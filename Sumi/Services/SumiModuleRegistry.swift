@@ -2,7 +2,6 @@ import Foundation
 
 enum SumiModuleID: String, CaseIterable, Codable, Hashable, Identifiable, Sendable {
     case extensions
-    case userScripts
     case boosts
     case liveFolders
 

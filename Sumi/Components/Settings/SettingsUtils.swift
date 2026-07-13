@@ -135,25 +135,16 @@ struct SettingsPaneDescriptor: Identifiable, Hashable {
                     "customize", "navigation",
                 ]
             )
-        case .userScripts:
-            return SettingsPaneDescriptor(
-                tab: tab,
-                title: "Userscripts",
-                subtitle: "Manage Sumi userscripts from the Extensions settings pane.",
-                icon: tab.icon,
-                group: .system,
-                keywords: ["userscripts", "scripts", "greasemonkey", "tampermonkey"]
-            )
         case .extensions:
             return SettingsPaneDescriptor(
                 tab: tab,
                 title: "Extensions",
-                subtitle: "Extension runtime status and userscripts for Sumi.",
+                subtitle: "Extension runtime status and installed extensions.",
                 icon: tab.icon,
                 group: .system,
                 keywords: [
                     "extensions", "webextension", "manifest", "safari",
-                    "userscripts", "uninstall",
+                    "uninstall",
                 ]
             )
         case .advanced:
@@ -243,19 +234,6 @@ enum SumiPrivacySettingsRoute: Equatable, Hashable {
     }
 }
 
-/// Which detail is shown inside Settings → Extensions (segmented control).
-enum SumiExtensionsSettingsSubPane: String, CaseIterable, Hashable {
-    case extensions
-    case userScripts
-
-    var segmentTitle: String {
-        switch self {
-        case .extensions: return "Extensions"
-        case .userScripts: return "Userscripts"
-        }
-    }
-}
-
 enum SettingsTabs: Hashable, CaseIterable {
     case general
     case appearance
@@ -265,7 +243,6 @@ enum SettingsTabs: Hashable, CaseIterable {
     case privacy
     case profiles
     case shortcuts
-    case userScripts
     case extensions
     case advanced
     case about
@@ -279,22 +256,12 @@ enum SettingsTabs: Hashable, CaseIterable {
     static var ordered: [SettingsTabs] {
         let caseOrder = Dictionary(uniqueKeysWithValues: allCases.enumerated().map { ($1, $0) })
         return allCases
-            .filter(\.showsInSettingsSidebar)
             .sorted { lhs, rhs in
                 if lhs.sidebarPlacement != rhs.sidebarPlacement {
                     return lhs.sidebarPlacement.rawValue < rhs.sidebarPlacement.rawValue
                 }
                 return (caseOrder[lhs] ?? 0) < (caseOrder[rhs] ?? 0)
             }
-    }
-
-    private var showsInSettingsSidebar: Bool {
-        switch self {
-        case .userScripts:
-            return false
-        default:
-            return true
-        }
     }
 
     private var sidebarPlacement: SidebarPlacement {
@@ -316,7 +283,6 @@ enum SettingsTabs: Hashable, CaseIterable {
         case .privacy: return "lock.shield"
         case .profiles: return "person.2"
         case .shortcuts: return "keyboard"
-        case .userScripts: return "curlybraces.square"
         case .extensions: return "puzzlepiece.extension"
         case .advanced: return "internaldrive"
         case .about: return "info.circle"
@@ -333,7 +299,6 @@ enum SettingsTabs: Hashable, CaseIterable {
         case .privacy: return .blue
         case .profiles: return .cyan
         case .shortcuts: return .indigo
-        case .userScripts: return .mint
         case .extensions: return .teal
         case .advanced: return .brown
         case .about: return .gray
@@ -351,7 +316,6 @@ enum SettingsTabs: Hashable, CaseIterable {
         case .privacy: return "privacy"
         case .profiles: return "profiles"
         case .shortcuts: return "shortcuts"
-        case .userScripts: return "userScripts"
         case .extensions: return "extensions"
         case .advanced: return "advanced"
         case .about: return "about"
@@ -368,7 +332,6 @@ enum SettingsTabs: Hashable, CaseIterable {
         case "privacy": self = .privacy
         case "profiles": self = .profiles
         case "shortcuts": self = .shortcuts
-        case "userscripts", "user_scripts": self = .userScripts
         case "extensions": self = .extensions
         case "advanced": self = .advanced
         case "about": self = .about

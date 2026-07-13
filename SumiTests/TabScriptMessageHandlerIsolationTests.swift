@@ -429,7 +429,7 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
         "sumiTabSuspension_\(tab.id.uuidString)"
     }
 
-    private func scriptShapes(_ scripts: [SumiUserScript]) -> [ScriptShape] {
+    private func scriptShapes(_ scripts: [SumiPageScript]) -> [ScriptShape] {
         scripts.map { script in
             ScriptShape(
                 typeName: String(describing: type(of: script)),

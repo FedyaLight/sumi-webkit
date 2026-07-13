@@ -102,7 +102,7 @@ final class SumiUserScriptMessageHandlerRegistry {
         guard !hasInstalledUserScripts(for: provider) else { return }
 
         let wkUserScripts = provider.userScripts.map {
-            SumiUserScriptBuilder.makeWKUserScript(from: $0)
+            SumiPageScriptBuilder.makeWKUserScript(from: $0)
         }
         guard removeInstalledUserScripts(from: userContentController) else { return }
         removeInstalledScriptMessageHandlers(from: userContentController)
@@ -135,7 +135,7 @@ final class SumiUserScriptMessageHandlerRegistry {
 
     private func installUserScripts(
         _ wkUserScripts: [WKUserScript],
-        handlers: [SumiUserScript],
+        handlers: [SumiPageScript],
         provider: SumiNormalTabUserScripts,
         on userContentController: WKUserContentController
     ) {
@@ -147,7 +147,7 @@ final class SumiUserScriptMessageHandlerRegistry {
     }
 
     private func addHandler(
-        _ userScript: SumiUserScript,
+        _ userScript: SumiPageScript,
         to userContentController: WKUserContentController
     ) {
         for messageName in userScript.messageNames {

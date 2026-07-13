@@ -7,10 +7,9 @@ import Foundation
 import SumiDomain
 
 /// Owns the ephemeral UI-routing state for the settings surface: which pane is
-/// selected, the privacy sub-route, and the Extensions/Userscripts sub-pane,
-/// plus the `sumi://settings?pane=…` URL ↔ state translation. This is view
-/// navigation, not a persisted preference, so it lives apart from the
-/// UserDefaults-backed `SumiSettingsService`.
+/// selected, the privacy sub-route, plus the `sumi://settings?pane=…` URL ↔
+/// state translation. This is view navigation, not a persisted preference,
+/// so it lives apart from the UserDefaults-backed `SumiSettingsService`.
 @MainActor
 @Observable
 final class SettingsNavigationOwner {
@@ -18,41 +17,21 @@ final class SettingsNavigationOwner {
 
     var privacySettingsRoute: SumiPrivacySettingsRoute = .overview
 
-    /// Extensions vs SumiScripts, when `currentSettingsTab == .extensions`.
-    var extensionsSettingsSubPane: SumiExtensionsSettingsSubPane = .extensions
-
-    /// Syncs sidebar tab + Extensions sub-pane from `sumi://settings?pane=…`.
+    /// Syncs sidebar state from `sumi://settings?pane=…`.
     func applyNavigation(from url: URL) {
         guard SumiSurface.isSettingsSurfaceURL(url),
               let raw = SumiSurface.settingsPaneQuery(from: url)?.lowercased()
         else { return }
-        switch raw {
-        case "userscripts", "user_scripts":
-            currentSettingsTab = .extensions
-            extensionsSettingsSubPane = .userScripts
-        case "extensions":
-            currentSettingsTab = .extensions
-            extensionsSettingsSubPane = .extensions
-        default:
-            if let tab = SettingsTabs(paneQueryValue: raw) {
-                currentSettingsTab = tab
-                if tab == .privacy {
-                    privacySettingsRoute = Self.privacyRoute(from: url)
-                }
+        if let tab = SettingsTabs(paneQueryValue: raw) {
+            currentSettingsTab = tab
+            if tab == .privacy {
+                privacySettingsRoute = Self.privacyRoute(from: url)
             }
         }
     }
 
-    /// URL for the active settings tab, including Userscripts as `pane=userScripts`.
+    /// URL for the active settings tab.
     func settingsSurfaceURLForCurrentNavigation() -> URL {
-        if currentSettingsTab == .extensions {
-            switch extensionsSettingsSubPane {
-            case .userScripts:
-                return SumiSurface.settingsSurfaceURL(paneQuery: SettingsTabs.userScripts.paneQueryValue)
-            case .extensions:
-                return SumiSurface.settingsSurfaceURL(paneQuery: SettingsTabs.extensions.paneQueryValue)
-            }
-        }
         if currentSettingsTab == .privacy {
             switch privacySettingsRoute {
             case .overview:

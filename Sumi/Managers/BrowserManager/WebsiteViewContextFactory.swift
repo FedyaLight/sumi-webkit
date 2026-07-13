@@ -77,7 +77,6 @@ enum WebsiteViewContextFactory {
             profileManager: browserManager.profileManager,
             tabManager: browserManager.tabManager,
             extensionsModule: browserManager.optionalModules.extensions,
-            userscriptsModule: browserManager.optionalModules.userscripts,
             extensionSurfaceStore: browserManager.optionalModules.extensions.surfaceStore,
             currentProfile: { [weak browserManager] in
                 browserManager?.currentProfile

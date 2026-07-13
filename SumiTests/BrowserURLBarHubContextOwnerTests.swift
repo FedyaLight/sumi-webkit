@@ -39,9 +39,6 @@ final class BrowserURLBarHubContextOwnerTests: XCTestCase {
             },
             isPinnedToToolbar: { extensionId in
                 extensionId == "pinned-extension"
-            },
-            sumiScriptsManagerEnabled: {
-                true
             }
         )
         let resolvedSnapshot = SiteControlsSnapshot.resolve(url: nil, profile: nil)
@@ -65,7 +62,6 @@ final class BrowserURLBarHubContextOwnerTests: XCTestCase {
         )
         XCTAssertEqual(context.extensionActions.orderedPinnedToolbarSlotCount([]), 7)
         XCTAssertTrue(context.extensionActions.isPinnedToToolbar("pinned-extension"))
-        XCTAssertTrue(context.extensionActions.sumiScriptsManagerEnabled())
         XCTAssertEqual(context.siteControlsSnapshot(nil, nil, false, false), resolvedSnapshot)
 
         context.extensionActions.ensureActionMetadataLoadedIfNeeded()
@@ -97,8 +93,7 @@ final class BrowserURLBarHubContextOwnerTests: XCTestCase {
             compactStrip: { _, _ in AnyView(EmptyView()) },
             hubTiles: { _, _ in AnyView(EmptyView()) },
             ensureActionMetadataLoadedIfNeeded: {},
-            isPinnedToToolbar: { _ in false },
-            sumiScriptsManagerEnabled: { false }
+            isPinnedToToolbar: { _ in false }
         )
         let owner = BrowserURLBarHubContextOwner(
             browserManager: browserManager,

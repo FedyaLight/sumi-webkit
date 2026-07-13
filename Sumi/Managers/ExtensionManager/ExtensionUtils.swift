@@ -275,7 +275,16 @@ struct ExtensionUtils {
 
     @MainActor
     static func hostPatternMatchesURL(_ pattern: String, url: URL) -> Bool {
-        UserScriptMatchEngine.matchPattern(pattern, matches: url)
+        let trimmed = pattern.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.isEmpty == false else { return false }
+        do {
+            return try WKWebExtension.MatchPattern(string: trimmed).matches(url)
+        } catch {
+            RuntimeDiagnostics.debug(category: "Extensions") {
+                "Invalid extension host pattern ignored: bytes=\(trimmed.utf8.count) error=\(error.localizedDescription)"
+            }
+            return false
+        }
     }
 
     static func loadJSONObject(at url: URL) throws -> [String: Any] {

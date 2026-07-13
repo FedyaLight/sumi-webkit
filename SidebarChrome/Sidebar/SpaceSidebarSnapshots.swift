@@ -163,14 +163,8 @@ struct EssentialsSnapshot {
     let items: [SpaceShortcutSnapshot]
 }
 
-enum ExtensionActionSlotSnapshotKind {
-    case sumiScriptsManager
-    case webExtension
-}
-
 struct ExtensionActionSlotSnapshot: Identifiable {
     let id: String
-    let kind: ExtensionActionSlotSnapshotKind
     let icon: NSImage?
     let badgeText: String?
     let hasUnreadBadgeText: Bool
@@ -339,14 +333,6 @@ enum SpaceSidebarTransitionSnapshotBuilder {
 
         let snapshots = slots.map { slot -> ExtensionActionSlotSnapshot in
             switch slot {
-            case .sumiScriptsManager:
-                return ExtensionActionSlotSnapshot(
-                    id: SumiScriptsToolbarConstants.nativeToolbarItemID,
-                    kind: .sumiScriptsManager,
-                    icon: nil,
-                    badgeText: nil,
-                    hasUnreadBadgeText: false
-                )
             case .webExtension(let ext):
                 let actionState = surfaceStore.actionStatesByExtensionID[ext.id]
                 let icon = actionState?.icon ?? extensionIcon(for: ext, surfaceStore: surfaceStore)
@@ -354,7 +340,6 @@ enum SpaceSidebarTransitionSnapshotBuilder {
                     .trimmingCharacters(in: .whitespacesAndNewlines)
                 return ExtensionActionSlotSnapshot(
                     id: ext.id,
-                    kind: .webExtension,
                     icon: icon,
                     badgeText: badgeText?.isEmpty == false ? badgeText : nil,
                     hasUnreadBadgeText: actionState?.hasUnreadBadgeText == true

@@ -1,8 +1,8 @@
 import Foundation
 
 @MainActor
-func makeNormalTabCoreUserScripts(for tab: Tab) -> [SumiUserScript] {
-    var scripts: [SumiUserScript] = [
+func makeNormalTabCoreUserScripts(for tab: Tab) -> [SumiPageScript] {
+    var scripts: [SumiPageScript] = [
         SumiLinkInteractionUserScript(contextID: tab.id),
         SumiWebPageContextMenuUserScript(contextID: tab.id),
         SumiDocumentSuspensionSensorUserScript(

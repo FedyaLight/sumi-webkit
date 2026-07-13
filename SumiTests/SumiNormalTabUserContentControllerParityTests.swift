@@ -637,7 +637,7 @@ private final class ParityContentRuleListProvider: SumiContentRuleListSetProvidi
 }
 
 @MainActor
-private final class ParityUserScript: NSObject, SumiUserScript {
+private final class ParityUserScript: NSObject, SumiPageScript {
     let source: String
     let injectionTime: WKUserScriptInjectionTime = .atDocumentStart
     let forMainFrameOnly = true
@@ -661,7 +661,7 @@ private final class ParityUserScript: NSObject, SumiUserScript {
 }
 
 @MainActor
-private final class ReplyParityUserScript: NSObject, SumiUserScript, WKScriptMessageHandlerWithReply {
+private final class ReplyParityUserScript: NSObject, SumiPageScript, WKScriptMessageHandlerWithReply {
     let source: String
     let injectionTime: WKUserScriptInjectionTime = .atDocumentStart
     let forMainFrameOnly = true

@@ -30,10 +30,6 @@ final class TabWebViewCleanupOwnerTests: XCTestCase {
                 return false
             },
             shutdownRuntime: SumiWebViewShutdown.NormalTabRuntime(
-                cleanupUserScripts: { controller, webViewId in
-                    XCTAssertIdentical(controller, webView.configuration.userContentController)
-                    events.append(.cleanupUserScripts(webViewId))
-                },
                 removeWebViewFromContainers: { candidateWebView in
                     XCTAssertIdentical(candidateWebView, webView)
                     events.append(.removeFromContainers)
@@ -79,7 +75,6 @@ final class TabWebViewCleanupOwnerTests: XCTestCase {
                 .protectedCleanupCheck,
                 .permissionEvent,
                 .leaveNavigationRuntime,
-                .cleanupUserScripts(tabId),
                 .unbindAudio,
                 .removeNavigationStateObservers,
                 .removeNavigationDelegateBundle,
@@ -103,9 +98,6 @@ final class TabWebViewCleanupOwnerTests: XCTestCase {
                 return true
             },
             shutdownRuntime: SumiWebViewShutdown.NormalTabRuntime(
-                cleanupUserScripts: { _, _ in
-                    XCTFail("Deferred cleanup must not run shutdown user-script cleanup")
-                },
                 removeWebViewFromContainers: { _ in
                     XCTFail("Deferred cleanup must not remove containers")
                 }
@@ -164,7 +156,6 @@ final class TabWebViewCleanupOwnerTests: XCTestCase {
         handlePermissionLifecycleEvent: @escaping TabWebViewCleanupOwner.PermissionLifecycleEventHandler = { _ in /* No-op. */ },
         deferProtectedWebViewCleanup: @escaping TabWebViewCleanupOwner.ProtectedWebViewCleanupDeferrer = { _, _, _ in false },
         shutdownRuntime: SumiWebViewShutdown.NormalTabRuntime = SumiWebViewShutdown.NormalTabRuntime(
-            cleanupUserScripts: { _, _ in /* No-op. */ },
             removeWebViewFromContainers: { _ in /* No-op. */ }
         ),
         currentPermissionPageId: @escaping () -> String = { "page" },
@@ -205,7 +196,6 @@ private enum Event: Equatable {
     case permissionEvent
     case protectedCleanupCheck
     case leaveNavigationRuntime
-    case cleanupUserScripts(UUID)
     case unbindAudio
     case removeNavigationStateObservers
     case removeNavigationDelegateBundle

@@ -49,7 +49,7 @@ The project focuses on:
 - Native macOS behavior through Swift, SwiftUI, AppKit where appropriate, and system WebKit.
 - Arc/Zen-style organization without cloning either project.
 - A performance-first browser shell with tabs, spaces, profiles, Glance, split view, and sidebar organization.
-- Optional extension, userscript, and privacy-cleanup modules that should not impose background runtime cost when disabled.
+- Optional extension, customization, and privacy-cleanup modules that should not impose background runtime cost when disabled.
 - User-controlled features instead of always-on product surfaces.
 
 ## Working Browser Features

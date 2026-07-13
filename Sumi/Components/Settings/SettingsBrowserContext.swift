@@ -9,7 +9,6 @@ struct SettingsBrowserContext {
     let profileManager: ProfileManager
     let tabManager: TabManager
     let extensionsModule: SumiExtensionsModule
-    let userscriptsModule: SumiUserscriptsModule
     let extensionSurfaceStore: BrowserExtensionSurfaceStore
 
     let currentProfile: () -> Profile?

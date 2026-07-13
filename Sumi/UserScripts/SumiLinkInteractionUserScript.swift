@@ -6,7 +6,7 @@ import WebKit
 /// `Tab`, so ephemeral presentation WebViews such as Reader can install it
 /// without inheriting the normal-tab script bundle or its runtime authority.
 @MainActor
-final class SumiLinkInteractionUserScript: NSObject, SumiUserScript {
+final class SumiLinkInteractionUserScript: NSObject, SumiPageScript {
     private let context: String
 
     let source: String

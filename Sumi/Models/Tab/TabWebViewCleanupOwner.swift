@@ -5,25 +5,23 @@ import WebKit
 
 enum SumiWebViewShutdown {
     private enum Scope {
-        case normal(tabId: UUID)
+        case normal
         case auxiliary
     }
 
     struct NormalTabRuntime {
-        let cleanupUserScripts: (WKUserContentController, UUID) -> Void
         let removeWebViewFromContainers: (WKWebView) -> Void
     }
 
     @MainActor
     static func perform(
         on webView: WKWebView,
-        tabId: UUID,
         runtime: NormalTabRuntime,
         additionalTabCleanup: (() -> Void)? = nil
     ) {
         performLifecycle(
             on: webView,
-            scope: .normal(tabId: tabId),
+            scope: .normal,
             normalTabRuntime: runtime,
             additionalTabCleanup: additionalTabCleanup
         )
@@ -34,12 +32,11 @@ enum SumiWebViewShutdown {
     @MainActor
     static func performTerminalShutdown(
         on webView: WKWebView,
-        tabId: UUID,
         runtime: NormalTabRuntime
     ) {
         performLifecycle(
             on: webView,
-            scope: .normal(tabId: tabId),
+            scope: .normal,
             normalTabRuntime: runtime,
             prepareForRelease: false
         )
@@ -66,13 +63,6 @@ enum SumiWebViewShutdown {
     ) {
         webView.stopLoading()
         stopNativeMedia(on: webView)
-
-        if case .normal(let tabId) = scope {
-            normalTabRuntime?.cleanupUserScripts(
-                webView.configuration.userContentController,
-                tabId
-            )
-        }
 
         if let controller = webView.configuration.userContentController.sumiNormalTabUserContentController {
             controller.cleanUpBeforeClosing()
@@ -182,7 +172,6 @@ enum TabWebViewCleanupOwner {
 
         SumiWebViewShutdown.perform(
             on: webView,
-            tabId: context.tabId,
             runtime: context.shutdownRuntime
         ) {
             context.unbindAudioState(webView)

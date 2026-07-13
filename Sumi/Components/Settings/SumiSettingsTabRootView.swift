@@ -78,11 +78,6 @@ struct SumiSettingsTabRootView: View {
         .onChange(of: sumiSettings.currentSettingsTab) { _, _ in
             syncSettingsURLToActiveTab(sumiSettings: sumiSettings)
         }
-        .onChange(of: sumiSettings.extensionsSettingsSubPane) { _, _ in
-            if sumiSettings.currentSettingsTab == .extensions {
-                syncSettingsURLToActiveTab(sumiSettings: sumiSettings)
-            }
-        }
         .onChange(of: sumiSettings.privacySettingsRoute) { _, _ in
             if sumiSettings.currentSettingsTab == .privacy {
                 syncSettingsURLToActiveTab(sumiSettings: sumiSettings)
@@ -351,10 +346,9 @@ struct SumiSettingsTabRootView: View {
             )
         case .shortcuts:
             ShortcutsSettingsView(shortcutManager: keyboardShortcutManager)
-        case .extensions, .userScripts:
+        case .extensions:
             SumiExtensionsSettingsPane(
                 extensionsModule: browserContext.extensionsModule,
-                userscriptsModule: browserContext.userscriptsModule,
                 currentProfileID: currentProfileID
             )
         case .advanced:

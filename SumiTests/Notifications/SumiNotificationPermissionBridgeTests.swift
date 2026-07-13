@@ -15,10 +15,9 @@ final class SumiNotificationPermissionBridgeTests: XCTestCase {
             committedURL: URL(string: "https://example.com/private/path?token=secret#fragment")
         )
 
-        let result = await bridge.postUserscriptNotification(
+        let result = await bridge.postWebsiteNotification(
             request: notificationRequest(),
             tabContext: tabContext,
-            scriptId: "script-a",
             title: "Title",
             body: "Body",
             iconURL: nil,
@@ -47,10 +46,9 @@ final class SumiNotificationPermissionBridgeTests: XCTestCase {
         )
         let bridge = makeBridge(coordinator: coordinator, service: service)
 
-        let result = await bridge.postUserscriptNotification(
+        let result = await bridge.postWebsiteNotification(
             request: notificationRequest(),
             tabContext: tabContext(),
-            scriptId: "script-a",
             title: "Title",
             body: "Body",
             iconURL: nil,
@@ -64,37 +62,6 @@ final class SumiNotificationPermissionBridgeTests: XCTestCase {
         XCTAssertEqual(result.permission, .denied)
         let postedCount = await service.postedCount()
         XCTAssertEqual(postedCount, 0)
-    }
-
-    func testPromptRequiredUsesTemporaryFailClosedStrategyWithDefaultPermissionState() async {
-        let service = FakeSumiNotificationService()
-        let coordinator = FakeNotificationPermissionCoordinator(mode: .pending)
-        let bridge = makeBridge(
-            coordinator: coordinator,
-            service: service,
-            pendingPollIntervalNanoseconds: 1_000_000,
-            coordinatorTimeoutNanoseconds: 50_000_000
-        )
-
-        let result = await bridge.postUserscriptNotification(
-            request: notificationRequest(),
-            tabContext: tabContext(),
-            scriptId: "script-a",
-            title: "Title",
-            body: "Body",
-            iconURL: nil,
-            imageURL: nil,
-            tag: nil,
-            isSilent: false,
-            webView: WKWebView()
-        )
-
-        XCTAssertFalse(result.delivered)
-        XCTAssertEqual(result.permission, .default)
-        let postedCount = await service.postedCount()
-        let cancelledReasons = await coordinator.cancelledReasons()
-        XCTAssertEqual(postedCount, 0)
-        XCTAssertEqual(cancelledReasons, ["notification-prompt-presenter-unavailable-deny"])
     }
 
     func testSecurityContextPropagatesSurfaceFromTabContext() {
@@ -155,21 +122,21 @@ final class SumiNotificationPermissionBridgeTests: XCTestCase {
     }
 
     func testNotificationPayloadSanitizesTextAndIdentifiersAreDeterministic() {
-        let first = SumiNotificationIdentifier.userscript(
+        let first = SumiNotificationIdentifier.website(
             profilePartitionId: "Profile A",
             tabId: "Tab A",
-            scriptId: "Script A",
+            pageId: "Page A",
             requestId: "Request A"
         )
-        let second = SumiNotificationIdentifier.userscript(
+        let second = SumiNotificationIdentifier.website(
             profilePartitionId: "Profile A",
             tabId: "Tab A",
-            scriptId: "Script A",
+            pageId: "Page A",
             requestId: "Request A"
         )
         let payload = SumiNotificationPayload(
             identifier: first,
-            kind: .userscript,
+            kind: .website,
             title: "\u{0}  Hello  ",
             body: "Body\u{1}",
             isSilent: true

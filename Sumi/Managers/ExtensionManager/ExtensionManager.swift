@@ -740,7 +740,7 @@ final class ExtensionManager: NSObject, ObservableObject {
         controllerIdentifierOwner.removeTestStorageIfNeededForLoadedIdentifier()
     }
 
-    func normalTabUserScripts() -> [SumiUserScript] {
+    func normalTabUserScripts() -> [SumiPageScript] {
         #if DEBUG || SUMI_DIAGNOSTICS
             [accountForkDiagnosticsUserScript]
         #else

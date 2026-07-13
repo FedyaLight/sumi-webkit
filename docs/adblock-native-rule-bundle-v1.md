@@ -83,7 +83,7 @@ Run these checks after each protection-runtime cleanup pass:
 
 ```sh
 git diff --check
-scripts/check_userscript_hot_paths.sh
+scripts/check_browser_script_hot_paths.sh
 scripts/check_tracker_radar_import_boundary.sh
 scripts/check_prepared_bundle_runtime_boundary.sh
 xcodebuild test -project Sumi.xcodeproj -scheme Sumi -destination 'platform=macOS,arch=arm64' CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO -only-testing:SumiTests/SumiAdBlockingModuleTests -only-testing:SumiTests/SumiAdblockNativeRuleBundleTests -only-testing:SumiTests/SumiAdblockUpdatePipelineTests -only-testing:SumiTests/SumiProtectionBundleRemoteUpdateTests -only-testing:SumiTests/SumiProtectionCoordinatorTests

@@ -25,7 +25,7 @@ extension SumiUserScriptSubfeature {
     }
 }
 
-protocol SumiUserScriptMessaging: SumiUserScript {
+protocol SumiUserScriptMessaging: SumiPageScript {
     var broker: SumiUserScriptMessageBroker { get }
 }
 

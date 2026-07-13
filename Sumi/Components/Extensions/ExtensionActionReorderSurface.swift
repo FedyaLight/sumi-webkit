@@ -13,7 +13,7 @@ import SwiftUI
 @available(macOS 15.5, *)
 enum ExtensionActionReorderMetrics {
     /// After a reorder drop, suppress the synthetic click that would otherwise
-    /// open the action popup / SumiScripts popover.
+    /// open the extension action popup.
     static let activationSuppressInterval: TimeInterval = 0.25
     static let springAnimation = Animation.interactiveSpring(
         duration: 0.22,

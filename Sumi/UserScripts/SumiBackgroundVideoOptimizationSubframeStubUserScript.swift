@@ -9,7 +9,7 @@ import WebKit
 /// frames, and on the first `<video>` "play" asks native code to inject the
 /// full optimizer into exactly that frame.
 @MainActor
-final class SumiBackgroundVideoOptimizationSubframeStubUserScript: NSObject, SumiUserScript {
+final class SumiBackgroundVideoOptimizationSubframeStubUserScript: NSObject, SumiPageScript {
     static let bootstrapMessageName = "sumiBackgroundVideoOptimizerBootstrap"
 
     let injectionTime: WKUserScriptInjectionTime = .atDocumentStart

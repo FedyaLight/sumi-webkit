@@ -255,7 +255,7 @@ final class ReaderPresentationSession: NSObject, WKNavigationDelegate {
             )
         }
         userContentController.addUserScript(
-            SumiUserScriptBuilder.makeWKUserScript(from: linkInteractionScript)
+            SumiPageScriptBuilder.makeWKUserScript(from: linkInteractionScript)
         )
         webView = FocusableWKWebView(frame: .zero, configuration: configuration)
         super.init()

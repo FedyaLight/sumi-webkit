@@ -6,7 +6,7 @@ final class SettingsModuleToggleTests: XCTestCase {
     func testDescriptorsStillCoverOptionalModules() {
         XCTAssertEqual(
             moduleToggleDescriptors.map(\.moduleID),
-            [.extensions, .userScripts]
+            [.extensions]
         )
     }
 
@@ -26,6 +26,6 @@ final class SettingsModuleToggleTests: XCTestCase {
     }
 
     private var moduleToggleDescriptors: [SumiSettingsModuleToggleDescriptor] {
-        [.extensions, .userScripts]
+        [.extensions]
     }
 }

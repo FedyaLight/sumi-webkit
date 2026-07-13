@@ -1032,7 +1032,7 @@ final class FailingSchemeHandler: NSObject, WKURLSchemeHandler {
     func webView(_: WKWebView, stop _: WKURLSchemeTask) { /* no-op */ }
 }
 
-final class SumiNavigationTestUserScript: NSObject, SumiUserScript {
+final class SumiNavigationTestUserScript: NSObject, SumiPageScript {
     let source: String
     let injectionTime: WKUserScriptInjectionTime = .atDocumentStart
     let forMainFrameOnly = true

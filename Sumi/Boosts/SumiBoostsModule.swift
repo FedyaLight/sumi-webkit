@@ -141,7 +141,7 @@ final class SumiBoostsModule: ObservableObject {
         for url: URL,
         profileId: UUID?,
         isEphemeral: Bool
-    ) -> [SumiUserScript] {
+    ) -> [SumiPageScript] {
         _ = isEphemeral
         guard let boost = activeBoost(for: url, profileId: profileId) else { return [] }
         return [SumiBoostUserScript(boost: boost)]
@@ -383,7 +383,7 @@ final class SumiBoostsModule: ObservableObject {
         }
     }
 
-    /// Rebuilds the managed user-script set (extensions + userscripts + boost)
+    /// Rebuilds the managed page-script set (browser-owned + extension + boost)
     /// and reinstalls every WKUserScript on each matching tab's content
     /// controller. Required when the active boost set changes.
     func reinstallUserScripts(profileId: UUID, host: String) {

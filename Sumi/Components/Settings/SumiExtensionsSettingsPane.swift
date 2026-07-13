@@ -8,10 +8,8 @@ import SwiftUI
 
 struct SumiExtensionsSettingsPane: View {
     let extensionsModule: SumiExtensionsModule
-    let userscriptsModule: SumiUserscriptsModule
     let currentProfileID: UUID?
 
-    @Environment(\.sumiSettings) private var sumiSettingsModel
     @EnvironmentObject private var extensionSurfaceStore: BrowserExtensionSurfaceStore
     @State private var busyExtensionIDs: Set<String> = []
     @State private var extensionOperationTasks: [String: Task<Void, Never>] = [:]
@@ -23,40 +21,16 @@ struct SumiExtensionsSettingsPane: View {
     @State private var safariExtensionScanStatus: String?
 
     var body: some View {
-        @Bindable var sumiSettings = sumiSettingsModel
-
         VStack(alignment: .leading, spacing: 16) {
-            Picker("Section", selection: $sumiSettings.extensionsSettingsSubPane) {
-                ForEach(SumiExtensionsSettingsSubPane.allCases, id: \.self) { segment in
-                    Text(segment.segmentTitle).tag(segment)
-                }
-            }
-            .pickerStyle(.segmented)
-            .accessibilityLabel("Extensions and userscripts")
-
-            switch sumiSettings.extensionsSettingsSubPane {
-            case .extensions:
-                SumiSettingsModuleToggleGate(descriptor: .extensions) {
-                    extensionsManagerBody
-                        .onDisappear {
-                            clearExtensionPaneState()
-                        }
-                }
-            case .userScripts:
-                SumiSettingsModuleToggleGate(descriptor: .userScripts) {
-                    if let manager = userscriptsModule.managerIfEnabled() {
-                        SumiScriptsManagerView(manager: manager)
+            SumiSettingsModuleToggleGate(descriptor: .extensions) {
+                extensionsManagerBody
+                    .onDisappear {
+                        clearExtensionPaneState()
                     }
-                }
             }
         }
         .onDisappear {
             clearExtensionPaneState()
-        }
-        .onChange(of: sumiSettings.extensionsSettingsSubPane) { _, subPane in
-            if subPane != .extensions {
-                clearExtensionPaneState()
-            }
         }
     }
 

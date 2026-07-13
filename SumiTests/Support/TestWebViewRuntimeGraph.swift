@@ -15,8 +15,7 @@ func makeTestWebViewRuntimeGraph(
     windowServices: WebViewWindowServices? = nil,
     deferredServices: DeferredWebViewServices? = nil,
     visibleContext: WebViewVisibleRuntimeContext? = nil,
-    initialDocumentContext: InitialDocumentWebViewRuntimeContext? = nil,
-    shutdownContext: WebViewShutdownRuntimeContext? = nil
+    initialDocumentContext: InitialDocumentWebViewRuntimeContext? = nil
 ) -> WebViewRuntimeGraph {
     WebViewRuntimeGraph(
         webViewSessions: webViewSessions,
@@ -53,9 +52,6 @@ func makeTestWebViewRuntimeGraph(
                 needsInitialDocumentExtensionContextLoad: { _ in false },
                 ensureInitialExtensionContextsLoaded: { _ in },
                 refreshCompositorForWindow: { _ in }
-            ),
-        shutdownContext: shutdownContext ?? WebViewShutdownRuntimeContext(
-            cleanupUserScripts: { _, _ in }
-        )
+            )
     )
 }

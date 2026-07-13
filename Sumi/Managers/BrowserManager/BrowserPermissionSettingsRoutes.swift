@@ -4,12 +4,7 @@ import SumiDomain
 @MainActor
 enum BrowserPermissionSettingsRoutes {
     static func settingsSurfaceURL(for pane: SettingsTabs) -> URL {
-        switch pane {
-        case .userScripts:
-            return SumiSurface.settingsSurfaceURL(paneQuery: SettingsTabs.userScripts.paneQueryValue)
-        default:
-            return pane.settingsSurfaceURL
-        }
+        pane.settingsSurfaceURL
     }
 
     static func privacySiteSettingsSurfaceURL(focusing tab: Tab?) -> URL {

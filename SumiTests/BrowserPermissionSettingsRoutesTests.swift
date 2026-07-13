@@ -4,11 +4,7 @@ import XCTest
 
 @MainActor
 final class BrowserPermissionSettingsRoutesTests: XCTestCase {
-    func testSettingsSurfaceURLKeepsUserscriptsPaneMapping() {
-        XCTAssertEqual(
-            BrowserPermissionSettingsRoutes.settingsSurfaceURL(for: .userScripts),
-            URL(string: "sumi://settings?pane=userScripts")
-        )
+    func testSettingsSurfaceURLUsesPaneMapping() {
         XCTAssertEqual(
             BrowserPermissionSettingsRoutes.settingsSurfaceURL(for: .about),
             SettingsTabs.about.settingsSurfaceURL

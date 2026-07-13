@@ -10,7 +10,7 @@ struct SumiTransientChromeInteractionShieldRect: Equatable {
 }
 
 @MainActor
-final class SumiTransientChromeInteractionShieldUserScript: NSObject, SumiUserScript {
+final class SumiTransientChromeInteractionShieldUserScript: NSObject, SumiPageScript {
     static let apiName = "__sumiTransientChromeInteractionShield"
     static let sourceMarker = "__sumiTransientChromeInteractionShieldInstalled"
 

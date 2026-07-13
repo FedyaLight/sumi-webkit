@@ -212,7 +212,6 @@ final class SumiAutoplayBrowserConfigTests: XCTestCase {
         TabWebViewConfigurationContext(
             browserConfiguration: browserConfiguration,
             extensionNormalTabUserScripts: { [] },
-            userscriptsNormalTabUserScripts: { _, _, _, _ in [] },
             boostsNormalTabUserScripts: { _, _, _ in [] },
             protectionDecision: { _, _ in nil },
             protectionDesiredAttachmentState: {

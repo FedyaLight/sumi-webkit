@@ -323,7 +323,7 @@ preserve user organization while reducing unnecessary live runtime state.
 
 ## Optional Modules
 
-Extensions, userscripts, and privacy cleanup are feature areas that should
+Extensions, site customization, and privacy cleanup are feature areas that should
 remain optional. When disabled, they should avoid background runtime cost.
 
 ## Protection

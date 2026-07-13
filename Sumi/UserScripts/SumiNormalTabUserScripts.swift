@@ -16,22 +16,22 @@ final class SumiNormalTabUserScripts {
     private let backgroundVideoOptimizationUserScript = SumiBackgroundVideoOptimizationUserScript()
     private let backgroundVideoOptimizationSubframeStubUserScript =
         SumiBackgroundVideoOptimizationSubframeStubUserScript()
-    private var contentBlockingUserScripts: [SumiUserScript]
-    private var managedUserScripts: [SumiUserScript]
+    private var contentBlockingUserScripts: [SumiPageScript]
+    private var managedUserScripts: [SumiPageScript]
     private var managedUserScriptSignature: [UserScriptSignature]
-    private var cachedUserScripts: [SumiUserScript]?
+    private var cachedUserScripts: [SumiPageScript]?
     private(set) var scriptsRevision = 0
 
     init(
-        contentBlockingUserScripts: [SumiUserScript] = [],
-        managedUserScripts: [SumiUserScript] = []
+        contentBlockingUserScripts: [SumiPageScript] = [],
+        managedUserScripts: [SumiPageScript] = []
     ) {
         self.contentBlockingUserScripts = contentBlockingUserScripts
         self.managedUserScripts = managedUserScripts
         self.managedUserScriptSignature = Self.signature(for: managedUserScripts)
     }
 
-    var userScripts: [SumiUserScript] {
+    var userScripts: [SumiPageScript] {
         if let cachedUserScripts {
             return cachedUserScripts
         }
@@ -46,7 +46,7 @@ final class SumiNormalTabUserScripts {
         return scripts
     }
 
-    func replaceManagedUserScripts(_ userScripts: [SumiUserScript]) {
+    func replaceManagedUserScripts(_ userScripts: [SumiPageScript]) {
         managedUserScripts = userScripts
         managedUserScriptSignature = Self.signature(for: userScripts)
         cachedUserScripts = nil
@@ -54,7 +54,7 @@ final class SumiNormalTabUserScripts {
     }
 
     @discardableResult
-    func replaceManagedUserScriptsIfChanged(_ userScripts: [SumiUserScript]) -> Bool {
+    func replaceManagedUserScriptsIfChanged(_ userScripts: [SumiPageScript]) -> Bool {
         let signature = Self.signature(for: userScripts)
         guard signature != managedUserScriptSignature else {
             return false
@@ -72,12 +72,12 @@ final class SumiNormalTabUserScripts {
         var scripts: [WKUserScript] = []
         scripts.reserveCapacity(scriptsToLoad.count)
         for userScript in scriptsToLoad {
-            scripts.append(SumiUserScriptBuilder.makeWKUserScript(from: userScript))
+            scripts.append(SumiPageScriptBuilder.makeWKUserScript(from: userScript))
         }
         return scripts
     }
 
-    private static func signature(for userScripts: [SumiUserScript]) -> [UserScriptSignature] {
+    private static func signature(for userScripts: [SumiPageScript]) -> [UserScriptSignature] {
         userScripts.map { userScript in
             UserScriptSignature(
                 typeName: String(describing: type(of: userScript)),

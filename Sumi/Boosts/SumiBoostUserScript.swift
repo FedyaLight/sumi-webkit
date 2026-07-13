@@ -2,7 +2,7 @@ import Foundation
 import WebKit
 
 @MainActor
-final class SumiBoostUserScript: NSObject, SumiUserScript {
+final class SumiBoostUserScript: NSObject, SumiPageScript {
     let source: String
     let injectionTime: WKUserScriptInjectionTime = .atDocumentStart
     let forMainFrameOnly = true

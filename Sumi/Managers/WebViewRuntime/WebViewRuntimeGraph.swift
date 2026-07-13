@@ -31,7 +31,6 @@ final class WebViewRuntimeGraph {
     fileprivate let deferredServices: DeferredWebViewServices
     fileprivate let visibleContext: WebViewVisibleRuntimeContext
     fileprivate let initialDocumentContext: InitialDocumentWebViewRuntimeContext
-    fileprivate let shutdownContext: WebViewShutdownRuntimeContext
 
     let runtimeTabs: WebViewRuntimeTabRegistry
 
@@ -44,8 +43,7 @@ final class WebViewRuntimeGraph {
         windowServices: WebViewWindowServices,
         deferredServices: DeferredWebViewServices,
         visibleContext: WebViewVisibleRuntimeContext,
-        initialDocumentContext: InitialDocumentWebViewRuntimeContext,
-        shutdownContext: WebViewShutdownRuntimeContext
+        initialDocumentContext: InitialDocumentWebViewRuntimeContext
     ) {
         self.webViewSessions = webViewSessions
         self.resolveRuntimeTab = resolveRuntimeTab
@@ -54,7 +52,6 @@ final class WebViewRuntimeGraph {
         self.deferredServices = deferredServices
         self.visibleContext = visibleContext
         self.initialDocumentContext = initialDocumentContext
-        self.shutdownContext = shutdownContext
         let runtimeTabs = WebViewRuntimeTabRegistry(
             webViewSessions: webViewSessions
         )
@@ -528,7 +525,6 @@ private extension WebViewRuntimeAssembler.Dependencies {
         Self(
             webViewSessions: graph.webViewSessions,
             visibleContext: graph.visibleContext,
-            shutdownContext: graph.shutdownContext,
             visibleWebViewRuntimeOwner: graph.visibleWebViewRuntimeOwner,
             hiddenCloneEvictionOwner: graph.hiddenCloneEvictionOwner,
             removeWebViewFromContainers: { [weak graph] webView in
@@ -601,7 +597,6 @@ private enum DeferredWebViewCommandAssembly {
                 processRecovery.cancel(webView)
                 SumiWebViewShutdown.perform(
                     on: webView,
-                    tabId: tabID,
                     runtime: runtimeAssembler.shutdownRuntime()
                 )
             },

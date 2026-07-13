@@ -204,7 +204,6 @@ struct SidebarBrowserContext {
                 guard let browserManager else { return [] }
                 return browserManager.optionalModules.extensions.orderedPinnedToolbarSlots(
                     enabledExtensions: enabledExtensions,
-                    sumiScriptsManagerEnabled: browserManager.optionalModules.userscripts.isEnabled,
                     profileId: profileId
                 )
             },

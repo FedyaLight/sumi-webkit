@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 
 extension Tab {
-    func normalTabCoreUserScripts() -> [SumiUserScript] {
+    func normalTabCoreUserScripts() -> [SumiPageScript] {
         makeNormalTabCoreUserScripts(for: self)
     }
 

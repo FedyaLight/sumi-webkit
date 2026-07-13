@@ -4,13 +4,12 @@ import SumiDomain
 
 @MainActor
 final class SettingsNavigationTests: XCTestCase {
-    func testSidebarOrderingKeepsAboutLastAndHidesUserscripts() {
+    func testSidebarOrderingKeepsAboutLast() {
         XCTAssertEqual(
             SettingsTabs.ordered,
             [.general, .appearance, .downloads, .startup, .performance, .privacy, .profiles, .shortcuts, .extensions, .advanced, .about]
         )
         XCTAssertEqual(SettingsTabs.ordered.last, .about)
-        XCTAssertFalse(SettingsTabs.ordered.contains(.userScripts))
     }
 
     func testStartupSettingsDefaultAndPersistence() {
@@ -358,7 +357,6 @@ final class SettingsNavigationTests: XCTestCase {
         )
         browserManager.selectTab(existing, in: windowState, loadPolicy: .deferred)
         settings.currentSettingsTab = .general
-        settings.extensionsSettingsSubPane = .userScripts
         browserManager.urlBarBundle.floatingBar.presentation.focus(
             in: windowState,
             prefill: existing.url.absoluteString,
@@ -377,7 +375,6 @@ final class SettingsNavigationTests: XCTestCase {
         XCTAssertEqual(existing.url, SettingsTabs.extensions.settingsSurfaceURL)
         XCTAssertEqual(windowState.currentTabId, existing.id)
         XCTAssertEqual(settings.currentSettingsTab, .extensions)
-        XCTAssertEqual(settings.extensionsSettingsSubPane, .extensions)
     }
 
     private func makeHarness() -> (BrowserManager, WindowRegistry, SumiSettingsService, BrowserWindowState, Space) {

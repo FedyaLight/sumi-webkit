@@ -5,9 +5,8 @@ import WebKit
 @MainActor
 struct TabWebViewConfigurationContext {
     let browserConfiguration: BrowserConfiguration
-    let extensionNormalTabUserScripts: () -> [SumiUserScript]
-    let userscriptsNormalTabUserScripts: (URL, UUID, UUID?, Bool) -> [SumiUserScript]
-    let boostsNormalTabUserScripts: (URL, UUID?, Bool) -> [SumiUserScript]
+    let extensionNormalTabUserScripts: () -> [SumiPageScript]
+    let boostsNormalTabUserScripts: (URL, UUID?, Bool) -> [SumiPageScript]
     let protectionDecision: (URL, UUID) -> SumiProtectionNormalTabDecision?
     let protectionDesiredAttachmentState: (URL?) -> SumiProtectionAttachmentState
     let safariContentBlockerAttachmentState: (URL) -> SumiSafariContentBlockerAttachmentState?
@@ -18,7 +17,6 @@ struct TabWebViewConfigurationContext {
     static let empty = TabWebViewConfigurationContext(
         browserConfiguration: .shared,
         extensionNormalTabUserScripts: { [] },
-        userscriptsNormalTabUserScripts: { _, _, _, _ in [] },
         boostsNormalTabUserScripts: { _, _, _ in [] },
         protectionDecision: { _, _ in nil },
         protectionDesiredAttachmentState: { _ in .disabled(siteHost: nil) },
@@ -36,8 +34,7 @@ final class TabWebViewConfigurationOwner {
 
     func normalTabUserScriptsProvider(
         for targetURL: URL?,
-        coreUserScripts: [SumiUserScript],
-        tabId: UUID,
+        coreUserScripts: [SumiPageScript],
         profileIdProvider: () -> UUID?,
         context: TabWebViewConfigurationContext,
         isEphemeral: Bool
@@ -46,7 +43,6 @@ final class TabWebViewConfigurationOwner {
             managedUserScripts: normalTabManagedUserScripts(
                 for: targetURL,
                 coreUserScripts: coreUserScripts,
-                tabId: tabId,
                 profileIdProvider: profileIdProvider,
                 context: context,
                 isEphemeral: isEphemeral
@@ -56,25 +52,15 @@ final class TabWebViewConfigurationOwner {
 
     func normalTabManagedUserScripts(
         for targetURL: URL?,
-        coreUserScripts: [SumiUserScript],
-        tabId: UUID,
+        coreUserScripts: [SumiPageScript],
         profileIdProvider: () -> UUID?,
         context: TabWebViewConfigurationContext,
         isEphemeral: Bool
-    ) -> [SumiUserScript] {
+    ) -> [SumiPageScript] {
         var scripts = coreUserScripts
         scripts.append(contentsOf: context.extensionNormalTabUserScripts())
 
         if let targetURL {
-            scripts.append(
-                contentsOf: context.userscriptsNormalTabUserScripts(
-                    targetURL,
-                    tabId,
-                    profileIdProvider(),
-                    isEphemeral
-                )
-            )
-
             scripts.append(
                 contentsOf: context.boostsNormalTabUserScripts(
                     targetURL,

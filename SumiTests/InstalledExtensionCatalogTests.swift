@@ -167,10 +167,7 @@ final class InstalledExtensionCatalogTests: XCTestCase {
         let existing = makeRecord(id: "removed-extension")
         harness.manager.installedExtensionCollection.setAll([existing])
         harness.manager.extensionsLoaded = false
-        harness.manager.pinnedToolbarExtensionIDsByProfile[harness.profileKey] = [
-            SumiScriptsToolbarConstants.nativeToolbarItemID,
-            existing.id
-        ]
+        harness.manager.pinnedToolbarExtensionIDsByProfile[harness.profileKey] = [existing.id]
 
         let enabled = harness.manager.installedExtensionCatalog.publish(
             .init(
@@ -183,13 +180,9 @@ final class InstalledExtensionCatalogTests: XCTestCase {
         XCTAssertTrue(enabled.isEmpty)
         XCTAssertTrue(harness.manager.installedExtensionCollection.records.isEmpty)
         XCTAssertTrue(harness.manager.extensionsLoaded)
-        XCTAssertEqual(
-            harness.manager.pinnedToolbarExtensionIDs,
-            [SumiScriptsToolbarConstants.nativeToolbarItemID]
-        )
-        XCTAssertEqual(
-            harness.manager.pinnedToolbarExtensionIDsByProfile[harness.profileKey],
-            [SumiScriptsToolbarConstants.nativeToolbarItemID]
+        XCTAssertTrue(harness.manager.pinnedToolbarExtensionIDs.isEmpty)
+        XCTAssertTrue(
+            harness.manager.pinnedToolbarExtensionIDsByProfile[harness.profileKey]?.isEmpty == true
         )
     }
 

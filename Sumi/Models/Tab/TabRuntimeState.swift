@@ -35,7 +35,6 @@ struct TabBrowserRuntime {
     var physicalWebPopupOpening: (any PhysicalWebPopupOpening)?
     var webKitChildTabOpening: (any WebKitChildTabOpening)?
     var webKitChildWindowOpening: (any WebKitChildWindowOpening)?
-    var installNavigationRuntime: TabInstallNavigationRuntime
     var webKitUIRuntime: TabWebKitUIRuntime
     var webViewReplacementRuntime: TabWebViewReplacementRuntime
     var webViewConfigurationContext: () -> TabWebViewConfigurationContext
@@ -70,7 +69,6 @@ struct TabBrowserRuntime {
         physicalWebPopupOpening: nil,
         webKitChildTabOpening: nil,
         webKitChildWindowOpening: nil,
-        installNavigationRuntime: .inactive,
         webKitUIRuntime: .inactive,
         webViewReplacementRuntime: .inactive,
         webViewConfigurationContext: { .empty },
@@ -341,7 +339,6 @@ struct TabWebViewCleanupRuntime {
         @MainActor @Sendable @escaping () -> Void
     ) -> Bool
     var retireParkedWebView: (Tab, WKWebView, String) -> Bool
-    var cleanupUserScripts: (WKUserContentController, UUID) -> Void
     var removeWebViewFromContainers: (WKWebView) -> Void
     var removeAllWebViews: (
         _ tab: Tab,
@@ -354,7 +351,6 @@ struct TabWebViewCleanupRuntime {
         deferWebsiteDataMutationWebViewMaterialization: { _, _ in false },
         deferWebsiteDataMutationMainFrameSubmission: { _, _, _, _ in false },
         retireParkedWebView: { _, _, _ in false },
-        cleanupUserScripts: { _, _ in /* No-op. */ },
         removeWebViewFromContainers: { _ in /* No-op. */ },
         removeAllWebViews: { _, _, _ in .none }
     )
@@ -415,15 +411,6 @@ struct TabWebKitUIRuntime {
     static let inactive = Self(
         handleWebViewDidClose: { _ in false },
         saveDownloadedData: { _, _, _, _ in /* No-op. */ }
-    )
-}
-
-@MainActor
-struct TabInstallNavigationRuntime {
-    var interceptInstallNavigation: (URL) -> Bool
-
-    static let inactive = Self(
-        interceptInstallNavigation: { _ in false }
     )
 }
 
@@ -567,7 +554,6 @@ final class TabNavigationRuntime {
     var webKitChildTabOpening: (any WebKitChildTabOpening)?
     var webKitChildWindowOpening: (any WebKitChildWindowOpening)?
     var webKitUIRuntime = TabWebKitUIRuntime.inactive
-    var installNavigationRuntime = TabInstallNavigationRuntime.inactive
     var webViewReplacementRuntime =
         TabWebViewReplacementRuntime.inactive
     var navigationCommandRuntime = TabNavigationCommandRuntime.inactive

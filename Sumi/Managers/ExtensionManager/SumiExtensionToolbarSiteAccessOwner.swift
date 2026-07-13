@@ -27,13 +27,11 @@ final class SumiExtensionToolbarSiteAccessOwner {
 
     func orderedPinnedToolbarSlots(
         enabledExtensions: [InstalledExtension],
-        sumiScriptsManagerEnabled: Bool,
         profileId: UUID?
     ) -> [PinnedToolbarSlot] {
         guard let manager = managerIfLoadedAndEnabled() else { return [] }
         return manager.orderedPinnedToolbarSlots(
             enabledExtensions: enabledExtensions,
-            sumiScriptsManagerEnabled: sumiScriptsManagerEnabled,
             profileId: profileId ?? manager.profileRuntime.currentProfileId
         )
     }

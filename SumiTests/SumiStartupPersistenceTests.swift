@@ -23,8 +23,6 @@ final class SumiStartupPersistenceTests: XCTestCase {
             "HistoryVisitEntity",
             "ExtensionEntity",
             "SafariContentBlockerEntity",
-            "UserScriptEntity",
-            "UserScriptResourceEntity",
             "PermissionDecisionEntity",
         ]
         XCTAssertEqual(schemaModelNames, expectedSchemaModelNames)

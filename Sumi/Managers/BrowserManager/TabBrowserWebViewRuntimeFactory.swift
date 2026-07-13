@@ -8,7 +8,6 @@ enum TabBrowserWebViewRuntimeFactory {
     ) -> TabWebViewCleanupRuntime {
         let webViewRuntime = browserManager.webViewRuntime
         return .make(
-            userscriptsModule: browserManager.optionalModules.userscripts,
             protection: webViewRuntime.protectionRuntime,
             websiteDataCleanup: webViewRuntime.websiteDataCleanupService,
             compositor: webViewRuntime.compositorRuntime,
@@ -52,9 +51,6 @@ enum TabBrowserWebViewRuntimeFactory {
             browserConfiguration: browserManager.browserConfiguration,
             extensionsModule: { [weak browserManager] in
                 browserManager?.optionalModules.extensions
-            },
-            userscriptsModule: { [weak browserManager] in
-                browserManager?.optionalModules.userscripts
             },
             boostsModule: { [weak browserManager] in
                 browserManager?.optionalModules.boosts
@@ -100,7 +96,6 @@ extension TabWebViewReplacementRuntime {
 @MainActor
 extension TabWebViewCleanupRuntime {
     static func make(
-        userscriptsModule: SumiUserscriptsModule,
         protection: WebViewProtectionRuntime,
         websiteDataCleanup: WebsiteDataCleanupService,
         compositor: WebViewCompositorRuntime,
@@ -140,12 +135,6 @@ extension TabWebViewCleanupRuntime {
                     reason: reason
                 )
             },
-            cleanupUserScripts: { controller, webViewId in
-                userscriptsModule.cleanupWebViewIfLoaded(
-                    controller: controller,
-                    webViewId: webViewId
-                )
-            },
             removeWebViewFromContainers: { webView in
                 compositor.removeWebViewFromContainers(webView)
             },
@@ -183,7 +172,6 @@ extension TabWebViewConfigurationContext {
     static func make(
         browserConfiguration: BrowserConfiguration,
         extensionsModule: @escaping () -> SumiExtensionsModule?,
-        userscriptsModule: @escaping () -> SumiUserscriptsModule?,
         boostsModule: @escaping () -> SumiBoostsModule?,
         protectionCoordinator: @escaping () -> SumiProtectionCoordinator?
     ) -> Self {
@@ -191,14 +179,6 @@ extension TabWebViewConfigurationContext {
             browserConfiguration: browserConfiguration,
             extensionNormalTabUserScripts: {
                 extensionsModule()?.normalTabUserScripts() ?? []
-            },
-            userscriptsNormalTabUserScripts: { url, tabId, profileId, isEphemeral in
-                userscriptsModule()?.normalTabUserScripts(
-                    for: url,
-                    webViewId: tabId,
-                    profileId: profileId,
-                    isEphemeral: isEphemeral
-                ) ?? []
             },
             boostsNormalTabUserScripts: { url, profileId, isEphemeral in
                 boostsModule()?.normalTabUserScripts(

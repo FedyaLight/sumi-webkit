@@ -1074,7 +1074,7 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
         let responder = SumiInternalSurfaceNavigationResponder()
         var preferences = sumiNavigationPreferences()
         let action = SumiNavigationAction(navigationAction(
-            url: URL(string: "sumi://settings?pane=userScripts")!,
+            url: URL(string: "sumi://settings?pane=privacy")!,
             navigationType: .other,
             sourceURL: URL(string: "https://evil.example/page")!,
             isUserInitiated: false,

@@ -176,13 +176,6 @@ enum TabBrowserNavigationRuntimeFactory {
         )
     }
 
-    static func installNavigationRuntime(
-        for browserManager: BrowserManager
-    ) -> TabInstallNavigationRuntime {
-        .make(userscriptsModule: { [weak browserManager] in
-            browserManager?.optionalModules.userscripts
-        })
-    }
 }
 
 @MainActor
@@ -367,17 +360,6 @@ extension TabNavigationDelegateRuntime {
             externalSchemePermissionBridge: externalSchemePermissionBridge,
             downloadManager: downloadManager,
             autoplayPolicy: autoplayPolicy
-        )
-    }
-}
-
-@MainActor
-extension TabInstallNavigationRuntime {
-    static func make(userscriptsModule: @escaping () -> SumiUserscriptsModule?) -> Self {
-        Self(
-            interceptInstallNavigation: { url in
-                userscriptsModule()?.interceptInstallNavigationIfNeeded(url) == true
-            }
         )
     }
 }

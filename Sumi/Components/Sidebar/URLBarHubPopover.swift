@@ -96,9 +96,7 @@ struct URLBarHubPopover: View {
     }
 
     private var showsExtensionSection: Bool {
-        let sumiScriptsEnabled = browserContext.extensionActions.sumiScriptsManagerEnabled()
-        return !unpinnedEnabledExtensionActions.isEmpty
-            || sumiScriptsEnabled
+        !unpinnedEnabledExtensionActions.isEmpty
     }
 
     private var showsBoostsSection: Bool {

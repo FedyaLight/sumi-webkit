@@ -243,7 +243,6 @@ final class WebViewLifecycleService {
             for entry in entries {
                 SumiWebViewShutdown.performTerminalShutdown(
                     on: entry.webView,
-                    tabId: entry.tabID,
                     runtime: shutdownRuntime
                 )
             }

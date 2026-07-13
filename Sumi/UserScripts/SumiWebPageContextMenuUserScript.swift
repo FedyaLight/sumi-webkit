@@ -2,7 +2,7 @@ import Foundation
 import WebKit
 
 @MainActor
-final class SumiWebPageContextMenuUserScript: NSObject, SumiUserScript {
+final class SumiWebPageContextMenuUserScript: NSObject, SumiPageScript {
     private let context: String
 
     let source: String

@@ -3,13 +3,10 @@ import OSLog
 
 @available(macOS 15.5, *)
 enum PinnedToolbarSlot: Identifiable {
-    case sumiScriptsManager
     case webExtension(InstalledExtension)
 
     var id: String {
         switch self {
-        case .sumiScriptsManager:
-            return SumiScriptsToolbarConstants.nativeToolbarItemID
         case .webExtension(let ext):
             return ext.id
         }
@@ -118,26 +115,14 @@ final class ExtensionToolbarPinningOwner {
 
     func reconcilePinnedToolbarExtensions() {
         let installedIDs = installedExtensionIDs()
-        let sumiSlot = SumiScriptsToolbarConstants.nativeToolbarItemID
-        guard installedIDs.isEmpty == false else {
-            updatePinnedToolbarExtensionIDs { ids in
-                ids.removeAll { $0 != sumiSlot }
-            }
-            return
-        }
-
         updatePinnedToolbarExtensionIDs { ids in
-            ids.removeAll { id in
-                if id == sumiSlot { return false }
-                return installedIDs.contains(id) == false
-            }
+            ids.removeAll { installedIDs.contains($0) == false }
         }
     }
 
-    /// Ordered toolbar buttons: built-in SumiScripts slot (when enabled) + pinned extensions.
+    /// Ordered toolbar buttons for enabled, pinned extensions.
     func orderedPinnedToolbarSlots(
         enabledExtensions: [InstalledExtension],
-        sumiScriptsManagerEnabled: Bool,
         profileId: UUID?
     ) -> [PinnedToolbarSlot] {
         let enabledByID = Dictionary(
@@ -153,9 +138,6 @@ final class ExtensionToolbarPinningOwner {
             )
 
         return normalizedPinnedIDs.compactMap { id -> PinnedToolbarSlot? in
-            if id == SumiScriptsToolbarConstants.nativeToolbarItemID {
-                return sumiScriptsManagerEnabled ? .sumiScriptsManager : nil
-            }
             guard let ext = enabledByID[id] else { return nil }
             return .webExtension(ext)
         }
@@ -278,24 +260,20 @@ extension ExtensionManager {
     }
 
     func orderedPinnedToolbarSlots(
-        enabledExtensions: [InstalledExtension],
-        sumiScriptsManagerEnabled: Bool
+        enabledExtensions: [InstalledExtension]
     ) -> [PinnedToolbarSlot] {
         toolbarPinningOwner.orderedPinnedToolbarSlots(
             enabledExtensions: enabledExtensions,
-            sumiScriptsManagerEnabled: sumiScriptsManagerEnabled,
             profileId: profileRuntime.currentProfileId
         )
     }
 
     func orderedPinnedToolbarSlots(
         enabledExtensions: [InstalledExtension],
-        sumiScriptsManagerEnabled: Bool,
         profileId: UUID?
     ) -> [PinnedToolbarSlot] {
         toolbarPinningOwner.orderedPinnedToolbarSlots(
             enabledExtensions: enabledExtensions,
-            sumiScriptsManagerEnabled: sumiScriptsManagerEnabled,
             profileId: profileId
         )
     }

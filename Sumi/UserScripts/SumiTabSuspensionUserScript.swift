@@ -4,7 +4,7 @@ import WebKit
 /// Page-world compatibility API. It can express only the page's own veto;
 /// native document tokens and PiP observation live in isolated-world sensors.
 @MainActor
-final class SumiTabSuspensionUserScript: NSObject, SumiUserScript,
+final class SumiTabSuspensionUserScript: NSObject, SumiPageScript,
     WKScriptMessageHandlerWithReply
 {
     private let context: String

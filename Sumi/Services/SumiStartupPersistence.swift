@@ -27,8 +27,6 @@ enum SumiStartupSchemaV1: VersionedSchema {
             HistoryVisitEntity.self,
             ExtensionEntity.self,
             SafariContentBlockerEntity.self,
-            UserScriptEntity.self,
-            UserScriptResourceEntity.self,
             PermissionDecisionEntity.self,
         ]
     }

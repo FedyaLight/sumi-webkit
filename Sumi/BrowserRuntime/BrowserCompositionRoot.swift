@@ -11,7 +11,6 @@ enum BrowserCompositionRoot {
         let adBlockingModule: SumiAdBlockingModule
         let protectionCoordinator: SumiProtectionCoordinator
         let adblockZapperStore: SumiAdblockZapperStore
-        let userscriptsModule: SumiUserscriptsModule
         let boostsModule: SumiBoostsModule
     }
 
@@ -41,7 +40,6 @@ enum BrowserCompositionRoot {
         adBlockingModule: SumiAdBlockingModule? = nil,
         protectionCoordinator: SumiProtectionCoordinator? = nil,
         adblockZapperStore: SumiAdblockZapperStore? = nil,
-        userscriptsModule: SumiUserscriptsModule? = nil,
         boostsModule: SumiBoostsModule? = nil
     ) -> AssembledModules {
         let resolvedAdBlocking = adBlockingModule
@@ -61,11 +59,6 @@ enum BrowserCompositionRoot {
             protectionCoordinator: resolvedProtection,
             adblockZapperStore: adblockZapperStore
                 ?? SumiAdblockZapperStore(userDefaults: moduleRegistry.userDefaults),
-            userscriptsModule: userscriptsModule
-                ?? SumiUserscriptsModule(
-                    moduleRegistry: moduleRegistry,
-                    context: modelContext
-                ),
             boostsModule: boostsModule ?? SumiBoostsModule(
                 moduleRegistry: moduleRegistry,
                 storeFactory: { SumiBoostStore() }
@@ -245,7 +238,6 @@ enum BrowserCompositionRoot {
         protectionCoordinator: SumiProtectionCoordinator?,
         adblockZapperStore: SumiAdblockZapperStore?,
         extensionsModule: SumiExtensionsModule?,
-        userscriptsModule: SumiUserscriptsModule?,
         boostsModule: SumiBoostsModule?,
         browsingDataCleanupService: SumiBrowsingDataCleanupService?,
         dataServices: BrowserManagerDataServices,
@@ -283,7 +275,6 @@ enum BrowserCompositionRoot {
             adBlockingModule: adBlockingModule,
             protectionCoordinator: protectionCoordinator,
             adblockZapperStore: adblockZapperStore,
-            userscriptsModule: userscriptsModule,
             boostsModule: boostsModule
         )
         let profileManager = makeProfileManager(
@@ -323,7 +314,6 @@ enum BrowserCompositionRoot {
             currentProfile: initialProfile,
             optionalModules: OptionalModuleHost(
                 extensionsModule: resolvedExtensionsModule,
-                userscriptsModule: modules.userscriptsModule,
                 boostsModule: modules.boostsModule,
                 liveFoldersModule: liveFoldersModule
             ),

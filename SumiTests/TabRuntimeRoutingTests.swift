@@ -277,7 +277,6 @@ final class TabRuntimeRoutingTests: XCTestCase {
         var permissionLifecycleEventCount = 0
         var deferredTabIds: [UUID] = []
         var deferredReasons: [String] = []
-        var cleanedUserScriptWebViewIds: [UUID] = []
         var removedWebViewFromContainers = false
         var removeAllWebViewsCallCount = 0
         tab.navigationRuntime.permissionRuntime = TabPermissionRuntime(
@@ -299,9 +298,6 @@ final class TabRuntimeRoutingTests: XCTestCase {
             deferWebsiteDataMutationWebViewMaterialization: { _, _ in false },
             deferWebsiteDataMutationMainFrameSubmission: { _, _, _, _ in false },
             retireParkedWebView: { _, _, _ in false },
-            cleanupUserScripts: { _, webViewId in
-                cleanedUserScriptWebViewIds.append(webViewId)
-            },
             removeWebViewFromContainers: { candidateWebView in
                 removedWebViewFromContainers = candidateWebView === webView
             },
@@ -317,7 +313,6 @@ final class TabRuntimeRoutingTests: XCTestCase {
         XCTAssertEqual(permissionLifecycleEventCount, 1)
         XCTAssertEqual(deferredTabIds, [tab.id])
         XCTAssertEqual(deferredReasons, ["Tab.cleanupCloneWebView"])
-        XCTAssertEqual(cleanedUserScriptWebViewIds, [tab.id])
         XCTAssertTrue(removedWebViewFromContainers)
         XCTAssertEqual(removeAllWebViewsCallCount, 0)
     }

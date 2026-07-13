@@ -2,7 +2,7 @@ import Foundation
 import os.log
 import WebKit
 
-final class SumiFaviconTransportUserScript: NSObject, SumiUserScript, @MainActor SumiUserScriptMessaging, WKScriptMessageHandlerWithReply {
+final class SumiFaviconTransportUserScript: NSObject, SumiPageScript, @MainActor SumiUserScriptMessaging, WKScriptMessageHandlerWithReply {
     let broker: SumiUserScriptMessageBroker
     let source: String
     let injectionTime: WKUserScriptInjectionTime = .atDocumentEnd
@@ -166,7 +166,7 @@ final class SumiFaviconTransportUserScript: NSObject, SumiUserScript, @MainActor
 final class SumiFaviconUserScripts {
     let transportScript: SumiFaviconTransportUserScript
     let faviconScript = SumiFaviconUserScript()
-    lazy var userScripts: [SumiUserScript] = [transportScript]
+    lazy var userScripts: [SumiPageScript] = [transportScript]
 
     init() {
         let transportScript = SumiFaviconTransportUserScript()

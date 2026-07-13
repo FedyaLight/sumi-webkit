@@ -3,7 +3,7 @@
 //  Sumi
 //
 //  Architecture plan R5/W4: host for optional feature modules (extensions,
-//  userscripts, boosts, live folders). Runtime wiring attaches through this
+//  boosts, live folders). Runtime wiring attaches through this
 //  host only when a module is enabled (true lazy modules).
 //
 
@@ -13,18 +13,15 @@ import Foundation
 @MainActor
 final class OptionalModuleHost {
     let extensions: SumiExtensionsModule
-    let userscripts: SumiUserscriptsModule
     let boosts: SumiBoostsModule
     let liveFolders: SumiLiveFoldersModule
 
     init(
         extensionsModule: SumiExtensionsModule,
-        userscriptsModule: SumiUserscriptsModule,
         boostsModule: SumiBoostsModule,
         liveFoldersModule: SumiLiveFoldersModule
     ) {
         self.extensions = extensionsModule
-        self.userscripts = userscriptsModule
         self.boosts = boostsModule
         self.liveFolders = liveFoldersModule
     }
@@ -33,8 +30,6 @@ final class OptionalModuleHost {
         switch moduleID {
         case .extensions:
             return extensions.isEnabled
-        case .userScripts:
-            return userscripts.isEnabled
         case .boosts:
             return boosts.isEnabled
         case .liveFolders:
@@ -43,7 +38,6 @@ final class OptionalModuleHost {
     }
 
     var isExtensionsEnabled: Bool { extensions.isEnabled }
-    var isUserscriptsEnabled: Bool { userscripts.isEnabled }
     var isBoostsEnabled: Bool { boosts.isEnabled }
     var isLiveFoldersEnabled: Bool { liveFolders.isEnabled }
 
@@ -58,11 +52,6 @@ final class OptionalModuleHost {
         if extensions.isEnabled {
             extensions.attach(
                 runtime: BrowserExtensionsModuleRuntimeFactory.runtime(for: browserManager)
-            )
-        }
-        if userscripts.isEnabled {
-            userscripts.attach(
-                runtime: BrowserUserscriptRuntimeFactory.runtime(for: browserManager)
             )
         }
         if boosts.isEnabled {
@@ -83,10 +72,6 @@ final class OptionalModuleHost {
         extensions.bindRuntimeProvider { [weak browserManager] in
             guard let browserManager else { return .inactive }
             return BrowserExtensionsModuleRuntimeFactory.runtime(for: browserManager)
-        }
-        userscripts.bindRuntimeProvider { [weak browserManager] in
-            guard let browserManager else { return .inactive }
-            return BrowserUserscriptRuntimeFactory.runtime(for: browserManager)
         }
         boosts.bindRuntimeProvider { [weak browserManager] in
             guard let browserManager else { return .empty }

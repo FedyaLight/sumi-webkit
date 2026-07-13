@@ -61,7 +61,6 @@ final class BrowserURLBarContextOwner {
     ) {
         let dataServices = browserManager.dataServices
         let extensionsModule = browserManager.optionalModules.extensions
-        let userscriptsModule = browserManager.optionalModules.userscripts
         let protectionCoordinator = browserManager.protectionCoordinator
         let urlBarHubPopoverPresenter = browserManager.chromeBundle.commands.urlBarHubPopoverPresenter
         let webViewRoutingService = browserManager.webViewRoutingService
@@ -112,8 +111,7 @@ final class BrowserURLBarContextOwner {
         let extensionActionContext: @MainActor () -> URLBarExtensionActionContext = { [weak browserManager] in
             BrowserURLBarContextOwner.makeExtensionActionContext(
                 browserManager: browserManager,
-                extensionsModule: extensionsModule,
-                userscriptsModule: userscriptsModule
+                extensionsModule: extensionsModule
             )
         }
         let siteControlsSnapshot: @MainActor (
@@ -283,14 +281,12 @@ final class BrowserURLBarContextOwner {
 private extension BrowserURLBarContextOwner {
     static func makeExtensionActionContext(
         browserManager: BrowserManager?,
-        extensionsModule: SumiExtensionsModule,
-        userscriptsModule: SumiUserscriptsModule
+        extensionsModule: SumiExtensionsModule
     ) -> URLBarExtensionActionContext {
         URLBarExtensionActionContext(
             orderedPinnedToolbarSlotCount: { enabledExtensions in
                 extensionsModule.orderedPinnedToolbarSlots(
-                    enabledExtensions: enabledExtensions,
-                    sumiScriptsManagerEnabled: userscriptsModule.isEnabled
+                    enabledExtensions: enabledExtensions
                 )
                 .count
             },
@@ -325,9 +321,6 @@ private extension BrowserURLBarContextOwner {
             },
             isPinnedToToolbar: { extensionId in
                 extensionsModule.isPinnedToToolbar(extensionId)
-            },
-            sumiScriptsManagerEnabled: {
-                userscriptsModule.isEnabled
             }
         )
     }

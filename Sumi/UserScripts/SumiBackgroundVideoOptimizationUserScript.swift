@@ -2,7 +2,7 @@ import Foundation
 import WebKit
 
 @MainActor
-final class SumiBackgroundVideoOptimizationUserScript: NSObject, SumiUserScript {
+final class SumiBackgroundVideoOptimizationUserScript: NSObject, SumiPageScript {
     let injectionTime: WKUserScriptInjectionTime = .atDocumentStart
     // Subframes get SumiBackgroundVideoOptimizationSubframeStubUserScript
     // instead; the full optimizer is injected into a subframe lazily on its

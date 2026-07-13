@@ -6,7 +6,7 @@ import WebKit
 /// subframe, then lazily installs a PiP-only sensor into that exact frame. The
 /// page world cannot access either its handler or the main-document token.
 @MainActor
-final class SumiSubframePictureInPictureUserScript: NSObject, SumiUserScript,
+final class SumiSubframePictureInPictureUserScript: NSObject, SumiPageScript,
     WKScriptMessageHandlerWithReply
 {
     private let bootstrapContext: String

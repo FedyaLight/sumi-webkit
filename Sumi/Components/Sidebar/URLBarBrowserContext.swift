@@ -11,7 +11,6 @@ struct URLBarExtensionActionContext {
     let hubTiles: ([InstalledExtension], BrowserWindowState) -> AnyView
     let ensureActionMetadataLoadedIfNeeded: () -> Void
     let isPinnedToToolbar: (String) -> Bool
-    let sumiScriptsManagerEnabled: () -> Bool
 }
 
 @MainActor

@@ -4,7 +4,7 @@ import SumiWebRuntime
 import WebKit
 
 @MainActor
-final class SumiWebNotificationUserScript: NSObject, SumiUserScript, @MainActor SumiUserScriptMessaging, WKScriptMessageHandlerWithReply {
+final class SumiWebNotificationUserScript: NSObject, SumiPageScript, @MainActor SumiUserScriptMessaging, WKScriptMessageHandlerWithReply {
     private let context: String
     let broker: SumiUserScriptMessageBroker
     let source: String

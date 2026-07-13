@@ -12,11 +12,9 @@ import WebKit
 @MainActor
 struct ExtensionActionBrowserContext {
     let extensionsModule: SumiExtensionsModule
-    let userscriptsModule: SumiUserscriptsModule
     let windowState: BrowserWindowState
     let currentTab: () -> Tab?
     let currentProfileID: () -> UUID?
-    let webView: (Tab) -> WKWebView?
     let openSettingsTab: (SettingsTabs) -> Void
     let showExtensionUnavailableAlert: (_ extensionName: String, _ message: String) -> Void
 
@@ -26,7 +24,6 @@ struct ExtensionActionBrowserContext {
     ) -> ExtensionActionBrowserContext {
         ExtensionActionBrowserContext(
             extensionsModule: browserManager.optionalModules.extensions,
-            userscriptsModule: browserManager.optionalModules.userscripts,
             windowState: windowState,
             currentTab: { [weak browserManager, weak windowState] in
                 guard let browserManager, let windowState else { return nil }
@@ -39,17 +36,6 @@ struct ExtensionActionBrowserContext {
             },
             currentProfileID: { [weak browserManager] in
                 browserManager?.currentProfile?.id
-            },
-            webView: { [weak browserManager, weak windowState] tab in
-                guard let browserManager else { return nil }
-                if let windowState,
-                   let windowOwned = browserManager.webViewRoutingService.webView(
-                    for: tab.id,
-                    in: windowState.id
-                   ) {
-                    return windowOwned
-                }
-                return browserManager.webViewRoutingService.anyLiveWebView(for: tab)
             },
             openSettingsTab: { [weak browserManager, weak windowState] tab in
                 guard let browserManager, let windowState else { return }

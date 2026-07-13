@@ -167,16 +167,6 @@ private struct HubExtensionTilesGrid: View {
             },
             content: { surface in
                 LazyVGrid(columns: columns, alignment: .leading, spacing: Self.spacing) {
-                    if browserContext.userscriptsModule.isEnabled {
-                        SumiScriptsToolbarControl(
-                            layout: .hubTile,
-                            browserContext: browserContext
-                        )
-                        .sumiAppKitContextMenu(entries: {
-                            sumiScriptsToolbarMenuEntries(browserContext: browserContext)
-                        })
-                    }
-
                     ForEach(surface.displayed, id: \.id) { ext in
                         surface.slot(ext) {
                             tileView(
@@ -307,12 +297,6 @@ private struct SidebarExtensionActionGrid: View {
         suppressActivation: (() -> Bool)?
     ) -> some View {
         switch slot {
-        case .sumiScriptsManager:
-            SumiScriptsToolbarControl(
-                layout: .sidebarGrid,
-                browserContext: browserContext,
-                suppressActivation: suppressActivation
-            )
         case .webExtension(let ext):
             ExtensionActionButton(
                 ext: ext,
@@ -326,8 +310,6 @@ private struct SidebarExtensionActionGrid: View {
 
     private func menuEntries(for slot: PinnedToolbarSlot) -> [SidebarContextMenuEntry] {
         switch slot {
-        case .sumiScriptsManager:
-            return sumiScriptsToolbarMenuEntries(browserContext: browserContext)
         case .webExtension(let ext):
             return extensionActionMenuEntries(
                 for: ext,
@@ -358,7 +340,6 @@ private struct SidebarExtensionActionGrid: View {
     private var pinnedSlots: [PinnedToolbarSlot] {
         browserContext.extensionsModule.orderedPinnedToolbarSlots(
             enabledExtensions: enabledExtensions,
-            sumiScriptsManagerEnabled: browserContext.userscriptsModule.isEnabled,
             profileId: profileId
         )
     }
@@ -409,12 +390,6 @@ private struct CompactExtensionActionStrip: View {
         suppressActivation: (() -> Bool)?
     ) -> some View {
         switch slot {
-        case .sumiScriptsManager:
-            SumiScriptsToolbarControl(
-                layout: .compactStrip,
-                browserContext: browserContext,
-                suppressActivation: suppressActivation
-            )
         case .webExtension(let ext):
             ExtensionActionButton(
                 ext: ext,
@@ -427,8 +402,6 @@ private struct CompactExtensionActionStrip: View {
 
     private func menuEntries(for slot: PinnedToolbarSlot) -> [SidebarContextMenuEntry] {
         switch slot {
-        case .sumiScriptsManager:
-            return sumiScriptsToolbarMenuEntries(browserContext: browserContext)
         case .webExtension(let ext):
             return extensionActionMenuEntries(
                 for: ext,
@@ -451,150 +424,12 @@ private struct CompactExtensionActionStrip: View {
 
     private var pinnedSlots: [PinnedToolbarSlot] {
         browserContext.extensionsModule.orderedPinnedToolbarSlots(
-            enabledExtensions: enabledExtensions,
-            sumiScriptsManagerEnabled: browserContext.userscriptsModule.isEnabled
+            enabledExtensions: enabledExtensions
         )
     }
 
     private var visiblePinnedSlots: [PinnedToolbarSlot] {
         Array(pinnedSlots.prefix(compactLimit))
-    }
-}
-
-// MARK: - Native SumiScripts toolbar control
-
-@available(macOS 15.5, *)
-private enum SumiScriptsToolbarLayout {
-    case compactStrip
-    case sidebarGrid
-    case hubTile
-}
-
-@available(macOS 15.5, *)
-private struct SumiScriptsToolbarControl: View {
-    let layout: SumiScriptsToolbarLayout
-    let browserContext: ExtensionActionBrowserContext
-    /// When it returns true, a just-completed reorder drag suppresses the
-    /// synthetic click so dragging the control does not also open its popover.
-    var suppressActivation: (() -> Bool)?
-
-    @Environment(\.sumiSettings) private var sumiSettings
-    @Environment(\.resolvedThemeContext) private var themeContext
-    @State private var isHovering = false
-    @State private var isPressed = false
-    @State private var showingPopup = false
-
-    var body: some View {
-        Button {
-            guard suppressActivation?() != true else { return }
-            showingPopup.toggle()
-        } label: {
-            switch layout {
-            case .compactStrip:
-                Image(systemName: "curlybraces.square")
-                    .resizable()
-                    .interpolation(.high)
-                    .antialiased(true)
-                    .scaledToFit()
-                    .frame(width: 16, height: 16)
-                    .padding(6)
-                    .background(isHovering ? .white.opacity(0.1) : .clear)
-                    .clipShape(RoundedRectangle(cornerRadius: 7))
-            case .sidebarGrid:
-                Image(systemName: "curlybraces.square")
-                    .resizable()
-                    .interpolation(.high)
-                    .antialiased(true)
-                    .scaledToFit()
-                    .frame(width: 16, height: 16)
-                    .padding(5)
-                    .frame(maxWidth: .infinity, minHeight: 26, maxHeight: 26)
-                    .background(sidebarGridBackgroundFill)
-                    .clipShape(RoundedRectangle(cornerRadius: sumiSettings.resolvedCornerRadius(12), style: .continuous))
-                    .contentShape(RoundedRectangle(cornerRadius: sumiSettings.resolvedCornerRadius(12), style: .continuous))
-            case .hubTile:
-                Image(systemName: "curlybraces.square")
-                    .font(.system(size: 18, weight: .medium))
-                    .foregroundStyle(URLBarHubNativeStyle.primaryText)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 36)
-                    .background(hubBackgroundFill)
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .stroke(URLBarHubNativeStyle.separator, lineWidth: 0.5)
-                    }
-                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                    .scaleEffect(hubButtonScale)
-            }
-        }
-        .buttonStyle(.plain)
-        .help("SumiScripts")
-        .popover(isPresented: $showingPopup, arrowEdge: .bottom) {
-            sumiScriptsPopover
-                .sumiNativeSurfaceColorScheme()
-        }
-        .onHover { hovering in
-            isHovering = hovering
-        }
-        .modifier(HubTilePressGestureModifier(layout: layout, isPressed: $isPressed))
-    }
-
-    @ViewBuilder
-    private var sumiScriptsPopover: some View {
-        let currentTab = browserContext.currentTab()
-        if let manager = browserContext.userscriptsModule.managerIfEnabled() {
-            SumiScriptsPopupView(
-                manager: manager,
-                currentURL: currentTab?.url,
-                webView: currentTab.flatMap(browserContext.webView)
-            )
-        }
-    }
-
-    private var hubBackgroundFill: Color {
-        isHovering ? URLBarHubNativeStyle.hoveredControlBackground : URLBarHubNativeStyle.controlBackground
-    }
-
-    private var sidebarGridBackgroundFill: Color {
-        isHovering ? tokens.pinnedHoverBackground : tokens.pinnedIdleBackground
-    }
-
-    private var tokens: ChromeThemeTokens {
-        themeContext.tokens(settings: sumiSettings)
-    }
-
-    private var hubButtonScale: CGFloat {
-        if isPressed && isHovering {
-            return 0.97
-        }
-        if isHovering {
-            return 1.03
-        }
-        return 1
-    }
-}
-
-@available(macOS 15.5, *)
-private struct HubTilePressGestureModifier: ViewModifier {
-    let layout: SumiScriptsToolbarLayout
-    @Binding var isPressed: Bool
-
-    func body(content: Content) -> some View {
-        switch layout {
-        case .compactStrip, .sidebarGrid:
-            content
-        case .hubTile:
-            content
-                .simultaneousGesture(
-                    DragGesture(minimumDistance: 0)
-                        .onChanged { _ in
-                            isPressed = true
-                        }
-                        .onEnded { _ in
-                            isPressed = false
-                        }
-                )
-        }
     }
 }
 
@@ -675,25 +510,6 @@ private func extensionActionMenuEntries(
     }
 
     return entries
-}
-
-@available(macOS 15.5, *)
-@MainActor
-private func sumiScriptsToolbarMenuEntries(
-    browserContext: ExtensionActionBrowserContext
-) -> [SidebarContextMenuEntry] {
-    [
-        .action(
-            SidebarContextMenuAction(
-                title: "Manage Userscripts",
-                systemImage: "gearshape",
-                classification: .presentationOnly,
-                action: {
-                    browserContext.openSettingsTab(.userScripts)
-                }
-            )
-        ),
-    ]
 }
 
 @available(macOS 15.5, *)
@@ -927,11 +743,9 @@ struct ExtensionActionButton: View {
         extensions: [],
         browserContext: ExtensionActionBrowserContext(
             extensionsModule: SumiExtensionsModule(),
-            userscriptsModule: SumiUserscriptsModule(),
             windowState: BrowserWindowState(),
             currentTab: { nil },
             currentProfileID: { nil },
-            webView: { _ in nil },
             openSettingsTab: { _ in /* No-op. */ },
             showExtensionUnavailableAlert: { _, _ in /* No-op. */ }
         )

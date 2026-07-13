@@ -35,12 +35,6 @@ class SumiSettingsService {
         set { navigation.privacySettingsRoute = newValue }
     }
 
-    /// Extensions vs SumiScripts, when `currentSettingsTab == .extensions`.
-    var extensionsSettingsSubPane: SumiExtensionsSettingsSubPane {
-        get { navigation.extensionsSettingsSubPane }
-        set { navigation.extensionsSettingsSubPane = newValue }
-    }
-
     // MARK: - Theme façade
 
     var windowSchemeMode: WindowSchemeMode {
@@ -399,12 +393,12 @@ class SumiSettingsService {
         nowPlayingController.setFeatureEnabled(chrome.sidebarMiniPlayerEnabled)
     }
 
-    /// Syncs sidebar tab + Extensions sub-pane from `sumi://settings?pane=…`.
+    /// Syncs sidebar state from `sumi://settings?pane=…`.
     func applyNavigationFromSettingsSurfaceURL(_ url: URL) {
         navigation.applyNavigation(from: url)
     }
 
-    /// URL for the active settings tab, including Userscripts as `pane=userScripts`.
+    /// URL for the active settings tab.
     func settingsSurfaceURLForCurrentNavigation() -> URL {
         navigation.settingsSurfaceURLForCurrentNavigation()
     }

@@ -88,29 +88,6 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
         harness.browserManager.auxiliaryWindows.teardown.closeAll(reason: .bulkCleanup)
     }
 
-    func testUserscriptWindowCloseFromAuxiliaryWebViewClosesPopupNotOpener() throws {
-        let harness = makeHarness()
-        let popupWebView = try XCTUnwrap(
-            harness.browserManager.auxiliaryWindows.popups.presentWebPopup(
-                configuration: WKWebViewConfiguration(),
-                request: URLRequest(url: URL(string: "https://popup.example/userscript")!),
-                windowFeatures: WKWindowFeatures(),
-                openerTab: harness.sourceTab
-            )
-        )
-        let runtime = BrowserUserscriptRuntimeFactory.runtime(for: harness.browserManager)
-
-        XCTAssertTrue(harness.browserManager.auxiliaryWindows.sessions.contains(popupWebView))
-        XCTAssertNotNil(harness.browserManager.tabManager.tabCollectionMembershipOwner.tab(for: harness.sourceTab.id))
-
-        runtime.closeTab(nil, popupWebView)
-
-        XCTAssertFalse(harness.browserManager.auxiliaryWindows.sessions.contains(popupWebView))
-        XCTAssertNil(harness.browserManager.auxiliaryWindows.sessions.session(for: popupWebView))
-        XCTAssertNotNil(harness.browserManager.tabManager.tabCollectionMembershipOwner.tab(for: harness.sourceTab.id))
-        XCTAssertEqual(harness.windowState.currentTabId, harness.sourceTab.id)
-    }
-
     func testCloseAllForExtensionIdRemovesRegisteredMiniWindowAdapter()
         async throws {
         let harness = try await makeExtensionHarness(

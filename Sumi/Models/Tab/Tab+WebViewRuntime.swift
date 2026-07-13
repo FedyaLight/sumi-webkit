@@ -183,7 +183,6 @@ extension Tab {
         webViewConfigurationOwner.normalTabUserScriptsProvider(
             for: targetURL,
             coreUserScripts: normalTabCoreUserScripts(),
-            tabId: id,
             profileIdProvider: {
                 profileIDOverride ?? self.resolveProfile()?.id ?? self.profileId
             },
@@ -195,11 +194,10 @@ extension Tab {
     func normalTabManagedUserScripts(
         for targetURL: URL?,
         profileIDOverride: UUID? = nil
-    ) -> [SumiUserScript] {
+    ) -> [SumiPageScript] {
         webViewConfigurationOwner.normalTabManagedUserScripts(
             for: targetURL,
             coreUserScripts: normalTabCoreUserScripts(),
-            tabId: id,
             profileIdProvider: {
                 profileIDOverride ?? self.resolveProfile()?.id ?? self.profileId
             },

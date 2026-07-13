@@ -9,7 +9,7 @@ import WebKit
 /// Hides WebKit's native page scrollbars so the AppKit overlay indicator can own the chrome.
 /// Does not inject a custom DOM scrollbar — only suppresses the system scroller.
 @MainActor
-final class SumiNativeScrollbarHideUserScript: NSObject, SumiUserScript {
+final class SumiNativeScrollbarHideUserScript: NSObject, SumiPageScript {
     let source: String = SumiNativeScrollbarHideUserScript.makeSource()
     let injectionTime: WKUserScriptInjectionTime = .atDocumentStart
     let forMainFrameOnly = true

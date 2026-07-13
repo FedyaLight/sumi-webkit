@@ -582,7 +582,7 @@ Evidence base:
   `testBiometricUnlockReturnsNotEnabledWhenNoStoredKey`,
   `testUnlockWithBiometricsForUserReportsStatusFromKeychain`.
 - Regression: site-access policy, profile isolation, Proton companion adapter,
-  and context-identity wiring suites pass; clean-import / userscript hot-path /
+  and context-identity wiring suites pass; clean-import / browser-script hot-path /
   prepared-bundle boundary guards and `scripts/check_architecture_guardrails.sh`
   pass; full `xcodebuild build` succeeds.
 - Pre-existing unrelated failure:
@@ -742,7 +742,7 @@ Evidence base:
   tests pass individually.
 - Clean-import audits passed:
   `scripts/check_safari_extension_clean_import.sh`,
-  `scripts/check_userscript_hot_paths.sh`,
+  `scripts/check_browser_script_hot_paths.sh`,
   `scripts/check_prepared_bundle_runtime_boundary.sh`, and `git diff --check`.
 - Build passed with
   `xcodebuild build -project Sumi.xcodeproj -scheme Sumi -destination 'platform=macOS'`.
@@ -859,7 +859,7 @@ Evidence base:
   native-messaging performance guards, and Bitwarden adapter guardrails.
 - Clean-import audits passed:
   `scripts/check_safari_extension_clean_import.sh`,
-  `scripts/check_userscript_hot_paths.sh`, and
+  `scripts/check_browser_script_hot_paths.sh`, and
   `scripts/check_prepared_bundle_runtime_boundary.sh`.
 
 ### Proven Remaining Gaps
@@ -944,7 +944,7 @@ Evidence base:
   `ExternallyConnectablePortRegistry.swift`.
 - No-op install, teardown, state, and diagnostic references for the deleted bridge,
   including `sumiExternallyConnectableRuntime`, `SUMI_EC_PAGE_BRIDGE`, and the
-  stale userscript hot-path exception.
+  stale browser-script hot-path exception.
 
 ### Tests Corrected
 
@@ -955,7 +955,7 @@ Evidence base:
   wrapper marker.
 - `BrowserConfigurationNormalTabTests` and `SumiPerformanceModularRegressionTests`
   no longer model deleted bridge markers as auxiliary-filter inputs.
-- `scripts/check_userscript_hot_paths.sh` no longer carries an exception for the
+- `scripts/check_browser_script_hot_paths.sh` no longer carries an exception for the
   deleted externally-connectable native-messaging file.
 
 ### Suspicious Code Intentionally Kept
@@ -1479,7 +1479,7 @@ cookie domain counts only, popup lifecycle phase).
   models, native-messaging bridge, port registry, broker subfeature, no-op
   install/teardown state, docs, and hot-path exception removed.
 - **URL-scheme compatibility narrowed:** retry timers replaced with namespace
-  assignment hooks; `scripts/check_userscript_hot_paths.sh` passes.
+  assignment hooks; `scripts/check_browser_script_hot_paths.sh` passes.
 - **Tests:** clean-import guard, inline-overlay runtime, auxiliary config,
   performance modular guards, and targeted Safari/WebKit extension suite pass.
 - **Build:** `xcodebuild build -project Sumi.xcodeproj -scheme Sumi -configuration Debug -destination 'platform=macOS'`.
@@ -1514,7 +1514,7 @@ cookie domain counts only, popup lifecycle phase).
   Proton-specific runtime branches.
 - **Tests/guards:** targeted site-access and lifecycle tests plus the clean-import
   audit pass; `check_safari_extension_clean_import.sh`,
-  `check_userscript_hot_paths.sh`, `check_prepared_bundle_runtime_boundary.sh`,
+  `check_browser_script_hot_paths.sh`, `check_prepared_bundle_runtime_boundary.sh`,
   and `git diff --check` pass.
 
 ### Cycle 14 (2026-06-12)

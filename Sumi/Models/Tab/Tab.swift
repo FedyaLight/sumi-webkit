@@ -436,7 +436,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
             runtime.webKitChildTabOpening
         navigationRuntime.webKitChildWindowOpening =
             runtime.webKitChildWindowOpening
-        navigationRuntime.installNavigationRuntime = runtime.installNavigationRuntime
         navigationRuntime.webKitUIRuntime = runtime.webKitUIRuntime
         navigationRuntime.webViewReplacementRuntime =
             runtime.webViewReplacementRuntime

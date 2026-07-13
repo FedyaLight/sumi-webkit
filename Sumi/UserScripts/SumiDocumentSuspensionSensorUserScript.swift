@@ -6,7 +6,7 @@ import WebKit
 /// committed document and combines the page's declared veto with physical PiP
 /// state before publishing exact replica evidence.
 @MainActor
-final class SumiDocumentSuspensionSensorUserScript: NSObject, SumiUserScript,
+final class SumiDocumentSuspensionSensorUserScript: NSObject, SumiPageScript,
     WKScriptMessageHandlerWithReply
 {
     private let context: String

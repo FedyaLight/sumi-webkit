@@ -88,7 +88,6 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         let context = TabWebViewConfigurationContext(
             browserConfiguration: BrowserConfiguration(),
             extensionNormalTabUserScripts: { [] },
-            userscriptsNormalTabUserScripts: { _, _, _, _ in [] },
             boostsNormalTabUserScripts: { _, _, _ in [] },
             protectionDecision: { _, _ in nil },
             protectionDesiredAttachmentState: { _ in .disabled(siteHost: nil) },
@@ -751,31 +750,6 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         XCTAssertTrue(disabledHost.effectiveWebViewRuleIdentities.isEmpty)
     }
 
-    func testBrowserManagerStartupWithUserscriptsDisabledDoesNotInitializeUserscriptsRuntime() {
-        let harness = TestDefaultsHarness()
-        defer { harness.reset() }
-        let registry = SumiModuleRegistry(
-            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
-        )
-        let probe = NormalTabUserscriptsRuntimeProbe()
-        let module = makeProbeUserscriptsModule(
-            registry: registry,
-            probe: probe
-        )
-
-        let browserManager = BrowserManager(
-            moduleRegistry: registry,
-            userscriptsModule: module
-        )
-
-        XCTAssertNotNil(browserManager.currentProfile)
-        XCTAssertFalse(registry.isEnabled(.userScripts))
-        XCTAssertEqual(probe.managerCount, 0)
-        XCTAssertEqual(probe.storeCount, 0)
-        XCTAssertEqual(probe.injectorCount, 0)
-        XCTAssertFalse(module.hasLoadedRuntime)
-    }
-
     func testBrowserManagerStartupWithExtensionsDisabledDoesNotInitializeExtensionsRuntime() throws {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
@@ -823,46 +797,6 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         XCTAssertFalse(registry.isEnabled(.boosts))
         XCTAssertEqual(probe.storeCount, 0)
         XCTAssertFalse(module.hasLoadedRuntime)
-    }
-
-    func testTabNormalWebViewCreationWithUserscriptsDisabledDoesNotInitializeUserscriptsRuntime() async throws {
-        let harness = TestDefaultsHarness()
-        defer { harness.reset() }
-        let registry = SumiModuleRegistry(
-            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
-        )
-        let probe = NormalTabUserscriptsRuntimeProbe()
-        let module = makeProbeUserscriptsModule(
-            registry: registry,
-            probe: probe
-        )
-        let browserManager = BrowserManager(
-            moduleRegistry: registry,
-            userscriptsModule: module
-        )
-        markIsolatedTabManagerReady(browserManager)
-        let tab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
-            url: "https://example.com/userscripts-disabled",
-            in: browserManager.tabManager.spaceStateOwner.currentSpace,
-            activate: false
-        )
-
-        let webView = try makeUnloadedNormalTabWebView(
-            for: tab,
-            reason: "BrowserConfigurationNormalTabTests.userscriptsDisabled"
-        )
-        let controller = try XCTUnwrap(webView.configuration.userContentController.sumiNormalTabUserContentController)
-        await controller.waitForContentBlockingAssetsInstalled()
-        let provider = try XCTUnwrap(controller.normalTabUserScriptsProvider)
-        let sources = provider.userScripts.map(\.source).joined(separator: "\n")
-
-        XCTAssertTrue(sources.contains("sumiLinkInteraction_\(tab.id.uuidString)"))
-        XCTAssertTrue(sources.contains("sumiTabSuspension_\(tab.id.uuidString)"))
-        XCTAssertFalse(sources.contains(UserScriptInjector.userScriptMarker))
-        XCTAssertFalse(sources.contains("sumiGM_"))
-        XCTAssertEqual(probe.managerCount, 0)
-        XCTAssertEqual(probe.storeCount, 0)
-        XCTAssertEqual(probe.injectorCount, 0)
     }
 
     func testTabNormalWebViewCreationWithExtensionsDisabledDoesNotInitializeExtensionsRuntime() async throws {
@@ -1176,25 +1110,6 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         XCTAssertTrue(configuration.userContentController.userScripts.isEmpty)
     }
 
-    func testAuxiliaryConfigurationsInstallNoUserscriptRuntimeContributions() {
-        let browserConfiguration = BrowserConfiguration()
-        let configurations = [
-            browserConfiguration.auxiliaryWebViewConfiguration(surface: .glance),
-            browserConfiguration.auxiliaryWebViewConfiguration(surface: .extensionOptions),
-        ]
-
-        for configuration in configurations {
-            let sources = configuration.userContentController.userScripts
-                .map(\.source)
-                .joined(separator: "\n")
-            XCTAssertFalse(sources.contains(UserScriptInjector.userScriptMarker))
-            XCTAssertFalse(sources.contains("SUMI_USER_SCRIPT_RUNTIME"))
-            XCTAssertFalse(sources.contains("sumiGM_"))
-            XCTAssertFalse(sources.contains("data-sumi-userscript"))
-            XCTAssertFalse(sources.contains("sumiLinkInteraction_"))
-        }
-    }
-
     func testAuxiliaryConfigurationFiltersNormalTabAndOptionalRuntimeScripts() {
         let browserConfiguration = BrowserConfiguration()
         let sourceConfiguration = WKWebViewConfiguration()
@@ -1209,10 +1124,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             "__sumiDocumentSuspensionSensor",
             "__sumiSubframePictureInPicture",
             SumiTransientChromeInteractionShieldUserScript.sourceMarker,
-            "SUMI_USER_SCRIPT_RUNTIME",
-            UserScriptInjector.userScriptMarker,
             "sumiFavicons",
-            "sumiGM_",
             "sumiLinkInteraction_",
             "sumiTabSuspension_",
         ].map { marker in
@@ -1244,10 +1156,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             "__sumiDocumentSuspensionSensor",
             "__sumiSubframePictureInPicture",
             SumiTransientChromeInteractionShieldUserScript.sourceMarker,
-            "SUMI_USER_SCRIPT_RUNTIME",
-            UserScriptInjector.userScriptMarker,
             "sumiFavicons",
-            "sumiGM_",
             "sumiLinkInteraction_",
             "sumiTabSuspension_",
         ] {
@@ -1356,36 +1265,6 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         )
         XCTAssertFalse(source.contains("sumiTabSuspension_"), file: file, line: line)
         XCTAssertFalse(source.contains("tabSuspension"), file: file, line: line)
-    }
-
-    private func makeProbeUserscriptsModule(
-        registry: SumiModuleRegistry,
-        probe: NormalTabUserscriptsRuntimeProbe
-    ) -> SumiUserscriptsModule {
-        SumiUserscriptsModule(
-            moduleRegistry: registry,
-            managerFactory: { context in
-                probe.managerCount += 1
-                return SumiScriptsManager(
-                    context: context,
-                    storeFactory: { context in
-                        probe.storeCount += 1
-                        return UserScriptStore(
-                            directory: FileManager.default.temporaryDirectory
-                                .appendingPathComponent(
-                                    "SumiNormalTabUserscripts-\(UUID().uuidString)",
-                                    isDirectory: true
-                                ),
-                            context: context
-                        )
-                    },
-                    injectorFactory: {
-                        probe.injectorCount += 1
-                        return UserScriptInjector()
-                    }
-                )
-            }
-        )
     }
 
     private func makeProbeExtensionsModule(
@@ -1783,12 +1662,6 @@ private struct BrowserConfigurationReloadRequest {
     let reason: String
 }
 
-private final class NormalTabUserscriptsRuntimeProbe {
-    var managerCount = 0
-    var storeCount = 0
-    var injectorCount = 0
-}
-
 private final class NormalTabExtensionsRuntimeProbe {
     var managerCount = 0
 }
@@ -1876,7 +1749,7 @@ private final class FakeWebsiteDataCleanupService: SumiWebsiteDataCleanupServici
     }
 }
 
-private final class TestNormalTabUserScript: NSObject, SumiUserScript {
+private final class TestNormalTabUserScript: NSObject, SumiPageScript {
     let source: String
     let injectionTime: WKUserScriptInjectionTime = .atDocumentStart
     let forMainFrameOnly = true

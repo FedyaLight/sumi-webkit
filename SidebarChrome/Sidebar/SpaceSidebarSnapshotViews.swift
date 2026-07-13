@@ -125,28 +125,18 @@ private struct ExtensionActionSnapshotButton: View {
 
     @ViewBuilder
     private var iconView: some View {
-        switch slot.kind {
-        case .sumiScriptsManager:
-            Image(systemName: "curlybraces.square")
+        if let icon = slot.icon {
+            Image(nsImage: icon)
                 .resizable()
                 .interpolation(.high)
                 .antialiased(true)
                 .scaledToFit()
                 .accessibilityHidden(true)
-        case .webExtension:
-            if let icon = slot.icon {
-                Image(nsImage: icon)
-                    .resizable()
-                    .interpolation(.high)
-                    .antialiased(true)
-                    .scaledToFit()
-                    .accessibilityHidden(true)
-            } else {
-                Image(systemName: "puzzlepiece.extension")
-                    .font(SidebarThemeTokens.Typography.extensionActionFallbackIcon)
-                    .foregroundStyle(tokens.primaryText)
-                    .accessibilityHidden(true)
-            }
+        } else {
+            Image(systemName: "puzzlepiece.extension")
+                .font(SidebarThemeTokens.Typography.extensionActionFallbackIcon)
+                .foregroundStyle(tokens.primaryText)
+                .accessibilityHidden(true)
         }
     }
 }

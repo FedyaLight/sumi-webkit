@@ -110,7 +110,6 @@ enum TabBrowserRuntimeFactory {
             physicalWebPopupOpening: physicalWebPopups,
             webKitChildTabOpening: childTabs,
             webKitChildWindowOpening: childWindows,
-            installNavigationRuntime: TabBrowserNavigationRuntimeFactory.installNavigationRuntime(for: browserManager),
             webKitUIRuntime: TabBrowserWebViewRuntimeFactory.webKitUIRuntime(for: browserManager),
             webViewReplacementRuntime: TabBrowserWebViewRuntimeFactory.replacementRuntime(for: browserManager),
             webViewConfigurationContext: { [weak browserManager] in

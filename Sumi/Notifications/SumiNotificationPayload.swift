@@ -2,7 +2,6 @@ import Foundation
 
 enum SumiNotificationPayloadKind: String, Codable, Equatable, Hashable, Sendable {
     case website
-    case userscript
 }
 
 struct SumiNotificationPayload: Codable, Equatable, Sendable {

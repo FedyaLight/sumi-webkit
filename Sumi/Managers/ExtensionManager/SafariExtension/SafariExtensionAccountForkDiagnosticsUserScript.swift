@@ -28,7 +28,7 @@ import Foundation
 import WebKit
 
 @MainActor
-final class SafariExtensionAccountForkDiagnosticsUserScript: NSObject, SumiUserScript {
+final class SafariExtensionAccountForkDiagnosticsUserScript: NSObject, SumiPageScript {
     static let messageName = "sumiAccountForkDiagnostics"
 
     var messageNames: [String] { [Self.messageName] }

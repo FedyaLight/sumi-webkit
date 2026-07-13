@@ -10,7 +10,7 @@ import WebKit
 /// so it survives frame proxies and is visible to `typeof` checks the same way
 /// browsers that ship GPC natively expose it.
 @MainActor
-final class SumiGPCUserScript: NSObject, SumiUserScript {
+final class SumiGPCUserScript: NSObject, SumiPageScript {
     let source: String = SumiGPCUserScript.makeSource()
     let injectionTime: WKUserScriptInjectionTime = .atDocumentStart
     let forMainFrameOnly = false

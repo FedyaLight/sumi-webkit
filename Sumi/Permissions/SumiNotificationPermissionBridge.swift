@@ -4,7 +4,6 @@ import WebKit
 
 enum SumiNotificationBridgeSource: String, Codable, Equatable, Sendable {
     case website
-    case userscript
 }
 
 enum SumiNotificationPermissionEvent: Equatable, Sendable {
@@ -189,90 +188,6 @@ final class SumiNotificationPermissionBridge {
 
     func closeNotification(identifier: SumiNotificationIdentifier) async {
         await notificationService.close(identifier: identifier)
-    }
-
-    func postUserscriptNotification(
-        request: SumiWebNotificationRequest,
-        tabContext: SumiWebNotificationTabContext,
-        scriptId: String,
-        title: String,
-        body: String,
-        iconURL: URL?,
-        imageURL: URL?,
-        tag: String?,
-        isSilent: Bool,
-        webView: WKWebView?,
-        pageValidator: PageValidator? = nil
-    ) async -> SumiNotificationPostResult {
-        guard webView != nil, pageValidator?() != false else {
-            return .blocked(permission: .denied, reason: "userscript-notification-page-cancelled")
-        }
-
-        let context = securityContext(for: request, tabContext: tabContext)
-        let decision = await coordinatorDecision(for: context, source: .userscript)
-        guard SumiWebNotificationDecisionMapper.canDeliver(decision) else {
-            recordNotificationIndicatorEvent(for: decision, context: context)
-            emitBlockedEvent(source: .userscript, requestId: request.id, decision: decision)
-            return .blocked(
-                permission: SumiWebNotificationDecisionMapper.permissionState(
-                    for: decision,
-                    promptRequiredState: .default,
-                    dismissedState: .default,
-                    cancelledState: .default
-                ),
-                reason: decision.reason
-            )
-        }
-        guard webView != nil, pageValidator?() != false else {
-            return .blocked(permission: .denied, reason: "userscript-notification-page-cancelled")
-        }
-
-        let identifier = SumiNotificationIdentifier.userscript(
-            profilePartitionId: tabContext.profilePartitionId,
-            tabId: tabContext.tabId,
-            scriptId: scriptId,
-            requestId: request.id
-        )
-        let payload = SumiNotificationPayload(
-            identifier: identifier,
-            kind: .userscript,
-            title: title,
-            body: body,
-            iconURL: sameOriginURL(iconURL, requestingOrigin: request.requestingOrigin),
-            imageURL: sameOriginURL(imageURL, requestingOrigin: request.requestingOrigin),
-            tag: tag,
-            isSilent: isSilent,
-            userInfo: notificationUserInfo(
-                source: .userscript,
-                request: request,
-                tabContext: tabContext,
-                extra: ["scriptId": scriptId]
-            )
-        )
-
-        let result = await notificationService.post(payload)
-        switch result {
-        case .delivered(let deliveredIdentifier):
-            emit(.delivered(
-                source: .userscript,
-                requestId: request.id,
-                identifier: deliveredIdentifier.rawValue
-            ))
-            return SumiNotificationPostResult(
-                delivered: true,
-                permission: .granted,
-                reason: "delivered",
-                identifier: deliveredIdentifier
-            )
-        case .failed(_, let reason):
-            emit(.failed(source: .userscript, requestId: request.id, reason: reason))
-            return SumiNotificationPostResult(
-                delivered: false,
-                permission: .granted,
-                reason: reason,
-                identifier: identifier
-            )
-        }
     }
 
     func securityContext(

@@ -16,8 +16,7 @@ enum BrowserWebViewRuntimeFactory {
             windowServices: windowServices(for: browserManager),
             deferredServices: deferredServices(for: browserManager),
             visibleContext: visiblePreparationContext(for: browserManager),
-            initialDocumentContext: initialDocumentContext(for: browserManager),
-            shutdownContext: shutdownContext(for: browserManager)
+            initialDocumentContext: initialDocumentContext(for: browserManager)
         )
     }
 
@@ -158,23 +157,6 @@ enum BrowserWebViewRuntimeFactory {
                       let windowState = browserManager.windowRegistry?.windows[windowId]
                 else { return }
                 browserManager.shellRuntime.windowVisuals.refreshCompositor(for: windowState)
-            }
-        )
-    }
-
-    private static func shutdownContext(
-        for browserManager: BrowserManager
-    ) -> WebViewShutdownRuntimeContext {
-        // Shutdown outlives BrowserManager in the app-shell fallback. Retain
-        // only the manager-independent module that owns the injected script
-        // bookkeeping; its own runtime ports reference BrowserManager weakly.
-        let userscriptsModule = browserManager.optionalModules.userscripts
-        return WebViewShutdownRuntimeContext(
-            cleanupUserScripts: { controller, webViewId in
-                userscriptsModule.cleanupWebViewIfLoaded(
-                    controller: controller,
-                    webViewId: webViewId
-                )
             }
         )
     }

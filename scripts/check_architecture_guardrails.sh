@@ -46,7 +46,6 @@ checks=(
   "scripts/check_startup_persistence_boundary.sh"
   "scripts/check_tracker_radar_import_boundary.sh"
   "scripts/check_updater_sparkle_boundary.sh"
-  "scripts/check_userscript_hot_paths.sh"
   "scripts/check_website_compositor_boundaries.sh"
   "scripts/check_website_data_mutation_boundary.sh"
   "scripts/check_webview_runtime_context_boundary.sh"
@@ -64,5 +63,11 @@ for check in "${checks[@]}"; do
   echo "==> ${check}"
   "${check}"
 done
+
+echo "==> scripts/check_browser_script_hot_paths.sh"
+bash scripts/check_browser_script_hot_paths.sh
+
+echo "==> scripts/check_removed_userscript_product.sh"
+bash scripts/check_removed_userscript_product.sh
 
 echo "architecture guardrails passed"

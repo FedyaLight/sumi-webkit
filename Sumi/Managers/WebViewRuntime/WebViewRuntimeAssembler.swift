@@ -16,7 +16,6 @@ final class WebViewRuntimeAssembler {
     struct Dependencies {
         let webViewSessions: WebViewSessionRepository
         let visibleContext: WebViewVisibleRuntimeContext
-        let shutdownContext: WebViewShutdownRuntimeContext
         let visibleWebViewRuntimeOwner: VisibleWebViewRuntimeOwner
         let hiddenCloneEvictionOwner: WebViewHiddenCloneEvictionOwner
         let removeWebViewFromContainers: @MainActor (WKWebView) -> Void
@@ -130,11 +129,7 @@ final class WebViewRuntimeAssembler {
     // MARK: - Shutdown Runtime
 
     func shutdownRuntime() -> SumiWebViewShutdown.NormalTabRuntime {
-        let runtimeContext = dependencies.shutdownContext
         return SumiWebViewShutdown.NormalTabRuntime(
-            cleanupUserScripts: { controller, webViewId in
-                runtimeContext.cleanupUserScripts(controller, webViewId)
-            },
             removeWebViewFromContainers: { [dependencies] webView in
                 dependencies.removeWebViewFromContainers(webView)
             }

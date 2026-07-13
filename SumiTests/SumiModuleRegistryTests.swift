@@ -36,21 +36,6 @@ final class SumiModuleRegistryTests: XCTestCase {
     }
 
     @MainActor
-    func testCleanInstallDefaultsUserscriptsDisabled() {
-        let harness = TestDefaultsHarness()
-        defer { harness.reset() }
-
-        let store = SumiModuleSettingsStore(userDefaults: harness.defaults)
-        let registry = SumiModuleRegistry(settingsStore: store)
-
-        let isEnabled = registry.isEnabled(.userScripts)
-        let storedValue = harness.defaults.object(forKey: store.key(for: .userScripts))
-
-        XCTAssertFalse(isEnabled)
-        XCTAssertNil(storedValue)
-    }
-
-    @MainActor
     func testCleanInstallDefaultsBoostsDisabled() {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
@@ -145,23 +130,6 @@ final class SumiModuleRegistryTests: XCTestCase {
     }
 
     @MainActor
-    func testUserscriptsEnableDisablePersists() {
-        let harness = TestDefaultsHarness()
-        defer { harness.reset() }
-
-        let store = SumiModuleSettingsStore(userDefaults: harness.defaults)
-        let registry = SumiModuleRegistry(settingsStore: store)
-
-        registry.enable(.userScripts)
-        let enabledValue = SumiModuleRegistry(settingsStore: store).isEnabled(.userScripts)
-        XCTAssertTrue(enabledValue)
-
-        registry.disable(.userScripts)
-        let disabledValue = SumiModuleRegistry(settingsStore: store).isEnabled(.userScripts)
-        XCTAssertFalse(disabledValue)
-    }
-
-    @MainActor
     func testBoostsEnableDisablePersists() {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
@@ -185,11 +153,9 @@ final class SumiModuleRegistryTests: XCTestCase {
         let store = SumiModuleSettingsStore(userDefaults: harness.defaults)
 
         let extensionsKey = store.key(for: .extensions)
-        let userScriptsKey = store.key(for: .userScripts)
         let boostsKey = store.key(for: .boosts)
 
         XCTAssertEqual(extensionsKey, "settings.modules.extensions.enabled")
-        XCTAssertEqual(userScriptsKey, "settings.modules.userScripts.enabled")
         XCTAssertEqual(boostsKey, "settings.modules.boosts.enabled")
     }
 }

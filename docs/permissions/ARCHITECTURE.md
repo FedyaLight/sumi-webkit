@@ -60,7 +60,7 @@ Bridges are callback adapters. They build `SumiPermissionSecurityContext`, call 
 | Camera and microphone | `SumiWebKitPermissionBridge` | Public and legacy WebKit media callbacks map WebKit media types to `.camera`, `.microphone`, or grouped UI requests, then wait for coordinator settlement on active visible normal tabs. |
 | Screen capture | `SumiWebKitPermissionBridge` plus `SumiWebKitDisplayCaptureRequest` | Private display-capture selectors and legacy display-device bits map to canonical `.screenCapture`; runtime stop controls remain absent unless WebKit exposes a real API. |
 | Geolocation | `SumiWebKitGeolocationBridge`, `SumiGeolocationProvider`, `SumiGeolocationService` | Private WebKit delegate/provider ABI is isolated; location is delivered only after both macOS/system and site decisions allow. |
-| Notifications | `SumiNotificationPermissionBridge`, `SumiNotificationService` | Website notifications and `GM_notification` use coordinator/site/system state. Delivery service is not permission truth. |
+| Notifications | `SumiNotificationPermissionBridge`, `SumiNotificationService` | Website notifications use coordinator/site/system state. Delivery service is not permission truth. |
 | Popups | `SumiPopupPermissionBridge`, `SumiBlockedPopupStore` | User-activated popups allow by default unless denied. Background/script popups block by default unless allowed and record session-only blocked state. |
 | External app schemes | `SumiExternalSchemePermissionBridge`, `SumiExternalAppResolver`, `SumiExternalSchemeSessionStore` | Normal-tab navigation responders do not open external apps before permission. `NSWorkspace.open` for external schemes is behind the resolver. |
 | Autoplay | `SumiAutoplayPolicyStoreAdapter`, `SumiAutoplayPolicyNavigationResponder`, `BrowserConfig` fallback, runtime reload requirement | `.autoplay` decisions are canonical store records and are applied through navigation-time `WKWebpagePreferences`. Old `settings.sitePermissionOverrides.autoplay` data is ignored and not migrated. |
@@ -126,7 +126,7 @@ Manual coverage should include media, geolocation, notifications, popups, extern
 Automated coverage is layered:
 
 - store/coordinator/unit tests for keys, lifetimes, profile partitioning, system snapshots, policy gates, queueing, prompt settlement, anti-abuse, cleanup, autoplay, and lifecycle;
-- bridge and integration tests for media/screen, geolocation/provider, notifications/userscripts, popups, external schemes, file picker, and storage access;
+- bridge and integration tests for media/screen, geolocation/provider, website notifications, popups, external schemes, file picker, and storage access;
 - view-model tests for URL-bar indicator, prompt model, URL hub current-site permissions, Privacy Site Settings, runtime controls, recent activity, anti-abuse, and cleanup;
 - source-level regression guards for old bypass paths, private API isolation, system authorization ownership, direct panel/open ownership, old autoplay path exclusion, UI side-effect boundaries, documentation fixtures, and license markers;
 - manual localhost pages for real device, TCC, WebKit, app-handler, and popover behavior that cannot be deterministically automated yet.

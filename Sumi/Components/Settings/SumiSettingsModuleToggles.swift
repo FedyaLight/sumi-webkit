@@ -15,10 +15,6 @@ private struct SumiExtensionsModuleEnvironmentKey: EnvironmentKey {
     static let defaultValue = MainActor.assumeIsolated { SumiExtensionsModule() }
 }
 
-private struct SumiUserscriptsModuleEnvironmentKey: EnvironmentKey {
-    static let defaultValue = MainActor.assumeIsolated { SumiUserscriptsModule() }
-}
-
 private struct SumiBoostsModuleEnvironmentKey: EnvironmentKey {
     static let defaultValue = MainActor.assumeIsolated {
         SumiBoostsModule(
@@ -44,11 +40,6 @@ extension EnvironmentValues {
         set { self[SumiExtensionsModuleEnvironmentKey.self] = newValue }
     }
 
-    var sumiUserscriptsModule: SumiUserscriptsModule {
-        get { self[SumiUserscriptsModuleEnvironmentKey.self] }
-        set { self[SumiUserscriptsModuleEnvironmentKey.self] = newValue }
-    }
-
     var sumiBoostsModule: SumiBoostsModule {
         get { self[SumiBoostsModuleEnvironmentKey.self] }
         set { self[SumiBoostsModuleEnvironmentKey.self] = newValue }
@@ -70,12 +61,6 @@ struct SumiSettingsModuleToggleDescriptor: Identifiable, Equatable {
         detail: "When off, this module does not use system resources."
     )
 
-    static let userScripts = SumiSettingsModuleToggleDescriptor(
-        moduleID: .userScripts,
-        title: "Userscripts",
-        toggleTitle: "Enable Userscripts",
-        detail: "When off, Sumi does not read the userscript store or attach WKUserScript."
-    )
 }
 
 @MainActor
@@ -98,7 +83,6 @@ struct SumiSettingsModuleToggleGate<EnabledContent: View>: View {
 
     @Environment(\.sumiModuleRegistry) private var moduleRegistry
     @Environment(\.sumiExtensionsModule) private var extensionsModule
-    @Environment(\.sumiUserscriptsModule) private var userscriptsModule
     @State private var cachedIsEnabled: Bool?
 
     init(
@@ -149,8 +133,6 @@ struct SumiSettingsModuleToggleGate<EnabledContent: View>: View {
     private func setModuleEnabled(_ isEnabled: Bool) {
         if descriptor.moduleID == .extensions {
             extensionsModule.setEnabled(isEnabled)
-        } else if descriptor.moduleID == .userScripts {
-            userscriptsModule.setEnabled(isEnabled)
         } else {
             model.setEnabled(isEnabled)
         }

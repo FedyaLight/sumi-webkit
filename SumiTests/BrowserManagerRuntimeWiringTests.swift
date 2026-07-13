@@ -25,7 +25,6 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         XCTAssertTrue(browserManager.optionalModules.boosts.isEnabled)
         XCTAssertTrue(browserManager.optionalModules.boosts.hasAttachedRuntime)
         XCTAssertFalse(browserManager.optionalModules.extensions.hasAttachedRuntime)
-        XCTAssertFalse(browserManager.optionalModules.userscripts.hasAttachedRuntime)
         XCTAssertFalse(browserManager.optionalModules.liveFolders.hasAttachedRuntime)
         XCTAssertFalse(browserManager.liveFolderManager.hasAttachedRuntime)
         XCTAssertTrue(compositorManagerCanUseAttachedRuntime(browserManager))
@@ -38,7 +37,6 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         XCTAssertTrue(auxiliaryWindowServicesCanOpenPopup(browserManager))
         XCTAssertTrue(glanceRuntimeCanPreparePreviewTabs(browserManager))
         XCTAssertFalse(browserManager.optionalModules.extensions.hasLoadedRuntime)
-        XCTAssertFalse(browserManager.optionalModules.userscripts.hasLoadedRuntime)
     }
 
     func testTabRuntimeCompositionServiceAttachesResourceRuntimesAndHandlesStructuralChanges() async throws {
@@ -1016,7 +1014,6 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         XCTAssertTrue(browserContext.profileManager === browserManager.profileManager)
         XCTAssertTrue(browserContext.tabManager === browserManager.tabManager)
         XCTAssertTrue(browserContext.extensionsModule === browserManager.optionalModules.extensions)
-        XCTAssertTrue(browserContext.userscriptsModule === browserManager.optionalModules.userscripts)
         XCTAssertTrue(
             browserContext.extensionSurfaceStore === browserManager.optionalModules.extensions.surfaceStore
         )

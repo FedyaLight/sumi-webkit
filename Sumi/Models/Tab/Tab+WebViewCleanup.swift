@@ -27,7 +27,6 @@ extension Tab {
             },
             deferProtectedWebViewCleanup: cleanupRuntime.deferProtectedWebViewCleanup,
             shutdownRuntime: SumiWebViewShutdown.NormalTabRuntime(
-                cleanupUserScripts: cleanupRuntime.cleanupUserScripts,
                 removeWebViewFromContainers: cleanupRuntime.removeWebViewFromContainers
             ),
             notifyNowPlayingTabUnloaded: { tabId in

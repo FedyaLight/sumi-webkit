@@ -75,12 +75,7 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         let registry = SumiModuleRegistry(
             settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
         )
-        let userscriptsProbe = UserscriptsRuntimeProbe()
         let extensionsProbe = ExtensionsRuntimeProbe()
-        let userscriptsModule = makeUserscriptsModule(
-            registry: registry,
-            probe: userscriptsProbe
-        )
         let extensionsModule = try makeExtensionsModule(
             registry: registry,
             probe: extensionsProbe
@@ -88,21 +83,15 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
 
         let browserManager = BrowserManager(
             moduleRegistry: registry,
-            extensionsModule: extensionsModule,
-            userscriptsModule: userscriptsModule
+            extensionsModule: extensionsModule
         )
 
         XCTAssertNotNil(browserManager.currentProfile)
-        XCTAssertEqual(userscriptsProbe.managerCount, 0)
-        XCTAssertEqual(userscriptsProbe.storeCount, 0)
-        XCTAssertEqual(userscriptsProbe.injectorCount, 0)
         XCTAssertEqual(extensionsProbe.managerCount, 0)
-        XCTAssertFalse(userscriptsModule.hasLoadedRuntime)
         XCTAssertFalse(extensionsModule.hasLoadedRuntime)
         XCTAssertFalse(browserManager.optionalModules.boosts.hasLoadedRuntime)
         // W4/R9: disabled modules must not receive attach(runtime:) at wiring time.
         XCTAssertFalse(extensionsModule.hasAttachedRuntime)
-        XCTAssertFalse(userscriptsModule.hasAttachedRuntime)
         XCTAssertFalse(browserManager.optionalModules.boosts.hasAttachedRuntime)
         XCTAssertFalse(browserManager.optionalModules.liveFolders.hasAttachedRuntime)
         XCTAssertFalse(browserManager.liveFolderManager.hasAttachedRuntime)
@@ -114,29 +103,20 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         let registry = SumiModuleRegistry(
             settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
         )
-        let userscriptsModule = makeUserscriptsModule(
-            registry: registry,
-            probe: UserscriptsRuntimeProbe()
-        )
         let extensionsModule = try makeExtensionsModule(
             registry: registry,
             probe: ExtensionsRuntimeProbe()
         )
         let browserManager = BrowserManager(
             moduleRegistry: registry,
-            extensionsModule: extensionsModule,
-            userscriptsModule: userscriptsModule
+            extensionsModule: extensionsModule
         )
 
         XCTAssertFalse(browserManager.optionalModules.boosts.hasAttachedRuntime)
-        XCTAssertFalse(userscriptsModule.hasAttachedRuntime)
         XCTAssertFalse(extensionsModule.hasAttachedRuntime)
 
         browserManager.optionalModules.boosts.setEnabled(true)
         XCTAssertTrue(browserManager.optionalModules.boosts.hasAttachedRuntime)
-
-        userscriptsModule.setEnabled(true)
-        XCTAssertTrue(userscriptsModule.hasAttachedRuntime)
 
         extensionsModule.setEnabled(true)
         XCTAssertTrue(extensionsModule.hasAttachedRuntime)
@@ -144,10 +124,6 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
 
         browserManager.optionalModules.boosts.setEnabled(false)
         XCTAssertFalse(browserManager.optionalModules.boosts.hasAttachedRuntime)
-
-        userscriptsModule.setEnabled(false)
-        XCTAssertFalse(userscriptsModule.hasAttachedRuntime)
-        XCTAssertFalse(userscriptsModule.hasLoadedRuntime)
 
         extensionsModule.setEnabled(false)
         XCTAssertFalse(extensionsModule.hasAttachedRuntime)
@@ -192,17 +168,12 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         let registry = SumiModuleRegistry(
             settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
         )
-        let userscriptsProbe = UserscriptsRuntimeProbe()
         let extensionsProbe = ExtensionsRuntimeProbe()
         let browserManager = BrowserManager(
             moduleRegistry: registry,
             extensionsModule: try makeExtensionsModule(
                 registry: registry,
                 probe: extensionsProbe
-            ),
-            userscriptsModule: makeUserscriptsModule(
-                registry: registry,
-                probe: userscriptsProbe
             )
         )
         let tab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
@@ -227,7 +198,6 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         XCTAssertTrue(sources.contains("sumiLinkInteraction_\(tab.id.uuidString)"))
         XCTAssertTrue(sources.contains("sumiTabSuspension_\(tab.id.uuidString)"))
         XCTAssertTrue(sources.contains("__sumiTabSuspension"))
-        assertNoOptionalModuleScriptsOrHandlers(in: webView.configuration.userContentController)
         XCTAssertNil(webView.configuration.webExtensionController)
         XCTAssertFalse(browserManager.adBlockingModule.hasLoadedRuntime)
         XCTAssertFalse(browserManager.optionalModules.boosts.hasLoadedRuntime)
@@ -238,9 +208,6 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
             tab.normalTabCoreUserScripts().first { $0.source.contains("__sumiTabSuspension") }
         )
         XCTAssertTrue(suspensionScript.forMainFrameOnly)
-        XCTAssertEqual(userscriptsProbe.managerCount, 0)
-        XCTAssertEqual(userscriptsProbe.storeCount, 0)
-        XCTAssertEqual(userscriptsProbe.injectorCount, 0)
         XCTAssertEqual(extensionsProbe.managerCount, 0)
     }
 
@@ -251,22 +218,14 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
             settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
         )
 
-        registry.enable(.userScripts)
-        XCTAssertTrue(registry.isEnabled(.userScripts))
-        XCTAssertFalse(registry.isEnabled(.extensions))
-        XCTAssertFalse(registry.isEnabled(.boosts))
-
-        registry.disable(.userScripts)
         registry.enable(.extensions)
         XCTAssertTrue(registry.isEnabled(.extensions))
-        XCTAssertFalse(registry.isEnabled(.userScripts))
         XCTAssertFalse(registry.isEnabled(.boosts))
 
         registry.disable(.extensions)
         registry.enable(.boosts)
         XCTAssertTrue(registry.isEnabled(.boosts))
         XCTAssertFalse(registry.isEnabled(.extensions))
-        XCTAssertFalse(registry.isEnabled(.userScripts))
     }
 
     func testAuxiliaryConfigurationsStayLightweight() {
@@ -280,7 +239,6 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
             XCTAssertNil(configuration.userContentController.sumiNormalTabUserScriptsProvider, surface.rawValue)
             XCTAssertTrue(configuration.userContentController.userScripts.isEmpty, surface.rawValue)
             XCTAssertNil(configuration.webExtensionController, surface.rawValue)
-            assertNoOptionalModuleScriptsOrHandlers(in: configuration.userContentController)
         }
 
         let sourceConfiguration = WKWebViewConfiguration()
@@ -288,8 +246,6 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
             "__sumiTabSuspension",
             SumiTransientChromeInteractionShieldUserScript.sourceMarker,
             "sumiLinkInteraction_",
-            "SUMI_USER_SCRIPT_RUNTIME",
-            "sumiGM_",
         ] {
             sourceConfiguration.userContentController.addUserScript(
                 WKUserScript(
@@ -305,30 +261,6 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
             additionalUserScripts: sourceConfiguration.userContentController.userScripts
         )
         XCTAssertTrue(filteredConfiguration.userContentController.userScripts.isEmpty)
-    }
-
-    func testDisabledUserscriptsModuleReturnsNoRuntimeContributions() {
-        let harness = TestDefaultsHarness()
-        defer { harness.reset() }
-        let registry = SumiModuleRegistry(
-            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
-        )
-        let probe = UserscriptsRuntimeProbe()
-        let module = makeUserscriptsModule(registry: registry, probe: probe)
-        let tab = Tab(name: "Userscripts Disabled")
-
-        let contributions = module.normalTabUserScripts(
-            for: URL(string: "https://example.com/userscripts-disabled")!,
-            webViewId: tab.id,
-            profileId: nil,
-            isEphemeral: false
-        )
-
-        XCTAssertTrue(contributions.isEmpty)
-        XCTAssertEqual(probe.managerCount, 0)
-        XCTAssertEqual(probe.storeCount, 0)
-        XCTAssertEqual(probe.injectorCount, 0)
-        XCTAssertTrue(tab.normalTabCoreUserScripts().contains { $0.source.contains("__sumiTabSuspension") })
     }
 
     func testDisabledExtensionsModuleDoesNotPrepareRuntimeController() throws {
@@ -348,36 +280,6 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         )
         XCTAssertNil(configuration.webExtensionController)
         XCTAssertEqual(probe.managerCount, 0)
-    }
-
-    private func makeUserscriptsModule(
-        registry: SumiModuleRegistry,
-        probe: UserscriptsRuntimeProbe
-    ) -> SumiUserscriptsModule {
-        SumiUserscriptsModule(
-            moduleRegistry: registry,
-            managerFactory: { context in
-                probe.managerCount += 1
-                return SumiScriptsManager(
-                    context: context,
-                    storeFactory: { context in
-                        probe.storeCount += 1
-                        return UserScriptStore(
-                            directory: FileManager.default.temporaryDirectory
-                                .appendingPathComponent(
-                                    "SumiPrompt20Userscripts-\(UUID().uuidString)",
-                                    isDirectory: true
-                                ),
-                            context: context
-                        )
-                    },
-                    injectorFactory: {
-                        probe.injectorCount += 1
-                        return UserScriptInjector()
-                    }
-                )
-            }
-        )
     }
 
     private func makeExtensionsModule(
@@ -406,32 +308,6 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         )
     }
 
-    private func assertNoOptionalModuleScriptsOrHandlers(
-        in userContentController: WKUserContentController,
-        file: StaticString = #filePath,
-        line: UInt = #line
-    ) {
-        let wkSources = userContentController.userScripts.map(\.source).joined(separator: "\n")
-        let provider = userContentController.sumiNormalTabUserScriptsProvider
-        let providerSources = provider?.userScripts.map(\.source).joined(separator: "\n") ?? ""
-        let messageNames = provider?.userScripts.flatMap(\.messageNames).joined(separator: "\n") ?? ""
-        let combined = [wkSources, providerSources, messageNames].joined(separator: "\n")
-
-        for marker in [
-            UserScriptInjector.userScriptMarker,
-            "SUMI_USER_SCRIPT_RUNTIME",
-            "data-sumi-userscript",
-            "sumiGM_",
-        ] {
-            XCTAssertFalse(combined.contains(marker), marker, file: file, line: line)
-        }
-    }
-}
-
-private final class UserscriptsRuntimeProbe {
-    var managerCount = 0
-    var storeCount = 0
-    var injectorCount = 0
 }
 
 private final class ExtensionsRuntimeProbe {

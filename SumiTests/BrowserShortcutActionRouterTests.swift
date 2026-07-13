@@ -49,7 +49,6 @@ final class BrowserShortcutActionRouterTests: XCTestCase {
         )
         // Command routing must stay zero-cost for disabled optional modules.
         XCTAssertFalse(browserManager.optionalModules.extensions.hasLoadedRuntime)
-        XCTAssertFalse(browserManager.optionalModules.userscripts.hasLoadedRuntime)
     }
 
     private func makeDependencies(

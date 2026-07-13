@@ -25,7 +25,7 @@ final class SumiGPCUserScriptTests: XCTestCase {
 
     func testBuiltWKUserScriptMatchesDeclaredShape() {
         let script = SumiGPCUserScript()
-        let wkScript = SumiUserScriptBuilder.makeWKUserScript(from: script)
+        let wkScript = SumiPageScriptBuilder.makeWKUserScript(from: script)
 
         XCTAssertEqual(wkScript.source, script.source)
         XCTAssertEqual(wkScript.injectionTime, .atDocumentStart)

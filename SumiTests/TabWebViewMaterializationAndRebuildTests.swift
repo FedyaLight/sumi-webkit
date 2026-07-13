@@ -1831,7 +1831,6 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
             TabWebViewConfigurationContext(
                 browserConfiguration: BrowserConfiguration(),
                 extensionNormalTabUserScripts: { [] },
-                userscriptsNormalTabUserScripts: { _, _, _, _ in [] },
                 boostsNormalTabUserScripts: { _, _, _ in [] },
                 protectionDecision: { _, _ in nil },
                 protectionDesiredAttachmentState: {
@@ -1900,9 +1899,6 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
                 needsInitialDocumentExtensionContextLoad: { _ in false },
                 ensureInitialExtensionContextsLoaded: { _ in },
                 refreshCompositorForWindow: { _ in }
-            ),
-            shutdownContext: WebViewShutdownRuntimeContext(
-                cleanupUserScripts: { _, _ in }
             )
         )
     }

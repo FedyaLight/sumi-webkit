@@ -77,7 +77,6 @@ final class WebViewPhysicalCleanupService {
         }
         SumiWebViewShutdown.perform(
             on: webView,
-            tabId: tabID,
             runtime: runtimeAssembler.shutdownRuntime()
         )
     }

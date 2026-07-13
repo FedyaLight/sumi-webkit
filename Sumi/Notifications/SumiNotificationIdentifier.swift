@@ -24,23 +24,6 @@ struct SumiNotificationIdentifier: RawRepresentable, Codable, Equatable, Hashabl
         )
     }
 
-    static func userscript(
-        profilePartitionId: String,
-        tabId: String,
-        scriptId: String,
-        requestId: String
-    ) -> SumiNotificationIdentifier {
-        SumiNotificationIdentifier(
-            rawValue: [
-                "sumi-gm",
-                profilePartitionId,
-                tabId,
-                scriptId,
-                requestId,
-            ].map(normalizedComponent).joined(separator: "-")
-        )
-    }
-
     private static func normalized(_ value: String) -> String {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? "sumi-notification" : trimmed

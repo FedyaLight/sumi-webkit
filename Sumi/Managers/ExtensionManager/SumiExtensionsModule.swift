@@ -221,7 +221,7 @@ final class SumiExtensionsModule {
         return managerIfEnabled() != nil
     }
 
-    func normalTabUserScripts() -> [SumiUserScript] {
+    func normalTabUserScripts() -> [SumiPageScript] {
         managerIfNeededForNormalTabRuntime()?.normalTabUserScripts() ?? []
     }
 
@@ -576,24 +576,20 @@ final class SumiExtensionsModule {
     }
 
     func orderedPinnedToolbarSlots(
-        enabledExtensions: [InstalledExtension],
-        sumiScriptsManagerEnabled: Bool
+        enabledExtensions: [InstalledExtension]
     ) -> [PinnedToolbarSlot] {
         orderedPinnedToolbarSlots(
             enabledExtensions: enabledExtensions,
-            sumiScriptsManagerEnabled: sumiScriptsManagerEnabled,
             profileId: nil
         )
     }
 
     func orderedPinnedToolbarSlots(
         enabledExtensions: [InstalledExtension],
-        sumiScriptsManagerEnabled: Bool,
         profileId: UUID?
     ) -> [PinnedToolbarSlot] {
         toolbarSiteAccess.orderedPinnedToolbarSlots(
             enabledExtensions: enabledExtensions,
-            sumiScriptsManagerEnabled: sumiScriptsManagerEnabled,
             profileId: profileId
         )
     }
