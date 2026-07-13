@@ -22,7 +22,11 @@ final class FolderSearchCandidateBuilderTests: XCTestCase {
             space.id: [visible, direct, nestedPin],
         ])
 
-        let candidates = makeBuilder(tabManager: tabManager, liveProvider: liveProvider).candidates(
+        let candidates = makeBuilder(
+            tabManager: tabManager,
+            space: space,
+            liveProvider: liveProvider
+        ).candidates(
             for: root,
             in: space,
             excludingVisibleCollapsedProjectionIDs: [visible.id]
@@ -69,7 +73,11 @@ final class FolderSearchCandidateBuilderTests: XCTestCase {
         liveProvider.sourcesByFolderId[folder.id] = source
         liveProvider.itemsByFolderId[folder.id] = [item]
 
-        let candidates = makeBuilder(tabManager: tabManager, liveProvider: liveProvider).candidates(
+        let candidates = makeBuilder(
+            tabManager: tabManager,
+            space: space,
+            liveProvider: liveProvider
+        ).candidates(
             for: folder,
             in: space,
             excludingVisibleCollapsedProjectionIDs: []
@@ -125,7 +133,11 @@ final class FolderSearchCandidateBuilderTests: XCTestCase {
         ])
         tabManager.splitGroupStore.replaceAll(with: [group])
 
-        let candidates = makeBuilder(tabManager: tabManager, liveProvider: liveProvider).candidates(
+        let candidates = makeBuilder(
+            tabManager: tabManager,
+            space: space,
+            liveProvider: liveProvider
+        ).candidates(
             for: folder,
             in: space,
             excludingVisibleCollapsedProjectionIDs: []
@@ -175,10 +187,19 @@ final class FolderSearchCandidateBuilderTests: XCTestCase {
 
     private func makeBuilder(
         tabManager: TabManager,
+        space: Space,
         liveProvider: FolderSearchLiveFolderProviding
     ) -> FolderSearchCandidateBuilder {
-        FolderSearchCandidateBuilder(
+        tabManager.spaceStateOwner.replaceSpaces([space])
+        let windowState = BrowserWindowState()
+        let roles = SidebarConsumerTestSupport.roles(
             tabManager: tabManager,
+            windowState: windowState
+        )
+        return FolderSearchCandidateBuilder(
+            inventory: roles.inventory.snapshot(for: space.id)!,
+            selection: roles.selection,
+            windowState: windowState,
             liveFolderProvider: liveProvider,
             actions: FolderSearchActivationActions(
                 activateShortcut: { _ in },

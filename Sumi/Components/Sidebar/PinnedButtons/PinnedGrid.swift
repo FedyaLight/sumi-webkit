@@ -34,6 +34,11 @@ struct PinnedGrid: View {
 
     let width: CGFloat
     let browserContext: SidebarBrowserContext
+    let inventory: SidebarInventoryProjection
+    let selection: SidebarWindowSelectionQuery
+    let pinProjection: SidebarPinFolderProjection
+    let pinCommands: SidebarPinFolderCommands
+    let spaceLifecycle: SidebarSpaceLifecycle
     let spaceId: UUID?
     let profileId: UUID?
     let animateLayout: Bool
@@ -48,6 +53,11 @@ struct PinnedGrid: View {
     init(
         width: CGFloat,
         browserContext: SidebarBrowserContext,
+        inventory: SidebarInventoryProjection,
+        selection: SidebarWindowSelectionQuery,
+        pinProjection: SidebarPinFolderProjection,
+        pinCommands: SidebarPinFolderCommands,
+        spaceLifecycle: SidebarSpaceLifecycle,
         spaceId: UUID? = nil,
         profileId: UUID? = nil,
         animateLayout: Bool = true,
@@ -56,6 +66,11 @@ struct PinnedGrid: View {
     ) {
         self.width = width
         self.browserContext = browserContext
+        self.inventory = inventory
+        self.selection = selection
+        self.pinProjection = pinProjection
+        self.pinCommands = pinCommands
+        self.spaceLifecycle = spaceLifecycle
         self.spaceId = spaceId
         self.profileId = profileId
         self.animateLayout = animateLayout
@@ -64,13 +79,12 @@ struct PinnedGrid: View {
     }
 
     var body: some View {
-        let _ = browserContext.tabStructuralRevision()
         let shouldReduceMotion = reduceMotion || sumiSettings.shouldReduceChromeMotion
 
         // Use profile-filtered essentials
         let effectiveProfileId = profileId ?? windowState.currentProfileId ?? browserContext.currentProfile()?.id
         let items: [ShortcutPin] = effectiveProfileId != nil
-            ? browserContext.tabManager.shortcutPinCollectionStateOwner.essentialPins(for: effectiveProfileId)
+            ? inventory.essentialPins(profileID: effectiveProfileId)
             : []
         let layout = PinnedGridLayoutModel(
             width: width,
@@ -189,9 +203,9 @@ struct PinnedGrid: View {
         if let placeholderGroup = splitPlaceholderGroup(for: pin) {
             PinnedSplitPlaceholderTile(
                 pin: pin,
-                faviconPartition: browserContext.tabManager.shortcutPinRuntimeResolutionOwner.resolvedFaviconPartition(
+                faviconPartition: pinProjection.faviconPartition(
                     for: pin,
-                    currentSpaceId: windowState.currentSpaceId
+                    currentSpaceID: windowState.currentSpaceId
                 ),
                 isSelected: isSplitPlaceholderSelected(placeholderGroup, pin: pin),
                 accessibilityID: "essential-split-placeholder-\(pin.id.uuidString)",
@@ -217,17 +231,14 @@ struct PinnedGrid: View {
             )
         } else {
             let presentationState = pinPresentationState(pin)
-            let liveTab = browserContext.tabManager.shortcutPresentationOwner.shortcutLiveTab(
-                for: pin.id,
-                in: windowState.id
-            )
+            let liveTab = selection.liveTab(for: pin.id, in: windowState)
             let contextMenuActions = essentialTileActionOwner.contextMenuActions(for: pin)
 
             PinnedTile(
                 pin: pin,
-                faviconPartition: browserContext.tabManager.shortcutPinRuntimeResolutionOwner.resolvedFaviconPartition(
+                faviconPartition: pinProjection.faviconPartition(
                     for: pin,
-                    currentSpaceId: windowState.currentSpaceId
+                    currentSpaceID: windowState.currentSpaceId
                 ),
                 presentationState: presentationState,
                 liveTab: liveTab,
@@ -266,40 +277,38 @@ struct PinnedGrid: View {
     @EnvironmentObject private var dragState: SidebarDragState
 
     private func pinPresentationState(_ pin: ShortcutPin) -> ShortcutPresentationState {
-        browserContext.tabManager.shortcutPresentationOwner.shortcutPresentationState(for: pin, in: windowState)
+        selection.presentationState(for: pin, in: windowState)
     }
 
     private func essentialRuntimeState(_ pin: ShortcutPin) -> SumiEssentialRuntimeState? {
-        browserContext.tabManager.shortcutPresentationOwner.essentialRuntimeState(
-            for: pin,
-            in: windowState,
-            splitQuery: browserContext.splitQuery
-        )
+        selection.essentialRuntimeState(for: pin, in: windowState)
     }
 
     private func splitPlaceholderGroup(for pin: ShortcutPin) -> SplitGroup? {
-        guard let group = browserContext.tabManager.splitGroupStore.group(
-            containing: .shortcutPin(pin.id)
-        ), !group.container.isShortcutSidebar else {
+        guard let spaceID = spaceId ?? windowState.currentSpaceId,
+              let group = inventory.snapshot(for: spaceID)?.splitGroup(
+                containing: .shortcutPin(pin.id)
+              ), !group.container.isShortcutSidebar else {
             return nil
         }
         return group
     }
 
     private func isSplitPlaceholderSelected(_ group: SplitGroup, pin: ShortcutPin) -> Bool {
-        if windowState.currentShortcutPinId == pin.id {
-            return true
-        }
-        return windowState.splitSelection?.groupID == group.id
-            && windowState.splitSelection?.activeMemberID == .shortcutPin(pin.id)
+        selection.isShortcutSelected(pin, in: windowState)
+            || selection.isSplitMemberSelected(
+                groupID: group.id,
+                memberID: .shortcutPin(pin.id),
+                in: windowState
+            )
     }
 
     private func activate(_ pin: ShortcutPin) {
-        let tab = browserContext.tabManager.shortcutTabMaterializer.materialize(
+        guard let tab = pinCommands.materialize(
             pin,
-            in: windowState.id,
-            currentSpaceId: windowState.currentSpaceId
-        )
+            in: windowState,
+            currentSpaceID: windowState.currentSpaceId
+        ) else { return }
         browserContext.commands.requestUserTabActivation(
             tab,
             windowState
@@ -309,6 +318,11 @@ struct PinnedGrid: View {
     private var essentialTileActionOwner: EssentialTileActionOwner {
         EssentialTileActionOwner(
             browserContext: browserContext,
+            inventory: inventory,
+            selection: selection,
+            pinProjection: pinProjection,
+            pinCommands: pinCommands,
+            spaceLifecycle: spaceLifecycle,
             windowState: windowState,
             themeContext: themeContext,
             contextMenuSpaceId: PinnedGridContextResolver.contextMenuSpaceId(

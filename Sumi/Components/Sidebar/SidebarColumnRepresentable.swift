@@ -1,17 +1,30 @@
 import AppKit
-import Combine
 import SwiftUI
 
 struct SidebarColumnHostedRootView: View {
     let environmentContext: SidebarHostEnvironmentContext
     let presentationContext: SidebarPresentationContext
-    @State private var structuralInvalidationGeneration: UInt = 0
+    let inventory: SidebarInventoryProjection
+    let selection: SidebarWindowSelectionQuery
+    let pinProjection: SidebarPinFolderProjection
+    let pinCommands: SidebarPinFolderCommands
+    let spaceLifecycle: SidebarSpaceLifecycle
+    let regularTabs: any SidebarRegularTabsControlling
+    let dragTransactions: SidebarDragTransactionPort
+    let updateStreams: SidebarUpdateStreams
     @Environment(\.accessibilityReduceTransparency) private var accessibilityReduceTransparency
 
     var body: some View {
-        let _ = structuralInvalidationGeneration
         SpacesSideBarView(
             browserContext: environmentContext.browserContext,
+            inventory: inventory,
+            selection: selection,
+            pinProjection: pinProjection,
+            pinCommands: pinCommands,
+            spaceLifecycle: spaceLifecycle,
+            regularTabs: regularTabs,
+            dragTransactions: dragTransactions,
+            updateStreams: updateStreams,
             nowPlayingController: environmentContext.nowPlayingController,
             updaterService: environmentContext.updaterService
         )
@@ -35,9 +48,6 @@ struct SidebarColumnHostedRootView: View {
             )
             .sidebarHostEnvironment(environmentContext)
             .environment(\.sidebarPresentationContext, presentationContext)
-            .onReceive(environmentContext.structuralInvalidation) { _ in
-                structuralInvalidationGeneration &+= 1
-            }
             // `NSHostingController` roots do not inherit `ContentView`’s `.ignoresSafeArea`; without this,
             // macOS reserves a title-bar safe area above the sidebar chrome when using `fullSizeContentView`.
             .ignoresSafeArea(.container, edges: .top)
@@ -130,20 +140,43 @@ enum SidebarColumnHostedRoot {
     @MainActor
     static func view(
         environmentContext: SidebarHostEnvironmentContext,
-        presentationContext: SidebarPresentationContext
+        presentationContext: SidebarPresentationContext,
+        inventory: SidebarInventoryProjection,
+        selection: SidebarWindowSelectionQuery,
+        pinProjection: SidebarPinFolderProjection,
+        pinCommands: SidebarPinFolderCommands,
+        spaceLifecycle: SidebarSpaceLifecycle,
+        regularTabs: any SidebarRegularTabsControlling,
+        dragTransactions: SidebarDragTransactionPort,
+        updateStreams: SidebarUpdateStreams
     ) -> SidebarColumnHostedRootView {
         SidebarColumnHostedRootView(
             environmentContext: environmentContext,
-            presentationContext: presentationContext
+            presentationContext: presentationContext,
+            inventory: inventory,
+            selection: selection,
+            pinProjection: pinProjection,
+            pinCommands: pinCommands,
+            spaceLifecycle: spaceLifecycle,
+            regularTabs: regularTabs,
+            dragTransactions: dragTransactions,
+            updateStreams: updateStreams
         )
     }
 }
 
 struct SidebarColumnRepresentable: NSViewControllerRepresentable {
     var browserContext: SidebarBrowserContext
+    let inventory: SidebarInventoryProjection
+    let selection: SidebarWindowSelectionQuery
+    let pinProjection: SidebarPinFolderProjection
+    let pinCommands: SidebarPinFolderCommands
+    let spaceLifecycle: SidebarSpaceLifecycle
+    let regularTabs: any SidebarRegularTabsControlling
+    let dragTransactions: SidebarDragTransactionPort
+    let updateStreams: SidebarUpdateStreams
     var updaterService: SumiUpdaterService
     var hostActions: SidebarHostActions
-    var structuralInvalidation: AnyPublisher<Void, Never>
     var windowState: BrowserWindowState
     var windowRegistry: WindowRegistry
     var sumiSettings: SumiSettingsService
@@ -159,7 +192,6 @@ struct SidebarColumnRepresentable: NSViewControllerRepresentable {
         SidebarHostEnvironmentContext(
             browserContext: browserContext,
             hostActions: hostActions,
-            structuralInvalidation: structuralInvalidation,
             windowState: windowState,
             windowRegistry: windowRegistry,
             sumiSettings: sumiSettings,
@@ -194,9 +226,18 @@ struct SidebarColumnRepresentable: NSViewControllerRepresentable {
     }
 
     func updateNSViewController(_ controller: SidebarColumnViewController, context: Context) {
+        windowState.sidebarContextMenuController.settings = sumiSettings
         let root = SidebarColumnHostedRoot.view(
             environmentContext: environmentContext,
-            presentationContext: presentationContext
+            presentationContext: presentationContext,
+            inventory: inventory,
+            selection: selection,
+            pinProjection: pinProjection,
+            pinCommands: pinCommands,
+            spaceLifecycle: spaceLifecycle,
+            regularTabs: regularTabs,
+            dragTransactions: dragTransactions,
+            updateStreams: updateStreams
         )
         controller.updateHostedSidebar(
             root: root,

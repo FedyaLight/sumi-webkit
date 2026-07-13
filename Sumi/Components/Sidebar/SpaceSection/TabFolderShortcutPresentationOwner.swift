@@ -9,18 +9,19 @@ import SumiDomain
 /// Resolves shortcut row presentation inputs for folder children.
 @MainActor
 struct TabFolderShortcutPresentationOwner {
-    let browserContext: SidebarBrowserContext
+    let pinProjection: SidebarPinFolderProjection
+    let selection: SidebarWindowSelectionQuery
     let windowState: BrowserWindowState
 
     func faviconPartition(for pin: ShortcutPin) -> SumiFaviconPartition {
-        browserContext.tabManager.shortcutPinRuntimeResolutionOwner.resolvedFaviconPartition(
+        pinProjection.faviconPartition(
             for: pin,
-            currentSpaceId: windowState.currentSpaceId
+            currentSpaceID: windowState.currentSpaceId
         )
     }
 
     func runtimeAffordance(for pin: ShortcutPin) -> SumiLauncherRuntimeAffordanceState {
-        browserContext.tabManager.shortcutPresentationOwner.shortcutRuntimeAffordanceState(
+        selection.runtimeAffordance(
             for: pin,
             in: windowState
         )

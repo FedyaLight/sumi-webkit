@@ -2,14 +2,14 @@
 # Sidebar view coupling freeze (architecture plan R3 / W5-R11).
 #
 # Soft-fails (exit 1) when SpacesSideBarView ObservedObject fan-out grows,
-# SpaceSection *View.swift browserContext.tabManager. coupling grows, or any
-# single View file under SidebarChrome/ / Sumi/Components/Sidebar/ exceeds the
-# LOC ceiling. Caps are hard ceilings — debt must not grow.
+# any sidebar UI source regains TabManager coupling, or any single View file
+# under SidebarChrome/ / Sumi/Components/Sidebar/ exceeds the LOC ceiling.
+# Caps are hard ceilings — debt must not grow.
 #
 # W5/R11 interim ceilings (honest ratchet):
 # - ObservedObject: 4 (target ≤2; currently 2)
 # - View LOC: 600 (target ≤350 for SpacesSideBarView; large chrome still peeling)
-# - tabManager dotted refs in SpaceSection *View.swift: 4 (target 0)
+# - TabManager type/reach-through in sidebar UI roots: 0
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -22,7 +22,6 @@ fi
 
 # Freeze baselines tightened 2026-07-09 (W5/R11).
 MAX_SPACES_SIDEBAR_OBSERVED_OBJECTS=4
-MAX_SPACE_SECTION_TAB_MANAGER_COUPLING=4
 MAX_SIDEBAR_VIEW_LOC=600
 
 SPACES_SIDEBAR_VIEW="SidebarChrome/Sidebar/SpacesSideBarView.swift"
@@ -30,7 +29,11 @@ SIDEBAR_TREES=(
   "SidebarChrome"
   "Sumi/Components/Sidebar"
 )
-SPACE_SECTION_DIR="Sumi/Components/Sidebar/SpaceSection"
+SIDEBAR_TAB_MANAGER_FREE_TREES=(
+  "SidebarChrome/Sidebar"
+  "Sumi/Components/Sidebar"
+  "Sumi/Components/DragDrop"
+)
 
 failures=0
 
@@ -82,24 +85,24 @@ check_max() {
 observed_objects="$(
   count_matches_in_file '@ObservedObject' "$SPACES_SIDEBAR_VIEW"
 )"
-tab_manager_coupling="$(
-  count_matches_in_glob 'browserContext\.tabManager\.' "$SPACE_SECTION_DIR" '*View.swift'
+tab_manager_coupling_hits="$(
+  rg -n --glob '*.swift' \
+    '\bTabManager\b|browserContext\.tabManager\b|windowState\.tabManager\b' \
+    "${SIDEBAR_TAB_MANAGER_FREE_TREES[@]}" || true
 )"
-
-shortcut_split_row_manager_hits="$(
-  rg -n '\bTabManager\b|browserContext\.tabManager' \
-    "$SPACE_SECTION_DIR/ShortcutHostedSplitGroupRow.swift" || true
-)"
-if [[ -n "$shortcut_split_row_manager_hits" ]]; then
-  printf 'error: shortcut-hosted split row regained TabManager coupling:\n%s\n' \
-    "$shortcut_split_row_manager_hits" >&2
+tab_manager_coupling_count=0
+if [[ -n "$tab_manager_coupling_hits" ]]; then
+  tab_manager_coupling_count="$(printf '%s\n' "$tab_manager_coupling_hits" | wc -l | tr -d ' ')"
+  printf 'error: sidebar UI roots regained TabManager coupling:\n%s\n' \
+    "$tab_manager_coupling_hits" >&2
   failures=$((failures + 1))
 fi
 
 printf '%s\n' 'Sidebar view coupling freeze'
 printf '%s\n' '----------------------------'
 check_max "SpacesSideBarView @ObservedObject" "$observed_objects" "$MAX_SPACES_SIDEBAR_OBSERVED_OBJECTS"
-check_max "SpaceSection *View browserContext.tabManager." "$tab_manager_coupling" "$MAX_SPACE_SECTION_TAB_MANAGER_COUPLING"
+printf '%-56s %5d / %5d\n' "sidebar UI TabManager coupling matches" \
+  "$tab_manager_coupling_count" 0
 
 oversized=0
 while IFS= read -r -d '' file; do

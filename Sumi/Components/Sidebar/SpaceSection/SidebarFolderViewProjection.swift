@@ -338,7 +338,8 @@ struct SidebarFolderViewProjection {
         shortcutPins: [ShortcutPin],
         childFolders: [TabFolder],
         shortcutRestoreGaps: [ShortcutRestoreGap],
-        tabManager: TabManager,
+        inventory: SidebarSpaceInventorySnapshot,
+        selection: SidebarWindowSelectionQuery,
         liveFolderManager: SumiLiveFolderManager,
         currentTab: Tab?,
         windowState: BrowserWindowState
@@ -347,13 +348,14 @@ struct SidebarFolderViewProjection {
         let liveFolderItems = liveFolderSource == nil
             ? []
             : liveFolderManager.visibleItems(for: folder.id)
-        let shortcutHostedGroups = tabManager.splitGroupSidebarOrdering.groups(
-            for: space.id,
-            folderID: folder.id
-        )
+        let visualItems = inventory.folderItems(for: folder.id)
+        let shortcutHostedGroups = visualItems.compactMap { item -> SplitGroup? in
+            guard case .splitGroup(let groupID) = item else { return nil }
+            return inventory.splitGroup(id: groupID)
+        }
         let restorePins = shortcutRestoreGaps
             .filter { $0.container == .folder(folder.id) }
-            .compactMap { tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: $0.pinId) }
+            .compactMap { inventory.pin(id: $0.pinId) }
         let projectionPins = shortcutPins + restorePins
         let projectionPinsById = projectionPins.reduce(into: [UUID: ShortcutPin]()) { result, pin in
             result[pin.id] = pin
@@ -365,9 +367,7 @@ struct SidebarFolderViewProjection {
         self.baseItems = Self.makeBaseItems(
             liveFolderItems: liveFolderItems,
             isLiveFolder: liveFolderSource != nil,
-            visualItems: tabManager.splitGroupSidebarOrdering
-                .resolver(for: space.id)
-                .folderItems(for: folder.id)
+            visualItems: visualItems
         )
         self.splitGroupsById = Dictionary(
             uniqueKeysWithValues: shortcutHostedGroups.map { ($0.id, $0) }
@@ -378,8 +378,9 @@ struct SidebarFolderViewProjection {
                     group.id,
                     SplitGroupSidebarModel.items(
                         for: group,
-                        tabManager: tabManager,
-                        windowID: windowState.id
+                        inventory: inventory,
+                        selection: selection,
+                        windowState: windowState
                     )
                 )
             }
@@ -387,9 +388,8 @@ struct SidebarFolderViewProjection {
         self.shortcutPinsById = projectionPinsById
         self.regularPlaceholderGroupsByPinId = Dictionary(
             uniqueKeysWithValues: uniqueProjectionPins.compactMap { pin in
-                guard let group = tabManager.splitGroupStore.group(
-                    containing: .shortcutPin(pin.id)
-                ), !group.container.isShortcutSidebar else {
+                guard let group = inventory.splitGroup(containing: .shortcutPin(pin.id)),
+                      !group.container.isShortcutSidebar else {
                     return nil
                 }
                 return (pin.id, group)
@@ -397,7 +397,7 @@ struct SidebarFolderViewProjection {
         )
         self.liveTabsByPinId = Dictionary(
             uniqueKeysWithValues: uniqueProjectionPins.compactMap { pin in
-                guard let liveTab = tabManager.shortcutPresentationOwner.shortcutLiveTab(for: pin.id, in: windowState.id) else {
+                guard let liveTab = selection.liveTab(for: pin.id, in: windowState) else {
                     return nil
                 }
                 return (pin.id, liveTab)
@@ -405,7 +405,7 @@ struct SidebarFolderViewProjection {
         )
         self.selectedPinIds = Set(
             uniqueProjectionPins.compactMap { pin in
-                tabManager.shortcutPresentationOwner.shortcutRuntimeAffordanceState(for: pin, in: windowState).isSelected
+                selection.isShortcutSelected(pin, in: windowState)
                     ? pin.id
                     : nil
             }
@@ -444,7 +444,7 @@ struct SidebarFolderViewProjection {
     private static func makeBaseItems(
         liveFolderItems: [SumiLiveFolderItem],
         isLiveFolder: Bool,
-        visualItems: [SplitGroupVisualListItem]
+        visualItems: [SidebarPinnedInventoryItem]
     ) -> [SidebarFolderListItem] {
         if isLiveFolder {
             return liveFolderItems.map { .liveItem($0.id) }
@@ -469,7 +469,8 @@ struct SidebarFolderViewProjectionReader<Content: View>: View {
     let shortcutPins: [ShortcutPin]
     let childFolders: [TabFolder]
     let shortcutRestoreGaps: [ShortcutRestoreGap]
-    let tabManager: TabManager
+    let inventory: SidebarSpaceInventorySnapshot
+    let selection: SidebarWindowSelectionQuery
     let liveFolderManager: SumiLiveFolderManager
     let currentTab: Tab?
     @ViewBuilder let content: (SidebarFolderViewProjection) -> Content
@@ -482,6 +483,8 @@ struct SidebarFolderViewProjectionReader<Content: View>: View {
         shortcutPins: [ShortcutPin],
         childFolders: [TabFolder],
         shortcutRestoreGaps: [ShortcutRestoreGap],
+        inventory: SidebarSpaceInventorySnapshot,
+        selection: SidebarWindowSelectionQuery,
         browserContext: SidebarBrowserContext,
         currentTab: Tab?,
         @ViewBuilder content: @escaping (SidebarFolderViewProjection) -> Content
@@ -491,7 +494,8 @@ struct SidebarFolderViewProjectionReader<Content: View>: View {
         self.shortcutPins = shortcutPins
         self.childFolders = childFolders
         self.shortcutRestoreGaps = shortcutRestoreGaps
-        self.tabManager = browserContext.tabManager
+        self.inventory = inventory
+        self.selection = selection
         self.liveFolderManager = browserContext.liveFolderManager
         self.currentTab = currentTab
         self.content = content
@@ -503,7 +507,8 @@ struct SidebarFolderViewProjectionReader<Content: View>: View {
         shortcutPins: [ShortcutPin],
         childFolders: [TabFolder],
         shortcutRestoreGaps: [ShortcutRestoreGap],
-        tabManager: TabManager,
+        inventory: SidebarSpaceInventorySnapshot,
+        selection: SidebarWindowSelectionQuery,
         liveFolderManager: SumiLiveFolderManager,
         currentTab: Tab?,
         @ViewBuilder content: @escaping (SidebarFolderViewProjection) -> Content
@@ -513,7 +518,8 @@ struct SidebarFolderViewProjectionReader<Content: View>: View {
         self.shortcutPins = shortcutPins
         self.childFolders = childFolders
         self.shortcutRestoreGaps = shortcutRestoreGaps
-        self.tabManager = tabManager
+        self.inventory = inventory
+        self.selection = selection
         self.liveFolderManager = liveFolderManager
         self.currentTab = currentTab
         self.content = content
@@ -527,7 +533,8 @@ struct SidebarFolderViewProjectionReader<Content: View>: View {
                 shortcutPins: shortcutPins,
                 childFolders: childFolders,
                 shortcutRestoreGaps: shortcutRestoreGaps,
-                tabManager: tabManager,
+                inventory: inventory,
+                selection: selection,
                 liveFolderManager: liveFolderManager,
                 currentTab: currentTab,
                 windowState: windowState

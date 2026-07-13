@@ -32,6 +32,9 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
             currentSpaces: { browserHarness.tabManager.spaceStateOwner.spaces },
             windowState: windowState,
             browserContext: browserHarness.context,
+            inventory: browserHarness.roles.inventory,
+            selection: browserHarness.roles.selection,
+            pinProjection: browserHarness.roles.pinProjection,
             dragState: dragState,
             settings: settings,
             allowsInteractiveWork: false,
@@ -80,6 +83,9 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
             currentSpaces: { browserHarness.tabManager.spaceStateOwner.spaces },
             windowState: windowState,
             browserContext: browserHarness.context,
+            inventory: browserHarness.roles.inventory,
+            selection: browserHarness.roles.selection,
+            pinProjection: browserHarness.roles.pinProjection,
             dragState: dragState,
             settings: settings,
             allowsInteractiveWork: true,
@@ -140,6 +146,9 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
             currentSpaces: { browserHarness.tabManager.spaceStateOwner.spaces },
             windowState: windowState,
             browserContext: browserHarness.context,
+            inventory: browserHarness.roles.inventory,
+            selection: browserHarness.roles.selection,
+            pinProjection: browserHarness.roles.pinProjection,
             dragState: dragState,
             settings: settings,
             allowsInteractiveWork: true,
@@ -237,6 +246,9 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
             currentSpaces: { browserHarness.tabManager.spaceStateOwner.spaces },
             windowState: windowState,
             browserContext: browserHarness.context,
+            inventory: browserHarness.roles.inventory,
+            selection: browserHarness.roles.selection,
+            pinProjection: browserHarness.roles.pinProjection,
             dragState: dragState,
             settings: settings,
             allowsInteractiveWork: true,
@@ -320,6 +332,9 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
             currentSpaces: { browserHarness.tabManager.spaceStateOwner.spaces },
             windowState: windowState,
             browserContext: browserHarness.context,
+            inventory: browserHarness.roles.inventory,
+            selection: browserHarness.roles.selection,
+            pinProjection: browserHarness.roles.pinProjection,
             dragState: dragState,
             settings: settings,
             allowsInteractiveWork: false,
@@ -404,6 +419,9 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
             currentSpaces: { browserHarness.tabManager.spaceStateOwner.spaces },
             windowState: windowState,
             browserContext: browserHarness.context,
+            inventory: browserHarness.roles.inventory,
+            selection: browserHarness.roles.selection,
+            pinProjection: browserHarness.roles.pinProjection,
             dragState: dragState,
             settings: settings,
             allowsInteractiveWork: true,
@@ -484,6 +502,9 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
             currentSpaces: { browserHarness.tabManager.spaceStateOwner.spaces },
             windowState: windowState,
             browserContext: browserHarness.context,
+            inventory: browserHarness.roles.inventory,
+            selection: browserHarness.roles.selection,
+            pinProjection: browserHarness.roles.pinProjection,
             dragState: SidebarDragState(),
             settings: settings,
             allowsInteractiveWork: false,
@@ -631,6 +652,9 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
                 currentSpaces: { browserHarness.tabManager.spaceStateOwner.spaces },
                 windowState: windowState,
                 browserContext: browserHarness.context,
+                inventory: browserHarness.roles.inventory,
+                selection: browserHarness.roles.selection,
+                pinProjection: browserHarness.roles.pinProjection,
                 dragState: dragState,
                 settings: settings,
                 allowsInteractiveWork: true,
@@ -757,6 +781,7 @@ private final class TestSidebarBrowserContextHarness {
     let tabManager: TabManager
     let profileManager: ProfileManager
     let context: SidebarBrowserContext
+    let roles: SidebarConsumerTestRoles
 
     private let browserManager: BrowserManager
     private let liveFolderManager: SumiLiveFolderManager
@@ -789,6 +814,7 @@ private final class TestSidebarBrowserContextHarness {
         profileManager = browserManager.profileManager
         profileManager.ensureDefaultProfile()
         liveFolderManager = browserManager.liveFolderManager
+        roles = SidebarConsumerTestSupport.roles(tabManager: tabManager)
 
         let tabManager = tabManager
         let profileManager = profileManager
@@ -801,7 +827,6 @@ private final class TestSidebarBrowserContextHarness {
         let transitionEventRecorder = transitionEventRecorder
 
         context = SidebarBrowserContext(
-            tabManager: tabManager,
             profileManager: profileManager,
             liveFolderManager: liveFolderManager,
             splitQuery: browserManager.splitComposition.query,
@@ -811,10 +836,6 @@ private final class TestSidebarBrowserContextHarness {
             downloadsPopoverPresenter: downloadsPopoverPresenter,
             glanceManager: glanceManager,
             extensionSurfaceStore: extensionSurfaceStore,
-            regularTabs: SidebarRegularTabsController.live(
-                tabManager: tabManager,
-                liveFolderManager: liveFolderManager
-            ),
             presentationActions: SidebarBrowserPresentationActions(
                 showShortcutEditor: { _, _, _, _ in /* No-op. */ },
                 showFolderEditor: { _, _, _, _ in /* No-op. */ },
@@ -826,16 +847,13 @@ private final class TestSidebarBrowserContextHarness {
                 presentSharingServicePicker: { _, _ in /* No-op. */ }
             ),
             headerContext: { _ in fatalError("Unused in SpaceSidebarTransitionCoordinatorTests") },
-            tabStructuralRevision: { 0 },
             isTransitioningProfile: { false },
             currentProfile: { profileManager.profiles.first },
-            currentTab: { _ in tabManager.selectionStateOwner.currentTab },
             extensionToolbarSlots: { _, _ in [] },
             extensionActionBrowserContext: { _ in
                 fatalError("Unused in SpaceSidebarTransitionCoordinatorTests")
             },
             savedSidebarWidth: { _ in BrowserWindowState.sidebarDefaultWidth },
-            performDrop: { _, _, _ in false },
             configureMediaStore: { _, _ in /* No-op. */ },
             spaceTransitions: SidebarSpaceTransitionActions(
                 completePendingSplitGroupFocusIfReady: { _, _ in /* No-op. */ },

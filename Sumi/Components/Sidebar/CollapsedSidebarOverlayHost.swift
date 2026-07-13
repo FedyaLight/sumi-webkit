@@ -1,4 +1,3 @@
-import Combine
 import SwiftUI
 
 private struct ZenCompactSidebarOffset: @preconcurrency AnimatableModifier {
@@ -18,9 +17,16 @@ private struct ZenCompactSidebarOffset: @preconcurrency AnimatableModifier {
 
 struct CollapsedSidebarOverlayHost: View {
     var browserContext: SidebarBrowserContext
+    let inventory: SidebarInventoryProjection
+    let selection: SidebarWindowSelectionQuery
+    let pinProjection: SidebarPinFolderProjection
+    let pinCommands: SidebarPinFolderCommands
+    let spaceLifecycle: SidebarSpaceLifecycle
+    let regularTabs: any SidebarRegularTabsControlling
+    let dragTransactions: SidebarDragTransactionPort
+    let updateStreams: SidebarUpdateStreams
     var updaterService: SumiUpdaterService
     var hostActions: SidebarHostActions
-    var structuralInvalidation: AnyPublisher<Void, Never>
     var windowState: BrowserWindowState
     var windowRegistry: WindowRegistry
     var sumiSettings: SumiSettingsService
@@ -55,9 +61,16 @@ struct CollapsedSidebarOverlayHost: View {
             ZStack {
                 SidebarColumnRepresentable(
                     browserContext: browserContext,
+                    inventory: inventory,
+                    selection: selection,
+                    pinProjection: pinProjection,
+                    pinCommands: pinCommands,
+                    spaceLifecycle: spaceLifecycle,
+                    regularTabs: regularTabs,
+                    dragTransactions: dragTransactions,
+                    updateStreams: updateStreams,
                     updaterService: updaterService,
                     hostActions: hostActions,
-                    structuralInvalidation: structuralInvalidation,
                     windowState: windowState,
                     windowRegistry: windowRegistry,
                     sumiSettings: sumiSettings,

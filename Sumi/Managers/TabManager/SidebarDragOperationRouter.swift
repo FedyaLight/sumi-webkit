@@ -223,7 +223,7 @@ extension SidebarDragOperationRouter.Dependencies {
     static func live(tabManager: TabManager) -> Self {
         Self(
             withStructuralUpdateTransaction: { [weak tabManager] operation in
-                guard let tabManager else { return operation() }
+                guard let tabManager else { return false }
                 return tabManager.structuralLookupCoordinator.withTransaction(operation)
             },
             shortcutPin: { [weak tabManager] id in

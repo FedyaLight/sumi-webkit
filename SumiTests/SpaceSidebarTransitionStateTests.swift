@@ -1513,10 +1513,20 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         settings: SumiSettingsService,
         scrollViewportForSpace: (UUID) -> SpaceSidebarSnapshotViewport? = { _ in nil }
     ) -> SpaceSidebarTransitionSnapshot {
-        SpaceSidebarTransitionSnapshotBuilder.make(
+        let roles = SidebarConsumerTestSupport.roles(
+            tabManager: browserManager.tabManager,
+            windowState: windowState
+        )
+        return SpaceSidebarTransitionSnapshotBuilder.make(
             sourceSpace: sourceSpace,
             destinationSpace: destinationSpace,
-            browserContext: SidebarBrowserContext.live(browserManager: browserManager),
+            browserContext: SidebarBrowserContext.live(
+                browserManager: browserManager,
+                spaceLifecycle: roles.lifecycle
+            ),
+            inventory: roles.inventory,
+            selection: roles.selection,
+            pinProjection: roles.pinProjection,
             windowState: windowState,
             settings: settings,
             scrollViewportForSpace: scrollViewportForSpace

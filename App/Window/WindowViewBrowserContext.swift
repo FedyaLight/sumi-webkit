@@ -1,4 +1,3 @@
-import Combine
 import Foundation
 
 /// Window-level browser boundary handed to `WindowView`: typed feature
@@ -19,8 +18,15 @@ final class WindowViewBrowserContext {
     let findManager: FindManager
     let floatingBarBrowserContext: FloatingBarBrowserContext
     let sidebarBrowserContext: SidebarBrowserContext
+    let sidebarInventory: SidebarInventoryProjection
+    let sidebarSelection: SidebarWindowSelectionQuery
+    let sidebarPinProjection: SidebarPinFolderProjection
+    let sidebarPinCommands: SidebarPinFolderCommands
+    let sidebarSpaceLifecycle: SidebarSpaceLifecycle
+    let sidebarRegularTabs: any SidebarRegularTabsControlling
+    let sidebarDragTransactions: SidebarDragTransactionPort
+    let sidebarUpdates: SidebarUpdateStreams
     let sidebarHostActions: SidebarHostActions
-    let sidebarStructuralInvalidation: AnyPublisher<Void, Never>
 
     private let _nativeModalPresentation: () -> BrowserNativeModalPresentation?
     private let _browsingDataDialogContext: () -> SumiBrowsingDataDialogContext
@@ -53,8 +59,15 @@ final class WindowViewBrowserContext {
         findManager: FindManager,
         floatingBarBrowserContext: FloatingBarBrowserContext,
         sidebarBrowserContext: SidebarBrowserContext,
+        sidebarInventory: SidebarInventoryProjection,
+        sidebarSelection: SidebarWindowSelectionQuery,
+        sidebarPinProjection: SidebarPinFolderProjection,
+        sidebarPinCommands: SidebarPinFolderCommands,
+        sidebarSpaceLifecycle: SidebarSpaceLifecycle,
+        sidebarRegularTabs: any SidebarRegularTabsControlling,
+        sidebarDragTransactions: SidebarDragTransactionPort,
+        sidebarUpdates: SidebarUpdateStreams,
         sidebarHostActions: SidebarHostActions,
-        sidebarStructuralInvalidation: AnyPublisher<Void, Never>,
         sidebarHostRecoveryCoordinator: SidebarHostRecoveryHandling,
         nativeModalPresentation: @escaping () -> BrowserNativeModalPresentation?,
         browsingDataDialogContext: @escaping () -> SumiBrowsingDataDialogContext,
@@ -85,8 +98,15 @@ final class WindowViewBrowserContext {
         self.findManager = findManager
         self.floatingBarBrowserContext = floatingBarBrowserContext
         self.sidebarBrowserContext = sidebarBrowserContext
+        self.sidebarInventory = sidebarInventory
+        self.sidebarSelection = sidebarSelection
+        self.sidebarPinProjection = sidebarPinProjection
+        self.sidebarPinCommands = sidebarPinCommands
+        self.sidebarSpaceLifecycle = sidebarSpaceLifecycle
+        self.sidebarRegularTabs = sidebarRegularTabs
+        self.sidebarDragTransactions = sidebarDragTransactions
+        self.sidebarUpdates = sidebarUpdates
         self.sidebarHostActions = sidebarHostActions
-        self.sidebarStructuralInvalidation = sidebarStructuralInvalidation
         self.sidebarHostRecoveryCoordinator = sidebarHostRecoveryCoordinator
         self._nativeModalPresentation = nativeModalPresentation
         self._browsingDataDialogContext = browsingDataDialogContext

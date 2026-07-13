@@ -336,7 +336,7 @@ extension SidebarRegularTabDragService.Dependencies {
                 tabManager?.shortcutPinCommandOwner.reorderSpacePinned(pin, in: spaceId, to: index) ?? false
             },
             withStructuralUpdateTransaction: { [weak tabManager] operation in
-                guard let tabManager else { return operation() }
+                guard let tabManager else { return false }
                 return tabManager.structuralLookupCoordinator.withTransaction(operation)
             },
             reorderRegularTab: { [weak tabManager] tab, spaceId, index in

@@ -11,6 +11,8 @@ struct TabFolderHeaderView: View {
     let folder: TabFolder
     let space: Space
     let browserContext: SidebarBrowserContext
+    let inventory: SidebarSpaceInventorySnapshot
+    let selection: SidebarWindowSelectionQuery
     let parentFolderId: UUID?
     let topLevelIndex: Int
     let contentProjection: SidebarFolderContentProjection
@@ -153,7 +155,10 @@ struct TabFolderHeaderView: View {
 
     private var folderSearchPopoverRequest: FolderSearchPopoverRequest? {
         let builder = FolderSearchCandidateBuilder(
-            browserContext: browserContext,
+            inventory: inventory,
+            selection: selection,
+            windowState: windowState,
+            liveFolderProvider: browserContext.liveFolderManager,
             actions: FolderSearchActivationActions(
                 activateShortcut: { pin in
                     onActivateShortcutPin(pin)

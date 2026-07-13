@@ -14,6 +14,7 @@ struct SpacesListItem: View {
 
     let space: Space
     let browserContext: SidebarBrowserContext
+    let spaceLifecycle: SidebarSpaceLifecycle
     let isActive: Bool
     let isFaded: Bool
     /// When true the item collapses its icon to a small dot (the strip's
@@ -30,6 +31,7 @@ struct SpacesListItem: View {
     init(
         space: Space,
         browserContext: SidebarBrowserContext,
+        spaceLifecycle: SidebarSpaceLifecycle,
         isActive: Bool,
         isFaded: Bool,
         showsCompactDot: Bool,
@@ -40,6 +42,7 @@ struct SpacesListItem: View {
     ) {
         self.space = space
         self.browserContext = browserContext
+        self.spaceLifecycle = spaceLifecycle
         self.isActive = isActive
         self.isFaded = isFaded
         self.showsCompactDot = showsCompactDot
@@ -108,9 +111,12 @@ struct SpacesListItem: View {
         .background(EmojiPickerAnchor(manager: emojiManager))
         .onChange(of: emojiManager.selectedEmoji) { _, newValue in
             guard !newValue.isEmpty else { return }
-            space.icon = SumiPersistentGlyph.normalizedSpaceIconValue(newValue)
-            browserContext.tabManager.structuralPersistence.markAllSpacesStructurallyDirty()
-            browserContext.tabManager.structuralPersistence.scheduleStructuralPersistence()
+            let icon = SumiPersistentGlyph.normalizedSpaceIconValue(newValue)
+            do {
+                try spaceLifecycle.updateSpaceIcon(space.id, to: icon)
+            } catch {
+                RuntimeDiagnostics.emit("⚠️ Failed to update space icon \(space.id.uuidString):", error)
+            }
         }
     }
 
@@ -129,7 +135,7 @@ struct SpacesListItem: View {
 
     private func spaceContextMenuEntries() -> [SidebarContextMenuEntry] {
         let deleteSpaceAction: (() -> Void)?
-        if browserContext.tabManager.spaceStateOwner.spaces.count > 1 {
+        if spaceLifecycle.canDeleteSpace() {
             deleteSpaceAction = { showDeleteConfirmation() }
         } else {
             deleteSpaceAction = nil

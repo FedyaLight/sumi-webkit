@@ -12,6 +12,11 @@ import SwiftUI
 struct SpacePinnedActionOwner {
     let space: Space
     let browserContext: SidebarBrowserContext
+    let inventory: SidebarSpaceInventorySnapshot
+    let selection: SidebarWindowSelectionQuery
+    let pinProjection: SidebarPinFolderProjection
+    let pinCommands: SidebarPinFolderCommands
+    let spaceLifecycle: SidebarSpaceLifecycle
     let windowState: BrowserWindowState
     let themeContext: ResolvedThemeContext
     let contentMutationAnimation: Animation?
@@ -20,32 +25,33 @@ struct SpacePinnedActionOwner {
         let presentationState = shortcutPresentationState(for: pin)
         let profiles = browserContext.profileManager.profiles
         let folderChoices = makeSidebarContextMenuFolderChoices(
-            folders: browserContext.tabManager.folderCollectionStateOwner.folders(for: space.id)
+            folders: inventory.foldersByID.values
                 .filter { !browserContext.liveFolderManager.isLiveFolder($0.id) },
             selectedFolderId: pin.folderId
         )
         let spaceChoices = makeSidebarContextMenuSpaceChoices(
-            spaces: browserContext.tabManager.spaceStateOwner.spaces,
+            spaces: spaceLifecycle.availableSpaces(isIncognito: false, ephemeralSpaces: []),
             selectedSpaceId: pin.spaceId
         )
         let profileChoices = makeSidebarContextMenuProfileChoices(
             profiles: profiles,
-            selectedProfileId: browserContext.tabManager.shortcutPinRuntimeResolutionOwner.resolvedExecutionProfileId(
+            selectedProfileId: pinProjection.executionProfileID(
                 for: pin,
-                currentSpaceId: space.id
+                currentSpaceID: space.id
             )
         )
-        let addToEssentialsAction: (() -> Void)? = browserContext.tabManager.essentialsShortcutPlacementOwner.canAddURL(
-            pin.launchURL,
-            using: .init(windowState: windowState, spaceId: space.id)
+        let addToEssentialsAction: (() -> Void)? = pinProjection.canAddToEssentials(
+            url: pin.launchURL,
+            in: windowState,
+            spaceID: space.id
         )
             ? { pinShortcutGlobally(pin) }
             : nil
         let savedURLDriftActions: SidebarSavedURLDriftActions? =
-            browserContext.tabManager.shortcutPresentationOwner.shortcutHasDrifted(pin, in: windowState)
+            selection.hasSavedURLDrift(pin, in: windowState)
                 ? .init(
                     onBackToSavedURL: { resetShortcutPin(pin) },
-                    onUseCurrentPageAsSavedURL: { _ = browserContext.tabManager.shortcutPinCommandOwner.replaceShortcutPinURLWithCurrent(pin, in: windowState) }
+                    onUseCurrentPageAsSavedURL: { _ = pinCommands.replaceSavedURLWithCurrent(pin, in: windowState) }
                 )
                 : nil
         let unloadAction: (() -> Void)? = presentationState.isOpenLive
@@ -84,10 +90,7 @@ struct SpacePinnedActionOwner {
                 profileTarget: .init(
                     choices: profileChoices,
                     onSelect: { profileId in
-                        browserContext.tabManager.profileAssignments.shortcuts.assign(
-                            pin,
-                            toExecutionProfile: profileId
-                        )
+                        _ = pinCommands.assignExecutionProfile(pin, profileID: profileId)
                     }
                 ),
                 addToEssentials: addToEssentialsAction,
@@ -102,25 +105,25 @@ struct SpacePinnedActionOwner {
 
     func ungroupFolder(_ folder: TabFolder) {
         mutatePinnedContent {
-            browserContext.tabManager.folderMutationOwner.ungroupFolder(folder.id)
+            _ = pinCommands.ungroupFolder(folder.id)
         }
     }
 
     func deleteFolder(_ folder: TabFolder) {
-        let childCount = browserContext.tabManager.spacePinnedStructureOwner.folderRecursiveChildCount(for: folder.id, in: space.id)
+        let childCount = pinCommands.recursiveChildCount(for: folder.id, in: space.id) ?? 0
         guard childCount == 0 else {
             confirmDeleteFolder(folder, childCount: childCount)
             return
         }
 
         mutatePinnedContent {
-            browserContext.tabManager.folderMutationOwner.deleteFolder(folder.id)
+            _ = pinCommands.deleteFolder(folder.id)
         }
     }
 
     func removeShortcutPin(_ pin: ShortcutPin) {
         mutatePinnedContent {
-            browserContext.tabManager.shortcutPinCommandOwner.removeShortcutPin(pin)
+            _ = pinCommands.remove(pin)
         }
     }
 
@@ -143,7 +146,7 @@ struct SpacePinnedActionOwner {
             themeContext: themeContext,
             onDelete: {
                 mutatePinnedContent {
-                    browserContext.tabManager.folderMutationOwner.deleteFolder(folder.id)
+                    _ = pinCommands.deleteFolder(folder.id)
                 }
             }
         )
@@ -153,7 +156,7 @@ struct SpacePinnedActionOwner {
         SidebarShortcutPinActions.resetToLaunchURL(
             pin,
             in: windowState,
-            tabManager: browserContext.tabManager
+            commands: pinCommands
         )
     }
 
@@ -166,36 +169,14 @@ struct SpacePinnedActionOwner {
     }
 
     func moveShortcutPin(_ pin: ShortcutPin, toFolder folderId: UUID) {
-        guard let targetFolder = browserContext.tabManager.folderCollectionStateOwner.folder(by: folderId) else { return }
-        let targetIndex = browserContext.tabManager.shortcutPinCollectionStateOwner.folderPinnedPins(
-            for: folderId,
-            in: targetFolder.spaceId
-        ).count
-
         mutatePinnedContent {
-            _ = browserContext.tabManager.shortcutPinCommandOwner.moveShortcutPin(
-                pin,
-                to: .spacePinned,
-                profileId: nil,
-                spaceId: targetFolder.spaceId,
-                folderId: folderId,
-                index: targetIndex
-            )
+            _ = pinCommands.move(pin, toFolder: folderId)
         }
     }
 
     func moveShortcutPin(_ pin: ShortcutPin, toSpace targetSpaceId: UUID) {
-        let targetIndex = browserContext.tabManager.spacePinnedStructureOwner.topLevelSpacePinnedItems(for: targetSpaceId).count
-
         mutatePinnedContent {
-            _ = browserContext.tabManager.shortcutPinCommandOwner.moveShortcutPin(
-                pin,
-                to: .spacePinned,
-                profileId: nil,
-                spaceId: targetSpaceId,
-                folderId: nil,
-                index: targetIndex
-            )
+            _ = pinCommands.move(pin, toSpace: targetSpaceId)
         }
     }
 
@@ -226,10 +207,10 @@ struct SpacePinnedActionOwner {
     }
 
     private func shortcutPresentationState(for pin: ShortcutPin) -> ShortcutPresentationState {
-        browserContext.tabManager.shortcutPresentationOwner.shortcutPresentationState(for: pin, in: windowState)
+        selection.presentationState(for: pin, in: windowState)
     }
 
     private func activeShortcutTab(for pin: ShortcutPin) -> Tab? {
-        browserContext.tabManager.shortcutPresentationOwner.shortcutLiveTab(for: pin.id, in: windowState.id)
+        selection.liveTab(for: pin.id, in: windowState)
     }
 }

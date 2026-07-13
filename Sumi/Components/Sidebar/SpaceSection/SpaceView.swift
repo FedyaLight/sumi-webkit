@@ -41,6 +41,12 @@ struct ShortcutRestoreGap: Identifiable, Hashable {
 struct SpaceView: View {
     let space: Space
     let browserContext: SidebarBrowserContext
+    let inventory: SidebarSpaceInventorySnapshot
+    let selection: SidebarWindowSelectionQuery
+    let pinProjection: SidebarPinFolderProjection
+    let pinCommands: SidebarPinFolderCommands
+    let spaceLifecycle: SidebarSpaceLifecycle
+    let regularTabs: any SidebarRegularTabsControlling
     let renderMode: SpaceViewRenderMode
     let allowsInteraction: Bool
     let scrollHoverCoordinator: NativeSurfaceScrollHoverCoordinator
@@ -79,6 +85,7 @@ struct SpaceView: View {
     var spaceTitleActions: SpaceTitleActions {
         SpaceTitleActionOwner(
             browserContext: browserContext,
+            spaceLifecycle: spaceLifecycle,
             space: space,
             windowState: windowState,
             windowRegistry: windowRegistry,
@@ -91,9 +98,7 @@ struct SpaceView: View {
     }
 
     var body: some View {
-        let _ = browserContext.tabStructuralRevision()
-
-        return VStack(spacing: 4) {
+        VStack(spacing: 4) {
             SpaceTitle(
                 space: space,
                 actions: spaceTitleActions,
@@ -173,15 +178,15 @@ extension SpaceView {
         memberID: SplitMemberID
     ) -> ShortcutRestoreGap? {
         SpaceShortcutRestorePlanner(
-            browserContext: browserContext,
+            inventory: inventory,
             space: space
         ).shortcutRestoreGap(groupID: groupID, memberID: memberID)
     }
 
     var elevatedFolderIds: Set<UUID> {
         SpaceElevatedFolderOwner(
-            browserContext: browserContext,
-            space: space,
+            inventory: inventory,
+            selection: selection,
             windowState: windowState
         ).elevatedFolderIds
     }

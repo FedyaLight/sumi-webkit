@@ -1,58 +1,78 @@
-//
-//  SidebarSpacePageModel.swift
-//  Sumi
-//
-//
-
 import Combine
 import Foundation
 
-/// Page-scoped observation hub for sidebar structural managers.
+/// Page-scoped subscriptions for the mounted sidebar.
 ///
-/// Forwards structural manager changes so `SpacesSideBarView` can observe one
-/// page-scoped model. The sidebar does not render transient split previews:
-/// durable topology arrives through `TabManager`, while window-local selection
-/// arrives through the `BrowserWindowState` environment.
+/// The publisher values are deliberately narrow: structural inventory,
+/// profiles, and live-folder content each invalidate only their consumers.
+/// Constructing the production streams installs no observers while the page
+/// is unmounted.
 @MainActor
 final class SidebarSpacePageModel: ObservableObject {
-    @Published var structuralRevision: UInt = 0
+    @Published private(set) var structuralRevision: UInt
+    @Published private(set) var profiles: [Profile]
+    @Published private(set) var profileRuntimeRevision: UInt = 0
+    @Published private(set) var liveFolderRevision: UInt = 0
 
-    let tabManager: TabManager
     let profileManager: ProfileManager
     let liveFolderManager: SumiLiveFolderManager
-    private let tabStructuralRevision: () -> UInt
+    private let spaceLifecycle: SidebarSpaceLifecycle
+    private let updateStreams: SidebarUpdateStreams
     private var cancellables = Set<AnyCancellable>()
 
-    init(browserContext: SidebarBrowserContext) {
-        tabManager = browserContext.tabManager
+    init(
+        browserContext: SidebarBrowserContext,
+        spaceLifecycle: SidebarSpaceLifecycle,
+        updateStreams: SidebarUpdateStreams
+    ) {
         profileManager = browserContext.profileManager
         liveFolderManager = browserContext.liveFolderManager
-        tabStructuralRevision = browserContext.tabStructuralRevision
-        structuralRevision = tabStructuralRevision()
-
-        forwardObjectWillChange(from: tabManager)
-        forwardObjectWillChange(from: profileManager)
-        forwardObjectWillChange(from: liveFolderManager)
+        self.spaceLifecycle = spaceLifecycle
+        self.updateStreams = updateStreams
+        structuralRevision = 0
+        profiles = browserContext.profileManager.profiles
     }
 
-    func bump() {
-        structuralRevision &+= 1
-    }
+    func setActive(_ isActive: Bool) {
+        if !isActive {
+            cancellables.removeAll()
+            return
+        }
+        guard cancellables.isEmpty else { return }
 
-    func refreshStructuralRevision() {
-        structuralRevision = tabStructuralRevision()
+        updateStreams.inventoryRevision
+            .receive(on: RunLoop.main)
+            .sink { [weak self] revision in
+                self?.structuralRevision = revision
+            }
+            .store(in: &cancellables)
+
+        updateStreams.profiles
+            .receive(on: RunLoop.main)
+            .sink { [weak self] profiles in
+                self?.profiles = profiles
+            }
+            .store(in: &cancellables)
+
+        updateStreams.profileRuntimeChanged
+            .receive(on: RunLoop.main)
+            .sink { [weak self] in
+                self?.profileRuntimeRevision &+= 1
+            }
+            .store(in: &cancellables)
+
+        updateStreams.liveFoldersChanged
+            .receive(on: RunLoop.main)
+            .sink { [weak self] in
+                self?.liveFolderRevision &+= 1
+            }
+            .store(in: &cancellables)
     }
 
     func availableSpaces(isIncognito: Bool, ephemeralSpaces: [Space]) -> [Space] {
-        isIncognito ? ephemeralSpaces : tabManager.spaceStateOwner.spaces
-    }
-
-    private func forwardObjectWillChange<T: ObservableObject>(from source: T) {
-        source.objectWillChange
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _ in
-                self?.objectWillChange.send()
-            }
-            .store(in: &cancellables)
+        spaceLifecycle.availableSpaces(
+            isIncognito: isIncognito,
+            ephemeralSpaces: ephemeralSpaces
+        )
     }
 }

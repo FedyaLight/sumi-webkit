@@ -40,26 +40,23 @@ struct FolderSearchActivationActions {
 
 @MainActor
 struct FolderSearchCandidateBuilder {
-    let tabManager: TabManager
+    let inventory: SidebarSpaceInventorySnapshot
+    let selection: SidebarWindowSelectionQuery
+    let windowState: BrowserWindowState
     let liveFolderProvider: FolderSearchLiveFolderProviding
     let actions: FolderSearchActivationActions
 
     init(
-        tabManager: TabManager,
+        inventory: SidebarSpaceInventorySnapshot,
+        selection: SidebarWindowSelectionQuery,
+        windowState: BrowserWindowState,
         liveFolderProvider: FolderSearchLiveFolderProviding,
         actions: FolderSearchActivationActions
     ) {
-        self.tabManager = tabManager
+        self.inventory = inventory
+        self.selection = selection
+        self.windowState = windowState
         self.liveFolderProvider = liveFolderProvider
-        self.actions = actions
-    }
-
-    init(
-        browserContext: SidebarBrowserContext,
-        actions: FolderSearchActivationActions
-    ) {
-        self.tabManager = browserContext.tabManager
-        self.liveFolderProvider = browserContext.liveFolderManager
         self.actions = actions
     }
 
@@ -98,16 +95,16 @@ struct FolderSearchCandidateBuilder {
             }
         }
 
-        return tabManager.spacePinnedStructureOwner.folderChildVisualItems(for: folderID, in: space.id).flatMap { item -> [FolderSearchCandidate] in
+        return inventory.folderItems(for: folderID).flatMap { item -> [FolderSearchCandidate] in
             switch item {
             case .shortcut(let pinID):
                 guard !visibleCollapsedProjectionIDs.contains(pinID),
-                      let pin = tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: pinID)
+                      let pin = inventory.pin(id: pinID)
                 else { return [] }
                 return [shortcutCandidate(pin, folderPath: folderPath)]
 
             case .folder(let childFolderID):
-                guard let childFolder = tabManager.folderCollectionStateOwner.folder(by: childFolderID) else {
+                guard let childFolder = inventory.folder(id: childFolderID) else {
                     return []
                 }
                 return candidates(
@@ -119,10 +116,15 @@ struct FolderSearchCandidateBuilder {
                 )
 
             case .splitGroup(let groupID):
-                guard let group = tabManager.splitGroupStore.group(id: groupID) else {
+                guard let group = inventory.splitGroup(id: groupID) else {
                     return []
                 }
-                return SplitGroupSidebarModel.items(for: group, tabManager: tabManager).map { item in
+                return SplitGroupSidebarModel.items(
+                    for: group,
+                    inventory: inventory,
+                    selection: selection,
+                    windowState: windowState
+                ).map { item in
                     splitGroupCandidate(
                         item,
                         group: group,

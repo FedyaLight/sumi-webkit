@@ -222,6 +222,9 @@ enum SpaceSidebarTransitionSnapshotBuilder {
         sourceSpace: Space,
         destinationSpace: Space,
         browserContext: SidebarBrowserContext,
+        inventory: SidebarInventoryProjection,
+        selection: SidebarWindowSelectionQuery,
+        pinProjection: SidebarPinFolderProjection,
         windowState: BrowserWindowState,
         settings: SumiSettingsService,
         scrollViewportForSpace: (UUID) -> SpaceSidebarSnapshotViewport? = { _ in nil }
@@ -245,6 +248,9 @@ enum SpaceSidebarTransitionSnapshotBuilder {
             for: sourceSpace,
             profileId: sourceProfileId,
             browserContext: browserContext,
+            inventory: inventory,
+            selection: selection,
+            pinProjection: pinProjection,
             windowState: windowState,
             settings: settings,
             scrollViewport: scrollViewportForSpace(sourceSpace.id) ?? .zero
@@ -253,6 +259,9 @@ enum SpaceSidebarTransitionSnapshotBuilder {
             for: destinationSpace,
             profileId: destinationProfileId,
             browserContext: browserContext,
+            inventory: inventory,
+            selection: selection,
+            pinProjection: pinProjection,
             windowState: windowState,
             settings: settings,
             scrollViewport: scrollViewportForSpace(destinationSpace.id) ?? .zero
@@ -260,7 +269,10 @@ enum SpaceSidebarTransitionSnapshotBuilder {
         let stationaryEssentials = sharedEssentials && !windowState.isIncognito
             ? essentialsSnapshot(
                 profileId: sourceProfileId,
-                browserContext: browserContext,
+                inventory: inventory,
+                spaceInventory: inventory.snapshot(for: sourceSpace.id),
+                selection: selection,
+                pinProjection: pinProjection,
                 windowState: windowState
             )
             : nil
@@ -276,20 +288,21 @@ enum SpaceSidebarTransitionSnapshotBuilder {
         for space: Space,
         profileId: UUID?,
         browserContext: SidebarBrowserContext,
+        inventory: SidebarInventoryProjection,
+        selection: SidebarWindowSelectionQuery,
+        pinProjection: SidebarPinFolderProjection,
         windowState: BrowserWindowState,
         settings: SumiSettingsService,
         scrollViewport: SpaceSidebarSnapshotViewport
     ) -> SpaceSidebarPageSnapshot {
-        let projection = windowState.isIncognito
-            ? nil
-            : browserContext.tabManager.spaceLauncherProjection.projection(
-                for: space.id,
-                in: windowState.id
-            )
+        let projection = windowState.isIncognito ? nil : inventory.snapshot(for: space.id)
         let tabs = windowState.isIncognito
             ? windowState.ephemeralTabs.sorted { $0.index < $1.index }
-            : (projection?.regularTabs ?? browserContext.tabManager.regularTabCollectionOwner.tabs(in: space))
-        let regularTabs = tabs.map { tabSnapshot($0, currentTabId: windowState.currentTabId) }
+            : (projection?.regularTabs ?? [])
+        let currentTabID = selection.selectedTabID(in: windowState)
+        let regularTabs = tabs.map {
+            tabSnapshot($0, currentTabId: currentTabID)
+        }
 
         return SpaceSidebarPageSnapshot(
             spaceId: space.id,
@@ -305,12 +318,16 @@ enum SpaceSidebarTransitionSnapshotBuilder {
                 ? nil
                 : essentialsSnapshot(
                     profileId: profileId,
-                    browserContext: browserContext,
+                    inventory: inventory,
+                    spaceInventory: projection,
+                    selection: selection,
+                    pinProjection: pinProjection,
                     windowState: windowState
                 ),
             pinnedItems: pinnedItemsSnapshot(
                 projection: projection,
-                browserContext: browserContext,
+                selection: selection,
+                pinProjection: pinProjection,
                 windowState: windowState
             ),
             regularTabs: regularTabs,
@@ -371,17 +388,22 @@ enum SpaceSidebarTransitionSnapshotBuilder {
 
     private static func essentialsSnapshot(
         profileId: UUID?,
-        browserContext: SidebarBrowserContext,
+        inventory: SidebarInventoryProjection,
+        spaceInventory: SidebarSpaceInventorySnapshot?,
+        selection: SidebarWindowSelectionQuery,
+        pinProjection: SidebarPinFolderProjection,
         windowState: BrowserWindowState
     ) -> EssentialsSnapshot {
         EssentialsSnapshot(
             items: profileId == nil
                 ? []
-                : browserContext.tabManager.shortcutPinCollectionStateOwner.essentialPins(for: profileId).map {
+                : inventory.essentialPins(profileID: profileId).map {
                     shortcutSnapshot(
                         for: $0,
-                        liveTab: browserContext.tabManager.shortcutPresentationOwner.shortcutLiveTab(for: $0.id, in: windowState.id),
-                        browserContext: browserContext,
+                        liveTab: selection.liveTab(for: $0.id, in: windowState),
+                        inventory: spaceInventory,
+                        selection: selection,
+                        pinProjection: pinProjection,
                         windowState: windowState
                     )
                 }
@@ -392,21 +414,30 @@ enum SpaceSidebarTransitionSnapshotBuilder {
         let childFoldersByParentId: [UUID: [TabFolder]]
         let folderPinsByFolderId: [UUID: [ShortcutPin]]
         let liveTabsByPinId: [UUID: Tab]
-        let browserContext: SidebarBrowserContext
+        let inventory: SidebarSpaceInventorySnapshot
+        let selection: SidebarWindowSelectionQuery
+        let pinProjection: SidebarPinFolderProjection
         let windowState: BrowserWindowState
     }
 
     private static func pinnedItemsSnapshot(
-        projection: SpaceLauncherProjectionSnapshot?,
-        browserContext: SidebarBrowserContext,
+        projection: SidebarSpaceInventorySnapshot?,
+        selection: SidebarWindowSelectionQuery,
+        pinProjection: SidebarPinFolderProjection,
         windowState: BrowserWindowState
     ) -> [SpacePinnedItemSnapshot] {
         guard let projection else { return [] }
         let folderContext = FolderSnapshotContext(
-            childFoldersByParentId: projection.childFolders,
-            folderPinsByFolderId: projection.folderPins,
-            liveTabsByPinId: projection.liveTabsByPinId,
-            browserContext: browserContext,
+            childFoldersByParentId: projection.childFoldersByParentID,
+            folderPinsByFolderId: projection.folderPinsByFolderID,
+            liveTabsByPinId: Dictionary(
+                uniqueKeysWithValues: projection.pinsByID.values.compactMap { pin in
+                    selection.liveTab(for: pin.id, in: windowState).map { (pin.id, $0) }
+                }
+            ),
+            inventory: projection,
+            selection: selection,
+            pinProjection: pinProjection,
             windowState: windowState
         )
 
@@ -429,8 +460,10 @@ enum SpaceSidebarTransitionSnapshotBuilder {
                     SpacePinnedItemSnapshot.shortcut(
                         shortcutSnapshot(
                             for: pin,
-                            liveTab: projection.liveTabsByPinId[pin.id],
-                            browserContext: browserContext,
+                            liveTab: selection.liveTab(for: pin.id, in: windowState),
+                            inventory: projection,
+                            selection: selection,
+                            pinProjection: pinProjection,
                             windowState: windowState
                         )
                     )
@@ -458,14 +491,16 @@ enum SpaceSidebarTransitionSnapshotBuilder {
         childFoldersByParentId: [UUID: [TabFolder]],
         folderPinsByFolderId: [UUID: [ShortcutPin]],
         liveTabsByPinId: [UUID: Tab],
+        selection: SidebarWindowSelectionQuery,
         windowState: BrowserWindowState
     ) -> Bool {
-        if let currentShortcutPinId = windowState.currentShortcutPinId {
-            if doesFolderContainPin(folderId: folderId, pinId: currentShortcutPinId, childFoldersByParentId: childFoldersByParentId, folderPinsByFolderId: folderPinsByFolderId) {
+        for pin in folderPinsByFolderId.values.flatMap({ $0 })
+        where selection.isShortcutSelected(pin, in: windowState) {
+            if doesFolderContainPin(folderId: folderId, pinId: pin.id, childFoldersByParentId: childFoldersByParentId, folderPinsByFolderId: folderPinsByFolderId) {
                 return true
             }
         }
-        if let currentTabId = windowState.currentTabId {
+        if let currentTabId = selection.selectedTabID(in: windowState) {
             if doesFolderContainLiveTab(folderId: folderId, tabId: currentTabId, childFoldersByParentId: childFoldersByParentId, folderPinsByFolderId: folderPinsByFolderId, liveTabsByPinId: liveTabsByPinId) {
                 return true
             }
@@ -547,7 +582,9 @@ enum SpaceSidebarTransitionSnapshotBuilder {
                     shortcutSnapshot(
                         for: pin,
                         liveTab: context.liveTabsByPinId[pin.id],
-                        browserContext: context.browserContext,
+                        inventory: context.inventory,
+                        selection: context.selection,
+                        pinProjection: context.pinProjection,
                         windowState: context.windowState
                     )
                 )
@@ -557,6 +594,7 @@ enum SpaceSidebarTransitionSnapshotBuilder {
                 childFoldersByParentId: context.childFoldersByParentId,
                 folderPinsByFolderId: context.folderPinsByFolderId,
                 liveTabsByPinId: context.liveTabsByPinId,
+                selection: context.selection,
                 windowState: context.windowState
             )
         }
@@ -610,7 +648,9 @@ enum SpaceSidebarTransitionSnapshotBuilder {
                         shortcutSnapshot(
                             for: pin,
                             liveTab: context.liveTabsByPinId[pin.id],
-                            browserContext: context.browserContext,
+                            inventory: context.inventory,
+                            selection: context.selection,
+                            pinProjection: context.pinProjection,
                             windowState: context.windowState
                         )
                     )
@@ -651,26 +691,21 @@ enum SpaceSidebarTransitionSnapshotBuilder {
     private static func shortcutSnapshot(
         for pin: ShortcutPin,
         liveTab: Tab?,
-        browserContext: SidebarBrowserContext,
+        inventory: SidebarSpaceInventorySnapshot?,
+        selection: SidebarWindowSelectionQuery,
+        pinProjection: SidebarPinFolderProjection,
         windowState: BrowserWindowState
     ) -> SpaceShortcutSnapshot {
-        let presentationState = browserContext.tabManager.shortcutPresentationOwner.shortcutPresentationState(
+        let presentationState = selection.presentationState(for: pin, in: windowState)
+        let faviconPartition = pinProjection.faviconPartition(
             for: pin,
-            in: windowState
-        )
-        let faviconPartition = browserContext.tabManager.shortcutPinRuntimeResolutionOwner.resolvedFaviconPartition(
-            for: pin,
-            currentSpaceId: pin.spaceId ?? windowState.currentSpaceId
+            currentSpaceID: pin.spaceId ?? windowState.currentSpaceId
         )
         let isInVisibleSplit = liveTab.map {
-            browserContext.splitQuery.contains(tabID: $0.id, in: windowState.id)
+            selection.selectedSplitGroup(in: windowState)?.contains(.regularTab($0.id)) == true
         } == true
-        let essentialRuntimeState = browserContext.tabManager.shortcutPresentationOwner.essentialRuntimeState(
-            for: pin,
-            in: windowState,
-            splitQuery: browserContext.splitQuery
-        )
-        let isSplitPlaceholder = browserContext.tabManager.splitGroupStore.group(
+        let essentialRuntimeState = selection.essentialRuntimeState(for: pin, in: windowState)
+        let isSplitPlaceholder = inventory?.splitGroup(
             containing: .shortcutPin(pin.id)
         ).map { !$0.container.isShortcutSidebar } == true
 

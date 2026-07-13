@@ -81,9 +81,16 @@ struct WindowView: View {
                             chromeBackgroundResolvedThemeContext: resolvedThemeContext,
                             windowChromeSize: windowChromeSize,
                             browserContext: browserContext.sidebarBrowserContext,
+                            inventory: browserContext.sidebarInventory,
+                            selection: browserContext.sidebarSelection,
+                            pinProjection: browserContext.sidebarPinProjection,
+                            pinCommands: browserContext.sidebarPinCommands,
+                            spaceLifecycle: browserContext.sidebarSpaceLifecycle,
+                            regularTabs: browserContext.sidebarRegularTabs,
+                            dragTransactions: browserContext.sidebarDragTransactions,
+                            updateStreams: browserContext.sidebarUpdates,
                             updaterService: updaterService,
                             hostActions: browserContext.sidebarHostActions,
-                            structuralInvalidation: browserContext.sidebarStructuralInvalidation,
                             sidebarDragState: sidebarDragState
                         )
                             .environmentObject(hoverSidebarManager)
@@ -339,9 +346,16 @@ struct WindowView: View {
 
         SidebarColumnRepresentable(
             browserContext: browserContext.sidebarBrowserContext,
+            inventory: browserContext.sidebarInventory,
+            selection: browserContext.sidebarSelection,
+            pinProjection: browserContext.sidebarPinProjection,
+            pinCommands: browserContext.sidebarPinCommands,
+            spaceLifecycle: browserContext.sidebarSpaceLifecycle,
+            regularTabs: browserContext.sidebarRegularTabs,
+            dragTransactions: browserContext.sidebarDragTransactions,
+            updateStreams: browserContext.sidebarUpdates,
             updaterService: updaterService,
             hostActions: browserContext.sidebarHostActions,
-            structuralInvalidation: browserContext.sidebarStructuralInvalidation,
             windowState: windowState,
             windowRegistry: windowRegistry,
             sumiSettings: sumiSettings,

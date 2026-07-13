@@ -35,21 +35,47 @@ struct SpacesSideBarView: View {
 
     @State var isSidebarHovered: Bool = false
     @State var transitionCoordinator = SpaceSidebarTransitionCoordinator()
-    @ObservedObject var pageModel: SidebarSpacePageModel
-    @ObservedObject var chromeModel: SidebarChromeModel
+    @StateObject var pageModel: SidebarSpacePageModel
+    @StateObject var chromeModel: SidebarChromeModel
     @StateObject var scrollHoverCoordinator = NativeSurfaceScrollHoverCoordinator()
     let browserContext: SidebarBrowserContext
+    let inventory: SidebarInventoryProjection
+    let selection: SidebarWindowSelectionQuery
+    let pinProjection: SidebarPinFolderProjection
+    let pinCommands: SidebarPinFolderCommands
+    let spaceLifecycle: SidebarSpaceLifecycle
+    let regularTabs: any SidebarRegularTabsControlling
+    let dragTransactions: SidebarDragTransactionPort
 
     init(
         browserContext: SidebarBrowserContext,
+        inventory: SidebarInventoryProjection,
+        selection: SidebarWindowSelectionQuery,
+        pinProjection: SidebarPinFolderProjection,
+        pinCommands: SidebarPinFolderCommands,
+        spaceLifecycle: SidebarSpaceLifecycle,
+        regularTabs: any SidebarRegularTabsControlling,
+        dragTransactions: SidebarDragTransactionPort,
+        updateStreams: SidebarUpdateStreams,
         nowPlayingController: SumiNativeNowPlayingController,
         updaterService: SumiUpdaterService
     ) {
         self.browserContext = browserContext
-        self._pageModel = ObservedObject(
-            wrappedValue: SidebarSpacePageModel(browserContext: browserContext)
+        self.inventory = inventory
+        self.selection = selection
+        self.pinProjection = pinProjection
+        self.pinCommands = pinCommands
+        self.spaceLifecycle = spaceLifecycle
+        self.regularTabs = regularTabs
+        self.dragTransactions = dragTransactions
+        self._pageModel = StateObject(
+            wrappedValue: SidebarSpacePageModel(
+                browserContext: browserContext,
+                spaceLifecycle: spaceLifecycle,
+                updateStreams: updateStreams
+            )
         )
-        self._chromeModel = ObservedObject(
+        self._chromeModel = StateObject(
             wrappedValue: SidebarChromeModel(
                 browserContext: browserContext,
                 nowPlayingController: nowPlayingController,
@@ -89,6 +115,7 @@ struct SpacesSideBarView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .onDisappear {
+                pageModel.setActive(false)
                 transitionCoordinator.cancelLocalSpaceTransitionIfNeeded(
                     context: makeTransitionContext(spaces: availableSpaces),
                     cancelTheme: true
@@ -98,7 +125,11 @@ struct SpacesSideBarView: View {
             .onHover { state in
                 isSidebarHovered = allowsSidebarInteractiveWork ? state : false
             }
+            .onAppear {
+                pageModel.setActive(allowsSidebarInteractiveWork)
+            }
             .onChange(of: allowsSidebarInteractiveWork) { _, allowsInteractiveWork in
+                pageModel.setActive(allowsInteractiveWork)
                 if !allowsInteractiveWork {
                     isSidebarHovered = false
                 }
@@ -112,9 +143,7 @@ struct SpacesSideBarView: View {
             .overlay {
                 ZStack {
                     SidebarGlobalDragOverlay(
-                        dropActions: SidebarDropActionContext(performDrop: { pasteboard, resolution, windowState in
-                            browserContext.performDrop(pasteboard, resolution, windowState)
-                        }),
+                        transactionPort: dragTransactions,
                         dragAutoscrollRegistry: dragState.dragAutoscrollRegistry
                     )
                         .allowsHitTesting(allowsSidebarInteractiveWork)
@@ -124,7 +153,8 @@ struct SpacesSideBarView: View {
 
     var mainSidebarContent: some View {
         let _ = pageModel.structuralRevision
-        let _ = browserContext.tabStructuralRevision()
+        let _ = pageModel.profileRuntimeRevision
+        let _ = pageModel.liveFolderRevision
         let spaces = availableSpaces
         let visualSpaceId = transitionCoordinator.visualSelectedSpaceId(
             in: makeTransitionContext(spaces: spaces)
@@ -138,7 +168,7 @@ struct SpacesSideBarView: View {
                 SidebarSpaceCreationView(
                     session: creationSession,
                     profileContext: SpaceCreationProfileContext(
-                        profiles: pageModel.profileManager.profiles,
+                        profiles: pageModel.profiles,
                         currentProfileID: browserContext.currentProfile()?.id
                     ),
                     onCreate: { commitSpaceCreationSession(creationSession) },
@@ -169,6 +199,7 @@ struct SpacesSideBarView: View {
 
                     SidebarBottomBar(
                         browserContext: sidebarBrowserContext,
+                        spaceLifecycle: spaceLifecycle,
                         visualSelectedSpaceId: visualSpaceId,
                         onNewSpaceTap: beginSpaceCreationMode,
                         onSelectSpace: { switchSpace(to: $0, spaces: spaces) }
@@ -227,6 +258,9 @@ struct SpacesSideBarView: View {
             },
             windowState: windowState,
             browserContext: browserContext,
+            inventory: inventory,
+            selection: selection,
+            pinProjection: pinProjection,
             dragState: dragState,
             settings: sumiSettings,
             allowsInteractiveWork: allowsSidebarInteractiveWork,

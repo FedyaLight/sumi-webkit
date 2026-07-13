@@ -9,6 +9,9 @@ final class SpaceSidebarTransitionCoordinator {
         let currentSpaces: @MainActor () -> [Space]
         let windowState: BrowserWindowState
         let browserContext: SidebarBrowserContext
+        let inventory: SidebarInventoryProjection
+        let selection: SidebarWindowSelectionQuery
+        let pinProjection: SidebarPinFolderProjection
         let dragState: SidebarDragState
         let settings: SumiSettingsService
         let allowsInteractiveWork: Bool
@@ -619,6 +622,9 @@ final class SpaceSidebarTransitionCoordinator {
             sourceSpace: sourceSpace,
             destinationSpace: destinationSpace,
             browserContext: context.browserContext,
+            inventory: context.inventory,
+            selection: context.selection,
+            pinProjection: context.pinProjection,
             windowState: context.windowState,
             settings: context.settings,
             scrollViewportForSpace: { [scrollViewportsBySpaceId] spaceId in

@@ -10,20 +10,17 @@ import SumiDomain
 /// Exact state is looked up by IDs at the moment the animation phase starts.
 @MainActor
 struct SpaceShortcutRestorePlanner {
-    let browserContext: SidebarBrowserContext
+    let inventory: SidebarSpaceInventorySnapshot
     let space: Space
 
     func shortcutRestoreGap(
         groupID: UUID,
         memberID: SplitMemberID
     ) -> ShortcutRestoreGap? {
-        guard let group = browserContext.tabManager.splitGroupStore.group(
-            id: groupID
-        ),
+        guard let group = inventory.splitGroup(id: groupID),
               let member = group.member(for: memberID),
               case .shortcutPin(let pinID) = memberID,
-              browserContext.tabManager.shortcutPinCollectionStateOwner
-                .shortcutPin(by: pinID) != nil,
+              inventory.pin(id: pinID) != nil,
               let returnPlacement = member.returnPlacement else {
             return nil
         }
@@ -32,10 +29,8 @@ struct SpaceShortcutRestorePlanner {
         case .spacePinned(let spaceID, let folderID, let index):
             guard spaceID == space.id else { return nil }
             if let folderID {
-                guard browserContext.tabManager.folderCollectionStateOwner
-                    .spaceId(for: folderID) == spaceID,
-                      browserContext.tabManager.folderCollectionStateOwner
-                        .folder(by: folderID)?.isOpen == true else {
+                guard inventory.folder(id: folderID)?.spaceId == spaceID,
+                      inventory.folder(id: folderID)?.isOpen == true else {
                     return nil
                 }
                 return ShortcutRestoreGap(
@@ -55,8 +50,7 @@ struct SpaceShortcutRestorePlanner {
             return ShortcutRestoreGap(
                 pinId: pinID,
                 container: .spacePinned(spaceID),
-                index: browserContext.tabManager.splitGroupSidebarOrdering
-                    .topLevelItems(for: spaceID).count
+                index: inventory.topLevelItems.count
             )
 
         case .essential:

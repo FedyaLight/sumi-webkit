@@ -9,6 +9,7 @@ import SwiftUI
 @MainActor
 struct TabFolderMutationActions {
     let browserContext: SidebarBrowserContext
+    let pinCommands: SidebarPinFolderCommands
     let windowState: BrowserWindowState
     let windowRegistry: WindowRegistry
     let themeContext: ResolvedThemeContext
@@ -17,15 +18,15 @@ struct TabFolderMutationActions {
 
     func toggleFolderOpenState(_ folderId: UUID) {
         withAnimation(folderLayoutAnimation) {
-            browserContext.tabManager.folderMutationOwner.toggleFolderOpenState(folderId)
+            _ = pinCommands.toggleFolder(folderId)
         }
     }
 
     func deleteNestedFolder(_ childFolder: TabFolder) {
-        let childCount = browserContext.tabManager.spacePinnedStructureOwner.folderRecursiveChildCount(
+        let childCount = pinCommands.recursiveChildCount(
             for: childFolder.id,
             in: space.id
-        )
+        ) ?? 0
         guard childCount == 0 else {
             SidebarSavedItemDeletionConfirmationPresenter.confirmDeleteFolder(
                 folderName: childFolder.name,
@@ -34,7 +35,7 @@ struct TabFolderMutationActions {
                 themeContext: themeContext,
                 onDelete: {
                     mutateFolderContent {
-                        browserContext.tabManager.folderMutationOwner.deleteFolder(childFolder.id)
+                        _ = pinCommands.deleteFolder(childFolder.id)
                     }
                 }
             )
@@ -42,22 +43,22 @@ struct TabFolderMutationActions {
         }
 
         mutateFolderContent {
-            browserContext.tabManager.folderMutationOwner.deleteFolder(childFolder.id)
+            _ = pinCommands.deleteFolder(childFolder.id)
         }
     }
 
     func ungroupNestedFolder(_ childFolder: TabFolder) {
         mutateFolderContent {
-            browserContext.tabManager.folderMutationOwner.ungroupFolder(childFolder.id)
+            _ = pinCommands.ungroupFolder(childFolder.id)
         }
     }
 
     func activateShortcutPin(_ pin: ShortcutPin) {
-        let tab = browserContext.tabManager.shortcutTabMaterializer.materialize(
+        guard let tab = pinCommands.materialize(
             pin,
-            in: windowState.id,
-            currentSpaceId: space.id
-        )
+            in: windowState,
+            currentSpaceID: space.id
+        ) else { return }
         browserContext.commands.requestUserTabActivation(
             tab,
             windowState

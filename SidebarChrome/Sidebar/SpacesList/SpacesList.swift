@@ -16,6 +16,7 @@ struct SpacesList: View {
     @Environment(\.resolvedThemeContext) private var themeContext
     @Environment(\.controlSize) private var controlSize
     let browserContext: SidebarBrowserContext
+    let spaceLifecycle: SidebarSpaceLifecycle
     let visualSelectedSpaceId: UUID?
     let onSelectSpace: (Space) -> Void
     @State private var availableWidth: CGFloat = 0
@@ -47,7 +48,7 @@ struct SpacesList: View {
         if windowState.isIncognito {
             return windowState.ephemeralSpaces
         }
-        return browserContext.tabManager.spaceStateOwner.spaces
+        return spaceLifecycle.availableSpaces(isIncognito: false, ephemeralSpaces: [])
     }
 
     private var displayedSpaces: [Space] {
@@ -112,6 +113,7 @@ struct SpacesList: View {
                 SpacesListItem(
                     space: space,
                     browserContext: browserContext,
+                    spaceLifecycle: spaceLifecycle,
                     isActive: visualSelectedSpaceId == space.id,
                     isFaded: false,
                     showsCompactDot: showsCompactDot(for: space),
@@ -228,10 +230,7 @@ struct SpacesList: View {
                 windowState.sidebarInteractionState.syncSidebarItemDrag(false)
             },
             onCommit: { move in
-                browserContext.tabManager.spaceServices.catalog.reorderSpace(
-                    spaceId: move.id,
-                    to: move.targetIndex
-                )
+                _ = spaceLifecycle.reorderSpace(move.id, to: move.targetIndex)
             },
             onTap: { onSelectSpace(space) }
         )
@@ -245,6 +244,7 @@ struct SpacesList: View {
             SpacesListItem(
                 space: draggedSpace,
                 browserContext: browserContext,
+                spaceLifecycle: spaceLifecycle,
                 isActive: visualSelectedSpaceId == draggedSpace.id,
                 isFaded: false,
                 showsCompactDot: false,

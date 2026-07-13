@@ -1,4 +1,3 @@
-import Combine
 import SwiftUI
 
 @MainActor
@@ -12,7 +11,6 @@ struct SidebarHostActions {
 struct SidebarHostEnvironmentContext {
     let browserContext: SidebarBrowserContext
     let hostActions: SidebarHostActions
-    let structuralInvalidation: AnyPublisher<Void, Never>
     let windowState: BrowserWindowState
     let windowRegistry: WindowRegistry
     let sumiSettings: SumiSettingsService

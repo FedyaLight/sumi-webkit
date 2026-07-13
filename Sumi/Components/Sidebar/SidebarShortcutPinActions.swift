@@ -5,11 +5,11 @@ enum SidebarShortcutPinActions {
     static func resetToLaunchURL(
         _ pin: ShortcutPin,
         in windowState: BrowserWindowState,
-        tabManager: TabManager
+        commands: SidebarPinFolderCommands
     ) {
         let modifiers = NSApp.currentEvent?.modifierFlags ?? []
         let preserveCurrentPage = modifiers.contains(.command) || modifiers.contains(.control)
-        _ = tabManager.shortcutPinCommandOwner.resetShortcutPinToLaunchURL(
+        _ = commands.resetToLaunchURL(
             pin,
             in: windowState,
             preserveCurrentPage: preserveCurrentPage

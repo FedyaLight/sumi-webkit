@@ -217,6 +217,41 @@ final class SidebarDropCoordinatorBoundaryTests: XCTestCase {
         XCTAssertFalse(inventory.wasQueried)
     }
 
+    func testTransactionPortRejectsStaleWindowBeforeReadingDragReceipt() {
+        let windowID = UUID()
+        let staleWindow = BrowserWindowState(id: windowID)
+        let replacementWindow = BrowserWindowState(id: windowID)
+        let registry = WindowRegistry()
+        registry.register(staleWindow)
+        registry.unregister(windowID)
+        registry.register(replacementWindow)
+        let inventory = FailingInventory()
+        let operations = RecordingDragOperations(payload: nil)
+        let port = SidebarDragTransactionPort(
+            windows: SidebarWindowIdentityQuery(registry: { registry }),
+            sourceInventory: inventory,
+            dragOperations: operations,
+            urlDropService: unusedURLDropService()
+        )
+
+        XCTAssertFalse(
+            port.commit(
+                pasteboard: NSPasteboard(
+                    name: NSPasteboard.Name("SumiStaleDrop-\(windowID)")
+                ),
+                resolution: SidebarDropResolution(
+                    slot: .spaceRegular(spaceId: UUID(), slot: 0),
+                    folderIntent: .none,
+                    activeHoveredFolderId: nil
+                ),
+                windowState: staleWindow
+            )
+        )
+        XCTAssertFalse(inventory.wasQueried)
+        XCTAssertTrue(operations.resolvedItems.isEmpty)
+        XCTAssertTrue(operations.performed.isEmpty)
+    }
+
     func testLiveCoordinatorCompositionExecutesWithoutBrowserManagerReachThrough() throws {
         let profile = Profile(name: "Sidebar Drop Composition")
         let browserManager = makeSafariExtensionTestBrowserManager(
@@ -255,17 +290,24 @@ final class SidebarDropCoordinatorBoundaryTests: XCTestCase {
         let windowState = BrowserWindowState()
         windowState.currentSpaceId = space.id
         windowState.currentProfileId = profile.id
-        let context = SidebarBrowserContext.live(browserManager: browserManager)
+        let windowRegistry = WindowRegistry()
+        windowRegistry.register(windowState)
+        browserManager.windowRegistry = windowRegistry
+        let context = WindowViewBrowserContext.make(
+            browserManager: browserManager,
+            updaterService: SumiUpdaterService(backendFactory: { _ in nil }),
+            defaultBrowserService: SumiDefaultBrowserService()
+        )
 
         XCTAssertTrue(
-            context.performDrop(
-                pasteboard,
-                SidebarDropResolution(
+            context.sidebarDragTransactions.commit(
+                pasteboard: pasteboard,
+                resolution: SidebarDropResolution(
                     slot: .essentials(slot: 0),
                     folderIntent: .none,
                     activeHoveredFolderId: nil
                 ),
-                windowState
+                windowState: windowState
             )
         )
         XCTAssertEqual(

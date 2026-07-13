@@ -53,7 +53,6 @@ struct SidebarBrowserCommandActions {
 
 @MainActor
 struct SidebarBrowserContext {
-    let tabManager: TabManager
     let profileManager: ProfileManager
     let liveFolderManager: SumiLiveFolderManager
     let splitQuery: WindowSplitQuery
@@ -63,60 +62,23 @@ struct SidebarBrowserContext {
     let downloadsPopoverPresenter: DownloadsPopoverPresenter
     let glanceManager: GlanceManager
     let extensionSurfaceStore: BrowserExtensionSurfaceStore
-    let regularTabs: any SidebarRegularTabsControlling
     let presentationActions: SidebarBrowserPresentationActions
     let headerContext: (BrowserWindowState) -> SidebarHeaderBrowserContext
-    let tabStructuralRevision: () -> UInt
     let isTransitioningProfile: () -> Bool
     let currentProfile: () -> Profile?
-    let currentTab: (BrowserWindowState) -> Tab?
     let extensionToolbarSlots: ([InstalledExtension], UUID?) -> [PinnedToolbarSlot]
     let extensionActionBrowserContext: (BrowserWindowState) -> ExtensionActionBrowserContext
     let savedSidebarWidth: (BrowserWindowState) -> CGFloat
-    let performDrop: (NSPasteboard, SidebarDropResolution, BrowserWindowState?) -> Bool
     let configureMediaStore: (SumiBackgroundMediaCardStore, BrowserWindowState) -> Void
     let spaceTransitions: SidebarSpaceTransitionActions
     let commands: SidebarBrowserCommandActions
     let windowRegistry: () -> WindowRegistry?
 
-    static func live(browserManager: BrowserManager) -> SidebarBrowserContext {
-        let tabManager = browserManager.tabManager
-        let shortcutInsertion = ShortcutURLInsertionService(
-            store: tabManager.shortcutPinStoreOwner,
-            materializer: tabManager.shortcutTabMaterializer,
-            structuralLookup: tabManager.structuralLookupCoordinator,
-            prepareActivation: { [weak browserManager] windowState in
-                guard let browserManager,
-                      browserManager.windowRegistry?.windows[windowState.id] === windowState
-                else { return nil }
-                return { [browserManager, windowState] tab in
-                    browserManager.selectTab(tab, in: windowState)
-                }
-            },
-            schedulePersistence: { [weak tabManager] in
-                tabManager?.structuralPersistence.scheduleStructuralPersistence()
-            }
-        )
-        let urlDropService = SidebarURLDropService(
-            tabOpening: browserManager.tabLifecycleService.opening,
-            nativeSurfaces: browserManager.chromeBundle.nativeSurfaceRoutingOwner,
-            destinations: SidebarURLDropDestinationCatalog(
-                spaces: tabManager.spaceStateOwner,
-                folders: tabManager.folderCollectionStateOwner,
-                essentials: tabManager.essentialsShortcutPlacementOwner
-            ),
-            shortcutInsertion: shortcutInsertion
-        )
-        let dragSourceInventory = SidebarDragSourceInventory(
-            essentialPins: tabManager.shortcutPinCollectionStateOwner,
-            splitOrdering: tabManager.splitGroupSidebarOrdering,
-            regularTabs: tabManager.regularTabCollectionOwner,
-            folders: tabManager.folderCollectionStateOwner,
-            spacePinned: tabManager.spacePinnedStructureOwner
-        )
-        let dragOperations = tabManager.sidebarDragRouter
+    static func live(
+        browserManager: BrowserManager,
+        spaceLifecycle: SidebarSpaceLifecycle
+    ) -> SidebarBrowserContext {
         return SidebarBrowserContext(
-            tabManager: browserManager.tabManager,
             profileManager: browserManager.profileManager,
             liveFolderManager: browserManager.liveFolderManager,
             splitQuery: browserManager.splitComposition.query,
@@ -126,10 +88,6 @@ struct SidebarBrowserContext {
             downloadsPopoverPresenter: browserManager.chromeBundle.commands.downloadsPopoverPresenter,
             glanceManager: browserManager.glanceManager,
             extensionSurfaceStore: browserManager.optionalModules.extensions.surfaceStore,
-            regularTabs: SidebarRegularTabsController.live(
-                tabManager: browserManager.tabManager,
-                liveFolderManager: browserManager.liveFolderManager
-            ),
             presentationActions: SidebarBrowserPresentationActions(
                 showShortcutEditor: { [weak browserManager] pin, windowState, themeContext, source in
                     browserManager?.sidebarCommandService.editorPresentation.showShortcutEditor(
@@ -177,8 +135,12 @@ struct SidebarBrowserContext {
                     guard let browserManager else { return }
                     SpaceDeletionConfirmationPresenter.confirmDelete(
                         space: space,
-                        browserManager: browserManager,
-                        window: windowState.shellWindow(in: browserManager.windowRegistry)
+                        lifecycle: spaceLifecycle,
+                        window: windowState.shellWindow(in: browserManager.windowRegistry),
+                        windowState: browserManager.windowRegistry?.windows[windowState.id] === windowState
+                            ? windowState
+                            : nil,
+                        settings: browserManager.sumiSettings
                     )
                 },
                 presentSharingServicePicker: { [weak browserManager] items, source in
@@ -188,17 +150,11 @@ struct SidebarBrowserContext {
             headerContext: { windowState in
                 browserManager.urlBarBundle.contextOwner.sidebarHeaderContext(for: windowState)
             },
-            tabStructuralRevision: { [weak browserManager] in
-                browserManager?.tabStructuralRevision ?? 0
-            },
             isTransitioningProfile: { [weak browserManager] in
                 browserManager?.isTransitioningProfile ?? false
             },
             currentProfile: { [weak browserManager] in
                 browserManager?.currentProfile
-            },
-            currentTab: { [weak browserManager] windowState in
-                browserManager?.shellRuntime.windowTabs.currentTab(for: windowState)
             },
             extensionToolbarSlots: { [weak browserManager] enabledExtensions, profileId in
                 guard let browserManager else { return [] }
@@ -215,17 +171,6 @@ struct SidebarBrowserContext {
             },
             savedSidebarWidth: { [weak browserManager] windowState in
                 browserManager?.chromeBundle.sidebarPresentationOwner.savedSidebarWidth(for: windowState) ?? BrowserWindowState.sidebarDefaultWidth
-            },
-            performDrop: { [weak dragOperations, urlDropService, dragSourceInventory] pasteboard, resolution, windowState in
-                guard let dragOperations else { return false }
-                return SidebarDropCoordinator.performDrop(
-                    pasteboard: pasteboard,
-                    resolution: resolution,
-                    sourceInventory: dragSourceInventory,
-                    dragOperations: dragOperations,
-                    urlDropService: urlDropService,
-                    windowState: windowState
-                )
             },
             configureMediaStore: { [weak browserManager] mediaStore, windowState in
                 guard let browserManager else { return }

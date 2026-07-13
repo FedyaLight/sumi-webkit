@@ -11,6 +11,7 @@ struct SidebarBottomBar: View {
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sidebarPresentationContext) private var presentationContext
     let browserContext: SidebarBrowserContext
+    let spaceLifecycle: SidebarSpaceLifecycle
     let visualSelectedSpaceId: UUID?
     let onNewSpaceTap: () -> Void
     let onSelectSpace: (Space) -> Void
@@ -30,6 +31,7 @@ struct SidebarBottomBar: View {
             if !windowState.isIncognito {
                 SpacesList(
                     browserContext: browserContext,
+                    spaceLifecycle: spaceLifecycle,
                     visualSelectedSpaceId: visualSelectedSpaceId,
                     onSelectSpace: onSelectSpace
                 )

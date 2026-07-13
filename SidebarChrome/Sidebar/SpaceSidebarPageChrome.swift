@@ -80,9 +80,25 @@ extension SpacesSideBarView {
         renderMode: SpaceViewRenderMode,
         allowsInteraction: Bool
     ) -> some View {
+        let pageInventory = windowState.isIncognito
+            ? SidebarSpaceInventorySnapshot.ephemeral(
+                spaceID: space.id,
+                regularTabs: windowState.ephemeralTabs
+            )
+            : inventory.snapshot(for: space.id)
+                ?? SidebarSpaceInventorySnapshot.ephemeral(
+                    spaceID: space.id,
+                    regularTabs: []
+                )
         SpaceView(
             space: space,
             browserContext: sidebarBrowserContext,
+            inventory: pageInventory,
+            selection: selection,
+            pinProjection: pinProjection,
+            pinCommands: pinCommands,
+            spaceLifecycle: spaceLifecycle,
+            regularTabs: regularTabs,
             renderMode: renderMode,
             allowsInteraction: allowsInteraction,
             scrollHoverCoordinator: scrollHoverCoordinator,
@@ -199,6 +215,11 @@ extension SpacesSideBarView {
         PinnedGrid(
             width: windowState.sidebarContentWidth,
             browserContext: sidebarBrowserContext,
+            inventory: inventory,
+            selection: selection,
+            pinProjection: pinProjection,
+            pinCommands: pinCommands,
+            spaceLifecycle: spaceLifecycle,
             spaceId: spaceId,
             profileId: profileId,
             animateLayout: shouldAnimate,

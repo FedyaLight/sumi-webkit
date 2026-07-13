@@ -4,33 +4,37 @@ import AppKit
 enum SpaceDeletionConfirmationPresenter {
     static func confirmDelete(
         space: Space,
-        browserManager: BrowserManager,
-        window: NSWindow?
+        lifecycle: SidebarSpaceLifecycle,
+        window: NSWindow?,
+        windowState: BrowserWindowState?,
+        settings: SumiSettingsService?
     ) {
-        guard browserManager.tabManager.spaceStateOwner.spaces.count > 1 else {
+        guard lifecycle.canDeleteSpace() else {
             NSSound.beep()
             return
         }
 
         let alert = makeAlert(
             spaceName: space.name,
-            tabsCount: browserManager.tabManager.spaceLauncherProjection.projection(for: space.id).userVisibleTabCount
+            tabsCount: lifecycle.userVisibleTabCount(in: space.id)
         )
-        alert.sumiApplyNativeSurfaceAppearance(
-            windowState: window.flatMap { browserManager.windowRegistry?.windowState(containing: $0) },
-            settings: browserManager.sumiSettings
-        )
+        if let settings {
+            alert.sumiApplyNativeSurfaceAppearance(
+                windowState: windowState,
+                settings: settings
+            )
+        }
         let spaceID = space.id
 
         if let window {
             alert.beginSheetModal(for: window) { response in
                 guard response == .alertFirstButtonReturn else { return }
                 Task { @MainActor in
-                    browserManager.tabManager.spaceServices.removal.removeSpace(spaceID)
+                    _ = lifecycle.removeSpace(spaceID)
                 }
             }
         } else if alert.runModal() == .alertFirstButtonReturn {
-            browserManager.tabManager.spaceServices.removal.removeSpace(spaceID)
+            _ = lifecycle.removeSpace(spaceID)
         }
     }
 

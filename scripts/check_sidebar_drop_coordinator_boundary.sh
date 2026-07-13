@@ -21,12 +21,13 @@ coordinator='Sumi/Components/DragDrop/SidebarDropCoordinator.swift'
 inventory='Sumi/Components/DragDrop/SidebarDragSourceInventory.swift'
 executing='Sumi/Components/DragDrop/SidebarDragOperationExecuting.swift'
 projection='Sumi/Components/DragDrop/SidebarDropProjection.swift'
-context='Sumi/Components/Sidebar/SidebarBrowserContext.swift'
+port='Sumi/Components/DragDrop/SidebarDragTransactionPort.swift'
+composition='Sumi/Managers/BrowserManager/BrowserWindowViewRuntimeWiring.swift'
 router='Sumi/Managers/TabManager/SidebarDragOperationRouter.swift'
 inventory_tests='SumiTests/SidebarDragSourceInventoryTests.swift'
 coordinator_tests='SumiTests/SidebarDropCoordinatorBoundaryTests.swift'
 
-for file in "$coordinator" "$inventory" "$executing" "$projection" \
+for file in "$coordinator" "$inventory" "$executing" "$projection" "$port" "$composition" \
   "$inventory_tests" "$coordinator_tests"; do
   if [[ ! -f "$file" ]]; then
     printf 'error: sidebar drop boundary file missing: %s\n' "$file" >&2
@@ -98,26 +99,30 @@ require_pattern \
   'extension[[:space:]]+SidebarDragOperationRouter:[[:space:]]*SidebarDragOperationExecuting' \
   "SidebarDragOperationRouter must remain the live operation authority"
 require_pattern \
-  "$context" \
+  "$composition" \
   'SidebarDragSourceInventory\(' \
-  "SidebarBrowserContext.live must compose SidebarDragSourceInventory"
+  "window-view composition must build SidebarDragSourceInventory"
 require_pattern \
-  "$context" \
-  'let[[:space:]]+dragOperations[[:space:]]*=[[:space:]]*tabManager\.sidebarDragRouter' \
-  "SidebarBrowserContext.live must resolve sidebarDragRouter at composition time"
+  "$composition" \
+  'dragOperations:[[:space:]]*tabManager\.sidebarDragRouter' \
+  "window-view composition must resolve sidebarDragRouter once"
 require_pattern \
-  "$context" \
-  'dragOperations:[[:space:]]*dragOperations' \
-  "SidebarBrowserContext.live must pass its composed operation authority"
+  "$composition" \
+  'sidebarDragTransactions:[[:space:]]*dragTransactions' \
+  "window-view composition must pass the exact transaction port"
+require_pattern \
+  "$port" \
+  'windows\.contains\(windowState\)' \
+  "SidebarDragTransactionPort must validate exact window identity"
 runtime_router_reach="$(
   awk '
-    /performDrop:[[:space:]]*\{/ { in_drop = 1 }
+    /func commit\(/ { in_drop = 1 }
     in_drop { print }
     in_drop && /^[[:space:]]*\},?$/ { exit }
-  ' "$context" | rg -n 'tabManager\.' || true
+  ' "$port" | rg -n 'tabManager\.|browserManager\.' || true
 )"
 fail_matches \
-  "sidebar drop resolves TabManager collaborators during the operation" \
+  "sidebar drop transaction resolves manager roots during the operation" \
   "$runtime_router_reach"
 
 # Focused surface size caps keep the inventory from becoming a god-object.
@@ -182,6 +187,7 @@ required_tests=(
   testCrossContainerDropSkipsSameContainerAdjustment
   testInvalidOrStaleScopeDoesNotMutate
   testURLDropDoesNotDependOnDragInventory
+  testTransactionPortRejectsStaleWindowBeforeReadingDragReceipt
   testLiveCoordinatorCompositionExecutesWithoutBrowserManagerReachThrough
 )
 
@@ -193,7 +199,7 @@ for test_name in "${required_tests[@]}"; do
   fi
 done
 if ! rg -A 45 'func testLiveCoordinatorCompositionExecutesWithoutBrowserManagerReachThrough' \
-  "$coordinator_tests" | rg -q 'SidebarBrowserContext\.live'; then
+  "$coordinator_tests" | rg -q 'WindowViewBrowserContext\.make'; then
   printf 'error: live sidebar-drop composition regression uses only stubs\n' >&2
   status=1
 fi

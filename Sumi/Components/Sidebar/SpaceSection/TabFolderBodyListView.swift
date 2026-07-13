@@ -17,6 +17,11 @@ struct TabFolderBodyListView: View {
     let folder: TabFolder
     let browserContext: SidebarBrowserContext
     let space: Space
+    let inventory: SidebarSpaceInventorySnapshot
+    let selection: SidebarWindowSelectionQuery
+    let pinProjection: SidebarPinFolderProjection
+    let pinCommands: SidebarPinFolderCommands
+    let spaceLifecycle: SidebarSpaceLifecycle
     let shortcutPins: [ShortcutPin]
     let childFolders: [TabFolder]
     let childFoldersByParentId: [UUID: [TabFolder]]
@@ -131,6 +136,11 @@ struct TabFolderBodyListView: View {
             folder: childFolder,
             browserContext: browserContext,
             space: space,
+            inventory: inventory,
+            selection: selection,
+            pinProjection: pinProjection,
+            pinCommands: pinCommands,
+            spaceLifecycle: spaceLifecycle,
             shortcutPins: folderPinsByFolderId[childFolder.id] ?? [],
             childFolders: childFoldersByParentId[childFolder.id] ?? [],
             childFoldersByParentId: childFoldersByParentId,
@@ -193,10 +203,7 @@ struct TabFolderBodyListView: View {
             guard let group = projection.splitGroup(with: groupId) else {
                 return false
             }
-            return SidebarSelectionElevation.splitGroupIsSelected(
-                group,
-                selectedGroupID: windowState.splitSelection?.groupID
-            )
+            return selection.isSplitGroupSelected(group, in: windowState)
         case .restoreGap, .placeholder:
             return false
         }
@@ -301,11 +308,13 @@ struct TabFolderBodyListView: View {
                 pin: pin,
                 liveTab: projection.liveTab(for: pin.id),
                 faviconPartition: TabFolderShortcutPresentationOwner(
-                    browserContext: browserContext,
+                    pinProjection: pinProjection,
+                    selection: selection,
                     windowState: windowState
                 ).faviconPartition(for: pin),
                 runtimeAffordance: TabFolderShortcutPresentationOwner(
-                    browserContext: browserContext,
+                    pinProjection: pinProjection,
+                    selection: selection,
                     windowState: windowState
                 ).runtimeAffordance(for: pin),
                 accessibilityID: "folder-shortcut-\(pin.id.uuidString)",
@@ -345,11 +354,12 @@ struct TabFolderBodyListView: View {
     }
 
     private func isFolderSplitPlaceholderSelected(_ group: SplitGroup, pin: ShortcutPin) -> Bool {
-        if windowState.currentShortcutPinId == pin.id {
-            return true
-        }
-        return windowState.splitSelection?.groupID == group.id
-            && windowState.splitSelection?.activeMemberID == .shortcutPin(pin.id)
+        selection.isShortcutSelected(pin, in: windowState)
+            || selection.isSplitMemberSelected(
+                groupID: group.id,
+                memberID: .shortcutPin(pin.id),
+                in: windowState
+            )
     }
 
 }

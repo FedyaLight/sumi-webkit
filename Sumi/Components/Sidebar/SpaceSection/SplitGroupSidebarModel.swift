@@ -102,29 +102,23 @@ enum SplitGroupSidebarModel {
     @MainActor
     static func items(
         for group: SplitGroup,
-        tabManager: TabManager,
-        windowID: UUID? = nil
+        inventory: SidebarSpaceInventorySnapshot,
+        selection: SidebarWindowSelectionQuery,
+        windowState: BrowserWindowState
     ) -> [SplitGroupSidebarItem] {
         group.members.compactMap { member in
             switch member.memberID {
             case .regularTab(let tabID):
-                guard let tab = tabManager.tabCollectionMembershipOwner
-                    .tab(for: tabID) else {
+                guard let tab = inventory.tab(id: tabID) else {
                     return nil
                 }
                 return .regular(member, tab: tab)
 
             case .shortcutPin(let pinID):
-                guard let pin = tabManager.shortcutPinCollectionStateOwner
-                    .shortcutPin(by: pinID) else {
+                guard let pin = inventory.pin(id: pinID) else {
                     return nil
                 }
-                let liveTab = windowID.flatMap { windowID in
-                    tabManager.shortcutPresentationOwner.shortcutLiveTab(
-                        for: pinID,
-                        in: windowID
-                    )
-                }
+                let liveTab = selection.liveTab(for: pinID, in: windowState)
                 return .shortcut(member, pin: pin, liveTab: liveTab)
             }
         }
@@ -144,8 +138,7 @@ enum SplitGroupSidebarModel {
 
     static func shortcutPin(
         for item: SplitGroupSidebarItem,
-        member _: SplitMember?,
-        tabManager _: TabManager
+        member _: SplitMember?
     ) -> ShortcutPin? {
         item.pin
     }

@@ -19,6 +19,11 @@ struct EssentialTileContextMenuActions {
 @MainActor
 struct EssentialTileActionOwner {
     let browserContext: SidebarBrowserContext
+    let inventory: SidebarInventoryProjection
+    let selection: SidebarWindowSelectionQuery
+    let pinProjection: SidebarPinFolderProjection
+    let pinCommands: SidebarPinFolderCommands
+    let spaceLifecycle: SidebarSpaceLifecycle
     let windowState: BrowserWindowState
     let themeContext: ResolvedThemeContext
     let contextMenuSpaceId: UUID?
@@ -29,10 +34,10 @@ struct EssentialTileActionOwner {
     func contextMenuActions(for pin: ShortcutPin) -> EssentialTileContextMenuActions {
         EssentialTileContextMenuActions(makeEntries: {
             let savedURLDriftActions: SidebarSavedURLDriftActions? =
-                browserContext.tabManager.shortcutPresentationOwner.shortcutHasDrifted(pin, in: windowState)
+                selection.hasSavedURLDrift(pin, in: windowState)
                     ? .init(
                         onBackToSavedURL: { resetShortcutPin(pin) },
-                        onUseCurrentPageAsSavedURL: { _ = browserContext.tabManager.shortcutPinCommandOwner.replaceShortcutPinURLWithCurrent(pin, in: windowState) }
+                        onUseCurrentPageAsSavedURL: { _ = pinCommands.replaceSavedURLWithCurrent(pin, in: windowState) }
                     )
                     : nil
             let unloadAction: (() -> Void)? = pinPresentationState(pin).isOpenLive
@@ -67,10 +72,7 @@ struct EssentialTileActionOwner {
                     profileTarget: .init(
                         choices: profileChoices(for: pin),
                         onSelect: { profileId in
-                            browserContext.tabManager.profileAssignments.shortcuts.assign(
-                                pin,
-                                toExecutionProfile: profileId
-                            )
+                            _ = pinCommands.assignExecutionProfile(pin, profileID: profileId)
                         }
                     ),
                     savedURLDrift: savedURLDriftActions,
@@ -97,13 +99,13 @@ struct EssentialTileActionOwner {
         SidebarShortcutPinActions.resetToLaunchURL(
             pin,
             in: windowState,
-            tabManager: browserContext.tabManager
+            commands: pinCommands
         )
     }
 
     func removeFromEssentials(_ pin: ShortcutPin) {
         mutateContentLayout {
-            browserContext.tabManager.shortcutPinCommandOwner.removeShortcutPin(pin)
+            _ = pinCommands.remove(pin)
         }
     }
 
@@ -128,68 +130,46 @@ struct EssentialTileActionOwner {
     }
 
     private func moveEssential(_ pin: ShortcutPin, toFolder folderId: UUID) {
-        guard let targetFolder = browserContext.tabManager.folderCollectionStateOwner.folder(by: folderId) else { return }
-        let targetIndex = browserContext.tabManager.shortcutPinCollectionStateOwner.folderPinnedPins(
-            for: folderId,
-            in: targetFolder.spaceId
-        ).count
-
         mutateContentLayout {
-            _ = browserContext.tabManager.shortcutPinCommandOwner.moveShortcutPin(
-                pin,
-                to: .spacePinned,
-                profileId: nil,
-                spaceId: targetFolder.spaceId,
-                folderId: folderId,
-                index: targetIndex
-            )
+            _ = pinCommands.move(pin, toFolder: folderId)
         }
     }
 
     private func moveEssential(_ pin: ShortcutPin, toSpace targetSpaceId: UUID) {
-        let targetIndex = browserContext.tabManager.spacePinnedStructureOwner.topLevelSpacePinnedItems(for: targetSpaceId).count
-
         mutateContentLayout {
-            _ = browserContext.tabManager.shortcutPinCommandOwner.moveShortcutPin(
-                pin,
-                to: .spacePinned,
-                profileId: nil,
-                spaceId: targetSpaceId,
-                folderId: nil,
-                index: targetIndex
-            )
+            _ = pinCommands.move(pin, toSpace: targetSpaceId)
         }
     }
 
     private var contextMenuSpace: Space? {
         guard let contextMenuSpaceId else { return nil }
-        return browserContext.tabManager.spaceStateOwner.spaces.first { $0.id == contextMenuSpaceId }
+        return spaceLifecycle.space(id: contextMenuSpaceId)
     }
 
     private var essentialFolderChoices: [SidebarContextMenuChoice] {
         guard let contextMenuSpace else { return [] }
         return makeSidebarContextMenuFolderChoices(
-            folders: browserContext.tabManager.folderCollectionStateOwner.folders(for: contextMenuSpace.id)
+            folders: Array(inventory.snapshot(for: contextMenuSpace.id)?.foldersByID.values ?? Dictionary<UUID, TabFolder>().values)
         )
     }
 
     private var essentialSpaceChoices: [SidebarContextMenuChoice] {
         makeSidebarContextMenuSpaceChoices(
-            spaces: browserContext.tabManager.spaceStateOwner.spaces
+            spaces: spaceLifecycle.availableSpaces(isIncognito: false, ephemeralSpaces: [])
         )
     }
 
     private func profileChoices(for pin: ShortcutPin) -> [SidebarContextMenuChoice] {
         makeSidebarContextMenuProfileChoices(
             profiles: browserContext.profileManager.profiles,
-            selectedProfileId: browserContext.tabManager.shortcutPinRuntimeResolutionOwner.resolvedExecutionProfileId(
+            selectedProfileId: pinProjection.executionProfileID(
                 for: pin,
-                currentSpaceId: contextMenuSpace?.id
+                currentSpaceID: contextMenuSpace?.id
             )
         )
     }
 
     private func pinPresentationState(_ pin: ShortcutPin) -> ShortcutPresentationState {
-        browserContext.tabManager.shortcutPresentationOwner.shortcutPresentationState(for: pin, in: windowState)
+        selection.presentationState(for: pin, in: windowState)
     }
 }

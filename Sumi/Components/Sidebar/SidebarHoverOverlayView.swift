@@ -5,7 +5,6 @@
 //
 
 import AppKit
-import Combine
 import SwiftUI
 
 enum SidebarHoverOverlayTransientPinningPolicy {
@@ -124,9 +123,16 @@ struct SidebarHoverOverlayView: View {
     let chromeBackgroundResolvedThemeContext: ResolvedThemeContext
     let windowChromeSize: CGSize
     let browserContext: SidebarBrowserContext
+    let inventory: SidebarInventoryProjection
+    let selection: SidebarWindowSelectionQuery
+    let pinProjection: SidebarPinFolderProjection
+    let pinCommands: SidebarPinFolderCommands
+    let spaceLifecycle: SidebarSpaceLifecycle
+    let regularTabs: any SidebarRegularTabsControlling
+    let dragTransactions: SidebarDragTransactionPort
+    let updateStreams: SidebarUpdateStreams
     let updaterService: SumiUpdaterService
     let hostActions: SidebarHostActions
-    let structuralInvalidation: AnyPublisher<Void, Never>
     @ObservedObject private var dragState: SidebarDragState
 
     @EnvironmentObject var hoverManager: HoverSidebarManager
@@ -141,18 +147,32 @@ struct SidebarHoverOverlayView: View {
         chromeBackgroundResolvedThemeContext: ResolvedThemeContext,
         windowChromeSize: CGSize,
         browserContext: SidebarBrowserContext,
+        inventory: SidebarInventoryProjection,
+        selection: SidebarWindowSelectionQuery,
+        pinProjection: SidebarPinFolderProjection,
+        pinCommands: SidebarPinFolderCommands,
+        spaceLifecycle: SidebarSpaceLifecycle,
+        regularTabs: any SidebarRegularTabsControlling,
+        dragTransactions: SidebarDragTransactionPort,
+        updateStreams: SidebarUpdateStreams,
         updaterService: SumiUpdaterService,
         hostActions: SidebarHostActions,
-        structuralInvalidation: AnyPublisher<Void, Never>,
         sidebarDragState: SidebarDragState
     ) {
         self.resolvedThemeContext = resolvedThemeContext
         self.chromeBackgroundResolvedThemeContext = chromeBackgroundResolvedThemeContext
         self.windowChromeSize = windowChromeSize
         self.browserContext = browserContext
+        self.inventory = inventory
+        self.selection = selection
+        self.pinProjection = pinProjection
+        self.pinCommands = pinCommands
+        self.spaceLifecycle = spaceLifecycle
+        self.regularTabs = regularTabs
+        self.dragTransactions = dragTransactions
+        self.updateStreams = updateStreams
         self.updaterService = updaterService
         self.hostActions = hostActions
-        self.structuralInvalidation = structuralInvalidation
         self._dragState = ObservedObject(wrappedValue: sidebarDragState)
     }
 
@@ -320,9 +340,16 @@ struct SidebarHoverOverlayView: View {
     private var collapsedOverlayHost: some View {
         CollapsedSidebarOverlayHost(
             browserContext: browserContext,
+            inventory: inventory,
+            selection: selection,
+            pinProjection: pinProjection,
+            pinCommands: pinCommands,
+            spaceLifecycle: spaceLifecycle,
+            regularTabs: regularTabs,
+            dragTransactions: dragTransactions,
+            updateStreams: updateStreams,
             updaterService: updaterService,
             hostActions: hostActions,
-            structuralInvalidation: structuralInvalidation,
             windowState: windowState,
             windowRegistry: windowRegistry,
             sumiSettings: sumiSettings,

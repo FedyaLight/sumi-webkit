@@ -9,6 +9,7 @@ import Foundation
 @MainActor
 struct SpaceTitleActionOwner {
     let browserContext: SidebarBrowserContext
+    let spaceLifecycle: SidebarSpaceLifecycle
     let space: Space
     let windowState: BrowserWindowState
     let windowRegistry: WindowRegistry
@@ -16,27 +17,27 @@ struct SpaceTitleActionOwner {
 
     var actions: SpaceTitleActions {
         SpaceTitleActions(
-            canDeleteSpace: browserContext.tabManager.spaceStateOwner.spaces.count > 1,
+            canDeleteSpace: spaceLifecycle.canDeleteSpace(),
             renameSpace: { newName in
                 do {
-                    try browserContext.tabManager.spaceServices.catalog.renameSpace(
-                        spaceId: space.id,
-                        newName: newName
-                    )
+                    try spaceLifecycle.renameSpace(space.id, to: newName)
                 } catch {
                     RuntimeDiagnostics.emit("⚠️ Failed to rename space \(space.id.uuidString):", error)
                 }
             },
             updateSpaceIcon: { icon in
                 do {
-                    try browserContext.tabManager.spaceServices.catalog.updateSpaceIcon(spaceId: space.id, icon: icon)
+                    try spaceLifecycle.updateSpaceIcon(space.id, to: icon)
                 } catch {
                     RuntimeDiagnostics.emit("⚠️ Failed to update space icon \(space.id.uuidString):", error)
                 }
             },
-            persistCommittedEmoji: { _ in
-                browserContext.tabManager.structuralPersistence.markAllSpacesStructurallyDirty()
-                browserContext.tabManager.structuralPersistence.scheduleStructuralPersistence()
+            persistCommittedEmoji: { icon in
+                do {
+                    try spaceLifecycle.updateSpaceIcon(space.id, to: icon)
+                } catch {
+                    RuntimeDiagnostics.emit("⚠️ Failed to persist space icon \(space.id.uuidString):", error)
+                }
             },
             editSpace: {
                 browserContext.presentationActions.showSpaceEditor(

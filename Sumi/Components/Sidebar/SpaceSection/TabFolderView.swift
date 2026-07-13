@@ -11,6 +11,11 @@ struct TabFolderView: View {
     var folder: TabFolder
     let browserContext: SidebarBrowserContext
     let space: Space
+    let inventory: SidebarSpaceInventorySnapshot
+    let selection: SidebarWindowSelectionQuery
+    let pinProjection: SidebarPinFolderProjection
+    let pinCommands: SidebarPinFolderCommands
+    let spaceLifecycle: SidebarSpaceLifecycle
     let shortcutPins: [ShortcutPin]
     let childFolders: [TabFolder]
     let childFoldersByParentId: [UUID: [TabFolder]]
@@ -69,6 +74,7 @@ struct TabFolderView: View {
     var mutationActions: TabFolderMutationActions {
         TabFolderMutationActions(
             browserContext: browserContext,
+            pinCommands: pinCommands,
             windowState: windowState,
             windowRegistry: windowRegistry,
             themeContext: themeContext,
@@ -84,6 +90,11 @@ struct TabFolderView: View {
             childFoldersByParentId: childFoldersByParentId,
             folderPinsByFolderId: folderPinsByFolderId,
             browserContext: browserContext,
+            inventory: inventory,
+            selection: selection,
+            pinProjection: pinProjection,
+            pinCommands: pinCommands,
+            spaceLifecycle: spaceLifecycle,
             windowState: windowState,
             themeContext: themeContext,
             folderLayoutAnimation: folderLayoutAnimation,
@@ -168,8 +179,10 @@ struct TabFolderView: View {
             shortcutPins: shortcutPins,
             childFolders: childFolders,
             shortcutRestoreGaps: shortcutRestoreGaps,
+            inventory: inventory,
+            selection: selection,
             browserContext: browserContext,
-            currentTab: browserContext.currentTab(windowState)
+            currentTab: selection.currentTab(in: windowState)
         ) { projection in
             let dragSnapshot = folderDragSnapshot
             let contentProjection = folderContentProjection(

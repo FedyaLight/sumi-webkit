@@ -6,7 +6,7 @@ import XCTest
 
 @MainActor
 final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
-    func testSidebarStructuralInvalidationTracksProfileRuntimeState() {
+    func testSidebarUpdateStreamsSeparateInventoryFromProfileRuntime() {
         let browserManager = BrowserManager()
         let context = WindowViewBrowserContext.make(
             browserManager: browserManager,
@@ -14,7 +14,10 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
             defaultBrowserService: SumiDefaultBrowserService()
         )
         var invalidationCount = 0
-        let cancellable = context.sidebarStructuralInvalidation.sink {
+        let inventoryCancellable = context.sidebarUpdates.inventoryRevision.sink { _ in
+            invalidationCount += 1
+        }
+        let profileCancellable = context.sidebarUpdates.profileRuntimeChanged.sink {
             invalidationCount += 1
         }
         let initialInvalidationCount = invalidationCount
@@ -31,7 +34,8 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
         browserManager.tabStructuralRevision &+= 1
         XCTAssertEqual(invalidationCount, initialInvalidationCount + 4)
 
-        cancellable.cancel()
+        inventoryCancellable.cancel()
+        profileCancellable.cancel()
     }
 
     func testSidebarColumnHostedRootCarriesInjectedDragState() throws {
@@ -40,6 +44,13 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
         let browserManager = BrowserManager(nowPlayingController: nowPlayingController)
         let windowState = BrowserWindowState()
         let windowRegistry = WindowRegistry()
+        windowRegistry.register(windowState)
+        browserManager.windowRegistry = windowRegistry
+        let viewContext = WindowViewBrowserContext.make(
+            browserManager: browserManager,
+            updaterService: updaterService,
+            defaultBrowserService: SumiDefaultBrowserService()
+        )
         let dragState = SidebarDragState()
         let settingsSuiteName = "SumiTests.sidebarDragState.\(UUID().uuidString)"
         let settingsDefaults = try XCTUnwrap(UserDefaults(suiteName: settingsSuiteName))
@@ -48,13 +59,12 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
         }
 
         let environmentContext = SidebarHostEnvironmentContext(
-            browserContext: SidebarBrowserContext.live(browserManager: browserManager),
+            browserContext: viewContext.sidebarBrowserContext,
             hostActions: SidebarHostActions(
                 updateSidebarWidth: { _, _, _ in /* No-op. */ },
                 persistWindowSession: { _ in /* No-op. */ },
                 dismissThemePickerCommittingIfNeeded: { /* No-op. */ }
             ),
-            structuralInvalidation: Empty().eraseToAnyPublisher(),
             windowState: windowState,
             windowRegistry: windowRegistry,
             sumiSettings: SumiSettingsService(userDefaults: settingsDefaults),
@@ -67,7 +77,15 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
         )
         let root = SidebarColumnHostedRoot.view(
             environmentContext: environmentContext,
-            presentationContext: .docked(sidebarWidth: 280)
+            presentationContext: .docked(sidebarWidth: 280),
+            inventory: viewContext.sidebarInventory,
+            selection: viewContext.sidebarSelection,
+            pinProjection: viewContext.sidebarPinProjection,
+            pinCommands: viewContext.sidebarPinCommands,
+            spaceLifecycle: viewContext.sidebarSpaceLifecycle,
+            regularTabs: viewContext.sidebarRegularTabs,
+            dragTransactions: viewContext.sidebarDragTransactions,
+            updateStreams: viewContext.sidebarUpdates
         )
 
         XCTAssertIdentical(root.environmentContext.sidebarDragState, dragState)

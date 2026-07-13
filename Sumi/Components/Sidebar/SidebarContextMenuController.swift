@@ -259,6 +259,7 @@ final class SidebarContextMenuController {
     let transientSessionCoordinator: SidebarTransientSessionCoordinator
     let sidebarRecoveryCoordinator: SidebarHostRecoveryHandling
     weak var windowState: BrowserWindowState?
+    weak var settings: SumiSettingsService?
 
     private let interactiveOwnerRegistry = SidebarInteractiveOwnerRegistry()
     private weak var activeOwnerView: NSView?
@@ -460,8 +461,7 @@ final class SidebarContextMenuController {
         if let windowState,
            let window = ownerView.window {
             let globalScheme: ColorScheme = window.effectiveAppearance.name == .darkAqua ? .dark : .light
-            if let settings = windowState.tabManager?.runtimePorts?.settings
-                ?? windowState.tabManager?.sumiSettings {
+            if let settings {
                 let themeContext = windowState.resolvedThemeContext(global: globalScheme, settings: settings)
                 let colorScheme = themeContext.nativeSurfaceColorScheme
                 let appearance = NSAppearance.sumiChromeAppearance(

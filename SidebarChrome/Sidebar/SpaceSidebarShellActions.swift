@@ -15,7 +15,7 @@ extension SpacesSideBarView {
             : {
                 browserContext.commands.createFolderInCurrentSpace(windowState)
             }
-        let changeThemeAction: (() -> Void)? = pageModel.tabManager.spaceStateOwner.currentSpace == nil
+        let changeThemeAction: (() -> Void)? = spaceLifecycle.currentSpace() == nil
             ? nil
             : {
                 browserContext.commands.showGradientEditor(windowState.resolveSidebarPresentationSource(in: windowRegistry))
@@ -63,7 +63,7 @@ extension SpacesSideBarView {
         let source = windowState.resolveSidebarPresentationSource(in: windowRegistry)
         let defaultProfileID = windowState.currentProfileId
             ?? browserContext.currentProfile()?.id
-            ?? pageModel.profileManager.profiles.first?.id
+            ?? pageModel.profiles.first?.id
 
         windowState.spaceCreationSession.begin(
             source: source,
@@ -87,12 +87,13 @@ extension SpacesSideBarView {
             profileId = session.profileID
         }
 
-        let newSpace = pageModel.tabManager.spaceServices.catalog.createSpace(
+        let newSpace = spaceLifecycle.createSpace(
             name: session.trimmedName,
             icon: session.resolvedIcon,
-            profileId: profileId
+            profileID: profileId
         )
-        if let resolvedSpace = pageModel.tabManager.spaceStateOwner.space(with: newSpace.id) {
+        if let newSpace,
+           let resolvedSpace = spaceLifecycle.space(id: newSpace.id) {
             browserContext.spaceTransitions.setActiveSpace(resolvedSpace, windowState)
         }
 
@@ -113,7 +114,7 @@ extension SpacesSideBarView {
     func isNewProfileNameAvailable(for session: SpaceCreationSession) -> Bool {
         let trimmed = session.trimmedNewProfileName
         guard !trimmed.isEmpty else { return false }
-        return !pageModel.profileManager.profiles.contains {
+        return !pageModel.profiles.contains {
             $0.name.caseInsensitiveCompare(trimmed) == .orderedSame
         }
     }

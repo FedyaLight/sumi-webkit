@@ -7,26 +7,12 @@ import SumiDomain
 import SwiftUI
 
 extension SpaceView {
-    private var launcherProjection: SpaceLauncherProjectionSnapshot? {
-        guard windowState.isIncognito == false else { return nil }
-        return browserContext.tabManager.spaceLauncherProjection.projection(
-            for: space.id,
-            in: windowState.id
-        )
-    }
-
     private var topLevelPinnedPins: [ShortcutPin] {
-        if windowState.isIncognito {
-            return []
-        }
-        return launcherProjection?.topLevelPins ?? []
+        windowState.isIncognito ? [] : inventory.topLevelPins
     }
 
     private var folders: [TabFolder] {
-        if windowState.isIncognito {
-            return []
-        }
-        return launcherProjection?.topLevelFolders ?? []
+        windowState.isIncognito ? [] : inventory.topLevelFolders
     }
 
     private var hasSpacePinnedContent: Bool {
@@ -51,8 +37,13 @@ extension SpaceView {
 
     private var spacePinnedItems: [SpacePinnedListItem] {
         guard !windowState.isIncognito else { return [] }
-        return browserContext.tabManager.splitGroupSidebarOrdering
-            .topLevelItems(for: space.id)
+        return inventory.topLevelItems.map { item in
+            switch item {
+            case .folder(let id): return .folder(id)
+            case .shortcut(let id): return .shortcut(id)
+            case .splitGroup(let id): return .splitGroup(id)
+            }
+        }
     }
 
     private var spacePinnedDisplayModel: SpacePinnedDisplayModel {
@@ -103,6 +94,11 @@ extension SpaceView {
         SpacePinnedActionOwner(
             space: space,
             browserContext: browserContext,
+            inventory: inventory,
+            selection: selection,
+            pinProjection: pinProjection,
+            pinCommands: pinCommands,
+            spaceLifecycle: spaceLifecycle,
             windowState: windowState,
             themeContext: themeContext,
             contentMutationAnimation: sidebarContentMutationAnimation
@@ -146,8 +142,9 @@ extension SpaceView {
     private func shortcutHostedSplitGroupView(_ group: SplitGroup, topLevelPinnedIndex: Int) -> some View {
         let items = SplitGroupSidebarModel.items(
             for: group,
-            tabManager: browserContext.tabManager,
-            windowID: windowState.id
+            inventory: inventory,
+            selection: selection,
+            windowState: windowState
         )
         if !items.isEmpty {
             ShortcutHostedSplitGroupRow(
@@ -226,7 +223,7 @@ extension SpaceView {
                             pinnedShortcutView(pin, topLevelPinnedIndex: entry.dropIndex)
                         }
                     case .item(.splitGroup(let groupId)):
-                        if let group = browserContext.tabManager.splitGroupStore.group(id: groupId) {
+                        if let group = inventory.splitGroup(id: groupId) {
                             shortcutHostedSplitGroupView(group, topLevelPinnedIndex: entry.dropIndex)
                         }
                     case .dragPlaceholder:
@@ -273,7 +270,7 @@ extension SpaceView {
             }
             return shortcutPinIsElevated(pin)
         case .splitGroup(let groupId):
-            guard let group = browserContext.tabManager.splitGroupStore.group(id: groupId) else {
+            guard let group = inventory.splitGroup(id: groupId) else {
                 return false
             }
             return splitGroupIsElevated(group)
@@ -281,14 +278,11 @@ extension SpaceView {
     }
 
     private func shortcutPinIsElevated(_ pin: ShortcutPin) -> Bool {
-        browserContext.tabManager.shortcutPresentationOwner.shortcutRuntimeAffordanceState(for: pin, in: windowState).isSelected
+        selection.isShortcutSelected(pin, in: windowState)
     }
 
     private func splitGroupIsElevated(_ group: SplitGroup) -> Bool {
-        SidebarSelectionElevation.splitGroupIsSelected(
-            group,
-            selectedGroupID: windowState.splitSelection?.groupID
-        )
+        selection.isSplitGroupSelected(group, in: windowState)
     }
 
     private func folderContainsElevatedSelection(_ folderId: UUID) -> Bool {
@@ -308,7 +302,7 @@ extension SpaceView {
         let isAppearing = shortcutRestoreAppearingGapIds.contains(gapId)
         return ZStack(alignment: .topLeading) {
             if let gap = shortcutRestoreGaps.first(where: { $0.id == gapId }),
-               let pin = browserContext.tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: gap.pinId) {
+               let pin = inventory.pin(id: gap.pinId) {
                 pinnedShortcutView(pin, topLevelPinnedIndex: gap.index)
                     .frame(height: SidebarRowLayout.rowHeight, alignment: .top)
             }
@@ -344,10 +338,15 @@ extension SpaceView {
             folder: folder,
             browserContext: browserContext,
             space: space,
-            shortcutPins: launcherProjection?.folderPins[folder.id] ?? [],
-            childFolders: launcherProjection?.childFolders[folder.id] ?? [],
-            childFoldersByParentId: launcherProjection?.childFolders ?? [:],
-            folderPinsByFolderId: launcherProjection?.folderPins ?? [:],
+            inventory: inventory,
+            selection: selection,
+            pinProjection: pinProjection,
+            pinCommands: pinCommands,
+            spaceLifecycle: spaceLifecycle,
+            shortcutPins: inventory.folderPinsByFolderID[folder.id] ?? [],
+            childFolders: inventory.childFoldersByParentID[folder.id] ?? [],
+            childFoldersByParentId: inventory.childFoldersByParentID,
+            folderPinsByFolderId: inventory.folderPinsByFolderID,
             shortcutRestoreGaps: $shortcutRestoreGaps,
             shortcutRestoreAppearingGapIds: $shortcutRestoreAppearingGapIds,
             elevatedFolderIds: elevatedFolderIds,
@@ -416,11 +415,11 @@ extension SpaceView {
             ShortcutSidebarRow(
                 pin: pin,
                 liveTab: activeTab,
-                faviconPartition: browserContext.tabManager.shortcutPinRuntimeResolutionOwner.resolvedFaviconPartition(
+                faviconPartition: pinProjection.faviconPartition(
                     for: pin,
-                    currentSpaceId: windowState.currentSpaceId
+                    currentSpaceID: windowState.currentSpaceId
                 ),
-                runtimeAffordance: browserContext.tabManager.shortcutPresentationOwner.shortcutRuntimeAffordanceState(
+                runtimeAffordance: selection.runtimeAffordance(
                     for: pin,
                     in: windowState
                 ),
@@ -453,32 +452,32 @@ extension SpaceView {
     }
 
     private func activeShortcutTab(for pin: ShortcutPin) -> Tab? {
-        browserContext.tabManager.shortcutPresentationOwner.shortcutLiveTab(for: pin.id, in: windowState.id)
+        selection.liveTab(for: pin.id, in: windowState)
     }
 
     private func isPinnedSplitPlaceholderSelected(_ group: SplitGroup, pin: ShortcutPin) -> Bool {
-        if windowState.currentShortcutPinId == pin.id {
-            return true
-        }
-        return windowState.splitSelection?.groupID == group.id
-            && windowState.splitSelection?.activeMemberID == .shortcutPin(pin.id)
+        selection.isShortcutSelected(pin, in: windowState)
+            || selection.isSplitMemberSelected(
+                groupID: group.id,
+                memberID: .shortcutPin(pin.id),
+                in: windowState
+            )
     }
 
     private func regularSplitGroup(containing pinID: UUID) -> SplitGroup? {
-        guard let group = browserContext.tabManager.splitGroupStore.group(
-            containing: .shortcutPin(pinID)
-        ), !group.container.isShortcutSidebar else {
+        guard let group = inventory.splitGroup(containing: .shortcutPin(pinID)),
+              !group.container.isShortcutSidebar else {
             return nil
         }
         return group
     }
 
     private func activateShortcutPin(_ pin: ShortcutPin) {
-        let tab = browserContext.tabManager.shortcutTabMaterializer.materialize(
+        guard let tab = pinCommands.materialize(
             pin,
-            in: windowState.id,
-            currentSpaceId: space.id
-        )
+            in: windowState,
+            currentSpaceID: space.id
+        ) else { return }
         browserContext.commands.requestUserTabActivation(
             tab,
             windowState

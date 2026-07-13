@@ -2,16 +2,8 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-struct SidebarDropActionContext {
-    let performDrop: (
-        _ pasteboard: NSPasteboard,
-        _ resolution: SidebarDropResolution,
-        _ windowState: BrowserWindowState?
-    ) -> Bool
-}
-
 struct SidebarGlobalDragOverlay: NSViewRepresentable {
-    let dropActions: SidebarDropActionContext
+    let transactionPort: SidebarDragTransactionPort
     let dragAutoscrollRegistry: SidebarTabListDragAutoscrollRegistry
     @EnvironmentObject private var dragState: SidebarDragState
     @Environment(BrowserWindowState.self) var windowState
@@ -21,13 +13,13 @@ struct SidebarGlobalDragOverlay: NSViewRepresentable {
             dragState: dragState,
             dragAutoscrollRegistry: dragAutoscrollRegistry
         )
-        view.dropActions = dropActions
+        view.transactionPort = transactionPort
         view.windowState = windowState
         return view
     }
 
     func updateNSView(_ nsView: SidebarDragNSView, context: Context) {
-        nsView.dropActions = dropActions
+        nsView.transactionPort = transactionPort
         nsView.dragState = dragState
         nsView.dragAutoscrollRegistry = dragAutoscrollRegistry
         nsView.windowState = windowState
@@ -50,7 +42,7 @@ class SidebarDragNSView: NSView {
         }
     }
 
-    var dropActions: SidebarDropActionContext?
+    var transactionPort: SidebarDragTransactionPort?
     var windowState: BrowserWindowState?
     var dragState: SidebarDragState
     var dragAutoscrollRegistry: SidebarTabListDragAutoscrollRegistry
@@ -148,10 +140,14 @@ class SidebarDragNSView: NSView {
 
         guard let resolution,
               resolution.slot != .empty,
-              let dropActions else { return false }
+              let transactionPort else { return false }
         dragState.beginDropCommit()
         return runWithoutDropAnimations {
-            dropActions.performDrop(sender.draggingPasteboard, resolution, windowState)
+            transactionPort.commit(
+                pasteboard: sender.draggingPasteboard,
+                resolution: resolution,
+                windowState: windowState
+            )
         }
     }
 
