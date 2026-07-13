@@ -90,8 +90,18 @@ final class SumiCurrentSitePermissionsViewModelTests: XCTestCase {
     }
 
     func testAutoplayActivityPersistsAcrossRegistrableSitePages() async throws {
+        let storageDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SumiAutoplaySiteActivity-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(
+            at: storageDirectory,
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: storageDirectory) }
         let defaults = UserDefaults(suiteName: "SumiAutoplaySiteActivity-\(UUID().uuidString)")!
-        let siteActivityStore = SumiPermissionSiteActivityStore(userDefaults: defaults)
+        let siteActivityStore = SumiPermissionSiteActivityStore(
+            userDefaults: defaults,
+            storageDirectory: storageDirectory
+        )
         let deps = dependencies(siteActivityStore: siteActivityStore)
         let mediaContext = context(
             url: URL(string: "https://video.example.com/watch")!,
@@ -111,8 +121,13 @@ final class SumiCurrentSitePermissionsViewModelTests: XCTestCase {
             autoplayInUse: true,
             dependencies: deps
         )
+        let didFlush = await siteActivityStore.persistenceAuthority.flushPendingWrites()
+        XCTAssertTrue(didFlush)
 
-        let reloadedStore = SumiPermissionSiteActivityStore(userDefaults: defaults)
+        let reloadedStore = SumiPermissionSiteActivityStore(
+            userDefaults: defaults,
+            storageDirectory: storageDirectory
+        )
         let rootViewModel = SumiCurrentSitePermissionsViewModel()
         await rootViewModel.load(
             context: rootContext,

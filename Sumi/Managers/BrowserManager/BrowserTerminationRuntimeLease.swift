@@ -49,6 +49,11 @@ final class BrowserTerminationRuntimeLease: BrowserTerminationFinalizing {
     func finalizeTermination() async {
         Self.log.info("Termination persistence began")
         windowPersistence.flush()
+        let didFlushPermissions = await browserRuntime.permissionRuntime
+            .flushPermissionPersistence()
+        Self.log.info(
+            "Permission persistence \(didFlushPermissions ? "succeeded" : "failed")"
+        )
 
         let runtimePersistStart = CFAbsoluteTimeGetCurrent()
         let flushedRuntimeStates = await tabManager.structuralPersistence

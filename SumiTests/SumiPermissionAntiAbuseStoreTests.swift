@@ -35,7 +35,8 @@ final class SumiPermissionAntiAbuseStoreTests: XCTestCase {
         XCTAssertFalse(events.first?.key.requestingOrigin.identity.contains("?") ?? true)
     }
 
-    func testPersistentProfilesSurviveStoreRecreationButEphemeralProfilesDoNotPersist() async {
+    func testPersistentProfilesSurviveStoreRecreationButEphemeralProfilesDoNotPersist() async throws {
+        let directory = try temporaryDirectory()
         let suiteName = "SumiAntiAbuseStoreTests-\(UUID().uuidString)"
         let storageKey = "anti-abuse-\(UUID().uuidString)"
         let persistentKey = antiAbuseKey(.camera)
@@ -44,14 +45,19 @@ final class SumiPermissionAntiAbuseStoreTests: XCTestCase {
 
         let firstStore = SumiPermissionAntiAbuseStore(
             userDefaults: UserDefaults(suiteName: suiteName)!,
-            storageKey: storageKey
+            storageKey: storageKey,
+            storageDirectory: directory
         )
         await firstStore.record(event(.userDismissed, key: persistentKey, at: now))
         await firstStore.record(event(.userDismissed, key: ephemeralKey, at: now))
+        let firstAuthority = await firstStore.persistenceAuthority
+        let didFlush = await firstAuthority.flushPendingWrites()
+        XCTAssertTrue(didFlush)
 
         let secondStore = SumiPermissionAntiAbuseStore(
             userDefaults: UserDefaults(suiteName: suiteName)!,
-            storageKey: storageKey
+            storageKey: storageKey,
+            storageDirectory: directory
         )
         let persistentEvents = await secondStore.events(for: persistentKey, now: now)
         let ephemeralEvents = await secondStore.events(for: ephemeralKey, now: now)
@@ -125,8 +131,55 @@ final class SumiPermissionAntiAbuseStoreTests: XCTestCase {
 
         XCTAssertEqual(events.map(\.type), [.userDismissed])
         XCTAssertEqual(diagnostics.loadOutcome, .loadedLegacyUserDefaults)
-        let migrated = try Data(contentsOf: directory.appendingPathComponent("permission-anti-abuse-events.v1.json"))
+        let authority = await store.persistenceAuthority
+        let didFlush = await authority.flushPendingWrites()
+        XCTAssertTrue(didFlush)
+        let migrated = try Data(
+            contentsOf: directory.appendingPathComponent(SumiPermissionPersistenceAuthority.canonicalFileName)
+        )
         XCTAssertGreaterThan(migrated.count, 0)
+        let assertionDefaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        XCTAssertNil(assertionDefaults.data(forKey: storageKey))
+    }
+
+    func testOneThousandRapidMutationsPublishOneGeneratedSnapshot() async throws {
+        let directory = try temporaryDirectory()
+        let authority = SumiPermissionPersistenceAuthority(
+            userDefaults: nil,
+            storageDirectory: directory
+        )
+        let key = antiAbuseKey(.camera)
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+
+        for index in 0..<1_000 {
+            authority.mutateAntiAbuseEvents { records in
+                records = [
+                    SumiPermissionAntiAbuseEvent(
+                        id: "event-\(index)",
+                        type: .promptShown,
+                        key: key,
+                        createdAt: now
+                    ),
+                ]
+            }
+        }
+
+        XCTAssertEqual(authority.persistenceDiagnostics.successfulWriteCount, 0)
+        let didFlush = await authority.flushPendingWrites()
+        XCTAssertTrue(didFlush)
+        XCTAssertEqual(authority.persistenceDiagnostics.successfulWriteCount, 1)
+
+        let envelope = try JSONDecoder().decode(
+            AntiAbuseCanonicalEnvelope.self,
+            from: Data(
+                contentsOf: directory.appendingPathComponent(
+                    SumiPermissionPersistenceAuthority.canonicalFileName
+                )
+            )
+        )
+        XCTAssertEqual(envelope.version, 1)
+        XCTAssertEqual(envelope.generation, 1_000)
+        XCTAssertEqual(envelope.antiAbuseEvents.map(\.id), ["event-999"])
     }
 
     func testRetentionCapRemovesOldAndExcessEvents() async {
@@ -159,4 +212,10 @@ final class SumiPermissionAntiAbuseStoreTests: XCTestCase {
         temporaryDirectories.append(directory)
         return directory
     }
+}
+
+private struct AntiAbuseCanonicalEnvelope: Decodable {
+    let version: Int
+    let generation: UInt64
+    let antiAbuseEvents: [SumiPermissionAntiAbuseEvent]
 }

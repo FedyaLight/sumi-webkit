@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import SumiDomain
 import SwiftData
 import WebKit
 import XCTest
@@ -8,6 +9,74 @@ import XCTest
 
 @MainActor
 final class BrowserTerminationRuntimeLeaseTests: XCTestCase {
+    func testFinalizationAwaitsOffMainPermissionPublication() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SumiPermissionTermination-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let defaults = try XCTUnwrap(
+            UserDefaults(suiteName: "SumiPermissionTermination-\(UUID().uuidString)")
+        )
+        let publishingGate = GatedPermissionPublisher()
+        let authority = SumiPermissionPersistenceAuthority(
+            userDefaults: defaults,
+            storageDirectory: directory,
+            publishingFaultInjector: { stage, _ in publishingGate.observe(stage) }
+        )
+        let siteActivityStore = SumiPermissionSiteActivityStore(
+            persistenceAuthority: authority
+        )
+        let browserManager = try makeBrowserManager(
+            permissionSiteActivityStore: siteActivityStore
+        )
+        let origin = SumiPermissionOrigin(string: "https://example.com")
+        let key = SumiPermissionKey(
+            requestingOrigin: origin,
+            topOrigin: origin,
+            permissionType: .camera,
+            profilePartitionId: "profile-a",
+            isEphemeralProfile: false
+        )
+        siteActivityStore.recordSettingsChange(
+            displayDomain: "example.com",
+            key: key,
+            state: .allow,
+            reason: "termination-flush"
+        )
+        browserManager.permissionRuntime.cancelPermissionEventObservation()
+        XCTAssertFalse(publishingGate.didEnter)
+
+        let lease = makeLease(browserManager)
+        var didFinalize = false
+        let finalization = Task { @MainActor in
+            await lease.finalizeTermination()
+            didFinalize = true
+        }
+        await waitUntil { publishingGate.didEnter }
+
+        XCTAssertFalse(publishingGate.didRunOnMainThread)
+        XCTAssertFalse(didFinalize)
+
+        publishingGate.resume()
+        await finalization.value
+
+        XCTAssertEqual(
+            siteActivityStore.persistenceDiagnostics.successfulWriteCount,
+            1
+        )
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: directory.appendingPathComponent(
+                    SumiPermissionPersistenceAuthority.canonicalFileName
+                ).path
+            )
+        )
+        XCTAssertTrue(
+            SumiPermissionCanonicalSnapshotPublisher.Stage.allCases.allSatisfy {
+                publishingGate.observedStages.contains($0)
+            }
+        )
+    }
+
     func testFinalizationWaitsForSiteDataCleanupBeforeReleasingBrowserResources() async throws {
         let browserManager = try makeBrowserManager()
         let profile = Profile(name: "Termination")
@@ -220,14 +289,17 @@ final class BrowserTerminationRuntimeLeaseTests: XCTestCase {
         )
     }
 
-    private func makeBrowserManager() throws -> BrowserManager {
+    private func makeBrowserManager(
+        permissionSiteActivityStore: SumiPermissionSiteActivityStore? = nil
+    ) throws -> BrowserManager {
         BrowserManager(
             startupPersistence: BrowserManagerStartupPersistence(
                 container: try ModelContainer(
                     for: SumiStartupPersistence.schema,
                     configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
                 )
-            )
+            ),
+            permissionSiteActivityStore: permissionSiteActivityStore
         )
     }
 
@@ -281,5 +353,42 @@ private final class GatedTerminationSiteDataPolicy: BrowserSiteDataPolicyEnforci
     func resumeCleanup() {
         continuation?.resume()
         continuation = nil
+    }
+}
+
+private final class GatedPermissionPublisher: @unchecked Sendable {
+    private let lock = NSLock()
+    private let releaseGate = DispatchSemaphore(value: 0)
+    private var entered = false
+    private var ranOnMainThread = false
+    private var stages: [SumiPermissionCanonicalSnapshotPublisher.Stage] = []
+
+    var didEnter: Bool {
+        lock.withLock { entered }
+    }
+
+    var didRunOnMainThread: Bool {
+        lock.withLock { ranOnMainThread }
+    }
+
+    var observedStages: [SumiPermissionCanonicalSnapshotPublisher.Stage] {
+        lock.withLock { stages }
+    }
+
+    func observe(_ stage: SumiPermissionCanonicalSnapshotPublisher.Stage) {
+        let shouldWait = lock.withLock {
+            stages.append(stage)
+            ranOnMainThread = ranOnMainThread || Thread.isMainThread
+            guard stage == .temporaryWrite, !entered else { return false }
+            entered = true
+            return true
+        }
+        if shouldWait {
+            releaseGate.wait()
+        }
+    }
+
+    func resume() {
+        releaseGate.signal()
     }
 }

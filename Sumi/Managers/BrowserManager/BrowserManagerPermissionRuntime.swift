@@ -109,7 +109,9 @@ final class BrowserManagerPermissionRuntime {
         // One store instance for coordinator + autoplay adapter (no dual SwiftData path).
         let autoplayStore = dependencies.browserConfiguration.autoplayPolicyStore
         let persistentPermissionStore = autoplayStore.permissionStore
-        let antiAbuseStore = SumiPermissionAntiAbuseStore()
+        let antiAbuseStore = SumiPermissionAntiAbuseStore(
+            persistenceAuthority: dependencies.permissionSiteActivityStore.persistenceAuthority
+        )
         let systemPermissionService = dependencies.systemPermissionService
             ?? MacSumiSystemPermissionService()
         let permissionCoordinator = dependencies.permissionCoordinator
@@ -205,6 +207,11 @@ final class BrowserManagerPermissionRuntime {
     func cancelPermissionEventObservation() {
         permissionEventOwner?.cancel()
         permissionEventOwner = nil
+    }
+
+    @discardableResult
+    func flushPermissionPersistence() async -> Bool {
+        await permissionSiteActivityStore.persistenceAuthority.flushPendingWrites()
     }
 
     isolated deinit {

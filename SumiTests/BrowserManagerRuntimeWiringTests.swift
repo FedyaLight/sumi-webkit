@@ -526,6 +526,24 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         XCTAssertIdentical(browserManager.permissionRuntime.permissionBridges.externalSchemeSessionStore, externalSchemeSessionStore)
     }
 
+    func testMissingPermissionStoreCreatesDistinctMemoryOnlyAuthorities() throws {
+        let firstBrowserManager = BrowserManager(
+            startupPersistence: BrowserManagerStartupPersistence(
+                container: try makeInMemoryStartupContainer()
+            )
+        )
+        let secondBrowserManager = BrowserManager(
+            startupPersistence: BrowserManagerStartupPersistence(
+                container: try makeInMemoryStartupContainer()
+            )
+        )
+
+        XCTAssertFalse(
+            firstBrowserManager.permissionRuntime.permissionSiteActivityStore.persistenceAuthority
+                === secondBrowserManager.permissionRuntime.permissionSiteActivityStore.persistenceAuthority
+        )
+    }
+
     func testBrowserManagerPermissionFacadesRouteThroughScopedBridgeRegistry() throws {
         let browserManager = BrowserManager(
             startupPersistence: BrowserManagerStartupPersistence(

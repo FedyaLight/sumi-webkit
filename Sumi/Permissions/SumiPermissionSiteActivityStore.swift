@@ -1,7 +1,6 @@
 import Combine
 import Foundation
 import SumiDomain
-import OSLog
 
 struct SumiPermissionSiteActivityRecord: Codable, Equatable, Hashable, Identifiable, Sendable {
     let id: String
@@ -29,8 +28,6 @@ struct SumiPermissionSiteActivityRecord: Codable, Equatable, Hashable, Identifia
 
 @MainActor
 final class SumiPermissionSiteActivityStore: ObservableObject {
-    private static let log = Logger.sumi(category: "PermissionSiteActivityStore")
-
     enum ActivityKind {
         case requested
         case autoDetected
@@ -40,46 +37,36 @@ final class SumiPermissionSiteActivityStore: ObservableObject {
 
     @Published private(set) var revision = 0
 
-    private struct StorageEnvelope: Codable {
-        var version: Int
-        var records: [SumiPermissionSiteActivityRecord]
-    }
-
     private enum Constants {
-        static let storageVersion = 1
-        static let storageKey = "permissions.siteActivity.v1"
-        static let storageFileName = "permission-site-activity.v1.json"
         static let persistentRecordLimit = 600
     }
 
-    private let userDefaults: UserDefaults
-    private let snapshotStore: SumiPermissionJSONSnapshotStore<StorageEnvelope>?
+    let persistenceAuthority: SumiPermissionPersistenceAuthority
     private let domainCache: SumiPermissionDomainCache
-    private var persistentRecordsById: [String: SumiPermissionSiteActivityRecord] = [:]
     private var ephemeralRecordsById: [String: SumiPermissionSiteActivityRecord] = [:]
-    private var loadedUnreadablePersistentPayload = false
-    private(set) var persistenceDiagnostics = SumiPermissionJSONPersistenceDiagnostics()
+
+    var persistenceDiagnostics: SumiPermissionPersistenceDiagnostics {
+        persistenceAuthority.persistenceDiagnostics
+    }
 
     init(
-        userDefaults: UserDefaults = .standard,
+        persistenceAuthority: SumiPermissionPersistenceAuthority,
+        registrableDomainResolver: any SumiRegistrableDomainResolving = SumiRegistrableDomainResolver()
+    ) {
+        self.persistenceAuthority = persistenceAuthority
+        self.domainCache = SumiPermissionDomainCache(registrableDomainResolver: registrableDomainResolver)
+    }
+
+    init(
+        userDefaults: UserDefaults? = nil,
         storageDirectory: URL? = nil,
         registrableDomainResolver: any SumiRegistrableDomainResolving = SumiRegistrableDomainResolver()
     ) {
-        self.userDefaults = userDefaults
-        if storageDirectory != nil || userDefaults === UserDefaults.standard {
-            snapshotStore = SumiPermissionJSONSnapshotStore(
-                fileName: Constants.storageFileName,
-                directoryURL: storageDirectory
-            )
-        } else {
-            snapshotStore = nil
-        }
+        persistenceAuthority = SumiPermissionPersistenceAuthority(
+            userDefaults: userDefaults,
+            storageDirectory: storageDirectory
+        )
         self.domainCache = SumiPermissionDomainCache(registrableDomainResolver: registrableDomainResolver)
-        persistentRecordsById = loadRecords()
-        if case .loadedLegacyUserDefaults = persistenceDiagnostics.loadOutcome,
-           !loadedUnreadablePersistentPayload {
-            persist()
-        }
     }
 
     func records(
@@ -242,12 +229,11 @@ final class SumiPermissionSiteActivityStore: ObservableObject {
                 ephemeralRecordsById.removeValue(forKey: id)
             }
         } else {
+            var persistentRecordsById = persistenceAuthority.siteActivityRecords()
             for id in ids {
                 persistentRecordsById.removeValue(forKey: id)
             }
-            if !loadedUnreadablePersistentPayload {
-                persist()
-            }
+            persistenceAuthority.replaceSiteActivityRecords(persistentRecordsById)
         }
         revision += 1
         return ids.count
@@ -362,7 +348,7 @@ final class SumiPermissionSiteActivityStore: ObservableObject {
     private func recordsStorage(
         isEphemeralProfile: Bool
     ) -> [String: SumiPermissionSiteActivityRecord] {
-        isEphemeralProfile ? ephemeralRecordsById : persistentRecordsById
+        isEphemeralProfile ? ephemeralRecordsById : persistenceAuthority.siteActivityRecords()
     }
 
     private func write(
@@ -372,9 +358,7 @@ final class SumiPermissionSiteActivityStore: ObservableObject {
         if isEphemeralProfile {
             ephemeralRecordsById = storage
         } else {
-            persistentRecordsById = capped(storage)
-            loadedUnreadablePersistentPayload = false
-            persist()
+            persistenceAuthority.replaceSiteActivityRecords(capped(storage))
         }
     }
 
@@ -388,97 +372,6 @@ final class SumiPermissionSiteActivityStore: ObservableObject {
                 .prefix(Constants.persistentRecordLimit)
                 .map { ($0.id, $0) }
         )
-    }
-
-    private func persist() {
-        let envelope = StorageEnvelope(
-            version: Constants.storageVersion,
-            records: Array(persistentRecordsById.values)
-        )
-
-        if let snapshotStore {
-            do {
-                try snapshotStore.write(envelope)
-                persistenceDiagnostics.lastWriteFailure = nil
-                return
-            } catch {
-                persistenceDiagnostics.lastWriteFailure = error.localizedDescription
-                Self.log.error(
-                    "Failed to persist permission site activity to file: \(error.localizedDescription, privacy: .public)"
-                )
-            }
-        }
-
-        do {
-            let data = try JSONEncoder().encode(envelope)
-            userDefaults.set(data, forKey: Constants.storageKey)
-        } catch {
-            persistenceDiagnostics.lastWriteFailure = error.localizedDescription
-            Self.log.error(
-                "Failed to encode permission site activity: \(error.localizedDescription, privacy: .public)"
-            )
-        }
-    }
-
-    private func loadRecords() -> [String: SumiPermissionSiteActivityRecord] {
-        if let snapshotStore {
-            switch snapshotStore.load() {
-            case .missing:
-                break
-            case .loaded(let envelope, let data):
-                guard envelope.version == Constants.storageVersion else {
-                    snapshotStore.preserveUnreadablePayload(data)
-                    loadedUnreadablePersistentPayload = true
-                    persistenceDiagnostics.loadOutcome = .unsupportedFileVersion(envelope.version)
-                    return [:]
-                }
-                persistenceDiagnostics.loadOutcome = .loadedFile
-                return Dictionary(uniqueKeysWithValues: envelope.records.map { ($0.id, $0) })
-            case .failed(let failure):
-                loadedUnreadablePersistentPayload = true
-                switch failure.kind {
-                case .read:
-                    persistenceDiagnostics.loadOutcome = .failedFileRead(failure.description)
-                case .decode:
-                    persistenceDiagnostics.loadOutcome = .failedFileDecode(failure.description)
-                case .write:
-                    persistenceDiagnostics.lastWriteFailure = failure.description
-                }
-                return [:]
-            }
-        }
-
-        guard let data = userDefaults.data(forKey: Constants.storageKey) else {
-            persistenceDiagnostics.loadOutcome = .missing
-            return [:]
-        }
-        let envelope: StorageEnvelope
-        do {
-            envelope = try JSONDecoder().decode(StorageEnvelope.self, from: data)
-        } catch {
-            Self.preserveUnreadablePayload(data, in: userDefaults, storageKey: Constants.storageKey)
-            loadedUnreadablePersistentPayload = true
-            persistenceDiagnostics.loadOutcome = .failedLegacyUserDefaultsDecode(error.localizedDescription)
-            return [:]
-        }
-        guard envelope.version == Constants.storageVersion else {
-            Self.preserveUnreadablePayload(data, in: userDefaults, storageKey: Constants.storageKey)
-            loadedUnreadablePersistentPayload = true
-            persistenceDiagnostics.loadOutcome = .unsupportedFileVersion(envelope.version)
-            return [:]
-        }
-        persistenceDiagnostics.loadOutcome = .loadedLegacyUserDefaults
-        return Dictionary(uniqueKeysWithValues: envelope.records.map { ($0.id, $0) })
-    }
-
-    private static func preserveUnreadablePayload(
-        _ data: Data,
-        in userDefaults: UserDefaults,
-        storageKey: String
-    ) {
-        let backupKey = "\(storageKey).unreadable"
-        guard userDefaults.data(forKey: backupKey) == nil else { return }
-        userDefaults.set(data, forKey: backupKey)
     }
 
     private func siteHost(for origin: SumiPermissionOrigin) -> String? {

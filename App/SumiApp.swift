@@ -50,13 +50,21 @@ struct SumiApp: App {
         let moduleRegistry = SumiModuleRegistry(
             settingsStore: SumiModuleSettingsStore(userDefaults: .standard)
         )
+        let permissionPersistenceAuthority = SumiPermissionPersistenceAuthority(
+            userDefaults: .standard,
+            storageDirectory: SumiApplicationSupportDirectory.appRootURL()
+                .appendingPathComponent("Permissions", isDirectory: true)
+        )
+        let permissionSiteActivityStore = SumiPermissionSiteActivityStore(
+            persistenceAuthority: permissionPersistenceAuthority
+        )
         let browserManager = BrowserManager(
             webViewSessions: webViewSessions,
             moduleRegistry: moduleRegistry,
             startupPersistence: SumiStartupPersistenceComposition.browserManagerStartupPersistence,
             browserConfiguration: BrowserConfiguration.shared,
             nowPlayingController: nowPlayingController,
-            permissionSiteActivityStore: SumiPermissionSiteActivityStore(),
+            permissionSiteActivityStore: permissionSiteActivityStore,
             externalAppResolver: SumiNSWorkspaceExternalAppResolver(),
             sidebarHostRecoveryCoordinator: SidebarHostRecoveryCoordinator()
         )

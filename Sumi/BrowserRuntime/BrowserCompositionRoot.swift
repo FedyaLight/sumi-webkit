@@ -216,7 +216,11 @@ enum BrowserCompositionRoot {
             permissionIndicatorEventStore: permissionIndicatorEventStore,
             permissionRecentActivityStore: permissionRecentActivityStore,
             permissionSiteActivityStore: permissionSiteActivityStore
-                ?? SumiPermissionSiteActivityStore(),
+                ?? SumiPermissionSiteActivityStore(
+                    persistenceAuthority: SumiPermissionPersistenceAuthority(
+                        userDefaults: nil
+                    )
+                ),
             permissionCleanupService: permissionCleanupService,
             blockedPopupStore: blockedPopupStore,
             externalAppResolver: externalAppResolver,
