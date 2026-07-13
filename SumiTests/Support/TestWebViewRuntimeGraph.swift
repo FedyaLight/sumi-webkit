@@ -40,7 +40,7 @@ func makeTestWebViewRuntimeGraph(
             currentTabId: { _ in nil },
             splitVisibleTabIds: { _ in [] },
             resolveTab: { _, _ in nil },
-            canMaterializeWebViewDuringStartup: { _ in false },
+            canMaterializeWebViewDuringStartup: { _, _ in false },
             markTabAccessed: { _ in },
             globallyVisibleTabIDs: { [] },
             scheduleTabSuspensionReconcile: { _ in },

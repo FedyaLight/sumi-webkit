@@ -41,8 +41,8 @@ final class VisibleWebViewRuntimeOwnerTests: XCTestCase {
             ),
             webViewSessions: webViewSessions,
             existingWebView: { _, _ in nil },
-            createWebView: { tab, windowId in
-                createdPairs.append((tab.id, windowId))
+            createWebView: { tab, window in
+                createdPairs.append((tab.id, window.id))
                 return WKWebView()
             }
         )
@@ -60,6 +60,116 @@ final class VisibleWebViewRuntimeOwnerTests: XCTestCase {
         XCTAssertEqual(evictedVisibleTabIds, [currentTab.id, splitTab.id])
         XCTAssertEqual(suspensionReasons, ["visible-webviews-prepared"])
         XCTAssertEqual(mediaReasons, ["visible-webviews-prepared"])
+    }
+
+    func testPrepareVisibleWebViewsResolvesRegularAndEphemeralTabsExactly() {
+        let owner = VisibleWebViewRuntimeOwner()
+        let webViewSessions = WebViewSessionRepository()
+        let regularWindow = BrowserWindowState()
+        let ephemeralWindow = BrowserWindowState()
+        ephemeralWindow.isIncognito = true
+
+        let regularTab = makeWebTab()
+        let ephemeralTab = makeWebTab(urlString: "https://example.com/private")
+        regularWindow.currentTabId = regularTab.id
+        ephemeralWindow.currentTabId = ephemeralTab.id
+        ephemeralWindow.ephemeralTabs = [ephemeralTab]
+
+        var createdTabs: [Tab] = []
+        for (window, expectedTab) in [
+            (regularWindow, regularTab),
+            (ephemeralWindow, ephemeralTab),
+        ] {
+            let runtime = makeRuntime(
+                windowStatesById: [window.id: window],
+                currentTabId: { handle in
+                    handle === window ? expectedTab.id : nil
+                },
+                resolveTab: { tabID, handle in
+                    guard handle === window else { return nil }
+                    return resolveVisibleTab(
+                        tabID,
+                        in: window,
+                        regularTab: { id in id == regularTab.id ? regularTab : nil }
+                    )
+                },
+                canMaterializeWebViewDuringStartup: { handle, windowHandle in
+                    guard windowHandle === window else { return false }
+                    return resolveVisibleTab(
+                        matching: handle,
+                        in: window,
+                        regularTab: { id in id == regularTab.id ? regularTab : nil }
+                    ) != nil
+                }
+            )
+
+            let didCreate = owner.prepareVisibleWebViews(
+                for: window,
+                runtime: runtime,
+                webViewSessions: webViewSessions,
+                existingWebView: { _, _ in nil },
+                createWebView: { handle, windowHandle in
+                    guard windowHandle === window,
+                          let tab = resolveVisibleTab(
+                            matching: handle,
+                            in: window,
+                            regularTab: { id in
+                                id == regularTab.id ? regularTab : nil
+                            }
+                          ) else {
+                        return nil
+                    }
+                    createdTabs.append(tab)
+                    return WKWebView()
+                }
+            )
+
+            XCTAssertTrue(didCreate)
+            XCTAssertIdentical(createdTabs.last, expectedTab)
+        }
+    }
+
+    func testVisibleStartupPolicyRejectsStaleSameIDTabEvidence() {
+        let owner = VisibleWebViewRuntimeOwner()
+        let window = BrowserWindowState()
+        let tabID = UUID()
+        let stale = Tab(
+            id: tabID,
+            loadsCachedFaviconOnInit: false
+        )
+        let replacement = Tab(
+            id: tabID,
+            loadsCachedFaviconOnInit: false
+        )
+        window.currentTabId = tabID
+        var createdCount = 0
+
+        let didCreate = owner.prepareVisibleWebViews(
+            for: window,
+            runtime: makeRuntime(
+                currentTabId: { handle in handle === window ? tabID : nil },
+                resolveTab: { id, handle in
+                    id == tabID && handle === window ? stale : nil
+                },
+                canMaterializeWebViewDuringStartup: { handle, windowHandle in
+                    guard windowHandle === window else { return false }
+                    return resolveVisibleTab(
+                        matching: handle,
+                        in: window,
+                        regularTab: { id in id == tabID ? replacement : nil }
+                    ) != nil
+                }
+            ),
+            webViewSessions: WebViewSessionRepository(),
+            existingWebView: { _, _ in nil },
+            createWebView: { _, _ in
+                createdCount += 1
+                return WKWebView()
+            }
+        )
+
+        XCTAssertFalse(didCreate)
+        XCTAssertEqual(createdCount, 0)
     }
 
     func testSchedulePrepareVisibleWebViewsCoalescesAndRefreshesOnce() async {
@@ -197,8 +307,9 @@ final class VisibleWebViewRuntimeOwnerTests: XCTestCase {
         splitVisibleTabIds: @escaping @MainActor (UUID) -> [UUID] = { _ in [] },
         resolveTab: @escaping @MainActor (UUID, any WebRuntimeWindowHandle) -> (any WebRuntimeTabHandle)? = { _, _ in nil },
         canMaterializeWebViewDuringStartup: @escaping @MainActor (
-            any WebRuntimeTabHandle
-        ) -> Bool = { _ in true },
+            any WebRuntimeTabHandle,
+            any WebRuntimeWindowHandle
+        ) -> Bool = { _, _ in true },
         markTabAccessed: @escaping @MainActor (UUID) -> Void = { _ in /* No-op. */ },
         evictHiddenWebViews: @escaping @MainActor (UUID, Set<UUID>) -> Void = { _, _ in /* No-op. */ },
         scheduleTabSuspensionReconcile: @escaping @MainActor (String) -> Void = { _ in /* No-op. */ },

@@ -25,11 +25,6 @@ extension BrowserWindowState: WebRuntimeWindowHandle {
     }
 }
 
-extension WebRuntimeTabHandle {
-    /// Concrete app-target tab when the handle is a `Tab` adapter.
-    var concreteTab: Tab? { self as? Tab }
-}
-
 extension WebRuntimeWindowHandle {
     /// Concrete app-target window when the handle is a `BrowserWindowState` adapter.
     var concreteWindowState: BrowserWindowState? { self as? BrowserWindowState }

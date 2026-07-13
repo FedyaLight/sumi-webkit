@@ -1888,7 +1888,7 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
                 currentTabId: { _ in tabID },
                 splitVisibleTabIds: { _ in [] },
                 resolveTab: { id, _ in id == tabID ? tab : nil },
-                canMaterializeWebViewDuringStartup: { _ in true },
+                canMaterializeWebViewDuringStartup: { _, _ in true },
                 markTabAccessed: { _ in },
                 globallyVisibleTabIDs: { [tabID] in [tabID] },
                 scheduleTabSuspensionReconcile: { _ in },

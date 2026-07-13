@@ -619,7 +619,7 @@ final class SumiWebRuntimeSmokeTests: XCTestCase {
             currentTabId: { $0.id == window.id ? tab.id : nil },
             splitVisibleTabIds: { _ in [] },
             resolveTab: { tabId, _ in tabId == tab.id ? tab : nil },
-            canMaterializeWebViewDuringStartup: { _ in true },
+            canMaterializeWebViewDuringStartup: { _, _ in true },
             markTabAccessed: { marked.append($0) },
             evictHiddenWebViews: { _, _ in },
             scheduleTabSuspensionReconcile: { _ in },

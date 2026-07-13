@@ -162,7 +162,10 @@ public final class VisibleWebViewRuntimeOwner: WebRuntimeVisiblePreparationContr
         runtime: VisibleWebViewPreparationRuntime,
         webViewSessions: WebViewSessionRepository,
         existingWebView: (UUID, UUID) -> WKWebView?,
-        createWebView: (any WebRuntimeTabHandle, UUID) -> WKWebView?
+        createWebView: (
+            any WebRuntimeTabHandle,
+            any WebRuntimeWindowHandle
+        ) -> WKWebView?
     ) -> Bool {
         let signpostState = SumiWebRuntimeDiagnostics.beginInterval(
             "VisibleWebViewRuntimeOwner.prepareVisibleWebViews"
@@ -185,13 +188,13 @@ public final class VisibleWebViewRuntimeOwner: WebRuntimeVisiblePreparationContr
             guard let tab = runtime.resolveTab(tabId, windowHandle) else {
                 continue
             }
-            guard runtime.canMaterializeWebViewDuringStartup(tab) else {
+            guard runtime.canMaterializeWebViewDuringStartup(tab, windowHandle) else {
                 continue
             }
 
             runtime.markTabAccessed(tab.id)
             if existingWebView(tab.id, windowHandle.id) == nil,
-               createWebView(tab, windowHandle.id) != nil {
+               createWebView(tab, windowHandle) != nil {
                 didCreateWebView = true
             }
         }

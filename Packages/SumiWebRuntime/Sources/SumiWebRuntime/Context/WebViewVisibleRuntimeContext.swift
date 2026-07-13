@@ -6,7 +6,10 @@ public struct WebViewVisibleRuntimeContext {
     public let currentTabId: (any WebRuntimeWindowHandle) -> UUID?
     public let splitVisibleTabIds: (UUID) -> [UUID]
     public let resolveTab: (UUID, any WebRuntimeWindowHandle) -> (any WebRuntimeTabHandle)?
-    public let canMaterializeWebViewDuringStartup: (any WebRuntimeTabHandle) -> Bool
+    public let canMaterializeWebViewDuringStartup: (
+        any WebRuntimeTabHandle,
+        any WebRuntimeWindowHandle
+    ) -> Bool
     public let markTabAccessed: (UUID) -> Void
     public let globallyVisibleTabIDs: @MainActor @Sendable () -> Set<UUID>
     public let scheduleTabSuspensionReconcile: (String) -> Void
@@ -19,7 +22,10 @@ public struct WebViewVisibleRuntimeContext {
         currentTabId: @escaping (any WebRuntimeWindowHandle) -> UUID?,
         splitVisibleTabIds: @escaping (UUID) -> [UUID],
         resolveTab: @escaping (UUID, any WebRuntimeWindowHandle) -> (any WebRuntimeTabHandle)?,
-        canMaterializeWebViewDuringStartup: @escaping (any WebRuntimeTabHandle) -> Bool,
+        canMaterializeWebViewDuringStartup: @escaping (
+            any WebRuntimeTabHandle,
+            any WebRuntimeWindowHandle
+        ) -> Bool,
         markTabAccessed: @escaping (UUID) -> Void,
         globallyVisibleTabIDs: @escaping @MainActor @Sendable () -> Set<UUID>,
         scheduleTabSuspensionReconcile: @escaping (String) -> Void,

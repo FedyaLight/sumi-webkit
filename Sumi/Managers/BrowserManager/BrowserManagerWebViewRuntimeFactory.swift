@@ -187,12 +187,22 @@ enum BrowserWebViewRuntimeFactory {
                 return requireBrowserManager(browserManager, operation: "resolve visible tab")
                     .tabManager.tabCollectionMembershipOwner.tab(for: tabId)
             },
-            canMaterializeWebViewDuringStartup: { [weak browserManager] tabHandle in
-                guard let tab = tabHandle.concreteTab else { return false }
-                return requireBrowserManager(
+            canMaterializeWebViewDuringStartup: { [weak browserManager] tabHandle, windowHandle in
+                guard let windowState = windowHandle.concreteWindowState else {
+                    return false
+                }
+                let manager = requireBrowserManager(
                     browserManager,
                     operation: "check visible WebView startup materialization"
-                ).startupProtectionRuntime.canMaterializeWebViewDuringStartup(tab)
+                )
+                guard let tab = resolveVisibleTab(
+                    matching: tabHandle,
+                    in: windowState,
+                    regularTab: manager.tabManager.tabCollectionMembershipOwner.tab(for:)
+                ) else {
+                    return false
+                }
+                return manager.startupProtectionRuntime.canMaterializeWebViewDuringStartup(tab)
             },
             markTabAccessed: { [weak browserManager] tabId in
                 requireBrowserManager(browserManager, operation: "mark visible tab accessed")

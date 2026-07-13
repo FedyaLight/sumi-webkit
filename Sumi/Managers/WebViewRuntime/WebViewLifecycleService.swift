@@ -80,22 +80,27 @@ final class WebViewLifecycleService {
             ).wasScheduled ?? false
         },
         cleanupUnprotectedTrackedWebView: { [weak self] webView, owner, tabHandle in
-            self?.cleanupUnprotectedTrackedWebView(
+            guard let self else { return }
+            self.cleanupUnprotectedTrackedWebView(
                 webView,
                 owner: owner,
-                tab: tabHandle.flatMap(\.concreteTab)
+                tab: self.tabForPackageCallback(tabHandle)
             )
         },
         cleanupUnprotectedDetachedWebView: { [weak self] webView, tabID, tabHandle in
-            if let tab = tabHandle?.concreteTab {
+            guard let self else { return }
+            if let tab = self.tabForPackageCallback(tabHandle) {
                 tab.cleanupCloneWebView(webView)
             } else {
-                self?.physicalCleanup.clean(webView, tabID: tabID)
+                self.physicalCleanup.clean(webView, tabID: tabID)
             }
         },
         refreshPrimaryTrackedWebView: { [weak self] tabHandle in
-            guard let tab = tabHandle.concreteTab else { return }
-            self?.visibility.refreshPrimaryWebView(for: tab)
+            guard let self,
+                  let tab = self.tabForPackageCallback(tabHandle) else {
+                return
+            }
+            self.visibility.refreshPrimaryWebView(for: tab)
         },
         removeWebViewFromContainers: { [weak self] webView in
             self?.compositor.removeWebViewFromContainers(webView)
@@ -127,15 +132,19 @@ final class WebViewLifecycleService {
             ).wasScheduled ?? false
         },
         cleanupUnprotectedTrackedWebView: { [weak self] webView, owner, tabHandle in
-            self?.cleanupUnprotectedTrackedWebView(
+            guard let self else { return }
+            self.cleanupUnprotectedTrackedWebView(
                 webView,
                 owner: owner,
-                tab: tabHandle.flatMap(\.concreteTab)
+                tab: self.tabForPackageCallback(tabHandle)
             )
         },
         refreshPrimaryTrackedWebView: { [weak self] tabHandle in
-            guard let tab = tabHandle.concreteTab else { return }
-            self?.visibility.refreshPrimaryWebView(for: tab)
+            guard let self,
+                  let tab = self.tabForPackageCallback(tabHandle) else {
+                return
+            }
+            self.visibility.refreshPrimaryWebView(for: tab)
         },
         removeCompositorContainerView: { [weak self] windowID in
             self?.compositor.removeContainer(for: windowID)
@@ -266,5 +275,16 @@ final class WebViewLifecycleService {
             owner: owner,
             tab: tab
         )
+    }
+
+    func tabForPackageCallback(
+        _ handle: (any WebRuntimeTabHandle)?
+    ) -> Tab? {
+        guard let handle,
+              let tab = resolveTab(handle.id),
+              tab === handle else {
+            return nil
+        }
+        return tab
     }
 }

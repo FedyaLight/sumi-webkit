@@ -379,7 +379,7 @@ final class WebViewRuntimeGraph {
         ownershipQuery: ownershipQuery,
         resolveTab: { [weak self] tabID in
             guard let self else { return nil }
-            return self.runtimeTabs.resolve(
+            return self.runtimeTabs.tabForCleanup(
                 tabID,
                 resolveRuntimeTab: self.resolveRuntimeTab
             )
@@ -404,7 +404,8 @@ final class WebViewRuntimeGraph {
             visibility: visibilityRuntime,
             webViewSessions: webViewSessions,
             ownershipQuery: ownershipQuery,
-            trackedAdmission: trackedWebViewAdmission
+            trackedAdmission: trackedWebViewAdmission,
+            regularTab: resolveCollectionTab
         )
 
     private lazy var tabWebViewRebuild: TabWebViewRebuildService = TabWebViewRebuildService(

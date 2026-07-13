@@ -29,16 +29,15 @@ final class WebViewNavigationBroadcastOwner {
         self.deferProtectedNavigation = deferProtectedNavigation
     }
 
-    func syncTab(_ tab: any WebRuntimeTabHandle, to url: URL, originatingWebView: WKWebView?) {
+    func syncTab(_ tab: Tab, to url: URL, originatingWebView: WKWebView?) {
         let tabId = tab.id
-        guard let concreteTab = tab.concreteTab else { return }
         crossWindowSyncOwner.syncTab(
             tabId,
             to: url,
             webViews: webViewSessions.webViews(for: tabId),
             originatingWebView: originatingWebView,
             hasPendingTarget: { webView, targetURL in
-                concreteTab.mainFrameLoads.hasOutstandingLoad(
+                tab.mainFrameLoads.hasOutstandingLoad(
                     on: webView,
                     targetURL: targetURL
                 )
@@ -49,9 +48,9 @@ final class WebViewNavigationBroadcastOwner {
             deferProtectedTarget: { [webViewSessions, deferProtectedNavigation] webView in
                 guard case .window(let owner) = webViewSessions.residence(of: webView),
                       owner.tabID == tabId,
-                      let navigationIntent = concreteTab.mainFrameLoads.currentIntent(
+                      let navigationIntent = tab.mainFrameLoads.currentIntent(
                           matching: url
-                      ), concreteTab.mainFrameLoads.markDeferredLoad(
+                      ), tab.mainFrameLoads.markDeferredLoad(
                           on: webView,
                           intent: navigationIntent
                       ) else {
@@ -73,13 +72,13 @@ final class WebViewNavigationBroadcastOwner {
                 case .scheduled:
                     return .deferred
                 case .notProtected:
-                    concreteTab.mainFrameLoads.clearDeferredLoad(
+                    tab.mainFrameLoads.clearDeferredLoad(
                         on: webView,
                         intent: navigationIntent
                     )
                     return .executeNow
                 case .invalidTarget, .droppedAtCapacity:
-                    concreteTab.mainFrameLoads.clearDeferredLoad(
+                    tab.mainFrameLoads.clearDeferredLoad(
                         on: webView,
                         intent: navigationIntent
                     )
@@ -87,22 +86,21 @@ final class WebViewNavigationBroadcastOwner {
                 }
             },
             load: { webView in
-                concreteTab.performMainFrameNavigationAfterHydrationIfNeeded(
+                tab.performMainFrameNavigationAfterHydrationIfNeeded(
                     on: webView
                 ) { resolvedWebView in
-                    return WebRuntimeMainFrameLoader.load(url, on: resolvedWebView)
+                    WebRuntimeMainFrameLoader.load(url, on: resolvedWebView)
                 }
             }
         )
     }
 
     func reloadTab(
-        _ tab: any WebRuntimeTabHandle,
+        _ tab: Tab,
         intent: TabMainFrameNavigationIntent,
         policy: WebRuntimeMainFrameReloadPolicy
     ) {
-        guard let concreteTab = tab.concreteTab,
-              concreteTab.mainFrameLoads.isCurrent(intent) else {
+        guard tab.mainFrameLoads.isCurrent(intent) else {
             return
         }
         let tabId = tab.id
@@ -112,11 +110,11 @@ final class WebViewNavigationBroadcastOwner {
             isProtected: { [isWebViewProtectedFromCompositorMutation] webView in
                 isWebViewProtectedFromCompositorMutation(webView)
             },
-            deferProtectedReload: { [weak concreteTab, webViewSessions, deferProtectedNavigation] webView in
-                guard let concreteTab,
+            deferProtectedReload: { [weak tab, webViewSessions, deferProtectedNavigation] webView in
+                guard let tab,
                       case .window(let owner) = webViewSessions.residence(of: webView),
                       owner.tabID == tabId,
-                      concreteTab.mainFrameLoads.markDeferredLoad(
+                      tab.mainFrameLoads.markDeferredLoad(
                           on: webView,
                           intent: intent
                       ) else {
@@ -139,13 +137,13 @@ final class WebViewNavigationBroadcastOwner {
                 case .scheduled:
                     return .deferred
                 case .notProtected:
-                    concreteTab.mainFrameLoads.clearDeferredLoad(
+                    tab.mainFrameLoads.clearDeferredLoad(
                         on: webView,
                         intent: intent
                     )
                     return .executeNow
                 case .invalidTarget, .droppedAtCapacity:
-                    concreteTab.mainFrameLoads.clearDeferredLoad(
+                    tab.mainFrameLoads.clearDeferredLoad(
                         on: webView,
                         intent: intent
                     )
@@ -153,9 +151,9 @@ final class WebViewNavigationBroadcastOwner {
                 }
             },
             reload: { webView in
-                _ = concreteTab.navigationCommandOwner.submitExactReload(
+                _ = tab.navigationCommandOwner.submitExactReload(
                     on: webView,
-                    tab: concreteTab,
+                    tab: tab,
                     intent: intent,
                     policy: policy
                 )
@@ -165,13 +163,12 @@ final class WebViewNavigationBroadcastOwner {
 
     @discardableResult
     func reloadTab(
-        _ tab: any WebRuntimeTabHandle,
+        _ tab: Tab,
         in windowId: UUID,
         intent: TabMainFrameNavigationIntent,
         policy: WebRuntimeMainFrameReloadPolicy
     ) -> TabMainFrameReloadCommandOutcome {
-        guard let concreteTab = tab.concreteTab,
-              concreteTab.mainFrameLoads.isCurrent(intent) else {
+        guard tab.mainFrameLoads.isCurrent(intent) else {
             return .failed
         }
         guard let webView = webViewSessions.webView(for: tab.id, in: windowId) else {
@@ -181,11 +178,11 @@ final class WebViewNavigationBroadcastOwner {
             RuntimeDiagnostics.protectedWebViewTrace(
                 "deferReloadProtected webView=\(ObjectIdentifier(webView)) tab=\(tab.id.uuidString.prefix(8)) window=\(windowId.uuidString.prefix(8))"
             )
-            guard concreteTab.mainFrameLoads.markDeferredLoad(
+            guard tab.mainFrameLoads.markDeferredLoad(
                 on: webView,
                 intent: intent
             ) else {
-                return concreteTab.mainFrameLoads.hasOutstandingLoad(
+                return tab.mainFrameLoads.hasOutstandingLoad(
                     on: webView,
                     targetURL: intent.targetURL
                 ) ? .scheduled : .failed
@@ -207,21 +204,21 @@ final class WebViewNavigationBroadcastOwner {
             case .scheduled:
                 return .scheduled
             case .notProtected:
-                concreteTab.mainFrameLoads.clearDeferredLoad(
+                tab.mainFrameLoads.clearDeferredLoad(
                     on: webView,
                     intent: intent
                 )
             case .invalidTarget, .droppedAtCapacity:
-                concreteTab.mainFrameLoads.clearDeferredLoad(
+                tab.mainFrameLoads.clearDeferredLoad(
                     on: webView,
                     intent: intent
                 )
                 return .failed
             }
         }
-        return concreteTab.navigationCommandOwner.submitExactReload(
+        return tab.navigationCommandOwner.submitExactReload(
             on: webView,
-            tab: concreteTab,
+            tab: tab,
             intent: intent,
             policy: policy
         )

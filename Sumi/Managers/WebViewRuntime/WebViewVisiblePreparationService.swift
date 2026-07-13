@@ -5,21 +5,26 @@ import SumiWebRuntime
 /// Materialization occurs only for tabs selected by the native visibility plan.
 @MainActor
 final class WebViewVisiblePreparationService {
+    typealias RegularTabResolver = @MainActor (UUID) -> Tab?
+
     private let visibility: WebViewVisibilityRuntime
     private let webViewSessions: WebViewSessionRepository
     private let ownershipQuery: WebViewOwnershipQuery
     private let trackedAdmission: TrackedWebViewAdmissionService
+    private let regularTab: RegularTabResolver
 
     init(
         visibility: WebViewVisibilityRuntime,
         webViewSessions: WebViewSessionRepository,
         ownershipQuery: WebViewOwnershipQuery,
-        trackedAdmission: TrackedWebViewAdmissionService
+        trackedAdmission: TrackedWebViewAdmissionService,
+        regularTab: @escaping RegularTabResolver
     ) {
         self.visibility = visibility
         self.webViewSessions = webViewSessions
         self.ownershipQuery = ownershipQuery
         self.trackedAdmission = trackedAdmission
+        self.regularTab = regularTab
     }
 
     @discardableResult
@@ -42,9 +47,16 @@ final class WebViewVisiblePreparationService {
             existingWebView: { [ownershipQuery] tabID, windowID in
                 ownershipQuery.webView(for: tabID, in: windowID)
             },
-            createWebView: { [trackedAdmission] tabHandle, windowID in
-                guard let tab = tabHandle.concreteTab else { return nil }
-                return trackedAdmission.webView(for: tab, in: windowID)
+            createWebView: { [regularTab, trackedAdmission] tabHandle, windowHandle in
+                guard windowHandle === windowState,
+                      let tab = resolveVisibleTab(
+                        matching: tabHandle,
+                        in: windowState,
+                        regularTab: regularTab
+                      ) else {
+                    return nil
+                }
+                return trackedAdmission.webView(for: tab, in: windowState.id)
             }
         )
     }
@@ -54,13 +66,41 @@ final class WebViewVisiblePreparationService {
         visibility.schedulePrepareVisibleWebViews(
             for: windowState,
             runtime: runtime,
-            prepare: { [weak self] windowHandle in
-                guard let self,
-                      let concreteWindow = windowHandle.concreteWindowState else {
+            prepare: { [weak self, weak windowState] windowHandle in
+                guard let self, let windowState,
+                      windowHandle === windowState else {
                     return false
                 }
-                return prepare(for: concreteWindow, runtime: runtime)
+                return self.prepare(for: windowState, runtime: runtime)
             }
         )
     }
+}
+
+@MainActor
+func resolveVisibleTab(
+    _ tabID: UUID,
+    in windowState: BrowserWindowState,
+    regularTab: WebViewVisiblePreparationService.RegularTabResolver
+) -> Tab? {
+    if windowState.isIncognito {
+        return windowState.ephemeralTabs.first { $0.id == tabID }
+    }
+    return regularTab(tabID)
+}
+
+@MainActor
+func resolveVisibleTab(
+    matching handle: any WebRuntimeTabHandle,
+    in windowState: BrowserWindowState,
+    regularTab: WebViewVisiblePreparationService.RegularTabResolver
+) -> Tab? {
+    guard let tab = resolveVisibleTab(
+        handle.id,
+        in: windowState,
+        regularTab: regularTab
+    ), tab === handle else {
+        return nil
+    }
+    return tab
 }

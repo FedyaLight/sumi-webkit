@@ -98,6 +98,96 @@ final class BrowserWebViewRoutingServiceTests: XCTestCase {
         XCTAssertEqual(commandRecorder.muteCalls.first?.tabId, tab.id)
     }
 
+    func testNavigationBroadcastSyncDefersProtectedReplicaWithExactIntent() throws {
+        let repository = WebViewSessionRepository()
+        let targetURL = try XCTUnwrap(URL(string: "https://example.com/broadcast"))
+        let tab = Tab(
+            url: targetURL,
+            webViewSessions: repository,
+            loadsCachedFaviconOnInit: false
+        )
+        let windowID = UUID()
+        let webView = NavigationBroadcastRecordingWebView()
+        registerTrackedWebView(
+            webView,
+            for: tab.id,
+            in: windowID,
+            repository: repository
+        )
+        var deferredCommand: DeferredWebViewCommand?
+        let broadcast = WebViewNavigationBroadcastOwner(
+            crossWindowSyncOwner: WebViewCrossWindowSyncOwner(),
+            webViewSessions: repository,
+            isWebViewProtectedFromCompositorMutation: { $0 === webView },
+            deferProtectedNavigation: { command, candidate in
+                XCTAssertIdentical(candidate, webView)
+                deferredCommand = command
+                return .scheduled
+            }
+        )
+
+        broadcast.syncTab(
+            tab,
+            to: targetURL,
+            originatingWebView: nil
+        )
+
+        guard case .synchronizeTrackedNavigation(
+            let webViewID,
+            let tabID,
+            let deferredWindowID,
+            let intent
+        ) = deferredCommand else {
+            return XCTFail("Expected protected navigation deferral")
+        }
+        XCTAssertEqual(webViewID, ObjectIdentifier(webView))
+        XCTAssertEqual(tabID, tab.id)
+        XCTAssertEqual(deferredWindowID, windowID)
+        XCTAssertEqual(intent.revision, tab.mainFrameLoads.currentIntent.revision)
+        XCTAssertEqual(intent.targetURL, targetURL)
+        XCTAssertTrue(tab.mainFrameLoads.hasOutstandingLoad(
+            on: webView,
+            targetURL: targetURL
+        ))
+        XCTAssertTrue(webView.loadedRequests.isEmpty)
+    }
+
+    func testNavigationBroadcastWindowReloadRejectsStaleIntent() throws {
+        let repository = WebViewSessionRepository()
+        let targetURL = try XCTUnwrap(URL(string: "https://example.com/reload"))
+        let newerURL = try XCTUnwrap(URL(string: "https://example.com/newer"))
+        let tab = Tab(
+            url: targetURL,
+            webViewSessions: repository,
+            loadsCachedFaviconOnInit: false
+        )
+        let windowID = UUID()
+        let webView = NavigationBroadcastRecordingWebView()
+        registerTrackedWebView(
+            webView,
+            for: tab.id,
+            in: windowID,
+            repository: repository
+        )
+        let graph = makeTestWebViewRuntimeGraph(
+            webViewSessions: repository,
+            resolveRuntimeTab: { id in id == tab.id ? tab : nil }
+        )
+        let staleIntent = tab.beginMainFrameNavigationIntent(to: targetURL)
+        _ = tab.beginMainFrameNavigationIntent(to: newerURL)
+
+        let outcome = graph.navigationBroadcastOwner.reloadTab(
+            tab,
+            in: windowID,
+            intent: staleIntent,
+            policy: .standard
+        )
+
+        XCTAssertEqual(outcome, .failed)
+        XCTAssertTrue(webView.loadedRequests.isEmpty)
+        XCTAssertEqual(webView.reloadCount, 0)
+    }
+
     func testWindowOwnedWebViewUsesCanonicalTrackedWebView() throws {
         let tab = Tab(
             url: try XCTUnwrap(URL(string: "https://example.com/page")),
@@ -524,6 +614,27 @@ final class BrowserWebViewRoutingServiceTests: XCTestCase {
             removeRecentVisibility: { _ in },
             cleanupDisplacedWebView: { _, _ in }
         )
+    }
+}
+
+@MainActor
+private final class NavigationBroadcastRecordingWebView: WKWebView {
+    private(set) var loadedRequests: [URLRequest] = []
+    private(set) var reloadCount = 0
+
+    override func load(_ request: URLRequest) -> WKNavigation? {
+        loadedRequests.append(request)
+        return nil
+    }
+
+    override func reload() -> WKNavigation? {
+        reloadCount += 1
+        return nil
+    }
+
+    override func reloadFromOrigin() -> WKNavigation? {
+        reloadCount += 1
+        return nil
     }
 }
 

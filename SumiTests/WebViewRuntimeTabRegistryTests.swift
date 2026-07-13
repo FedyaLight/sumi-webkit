@@ -54,6 +54,33 @@ final class WebViewRuntimeTabRegistryTests: XCTestCase {
         XCTAssertIdentical(registry.boundTab(tabID), bound)
     }
 
+    func testLifecyclePackageCallbackRejectsStaleSameIDTabIdentity() {
+        let repository = WebViewSessionRepository()
+        let tabID = UUID()
+        let stale = makeTab(id: tabID, webViewSessions: repository)
+        let replacement = makeTab(id: tabID, webViewSessions: repository)
+        let graph = makeTestWebViewRuntimeGraph(
+            webViewSessions: repository,
+            resolveRuntimeTab: { id in id == tabID ? replacement : nil }
+        )
+
+        XCTAssertEqual(graph.runtimeTabs.bind(stale), .bound)
+        XCTAssertNil(graph.lifecycleService.tabForPackageCallback(stale))
+        XCTAssertIdentical(graph.runtimeTabs.boundTab(tabID), stale)
+    }
+
+    func testLifecyclePackageCallbackAcceptsExactRetiringTabIdentity() {
+        let repository = WebViewSessionRepository()
+        let tab = makeTab(webViewSessions: repository)
+        let graph = makeTestWebViewRuntimeGraph(
+            webViewSessions: repository,
+            resolveRuntimeTab: { id in id == tab.id ? tab : nil }
+        )
+
+        XCTAssertTrue(graph.runtimeTabs.beginRetirement(tab))
+        XCTAssertIdentical(graph.lifecycleService.tabForPackageCallback(tab), tab)
+    }
+
     func testRetiredIdentityCannotRebindButDistinctSameIDTabCanBind() {
         let repository = WebViewSessionRepository()
         let registry = WebViewRuntimeTabRegistry(webViewSessions: repository)

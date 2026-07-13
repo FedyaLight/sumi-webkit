@@ -34,7 +34,10 @@ final class WebViewVisibilityRuntime {
         runtime: VisibleWebViewPreparationRuntime,
         webViewSessions: WebViewSessionRepository,
         existingWebView: @escaping (UUID, UUID) -> WKWebView?,
-        createWebView: @escaping (any WebRuntimeTabHandle, UUID) -> WKWebView?
+        createWebView: @escaping (
+            any WebRuntimeTabHandle,
+            any WebRuntimeWindowHandle
+        ) -> WKWebView?
     ) -> Bool {
         visibleRuntime.prepareVisibleWebViews(
             for: windowState,
