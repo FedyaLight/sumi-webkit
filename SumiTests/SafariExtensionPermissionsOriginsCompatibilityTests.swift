@@ -177,7 +177,7 @@ final class SafariExtensionPermissionsOriginsCompatibilityTests: XCTestCase {
         webView.owningTab = tab
         tab.replaceUntrackedWebView(webView)
 
-        manager.registerTabWithExtensionRuntime(
+        manager.normalTabRegistration.register(
             tab,
             reason: "SafariExtensionPermissionsOriginsCompatibilityTests"
         )

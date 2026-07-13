@@ -13,8 +13,6 @@ final class ExtensionInitialDocumentRuntimePreparationOwner:
         [UUID: (token: UUID, task: Task<Void, Never>)] = [:]
     private var retiredNativeMessagingWarmupTaskTokens = Set<UUID>()
     private var finishedUnregisteredNativeMessagingWarmupTaskTokens = Set<UUID>()
-    private var deferredTabNotificationTasksByTabID:
-        [UUID: (token: UUID, task: Task<Void, Never>)] = [:]
 
     init(manager: ExtensionManager) {
         self.manager = manager
@@ -113,54 +111,6 @@ final class ExtensionInitialDocumentRuntimePreparationOwner:
         }
     }
 
-    @discardableResult
-    func scheduleDeferredTabNotificationAfterContextLoad(
-        _ tab: Tab,
-        profileId: UUID,
-        extensionLoadGeneration: UInt64,
-        reason: String
-    ) -> Task<Void, Never> {
-        let tabId = tab.id
-        let token = UUID()
-        let task = Self.detachedMainActorRuntimeTask { [weak self] in
-            guard let self, let manager = self.manager else { return }
-            defer {
-                if self.deferredTabNotificationTasksByTabID[tabId]?.token == token {
-                    self.deferredTabNotificationTasksByTabID.removeValue(forKey: tabId)
-                }
-            }
-
-            guard Task.isCancelled == false,
-                  manager.runtimeSession.extensionLoadGeneration == extensionLoadGeneration
-            else { return }
-
-            await self.ensureInitialExtensionContextsLoaded(for: profileId)
-
-            guard Task.isCancelled == false,
-                  manager.runtimeSession.extensionLoadGeneration == extensionLoadGeneration
-            else { return }
-
-            guard
-                let resolvedTab = manager.extensionTabQuery?.extensionTab(
-                    for: tabId
-                )
-            else {
-                return
-            }
-            manager.reconcileTabAfterContentScriptContextsLoaded(
-                resolvedTab,
-                reason: "\(reason).afterContextLoad"
-            )
-        }
-        deferredTabNotificationTasksByTabID[tabId]?.task.cancel()
-        deferredTabNotificationTasksByTabID[tabId] = (token, task)
-        return task
-    }
-
-    func deferredTabNotificationTask(for tabId: UUID) -> Task<Void, Never>? {
-        deferredTabNotificationTasksByTabID[tabId]?.task
-    }
-
     func cancelContentScriptContextLoadTasks() {
         contentScriptContextLoadTasksByProfile.values.forEach { $0.cancel() }
         contentScriptContextLoadTasksByProfile.removeAll()
@@ -175,15 +125,9 @@ final class ExtensionInitialDocumentRuntimePreparationOwner:
         finishedUnregisteredNativeMessagingWarmupTaskTokens.removeAll()
     }
 
-    func cancelDeferredTabNotificationTasks() {
-        deferredTabNotificationTasksByTabID.values.forEach { $0.task.cancel() }
-        deferredTabNotificationTasksByTabID.removeAll()
-    }
-
     #if DEBUG
         func runtimeTasksForDrain() -> [Task<Void, Never>] {
-            deferredTabNotificationTasksByTabID.values.map(\.task)
-                + Array(contentScriptContextLoadTasksByProfile.values)
+            Array(contentScriptContextLoadTasksByProfile.values)
                 + nativeMessagingWarmupTasksByProfile.values.map(\.task)
         }
     #endif
@@ -363,7 +307,7 @@ extension ExtensionManager {
         profileId: UUID,
         reason: String = #function
     ) -> Task<Void, Never> {
-        initialDocumentRuntimePreparationOwner
+        deferredTabRegistration
             .scheduleDeferredTabNotificationAfterContextLoad(
                 tab,
                 profileId: profileId,
@@ -373,6 +317,6 @@ extension ExtensionManager {
     }
 
     func deferredTabNotificationTask(for tabId: UUID) -> Task<Void, Never>? {
-        initialDocumentRuntimePreparationOwner.deferredTabNotificationTask(for: tabId)
+        deferredTabRegistration.task(for: tabId)
     }
 }

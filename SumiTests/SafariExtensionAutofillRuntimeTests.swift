@@ -207,7 +207,7 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
         )
 
         let adapter = try XCTUnwrap(manager.adapterCatalog.stableAdapter(for: tab))
-        XCTAssertTrue(manager.isTabEligibleForCurrentExtensionRuntime(tab))
+        XCTAssertTrue(manager.preparedExtensionTabs.containsPreparedTab(tab))
         XCTAssertNotNil(adapter.url(for: try XCTUnwrap(manager.getExtensionContext(for: installed.id))))
     }
 
@@ -304,13 +304,13 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
             }
         }
 
-        manager.markTabEligibleAfterCommittedNavigation(
+        manager.normalTabRegistration.markEligibleAfterCommittedNavigation(
             tab,
             reason: "SafariExtensionAutofillRuntimeTests"
         )
 
         wait(for: [didOpenExpectation], timeout: 2)
-        XCTAssertTrue(manager.isTabEligibleForCurrentExtensionRuntime(tab))
+        XCTAssertTrue(manager.preparedExtensionTabs.containsPreparedTab(tab))
     }
 
     func testLoginFormFixtureExistsForManualAutofillVerification() throws {

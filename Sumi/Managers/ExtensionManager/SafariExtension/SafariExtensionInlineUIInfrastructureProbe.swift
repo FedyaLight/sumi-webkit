@@ -33,7 +33,7 @@ enum SafariExtensionInlineUIInfrastructureProbe {
         "func canLateBindExtensionController(to webView: WKWebView) -> Bool",
         "enum ExtensionRuntimeWebViewBindingPolicy",
         "normalizedURL.isEmpty || normalizedURL == \"about:blank\"",
-        "func tabNeedsExtensionContentScriptRebind(_ tab: Tab) -> Bool",
+        "func needsContentScriptRebind(_ tab: Tab) -> Bool",
     ]
 
     static let navigationResponderRequiredSymbols: [String] = [
@@ -138,7 +138,7 @@ enum SafariExtensionInlineUIInfrastructureProbe {
                     || normalTabRuntimeBinding?.contains(symbol) == true
                     || webViewBindingPolicy?.contains(symbol) == true
             }
-            && normalTabRuntimeBinding?.contains("func tabNeedsExtensionContentScriptRebind(_ tab: Tab) -> Bool") == true
+            && normalTabRuntimeBinding?.contains("func needsContentScriptRebind(_ tab: Tab) -> Bool") == true
         let inlineUINavigationResponderWired =
             navigationResponderRequiredSymbols.allSatisfy { navigation?.contains($0) == true }
 

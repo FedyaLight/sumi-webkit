@@ -130,7 +130,8 @@ enum SafariExtensionAutofillInfrastructureClassifier {
             )
         }
 
-        guard extensionManager.isTabEligibleForCurrentExtensionRuntime(tab) else {
+        guard extensionManager.publishedExtensionTabs
+            .containsPublishedTab(tab) else {
             return classification(
                 .tabMappingMissing,
                 detail: "Tab is not eligible for the current extension runtime generation"

@@ -110,3 +110,17 @@ final class BrowserExtensionWindowQueryAdapter: ExtensionWindowQuery {
             }
     }
 }
+
+@available(macOS 15.5, *)
+extension BrowserExtensionWindowQueryAdapter:
+    ExtensionTabWindowProfileQuery {
+    func profileIDForWindowContainingExactTab(_ tab: Tab) -> UUID? {
+        guard let window = preferredExtensionWindowState(containing: tab),
+              tabs(window).contains(where: { $0 === tab })
+        else { return nil }
+        if window.isIncognito {
+            return window.ephemeralProfile?.id
+        }
+        return window.currentProfileId
+    }
+}

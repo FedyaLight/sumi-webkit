@@ -23,7 +23,7 @@ final class ExtensionPageContextMenuItemsOwner {
     /// menu is shown — items must not be cached across menu presentations.
     func menuItems(for tab: Tab) -> [NSMenuItem] {
         guard let manager,
-              manager.isTabEligibleForCurrentExtensionRuntime(tab),
+              manager.publishedExtensionTabs.containsPublishedTab(tab),
               let profileId = manager.resolvedProfileId(for: tab),
               let tabAdapter = manager.adapterCatalog.stableAdapter(for: tab)
         else { return [] }

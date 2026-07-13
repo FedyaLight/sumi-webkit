@@ -27,7 +27,6 @@ final class ExtensionWebViewRuntimePreparationOwner:
             @MainActor (WKUserContentController, UUID) -> Void
         let attachExtensionControllerIfNeeded: @MainActor (WKWebView, Tab) -> Bool
         let webViewNeedsExtensionRuntimeRebuild: @MainActor (WKWebView, Tab) -> Bool
-        let registerTabWithExtensionRuntime: @MainActor (Tab, String) -> Void
         let traceControllerBinding:
             @MainActor (String, UUID?, WKWebExtensionController?, WKWebViewConfiguration?, WKWebView?) -> Void
         let controllerDescription: @MainActor (WKWebExtensionController?) -> String
@@ -38,9 +37,18 @@ final class ExtensionWebViewRuntimePreparationOwner:
     }
 
     private let dependencies: Dependencies
+    private weak var tabRegistration: ExtensionNormalTabRegistration?
 
     init(dependencies: Dependencies) {
         self.dependencies = dependencies
+    }
+
+    func bind(tabRegistration: ExtensionNormalTabRegistration) {
+        if let existing = self.tabRegistration {
+            precondition(existing === tabRegistration)
+            return
+        }
+        self.tabRegistration = tabRegistration
     }
 
     func prepareWebViewConfigForExtensionRuntime(
@@ -110,9 +118,9 @@ final class ExtensionWebViewRuntimePreparationOwner:
             )
             dependencies.runtime().rebuildLiveWebViews(owningTab)
             owningTab.extensionPageRuntimeOwner.clearOpenNotificationGeneration()
-            dependencies.registerTabWithExtensionRuntime(
+            tabRegistration?.register(
                 owningTab,
-                "prepareWebViewForExtensionRuntime.rebuild"
+                reason: "prepareWebViewForExtensionRuntime.rebuild"
             )
         }
 
@@ -175,9 +183,6 @@ extension ExtensionWebViewRuntimePreparationOwner.Dependencies {
             },
             webViewNeedsExtensionRuntimeRebuild: { [weak manager] webView, tab in
                 manager?.webViewNeedsExtensionRuntimeRebuild(webView, for: tab) ?? false
-            },
-            registerTabWithExtensionRuntime: { [weak manager] tab, reason in
-                manager?.registerTabWithExtensionRuntime(tab, reason: reason)
             },
             traceControllerBinding: { [weak manager] phase, profileId, controller, configuration, webView in
                 manager?.runtimeDiagnostics.traceNativeMessagingContextBinding(

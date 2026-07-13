@@ -380,6 +380,10 @@ extension ExtensionManager {
         let bridge = browserManager.extensionBridgeComposition
         extensionWindowQuery = bridge.windows
         extensionTabQuery = bridge.tabs
+        controllerAttachmentOwner.bind(
+            tabQuery: bridge.tabs,
+            liveWebViews: bridge.webViews
+        )
         requestedTabTargetQuery = bridge.requestedTabTargets
         extensionTabMutation = bridge.tabMutation
         extensionWindowActivation = bridge.windowActivation

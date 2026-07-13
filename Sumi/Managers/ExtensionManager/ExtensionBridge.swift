@@ -239,12 +239,14 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
     private weak var windowActivation: (any ExtensionWindowActivation)?
     private weak var contextPublications: ExtensionContextPublicationQuery?
     private weak var extensionManager: ExtensionManager?
+    private let preparedTabVisibility: ExtensionPreparedTabVisibility
 
     init(
         windowState: BrowserWindowState,
         windowQuery: any ExtensionWindowQuery,
         windowActivation: any ExtensionWindowActivation,
         contextPublications: ExtensionContextPublicationQuery,
+        preparedTabVisibility: ExtensionPreparedTabVisibility,
         extensionManager: ExtensionManager
     ) {
         self.windowId = windowState.id
@@ -252,6 +254,7 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
         self.windowQuery = windowQuery
         self.windowActivation = windowActivation
         self.contextPublications = contextPublications
+        self.preparedTabVisibility = preparedTabVisibility
         self.extensionManager = extensionManager
         super.init()
     }
@@ -314,7 +317,7 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
             )?.profileID,
             let tab = windowQuery.currentExtensionTab(in: windowState),
             extensionManager.resolvedProfileId(for: tab) == contextProfileId,
-            extensionManager.isTabEligibleForCurrentExtensionRuntime(tab)
+            tabIsVisibleToPublishedWindow(tab, in: windowState)
         else {
             SafariExtensionAutofillFillDiagnostics.recordPopupTabVisibility(
                 seesCurrentTab: false,
@@ -348,10 +351,25 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
 
         return windowQuery.tabsForExtensionWindow(windowState).filter {
             extensionManager.resolvedProfileId(for: $0) == contextProfileId
-                && extensionManager.isTabEligibleForCurrentExtensionRuntime($0)
+                && tabIsVisibleToPublishedWindow($0, in: windowState)
         }.compactMap {
             extensionManager.adapterCatalog.stableAdapter(for: $0)
         }
+    }
+
+    private func tabIsVisibleToPublishedWindow(
+        _ tab: Tab,
+        in windowState: BrowserWindowState
+    ) -> Bool {
+        guard let extensionManager else { return false }
+        if extensionManager.publishedExtensionTabs.containsPublishedTab(tab) {
+            return true
+        }
+        return preparedTabVisibility.allowsPreparedTabRead(
+            tab,
+            in: windowState,
+            through: self
+        ) && extensionManager.preparedExtensionTabs.containsPreparedTab(tab)
     }
 
     func frame(for extensionContext: WKWebExtensionContext) -> CGRect {

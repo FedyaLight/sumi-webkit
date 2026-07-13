@@ -1,0 +1,302 @@
+import Foundation
+import WebKit
+
+@available(macOS 15.5, *)
+@MainActor
+protocol ExtensionTabAdapterResolving: AnyObject {
+    func stableAdapter(for tab: Tab) -> ExtensionTabAdapter?
+}
+
+@available(macOS 15.5, *)
+extension ExtensionAdapterCatalog: ExtensionTabAdapterResolving {}
+
+@available(macOS 15.5, *)
+@MainActor
+protocol ExtensionInitialDocumentReadiness: AnyObject {
+    func profileNeedsInitialDocumentExtensionContextLoad(
+        profileId: UUID
+    ) -> Bool
+}
+
+@available(macOS 15.5, *)
+extension ExtensionInitialDocumentRuntimePreparationOwner:
+    ExtensionInitialDocumentReadiness {}
+
+@available(macOS 15.5, *)
+@MainActor
+protocol ExtensionNormalTabOpening: AnyObject {
+    @discardableResult
+    func publishOpen(_ tab: Tab) -> Bool
+
+    @discardableResult
+    func publishOpen(
+        _ tab: Tab,
+        during claim: ExtensionRuntimePublicationGate.ReloadClaim
+    ) -> Bool
+}
+
+/// Exact claim-backed publication of one normal browser Tab into WebKit.
+/// Every authority that may change across a synchronous WebKit callback is
+/// captured before dispatch and revalidated after it returns.
+@available(macOS 15.5, *)
+@MainActor
+final class ExtensionNormalTabOpenTransaction: ExtensionNormalTabOpening {
+    private weak var runtimeSession: ExtensionRuntimeSession?
+    private weak var publicationGate: ExtensionRuntimePublicationGate?
+    private weak var profileRuntime: ExtensionProfileRuntime?
+    private weak var profiles: (any ExtensionTabProfileResolving)?
+    private weak var tabs: (any ExtensionTabQuery)?
+    private weak var adapters: ExtensionBrowserAdapterStore?
+    private weak var adapterResolver: (any ExtensionTabAdapterResolving)?
+    private weak var controllers: (any ExtensionTabControllerQuery)?
+    private weak var controllerAttachment: (any ExtensionControllerAttaching)?
+    private weak var liveWebViews: (any ExtensionTabLiveWebViewQuery)?
+    private weak var contextReadiness: (any ExtensionInitialDocumentReadiness)?
+    private weak var deferredRegistration:
+        (any ExtensionDeferredTabRegistrationScheduling)?
+    private weak var admission: ExtensionTabPublicationAdmission?
+    private weak var windowPublications:
+        (any ExtensionTabPublicationEvidenceQuery)?
+    private let events: ExtensionTabLifecycleEmitter
+    private let diagnostics: ExtensionRuntimeDiagnostics
+    private let didDeferOpen: ((UUID, String) -> Void)?
+
+    init(
+        runtimeSession: ExtensionRuntimeSession,
+        publicationGate: ExtensionRuntimePublicationGate,
+        profileRuntime: ExtensionProfileRuntime,
+        profiles: any ExtensionTabProfileResolving,
+        tabs: any ExtensionTabQuery,
+        adapters: ExtensionBrowserAdapterStore,
+        adapterResolver: any ExtensionTabAdapterResolving,
+        controllers: any ExtensionTabControllerQuery,
+        controllerAttachment: any ExtensionControllerAttaching,
+        liveWebViews: any ExtensionTabLiveWebViewQuery,
+        contextReadiness: any ExtensionInitialDocumentReadiness,
+        deferredRegistration: any ExtensionDeferredTabRegistrationScheduling,
+        admission: ExtensionTabPublicationAdmission,
+        windowPublications: any ExtensionTabPublicationEvidenceQuery,
+        events: ExtensionTabLifecycleEmitter,
+        diagnostics: ExtensionRuntimeDiagnostics,
+        didDeferOpen: ((UUID, String) -> Void)? = nil
+    ) {
+        self.runtimeSession = runtimeSession
+        self.publicationGate = publicationGate
+        self.profileRuntime = profileRuntime
+        self.profiles = profiles
+        self.tabs = tabs
+        self.adapters = adapters
+        self.adapterResolver = adapterResolver
+        self.controllers = controllers
+        self.controllerAttachment = controllerAttachment
+        self.liveWebViews = liveWebViews
+        self.contextReadiness = contextReadiness
+        self.deferredRegistration = deferredRegistration
+        self.admission = admission
+        self.windowPublications = windowPublications
+        self.events = events
+        self.diagnostics = diagnostics
+        self.didDeferOpen = didDeferOpen
+    }
+
+    @discardableResult
+    func publishOpen(_ tab: Tab) -> Bool {
+        publishOpen(tab, reloadClaim: nil)
+    }
+
+    @discardableResult
+    func publishOpen(
+        _ tab: Tab,
+        during claim: ExtensionRuntimePublicationGate.ReloadClaim
+    ) -> Bool {
+        publishOpen(tab, reloadClaim: claim)
+    }
+
+    private func publishOpen(
+        _ tab: Tab,
+        reloadClaim: ExtensionRuntimePublicationGate.ReloadClaim?
+    ) -> Bool {
+        func deferOpen(_ reason: String) -> Bool {
+            didDeferOpen?(tab.id, reason)
+            return false
+        }
+
+        guard let runtimeSession,
+              let profileRuntime,
+              let controllerAttachment,
+              let admission,
+              tabs?.extensionTab(for: tab.id) === tab,
+              let controller = controllers?.existingController(for: tab),
+              let adapter = adapterResolver?.stableAdapter(for: tab),
+              adapter.represents(tab)
+        else {
+            SafariExtensionAutofillFillDiagnostics.recordContentScriptInjection(
+                injected: false,
+                extensionId: nil,
+                reason: "notifyTabOpenedMissingAuthority",
+                pageURL: tab.url
+            )
+            return deferOpen("missingAuthority")
+        }
+
+        guard let profileID = profiles?.profileID(for: tab) else {
+            return deferOpen("missingProfile")
+        }
+        guard contextReadiness?
+            .profileNeedsInitialDocumentExtensionContextLoad(
+                profileId: profileID
+            ) == false else {
+            _ = deferredRegistration?
+                .scheduleDeferredTabNotificationAfterContextLoad(
+                    tab,
+                    profileId: profileID,
+                    extensionLoadGeneration:
+                        runtimeSession.extensionLoadGeneration,
+                    reason: "notifyTabOpened"
+                )
+            return deferOpen("initialDocumentContextsNotLoaded")
+        }
+
+        guard let webView = liveWebViews?.extensionLiveWebView(for: tab),
+              (webView as? FocusableWKWebView)?.owningTab === tab,
+              controllerAttachment.attachExtensionControllerIfNeeded(
+                  to: webView,
+                  for: tab
+              ),
+              liveWebViews?.extensionLiveWebView(for: tab) === webView,
+              (webView as? FocusableWKWebView)?.owningTab === tab,
+              webView.configuration.webExtensionController === controller
+        else {
+            return deferOpen("missingUsableWebView")
+        }
+
+        let admitted = if let reloadClaim {
+            admission.prepareTabOpen(tab, during: reloadClaim)
+        } else {
+            admission.prepareTabOpen(tab)
+        }
+        guard admitted else { return deferOpen("windowProjectionUnavailable") }
+        guard tab.extensionPageRuntimeOwner.canPublishFutureOpenNotification()
+        else { return deferOpen("tabOpenPublicationRetired") }
+
+        let extensionLoadGeneration = runtimeSession.extensionLoadGeneration
+        let openGeneration = runtimeSession.tabOpenNotificationGeneration
+        let contextBindingGeneration = profileRuntime
+            .contextBindingGeneration(for: profileID)
+        guard remainsCurrent(
+            tab,
+            reloadClaim: reloadClaim,
+            controller: controller,
+            adapter: adapter,
+            webView: webView,
+            profileID: profileID,
+            extensionLoadGeneration: extensionLoadGeneration,
+            openGeneration: openGeneration,
+            contextBindingGeneration: contextBindingGeneration
+        ) else {
+            return deferOpen("openPublicationChangedDuringAdmission")
+        }
+
+        guard let openClaim = tab.extensionPageRuntimeOwner.reserveDidOpenTab(
+            generation: openGeneration
+        ) else {
+            return deferOpen("openPublicationClaimAlreadyCurrent")
+        }
+        tab.extensionPageRuntimeOwner.noteOpenNotification(
+            extensionContextBindingGeneration: contextBindingGeneration,
+            contextReadiness: .loaded
+        )
+        events.emitDidOpenTab(
+            tab,
+            controller: controller,
+            adapter: adapter
+        )
+
+        guard remainsCurrent(
+                tab,
+                reloadClaim: reloadClaim,
+                controller: controller,
+                adapter: adapter,
+                webView: webView,
+                profileID: profileID,
+                extensionLoadGeneration: extensionLoadGeneration,
+                openGeneration: openGeneration,
+                contextBindingGeneration: contextBindingGeneration
+              ),
+              tab.extensionPageRuntimeOwner.settleDidOpenTabNotification(
+                  openClaim,
+                  generation: openGeneration
+              )
+        else {
+            if tab.extensionPageRuntimeOwner
+                .claimDidOpenTabNotificationForClose(
+                    openClaim,
+                    generation: openGeneration
+                ) {
+                events.emitDidCloseTab(
+                    tab,
+                    controller: controller,
+                    adapter: adapter
+                )
+            }
+            return deferOpen("openPublicationChangedDuringCallback")
+        }
+
+        SafariExtensionAutofillFillDiagnostics.recordContentScriptInjection(
+            injected: true,
+            extensionId: nil,
+            reason: "didOpenTab",
+            pageURL: tab.url
+        )
+        diagnostics.trace(
+            "didOpenTab complete generation=\(openGeneration) tab=\(tab.id.uuidString.prefix(8))"
+        )
+        return true
+    }
+
+    private func remainsCurrent(
+        _ tab: Tab,
+        reloadClaim: ExtensionRuntimePublicationGate.ReloadClaim?,
+        controller: WKWebExtensionController,
+        adapter: ExtensionTabAdapter,
+        webView: WKWebView,
+        profileID: UUID,
+        extensionLoadGeneration: UInt64,
+        openGeneration: UInt64,
+        contextBindingGeneration: UInt64
+    ) -> Bool {
+        guard let runtimeSession,
+              let publicationGate,
+              let profileRuntime,
+              let adapters
+        else { return false }
+        let gateIsCurrent = if let reloadClaim {
+            publicationGate.reloadIsCurrent(reloadClaim)
+        } else {
+            publicationGate.acceptsBrowserEvents
+        }
+        return gateIsCurrent
+            && runtimeSession.extensionLoadGeneration == extensionLoadGeneration
+            && runtimeSession.tabOpenNotificationGeneration == openGeneration
+            && profileRuntime.contextBindingGeneration(for: profileID)
+                == contextBindingGeneration
+            && contextReadiness?
+                .profileNeedsInitialDocumentExtensionContextLoad(
+                    profileId: profileID
+                ) == false
+            && tabs?.extensionTab(for: tab.id) === tab
+            && profiles?.profileID(for: tab) == profileID
+            && profileRuntime.controller(for: profileID) === controller
+            && adapters.existingTabAdapter(for: tab.id) === adapter
+            && adapter.represents(tab)
+            && tab.extensionPageRuntimeOwner.canPublishFutureOpenNotification()
+            && tab.extensionPageRuntimeOwner.isEligible(for: openGeneration)
+            && liveWebViews?.extensionLiveWebView(for: tab) === webView
+            && (webView as? FocusableWKWebView)?.owningTab === tab
+            && webView.configuration.webExtensionController === controller
+            && windowPublications?.tabPublicationIsCurrent(
+                tab,
+                profileID: profileID
+            ) == true
+    }
+}

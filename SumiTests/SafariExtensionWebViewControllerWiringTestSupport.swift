@@ -60,9 +60,45 @@ class SafariExtensionWebViewControllerWiringTestCase: XCTestCase {
     }
 
     func makeTab(profileId: UUID, url: URL, browserManager: BrowserManager) -> Tab {
-        let tab = browserManager.tabManager.tabFactory.makeTab(url: url, name: "Test")
+        let tabs = browserManager.tabManager
+        let space = tabs.spaceStateOwner.firstSpace(forProfile: profileId)
+            ?? tabs.spaceServices.catalog.createSpace(
+                name: "Test Space",
+                profileId: profileId
+            )
+        let tab = tabs.tabFactory.makeTab(
+            url: url,
+            name: "Test",
+            spaceId: space.id,
+            index: tabs.regularTabCollectionOwner.tabs(in: space.id).count
+        )
         tab.profileId = profileId
+        tabs.regularTabLifecycleOwner.addTab(tab)
         return tab
+    }
+
+    @discardableResult
+    func registerWindowDisplaying(
+        _ tab: Tab,
+        profileId: UUID,
+        browserManager: BrowserManager
+    ) -> BrowserWindowState {
+        let registry = browserManager.windowRegistry ?? WindowRegistry()
+        browserManager.windowRegistry = registry
+        let window = BrowserWindowState()
+        window.tabManager = browserManager.tabManager
+        window.currentProfileId = profileId
+        window.currentSpaceId = tab.spaceId
+        window.currentTabId = tab.id
+        if let spaceID = tab.spaceId {
+            window.activeTabForSpace[spaceID] = tab.id
+        }
+        registry.register(window)
+        registry.setActive(window)
+        addTeardownBlock {
+            registry.unregister(window.id)
+        }
+        return window
     }
 
     func makeLoadedExtensionContext(

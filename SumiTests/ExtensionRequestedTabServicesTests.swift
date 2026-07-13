@@ -365,6 +365,9 @@ final class ExtensionRequestedTabServicesTests:
             windowQuery: windowQuery,
             windowActivation: activation,
             contextPublications: harness.manager.contextPublications,
+            preparedTabVisibility: ExtensionPreparedTabVisibility(
+                gate: ExtensionRuntimePublicationGate()
+            ),
             extensionManager: harness.manager
         )
 

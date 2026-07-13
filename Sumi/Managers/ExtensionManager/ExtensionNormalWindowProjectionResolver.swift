@@ -32,9 +32,14 @@ struct ExtensionNormalWindowProjection {
 @MainActor
 final class ExtensionNormalWindowProjectionResolver {
     private weak var manager: ExtensionManager?
+    private let preparedTabVisibility: ExtensionPreparedTabVisibility
 
-    init(manager: ExtensionManager) {
+    init(
+        manager: ExtensionManager,
+        preparedTabVisibility: ExtensionPreparedTabVisibility
+    ) {
         self.manager = manager
+        self.preparedTabVisibility = preparedTabVisibility
     }
 
     func resolve(
@@ -52,14 +57,17 @@ final class ExtensionNormalWindowProjectionResolver {
               selectedTab.isEphemeral == false,
               let profileID = manager.resolvedProfileId(for: window),
               manager.resolvedProfileId(for: selectedTab) == profileID,
-              manager.isTabEligibleForCurrentExtensionRuntime(selectedTab),
+              manager.preparedExtensionTabs.containsPreparedTab(selectedTab),
               let controller = manager.profileRuntime
               .controllersByProfile[profileID],
               manager.extensionController(for: selectedTab) === controller,
               let selectedTabAdapter = manager.adapterCatalog
               .stableAdapter(for: selectedTab),
               let windowAdapter = manager.adapterCatalog
-              .windowAdapter(for: window.id),
+              .windowAdapter(
+                  for: window.id,
+                  preparedTabVisibility: preparedTabVisibility
+              ),
               windowAdapter.represents(window)
         else {
             return nil
@@ -99,7 +107,7 @@ final class ExtensionNormalWindowProjectionResolver {
                 == projection.profileID,
               manager.resolvedProfileId(for: selectedTab)
                 == projection.profileID,
-              manager.isTabEligibleForCurrentExtensionRuntime(selectedTab),
+              manager.preparedExtensionTabs.containsPreparedTab(selectedTab),
               manager.profileRuntime.controllersByProfile[projection.profileID]
                 === projection.controller,
               manager.extensionController(for: selectedTab)

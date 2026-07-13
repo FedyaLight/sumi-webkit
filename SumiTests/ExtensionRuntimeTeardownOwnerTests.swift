@@ -36,14 +36,19 @@ final class ExtensionRuntimeTeardownOwnerTests: XCTestCase {
             for: SumiStartupPersistence.schema,
             configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
         )
+        let profile = Profile(name: "Publication Lifetime Profile")
         var manager: ExtensionManager? = ExtensionManager(
             context: container.mainContext,
-            initialProfile: Profile(name: "Publication Lifetime Profile"),
+            initialProfile: profile,
             browserConfiguration: BrowserConfiguration(),
             extensionPreferences: UserDefaults(
                 suiteName: UUID().uuidString
             )!
         )
+        let browserManager = makeSafariExtensionTestBrowserManager(
+            profile: profile
+        )
+        manager?.attach(browserManager: browserManager)
         weak var weakManager = manager
         let reconciler = try XCTUnwrap(
             manager?.runtimePublicationReconciler
@@ -54,7 +59,9 @@ final class ExtensionRuntimeTeardownOwnerTests: XCTestCase {
         manager = nil
 
         XCTAssertNil(weakManager)
-        withExtendedLifetime((reconciler, publications, admission)) {}
+        withExtendedLifetime(
+            (reconciler, publications, admission, browserManager)
+        ) {}
     }
 
     func testFullRuntimeTeardownReleasesControllerAndClearsBookkeeping() throws {

@@ -125,7 +125,7 @@ final class SafariExtension1PasswordRuntimeTests: XCTestCase {
         let webView = FocusableWKWebView(frame: .zero, configuration: configuration)
         webView.owningTab = tab
         tab.replaceUntrackedWebView(webView)
-        manager.registerTabWithExtensionRuntime(
+        manager.normalTabRegistration.register(
             tab,
             reason: "SafariExtension1PasswordRuntimeTests"
         )

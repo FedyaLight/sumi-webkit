@@ -47,11 +47,15 @@ final class ExtensionNormalWindowLifecycleTests: XCTestCase {
             context: container.mainContext,
             initialProfile: profile
         )
+        let gate = ExtensionRuntimePublicationGate()
+        let preparedTabVisibility = ExtensionPreparedTabVisibility(gate: gate)
         let lifecycle = ExtensionNormalWindowLifecycle(
             resolver: ExtensionNormalWindowProjectionResolver(
-                manager: manager
+                manager: manager,
+                preparedTabVisibility: preparedTabVisibility
             ),
-            adapterStore: manager.adapterStore
+            adapterStore: manager.adapterStore,
+            preparedTabVisibility: preparedTabVisibility
         )
         let token = try XCTUnwrap(
             lifecycle.beginRuntimeReconciliation()

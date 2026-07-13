@@ -33,8 +33,7 @@ final class ExtensionRuntimeTeardownOwner {
         manager.loadedInitialDocumentRuntimePreparationOwner?
             .cancelContentScriptContextLoadTasks()
         manager.cancelInitialDocumentNativeMessagingWarmupTasks()
-        manager.loadedInitialDocumentRuntimePreparationOwner?
-            .cancelDeferredTabNotificationTasks()
+        manager.loadedDeferredTabRegistration?.cancelAll()
         manager.cancelNativeMessagingBackgroundWakeTasks()
         manager.backgroundRuntimeStateOwner.cancelAllWakeTasks()
         manager.loadedRuntimePublicationReconciler?.retire(

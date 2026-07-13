@@ -33,6 +33,10 @@ final class ExtensionRuntimePublicationGate {
     private var phase = Phase.active
     private var epoch: UInt64 = 0
 
+    private var reloadState: ReloadState? {
+        if case .reloading(let state) = phase { state } else { nil }
+    }
+
     var acceptsBrowserEvents: Bool {
         switch phase {
         case .active:
@@ -44,10 +48,9 @@ final class ExtensionRuntimePublicationGate {
         }
     }
 
-    var canCoalesceReloadRequest: Bool {
-        guard case .reloading = phase else { return false }
-        return true
-    }
+    var canCoalesceReloadRequest: Bool { reloadState != nil }
+
+    var isBrowserEventHandoffActive: Bool { reloadState?.acceptsBrowserEvents == true }
 
     func beginReload() -> ReloadClaim? {
         switch phase {

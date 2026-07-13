@@ -205,7 +205,7 @@ extension ExtensionActionInvocationService.Environment {
                 manager?.adapterCatalog.stableAdapter(for: $0)
             },
             registerTab: { [weak manager] tab, reason in
-                manager?.registerTabWithExtensionRuntime(tab, reason: reason)
+                manager?.normalTabRegistration.register(tab, reason: reason)
             },
             actionDispatchProbe: { [weak manager] extensionID in
                 #if DEBUG

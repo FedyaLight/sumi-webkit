@@ -22,24 +22,36 @@ final class ExtensionControllerAttachmentOwner: ExtensionControllerBinding {
         let hasEnabledInstalledExtensions: @MainActor () -> Bool
         let allowsRuntimeWithoutEnabledExtensions: @MainActor () -> Bool
         let extensionsLoaded: @MainActor () -> Bool
-        let tabOpenNotificationGeneration: @MainActor () -> UInt64
         let ensureExtensionController: @MainActor (UUID) -> WKWebExtensionController?
         let canLateBindExtensionController: @MainActor (WKWebView) -> Bool
         let installPermissionsOriginsCompatibilityPreludes:
             @MainActor (WKUserContentController, UUID) -> Void
         let liveWebViews: @MainActor (Tab) -> [WKWebView]
         let allKnownTabs: @MainActor () -> [Tab]
-        let tabNeedsExtensionContentScriptRebind: @MainActor (Tab) -> Bool
-        let registerTabWithExtensionRuntime: @MainActor (Tab, String) -> Void
         let tabDescription: @MainActor (Tab) -> String
         let webViewDescription: @MainActor (WKWebView) -> String
         let trace: @MainActor (() -> String) -> Void
     }
 
     private let dependencies: Dependencies
+    private weak var tabQuery: (any ExtensionTabQuery)?
+    private weak var liveWebViewQuery: (any ExtensionTabLiveWebViewQuery)?
 
     init(dependencies: Dependencies) {
         self.dependencies = dependencies
+    }
+
+    func bind(
+        tabQuery: any ExtensionTabQuery,
+        liveWebViews: any ExtensionTabLiveWebViewQuery
+    ) {
+        if let existing = self.tabQuery {
+            precondition(existing === tabQuery)
+            precondition(self.liveWebViewQuery === liveWebViews)
+            return
+        }
+        self.tabQuery = tabQuery
+        liveWebViewQuery = liveWebViews
     }
 
     func extensionController(for tab: Tab) -> WKWebExtensionController? {
@@ -70,19 +82,16 @@ final class ExtensionControllerAttachmentOwner: ExtensionControllerBinding {
     }
 
     func resolvedLiveWebView(for tab: Tab) -> WKWebView? {
-        let runtime = dependencies.runtime()
-        let windowId = runtime.windowStateContainingTab(tab)?.id
-            ?? runtime.primaryTrackedWindowId(tab.id)
-        if let windowId,
-           let webView = runtime.windowOwnedWebView(tab, windowId) {
-            return webView
-        }
-
-        return ownedUntrackedCurrentWebView(for: tab)
+        guard tabQuery?.extensionTab(for: tab.id) === tab else { return nil }
+        guard let webView = liveWebViewQuery?.extensionLiveWebView(for: tab),
+              (webView as? FocusableWKWebView)?.owningTab === tab
+        else { return nil }
+        return webView
     }
 
     func ownedUntrackedCurrentWebView(for tab: Tab) -> WKWebView? {
-        dependencies.runtime().untrackedOwnedWebView(tab)
+        guard tabQuery?.extensionTab(for: tab.id) === tab else { return nil }
+        return dependencies.runtime().untrackedOwnedWebView(tab)
     }
 
     @discardableResult
@@ -91,6 +100,8 @@ final class ExtensionControllerAttachmentOwner: ExtensionControllerBinding {
         for tab: Tab
     ) -> Bool {
         guard tab.isEphemeral == false else { return false }
+        guard let ownedWebView = webView as? FocusableWKWebView,
+              ownedWebView.owningTab === tab else { return false }
         guard let profileId = dependencies.resolvedProfileId(tab) else { return false }
 
         let expectedController: WKWebExtensionController
@@ -134,11 +145,13 @@ final class ExtensionControllerAttachmentOwner: ExtensionControllerBinding {
         allowWhenExtensionsNotLoaded: Bool = false
     ) {
         guard tab.isEphemeral == false else { return }
+        guard tabQuery?.extensionTab(for: tab.id) === tab else { return }
         guard dependencies.extensionsLoaded() || allowWhenExtensionsNotLoaded else { return }
         guard dependencies.resolvedProfileId(tab) != nil else { return }
 
         var needsRebuild = false
-        for webView in dependencies.liveWebViews(tab) {
+        for webView in dependencies.liveWebViews(tab)
+            where (webView as? FocusableWKWebView)?.owningTab === tab {
             let attached = attachExtensionControllerIfNeeded(to: webView, for: tab)
             dependencies.trace {
                 "ensureExtensionControllerAttachedForTab webView=\(self.dependencies.webViewDescription(webView)) attached=\(attached) \(self.dependencies.tabDescription(tab))"
@@ -153,7 +166,7 @@ final class ExtensionControllerAttachmentOwner: ExtensionControllerBinding {
         if needsRebuild,
            dependencies.runtime().browserRuntimeAvailable() {
             dependencies.trace {
-                "ensureExtensionControllerAttachedForTab rebuild reason=\(reason) controllerMismatch=true contentScriptRebind=\(self.dependencies.tabNeedsExtensionContentScriptRebind(tab)) \(self.dependencies.tabDescription(tab))"
+                "ensureExtensionControllerAttachedForTab rebuild reason=\(reason) controllerMismatch=true \(self.dependencies.tabDescription(tab))"
             }
             SafariExtensionPermissionLifecycleDiagnostics.logReloadRebuild(
                 SafariExtensionReloadRebuildSnapshot(
@@ -223,6 +236,7 @@ final class ExtensionControllerAttachmentOwner: ExtensionControllerBinding {
         guard dependencies.runtime().browserRuntimeAvailable() else { return }
 
         for tab in dependencies.allKnownTabs() {
+            guard tabQuery?.extensionTab(for: tab.id) === tab else { continue }
             guard dependencies.resolvedProfileId(tab) == profileId else { continue }
             guard tab.isEphemeral == false else { continue }
             ensureExtensionControllerAttachedForTab(
@@ -233,26 +247,6 @@ final class ExtensionControllerAttachmentOwner: ExtensionControllerBinding {
         }
     }
 
-    func reconcileTabAfterContentScriptContextsLoaded(
-        _ tab: Tab,
-        reason: String
-    ) {
-        guard tab.isEphemeral == false else { return }
-        if tab.extensionPageRuntimeOwner.hasOpenNotificationForCurrentDocumentWithLoadedContexts(
-            generation: dependencies.tabOpenNotificationGeneration()
-        ) {
-            return
-        }
-
-        if tab.extensionPageRuntimeOwner.hasCommittedDocumentBinding(),
-           dependencies.tabNeedsExtensionContentScriptRebind(tab) {
-            ensureExtensionControllerAttachedForTab(tab, reason: reason)
-            return
-        }
-
-        tab.extensionPageRuntimeOwner.clearOpenNotificationGeneration()
-        dependencies.registerTabWithExtensionRuntime(tab, reason)
-    }
 }
 
 @available(macOS 15.5, *)
@@ -280,9 +274,6 @@ extension ExtensionControllerAttachmentOwner.Dependencies {
             extensionsLoaded: { [weak manager] in
                 manager?.extensionsLoaded ?? false
             },
-            tabOpenNotificationGeneration: { [weak manager] in
-                manager?.runtimeSession.tabOpenNotificationGeneration ?? 0
-            },
             ensureExtensionController: { [weak manager] profileId in
                 manager?.ensureExtensionController(for: profileId)
             },
@@ -307,12 +298,6 @@ extension ExtensionControllerAttachmentOwner.Dependencies {
                 return manager.browserContentInventory.tabs(
                     in: manager.runtime
                 )
-            },
-            tabNeedsExtensionContentScriptRebind: { [weak manager] tab in
-                manager?.tabNeedsExtensionContentScriptRebind(tab) ?? false
-            },
-            registerTabWithExtensionRuntime: { [weak manager] tab, reason in
-                manager?.registerTabWithExtensionRuntime(tab, reason: reason)
             },
             tabDescription: { [weak manager] tab in
                 manager?.runtimeDiagnostics.tabDescription(tab, manager: manager) ?? "tab=\(tab.id.uuidString.prefix(8))"
@@ -401,13 +386,4 @@ extension ExtensionManager {
         )
     }
 
-    func reconcileTabAfterContentScriptContextsLoaded(
-        _ tab: Tab,
-        reason: String = #function
-    ) {
-        controllerAttachmentOwner.reconcileTabAfterContentScriptContextsLoaded(
-            tab,
-            reason: reason
-        )
-    }
 }

@@ -290,8 +290,7 @@ extension ExtensionRuntimeStateResetOwner.Dependencies {
                 }
             },
             cancelInitialDocumentTasks: { [weak manager] in
-                manager?.loadedInitialDocumentRuntimePreparationOwner?
-                    .cancelDeferredTabNotificationTasks()
+                manager?.loadedDeferredTabRegistration?.cancelAll()
                 manager?.cancelInitialDocumentNativeMessagingWarmupTasks()
             },
             clearActionSurfaceState: { [weak manager] extensionId in

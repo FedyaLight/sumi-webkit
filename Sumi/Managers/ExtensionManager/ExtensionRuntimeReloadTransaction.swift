@@ -41,7 +41,8 @@ final class ExtensionRuntimeReloadTransaction {
     private let publicationGate: ExtensionRuntimePublicationGate
     private let adapterResolution: ExtensionAdapterCatalog
     private let controllerBinding: ExtensionControllerAttachmentOwner
-    private let tabPublication: ExtensionNormalTabRuntimeBindingOwner
+    private let tabPublication: any ExtensionNormalTabOpening
+    private let tabEvents: any ExtensionTabLifecycleEventSink
     private let isAuxiliarySessionTab: @MainActor (Tab) -> Bool
     private let diagnostics: ExtensionRuntimeDiagnostics
     private let contentInventory: ExtensionBrowserContentInventory
@@ -53,7 +54,8 @@ final class ExtensionRuntimeReloadTransaction {
         publicationGate: ExtensionRuntimePublicationGate,
         adapterResolution: ExtensionAdapterCatalog,
         controllerBinding: ExtensionControllerAttachmentOwner,
-        tabPublication: ExtensionNormalTabRuntimeBindingOwner,
+        tabPublication: any ExtensionNormalTabOpening,
+        tabEvents: any ExtensionTabLifecycleEventSink,
         isAuxiliarySessionTab: @escaping @MainActor (Tab) -> Bool,
         diagnostics: ExtensionRuntimeDiagnostics,
         contentInventory: ExtensionBrowserContentInventory = .init()
@@ -65,6 +67,7 @@ final class ExtensionRuntimeReloadTransaction {
         self.adapterResolution = adapterResolution
         self.controllerBinding = controllerBinding
         self.tabPublication = tabPublication
+        self.tabEvents = tabEvents
         self.isAuxiliarySessionTab = isAuxiliarySessionTab
         self.diagnostics = diagnostics
         self.contentInventory = contentInventory
@@ -172,7 +175,7 @@ final class ExtensionRuntimeReloadTransaction {
             else {
                 continue
             }
-            _ = tabPublication.notifyTabOpened(
+            _ = tabPublication.publishOpen(
                 tab,
                 during: publicationClaim
             )
@@ -283,7 +286,7 @@ final class ExtensionRuntimeReloadTransaction {
             else {
                 continue
             }
-            tabPublication.emitDidCloseTab(
+            tabEvents.emitDidCloseTab(
                 tab,
                 controller: controller,
                 adapter: adapter

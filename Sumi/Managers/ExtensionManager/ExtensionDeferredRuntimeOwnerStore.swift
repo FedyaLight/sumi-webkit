@@ -8,8 +8,6 @@ final class ExtensionDeferredRuntimeOwnerStore {
         ExtensionNativeMessagingBackgroundWakeOwner?
     private var initialDocumentRuntimePreparationOwnerStorage:
         ExtensionInitialDocumentRuntimePreparationOwner?
-    private var normalTabRuntimeBindingOwnerStorage:
-        ExtensionNormalTabRuntimeBindingOwner?
 
     init(manager: ExtensionManager) {
         self.manager = manager
@@ -42,12 +40,4 @@ final class ExtensionDeferredRuntimeOwnerStore {
         initialDocumentRuntimePreparationOwnerStorage
     }
 
-    var normalTabRuntimeBindingOwner: ExtensionNormalTabRuntimeBindingOwner {
-        if let normalTabRuntimeBindingOwnerStorage {
-            return normalTabRuntimeBindingOwnerStorage
-        }
-        let owner = ExtensionNormalTabRuntimeBindingOwner(manager: manager)
-        normalTabRuntimeBindingOwnerStorage = owner
-        return owner
-    }
 }

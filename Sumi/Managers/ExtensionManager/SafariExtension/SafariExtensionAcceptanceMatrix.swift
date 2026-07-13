@@ -369,8 +369,9 @@ enum SafariExtensionContentScriptProbe {
             @MainActor (ExtensionActionSurfacePublisher) -> (String, UUID?, ExtensionManager.ExtensionBackgroundWakeReason?) async -> Void =
                 ExtensionActionSurfacePublisher.finalizeEnabledExtensionRuntime
         let rebind:
-            @MainActor (ExtensionNormalTabRuntimeBindingOwner) -> (Tab) -> Bool =
-                ExtensionNormalTabRuntimeBindingOwner.tabNeedsExtensionContentScriptRebind
+            @MainActor (ExtensionTabLifecycleRebindTransaction) -> (Tab) -> Bool =
+                ExtensionTabLifecycleRebindTransaction
+                    .needsContentScriptRebind
         _ = (reconcile, finalize, rebind)
         return true
     }

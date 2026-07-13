@@ -62,6 +62,13 @@ extension_tab_roles=(
   "$extension_tab_commands"
   "$extension_tab_webview"
 )
+normal_tab_open='Sumi/Managers/ExtensionManager/ExtensionNormalTabOpenTransaction.swift'
+normal_tab_queries='Sumi/Managers/ExtensionManager/ExtensionNormalTabPublicationQueries.swift'
+normal_tab_registration='Sumi/Managers/ExtensionManager/ExtensionNormalTabRegistration.swift'
+normal_tab_properties='Sumi/Managers/ExtensionManager/ExtensionTabPropertyPublisher.swift'
+normal_tab_rebind='Sumi/Managers/ExtensionManager/ExtensionTabLifecycleRebindTransaction.swift'
+normal_tab_deferred='Sumi/Managers/ExtensionManager/ExtensionDeferredTabRegistration.swift'
+normal_tab_events='Sumi/Managers/ExtensionManager/ExtensionTabLifecycleEmitter.swift'
 window_request_router='Sumi/Managers/ExtensionManager/ExtensionWindowRequestRouter.swift'
 requested_tab_opening='Sumi/Managers/ExtensionManager/ExtensionRequestedTabOpeningService.swift'
 requested_tab_registrar='Sumi/Managers/ExtensionManager/ExtensionCreatedTabRuntimeRegistrar.swift'
@@ -115,6 +122,13 @@ required_files=(
   "$window_publication_query"
   "$tab_publication_admission"
   "$adapter_store"
+  "$normal_tab_open"
+  "$normal_tab_queries"
+  "$normal_tab_registration"
+  "$normal_tab_properties"
+  "$normal_tab_rebind"
+  "$normal_tab_deferred"
+  "$normal_tab_events"
   "$auxiliary_events"
   "$auxiliary_popup_opening"
   "$extension_window_opening"
@@ -321,7 +335,7 @@ for required_reload_claim_route in \
   if ! rg -Fq "$required_reload_claim_route" \
       "$runtime_publication_reconciler" \
       "$runtime_reload_transaction" \
-      Sumi/Managers/ExtensionManager/ExtensionNormalTabRuntimeBindingOwner.swift \
+      "$normal_tab_open" \
       "$tab_publication_admission"; then
     printf 'error: reload-internal Tab publication lost its exact claim: %s\n' \
       "$required_reload_claim_route" >&2
@@ -368,23 +382,24 @@ for required_deferred_reload_settlement in \
 done
 
 for required_post_callback_open_authority in \
-  'manager.runtimePublicationGate.reloadIsCurrent(reloadClaim)' \
-  'manager.extensionContextBindingGeneration(for: profileId)' \
-  'manager.profileRuntime.controller(for: profileId) === controller' \
-  'manager.adapterStore.existingTabAdapter(for: tab.id) === adapter' \
-  'manager.resolvedLiveWebView(for: tab) === webView' \
+  'publicationGate.reloadIsCurrent(reloadClaim)' \
+  'profileRuntime.contextBindingGeneration(for: profileID)' \
+  'profileRuntime.controller(for: profileID) === controller' \
+  'adapters.existingTabAdapter(for: tab.id) === adapter' \
+  'liveWebViews?.extensionLiveWebView(for: tab) === webView' \
+  'tabs?.extensionTab(for: tab.id) === tab' \
   'claimDidOpenTabNotificationForClose(' \
-  'manager.windowPublications.tabPublicationIsCurrent('; do
+  'windowPublications?.tabPublicationIsCurrent('; do
   if ! rg -Fq "$required_post_callback_open_authority" \
-      Sumi/Managers/ExtensionManager/ExtensionNormalTabRuntimeBindingOwner.swift; then
+      "$normal_tab_open"; then
     printf 'error: didOpenTab lost exact post-callback authority: %s\n' \
       "$required_post_callback_open_authority" >&2
     status=1
   fi
 done
 
-open_authority_validation_count="$(rg -Fc 'openPublicationRemainsCurrent(' \
-  Sumi/Managers/ExtensionManager/ExtensionNormalTabRuntimeBindingOwner.swift)"
+open_authority_validation_count="$(rg -Fc 'remainsCurrent(' \
+  "$normal_tab_open")"
 if (( open_authority_validation_count < 3 )); then
   printf 'error: didOpenTab authority is not validated before and after callback\n' >&2
   status=1
@@ -602,11 +617,12 @@ for required_publication_lifetime_regression in \
 done
 
 for required_current_tab_property_boundary in \
-  'runtimePublicationGate.acceptsBrowserEvents' \
+  'publicationGate?.acceptsBrowserEvents' \
   '.hasSettledDidOpenTabNotification(for: generation)' \
-  'manager.windowPublications.tabPublicationIsCurrent('; do
+  'windows?.tabPublicationIsCurrent(' \
+  'publishedTabs?.containsPublishedTab(tab) == true'; do
   if ! rg -Fq "$required_current_tab_property_boundary" \
-      Sumi/Managers/ExtensionManager/ExtensionNormalTabRuntimeBindingOwner.swift; then
+      "$normal_tab_queries" "$normal_tab_properties"; then
     printf 'error: Tab property event lacks current open-publication proof: %s\n' \
       "$required_current_tab_property_boundary" >&2
     status=1

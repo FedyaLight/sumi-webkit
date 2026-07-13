@@ -260,7 +260,7 @@ final class SafariExtensionAccountForkPipelineTests: XCTestCase {
                 + "adapterTabMatches=\(adapter?.tab === probedTab) "
                 + "tabManagerLookup=\(lookupTab == nil ? "nil" : (lookupTab === probedTab ? "match" : "OTHER")) "
                 + "adapterWebViewMatchesTab=\(adapterWebView === probedTab.resolvedCurrentWebView()) "
-                + "tabEligible=\(manager.isTabEligibleForCurrentExtensionRuntime(probedTab)) "
+                + "tabEligible=\(manager.preparedExtensionTabs.containsPreparedTab(probedTab)) "
                 + "resolvedProfile=\(String(describing: manager.resolvedProfileId(for: probedTab))) "
                 + "controllerAttached=\(probedTab.resolvedCurrentWebView()?.configuration.webExtensionController != nil) "
                 + "tabMatchesContext=\(manager.tabMatchesExtensionContext(probedTab, extensionContext: extensionContext))"
@@ -273,7 +273,7 @@ final class SafariExtensionAccountForkPipelineTests: XCTestCase {
         var adapterResolutionDiagnostics: String {
             let adapter = manager.adapterCatalog.stableAdapter(for: tab)
             let adapterWebView = adapter?.webView(for: extensionContext)
-            let eligible = manager.isTabEligibleForCurrentExtensionRuntime(tab)
+            let eligible = manager.preparedExtensionTabs.containsPreparedTab(tab)
             let adapterTab = adapter?.tab
             let lookupTab = browserManager.tabManager.tabCollectionMembershipOwner.tab(for: tab.id)
             let containingSpaces = browserManager.tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()
@@ -425,7 +425,7 @@ final class SafariExtensionAccountForkPipelineTests: XCTestCase {
         webView.owningTab = tab
         tab.replaceUntrackedWebView(webView)
 
-        manager.registerTabWithExtensionRuntime(
+        manager.normalTabRegistration.register(
             tab,
             reason: "SafariExtensionAccountForkPipelineTests"
         )

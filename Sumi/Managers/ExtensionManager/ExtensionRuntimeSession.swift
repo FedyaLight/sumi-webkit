@@ -17,6 +17,7 @@ final class ExtensionRuntimeSession {
         [String: ExtensionManager.ExtensionRuntimeMetrics] = [:]
     var extensionLoadGeneration: UInt64 = 0
     var tabOpenNotificationGeneration: UInt64 = 1
+    var extensionsLoaded = false
 
     func recordRuntimeMetric(
         for extensionId: String,

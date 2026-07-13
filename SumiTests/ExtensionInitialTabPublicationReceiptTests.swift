@@ -160,7 +160,7 @@ final class ExtensionInitialTabPublicationReceiptTests:
         XCTAssertTrue(
             harness.manager.normalWindowLifecycle.opened(harness.window)
         )
-        harness.manager.registerTabWithExtensionRuntime(
+        harness.manager.normalTabRegistration.register(
             harness.tab,
             reason: #function
         )

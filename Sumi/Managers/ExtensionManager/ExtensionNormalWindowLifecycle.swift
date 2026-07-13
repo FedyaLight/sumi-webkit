@@ -73,6 +73,7 @@ final class ExtensionNormalWindowLifecycle {
 
     private let resolver: ExtensionNormalWindowProjectionResolver
     private let adapterStore: ExtensionBrowserAdapterStore
+    private let preparedTabVisibility: ExtensionPreparedTabVisibility
     #if DEBUG
         private let debugDidOpenWindow: @MainActor (UUID) -> Void
     #endif
@@ -90,19 +91,23 @@ final class ExtensionNormalWindowLifecycle {
         init(
             resolver: ExtensionNormalWindowProjectionResolver,
             adapterStore: ExtensionBrowserAdapterStore,
+            preparedTabVisibility: ExtensionPreparedTabVisibility,
             debugDidOpenWindow: @escaping @MainActor (UUID) -> Void = { _ in }
         ) {
             self.resolver = resolver
             self.adapterStore = adapterStore
+            self.preparedTabVisibility = preparedTabVisibility
             self.debugDidOpenWindow = debugDidOpenWindow
         }
     #else
         init(
             resolver: ExtensionNormalWindowProjectionResolver,
-            adapterStore: ExtensionBrowserAdapterStore
+            adapterStore: ExtensionBrowserAdapterStore,
+            preparedTabVisibility: ExtensionPreparedTabVisibility
         ) {
             self.resolver = resolver
             self.adapterStore = adapterStore
+            self.preparedTabVisibility = preparedTabVisibility
         }
     #endif
 
@@ -434,10 +439,15 @@ final class ExtensionNormalWindowLifecycle {
             projection: projection
         )
         publishedByWindowID[windowID] = published
-        projection.controller.didOpenWindow(projection.windowAdapter)
-        #if DEBUG
-            debugDidOpenWindow(windowID)
-        #endif
+        preparedTabVisibility.withWindowOpenCallback(
+            window: window,
+            adapter: projection.windowAdapter
+        ) {
+            projection.controller.didOpenWindow(projection.windowAdapter)
+            #if DEBUG
+                debugDidOpenWindow(windowID)
+            #endif
+        }
 
         guard case .active = phase,
               lifecycleEpoch == publicationEpoch,

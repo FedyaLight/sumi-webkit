@@ -26,7 +26,14 @@ final class ExtensionManager: NSObject, ObservableObject {
         [String: BrowserExtensionActionSurfaceState] = [:]
     @Published private(set) var isExtensionSupportAvailable =
         ExtensionUtils.isExtensionSupportAvailable
-    @Published var extensionsLoaded = false
+    var extensionsLoaded: Bool {
+        get { runtimeSession.extensionsLoaded }
+        set {
+            guard runtimeSession.extensionsLoaded != newValue else { return }
+            objectWillChange.send()
+            runtimeSession.extensionsLoaded = newValue
+        }
+    }
     @Published var isPopupActive = false
     @Published var pinnedToolbarExtensionIDs: [String] = []
 
@@ -142,7 +149,7 @@ final class ExtensionManager: NSObject, ObservableObject {
         contextLoading: initialDocumentRuntimePreparationOwner,
         publications: windowPublications,
         publicationAdmission: tabPublicationAdmission,
-        events: normalTabRuntimeBindingOwner,
+        events: tabLifecycleEvents,
         extensionsLoaded: { [weak self] in self?.extensionsLoaded == true },
         diagnostics: runtimeDiagnostics
     )
@@ -156,7 +163,7 @@ final class ExtensionManager: NSObject, ObservableObject {
             adapterResolution: adapterCatalog,
             contextLoading: initialDocumentRuntimePreparationOwner,
             windowPublications: windowPublications,
-            events: normalTabRuntimeBindingOwner,
+            events: tabLifecycleEvents,
             extensionsLoaded: {
                 [weak self] in self?.extensionsLoaded == true
             },
@@ -229,6 +236,8 @@ final class ExtensionManager: NSObject, ObservableObject {
         ExtensionPageNavigationPreparationOwner()
     var runtimePublicationComposition:
         ExtensionRuntimePublicationComposition?
+    var normalTabRuntimeComposition:
+        ExtensionNormalTabRuntimeComposition?
     lazy var runtimeLifecycleOwner = ExtensionRuntimeLifecycleOwner(
         dependencies: .live(manager: self)
     )
@@ -375,10 +384,6 @@ final class ExtensionManager: NSObject, ObservableObject {
         deferredRuntimeOwnerStore.loadedInitialDocumentRuntimePreparationOwner
     }
 
-    var normalTabRuntimeBindingOwner:
-        ExtensionNormalTabRuntimeBindingOwner {
-        deferredRuntimeOwnerStore.normalTabRuntimeBindingOwner
-    }
     let actionAnchorStore = ExtensionActionAnchorStore()
     let actionPopupAnchorStore = ExtensionActionPopupAnchorStore()
     let optionsWindows = ExtensionOptionsWindowService()
@@ -619,6 +624,8 @@ final class ExtensionManager: NSObject, ObservableObject {
             while true {
                 let tasks =
                     (loadedInitialDocumentRuntimePreparationOwner?
+                        .runtimeTasksForDrain() ?? [])
+                    + (loadedDeferredTabRegistration?
                         .runtimeTasksForDrain() ?? [])
                     + (loadedNativeMessagingBackgroundWakeOwner?
                         .runtimeTasksForDrain() ?? [])

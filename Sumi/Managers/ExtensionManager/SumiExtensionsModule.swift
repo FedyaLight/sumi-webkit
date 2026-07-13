@@ -266,7 +266,7 @@ final class SumiExtensionsModule {
         _ tab: Tab,
         reason: String
     ) {
-        managerIfNeededForNormalTabRuntime()?.registerTabWithExtensionRuntime(
+        managerIfNeededForNormalTabRuntime()?.normalTabRegistration.register(
             tab,
             reason: reason
         )
@@ -276,10 +276,8 @@ final class SumiExtensionsModule {
         _ tab: Tab,
         reason: String
     ) {
-        managerIfLoadedAndEnabled()?.reconcileExtensionRuntimeOnUserGestureIfNeeded(
-            tab,
-            reason: reason
-        )
+        managerIfLoadedAndEnabled()?.tabLifecycleRebind
+            .reconcileOnUserGestureIfNeeded(tab, reason: reason)
     }
 
     func publishWindowIfLoaded(
@@ -351,9 +349,9 @@ final class SumiExtensionsModule {
         _ tab: Tab,
         properties: WKWebExtension.TabChangedProperties
     ) {
-        managerIfLoadedAndEnabled()?.notifyTabPropertiesChanged(
-            tab,
-            properties: properties
+        managerIfLoadedAndEnabled()?.tabPropertyPublisher.publishChange(
+            for: tab,
+            requested: properties
         )
     }
 
@@ -374,10 +372,8 @@ final class SumiExtensionsModule {
         _ tab: Tab,
         reason: String
     ) {
-        managerIfLoadedAndEnabled()?.markTabEligibleAfterCommittedNavigation(
-            tab,
-            reason: reason
-        )
+        managerIfLoadedAndEnabled()?.normalTabRegistration
+            .markEligibleAfterCommittedNavigation(tab, reason: reason)
     }
 
     func prepareExtensionRuntimeBeforeCommittedMainFrameNavigationIfLoaded(
@@ -385,11 +381,12 @@ final class SumiExtensionsModule {
         destinationURL: URL,
         reason: String
     ) {
-        managerIfLoadedAndEnabled()?.prepareExtensionRuntimeBeforeCommittedMainFrameNavigation(
-            tab,
-            destinationURL: destinationURL,
-            reason: reason
-        )
+        managerIfLoadedAndEnabled()?.tabLifecycleRebind
+            .prepareBeforeCommittedMainFrameNavigation(
+                tab,
+                destinationURL: destinationURL,
+                reason: reason
+            )
     }
 
     func ensureInitialExtensionContextsIfNeeded(profileId: UUID) async {

@@ -292,7 +292,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
 
         XCTAssertTrue(ephemeralProfile.isEphemeral)
         XCTAssertTrue(tab.isEphemeral)
-        XCTAssertFalse(manager.isTabEligibleForCurrentExtensionRuntime(tab))
+        XCTAssertFalse(manager.preparedExtensionTabs.containsPreparedTab(tab))
     }
 
     func testNotifyTabActivatedSkipsGenerationEligibleEphemeralTabs() throws {
@@ -1542,7 +1542,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         XCTAssertEqual(didOpenCount, 1)
 
         tab.extensionPageRuntimeOwner.noteCommittedMainDocumentNavigation(to: extensionURL)
-        manager.markTabEligibleAfterCommittedNavigation(
+        manager.normalTabRegistration.markEligibleAfterCommittedNavigation(
             tab,
             reason: "SafariExtensionWebViewControllerWiringTests.didCommit"
         )
@@ -1588,6 +1588,11 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             browserManager: browserManager
         )
         tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
+        registerWindowDisplaying(
+            tab,
+            profileId: profile.id,
+            browserManager: browserManager
+        )
 
         let configuration = BrowserConfiguration().auxiliaryWebViewConfiguration(
             surface: .extensionOptions
@@ -1608,7 +1613,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             }
         }
 
-        manager.markTabEligibleAfterCommittedNavigation(
+        manager.normalTabRegistration.markEligibleAfterCommittedNavigation(
             tab,
             reason: "SafariExtensionWebViewControllerWiringTests"
         )
@@ -1645,6 +1650,11 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             browserManager: browserManager
         )
         tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
+        registerWindowDisplaying(
+            tab,
+            profileId: profile.id,
+            browserManager: browserManager
+        )
 
         let configuration = BrowserConfiguration().auxiliaryWebViewConfiguration(
             surface: .extensionOptions
@@ -1665,11 +1675,11 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             }
         }
 
-        manager.markTabEligibleAfterCommittedNavigation(
+        manager.normalTabRegistration.markEligibleAfterCommittedNavigation(
             tab,
             reason: "SafariExtensionWebViewControllerWiringTests.first"
         )
-        manager.markTabEligibleAfterCommittedNavigation(
+        manager.normalTabRegistration.markEligibleAfterCommittedNavigation(
             tab,
             reason: "SafariExtensionWebViewControllerWiringTests.second"
         )
@@ -1717,6 +1727,11 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             browserManager: browserManager
         )
         tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
+        registerWindowDisplaying(
+            tab,
+            profileId: profile.id,
+            browserManager: browserManager
+        )
         let webView = FocusableWKWebView(frame: .zero, configuration: configuration)
         webView.owningTab = tab
         tab.replaceUntrackedWebView(webView)
@@ -1735,7 +1750,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         await fulfillment(of: [didFinish], timeout: 5)
         webView.navigationDelegate = nil
 
-        manager.markTabEligibleAfterCommittedNavigation(
+        manager.normalTabRegistration.markEligibleAfterCommittedNavigation(
             tab,
             reason: "SafariExtensionWebViewControllerWiringTests"
         )

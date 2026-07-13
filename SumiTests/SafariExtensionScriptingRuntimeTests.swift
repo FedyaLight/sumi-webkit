@@ -86,7 +86,7 @@ final class SafariExtensionScriptingRuntimeTests: XCTestCase {
         webView.owningTab = tab
         tab.replaceUntrackedWebView(webView)
 
-        manager.registerTabWithExtensionRuntime(
+        manager.normalTabRegistration.register(
             tab,
             reason: "SafariExtensionScriptingRuntimeTests"
         )

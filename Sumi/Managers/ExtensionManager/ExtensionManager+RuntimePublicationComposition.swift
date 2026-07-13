@@ -77,18 +77,27 @@ extension ExtensionManager {
         guard runtimePublicationComposition == nil else { return }
 
         let gate = ExtensionRuntimePublicationGate()
+        let preparedTabVisibility = ExtensionPreparedTabVisibility(gate: gate)
         #if DEBUG
             let normalWindows = ExtensionNormalWindowLifecycle(
-                resolver: ExtensionNormalWindowProjectionResolver(manager: self),
+                resolver: ExtensionNormalWindowProjectionResolver(
+                    manager: self,
+                    preparedTabVisibility: preparedTabVisibility
+                ),
                 adapterStore: adapterStore,
+                preparedTabVisibility: preparedTabVisibility,
                 debugDidOpenWindow: { [weak self] windowID in
                     self?.testHooks.didOpenNormalWindow?(windowID)
                 }
             )
         #else
             let normalWindows = ExtensionNormalWindowLifecycle(
-                resolver: ExtensionNormalWindowProjectionResolver(manager: self),
-                adapterStore: adapterStore
+                resolver: ExtensionNormalWindowProjectionResolver(
+                    manager: self,
+                    preparedTabVisibility: preparedTabVisibility
+                ),
+                adapterStore: adapterStore,
+                preparedTabVisibility: preparedTabVisibility
             )
         #endif
         let auxiliaryTabPublication = ExtensionAuxiliaryTabPublicationPreparer(
@@ -130,6 +139,15 @@ extension ExtensionManager {
             publications: publications,
             gate: gate
         )
+        let normalTabs = ExtensionNormalTabRuntimeAssembler.assemble(
+            manager: self,
+            gate: gate,
+            preparedTabVisibility: preparedTabVisibility,
+            admission: admission,
+            publications: publications
+        )
+        let tabLifecycleEvents = normalTabs.tabLifecycleEvents
+        let tabOpening = normalTabs.tabOpening
         let activationValidator = ExtensionNormalTabActivationValidator(
             runtimeSession: runtimeSession,
             profileRuntime: profileRuntime,
@@ -160,7 +178,7 @@ extension ExtensionManager {
             profileRuntime: profileRuntime,
             adapterStore: adapterStore,
             windowPublications: publications,
-            events: normalTabRuntimeBindingOwner,
+            events: tabLifecycleEvents,
             runtime: { [weak self] in self?.runtime ?? .inactive }
         )
         let reload = ExtensionRuntimeReloadTransaction(
@@ -170,7 +188,8 @@ extension ExtensionManager {
             publicationGate: gate,
             adapterResolution: adapterCatalog,
             controllerBinding: controllerAttachmentOwner,
-            tabPublication: normalTabRuntimeBindingOwner,
+            tabPublication: tabOpening,
+            tabEvents: tabLifecycleEvents,
             isAuxiliarySessionTab: publications.isAuxiliarySessionTab,
             diagnostics: runtimeDiagnostics
         )
@@ -185,6 +204,7 @@ extension ExtensionManager {
             }
         )
 
+        normalTabRuntimeComposition = normalTabs
         runtimePublicationComposition = ExtensionRuntimePublicationComposition(
             gate: gate,
             normalWindows: normalWindows,

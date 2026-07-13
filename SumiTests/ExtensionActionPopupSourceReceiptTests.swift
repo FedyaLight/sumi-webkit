@@ -485,7 +485,8 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
                     ($0 as? ExtensionTabAdapter)?.tabId
                 }
             ),
-            expectedTabIDs
+            [harness.sourceTab.id],
+            "A prepared but unsettled background Tab must remain hidden outside an open callback"
         )
         for tab in expectedTabs {
             XCTAssertTrue(
@@ -545,7 +546,7 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
         for tab in expectedTabs {
             XCTAssertTrue(
                 harness.extensionManager
-                    .isTabEligibleForCurrentExtensionRuntime(tab),
+                    .preparedExtensionTabs.containsPreparedTab(tab),
                 "Tab did not enter the committed generation: \(tab.id)"
             )
         }
@@ -652,7 +653,7 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
         }
 
         XCTAssertFalse(
-            harness.extensionManager.notifyTabOpened(tab)
+            harness.extensionManager.normalTabOpening.publishOpen(tab)
         )
         XCTAssertFalse(
             tab.extensionPageRuntimeOwner
@@ -703,7 +704,7 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
                 = adapter
         }
 
-        XCTAssertFalse(harness.extensionManager.notifyTabOpened(tab))
+        XCTAssertFalse(harness.extensionManager.normalTabOpening.publishOpen(tab))
         XCTAssertFalse(
             tab.extensionPageRuntimeOwner
                 .hasSettledDidOpenTabNotification(for: generation)
@@ -766,7 +767,7 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
                 = adapter
         }
 
-        XCTAssertFalse(harness.extensionManager.notifyTabOpened(tab))
+        XCTAssertFalse(harness.extensionManager.normalTabOpening.publishOpen(tab))
         XCTAssertEqual(didOpenCount, 0)
         XCTAssertEqual(didCloseCount, 0)
         XCTAssertFalse(
@@ -1006,9 +1007,9 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
             harness.extensionManager.testHooks.didChangeTabProperties = nil
         }
 
-        harness.extensionManager.notifyTabPropertiesChanged(
-            harness.sourceTab,
-            properties: [.title]
+        harness.extensionManager.tabPropertyPublisher.publishChange(
+            for: harness.sourceTab,
+            requested: [.title]
         )
 
         XCTAssertTrue(changedProperties.isEmpty)
@@ -1237,7 +1238,7 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
             profileID: profile.id
         )
         XCTAssertTrue(
-            extensionManager.isTabEligibleForCurrentExtensionRuntime(sourceTab)
+            extensionManager.preparedExtensionTabs.containsPreparedTab(sourceTab)
         )
         XCTAssertNotNil(
             extensionManager.adapterStore.existingWindowAdapter(

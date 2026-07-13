@@ -51,7 +51,10 @@ final class ExtensionAdapterCatalog {
         }
     }
 
-    func windowAdapter(for windowId: UUID) -> ExtensionWindowAdapter? {
+    func windowAdapter(
+        for windowId: UUID,
+        preparedTabVisibility: ExtensionPreparedTabVisibility
+    ) -> ExtensionWindowAdapter? {
         guard let manager else { return nil }
         return manager.adapterStore.windowAdapter(for: windowId) { [weak manager] in
             guard let manager,
@@ -69,6 +72,7 @@ final class ExtensionAdapterCatalog {
                 windowQuery: windowQuery,
                 windowActivation: windowActivation,
                 contextPublications: manager.contextPublications,
+                preparedTabVisibility: preparedTabVisibility,
                 extensionManager: manager
             )
         }

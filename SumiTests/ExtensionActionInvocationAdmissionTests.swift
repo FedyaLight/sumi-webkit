@@ -683,7 +683,7 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
 
     func testAdapterAbsenceIsExactAuthority() async throws {
         let harness = try await makeHarness(name: "ExactAdapterAbsence")
-        harness.manager.registerTabWithExtensionRuntime(
+        harness.manager.normalTabRegistration.register(
             harness.tab,
             reason: "ExtensionActionInvocationAdmissionTests"
         )
