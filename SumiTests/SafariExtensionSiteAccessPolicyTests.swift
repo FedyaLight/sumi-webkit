@@ -164,7 +164,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
             .ask
         )
         XCTAssertFalse(
-            reloadedManager.isGrantedPermissionStatus(
+            ExtensionPermissionStatusResolver.isGranted(
                 reloadedContext.permissionStatus(for: matchPattern)
             )
         )
@@ -380,10 +380,10 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
         )
 
         XCTAssertFalse(
-            manager.isGrantedPermissionStatus(contextA.permissionStatus(for: matchPattern))
+            ExtensionPermissionStatusResolver.isGranted(contextA.permissionStatus(for: matchPattern))
         )
         XCTAssertFalse(
-            manager.isGrantedPermissionStatus(contextB.permissionStatus(for: matchPattern))
+            ExtensionPermissionStatusResolver.isGranted(contextB.permissionStatus(for: matchPattern))
         )
     }
 
@@ -473,7 +473,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
             .ask
         )
         XCTAssertFalse(
-            manager.isGrantedPermissionStatus(context.permissionStatus(for: matchPattern))
+            ExtensionPermissionStatusResolver.isGranted(context.permissionStatus(for: matchPattern))
         )
         XCTAssertFalse(context.hasAccess(to: URL(string: "https://account.proton.me/u/0")!))
     }
@@ -758,8 +758,8 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
     }
 
     /// Safari parity: permission state changes only when configuration
-    /// changes. Re-applying an unchanged policy (context load, popup open,
-    /// tab reconcile all route through `grantRequestedMatchPatterns`) must be
+    /// changes. Re-applying an unchanged policy during context load or live
+    /// policy reconciliation must be
     /// a no-op — the previous remove-then-regrant sweep fired
     /// `permissions.onRemoved`/`onAdded` storms into extension workers, which
     /// Proton Pass caches as "permissions missing" for its popup spotlight.
@@ -817,12 +817,14 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
             }
         }
 
-        // The action popup open path and the tab reconcile path both re-apply
-        // the (unchanged) policy.
+        // Context reconciliation may re-apply an unchanged policy repeatedly.
         for _ in 0..<3 {
-            manager.grantRequestedMatchPatterns(
+            manager.siteAccessPolicyCoordinator.applyConfiguredSiteAccessPolicy(
                 to: context,
-                webExtension: context.webExtension
+                extensionId: installed.id,
+                profileId: profile.id,
+                webExtension: context.webExtension,
+                manifest: installed.manifest
             )
         }
         try await Task.sleep(nanoseconds: 300_000_000)
@@ -1009,7 +1011,8 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
         let passPattern = try XCTUnwrap(
             WKWebExtension.MatchPattern(string: "https://pass.example.test/*")
         )
-        let declaredPatterns = manager.declaredSiteAccessMatchPatterns(
+        let declaredPatterns = manager.siteAccessPolicyCoordinator
+            .declaredSiteAccessMatchPatterns(
             for: context.webExtension,
             manifest: installed.manifest
         )
@@ -1017,10 +1020,10 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
         XCTAssertFalse(declaredPatterns.contains(accountPattern))
         XCTAssertFalse(declaredPatterns.contains(passPattern))
         XCTAssertFalse(
-            manager.isGrantedPermissionStatus(context.permissionStatus(for: accountPattern))
+            ExtensionPermissionStatusResolver.isGranted(context.permissionStatus(for: accountPattern))
         )
         XCTAssertFalse(
-            manager.isGrantedPermissionStatus(context.permissionStatus(for: passPattern))
+            ExtensionPermissionStatusResolver.isGranted(context.permissionStatus(for: passPattern))
         )
         XCTAssertFalse(context.hasAccess(to: URL(string: "https://account.example.test/login")!))
         XCTAssertFalse(context.hasAccess(to: URL(string: "https://pass.example.test/")!))
@@ -1073,7 +1076,8 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
         let passPattern = try XCTUnwrap(
             WKWebExtension.MatchPattern(string: "https://pass.proton.me/*")
         )
-        let declaredPatterns = manager.declaredSiteAccessMatchPatterns(
+        let declaredPatterns = manager.siteAccessPolicyCoordinator
+            .declaredSiteAccessMatchPatterns(
             for: webExtension,
             manifest: manifest
         )
@@ -1084,7 +1088,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
             "Exact externally_connectable-only page messaging patterns must not be promoted to declared site access when broad host access already covers the page"
         )
         XCTAssertTrue(
-            manager.isGrantedPermissionStatus(extensionContext.permissionStatus(for: allHosts))
+            ExtensionPermissionStatusResolver.isGranted(extensionContext.permissionStatus(for: allHosts))
         )
         XCTAssertTrue(
             extensionContext.hasAccess(to: URL(string: "https://account.proton.me/")!)

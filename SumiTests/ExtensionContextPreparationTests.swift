@@ -35,7 +35,6 @@ final class ExtensionContextPreparationTests: XCTestCase {
         var policyPersistenceCount = 0
         let preparation = ExtensionContextPreparation(
             siteAccessPolicyStore: .init(preferences: preferences),
-            capabilities: .init(),
             installedExtensions: .init(),
             permissionDecisions: decisions,
             siteAccessPolicyDidPersist: {

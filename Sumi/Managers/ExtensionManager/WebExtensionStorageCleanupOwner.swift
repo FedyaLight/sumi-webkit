@@ -233,7 +233,11 @@ final class WebExtensionStorageCleanupOwner {
     func storeCapabilitySnapshot(
         for manifest: [String: Any]
     ) -> ExtensionManager.WebExtensionStoreCapabilitySnapshot {
-        manager.installCapabilityOwner.webExtensionStoreCapabilitySnapshot(for: manifest)
+        storageCleanupPlanner.storeCapabilitySnapshot(
+            for: manifest,
+            unsupportedAPIs: WebExtensionRuntimeCompatibilityPolicy
+                .unsupportedAPIs(for: manifest)
+        )
     }
 
     func classifyCleanupErrors(

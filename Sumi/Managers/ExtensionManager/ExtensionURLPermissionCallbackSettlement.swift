@@ -39,24 +39,6 @@ final class ExtensionURLPermissionCallbackSettlement {
                 granted.insert(url)
             case .alreadyDenied:
                 Self.recordHostPermission(false, evidence, "promptAlreadyDenied")
-            case .contextMatchPattern:
-                guard setPermissionStatus(
-                    .grantedExplicitly,
-                    for: url,
-                    in: extensionContext,
-                    includeHostPattern: false,
-                    expirationDate: nil,
-                    evidence: evidence,
-                    manager: manager
-                ) else {
-                    completionHandler([], nil)
-                    return
-                }
-                Self.recordHostPermission(true, evidence, "promptMatchPattern")
-                granted.insert(url)
-            case .tabMatchPattern:
-                Self.recordHostPermission(true, evidence, "promptMatchPattern")
-                granted.insert(url)
             case .configured(let access):
                 let isAllowed = access == .allow
                 guard setPermissionStatus(

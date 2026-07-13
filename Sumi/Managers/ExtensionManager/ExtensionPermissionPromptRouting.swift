@@ -10,8 +10,6 @@ enum ExtensionPermissionPromptRouting {
     enum URLPermissionPromptResolution {
         case alreadyGranted
         case alreadyDenied
-        case contextMatchPattern
-        case tabMatchPattern
         case configured(SafariExtensionSiteAccessLevel)
         case unresolved
     }
@@ -19,12 +17,15 @@ enum ExtensionPermissionPromptRouting {
     static func grantedPermissions(
         from permissions: Set<WKWebExtension.Permission>,
         in extensionContext: WKWebExtensionContext,
-        tab: (any WKWebExtensionTab)?,
-        manager: ExtensionManager
+        tab: (any WKWebExtensionTab)?
     ) -> Set<WKWebExtension.Permission> {
         permissions.filter {
-            manager.isGrantedPermissionStatus(
-                manager.effectivePermissionStatus(for: $0, in: extensionContext, tab: tab)
+            ExtensionPermissionStatusResolver.isGranted(
+                ExtensionPermissionStatusResolver.effectiveStatus(
+                    for: $0,
+                    in: extensionContext,
+                    tab: tab
+                )
             )
         }
     }
@@ -32,12 +33,15 @@ enum ExtensionPermissionPromptRouting {
     static func grantedMatchPatterns(
         from matchPatterns: Set<WKWebExtension.MatchPattern>,
         in extensionContext: WKWebExtensionContext,
-        tab: (any WKWebExtensionTab)?,
-        manager: ExtensionManager
+        tab: (any WKWebExtensionTab)?
     ) -> Set<WKWebExtension.MatchPattern> {
         matchPatterns.filter {
-            manager.isGrantedPermissionStatus(
-                manager.effectivePermissionStatus(for: $0, in: extensionContext, tab: tab)
+            ExtensionPermissionStatusResolver.isGranted(
+                ExtensionPermissionStatusResolver.effectiveStatus(
+                    for: $0,
+                    in: extensionContext,
+                    tab: tab
+                )
             )
         }
     }
@@ -102,29 +106,16 @@ enum ExtensionPermissionPromptRouting {
         profileId: UUID,
         manager: ExtensionManager
     ) -> URLPermissionPromptResolution {
-        let status = manager.effectivePermissionStatus(
+        let status = ExtensionPermissionStatusResolver.effectiveStatus(
             for: url,
             in: extensionContext,
             tab: tab
         )
-        if manager.isGrantedPermissionStatus(status) {
+        if ExtensionPermissionStatusResolver.isGranted(status) {
             return .alreadyGranted
         }
         if status == .deniedExplicitly {
             return .alreadyDenied
-        }
-        switch grantedMatchPatternCoverage(
-            for: url,
-            in: extensionContext,
-            tab: tab,
-            manager: manager
-        ) {
-        case .context:
-            return .contextMatchPattern
-        case .tab:
-            return .tabMatchPattern
-        case .none:
-            break
         }
         guard ["http", "https"].contains(url.scheme?.lowercased() ?? "") else {
             return .unresolved
@@ -143,43 +134,4 @@ enum ExtensionPermissionPromptRouting {
         }
     }
 
-    private enum MatchPatternCoverage {
-        case context
-        case tab
-        case none
-    }
-
-    private static func grantedMatchPatternCoverage(
-        for url: URL,
-        in extensionContext: WKWebExtensionContext,
-        tab: (any WKWebExtensionTab)?,
-        manager: ExtensionManager
-    ) -> MatchPatternCoverage {
-        let declaredPatterns = extensionContext.webExtension
-            .allRequestedMatchPatterns
-            .union(extensionContext.webExtension.optionalPermissionMatchPatterns)
-        var contextPatterns = Set(extensionContext.grantedPermissionMatchPatterns.keys)
-        var tabPatterns = Set<WKWebExtension.MatchPattern>()
-
-        for pattern in declaredPatterns {
-            if manager.isGrantedPermissionStatus(
-                extensionContext.permissionStatus(for: pattern)
-            ) {
-                contextPatterns.insert(pattern)
-            } else if let tab,
-                      manager.isGrantedPermissionStatus(
-                          extensionContext.permissionStatus(for: pattern, in: tab)
-                      ) {
-                tabPatterns.insert(pattern)
-            }
-        }
-
-        if contextPatterns.contains(where: { $0.matches(url) }) {
-            return .context
-        }
-        if tabPatterns.contains(where: { $0.matches(url) }) {
-            return .tab
-        }
-        return .none
-    }
 }

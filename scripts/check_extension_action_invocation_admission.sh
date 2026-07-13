@@ -64,7 +64,7 @@ if [[ -n "${request_capture_line:-}" && -n "${runtime_await_line:-}" \
   status=1
 fi
 first_effect_line="$(
-  rg -n 'grantRequestedPermissions\(|grantRequestedMatchPatterns\(|updateActionSurfaceState\(|performAction\(|recordRuntimeMetric\(' \
+  rg -n 'registerTab\(|applyConfiguredPolicy\(|authorize\(|updateActionSurfaceState\(|performAction\(|recordRuntimeMetric\(' \
     "$service" | head -1 | cut -d: -f1
 )"
 if [[ -n "${capture_line:-}" && -n "${first_effect_line:-}" ]] \

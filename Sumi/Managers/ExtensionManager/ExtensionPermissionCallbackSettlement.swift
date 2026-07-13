@@ -23,8 +23,12 @@ final class ExtensionPermissionCallbackSettlement {
     ) {
         let extensionContext = evidence.context
         let unresolvedPermissions = permissions.filter {
-            manager.isGrantedPermissionStatus(
-                manager.effectivePermissionStatus(for: $0, in: extensionContext, tab: tab)
+            ExtensionPermissionStatusResolver.isGranted(
+                ExtensionPermissionStatusResolver.effectiveStatus(
+                    for: $0,
+                    in: extensionContext,
+                    tab: tab
+                )
             ) == false
         }
 
@@ -58,8 +62,7 @@ final class ExtensionPermissionCallbackSettlement {
                 ExtensionPermissionPromptRouting.grantedPermissions(
                     from: permissions,
                     in: extensionContext,
-                    tab: tab,
-                    manager: manager
+                    tab: tab
                 ),
                 nil
             )
@@ -119,8 +122,7 @@ final class ExtensionPermissionCallbackSettlement {
                 ExtensionPermissionPromptRouting.grantedPermissions(
                     from: permissions,
                     in: extensionContext,
-                    tab: tab,
-                    manager: manager
+                    tab: tab
                 ),
                 settlement.expirationDate
             )
@@ -136,8 +138,12 @@ final class ExtensionPermissionCallbackSettlement {
     ) {
         let extensionContext = evidence.context
         let unresolvedMatches = matchPatterns.filter {
-            manager.isGrantedPermissionStatus(
-                manager.effectivePermissionStatus(for: $0, in: extensionContext, tab: tab)
+            ExtensionPermissionStatusResolver.isGranted(
+                ExtensionPermissionStatusResolver.effectiveStatus(
+                    for: $0,
+                    in: extensionContext,
+                    tab: tab
+                )
             ) == false
         }
 
@@ -169,8 +175,7 @@ final class ExtensionPermissionCallbackSettlement {
                 ExtensionPermissionPromptRouting.grantedMatchPatterns(
                     from: matchPatterns,
                     in: extensionContext,
-                    tab: tab,
-                    manager: manager
+                    tab: tab
                 ),
                 nil
             )
@@ -241,8 +246,7 @@ final class ExtensionPermissionCallbackSettlement {
                 ExtensionPermissionPromptRouting.grantedMatchPatterns(
                     from: matchPatterns,
                     in: extensionContext,
-                    tab: tab,
-                    manager: manager
+                    tab: tab
                 ),
                 settlement.expirationDate
             )

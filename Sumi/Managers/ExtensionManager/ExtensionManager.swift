@@ -313,7 +313,6 @@ final class ExtensionManager: NSObject, ObservableObject {
     )
     lazy var contextPreparation = ExtensionContextPreparation(
         siteAccessPolicyStore: siteAccessPolicyStore,
-        capabilities: installCapabilityOwner,
         installedExtensions: installedExtensionCollection,
         permissionDecisions: permissionDecisionStore,
         siteAccessPolicyDidPersist: { [weak self] in
@@ -532,7 +531,6 @@ final class ExtensionManager: NSObject, ObservableObject {
     var runtime = ExtensionManagerRuntime.inactive
     let runtimeSession = ExtensionRuntimeSession()
     let webExtensionStorageCleanupPlanner: WebExtensionStorageCleanupPlanner
-    let installCapabilityOwner: SafariExtensionInstallCapabilityOwner
     let backgroundRuntimeStateOwner = ExtensionBackgroundRuntimeStateOwner()
     lazy var runtimeActivityCancellation = ExtensionRuntimeActivityCancellation(
         loadRegistry: contextLoadRegistry,
@@ -649,9 +647,6 @@ final class ExtensionManager: NSObject, ObservableObject {
         )
         let storageCleanupPlanner = WebExtensionStorageCleanupPlanner()
         self.webExtensionStorageCleanupPlanner = storageCleanupPlanner
-        self.installCapabilityOwner = SafariExtensionInstallCapabilityOwner(
-            storageCleanupPlanner: storageCleanupPlanner
-        )
         super.init()
         installedExtensionCollection.connectRecordChanges { [weak self] in
             self?.toolbarPinningOwner.reconcilePinnedToolbarExtensions()

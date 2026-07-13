@@ -205,9 +205,12 @@ final class SafariExtensionInstallationSecurityTests: XCTestCase {
             manager.getExtensionContext(for: installed.id, profileId: profile.id)
         )
 
-        XCTAssertFalse(ExtensionManager.manifestDeclaresNativeMessaging(installed.manifest))
         XCTAssertFalse(
-            manager.isGrantedPermissionStatus(
+            WebExtensionRuntimeCompatibilityPolicy
+                .declaresNativeMessaging(installed.manifest)
+        )
+        XCTAssertFalse(
+            ExtensionPermissionStatusResolver.isGranted(
                 context.permissionStatus(for: .nativeMessaging)
             )
         )
@@ -242,7 +245,7 @@ final class SafariExtensionInstallationSecurityTests: XCTestCase {
 
         XCTAssertEqual(context.permissionStatus(for: storagePermission), .grantedExplicitly)
         XCTAssertFalse(
-            manager.isGrantedPermissionStatus(
+            ExtensionPermissionStatusResolver.isGranted(
                 context.permissionStatus(for: tabsPermission)
             )
         )
@@ -273,7 +276,10 @@ final class SafariExtensionInstallationSecurityTests: XCTestCase {
             manager.getExtensionContext(for: installed.id, profileId: profile.id)
         )
 
-        XCTAssertTrue(ExtensionManager.manifestDeclaresNativeMessaging(installed.manifest))
+        XCTAssertTrue(
+            WebExtensionRuntimeCompatibilityPolicy
+                .declaresNativeMessaging(installed.manifest)
+        )
         XCTAssertEqual(
             context.permissionStatus(for: .nativeMessaging),
             .grantedExplicitly
@@ -385,8 +391,7 @@ final class SafariExtensionInstallationSecurityTests: XCTestCase {
         )
     }
 
-    func testInstallCapabilityOwnerClassifiesWebKitRuntimePolicy() {
-        let owner = SafariExtensionInstallCapabilityOwner()
+    func testRuntimeCompatibilityPolicyClassifiesWebKitTarget() {
         let manifest: [String: Any] = [
             "manifest_version": 3,
             "name": "WebKit Runtime Policy",
@@ -398,7 +403,7 @@ final class SafariExtensionInstallationSecurityTests: XCTestCase {
         ]
 
         XCTAssertTrue(
-            SafariExtensionInstallCapabilityOwner.manifestDeclaresNativeMessaging(
+            WebExtensionRuntimeCompatibilityPolicy.declaresNativeMessaging(
                 manifest
             )
         )
@@ -406,8 +411,8 @@ final class SafariExtensionInstallationSecurityTests: XCTestCase {
         // SafariExtensionScriptingRuntimeTests, so Safari-target manifests
         // must not mark it unsupported (Proton Pass bootstraps its autofill
         // client through it). Legacy MV2 injection APIs stay unsupported.
-        let unsupportedAPIs = SafariExtensionInstallCapabilityOwner
-            .webKitRuntimeUnsupportedAPIs(for: manifest)
+        let unsupportedAPIs = WebExtensionRuntimeCompatibilityPolicy
+            .unsupportedAPIs(for: manifest)
         XCTAssertFalse(unsupportedAPIs.contains("browser.scripting.executeScript"))
         XCTAssertFalse(unsupportedAPIs.contains("browser.scripting.insertCSS"))
         XCTAssertTrue(unsupportedAPIs.contains("browser.tabs.executeScript"))

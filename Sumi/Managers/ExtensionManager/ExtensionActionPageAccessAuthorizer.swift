@@ -20,7 +20,6 @@ enum ExtensionActionPageAccessOutcome {
 @MainActor
 final class ExtensionActionPageAccessAuthorizer {
     struct Environment {
-        let capabilities: SafariExtensionInstallCapabilityOwner
         /// Deferred so constructing the invocation boundary for a rejected
         /// click cannot materialize the runtime bundle's lazy systems.
         let siteAccess: @MainActor () -> ExtensionSiteAccessPolicyCoordinator?
@@ -75,41 +74,28 @@ final class ExtensionActionPageAccessAuthorizer {
         let permissions = Self.stringArray(from: manifest["permissions"])
         let optionalPermissions = Self.stringArray(from: manifest["optional_permissions"])
         if (permissions + optionalPermissions).contains("activeTab") {
-            // grantActiveTabURLAccess reads the live Tab URL; it may only run
-            // while that URL is still exactly the captured, authorized page.
+            // WebKit converts the admitted action user gesture into temporary,
+            // tab-scoped host access during performAction(for:). A manual URL
+            // grant here would instead create global, effectively permanent
+            // access and overwrite a persisted denial.
             guard admission.isCurrent(evidence),
                   page.tab.url == pageURL
             else { return .stale }
-            environment.capabilities.grantActiveTabURLAccess(
-                for: context,
-                tab: page.tab,
-                manifest: manifest,
-                extensionId: evidence.extensionID,
-                profileId: evidence.profileID
-            )
             return .authorized
         }
 
-        let status = environment.capabilities.effectivePermissionStatus(
+        let status = ExtensionPermissionStatusResolver.effectiveStatus(
             for: pageURL,
             in: context,
             tab: evidence.adapter
         )
-        if environment.capabilities.isGrantedPermissionStatus(status) {
+        if ExtensionPermissionStatusResolver.isGranted(status) {
             return .authorized
         }
         if status == .deniedExplicitly {
             return .denied
         }
         guard admission.isCurrent(evidence) else { return .stale }
-        if environment.capabilities.explicitlyGrantURLIfCoveredByGrantedMatchPattern(
-            pageURL,
-            in: context,
-            tab: evidence.adapter
-        ) {
-            return .authorized
-        }
-
         guard let siteAccess = environment.siteAccess() else { return .stale }
         switch siteAccess.configuredSiteAccessLevel(
             for: pageURL,
@@ -289,7 +275,6 @@ extension ExtensionActionPageAccessAuthorizer.Environment {
     @MainActor
     static func makeLive(manager: ExtensionManager) -> Self {
         Self(
-            capabilities: manager.installCapabilityOwner,
             siteAccess: { [weak manager] in
                 manager?.siteAccessPolicyCoordinator
             },

@@ -8,7 +8,7 @@ import WebKit
 @MainActor
 final class ExtensionSiteAccessPolicyCoordinator {
     private let siteAccessPolicyStore: SafariExtensionSiteAccessPolicyStore
-    private let installCapabilityOwner: SafariExtensionInstallCapabilityOwner
+    private let policyApplicator: ExtensionSiteAccessPolicyApplicator
     private let installedExtensions: @MainActor () -> [InstalledExtension]
     private let loadedExtensionManifests: @MainActor () -> [String: [String: Any]]
     private let getExtensionContext: @MainActor (String, UUID) -> WKWebExtensionContext?
@@ -17,7 +17,7 @@ final class ExtensionSiteAccessPolicyCoordinator {
 
     init(
         siteAccessPolicyStore: SafariExtensionSiteAccessPolicyStore,
-        installCapabilityOwner: SafariExtensionInstallCapabilityOwner,
+        policyApplicator: ExtensionSiteAccessPolicyApplicator = .init(),
         installedExtensions: @escaping @MainActor () -> [InstalledExtension],
         loadedExtensionManifests: @escaping @MainActor () -> [String: [String: Any]],
         getExtensionContext: @escaping @MainActor (String, UUID) -> WKWebExtensionContext?,
@@ -25,7 +25,7 @@ final class ExtensionSiteAccessPolicyCoordinator {
         postSiteAccessPoliciesDidChange: @escaping @MainActor () -> Void
     ) {
         self.siteAccessPolicyStore = siteAccessPolicyStore
-        self.installCapabilityOwner = installCapabilityOwner
+        self.policyApplicator = policyApplicator
         self.installedExtensions = installedExtensions
         self.loadedExtensionManifests = loadedExtensionManifests
         self.getExtensionContext = getExtensionContext
@@ -197,20 +197,37 @@ final class ExtensionSiteAccessPolicyCoordinator {
         webExtension: WKWebExtension,
         manifest: [String: Any]? = nil
     ) {
-        installCapabilityOwner.applyConfiguredSiteAccessPolicy(
+        let policyResult = siteAccessPolicyStore.policy(
+            extensionId: extensionId,
+            profileId: profileId
+        )
+        policyApplicator.apply(
             to: extensionContext,
             webExtension: webExtension,
-            input: SafariExtensionInstallCapabilityOwner.SiteAccessApplicationInput(
-                extensionId: extensionId,
-                profileId: profileId,
-                policy: siteAccessPolicy(
-                    extensionId: extensionId,
-                    profileId: profileId
-                ),
+            input: ExtensionSiteAccessPolicyApplicator.Input(
+                extensionID: extensionId,
+                profileID: profileId,
+                policy: policyResult.policy,
                 installedExtension: installedExtensions()
                     .first { $0.id == extensionId },
                 manifest: manifest
             )
+        )
+        // Policy normalization may publish synchronously and replace the
+        // caller's context binding. Mutate the captured context first; the
+        // caller can then revalidate authority after this notification.
+        notifySiteAccessPoliciesDidChangeIfNeeded(
+            policyResult.didPersistChanges
+        )
+    }
+
+    func declaredSiteAccessMatchPatterns(
+        for webExtension: WKWebExtension,
+        manifest: [String: Any]? = nil
+    ) -> Set<WKWebExtension.MatchPattern> {
+        policyApplicator.declaredMatchPatterns(
+            for: webExtension,
+            manifest: manifest
         )
     }
 
@@ -353,7 +370,6 @@ extension ExtensionSiteAccessPolicyCoordinator {
     convenience init(manager: ExtensionManager) {
         self.init(
             siteAccessPolicyStore: manager.siteAccessPolicyStore,
-            installCapabilityOwner: manager.installCapabilityOwner,
             installedExtensions: { [weak manager] in
                 manager?.installedExtensionCollection.records ?? []
             },
@@ -521,16 +537,6 @@ extension ExtensionManager {
             extensionId: extensionId,
             profileId: profileId,
             webExtension: webExtension,
-            manifest: manifest
-        )
-    }
-
-    func declaredSiteAccessMatchPatterns(
-        for webExtension: WKWebExtension,
-        manifest: [String: Any]? = nil
-    ) -> Set<WKWebExtension.MatchPattern> {
-        installCapabilityOwner.declaredSiteAccessMatchPatterns(
-            for: webExtension,
             manifest: manifest
         )
     }

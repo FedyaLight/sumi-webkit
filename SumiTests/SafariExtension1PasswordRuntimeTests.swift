@@ -56,9 +56,9 @@ final class SafariExtension1PasswordRuntimeTests: XCTestCase {
         let allURLs = WKWebExtension.MatchPattern.allURLs()
         let allHostsAndSchemes = WKWebExtension.MatchPattern.allHostsAndSchemes()
         XCTAssertTrue(
-            manager.isGrantedPermissionStatus(
+            ExtensionPermissionStatusResolver.isGranted(
                 extensionContext.permissionStatus(for: allURLs)
-            ) || manager.isGrantedPermissionStatus(
+            ) || ExtensionPermissionStatusResolver.isGranted(
                 extensionContext.permissionStatus(for: allHostsAndSchemes)
             ),
             "declared <all_urls> access must seed as granted for the Safari appex import"
@@ -72,7 +72,7 @@ final class SafariExtension1PasswordRuntimeTests: XCTestCase {
         // scripting, contextMenus, tabs, storage, alarms, webNavigation).
         for permission in ["nativeMessaging", "scripting", "storage", "tabs", "contextMenus"] {
             XCTAssertTrue(
-                manager.isGrantedPermissionStatus(
+                ExtensionPermissionStatusResolver.isGranted(
                     extensionContext.permissionStatus(
                         for: WKWebExtension.Permission(rawValue: permission)
                     )

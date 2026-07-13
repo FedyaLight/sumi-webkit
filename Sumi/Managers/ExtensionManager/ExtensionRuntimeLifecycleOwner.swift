@@ -29,9 +29,6 @@ final class ExtensionRuntimeLifecycleOwner {
         let extensionRuntimeReadinessContext: @MainActor (UUID) -> ExtensionRuntimeReadinessContext
         let markExtensionRuntimeReadyIfProfileContextsLoaded: @MainActor (UUID) -> Void
         let countLoadedExtensionContexts: @MainActor () -> Int
-        let installCapabilityOwner: SafariExtensionInstallCapabilityOwner
-        let loadedExtensionManifests: @MainActor () -> [String: [String: Any]]
-        let controllersByProfile: @MainActor () -> [UUID: WKWebExtensionController]
         let extensionControllerDescription: @MainActor (WKWebExtensionController?) -> String
         let trace: @MainActor (String) -> Void
     }
@@ -69,28 +66,6 @@ final class ExtensionRuntimeLifecycleOwner {
             guard let self else { return }
             self.dependencies.reconcileProfileWebViewRuntime(profileId)
             self.dependencies.refreshActionSurfaceStateForCurrentProfile()
-        }
-    }
-
-    func prepareExtensionContextForRuntime(
-        _ extensionContext: WKWebExtensionContext,
-        extensionId: String,
-        profileId: UUID,
-        manifest: [String: Any]? = nil
-    ) {
-        let resolvedManifest =
-            manifest
-            ?? dependencies.loadedExtensionManifests()[extensionId]
-            ?? extensionContext.webExtension.manifest
-        dependencies.installCapabilityOwner.prepareExtensionContextForRuntime(
-            extensionContext,
-            extensionId: extensionId,
-            profileId: profileId,
-            manifest: resolvedManifest
-        )
-
-        if dependencies.controllersByProfile()[profileId] == nil {
-            _ = dependencies.ensureExtensionController(profileId)
         }
     }
 
@@ -310,13 +285,6 @@ extension ExtensionRuntimeLifecycleOwner.Dependencies {
             countLoadedExtensionContexts: { [weak manager] in
                 manager?.countLoadedExtensionContexts() ?? 0
             },
-            installCapabilityOwner: manager.installCapabilityOwner,
-            loadedExtensionManifests: { [weak manager] in
-                manager?.runtimeSession.loadedExtensionManifests ?? [:]
-            },
-            controllersByProfile: { [weak manager] in
-                manager?.profileRuntime.controllersByProfile ?? [:]
-            },
             extensionControllerDescription: { controller in
                 ExtensionRuntimeDiagnostics.objectDescription(controller)
             },
@@ -400,20 +368,6 @@ extension ExtensionManager {
 
     func switchProfile(profileId: UUID) {
         runtimeLifecycleOwner.switchProfile(profileId: profileId)
-    }
-
-    func prepareExtensionContextForRuntime(
-        _ extensionContext: WKWebExtensionContext,
-        extensionId: String,
-        profileId: UUID,
-        manifest: [String: Any]? = nil
-    ) {
-        runtimeLifecycleOwner.prepareExtensionContextForRuntime(
-            extensionContext,
-            extensionId: extensionId,
-            profileId: profileId,
-            manifest: manifest
-        )
     }
 
     @discardableResult

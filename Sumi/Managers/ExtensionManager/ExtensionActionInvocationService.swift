@@ -16,7 +16,6 @@ final class ExtensionActionInvocationService {
         let requestAdmission: ExtensionActionRequestAdmission
         let pageAccess: ExtensionActionPageAccessAuthorizer
         let admission: ExtensionActionInvocationAdmission
-        let capabilities: SafariExtensionInstallCapabilityOwner
         let actionPublication: ExtensionActionSurfacePublisher
         let runtimeSession: ExtensionRuntimeSession
         let stableAdapter: @MainActor (Tab) -> ExtensionTabAdapter?
@@ -82,18 +81,6 @@ final class ExtensionActionInvocationService {
             evidence = adapterBound
         }
 
-        guard environment.admission.isCurrent(evidence) else {
-            return Self.staleResult()
-        }
-        environment.capabilities.grantRequestedPermissions(
-            to: evidence.context,
-            webExtension: evidence.context.webExtension,
-            manifest: evidence.installedRecord.manifest
-        )
-        // Barrier: requested-permission grants are observable context state.
-        guard environment.admission.isCurrent(evidence) else {
-            return Self.staleResult()
-        }
         guard environment.pageAccess.applyConfiguredPolicy(evidence: evidence) else {
             return Self.staleResult()
         }
@@ -198,7 +185,6 @@ extension ExtensionActionInvocationService.Environment {
                 admission: admission
             ),
             admission: admission,
-            capabilities: manager.installCapabilityOwner,
             actionPublication: manager.actionSurfacePublisher,
             runtimeSession: manager.runtimeSession,
             stableAdapter: { [weak manager] in

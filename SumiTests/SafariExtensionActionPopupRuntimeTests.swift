@@ -83,10 +83,11 @@ final class SafariExtensionActionPopupRuntimeTests: XCTestCase {
     func testImportedSafariAppexCanOpenActionPopupAfterEnable() async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Raindrop Profile")
-        let manager = ExtensionManager(
+        let fixture = makeAttachedBrowserFixture(
             context: container.mainContext,
-            initialProfile: profile
+            profile: profile
         )
+        let manager = fixture.manager
 
         let scratchDirectory = try makeScratchDirectory()
         let installed = try await installSafariStyleCopiedPackage(
@@ -97,8 +98,11 @@ final class SafariExtensionActionPopupRuntimeTests: XCTestCase {
         )
         _ = try await manager.installedExtensionLifecycle.enable(installed.id)
 
-        let tab = Tab(url: URL(string: "https://example.com/")!)
-        tab.profileId = profile.id
+        let tab = makeVisibleTab(
+            url: URL(string: "https://example.com/")!,
+            profile: profile,
+            fixture: fixture
+        )
 
         let result = await manager.extensionActionInvocation.openPopup(
             extensionID: installed.id,
@@ -153,48 +157,93 @@ final class SafariExtensionActionPopupRuntimeTests: XCTestCase {
         XCTAssertNotEqual(blocker, BrowserExtensionActionPopupBlocker.contextUnavailable)
     }
 
-    func testURLHubActiveTabGrantUsesClickedTabBeforePopupDispatch() async throws {
-        let container = try makeTestContainer()
-        let profile = Profile(name: "ActiveTab Popup Profile")
-        let manager = ExtensionManager(
-            context: container.mainContext,
-            initialProfile: profile
-        )
-
-        let scratchDirectory = try makeScratchDirectory()
-        let installed = try await installUnpackedExtension(
-            manager: manager,
-            scratchDirectory: scratchDirectory,
-            name: "ActiveTab Popup",
-            packageStyle: .raindropIframePopup
-        )
-        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
-
-        let clickedTab = Tab(url: URL(string: "https://clicked.example/path")!)
-        clickedTab.profileId = profile.id
-        let laterActiveURL = URL(string: "https://later.example/")!
-
-        let result = await manager.extensionActionInvocation.openPopup(
-            extensionID: installed.id,
-            currentTab: clickedTab
-        )
-
-        let extensionContext = try XCTUnwrap(
-            manager.getExtensionContext(for: installed.id, profileId: profile.id)
+    func testURLHubActiveTabUsesWebKitGestureWithoutGlobalGrant() async throws {
+        let harness = try await makeActiveTabActionHarness(
+            configuredAccess: nil
         )
         XCTAssertEqual(
-            extensionContext.permissionStatus(for: clickedTab.url),
-            .grantedExplicitly,
-            "The URL-hub click must grant activeTab access to the concrete clicked tab URL"
+            harness.extensionContext.permissionStatus(for: harness.clickedTab.url),
+            .unknown,
+            "activeTab must not become a global persistent URL grant"
         )
-        XCTAssertNotEqual(
-            extensionContext.permissionStatus(for: laterActiveURL),
-            .grantedExplicitly,
-            "A later active tab URL must not receive activeTab access from popup presentation"
+        XCTAssertTrue(
+            harness.adapter.shouldGrantPermissionsOnUserGesture(
+                for: harness.extensionContext
+            ),
+            "The admitted clicked tab must let WebKit derive temporary activeTab access"
         )
-        XCTAssertNotEqual(
-            result.blocker,
-            BrowserExtensionActionPopupBlocker.currentPagePermissionMissing
+        XCTAssertTrue(
+            harness.extensionContext.hasActiveUserGesture(in: harness.adapter),
+            "performAction must publish WebKit's tab-scoped user gesture"
+        )
+        XCTAssertTrue(
+            ExtensionPermissionStatusResolver.isGranted(
+                ExtensionPermissionStatusResolver.effectiveStatus(
+                    for: harness.clickedTab.url,
+                    in: harness.extensionContext,
+                    tab: harness.adapter
+                )
+            ),
+            "The activeTab grant must be visible only through the clicked tab"
+        )
+        XCTAssertTrue(
+            harness.result.opened,
+            "The action must reach WebKit performAction; blocker=\(harness.result.blocker?.rawValue ?? "nil")"
+        )
+    }
+
+    func testURLHubActiveTabDoesNotOverrideConfiguredDeny() async throws {
+        let harness = try await makeActiveTabActionHarness(
+            configuredAccess: .deny
+        )
+        XCTAssertEqual(
+            harness.extensionContext.permissionStatus(
+                for: harness.clickedTab.url
+            ),
+            .deniedExplicitly,
+            "activeTab must not overwrite the configured global denial"
+        )
+        XCTAssertTrue(
+            harness.extensionContext.hasActiveUserGesture(in: harness.adapter)
+        )
+        XCTAssertEqual(
+            ExtensionPermissionStatusResolver.effectiveStatus(
+                for: harness.clickedTab.url,
+                in: harness.extensionContext,
+                tab: harness.adapter
+            ),
+            .deniedExplicitly,
+            "An explicit configured denial must win over the temporary activeTab gesture"
+        )
+        XCTAssertTrue(
+            ExtensionPermissionStatusResolver.isGranted(
+                ExtensionPermissionStatusResolver.effectiveStatus(
+                    for: .activeTab,
+                    in: harness.extensionContext,
+                    tab: harness.adapter
+                )
+            )
+        )
+        let laterPattern = try XCTUnwrap(
+            WKWebExtension.MatchPattern(
+                string: "https://later.example/*"
+            )
+        )
+        harness.extensionContext.setPermissionStatus(
+            .deniedExplicitly,
+            for: laterPattern
+        )
+        XCTAssertEqual(
+            ExtensionPermissionStatusResolver.effectiveStatus(
+                for: laterPattern,
+                in: harness.extensionContext,
+                tab: harness.adapter
+            ),
+            .deniedExplicitly
+        )
+        XCTAssertTrue(
+            harness.result.opened,
+            "A user-invoked action may run without changing the persisted deny"
         )
     }
 
@@ -350,6 +399,166 @@ final class SafariExtensionActionPopupRuntimeTests: XCTestCase {
             for: SumiStartupPersistence.schema,
             configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
         )
+    }
+
+    private struct AttachedBrowserFixture {
+        let manager: ExtensionManager
+        let browserManager: BrowserManager
+        let windowRegistry: WindowRegistry
+    }
+
+    private struct ActiveTabActionHarness {
+        let clickedTab: Tab
+        let extensionContext: WKWebExtensionContext
+        let adapter: ExtensionTabAdapter
+        let result: BrowserExtensionActionPopupRequestResult
+    }
+
+    private func makeActiveTabActionHarness(
+        configuredAccess: SafariExtensionSiteAccessLevel?
+    ) async throws -> ActiveTabActionHarness {
+        let container = try makeTestContainer()
+        let profile = Profile(name: "ActiveTab Popup Profile")
+        let fixture = makeAttachedBrowserFixture(
+            context: container.mainContext,
+            profile: profile
+        )
+        let scratchDirectory = try makeScratchDirectory()
+        let installed = try await installUnpackedExtension(
+            manager: fixture.manager,
+            scratchDirectory: scratchDirectory,
+            name: "ActiveTab Popup",
+            packageStyle: .raindropIframePopup
+        )
+        _ = try await fixture.manager.installedExtensionLifecycle.enable(
+            installed.id
+        )
+        let clickedTab = makeVisibleTab(
+            url: URL(string: "https://clicked.example/path")!,
+            profile: profile,
+            fixture: fixture
+        )
+        if let configuredAccess {
+            fixture.manager.setConfiguredSiteAccess(
+                configuredAccess,
+                extensionId: installed.id,
+                profileId: profile.id,
+                matchPatternString: "https://clicked.example/*"
+            )
+        }
+        let extensionContext = try XCTUnwrap(
+            fixture.manager.getExtensionContext(
+                for: installed.id,
+                profileId: profile.id
+            )
+        )
+        let result = await fixture.manager.extensionActionInvocation.openPopup(
+            extensionID: installed.id,
+            currentTab: clickedTab
+        )
+        return ActiveTabActionHarness(
+            clickedTab: clickedTab,
+            extensionContext: extensionContext,
+            adapter: try XCTUnwrap(
+                fixture.manager.adapterCatalog.stableAdapter(for: clickedTab)
+            ),
+            result: result
+        )
+    }
+
+    private func makeAttachedBrowserFixture(
+        context: ModelContext,
+        profile: Profile
+    ) -> AttachedBrowserFixture {
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(
+                userDefaults: UserDefaults(suiteName: UUID().uuidString)!
+            )
+        )
+        registry.enable(.extensions)
+        let browserConfiguration = BrowserConfiguration()
+        let manager = makeSafariExtensionTestExtensionManager(
+            context: context,
+            initialProfile: profile,
+            browserConfiguration: browserConfiguration,
+            moduleRegistry: registry
+        )
+        let extensionsModule = SumiExtensionsModule(
+            moduleRegistry: registry,
+            context: context,
+            browserConfiguration: browserConfiguration,
+            initialProfileProvider: { profile },
+            managerFactory: { _, _, _, _ in manager }
+        )
+        let windowRegistry = WindowRegistry()
+        let browserManager = makeSafariExtensionTestBrowserManager(
+            moduleRegistry: registry,
+            extensionsModule: extensionsModule,
+            profile: profile,
+            windowRegistry: windowRegistry
+        )
+        extensionsModule.attach(
+            runtime: BrowserExtensionsModuleRuntimeFactory.runtime(
+                for: browserManager
+            )
+        )
+        XCTAssertIdentical(extensionsModule.managerIfEnabled(), manager)
+        return AttachedBrowserFixture(
+            manager: manager,
+            browserManager: browserManager,
+            windowRegistry: windowRegistry
+        )
+    }
+
+    private func makeVisibleTab(
+        url: URL,
+        profile: Profile,
+        fixture: AttachedBrowserFixture
+    ) -> Tab {
+        let tabManager = fixture.browserManager.tabManager
+        let space = tabManager.spaceStateOwner.firstSpace(forProfile: profile.id)
+            ?? tabManager.spaceServices.catalog.createSpace(
+                name: "Action Popup",
+                profileId: profile.id
+            )
+        let tab = tabManager.tabFactory.makeTab(
+            url: url,
+            name: "Action Popup",
+            spaceId: space.id,
+            index: tabManager.regularTabCollectionOwner.tabs(in: space.id).count
+        )
+        tab.profileId = profile.id
+        tabManager.regularTabLifecycleOwner.addTab(tab)
+        let configuration = fixture.manager.browserConfiguration
+            .auxiliaryWebViewConfiguration(surface: .extensionOptions)
+        fixture.manager.prepareWebViewConfigForExtensionRuntime(
+            configuration,
+            profileId: profile.id,
+            reason: "SafariExtensionActionPopupRuntimeTests"
+        )
+        let webView = FocusableWKWebView(
+            frame: .zero,
+            configuration: configuration
+        )
+        webView.owningTab = tab
+        tab.replaceUntrackedWebView(webView)
+
+        let window = BrowserWindowState()
+        window.tabManager = tabManager
+        window.currentProfileId = profile.id
+        window.currentSpaceId = space.id
+        window.currentTabId = tab.id
+        window.activeTabForSpace[space.id] = tab.id
+        fixture.windowRegistry.register(window)
+        fixture.windowRegistry.setActive(window)
+        fixture.manager.normalTabRegistration.register(
+            tab,
+            reason: "SafariExtensionActionPopupRuntimeTests"
+        )
+        addTeardownBlock {
+            fixture.windowRegistry.unregister(window.id)
+        }
+        return tab
     }
 
     private func makeScratchDirectory() throws -> URL {

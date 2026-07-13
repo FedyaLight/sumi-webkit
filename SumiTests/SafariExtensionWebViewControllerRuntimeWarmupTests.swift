@@ -729,7 +729,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         let nativeMessagingPermission = WKWebExtension.Permission(rawValue: "nativeMessaging")
         XCTAssertTrue(context.isLoaded)
         XCTAssertTrue(
-            manager.isGrantedPermissionStatus(
+            ExtensionPermissionStatusResolver.isGranted(
                 context.permissionStatus(for: nativeMessagingPermission)
             )
         )

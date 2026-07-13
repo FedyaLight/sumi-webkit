@@ -144,12 +144,10 @@ final class SafariExtensionInstalledInternalPageRenderTests: XCTestCase {
         let controller = manager.ensureExtensionController(for: profile.id)
         let extensionId = candidate.extensionBundleIdentifier
 
-        manager.prepareExtensionContextForRuntime(
-            extensionContext,
-            extensionId: extensionId,
-            profileId: profile.id,
-            manifest: webExtension.manifest
-        )
+        extensionContext.unsupportedAPIs =
+            WebExtensionRuntimeCompatibilityPolicy.unsupportedAPIs(
+                for: webExtension.manifest
+            )
         manager.setExtensionContext(
             extensionContext,
             extensionId: extensionId,

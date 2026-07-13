@@ -87,18 +87,10 @@ final class ExtensionActionPopupSessionOwner: NSObject, NSPopoverDelegate {
         let extensionId = manager.extensionID(for: extensionContext)
         let popupPhase: SafariExtensionPopupLifecyclePhase =
             manager.isPopupActive ? .reopened : .opened
+        let manifest = extensionId.flatMap {
+            manager.runtimeSession.loadedExtensionManifests[$0]
+        } ?? [:]
 
-        let manifest = extensionId.flatMap { manager.runtimeSession.loadedExtensionManifests[$0] } ?? [:]
-
-        manager.grantRequestedPermissions(
-            to: extensionContext,
-            webExtension: extensionContext.webExtension,
-            manifest: manifest
-        )
-        manager.grantRequestedMatchPatterns(
-            to: extensionContext,
-            webExtension: extensionContext.webExtension
-        )
         if let activeTab = manager.extensionWindowQuery?
             .currentExtensionTabForActiveWindow() {
             let seesCurrentTab =

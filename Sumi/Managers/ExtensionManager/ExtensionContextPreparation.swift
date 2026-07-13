@@ -14,20 +14,23 @@ final class ExtensionContextPreparation {
     }()
 
     private let siteAccessPolicyStore: SafariExtensionSiteAccessPolicyStore
-    private let capabilities: SafariExtensionInstallCapabilityOwner
+    private let declaredPermissionApplicator: ExtensionDeclaredPermissionApplicator
+    private let siteAccessPolicyApplicator: ExtensionSiteAccessPolicyApplicator
     private let installedExtensions: InstalledExtensionCollection
     private let permissionDecisions: ExtensionPermissionDecisionStore
     private let siteAccessPolicyDidPersist: @MainActor () -> Void
 
     init(
         siteAccessPolicyStore: SafariExtensionSiteAccessPolicyStore,
-        capabilities: SafariExtensionInstallCapabilityOwner,
+        declaredPermissionApplicator: ExtensionDeclaredPermissionApplicator = .init(),
+        siteAccessPolicyApplicator: ExtensionSiteAccessPolicyApplicator = .init(),
         installedExtensions: InstalledExtensionCollection,
         permissionDecisions: ExtensionPermissionDecisionStore,
         siteAccessPolicyDidPersist: @escaping @MainActor () -> Void
     ) {
         self.siteAccessPolicyStore = siteAccessPolicyStore
-        self.capabilities = capabilities
+        self.declaredPermissionApplicator = declaredPermissionApplicator
+        self.siteAccessPolicyApplicator = siteAccessPolicyApplicator
         self.installedExtensions = installedExtensions
         self.permissionDecisions = permissionDecisions
         self.siteAccessPolicyDidPersist = siteAccessPolicyDidPersist
@@ -50,11 +53,11 @@ final class ExtensionContextPreparation {
             runtimeIdentifier: runtimeIdentifier
         )
 
-        capabilities.grantRequestedPermissions(
+        declaredPermissionApplicator.apply(
             to: context,
             webExtension: webExtension,
-            extensionId: request.extensionId,
-            profileId: request.profileId,
+            extensionID: request.extensionId,
+            profileID: request.profileId,
             manifest: request.manifest
         )
 
@@ -71,12 +74,12 @@ final class ExtensionContextPreparation {
                 profileId: request.profileId
             )
         }
-        capabilities.applyConfiguredSiteAccessPolicy(
+        siteAccessPolicyApplicator.apply(
             to: context,
             webExtension: webExtension,
-            input: SafariExtensionInstallCapabilityOwner.SiteAccessApplicationInput(
-                extensionId: request.extensionId,
-                profileId: request.profileId,
+            input: ExtensionSiteAccessPolicyApplicator.Input(
+                extensionID: request.extensionId,
+                profileID: request.profileId,
                 policy: policyResult.policy,
                 installedExtension: installedExtensions.records.first {
                     $0.id == request.extensionId
@@ -90,11 +93,26 @@ final class ExtensionContextPreparation {
             profileId: request.profileId
         )
         context.isInspectable = RuntimeDiagnostics.isDeveloperInspectionEnabled
-        capabilities.prepareExtensionContextForRuntime(
-            context,
+        context.unsupportedAPIs = WebExtensionRuntimeCompatibilityPolicy
+            .unsupportedAPIs(for: request.manifest)
+        SafariExtensionAutofillFillDiagnostics.recordScriptingAvailability(
+            extensionContext: context,
+            manifest: request.manifest
+        )
+        SafariExtensionNativeMessagingPermissionDiagnostics.logContextState(
             extensionId: request.extensionId,
             profileId: request.profileId,
-            manifest: request.manifest
+            manifestDeclaresNativeMessaging:
+                WebExtensionRuntimeCompatibilityPolicy.declaresNativeMessaging(
+                    request.manifest
+                ),
+            permissionGranted: ExtensionPermissionStatusResolver.isGranted(
+                context.permissionStatus(for: .nativeMessaging)
+            ),
+            unsupportedAPIsContainNativeMessaging: context.unsupportedAPIs
+                .contains {
+                    $0.localizedCaseInsensitiveContains("nativeMessaging")
+                }
         )
 
         // Publish only after the context is locally complete. Notification

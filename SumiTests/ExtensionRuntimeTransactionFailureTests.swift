@@ -52,7 +52,6 @@ final class ExtensionRuntimeTransactionFailureTests:
         let claim = manager.contextLoadRegistry.begin(for: key)
         let preparation = ExtensionContextPreparation(
             siteAccessPolicyStore: manager.siteAccessPolicyStore,
-            capabilities: manager.installCapabilityOwner,
             installedExtensions: manager.installedExtensionCollection,
             permissionDecisions: manager.permissionDecisionStore,
             siteAccessPolicyDidPersist: {
