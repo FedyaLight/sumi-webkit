@@ -1,9 +1,10 @@
 import Foundation
-import OSLog
 
 /// Public Suffix List matcher backed by the bundled `public_suffix_list.dat`
 /// (https://publicsuffix.org), including wildcard (`*.foo`) and exception
 /// (`!bar.foo`) rules. Contains both the ICANN and private-domain sections.
+/// Immutable after initialization. Reference identity only shares the parsed,
+/// potentially large rule indexes; it never participates in policy decisions.
 public final class SumiPublicSuffixList: Sendable {
     /// The list parsed from the bundled `public_suffix_list.dat`, loaded once.
     public static let bundled = SumiPublicSuffixList()
@@ -98,24 +99,17 @@ public final class SumiPublicSuffixList: Sendable {
     }
 
     private static func bundledListText() -> String {
-        let logger = Logger(subsystem: "com.sumi.browser", category: "PublicSuffixList")
-        let bundles = [Bundle.module, Bundle(for: SumiPublicSuffixList.self), Bundle.main]
-        for bundle in bundles {
-            guard let url = bundle.url(forResource: "public_suffix_list", withExtension: "dat") else {
-                continue
-            }
-            do {
-                return try String(contentsOf: url, encoding: .utf8)
-            } catch {
-                logger.debug(
-                    "Failed to read bundled Public Suffix List: \(error.localizedDescription, privacy: .public)"
-                )
-            }
+        guard let url = Bundle.module.url(
+            forResource: "public_suffix_list",
+            withExtension: "dat"
+        ) else {
+            preconditionFailure("SumiDomain is missing its public_suffix_list.dat package resource")
         }
 
-        logger.debug(
-            "public_suffix_list.dat missing from bundle; registrable-domain resolution disabled"
-        )
-        return ""
+        do {
+            return try String(contentsOf: url, encoding: .utf8)
+        } catch {
+            preconditionFailure("SumiDomain could not read public_suffix_list.dat: \(error)")
+        }
     }
 }

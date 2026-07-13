@@ -26,15 +26,15 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     @Published var faviconPresentation: TabFaviconPresentation
     /// True while the tab shows the SF Symbol ``globe`` fallback (no bitmap favicon yet / resolver miss).
     @Published var faviconIsTemplateGlobePlaceholder: Bool = false
-    private let placementStateOwner = TabPlacementStateOwner()
-    private let surfaceStateOwner = TabSurfaceStateOwner()
+    private var placementState = TabPlacementState()
+    private var surfaceState = TabSurfaceState()
     var spaceId: UUID? {
-        get { placementStateOwner.spaceId }
-        set { placementStateOwner.spaceId = newValue }
+        get { placementState.spaceId }
+        set { placementState.spaceId = newValue }
     }
     var index: Int {
-        get { placementStateOwner.index }
-        set { placementStateOwner.index = newValue }
+        get { placementState.index }
+        set { placementState.index = newValue }
     }
     let profileAssignment = TabProfileAssignmentStateMachine()
     var profileId: UUID? {
@@ -43,13 +43,13 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     }
     // If true, this tab is created to host a popup window; do not perform initial load.
     var isPopupHost: Bool {
-        get { surfaceStateOwner.isPopupHost }
-        set { surfaceStateOwner.isPopupHost = newValue }
+        get { surfaceState.isPopupHost }
+        set { surfaceState.isPopupHost = newValue }
     }
     // If true, this tab hosts content in a compact auxiliary mini-window (not in sidebar).
     var isAuxiliaryMiniWindow: Bool {
-        get { surfaceStateOwner.isAuxiliaryMiniWindow }
-        set { surfaceStateOwner.isAuxiliaryMiniWindow = newValue }
+        get { surfaceState.isAuxiliaryMiniWindow }
+        set { surfaceState.isAuxiliaryMiniWindow = newValue }
     }
 
     let stateChangeEmitter = TabStateChangeEmitter()
@@ -94,28 +94,28 @@ public class Tab: NSObject, Identifiable, ObservableObject {
 
     // MARK: - Pin State
     var isPinned: Bool {
-        get { placementStateOwner.isPinned }
-        set { placementStateOwner.isPinned = newValue }
+        get { placementState.isPinned }
+        set { placementState.isPinned = newValue }
     }
     var isSpacePinned: Bool {
-        get { placementStateOwner.isSpacePinned }
-        set { placementStateOwner.isSpacePinned = newValue }
+        get { placementState.isSpacePinned }
+        set { placementState.isSpacePinned = newValue }
     }
     var folderId: UUID? {
-        get { placementStateOwner.folderId }
-        set { placementStateOwner.folderId = newValue }
+        get { placementState.folderId }
+        set { placementState.folderId = newValue }
     }
     var shortcutPinId: UUID? {
-        get { placementStateOwner.shortcutPinId }
-        set { placementStateOwner.shortcutPinId = newValue }
+        get { placementState.shortcutPinId }
+        set { placementState.shortcutPinId = newValue }
     }
     var shortcutPinRole: ShortcutPinRole? {
-        get { placementStateOwner.shortcutPinRole }
-        set { placementStateOwner.shortcutPinRole = newValue }
+        get { placementState.shortcutPinRole }
+        set { placementState.shortcutPinRole = newValue }
     }
     var isShortcutLiveInstance: Bool {
-        get { placementStateOwner.isShortcutLiveInstance }
-        set { placementStateOwner.isShortcutLiveInstance = newValue }
+        get { placementState.isShortcutLiveInstance }
+        set { placementState.isShortcutLiveInstance = newValue }
     }
 
     // MARK: - Ephemeral State
@@ -469,39 +469,39 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     }
 
     var representsSumiEmptySurface: Bool {
-        surfaceStateOwner.representsSumiEmptySurface(for: url)
+        surfaceState.representsSumiEmptySurface(for: url)
     }
 
     var representsSumiSettingsSurface: Bool {
-        surfaceStateOwner.representsSumiSettingsSurface(for: url)
+        surfaceState.representsSumiSettingsSurface(for: url)
     }
 
     var representsSumiHistorySurface: Bool {
-        surfaceStateOwner.representsSumiHistorySurface(for: url)
+        surfaceState.representsSumiHistorySurface(for: url)
     }
 
     var representsSumiBookmarksSurface: Bool {
-        surfaceStateOwner.representsSumiBookmarksSurface(for: url)
+        surfaceState.representsSumiBookmarksSurface(for: url)
     }
 
     /// Native Sumi surfaces rendered outside WebKit.
     var representsSumiNativeSurface: Bool {
-        surfaceStateOwner.representsSumiNativeSurface(for: url)
+        surfaceState.representsSumiNativeSurface(for: url)
     }
 
     /// Internal Sumi surfaces that use chrome-template presentation.
     var representsSumiInternalSurface: Bool {
-        surfaceStateOwner.representsSumiInternalSurface(for: url)
+        surfaceState.representsSumiInternalSurface(for: url)
     }
 
     public var requiresPrimaryWebView: Bool {
-        surfaceStateOwner.requiresPrimaryWebView(for: url)
+        surfaceState.requiresPrimaryWebView(for: url)
     }
 
     /// Sidebar / split tab row: tint template SF Symbol favicons like `NavButtonStyle` (`tokens.primaryText`).
     /// Covers empty tab, internal Sumi surfaces, and the ordinary ``globe`` placeholder until a bitmap favicon loads.
     var usesChromeThemedTemplateFavicon: Bool {
-        surfaceStateOwner.usesChromeThemedTemplateFavicon(
+        surfaceState.usesChromeThemedTemplateFavicon(
             for: url,
             faviconIsTemplateGlobePlaceholder: faviconIsTemplateGlobePlaceholder
         )
@@ -590,11 +590,11 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     }
 
     func bindToShortcutPin(_ pin: ShortcutPin) {
-        placementStateOwner.bindToShortcutPin(id: pin.id, role: pin.role)
+        placementState.bindToShortcutPin(id: pin.id, role: pin.role)
     }
 
     func clearShortcutBinding() {
-        placementStateOwner.clearShortcutBinding()
+        placementState.clearShortcutBinding()
     }
 
     // MARK: - Tab Actions

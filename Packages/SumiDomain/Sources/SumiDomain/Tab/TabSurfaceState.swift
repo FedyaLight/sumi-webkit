@@ -1,10 +1,10 @@
 import Foundation
 
-@MainActor
-public final class TabSurfaceStateOwner {
-    public init() {}
+public struct TabSurfaceState: Equatable, Sendable {
     public var isPopupHost = false
     public var isAuxiliaryMiniWindow = false
+
+    public init() {}
 
     public func representsSumiEmptySurface(for url: URL) -> Bool {
         !isPopupHost && SumiSurface.isEmptyNewTabURL(url)

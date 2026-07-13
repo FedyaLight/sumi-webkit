@@ -1,7 +1,6 @@
 import Foundation
 
-@MainActor
-public final class TabPlacementStateOwner {
+public struct TabPlacementState: Equatable, Sendable {
     public var spaceId: UUID?
     public var index = 0
     public var isPinned = false
@@ -13,13 +12,13 @@ public final class TabPlacementStateOwner {
 
     public init() {}
 
-    public func bindToShortcutPin(id: UUID, role: ShortcutPinRole) {
+    public mutating func bindToShortcutPin(id: UUID, role: ShortcutPinRole) {
         shortcutPinId = id
         shortcutPinRole = role
         isShortcutLiveInstance = true
     }
 
-    public func clearShortcutBinding() {
+    public mutating func clearShortcutBinding() {
         shortcutPinId = nil
         shortcutPinRole = nil
         isShortcutLiveInstance = false

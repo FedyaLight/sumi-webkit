@@ -144,8 +144,8 @@ class BrowserWindowState {
     /// Most recently selected non-essential live shortcut for each space in this window.
     var selectedShortcutPinForSpace: [UUID: UUID] = [:]
 
-    /// Window-scoped owner for regular-tab and shortcut selection history.
-    let selectionHistory = WindowSelectionHistoryOwner()
+    /// Window-scoped regular-tab and shortcut selection history.
+    var selectionHistory = WindowSelectionHistory()
 
     /// Sidebar width for this window
     var sidebarWidth: CGFloat = BrowserWindowState.sidebarDefaultWidth

@@ -5,7 +5,8 @@
 # (no SwiftUI / AppKit / WebKit) and must not type-edge into known runtime
 # types (Tab, Profile, ExtensionUtils, ShortcutPin, BrowserWindowState).
 # The SumiDomain SPM package is the compile-time home for peeled clusters;
-# this script also guards that package against UI/runtime framework imports.
+# this script also guards that package against observation, scheduling, logging,
+# and UI/runtime framework imports.
 #
 # Intended dependency direction: SumiDomain → SumiWebRuntime → SumiAppUI.
 set -euo pipefail
@@ -72,7 +73,8 @@ for file in "${DOMAIN_FILES[@]}"; do
   fi
 done
 
-# SumiDomain SPM package must stay Foundation/Combine/Observation/OSLog only.
+# SumiDomain contains deterministic values, policies, and reducers. Observation,
+# app-actor isolation, scheduling, and logging belong to app/runtime targets.
 sumi_domain_root="Packages/SumiDomain/Sources"
 if [[ ! -d "$sumi_domain_root" ]]; then
   printf 'error: SumiDomain package sources missing: %s\n' "$sumi_domain_root" >&2
@@ -84,6 +86,23 @@ else
     failures=$((failures + 1))
   else
     printf 'ok  Packages/SumiDomain/Sources (no SwiftUI/AppKit/WebKit imports)\n'
+  fi
+
+  domain_runtime_pattern='^import (Combine|Observation|OSLog|Dispatch)\b|@(Observable|ObservationIgnored|Published|MainActor)\b|\b(ObservableObject|ObservationRegistrar|withObservationTracking|Task|DispatchQueue|Logger|OSLog|os_log)\b'
+  domain_runtime_hits="$({
+    while IFS= read -r -d '' file; do
+      hits="$(strip_swift_comments "$file" | rg -n "$domain_runtime_pattern" || true)"
+      if [[ -n "$hits" ]]; then
+        printf '%s\n%s\n' "$file" "$hits"
+      fi
+    done < <(find "$sumi_domain_root" -type f -name '*.swift' -print0)
+  })"
+  if [[ -n "$domain_runtime_hits" ]]; then
+    printf 'error: SumiDomain package contains app observation/scheduling/logging runtime:\n' >&2
+    printf '%s\n' "$domain_runtime_hits" >&2
+    failures=$((failures + 1))
+  else
+    printf 'ok  Packages/SumiDomain/Sources (no app observation/scheduling/logging runtime)\n'
   fi
 fi
 

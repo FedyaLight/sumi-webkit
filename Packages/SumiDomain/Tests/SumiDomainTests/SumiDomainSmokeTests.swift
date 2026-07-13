@@ -54,17 +54,16 @@ final class SumiDomainSmokeTests: XCTestCase {
         XCTAssertEqual(Set([tab, tab]).count, 1)
     }
 
-    @MainActor
-    func testTabPlacementStateOwnerShortcutBinding() {
-        let owner = TabPlacementStateOwner()
+    func testTabPlacementStateShortcutBinding() {
+        var state = TabPlacementState()
         let pinId = UUID()
-        owner.bindToShortcutPin(id: pinId, role: .essential)
-        XCTAssertEqual(owner.shortcutPinId, pinId)
-        XCTAssertEqual(owner.shortcutPinRole, .essential)
-        XCTAssertTrue(owner.isShortcutLiveInstance)
-        owner.clearShortcutBinding()
-        XCTAssertNil(owner.shortcutPinId)
-        XCTAssertNil(owner.shortcutPinRole)
-        XCTAssertFalse(owner.isShortcutLiveInstance)
+        state.bindToShortcutPin(id: pinId, role: .essential)
+        XCTAssertEqual(state.shortcutPinId, pinId)
+        XCTAssertEqual(state.shortcutPinRole, .essential)
+        XCTAssertTrue(state.isShortcutLiveInstance)
+        state.clearShortcutBinding()
+        XCTAssertNil(state.shortcutPinId)
+        XCTAssertNil(state.shortcutPinRole)
+        XCTAssertFalse(state.isShortcutLiveInstance)
     }
 }

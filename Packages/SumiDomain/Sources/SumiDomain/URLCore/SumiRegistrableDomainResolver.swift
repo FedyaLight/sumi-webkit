@@ -1,6 +1,6 @@
 import Foundation
 
-/// Single app-side facade for omnibar URL-vs-search classification.
+/// Canonical deterministic entry point for omnibar URL-vs-search classification.
 public enum SumiURLClassifier {
     public enum Decision: Equatable {
         case navigate(URL)
@@ -28,6 +28,9 @@ public enum SumiURLClassifier {
     }
 }
 
+/// A one-entry, lock-protected implementation cache for a deterministic pure
+/// classifier. The cache is bounded and output-transparent: reference identity
+/// can only avoid recomputation and can never change the classification result.
 private final class SumiLastDecisionMemo: @unchecked Sendable {
     private let lock = NSLock()
     private var entry: (input: String, decision: SumiURLClassifier.Decision)?

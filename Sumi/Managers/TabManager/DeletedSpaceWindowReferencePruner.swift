@@ -85,7 +85,7 @@ struct DeletedSpaceWindowReferencePruner {
         _ removal: SpaceRemovalFootprint,
         in windowState: BrowserWindowState
     ) -> Bool {
-        let history = windowState.selectionHistory
+        var history = windowState.selectionHistory
         let previousRegularTabs = history.recentRegularTabIdsBySpace
         let previousSelections = history.recentSelectionItemsBySpace
         history.recentRegularTabIdsBySpace = history.recentRegularTabIdsBySpace
@@ -109,7 +109,11 @@ struct DeletedSpaceWindowReferencePruner {
                 }
                 if !remaining.isEmpty { result[entry.key] = remaining }
             }
-        return history.recentRegularTabIdsBySpace != previousRegularTabs
+        let didChange = history.recentRegularTabIdsBySpace != previousRegularTabs
             || history.recentSelectionItemsBySpace != previousSelections
+        if didChange {
+            windowState.selectionHistory = history
+        }
+        return didChange
     }
 }

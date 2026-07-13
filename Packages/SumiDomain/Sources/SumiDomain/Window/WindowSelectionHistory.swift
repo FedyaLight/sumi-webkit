@@ -1,14 +1,9 @@
 import Foundation
-import Observation
 
-/// Owns per-window selection history: recently selected regular tabs and the
-/// mixed tab/shortcut selection history used as a close-tab fallback.
-@MainActor
-@Observable
-public final class WindowSelectionHistoryOwner {
+public struct WindowSelectionHistory: Equatable, Sendable {
     private static let historyLimit = 20
 
-    /// Most recently selected regular tabs for each space (most recent first)
+    /// Most recently selected regular tabs for each space (most recent first).
     public var recentRegularTabIdsBySpace: [UUID: [UUID]] = [:]
 
     /// Most recently selected tabs and live shortcuts for each space, used only as a close-tab fallback.
@@ -16,7 +11,7 @@ public final class WindowSelectionHistoryOwner {
 
     public init() {}
 
-    public func recordRegularTabSelection(_ tabId: UUID, in spaceId: UUID) {
+    public mutating func recordRegularTabSelection(_ tabId: UUID, in spaceId: UUID) {
         var history = recentRegularTabIdsBySpace[spaceId] ?? []
         history.removeAll { $0 == tabId }
         history.insert(tabId, at: 0)
@@ -26,7 +21,7 @@ public final class WindowSelectionHistoryOwner {
         recentRegularTabIdsBySpace[spaceId] = history
     }
 
-    public func removeFromRegularTabHistory(_ tabId: UUID) {
+    public mutating func removeFromRegularTabHistory(_ tabId: UUID) {
         for (spaceId, history) in recentRegularTabIdsBySpace {
             recentRegularTabIdsBySpace[spaceId] = history.filter { $0 != tabId }
         }
@@ -39,7 +34,10 @@ public final class WindowSelectionHistoryOwner {
     }
 
     @discardableResult
-    public func recordSelection(_ item: BrowserWindowSelectionHistoryItem, in spaceId: UUID) -> Bool {
+    public mutating func recordSelection(
+        _ item: BrowserWindowSelectionHistoryItem,
+        in spaceId: UUID
+    ) -> Bool {
         let previous = recentSelectionItemsBySpace[spaceId] ?? []
         var history = previous
         history.removeAll { $0 == item }
@@ -51,7 +49,7 @@ public final class WindowSelectionHistoryOwner {
         return history != previous
     }
 
-    public func removeFromShortcutLiveSelectionHistory(_ pinId: UUID) {
+    public mutating func removeFromShortcutLiveSelectionHistory(_ pinId: UUID) {
         removeFromSelectionHistory { item in
             if case let .shortcutPin(historyPinId) = item {
                 return historyPinId == pinId
@@ -60,7 +58,9 @@ public final class WindowSelectionHistoryOwner {
         }
     }
 
-    private func removeFromSelectionHistory(_ shouldRemove: (BrowserWindowSelectionHistoryItem) -> Bool) {
+    private mutating func removeFromSelectionHistory(
+        _ shouldRemove: (BrowserWindowSelectionHistoryItem) -> Bool
+    ) {
         for (spaceId, history) in recentSelectionItemsBySpace {
             let filtered = history.filter { !shouldRemove($0) }
             if filtered.isEmpty {
