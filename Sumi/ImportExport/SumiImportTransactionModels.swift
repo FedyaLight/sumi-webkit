@@ -68,6 +68,10 @@ enum SumiImportTransactionError: LocalizedError {
         rollbackErrors: [Error],
         preRestoreBackupURL: URL?
     )
+    case commitFinalizationFailed(
+        finalizationError: Error,
+        preRestoreBackupURL: URL?
+    )
 
     var rollbackErrors: [Error] {
         switch self {
@@ -76,6 +80,8 @@ enum SumiImportTransactionError: LocalizedError {
         case .commitFailed(_, let rollbackErrors, _),
              .recoveryFailed(let rollbackErrors, _):
             rollbackErrors
+        case .commitFinalizationFailed:
+            []
         }
     }
 
@@ -84,7 +90,8 @@ enum SumiImportTransactionError: LocalizedError {
         case .runtimePersistenceFailed:
             nil
         case .commitFailed(_, _, let backupURL),
-             .recoveryFailed(_, let backupURL):
+             .recoveryFailed(_, let backupURL),
+             .commitFinalizationFailed(_, let backupURL):
             backupURL
         }
     }
@@ -100,6 +107,8 @@ enum SumiImportTransactionError: LocalizedError {
             return "Import failed: \(importError.localizedDescription) \(rollbackDescription)\(Self.backupDescription(backupURL))"
         case .recoveryFailed(let rollbackErrors, let backupURL):
             return "Sumi could not recover an interrupted import. \(Self.errorList(rollbackErrors))\(Self.backupDescription(backupURL))"
+        case .commitFinalizationFailed(let finalizationError, let backupURL):
+            return "Import effects were applied, but durable transaction finalization could not be confirmed: \(finalizationError.localizedDescription) Sumi will resolve the journal on next launch.\(Self.backupDescription(backupURL))"
         }
     }
 

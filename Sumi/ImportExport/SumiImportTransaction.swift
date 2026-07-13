@@ -86,41 +86,33 @@ final class SumiImportTransaction {
         )
 
         do {
-            try persistPrepared(record)
+            try await persistPrepared(record)
         } catch is SumiImportTransactionInterruption {
             throw SumiImportTransactionInterruption()
         } catch {
             throw commitFailure(error, rollbackErrors: [], backupURL: preRestoreBackupURL)
         }
 
+        let bookmarkSummary: SumiBookmarksImportSummary?
         do {
             if let importedState {
                 try await runtime.install(importedState)
                 try interruptIfRequested(at: .runtimeInstalled)
             }
-            try transition(&record, to: .runtimeCommitted)
+            record = try await transition(record, to: .runtimeCommitted)
 
-            let bookmarkSummary = bookmarkCheckpoint != nil
+            bookmarkSummary = bookmarkCheckpoint != nil
                 ? try bookmarks.commit(plan.bookmarkMutation)
                 : nil
             if bookmarkCheckpoint != nil {
                 try interruptIfRequested(at: .bookmarksMutated)
             }
-            try transition(&record, to: .bookmarksCommitted)
-            try transition(&record, to: .completed)
-            try? journal.clear()
-
-            return SumiImportReport(
-                warnings: reportWarnings(plan.warnings, bookmarkSummary: bookmarkSummary),
-                preRestoreBackupURL: preRestoreBackupURL,
-                appliedCategories: plan.categories,
-                bookmarkSummary: bookmarkSummary
-            )
+            record = try await transition(record, to: .bookmarksCommitted)
         } catch is SumiImportTransactionInterruption {
             throw SumiImportTransactionInterruption()
         } catch let importError {
             let rollbackErrors = try await compensate(
-                record: &record,
+                record: record,
                 runtimeCheckpoint: runtimeCheckpoint,
                 bookmarkCheckpoint: bookmarkCheckpoint
             )
@@ -130,17 +122,44 @@ final class SumiImportTransaction {
                 backupURL: preRestoreBackupURL
             )
         }
+
+        do {
+            record = try await transition(record, to: .completed)
+        } catch is SumiImportTransactionInterruption {
+            throw SumiImportTransactionInterruption()
+        } catch {
+            throw SumiImportTransactionError.commitFinalizationFailed(
+                finalizationError: error,
+                preRestoreBackupURL: preRestoreBackupURL
+            )
+        }
+
+        do {
+            try await journal.clear()
+        } catch {
+            throw SumiImportTransactionError.commitFinalizationFailed(
+                finalizationError: error,
+                preRestoreBackupURL: preRestoreBackupURL
+            )
+        }
+
+        return SumiImportReport(
+            warnings: reportWarnings(plan.warnings, bookmarkSummary: bookmarkSummary),
+            preRestoreBackupURL: preRestoreBackupURL,
+            appliedCategories: plan.categories,
+            bookmarkSummary: bookmarkSummary
+        )
     }
 
     private func recoverIfNeededExclusively() async throws -> SumiImportRecoveryReport? {
-        guard var record = try journal.load() else { return nil }
+        guard var record = try await journal.load() else { return nil }
         let report = SumiImportRecoveryReport(
             preRestoreBackupURL: record.preRestoreBackupURL
         )
 
         if record.phase == .completed {
             do {
-                try journal.clear()
+                try await journal.clear()
                 return report
             } catch {
                 throw SumiImportTransactionError.recoveryFailed(
@@ -153,7 +172,7 @@ final class SumiImportTransaction {
         var recoveryErrors: [Error] = []
         if record.phase != .compensating {
             do {
-                try transition(&record, to: .compensating)
+                record = try await transition(record, to: .compensating)
             } catch is SumiImportTransactionInterruption {
                 throw SumiImportTransactionInterruption()
             } catch {
@@ -198,7 +217,7 @@ final class SumiImportTransaction {
 
         if recoveryErrors.isEmpty {
             do {
-                try transition(&record, to: .completed)
+                record = try await transition(record, to: .completed)
             } catch is SumiImportTransactionInterruption {
                 throw SumiImportTransactionInterruption()
             } catch {
@@ -208,7 +227,7 @@ final class SumiImportTransaction {
 
         if recoveryErrors.isEmpty {
             do {
-                try journal.clear()
+                try await journal.clear()
                 return report
             } catch {
                 recoveryErrors.append(error)
@@ -222,13 +241,14 @@ final class SumiImportTransaction {
     }
 
     private func compensate(
-        record: inout SumiImportTransactionJournalRecord,
+        record: SumiImportTransactionJournalRecord,
         runtimeCheckpoint: SumiImportRuntimeState?,
         bookmarkCheckpoint: SumiBookmarksSnapshot?
     ) async throws -> [Error] {
+        var record = record
         var rollbackErrors: [Error] = []
         do {
-            try transition(&record, to: .compensating)
+            record = try await transition(record, to: .compensating)
         } catch is SumiImportTransactionInterruption {
             throw SumiImportTransactionInterruption()
         } catch {
@@ -259,7 +279,7 @@ final class SumiImportTransaction {
 
         if rollbackErrors.isEmpty {
             do {
-                try transition(&record, to: .completed)
+                record = try await transition(record, to: .completed)
             } catch is SumiImportTransactionInterruption {
                 throw SumiImportTransactionInterruption()
             } catch {
@@ -268,15 +288,19 @@ final class SumiImportTransaction {
         }
 
         if rollbackErrors.isEmpty {
-            try? journal.clear()
+            do {
+                try await journal.clear()
+            } catch {
+                rollbackErrors.append(error)
+            }
         }
         return rollbackErrors
     }
 
     private func transition(
-        _ record: inout SumiImportTransactionJournalRecord,
+        _ record: SumiImportTransactionJournalRecord,
         to phase: SumiImportTransactionPhase
-    ) throws {
+    ) async throws -> SumiImportTransactionJournalRecord {
         guard record.phase.canTransition(to: phase) else {
             throw SumiImportTransactionJournalError.invalidTransition(
                 from: record.phase,
@@ -285,14 +309,14 @@ final class SumiImportTransaction {
         }
         var updatedRecord = record
         updatedRecord.phase = phase
-        try journal.save(updatedRecord)
-        record = updatedRecord
+        try await journal.save(updatedRecord)
         try interruptIfRequested(at: .phasePersisted(phase))
+        return updatedRecord
     }
 
-    private func persistPrepared(_ record: SumiImportTransactionJournalRecord) throws {
+    private func persistPrepared(_ record: SumiImportTransactionJournalRecord) async throws {
         precondition(record.phase == .prepared)
-        try journal.save(record)
+        try await journal.save(record)
         try interruptIfRequested(at: .phasePersisted(.prepared))
     }
 

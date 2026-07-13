@@ -590,10 +590,456 @@ final class SumiImportTransactionTests: XCTestCase {
         }
     }
 
-    func testFileJournalDurablyRoundTripsEveryPhase() throws {
+    func testCompensationCompletedPublicationErrorIsIncludedInRollbackErrors() async {
+        let fixture = makeTransactionFixture()
+        fixture.bookmarks.failuresRemaining = 1
+        fixture.journal.saveErrors[.completed] = TestImportFailure.journal
+
+        do {
+            _ = try await fixture.transaction.commit(mutatingPlan())
+            XCTFail("Expected import failure")
+        } catch let error as SumiImportTransactionError {
+            guard case .commitFailed = error else {
+                XCTFail("Expected commitFailed, got \(error)")
+                return
+            }
+            XCTAssertEqual(
+                error.rollbackErrors.compactMap { $0 as? TestImportFailure },
+                [.journal]
+            )
+            XCTAssertEqual(fixture.journal.record?.phase, .compensating)
+        } catch {
+            XCTFail("Expected SumiImportTransactionError, got \(error)")
+        }
+    }
+
+    func testPreparedPhysicalPublicationRunsOffMainAndIsAwaitedBeforeEffects() async throws {
+        let directory = temporaryDirectory(named: "SumiImportOffMainTests")
+        defer { removeTemporaryDirectoryOrRecordFailure(directory) }
+        let publicationReached = expectation(description: "prepared publication reached parent barrier")
+        let probe = ImportJournalFileOperationProbe(
+            blocking: .synchronizePublishedPhase(.prepared),
+            blockedExpectation: publicationReached
+        )
+        let journal = SumiImportTransactionFileJournal(
+            fileURL: directory.appendingPathComponent("active.json"),
+            operationHook: probe.handle
+        )
+        let fixture = makePhysicalTransactionFixture(journal: journal)
+        let plan = mutatingPlan()
+
+        let commitTask = Task { @MainActor in
+            try await fixture.transaction.commit(plan)
+        }
+        await fulfillment(of: [publicationReached], timeout: 5)
+
+        XCTAssertEqual(fixture.runtime.events, ["checkpoint"])
+        XCTAssertEqual(fixture.bookmarks.commitCount, 0)
+        XCTAssertFalse(probe.observations.isEmpty)
+        XCTAssertTrue(probe.observations.allSatisfy { !$0.wasMainThread })
+        XCTAssertTrue(probe.observations.allSatisfy(\.wasAtLeastUtilityPriority))
+
+        probe.resumeBlockedOperation()
+        _ = try await commitTask.value
+
+        XCTAssertEqual(fixture.runtime.events, ["checkpoint", "install"])
+        XCTAssertEqual(fixture.bookmarks.commitCount, 1)
+        let operations = probe.operations
+        XCTAssertLessThan(
+            try XCTUnwrap(operations.firstIndex(of: .retireCompletedJournal)),
+            try XCTUnwrap(operations.firstIndex(of: .synchronizeRetiredCompletedJournal))
+        )
+        XCTAssertLessThan(
+            try XCTUnwrap(operations.firstIndex(of: .removeCompletedJournal)),
+            try XCTUnwrap(operations.firstIndex(of: .synchronizeCompletedRemoval))
+        )
+        XCTAssertTrue(probe.observations.allSatisfy { !$0.wasMainThread })
+        XCTAssertTrue(probe.observations.allSatisfy(\.wasAtLeastUtilityPriority))
+    }
+
+    func testDirectoryPublicationBarrierFailurePreventsPreparedJournalAndEffects() async {
+        let directory = temporaryDirectory(named: "SumiImportDirectoryBarrierTests")
+        defer { removeTemporaryDirectoryOrRecordFailure(directory) }
+        let journalURL = directory
+            .appendingPathComponent("new", isDirectory: true)
+            .appendingPathComponent("active.json")
+        let probe = ImportJournalFileOperationProbe(
+            failing: .synchronizeJournalDirectoryParent
+        )
+        let fixture = makePhysicalTransactionFixture(
+            journal: SumiImportTransactionFileJournal(
+                fileURL: journalURL,
+                operationHook: probe.handle
+            )
+        )
+
+        await XCTAssertThrowsErrorAsync {
+            _ = try await fixture.transaction.commit(self.mutatingPlan())
+        }
+
+        XCTAssertEqual(fixture.runtime.events, ["checkpoint"])
+        XCTAssertEqual(fixture.bookmarks.commitCount, 0)
+        XCTAssertFalse(probe.operations.contains(.synchronizeExistingDirectoryParent))
+        XCTAssertFalse(probe.operations.contains(.writeTemporaryFile(.prepared)))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: journalURL.path))
+    }
+
+    func testDirectoryBarrierRetryReestablishesParentBeforePublishing() async throws {
+        let directory = temporaryDirectory(named: "SumiImportDirectoryRetryTests")
+        defer { removeTemporaryDirectoryOrRecordFailure(directory) }
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true
+        )
+        let journalURL = directory
+            .appendingPathComponent("new", isDirectory: true)
+            .appendingPathComponent("active.json")
+        let probe = ImportJournalFileOperationProbe(
+            failing: .synchronizeJournalDirectoryParent
+        )
+        let fixture = makePhysicalTransactionFixture(
+            journal: SumiImportTransactionFileJournal(
+                fileURL: journalURL,
+                operationHook: probe.handle
+            )
+        )
+
+        await XCTAssertThrowsErrorAsync {
+            _ = try await fixture.transaction.commit(self.mutatingPlan())
+        }
+        _ = try await fixture.transaction.commit(mutatingPlan())
+
+        let operations = probe.operations
+        let preparedSaveIndices = operations.indices.filter {
+            operations[$0] == .beginSave(.prepared)
+        }
+        XCTAssertEqual(preparedSaveIndices.count, 2)
+        let retryOperations = Array(operations[preparedSaveIndices[1]...])
+        let existingBarrier = try XCTUnwrap(
+            retryOperations.firstIndex(of: .synchronizeExistingDirectoryParent)
+        )
+        let temporaryWrite = try XCTUnwrap(
+            retryOperations.firstIndex(of: .writeTemporaryFile(.prepared))
+        )
+        XCTAssertFalse(retryOperations.contains(.createJournalDirectory))
+        XCTAssertLessThan(existingBarrier, temporaryWrite)
+    }
+
+    func testUnavailableApplicationSupportFailsClosedBeforeAnyEffect() async {
+        let fixture = makePhysicalTransactionFixture(
+            journal: SumiImportTransactionFileJournal(
+                applicationSupportDirectoryProvider: { nil }
+            )
+        )
+
+        do {
+            _ = try await fixture.transaction.commit(mutatingPlan())
+            XCTFail("Expected unavailable Application Support failure")
+        } catch let error as SumiImportTransactionJournalError {
+            guard case .applicationSupportUnavailable = error else {
+                XCTFail("Expected applicationSupportUnavailable, got \(error)")
+                return
+            }
+        } catch {
+            XCTFail("Expected journal error, got \(error)")
+        }
+
+        XCTAssertTrue(fixture.runtime.events.isEmpty)
+        XCTAssertTrue(fixture.bookmarks.events.isEmpty)
+    }
+
+    func testPreparedPublicationBarrierFailurePreventsAllEffects() async throws {
+        let directory = temporaryDirectory(named: "SumiImportPreparedBarrierTests")
+        defer { removeTemporaryDirectoryOrRecordFailure(directory) }
+        let journalURL = directory.appendingPathComponent("active.json")
+        let probe = ImportJournalFileOperationProbe(
+            failing: .synchronizePublishedPhase(.prepared)
+        )
+        let fixture = makePhysicalTransactionFixture(
+            journal: SumiImportTransactionFileJournal(
+                fileURL: journalURL,
+                operationHook: probe.handle
+            )
+        )
+
+        await XCTAssertThrowsErrorAsync {
+            _ = try await fixture.transaction.commit(self.mutatingPlan())
+        }
+
+        XCTAssertEqual(fixture.runtime.events, ["checkpoint"])
+        XCTAssertEqual(fixture.bookmarks.commitCount, 0)
+        let visibleRecord = try await SumiImportTransactionFileJournal(fileURL: journalURL).load()
+        XCTAssertEqual(visibleRecord?.phase, .prepared)
+    }
+
+    func testLaterPhasePublicationBarrierFailureCannotAdvanceToNextEffect() async throws {
+        struct Case {
+            let phase: SumiImportTransactionPhase
+            let expectedBookmarkCommitCount: Int
+        }
+        let cases = [
+            Case(phase: .runtimeCommitted, expectedBookmarkCommitCount: 0),
+            Case(phase: .bookmarksCommitted, expectedBookmarkCommitCount: 1),
+        ]
+
+        for testCase in cases {
+            let directory = temporaryDirectory(named: "SumiImportPhaseBarrierTests")
+            defer { removeTemporaryDirectoryOrRecordFailure(directory) }
+            let journalURL = directory.appendingPathComponent("active.json")
+            let probe = ImportJournalFileOperationProbe(
+                failing: .synchronizePublishedPhase(testCase.phase)
+            )
+            let fixture = makePhysicalTransactionFixture(
+                journal: SumiImportTransactionFileJournal(
+                    fileURL: journalURL,
+                    operationHook: probe.handle
+                )
+            )
+
+            await XCTAssertThrowsErrorAsync {
+                _ = try await fixture.transaction.commit(self.mutatingPlan())
+            }
+
+            XCTAssertEqual(
+                fixture.bookmarks.commitCount,
+                testCase.expectedBookmarkCommitCount,
+                "phase=\(testCase.phase)"
+            )
+            XCTAssertEqual(
+                fixture.runtime.events,
+                ["checkpoint", "install", "restore"],
+                "phase=\(testCase.phase)"
+            )
+            XCTAssertEqual(
+                fixture.bookmarks.events.last,
+                "restore",
+                "phase=\(testCase.phase)"
+            )
+            let remainingRecord = try await SumiImportTransactionFileJournal(
+                fileURL: journalURL
+            ).load()
+            XCTAssertNil(remainingRecord, "phase=\(testCase.phase)")
+        }
+    }
+
+    func testCompletedPublicationFailureDefersDecisionToVisibleJournal() async throws {
+        let cases: [(
+            operation: SumiImportTransactionJournalFileOperation,
+            visiblePhase: SumiImportTransactionPhase,
+            recoveryRestores: Bool
+        )] = [
+            (.publishPhase(.completed), .bookmarksCommitted, true),
+            (.synchronizePublishedPhase(.completed), .completed, false),
+        ]
+
+        for testCase in cases {
+            let directory = temporaryDirectory(named: "SumiImportCompletedBarrierTests")
+            defer { removeTemporaryDirectoryOrRecordFailure(directory) }
+            let journalURL = directory.appendingPathComponent("active.json")
+            let probe = ImportJournalFileOperationProbe(failing: testCase.operation)
+            let fixture = makePhysicalTransactionFixture(
+                journal: SumiImportTransactionFileJournal(
+                    fileURL: journalURL,
+                    operationHook: probe.handle
+                )
+            )
+
+            do {
+                _ = try await fixture.transaction.commit(mutatingPlan())
+                XCTFail("Expected finalization failure")
+            } catch let error as SumiImportTransactionError {
+                guard case .commitFinalizationFailed = error else {
+                    XCTFail("Expected commitFinalizationFailed, got \(error)")
+                    continue
+                }
+            }
+
+            XCTAssertEqual(fixture.runtime.events, ["checkpoint", "install"])
+            XCTAssertEqual(fixture.bookmarks.events.last, "commit")
+            let freshJournal = SumiImportTransactionFileJournal(fileURL: journalURL)
+            let visibleRecord = try await freshJournal.load()
+            XCTAssertEqual(visibleRecord?.phase, testCase.visiblePhase)
+
+            _ = try await SumiImportTransaction(
+                materializer: fixture.materializer,
+                runtime: fixture.runtime,
+                bookmarks: fixture.bookmarks,
+                backupWriter: fixture.backup,
+                journal: freshJournal,
+                executionGate: SumiImportTransactionExecutionGate()
+            ).recoverIfNeeded()
+
+            XCTAssertEqual(
+                fixture.runtime.events.contains("restore"),
+                testCase.recoveryRestores
+            )
+            XCTAssertEqual(
+                fixture.bookmarks.events.contains("restore"),
+                testCase.recoveryRestores
+            )
+        }
+    }
+
+    func testFailedPhasePublicationNeverSilentlyDiscardsOriginalJournal() async throws {
+        let failureCases: [(
+            operation: SumiImportTransactionJournalFileOperation,
+            visiblePhase: SumiImportTransactionPhase
+        )] = [
+            (.synchronizeTemporaryFile(.runtimeCommitted), .prepared),
+            (.publishPhase(.runtimeCommitted), .prepared),
+            (.synchronizePublishedPhase(.runtimeCommitted), .runtimeCommitted),
+        ]
+
+        for testCase in failureCases {
+            let directory = temporaryDirectory(named: "SumiImportOriginalJournalTests")
+            defer { removeTemporaryDirectoryOrRecordFailure(directory) }
+            let journalURL = directory.appendingPathComponent("active.json")
+            try await SumiImportTransactionFileJournal(fileURL: journalURL).save(
+                makeJournalRecord(phase: .prepared)
+            )
+            let probe = ImportJournalFileOperationProbe(failing: testCase.operation)
+            let failingJournal = SumiImportTransactionFileJournal(
+                fileURL: journalURL,
+                operationHook: probe.handle
+            )
+
+            do {
+                try await failingJournal.save(makeJournalRecord(phase: .runtimeCommitted))
+                XCTFail("Expected journal publication failure")
+            } catch {}
+
+            let visibleRecord = try await SumiImportTransactionFileJournal(
+                fileURL: journalURL
+            ).load()
+            XCTAssertEqual(visibleRecord?.phase, testCase.visiblePhase)
+        }
+    }
+
+    func testStagingCleanupErrorsAreAggregatedWithoutDiscardingActiveJournal() async throws {
+        let directory = temporaryDirectory(named: "SumiImportStagingCleanupTests")
+        defer { removeTemporaryDirectoryOrRecordFailure(directory) }
+        let journalURL = directory.appendingPathComponent("active.json")
+        try await SumiImportTransactionFileJournal(fileURL: journalURL).save(
+            makeJournalRecord(phase: .prepared)
+        )
+        let failingOperations: [SumiImportTransactionJournalFileOperation] = [
+            .synchronizeTemporaryFile(.runtimeCommitted),
+            .closeTemporaryFileAfterFailure(.runtimeCommitted),
+            .discardTemporaryFile(.runtimeCommitted),
+        ]
+        let failingJournal = SumiImportTransactionFileJournal(
+            fileURL: journalURL,
+            operationHook: { operation in
+                if failingOperations.contains(operation) {
+                    throw TestImportFailure.journal
+                }
+            }
+        )
+
+        do {
+            try await failingJournal.save(makeJournalRecord(phase: .runtimeCommitted))
+            XCTFail("Expected journal and staging cleanup failure")
+        } catch let error as SumiImportTransactionJournalFileFailure {
+            XCTAssertEqual(error.operationError as? TestImportFailure, .journal)
+            XCTAssertEqual(
+                error.cleanupErrors.compactMap { $0 as? TestImportFailure },
+                [.journal, .journal]
+            )
+        } catch {
+            XCTFail("Expected aggregated journal failure, got \(error)")
+        }
+
+        let visibleRecord = try await SumiImportTransactionFileJournal(
+            fileURL: journalURL
+        ).load()
+        XCTAssertEqual(visibleRecord?.phase, .prepared)
+    }
+
+    func testCleanupFailureLeavesCompletedEvidenceForFreshRecovery() async throws {
+        let directory = temporaryDirectory(named: "SumiImportCleanupRecoveryTests")
+        defer { removeTemporaryDirectoryOrRecordFailure(directory) }
+        let journalURL = directory.appendingPathComponent("active.json")
+        let probe = ImportJournalFileOperationProbe(
+            failing: .synchronizeRetiredCompletedJournal
+        )
+        let fixture = makePhysicalTransactionFixture(
+            journal: SumiImportTransactionFileJournal(
+                fileURL: journalURL,
+                operationHook: probe.handle
+            )
+        )
+
+        do {
+            _ = try await fixture.transaction.commit(replaceMutatingPlan())
+            XCTFail("Expected cleanup failure")
+        } catch let error as SumiImportTransactionError {
+            guard case .commitFinalizationFailed = error else {
+                XCTFail("Expected commitFinalizationFailed, got \(error)")
+                return
+            }
+            XCTAssertEqual(
+                error.preRestoreBackupURL,
+                URL(fileURLWithPath: "/tmp/import-backup.sumibackup")
+            )
+        }
+
+        XCTAssertEqual(fixture.runtime.events, ["checkpoint", "install"])
+        XCTAssertEqual(fixture.bookmarks.events.last, "commit")
+        let freshJournal = SumiImportTransactionFileJournal(fileURL: journalURL)
+        let completedRecord = try await freshJournal.load()
+        XCTAssertEqual(completedRecord?.phase, .completed)
+
+        _ = try await SumiImportTransaction(
+            materializer: fixture.materializer,
+            runtime: fixture.runtime,
+            bookmarks: fixture.bookmarks,
+            backupWriter: fixture.backup,
+            journal: freshJournal,
+            executionGate: SumiImportTransactionExecutionGate()
+        ).recoverIfNeeded()
+
+        XCTAssertFalse(fixture.runtime.events.contains("restore"))
+        XCTAssertFalse(fixture.bookmarks.events.contains("restore"))
+        let clearedRecord = try await freshJournal.load()
+        XCTAssertNil(clearedRecord)
+    }
+
+    func testPostRemovalBarrierFailureIsReportedWithoutRollback() async {
+        let directory = temporaryDirectory(named: "SumiImportRemovalBarrierTests")
+        defer { removeTemporaryDirectoryOrRecordFailure(directory) }
+        let journalURL = directory.appendingPathComponent("active.json")
+        let probe = ImportJournalFileOperationProbe(
+            failing: .synchronizeCompletedRemoval
+        )
+        let fixture = makePhysicalTransactionFixture(
+            journal: SumiImportTransactionFileJournal(
+                fileURL: journalURL,
+                operationHook: probe.handle
+            )
+        )
+
+        do {
+            _ = try await fixture.transaction.commit(mutatingPlan())
+            XCTFail("Expected cleanup barrier failure")
+        } catch let error as SumiImportTransactionError {
+            guard case .commitFinalizationFailed = error else {
+                XCTFail("Expected commitFinalizationFailed, got \(error)")
+                return
+            }
+        } catch {
+            XCTFail("Expected SumiImportTransactionError, got \(error)")
+        }
+
+        XCTAssertEqual(fixture.runtime.events, ["checkpoint", "install"])
+        XCTAssertEqual(fixture.bookmarks.events.last, "commit")
+        XCTAssertTrue(probe.operations.contains(.removeCompletedJournal))
+        XCTAssertTrue(probe.operations.contains(.synchronizeCompletedRemoval))
+    }
+
+    func testFileJournalDurablyRoundTripsEveryPhase() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("SumiImportJournalTests-\(UUID().uuidString)", isDirectory: true)
-        defer { try? FileManager.default.removeItem(at: directory) }
+        defer { removeTemporaryDirectoryOrRecordFailure(directory) }
         let journal = SumiImportTransactionFileJournal(
             fileURL: directory.appendingPathComponent("active.json")
         )
@@ -613,18 +1059,20 @@ final class SumiImportTransactionTests: XCTestCase {
                 bookmarkCheckpoint: bookmarkCheckpoint,
                 preRestoreBackupURL: URL(fileURLWithPath: "/tmp/pre-restore.sumibackup")
             )
-            try journal.save(record)
-            XCTAssertEqual(try journal.load(), record, "phase=\(phase)")
+            try await journal.save(record)
+            let loadedRecord = try await journal.load()
+            XCTAssertEqual(loadedRecord, record, "phase=\(phase)")
         }
 
-        try journal.clear()
-        XCTAssertNil(try journal.load())
+        try await journal.clear()
+        let clearedRecord = try await journal.load()
+        XCTAssertNil(clearedRecord)
     }
 
     func testFreshFileJournalRecoveryRestoresCompleteDurableRuntimeCheckpoint() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("SumiImportRecoveryTests-\(UUID().uuidString)", isDirectory: true)
-        defer { try? FileManager.default.removeItem(at: directory) }
+        defer { removeTemporaryDirectoryOrRecordFailure(directory) }
         let journalURL = directory.appendingPathComponent("active.json")
 
         let browserManager = BrowserManager()
@@ -903,6 +1351,67 @@ final class SumiImportTransactionTests: XCTestCase {
         )
     }
 
+    private func temporaryDirectory(named prefix: String) -> URL {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent("\(prefix)-\(UUID().uuidString)", isDirectory: true)
+    }
+
+    private func removeTemporaryDirectoryOrRecordFailure(
+        _ directory: URL,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        do {
+            try FileManager.default.removeItem(at: directory)
+        } catch let error as CocoaError where error.code == .fileNoSuchFile {
+            return
+        } catch {
+            XCTFail(
+                "Failed to remove test temporary directory \(directory.path): \(error)",
+                file: file,
+                line: line
+            )
+        }
+    }
+
+    private func makeJournalRecord(
+        phase: SumiImportTransactionPhase
+    ) -> SumiImportTransactionJournalRecord {
+        SumiImportTransactionJournalRecord(
+            phase: phase,
+            baseline: mutatingPlan().baseline,
+            targetRuntimeData: mutatingPlan().targetRuntimeData,
+            runtimeCheckpoint: SumiImportDurableRuntimeCheckpoint(emptyRuntimeState()),
+            bookmarkCheckpoint: SumiImportBookmarkCheckpoint(
+                RecordingImportBookmarks().checkpoint()
+            ),
+            preRestoreBackupURL: URL(fileURLWithPath: "/tmp/pre-restore.sumibackup")
+        )
+    }
+
+    private func makePhysicalTransactionFixture(
+        journal: SumiImportTransactionFileJournal
+    ) -> PhysicalTransactionFixture {
+        let materializer = RecordingImportMaterializer(state: emptyRuntimeState())
+        let runtime = RecordingImportRuntime(checkpoint: emptyRuntimeState())
+        let bookmarks = RecordingImportBookmarks()
+        let backup = RecordingImportBackup()
+        return PhysicalTransactionFixture(
+            transaction: SumiImportTransaction(
+                materializer: materializer,
+                runtime: runtime,
+                bookmarks: bookmarks,
+                backupWriter: backup,
+                journal: journal,
+                executionGate: SumiImportTransactionExecutionGate()
+            ),
+            materializer: materializer,
+            runtime: runtime,
+            bookmarks: bookmarks,
+            backup: backup
+        )
+    }
+
     private func makeTransactionFixture() -> TransactionFixture {
         let checkpoint = emptyRuntimeState()
         let target = emptyRuntimeState()
@@ -945,6 +1454,15 @@ final class SumiImportTransactionTests: XCTestCase {
             currentTab: nil
         )
     }
+}
+
+@MainActor
+private struct PhysicalTransactionFixture {
+    let transaction: SumiImportTransaction
+    let materializer: RecordingImportMaterializer
+    let runtime: RecordingImportRuntime
+    let bookmarks: RecordingImportBookmarks
+    let backup: RecordingImportBackup
 }
 
 @MainActor
@@ -1174,11 +1692,11 @@ private final class RecordingImportJournal: SumiImportTransactionJournal {
     private(set) var savedPhases: [SumiImportTransactionPhase] = []
     private(set) var clearCount = 0
 
-    func load() throws -> SumiImportTransactionJournalRecord? {
+    func load() async throws -> SumiImportTransactionJournalRecord? {
         record
     }
 
-    func save(_ record: SumiImportTransactionJournalRecord) throws {
+    func save(_ record: SumiImportTransactionJournalRecord) async throws {
         if let error = saveErrors[record.phase] {
             throw error
         }
@@ -1186,7 +1704,7 @@ private final class RecordingImportJournal: SumiImportTransactionJournal {
         savedPhases.append(record.phase)
     }
 
-    func clear() throws {
+    func clear() async throws {
         if let clearError { throw clearError }
         record = nil
         clearCount += 1
@@ -1201,6 +1719,70 @@ private enum TestImportFailure: LocalizedError, Equatable {
     case bookmarkRollback
     case runtimeRollback
     case journal
+}
+
+private final class ImportJournalFileOperationProbe: @unchecked Sendable {
+    struct Observation {
+        let operation: SumiImportTransactionJournalFileOperation
+        let wasMainThread: Bool
+        let wasAtLeastUtilityPriority: Bool
+    }
+
+    private let lock = NSLock()
+    private let failingOperation: SumiImportTransactionJournalFileOperation?
+    private let blockingOperation: SumiImportTransactionJournalFileOperation?
+    private let blockedExpectation: XCTestExpectation?
+    private let releaseSemaphore = DispatchSemaphore(value: 0)
+    private var failureRemaining: Bool
+    private var blockRemaining: Bool
+    private var recordedObservations: [Observation] = []
+
+    init(
+        failing: SumiImportTransactionJournalFileOperation? = nil,
+        blocking: SumiImportTransactionJournalFileOperation? = nil,
+        blockedExpectation: XCTestExpectation? = nil
+    ) {
+        failingOperation = failing
+        blockingOperation = blocking
+        self.blockedExpectation = blockedExpectation
+        failureRemaining = failing != nil
+        blockRemaining = blocking != nil
+    }
+
+    func handle(_ operation: SumiImportTransactionJournalFileOperation) throws {
+        let observation = Observation(
+            operation: operation,
+            wasMainThread: Thread.isMainThread,
+            wasAtLeastUtilityPriority: Task.currentPriority >= .utility
+        )
+        lock.lock()
+        recordedObservations.append(observation)
+        let shouldFail = failureRemaining && operation == failingOperation
+        if shouldFail { failureRemaining = false }
+        let shouldBlock = blockRemaining && operation == blockingOperation
+        if shouldBlock { blockRemaining = false }
+        lock.unlock()
+
+        if shouldBlock {
+            blockedExpectation?.fulfill()
+            releaseSemaphore.wait()
+        }
+        if shouldFail {
+            throw TestImportFailure.journal
+        }
+    }
+
+    func resumeBlockedOperation() {
+        releaseSemaphore.signal()
+    }
+
+    var observations: [Observation] {
+        lock.withLock { recordedObservations }
+    }
+
+    var operations: [SumiImportTransactionJournalFileOperation] {
+        observations.map(\.operation)
+    }
 }
 
 @MainActor

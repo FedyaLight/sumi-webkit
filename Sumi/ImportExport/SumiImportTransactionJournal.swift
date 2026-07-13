@@ -242,74 +242,46 @@ struct SumiImportBookmarkCheckpoint: Codable, Equatable, Sendable {
     }
 }
 
-@MainActor
-protocol SumiImportTransactionJournal: AnyObject {
-    func load() throws -> SumiImportTransactionJournalRecord?
-    func save(_ record: SumiImportTransactionJournalRecord) throws
-    func clear() throws
+protocol SumiImportTransactionJournal: Sendable {
+    func load() async throws -> SumiImportTransactionJournalRecord?
+    func save(_ record: SumiImportTransactionJournalRecord) async throws
+    func clear() async throws
 }
 
 enum SumiImportTransactionJournalError: LocalizedError {
+    case applicationSupportUnavailable
     case unsupportedVersion(Int)
     case invalidTransition(
         from: SumiImportTransactionPhase,
         to: SumiImportTransactionPhase
     )
+    case refusingToClearUncompleted(SumiImportTransactionPhase)
+    case invalidCompletedTombstone(SumiImportTransactionPhase)
 
     var errorDescription: String? {
         switch self {
+        case .applicationSupportUnavailable:
+            "Application Support is unavailable for the durable import journal."
         case .unsupportedVersion(let version):
             "The pending import journal uses unsupported version \(version)."
         case .invalidTransition(let from, let to):
             "The import journal cannot transition from \(from.rawValue) to \(to.rawValue)."
+        case .refusingToClearUncompleted(let phase):
+            "The import journal cannot clear unresolved phase \(phase.rawValue)."
+        case .invalidCompletedTombstone(let phase):
+            "The import journal cleanup marker contains unresolved phase \(phase.rawValue)."
         }
     }
 }
 
-@MainActor
-final class SumiImportTransactionFileJournal: SumiImportTransactionJournal {
-    private let fileURL: URL
-    private let fileManager: FileManager
-    private let encoder: JSONEncoder
-    private let decoder: JSONDecoder
+struct SumiImportTransactionJournalFileFailure: LocalizedError {
+    let operationError: Error
+    let cleanupErrors: [Error]
 
-    init(
-        fileURL: URL = SumiApplicationSupportDirectory.appRootURL()
-            .appendingPathComponent("ImportTransaction.json", isDirectory: false),
-        fileManager: FileManager = .default
-    ) {
-        self.fileURL = fileURL
-        self.fileManager = fileManager
-        encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys]
-        decoder = JSONDecoder()
-    }
-
-    func load() throws -> SumiImportTransactionJournalRecord? {
-        guard fileManager.fileExists(atPath: fileURL.path) else { return nil }
-        let record = try decoder.decode(
-            SumiImportTransactionJournalRecord.self,
-            from: Data(contentsOf: fileURL)
-        )
-        guard record.version == SumiImportTransactionJournalRecord.currentVersion else {
-            throw SumiImportTransactionJournalError.unsupportedVersion(record.version)
-        }
-        return record
-    }
-
-    func save(_ record: SumiImportTransactionJournalRecord) throws {
-        try fileManager.createDirectory(
-            at: fileURL.deletingLastPathComponent(),
-            withIntermediateDirectories: true
-        )
-        try encoder.encode(record).write(to: fileURL, options: .atomic)
-        let handle = try FileHandle(forWritingTo: fileURL)
-        defer { try? handle.close() }
-        try handle.synchronize()
-    }
-
-    func clear() throws {
-        guard fileManager.fileExists(atPath: fileURL.path) else { return }
-        try fileManager.removeItem(at: fileURL)
+    var errorDescription: String? {
+        let cleanupDescription = cleanupErrors
+            .map(\.localizedDescription)
+            .joined(separator: "; ")
+        return "Import journal operation failed: \(operationError.localizedDescription) Cleanup also reported \(cleanupErrors.count) error(s): \(cleanupDescription)"
     }
 }
