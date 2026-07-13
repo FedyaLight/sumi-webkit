@@ -12,6 +12,137 @@ final class ExtensionRuntimeTransactionFailureTests:
         case beforeControllerLoad
     }
 
+    func testSuccessfulWebKitLoadConsumesDelegateReceiptOnce()
+        async throws {
+        let fixture = try await makeLoadFixture(name: "DelegateReadiness")
+        defer { fixture.cleanUp() }
+        let controller = try XCTUnwrap(
+            fixture.manager.profileRuntime.controller(for: fixture.profile.id)
+        )
+        let controllerBinding = try XCTUnwrap(
+            fixture.manager.profileRuntime.controllerBindingSnapshot(
+                for: fixture.profile.id
+            )
+        )
+
+        XCTAssertTrue(controller.extensionContexts.isEmpty)
+        XCTAssertTrue(
+            fixture.manager.profileRuntime.contexts(
+                for: fixture.profile.id
+            ).isEmpty
+        )
+        XCTAssertIdentical(
+            controller.delegate,
+            fixture.manager.controllerDelegateBridge
+        )
+
+        var reachedControllerLoadBoundary = false
+        controller.delegate = nil
+        fixture.manager.testHooks.beforeControllerLoad = { _, _ in
+            reachedControllerLoadBoundary = true
+            XCTAssertNil(controller.delegate)
+            XCTAssertTrue(controller.extensionContexts.isEmpty)
+        }
+
+        _ = try await fixture.manager.extensionRuntimeLoader.loadEnabled(
+            from: fixture.entity
+        )
+
+        XCTAssertTrue(reachedControllerLoadBoundary)
+        let context = try XCTUnwrap(
+            fixture.manager.profileRuntime.contexts(
+                for: fixture.profile.id
+            )[fixture.installed.id]
+        )
+        XCTAssertTrue(
+            controller.extensionContexts.contains { $0 === context }
+        )
+        XCTAssertIdentical(context.webExtensionController, controller)
+        XCTAssertIdentical(
+            controller.delegate,
+            fixture.manager.controllerDelegateBridge
+        )
+
+        controller.delegate = nil
+        XCTAssertFalse(
+            fixture.manager.controllerDelegateBindingReadiness
+                .controllerDidBecomeReady(controllerBinding)
+        )
+        XCTAssertNil(controller.delegate)
+    }
+
+    func testRolledBackWebKitLoadPreservesDelegateReceiptWithoutBinding()
+        async throws {
+        let fixture = try await makeLoadFixture(name: "DelegateRollback")
+        let holder = WKWebExtensionController(
+            configuration: .init(identifier: UUID())
+        )
+        var heldContext: WKWebExtensionContext?
+        defer {
+            if let heldContext,
+               holder.extensionContexts.contains(where: { $0 === heldContext }) {
+                try? holder.unload(heldContext)
+            }
+            fixture.cleanUp()
+        }
+        let controller = try XCTUnwrap(
+            fixture.manager.profileRuntime.controller(for: fixture.profile.id)
+        )
+        let controllerBinding = try XCTUnwrap(
+            fixture.manager.profileRuntime.controllerBindingSnapshot(
+                for: fixture.profile.id
+            )
+        )
+        controller.delegate = nil
+        fixture.manager.testHooks.beforeControllerLoad = { extensionID, _ in
+            let context = try XCTUnwrap(
+                fixture.manager.profileRuntime.contexts(
+                    for: fixture.profile.id
+                )[extensionID]
+            )
+            try holder.load(context)
+            heldContext = context
+        }
+
+        do {
+            _ = try await fixture.manager.extensionRuntimeLoader.loadEnabled(
+                from: fixture.entity
+            )
+            XCTFail("A context already loaded by another controller must fail")
+        } catch {
+            let webKitError = error as NSError
+            XCTAssertEqual(
+                webKitError.domain,
+                WKWebExtensionContext.errorDomain
+            )
+            XCTAssertEqual(
+                webKitError.code,
+                WKWebExtensionContext.Error.alreadyLoaded.rawValue
+            )
+        }
+
+        let context = try XCTUnwrap(heldContext)
+        XCTAssertTrue(holder.extensionContexts.contains { $0 === context })
+        XCTAssertFalse(
+            controller.extensionContexts.contains { $0 === context }
+        )
+        XCTAssertNil(
+            fixture.manager.profileRuntime.contexts(
+                for: fixture.profile.id
+            )[fixture.installed.id]
+        )
+        XCTAssertNil(controller.delegate)
+
+        XCTAssertTrue(
+            fixture.manager.controllerDelegateBindingReadiness
+                .controllerDidBecomeReady(controllerBinding)
+        )
+        XCTAssertIdentical(
+            controller.delegate,
+            fixture.manager.controllerDelegateBridge
+        )
+    }
+
     func testReentrantPolicyPublicationStopsBeforeStorageMutation()
         async throws {
         let container = try makeTestContainer()
@@ -66,6 +197,8 @@ final class ExtensionRuntimeTransactionFailureTests:
             runtimeSession: manager.runtimeSession,
             diagnostics: manager.runtimeDiagnostics,
             expectedControllerDelegate: manager.controllerDelegateBridge,
+            controllerDelegateReadiness:
+                manager.controllerDelegateBindingReadiness,
             debugBeforeControllerLoad: { nil }
         )
         let loader = ExtensionContextLoader(

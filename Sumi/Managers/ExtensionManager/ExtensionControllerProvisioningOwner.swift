@@ -38,8 +38,8 @@ final class ExtensionControllerProvisioningOwner:
         let runtime: @MainActor () -> ExtensionManagerRuntime
         let currentProfileId: @MainActor () -> UUID?
         let assignControllerDelegate: @MainActor (WKWebExtensionController) -> Void
-        let isControllerRegistered: @MainActor (WKWebExtensionController) -> Bool
-        let profileIdForController: @MainActor (WKWebExtensionController) -> UUID?
+        let controllerDelegateReadiness:
+            ExtensionControllerDelegateReadiness
         let traceControllerBinding:
             @MainActor (String, UUID?, WKWebExtensionController, WKWebViewConfiguration?) -> Void
         let controllerDescription: @MainActor (WKWebExtensionController?) -> String
@@ -112,8 +112,13 @@ final class ExtensionControllerProvisioningOwner:
             defaultDataStore: defaultDataStore,
             profileId: profileId
         )
-        dependencies.profileRuntime.setController(controller, for: profileId)
-        scheduleControllerDelegateRebind(for: controller)
+        let controllerBinding = dependencies.profileRuntime.setController(
+            controller,
+            for: profileId
+        )
+        dependencies.controllerDelegateReadiness.controllerInstalled(
+            controllerBinding
+        )
 
         if dependencies.currentProfileId() == profileId {
             dependencies.browserConfiguration.webViewConfiguration.webExtensionController =
@@ -191,24 +196,6 @@ final class ExtensionControllerProvisioningOwner:
         return configuration
     }
 
-    private func scheduleControllerDelegateRebind(
-        for controller: WKWebExtensionController
-    ) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self, weak controller] in
-            guard let self, let controller else { return }
-            guard dependencies.isControllerRegistered(controller) else {
-                return
-            }
-            dependencies.assignControllerDelegate(controller)
-            dependencies.traceControllerBinding(
-                "delegateRebound",
-                dependencies.profileIdForController(controller),
-                controller,
-                nil
-            )
-        }
-    }
-
     private func verifyExtensionStorage(profileId: UUID) {
         guard RuntimeDiagnostics.isVerboseEnabled else {
             return
@@ -240,14 +227,8 @@ extension ExtensionControllerProvisioningOwner.Dependencies {
             assignControllerDelegate: { [weak manager] controller in
                 controller.delegate = manager?.controllerDelegateBridge
             },
-            isControllerRegistered: { [weak manager] controller in
-                manager?.profileRuntime.controllersByProfile.values.contains {
-                    $0 === controller
-                } ?? false
-            },
-            profileIdForController: { [weak manager] controller in
-                manager?.profileId(for: controller)
-            },
+            controllerDelegateReadiness:
+                manager.controllerDelegateBindingReadiness,
             traceControllerBinding: { [weak manager] phase, profileId, controller, configuration in
                 manager?.runtimeDiagnostics.traceNativeMessagingContextBinding(
                     phase: phase,

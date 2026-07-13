@@ -19,6 +19,8 @@ final class ExtensionContextControllerTransaction {
     private let runtimeSession: ExtensionRuntimeSession
     private let diagnostics: ExtensionRuntimeDiagnostics
     private let expectedControllerDelegate: ExtensionControllerDelegateBridge
+    private let controllerDelegateReadiness:
+        ExtensionControllerDelegateReadiness
     private let debugBeforeControllerLoad:
         @MainActor () -> BeforeControllerLoad?
 
@@ -30,6 +32,8 @@ final class ExtensionContextControllerTransaction {
         runtimeSession: ExtensionRuntimeSession,
         diagnostics: ExtensionRuntimeDiagnostics,
         expectedControllerDelegate: ExtensionControllerDelegateBridge,
+        controllerDelegateReadiness:
+            ExtensionControllerDelegateReadiness,
         debugBeforeControllerLoad:
             @escaping @MainActor () -> BeforeControllerLoad?
     ) {
@@ -40,6 +44,7 @@ final class ExtensionContextControllerTransaction {
         self.runtimeSession = runtimeSession
         self.diagnostics = diagnostics
         self.expectedControllerDelegate = expectedControllerDelegate
+        self.controllerDelegateReadiness = controllerDelegateReadiness
         self.debugBeforeControllerLoad = debugBeforeControllerLoad
     }
 
@@ -99,6 +104,9 @@ final class ExtensionContextControllerTransaction {
                 context: context,
                 controller: controller,
                 request: request
+            )
+            controllerDelegateReadiness.controllerDidBecomeReady(
+                controllerBinding
             )
             if request.operation.recordsRuntimeMetrics {
                 runtimeSession.recordRuntimeMetric(for: request.extensionId) {

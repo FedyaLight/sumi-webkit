@@ -191,6 +191,8 @@ final class ExtensionManager: NSObject, ObservableObject {
             runtimeSession: runtimeSession,
             diagnostics: runtimeDiagnostics,
             expectedControllerDelegate: controllerDelegateBridge,
+            controllerDelegateReadiness:
+                controllerDelegateBindingReadiness,
             debugBeforeControllerLoad: { [weak self] in
                 self?.currentBeforeControllerLoadHook()
             }
@@ -403,6 +405,24 @@ final class ExtensionManager: NSObject, ObservableObject {
     lazy var controllerProvisioningOwner = ExtensionControllerProvisioningOwner(
         dependencies: .live(manager: self)
     )
+    lazy var controllerDelegateBindingReadiness: ExtensionControllerDelegateReadiness = {
+        let delegate = controllerDelegateBridge
+        let diagnostics = runtimeDiagnostics
+        return ExtensionControllerDelegateReadiness(
+            profileRuntime: profileRuntime,
+            bind: { receipt in
+                receipt.controller.delegate = delegate
+                diagnostics.traceNativeMessagingContextBinding(
+                    phase: "delegateRebound",
+                    extensionId: nil,
+                    profileId: receipt.profileID,
+                    controller: receipt.controller,
+                    profileController: receipt.controller,
+                    expectedControllerDelegate: delegate
+                )
+            }
+        )
+    }()
     lazy var contextResidencyOwner = ExtensionContextResidencyOwner(
         dependencies: .live(manager: self)
     )
@@ -606,7 +626,9 @@ final class ExtensionManager: NSObject, ObservableObject {
     lazy var controllerRuntimeRelease = ExtensionControllerRuntimeRelease(
         browserConfiguration: browserConfiguration,
         profileRuntime: profileRuntime,
-        runtimeSession: runtimeSession
+        runtimeSession: runtimeSession,
+        controllerDelegateReadiness:
+            controllerDelegateBindingReadiness
     )
     lazy var runtimeShutdown = ExtensionRuntimeShutdown(
         activityCancellation: runtimeActivityCancellation,

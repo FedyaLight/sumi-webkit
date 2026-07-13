@@ -73,11 +73,17 @@ final class ExtensionProfileRuntime {
         return state.controller(for: currentProfileId)
     }
 
+    @discardableResult
     func setController(
         _ controller: WKWebExtensionController,
         for profileId: UUID
-    ) {
+    ) -> ExtensionControllerBindingSnapshot {
         state.setController(controller, for: profileId)
+        return ExtensionControllerBindingSnapshot(
+            profileID: profileId,
+            controller: controller,
+            revision: state.controllerBindingRevision(for: profileId)
+        )
     }
 
     func contextsForCurrentProfile() -> [String: WKWebExtensionContext] {
