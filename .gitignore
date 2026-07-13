@@ -35,6 +35,11 @@ default.profraw
 # SwiftPM
 .build/
 .swiftpm/
+
+# Python tooling
+__pycache__/
+*.py[cod]
+
 # Ignore the unpacked URLPredictor binary artifacts (materialized by
 # scripts/bootstrap_vendor_binaries.sh), but keep CHECKSUMS.sha256 tracked.
 Vendor/DDG/URLPredictor/Binary/URLPredictorRust.xcframework/
@@ -77,6 +82,7 @@ telemetry-id
 !.github/workflows/alpha-release.yml
 !.github/workflows/publish-appcast-pages.yml
 !.github/workflows/sumi-ci.yml
+!.github/workflows/sumi-nightly.yml
 .vscode/
 
 # Local dev artifacts (not part of the Xcode app)

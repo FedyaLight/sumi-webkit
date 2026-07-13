@@ -1,102 +1,158 @@
 #!/usr/bin/env bash
-# Unified CI test entrypoint (architecture 72→100 plan B0/B7).
+# Manifest-backed local and hosted CI test entrypoint.
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+manifest_tool="$repo_root/scripts/ci/ci_manifest.py"
+manifest_path="${SUMI_CI_TEST_MANIFEST:-$repo_root/scripts/ci/test-manifest.json}"
 cd "$repo_root"
 
-PROJECT="${SUMI_XCODE_PROJECT:-Sumi.xcodeproj}"
-SCHEME="${SUMI_SCHEME:-Sumi}"
-DESTINATION="${SUMI_XCODE_DESTINATION:-platform=macOS}"
-DERIVED_DATA="${SUMI_CI_DERIVED_DATA:-$repo_root/build/ci-derived-data}"
-RESULT_BUNDLE="${SUMI_CI_RESULT_BUNDLE:-$repo_root/build/BuildResults/SumiTests.xcresult}"
-
-# PR smoke: architecture-sensitive subset (not full ~106k LOC SumiTests).
-PR_SMOKE_TESTS=(
-  "-only-testing:SumiTests/TabManagerStructuralPersistenceTests"
-  "-only-testing:SumiTests/TabManagerStructuralBatchingTests"
-  "-only-testing:SumiTests/TabStructureEventBusTests"
-  "-only-testing:SumiTests/RuntimeStateCoalescerTests"
-  "-only-testing:SumiTests/BrowserManagerRuntimeWiringTests"
-  "-only-testing:SumiTests/BrowserManagerLifecycleWiringTests"
-  "-only-testing:SumiTests/SumiPerformanceModularRegressionTests/testBrowserManagerStartupAndSettingsSurfacesDoNotConstructDisabledRuntimes"
-  "-only-testing:SumiTests/SumiPerformanceModularRegressionTests/testEnablingOptionalModuleAfterStartupAttachesRuntime"
-  "-only-testing:SumiTests/SumiPerformanceModularRegressionTests/testDefaultNormalTabAttachesOnlyCoreRuntimeAndNoOptionalModuleAssets"
-  "-only-testing:SumiTests/BrowserSidebarCommandRoutingOwnerTests"
-  "-only-testing:SumiTests/BrowserSidebarActionOwnerTests"
-  "-only-testing:SumiTests/SidebarRegularTabsControllerTests"
-  "-only-testing:SumiTests/SidebarSpaceBodyInjectionRegressionTests"
-  "-only-testing:SumiTests/TabWebViewMaterializationAndRebuildTests"
-  "-only-testing:SumiTests/DeferredProtectedCommandTests"
-  "-only-testing:SumiTests/InitialDocumentRuntimeHandoffTests"
-  "-only-testing:SumiTests/GlanceManagerTests"
-  "-only-testing:SumiTests/BrowserShortcutPinUnloadOwnerTests"
-)
+manifest() {
+  python3 "$manifest_tool" \
+    --repo-root "$repo_root" \
+    --manifest "$manifest_path" \
+    "$@"
+}
 
 usage() {
   cat <<USAGE
 Usage:
-  scripts/ci/run_tests.sh packages
-  scripts/ci/run_tests.sh pr-smoke
-  scripts/ci/run_tests.sh full
-  scripts/ci/run_tests.sh ui-smoke
-  scripts/ci/run_tests.sh domain
+  scripts/ci/run_tests.sh validate
+  scripts/ci/run_tests.sh run <suite-id>
+  scripts/ci/run_tests.sh profile <profile-id> [suite-kind]
+  scripts/ci/run_tests.sh matrix <profile-id> [suite-kind]
+  scripts/ci/run_tests.sh list <profile-id> [suite-kind]
+  scripts/ci/run_tests.sh verify-toolchain <profile-id>
+  scripts/ci/run_tests.sh suite-field <suite-id> <field>
+  scripts/ci/run_tests.sh selectors <suite-id>
+  scripts/ci/run_tests.sh toolchain-field <profile-id> <field>
+  scripts/ci/run_tests.sh xcode-field <field>
 
 Environment:
-  SUMI_CI_DERIVED_DATA   DerivedData path
-  SUMI_CI_RESULT_BUNDLE  .xcresult output path
+  SUMI_CI_TEST_MANIFEST  Manifest override (primarily for parser tests)
+  SUMI_CI_DERIVED_DATA  DerivedData path
+  SUMI_CI_RESULT_BUNDLE .xcresult output path
 USAGE
 }
 
-run_xcodebuild() {
-  mkdir -p "$(dirname "$RESULT_BUNDLE")" "$DERIVED_DATA"
-  rm -rf "$RESULT_BUNDLE"
+run_xcode_suite() {
+  local suite="$1"
+  local project="${SUMI_XCODE_PROJECT:-$(manifest xcode-field project)}"
+  local destination="${SUMI_XCODE_DESTINATION:-$(manifest xcode-field destination)}"
+  local parallel_testing
+  local scheme
+  local configuration
+  local derived_data="${SUMI_CI_DERIVED_DATA:-$repo_root/build/ci-derived-data}"
+  local result_bundle="${SUMI_CI_RESULT_BUNDLE:-$repo_root/build/BuildResults/${suite}.xcresult}"
+  local -a selectors=()
+  local selector_output
+
+  parallel_testing="$(manifest xcode-field parallel_testing_enabled)"
+  scheme="$(manifest suite-field "$suite" scheme)"
+  configuration="$(manifest suite-field "$suite" configuration)"
+  selector_output="$(manifest selectors "$suite")"
+  while IFS= read -r selector; do
+    [[ -n "$selector" ]] && selectors+=("-only-testing:$selector")
+  done <<< "$selector_output"
+
+  mkdir -p "$(dirname "$result_bundle")" "$derived_data"
+  rm -rf "$result_bundle"
   xcodebuild \
-    -project "$PROJECT" \
-    -scheme "$SCHEME" \
-    -destination "$DESTINATION" \
-    -derivedDataPath "$DERIVED_DATA" \
-    -resultBundlePath "$RESULT_BUNDLE" \
-    -parallel-testing-enabled NO \
+    -project "$project" \
+    -scheme "$scheme" \
+    -configuration "$configuration" \
+    -destination "$destination" \
+    -derivedDataPath "$derived_data" \
+    -resultBundlePath "$result_bundle" \
+    -parallel-testing-enabled "$parallel_testing" \
     CODE_SIGNING_ALLOWED=NO \
     CODE_SIGNING_REQUIRED=NO \
-    "$@"
+    "${selectors[@]}" \
+    test
 }
 
-run_architecture_packages() {
-  swift test --package-path Packages/SumiDomain
-  swift test --package-path Packages/SumiWebRuntime
+run_suite() {
+  local suite="$1"
+  local kind
+  local name
+  kind="$(manifest suite-field "$suite" kind)"
+  name="$(manifest suite-field "$suite" name)"
+  echo "==> $name [$suite]"
+
+  case "$kind" in
+    swift-package)
+      swift test --package-path "$repo_root/$(manifest suite-field "$suite" path)"
+      ;;
+    xcode-test)
+      run_xcode_suite "$suite"
+      ;;
+    *)
+      echo "error: validated manifest returned unsupported suite kind: $kind" >&2
+      exit 2
+      ;;
+  esac
+  echo "==> $name passed"
 }
 
-cmd="${1:-}"
-case "$cmd" in
-  packages)
-    run_architecture_packages
+run_profile() {
+  local profile="$1"
+  local kind="${2:-}"
+  local -a query=(list "$profile")
+  local suite_output
+  [[ -n "$kind" ]] && query+=("$kind")
+  suite_output="$(manifest "${query[@]}")"
+  while IFS= read -r suite; do
+    [[ -n "$suite" ]] && run_suite "$suite"
+  done <<< "$suite_output"
+}
+
+verify_toolchain() {
+  local profile="$1"
+  local expected_version
+  local actual_version
+  expected_version="$(manifest toolchain-field "$profile" xcode_version)"
+  actual_version="$(xcodebuild -version | awk '/^Xcode / { print $2; exit }')"
+  if [[ "$actual_version" != "$expected_version" ]]; then
+    echo "error: profile $profile requires Xcode $expected_version; active version is ${actual_version:-unknown}" >&2
+    exit 1
+  fi
+  xcodebuild -version
+  swift --version
+  xcodebuild -showsdks | sed -n '/macOS SDKs:/,/iOS SDKs:/p'
+}
+
+command="${1:-}"
+case "$command" in
+  validate)
+    [[ $# -eq 1 ]] || { usage; exit 2; }
+    manifest validate
     ;;
-  domain)
-    swift test --package-path Packages/SumiDomain
+  run)
+    [[ $# -eq 2 ]] || { usage; exit 2; }
+    run_suite "$2"
     ;;
-  pr-smoke)
-    echo "==> Architecture package tests"
-    run_architecture_packages
-    echo "==> Sumi PR smoke unit tests"
-    run_xcodebuild "${PR_SMOKE_TESTS[@]}" test
+  profile)
+    [[ $# -ge 2 && $# -le 3 ]] || { usage; exit 2; }
+    run_profile "$2" "${3:-}"
     ;;
-  full)
-    echo "==> Full Sumi unit tests"
-    run_xcodebuild test
+  verify-toolchain)
+    [[ $# -eq 2 ]] || { usage; exit 2; }
+    verify_toolchain "$2"
     ;;
-  ui-smoke)
-    echo "==> UI launch smoke"
-    run_xcodebuild \
-      -scheme SumiSmoke \
-      -only-testing:SumiUITests/SumiLaunchSmokeUITests/testLaunchesMainWindow \
-      test
+  matrix|list)
+    [[ $# -ge 2 && $# -le 3 ]] || { usage; exit 2; }
+    manifest "$@"
+    ;;
+  suite-field|toolchain-field)
+    [[ $# -eq 3 ]] || { usage; exit 2; }
+    manifest "$@"
+    ;;
+  selectors|xcode-field)
+    [[ $# -eq 2 ]] || { usage; exit 2; }
+    manifest "$@"
     ;;
   *)
     usage
     exit 2
     ;;
 esac
-
-echo "ci run_tests.sh $cmd passed"

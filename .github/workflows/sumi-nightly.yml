@@ -1,0 +1,99 @@
+name: Sumi Nightly
+
+on:
+  schedule:
+    - cron: "23 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sumi-nightly-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  manifest:
+    name: Validate CI manifest
+    runs-on: ubuntu-latest
+    outputs:
+      runner: ${{ steps.selection.outputs.runner }}
+      developer_dir: ${{ steps.selection.outputs.developer_dir }}
+      package_matrix: ${{ steps.selection.outputs.package_matrix }}
+      xcode_matrix: ${{ steps.selection.outputs.xcode_matrix }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Validate and select nightly suites
+        id: selection
+        run: |
+          set -euo pipefail
+          scripts/ci/run_tests.sh validate
+          runner="$(scripts/ci/run_tests.sh toolchain-field nightly runner)"
+          developer_dir="$(scripts/ci/run_tests.sh toolchain-field nightly developer_dir)"
+          package_matrix="$(scripts/ci/run_tests.sh matrix nightly swift-package)"
+          xcode_matrix="$(scripts/ci/run_tests.sh matrix nightly xcode-test)"
+          {
+            echo "runner=$runner"
+            echo "developer_dir=$developer_dir"
+            echo "package_matrix=$package_matrix"
+            echo "xcode_matrix=$xcode_matrix"
+          } >> "$GITHUB_OUTPUT"
+
+  architecture-packages:
+    name: Architecture package / ${{ matrix.name }}
+    needs: manifest
+    runs-on: ${{ needs.manifest.outputs.runner }}
+    timeout-minutes: 60
+    env:
+      DEVELOPER_DIR: ${{ needs.manifest.outputs.developer_dir }}
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix: ${{ fromJSON(needs.manifest.outputs.package_matrix) }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Verify production toolchain
+        run: scripts/ci/run_tests.sh verify-toolchain nightly
+
+      - name: Test ${{ matrix.name }}
+        run: scripts/ci/run_tests.sh run "${{ matrix.suite }}"
+
+  app-tests:
+    name: Nightly / ${{ matrix.name }}
+    needs:
+      - manifest
+      - architecture-packages
+    runs-on: ${{ needs.manifest.outputs.runner }}
+    timeout-minutes: 120
+    env:
+      DEVELOPER_DIR: ${{ needs.manifest.outputs.developer_dir }}
+      SUMI_CI_RESULT_BUNDLE: ${{ github.workspace }}/build/BuildResults/SumiNightly-${{ matrix.suite }}.xcresult
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix: ${{ fromJSON(needs.manifest.outputs.xcode_matrix) }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Verify production toolchain
+        run: scripts/ci/run_tests.sh verify-toolchain nightly
+
+      - name: Run ${{ matrix.name }}
+        run: scripts/ci/run_tests.sh run "${{ matrix.suite }}"
+
+      - name: Upload nightly test result
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Sumi-nightly-${{ matrix.suite }}.xcresult
+          path: build/BuildResults/SumiNightly-${{ matrix.suite }}.xcresult
+          if-no-files-found: ignore
+          retention-days: 7

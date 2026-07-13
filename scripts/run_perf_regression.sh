@@ -3,29 +3,13 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname "$0")" && pwd)"
 ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
-PROJECT="$ROOT/Sumi.xcodeproj"
-SCHEME="${SUMI_SCHEME:-Sumi}"
+CI_TEST_RUNNER="$ROOT/scripts/ci/run_tests.sh"
+PROJECT="${SUMI_XCODE_PROJECT:-$ROOT/$("$CI_TEST_RUNNER" xcode-field project)}"
+SCHEME="${SUMI_SCHEME:-$("$CI_TEST_RUNNER" suite-field performance-regression scheme)}"
 DESTINATION="${SUMI_XCODE_DESTINATION:-platform=macOS,arch=arm64}"
 DERIVED_DATA="${SUMI_PERF_DERIVED_DATA:-$ROOT/.build/performance/perf-derived-data}"
 TRACE_DIR="${SUMI_PERF_TRACE_DIR:-$ROOT/.build/profiles}"
 TIME_LIMIT="${SUMI_PERF_TIME_LIMIT:-90s}"
-
-OPTIMIZED_STACK_TESTS=(
-  "-only-testing:SumiTests/TabManagerStructuralPersistenceTests"
-  "-only-testing:SumiTests/TabManagerStructuralBatchingTests"
-  "-only-testing:SumiTests/RuntimeStateCoalescerTests"
-  "-only-testing:SumiTests/BrowserConfigurationNormalTabTests/testNormalTabConfigurationInstallsCoreScriptProvider"
-  "-only-testing:SumiTests/BrowserConfigurationNormalTabTests/testNormalTabConfigurationUsesSumiNormalTabControllerAndProfileStore"
-  "-only-testing:SumiTests/BrowserConfigurationNormalTabTests/testNormalTabConfigurationDoesNotCopyTemplateScripts"
-  "-only-testing:SumiTests/SumiNormalTabUserContentControllerParityTests/testWaitForContentBlockingAssetsInstalledReturnsForAlreadyInstalledDisabledAssets"
-  "-only-testing:SumiTests/SumiNormalTabUserContentControllerParityTests/testEquivalentManagedScriptSetDoesNotAdvanceRevision"
-  "-only-testing:SumiTests/SumiNormalTabUserContentControllerParityTests/testEquivalentReplacementDoesNotDuplicateInstalledScripts"
-  "-only-testing:SumiTests/SumiNormalTabUserContentControllerParityTests/testCleanupIsIdempotentAndPreventsLaterScriptReplacement"
-  "-only-testing:SumiTests/SumiPerformanceModularRegressionTests/testPrompt22MemorySaverRegressionGates"
-  "-only-testing:SumiTests/SumiPerformanceModularRegressionTests/testBrowserManagerStartupAndSettingsSurfacesDoNotConstructDisabledRuntimes"
-  "-only-testing:SumiTests/SumiPerformanceModularRegressionTests/testEnablingOptionalModuleAfterStartupAttachesRuntime"
-  "-only-testing:SumiTests/SumiPerformanceModularRegressionTests/testDefaultNormalTabAttachesOnlyCoreRuntimeAndNoOptionalModuleAssets"
-)
 
 usage() {
   cat <<USAGE
@@ -60,12 +44,19 @@ build_configuration() {
 }
 
 verify() {
+  local -a optimized_stack_tests=()
+  local selector_output
+  selector_output="$("$CI_TEST_RUNNER" selectors performance-regression)"
+  while IFS= read -r selector; do
+    [[ -n "$selector" ]] && optimized_stack_tests+=("-only-testing:$selector")
+  done <<< "$selector_output"
+
   mkdir -p "$DERIVED_DATA"
   build_configuration Debug
   build_configuration Release
 
   echo "==> Running optimized-stack regression tests"
-  run_xcodebuild "${OPTIMIZED_STACK_TESTS[@]}" test
+  run_xcodebuild "${optimized_stack_tests[@]}" test
 }
 
 slugify() {
@@ -115,14 +106,23 @@ trace() {
 }
 
 ui_smoke() {
+  local scheme
+  local -a selectors=()
+  local selector_output
+  scheme="$("$CI_TEST_RUNNER" suite-field ui-smoke scheme)"
+  selector_output="$("$CI_TEST_RUNNER" selectors ui-smoke)"
+  while IFS= read -r selector; do
+    [[ -n "$selector" ]] && selectors+=("-only-testing:$selector")
+  done <<< "$selector_output"
+
   echo "==> Running cheap launch UI smoke through SumiSmoke"
   echo "==> Requires local macOS UI automation permissions; this is intentionally outside the verify gate"
   xcodebuild \
     -project "$PROJECT" \
-    -scheme SumiSmoke \
+    -scheme "$scheme" \
     -destination "$DESTINATION" \
     -derivedDataPath "$DERIVED_DATA-smoke" \
-    -only-testing:SumiUITests/SumiLaunchSmokeUITests/testLaunchesMainWindow \
+    "${selectors[@]}" \
     test \
     CODE_SIGNING_ALLOWED=NO \
     CODE_SIGNING_REQUIRED=NO

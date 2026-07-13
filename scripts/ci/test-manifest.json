@@ -1,0 +1,118 @@
+{
+  "version": 1,
+  "toolchains": {
+    "production": {
+      "name": "Xcode 26.6 on macOS 26",
+      "runner": "macos-26",
+      "developer_dir": "/Applications/Xcode_26.6.app/Contents/Developer",
+      "xcode_version": "26.6",
+      "selection_note": "macos-26 is a moving GitHub-hosted image; DEVELOPER_DIR selects the installed Xcode 26.6 bundle explicitly."
+    }
+  },
+  "xcode": {
+    "project": "Sumi.xcodeproj",
+    "destination": "platform=macOS",
+    "parallel_testing_enabled": false
+  },
+  "profiles": {
+    "pr": {
+      "toolchain": "production",
+      "suites": [
+        "sumi-domain",
+        "sumi-web-runtime",
+        "pr-smoke"
+      ]
+    },
+    "nightly": {
+      "toolchain": "production",
+      "suites": [
+        "sumi-domain",
+        "sumi-web-runtime",
+        "full",
+        "ui-smoke"
+      ]
+    }
+  },
+  "suites": [
+    {
+      "id": "sumi-domain",
+      "name": "SumiDomain package",
+      "kind": "swift-package",
+      "path": "Packages/SumiDomain"
+    },
+    {
+      "id": "sumi-web-runtime",
+      "name": "SumiWebRuntime package",
+      "kind": "swift-package",
+      "path": "Packages/SumiWebRuntime"
+    },
+    {
+      "id": "pr-smoke",
+      "name": "PR smoke unit tests",
+      "kind": "xcode-test",
+      "scheme": "Sumi",
+      "configuration": "Debug",
+      "selectors": [
+        "SumiTests/TabManagerStructuralPersistenceTests",
+        "SumiTests/TabManagerStructuralBatchingTests",
+        "SumiTests/TabStructureEventBusTests",
+        "SumiTests/RuntimeStateCoalescerTests",
+        "SumiTests/BrowserManagerRuntimeWiringTests",
+        "SumiTests/BrowserManagerLifecycleWiringTests",
+        "SumiTests/SumiPerformanceModularRegressionTests/testBrowserManagerStartupAndSettingsSurfacesDoNotConstructDisabledRuntimes",
+        "SumiTests/SumiPerformanceModularRegressionTests/testEnablingOptionalModuleAfterStartupAttachesRuntime",
+        "SumiTests/SumiPerformanceModularRegressionTests/testDefaultNormalTabAttachesOnlyCoreRuntimeAndNoOptionalModuleAssets",
+        "SumiTests/BrowserSidebarCommandRoutingOwnerTests",
+        "SumiTests/BrowserSidebarActionOwnerTests",
+        "SumiTests/SidebarRegularTabsControllerTests",
+        "SumiTests/SidebarSpaceBodyInjectionRegressionTests",
+        "SumiTests/TabWebViewMaterializationAndRebuildTests",
+        "SumiTests/DeferredProtectedCommandSchedulerTests",
+        "SumiTests/InitialDocumentRuntimeHandoffTests",
+        "SumiTests/GlanceManagerTests",
+        "SumiTests/BrowserShortcutPinUnloadOwnerTests"
+      ]
+    },
+    {
+      "id": "full",
+      "name": "Full Sumi unit tests",
+      "kind": "xcode-test",
+      "scheme": "Sumi",
+      "configuration": "Debug",
+      "selectors": []
+    },
+    {
+      "id": "ui-smoke",
+      "name": "Sumi launch UI smoke",
+      "kind": "xcode-test",
+      "scheme": "SumiSmoke",
+      "configuration": "Debug",
+      "selectors": [
+        "SumiUITests/SumiLaunchSmokeUITests/testLaunchesMainWindow"
+      ]
+    },
+    {
+      "id": "performance-regression",
+      "name": "Optimized-stack performance regressions",
+      "kind": "xcode-test",
+      "scheme": "Sumi",
+      "configuration": "Debug",
+      "selectors": [
+        "SumiTests/TabManagerStructuralPersistenceTests",
+        "SumiTests/TabManagerStructuralBatchingTests",
+        "SumiTests/RuntimeStateCoalescerTests",
+        "SumiTests/BrowserConfigurationNormalTabTests/testNormalTabConfigurationInstallsCoreScriptProvider",
+        "SumiTests/BrowserConfigurationNormalTabTests/testNormalTabConfigurationUsesSumiNormalTabControllerAndProfileStore",
+        "SumiTests/BrowserConfigurationNormalTabTests/testNormalTabConfigurationDoesNotCopyTemplateScripts",
+        "SumiTests/SumiNormalTabUserContentControllerParityTests/testWaitForContentBlockingAssetsInstalledReturnsForAlreadyInstalledDisabledAssets",
+        "SumiTests/SumiNormalTabUserContentControllerParityTests/testEquivalentManagedScriptSetDoesNotAdvanceRevision",
+        "SumiTests/SumiNormalTabUserContentControllerParityTests/testEquivalentReplacementDoesNotDuplicateInstalledScripts",
+        "SumiTests/SumiNormalTabUserContentControllerParityTests/testCleanupIsIdempotentAndPreventsLaterScriptReplacement",
+        "SumiTests/SumiPerformanceModularRegressionTests/testPrompt22MemorySaverRegressionGates",
+        "SumiTests/SumiPerformanceModularRegressionTests/testBrowserManagerStartupAndSettingsSurfacesDoNotConstructDisabledRuntimes",
+        "SumiTests/SumiPerformanceModularRegressionTests/testEnablingOptionalModuleAfterStartupAttachesRuntime",
+        "SumiTests/SumiPerformanceModularRegressionTests/testDefaultNormalTabAttachesOnlyCoreRuntimeAndNoOptionalModuleAssets"
+      ]
+    }
+  ]
+}

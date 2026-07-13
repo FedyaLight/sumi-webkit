@@ -15,33 +15,88 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Keep CI on the stable SDK used by Sumi and the vendored Navigation module.
-  DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
-  XCODE_PROJECT: Sumi.xcodeproj
-  XCODE_SCHEME: Sumi
-  XCODE_CONFIGURATION: Debug
   DERIVED_DATA_PATH: ${{ github.workspace }}/build/DerivedData
   RESULT_BUNDLE_PATH: ${{ github.workspace }}/build/BuildResults/Sumi.xcresult
   TEST_RESULT_BUNDLE_PATH: ${{ github.workspace }}/build/BuildResults/SumiPRSmoke.xcresult
 
 jobs:
-  build-and-test:
-    name: Build and PR smoke tests
-    runs-on: macos-26
-    timeout-minutes: 60
+  manifest:
+    name: Validate CI manifest
+    runs-on: ubuntu-latest
+    outputs:
+      runner: ${{ steps.selection.outputs.runner }}
+      developer_dir: ${{ steps.selection.outputs.developer_dir }}
+      package_matrix: ${{ steps.selection.outputs.package_matrix }}
+      xcode_matrix: ${{ steps.selection.outputs.xcode_matrix }}
+      xcode_project: ${{ steps.selection.outputs.xcode_project }}
+      xcode_destination: ${{ steps.selection.outputs.xcode_destination }}
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Show toolchain
+      - name: Validate and select PR suites
+        id: selection
         run: |
-          xcodebuild -version
-          swift --version
-          xcodebuild -showsdks | sed -n '/macOS SDKs:/,/iOS SDKs:/p'
+          set -euo pipefail
+          scripts/ci/run_tests.sh validate
+          runner="$(scripts/ci/run_tests.sh toolchain-field pr runner)"
+          developer_dir="$(scripts/ci/run_tests.sh toolchain-field pr developer_dir)"
+          package_matrix="$(scripts/ci/run_tests.sh matrix pr swift-package)"
+          xcode_matrix="$(scripts/ci/run_tests.sh matrix pr xcode-test)"
+          xcode_project="$(scripts/ci/run_tests.sh xcode-field project)"
+          xcode_destination="$(scripts/ci/run_tests.sh xcode-field destination)"
+          {
+            echo "runner=$runner"
+            echo "developer_dir=$developer_dir"
+            echo "package_matrix=$package_matrix"
+            echo "xcode_matrix=$xcode_matrix"
+            echo "xcode_project=$xcode_project"
+            echo "xcode_destination=$xcode_destination"
+          } >> "$GITHUB_OUTPUT"
 
-      - name: Test architecture packages
-        run: scripts/ci/run_tests.sh packages
+  architecture-packages:
+    name: Architecture package / ${{ matrix.name }}
+    needs: manifest
+    runs-on: ${{ needs.manifest.outputs.runner }}
+    timeout-minutes: 60
+    env:
+      DEVELOPER_DIR: ${{ needs.manifest.outputs.developer_dir }}
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix: ${{ fromJSON(needs.manifest.outputs.package_matrix) }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Verify production toolchain
+        run: scripts/ci/run_tests.sh verify-toolchain pr
+
+      - name: Test ${{ matrix.name }}
+        run: scripts/ci/run_tests.sh run "${{ matrix.suite }}"
+
+  build-and-test:
+    name: Build and ${{ matrix.name }}
+    needs:
+      - manifest
+      - architecture-packages
+    runs-on: ${{ needs.manifest.outputs.runner }}
+    timeout-minutes: 60
+    env:
+      DEVELOPER_DIR: ${{ needs.manifest.outputs.developer_dir }}
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix: ${{ fromJSON(needs.manifest.outputs.xcode_matrix) }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Verify production toolchain
+        run: scripts/ci/run_tests.sh verify-toolchain pr
 
       - name: Build Sumi app
         run: |
@@ -51,51 +106,21 @@ jobs:
 
           xcodebuild \
             -quiet \
-            -project "$XCODE_PROJECT" \
-            -scheme "$XCODE_SCHEME" \
-            -configuration "$XCODE_CONFIGURATION" \
-            -destination 'platform=macOS' \
+            -project "${{ needs.manifest.outputs.xcode_project }}" \
+            -scheme "${{ matrix.scheme }}" \
+            -configuration "${{ matrix.configuration }}" \
+            -destination "${{ needs.manifest.outputs.xcode_destination }}" \
             -derivedDataPath "$DERIVED_DATA_PATH" \
             -resultBundlePath "$RESULT_BUNDLE_PATH" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             build
 
-      - name: PR smoke unit tests
+      - name: Run ${{ matrix.name }}
         env:
           SUMI_CI_DERIVED_DATA: ${{ env.DERIVED_DATA_PATH }}
           SUMI_CI_RESULT_BUNDLE: ${{ env.TEST_RESULT_BUNDLE_PATH }}
-        run: |
-          set -euo pipefail
-          # Architecture packages already tested above; run xcode smoke only.
-          mkdir -p "$(dirname "$SUMI_CI_RESULT_BUNDLE")"
-          rm -rf "$SUMI_CI_RESULT_BUNDLE"
-          xcodebuild \
-            -project "$XCODE_PROJECT" \
-            -scheme "$XCODE_SCHEME" \
-            -configuration "$XCODE_CONFIGURATION" \
-            -destination 'platform=macOS' \
-            -derivedDataPath "$SUMI_CI_DERIVED_DATA" \
-            -resultBundlePath "$SUMI_CI_RESULT_BUNDLE" \
-            -parallel-testing-enabled NO \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            -only-testing:SumiTests/TabManagerStructuralPersistenceTests \
-            -only-testing:SumiTests/TabManagerStructuralBatchingTests \
-            -only-testing:SumiTests/TabStructureEventBusTests \
-            -only-testing:SumiTests/RuntimeStateCoalescerTests \
-            -only-testing:SumiTests/BrowserManagerRuntimeWiringTests \
-            -only-testing:SumiTests/BrowserManagerLifecycleWiringTests \
-            -only-testing:SumiTests/SumiPerformanceModularRegressionTests/testBrowserManagerStartupAndSettingsSurfacesDoNotConstructDisabledRuntimes \
-            -only-testing:SumiTests/SumiPerformanceModularRegressionTests/testEnablingOptionalModuleAfterStartupAttachesRuntime \
-            -only-testing:SumiTests/SumiPerformanceModularRegressionTests/testDefaultNormalTabAttachesOnlyCoreRuntimeAndNoOptionalModuleAssets \
-            -only-testing:SumiTests/BrowserSidebarCommandRoutingOwnerTests \
-            -only-testing:SumiTests/BrowserSidebarActionOwnerTests \
-            -only-testing:SumiTests/SidebarRegularTabsControllerTests \
-            -only-testing:SumiTests/SidebarSpaceBodyInjectionRegressionTests \
-            -only-testing:SumiTests/TabWebViewMaterializationAndRebuildTests \
-            -only-testing:SumiTests/BrowserShortcutPinUnloadOwnerTests \
-            test
+        run: scripts/ci/run_tests.sh run "${{ matrix.suite }}"
 
       - name: Upload Sumi build result
         if: failure()
