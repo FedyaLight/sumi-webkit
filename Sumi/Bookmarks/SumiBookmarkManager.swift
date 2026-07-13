@@ -3,15 +3,18 @@ import Foundation
 
 @MainActor
 final class SumiBookmarkManager: ObservableObject {
-    @Published private(set) var revision: UInt = 0
+    @Published private(set) var publicationRevision: UInt = 0
+    private(set) var revision: UInt = 0
 
     private let repository: any SumiBookmarkRepository
     private let syncFavicons: Bool
     private let faviconService: (any BrowserFaviconServicing)?
     private var faviconPrefetchPartition: SumiFaviconPartition = .regular(nil)
-    private var bookmarksByID: [String: SumiBookmark] = [:]
-    private var bookmarkIDByURLKey: [String: String] = [:]
+    private var bookmarkIndex = SumiBookmarkLookupIndex()
     private var foldersCache: [SumiBookmarkFolder] = []
+    private var foldersCacheNeedsReload = false
+    private var pendingFaviconBookmarksByID: [String: SumiBookmark] = [:]
+    private var publicationTask: Task<Void, Never>?
     private var didInstallSaveObserver = false
     private var saveObserver: NSObjectProtocol?
 
@@ -54,6 +57,7 @@ final class SumiBookmarkManager: ObservableObject {
     }
 
     isolated deinit {
+        publicationTask?.cancel()
         if let saveObserver {
             NotificationCenter.default.removeObserver(saveObserver)
         }
@@ -84,32 +88,27 @@ final class SumiBookmarkManager: ObservableObject {
     }
 
     func bookmark(for url: URL) -> SumiBookmark? {
-        for variant in url.sumiBookmarkButtonURLVariants() {
-            let key = Self.urlKey(variant)
-            if let id = bookmarkIDByURLKey[key],
-               let bookmark = bookmarksByID[id] {
-                return bookmark
-            }
-        }
-        return nil
+        bookmarkIndex.bookmark(for: url)
     }
 
     func folders() -> [SumiBookmarkFolder] {
-        foldersCache
+        refreshFoldersCacheIfNeeded()
+        return foldersCache
     }
 
     func setFaviconPrefetchPartition(_ partition: SumiFaviconPartition) {
         guard faviconPrefetchPartition != partition else { return }
         faviconPrefetchPartition = partition
-        guard syncFavicons, !bookmarksByID.isEmpty else { return }
+        guard syncFavicons, !bookmarkIndex.isEmpty else { return }
         faviconService?.syncBookmarks(
-            Array(bookmarksByID.values),
+            bookmarkIndex.bookmarks,
             partition: faviconPrefetchPartition
         )
+        pendingFaviconBookmarksByID.removeAll(keepingCapacity: true)
     }
 
     func allBookmarks() -> [SumiBookmark] {
-        Array(bookmarksByID.values).sorted {
+        bookmarkIndex.bookmarks.sorted {
             $0.title.localizedStandardCompare($1.title) == .orderedAscending
         }
     }
@@ -183,7 +182,8 @@ final class SumiBookmarkManager: ObservableObject {
             title: sanitizedTitle(title, fallbackURL: url),
             folderID: folderID
         )
-        reload()
+        applyBookmark(bookmark, queueFavicon: true)
+        recordLocalMutation()
         return bookmark
     }
 
@@ -206,7 +206,9 @@ final class SumiBookmarkManager: ObservableObject {
             url: url,
             folderID: folderID
         )
-        reload()
+        let queueFavicon = bookmarkIndex.bookmark(id: id)?.url != bookmark.url
+        applyBookmark(bookmark, queueFavicon: queueFavicon)
+        recordLocalMutation()
         return bookmark
     }
 
@@ -216,7 +218,7 @@ final class SumiBookmarkManager: ObservableObject {
             title: sanitizedFolderTitle(title),
             parentID: parentID
         )
-        reload()
+        recordLocalMutation()
         return folder
     }
 
@@ -232,7 +234,10 @@ final class SumiBookmarkManager: ObservableObject {
             parentID: parentID,
             bookmarks: prepared.requests
         )
-        reload()
+        for bookmark in result.bookmarks {
+            applyBookmark(bookmark, queueFavicon: true)
+        }
+        recordLocalMutation()
         return SumiBookmarkFolderBatchCreateResult(
             folder: result.folder,
             bookmarks: result.bookmarks,
@@ -247,7 +252,7 @@ final class SumiBookmarkManager: ObservableObject {
             title: sanitizedFolderTitle(title),
             parentID: parentID
         )
-        reload()
+        recordLocalMutation()
         return folder
     }
 
@@ -256,8 +261,14 @@ final class SumiBookmarkManager: ObservableObject {
     }
 
     func removeEntities(ids: some Sequence<String>) throws {
-        try repository.removeEntities(ids: Array(ids))
-        reload()
+        let ids = Array(ids)
+        guard !ids.isEmpty else { return }
+        let removedBookmarks = try repository.removeEntities(ids: ids)
+        for bookmark in removedBookmarks {
+            bookmarkIndex.remove(bookmark)
+            pendingFaviconBookmarksByID.removeValue(forKey: bookmark.id)
+        }
+        recordLocalMutation()
     }
 
     func moveEntities(
@@ -265,8 +276,11 @@ final class SumiBookmarkManager: ObservableObject {
         toParentID parentID: String?,
         atIndex index: Int? = nil
     ) throws {
+        guard !ids.isEmpty else { return }
         try repository.moveEntities(ids: ids, toParentID: parentID, atIndex: index)
-        reload()
+        let resolvedParentID = parentID ?? SumiBookmarkConstants.rootFolderID
+        bookmarkIndex.moveBookmarks(ids: ids, to: resolvedParentID)
+        recordLocalMutation()
     }
 
     func importBookmarks(
@@ -277,7 +291,11 @@ final class SumiBookmarkManager: ObservableObject {
             bookmarks,
             parentID: parentID,
             acceptsURL: Self.canBookmark(_:),
-            urlKeys: { Set($0.sumiBookmarkButtonURLVariants().map(Self.urlKey)) }
+            urlKeys: {
+                Set($0.sumiBookmarkButtonURLVariants().map(
+                    SumiBookmarkLookupIndex.urlKey
+                ))
+            }
         )
         reload()
         return summary
@@ -289,7 +307,11 @@ final class SumiBookmarkManager: ObservableObject {
         let summary = try repository.replaceBookmarks(
             bookmarks,
             acceptsURL: Self.canBookmark(_:),
-            urlKeys: { Set($0.sumiBookmarkButtonURLVariants().map(Self.urlKey)) }
+            urlKeys: {
+                Set($0.sumiBookmarkButtonURLVariants().map(
+                    SumiBookmarkLookupIndex.urlKey
+                ))
+            }
         )
         reload()
         return summary
@@ -324,17 +346,10 @@ final class SumiBookmarkManager: ObservableObject {
 
     private func reload(notify: Bool = true) {
         let bookmarks = repository.fetchBookmarks()
-        bookmarksByID = Dictionary(
-            uniqueKeysWithValues: bookmarks.map { ($0.id, $0) }
-        )
-        var urlIndex: [String: String] = [:]
-        for bookmark in bookmarks {
-            for variant in bookmark.url.sumiBookmarkButtonURLVariants() {
-                urlIndex[Self.urlKey(variant), default: bookmark.id] = bookmark.id
-            }
-        }
-        bookmarkIDByURLKey = urlIndex
+        bookmarkIndex.replace(with: bookmarks)
         foldersCache = repository.snapshot(sortMode: .manual).flattenedFolders
+        foldersCacheNeedsReload = false
+        pendingFaviconBookmarksByID.removeAll(keepingCapacity: true)
 
         if syncFavicons {
             faviconService?.syncBookmarks(
@@ -345,7 +360,57 @@ final class SumiBookmarkManager: ObservableObject {
 
         if notify {
             revision &+= 1
+            schedulePublication()
         }
+    }
+
+    private func recordLocalMutation() {
+        foldersCacheNeedsReload = true
+        revision &+= 1
+        schedulePublication()
+    }
+
+    private func applyBookmark(
+        _ bookmark: SumiBookmark,
+        queueFavicon: Bool
+    ) {
+        bookmarkIndex.upsert(bookmark)
+        if queueFavicon, syncFavicons, faviconService != nil {
+            pendingFaviconBookmarksByID[bookmark.id] = bookmark
+        }
+    }
+
+    private func schedulePublication() {
+        guard publicationTask == nil else { return }
+        publicationTask = Task { @MainActor [weak self] in
+            await Task.yield()
+            guard !Task.isCancelled else { return }
+            self?.publishPendingChanges()
+        }
+    }
+
+    private func publishPendingChanges() {
+        publicationTask = nil
+        refreshFoldersCacheIfNeeded()
+
+        if syncFavicons, !pendingFaviconBookmarksByID.isEmpty {
+            let bookmarks = pendingFaviconBookmarksByID.values.sorted {
+                $0.id < $1.id
+            }
+            pendingFaviconBookmarksByID.removeAll(keepingCapacity: true)
+            faviconService?.syncBookmarks(
+                bookmarks,
+                partition: faviconPrefetchPartition
+            )
+        }
+
+        publicationRevision &+= 1
+    }
+
+    private func refreshFoldersCacheIfNeeded() {
+        guard foldersCacheNeedsReload else { return }
+        foldersCache = repository.snapshot(sortMode: .manual).flattenedFolders
+        foldersCacheNeedsReload = false
     }
 
     private func flattenedDescendants(of entity: SumiBookmarkEntity) -> [SumiBookmarkEntity] {
@@ -375,7 +440,7 @@ final class SumiBookmarkManager: ObservableObject {
     private func prepareUniqueBookmarkRequests(
         _ requests: [SumiBookmarkCreateRequest]
     ) throws -> (requests: [SumiBookmarkCreateRequest], duplicates: Int) {
-        var seenURLKeys = Set(bookmarkIDByURLKey.keys)
+        var seenURLKeys = bookmarkIndex.urlKeys
         var preparedRequests: [SumiBookmarkCreateRequest] = []
         preparedRequests.reserveCapacity(requests.count)
         var duplicates = 0
@@ -385,7 +450,11 @@ final class SumiBookmarkManager: ObservableObject {
                 throw SumiBookmarkError.unsupportedURL
             }
 
-            let urlKeys = Set(request.url.sumiBookmarkButtonURLVariants().map(Self.urlKey))
+            let urlKeys = Set(
+                request.url.sumiBookmarkButtonURLVariants().map(
+                    SumiBookmarkLookupIndex.urlKey
+                )
+            )
             if urlKeys.contains(where: { seenURLKeys.contains($0) }) {
                 duplicates += 1
                 continue
@@ -401,10 +470,6 @@ final class SumiBookmarkManager: ObservableObject {
         }
 
         return (preparedRequests, duplicates)
-    }
-
-    private static func urlKey(_ url: URL) -> String {
-        url.absoluteString.lowercased()
     }
 }
 

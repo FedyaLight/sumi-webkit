@@ -298,7 +298,7 @@ final class SumiCoreDataBookmarkRepository: SumiBookmarkRepository, @unchecked S
         return node
     }
 
-    func removeEntities(ids: [String]) throws {
+    func removeEntities(ids: [String]) throws -> [SumiBookmark] {
         var entitiesToDelete: [BookmarkEntity] = []
         for id in ids {
             guard id != BookmarkEntity.Constants.rootFolderID else {
@@ -310,11 +310,17 @@ final class SumiCoreDataBookmarkRepository: SumiBookmarkRepository, @unchecked S
             entitiesToDelete.append(entity)
         }
 
+        var removedBookmarksByID: [String: SumiBookmark] = [:]
+        for entity in entitiesToDelete {
+            collectBookmarks(from: entity, into: &removedBookmarksByID)
+        }
+
         for entity in entitiesToDelete {
             entity.parent?.removeFromChildren(entity)
             deleteRecursively(entity)
         }
         try save()
+        return Array(removedBookmarksByID.values)
     }
 
     func moveEntities(
@@ -633,6 +639,19 @@ final class SumiCoreDataBookmarkRepository: SumiBookmarkRepository, @unchecked S
             }
         }
         context.delete(entity)
+    }
+
+    private func collectBookmarks(
+        from entity: BookmarkEntity,
+        into bookmarksByID: inout [String: SumiBookmark]
+    ) {
+        if entity.isFolder {
+            for child in entity.childrenArray {
+                collectBookmarks(from: child, into: &bookmarksByID)
+            }
+        } else if let bookmark = bookmark(from: entity) {
+            bookmarksByID[bookmark.id] = bookmark
+        }
     }
 
     private func openableURLs(from entity: BookmarkEntity) -> [URL] {

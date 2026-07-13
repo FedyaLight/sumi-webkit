@@ -15,7 +15,7 @@ protocol SumiBookmarkRepository: AnyObject, Sendable {
         bookmarks: [SumiBookmarkCreateRequest]
     ) throws -> SumiBookmarkFolderCreateResult
     func updateFolder(id: String, title: String, parentID: String?) throws -> SumiBookmarkEntity
-    func removeEntities(ids: [String]) throws
+    func removeEntities(ids: [String]) throws -> [SumiBookmark]
     func moveEntities(ids: [String], toParentID parentID: String?, atIndex index: Int?) throws
     func importBookmarks(
         _ bookmarks: [SumiBookmarkImportNode],
@@ -94,7 +94,7 @@ final class SumiUnavailableBookmarkRepository: SumiBookmarkRepository {
         throw unavailableError
     }
 
-    func removeEntities(ids: [String]) throws {
+    func removeEntities(ids: [String]) throws -> [SumiBookmark] {
         throw unavailableError
     }
 

@@ -1,7 +1,7 @@
+import Combine
 import CoreData
 import Synchronization
 import XCTest
-
 
 @testable import Sumi
 
@@ -31,7 +31,7 @@ final class SumiBookmarkManagerTests: XCTestCase {
         )
     }
 
-    func testBookmarkFaviconSyncUsesInjectedService() throws {
+    func testBookmarkFaviconSyncUsesInjectedService() async throws {
         let faviconService = FakeBookmarkFaviconService()
         let directory = try temporaryDirectory(named: "SumiBookmarkInjectedFavicon")
         let manager = SumiBookmarkManager(
@@ -46,6 +46,7 @@ final class SumiBookmarkManagerTests: XCTestCase {
         let url = try XCTUnwrap(URL(string: "https://favicon.example"))
 
         _ = try manager.createBookmark(url: url, title: "Favicon")
+        await waitForPublication(from: manager)
 
         XCTAssertEqual(faviconService.syncedBookmarkURLs.last, [url])
         XCTAssertEqual(faviconService.syncedBookmarkPartitions.last, partition)
@@ -212,6 +213,128 @@ final class SumiBookmarkManagerTests: XCTestCase {
         XCTAssertEqual(manager.revision, revisionBeforeBatch + 1)
         XCTAssertEqual(manager.snapshot().entitiesByID[result.folder.id]?.childBookmarkCount, 2)
         XCTAssertEqual(manager.bookmark(for: variantURL)?.title, "First")
+    }
+
+    func testIndividualCreatesCoalescePublicationAndFaviconSync() async throws {
+        let faviconService = FakeBookmarkFaviconService()
+        let directory = try temporaryDirectory(named: "SumiBookmarkCreateCoalescing")
+        let manager = SumiBookmarkManager(
+            database: SumiBookmarkDatabase(directory: directory),
+            faviconService: faviconService
+        )
+        let urls = try [
+            XCTUnwrap(URL(string: "https://batch-one.example")),
+            XCTUnwrap(URL(string: "https://batch-two.example")),
+            XCTUnwrap(URL(string: "https://batch-three.example")),
+        ]
+        let initialRevision = manager.revision
+        let initialPublication = manager.publicationRevision
+        let initialSyncCount = faviconService.syncedBookmarkURLs.count
+
+        for (index, url) in urls.enumerated() {
+            _ = try manager.createBookmark(
+                url: url,
+                title: "Bookmark \(index)"
+            )
+        }
+
+        XCTAssertEqual(manager.revision, initialRevision + 3)
+        XCTAssertEqual(manager.publicationRevision, initialPublication)
+        XCTAssertEqual(faviconService.syncedBookmarkURLs.count, initialSyncCount)
+        XCTAssertEqual(urls.compactMap(manager.bookmark(for:)).count, 3)
+
+        await waitForPublication(from: manager)
+        await Task.yield()
+
+        XCTAssertEqual(manager.publicationRevision, initialPublication + 1)
+        XCTAssertEqual(faviconService.syncedBookmarkURLs.count, initialSyncCount + 1)
+        XCTAssertEqual(
+            Set(faviconService.syncedBookmarkURLs.last ?? []),
+            Set(urls)
+        )
+    }
+
+    func testRepeatedUpdatePublishesAndSyncsOnlyFinalURL() async throws {
+        let faviconService = FakeBookmarkFaviconService()
+        let directory = try temporaryDirectory(named: "SumiBookmarkUpdateCoalescing")
+        let manager = SumiBookmarkManager(
+            database: SumiBookmarkDatabase(directory: directory),
+            faviconService: faviconService
+        )
+        let firstURL = try XCTUnwrap(URL(string: "https://update-one.example"))
+        let secondURL = try XCTUnwrap(URL(string: "https://update-two.example"))
+        let finalURL = try XCTUnwrap(URL(string: "https://update-final.example"))
+        let bookmark = try manager.createBookmark(url: firstURL, title: "First")
+        await waitForPublication(from: manager)
+        let initialPublication = manager.publicationRevision
+        let initialSyncCount = faviconService.syncedBookmarkURLs.count
+
+        _ = try manager.updateBookmark(
+            id: bookmark.id,
+            title: "Second",
+            url: secondURL,
+            folderID: nil
+        )
+        _ = try manager.updateBookmark(
+            id: bookmark.id,
+            title: "Final",
+            url: finalURL,
+            folderID: nil
+        )
+
+        XCTAssertNil(manager.bookmark(for: firstURL))
+        XCTAssertNil(manager.bookmark(for: secondURL))
+        XCTAssertEqual(manager.bookmark(for: finalURL)?.title, "Final")
+        XCTAssertEqual(faviconService.syncedBookmarkURLs.count, initialSyncCount)
+
+        await waitForPublication(from: manager)
+
+        XCTAssertEqual(manager.publicationRevision, initialPublication + 1)
+        XCTAssertEqual(faviconService.syncedBookmarkURLs.count, initialSyncCount + 1)
+        XCTAssertEqual(faviconService.syncedBookmarkURLs.last, [finalURL])
+    }
+
+    func testCreateThenRemoveBeforePublicationSkipsFaviconWork() async throws {
+        let faviconService = FakeBookmarkFaviconService()
+        let directory = try temporaryDirectory(named: "SumiBookmarkRemovalCoalescing")
+        let manager = SumiBookmarkManager(
+            database: SumiBookmarkDatabase(directory: directory),
+            faviconService: faviconService
+        )
+        let url = try XCTUnwrap(URL(string: "https://removed-before-publish.example"))
+        let initialSyncCount = faviconService.syncedBookmarkURLs.count
+        let bookmark = try manager.createBookmark(url: url, title: "Transient")
+        try manager.removeBookmark(id: bookmark.id)
+
+        XCTAssertNil(manager.bookmark(for: url))
+        XCTAssertEqual(faviconService.syncedBookmarkURLs.count, initialSyncCount)
+
+        await waitForPublication(from: manager)
+
+        XCTAssertEqual(faviconService.syncedBookmarkURLs.count, initialSyncCount)
+        XCTAssertEqual(manager.snapshot().root.childBookmarkCount, 0)
+    }
+
+    func testFolderOnlyMutationsCoalesceWithoutFaviconWork() async throws {
+        let faviconService = FakeBookmarkFaviconService()
+        let directory = try temporaryDirectory(named: "SumiBookmarkFolderCoalescing")
+        let manager = SumiBookmarkManager(
+            database: SumiBookmarkDatabase(directory: directory),
+            faviconService: faviconService
+        )
+        let initialSyncCount = faviconService.syncedBookmarkURLs.count
+        let initialPublication = manager.publicationRevision
+        let folder = try manager.createFolder(title: "Draft")
+        _ = try manager.updateFolder(id: folder.id, title: "Final", parentID: nil)
+        _ = try manager.createFolder(title: "Nested", parentID: folder.id)
+
+        XCTAssertEqual(manager.folders().map(\.title), ["Bookmarks", "Final", "Nested"])
+        XCTAssertEqual(faviconService.syncedBookmarkURLs.count, initialSyncCount)
+
+        await waitForPublication(from: manager)
+
+        XCTAssertEqual(manager.publicationRevision, initialPublication + 1)
+        XCTAssertEqual(faviconService.syncedBookmarkURLs.count, initialSyncCount)
     }
 
     func testPersistentStoreReopenPreservesBootstrapStructureIDsAndManualOrdering() throws {
@@ -463,6 +586,16 @@ final class SumiBookmarkManagerTests: XCTestCase {
             database: SumiBookmarkDatabase(directory: directory),
             syncFavicons: false
         )
+    }
+
+    private func waitForPublication(from manager: SumiBookmarkManager) async {
+        let publication = expectation(description: "bookmark publication")
+        var cancellable: AnyCancellable? = manager.$publicationRevision
+            .dropFirst()
+            .sink { _ in publication.fulfill() }
+        await fulfillment(of: [publication], timeout: 1)
+        cancellable?.cancel()
+        cancellable = nil
     }
 
     private func makeManager(directory: URL) -> SumiBookmarkManager {

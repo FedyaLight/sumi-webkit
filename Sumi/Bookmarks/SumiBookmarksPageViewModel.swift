@@ -38,7 +38,7 @@ final class SumiBookmarksPageViewModel: ObservableObject {
     private let browserContext: BookmarksPageBrowserContext
     private let bookmarkManager: SumiBookmarkManager
     private let faviconService: any BrowserFaviconServicing
-    private var revisionCancellable: AnyCancellable?
+    private var publicationCancellable: AnyCancellable?
     private var currentProfileCancellable: AnyCancellable?
     private(set) var draggedEntityIDs: Set<String> = []
 
@@ -55,7 +55,8 @@ final class SumiBookmarksPageViewModel: ObservableObject {
             .flatMap { SumiSurface.bookmarksSelectedFolderID(from: $0.url) }
         self.selectedFolderID = selected ?? SumiBookmarkConstants.rootFolderID
 
-        revisionCancellable = bookmarkManager.$revision
+        publicationCancellable = bookmarkManager.$publicationRevision
+            .dropFirst()
             .sink { [weak self] _ in
                 Task { @MainActor in
                     self?.rebuildVisibleEntities()
@@ -70,7 +71,7 @@ final class SumiBookmarksPageViewModel: ObservableObject {
     }
 
     isolated deinit {
-        revisionCancellable?.cancel()
+        publicationCancellable?.cancel()
         currentProfileCancellable?.cancel()
     }
 

@@ -11,7 +11,8 @@ final class SumiBookmarkMenuSnapshotStore: ObservableObject {
     init(bookmarkManager: SumiBookmarkManager) {
         self.bookmarkManager = bookmarkManager
         self.snapshot = bookmarkManager.snapshot(sortMode: .manual)
-        cancellable = bookmarkManager.$revision
+        cancellable = bookmarkManager.$publicationRevision
+            .dropFirst()
             .sink { [weak self] _ in
                 guard let self else { return }
                 self.snapshot = self.bookmarkManager.snapshot(sortMode: .manual)
@@ -21,7 +22,6 @@ final class SumiBookmarkMenuSnapshotStore: ObservableObject {
 
 struct SumiBookmarksCommands: Commands {
     let browserContext: SumiCommandsBrowserContext
-    @ObservedObject private var bookmarkManager: SumiBookmarkManager
     @ObservedObject private var snapshotStore: SumiBookmarkMenuSnapshotStore
     @ObservedObject private var menuFaviconInvalidator: SumiMenuFaviconInvalidator
 
@@ -31,14 +31,12 @@ struct SumiBookmarksCommands: Commands {
     ) {
         self.browserContext = browserContext
         let bookmarkManager = browserContext.bookmarkManager
-        self.bookmarkManager = bookmarkManager
         self.snapshotStore = SumiBookmarkMenuSnapshotStore(bookmarkManager: bookmarkManager)
         self._menuFaviconInvalidator = ObservedObject(wrappedValue: menuFaviconInvalidator)
     }
 
     private var bookmarkMenuSnapshot: SumiBookmarksSnapshot {
-        let _ = bookmarkManager.revision
-        return snapshotStore.snapshot
+        snapshotStore.snapshot
     }
 
     private var bookmarkMenuFaviconPartition: SumiFaviconPartition {
