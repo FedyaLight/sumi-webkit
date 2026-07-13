@@ -129,8 +129,8 @@ final class SafariExtensionInstalledInternalPageRenderTests: XCTestCase {
         windowRegistry.register(windowState)
         windowRegistry.setActive(windowState)
         manager.attach(browserManager: browserManager)
-        _ = manager.requestExtensionRuntime(
-            reason: ExtensionManager.ExtensionRuntimeRequestReason.attach,
+        _ = manager.runtimeDemandCoordinator.request(
+            reason: .install,
             allowWithoutEnabledExtensions: true,
             profileId: profile.id
         )

@@ -70,16 +70,6 @@ final class ExtensionManager: NSObject, ObservableObject {
         case failed
     }
 
-    enum ExtensionRuntimeRequestReason: String, Codable, CaseIterable {
-        case attach
-        case webViewConfiguration
-        case install
-        case enable
-        case refresh
-        case extensionAction
-        case resetReload
-    }
-
     enum ExtensionPermissionPromptDecision {
         case allow(expirationDate: Date?)
         case deny
@@ -250,7 +240,8 @@ final class ExtensionManager: NSObject, ObservableObject {
             authority: loadedContextAuthority,
             rollback: runtimeRollback,
             contextLoader: extensionContextLoader,
-            activation: installRuntimeActivation
+            activation: installRuntimeActivation,
+            residency: contextResidencyOwner
         )
     lazy var enabledRuntimeActivation = ExtensionEnabledRuntimeActivation(
         runtimeAccess: extensionRuntimeAccess,
@@ -335,8 +326,36 @@ final class ExtensionManager: NSObject, ObservableObject {
         ExtensionNormalTabRuntimeComposition?
     var controllerRuntimeComposition:
         ExtensionControllerRuntimeComposition?
-    lazy var runtimeLifecycleOwner = ExtensionRuntimeLifecycleOwner(
-        dependencies: .live(manager: self)
+    lazy var runtimeDemandCoordinator = ExtensionRuntimeDemandCoordinator(
+        installedExtensions: installedExtensionCollection,
+        profileRuntime: profileRuntime,
+        runtimeSession: runtimeSession,
+        controllerProvisioning: controllerProvisioningOwner,
+        runtimeProfileID: { [weak self] in
+            self?.runtime.currentProfile()?.id
+        },
+        extensionSupportAvailable: isExtensionSupportAvailable,
+        diagnostics: runtimeDiagnostics
+    )
+    lazy var profileRuntimeTransition = ExtensionProfileRuntimeTransition(
+        installedExtensions: installedExtensionCollection,
+        profileRuntime: profileRuntime,
+        runtimeSession: runtimeSession,
+        browserConfiguration: browserConfiguration,
+        controllerProvisioning: controllerProvisioningOwner,
+        inactiveContextRetirement: contextResidencyOwner,
+        actionAnchors: actionPopupAnchorStore,
+        toolbarProfiles: toolbarPinningOwner,
+        extensionSupportAvailable: isExtensionSupportAvailable,
+        reconcileProfile: { [weak self] profileID in
+            self?.controllerRuntimeComposition?.reconciler.reconcile(
+                profileID: profileID,
+                reason: "ExtensionProfileRuntimeTransition"
+            )
+        },
+        refreshActionSurfaces: { [weak self] profileID in
+            self?.refreshActionSurfaceState(for: profileID)
+        }
     )
     lazy var adapterCatalog = ExtensionAdapterCatalog(
         manager: self
@@ -489,7 +508,7 @@ final class ExtensionManager: NSObject, ObservableObject {
                 )
             },
             requestRuntime: { [weak self] profileID in
-                _ = self?.requestExtensionRuntime(
+                _ = self?.runtimeDemandCoordinator.request(
                     reason: .webViewConfiguration,
                     profileId: profileID
                 )
@@ -743,9 +762,10 @@ final class ExtensionManager: NSObject, ObservableObject {
         }
     }
 
-    func refreshActionSurfaceStateForCurrentProfile() {
-        guard let profileId = profileRuntime.currentProfileId else { return }
+    func refreshActionSurfaceState(for profileId: UUID) {
+        guard profileRuntime.currentProfileId == profileId else { return }
         for (extensionId, context) in extensionContexts(for: profileId) {
+            guard profileRuntime.currentProfileId == profileId else { return }
             actionSurfacePublisher.publishActionSurfaceStateForLoadedContext(context)
             _ = extensionId
         }

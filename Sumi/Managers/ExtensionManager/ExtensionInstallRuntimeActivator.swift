@@ -73,9 +73,6 @@ final class ExtensionInstallRuntimeActivator {
             )
         }
         try validate(request.loadedContext)
-        manager.markExtensionRuntimeReadyIfProfileContextsLoaded(
-            for: request.loadedContext.bindingReceipt.key.profileId
-        )
     }
 
     private func validate(

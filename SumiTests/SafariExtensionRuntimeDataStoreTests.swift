@@ -17,8 +17,8 @@ final class SafariExtensionRuntimeDataStoreTests: XCTestCase {
             context: container.mainContext,
             initialProfile: profile
         )
-        _ = manager.requestExtensionRuntime(
-            reason: .attach,
+        _ = manager.runtimeDemandCoordinator.request(
+            reason: .install,
             allowWithoutEnabledExtensions: true
         )
 
@@ -82,24 +82,13 @@ final class SafariExtensionRuntimeDataStoreTests: XCTestCase {
         let reconciler = manager.profileWebViewRuntimeReconciler
         let initialCount = reconciler.reconciliationRequestCount
 
-        _ = manager.requestExtensionRuntime(
+        _ = manager.runtimeDemandCoordinator.request(
             reason: .webViewConfiguration,
             allowWithoutEnabledExtensions: true,
             profileId: profile.id
         )
 
         XCTAssertEqual(reconciler.reconciliationRequestCount, initialCount)
-
-        _ = manager.requestExtensionRuntime(
-            reason: .refresh,
-            allowWithoutEnabledExtensions: true,
-            profileId: profile.id
-        )
-
-        XCTAssertEqual(
-            reconciler.reconciliationRequestCount,
-            initialCount + 1
-        )
     }
 
     func testRepeatedAttachmentToSameBrowserKeepsControllerRuntimeIdentity() throws {
@@ -161,7 +150,7 @@ final class SafariExtensionRuntimeDataStoreTests: XCTestCase {
         )
         manager.attach(browserManager: browserManager)
 
-        _ = manager.requestExtensionRuntime(
+        _ = manager.runtimeDemandCoordinator.request(
             reason: .webViewConfiguration,
             allowWithoutEnabledExtensions: true
         )

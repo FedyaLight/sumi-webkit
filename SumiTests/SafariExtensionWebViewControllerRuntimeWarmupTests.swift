@@ -14,8 +14,8 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
             context: container.mainContext,
             profile: profile
         ).manager
-        _ = manager.requestExtensionRuntime(
-            reason: .attach,
+        _ = manager.runtimeDemandCoordinator.request(
+            reason: .install,
             allowWithoutEnabledExtensions: true
         )
         _ = manager.ensureExtensionController(for: profile.id)
@@ -73,8 +73,8 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
             context: container.mainContext,
             profile: profile
         ).manager
-        _ = manager.requestExtensionRuntime(
-            reason: .attach,
+        _ = manager.runtimeDemandCoordinator.request(
+            reason: .install,
             allowWithoutEnabledExtensions: true
         )
         _ = manager.ensureExtensionController(for: profile.id)
@@ -165,8 +165,8 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
             context: container.mainContext,
             profile: profile
         ).manager
-        _ = manager.requestExtensionRuntime(
-            reason: .attach,
+        _ = manager.runtimeDemandCoordinator.request(
+            reason: .install,
             allowWithoutEnabledExtensions: true
         )
         _ = manager.ensureExtensionController(for: profile.id)
@@ -218,8 +218,8 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
             context: container.mainContext,
             profile: profile
         ).manager
-        _ = manager.requestExtensionRuntime(
-            reason: .attach,
+        _ = manager.runtimeDemandCoordinator.request(
+            reason: .install,
             allowWithoutEnabledExtensions: true
         )
         _ = manager.ensureExtensionController(for: profile.id)
@@ -286,8 +286,8 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
             context: container.mainContext,
             profile: profile
         ).manager
-        _ = manager.requestExtensionRuntime(
-            reason: .attach,
+        _ = manager.runtimeDemandCoordinator.request(
+            reason: .install,
             allowWithoutEnabledExtensions: true
         )
         let controller = manager.ensureExtensionController(for: profile.id)
@@ -373,8 +373,8 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
             context: container.mainContext,
             profile: profile
         ).manager
-        _ = manager.requestExtensionRuntime(
-            reason: .attach,
+        _ = manager.runtimeDemandCoordinator.request(
+            reason: .install,
             allowWithoutEnabledExtensions: true
         )
         let controller = manager.ensureExtensionController(for: profile.id)
@@ -455,8 +455,8 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
             context: container.mainContext,
             profile: profile
         ).manager
-        _ = manager.requestExtensionRuntime(
-            reason: .attach,
+        _ = manager.runtimeDemandCoordinator.request(
+            reason: .install,
             allowWithoutEnabledExtensions: true
         )
         let controller = manager.ensureExtensionController(for: profile.id)
@@ -899,8 +899,8 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
             context: container.mainContext,
             profile: profile
         ).manager
-        _ = manager.requestExtensionRuntime(
-            reason: .attach,
+        _ = manager.runtimeDemandCoordinator.request(
+            reason: .install,
             allowWithoutEnabledExtensions: true
         )
         _ = manager.ensureExtensionController(for: profile.id)
@@ -979,8 +979,8 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
             context: container.mainContext,
             profile: profile
         ).manager
-        _ = manager.requestExtensionRuntime(
-            reason: .attach,
+        _ = manager.runtimeDemandCoordinator.request(
+            reason: .install,
             allowWithoutEnabledExtensions: true
         )
         let controller = manager.ensureExtensionController(for: profile.id)
@@ -1044,8 +1044,8 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
             profile: profileA,
             browserConfiguration: browserConfiguration
         ).manager
-        _ = manager.requestExtensionRuntime(
-            reason: .attach,
+        _ = manager.runtimeDemandCoordinator.request(
+            reason: .install,
             allowWithoutEnabledExtensions: true
         )
         let controllerA = manager.ensureExtensionController(for: profileA.id)
@@ -1174,8 +1174,8 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
             profile: profile,
             browserConfiguration: browserConfiguration
         ).manager
-        _ = manager.requestExtensionRuntime(
-            reason: .attach,
+        _ = manager.runtimeDemandCoordinator.request(
+            reason: .install,
             allowWithoutEnabledExtensions: true
         )
         let expectedController = manager.ensureExtensionController(for: profile.id)

@@ -64,9 +64,6 @@ final class ExtensionLoadedContextFinalizer {
                 backgroundWakeReason: wakeReason
             )
             try authority.validate(loadedContext)
-            residency.markExtensionRuntimeReadyIfProfileContextsLoaded(
-                for: key.profileId
-            )
         case .safariAppExtension:
             try await installationActivation.activate(
                 .init(
@@ -77,5 +74,14 @@ final class ExtensionLoadedContextFinalizer {
             )
         }
         try authority.validate(loadedContext)
+    }
+
+    func settlePublication(
+        _ loadedContext: ExtensionLoadedContext
+    ) throws {
+        try authority.validate(loadedContext)
+        guard residency.settleLoadedContext(loadedContext) else {
+            throw CancellationError()
+        }
     }
 }

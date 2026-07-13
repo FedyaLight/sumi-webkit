@@ -37,8 +37,8 @@ final class ExtensionRequestedTabServicesTests:
             context: container.mainContext,
             initialProfile: profile
         )
-        _ = manager.requestExtensionRuntime(
-            reason: .attach,
+        _ = manager.runtimeDemandCoordinator.request(
+            reason: .install,
             allowWithoutEnabledExtensions: true
         )
         let expectedController = manager.ensureExtensionController(for: profile.id)

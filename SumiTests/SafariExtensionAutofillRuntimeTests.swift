@@ -65,8 +65,8 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
             initialProfile: profileA,
             browserConfiguration: browserConfiguration
         )
-        _ = manager.requestExtensionRuntime(
-            reason: .attach,
+        _ = manager.runtimeDemandCoordinator.request(
+            reason: .install,
             allowWithoutEnabledExtensions: true
         )
         let controllerA = manager.ensureExtensionController(for: profileA.id)
@@ -99,8 +99,8 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
         let browserManager = BrowserManager()
         manager.attach(browserManager: browserManager)
         browserManager.profileManager.profiles = [profile]
-        _ = manager.requestExtensionRuntime(
-            reason: .attach,
+        _ = manager.runtimeDemandCoordinator.request(
+            reason: .install,
             allowWithoutEnabledExtensions: true
         )
         _ = manager.ensureExtensionController(for: profile.id)
@@ -218,8 +218,8 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
             context: container.mainContext,
             initialProfile: profile
         )
-        _ = manager.requestExtensionRuntime(
-            reason: .attach,
+        _ = manager.runtimeDemandCoordinator.request(
+            reason: .install,
             allowWithoutEnabledExtensions: true
         )
         _ = manager.ensureExtensionController(for: profile.id)
@@ -266,8 +266,8 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
             context: container.mainContext,
             initialProfile: profile
         )
-        _ = manager.requestExtensionRuntime(
-            reason: .attach,
+        _ = manager.runtimeDemandCoordinator.request(
+            reason: .install,
             allowWithoutEnabledExtensions: true
         )
         _ = manager.ensureExtensionController(for: profile.id)

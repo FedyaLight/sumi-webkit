@@ -12,6 +12,14 @@ import WebKit
 
 @available(macOS 15.5, *)
 @MainActor
+protocol ExtensionControllerProvisioning: AnyObject {
+    func ensureExtensionController(
+        for profileID: UUID
+    ) -> WKWebExtensionController
+}
+
+@available(macOS 15.5, *)
+@MainActor
 protocol ExtensionWebViewConfigurationProvisioning: AnyObject {
     func ensureExtensionController(
         for profileId: UUID
@@ -22,7 +30,8 @@ protocol ExtensionWebViewConfigurationProvisioning: AnyObject {
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionControllerProvisioningOwner:
-    ExtensionWebViewConfigurationProvisioning {
+    ExtensionWebViewConfigurationProvisioning,
+    ExtensionControllerProvisioning {
     struct Dependencies {
         let browserConfiguration: BrowserConfiguration
         let profileRuntime: ExtensionProfileRuntime

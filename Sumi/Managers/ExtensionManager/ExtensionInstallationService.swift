@@ -17,7 +17,7 @@ final class ExtensionInstallationService {
     private let activePackageGenerations: ExtensionPackageGenerationRegistry
     private let packageMaintenance: ExtensionPackageMaintenance
     private let packageFileExecutor: ExtensionPackageFileExecutor
-    private let requestRuntimeForInstallation: @MainActor () async -> Void
+    private let requestRuntimeForInstallation: @MainActor () -> Void
     private let removeStoredData: @MainActor (
         String, WebExtensionStorageCleanupPlanner.CleanupMode
     ) async -> Void
@@ -42,7 +42,7 @@ final class ExtensionInstallationService {
         activePackageGenerations: ExtensionPackageGenerationRegistry,
         packageMaintenance: ExtensionPackageMaintenance,
         packageFileExecutor: ExtensionPackageFileExecutor = .init(),
-        requestRuntimeForInstallation: @escaping @MainActor () async -> Void,
+        requestRuntimeForInstallation: @escaping @MainActor () -> Void,
         removeStoredData: @escaping @MainActor (
             String, WebExtensionStorageCleanupPlanner.CleanupMode
         ) async -> Void,
@@ -118,7 +118,7 @@ final class ExtensionInstallationService {
         defer { _ = sourceAdmission.finish(sourceClaim) }
 
         if enableOnInstall {
-            await requestRuntimeForInstallation()
+            requestRuntimeForInstallation()
         }
 
         let package = try await ExtensionInstallationPackage.prepare(
@@ -238,6 +238,9 @@ final class ExtensionInstallationService {
                 record,
                 replacing: recordSnapshot
             )
+            if let activation {
+                runtimeActivation.settlePublication(activation)
+            }
             await package.commit()
             if let activation {
                 runtimeActivation.finish(activation)

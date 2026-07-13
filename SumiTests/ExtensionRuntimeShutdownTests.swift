@@ -107,8 +107,8 @@ final class ExtensionRuntimeShutdownTests: XCTestCase {
         let manager = fixture.manager
         try XCTSkipUnless(manager.isExtensionSupportAvailable)
 
-        _ = manager.requestExtensionRuntime(
-            reason: .attach,
+        _ = manager.runtimeDemandCoordinator.request(
+            reason: .install,
             allowWithoutEnabledExtensions: true,
             profileId: profile.id
         )

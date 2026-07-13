@@ -21,7 +21,7 @@ final class ExtensionActionRuntimeResolver {
         let runtimeAccess: ExtensionRuntimeAccess
         let anchorStore: ExtensionActionPopupAnchorStore
         let anchorResolution: ExtensionActionPopupAnchorResolver
-        let runtimeLifecycle: ExtensionRuntimeLifecycleOwner
+        let profileTransition: ExtensionProfileRuntimeTransition
         let contextResidency: ExtensionContextResidencyOwner
         let failureDiagnostics: ExtensionActionPopupFailureDiagnostics
         let resolvedProfileID: @MainActor (Tab) -> UUID?
@@ -78,8 +78,7 @@ final class ExtensionActionRuntimeResolver {
             profileID: profileID,
             currentTab: currentTab
         )
-        environment.runtimeLifecycle.switchProfile(profileId: profileID)
-        environment.runtimeAccess.ensureExtensionController(profileID)
+        environment.profileTransition.switchProfile(profileID: profileID)
 
         let context: WKWebExtensionContext
         do {
@@ -271,7 +270,7 @@ extension ExtensionActionRuntimeResolver.Environment {
             ),
             anchorStore: manager.actionPopupAnchorStore,
             anchorResolution: manager.actionPopupAnchorResolver,
-            runtimeLifecycle: manager.runtimeLifecycleOwner,
+            profileTransition: manager.profileRuntimeTransition,
             contextResidency: manager.contextResidencyOwner,
             failureDiagnostics: manager.actionPopupFailureDiagnostics,
             resolvedProfileID: { [weak manager] in manager?.resolvedProfileId(for: $0) },

@@ -124,8 +124,8 @@ final class SafariExtensionAutofillInfrastructureTests: XCTestCase {
         )
         let browserManager = makeSafariExtensionTestBrowserManager(profile: profile)
         manager.attach(browserManager: browserManager)
-        _ = manager.requestExtensionRuntime(
-            reason: .attach,
+        _ = manager.runtimeDemandCoordinator.request(
+            reason: .install,
             allowWithoutEnabledExtensions: true
         )
         _ = manager.ensureExtensionController(for: profile.id)
@@ -184,8 +184,8 @@ final class SafariExtensionAutofillInfrastructureTests: XCTestCase {
         )
         let browserManager = makeSafariExtensionTestBrowserManager(profile: profile)
         manager.attach(browserManager: browserManager)
-        _ = manager.requestExtensionRuntime(
-            reason: .attach,
+        _ = manager.runtimeDemandCoordinator.request(
+            reason: .install,
             allowWithoutEnabledExtensions: true
         )
         let expectedController = manager.ensureExtensionController(for: profile.id)

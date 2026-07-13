@@ -235,6 +235,10 @@ final class ExtensionToolbarPinningOwner {
     }
 }
 
+@available(macOS 15.5, *)
+extension ExtensionToolbarPinningOwner:
+    ExtensionToolbarProfileReloading {}
+
 // MARK: - ExtensionManager facade
 
 @available(macOS 15.5, *)

@@ -238,7 +238,7 @@ final class SafariExtensionAccountForkPipelineTests: XCTestCase {
     private struct ForkProbeHarness {
         /// Keeps the in-memory SwiftData container alive for the whole test:
         /// extension-requested tab opening reads persisted extension entities
-        /// (`enabledPersistedExtensionEntities`), which traps if the container
+        /// (installed-catalog publication), which traps if the container
         /// backing the manager's ModelContext has been deallocated.
         let container: ModelContainer
         let manager: ExtensionManager

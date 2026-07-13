@@ -52,6 +52,7 @@ final class ExtensionEnabledRuntimeActivation {
             loadedContext,
             activation: activation
         )
+        try finalizer.settlePublication(loadedContext)
         return nil
     }
 
@@ -81,5 +82,6 @@ final class ExtensionEnabledRuntimeActivation {
             loadedContext,
             activation: .background(.enable)
         )
+        try finalizer.settlePublication(loadedContext)
     }
 }

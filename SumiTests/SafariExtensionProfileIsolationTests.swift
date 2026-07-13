@@ -90,8 +90,8 @@ final class SafariExtensionProfileIsolationTests: XCTestCase {
             initialProfile: profileA
         )
 
-        _ = manager.requestExtensionRuntime(
-            reason: .attach,
+        _ = manager.runtimeDemandCoordinator.request(
+            reason: .install,
             allowWithoutEnabledExtensions: true
         )
 
@@ -129,19 +129,19 @@ final class SafariExtensionProfileIsolationTests: XCTestCase {
             initialProfile: profileA
         )
 
-        _ = manager.requestExtensionRuntime(
-            reason: .attach,
+        _ = manager.runtimeDemandCoordinator.request(
+            reason: .install,
             allowWithoutEnabledExtensions: true
         )
 
-        manager.switchProfile(profileId: profileA.id)
+        manager.profileRuntimeTransition.switchProfile(profileID: profileA.id)
         let activeA = try XCTUnwrap(manager.extensionController)
         XCTAssertEqual(
             activeA.configuration.defaultWebsiteDataStore?.identifier,
             profileA.dataStore.identifier
         )
 
-        manager.switchProfile(profileId: profileB.id)
+        manager.profileRuntimeTransition.switchProfile(profileID: profileB.id)
         let activeB = try XCTUnwrap(manager.extensionController)
         XCTAssertNotIdentical(activeA, activeB)
         XCTAssertEqual(
@@ -162,7 +162,7 @@ final class SafariExtensionProfileIsolationTests: XCTestCase {
             initialProfile: profileA
         )
 
-        _ = manager.requestExtensionRuntime(
+        _ = manager.runtimeDemandCoordinator.request(
             reason: .webViewConfiguration,
             allowWithoutEnabledExtensions: true
         )

@@ -158,12 +158,14 @@ final class ExtensionNormalWindowProjectionResolver {
         guard let manager else { return }
         let runtime = manager.runtime
         if window.isIncognito, let profile = window.ephemeralProfile {
-            manager.switchProfile(profileId: profile.id)
+            manager.profileRuntimeTransition.switchProfile(profileID: profile.id)
         } else if let profileID = window.currentProfileId,
                   runtime.profile(profileID) != nil {
-            manager.switchProfile(profileId: profileID)
+            manager.profileRuntimeTransition.switchProfile(profileID: profileID)
         } else if let currentProfile = runtime.currentProfile() {
-            manager.switchProfile(profileId: currentProfile.id)
+            manager.profileRuntimeTransition.switchProfile(
+                profileID: currentProfile.id
+            )
         }
     }
 }

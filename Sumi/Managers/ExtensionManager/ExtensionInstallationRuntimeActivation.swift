@@ -34,19 +34,22 @@ final class ExtensionInstallationRuntimeActivation {
     private let rollback: ExtensionRuntimeRollback
     private let contextLoader: ExtensionContextLoader
     private let activation: ExtensionInstallRuntimeActivator
+    private let residency: ExtensionContextResidencyOwner
 
     init(
         runtimeAccess: ExtensionRuntimeAccess,
         authority: ExtensionLoadedContextAuthority,
         rollback: ExtensionRuntimeRollback,
         contextLoader: ExtensionContextLoader,
-        activation: ExtensionInstallRuntimeActivator
+        activation: ExtensionInstallRuntimeActivator,
+        residency: ExtensionContextResidencyOwner
     ) {
         self.runtimeAccess = runtimeAccess
         self.authority = authority
         self.rollback = rollback
         self.contextLoader = contextLoader
         self.activation = activation
+        self.residency = residency
     }
 
     func load(
@@ -108,6 +111,13 @@ final class ExtensionInstallationRuntimeActivation {
 
     func validate(_ transaction: Transaction) throws {
         try authority.validate(transaction.loadedContext)
+    }
+
+    func settlePublication(_ transaction: Transaction) {
+        precondition(
+            residency.settleLoadedContext(transaction.loadedContext),
+            "Committed extension runtime lost its exact loaded context"
+        )
     }
 
     func finish(_ transaction: Transaction) {

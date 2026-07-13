@@ -4,6 +4,7 @@ import Foundation
 @MainActor
 extension ExtensionInstallationService {
     static func makeLive(manager: ExtensionManager) -> Self {
+        let runtimeDemand = manager.runtimeDemandCoordinator
         let recordTransaction = ExtensionInstallationRecordTransaction(
             persistence: manager.installationMetadataStore,
             installedRecords: manager.installedExtensionCollection
@@ -32,12 +33,11 @@ extension ExtensionInstallationService {
                 activeGenerations: manager.activePackageGenerations
             ),
             packageFileExecutor: ExtensionPackageFileExecutor(),
-            requestRuntimeForInstallation: { [weak manager] in
-                _ = await manager?.runtimeLifecycleOwner
-                    .requestExtensionRuntimeAndWait(
-                        reason: .install,
-                        allowWithoutEnabledExtensions: true
-                    )
+            requestRuntimeForInstallation: { [runtimeDemand] in
+                _ = runtimeDemand.request(
+                    reason: .install,
+                    allowWithoutEnabledExtensions: true
+                )
             },
             removeStoredData: { [weak manager] extensionID, mode in
                 await manager?.removeStoredWebExtensionData(

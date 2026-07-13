@@ -20,7 +20,8 @@ live_preparation='Sumi/Managers/ExtensionManager/ExtensionLiveWebViewRuntimePrep
 bridge='Sumi/Managers/ExtensionManager/ExtensionBridge.swift'
 browser_composition='Sumi/Managers/BrowserManager/BrowserExtensionBridgeComposition.swift'
 browser_runtime_factory='Sumi/Managers/BrowserManager/BrowserExtensionManagerRuntimeFactory.swift'
-runtime_lifecycle='Sumi/Managers/ExtensionManager/ExtensionRuntimeLifecycleOwner.swift'
+runtime_demand='Sumi/Managers/ExtensionManager/ExtensionRuntimeDemandCoordinator.swift'
+runtime_attachment='Sumi/Managers/ExtensionManager/ExtensionManager+BrowserRuntimeAttachment.swift'
 action_surface='Sumi/Managers/ExtensionManager/ExtensionActionSurfacePublisher.swift'
 runtime_publication='Sumi/Managers/ExtensionManager/ExtensionManager+RuntimePublication.swift'
 
@@ -154,13 +155,8 @@ if rg -n 'updateWebViewsForProfile|reconcile(Profile|WebViews)' "$provisioning" 
   echo 'error: controller provisioning can synchronously re-enter profile reconciliation' >&2
   status=1
 fi
-ready_request_body="$(
-  sed -n \
-    '/if dependencies.runtimeState() == .ready {/,/^        }/p' \
-    "$runtime_lifecycle"
-)"
-if ! rg -Fq 'reason != .webViewConfiguration' <<<"$ready_request_body"; then
-  echo 'error: WebView configuration demand can synchronously re-enter reconciliation' >&2
+if rg -n 'reconcile(Profile)?|runtimeReconciler' "$runtime_demand" >/dev/null; then
+  echo 'error: extension runtime demand can synchronously re-enter reconciliation' >&2
   status=1
 fi
 reload_body="$(
@@ -191,7 +187,7 @@ if [[ -n "$strong_runtime_root_hits" ]]; then
 fi
 attach_body="$(
   sed -n '/func attach(browserManager: BrowserManager)/,/^    }/p' \
-    "$runtime_lifecycle"
+    "$runtime_attachment"
 )"
 if ! rg -Fq 'controllerRuntimeComposition == nil' <<<"$attach_body" \
     || ! rg -Fq 'attachedBrowserManager === browserManager' \

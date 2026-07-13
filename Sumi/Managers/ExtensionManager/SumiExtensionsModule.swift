@@ -321,7 +321,9 @@ final class SumiExtensionsModule {
     }
 
     func switchProfileIfLoaded(_ profile: Profile) {
-        managerIfLoadedAndEnabled()?.switchProfile(profile)
+        managerIfLoadedAndEnabled()?.profileRuntimeTransition.switchProfile(
+            profileID: profile.id
+        )
     }
 
     func notifyTabActivatedIfLoaded(newTab: Tab, previous: Tab?) {
@@ -682,13 +684,6 @@ final class SumiExtensionsModule {
         )
     }
 
-    @discardableResult
-    func requestExtensionRuntime(
-        reason: ExtensionManager.ExtensionRuntimeRequestReason
-    ) -> WKWebExtensionController? {
-        managerIfEnabled()?.requestExtensionRuntime(reason: reason)
-    }
-
     func getExtensionContext(
         for extensionId: String
     ) -> WKWebExtensionContext? {
@@ -831,7 +826,9 @@ final class SumiExtensionsModule {
         guard isEnabled else { return nil }
         if let cachedManager {
             let hasRuntimeDemand =
-                cachedManager.hasEnabledInstalledExtensions
+                cachedManager.installedExtensionCollection.records.contains(
+                    where: \.isEnabled
+                )
                 || cachedManager.runtimeSession
                 .allowsRuntimeWithoutEnabledExtensions
             return hasRuntimeDemand ? cachedManager : nil

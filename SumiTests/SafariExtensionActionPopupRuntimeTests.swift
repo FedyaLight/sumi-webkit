@@ -7,7 +7,7 @@ import XCTest
 @available(macOS 15.5, *)
 @MainActor
 final class SafariExtensionActionPopupRuntimeTests: XCTestCase {
-    func testRequestExtensionRuntimeAndWaitHonorsProfileReadinessWithoutForceReload() async throws {
+    func testRuntimeDemandReusesReadyProfileControllerWithoutForceReload() throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Popup Profile")
         let manager = ExtensionManager(
@@ -15,22 +15,18 @@ final class SafariExtensionActionPopupRuntimeTests: XCTestCase {
             initialProfile: profile
         )
 
-        _ = manager.requestExtensionRuntime(
-            reason: .attach,
+        let initialController = manager.runtimeDemandCoordinator.request(
+            reason: .install,
             allowWithoutEnabledExtensions: true
         )
 
         manager.runtimeSession.runtimeState = .idle
-        manager.markExtensionRuntimeReadyIfProfileContextsLoaded(for: profile.id)
-
-        let runtimeReady = await manager.requestExtensionRuntimeAndWait(
-            reason: .extensionAction,
+        let reusedController = manager.runtimeDemandCoordinator.request(
+            reason: .install,
+            allowWithoutEnabledExtensions: true,
             profileId: profile.id
         )
-        XCTAssertTrue(
-            runtimeReady,
-            "Profile-scoped readiness should satisfy the action-popup runtime gate without a destructive reload"
-        )
+        XCTAssertIdentical(reusedController, initialController)
         XCTAssertEqual(manager.runtimeSession.runtimeState, .ready)
     }
 

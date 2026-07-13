@@ -16,6 +16,7 @@ final class ExtensionContextResidencyOwner {
     struct Dependencies {
         let profileRuntime: ExtensionProfileRuntime
         let runtimeSession: ExtensionRuntimeSession
+        let installedExtensions: InstalledExtensionCollection
         let contextLoadRegistry: ExtensionContextLoadRegistry
         let contextRetirement: ExtensionContextRetirement
         let isExtensionSupportAvailable: @MainActor () -> Bool
@@ -23,11 +24,9 @@ final class ExtensionContextResidencyOwner {
         let ensureExtensionController: @MainActor (UUID) -> Void
         let getExtensionContext: @MainActor (String, UUID) -> WKWebExtensionContext?
         let countLoadedContexts: @MainActor () -> Int
-        let readinessContext: @MainActor (UUID) -> ExtensionRuntimeReadinessContext?
         let extensionEntity: @MainActor (String) throws -> ExtensionEntity?
-        let enabledPersistedExtensionEntities: @MainActor () -> [ExtensionEntity]
         let loadEnabledExtension: @MainActor (ExtensionEntity, UUID) async throws -> Void
-        let setExtensionsLoaded: @MainActor (Bool) -> Void
+        let markRuntimePublicationReady: @MainActor () -> Void
         let trace: @MainActor (() -> String) -> Void
     }
 
@@ -187,41 +186,71 @@ final class ExtensionContextResidencyOwner {
         guard dependencies.isExtensionSupportAvailable() else { return }
 
         dependencies.ensureExtensionController(profileId)
-        let enabledEntities = dependencies.enabledPersistedExtensionEntities()
-        guard enabledEntities.isEmpty == false else { return }
+        let catalogSnapshot = dependencies.installedExtensions.records
+        let enabledRecords = catalogSnapshot.filter(\.isEnabled)
+        guard enabledRecords.isEmpty == false else { return }
 
-        for entity in enabledEntities {
-            guard dependencies.getExtensionContext(entity.id, profileId) == nil else {
+        for record in enabledRecords {
+            let extensionID = record.id
+            guard dependencies.getExtensionContext(extensionID, profileId) == nil else {
                 continue
             }
 
             do {
+                guard let entity = try dependencies.extensionEntity(extensionID),
+                      entity.isEnabled
+                else {
+                    continue
+                }
                 try await dependencies.loadEnabledExtension(
                     entity,
                     profileId
                 )
             } catch {
                 ExtensionManager.logger.error(
-                    "Failed to load enabled extension \(entity.name, privacy: .public) for profile \(profileId.uuidString, privacy: .public): \(error.localizedDescription, privacy: .public)"
+                    "Failed to load enabled extension \(extensionID, privacy: .public) for profile \(profileId.uuidString, privacy: .public): \(error.localizedDescription, privacy: .public)"
                 )
             }
         }
 
-        markExtensionRuntimeReadyIfProfileContextsLoaded(for: profileId)
     }
 
-    func markExtensionRuntimeReadyIfProfileContextsLoaded(for profileId: UUID) {
-        guard dependencies.profileRuntime.controller(for: profileId) != nil else { return }
-        guard let readiness = dependencies.readinessContext(profileId) else { return }
-        dependencies.setExtensionsLoaded(true)
+    @discardableResult
+    func settleLoadedContext(
+        _ loadedContext: ExtensionLoadedContext
+    ) -> Bool {
+        let receipt = loadedContext.bindingReceipt
+        let profileId = receipt.key.profileId
+        guard dependencies.profileRuntime.context(ifCurrent: receipt)
+                === loadedContext.context,
+              dependencies.profileRuntime.controller(ifCurrent: receipt)
+                === loadedContext.controller,
+              loadedContext.context.isLoaded
+        else { return false }
+
+        let catalogSnapshot = dependencies.installedExtensions.records
+        guard catalogSnapshot.contains(where: {
+            $0.id == receipt.key.extensionId && $0.isEnabled
+        }) else { return false }
+        let enabledExtensionIDs = Set(
+            catalogSnapshot.lazy.filter(\.isEnabled).map(\.id)
+        )
+        let readiness = dependencies.profileRuntime.readinessContext(
+            for: profileId,
+            hasEnabledExtensionDemand: enabledExtensionIDs.isEmpty == false,
+            enabledExtensionIDs: enabledExtensionIDs,
+            globalRuntimeReady: dependencies.runtimeSession.runtimeState == .ready
+        )
         if readiness.isProfileReady {
             dependencies.runtimeSession.runtimeState = .ready
         } else if dependencies.runtimeSession.runtimeState != .failed {
             dependencies.runtimeSession.runtimeState = .loading
         }
+        dependencies.markRuntimePublicationReady()
         dependencies.trace {
             "markExtensionRuntimeReady profile=\(profileId.uuidString) loadedContexts=\(self.dependencies.profileRuntime.contexts(for: profileId).count) allEnabledLoaded=\(readiness.isProfileReady) unloadedEnabledExtensionIDs=\(readiness.unloadedEnabledExtensionIDs.joined(separator: ","))"
         }
+        return true
     }
 }
 
@@ -232,6 +261,7 @@ extension ExtensionContextResidencyOwner.Dependencies {
         Self(
             profileRuntime: manager.profileRuntime,
             runtimeSession: manager.runtimeSession,
+            installedExtensions: manager.installedExtensionCollection,
             contextLoadRegistry: manager.contextLoadRegistry,
             contextRetirement: manager.contextRetirement,
             isExtensionSupportAvailable: { [weak manager] in
@@ -249,14 +279,8 @@ extension ExtensionContextResidencyOwner.Dependencies {
             countLoadedContexts: { [weak manager] in
                 manager?.countLoadedExtensionContexts() ?? 0
             },
-            readinessContext: { [weak manager] profileId in
-                manager?.extensionRuntimeReadinessContext(for: profileId)
-            },
             extensionEntity: { [weak manager] extensionId in
                 try manager?.extensionEntity(for: extensionId)
-            },
-            enabledPersistedExtensionEntities: { [weak manager] in
-                manager?.enabledPersistedExtensionEntities() ?? []
             },
             loadEnabledExtension: { [weak manager] entity, profileId in
                 _ = try await manager?.extensionRuntimeLoader.loadEnabled(
@@ -264,8 +288,8 @@ extension ExtensionContextResidencyOwner.Dependencies {
                     profileID: profileId
                 )
             },
-            setExtensionsLoaded: { [weak manager] loaded in
-                manager?.extensionsLoaded = loaded
+            markRuntimePublicationReady: { [weak manager] in
+                manager?.extensionsLoaded = true
             },
             trace: { [weak manager] message in
                 manager?.runtimeDiagnostics.trace(message())
@@ -273,6 +297,10 @@ extension ExtensionContextResidencyOwner.Dependencies {
         )
     }
 }
+
+@available(macOS 15.5, *)
+extension ExtensionContextResidencyOwner:
+    ExtensionInactiveProfileContextRetiring {}
 
 @available(macOS 15.5, *)
 @MainActor
@@ -333,9 +361,4 @@ extension ExtensionManager {
         await contextResidencyOwner.ensureEnabledExtensionsLoaded(for: profileId)
     }
 
-    func markExtensionRuntimeReadyIfProfileContextsLoaded(for profileId: UUID) {
-        contextResidencyOwner.markExtensionRuntimeReadyIfProfileContextsLoaded(
-            for: profileId
-        )
-    }
 }

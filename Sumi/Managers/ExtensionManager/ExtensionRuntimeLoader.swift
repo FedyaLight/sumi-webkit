@@ -183,6 +183,7 @@ final class ExtensionRuntimeLoader {
                 runtimeAccess.runtimeSession.loadedExtensionManifests[
                     entity.id
                 ] = manifest
+                try finalizer.settlePublication(loaded)
                 return nil
             }
 
@@ -197,6 +198,7 @@ final class ExtensionRuntimeLoader {
                 entity.id
             ] = manifest
             installedRecords.upsert(refreshed)
+            try finalizer.settlePublication(loaded)
             return refreshed
         } catch {
             if let loadedContext {
