@@ -1,5 +1,5 @@
 //
-//  BookmarkImportSource.swift
+//  SumiBookmarkImportSource.swift
 //
 //
 //  Derived from DuckDuckGo BrowserServicesKit (https://github.com/duckduckgo/apple-browsers),
@@ -10,27 +10,8 @@
 import Foundation
 import SQLite3
 
-enum BookmarkImportReaderKind: Equatable, Sendable {
-    case html
-    case safariPlist
-    case chromiumJSON
-    case firefoxSQLite
-}
-
-struct BookmarkImportSource: Identifiable, Equatable, Sendable {
-    let id: String
-    var title: String
-    var fileURL: URL
-    var kind: BookmarkImportReaderKind
-
-    init(id: String, title: String, fileURL: URL, kind: BookmarkImportReaderKind) {
-        self.id = id
-        self.title = title
-        self.fileURL = fileURL
-        self.kind = kind
-    }
-
-    func readBookmarks() throws -> [BookmarkOrFolder] {
+extension SumiBookmarkImportSource {
+    func readBookmarks() throws -> [SumiBookmarkImportNode] {
         switch kind {
         case .html:
             return try BookmarkImportReader.readHTML(from: fileURL)
@@ -45,17 +26,28 @@ struct BookmarkImportSource: Identifiable, Equatable, Sendable {
 
     static func detectedBrowserSources(
         homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
-    ) -> [BookmarkImportSource] {
+    ) -> [SumiBookmarkImportSource] {
         let fileManager = FileManager.default
-        var sources: [BookmarkImportSource] = []
+        var sources: [SumiBookmarkImportSource] = []
 
-        func addFileSource(title: String, pathComponents: [String], kind: BookmarkImportReaderKind) {
+        func addFileSource(
+            title: String,
+            pathComponents: [String],
+            kind: SumiBookmarkImportReaderKind
+        ) {
             var url = homeDirectory
             for component in pathComponents {
                 url.appendPathComponent(component)
             }
             if fileManager.fileExists(atPath: url.path) {
-                sources.append(BookmarkImportSource(id: "\(title)-\(url.path)", title: title, fileURL: url, kind: kind))
+                sources.append(
+                    SumiBookmarkImportSource(
+                        id: "\(title)-\(url.path)",
+                        title: title,
+                        fileURL: url,
+                        kind: kind
+                    )
+                )
             }
         }
 
@@ -98,7 +90,10 @@ struct BookmarkImportSource: Identifiable, Equatable, Sendable {
         }
     }
 
-    private static func chromiumProfileSources(browserName: String, baseURL: URL) -> [BookmarkImportSource] {
+    private static func chromiumProfileSources(
+        browserName: String,
+        baseURL: URL
+    ) -> [SumiBookmarkImportSource] {
         let fileManager = FileManager.default
         guard let contents = try? fileManager.contentsOfDirectory(
             at: baseURL,
@@ -112,7 +107,7 @@ struct BookmarkImportSource: Identifiable, Equatable, Sendable {
             let bookmarksURL = profileURL.appendingPathComponent("Bookmarks")
             guard fileManager.fileExists(atPath: bookmarksURL.path) else { return nil }
             let profileName = profileURL.lastPathComponent == "Default" ? "Default" : profileURL.lastPathComponent
-            return BookmarkImportSource(
+            return SumiBookmarkImportSource(
                 id: "\(browserName)-\(profileName)-\(bookmarksURL.path)",
                 title: "\(browserName) - \(profileName)",
                 fileURL: bookmarksURL,
@@ -121,7 +116,10 @@ struct BookmarkImportSource: Identifiable, Equatable, Sendable {
         }
     }
 
-    private static func firefoxProfileSources(browserName: String, profilesURL: URL) -> [BookmarkImportSource] {
+    private static func firefoxProfileSources(
+        browserName: String,
+        profilesURL: URL
+    ) -> [SumiBookmarkImportSource] {
         let fileManager = FileManager.default
         guard let contents = try? fileManager.contentsOfDirectory(
             at: profilesURL,
@@ -134,7 +132,7 @@ struct BookmarkImportSource: Identifiable, Equatable, Sendable {
         return contents.compactMap { profileURL in
             let placesURL = profileURL.appendingPathComponent("places.sqlite")
             guard fileManager.fileExists(atPath: placesURL.path) else { return nil }
-            return BookmarkImportSource(
+            return SumiBookmarkImportSource(
                 id: "\(browserName)-\(profileURL.lastPathComponent)-\(placesURL.path)",
                 title: "\(browserName) - \(profileURL.lastPathComponent)",
                 fileURL: placesURL,
@@ -145,7 +143,7 @@ struct BookmarkImportSource: Identifiable, Equatable, Sendable {
 }
 
 enum BookmarkImportReader {
-    static func readHTML(from fileURL: URL) throws -> [BookmarkOrFolder] {
+    static func readHTML(from fileURL: URL) throws -> [SumiBookmarkImportNode] {
         let html = try String(contentsOf: fileURL, encoding: .utf8)
         let lineParsed = parseBookmarkHTMLLines(html)
         if !lineParsed.isEmpty {
@@ -159,10 +157,10 @@ enum BookmarkImportReader {
         return parseBookmarkHTMLDL(rootDL)
     }
 
-    static func readChromiumBookmarks(from fileURL: URL) throws -> [BookmarkOrFolder] {
+    static func readChromiumBookmarks(from fileURL: URL) throws -> [SumiBookmarkImportNode] {
         let data = try Data(contentsOf: fileURL)
         let decoded = try JSONDecoder().decode(ChromiumBookmarksFile.self, from: data)
-        var bookmarks: [BookmarkOrFolder] = []
+        var bookmarks: [SumiBookmarkImportNode] = []
 
         if let children = decoded.roots.bookmarkBar?.children, !children.isEmpty {
             bookmarks.append(.folder(name: "Bookmarks Bar", children: children.compactMap(importedBookmark(from:))))
@@ -177,14 +175,14 @@ enum BookmarkImportReader {
         return bookmarks
     }
 
-    static func readSafariPlist(from fileURL: URL) throws -> [BookmarkOrFolder] {
+    static func readSafariPlist(from fileURL: URL) throws -> [SumiBookmarkImportNode] {
         let data = try Data(contentsOf: fileURL)
         let plist = try PropertyListSerialization.propertyList(from: data, options: [], format: nil)
         guard let root = plist as? [String: Any] else { return [] }
         return parseSafariChildren(root["Children"] as? [[String: Any]] ?? [])
     }
 
-    static func readFirefoxPlaces(from fileURL: URL) throws -> [BookmarkOrFolder] {
+    static func readFirefoxPlaces(from fileURL: URL) throws -> [SumiBookmarkImportNode] {
         let tempURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("BookmarksFirefox-\(UUID().uuidString).sqlite")
         try? FileManager.default.removeItem(at: tempURL)
@@ -206,9 +204,9 @@ enum BookmarkImportReader {
         return try firefoxChildren(parentID: 0, database: database)
     }
 
-    private static func parseBookmarkHTMLDL(_ dl: XMLNode) -> [BookmarkOrFolder] {
+    private static func parseBookmarkHTMLDL(_ dl: XMLNode) -> [SumiBookmarkImportNode] {
         let children = elementChildren(of: dl)
-        var result: [BookmarkOrFolder] = []
+        var result: [SumiBookmarkImportNode] = []
         var index = 0
 
         while index < children.count {
@@ -237,8 +235,8 @@ enum BookmarkImportReader {
         return result
     }
 
-    private static func parseBookmarkHTMLLines(_ html: String) -> [BookmarkOrFolder] {
-        var stack: [(title: String?, children: [BookmarkOrFolder])] = [(nil, [])]
+    private static func parseBookmarkHTMLLines(_ html: String) -> [SumiBookmarkImportNode] {
+        var stack: [(title: String?, children: [SumiBookmarkImportNode])] = [(nil, [])]
         var pendingFolderTitle: String?
 
         for rawLine in html.components(separatedBy: .newlines) {
@@ -279,11 +277,13 @@ enum BookmarkImportReader {
         return stack.first?.children ?? []
     }
 
-    private static func parseSafariChildren(_ children: [[String: Any]]) -> [BookmarkOrFolder] {
+    private static func parseSafariChildren(
+        _ children: [[String: Any]]
+    ) -> [SumiBookmarkImportNode] {
         children.compactMap(parseSafariItem)
     }
 
-    private static func parseSafariItem(_ item: [String: Any]) -> BookmarkOrFolder? {
+    private static func parseSafariItem(_ item: [String: Any]) -> SumiBookmarkImportNode? {
         let type = item["WebBookmarkType"] as? String
         let title = (item["URIDictionary"] as? [String: Any])?["title"] as? String
             ?? item["Title"] as? String
@@ -310,7 +310,9 @@ enum BookmarkImportReader {
         return .folder(name: folderTitle, children: children)
     }
 
-    private static func importedBookmark(from node: ChromiumBookmarkNode) -> BookmarkOrFolder? {
+    private static func importedBookmark(
+        from node: ChromiumBookmarkNode
+    ) -> SumiBookmarkImportNode? {
         switch node.type {
         case "url":
             guard let urlString = node.url,
@@ -326,7 +328,10 @@ enum BookmarkImportReader {
         }
     }
 
-    private static func firefoxChildren(parentID: Int64, database: OpaquePointer) throws -> [BookmarkOrFolder] {
+    private static func firefoxChildren(
+        parentID: Int64,
+        database: OpaquePointer
+    ) throws -> [SumiBookmarkImportNode] {
         let sql = """
         SELECT b.id, b.type, b.title, p.url, b.guid
         FROM moz_bookmarks b
@@ -343,7 +348,7 @@ enum BookmarkImportReader {
         defer { sqlite3_finalize(statement) }
 
         sqlite3_bind_int64(statement, 1, parentID)
-        var bookmarks: [BookmarkOrFolder] = []
+        var bookmarks: [SumiBookmarkImportNode] = []
         while sqlite3_step(statement) == SQLITE_ROW {
             let id = sqlite3_column_int64(statement, 0)
             let type = sqlite3_column_int(statement, 1)

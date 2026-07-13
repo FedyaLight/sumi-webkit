@@ -26,6 +26,19 @@ struct SumiBookmarkImportNode: Equatable, Sendable {
     let urlString: String?
     var children: [SumiBookmarkImportNode]?
 
+    var url: URL? {
+        urlString.flatMap(URL.init(string:))
+    }
+
+    var isInvalidBookmark: Bool {
+        switch type {
+        case .bookmark, .favorite:
+            return urlString == nil
+        case .folder:
+            return false
+        }
+    }
+
     init(
         name: String,
         type: NodeType,

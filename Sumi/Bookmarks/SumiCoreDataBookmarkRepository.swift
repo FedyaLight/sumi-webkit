@@ -369,11 +369,7 @@ final class SumiCoreDataBookmarkRepository: SumiBookmarkRepository, @unchecked S
             urlKeys: urlKeys
         )
         defer { invalidateSnapshotCache() }
-        let summary = try importer.importBookmarks(
-            bookmarks.map(\.storeBookmarkOrFolder),
-            parent: parent
-        )
-        return SumiBookmarksImportSummary(storeImportSummary: summary)
+        return try importer.importBookmarks(bookmarks, parent: parent)
     }
 
     func replaceBookmarks(
@@ -392,11 +388,7 @@ final class SumiCoreDataBookmarkRepository: SumiBookmarkRepository, @unchecked S
             urlKeys: urlKeys
         )
         defer { invalidateSnapshotCache() }
-        let summary = try importer.importBookmarks(
-            bookmarks.map(\.storeBookmarkOrFolder),
-            parent: root
-        )
-        return SumiBookmarksImportSummary(storeImportSummary: summary)
+        return try importer.importBookmarks(bookmarks, parent: root)
     }
 
     func restoreSnapshot(_ snapshot: SumiBookmarksSnapshot) throws {

@@ -32,14 +32,17 @@ final class BookmarkCoreDataImporter {
         self.urlKeys = urlKeys
     }
 
-    func importBookmarks(_ bookmarks: [BookmarkOrFolder], parent: BookmarkEntity? = nil) throws -> BookmarksImportSummary {
+    func importBookmarks(
+        _ bookmarks: [SumiBookmarkImportNode],
+        parent: BookmarkEntity? = nil
+    ) throws -> SumiBookmarksImportSummary {
         do {
             let targetParent = try parent ?? requiredRootFolder()
             var knownURLKeys = try existingURLKeys()
-            var summary = BookmarksImportSummary(successful: 0, duplicates: 0, failed: 0)
+            var summary = SumiBookmarksImportSummary(successful: 0, duplicates: 0, failed: 0)
 
-            for bookmark in bookmarks {
-                importBookmarkOrFolder(bookmark, into: targetParent, knownURLKeys: &knownURLKeys, summary: &summary)
+            for node in bookmarks {
+                importNode(node, into: targetParent, knownURLKeys: &knownURLKeys, summary: &summary)
             }
 
             if context.hasChanges {
@@ -79,30 +82,30 @@ final class BookmarkCoreDataImporter {
         }
     }
 
-    private func importBookmarkOrFolder(
-        _ bookmarkOrFolder: BookmarkOrFolder,
+    private func importNode(
+        _ node: SumiBookmarkImportNode,
         into parent: BookmarkEntity,
         knownURLKeys: inout Set<String>,
-        summary: inout BookmarksImportSummary
+        summary: inout SumiBookmarksImportSummary
     ) {
-        if bookmarkOrFolder.isInvalidBookmark {
+        if node.isInvalidBookmark {
             summary.failed += 1
             return
         }
 
-        switch bookmarkOrFolder.type {
+        switch node.type {
         case .folder:
             let folder = BookmarkEntity.makeFolder(
-                title: sanitizedFolderTitle(bookmarkOrFolder.name),
+                title: sanitizedFolderTitle(node.name),
                 parent: parent,
                 context: context
             )
             summary.successful += 1
-            for child in bookmarkOrFolder.children ?? [] {
-                importBookmarkOrFolder(child, into: folder, knownURLKeys: &knownURLKeys, summary: &summary)
+            for child in node.children ?? [] {
+                importNode(child, into: folder, knownURLKeys: &knownURLKeys, summary: &summary)
             }
         case .bookmark, .favorite:
-            guard let url = bookmarkOrFolder.url, acceptsURL(url) else {
+            guard let url = node.url, acceptsURL(url) else {
                 summary.failed += 1
                 return
             }
@@ -114,7 +117,7 @@ final class BookmarkCoreDataImporter {
             }
 
             _ = BookmarkEntity.makeBookmark(
-                title: sanitizedTitle(bookmarkOrFolder.name, fallbackURL: url),
+                title: sanitizedTitle(node.name, fallbackURL: url),
                 url: url.absoluteString,
                 parent: parent,
                 context: context
