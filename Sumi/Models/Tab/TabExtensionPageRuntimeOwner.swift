@@ -105,10 +105,32 @@ final class TabExtensionPrepublicationToken {
 final class TabExtensionOpenPublicationClaim {
     fileprivate let sourceIdentity: ObjectIdentifier
     fileprivate let generation: UInt64
+    private let publisher: AnyObject?
+    private let adapter: AnyObject?
 
-    fileprivate init(sourceIdentity: ObjectIdentifier, generation: UInt64) {
+    fileprivate init(
+        sourceIdentity: ObjectIdentifier,
+        generation: UInt64,
+        publisher: AnyObject?,
+        adapter: AnyObject?
+    ) {
         self.sourceIdentity = sourceIdentity
         self.generation = generation
+        self.publisher = publisher
+        self.adapter = adapter
+    }
+
+    func representsPublication(
+        publisher: AnyObject,
+        adapter: AnyObject
+    ) -> Bool {
+        self.publisher === publisher && self.adapter === adapter
+    }
+
+    func publicationAuthority()
+        -> (publisher: AnyObject, adapter: AnyObject)? {
+        guard let publisher, let adapter else { return nil }
+        return (publisher, adapter)
     }
 }
 
@@ -808,7 +830,11 @@ final class TabExtensionPageRuntimeOwner {
     }
 
     @discardableResult
-    func markDidOpenTab(generation: UInt64) -> Bool {
+    func markDidOpenTab(
+        generation: UInt64,
+        publisher: AnyObject? = nil,
+        adapter: AnyObject? = nil
+    ) -> Bool {
         guard state.acceptsFutureOpenPublications,
               state.openPublicationClaim == nil,
               state.didReportOpenForGeneration == 0
@@ -820,7 +846,11 @@ final class TabExtensionPageRuntimeOwner {
         state.preparedWindowPrepublicationToken = nil
         state.committedWindowPrepublicationTokenIdentity = nil
         state.committedWindowPrepublicationToken = nil
-        let claim = makeOpenPublicationClaim(generation: generation)
+        let claim = makeOpenPublicationClaim(
+            generation: generation,
+            publisher: publisher,
+            adapter: adapter
+        )
         state.openPublicationClaim = claim
         state.settledOpenPublicationClaimIdentity = nil
         state.didReportOpenForGeneration = generation
@@ -842,7 +872,9 @@ final class TabExtensionPageRuntimeOwner {
     func markDidOpenTab(
         generation: UInt64,
         committedWindowPrepublication token:
-            TabExtensionPrepublicationToken
+            TabExtensionPrepublicationToken,
+        publisher: AnyObject? = nil,
+        adapter: AnyObject? = nil
     ) -> Bool {
         guard token.sourceIdentity == ObjectIdentifier(self),
               state.acceptsFutureOpenPublications,
@@ -857,7 +889,11 @@ final class TabExtensionPageRuntimeOwner {
         else {
             return false
         }
-        let claim = makeOpenPublicationClaim(generation: generation)
+        let claim = makeOpenPublicationClaim(
+            generation: generation,
+            publisher: publisher,
+            adapter: adapter
+        )
         state.openPublicationClaim = claim
         state.settledOpenPublicationClaimIdentity = nil
         state.didReportOpenForGeneration = generation
@@ -868,20 +904,32 @@ final class TabExtensionPageRuntimeOwner {
     }
 
     func reserveDidOpenTab(
-        generation: UInt64
+        generation: UInt64,
+        publisher: AnyObject? = nil,
+        adapter: AnyObject? = nil
     ) -> TabExtensionOpenPublicationClaim? {
-        guard markDidOpenTab(generation: generation) else { return nil }
+        guard markDidOpenTab(
+            generation: generation,
+            publisher: publisher,
+            adapter: adapter
+        ) else {
+            return nil
+        }
         return currentOpenPublicationClaim(generation: generation)
     }
 
     func reserveDidOpenTab(
         generation: UInt64,
         committedWindowPrepublication token:
-            TabExtensionPrepublicationToken
+            TabExtensionPrepublicationToken,
+        publisher: AnyObject? = nil,
+        adapter: AnyObject? = nil
     ) -> TabExtensionOpenPublicationClaim? {
         guard markDidOpenTab(
             generation: generation,
-            committedWindowPrepublication: token
+            committedWindowPrepublication: token,
+            publisher: publisher,
+            adapter: adapter
         ) else {
             return nil
         }
@@ -927,11 +975,15 @@ final class TabExtensionPageRuntimeOwner {
     }
 
     private func makeOpenPublicationClaim(
-        generation: UInt64
+        generation: UInt64,
+        publisher: AnyObject?,
+        adapter: AnyObject?
     ) -> TabExtensionOpenPublicationClaim {
         TabExtensionOpenPublicationClaim(
             sourceIdentity: ObjectIdentifier(self),
-            generation: generation
+            generation: generation,
+            publisher: publisher,
+            adapter: adapter
         )
     }
 

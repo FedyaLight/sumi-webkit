@@ -32,7 +32,6 @@ final class ExtensionManager: NSObject, ObservableObject {
             runtimeSession.extensionsLoaded = newValue
         }
     }
-    @Published var isPopupActive = false
     @Published var pinnedToolbarExtensionIDs: [String] = []
 
     enum ExtensionBackgroundWakeReason: String, Codable, CaseIterable {
@@ -274,9 +273,7 @@ final class ExtensionManager: NSObject, ObservableObject {
     lazy var extensionInstaller = ExtensionInstallationService.makeLive(
         manager: self
     )
-    lazy var actionPopupAnchorResolver = ExtensionActionPopupAnchorResolver(
-        manager: self
-    )
+    lazy var actionPopupAnchorResolver = makeActionPopupAnchorResolver()
     lazy var actionPopupFailureDiagnostics = ExtensionActionPopupFailureDiagnostics(
         manager: self
     )
@@ -376,7 +373,8 @@ final class ExtensionManager: NSObject, ObservableObject {
         backgroundRuntimeState: backgroundRuntimeStateOwner,
         runtimeSession: runtimeSession,
         errorObservation: contextErrorObservation,
-        diagnostics: runtimeDiagnostics
+        diagnostics: runtimeDiagnostics,
+        actionPopups: actionPopupRuntimeRetirement
     )
     lazy var contextLoadAdmission = ExtensionContextLoadAdmission(
         mutationRegistry: runtimeMutationRegistry,
@@ -441,9 +439,8 @@ final class ExtensionManager: NSObject, ObservableObject {
     var contextTabCompatibility: ExtensionContextTabCompatibilityQuery {
         controllerRuntimeComposition!.contextCompatibility
     }
-    lazy var extensionActionInvocation = ExtensionActionInvocationService(
-        environment: .makeLive(manager: self)
-    )
+    lazy var extensionActionInvocation =
+        ExtensionActionInvocationService.live(manager: self)
     lazy var nativeMessageSendSettlement = ExtensionNativeMessageSendSettlement(
         admission: controllerCallbackAdmission
     )
@@ -515,7 +512,40 @@ final class ExtensionManager: NSObject, ObservableObject {
             },
             diagnostics: runtimeDiagnostics
         )
-    lazy var actionPopupSessionOwner = ExtensionActionPopupSessionOwner(manager: self)
+    let actionPopupInvocationLedger = ExtensionActionPopupInvocationLedger()
+    lazy var actionPopupCallbackAdmission = ExtensionActionPopupCallbackAdmission(
+        runtimeBindingAdmission: controllerCallbackAdmission,
+        installedExtensions: installedExtensionCollection
+    )
+    lazy var actionPopupTelemetry = makeActionPopupTelemetry()
+    lazy var actionPopupSourceAdmission = makeActionPopupSourceAdmission()
+    let actionPopupSessionLedger = ExtensionActionPopupSessionLedger()
+    lazy var actionPopupFocusRestorer = ExtensionActionPopupFocusRestorer(
+        windows: { [weak self] in self?.extensionWindowQuery },
+        liveWebView: { [weak self] tab in
+            self?.exactExtensionTabWebViews.liveWebView(for: tab)
+        }
+    )
+    lazy var actionPopupRetirement = ExtensionActionPopupRetirementService(
+        sessions: actionPopupSessionLedger,
+        focusRestorer: actionPopupFocusRestorer,
+        telemetry: actionPopupTelemetry
+    )
+    lazy var actionPopupCommitRecorder = ExtensionActionPopupCommitRecorder(
+        sessions: actionPopupSessionLedger,
+        telemetry: actionPopupTelemetry
+    )
+    lazy var actionPopupCoordinator = makeActionPopupCoordinator()
+    lazy var actionPopupRuntimeRetirement = ExtensionActionPopupRuntimeRetirement(
+        sessions: actionPopupRetirement,
+        invocations: actionPopupInvocationLedger
+    )
+    lazy var actionPopupBindingRecovery = ExtensionActionPopupBindingRecovery(
+        contextRetirement: contextRetirement,
+        contextLoading: contextResidencyOwner,
+        profileRuntime: profileRuntime
+    )
+    var isPopupActive: Bool { actionPopupSessionLedger.hasVisibleSession }
     lazy var keyboardCommandDispatchOwner = ExtensionKeyboardCommandDispatchOwner(
         manager: self
     )
@@ -569,7 +599,9 @@ final class ExtensionManager: NSObject, ObservableObject {
         controllerProvisioning: controllerProvisioningOwner,
         adapterStore: adapterStore,
         optionsWindows: optionsWindows,
-        actionAnchors: actionAnchorStore
+        actionAnchors: actionAnchorStore,
+        actionPopupAnchors: actionPopupAnchorStore,
+        actionPopupInvocations: actionPopupInvocationLedger
     )
     lazy var controllerRuntimeRelease = ExtensionControllerRuntimeRelease(
         browserConfiguration: browserConfiguration,
@@ -675,15 +707,6 @@ final class ExtensionManager: NSObject, ObservableObject {
             self?.toolbarPinningOwner.reconcilePinnedToolbarExtensions()
         }
         toolbarPinningOwner.reloadPinnedToolbarExtensionsForCurrentProfile()
-        SafariExtensionAutofillFillDiagnostics.deferredFillCompletionHandler = {
-            [weak self] extensionId in
-            guard let extensionId else { return }
-            self?.actionPopupSessionOwner.completeDeferredContextUnload(
-                forExtensionId: extensionId,
-                reason: "relaySucceeded"
-            )
-        }
-
         // The deinit teardown path reaches these owners; forming their weak
         // captures during deallocation traps, so they must exist up front.
         _ = contextErrorObservation

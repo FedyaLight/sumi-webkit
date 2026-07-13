@@ -22,6 +22,7 @@ checks=(
   "scripts/check_extension_permission_callback_admission.sh"
   "scripts/check_extension_native_messaging_callback_admission.sh"
   "scripts/check_extension_action_invocation_admission.sh"
+  "scripts/check_extension_action_popup_lifecycle_boundary.sh"
   "scripts/check_ddg_vendor_test_boundary.sh"
   "scripts/check_modernization_debt.sh"
   "scripts/check_di_ceremony_debt.sh"

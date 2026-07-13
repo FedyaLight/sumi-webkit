@@ -16,7 +16,6 @@ struct ExtensionActionBrowserContext {
     let windowState: BrowserWindowState
     let currentTab: () -> Tab?
     let currentProfileID: () -> UUID?
-    let hasLoadedInitialData: () -> Bool
     let webView: (Tab) -> WKWebView?
     let openSettingsTab: (SettingsTabs) -> Void
     let showExtensionUnavailableAlert: (_ extensionName: String, _ message: String) -> Void
@@ -40,9 +39,6 @@ struct ExtensionActionBrowserContext {
             },
             currentProfileID: { [weak browserManager] in
                 browserManager?.currentProfile?.id
-            },
-            hasLoadedInitialData: { [weak browserManager] in
-                browserManager?.tabManager.startupRestoreLifecycle.hasLoadedInitialData ?? true
             },
             webView: { [weak browserManager, weak windowState] tab in
                 guard let browserManager else { return nil }
@@ -79,23 +75,35 @@ struct ExtensionActionPresentationContext {
     let profileId: UUID?
 
     func presentActionPopup(for installedExtension: InstalledExtension) async {
-        let currentTab = await currentActionTabForClick()
+        // The target is click-time authority. Waiting for startup selection
+        // could silently retarget this action to a tab selected after the
+        // click, so capture once before the first suspension.
+        let currentTab = currentActionTab
         let actionProfileId =
             currentTab?.profileId
             ?? browserContext.windowState.currentProfileId
             ?? browserContext.currentProfileID()
 
-        browserContext.extensionsModule.captureActionPopupAnchor(
+        let anchorSessionToken = browserContext.extensionsModule
+            .captureActionPopupAnchor(
             extensionId: installedExtension.id,
             windowId: browserContext.windowState.id,
             profileId: actionProfileId,
-            tabId: currentTab?.id
-        )
+            tab: currentTab
+            )
 
+        guard let anchorSessionToken else {
+            browserContext.showExtensionUnavailableAlert(
+                installedExtension.name,
+                "Sumi could not bind this popup request to the clicked browser window."
+            )
+            return
+        }
         let result = await browserContext.extensionsModule
             .openActionPopupFromURLHub(
                 extensionId: installedExtension.id,
-                currentTab: currentTab
+                currentTab: currentTab,
+                anchorSessionToken: anchorSessionToken
             )
         guard result.opened == false else { return }
 
@@ -126,30 +134,6 @@ struct ExtensionActionPresentationContext {
             ?? currentActionTab?.profileId
             ?? browserContext.windowState.currentProfileId
             ?? browserContext.currentProfileID()
-    }
-
-    private func currentActionTabForClick() async -> Tab? {
-        if let currentTab = currentActionTab {
-            return currentTab
-        }
-
-        guard browserContext.windowState.isAwaitingInitialSessionResolution
-                || !browserContext.hasLoadedInitialData()
-        else {
-            return nil
-        }
-
-        for _ in 0..<30 {
-            try? await Task.sleep(nanoseconds: 50_000_000)
-            if let currentTab = currentActionTab {
-                return currentTab
-            }
-            if !browserContext.windowState.isAwaitingInitialSessionResolution
-                && browserContext.hasLoadedInitialData() {
-                return nil
-            }
-        }
-        return currentActionTab
     }
 
     private var currentActionTab: Tab? {

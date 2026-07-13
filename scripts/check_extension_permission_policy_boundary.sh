@@ -57,7 +57,7 @@ fi
 
 if rg -n 'ExtensionDeclaredPermissionApplicator|setPermissionStatus\(' \
     Sumi/Managers/ExtensionManager/ExtensionActionInvocationService.swift \
-    Sumi/Managers/ExtensionManager/ExtensionActionPopupSessionOwner.swift; then
+    Sumi/Managers/ExtensionManager/ExtensionActionPopupCoordinator.swift; then
   printf 'error: action/popup path regained permission re-grant mutation\n' >&2
   exit 1
 fi

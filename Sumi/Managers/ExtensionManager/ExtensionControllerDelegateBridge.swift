@@ -62,9 +62,30 @@ final class ExtensionControllerDelegateBridge: NSObject, WKWebExtensionControlle
             )
             return
         }
-        manager.actionPopupSessionOwner.presentActionPopup(
-            action,
-            for: extensionContext,
+        guard let evidence = manager.actionPopupCallbackAdmission.capture(
+                  context: extensionContext,
+                  controller: controller
+              )
+        else {
+            completionHandler(CancellationError())
+            return
+        }
+        let invocation: ExtensionActionPopupInvocationReceipt?
+        switch manager.actionPopupInvocationLedger.claim(
+            action: action,
+            evidence: evidence
+        ) {
+        case .claimed(let receipt):
+            invocation = receipt
+        case .staleBrowserInvocation:
+            completionHandler(CancellationError())
+            return
+        case .unsolicited:
+            invocation = nil
+        }
+        manager.actionPopupCoordinator.present(
+            action: action,
+            evidence: evidence.attaching(invocation: invocation),
             completionHandler: completionHandler
         )
     }

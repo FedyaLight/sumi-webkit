@@ -16,6 +16,8 @@ final class ExtensionRuntimeBookkeepingReset {
     private let adapterStore: ExtensionBrowserAdapterStore
     private let optionsWindows: ExtensionOptionsWindowService
     private let actionAnchors: ExtensionActionAnchorStore
+    private let actionPopupAnchors: ExtensionActionPopupAnchorStore
+    private let actionPopupInvocations: ExtensionActionPopupInvocationLedger
 
     init(
         runtimeSession: ExtensionRuntimeSession,
@@ -28,7 +30,9 @@ final class ExtensionRuntimeBookkeepingReset {
         controllerProvisioning: ExtensionControllerProvisioningOwner,
         adapterStore: ExtensionBrowserAdapterStore,
         optionsWindows: ExtensionOptionsWindowService,
-        actionAnchors: ExtensionActionAnchorStore
+        actionAnchors: ExtensionActionAnchorStore,
+        actionPopupAnchors: ExtensionActionPopupAnchorStore,
+        actionPopupInvocations: ExtensionActionPopupInvocationLedger
     ) {
         self.runtimeSession = runtimeSession
         self.sourceCache = sourceCache
@@ -40,6 +44,8 @@ final class ExtensionRuntimeBookkeepingReset {
         self.adapterStore = adapterStore
         self.optionsWindows = optionsWindows
         self.actionAnchors = actionAnchors
+        self.actionPopupAnchors = actionPopupAnchors
+        self.actionPopupInvocations = actionPopupInvocations
     }
 
     func reset() {
@@ -49,6 +55,8 @@ final class ExtensionRuntimeBookkeepingReset {
         for extensionID in actionAnchors.extensionIDs {
             actionAnchors.clearAnchors(for: extensionID)
         }
+        actionPopupAnchors.removeAll()
+        actionPopupInvocations.removeAll()
 
         runtimeSession.loadedExtensionManifests.removeAll()
         sourceCache.removeAll()

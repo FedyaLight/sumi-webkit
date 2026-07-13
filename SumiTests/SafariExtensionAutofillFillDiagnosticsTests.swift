@@ -37,59 +37,18 @@ final class SafariExtensionAutofillFillDiagnosticsTests: XCTestCase {
         XCTAssertTrue(probe.detail.contains("tabContainerClipsToBoundsChromeOnly"))
     }
 
-    func testShouldRestoreInlineUIHostingFocusAfterPopupClose() {
-        SafariExtensionAutofillFillDiagnostics.beginInlineUISession(extensionId: "ext-focus")
-        SafariExtensionAutofillFillDiagnostics.recordInlineUIRenderAttempted(
-            extensionId: "ext-focus",
-            reason: "test"
-        )
-        XCTAssertTrue(
-            SafariExtensionAutofillFillDiagnostics.shouldRestoreInlineUIHostingFocusAfterPopupClose()
-        )
-
-        SafariExtensionAutofillFillDiagnostics.endInlineUISession(extensionId: "ext-focus")
-        XCTAssertFalse(
-            SafariExtensionAutofillFillDiagnostics.shouldRestoreInlineUIHostingFocusAfterPopupClose()
-        )
-    }
-
-    func testBeginInlineUISessionWithoutRenderAttemptDoesNotRequestFocusRestore() {
-        SafariExtensionAutofillFillDiagnostics.beginInlineUISession(extensionId: "ext-focus")
-        XCTAssertFalse(
-            SafariExtensionAutofillFillDiagnostics.shouldRestoreInlineUIHostingFocusAfterPopupClose()
-        )
-        SafariExtensionAutofillFillDiagnostics.endInlineUISession(extensionId: "ext-focus")
-    }
-
     func testRecordIsNoOpWhenVerboseDisabled() {
         SafariExtensionAutofillFillDiagnostics.record(.fillActionStarted)
         let snapshot = SafariExtensionAutofillFillDiagnostics.snapshot()
         XCTAssertTrue(snapshot.bucketCounts.isEmpty)
     }
 
-    func testFillSessionDefersTeardownAfterPopupCloseWithNativeMessaging() {
+    func testPopupCloseAlwaysEndsDiagnosticFillSession() {
         SafariExtensionAutofillFillDiagnostics.beginFillSession(extensionId: "ext-a")
         SafariExtensionAutofillFillDiagnostics.recordNativeMessagingActivity(extensionId: "ext-a")
         SafariExtensionAutofillFillDiagnostics.setPopupActive(false, extensionId: "ext-a")
 
-        XCTAssertTrue(SafariExtensionAutofillFillDiagnostics.isFillSessionActive)
-        XCTAssertTrue(
-            SafariExtensionAutofillFillDiagnostics.shouldDeferNativeMessagingTeardownOnPopupClose()
-        )
-
-        SafariExtensionAutofillFillDiagnostics.endFillSession(extensionId: "ext-a")
         XCTAssertFalse(SafariExtensionAutofillFillDiagnostics.isFillSessionActive)
-        XCTAssertFalse(
-            SafariExtensionAutofillFillDiagnostics.shouldDeferNativeMessagingTeardownOnPopupClose()
-        )
-    }
-
-    func testIntentionalDeferredTeardownSuppressesRelayCancellationDiagnostics() {
-        SafariExtensionAutofillFillDiagnostics.beginFillSession(extensionId: "ext-b")
-        SafariExtensionAutofillFillDiagnostics.beginIntentionalDeferredTeardown()
-        XCTAssertFalse(SafariExtensionAutofillFillDiagnostics.shouldRecordRelayCancellation())
-        SafariExtensionAutofillFillDiagnostics.endIntentionalDeferredTeardown()
-        XCTAssertTrue(SafariExtensionAutofillFillDiagnostics.shouldRecordRelayCancellation())
     }
 
     func testPasswordManagerFixtureProbeFindsAutofillPages() {

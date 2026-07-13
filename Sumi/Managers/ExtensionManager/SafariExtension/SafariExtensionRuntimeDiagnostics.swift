@@ -371,7 +371,6 @@ enum SafariExtensionPopupAnchorProbe {
 
     static let requiredSymbols: [String] = [
         "func captureActionPopupAnchor(",
-        "func resolveActionPopupAnchor(",
         "func presentResolvedExtensionActionPopup(",
         "ExtensionActionPopupAnchorResolution",
         "extensionActionPopupAnchorRect(for:",

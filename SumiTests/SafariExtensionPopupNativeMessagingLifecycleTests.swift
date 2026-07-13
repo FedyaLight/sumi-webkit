@@ -79,6 +79,51 @@ final class SafariExtensionPopupNativeMessagingLifecycleTests: XCTestCase {
         }
     }
 
+    private final class ControlledOneShotAdapter:
+        SumiNativeMessagingProtocolAdapter {
+        let protocolIdentifier = "test.controlled"
+        let started: XCTestExpectation
+        private var replyHandler: ((Any?, (any Error)?) -> Void)?
+
+        init(started: XCTestExpectation) {
+            self.started = started
+        }
+
+        func supports(hostBundleIdentifier: String) -> Bool {
+            hostBundleIdentifier == "com.example.host"
+        }
+
+        func relayOneShotMessage(
+            request _: SumiNativeMessagingOneShotRequest,
+            launcher _: SumiHostApplicationLaunching,
+            replyHandler: @escaping (Any?, (any Error)?) -> Void
+        ) {
+            self.replyHandler = replyHandler
+            started.fulfill()
+        }
+
+        func complete() {
+            let replyHandler = replyHandler
+            self.replyHandler = nil
+            replyHandler?(["ok": true], nil)
+        }
+
+        func connectPort(
+            session _: SumiNativeMessagingPortSession,
+            launcher _: SumiHostApplicationLaunching,
+            completionHandler: ((any Error)?) -> Void
+        ) {
+            completionHandler(nil)
+        }
+
+        func relayPortMessage(
+            session _: SumiNativeMessagingPortSession,
+            message _: Any
+        ) -> Bool {
+            true
+        }
+    }
+
     override func setUp() {
         super.setUp()
         SumiNativeMessagingRuntimeCounters.resetForTesting()
@@ -186,7 +231,7 @@ final class SafariExtensionPopupNativeMessagingLifecycleTests: XCTestCase {
         XCTAssertTrue(port.isDisconnected)
     }
 
-    func testFillSurvivesPopupCloseWhenNativeMessagingObserved() async throws {
+    func testPopupCloseDoesNotRetireNativePortButContextUnloadDoes() async throws {
         let installed = try makeInstalledExtension(
             id: "ext-fill-survive",
             sourceBundlePath: try makeFixtureApp(
@@ -213,34 +258,26 @@ final class SafariExtensionPopupNativeMessagingLifecycleTests: XCTestCase {
         SafariExtensionAutofillFillDiagnostics.recordNativeMessagingActivity(
             extensionId: installed.id
         )
-        SafariExtensionAutofillFillDiagnostics.setPopupActive(false, extensionId: installed.id)
-
-        XCTAssertTrue(
-            SafariExtensionAutofillFillDiagnostics.shouldDeferNativeMessagingTeardownOnPopupClose()
-        )
-        XCTAssertTrue(SafariExtensionAutofillFillDiagnostics.isFillSessionActive)
-
         let port = MockNativeMessagingPort()
         port.applicationIdentifier = "com.example.host"
         _ = await connectReply(relay: relay, port: port, installed: installed)
         XCTAssertFalse(port.isDisconnected)
 
-        var teardownExtensionId: String?
-        SafariExtensionAutofillFillDiagnostics.deferredFillCompletionHandler = { extensionId in
-            teardownExtensionId = extensionId
-            SafariExtensionAutofillFillDiagnostics.endFillSession(extensionId: extensionId)
-            relay.clearLaunchSessionOnExtensionContextUnload(forExtensionId: installed.id)
-        }
-        SafariExtensionAutofillFillDiagnostics.noteNativeMessagingRelaySucceeded(
+        SafariExtensionAutofillFillDiagnostics.setPopupActive(
+            false,
             extensionId: installed.id
         )
 
-        XCTAssertEqual(teardownExtensionId, installed.id)
-        XCTAssertTrue(port.isDisconnected)
         XCTAssertFalse(SafariExtensionAutofillFillDiagnostics.isFillSessionActive)
+        XCTAssertFalse(port.isDisconnected)
+
+        relay.clearLaunchSessionOnExtensionContextUnload(
+            forExtensionId: installed.id
+        )
+        XCTAssertTrue(port.isDisconnected)
     }
 
-    func testRelayNotCancelledMidFillWhenTeardownDeferred() async throws {
+    func testPopupCloseDoesNotCancelInFlightOneShotRelay() async throws {
         let installed = try makeInstalledExtension(
             id: "ext-mid-fill",
             sourceBundlePath: try makeFixtureApp(
@@ -250,10 +287,12 @@ final class SafariExtensionPopupNativeMessagingLifecycleTests: XCTestCase {
         )
         let launcher = MockHostLauncher()
         launcher.bundleURLs["com.example.host"] = URL(fileURLWithPath: "/Applications/Example.app")
+        let relayStarted = expectation(description: "oneShotStarted")
+        let adapter = ControlledOneShotAdapter(started: relayStarted)
         let relay = SumiNativeMessagingRelay(
             launcher: launcher,
             adapterRegistry: SumiNativeMessagingAdapterRegistry(
-                adapters: [SlowOneShotAdapter(sleepDuration: .milliseconds(50))]
+                adapters: [adapter]
             ),
             launchPolicy: SumiCompanionAppLaunchPolicy(),
             loopGuard: SumiNativeMessagingRelayLoopGuard(),
@@ -265,7 +304,6 @@ final class SafariExtensionPopupNativeMessagingLifecycleTests: XCTestCase {
         SafariExtensionAutofillFillDiagnostics.recordNativeMessagingActivity(
             extensionId: installed.id
         )
-        SafariExtensionAutofillFillDiagnostics.setPopupActive(false, extensionId: installed.id)
 
         let expectation = expectation(description: "oneShotCompleted")
         var replyError: (any Error)?
@@ -279,11 +317,15 @@ final class SafariExtensionPopupNativeMessagingLifecycleTests: XCTestCase {
             expectation.fulfill()
         }
 
+        await fulfillment(of: [relayStarted], timeout: 2)
+        SafariExtensionAutofillFillDiagnostics.setPopupActive(
+            false,
+            extensionId: installed.id
+        )
+        adapter.complete()
         await fulfillment(of: [expectation], timeout: 2)
         XCTAssertNil(replyError)
-        XCTAssertTrue(
-            SafariExtensionAutofillFillDiagnostics.shouldDeferNativeMessagingTeardownOnPopupClose()
-        )
+        XCTAssertFalse(SafariExtensionAutofillFillDiagnostics.isFillSessionActive)
     }
 
     // MARK: - Helpers

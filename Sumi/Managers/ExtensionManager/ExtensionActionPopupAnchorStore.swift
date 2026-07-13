@@ -31,8 +31,36 @@ final class ExtensionActionPopupAnchorStore {
         return latestSessionByExtensionID[extensionId]
     }
 
-    func contains(sessionToken: UUID) -> Bool {
-        pendingAnchorsBySessionToken[sessionToken] != nil
+    func contains(sessionToken: UUID, now: Date = Date()) -> Bool {
+        pruneExpiredAnchors(now: now)
+        return pendingAnchorsBySessionToken[sessionToken] != nil
+    }
+
+    func anchor(
+        sessionToken: UUID,
+        now: Date = Date()
+    ) -> ExtensionActionPopupAnchor? {
+        pruneExpiredAnchors(now: now)
+        return pendingAnchorsBySessionToken[sessionToken]
+    }
+
+    /// Atomically admits only the newest still-live click for an extension.
+    /// Older non-expired anchors remain useful for diagnostics but cannot
+    /// present after a newer click superseded them.
+    func claimAnchor(
+        sessionToken: UUID,
+        extensionID: String,
+        now: Date = Date()
+    ) -> ExtensionActionPopupAnchor? {
+        pruneExpiredAnchors(now: now)
+        guard latestSessionByExtensionID[extensionID] == sessionToken,
+              let anchor = pendingAnchorsBySessionToken[sessionToken],
+              anchor.extensionID == extensionID
+        else {
+            return nil
+        }
+        removeAnchor(sessionToken: sessionToken)
+        return anchor
     }
 
     func store(
@@ -68,6 +96,11 @@ final class ExtensionActionPopupAnchorStore {
         for token in staleTokens {
             removeAnchor(sessionToken: token)
         }
+    }
+
+    func removeAll() {
+        pendingAnchorsBySessionToken.removeAll()
+        latestSessionByExtensionID.removeAll()
     }
 
     private func pruneExpiredAnchors(now: Date) {

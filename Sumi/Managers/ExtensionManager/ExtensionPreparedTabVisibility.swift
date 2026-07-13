@@ -1,4 +1,5 @@
 import Foundation
+import WebKit
 
 /// Grants prepared-Tab reads only while WebKit is synchronously crossing the
 /// exact window or Tab open callback that needs window-first visibility.
@@ -9,6 +10,7 @@ final class ExtensionPreparedTabVisibility {
         let token: UUID
         let window: BrowserWindowState
         let adapter: ExtensionWindowAdapter
+        let controller: WKWebExtensionController
     }
 
     private struct TabScope {
@@ -27,11 +29,17 @@ final class ExtensionPreparedTabVisibility {
     func withWindowOpenCallback(
         window: BrowserWindowState,
         adapter: ExtensionWindowAdapter,
+        controller: WKWebExtensionController,
         _ callback: () -> Void
     ) {
         let token = UUID()
         windowScopes.append(
-            WindowScope(token: token, window: window, adapter: adapter)
+            WindowScope(
+                token: token,
+                window: window,
+                adapter: adapter,
+                controller: controller
+            )
         )
         defer { windowScopes.removeAll { $0.token == token } }
         callback()
@@ -62,5 +70,18 @@ final class ExtensionPreparedTabVisibility {
             return true
         }
         return tabScopes.contains { $0.tab === tab }
+    }
+
+    /// Returns authority only while the exact `didOpenWindow` callback that
+    /// exposed this prepared adapter is still on the stack. The controller's
+    /// own open-Tab catalog proves WebKit actually adopted the adapter.
+    func controllerExposingPreparedAdapter(
+        _ adapter: ExtensionTabAdapter
+    ) -> WKWebExtensionController? {
+        windowScopes.reversed().first(where: { scope in
+            scope.controller.extensionContexts.contains { context in
+                context.openTabs.contains { ($0 as AnyObject) === adapter }
+            }
+        })?.controller
     }
 }

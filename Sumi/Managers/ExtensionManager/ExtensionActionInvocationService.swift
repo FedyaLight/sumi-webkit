@@ -25,14 +25,37 @@ final class ExtensionActionInvocationService {
     }
 
     private let environment: Environment
+    private let actionDispatch: any ExtensionActionDispatching
+    private let popupBindingRecovery: any ExtensionActionPopupBindingRecovering
 
-    init(environment: Environment) {
+    init(
+        environment: Environment,
+        actionDispatch: any ExtensionActionDispatching,
+        popupBindingRecovery: any ExtensionActionPopupBindingRecovering
+    ) {
         self.environment = environment
+        self.actionDispatch = actionDispatch
+        self.popupBindingRecovery = popupBindingRecovery
     }
 
     func openPopup(
         extensionID: String,
-        currentTab: Tab?
+        currentTab: Tab?,
+        popupTargetRequest: ExtensionActionPopupTargetRequest = .implicit
+    ) async -> BrowserExtensionActionPopupRequestResult {
+        await openPopupAttempt(
+            extensionID: extensionID,
+            currentTab: currentTab,
+            popupTargetRequest: popupTargetRequest,
+            allowsBindingRecovery: true
+        )
+    }
+
+    private func openPopupAttempt(
+        extensionID: String,
+        currentTab: Tab?,
+        popupTargetRequest: ExtensionActionPopupTargetRequest,
+        allowsBindingRecovery: Bool
     ) async -> BrowserExtensionActionPopupRequestResult {
         guard let request = environment.requestAdmission.capture(
                   extensionID: extensionID,
@@ -44,7 +67,8 @@ final class ExtensionActionInvocationService {
         let ready: ExtensionActionRuntimeResolution.Ready
         switch await environment.runtimeResolver.resolve(
             extensionID: extensionID,
-            currentTab: currentTab
+            currentTab: currentTab,
+            popupTargetRequest: popupTargetRequest
         ) {
         case .blocked(let result):
             return result
@@ -127,21 +151,56 @@ final class ExtensionActionInvocationService {
         trace(
             "urlHubAction performAction extensionId=\(extensionID) actionLabel=\(action.label) actionEnabled=\(action.isEnabled) presentsPopup=\(action.presentsPopup)"
         )
-        guard environment.admission.isCurrent(evidence) else {
-            return Self.staleResult()
-        }
         let presentsPopup = action.presentsPopup
-        evidence.context.performAction(for: evidence.adapter)
+        let popupRegistration: ExtensionActionPopupInvocationRegistration?
+        switch actionDispatch.perform(
+            action: action,
+            evidence: evidence,
+            popupTarget: ready.popupTarget
+        ) {
+        case .performed(let registration):
+            popupRegistration = registration
+        case .stale:
+            return Self.staleResult()
+        case .popupTargetUnavailable:
+            return .blocked(
+                .staleInvocation,
+                message: "The action popup lost its exact presentation target before dispatch."
+            )
+        case .awaitingPopupSettlement:
+            return .blocked(
+                .staleInvocation,
+                message: "This popup is still loading and awaiting WebKit settlement from the previous click."
+            )
+        case .popupBindingRecoveryRequired(let stalledBinding):
+            guard allowsBindingRecovery,
+                  await popupBindingRecovery.recover(stalledBinding)
+            else {
+                return .blocked(
+                    .runtimeLoadFailed,
+                    message: "The stalled WebKit popup runtime could not be replaced safely."
+                )
+            }
+            return await openPopupAttempt(
+                extensionID: extensionID,
+                currentTab: currentTab,
+                popupTargetRequest: popupTargetRequest,
+                allowsBindingRecovery: false
+            )
+        }
         environment.actionDispatchProbe(extensionID)
         // Barrier: dispatch itself is observable; a reentrant replacement
-        // must not record success metrics for superseded authority.
-        if environment.admission.isCurrent(evidence) {
-            environment.runtimeSession.recordRuntimeMetric(
-                for: extensionID
-            ) { metrics in
-                metrics.lastBackgroundWakeReason = .actionPopup
-                metrics.backgroundWakeCount += 1
-            }
+        // cannot undo WebKit's call, but must cancel local popup admission and
+        // return a stale result rather than report a popup that cannot present.
+        guard environment.admission.isCurrent(evidence) else {
+            actionDispatch.cancel(popupRegistration)
+            return Self.staleResult()
+        }
+        environment.runtimeSession.recordRuntimeMetric(
+            for: extensionID
+        ) { metrics in
+            metrics.lastBackgroundWakeReason = .actionPopup
+            metrics.backgroundWakeCount += 1
         }
         return presentsPopup ? .openedPopup : .performedAction
     }
@@ -156,52 +215,5 @@ final class ExtensionActionInvocationService {
     private func trace(_ message: @autoclosure () -> String) {
         guard ExtensionManager.isWebKitRuntimeTraceEnabled else { return }
         environment.trace(message())
-    }
-}
-
-@available(macOS 15.5, *)
-extension ExtensionActionInvocationService.Environment {
-    @MainActor
-    static func makeLive(manager: ExtensionManager) -> Self {
-        let requestAdmission = ExtensionActionRequestAdmission(
-            runtimeBindingAdmission: manager.controllerCallbackAdmission,
-            profileRuntime: manager.profileRuntime,
-            runtime: { [weak manager] in manager?.runtime ?? .inactive },
-            installedExtensions: manager.installedExtensionCollection
-        )
-        let admission = ExtensionActionInvocationAdmission(
-            runtimeBindingAdmission: manager.controllerCallbackAdmission,
-            requestAdmission: requestAdmission,
-            installedExtensions: manager.installedExtensionCollection,
-            adapterStore: manager.adapterStore
-        )
-        return Self(
-            runtimeResolver: ExtensionActionRuntimeResolver(
-                environment: .makeLive(manager: manager)
-            ),
-            requestAdmission: requestAdmission,
-            pageAccess: ExtensionActionPageAccessAuthorizer(
-                environment: .makeLive(manager: manager),
-                admission: admission
-            ),
-            admission: admission,
-            actionPublication: manager.actionSurfacePublisher,
-            runtimeSession: manager.runtimeSession,
-            stableAdapter: { [weak manager] in
-                manager?.adapterCatalog.stableAdapter(for: $0)
-            },
-            registerTab: { [weak manager] tab, reason in
-                manager?.normalTabRegistration.register(tab, reason: reason)
-            },
-            actionDispatchProbe: { [weak manager] extensionID in
-                #if DEBUG
-                    manager?.testHooks.didDispatchExtensionAction?(extensionID)
-                #else
-                    _ = manager
-                    _ = extensionID
-                #endif
-            },
-            trace: { [weak manager] message in manager?.runtimeDiagnostics.trace(message) }
-        )
     }
 }

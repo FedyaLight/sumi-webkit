@@ -68,7 +68,6 @@ struct SafariExtensionAutofillFillDiagnosticSnapshot: Codable, Equatable, Sendab
 
 @MainActor
 enum SafariExtensionAutofillFillDiagnostics {
-    static let deferredFillTeardownTimeout: Duration = .seconds(30)
     private static let extensionResourceSchemes: Set<String> = [
         "webkit-extension",
         "safari-web-extension",
@@ -80,20 +79,12 @@ enum SafariExtensionAutofillFillDiagnostics {
     private static var fillSessionActive = false
     private static var popupActive = false
     private static var nativeMessagingObservedDuringFill = false
-    private static var popupClosedDuringFill = false
-    private static var intentionalDeferredTeardownInProgress = false
     private static var inlineUISessionActive = false
     private static var inlineUIRenderAttemptedInSession = false
     private static var inlineCSSObservedInSession = false
     private static var inlineIframeObservedInSession = false
-    static var deferredFillCompletionHandler: (@MainActor (String?) -> Void)?
 
     static var isFillSessionActive: Bool { fillSessionActive }
-
-    /// Returns true when an extension popup close should return first responder to the tab web view.
-    static func shouldRestoreInlineUIHostingFocusAfterPopupClose() -> Bool {
-        inlineUISessionActive && inlineUIRenderAttemptedInSession
-    }
 
     static func resetForTesting() {
         bucketCounts = [:]
@@ -101,36 +92,19 @@ enum SafariExtensionAutofillFillDiagnostics {
         fillSessionActive = false
         popupActive = false
         nativeMessagingObservedDuringFill = false
-        popupClosedDuringFill = false
-        intentionalDeferredTeardownInProgress = false
         inlineUISessionActive = false
         inlineUIRenderAttemptedInSession = false
         inlineCSSObservedInSession = false
         inlineIframeObservedInSession = false
-        deferredFillCompletionHandler = nil
-    }
-
-    static func shouldDeferNativeMessagingTeardownOnPopupClose() -> Bool {
-        fillSessionActive && nativeMessagingObservedDuringFill
-    }
-
-    static func beginIntentionalDeferredTeardown() {
-        intentionalDeferredTeardownInProgress = true
-    }
-
-    static func endIntentionalDeferredTeardown() {
-        intentionalDeferredTeardownInProgress = false
     }
 
     static func shouldRecordRelayCancellation() -> Bool {
-        guard intentionalDeferredTeardownInProgress == false else { return false }
-        return fillSessionActive
+        fillSessionActive
     }
 
     static func beginFillSession(extensionId: String?) {
         fillSessionActive = true
         nativeMessagingObservedDuringFill = false
-        popupClosedDuringFill = false
         guard RuntimeDiagnostics.isVerboseEnabled else { return }
         record(.fillActionStarted, extensionId: extensionId)
     }
@@ -139,7 +113,6 @@ enum SafariExtensionAutofillFillDiagnostics {
         guard fillSessionActive else { return }
         fillSessionActive = false
         nativeMessagingObservedDuringFill = false
-        popupClosedDuringFill = false
     }
 
     static func setPopupActive(_ isActive: Bool, extensionId: String? = nil) {
@@ -151,17 +124,11 @@ enum SafariExtensionAutofillFillDiagnostics {
 
         guard fillSessionActive else { return }
         if nativeMessagingObservedDuringFill {
-            popupClosedDuringFill = true
-            guard RuntimeDiagnostics.isVerboseEnabled else { return }
-            record(.popupClosedBeforeFillComplete, extensionId: extensionId)
-            return
+            if RuntimeDiagnostics.isVerboseEnabled {
+                record(.popupClosedBeforeFillComplete, extensionId: extensionId)
+            }
         }
         endFillSession(extensionId: extensionId)
-    }
-
-    static func noteNativeMessagingRelaySucceeded(extensionId: String?) {
-        guard fillSessionActive, popupClosedDuringFill else { return }
-        deferredFillCompletionHandler?(extensionId)
     }
 
     static func recordNativeMessagingActivity(extensionId: String?) {

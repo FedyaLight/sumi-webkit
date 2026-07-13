@@ -340,7 +340,7 @@ extension ExtensionManager {
 
     func quiesceForWebsiteDataMutation(profileIDs: Set<UUID>) -> Bool {
         optionsWindows.closeWindows(backedBy: profileIDs)
-        actionPopupSessionOwner.closePopup(backedBy: profileIDs)
+        actionPopupRetirement.closePopup(backedBy: profileIDs)
         return contextResidencyOwner.quiesceForWebsiteDataMutation(
             profileIDs: profileIDs
         )

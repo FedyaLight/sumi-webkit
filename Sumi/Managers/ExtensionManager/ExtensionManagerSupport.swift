@@ -293,11 +293,6 @@ struct ExtensionActionPopupAnchorResolution: Equatable, Sendable {
     }
 }
 
-struct ExtensionActionPopupIdentity: Equatable, Hashable, Sendable {
-    let extensionId: String
-    let profileId: UUID?
-}
-
 /// Click-time anchor captured before async extension runtime work.
 @available(macOS 15.5, *)
 @MainActor
@@ -308,8 +303,11 @@ final class ExtensionActionPopupAnchor {
     let tabID: UUID?
     let sessionToken: UUID
     let capturedAt: Date
+    weak var windowState: BrowserWindowState?
+    weak var tab: Tab?
+    let tabProfileAssignmentRevision: UInt64?
+    let tabDocumentProof: TabCommittedDocumentAuthorityProof?
     weak var buttonView: NSView?
-    var validatedRectInWindow: CGRect?
 
     init(
         extensionID: String,
@@ -318,8 +316,11 @@ final class ExtensionActionPopupAnchor {
         tabID: UUID? = nil,
         sessionToken: UUID = UUID(),
         capturedAt: Date = Date(),
-        buttonView: NSView?,
-        validatedRectInWindow: CGRect?
+        windowState: BrowserWindowState? = nil,
+        tab: Tab? = nil,
+        tabProfileAssignmentRevision: UInt64? = nil,
+        tabDocumentProof: TabCommittedDocumentAuthorityProof? = nil,
+        buttonView: NSView?
     ) {
         self.extensionID = extensionID
         self.profileID = profileID
@@ -327,8 +328,11 @@ final class ExtensionActionPopupAnchor {
         self.tabID = tabID
         self.sessionToken = sessionToken
         self.capturedAt = capturedAt
+        self.windowState = windowState
+        self.tab = tab
+        self.tabProfileAssignmentRevision = tabProfileAssignmentRevision
+        self.tabDocumentProof = tabDocumentProof
         self.buttonView = buttonView
-        self.validatedRectInWindow = validatedRectInWindow
     }
 }
 

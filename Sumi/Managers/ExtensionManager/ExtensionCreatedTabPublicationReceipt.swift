@@ -54,7 +54,9 @@ final class ExtensionCreatedTabPublicationReceipt {
         guard let openClaim = evidence.tab.extensionPageRuntimeOwner
             .reserveDidOpenTab(
                 generation: evidence.generation,
-                committedWindowPrepublication: evidence.stateToken
+                committedWindowPrepublication: evidence.stateToken,
+                publisher: evidence.base.controller,
+                adapter: evidence.adapter
             ) else {
             _ = evidence.tab.extensionPageRuntimeOwner
                 .abortCommittedWindowPrepublicationBeforeOpen(

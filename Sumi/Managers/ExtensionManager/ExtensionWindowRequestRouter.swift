@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 import WebKit
 
 /// Routes WebKit normal-window requests either to an exact existing published
@@ -85,8 +86,7 @@ final class ExtensionWindowRequestRouter {
             }
             let firstURL = tabURLs.first
             if let firstURL,
-               ExtensionActionPopupPresentation
-                .isExtensionExternalWebPopupURL(firstURL),
+               Self.isExternalWebPopupURL(firstURL),
                await self.openExternalTabInPublishedWindow(
                    firstURL,
                    profileID: profileID,
@@ -104,6 +104,14 @@ final class ExtensionWindowRequestRouter {
                 completion: completion
             )
         }
+    }
+
+    private nonisolated static func isExternalWebPopupURL(_ url: URL) -> Bool {
+        guard let scheme = url.scheme?.lowercased(),
+              scheme == "http" || scheme == "https",
+              ExtensionUtils.isExtensionOwnedURL(url) == false
+        else { return false }
+        return true
     }
 
     private func openExternalTabInPublishedWindow(

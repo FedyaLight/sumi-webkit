@@ -23,11 +23,12 @@ fail_matches() {
 admission='Sumi/Managers/ExtensionManager/ExtensionActionInvocationAdmission.swift'
 request_admission='Sumi/Managers/ExtensionManager/ExtensionActionRequestAdmission.swift'
 service='Sumi/Managers/ExtensionManager/ExtensionActionInvocationService.swift'
+dispatch='Sumi/Managers/ExtensionManager/ExtensionActionDispatch.swift'
 authorizer='Sumi/Managers/ExtensionManager/ExtensionActionPageAccessAuthorizer.swift'
 collection='Sumi/Managers/ExtensionManager/InstalledExtensionCollection.swift'
 tests='SumiTests/ExtensionActionInvocationAdmissionTests.swift'
 
-for file in "$request_admission" "$admission" "$service" "$authorizer" "$collection" "$tests"; do
+for file in "$request_admission" "$admission" "$service" "$dispatch" "$authorizer" "$collection" "$tests"; do
   if [[ ! -f "$file" ]]; then
     printf 'error: action invocation admission boundary missing: %s\n' "$file" >&2
     status=1
@@ -76,9 +77,10 @@ fi
 
 # Post-await / between-effect revalidation must stay in place.
 service_revalidation="$(rg -c 'admission\.isCurrent\(evidence\)|admission\.admitAdapter\(' "$service" || true)"
-if (( ${service_revalidation:-0} < 5 )); then
-  printf 'error: invocation service lost staleness revalidation between effects (%s < 5)\n' \
-    "${service_revalidation:-0}" >&2
+dispatch_revalidation="$(rg -c 'admission\.isCurrent\(evidence\)' "$dispatch" || true)"
+if (( ${service_revalidation:-0} < 4 || ${dispatch_revalidation:-0} < 3 )); then
+  printf 'error: invocation transaction lost staleness revalidation between effects (service %s/4, dispatch %s/3)\n' \
+    "${service_revalidation:-0}" "${dispatch_revalidation:-0}" >&2
   status=1
 fi
 authorizer_revalidation="$(rg -c 'admission\.isCurrent\(evidence\)' "$authorizer" || true)"
@@ -122,11 +124,11 @@ fail_matches "URL-equality fallback admission appeared" "$url_fallback_hits"
 # closure bag.
 manager_root_hits="$(
   rg -n 'manager\s*:\s*ExtensionManager|extensionManager\s*:\s*ExtensionManager|weak var manager' \
-    "$admission" || true
+    "$admission" "$dispatch" || true
 )"
 fail_matches "manager root appeared in action invocation admission" "$manager_root_hits"
 closure_bag_hits="$(
-  rg -n 'struct Dependencies|struct Actions\b' "$request_admission" "$admission" "$service" "$authorizer" || true
+  rg -n 'struct Dependencies|struct Actions\b' "$request_admission" "$admission" "$service" "$dispatch" "$authorizer" || true
 )"
 fail_matches "closure-bag DI appeared in the action invocation boundary" "$closure_bag_hits"
 
@@ -171,13 +173,41 @@ unguarded_dispatch="$(
   awk '
     /admission\.isCurrent\(evidence\)/ { guard_line = NR }
     /performAction\(for:/ {
-      if (guard_line == 0 || NR - guard_line > 30) {
+      if (guard_line == 0 || NR - guard_line > 8) {
         printf "%d:%s\n", NR, $0
       }
     }
-  ' "$service"
+  ' "$dispatch"
 )"
 fail_matches "performAction lost its preceding admission barrier" "$unguarded_dispatch"
+direct_dispatch_count="$(rg -c 'performAction\(for:' "$dispatch" || true)"
+service_direct_dispatch_count="$(rg -c 'performAction\(for:' "$service" || true)"
+if (( ${direct_dispatch_count:-0} != 1 || ${service_direct_dispatch_count:-0} != 0 )); then
+  printf 'error: exact dispatch boundary must own the only WebKit action call (dispatch %s, service %s)\n' \
+    "${direct_dispatch_count:-0}" "${service_direct_dispatch_count:-0}" >&2
+  status=1
+fi
+perform_action_line="$(rg -n 'performAction\(for:' "$dispatch" | cut -d: -f1)"
+pre_dispatch_guard_line="$(awk -v call="$perform_action_line" '
+  NR < call && /admission\.isCurrent\(evidence\)/ { line = NR }
+  END { if (line) print line }
+' "$dispatch")"
+post_dispatch_guard_line="$(awk -v call="$perform_action_line" '
+  NR > call && /admission\.isCurrent\(evidence\)/ { print NR; exit }
+' "$dispatch")"
+if [[ -z "$pre_dispatch_guard_line" || -z "$post_dispatch_guard_line" ]] \
+  || (( perform_action_line - pre_dispatch_guard_line > 8 \
+        || post_dispatch_guard_line - perform_action_line > 8 )); then
+  printf 'error: WebKit action call lost its immediate before/after admission barriers\n' >&2
+  status=1
+fi
+registration_line="$(rg -n 'popupInvocations\.register\(' "$dispatch" | cut -d: -f1)"
+cancel_count="$(rg -c '^\s+cancel\(registration\)' "$dispatch" || true)"
+if [[ -z "$registration_line" ]] || (( registration_line >= perform_action_line \
+    || ${cancel_count:-0} != 2 )); then
+  printf 'error: dispatch lost popup registration-before-call or two stale cancellation paths\n' >&2
+  status=1
+fi
 unguarded_metric="$(
   awk '
     /admission\.isCurrent\(evidence\)/ { guard_line = NR }
@@ -190,12 +220,23 @@ unguarded_metric="$(
 )"
 fail_matches "runtime metric mutation lost its preceding admission barrier" "$unguarded_metric"
 
-dispatch_line="$(rg -n 'performAction\(for:' "$service" | head -1 | cut -d: -f1)"
+dispatch_line="$(rg -n 'actionDispatch\.perform\(' "$service" | head -1 | cut -d: -f1)"
 dispatch_probe_line="$(rg -n 'actionDispatchProbe\(extensionID\)' "$service" | head -1 | cut -d: -f1)"
-if [[ -n "${dispatch_line:-}" && -n "${dispatch_probe_line:-}" ]] \
-  && (( dispatch_probe_line <= dispatch_line )); then
-  printf 'error: action dispatch probe runs before WebKit performAction (%s <= %s)\n' \
-    "$dispatch_probe_line" "$dispatch_line" >&2
+post_dispatch_admission_line="$(awk -v probe="$dispatch_probe_line" '
+  NR > probe && /admission\.isCurrent\(evidence\)/ { print NR; exit }
+' "$service")"
+metric_line="$(rg -n 'recordRuntimeMetric\(' "$service" | head -1 | cut -d: -f1)"
+if [[ -z "${dispatch_line:-}" || -z "${dispatch_probe_line:-}" \
+   || -z "${post_dispatch_admission_line:-}" || -z "${metric_line:-}" ]] \
+  || (( dispatch_line >= dispatch_probe_line \
+        || dispatch_probe_line >= post_dispatch_admission_line \
+        || post_dispatch_admission_line >= metric_line )); then
+  printf 'error: service lost dispatch -> probe -> admission -> metric order\n' >&2
+  status=1
+fi
+recovery_retry_count="$(rg -c 'allowsBindingRecovery: false' "$service" || true)"
+if (( ${recovery_retry_count:-0} != 1 )); then
+  printf 'error: popup binding recovery must retry the full transaction exactly once\n' >&2
   status=1
 fi
 
@@ -245,6 +286,7 @@ check_loc() {
 check_loc "$request_admission" 130 "action request admission"
 check_loc "$admission" 210 "action invocation admission"
 check_loc "$service" 240 "action invocation service"
+check_loc "$dispatch" 100 "exact action dispatch"
 check_loc "$authorizer" 320 "page-access authorizer"
 check_loc "$collection" 160 "installed-extension collection"
 
@@ -269,7 +311,12 @@ for required_regression in \
   testExistingRuntimeRebindDuringRuntimeResolutionInvalidatesRequest \
   testDocumentReplacementDuringRuntimeResolutionInvalidatesRequest \
   testAdapterAbsenceIsExactAuthority \
-  testRejectedInvocationDoesNotMaterializeLazyRuntimeSystems; do
+  testRejectedInvocationDoesNotMaterializeLazyRuntimeSystems \
+  testPendingPopupInvocationRequiresRecoveryOnlyAfterDeadline \
+  testCanceledInvocationIsQuarantinedAndLateCallbackIsRejected \
+  testCoalescedPopupInvocationAdoptsNewestExactClickTarget \
+  testCatalogRevisionChangeReplacesUnclaimablePendingInvocation \
+  testContextRetirementQuarantinesBeforeUnloadAndPreservesFailure; do
   if ! rg -Fq "func $required_regression" "$tests"; then
     printf 'error: action invocation admission regression missing: %s\n' \
       "$required_regression" >&2

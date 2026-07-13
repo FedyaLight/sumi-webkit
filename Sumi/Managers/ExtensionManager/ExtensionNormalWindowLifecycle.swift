@@ -441,7 +441,8 @@ final class ExtensionNormalWindowLifecycle {
         publishedByWindowID[windowID] = published
         preparedTabVisibility.withWindowOpenCallback(
             window: window,
-            adapter: projection.windowAdapter
+            adapter: projection.windowAdapter,
+            controller: projection.controller
         ) {
             projection.controller.didOpenWindow(projection.windowAdapter)
             #if DEBUG

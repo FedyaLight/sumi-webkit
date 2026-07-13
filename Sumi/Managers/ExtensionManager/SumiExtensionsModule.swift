@@ -738,7 +738,8 @@ final class SumiExtensionsModule {
 
     func openActionPopupFromURLHub(
         extensionId: String,
-        currentTab: Tab?
+        currentTab: Tab?,
+        anchorSessionToken: UUID
     ) async -> BrowserExtensionActionPopupRequestResult {
         guard isEnabled else {
             return .blocked(
@@ -755,7 +756,8 @@ final class SumiExtensionsModule {
         transferPendingActionAnchors(to: manager)
         return await manager.extensionActionInvocation.openPopup(
             extensionID: extensionId,
-            currentTab: currentTab
+            currentTab: currentTab,
+            popupTargetRequest: .explicitAnchor(anchorSessionToken)
         )
     }
 
@@ -776,14 +778,14 @@ final class SumiExtensionsModule {
         extensionId: String,
         windowId: UUID,
         profileId: UUID?,
-        tabId: UUID? = nil
-    ) -> UUID {
+        tab: Tab? = nil
+    ) -> UUID? {
         managerIfEnabled()?.actionPopupAnchorResolver.captureActionPopupAnchor(
             extensionId: extensionId,
             windowId: windowId,
             profileId: profileId,
-            tabId: tabId
-        ) ?? UUID()
+            tab: tab
+        )
     }
 
     func cancelNativeMessagingSessionsIfLoaded(reason: String) {

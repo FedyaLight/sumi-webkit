@@ -6,6 +6,7 @@ enum ExtensionActionRuntimeResolution {
     struct Ready {
         let profileID: UUID
         let context: WKWebExtensionContext
+        let popupTarget: ExtensionActionPopupInvocationTarget?
     }
 
     case ready(Ready)
@@ -38,7 +39,8 @@ final class ExtensionActionRuntimeResolver {
 
     func resolve(
         extensionID: String,
-        currentTab: Tab?
+        currentTab: Tab?,
+        popupTargetRequest: ExtensionActionPopupTargetRequest = .implicit
     ) async -> ExtensionActionRuntimeResolution {
         guard let extensionRecord = environment.installedExtensions.records.first(where: {
             $0.id == extensionID
@@ -73,10 +75,11 @@ final class ExtensionActionRuntimeResolver {
                 )
             )
         }
-        captureAnchorIfNeeded(
+        let popupTarget = capturePopupTarget(
             extensionID: extensionID,
             profileID: profileID,
-            currentTab: currentTab
+            currentTab: currentTab,
+            request: popupTargetRequest
         )
         environment.profileTransition.switchProfile(profileID: profileID)
 
@@ -163,7 +166,8 @@ final class ExtensionActionRuntimeResolver {
         return .ready(
             .init(
                 profileID: profileID,
-                context: context
+                context: context,
+                popupTarget: popupTarget
             )
         )
     }
@@ -176,24 +180,40 @@ final class ExtensionActionRuntimeResolver {
         environment.runtimeAccess.profileRuntime.currentProfileId
     }
 
-    private func captureAnchorIfNeeded(
+    private func capturePopupTarget(
         extensionID: String,
         profileID: UUID,
-        currentTab: Tab?
-    ) {
-        guard environment.anchorStore.latestSessionToken(for: extensionID) == nil else {
-            return
+        currentTab: Tab?,
+        request: ExtensionActionPopupTargetRequest
+    ) -> ExtensionActionPopupInvocationTarget? {
+        if case .explicitAnchor(let requestedAnchorSessionToken) = request {
+            guard let anchor = environment.anchorStore.anchor(
+                      sessionToken: requestedAnchorSessionToken
+                  ),
+                  anchor.extensionID == extensionID,
+                  anchor.profileID == profileID
+            else {
+                return nil
+            }
+            return .init(
+                anchorSessionToken: requestedAnchorSessionToken,
+                windowID: anchor.windowID
+            )
         }
         let windowID = currentTab.flatMap {
             environment.runtimeAccess.runtime().primaryTrackedWindowId($0.id)
         } ?? environment.activeWindowID()
-        guard let windowID else { return }
-        _ = environment.anchorResolution.captureActionPopupAnchor(
+        guard let windowID,
+              let token = environment.anchorResolution.captureActionPopupAnchor(
             extensionId: extensionID,
             windowId: windowID,
             profileId: profileID,
-            tabId: currentTab?.id
-        )
+            tab: currentTab
+              )
+        else {
+            return nil
+        }
+        return .init(anchorSessionToken: token, windowID: windowID)
     }
 
     private func unavailableContextResult(

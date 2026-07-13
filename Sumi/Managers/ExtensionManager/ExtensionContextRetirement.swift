@@ -21,6 +21,7 @@ final class ExtensionContextRetirement {
     private let runtimeSession: ExtensionRuntimeSession
     private let errorObservation: ExtensionContextErrorObservation
     private let diagnostics: ExtensionRuntimeDiagnostics
+    private let actionPopups: ExtensionActionPopupRuntimeRetirement?
     private let unloadContext: @MainActor (
         WKWebExtensionController,
         WKWebExtensionContext
@@ -37,6 +38,7 @@ final class ExtensionContextRetirement {
         runtimeSession: ExtensionRuntimeSession,
         errorObservation: ExtensionContextErrorObservation,
         diagnostics: ExtensionRuntimeDiagnostics,
+        actionPopups: ExtensionActionPopupRuntimeRetirement? = nil,
         unloadContext: @escaping @MainActor (
             WKWebExtensionController,
             WKWebExtensionContext
@@ -55,6 +57,7 @@ final class ExtensionContextRetirement {
         self.runtimeSession = runtimeSession
         self.errorObservation = errorObservation
         self.diagnostics = diagnostics
+        self.actionPopups = actionPopups
         self.unloadContext = unloadContext
         self.isLoadedContext = isLoadedContext
     }
@@ -73,7 +76,14 @@ final class ExtensionContextRetirement {
     }
 
     func retire(_ receipt: ExtensionContextBindingReceipt) -> Outcome {
+        guard inFlightReceipts.insert(receipt).inserted else {
+            return .retirementInProgress
+        }
+        defer { inFlightReceipts.remove(receipt) }
+
+        actionPopups?.begin(receipt)
         guard let context = profileRuntime.context(ifCurrent: receipt) else {
+            actionPopups?.complete(receipt)
             return .superseded
         }
         guard let controller = profileRuntime.controller(ifCurrent: receipt)
@@ -101,6 +111,12 @@ final class ExtensionContextRetirement {
         else {
             return .superseded
         }
+        guard inFlightReceipts.insert(receipt).inserted else {
+            return .retirementInProgress
+        }
+        defer { inFlightReceipts.remove(receipt) }
+
+        actionPopups?.begin(receipt)
         return retireExact(
             context: context,
             controller: controller,
@@ -113,11 +129,6 @@ final class ExtensionContextRetirement {
         controller: WKWebExtensionController,
         receipt: ExtensionContextBindingReceipt
     ) -> Outcome {
-        guard inFlightReceipts.insert(receipt).inserted else {
-            return .retirementInProgress
-        }
-        defer { inFlightReceipts.remove(receipt) }
-
         let key = receipt.key
         if profileRuntime.isCurrent(receipt) {
             let wakeKey = ExtensionRuntimeResidencyState.scopedKey(
@@ -181,6 +192,7 @@ final class ExtensionContextRetirement {
             extensionId: key.extensionId,
             profileId: key.profileId
         )
+        actionPopups?.complete(receipt)
         guard removal != nil else {
             diagnostics.trace(
                 "contextRetirement superseded extensionId=\(key.extensionId) "

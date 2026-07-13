@@ -174,11 +174,10 @@ extension ExtensionManager {
         #endif
         let closure = ExtensionNormalTabCloseTransaction(
             runtimeSession: runtimeSession,
-            profileRuntime: profileRuntime,
             adapterStore: adapterStore,
             windowPublications: publications,
-            events: tabLifecycleEvents,
-            runtime: { [weak self] in self?.runtime ?? .inactive }
+            preparedTabVisibility: preparedTabVisibility,
+            events: tabLifecycleEvents
         )
         let reload = ExtensionRuntimeReloadTransaction(
             runtimeSession: runtimeSession,
@@ -203,7 +202,6 @@ extension ExtensionManager {
                 self?.settleRuntimePublicationCommit(commit)
             }
         )
-
         normalTabRuntimeComposition = normalTabs
         runtimePublicationComposition = ExtensionRuntimePublicationComposition(
             gate: gate,

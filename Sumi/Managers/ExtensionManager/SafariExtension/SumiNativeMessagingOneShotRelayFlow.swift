@@ -12,19 +12,15 @@ final class SumiNativeMessagingOneShotRelayFlow {
     private let sessionStore: SumiNativeMessagingRelaySessionStore
     private let loopGuard: SumiNativeMessagingRelayLoopGuard
     private let profileRuntimeLoaded: @MainActor () -> Bool
-    private let recordAutofillRelaySuccess: @MainActor (String) -> Void
 
     init(
         sessionStore: SumiNativeMessagingRelaySessionStore,
         loopGuard: SumiNativeMessagingRelayLoopGuard,
-        profileRuntimeLoaded: @escaping @MainActor () -> Bool,
-        recordAutofillRelaySuccess: @escaping @MainActor (String) -> Void =
-            SafariExtensionAutofillFillDiagnostics.noteNativeMessagingRelaySucceeded
+        profileRuntimeLoaded: @escaping @MainActor () -> Bool
     ) {
         self.sessionStore = sessionStore
         self.loopGuard = loopGuard
         self.profileRuntimeLoaded = profileRuntimeLoaded
-        self.recordAutofillRelaySuccess = recordAutofillRelaySuccess
     }
 
     func relay(
@@ -74,7 +70,6 @@ final class SumiNativeMessagingOneShotRelayFlow {
                     }
                 } else {
                     self.loopGuard.recordSupportedAdapterLaunchAttempt(key: loopKey)
-                    self.recordAutofillRelaySuccess(extensionId)
                 }
                 once.call(value, error)
             },

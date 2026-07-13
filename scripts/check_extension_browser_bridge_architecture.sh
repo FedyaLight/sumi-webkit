@@ -424,7 +424,7 @@ fi
 
 for required_exact_close_boundary in \
   'private let deferredTabClosures: ExtensionDeferredTabClosures' \
-  'struct ExtensionNormalTabCloseReceipt' \
+  'final class ExtensionNormalTabCloseReceipt' \
   'func deferTabClose(_ tab: Tab) -> Bool' \
   'drainDeferredTabClosures()' \
   'manager.runtimePublicationReconciler.deferTabClose(tab)' \
@@ -433,7 +433,8 @@ for required_exact_close_boundary in \
   if ! rg -Fq "$required_exact_close_boundary" \
       "$runtime_publication_reconciler" \
       Sumi/Managers/ExtensionManager/SumiExtensionsModule.swift \
-      Sumi/Managers/ExtensionManager/ExtensionNormalTabCloseTransaction.swift; then
+      Sumi/Managers/ExtensionManager/ExtensionNormalTabCloseTransaction.swift \
+      Sumi/Managers/ExtensionManager/ExtensionNormalTabCloseReceipt.swift; then
     printf 'error: exact pre-handoff Tab closure is lost: %s\n' \
       "$required_exact_close_boundary" >&2
     status=1
@@ -675,26 +676,8 @@ legacy_popup_lookup_hits="$(
 )"
 fail_matches "ambiguous action-popup active-tab lookup returned" "$legacy_popup_lookup_hits"
 
-for required_popup_boundary in \
-  'sourceReceipt.resolve(' \
-  'openerProfileID: sourceReceipt.profileID'; do
-  if ! rg -Fq "$required_popup_boundary" \
-      Sumi/Managers/ExtensionManager/ExtensionActionPopupPresentation.swift; then
-    printf 'error: exact action-popup source boundary missing: %s\n' \
-      "$required_popup_boundary" >&2
-    status=1
-  fi
-done
-
-if ! rg -Fq 'childConfiguration.websiteDataStore === profile.dataStore' \
-    Sumi/Managers/ExtensionManager/ExtensionActionPopupSourceReceipt.swift; then
-  printf 'error: exact action-popup child data-store check missing\n' >&2
-    status=1
-fi
-
 normal_window_lookup_consumers=(
   "$extension_tab_projection"
-  Sumi/Managers/ExtensionManager/ExtensionActionPopupPresentation.swift
 )
 raw_normal_window_lookup_hits="$(
   rg -n '\b(browserRuntimeBridgeOwner\.publishedWindowAdapter|adapterCatalog\.windowAdapter)\b' \
@@ -704,11 +687,24 @@ fail_matches \
   "normal-window consumer bypassed context-bound published projection" \
   "$raw_normal_window_lookup_hits"
 
-if ! rg -Fq 'publishedNormalWindowAdapter(' \
-    Sumi/Managers/ExtensionManager/ExtensionActionPopupPresentation.swift; then
-  printf 'error: context-bound action-popup window projection missing\n' >&2
-  status=1
-fi
+popup_delegate_takeover_hits="$(
+  rg -n '(ExtensionActionPopupUIDelegate|ExtensionActionPopupChildWindowRouter|popupWebView\.uiDelegate[[:space:]]*=)' \
+    Sumi/Managers/ExtensionManager/ExtensionActionPopup*.swift || true
+)"
+fail_matches \
+  "action popup replaced WebKit native child-window/file-panel routing" \
+  "$popup_delegate_takeover_hits"
+for native_popup_route in \
+  'openNewTabUsing configuration' \
+  'openNewWindowUsing configuration' \
+  'requestedWindow: configuration.window'; do
+  if ! rg -Fq "$native_popup_route" \
+      Sumi/Managers/ExtensionManager/ExtensionControllerDelegateBridge.swift; then
+    printf 'error: native WebKit popup route missing: %s\n' \
+      "$native_popup_route" >&2
+    status=1
+  fi
+done
 for boundary in 'publishedWindowAdapter(' 'adapter.represents(window)'; do
   if ! rg -Fq "$boundary" "$extension_tab_projection"; then
     printf 'error: exact Tab window projection missing: %s\n' "$boundary" >&2

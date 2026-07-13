@@ -201,7 +201,9 @@ final class ExtensionNormalTabOpenTransaction: ExtensionNormalTabOpening {
         }
 
         guard let openClaim = tab.extensionPageRuntimeOwner.reserveDidOpenTab(
-            generation: openGeneration
+            generation: openGeneration,
+            publisher: controller,
+            adapter: adapter
         ) else {
             return deferOpen("openPublicationClaimAlreadyCurrent")
         }

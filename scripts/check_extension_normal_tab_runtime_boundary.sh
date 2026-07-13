@@ -6,6 +6,8 @@ cd "$repo_root"
 
 old='Sumi/Managers/ExtensionManager/ExtensionNormalTabRuntimeBindingOwner.swift'
 open='Sumi/Managers/ExtensionManager/ExtensionNormalTabOpenTransaction.swift'
+close='Sumi/Managers/ExtensionManager/ExtensionNormalTabCloseTransaction.swift'
+close_receipt='Sumi/Managers/ExtensionManager/ExtensionNormalTabCloseReceipt.swift'
 queries='Sumi/Managers/ExtensionManager/ExtensionNormalTabPublicationQueries.swift'
 registration='Sumi/Managers/ExtensionManager/ExtensionNormalTabRegistration.swift'
 properties='Sumi/Managers/ExtensionManager/ExtensionTabPropertyPublisher.swift'
@@ -14,6 +16,8 @@ deferred='Sumi/Managers/ExtensionManager/ExtensionDeferredTabRegistration.swift'
 events='Sumi/Managers/ExtensionManager/ExtensionTabLifecycleEmitter.swift'
 policy='Sumi/Managers/ExtensionManager/ExtensionContentScriptBindingPolicy.swift'
 visibility='Sumi/Managers/ExtensionManager/ExtensionPreparedTabVisibility.swift'
+lifecycle='Sumi/Managers/ExtensionManager/ExtensionNormalWindowLifecycle.swift'
+tab_state='Sumi/Models/Tab/TabExtensionPageRuntimeOwner.swift'
 bridge='Sumi/Managers/ExtensionManager/ExtensionBridge.swift'
 composition='Sumi/Managers/ExtensionManager/ExtensionManager+RuntimePublicationComposition.swift'
 assembler='Sumi/Managers/ExtensionManager/ExtensionNormalTabRuntimeAssembler.swift'
@@ -137,6 +141,55 @@ if [[ -z "$scope_line" || -z "$handoff_line" ]] || (( scope_line >= handoff_line
   echo 'error: reload handoff can grant prepared Tab reads outside a Tab callback' >&2
   status=1
 fi
+if ! rg -Fq 'controllerExposingPreparedAdapter(' "$visibility" \
+    || ! rg -Fq 'controller: projection.controller' "$lifecycle" \
+    || ! rg -Fq 'let published: Publication?' "$close_receipt" \
+    || ! rg -Fq 'let implicit: Publication?' "$close_receipt" \
+    || ! rg -Fq 'claim.publicationAuthority()' "$close" \
+    || ! rg -Fq 'claim.representsPublication(' "$close" \
+    || ! rg -Fq 'publisher: controller' "$open" \
+    || ! rg -Fq 'adapter: adapter' "$open" \
+    || ! rg -Fq 'self.publisher === publisher' "$tab_state" \
+    || ! rg -Fq 'self.adapter === adapter' "$tab_state" \
+    || ! rg -Fq 'guard receipt.beginClose() else { return }' "$close" \
+    || ! rg -Fq 'private var inFlightCloses: Set<InFlightClose>' "$close" \
+    || ! rg -Fq 'controller.extensionContexts.contains' "$close" \
+    || ! rg -Fq 'ifIdenticalTo: storedAdapter' "$close" \
+    || ! rg -Fq 'testPreHandoffPhysicalTabCloseRetiresExactAdapter' \
+      SumiTests/ExtensionActionPopupSourceReceiptTests.swift \
+    || ! rg -Fq 'testImplicitWindowOpenCloseReceiptIsOneShotAcrossReentry' \
+      SumiTests/ExtensionActionPopupSourceReceiptTests.swift \
+    || ! rg -Fq 'testPhysicalCloseUsesOriginalPublicationAfterControllerAndAdapterRebind' \
+      SumiTests/ExtensionActionPopupSourceReceiptTests.swift \
+    || ! rg -Fq 'testNormalTabCloseClaimsGenerationBeforeReentrantCallbackAndPreservesReplacementAdapter' \
+      SumiTests/ExtensionActionPopupSourceReceiptTests.swift; then
+  echo 'error: implicit WebKit-open Tab close authority is incomplete' >&2
+  status=1
+fi
+if rg -n 'hasPreparedWindowExposure|claimPreparedWindowExposureForClose|reserveImplicitOpenClaim|implicitOpenClaims' \
+    "$visibility" "$close" >/dev/null; then
+  echo 'error: stale prepared-visibility close reservation returned' >&2
+  status=1
+fi
+implicit_capture_line="$(rg -n -F 'preparedTabVisibility.controllerExposingPreparedAdapter(adapter)' "$close" | cut -d: -f1 || true)"
+implicit_close_line="$(rg -n -F 'events.emitDidCloseTab(' "$close" | cut -d: -f1 || true)"
+if [[ -z "$implicit_capture_line" || -z "$implicit_close_line" ]] \
+    || (( implicit_capture_line >= implicit_close_line )); then
+  echo 'error: exact callback controller is not captured before didCloseTab' >&2
+  status=1
+fi
+retirement_line="$(rg -n -F 'retireFutureOpenPublications()' "$close" | cut -d: -f1 || true)"
+store_read_line="$(rg -n -F 'let storedAdapter = adapterStore.tabAdapters' "$close" | cut -d: -f1 || true)"
+if [[ -z "$retirement_line" || -z "$store_read_line" ]] \
+    || (( retirement_line >= store_read_line )); then
+  echo 'error: physical Tab retirement still depends on current adapter-store membership' >&2
+  status=1
+fi
+if rg -n '\bprofileRuntime\b|controllers\.existingController\(for: tab\)' \
+    "$close" >/dev/null; then
+  echo 'error: physical Tab close reconstructs publication from current runtime binding' >&2
+  status=1
+fi
 
 composition_declarations="$(rg -Fc 'struct ExtensionNormalTabRuntimeComposition' "$assembler" || true)"
 composition_declarations="${composition_declarations:-0}"
@@ -187,9 +240,9 @@ if (( materializer_constructions != 1 )); then
 fi
 
 role_caps=(
-  "$open:330" "$queries:170" "$registration:150"
+  "$open:330" "$close:180" "$queries:170" "$registration:150"
   "$properties:110" "$rebind:210" "$deferred:145"
-  "$events:80" "$policy:65" "$visibility:85"
+  "$events:80" "$policy:65" "$visibility:90"
 )
 for role_cap in "${role_caps[@]}"; do
   role="${role_cap%:*}"

@@ -743,6 +743,297 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
         XCTAssertNil(manager.loadedRuntimePublicationReconciler)
     }
 
+    // MARK: - 20. Popup invocation settlement and exact recovery
+
+    func testPendingPopupInvocationRequiresRecoveryOnlyAfterDeadline()
+        async throws {
+        let harness = try await makeHarness(name: "PopupDeadline")
+        let (evidence, action) = try exactInvocation(
+            in: harness
+        )
+        var now: TimeInterval = 10
+        let ledger = ExtensionActionPopupInvocationLedger(
+            recoveryInterval: 5,
+            now: { now }
+        )
+        let target = ExtensionActionPopupInvocationTarget(
+            anchorSessionToken: UUID(),
+            windowID: UUID()
+        )
+
+        guard case .registered = ledger.register(
+            evidence: evidence,
+            action: action,
+            target: target
+        ) else {
+            return XCTFail("first exact invocation must register")
+        }
+        now = 14.9
+        guard case .awaitingSettlement = ledger.register(
+            evidence: evidence,
+            action: action,
+            target: target
+        ) else {
+            return XCTFail("a live request inside the deadline must stay single-flight")
+        }
+        now = 15
+        guard case .recoveryRequired(let receipt) = ledger.register(
+            evidence: evidence,
+            action: action,
+            target: target
+        ) else {
+            return XCTFail("a user retry after the deadline must request exact binding recovery")
+        }
+
+        XCTAssertEqual(
+            receipt,
+            harness.manager.profileRuntime.contextBindingReceipt(
+                extensionId: harness.extensionID,
+                profileId: harness.profileID
+            )
+        )
+    }
+
+    func testCanceledInvocationIsQuarantinedAndLateCallbackIsRejected()
+        async throws {
+        let harness = try await makeHarness(name: "PopupQuarantine")
+        let (evidence, action) = try exactInvocation(in: harness)
+        let ledger = ExtensionActionPopupInvocationLedger(
+            recoveryInterval: 60,
+            now: { 0 }
+        )
+        let target = ExtensionActionPopupInvocationTarget(
+            anchorSessionToken: UUID(),
+            windowID: UUID()
+        )
+        guard case .registered(let registration) = ledger.register(
+            evidence: evidence,
+            action: action,
+            target: target
+        ) else {
+            return XCTFail("first exact invocation must register")
+        }
+        ledger.cancel(registration)
+        guard case .recoveryRequired = ledger.register(
+            evidence: evidence,
+            action: action,
+            target: target
+        ) else {
+            return XCTFail("canceled dispatch must require a fresh binding")
+        }
+        let callbackEvidence = try XCTUnwrap(
+            harness.manager.actionPopupCallbackAdmission.capture(
+                context: harness.context,
+                controller: evidence.runtimeBinding.controller
+            )
+        )
+
+        guard case .staleBrowserInvocation = ledger.claim(
+            action: action,
+            evidence: callbackEvidence
+        ) else {
+            return XCTFail("late callback from a quarantined dispatch must fail closed")
+        }
+    }
+
+    func testCoalescedPopupInvocationAdoptsNewestExactClickTarget()
+        async throws {
+        let harness = try await makeHarness(name: "PopupRetarget")
+        let (evidence, action) = try exactInvocation(in: harness)
+        let ledger = ExtensionActionPopupInvocationLedger(
+            recoveryInterval: 60,
+            now: { 0 }
+        )
+        let firstTarget = ExtensionActionPopupInvocationTarget(
+            anchorSessionToken: UUID(),
+            windowID: UUID()
+        )
+        let newestTarget = ExtensionActionPopupInvocationTarget(
+            anchorSessionToken: UUID(),
+            windowID: UUID()
+        )
+        guard case .registered = ledger.register(
+            evidence: evidence,
+            action: action,
+            target: firstTarget
+        ) else {
+            return XCTFail("first exact invocation must register")
+        }
+        guard case .awaitingSettlement = ledger.register(
+            evidence: evidence,
+            action: action,
+            target: newestTarget
+        ) else {
+            return XCTFail("a coalesced click must keep one WebKit invocation")
+        }
+        let callbackEvidence = try XCTUnwrap(
+            harness.manager.actionPopupCallbackAdmission.capture(
+                context: harness.context,
+                controller: evidence.runtimeBinding.controller
+            )
+        )
+
+        guard case .claimed(let receipt) = ledger.claim(
+            action: action,
+            evidence: callbackEvidence
+        ) else {
+            return XCTFail("the current callback must claim the coalesced invocation")
+        }
+        XCTAssertEqual(receipt.target, newestTarget)
+    }
+
+    func testCatalogRevisionChangeReplacesUnclaimablePendingInvocation()
+        async throws {
+        let harness = try await makeHarness(name: "PopupCatalogRevision")
+        let (firstEvidence, firstAction) = try exactInvocation(in: harness)
+        let ledger = ExtensionActionPopupInvocationLedger(
+            recoveryInterval: 60,
+            now: { 0 }
+        )
+        guard case .registered = ledger.register(
+            evidence: firstEvidence,
+            action: firstAction,
+            target: .init(anchorSessionToken: UUID(), windowID: UUID())
+        ) else {
+            return XCTFail("first catalog revision must register")
+        }
+
+        let installed = try XCTUnwrap(
+            harness.manager.installedExtensionCollection.records.first {
+                $0.id == harness.extensionID
+            }
+        )
+        harness.manager.installedExtensionCollection.upsert(installed)
+        let (currentEvidence, currentAction) = try exactInvocation(in: harness)
+        XCTAssertIdentical(firstAction, currentAction)
+        let currentTarget = ExtensionActionPopupInvocationTarget(
+            anchorSessionToken: UUID(),
+            windowID: UUID()
+        )
+        guard case .registered = ledger.register(
+            evidence: currentEvidence,
+            action: currentAction,
+            target: currentTarget
+        ) else {
+            return XCTFail("new catalog authority must replace the stale entry")
+        }
+        let callbackEvidence = try XCTUnwrap(
+            harness.manager.actionPopupCallbackAdmission.capture(
+                context: harness.context,
+                controller: currentEvidence.runtimeBinding.controller
+            )
+        )
+
+        guard case .claimed(let receipt) = ledger.claim(
+            action: currentAction,
+            evidence: callbackEvidence
+        ) else {
+            return XCTFail("callback must claim current catalog authority")
+        }
+        XCTAssertEqual(receipt.target, currentTarget)
+    }
+
+    func testContextRetirementQuarantinesBeforeUnloadAndPreservesFailure()
+        async throws {
+        let harness = try await makeHarness(name: "PopupRetirementOrdering")
+        let (evidence, action) = try exactInvocation(in: harness)
+        let target = ExtensionActionPopupInvocationTarget(
+            anchorSessionToken: UUID(),
+            windowID: UUID()
+        )
+        guard case .registered = harness.manager.actionPopupInvocationLedger
+            .register(evidence: evidence, action: action, target: target)
+        else {
+            return XCTFail("popup invocation must register before retirement")
+        }
+        let receipt = try XCTUnwrap(
+            harness.manager.profileRuntime.contextBindingReceipt(
+                extensionId: harness.extensionID,
+                profileId: harness.profileID
+            )
+        )
+        var observedQuarantineInsideUnload = false
+        let retirement = ExtensionContextRetirement(
+            profileRuntime: harness.manager.profileRuntime,
+            backgroundRuntimeState: harness.manager.backgroundRuntimeStateOwner,
+            runtimeSession: harness.manager.runtimeSession,
+            errorObservation: harness.manager.contextErrorObservation,
+            diagnostics: harness.manager.runtimeDiagnostics,
+            actionPopups: harness.manager.actionPopupRuntimeRetirement,
+            unloadContext: { _, _ in
+                guard case .recoveryRequired(let observed) = harness.manager
+                    .actionPopupInvocationLedger.register(
+                        evidence: evidence,
+                        action: action,
+                        target: target
+                    )
+                else {
+                    return XCTFail(
+                        "invocation must be quarantined before WebKit unload"
+                    )
+                }
+                XCTAssertEqual(observed, receipt)
+                observedQuarantineInsideUnload = true
+                throw NSError(
+                    domain: "ExtensionActionInvocationAdmissionTests",
+                    code: 1
+                )
+            }
+        )
+
+        XCTAssertEqual(retirement.retire(receipt), .unloadFailed)
+        XCTAssertTrue(observedQuarantineInsideUnload)
+        guard case .recoveryRequired(let preserved) = harness.manager
+            .actionPopupInvocationLedger.register(
+                evidence: evidence,
+                action: action,
+                target: target
+            )
+        else {
+            return XCTFail("failed unload must preserve the quarantine")
+        }
+        XCTAssertEqual(preserved, receipt)
+    }
+
+    func testSuccessfulBindingRecoveryRetriesInvocationServiceOnce()
+        async throws {
+        let harness = try await makeHarness(name: "PopupServiceRecovery")
+        let receipt = try XCTUnwrap(
+            harness.manager.profileRuntime.contextBindingReceipt(
+                extensionId: harness.extensionID,
+                profileId: harness.profileID
+            )
+        )
+        let dispatch = RecoveringActionDispatch(stalledBinding: receipt)
+        let recovery = SuccessfulBindingRecovery()
+        var dispatches = 0
+        harness.manager.testHooks.permissionPromptDecision = { _, _, _ in
+            .allow(expirationDate: nil)
+        }
+        defer { clearHooks(harness) }
+
+        let service = makeInvocationService(
+            manager: harness.manager,
+            actionDispatch: dispatch,
+            bindingRecovery: recovery,
+            actionDispatchProbe: { _ in dispatches += 1 }
+        )
+        let result = await service.openPopup(
+            extensionID: harness.extensionID,
+            currentTab: harness.tab
+        )
+        XCTAssertTrue(
+            result.opened,
+            "unexpected blocker: \(result.blocker?.rawValue ?? "nil") \(result.message)"
+        )
+        XCTAssertEqual(recovery.receipts, [receipt])
+        XCTAssertEqual(dispatch.contexts.count, 2)
+        XCTAssertIdentical(dispatch.contexts.first, harness.context)
+        XCTAssertIdentical(dispatch.contexts.last, harness.context)
+        XCTAssertEqual(dispatches, 1)
+        XCTAssertEqual(harness.actionPopupMetricCount(), 1)
+    }
+
     // MARK: - Harness
 
     private struct Harness {
@@ -755,9 +1046,20 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
 
         @MainActor
         func openPopup() async -> BrowserExtensionActionPopupRequestResult {
-            await manager.extensionActionInvocation.openPopup(
+            let anchor = ExtensionActionPopupAnchor(
                 extensionID: extensionID,
-                currentTab: tab
+                profileID: profileID,
+                windowID: UUID(),
+                tabID: tab.id,
+                sessionToken: UUID(),
+                capturedAt: Date(),
+                buttonView: nil
+            )
+            manager.actionPopupAnchorStore.store(anchor)
+            return await manager.extensionActionInvocation.openPopup(
+                extensionID: extensionID,
+                currentTab: tab,
+                popupTargetRequest: .explicitAnchor(anchor.sessionToken)
             )
         }
 
@@ -823,6 +1125,74 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
             adapterStore: manager.adapterStore
         )
         return (request, invocation)
+    }
+
+    private func makeInvocationService(
+        manager: ExtensionManager,
+        actionDispatch: any ExtensionActionDispatching,
+        bindingRecovery: any ExtensionActionPopupBindingRecovering,
+        actionDispatchProbe: @escaping @MainActor (String) -> Void
+    ) -> ExtensionActionInvocationService {
+        let boundary = makeAdmission(manager: manager)
+        return ExtensionActionInvocationService(
+            environment: .init(
+                runtimeResolver: ExtensionActionRuntimeResolver(
+                    environment: .makeLive(manager: manager)
+                ),
+                requestAdmission: boundary.request,
+                pageAccess: ExtensionActionPageAccessAuthorizer(
+                    environment: .makeLive(manager: manager),
+                    admission: boundary.invocation
+                ),
+                admission: boundary.invocation,
+                actionPublication: manager.actionSurfacePublisher,
+                runtimeSession: manager.runtimeSession,
+                stableAdapter: { [weak manager] in
+                    manager?.adapterCatalog.stableAdapter(for: $0)
+                },
+                registerTab: { [weak manager] tab, reason in
+                    manager?.normalTabRegistration.register(tab, reason: reason)
+                },
+                actionDispatchProbe: actionDispatchProbe,
+                trace: { _ in }
+            ),
+            actionDispatch: actionDispatch,
+            popupBindingRecovery: bindingRecovery
+        )
+    }
+
+    private func exactInvocation(
+        in harness: Harness
+    ) throws -> (ExtensionActionInvocationEvidence, WKWebExtension.Action) {
+        harness.manager.normalTabRegistration.register(
+            harness.tab,
+            reason: "ExtensionActionInvocationAdmissionTests.exactInvocation"
+        )
+        let boundary = makeAdmission(manager: harness.manager)
+        let request = try XCTUnwrap(
+            boundary.request.capture(
+                extensionID: harness.extensionID,
+                currentTab: harness.tab
+            )
+        )
+        let captured = try XCTUnwrap(
+            boundary.invocation.capture(
+                request: request,
+                profileID: harness.profileID,
+                context: harness.context,
+                controller: harness.context.webExtensionController
+            )
+        )
+        let adapter = try XCTUnwrap(
+            harness.manager.adapterCatalog.stableAdapter(for: harness.tab)
+        )
+        let evidence = try XCTUnwrap(
+            boundary.invocation.admitAdapter(adapter, for: captured)
+        )
+        let action = try XCTUnwrap(
+            harness.context.action(for: evidence.adapter)
+        )
+        return (evidence, action)
     }
 
     private func makeHarness(name: String) async throws -> Harness {
@@ -988,6 +1358,43 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
             ),
             manifest: ["manifest_version": 3, "name": "Unrelated", "version": "1.0"]
         )
+    }
+}
+
+@available(macOS 15.5, *)
+@MainActor
+private final class RecoveringActionDispatch: ExtensionActionDispatching {
+    let stalledBinding: ExtensionContextBindingReceipt
+    private(set) var contexts: [WKWebExtensionContext] = []
+
+    init(stalledBinding: ExtensionContextBindingReceipt) {
+        self.stalledBinding = stalledBinding
+    }
+
+    func perform(
+        action _: WKWebExtension.Action,
+        evidence: ExtensionActionInvocationEvidence,
+        popupTarget _: ExtensionActionPopupInvocationTarget?
+    ) -> ExtensionActionDispatchResult {
+        contexts.append(evidence.context)
+        if contexts.count == 1 {
+            return .popupBindingRecoveryRequired(stalledBinding)
+        }
+        return .performed(nil)
+    }
+
+    func cancel(_: ExtensionActionPopupInvocationRegistration?) {}
+}
+
+@available(macOS 15.5, *)
+@MainActor
+private final class SuccessfulBindingRecovery:
+    ExtensionActionPopupBindingRecovering {
+    private(set) var receipts: [ExtensionContextBindingReceipt] = []
+
+    func recover(_ stalled: ExtensionContextBindingReceipt) async -> Bool {
+        receipts.append(stalled)
+        return true
     }
 }
 

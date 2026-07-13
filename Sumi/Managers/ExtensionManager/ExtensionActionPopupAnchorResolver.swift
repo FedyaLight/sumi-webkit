@@ -48,8 +48,8 @@ final class ExtensionActionPopupAnchorResolver {
         extensionId: String,
         windowId: UUID,
         profileId: UUID?,
-        tabId: UUID? = nil
-    ) -> UUID {
+        tab: Tab? = nil
+    ) -> UUID? {
         let captureProfileId =
             profileId
             ?? windowQuery()?.extensionWindowState(for: windowId).flatMap {
@@ -58,193 +58,152 @@ final class ExtensionActionPopupAnchorResolver {
             ?? fallbackProfileId()
 
         guard let captureProfileId else {
-            let sessionToken = UUID()
             trace {
                 "actionPopupAnchor capture skipped extensionId=\(extensionId) reason=missingProfile"
             }
-            return sessionToken
+            return nil
+        }
+
+        guard let windowState = windowQuery()?.extensionWindowState(
+                  for: windowId
+              ),
+              windowMatchesProfile(windowState, captureProfileId),
+              tab.map({
+                  windowQuery()?.extensionTab(withID: $0.id, in: windowState)
+                      === $0
+                      && windowQuery()?.currentExtensionTab(in: windowState)
+                          === $0
+              }) ?? true
+        else {
+            return nil
         }
 
         let buttonView = liveActionAnchorView(
             for: extensionId,
             windowId: windowId
         )
-        let validatedRectInWindow = snapshotAnchorRectInWindow(for: buttonView)
 
         let anchor = ExtensionActionPopupAnchor(
             extensionID: extensionId,
             profileID: captureProfileId,
             windowID: windowId,
-            tabID: tabId,
-            buttonView: buttonView,
-            validatedRectInWindow: validatedRectInWindow
+            tabID: tab?.id,
+            windowState: windowState,
+            tab: tab,
+            tabProfileAssignmentRevision: tab?.profileAssignment.changeRevision,
+            tabDocumentProof: tab?.committedDocumentRuntime.authorityProof,
+            buttonView: buttonView
         )
 
         actionPopupAnchorStore.store(anchor)
 
         trace {
-            "actionPopupAnchor captured extensionId=\(extensionId) profileId=\(captureProfileId.uuidString) windowId=\(windowId.uuidString) tabId=\(tabId?.uuidString ?? "nil") sessionToken=\(anchor.sessionToken.uuidString) hasButtonView=\(buttonView != nil) hasRect=\(validatedRectInWindow != nil)"
+            "actionPopupAnchor captured extensionId=\(extensionId) profileId=\(captureProfileId.uuidString) windowId=\(windowId.uuidString) tabId=\(tab?.id.uuidString ?? "nil") sessionToken=\(anchor.sessionToken.uuidString) hasButtonView=\(buttonView != nil)"
         }
         return anchor.sessionToken
     }
 
-    func resolveActionPopupAnchor(
-        for extensionId: String,
-        profileId: UUID?,
-        preferredWindowId: UUID? = nil
-    ) -> (
-        anchorView: NSView,
-        source: ExtensionActionPopupAnchorSource,
-        resolution: ExtensionActionPopupAnchorResolution
-    )? {
-        let presentationProfileId =
-            profileId
-            ?? fallbackProfileId()
-
-        var pendingAnchor: ExtensionActionPopupAnchor? =
-            actionPopupAnchorStore.latestAnchor(for: extensionId)
-
-        if let staleAnchor = pendingAnchor,
-           let presentationProfileId,
-           staleAnchor.profileID != presentationProfileId {
-            actionPopupAnchorStore.consume(sessionToken: staleAnchor.sessionToken)
-            trace {
-                "actionPopupAnchor stale session extensionId=\(extensionId) reason=profileMismatch capturedProfile=\(staleAnchor.profileID.uuidString) resolvedProfile=\(presentationProfileId.uuidString)"
-            }
-            pendingAnchor = nil
-        }
-
-        let targetWindow = resolveActionPopupTargetWindow(
-            pendingAnchor: pendingAnchor,
-            preferredWindowId: preferredWindowId,
-            profileId: presentationProfileId
-        )
-        let targetWindowId = targetWindow?.id
-        let targetWindowProfileMatches = presentationProfileId.map { profileId in
-            targetWindow.map { windowMatchesProfile($0, profileId) } ?? false
-        } ?? true
-
-        if presentationProfileId != nil, targetWindowId == nil {
-            let resolution = ExtensionActionPopupAnchorResolution(
-                anchorResolved: false,
-                anchorSource: pendingAnchor == nil ? nil : .stale,
-                windowMatch: false,
-                profileMatch: false,
-                sessionToken: pendingAnchor?.sessionToken
-            )
-            trace {
-                "actionPopupAnchor unresolved extensionId=\(extensionId) reason=profileWindowUnavailable \(resolution.traceLine)"
-            }
-            return nil
-        } else if let pendingAnchor,
-                  let buttonView = pendingAnchor.buttonView,
-                  isActionPopupAnchorViewReady(buttonView),
-                  let window = buttonView.window,
-                  let targetWindow,
-                  let targetAppKitWindow = windowQuery()?.appKitWindow(for: targetWindow),
-                  window === targetAppKitWindow {
-            let resolution = ExtensionActionPopupAnchorResolution(
-                anchorResolved: true,
-                anchorSource: .button,
-                windowMatch: window === targetAppKitWindow,
-                profileMatch: presentationProfileId.map { pendingAnchor.profileID == $0 } ?? true,
-                sessionToken: pendingAnchor.sessionToken
-            )
-            trace {
-                "actionPopupAnchor resolved extensionId=\(extensionId) \(resolution.traceLine)"
-            }
-            return (buttonView, .button, resolution)
-        } else if let pendingAnchor,
-                  pendingAnchor.buttonView != nil,
-                  pendingAnchor.validatedRectInWindow != nil {
-            trace {
-                "actionPopupAnchor stale session extensionId=\(extensionId) sessionToken=\(pendingAnchor.sessionToken.uuidString)"
-            }
-        }
-
-        if let targetWindowId,
-           let currentView = liveActionAnchorView(for: extensionId, windowId: targetWindowId),
-           isActionPopupAnchorViewReady(currentView) {
-            let windowMatch =
-                currentView.window
-                === targetWindow.flatMap({ windowQuery()?.appKitWindow(for: $0) })
-            let resolution = ExtensionActionPopupAnchorResolution(
-                anchorResolved: true,
-                anchorSource: .current,
-                windowMatch: windowMatch,
-                profileMatch: targetWindowProfileMatches,
-                sessionToken: pendingAnchor?.sessionToken
-            )
-            trace {
-                "actionPopupAnchor re-resolved extensionId=\(extensionId) \(resolution.traceLine)"
-            }
-            return (currentView, .current, resolution)
-        }
-
-        if let targetWindowId,
-           let fallbackView = urlHubFallbackAnchorView(for: targetWindowId),
-           isActionPopupAnchorViewReady(fallbackView) {
-            let resolution = ExtensionActionPopupAnchorResolution(
-                anchorResolved: true,
-                anchorSource: .fallback,
-                windowMatch: true,
-                profileMatch: targetWindowProfileMatches,
-                sessionToken: pendingAnchor?.sessionToken
-            )
-            trace {
-                "actionPopupAnchor urlHubFallback extensionId=\(extensionId) windowId=\(targetWindowId.uuidString) \(resolution.traceLine)"
-            }
-            return (fallbackView, .fallback, resolution)
-        }
-
-        let resolution = ExtensionActionPopupAnchorResolution(
-            anchorResolved: false,
-            anchorSource: pendingAnchor == nil ? nil : .stale,
-            windowMatch: false,
-            profileMatch: presentationProfileId.map {
-                pendingAnchor?.profileID == $0
-            } ?? false,
-            sessionToken: pendingAnchor?.sessionToken
-        )
-        trace {
-            "actionPopupAnchor unresolved extensionId=\(extensionId) \(resolution.traceLine)"
-        }
-        return nil
-    }
-
     func presentResolvedExtensionActionPopup(
         _ popover: NSPopover,
-        for extensionId: String,
-        profileId: UUID?,
-        preferredWindowId: UUID? = nil
+        target: ExtensionActionPopupPresentationTarget,
+        isCurrent: @escaping @MainActor () -> Bool
     ) -> ExtensionActionPopupAnchorResolution {
-        ExtensionActionPopupPresentation.prepare(popover)
-
-        guard let resolved = resolveActionPopupAnchor(
-            for: extensionId,
-            profileId: profileId,
-            preferredWindowId: preferredWindowId
-        ) else {
+        guard isCurrent() else { return .unresolved }
+        let anchor = target.anchor
+        guard let resolved = resolveExactTarget(
+            target,
+            anchor: anchor
+        ), isCurrent() else {
             return .unresolved
         }
 
-        if let anchorWindow = resolved.anchorView.window,
-           let appearance = windowPresentation()?.extensionActionPopupAppearance(
+        let appearance = resolved.anchorView.window.flatMap { anchorWindow in
+            windowPresentation()?.extensionActionPopupAppearance(
                forAnchorWindow: anchorWindow,
                fallback: anchorWindow.effectiveAppearance
-           ) {
+            )
+        }
+        guard isCurrent() else { return .unresolved }
+        if let appearance {
             popover.appearance = appearance
         }
+        guard isCurrent() else { return .unresolved }
 
         ExtensionActionPopupPresentation.show(
             popover,
             relativeTo: resolved.anchorView,
             preferredEdge: .maxY
         )
-        actionPopupAnchorStore.consume(
-            sessionToken: resolved.resolution.sessionToken
-        )
         return resolved.resolution
+    }
+
+    private func resolveExactTarget(
+        _ target: ExtensionActionPopupPresentationTarget,
+        anchor: ExtensionActionPopupAnchor?
+    ) -> (
+        anchorView: NSView,
+        source: ExtensionActionPopupAnchorSource,
+        resolution: ExtensionActionPopupAnchorResolution
+    )? {
+        guard let windowState = windowQuery()?.extensionWindowState(
+                  for: target.windowID
+              ),
+              windowState === target.source.windowState,
+              windowMatchesProfile(windowState, target.profileID),
+              let appKitWindow = windowQuery()?.appKitWindow(for: windowState)
+        else {
+            return nil
+        }
+
+        if let anchor,
+           let buttonView = anchor.buttonView,
+           isActionPopupAnchorViewReady(buttonView),
+           buttonView.window === appKitWindow {
+            return (
+                buttonView,
+                .button,
+                .init(
+                    anchorResolved: true,
+                    anchorSource: .button,
+                    windowMatch: true,
+                    profileMatch: true,
+                    sessionToken: anchor.sessionToken
+                )
+            )
+        }
+        if let currentView = liveActionAnchorView(
+            for: target.extensionID,
+            windowId: target.windowID
+        ), currentView.window === appKitWindow {
+            return (
+                currentView,
+                .current,
+                .init(
+                    anchorResolved: true,
+                    anchorSource: .current,
+                    windowMatch: true,
+                    profileMatch: true,
+                    sessionToken: anchor?.sessionToken
+                )
+            )
+        }
+        if let fallbackView = urlHubFallbackAnchorView(
+            for: target.windowID
+        ), fallbackView.window === appKitWindow,
+           isActionPopupAnchorViewReady(fallbackView) {
+            return (
+                fallbackView,
+                .fallback,
+                .init(
+                    anchorResolved: true,
+                    anchorSource: .fallback,
+                    windowMatch: true,
+                    profileMatch: true,
+                    sessionToken: anchor?.sessionToken
+                )
+            )
+        }
+        return nil
     }
 
     private func liveActionAnchorView(
@@ -267,29 +226,6 @@ final class ExtensionActionPopupAnchorResolver {
         windowPresentation()?.extensionURLHubFallbackAnchorView(for: windowId)
     }
 
-    private func resolveActionPopupTargetWindow(
-        pendingAnchor: ExtensionActionPopupAnchor?,
-        preferredWindowId: UUID?,
-        profileId: UUID?
-    ) -> BrowserWindowState? {
-        let candidates = [
-            pendingAnchor?.windowID,
-            preferredWindowId,
-            windowQuery()?.activeExtensionWindowState?.id,
-        ]
-        for candidateId in candidates.compactMap(\.self) {
-            guard let windowState = windowQuery()?
-                .extensionWindowState(for: candidateId) else {
-                continue
-            }
-            guard profileId.map({ windowMatchesProfile(windowState, $0) }) ?? true else {
-                continue
-            }
-            return windowState
-        }
-        return nil
-    }
-
     private func isActionPopupAnchorViewReady(_ view: NSView?) -> Bool {
         guard let view else { return false }
         return PopoverPresenterChromeSupport.isAnchorViewReady(
@@ -298,43 +234,4 @@ final class ExtensionActionPopupAnchorResolver {
         )
     }
 
-    private func snapshotAnchorRectInWindow(for view: NSView?) -> CGRect? {
-        guard let view,
-              let window = view.window,
-              isActionPopupAnchorViewReady(view)
-        else {
-            return nil
-        }
-
-        let anchorRect = ExtensionActionPopupPresentation.anchorRect(for: view)
-        return view.convert(anchorRect, to: window.contentView)
-    }
-}
-
-@available(macOS 15.5, *)
-extension ExtensionActionPopupAnchorResolver {
-    convenience init(manager: ExtensionManager) {
-        self.init(
-            actionAnchorStore: manager.actionAnchorStore,
-            actionPopupAnchorStore: manager.actionPopupAnchorStore,
-            windowQuery: { [weak manager] in
-                manager?.extensionWindowQuery
-            },
-            windowPresentation: { [weak manager] in
-                manager?.extensionWindowPresentation
-            },
-            fallbackProfileId: { [weak manager] in
-                manager?.fallbackProfileId
-            },
-            resolvedProfileId: { [weak manager] windowState in
-                manager?.resolvedProfileId(for: windowState)
-            },
-            windowMatchesProfile: { [weak manager] windowState, profileId in
-                manager?.windowMatchesProfile(windowState, profileId: profileId) ?? false
-            },
-            trace: { [weak manager] message in
-                manager?.runtimeDiagnostics.trace(message())
-            }
-        )
-    }
 }

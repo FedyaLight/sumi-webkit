@@ -19,258 +19,6 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
         let extensionContext: WKWebExtensionContext
     }
 
-    private struct MutationSnapshot: Equatable {
-        let regularTabIDs: Set<UUID>
-        let transientTabIDs: Set<UUID>
-        let sessionIDs: Set<UUID>
-    }
-
-    func testExternalURLUsesCapturedWindowAndProfile() async throws {
-        let extensionID = "action-owner"
-        let harness = try await makeHarness(extensionID: extensionID)
-        let sourceURL = URL(
-            string: "safari-web-extension://\(extensionID)/popup.html"
-        )!
-        let targetURL = URL(string: "https://account.example.test/login")!
-        let mainWindow = try XCTUnwrap(
-            harness.windowRegistry.appKitWindow(for: harness.windowState)
-        )
-        let originalMainFrame = mainWindow.frame
-        let spaceID = try XCTUnwrap(
-            harness.browserManager.tabManager.spaceStateOwner.currentSpace?.id
-        )
-        let initialRegularTabCount = harness.browserManager.tabManager
-            .regularTabCollectionStateOwner.tabsBySpaceSnapshot()[spaceID]?
-            .count ?? 0
-        let popupSource = try makePopupSource(
-            harness: harness,
-            extensionID: extensionID
-        )
-        let delegate = ExtensionActionPopupUIDelegate(
-            manager: harness.extensionManager,
-            popover: NSPopover(),
-            sourceReceipt: popupSource.receipt
-        )
-        let childConfiguration = configuration(
-            dataStore: harness.profile.dataStore
-        )
-
-        XCTAssertNil(
-            delegate.webView(
-                popupSource.webView,
-                createWebViewWith: childConfiguration,
-                for: navigationAction(
-                    sourceURL: sourceURL,
-                    targetURL: targetURL,
-                    webView: popupSource.webView
-                ),
-                windowFeatures: WKWindowFeatures()
-            )
-        )
-        XCTAssertTrue(
-            harness.browserManager.tabManager.transientTabRegistryOwner
-                .auxiliaryMiniWindowTabsByID.isEmpty
-        )
-        XCTAssertEqual(
-            harness.browserManager.tabManager.regularTabCollectionStateOwner
-                .tabsBySpaceSnapshot()[spaceID]?.count,
-            initialRegularTabCount + 1
-        )
-        let openedTab = try XCTUnwrap(
-            harness.browserManager.tabManager.regularTabCollectionStateOwner
-                .allTabsSnapshot().last
-        )
-        XCTAssertEqual(openedTab.url, targetURL)
-        XCTAssertNil(openedTab.profileId)
-        XCTAssertIdentical(openedTab.resolveProfile(), harness.profile)
-        XCTAssertFalse(openedTab.isAuxiliaryMiniWindow)
-        XCTAssertFalse(openedTab.isPopupHost)
-        XCTAssertEqual(mainWindow.frame, originalMainFrame)
-    }
-
-    func testNestedPopupKeepsCapturedProfileAndWindowAfterActiveWindowSwitch()
-        async throws {
-        let extensionID = "action-owner"
-        let harness = try await makeHarness(extensionID: extensionID)
-        let popupSource = try makePopupSource(
-            harness: harness,
-            extensionID: extensionID
-        )
-        let sourceWindow = try XCTUnwrap(
-            harness.windowRegistry.appKitWindow(for: harness.windowState)
-        )
-        let delegate = ExtensionActionPopupUIDelegate(
-            manager: harness.extensionManager,
-            popover: NSPopover(),
-            sourceReceipt: popupSource.receipt
-        )
-
-        let otherProfile = Profile(name: "Other Profile")
-        harness.browserManager.profileManager.profiles.append(otherProfile)
-        let otherSpace = Space(name: "Other Space", profileId: otherProfile.id)
-        harness.browserManager.tabManager.spaceStateOwner.replaceSpaces(
-            harness.browserManager.tabManager.spaceStateOwner.spaces + [otherSpace]
-        )
-        let otherWindowState = BrowserWindowState()
-        otherWindowState.tabManager = harness.browserManager.tabManager
-        otherWindowState.currentSpaceId = otherSpace.id
-        otherWindowState.currentProfileId = otherProfile.id
-        let otherWindow = NSWindow(
-            contentRect: NSRect(x: 240, y: 180, width: 900, height: 680),
-            styleMask: [.titled, .closable, .resizable],
-            backing: .buffered,
-            defer: false
-        )
-        harness.windowRegistry.bindAppKitWindow(otherWindow, to: otherWindowState)
-        harness.windowRegistry.register(otherWindowState)
-        let otherTab = harness.browserManager.tabManager.regularTabLifecycleOwner
-            .createNewTab(
-                url: "https://profile-b.example/",
-                in: otherSpace,
-                activate: true
-            )
-        otherTab.profileId = otherProfile.id
-        harness.browserManager.selectTab(otherTab, in: otherWindowState)
-        harness.windowRegistry.setActive(otherWindowState)
-
-        let childWebView = try XCTUnwrap(
-            delegate.webView(
-                popupSource.webView,
-                createWebViewWith: configuration(
-                    dataStore: harness.profile.dataStore
-                ),
-                for: nestedNavigationAction(
-                    extensionID: extensionID,
-                    webView: popupSource.webView
-                ),
-                windowFeatures: WKWindowFeatures()
-            )
-        )
-        defer {
-            harness.browserManager.auxiliaryWindows.teardown.teardown(
-                for: childWebView,
-                reason: .bulkCleanup
-            )
-        }
-        let childSession = try XCTUnwrap(
-            harness.browserManager.auxiliaryWindows.sessions.session(
-                for: childWebView
-            )
-        )
-
-        XCTAssertIdentical(harness.windowRegistry.activeWindow, otherWindowState)
-        XCTAssertIdentical(childSession.openerTab, harness.sourceTab)
-        XCTAssertIdentical(childSession.openerWindow, sourceWindow)
-        XCTAssertEqual(childSession.tab.profileId, harness.profile.id)
-        XCTAssertIdentical(childSession.tab.resolveProfile(), harness.profile)
-        XCTAssertIdentical(
-            childWebView.configuration.websiteDataStore,
-            harness.profile.dataStore
-        )
-        XCTAssertNotEqual(childSession.tab.profileId, otherProfile.id)
-    }
-
-    func testStaleReceiptIsRejectedBeforeTransientMutation() async throws {
-        let extensionID = "action-owner"
-        let harness = try await makeHarness(extensionID: extensionID)
-        let popupSource = try makePopupSource(
-            harness: harness,
-            extensionID: extensionID
-        )
-        let delegate = ExtensionActionPopupUIDelegate(
-            manager: harness.extensionManager,
-            popover: NSPopover(),
-            sourceReceipt: popupSource.receipt
-        )
-        let before = mutationSnapshot(harness)
-        harness.windowRegistry.unregister(harness.windowState.id)
-
-        XCTAssertNil(
-            delegate.webView(
-                popupSource.webView,
-                createWebViewWith: configuration(
-                    dataStore: harness.profile.dataStore
-                ),
-                for: nestedNavigationAction(
-                    extensionID: extensionID,
-                    webView: popupSource.webView
-                ),
-                windowFeatures: WKWindowFeatures()
-            )
-        )
-        XCTAssertEqual(mutationSnapshot(harness), before)
-    }
-
-    func testDataStoreMismatchIsRejectedBeforeTransientMutation() async throws {
-        let extensionID = "action-owner"
-        let harness = try await makeHarness(extensionID: extensionID)
-        let popupSource = try makePopupSource(
-            harness: harness,
-            extensionID: extensionID
-        )
-        let delegate = ExtensionActionPopupUIDelegate(
-            manager: harness.extensionManager,
-            popover: NSPopover(),
-            sourceReceipt: popupSource.receipt
-        )
-        let before = mutationSnapshot(harness)
-        let mismatchedProfile = Profile(name: "Mismatched Profile")
-
-        XCTAssertNil(
-            delegate.webView(
-                popupSource.webView,
-                createWebViewWith: configuration(
-                    dataStore: mismatchedProfile.dataStore
-                ),
-                for: nestedNavigationAction(
-                    extensionID: extensionID,
-                    webView: popupSource.webView
-                ),
-                windowFeatures: WKWindowFeatures()
-            )
-        )
-        XCTAssertEqual(mutationSnapshot(harness), before)
-    }
-
-    func testExternalURLRequiresPublishedNormalWindowProjection()
-        async throws {
-        let extensionID = "action-owner"
-        let harness = try await makeHarness(extensionID: extensionID)
-        let popupSource = try makePopupSource(
-            harness: harness,
-            extensionID: extensionID
-        )
-        let delegate = ExtensionActionPopupUIDelegate(
-            manager: harness.extensionManager,
-            popover: NSPopover(),
-            sourceReceipt: popupSource.receipt
-        )
-        harness.extensionManager.normalWindowLifecycle.closed(
-            harness.windowState
-        )
-        let before = mutationSnapshot(harness)
-
-        XCTAssertNil(
-            delegate.webView(
-                popupSource.webView,
-                createWebViewWith: configuration(
-                    dataStore: harness.profile.dataStore
-                ),
-                for: navigationAction(
-                    sourceURL: URL(
-                        string: "safari-web-extension://\(extensionID)/popup.html"
-                    ),
-                    targetURL: URL(
-                        string: "https://account.example.test/unpublished"
-                    )!,
-                    webView: popupSource.webView
-                ),
-                windowFeatures: WKWindowFeatures()
-            )
-        )
-        XCTAssertEqual(mutationSnapshot(harness), before)
-    }
-
     func testStaleNormalWindowCloseCannotRetireReplacementWithSameUUID()
         async throws {
         let harness = try await makeHarness(
@@ -628,7 +376,11 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
         let tab = harness.sourceTab
         let generation = harness.extensionManager.runtimeSession
             .tabOpenNotificationGeneration
-        harness.extensionManager.normalTabClosure.close(tab)
+        try retireCurrentOpenForRepublication(
+            harness: harness,
+            tab: tab,
+            generation: generation
+        )
         let adapter = try XCTUnwrap(
             harness.extensionManager.adapterCatalog
                 .stableAdapter(for: tab)
@@ -679,7 +431,11 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
         let tab = harness.sourceTab
         let generation = harness.extensionManager.runtimeSession
             .tabOpenNotificationGeneration
-        harness.extensionManager.normalTabClosure.close(tab)
+        try retireCurrentOpenForRepublication(
+            harness: harness,
+            tab: tab,
+            generation: generation
+        )
         let adapter = try XCTUnwrap(
             harness.extensionManager.adapterCatalog
                 .stableAdapter(for: tab)
@@ -896,6 +652,23 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
         let closingAdapter = try XCTUnwrap(
             harness.extensionManager.adapterStore.tabAdapters[closingTab.id]
         )
+        let openingController = try XCTUnwrap(
+            harness.extensionManager.profileRuntime.controller(
+                for: harness.profile.id
+            )
+        )
+        let replacementController = WKWebExtensionController(
+            configuration: .nonPersistent()
+        )
+        let replacementTab = try makeInactivePublishedTab(
+            harness: harness,
+            url: URL(string: "https://replacement.example.test/")!
+        )
+        let replacementAdapter = try XCTUnwrap(
+            harness.extensionManager.adapterStore.tabAdapters[
+                replacementTab.id
+            ]
+        )
         harness.extensionManager.extensionsLoaded = false
         var didCloseCount = 0
         var didReopenCount = 0
@@ -917,13 +690,34 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
                 return
             }
             closedDuringWindowCallback = true
+            // The window callback belongs to `openingController`. Rebinding
+            // the profile before physical close must not redirect the close
+            // to a controller that never exposed this adapter.
+            harness.extensionManager.profileRuntime.setController(
+                replacementController,
+                for: harness.profile.id
+            )
             harness.browserManager.tabLifecycleService.closeOrchestration
                 .closeTab(closingTab, in: harness.windowState)
+            harness.extensionManager.profileRuntime.setController(
+                openingController,
+                for: harness.profile.id
+            )
+            // Exact WebKit retirement is independent from store retirement.
+            // A replacement installed before deferred drain must survive.
+            harness.extensionManager.adapterStore.tabAdapters[closingTab.id] =
+                replacementAdapter
         }
         defer {
             harness.extensionManager.testHooks.didCloseTab = nil
             harness.extensionManager.testHooks.didOpenTab = nil
             harness.extensionManager.testHooks.didOpenNormalWindow = nil
+            if harness.extensionManager.adapterStore.tabAdapters[
+                closingTab.id
+            ] === replacementAdapter {
+                harness.extensionManager.adapterStore.tabAdapters
+                    .removeValue(forKey: closingTab.id)
+            }
         }
 
         harness.extensionManager.reloadRuntimePublications(
@@ -933,17 +727,98 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
         )
 
         XCTAssertTrue(closedDuringWindowCallback)
-        // The physical close happens before browser-event handoff, so this Tab
-        // never publishes in the replacement generation. Its deferred receipt
-        // must retire the exact adapter without emitting an unmatched close.
-        XCTAssertEqual(didCloseCount, 0)
+        // The first close retires the old generation. didOpenWindow then makes
+        // the prepared adapter visible to WebKit before per-Tab handoff; the
+        // deferred physical close must balance that implicit open exactly once.
+        XCTAssertEqual(didCloseCount, 2)
         XCTAssertEqual(didReopenCount, 0)
         XCTAssertNil(
             harness.browserManager.tabManager.tabCollectionMembershipOwner
                 .tab(for: closingTab.id)
         )
+        XCTAssertIdentical(
+            harness.extensionManager.adapterStore.tabAdapters[closingTab.id],
+            replacementAdapter
+        )
+        XCTAssertFalse(
+            closingTab.extensionPageRuntimeOwner.canPublishFutureOpenNotification()
+        )
+        XCTAssertFalse(
+            harness.extensionContext.openTabs.contains { openTab in
+                (openTab as AnyObject) === closingAdapter
+            }
+        )
+    }
+
+    func testImplicitWindowOpenCloseReceiptIsOneShotAcrossReentry()
+        async throws {
+        let harness = try await makeHarness(
+            extensionID: "reload-implicit-close-reentry"
+        )
+        let closingTab = harness.sourceTab
+        let closingAdapter = try XCTUnwrap(
+            harness.extensionManager.adapterStore.tabAdapters[closingTab.id]
+        )
+        harness.extensionManager.extensionsLoaded = false
+
+        var firstReceipt: ExtensionNormalTabCloseReceipt?
+        var secondReceipt: ExtensionNormalTabCloseReceipt?
+        var didCloseCount = 0
+        var shouldReenter = false
+        var didExerciseImplicitClose = false
+        harness.extensionManager.testHooks.didCloseTab = { tabID in
+            guard tabID == closingTab.id else { return }
+            didCloseCount += 1
+            guard shouldReenter else { return }
+            shouldReenter = false
+            if let firstReceipt {
+                harness.extensionManager.normalTabClosure.close(firstReceipt)
+            }
+            if let secondReceipt {
+                harness.extensionManager.normalTabClosure.close(secondReceipt)
+            }
+        }
+        harness.extensionManager.testHooks.didOpenNormalWindow = { windowID in
+            guard windowID == harness.windowState.id,
+                  didExerciseImplicitClose == false
+            else {
+                return
+            }
+            didExerciseImplicitClose = true
+            firstReceipt = harness.extensionManager.normalTabClosure
+                .prepareClose(closingTab)
+            secondReceipt = harness.extensionManager.normalTabClosure
+                .prepareClose(closingTab)
+            guard let firstReceipt, let secondReceipt else {
+                XCTFail("Expected two exact implicit-close receipts")
+                return
+            }
+            shouldReenter = true
+            harness.extensionManager.normalTabClosure.close(firstReceipt)
+            harness.extensionManager.normalTabClosure.close(firstReceipt)
+            harness.extensionManager.normalTabClosure.close(secondReceipt)
+        }
+        defer {
+            harness.extensionManager.testHooks.didCloseTab = nil
+            harness.extensionManager.testHooks.didOpenNormalWindow = nil
+        }
+
+        harness.extensionManager.reloadRuntimePublications(
+            reason: "ExtensionActionPopupSourceReceiptTests.implicitCloseReentry",
+            allowWhenExtensionsNotLoaded: true,
+            profileID: harness.profile.id
+        )
+
+        XCTAssertTrue(didExerciseImplicitClose)
+        // One close retires the previous generation; exactly one more balances
+        // the implicit didOpenWindow exposure despite duplicate receipts and
+        // synchronous reentry.
+        XCTAssertEqual(didCloseCount, 2)
         XCTAssertNil(
             harness.extensionManager.adapterStore.tabAdapters[closingTab.id]
+        )
+        XCTAssertFalse(
+            closingTab.extensionPageRuntimeOwner.canPublishFutureOpenNotification()
         )
         XCTAssertFalse(
             harness.extensionContext.openTabs.contains { openTab in
@@ -1067,6 +942,77 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
         XCTAssertNotIdentical(replacementAdapter, closingAdapter)
     }
 
+    func testPhysicalCloseUsesOriginalPublicationAfterControllerAndAdapterRebind()
+        async throws {
+        let harness = try await makeHarness(
+            extensionID: "close-exact-publication"
+        )
+        let closingTab = harness.sourceTab
+        let openingController = try XCTUnwrap(
+            harness.extensionManager.profileRuntime.controller(
+                for: harness.profile.id
+            )
+        )
+        let closingAdapter = try XCTUnwrap(
+            harness.extensionManager.adapterStore.tabAdapters[closingTab.id]
+        )
+        let replacementTab = try makeInactivePublishedTab(
+            harness: harness,
+            url: URL(string: "https://replacement.example.test/")!
+        )
+        let replacementAdapter = try XCTUnwrap(
+            harness.extensionManager.adapterStore.tabAdapters[
+                replacementTab.id
+            ]
+        )
+        let replacementController = WKWebExtensionController(
+            configuration: .nonPersistent()
+        )
+        var closeCount = 0
+        harness.extensionManager.testHooks.didCloseTab = { tabID in
+            guard tabID == closingTab.id else { return }
+            closeCount += 1
+        }
+        defer {
+            harness.extensionManager.testHooks.didCloseTab = nil
+            harness.extensionManager.profileRuntime.setController(
+                openingController,
+                for: harness.profile.id
+            )
+            if harness.extensionManager.adapterStore.tabAdapters[
+                closingTab.id
+            ] === replacementAdapter {
+                harness.extensionManager.adapterStore.tabAdapters
+                    .removeValue(forKey: closingTab.id)
+            }
+        }
+
+        harness.extensionManager.profileRuntime.setController(
+            replacementController,
+            for: harness.profile.id
+        )
+        harness.extensionManager.adapterStore.tabAdapters[closingTab.id] =
+            replacementAdapter
+        harness.extensionManager.normalTabClosure.close(closingTab)
+
+        XCTAssertEqual(closeCount, 1)
+        XCTAssertFalse(
+            harness.extensionContext.openTabs.contains { openTab in
+                (openTab as AnyObject) === closingAdapter
+            }
+        )
+        XCTAssertIdentical(
+            harness.extensionManager.adapterStore.tabAdapters[closingTab.id],
+            replacementAdapter
+        )
+        XCTAssertFalse(
+            closingTab.extensionPageRuntimeOwner.hasAnyDidOpenTabNotification()
+        )
+        XCTAssertFalse(
+            closingTab.extensionPageRuntimeOwner.canPublishFutureOpenNotification()
+        )
+    }
+
     func testNormalTabActivationStopsBeforeSelectionWhenDidActivateReenters()
         async throws {
         let harness = try await makeHarness(extensionID: "activate-reentry")
@@ -1187,6 +1133,10 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
         )
         extensionManager.runtimeSession.allowsRuntimeWithoutEnabledExtensions = true
         extensionManager.extensionsLoaded = true
+        extensionManager.installedExtensionCollection.upsert(
+            makeInstalledExtension(extensionID: extensionID),
+            durability: .volatileExactRuntime
+        )
 
         let space = Space(name: "Source Space", profileId: profile.id)
         browserManager.tabManager.spaceStateOwner.replaceSpaces([space])
@@ -1221,7 +1171,16 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
             extensionId: extensionID,
             profileId: profile.id
         )
-        _ = extensionManager.ensureExtensionController(for: profile.id)
+        let controller = extensionManager.ensureExtensionController(
+            for: profile.id
+        )
+        try controller.load(extensionContext)
+        addTeardownBlock {
+            guard controller.extensionContexts.contains(extensionContext) else {
+                return
+            }
+            try controller.unload(extensionContext)
+        }
         let sourceWebView = try XCTUnwrap(
             sourceTab.makeNormalTabWebView(
                 reason: "ExtensionActionPopupSourceReceiptTests.makeHarness"
@@ -1333,163 +1292,69 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
         return tab
     }
 
-    private func makePopupSource(
+    private func retireCurrentOpenForRepublication(
         harness: Harness,
+        tab: Tab,
+        generation: UInt64
+    ) throws {
+        let controller = try XCTUnwrap(
+            harness.extensionManager.profileRuntime.controller(
+                for: harness.profile.id
+            )
+        )
+        let adapter = try XCTUnwrap(
+            harness.extensionManager.adapterStore.tabAdapters[tab.id]
+        )
+        XCTAssertTrue(
+            tab.extensionPageRuntimeOwner
+                .claimDidOpenTabNotificationForClose(generation: generation)
+        )
+        controller.didCloseTab(adapter, windowIsClosing: false)
+        XCTAssertTrue(
+            harness.extensionManager.adapterStore.removeTabAdapter(
+                for: tab.id,
+                ifIdenticalTo: adapter
+            )
+        )
+    }
+
+    private func makeInstalledExtension(
         extensionID: String
-    ) throws -> (
-        webView: WKWebView,
-        receipt: ExtensionActionPopupSourceReceipt
-    ) {
-        let webView = WKWebView(
-            frame: .zero,
-            configuration: configuration(dataStore: harness.profile.dataStore)
-        )
-        let anchor = ExtensionActionPopupAnchor(
-            extensionID: extensionID,
-            profileID: harness.profile.id,
-            windowID: harness.windowState.id,
-            tabID: harness.sourceTab.id,
-            buttonView: nil,
-            validatedRectInWindow: nil
-        )
-        let receipt = try XCTUnwrap(
-            ExtensionActionPopupSourceReceipt.capture(
-                extensionID: extensionID,
-                profileID: harness.profile.id,
-                anchor: anchor,
-                popupWebView: webView,
-                manager: harness.extensionManager
-            )
-        )
-        return (webView, receipt)
-    }
-
-    private func nestedNavigationAction(
-        extensionID: String,
-        webView: WKWebView
-    ) -> WKNavigationAction {
-        navigationAction(
-            sourceURL: URL(
-                string: "safari-web-extension://\(extensionID)/popup.html"
+    ) -> InstalledExtension {
+        InstalledExtension(
+            id: extensionID,
+            name: "Action Popup \(extensionID)",
+            version: "1.0",
+            manifestVersion: 3,
+            description: nil,
+            isEnabled: true,
+            installDate: Date(),
+            lastUpdateDate: Date(),
+            packagePath: "/tmp/\(extensionID)",
+            iconPath: nil,
+            sourceKind: .directory,
+            backgroundModel: .none,
+            incognitoMode: .spanning,
+            sourcePathFingerprint: "source-\(extensionID)",
+            manifestRootFingerprint: "manifest-\(extensionID)",
+            sourceBundlePath: "",
+            optionsPagePath: nil,
+            defaultPopupPath: "popup.html",
+            hasBackground: false,
+            hasAction: true,
+            hasOptionsPage: false,
+            hasContentScripts: false,
+            hasExtensionPages: true,
+            activationSummary: ExtensionActivationSummary(
+                matchPatternStrings: [],
+                broadScope: false,
+                hasContentScripts: false,
+                hasAction: true,
+                hasOptionsPage: false,
+                hasExtensionPages: true
             ),
-            targetURL: URL(
-                string: "safari-web-extension://\(extensionID)/nested.html"
-            )!,
-            webView: webView
+            manifest: [:]
         )
     }
 
-    private func navigationAction(
-        sourceURL: URL?,
-        targetURL: URL,
-        webView: WKWebView
-    ) -> WKNavigationAction {
-        let sourceFrame = sourceURL.map {
-            ExtensionActionPopupNavigationFrameMock(
-                request: URLRequest(url: $0),
-                securityOrigin: ExtensionActionPopupSecurityOriginMock.new(
-                    url: $0
-                ),
-                webView: webView
-            ).frameInfo
-        }
-        return ExtensionActionPopupNavigationActionMock(
-            sourceFrame: sourceFrame,
-            request: URLRequest(url: targetURL)
-        ).navigationAction
-    }
-
-    private func configuration(
-        dataStore: WKWebsiteDataStore
-    ) -> WKWebViewConfiguration {
-        let configuration = WKWebViewConfiguration()
-        configuration.websiteDataStore = dataStore
-        return configuration
-    }
-
-    private func mutationSnapshot(_ harness: Harness) -> MutationSnapshot {
-        MutationSnapshot(
-            regularTabIDs: Set(
-                harness.browserManager.tabManager
-                    .regularTabCollectionStateOwner.allTabsSnapshot().map(\.id)
-            ),
-            transientTabIDs: Set(
-                harness.browserManager.tabManager.transientTabRegistryOwner
-                    .auxiliaryMiniWindowTabsByID.keys
-            ),
-            sessionIDs: Set(
-                harness.browserManager.auxiliaryWindows.sessions
-                    .sessionsSnapshot().map(\.id)
-            )
-        )
-    }
-}
-
-@available(macOS 15.5, *)
-private final class ExtensionActionPopupNavigationActionMock: NSObject {
-    @objc var sourceFrame: WKFrameInfo?
-    @objc var targetFrame: WKFrameInfo?
-    @objc var navigationType: WKNavigationType = .linkActivated
-    @objc var request: URLRequest
-    @objc var isUserInitiated = false
-
-    init(sourceFrame: WKFrameInfo?, request: URLRequest) {
-        self.sourceFrame = sourceFrame
-        self.request = request
-    }
-
-    var navigationAction: WKNavigationAction {
-        withUnsafePointer(to: self) {
-            $0.withMemoryRebound(to: WKNavigationAction.self, capacity: 1) {
-                $0.pointee
-            }
-        }
-    }
-}
-
-@available(macOS 15.5, *)
-private final class ExtensionActionPopupNavigationFrameMock: NSObject {
-    @objc var isMainFrame = true
-    @objc var request: URLRequest?
-    @objc var securityOrigin: WKSecurityOrigin
-    @objc weak var webView: WKWebView?
-
-    init(
-        request: URLRequest?,
-        securityOrigin: WKSecurityOrigin,
-        webView: WKWebView?
-    ) {
-        self.request = request
-        self.securityOrigin = securityOrigin
-        self.webView = webView
-    }
-
-    var frameInfo: WKFrameInfo {
-        withUnsafePointer(to: self) {
-            $0.withMemoryRebound(to: WKFrameInfo.self, capacity: 1) {
-                $0.pointee
-            }
-        }
-    }
-}
-
-@available(macOS 15.5, *)
-@objc
-private final class ExtensionActionPopupSecurityOriginMock: WKSecurityOrigin {
-    private var mockedProtocol = ""
-    private var mockedHost = ""
-    private var mockedPort = 0
-
-    override var `protocol`: String { mockedProtocol }
-    override var host: String { mockedHost }
-    override var port: Int { mockedPort }
-
-    static func new(url: URL) -> ExtensionActionPopupSecurityOriginMock {
-        let mock = perform(NSSelectorFromString("alloc"))
-            .takeUnretainedValue() as! ExtensionActionPopupSecurityOriginMock
-        mock.mockedProtocol = url.scheme ?? ""
-        mock.mockedHost = url.host ?? ""
-        mock.mockedPort = url.port ?? 0
-        return mock
-    }
 }

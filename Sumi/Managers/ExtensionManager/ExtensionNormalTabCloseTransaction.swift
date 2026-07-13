@@ -1,49 +1,37 @@
 import Foundation
 import WebKit
 
-@available(macOS 15.5, *)
-@MainActor
-struct ExtensionNormalTabCloseReceipt {
-    struct Identity: Hashable {
-        let tab: ObjectIdentifier
-        let adapter: ObjectIdentifier
-    }
-
-    let identity: Identity
-    let tab: Tab
-    let generation: UInt64
-    let adapter: ExtensionTabAdapter
-    let controller: WKWebExtensionController?
-    let openClaim: TabExtensionOpenPublicationClaim?
-}
-
 /// Atomically claims one exact did-open generation before crossing WebKit's
 /// synchronous close callback, then retires only the adapter that was closed.
 /// A nested close sees the tombstone; a same-UUID replacement survives.
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionNormalTabCloseTransaction {
+    private struct InFlightClose: Hashable {
+        let tab: ObjectIdentifier
+        let adapter: ObjectIdentifier
+        let controller: ObjectIdentifier
+    }
+
     private let runtimeSession: ExtensionRuntimeSession
-    private let profileRuntime: ExtensionProfileRuntime
     private let adapterStore: ExtensionBrowserAdapterStore
     private let windowPublications: ExtensionWindowPublicationQuery
+    private let preparedTabVisibility: ExtensionPreparedTabVisibility
     private let events: any ExtensionTabLifecycleEventSink
-    private let runtime: @MainActor () -> ExtensionManagerRuntime
+    private var inFlightCloses: Set<InFlightClose> = []
 
     init(
         runtimeSession: ExtensionRuntimeSession,
-        profileRuntime: ExtensionProfileRuntime,
         adapterStore: ExtensionBrowserAdapterStore,
         windowPublications: ExtensionWindowPublicationQuery,
-        events: any ExtensionTabLifecycleEventSink,
-        runtime: @escaping @MainActor () -> ExtensionManagerRuntime
+        preparedTabVisibility: ExtensionPreparedTabVisibility,
+        events: any ExtensionTabLifecycleEventSink
     ) {
         self.runtimeSession = runtimeSession
-        self.profileRuntime = profileRuntime
         self.adapterStore = adapterStore
         self.windowPublications = windowPublications
+        self.preparedTabVisibility = preparedTabVisibility
         self.events = events
-        self.runtime = runtime
     }
 
     func close(_ tab: Tab) {
@@ -52,67 +40,128 @@ final class ExtensionNormalTabCloseTransaction {
     }
 
     func prepareClose(_ tab: Tab) -> ExtensionNormalTabCloseReceipt? {
-        guard windowPublications.isAuxiliarySessionTab(tab) == false,
-              let adapter = adapterStore.tabAdapters[tab.id],
-              adapter.hasExactTabIdentity(tab)
-        else {
+        guard windowPublications.isAuxiliarySessionTab(tab) == false else {
             return nil
         }
+        tab.extensionPageRuntimeOwner.retireFutureOpenPublications()
 
         let generation = runtimeSession.tabOpenNotificationGeneration
-        let controller: WKWebExtensionController?
-        let openClaim: TabExtensionOpenPublicationClaim?
-        if tab.extensionPageRuntimeOwner.isEligible(for: generation),
-           let claim = tab.extensionPageRuntimeOwner
-            .currentOpenPublicationClaim(generation: generation),
-           let profileID = profileRuntime.resolvedProfileId(
-               for: tab,
-               runtime: runtime()
-           ), let resolvedController = profileRuntime.controller(
-               for: profileID
-           ) {
-            controller = resolvedController
-            openClaim = claim
-        } else {
-            controller = nil
-            openClaim = nil
+        let openClaim = tab.extensionPageRuntimeOwner.isEligible(for: generation)
+            ? tab.extensionPageRuntimeOwner
+                .currentOpenPublicationClaim(generation: generation)
+            : nil
+        let storedAdapter = adapterStore.tabAdapters[tab.id].flatMap {
+            $0.hasExactTabIdentity(tab) ? $0 : nil
+        }
+        let published = openClaim.flatMap { claim in
+            publishedTarget(for: tab, claim: claim)
+        }
+        let implicit = storedAdapter.flatMap { adapter in
+            preparedTabVisibility.controllerExposingPreparedAdapter(adapter)
+                .map {
+                    ExtensionNormalTabCloseReceipt.Publication(
+                        controller: $0,
+                        adapter: adapter
+                    )
+                }
+        }
+        guard openClaim != nil || implicit != nil || storedAdapter != nil else {
+            return nil
         }
         return ExtensionNormalTabCloseReceipt(
-            identity: .init(
-                tab: ObjectIdentifier(tab),
-                adapter: ObjectIdentifier(adapter)
-            ),
             tab: tab,
             generation: generation,
-            adapter: adapter,
-            controller: controller,
+            storedAdapter: storedAdapter,
+            published: published,
+            implicit: implicit,
             openClaim: openClaim
         )
     }
 
     func close(_ receipt: ExtensionNormalTabCloseReceipt) {
-        guard adapterStore.tabAdapters[receipt.tab.id]
-                === receipt.adapter,
-              receipt.adapter.hasExactTabIdentity(receipt.tab)
-        else {
-            return
+        guard receipt.beginClose() else { return }
+
+        var publications: [ExtensionNormalTabCloseReceipt.Publication] = []
+        if let openClaim = receipt.openClaim {
+            let claimed = receipt.tab.extensionPageRuntimeOwner
+                .claimDidOpenTabNotificationForClose(
+                    openClaim,
+                    generation: receipt.generation
+                )
+            if claimed, let published = receipt.published {
+                publications.append(published)
+            }
         }
-        if let controller = receipt.controller,
-           let openClaim = receipt.openClaim,
-           receipt.tab.extensionPageRuntimeOwner
-            .claimDidOpenTabNotificationForClose(
-                openClaim,
-                generation: receipt.generation
-            ) {
-            events.emitDidCloseTab(
-                receipt.tab,
-                controller: controller,
-                adapter: receipt.adapter
+        if let implicit = receipt.implicit,
+           controllerContains(
+               implicit.adapter,
+               controller: implicit.controller
+           ), publications.contains(where: {
+               $0.controller === implicit.controller
+                   && $0.adapter === implicit.adapter
+           }) == false {
+            publications.append(implicit)
+        }
+        for publication in publications {
+            emitClose(
+                tab: receipt.tab,
+                adapter: publication.adapter,
+                controller: publication.controller
             )
         }
-        _ = adapterStore.removeTabAdapter(
-            for: receipt.tab.id,
-            ifIdenticalTo: receipt.adapter
+        if let storedAdapter = receipt.storedAdapter {
+            _ = adapterStore.removeTabAdapter(
+                for: receipt.tab.id,
+                ifIdenticalTo: storedAdapter
+            )
+        }
+    }
+
+    private func publishedTarget(
+        for tab: Tab,
+        claim: TabExtensionOpenPublicationClaim
+    ) -> ExtensionNormalTabCloseReceipt.Publication? {
+        guard let authority = claim.publicationAuthority(),
+              let controller = authority.publisher
+                  as? WKWebExtensionController,
+              let adapter = authority.adapter as? ExtensionTabAdapter,
+              adapter.hasExactTabIdentity(tab),
+              claim.representsPublication(
+                  publisher: controller,
+                  adapter: adapter
+              )
+        else { return nil }
+        return ExtensionNormalTabCloseReceipt.Publication(
+            controller: controller,
+            adapter: adapter
+        )
+    }
+
+    private func controllerContains(
+        _ adapter: ExtensionTabAdapter,
+        controller: WKWebExtensionController
+    ) -> Bool {
+        controller.extensionContexts.contains { context in
+            context.openTabs.contains { ($0 as AnyObject) === adapter }
+        }
+    }
+
+    private func emitClose(
+        tab: Tab,
+        adapter: ExtensionTabAdapter,
+        controller: WKWebExtensionController
+    ) {
+        let claim = InFlightClose(
+            tab: ObjectIdentifier(tab),
+            adapter: ObjectIdentifier(adapter),
+            controller: ObjectIdentifier(controller)
+        )
+        guard inFlightCloses.insert(claim).inserted else { return }
+        defer { inFlightCloses.remove(claim) }
+        events.emitDidCloseTab(
+            tab,
+            controller: controller,
+            adapter: adapter
         )
     }
 }

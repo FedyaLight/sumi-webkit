@@ -20,8 +20,7 @@ final class SafariExtensionActionPopupAnchorTests: XCTestCase {
             tabID: tabId,
             sessionToken: sessionToken,
             capturedAt: Date(timeIntervalSince1970: 1_000),
-            buttonView: buttonView,
-            validatedRectInWindow: NSRect(x: 1, y: 2, width: 3, height: 4)
+            buttonView: buttonView
         )
 
         XCTAssertEqual(anchor.extensionID, "tracked-extension")
@@ -30,10 +29,6 @@ final class SafariExtensionActionPopupAnchorTests: XCTestCase {
         XCTAssertEqual(anchor.tabID, tabId)
         XCTAssertEqual(anchor.sessionToken, sessionToken)
         XCTAssertIdentical(anchor.buttonView, buttonView)
-        XCTAssertEqual(
-            anchor.validatedRectInWindow,
-            NSRect(x: 1, y: 2, width: 3, height: 4)
-        )
     }
 
     func testAnchorResolutionTraceLineReportsSanitizedState() throws {
@@ -104,11 +99,11 @@ final class SafariExtensionActionPopupAnchorTests: XCTestCase {
 
         store.store(staleAnchor, now: now)
         XCTAssertNil(store.latestSessionToken(for: "stale-extension", now: now))
-        XCTAssertFalse(store.contains(sessionToken: staleAnchor.sessionToken))
+        XCTAssertFalse(store.contains(sessionToken: staleAnchor.sessionToken, now: now))
 
         store.store(staleAnchor, now: now)
         store.store(freshAnchor, now: now)
-        XCTAssertFalse(store.contains(sessionToken: staleAnchor.sessionToken))
+        XCTAssertFalse(store.contains(sessionToken: staleAnchor.sessionToken, now: now))
         XCTAssertEqual(store.latestSessionToken(for: "fresh-extension", now: now), freshAnchor.sessionToken)
     }
 
@@ -143,10 +138,10 @@ final class SafariExtensionActionPopupAnchorTests: XCTestCase {
         store.store(newestAnchor, now: now)
 
         XCTAssertEqual(store.pendingCount, 2)
-        XCTAssertFalse(store.contains(sessionToken: oldestAnchor.sessionToken))
-        XCTAssertTrue(store.contains(sessionToken: middleAnchor.sessionToken))
-        XCTAssertTrue(store.contains(sessionToken: newestAnchor.sessionToken))
-        XCTAssertNil(store.latestSessionToken(for: "oldest"))
+        XCTAssertFalse(store.contains(sessionToken: oldestAnchor.sessionToken, now: now))
+        XCTAssertTrue(store.contains(sessionToken: middleAnchor.sessionToken, now: now))
+        XCTAssertTrue(store.contains(sessionToken: newestAnchor.sessionToken, now: now))
+        XCTAssertNil(store.latestSessionToken(for: "oldest", now: now))
     }
 
     func testAnchorStoreClearsMismatchedProfilesAndConsumesSessions() throws {
@@ -178,6 +173,36 @@ final class SafariExtensionActionPopupAnchorTests: XCTestCase {
         XCTAssertEqual(store.pendingCount, 0)
     }
 
+    func testClaimRejectsOlderClickAndConsumesOnlyNewestClick() throws {
+        let profileID = try uuid("11111111-2222-3333-4444-555555555555")
+        let store = ExtensionActionPopupAnchorStore()
+        let older = makeAnchor(
+            extensionId: "ordered-extension",
+            profileId: profileID,
+            sessionToken: try uuid("AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEE0041")
+        )
+        let newest = makeAnchor(
+            extensionId: "ordered-extension",
+            profileId: profileID,
+            sessionToken: try uuid("AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEE0042")
+        )
+        store.store(older)
+        store.store(newest)
+
+        XCTAssertNil(store.claimAnchor(
+            sessionToken: older.sessionToken,
+            extensionID: older.extensionID
+        ))
+        XCTAssertIdentical(
+            store.claimAnchor(
+                sessionToken: newest.sessionToken,
+                extensionID: newest.extensionID
+            ),
+            newest
+        )
+        XCTAssertFalse(store.contains(sessionToken: newest.sessionToken))
+    }
+
     private func makeAnchor(
         extensionId: String,
         profileId: UUID,
@@ -191,8 +216,7 @@ final class SafariExtensionActionPopupAnchorTests: XCTestCase {
             windowID: windowId,
             sessionToken: sessionToken,
             capturedAt: capturedAt,
-            buttonView: nil,
-            validatedRectInWindow: nil
+            buttonView: nil
         )
     }
 
