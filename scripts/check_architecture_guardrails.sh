@@ -17,6 +17,7 @@ checks=(
   "scripts/check_extension_permission_policy_boundary.sh"
   "scripts/check_extension_installation_transaction_boundary.sh"
   "scripts/check_installed_extension_catalog_boundary.sh"
+  "scripts/check_extension_settings_scan_session_boundary.sh"
   "scripts/check_extension_runtime_retirement_boundary.sh"
   "scripts/check_extension_requested_window_transaction.sh"
   "scripts/check_extension_permission_callback_admission.sh"

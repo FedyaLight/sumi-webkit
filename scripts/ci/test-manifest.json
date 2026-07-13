@@ -69,6 +69,9 @@
         "SumiTests/SidebarSpaceBodyInjectionRegressionTests",
         "SumiTests/TabWebViewMaterializationAndRebuildTests",
         "SumiTests/DeferredProtectedCommandSchedulerTests",
+        "SumiTests/ExtensionSettingsScanSessionTests",
+        "SumiTests/ExtensionSettingsSectionCommandRoutingTests",
+        "SumiTests/ExtensionSettingsRuntimeGateTests",
         "SumiTests/InitialDocumentRuntimeHandoffTests",
         "SumiTests/GlanceManagerTests",
         "SumiTests/BrowserShortcutPinUnloadOwnerTests"

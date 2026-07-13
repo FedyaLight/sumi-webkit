@@ -64,7 +64,6 @@ enum WebsiteViewContextFactory {
                         defaultBrowserService: defaultBrowserService,
                         windowState: windowState
                     )
-                    .environmentObject(browserContext.extensionSurfaceStore)
                 )
             }
         )

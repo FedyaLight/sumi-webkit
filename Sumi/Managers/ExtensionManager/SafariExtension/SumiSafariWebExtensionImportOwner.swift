@@ -63,6 +63,8 @@ final class SumiSafariWebExtensionImportOwner {
         var skippedUnreadableCount = 0
 
         for candidate in candidates where candidate.bundleKind == .webExtension {
+            guard Task.isCancelled == false else { break }
+
             guard candidate.isReadable else {
                 skippedUnreadableCount += 1
                 continue
@@ -80,10 +82,13 @@ final class SumiSafariWebExtensionImportOwner {
                     from: candidate,
                     enableOnInstall: false
                 )
+                guard Task.isCancelled == false else { break }
                 addedExtensions.append(installed)
                 installedSourcePaths.insert(Self.standardizedFilePath(installed.sourceBundlePath))
                 knownSafariBundleIDs.insert(installed.id)
                 knownSafariBundleIDs.insert(candidate.extensionBundleIdentifier)
+            } catch is CancellationError {
+                break
             } catch {
                 failedMessages.append("\(candidate.displayName): \(error.localizedDescription)")
             }

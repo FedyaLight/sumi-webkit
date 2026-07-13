@@ -110,6 +110,8 @@ struct SafariExtensionScanner {
         var seenExtensionIDs: [String: URL] = [:]
 
         for root in roots {
+            guard Task.isCancelled == false else { break }
+
             let appURLs: [URL]
             do {
                 appURLs = try fileManager.contentsOfDirectory(
@@ -123,6 +125,8 @@ struct SafariExtensionScanner {
             }
 
             for appURL in appURLs where appURL.pathExtension == "app" {
+                guard Task.isCancelled == false else { break }
+
                 let discovered = inspectContainingAppBundle(
                     at: appURL,
                     includeUnsupported: includeUnsupported,
@@ -183,17 +187,22 @@ struct SafariExtensionScanner {
             return []
         }
 
-        return pluginURLs.compactMap { pluginURL in
-            guard pluginURL.pathExtension == "appex" else { return nil }
-            return inspectAppexBundle(
+        var candidates: [DiscoveredSafariExtensionCandidate] = []
+        for pluginURL in pluginURLs where pluginURL.pathExtension == "appex" {
+            guard Task.isCancelled == false else { break }
+
+            if let candidate = inspectAppexBundle(
                 at: pluginURL,
                 containingAppURL: appURL,
                 containingAppName: containingAppName,
                 containingAppBundleIdentifier: containingAppBundleID,
                 includeUnsupported: includeUnsupported,
                 issues: &issues
-            )
+            ) {
+                candidates.append(candidate)
+            }
         }
+        return candidates
     }
 
     /// Inspects a single `.appex` bundle. Returns nil for non-Safari extension points.

@@ -349,7 +349,8 @@ struct SumiSettingsTabRootView: View {
         case .extensions:
             SumiExtensionsSettingsPane(
                 extensionsModule: browserContext.extensionsModule,
-                currentProfileID: currentProfileID
+                currentProfileID: currentProfileID,
+                extensionSurfaceStore: browserContext.extensionSurfaceStore
             )
         case .advanced:
             SumiDataRecoverySettingsPane(actions: browserContext.dataRecoveryActions)

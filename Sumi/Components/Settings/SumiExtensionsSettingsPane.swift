@@ -3,730 +3,226 @@
 //  Sumi
 //
 
-import AppKit
+import Foundation
 import SwiftUI
 
 struct SumiExtensionsSettingsPane: View {
     let extensionsModule: SumiExtensionsModule
     let currentProfileID: UUID?
-
-    @EnvironmentObject private var extensionSurfaceStore: BrowserExtensionSurfaceStore
-    @State private var busyExtensionIDs: Set<String> = []
-    @State private var extensionOperationTasks: [String: Task<Void, Never>] = [:]
-    @State private var safariExtensionCandidates: [DiscoveredSafariExtensionCandidate] = []
-    @State private var safariContentBlockerRecords: [InstalledSafariContentBlockerRecord] = []
-    @State private var safariExtensionScanTask: Task<Void, Never>?
-    @State private var safariExtensionScanGeneration: UInt64 = 0
-    @State private var isSafariExtensionScanning = false
-    @State private var safariExtensionScanStatus: String?
+    let extensionSurfaceStore: BrowserExtensionSurfaceStore
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             SumiSettingsModuleToggleGate(descriptor: .extensions) {
-                extensionsManagerBody
-                    .onDisappear {
-                        clearExtensionPaneState()
-                    }
+                ExtensionSettingsRuntimeGate(
+                    readiness: ExtensionSettingsRuntimeReadiness(
+                        extensionsModule: extensionsModule
+                    )
+                ) {
+                    ExtensionSettingsEnabledContent(
+                        extensionsModule: extensionsModule,
+                        currentProfileID: currentProfileID,
+                        extensionSurfaceStore: extensionSurfaceStore
+                    )
+                }
             }
-        }
-        .onDisappear {
-            clearExtensionPaneState()
         }
     }
+}
 
-    @ViewBuilder
-    private var extensionsManagerBody: some View {
-        if extensionsModule.managerIfEnabled() != nil {
-            let installedExtensions = extensionSurfaceStore.installedExtensions
-            extensionsBody(
-                installedExtensions: installedExtensions,
-                siteAccessPoliciesByExtensionID:
-                    extensionSurfaceStore.siteAccessPoliciesByExtensionID
-            )
-            .task(
-                id: ExtensionsSiteAccessPolicyRefreshKey(
-                    profileId: currentProfileID,
-                    extensionIds: installedExtensions.map(\.id)
-                )
-            ) {
-                extensionSurfaceStore.refreshSiteAccessPolicies(
-                    profileId: currentProfileID
-                )
-            }
-            .task {
-                rescanSafariExtensions()
-            }
-        } else {
+enum ExtensionSettingsRuntimeReadiness: Equatable {
+    case ready
+    case unavailable
+
+    @MainActor
+    init(extensionsModule: SumiExtensionsModule) {
+        self = extensionsModule.managerIfEnabled() != nil
+            ? .ready
+            : .unavailable
+    }
+}
+
+struct ExtensionSettingsRuntimeGate<EnabledContent: View>: View {
+    let readiness: ExtensionSettingsRuntimeReadiness
+    @ViewBuilder let enabledContent: () -> EnabledContent
+
+    var body: some View {
+        switch readiness {
+        case .ready:
+            enabledContent()
+        case .unavailable:
             Text("Enable the Extensions module to manage installed extensions.")
                 .foregroundStyle(.secondary)
         }
     }
+}
 
-    @ViewBuilder
-    private func extensionsBody(
-        installedExtensions: [InstalledExtension],
-        siteAccessPoliciesByExtensionID: [String: SafariExtensionSiteAccessPolicy]
-    ) -> some View {
-        let enabledExtensions = installedExtensions.filter(\.isEnabled)
-        let disabledExtensions = installedExtensions.filter { $0.isEnabled == false }
-        let contentBlockerCandidates = safariExtensionCandidates.filter {
-            $0.bundleKind == .contentBlocker
-        }
-        let unsupportedSafariExtensions = safariExtensionCandidates.filter {
-            $0.bundleKind == .legacySafariAppExtension
-        }
+private struct ExtensionSettingsEnabledContent: View {
+    let extensionsModule: SumiExtensionsModule
+    let currentProfileID: UUID?
+    @ObservedObject private var extensionSurfaceStore: BrowserExtensionSurfaceStore
+    @State private var scanSession: ExtensionSettingsScanSession
+
+    init(
+        extensionsModule: SumiExtensionsModule,
+        currentProfileID: UUID?,
+        extensionSurfaceStore: BrowserExtensionSurfaceStore
+    ) {
+        self.extensionsModule = extensionsModule
+        self.currentProfileID = currentProfileID
+        _extensionSurfaceStore = ObservedObject(
+            wrappedValue: extensionSurfaceStore
+        )
+        _scanSession = State(
+            initialValue: ExtensionSettingsScanSession(
+                scan: ExtensionSettingsSafariScanner.scanInstalledExtensions,
+                synchronize: { [weak extensionsModule] candidates in
+                    guard let extensionsModule else {
+                        throw ExtensionSettingsCapabilityError.unavailable
+                    }
+                    let result = await extensionsModule
+                        .syncDiscoveredSafariWebExtensions(candidates)
+                    return ExtensionSettingsImportResult(
+                        importedExtensionCount: result.addedExtensions.count,
+                        failedMessages: result.failedMessages,
+                        skippedUnreadableCount: result.skippedUnreadableCount
+                    )
+                },
+                loadContentBlockers: { [weak extensionsModule] in
+                    guard let extensionsModule else {
+                        throw ExtensionSettingsCapabilityError.unavailable
+                    }
+                    return extensionsModule.installedSafariContentBlockers()
+                }
+            )
+        )
+    }
+
+    var body: some View {
+        let projection = ExtensionSettingsInstalledProjection(
+            extensions: extensionSurfaceStore.installedExtensions,
+            siteAccessPoliciesByExtensionID:
+                extensionSurfaceStore.siteAccessPoliciesByExtensionID
+        )
+        let snapshot = scanSession.snapshot
 
         VStack(alignment: .leading, spacing: 16) {
-            SettingsSection(
-                title: "Extensions"
-            ) {
-                safariExtensionRescanButton
-            } content: {
-                if let safariExtensionScanStatus {
-                    Text(safariExtensionScanStatus)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+            ExtensionSettingsInstalledSection(
+                projection: projection,
+                scanState: scanSession.state,
+                commands: installedCommands,
+                onRefresh: scanSession.refresh
+            )
 
-                if installedExtensions.isEmpty {
-                    Text("No extensions found.")
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                } else {
-                    VStack(alignment: .leading, spacing: 16) {
-                        extensionGroup(
-                            title: "Enabled",
-                            extensions: enabledExtensions,
-                            siteAccessPoliciesByExtensionID: siteAccessPoliciesByExtensionID
-                        )
-                        extensionGroup(
-                            title: "Disabled",
-                            extensions: disabledExtensions,
-                            siteAccessPoliciesByExtensionID: siteAccessPoliciesByExtensionID
-                        )
+            if snapshot.contentBlockerCandidates.isEmpty == false {
+                ExtensionSettingsContentBlockersSection(
+                    candidates: snapshot.contentBlockerCandidates,
+                    records: snapshot.contentBlockerRecords,
+                    commands: contentBlockerCommands,
+                    onRecordChanged: { [weak scanSession] record in
+                        scanSession?.updateContentBlockerRecord(record)
                     }
-                }
+                )
             }
 
-            if contentBlockerCandidates.isEmpty == false {
-                SettingsSection(title: "Content Blockers") {
-                    SafariContentBlockerCandidatesSection(
-                        extensionsModule: extensionsModule,
-                        candidates: contentBlockerCandidates,
-                        contentBlockerRecords: $safariContentBlockerRecords,
-                        onStatus: { safariExtensionScanStatus = $0 }
-                    )
-                }
-            }
-
-            if unsupportedSafariExtensions.isEmpty == false {
-                SettingsSection(title: "Unsupported") {
-                    SafariUnsupportedExtensionCandidatesSection(
-                        candidates: unsupportedSafariExtensions
-                    )
-                }
+            if snapshot.unsupportedCandidates.isEmpty == false {
+                ExtensionSettingsUnsupportedSection(
+                    candidates: snapshot.unsupportedCandidates
+                )
             }
         }
-    }
-
-    @ViewBuilder
-    private func extensionGroup(
-        title: String,
-        extensions: [InstalledExtension],
-        siteAccessPoliciesByExtensionID: [String: SafariExtensionSiteAccessPolicy]
-    ) -> some View {
-        if extensions.isEmpty == false {
-            VStack(alignment: .leading, spacing: 10) {
-                Text(title)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-
-                VStack(alignment: .leading, spacing: 12) {
-                    ForEach(extensions, id: \.id) { ext in
-                        ExtensionCatalogRow(
-                            extensionRecord: ext,
-                            siteAccessPolicy: siteAccessPoliciesByExtensionID[ext.id],
-                            isBusy: busyExtensionIDs.contains(ext.id),
-                            onToggleEnabled: {
-                                toggleExtension(ext)
-                            },
-                            onDefaultSiteAccessChanged: { access in
-                                extensionsModule.setDefaultSiteAccess(
-                                    access,
-                                    extensionId: ext.id,
-                                    profileId: currentProfileID
-                                )
-                            },
-                            onPrivateAccessChanged: { isAllowed in
-                                extensionsModule.setPrivateBrowsingAccess(
-                                    isAllowed,
-                                    extensionId: ext.id,
-                                    profileId: currentProfileID
-                                )
-                            },
-                            onConfiguredSiteAccessChanged: { matchPattern, access in
-                                extensionsModule.setConfiguredSiteAccess(
-                                    access,
-                                    extensionId: ext.id,
-                                    profileId: currentProfileID,
-                                    matchPatternString: matchPattern
-                                )
-                            },
-                            onOpenOptions: {
-                                Task { @MainActor in
-                                    await extensionsModule.openOptionsPage(
-                                        extensionId: ext.id,
-                                        profileId: currentProfileID
-                                    )
-                                }
-                            }
-                        )
-                    }
-                }
-            }
-        }
-    }
-
-    private var safariExtensionRescanButton: some View {
-        Button {
-            rescanSafariExtensions()
-        } label: {
-            HStack(spacing: 6) {
-                if isSafariExtensionScanning {
-                    ProgressView()
-                        .controlSize(.small)
-                }
-                Text("Rescan")
-            }
-            .frame(width: 96)
-        }
-        .buttonStyle(.bordered)
-        .disabled(isSafariExtensionScanning)
-    }
-
-    private func rescanSafariExtensions() {
-        safariExtensionScanTask?.cancel()
-        safariExtensionScanGeneration += 1
-        let generation = safariExtensionScanGeneration
-
-        isSafariExtensionScanning = true
-        safariExtensionScanStatus = nil
-
-        safariExtensionScanTask = Task { @MainActor in
-            defer {
-                if safariExtensionScanGeneration == generation {
-                    isSafariExtensionScanning = false
-                    safariExtensionScanTask = nil
-                }
-            }
-
-            guard extensionsModule.isEnabled else {
-                safariExtensionCandidates = []
-                safariContentBlockerRecords = []
-                return
-            }
-
-            var issues: [SafariExtensionScannerIssue] = []
-            let discovered = SafariExtensionScanner().scanInstalledExtensions(issues: &issues)
-            guard Task.isCancelled == false,
-                  safariExtensionScanGeneration == generation
-            else {
-                return
-            }
-
-            let syncResult = await extensionsModule
-                .syncDiscoveredSafariWebExtensions(discovered)
-            guard Task.isCancelled == false,
-                  safariExtensionScanGeneration == generation
-            else {
-                return
-            }
-
-            safariExtensionCandidates = discovered
-            safariContentBlockerRecords = extensionsModule.installedSafariContentBlockers()
-            safariExtensionScanStatus = safariExtensionStatusText(for: syncResult)
-        }
-    }
-
-    private func safariExtensionStatusText(
-        for result: SafariWebExtensionSyncResult
-    ) -> String? {
-        if let firstFailure = result.failedMessages.first {
-            if result.failedMessages.count == 1 {
-                return "Could not add \(firstFailure)."
-            }
-            return "Could not add \(result.failedMessages.count) Safari extensions. \(firstFailure)"
-        }
-
-        if result.skippedUnreadableCount > 0 {
-            return "Skipped \(extensionCountText(result.skippedUnreadableCount)) because it was unreadable."
-        }
-
-        return nil
-    }
-
-    private func extensionCountText(_ count: Int) -> String {
-        count == 1 ? "1 extension" : "\(count) extensions"
-    }
-
-    private func toggleExtension(_ extensionRecord: InstalledExtension) {
-        extensionOperationTasks[extensionRecord.id]?.cancel()
-        busyExtensionIDs.insert(extensionRecord.id)
-        extensionOperationTasks[extensionRecord.id] = Task { @MainActor in
-            do {
-                if extensionRecord.isEnabled {
-                    try await extensionsModule.disableExtension(
-                        extensionRecord.id
-                    )
-                } else {
-                    let _ = try await extensionsModule.enableExtension(
-                        extensionRecord.id
-                    )
-                }
-            } catch {}
-            guard !Task.isCancelled else { return }
-            busyExtensionIDs.remove(extensionRecord.id)
-            extensionOperationTasks[extensionRecord.id] = nil
-        }
-    }
-
-    private func cancelExtensionPaneTasks() {
-        extensionOperationTasks.values.forEach { $0.cancel() }
-        extensionOperationTasks.removeAll()
-        busyExtensionIDs.removeAll()
-        safariExtensionScanTask?.cancel()
-        safariExtensionScanTask = nil
-        safariExtensionScanGeneration += 1
-        isSafariExtensionScanning = false
-    }
-
-    private func clearExtensionPaneState() {
-        cancelExtensionPaneTasks()
-        safariExtensionScanStatus = nil
-        extensionSurfaceStore.refreshSiteAccessPolicies(profileId: nil)
-    }
-}
-
-private struct ExtensionsSiteAccessPolicyRefreshKey: Hashable {
-    let profileId: UUID?
-    let extensionIds: [String]
-}
-
-private struct ExtensionCatalogRow: View {
-    let extensionRecord: InstalledExtension
-    let siteAccessPolicy: SafariExtensionSiteAccessPolicy?
-    let isBusy: Bool
-    let onToggleEnabled: () -> Void
-    let onDefaultSiteAccessChanged: (SafariExtensionSiteAccessLevel) -> Void
-    let onPrivateAccessChanged: (Bool) -> Void
-    let onConfiguredSiteAccessChanged: (String, SafariExtensionSiteAccessLevel) -> Void
-    let onOpenOptions: () -> Void
-
-    @State private var isEnabled = false
-    @State private var defaultSiteAccess: SafariExtensionSiteAccessLevel = .allow
-    @State private var privateAccessAllowed = false
-    @State private var isDetailsPresented = false
-
-    var body: some View {
-        HStack(alignment: .center, spacing: 12) {
-            extensionIcon
-                .frame(width: 30, height: 30)
-
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
-                    Text(extensionRecord.name)
-                        .font(.headline)
-                        .lineLimit(1)
-
-                    if extensionRecord.legacyManifestMayUseMoreEnergy {
-                        Image(systemName: "battery.100percent.bolt")
-                            .font(.system(size: 16, weight: .medium))
-                            .foregroundStyle(.orange)
-                            .help(InstalledExtensionRecord.legacyManifestWarningTooltip)
-                            .accessibilityLabel(InstalledExtensionRecord.legacyManifestWarningTooltip)
-                    }
-                }
-
-                Text(rowSummary)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-
-            Spacer()
-
-            HStack(spacing: 12) {
-                if isBusy {
-                    ProgressView()
-                        .scaleEffect(0.75)
-                }
-
-                Button {
-                    isDetailsPresented.toggle()
-                } label: {
-                    Image(systemName: "info.circle")
-                        .font(.system(size: 15, weight: .medium))
-                }
-                .buttonStyle(NavButtonStyle(size: .small))
-                .help("Extension information and permissions")
-                .popover(isPresented: $isDetailsPresented, arrowEdge: .trailing) {
-                    ExtensionCatalogDetailsPopover(
-                        extensionRecord: extensionRecord,
-                        siteAccessPolicy: siteAccessPolicy,
-                        isBusy: isBusy,
-                        defaultSiteAccess: $defaultSiteAccess,
-                        privateAccessAllowed: $privateAccessAllowed,
-                        onConfiguredSiteAccessChanged: onConfiguredSiteAccessChanged,
-                        onOpenOptions: onOpenOptions
-                    )
-                    .frame(width: 430)
-                    .padding(16)
-                    .sumiNativeSurfaceColorScheme()
-                }
-
-                Toggle("", isOn: $isEnabled)
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-                    .disabled(isBusy)
-                    .help(extensionRecord.isEnabled ? "Disable extension" : "Enable extension")
-                    .onChange(of: isEnabled) { oldValue, newValue in
-                        guard oldValue != newValue, newValue != extensionRecord.isEnabled else {
-                            return
-                        }
-                        onToggleEnabled()
-                    }
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 4)
         .onAppear {
-            isEnabled = extensionRecord.isEnabled
-            syncSiteAccessState()
+            scanSession.beginIfNeeded()
         }
-        .onChange(of: extensionRecord.isEnabled) { _, newValue in
-            isEnabled = newValue
-        }
-        .onChange(of: siteAccessPolicy) { _, _ in
-            syncSiteAccessState()
-        }
-        .onChange(of: defaultSiteAccess) { oldValue, newValue in
-            guard oldValue != newValue,
-                  newValue != siteAccessPolicy?.defaultAccess
-            else { return }
-            onDefaultSiteAccessChanged(newValue)
-        }
-        .onChange(of: privateAccessAllowed) { oldValue, newValue in
-            guard oldValue != newValue,
-                  newValue != siteAccessPolicy?.privateAccessAllowed
-            else { return }
-            onPrivateAccessChanged(newValue)
-        }
-    }
-
-    @ViewBuilder
-    private var extensionIcon: some View {
-        if let iconPath = ExtensionUtils.iconPath(for: extensionRecord),
-           let image = NSImage(contentsOfFile: iconPath) {
-            Image(nsImage: image)
-                .resizable()
-                .scaledToFit()
-        } else {
-            Image(systemName: "puzzlepiece.extension")
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    private var rowSummary: String {
-        "Version \(extensionRecord.version)"
-    }
-
-    private func syncSiteAccessState() {
-        defaultSiteAccess = siteAccessPolicy?.defaultAccess ?? .ask
-        privateAccessAllowed = siteAccessPolicy?.privateAccessAllowed ?? false
-    }
-}
-
-private struct ExtensionCatalogDetailsPopover: View {
-    let extensionRecord: InstalledExtension
-    let siteAccessPolicy: SafariExtensionSiteAccessPolicy?
-    let isBusy: Bool
-    @Binding var defaultSiteAccess: SafariExtensionSiteAccessLevel
-    @Binding var privateAccessAllowed: Bool
-    let onConfiguredSiteAccessChanged: (String, SafariExtensionSiteAccessLevel) -> Void
-    let onOpenOptions: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            header
-
-            if showsWarnings {
-                detailSection("Warnings") {
-                    VStack(alignment: .leading, spacing: 8) {
-                        if extensionRecord.activationSummary.broadScope {
-                            warningRow(
-                                systemImage: "hand.raised.fill",
-                                text: "Can read and change website data on allowed websites."
-                            )
-                        }
-                        if extensionRecord.legacyManifestMayUseMoreEnergy {
-                            warningRow(
-                                systemImage: "battery.100percent.bolt",
-                                text: InstalledExtensionRecord.legacyManifestWarningTooltip
-                            )
-                        }
-                    }
-                }
-            }
-
-            if showsWebsiteAccessControls {
-                detailSection("Website Access") {
-                    VStack(alignment: .leading, spacing: 10) {
-                        HStack(spacing: 10) {
-                            Text("Other Websites")
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                            Picker("", selection: $defaultSiteAccess) {
-                                ForEach(SafariExtensionSiteAccessLevel.allCases) { access in
-                                    Text(access.title).tag(access)
-                                }
-                            }
-                            .labelsHidden()
-                            .pickerStyle(.menu)
-                            .frame(width: 112)
-                            .disabled(isBusy)
-                        }
-
-                        if configuredSiteRules.isEmpty == false {
-                            Divider()
-
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("Configured Websites")
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(.secondary)
-
-                                ForEach(configuredSiteRules) { rule in
-                                    HStack(spacing: 10) {
-                                        Text(displayName(for: rule.matchPattern))
-                                            .lineLimit(1)
-                                            .truncationMode(.middle)
-                                            .frame(maxWidth: .infinity, alignment: .leading)
-
-                                        Picker(
-                                            "",
-                                            selection: configuredSiteAccessBinding(for: rule)
-                                        ) {
-                                            ForEach(SafariExtensionSiteAccessLevel.allCases) {
-                                                access in
-                                                Text(access.title).tag(access)
-                                            }
-                                        }
-                                        .labelsHidden()
-                                        .pickerStyle(.menu)
-                                        .frame(width: 112)
-                                        .disabled(isBusy)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            if extensionRecord.incognitoMode.allowsPrivateAccess {
-                detailSection("Private Access") {
-                    Toggle("Allow in Private Browsing", isOn: $privateAccessAllowed)
-                        .toggleStyle(.checkbox)
-                        .disabled(isBusy)
-                }
-            }
-
-            detailSection("Shortcuts") {
-                if commandRows.isEmpty {
-                    Text("No keyboard shortcuts declared.")
-                        .foregroundStyle(.secondary)
-                } else {
-                    VStack(alignment: .leading, spacing: 8) {
-                        ForEach(commandRows) { command in
-                            HStack(spacing: 10) {
-                                Text(command.title)
-                                    .lineLimit(1)
-                                    .truncationMode(.tail)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                Text(command.shortcut ?? "Not set")
-                                    .font(.caption.monospaced())
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-                }
-            }
-
-            detailSection("Settings") {
-                if extensionRecord.hasOptionsPage {
-                    Button("Open Extension Settings") {
-                        onOpenOptions()
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(isBusy || extensionRecord.isEnabled == false)
-                } else {
-                    Text("No extension settings page.")
-                        .foregroundStyle(.secondary)
-                }
-            }
-        }
-        .font(.callout)
-    }
-
-    private var header: some View {
-        HStack(alignment: .center, spacing: 10) {
-            Group {
-                if let iconPath = ExtensionUtils.iconPath(for: extensionRecord),
-                   let image = NSImage(contentsOfFile: iconPath) {
-                    Image(nsImage: image)
-                        .resizable()
-                        .scaledToFit()
-                } else {
-                    Image(systemName: "puzzlepiece.extension")
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .frame(width: 32, height: 32)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(extensionRecord.name)
-                    .font(.headline)
-                    .lineLimit(1)
-                Text("Version \(extensionRecord.version)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-
-    private var showsWarnings: Bool {
-        extensionRecord.activationSummary.broadScope
-            || extensionRecord.legacyManifestMayUseMoreEnergy
-    }
-
-    private var showsWebsiteAccessControls: Bool {
-        extensionRecord.activationSummary.matchPatternStrings.isEmpty == false
-            || optionalHostPermissionStrings.isEmpty == false
-            || optionalPermissionHostPatternStrings.isEmpty == false
-    }
-
-    private var optionalHostPermissionStrings: [String] {
-        extensionRecord.manifest["optional_host_permissions"] as? [String] ?? []
-    }
-
-    private var optionalPermissionHostPatternStrings: [String] {
-        (extensionRecord.manifest["optional_permissions"] as? [String] ?? [])
-            .filter {
-                $0 == "<all_urls>"
-                    || $0.hasPrefix("http://")
-                    || $0.hasPrefix("https://")
-                    || $0.hasPrefix("*://")
-            }
-    }
-
-    private var configuredSiteRules: [SafariExtensionSiteAccessRule] {
-        siteAccessPolicy?.siteRules ?? []
-    }
-
-    private var commandRows: [ExtensionCommandSummary] {
-        guard let commands = extensionRecord.manifest["commands"] as? [String: Any] else {
-            return []
-        }
-
-        return commands.compactMap { key, value in
-            guard let command = value as? [String: Any] else { return nil }
-            let title =
-                (command["description"] as? String)?
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                ?? humanizedCommandName(key)
-            let shortcut = shortcutString(from: command["suggested_key"])
-            return ExtensionCommandSummary(
-                id: key,
-                title: title.isEmpty ? humanizedCommandName(key) : title,
-                shortcut: shortcut
+        .onChange(of: siteAccessPolicyRefreshKey, initial: true) { _, _ in
+            extensionSurfaceStore.refreshSiteAccessPolicies(
+                profileId: currentProfileID
             )
         }
-        .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+        .onDisappear {
+            scanSession.cancel()
+            extensionSurfaceStore.refreshSiteAccessPolicies(profileId: nil)
+        }
     }
 
-    private func configuredSiteAccessBinding(
-        for rule: SafariExtensionSiteAccessRule
-    ) -> Binding<SafariExtensionSiteAccessLevel> {
-        Binding(
-            get: {
-                configuredSiteRules
-                    .first { $0.matchPattern == rule.matchPattern }?
-                    .access ?? rule.access
+    private var siteAccessPolicyRefreshKey: ExtensionsSiteAccessPolicyRefreshKey {
+        ExtensionsSiteAccessPolicyRefreshKey(
+            profileID: currentProfileID,
+            extensionIDs: extensionSurfaceStore.installedExtensions.map(\.id)
+        )
+    }
+
+    private var installedCommands: ExtensionSettingsInstalledCommands {
+        ExtensionSettingsInstalledCommands(
+            setEnabled: { [weak extensionsModule] extensionID, isEnabled in
+                guard let extensionsModule else {
+                    throw ExtensionSettingsCapabilityError.unavailable
+                }
+                if isEnabled {
+                    _ = try await extensionsModule.enableExtension(extensionID)
+                } else {
+                    try await extensionsModule.disableExtension(extensionID)
+                }
             },
-            set: { access in
-                guard access != rule.access else { return }
-                onConfiguredSiteAccessChanged(rule.matchPattern, access)
+            setDefaultSiteAccess: {
+                [weak extensionsModule] extensionID, access in
+                extensionsModule?.setDefaultSiteAccess(
+                    access,
+                    extensionId: extensionID,
+                    profileId: currentProfileID
+                )
+            },
+            setPrivateAccess: {
+                [weak extensionsModule] extensionID, isAllowed in
+                extensionsModule?.setPrivateBrowsingAccess(
+                    isAllowed,
+                    extensionId: extensionID,
+                    profileId: currentProfileID
+                )
+            },
+            setConfiguredSiteAccess: {
+                [weak extensionsModule] extensionID, matchPattern, access in
+                extensionsModule?.setConfiguredSiteAccess(
+                    access,
+                    extensionId: extensionID,
+                    profileId: currentProfileID,
+                    matchPatternString: matchPattern
+                )
+            },
+            openOptions: { [weak extensionsModule] extensionID in
+                await extensionsModule?.openOptionsPage(
+                    extensionId: extensionID,
+                    profileId: currentProfileID
+                )
             }
         )
     }
 
-    private func displayName(for matchPattern: String) -> String {
-        guard let url = URL(string: matchPattern),
-              let host = url.host,
-              host.isEmpty == false
-        else {
-            return matchPattern
-        }
-        return host
-    }
-
-    private func shortcutString(from value: Any?) -> String? {
-        if let raw = value as? String {
-            return raw.isEmpty ? nil : raw
-        }
-        guard let dictionary = value as? [String: Any] else { return nil }
-        let candidates = ["mac", "default", "chromeos", "linux", "windows"]
-        for key in candidates {
-            if let raw = dictionary[key] as? String,
-               raw.isEmpty == false {
-                return raw
+    private var contentBlockerCommands: ExtensionSettingsContentBlockerCommands {
+        ExtensionSettingsContentBlockerCommands(
+            enable: { [weak extensionsModule] candidate in
+                guard let extensionsModule else {
+                    throw ExtensionSettingsCapabilityError.unavailable
+                }
+                return try await extensionsModule.enableSafariContentBlocker(
+                    from: candidate
+                )
+            },
+            setEnabled: {
+                [weak extensionsModule] bundleIdentifier, isEnabled in
+                guard let extensionsModule else {
+                    throw ExtensionSettingsCapabilityError.unavailable
+                }
+                return try await extensionsModule.setSafariContentBlockerEnabled(
+                    isEnabled,
+                    bundleIdentifier: bundleIdentifier
+                )
             }
-        }
-        return nil
-    }
-
-    private func humanizedCommandName(_ key: String) -> String {
-        key
-            .replacingOccurrences(of: "_", with: " ")
-            .replacingOccurrences(of: "-", with: " ")
-            .capitalized
-    }
-
-    private func warningRow(systemImage: String, text: String) -> some View {
-        Label {
-            Text(text)
-                .fixedSize(horizontal: false, vertical: true)
-        } icon: {
-            Image(systemName: systemImage)
-                .foregroundStyle(.orange)
-        }
-        .font(.caption)
-    }
-
-    private func detailSection<Content: View>(
-        _ title: String,
-        @ViewBuilder content: () -> Content
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-            content()
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        )
     }
 }
 
-private struct ExtensionCommandSummary: Identifiable {
-    let id: String
-    let title: String
-    let shortcut: String?
+private struct ExtensionsSiteAccessPolicyRefreshKey: Equatable {
+    let profileID: UUID?
+    let extensionIDs: [String]
 }
