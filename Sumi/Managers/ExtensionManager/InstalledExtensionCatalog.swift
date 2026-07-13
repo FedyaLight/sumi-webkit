@@ -53,6 +53,13 @@ final class InstalledExtensionCatalog {
     func publish(
         _ result: ExtensionInstallationMetadataStore.MetadataLoadResult
     ) -> [ExtensionEntity] {
+        guard result.didFetchPersistedMetadata else {
+            trace(
+                "loadInstalledExtensionMetadata failed; preserving authoritative catalog"
+            )
+            return []
+        }
+
         environment.installedRecords.setAll(result.records)
         environment.markCatalogLoaded()
         trace(
