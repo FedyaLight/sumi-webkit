@@ -317,7 +317,6 @@ final class WindowSessionRestoreService {
 
         floatingBarSanitizer.sanitize(in: windowState)
         selection.syncShortcutSelectionState(for: windowState)
-        splitRestorer.restorePendingSelectionIfNeeded(in: windowState)
         themeRestorer.restore(for: windowState, source: source)
 
         completeInitialResolution(for: windowState)

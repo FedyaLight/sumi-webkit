@@ -577,6 +577,95 @@ final class WindowSessionServiceTests: XCTestCase {
         XCTAssertNil(windowState.pendingSessionSplitSelection)
     }
 
+    func testDeferredSplitSelectionRetriesOnlyAfterTabDataLoad() throws {
+        let tabManager = try makeInMemoryTabManager(loadPersistedState: false)
+        let space = tabManager.spaceServices.catalog.createSpace(
+            name: "Deferred Split",
+            profileId: UUID()
+        )
+        let first = tabManager.regularTabLifecycleOwner.createNewTab(
+            url: "https://one.example",
+            in: space,
+            activate: true
+        )
+        let second = tabManager.regularTabLifecycleOwner.createNewTab(
+            url: "https://two.example",
+            in: space,
+            activate: false
+        )
+        let group = try XCTUnwrap(
+            SplitGroup.make(
+                members: [.regularTab(first.id), .regularTab(second.id)],
+                layoutKind: .vertical,
+                container: .regularTabs(spaceId: space.id)
+            )
+        )
+        let pendingSelection = WindowSplitSelection(
+            groupID: group.id,
+            activeMemberID: .regularTab(second.id)
+        )
+        let snapshot = WindowSessionSnapshot(
+            currentTabId: first.id,
+            currentSpaceId: space.id,
+            currentProfileId: nil,
+            activeShortcutPinId: nil,
+            activeShortcutPinRole: nil,
+            isShowingEmptyState: false,
+            floatingBarReason: nil,
+            activeTabsBySpace: [],
+            activeShortcutsBySpace: [],
+            sidebarWidth: Double(BrowserWindowState.sidebarDefaultWidth),
+            savedSidebarWidth: Double(BrowserWindowState.sidebarDefaultWidth),
+            sidebarContentWidth: Double(BrowserWindowState.sidebarContentWidth(
+                for: BrowserWindowState.sidebarDefaultWidth
+            )),
+            isSidebarVisible: true,
+            floatingBarDraft: FloatingBarDraftState(
+                text: "",
+                navigateCurrentTab: false
+            ),
+            splitSelection: pendingSelection
+        )
+        let delegate = TestWindowSessionDelegate(tabManager: tabManager)
+        var didPublishGroup = false
+        delegate.onSyncShortcutSelectionState = { _ in
+            guard !didPublishGroup else { return }
+            didPublishGroup = true
+            XCTAssertTrue(
+                tabManager.splitGroupMutations.insert(group, persist: false)
+            )
+        }
+        let service = delegate.makeRestoreService(
+            lastWindowSessionKey: "SumiTests.windowSession.\(UUID().uuidString)"
+        )
+        let windowState = BrowserWindowState()
+
+        service.applyWindowSessionSnapshot(snapshot, to: windowState)
+
+        XCTAssertTrue(didPublishGroup)
+        XCTAssertEqual(delegate.focusedSplitGroupIds, [])
+        XCTAssertEqual(
+            windowState.pendingSessionSplitSelection,
+            PendingWindowSplitSelection(
+                groupID: pendingSelection.groupID,
+                preferredMemberID: pendingSelection.activeMemberID
+            )
+        )
+
+        tabManager.startupRestoreLifecycle.markLoadFinished()
+        service.handleTabManagerDataLoaded(windows: [windowState])
+
+        XCTAssertEqual(delegate.focusedSplitGroupIds, [group.id])
+        XCTAssertNil(windowState.pendingSessionSplitSelection)
+        XCTAssertEqual(
+            windowState.splitSelection,
+            WindowSplitSelection(
+                groupID: group.id,
+                activeMemberID: .regularTab(second.id)
+            )
+        )
+    }
+
     func testLegacySplitSessionSnapshotMigratesAfterTabLoad() throws {
         let tabManager = try makeInMemoryTabManager(loadPersistedState: false)
         let space = tabManager.spaceServices.catalog.createSpace(name: "Legacy Split", profileId: UUID())
@@ -942,6 +1031,7 @@ final class TestWindowSessionDelegate:
     private let themeCoordinator = WorkspaceThemeCoordinator()
     private(set) var committedThemes: [WorkspaceTheme] = []
     private(set) var focusedSplitGroupIds: [UUID] = []
+    var onSyncShortcutSelectionState: ((BrowserWindowState) -> Void)?
 
     init(tabManager: TabManager) {
         self.tabManager = tabManager
@@ -1004,7 +1094,9 @@ final class TestWindowSessionDelegate:
 
     func sanitize(in _: BrowserWindowState) { /* no-op */ }
 
-    func syncShortcutSelectionState(for _: BrowserWindowState) { /* no-op */ }
+    func syncShortcutSelectionState(for windowState: BrowserWindowState) {
+        onSyncShortcutSelectionState?(windowState)
+    }
 
     func commitWorkspaceTheme(_ theme: WorkspaceTheme, for windowState: BrowserWindowState) {
         committedThemes.append(theme)
