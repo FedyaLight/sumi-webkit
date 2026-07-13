@@ -47,7 +47,7 @@ final class SumiImportRuntimeStore: SumiImportRuntimeMutating {
         persistenceReason: String
     ) async throws {
         try profileManager.replaceProfiles(with: state.profiles)
-        profileSelection.currentProfile = state.currentProfile
+        profileSelection.applyImportProfileSelection(state.currentProfile)
         tabManager.structuralInstallOwner.install(
             spaces: state.spaces,
             tabsBySpace: state.tabsBySpace,

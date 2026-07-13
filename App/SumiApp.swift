@@ -24,12 +24,21 @@ private struct SumiAppRootDependencies {
     let windowLifecycleService: BrowserWindowLifecycleService
 }
 
+private enum SumiImportRecoveryState {
+    case pending
+    case ready
+    case failed(message: String, backupURL: URL?)
+}
+
 @main
 struct SumiApp: App {
+    private static let importRecoveryLog = Logger.sumi(category: "ImportRecovery")
+
     @State private var windowRegistry = WindowRegistry()
     @State private var settingsManager: SumiSettingsService
     @State private var keyboardShortcutManager = KeyboardShortcutManager()
     @State private var appOrchestrationOwner = BrowserAppOrchestrationOwner()
+    @State private var importRecoveryState = SumiImportRecoveryState.pending
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
     // Root runtime facade retained for SwiftUI observation. App lifecycle and platform callbacks
@@ -83,27 +92,95 @@ struct SumiApp: App {
 
     var body: some Scene {
         WindowGroup {
-            rootContentView(
-                windowState: nil,
-                initialWorkspaceTheme: browserManager.startupWorkspaceTheme
-            )
-                .onAppear {
-                    setupApplicationLifecycle()
+            Group {
+                switch importRecoveryState {
+                case .pending:
+                    VStack(spacing: 12) {
+                        ProgressView()
+                        Text("Recovering browser data…")
+                    }
+                    .frame(minWidth: 520, minHeight: 240)
+                case .ready:
+                    rootContentView(
+                        windowState: nil,
+                        initialWorkspaceTheme: browserManager.startupWorkspaceTheme
+                    )
+                    .onAppear {
+                        setupApplicationLifecycle()
+                    }
+                case .failed(let message, let backupURL):
+                    VStack(spacing: 12) {
+                        Text("Sumi could not recover an interrupted import.")
+                            .font(.headline)
+                        Text(message)
+                            .multilineTextAlignment(.center)
+                        if let backupURL {
+                            Text("Pre-restore backup: \(backupURL.path)")
+                                .font(.caption)
+                                .textSelection(.enabled)
+                        }
+                    }
+                    .padding(32)
+                    .frame(minWidth: 520, minHeight: 240)
                 }
+            }
+            .task {
+                await recoverInterruptedImportIfNeeded()
+            }
         }
         .windowStyle(.hiddenTitleBar)
         .commands {
-            SumiCommands(
-                browserContext: makeCommandsBrowserContext(),
-                windowRegistry: windowRegistry,
-                shortcutManager: keyboardShortcutManager,
-                updaterService: updaterService,
-                menuFaviconInvalidator: menuFaviconInvalidator
-            )
+            if case .ready = importRecoveryState {
+                SumiCommands(
+                    browserContext: makeCommandsBrowserContext(),
+                    windowRegistry: windowRegistry,
+                    shortcutManager: keyboardShortcutManager,
+                    updaterService: updaterService,
+                    menuFaviconInvalidator: menuFaviconInvalidator
+                )
+            }
         }
     }
 
     // MARK: - Application Lifecycle Setup
+
+    private func recoverInterruptedImportIfNeeded() async {
+        guard case .pending = importRecoveryState else { return }
+        let transaction = SumiImportTransaction(
+            materializer: SumiImportRuntimeMaterializer(
+                tabFactory: browserManager.tabManager.tabFactory,
+                tabBrowserRuntime: TabBrowserRuntimeFactory.make(for: browserManager)
+            ),
+            runtime: SumiImportRuntimeStore(
+                profileManager: browserManager.profileManager,
+                tabManager: browserManager.tabManager,
+                profileSelection: browserManager
+            ),
+            bookmarks: SumiImportBookmarkStore(
+                bookmarkManager: browserManager.bookmarkManager
+            ),
+            backupWriter: SumiBackupService()
+        )
+        do {
+            let report = try await transaction.recoverIfNeeded()
+            importRecoveryState = .ready
+            guard let report else { return }
+            let backupPath = report.preRestoreBackupURL?.path ?? "none"
+            Self.importRecoveryLog.notice(
+                "Recovered an interrupted import; preRestoreBackup=\(backupPath, privacy: .public)"
+            )
+        } catch {
+            let backupURL = (error as? SumiImportTransactionError)?.preRestoreBackupURL
+            importRecoveryState = .failed(
+                message: error.localizedDescription,
+                backupURL: backupURL
+            )
+            let backupPath = backupURL?.path ?? "none"
+            Self.importRecoveryLog.error(
+                "Interrupted import recovery failed: \(error.localizedDescription, privacy: .public); preRestoreBackup=\(backupPath, privacy: .public)"
+            )
+        }
+    }
 
     /// Configures application-level dependencies and callbacks when the first window appears.
     ///

@@ -247,4 +247,15 @@ enum WebsiteViewContextFactory {
     }
 }
 
-extension BrowserManager: SumiImportProfileSelection {}
+extension BrowserManager: SumiImportProfileSelection {
+    func applyImportProfileSelection(_ profile: Profile?) {
+        currentProfile = profile
+        historyManager.switchProfile(profile?.id)
+        bookmarkManager.setFaviconPrefetchPartition(
+            dataServices.faviconService.partition(profile: profile)
+        )
+        if let profile {
+            optionalModules.extensions.switchProfileIfLoaded(profile)
+        }
+    }
+}

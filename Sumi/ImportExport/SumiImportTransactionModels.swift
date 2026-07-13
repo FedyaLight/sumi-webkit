@@ -14,6 +14,10 @@ struct SumiImportReport: Sendable {
     let bookmarkSummary: SumiBookmarksImportSummary?
 }
 
+struct SumiImportRecoveryReport: Sendable {
+    let preRestoreBackupURL: URL?
+}
+
 enum SumiImportBookmarkMutation: Equatable, Sendable {
     case none
     case merge([SumiPortableBookmarkNode])
@@ -55,14 +59,56 @@ struct SumiImportPlan: Equatable, Sendable {
 
 enum SumiImportTransactionError: LocalizedError {
     case runtimePersistenceFailed
-    case rollbackFailed(importError: Error, rollbackError: Error)
+    case commitFailed(
+        importError: Error,
+        rollbackErrors: [Error],
+        preRestoreBackupURL: URL?
+    )
+    case recoveryFailed(
+        rollbackErrors: [Error],
+        preRestoreBackupURL: URL?
+    )
+
+    var rollbackErrors: [Error] {
+        switch self {
+        case .runtimePersistenceFailed:
+            []
+        case .commitFailed(_, let rollbackErrors, _),
+             .recoveryFailed(let rollbackErrors, _):
+            rollbackErrors
+        }
+    }
+
+    var preRestoreBackupURL: URL? {
+        switch self {
+        case .runtimePersistenceFailed:
+            nil
+        case .commitFailed(_, _, let backupURL),
+             .recoveryFailed(_, let backupURL):
+            backupURL
+        }
+    }
 
     var errorDescription: String? {
         switch self {
         case .runtimePersistenceFailed:
             return "Sumi could not persist the imported browser data."
-        case .rollbackFailed(let importError, let rollbackError):
-            return "Import failed (\(importError.localizedDescription)) and Sumi could not restore the previous browser state (\(rollbackError.localizedDescription))."
+        case .commitFailed(let importError, let rollbackErrors, let backupURL):
+            let rollbackDescription = rollbackErrors.isEmpty
+                ? "The previous browser state was restored."
+                : "Rollback reported \(rollbackErrors.count) error(s): \(Self.errorList(rollbackErrors))."
+            return "Import failed: \(importError.localizedDescription) \(rollbackDescription)\(Self.backupDescription(backupURL))"
+        case .recoveryFailed(let rollbackErrors, let backupURL):
+            return "Sumi could not recover an interrupted import. \(Self.errorList(rollbackErrors))\(Self.backupDescription(backupURL))"
         }
+    }
+
+    private static func errorList(_ errors: [Error]) -> String {
+        errors.map(\.localizedDescription).joined(separator: "; ")
+    }
+
+    private static func backupDescription(_ url: URL?) -> String {
+        guard let url else { return "" }
+        return " Pre-restore backup: \(url.path)"
     }
 }

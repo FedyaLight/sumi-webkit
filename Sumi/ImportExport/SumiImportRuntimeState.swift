@@ -33,5 +33,6 @@ protocol SumiImportRuntimeMutating: AnyObject {
 
 @MainActor
 protocol SumiImportProfileSelection: AnyObject {
-    var currentProfile: Profile? { get set }
+    var currentProfile: Profile? { get }
+    func applyImportProfileSelection(_ profile: Profile?)
 }

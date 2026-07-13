@@ -1,4 +1,5 @@
 import XCTest
+import SumiDomain
 
 @testable import Sumi
 
@@ -225,10 +226,11 @@ final class SumiImportTransactionTests: XCTestCase {
             _ = try await fixture.transaction.commit(mutatingPlan())
             XCTFail("Expected rollback failure")
         } catch let error as SumiImportTransactionError {
-            guard case .rollbackFailed = error else {
-                XCTFail("Expected rollbackFailed, got \(error)")
+            guard case .commitFailed = error else {
+                XCTFail("Expected commitFailed, got \(error)")
                 return
             }
+            XCTAssertEqual(error.rollbackErrors.count, 1)
         } catch {
             XCTFail("Expected SumiImportTransactionError, got \(error)")
         }
@@ -245,10 +247,11 @@ final class SumiImportTransactionTests: XCTestCase {
             _ = try await fixture.transaction.commit(mutatingPlan())
             XCTFail("Expected rollback failure")
         } catch let error as SumiImportTransactionError {
-            guard case .rollbackFailed = error else {
-                XCTFail("Expected rollbackFailed, got \(error)")
+            guard case .commitFailed = error else {
+                XCTFail("Expected commitFailed, got \(error)")
                 return
             }
+            XCTAssertEqual(error.rollbackErrors.count, 1)
         } catch {
             XCTFail("Expected SumiImportTransactionError, got \(error)")
         }
@@ -275,6 +278,495 @@ final class SumiImportTransactionTests: XCTestCase {
 
         XCTAssertEqual(fixture.runtime.events, ["checkpoint"])
         XCTAssertEqual(fixture.bookmarks.commitCount, 0)
+    }
+
+    func testFailureResultIncludesPreRestoreBackupURL() async {
+        let fixture = makeTransactionFixture()
+        fixture.bookmarks.failuresRemaining = 1
+
+        do {
+            _ = try await fixture.transaction.commit(replaceMutatingPlan())
+            XCTFail("Expected import failure")
+        } catch let error as SumiImportTransactionError {
+            guard case .commitFailed = error else {
+                XCTFail("Expected commitFailed, got \(error)")
+                return
+            }
+            XCTAssertEqual(
+                error.preRestoreBackupURL,
+                URL(fileURLWithPath: "/tmp/import-backup.sumibackup")
+            )
+            XCTAssertTrue(error.rollbackErrors.isEmpty)
+        } catch {
+            XCTFail("Expected SumiImportTransactionError, got \(error)")
+        }
+    }
+
+    func testAllRollbackErrorsAreReportedAndJournalRemainsRecoverable() async {
+        let fixture = makeTransactionFixture()
+        fixture.bookmarks.failuresRemaining = 1
+        fixture.bookmarks.restoreError = TestImportFailure.bookmarkRollback
+        fixture.runtime.restoreError = TestImportFailure.runtimeRollback
+
+        do {
+            _ = try await fixture.transaction.commit(mutatingPlan())
+            XCTFail("Expected rollback failure")
+        } catch let error as SumiImportTransactionError {
+            guard case .commitFailed = error else {
+                XCTFail("Expected commitFailed, got \(error)")
+                return
+            }
+            XCTAssertEqual(error.rollbackErrors.count, 2)
+            XCTAssertEqual(
+                error.rollbackErrors.compactMap { $0 as? TestImportFailure },
+                [.bookmarkRollback, .runtimeRollback]
+            )
+            XCTAssertEqual(fixture.journal.record?.phase, .compensating)
+        } catch {
+            XCTFail("Expected SumiImportTransactionError, got \(error)")
+        }
+
+        XCTAssertEqual(fixture.bookmarks.events.suffix(1), ["restore"])
+        XCTAssertEqual(fixture.runtime.events.suffix(1), ["restore"])
+    }
+
+    func testJournalTransitionAndBothResourceRollbackErrorsAreAllReported() async {
+        let fixture = makeTransactionFixture()
+        fixture.bookmarks.failuresRemaining = 1
+        fixture.journal.saveErrors[.compensating] = TestImportFailure.journal
+        fixture.bookmarks.restoreError = TestImportFailure.bookmarkRollback
+        fixture.runtime.restoreError = TestImportFailure.runtimeRollback
+
+        do {
+            _ = try await fixture.transaction.commit(mutatingPlan())
+            XCTFail("Expected rollback failure")
+        } catch let error as SumiImportTransactionError {
+            XCTAssertEqual(
+                error.rollbackErrors.compactMap { $0 as? TestImportFailure },
+                [.journal, .bookmarkRollback, .runtimeRollback]
+            )
+        } catch {
+            XCTFail("Expected SumiImportTransactionError, got \(error)")
+        }
+    }
+
+    func testPreparedJournalFailureIncludesCreatedBackupWithoutMutating() async {
+        let fixture = makeTransactionFixture()
+        fixture.journal.saveErrors[.prepared] = TestImportFailure.journal
+
+        do {
+            _ = try await fixture.transaction.commit(replaceMutatingPlan())
+            XCTFail("Expected journal failure")
+        } catch let error as SumiImportTransactionError {
+            XCTAssertEqual(
+                error.preRestoreBackupURL,
+                URL(fileURLWithPath: "/tmp/import-backup.sumibackup")
+            )
+            XCTAssertTrue(error.rollbackErrors.isEmpty)
+        } catch {
+            XCTFail("Expected SumiImportTransactionError, got \(error)")
+        }
+
+        XCTAssertEqual(fixture.runtime.events, ["checkpoint"])
+        XCTAssertFalse(fixture.runtime.events.contains("install"))
+        XCTAssertEqual(fixture.bookmarks.commitCount, 0)
+    }
+
+    func testInjectedCrashAtEveryForwardPhaseRecoversOnNextTransaction() async throws {
+        let phases: [SumiImportTransactionPhase] = [
+            .prepared,
+            .runtimeCommitted,
+            .bookmarksCommitted,
+            .completed,
+        ]
+
+        for phase in phases {
+            let fixture = makeTransactionFixture()
+            let interrupted = fixture.makeTransaction(
+                interrupting: .phasePersisted(phase)
+            )
+
+            await XCTAssertThrowsErrorAsync {
+                _ = try await interrupted.commit(self.mutatingPlan())
+            }
+
+            XCTAssertEqual(fixture.journal.record?.phase, phase, "phase=\(phase)")
+            let runtimeRestoreCount = fixture.runtime.events.filter { $0 == "restore" }.count
+            let bookmarkRestoreCount = fixture.bookmarks.events.filter { $0 == "restore" }.count
+
+            let report = try await fixture.makeTransaction().recoverIfNeeded()
+
+            XCTAssertNotNil(report, "phase=\(phase)")
+            XCTAssertNil(fixture.journal.record, "phase=\(phase)")
+            if phase == .completed {
+                XCTAssertEqual(
+                    fixture.runtime.events.filter { $0 == "restore" }.count,
+                    runtimeRestoreCount,
+                    "phase=\(phase)"
+                )
+                XCTAssertEqual(
+                    fixture.bookmarks.events.filter { $0 == "restore" }.count,
+                    bookmarkRestoreCount,
+                    "phase=\(phase)"
+                )
+            } else {
+                XCTAssertEqual(
+                    fixture.runtime.events.filter { $0 == "restore" }.count,
+                    runtimeRestoreCount + 1,
+                    "phase=\(phase)"
+                )
+                XCTAssertEqual(
+                    fixture.bookmarks.events.filter { $0 == "restore" }.count,
+                    bookmarkRestoreCount + 1,
+                    "phase=\(phase)"
+                )
+                XCTAssertEqual(fixture.bookmarks.storedIDs, ["before-id"])
+            }
+        }
+    }
+
+    func testInjectedCrashBetweenDurableEffectsAndPhaseWritesRecovers() async throws {
+        let cases: [(SumiImportTransactionFaultPoint, SumiImportTransactionPhase)] = [
+            (.runtimeInstalled, .prepared),
+            (.bookmarksMutated, .runtimeCommitted),
+        ]
+
+        for (faultPoint, expectedPhase) in cases {
+            let fixture = makeTransactionFixture()
+
+            await XCTAssertThrowsErrorAsync {
+                _ = try await fixture.makeTransaction(interrupting: faultPoint)
+                    .commit(self.mutatingPlan())
+            }
+
+            XCTAssertEqual(fixture.journal.record?.phase, expectedPhase)
+            _ = try await fixture.makeTransaction().recoverIfNeeded()
+            XCTAssertNil(fixture.journal.record)
+            XCTAssertEqual(fixture.runtime.events.suffix(2), ["checkpoint", "restore"])
+            XCTAssertEqual(fixture.bookmarks.storedIDs, ["before-id"])
+        }
+    }
+
+    func testInjectedCrashAtCompensatingPhaseRecoversOnNextTransaction() async throws {
+        let fixture = makeTransactionFixture()
+        fixture.bookmarks.failuresRemaining = 1
+        let interrupted = fixture.makeTransaction(
+            interrupting: .phasePersisted(.compensating)
+        )
+
+        await XCTAssertThrowsErrorAsync {
+            _ = try await interrupted.commit(self.mutatingPlan())
+        }
+
+        XCTAssertEqual(fixture.journal.record?.phase, .compensating)
+        XCTAssertFalse(fixture.runtime.events.contains("restore"))
+        XCTAssertFalse(fixture.bookmarks.events.contains("restore"))
+
+        let report = try await fixture.makeTransaction().recoverIfNeeded()
+
+        XCTAssertNotNil(report)
+        XCTAssertNil(fixture.journal.record)
+        XCTAssertEqual(fixture.runtime.events.suffix(2), ["checkpoint", "restore"])
+        XCTAssertEqual(fixture.bookmarks.events.suffix(1), ["restore"])
+        XCTAssertEqual(fixture.bookmarks.storedIDs, ["before-id"])
+    }
+
+    func testRecoveryCanResumeAfterEveryCompensationBoundary() async throws {
+        let faultPoints: [SumiImportTransactionFaultPoint] = [
+            .phasePersisted(.compensating),
+            .bookmarksCompensated,
+            .runtimeCompensated,
+            .phasePersisted(.completed),
+        ]
+
+        for faultPoint in faultPoints {
+            let fixture = makeTransactionFixture()
+            await XCTAssertThrowsErrorAsync {
+                _ = try await fixture.makeTransaction(interrupting: .runtimeInstalled)
+                    .commit(self.mutatingPlan())
+            }
+
+            await XCTAssertThrowsErrorAsync {
+                _ = try await fixture.makeTransaction(interrupting: faultPoint)
+                    .recoverIfNeeded()
+            }
+
+            _ = try await fixture.makeTransaction().recoverIfNeeded()
+            XCTAssertNil(fixture.journal.record, "faultPoint=\(faultPoint)")
+            XCTAssertEqual(fixture.bookmarks.storedIDs, ["before-id"])
+        }
+    }
+
+    func testCompensationCompletedTransitionIsCrashRecoverable() async throws {
+        let fixture = makeTransactionFixture()
+        fixture.bookmarks.failuresRemaining = 1
+
+        await XCTAssertThrowsErrorAsync {
+            _ = try await fixture.makeTransaction(
+                interrupting: .phasePersisted(.completed)
+            ).commit(self.mutatingPlan())
+        }
+
+        XCTAssertEqual(fixture.journal.record?.phase, .completed)
+        let runtimeRestoreCount = fixture.runtime.events.filter { $0 == "restore" }.count
+        let bookmarkRestoreCount = fixture.bookmarks.events.filter { $0 == "restore" }.count
+
+        _ = try await fixture.makeTransaction().recoverIfNeeded()
+
+        XCTAssertNil(fixture.journal.record)
+        XCTAssertEqual(
+            fixture.runtime.events.filter { $0 == "restore" }.count,
+            runtimeRestoreCount
+        )
+        XCTAssertEqual(
+            fixture.bookmarks.events.filter { $0 == "restore" }.count,
+            bookmarkRestoreCount
+        )
+    }
+
+    func testConcurrentTransactionsCannotOverwriteActiveJournal() async throws {
+        let fixture = makeTransactionFixture()
+        let installSuspended = expectation(description: "first install suspended")
+        fixture.runtime.suspendNextInstall {
+            installSuspended.fulfill()
+        }
+
+        let first = Task { @MainActor in
+            try await fixture.transaction.commit(self.mutatingPlan())
+        }
+        await fulfillment(of: [installSuspended], timeout: 1)
+
+        let secondStarted = expectation(description: "second transaction started")
+        let second = Task { @MainActor in
+            secondStarted.fulfill()
+            try await fixture.makeTransaction().commit(self.mutatingPlan())
+        }
+        await fulfillment(of: [secondStarted], timeout: 1)
+        await Task.yield()
+
+        XCTAssertEqual(fixture.journal.savedPhases, [.prepared])
+        XCTAssertEqual(fixture.runtime.events, ["checkpoint", "install"])
+
+        fixture.runtime.resumeSuspendedInstall()
+        _ = try await first.value
+        _ = try await second.value
+
+        XCTAssertNil(fixture.journal.record)
+        XCTAssertEqual(fixture.runtime.events.filter { $0 == "install" }.count, 2)
+    }
+
+    func testRecoveryReportsEveryErrorAndPreRestoreBackupURL() async {
+        let fixture = makeTransactionFixture()
+        let interrupted = fixture.makeTransaction(
+            interrupting: .phasePersisted(.bookmarksCommitted)
+        )
+
+        await XCTAssertThrowsErrorAsync {
+            _ = try await interrupted.commit(self.replaceMutatingPlan())
+        }
+        fixture.bookmarks.restoreError = TestImportFailure.bookmarkRollback
+        fixture.runtime.restoreError = TestImportFailure.runtimeRollback
+
+        do {
+            _ = try await fixture.makeTransaction().recoverIfNeeded()
+            XCTFail("Expected recovery failure")
+        } catch let error as SumiImportTransactionError {
+            guard case .recoveryFailed = error else {
+                XCTFail("Expected recoveryFailed, got \(error)")
+                return
+            }
+            XCTAssertEqual(error.rollbackErrors.count, 2)
+            XCTAssertEqual(
+                error.rollbackErrors.compactMap { $0 as? TestImportFailure },
+                [.bookmarkRollback, .runtimeRollback]
+            )
+            XCTAssertEqual(
+                error.preRestoreBackupURL,
+                URL(fileURLWithPath: "/tmp/import-backup.sumibackup")
+            )
+            XCTAssertEqual(fixture.journal.record?.phase, .compensating)
+        } catch {
+            XCTFail("Expected SumiImportTransactionError, got \(error)")
+        }
+    }
+
+    func testFileJournalDurablyRoundTripsEveryPhase() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SumiImportJournalTests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let journal = SumiImportTransactionFileJournal(
+            fileURL: directory.appendingPathComponent("active.json")
+        )
+        let baseline = mutatingPlan().baseline
+        let target = mutatingPlan().targetRuntimeData
+        let bookmarkCheckpoint = SumiImportBookmarkCheckpoint(
+            RecordingImportBookmarks().checkpoint()
+        )
+        let runtimeCheckpoint = SumiImportDurableRuntimeCheckpoint(emptyRuntimeState())
+
+        for phase in SumiImportTransactionPhase.allCases {
+            let record = SumiImportTransactionJournalRecord(
+                phase: phase,
+                baseline: baseline,
+                targetRuntimeData: target,
+                runtimeCheckpoint: runtimeCheckpoint,
+                bookmarkCheckpoint: bookmarkCheckpoint,
+                preRestoreBackupURL: URL(fileURLWithPath: "/tmp/pre-restore.sumibackup")
+            )
+            try journal.save(record)
+            XCTAssertEqual(try journal.load(), record, "phase=\(phase)")
+        }
+
+        try journal.clear()
+        XCTAssertNil(try journal.load())
+    }
+
+    func testFreshFileJournalRecoveryRestoresCompleteDurableRuntimeCheckpoint() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SumiImportRecoveryTests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let journalURL = directory.appendingPathComponent("active.json")
+
+        let browserManager = BrowserManager()
+        let firstProfile = Profile(name: "First", icon: "person")
+        let selectedProfile = Profile(name: "Selected", icon: "person.2")
+        let space = Space(name: "Baseline Space", icon: "circle", profileId: selectedProfile.id)
+        let firstTab = browserManager.tabManager.tabFactory.makeTab(
+            url: URL(string: "https://first.example")!,
+            name: "First",
+            spaceId: space.id,
+            loadsCachedFaviconOnInit: false
+        )
+        let selectedTab = browserManager.tabManager.tabFactory.makeTab(
+            url: URL(string: "https://selected.example")!,
+            name: "Selected",
+            spaceId: space.id,
+            loadsCachedFaviconOnInit: false
+        )
+        let pendingPin = ShortcutPin(
+            id: UUID(),
+            role: .essential,
+            index: 0,
+            launchURL: URL(string: "https://pending.example")!,
+            title: "Pending"
+        )
+        let splitGroup = try XCTUnwrap(SplitGroup.make(
+            members: [.regularTab(firstTab.id), .regularTab(selectedTab.id)],
+            layoutKind: .vertical,
+            container: .regularTabs(spaceId: space.id)
+        ))
+        let baselineState = SumiImportRuntimeState(
+            profiles: [firstProfile, selectedProfile],
+            currentProfile: selectedProfile,
+            spaces: [space],
+            tabsBySpace: [space.id: [firstTab, selectedTab]],
+            foldersBySpace: [space.id: []],
+            pinnedByProfile: [:],
+            spacePinnedShortcuts: [:],
+            pendingPinnedWithoutProfile: [pendingPin],
+            splitGroups: [splitGroup],
+            currentSpace: space,
+            currentTab: selectedTab
+        )
+        let materializedBaseline = SumiImportRuntimeState(
+            profiles: baselineState.profiles,
+            currentProfile: firstProfile,
+            spaces: baselineState.spaces,
+            tabsBySpace: baselineState.tabsBySpace,
+            foldersBySpace: baselineState.foldersBySpace,
+            pinnedByProfile: baselineState.pinnedByProfile,
+            spacePinnedShortcuts: baselineState.spacePinnedShortcuts,
+            pendingPinnedWithoutProfile: [],
+            splitGroups: [],
+            currentSpace: space,
+            currentTab: firstTab
+        )
+        let importedProfile = Profile(id: firstProfile.id, name: "Imported", icon: "person")
+        let importedState = SumiImportRuntimeState(
+            profiles: [importedProfile, selectedProfile],
+            currentProfile: importedProfile,
+            spaces: baselineState.spaces,
+            tabsBySpace: baselineState.tabsBySpace,
+            foldersBySpace: baselineState.foldersBySpace,
+            pinnedByProfile: baselineState.pinnedByProfile,
+            spacePinnedShortcuts: baselineState.spacePinnedShortcuts,
+            pendingPinnedWithoutProfile: [],
+            splitGroups: [],
+            currentSpace: space,
+            currentTab: firstTab
+        )
+        let baselineData = SumiPortableData(
+            profiles: [
+                portableProfile(id: firstProfile.id.uuidString, name: firstProfile.name),
+                portableProfile(id: selectedProfile.id.uuidString, name: selectedProfile.name),
+            ],
+            spaces: [portableSpace(
+                id: space.id.uuidString,
+                profileId: selectedProfile.id.uuidString
+            )],
+            regularTabs: [
+                portableTab(id: firstTab.id.uuidString, spaceId: space.id.uuidString),
+                portableTab(id: selectedTab.id.uuidString, spaceId: space.id.uuidString),
+            ]
+        )
+        let targetData = SumiPortableData(
+            profiles: [
+                portableProfile(id: firstProfile.id.uuidString, name: importedProfile.name),
+                portableProfile(id: selectedProfile.id.uuidString, name: selectedProfile.name),
+            ],
+            spaces: baselineData.spaces,
+            regularTabs: baselineData.regularTabs
+        )
+        let plan = SumiImportPlan(
+            baseline: baselineData,
+            targetRuntimeData: targetData,
+            bookmarkMutation: .merge([bookmarkNode("Imported")]),
+            categories: [.profiles, .bookmarks],
+            mode: .merge,
+            warnings: []
+        )
+        let bookmarks = RecordingImportBookmarks()
+        let firstRuntime = StateTrackingImportRuntime(state: baselineState)
+        let materializer = PlanStateImportMaterializer(
+            rollbackData: baselineData,
+            importedState: importedState,
+            rollbackState: materializedBaseline
+        )
+        let firstTransaction = SumiImportTransaction(
+            materializer: materializer,
+            runtime: firstRuntime,
+            bookmarks: bookmarks,
+            backupWriter: RecordingImportBackup(),
+            journal: SumiImportTransactionFileJournal(fileURL: journalURL),
+            executionGate: SumiImportTransactionExecutionGate(),
+            shouldInterrupt: { $0 == .bookmarksMutated }
+        )
+
+        await XCTAssertThrowsErrorAsync {
+            _ = try await firstTransaction.commit(plan)
+        }
+
+        let launchRuntime = StateTrackingImportRuntime(state: importedState)
+        let launchTransaction = SumiImportTransaction(
+            materializer: materializer,
+            runtime: launchRuntime,
+            bookmarks: bookmarks,
+            backupWriter: RecordingImportBackup(),
+            journal: SumiImportTransactionFileJournal(fileURL: journalURL),
+            executionGate: SumiImportTransactionExecutionGate()
+        )
+
+        _ = try await launchTransaction.recoverIfNeeded()
+
+        XCTAssertEqual(launchRuntime.state.profiles.map(\.name), ["First", "Selected"])
+        XCTAssertIdentical(launchRuntime.state.currentProfile, selectedProfile)
+        XCTAssertIdentical(launchRuntime.state.currentSpace, space)
+        XCTAssertIdentical(launchRuntime.state.currentTab, selectedTab)
+        XCTAssertEqual(launchRuntime.state.pendingPinnedWithoutProfile.count, 1)
+        XCTAssertEqual(launchRuntime.state.pendingPinnedWithoutProfile.first?.id, pendingPin.id)
+        XCTAssertEqual(launchRuntime.state.splitGroups, [splitGroup])
+        XCTAssertEqual(bookmarks.storedIDs, ["before-id"])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: journalURL.path))
     }
 
     func testNoOpPlanDoesNotMaterializeCheckpointBackupOrMutate() async throws {
@@ -362,6 +854,18 @@ final class SumiImportTransactionTests: XCTestCase {
         )
     }
 
+    private func replaceMutatingPlan() -> SumiImportPlan {
+        let plan = mutatingPlan()
+        return SumiImportPlan(
+            baseline: plan.baseline,
+            targetRuntimeData: plan.targetRuntimeData,
+            bookmarkMutation: plan.bookmarkMutation,
+            categories: plan.categories,
+            mode: .replace,
+            warnings: plan.warnings
+        )
+    }
+
     private func bookmarkNode(_ name: String) -> SumiPortableBookmarkNode {
         SumiPortableBookmarkNode(
             name: name,
@@ -406,17 +910,23 @@ final class SumiImportTransactionTests: XCTestCase {
         let runtime = RecordingImportRuntime(checkpoint: checkpoint)
         let bookmarks = RecordingImportBookmarks()
         let backup = RecordingImportBackup()
+        let journal = RecordingImportJournal()
+        let executionGate = SumiImportTransactionExecutionGate()
         return TransactionFixture(
             transaction: SumiImportTransaction(
                 materializer: materializer,
                 runtime: runtime,
                 bookmarks: bookmarks,
-                backupWriter: backup
+                backupWriter: backup,
+                journal: journal,
+                executionGate: executionGate
             ),
             materializer: materializer,
             runtime: runtime,
             bookmarks: bookmarks,
-            backup: backup
+            backup: backup,
+            journal: journal,
+            executionGate: executionGate
         )
     }
 
@@ -444,6 +954,22 @@ private struct TransactionFixture {
     let runtime: RecordingImportRuntime
     let bookmarks: RecordingImportBookmarks
     let backup: RecordingImportBackup
+    let journal: RecordingImportJournal
+    let executionGate: SumiImportTransactionExecutionGate
+
+    func makeTransaction(
+        interrupting faultPoint: SumiImportTransactionFaultPoint? = nil
+    ) -> SumiImportTransaction {
+        SumiImportTransaction(
+            materializer: materializer,
+            runtime: runtime,
+            bookmarks: bookmarks,
+            backupWriter: backup,
+            journal: journal,
+            executionGate: executionGate,
+            shouldInterrupt: { $0 == faultPoint }
+        )
+    }
 }
 
 @MainActor
@@ -465,11 +991,59 @@ private final class RecordingImportMaterializer: SumiImportRuntimeMaterializing 
 }
 
 @MainActor
+private final class PlanStateImportMaterializer: SumiImportRuntimeMaterializing {
+    let rollbackData: SumiPortableData
+    let importedState: SumiImportRuntimeState
+    let rollbackState: SumiImportRuntimeState
+
+    init(
+        rollbackData: SumiPortableData,
+        importedState: SumiImportRuntimeState,
+        rollbackState: SumiImportRuntimeState
+    ) {
+        self.rollbackData = rollbackData
+        self.importedState = importedState
+        self.rollbackState = rollbackState
+    }
+
+    func materialize(
+        _ plan: SumiImportPlan,
+        preserving checkpoint: SumiImportRuntimeState
+    ) throws -> SumiImportRuntimeState {
+        _ = checkpoint
+        return plan.targetRuntimeData == rollbackData ? rollbackState : importedState
+    }
+}
+
+@MainActor
+private final class StateTrackingImportRuntime: SumiImportRuntimeMutating {
+    private(set) var state: SumiImportRuntimeState
+
+    init(state: SumiImportRuntimeState) {
+        self.state = state
+    }
+
+    func checkpoint() -> SumiImportRuntimeState {
+        state
+    }
+
+    func install(_ state: SumiImportRuntimeState) async throws {
+        self.state = state
+    }
+
+    func restore(_ checkpoint: SumiImportRuntimeState) async throws {
+        state = checkpoint
+    }
+}
+
+@MainActor
 private final class RecordingImportRuntime: SumiImportRuntimeMutating {
     let savedCheckpoint: SumiImportRuntimeState
     var events: [String] = []
     var installFailuresRemaining = 0
     var restoreError: Error?
+    private var suspendedInstall: CheckedContinuation<Void, Never>?
+    private var onInstallSuspended: (() -> Void)?
 
     init(checkpoint: SumiImportRuntimeState) {
         savedCheckpoint = checkpoint
@@ -482,6 +1056,13 @@ private final class RecordingImportRuntime: SumiImportRuntimeMutating {
 
     func install(_ state: SumiImportRuntimeState) async throws {
         events.append("install")
+        if let onInstallSuspended {
+            self.onInstallSuspended = nil
+            await withCheckedContinuation { continuation in
+                suspendedInstall = continuation
+                onInstallSuspended()
+            }
+        }
         if installFailuresRemaining > 0 {
             installFailuresRemaining -= 1
             throw TestImportFailure.install
@@ -491,6 +1072,15 @@ private final class RecordingImportRuntime: SumiImportRuntimeMutating {
     func restore(_ checkpoint: SumiImportRuntimeState) async throws {
         events.append("restore")
         if let restoreError { throw restoreError }
+    }
+
+    func suspendNextInstall(_ onSuspended: @escaping () -> Void) {
+        onInstallSuspended = onSuspended
+    }
+
+    func resumeSuspendedInstall() {
+        suspendedInstall?.resume()
+        suspendedInstall = nil
     }
 }
 
@@ -576,11 +1166,41 @@ private final class RecordingImportBackup: SumiImportBackupWriting {
     }
 }
 
-private enum TestImportFailure: LocalizedError {
+@MainActor
+private final class RecordingImportJournal: SumiImportTransactionJournal {
+    var record: SumiImportTransactionJournalRecord?
+    var saveErrors: [SumiImportTransactionPhase: Error] = [:]
+    var clearError: Error?
+    private(set) var savedPhases: [SumiImportTransactionPhase] = []
+    private(set) var clearCount = 0
+
+    func load() throws -> SumiImportTransactionJournalRecord? {
+        record
+    }
+
+    func save(_ record: SumiImportTransactionJournalRecord) throws {
+        if let error = saveErrors[record.phase] {
+            throw error
+        }
+        self.record = record
+        savedPhases.append(record.phase)
+    }
+
+    func clear() throws {
+        if let clearError { throw clearError }
+        record = nil
+        clearCount += 1
+    }
+}
+
+private enum TestImportFailure: LocalizedError, Equatable {
     case install
     case bookmarks
     case backup
     case rollback
+    case bookmarkRollback
+    case runtimeRollback
+    case journal
 }
 
 @MainActor
