@@ -224,6 +224,107 @@ final class SumiGPCNavigationResponderTests: XCTestCase {
         XCTAssertTrue(webView.loadedRequests.isEmpty)
     }
 
+    func testUnavailableTransactionRuntimeReturnsTypedFailureBeforeLoading() async {
+        let webView = SumiGPCLoadRecordingWebView()
+        let tab = makeTab()
+        var diagnostics: [SumiGPCNavigationRewriteFailure] = []
+        let responder = SumiGPCNavigationResponder(
+            tab: tab,
+            isGPCEnabledProvider: { true },
+            recordDiagnostic: { diagnostics.append($0) }
+        )
+        var preferences = sumiPreferences()
+        let originalNavigation = NSObject()
+
+        let policy = await responder.decidePolicy(
+            for: mainFrameAction(url: URL(string: "https://example.com/private?token=secret")!),
+            targetWebView: webView,
+            context: SumiNavigationActionContext(
+                navigationID: ObjectIdentifier(originalNavigation),
+                navigationLifetime: originalNavigation
+            ),
+            preferences: &preferences
+        )
+
+        XCTAssertEqual(policy, .cancel)
+        XCTAssertTrue(webView.loadedRequests.isEmpty)
+        XCTAssertEqual(diagnostics, [.unavailableTransactionRuntime])
+    }
+
+    func testMismatchedOriginalIdentityReturnsTypedFailureBeforeLoading() async {
+        let webView = SumiGPCLoadRecordingWebView()
+        let tab = makeTab()
+        _ = tab.installNavigationDelegate(on: webView)
+        var diagnostics: [SumiGPCNavigationRewriteFailure] = []
+        let responder = SumiGPCNavigationResponder(
+            tab: tab,
+            isGPCEnabledProvider: { true },
+            recordDiagnostic: { diagnostics.append($0) }
+        )
+        var preferences = sumiPreferences()
+        let navigationIDObject = NSObject()
+        let differentLifetime = NSObject()
+
+        let policy = await responder.decidePolicy(
+            for: mainFrameAction(url: URL(string: "https://example.com/private?token=secret")!),
+            targetWebView: webView,
+            context: SumiNavigationActionContext(
+                navigationID: ObjectIdentifier(navigationIDObject),
+                navigationLifetime: differentLifetime
+            ),
+            preferences: &preferences
+        )
+
+        XCTAssertEqual(policy, .cancel)
+        XCTAssertTrue(webView.loadedRequests.isEmpty)
+        XCTAssertEqual(diagnostics, [.originalNavigationIdentityMismatch])
+        XCTAssertFalse(diagnostics[0].rawValue.contains("secret"))
+    }
+
+    func testReplacementRevisionMismatchStopsLoadAndReportsTypedFailure() async {
+        let originalURL = URL(string: "https://example.com/private?token=secret")!
+        let supersedingURL = URL(string: "https://superseding.example/")!
+        let webView = SumiGPCLoadRecordingWebView()
+        let tab = makeTab()
+        _ = tab.installNavigationDelegate(on: webView)
+        var diagnostics: [SumiGPCNavigationRewriteFailure] = []
+        let responder = SumiGPCNavigationResponder(
+            tab: tab,
+            isGPCEnabledProvider: { true },
+            recordDiagnostic: { diagnostics.append($0) }
+        )
+        webView.afterLoad = {
+            _ = tab.beginMainFrameNavigationIntent(to: supersedingURL)
+        }
+        var preferences = sumiPreferences()
+        let originalNavigation = NSObject()
+
+        let policy = await responder.decidePolicy(
+            for: mainFrameAction(url: originalURL),
+            targetWebView: webView,
+            context: SumiNavigationActionContext(
+                navigationID: ObjectIdentifier(originalNavigation),
+                navigationLifetime: originalNavigation
+            ),
+            preferences: &preferences
+        )
+
+        XCTAssertEqual(policy, .cancel)
+        XCTAssertEqual(webView.stopLoadingCallCount, 1)
+        XCTAssertTrue(webView.activeLoadedRequests.isEmpty)
+        XCTAssertNotNil(tab.mainFrameLoads.currentIntent(matching: supersedingURL))
+        XCTAssertNil(tab.mainFrameLoads.currentIntent(matching: originalURL))
+        XCTAssertEqual(diagnostics, [.replacementTransactionMismatch])
+        XCTAssertFalse(diagnostics[0].rawValue.contains("secret"))
+    }
+
+    func testDiagnosticBucketsHaveNoURLPayloadShape() {
+        XCTAssertFalse(SumiGPCNavigationRewriteFailure.allCases.isEmpty)
+        for failure in SumiGPCNavigationRewriteFailure.allCases {
+            XCTAssertNil(failure.rawValue.range(of: #"[/?:=&]"#, options: .regularExpression))
+        }
+    }
+
     func testOriginalCancellationCannotRetireRewrittenNavigation() async {
         let targetURL = URL(string: "https://example.com/rewrite")!
         let initialURL = URL(string: "https://example.com")!
@@ -380,9 +481,21 @@ final class SumiGPCSettingsTests: XCTestCase {
 @MainActor
 final class SumiGPCLoadRecordingWebView: WKWebView {
     private(set) var loadedRequests: [URLRequest] = []
+    private(set) var activeLoadedRequests: [URLRequest] = []
+    private(set) var stopLoadingCallCount = 0
+    var afterLoad: (() -> Void)?
 
     override func load(_ request: URLRequest) -> WKNavigation? {
         loadedRequests.append(request)
-        return super.load(request)
+        activeLoadedRequests.append(request)
+        let navigation = super.load(request)
+        afterLoad?()
+        return navigation
+    }
+
+    override func stopLoading() {
+        stopLoadingCallCount += 1
+        activeLoadedRequests.removeAll()
+        super.stopLoading()
     }
 }

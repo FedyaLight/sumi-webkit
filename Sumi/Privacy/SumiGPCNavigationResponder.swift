@@ -1,7 +1,24 @@
 import Foundation
 import Navigation
+import OSLog
 import SumiDomain
 import WebKit
+
+enum SumiGPCNavigationRewriteFailure: String, CaseIterable, Equatable, Error, Sendable {
+    case missingOriginalNavigationIdentity
+    case originalNavigationIdentityMismatch
+    case unavailableTransactionRuntime
+    case missingTargetURL
+    case originalTransactionMismatch
+    case replacementLoadRejected
+    case replacementNavigationIdentityMismatch
+    case replacementTransactionMismatch
+}
+
+enum SumiGPCNavigationRewriteResult: Equatable {
+    case rewritten
+    case failed(SumiGPCNavigationRewriteFailure)
+}
 
 /// Attaches `Sec-GPC: 1` to outgoing main-frame navigation requests, mirroring
 /// the DOM signal from `SumiGPCUserScript` so servers that only look at the
@@ -15,19 +32,28 @@ import WebKit
 /// let through as `.next` on its second pass through the responder chain.
 @MainActor
 final class SumiGPCNavigationResponder: SumiNavigationActionTargetContextResponding {
+    private static let log = Logger.sumi(category: "GlobalPrivacyControl")
+
     private weak var tab: Tab?
     private let requestFactory: SumiGPCRequestFactory
     private let isGPCEnabledProvider: () -> Bool
+    private let recordDiagnostic: (SumiGPCNavigationRewriteFailure) -> Void
 
     init(
         tab: Tab,
         requestFactory: SumiGPCRequestFactory = SumiGPCRequestFactory(),
-        isGPCEnabledProvider: (() -> Bool)? = nil
+        isGPCEnabledProvider: (() -> Bool)? = nil,
+        recordDiagnostic: ((SumiGPCNavigationRewriteFailure) -> Void)? = nil
     ) {
         self.tab = tab
         self.requestFactory = requestFactory
         self.isGPCEnabledProvider = isGPCEnabledProvider ?? { [weak tab] in
             tab?.sumiSettings?.isGPCEnabled ?? true
+        }
+        self.recordDiagnostic = recordDiagnostic ?? { failure in
+            Self.log.error(
+                "GPC request rewrite failed: \(failure.rawValue, privacy: .public)"
+            )
         }
     }
 
@@ -45,12 +71,41 @@ final class SumiGPCNavigationResponder: SumiNavigationActionTargetContextRespond
         )
         else { return .next }
 
-        guard let originalNavigationID = context.navigationID,
-              let originalNavigationLifetime = context.navigationLifetime,
-              let tab,
-              let navigator = targetWebView.navigator(),
-              let targetURL = rewrittenRequest.url else {
+        let result = rewrite(
+            rewrittenRequest,
+            for: navigationAction,
+            targetWebView: targetWebView,
+            context: context
+        )
+        switch result {
+        case .rewritten:
             return .cancel
+        case .failed(let failure):
+            recordDiagnostic(failure)
+            return .cancel
+        }
+    }
+
+    private func rewrite(
+        _ rewrittenRequest: URLRequest,
+        for navigationAction: SumiNavigationAction,
+        targetWebView: WKWebView,
+        context: SumiNavigationActionContext
+    ) -> SumiGPCNavigationRewriteResult {
+        guard let originalNavigationID = context.navigationID,
+              let originalNavigationLifetime = context.navigationLifetime else {
+            return .failed(.missingOriginalNavigationIdentity)
+        }
+        guard ObjectIdentifier(originalNavigationLifetime) == originalNavigationID else {
+            return .failed(.originalNavigationIdentityMismatch)
+        }
+        guard let tab,
+              targetWebView.navigationDelegate is DistributedNavigationDelegate,
+              let navigator = targetWebView.navigator() else {
+            return .failed(.unavailableTransactionRuntime)
+        }
+        guard let targetURL = rewrittenRequest.url else {
+            return .failed(.missingTargetURL)
         }
         let originalRole = tab.beginMainFrameLifecycle(
             from: targetWebView,
@@ -60,11 +115,18 @@ final class SumiGPCNavigationResponder: SumiNavigationActionTargetContextRespond
             allowsUserInitiatedSupersession: navigationAction.isUserInitiated,
             continuationKind: nil
         )
-        guard originalRole.isParticipant,
-              let replacementNavigation = targetWebView.load(rewrittenRequest) else {
-            return .cancel
+        guard originalRole.isParticipant else {
+            return .failed(.originalTransactionMismatch)
+        }
+        guard let replacementNavigation = targetWebView.load(rewrittenRequest) else {
+            return .failed(.replacementLoadRejected)
         }
         let expectedNavigation = navigator.expect(replacementNavigation)
+        guard ObjectIdentifier(expectedNavigation.identityLifetime)
+            == expectedNavigation.stableIdentifier else {
+            stopRejectedRewrite(on: targetWebView)
+            return .failed(.replacementNavigationIdentityMismatch)
+        }
         let replacementRole = tab.beginMainFrameLifecycle(
             from: targetWebView,
             navigationID: expectedNavigation.stableIdentifier,
@@ -73,10 +135,17 @@ final class SumiGPCNavigationResponder: SumiNavigationActionTargetContextRespond
             allowsUserInitiatedSupersession: false,
             continuationKind: .requestRewrite
         )
-        precondition(
-            replacementRole.isParticipant,
-            "GPC request rewrite lost its exact navigation transaction"
-        )
-        return .cancel
+        guard replacementRole.isParticipant else {
+            stopRejectedRewrite(on: targetWebView)
+            return .failed(.replacementTransactionMismatch)
+        }
+        return .rewritten
+    }
+
+    private func stopRejectedRewrite(on webView: WKWebView) {
+        // WebKit has no public per-WKNavigation cancellation API. Stop the
+        // load immediately so a request outside the exact transaction cannot
+        // proceed with stale GPC rewrite state.
+        webView.stopLoading()
     }
 }

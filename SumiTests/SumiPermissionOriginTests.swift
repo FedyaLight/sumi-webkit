@@ -124,4 +124,88 @@ final class SumiPermissionOriginTests: XCTestCase {
         XCTAssertEqual(SumiSecurityOrigin.empty.host, "")
         XCTAssertEqual(SumiSecurityOrigin.empty.port, 0)
     }
+
+    func testSecurityOriginAndPermissionKeyCanonicalEquivalenceFixtures() {
+        let fixtures: [(String, SumiSecurityOrigin, String)] = [
+            (
+                "unicode IDN and punycode",
+                SumiSecurityOrigin(protocol: "https", host: "bücher.example", port: 0),
+                "https://xn--bcher-kva.example/path"
+            ),
+            (
+                "HTTP default port",
+                SumiSecurityOrigin(protocol: "HTTP", host: "Example.COM", port: 80),
+                "http://example.com/path"
+            ),
+            (
+                "HTTPS default port",
+                SumiSecurityOrigin(protocol: "https", host: "Example.COM", port: 443),
+                "https://example.com/path"
+            ),
+            (
+                "host case with trailing dot",
+                SumiSecurityOrigin(protocol: "HTTPS", host: "Example.COM.", port: 0),
+                "https://example.com./path"
+            ),
+        ]
+
+        for (label, securityOrigin, urlString) in fixtures {
+            let bridged = securityOrigin.permissionOrigin(
+                missingReason: "missing-fixture-origin"
+            )
+            let direct = SumiPermissionOrigin(string: urlString)
+
+            XCTAssertEqual(bridged, direct, label)
+            XCTAssertEqual(permissionKey(for: bridged), permissionKey(for: direct), label)
+        }
+    }
+
+    func testNonDefaultPortAndTrailingDotRemainDistinctAtPermissionKeyBoundary() {
+        let defaultPort = SumiSecurityOrigin(
+            protocol: "https",
+            host: "example.com",
+            port: 443
+        ).permissionOrigin(missingReason: "missing-fixture-origin")
+        let nonDefaultPort = SumiSecurityOrigin(
+            protocol: "https",
+            host: "example.com",
+            port: 8443
+        ).permissionOrigin(missingReason: "missing-fixture-origin")
+        let trailingDot = SumiSecurityOrigin(
+            protocol: "https",
+            host: "example.com.",
+            port: 0
+        ).permissionOrigin(missingReason: "missing-fixture-origin")
+
+        XCTAssertNotEqual(permissionKey(for: defaultPort), permissionKey(for: nonDefaultPort))
+        XCTAssertNotEqual(permissionKey(for: defaultPort), permissionKey(for: trailingDot))
+        XCTAssertEqual(nonDefaultPort.identity, "https://example.com:8443")
+        XCTAssertEqual(trailingDot.identity, "https://example.com.")
+    }
+
+    func testMalformedAndOpaqueSecurityOriginsFailClosedAtPermissionBoundary() {
+        let origins = [
+            SumiSecurityOrigin(protocol: "https", host: "exa mple", port: 0)
+                .permissionOrigin(missingReason: "missing-fixture-origin"),
+            SumiSecurityOrigin(protocol: "data", host: "", port: 0)
+                .permissionOrigin(missingReason: "missing-fixture-origin"),
+            SumiPermissionOrigin(string: "about:blank"),
+            SumiPermissionOrigin(string: "data:text/plain,opaque"),
+        ]
+
+        XCTAssertEqual(origins.map(\.kind), [.invalid, .invalid, .opaque, .opaque])
+        for origin in origins {
+            XCTAssertFalse(origin.isWebOrigin)
+            XCTAssertFalse(origin.supportsSensitiveWebPermission(.camera))
+        }
+    }
+
+    private func permissionKey(for origin: SumiPermissionOrigin) -> SumiPermissionKey {
+        SumiPermissionKey(
+            requestingOrigin: origin,
+            topOrigin: origin,
+            permissionType: .camera,
+            profilePartitionId: "fixture-profile"
+        )
+    }
 }
