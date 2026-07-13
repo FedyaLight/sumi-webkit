@@ -377,8 +377,8 @@ final class ExtensionActionPopupSessionOwner: NSObject, NSPopoverDelegate {
             forExtensionId: extensionId,
             profileId: profileId
         )
-        manager.pruneNativeMessagePortHandlerEntries(
-            forExtensionId: extensionId,
+        manager.nativeMessagingPortRegistry.disconnect(
+            extensionId: extensionId,
             profileId: profileId
         )
     }

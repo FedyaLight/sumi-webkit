@@ -163,7 +163,7 @@ final class ExtensionBrowserContentInventoryTests: XCTestCase {
             primaryTrackedWindowId: primaryTrackedWindowID,
             untrackedOwnedWebView: untrackedOwnedWebView,
             trackedWebViews: trackedWebViews,
-            rebuildLiveWebViews: { _ in },
+            rebuildLiveWebViews: { _ in .noLiveWindows },
             websiteDataMutationAdmissionIsBlocked: { _ in false },
             waitForWebsiteDataMutationAdmission: { _ in true },
             browserRuntimeAvailable: browserRuntimeAvailable,

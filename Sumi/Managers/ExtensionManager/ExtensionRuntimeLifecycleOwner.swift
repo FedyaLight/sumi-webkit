@@ -20,8 +20,6 @@ final class ExtensionRuntimeLifecycleOwner {
         let setRuntimeState: @MainActor (ExtensionManager.ExtensionRuntimeState) -> Void
         let setExtensionsLoaded: @MainActor (Bool) -> Void
         let setAllowsRuntimeWithoutEnabledExtensions: @MainActor (Bool) -> Void
-        let runtimeInitializationTask: @MainActor () -> Task<Void, Never>?
-        let cancelRuntimeInitializationTask: @MainActor () -> Void
         let ensureExtensionController: @MainActor (UUID) -> WKWebExtensionController
         let reconcileProfileWebViewRuntime: @MainActor (UUID) -> Void
         let unloadExtensionContextsForInactiveProfiles: @MainActor (UUID) -> Void
@@ -30,11 +28,7 @@ final class ExtensionRuntimeLifecycleOwner {
         let refreshActionSurfaceStateForCurrentProfile: @MainActor () -> Void
         let extensionRuntimeReadinessContext: @MainActor (UUID) -> ExtensionRuntimeReadinessContext
         let markExtensionRuntimeReadyIfProfileContextsLoaded: @MainActor (UUID) -> Void
-        let resetLoadedExtensionRuntimeStateForReload: @MainActor () -> Void
-        let clearCachedWebExtensions: @MainActor () -> Void
-        let clearLoadErrorsAndResidency: @MainActor () -> Void
         let countLoadedExtensionContexts: @MainActor () -> Int
-        let extensionLoadGeneration: @MainActor () -> UInt64
         let installCapabilityOwner: SafariExtensionInstallCapabilityOwner
         let loadedExtensionManifests: @MainActor () -> [String: [String: Any]]
         let controllersByProfile: @MainActor () -> [UUID: WKWebExtensionController]
@@ -103,7 +97,6 @@ final class ExtensionRuntimeLifecycleOwner {
     @discardableResult
     func requestExtensionRuntime(
         reason: ExtensionManager.ExtensionRuntimeRequestReason,
-        forceReload: Bool = false,
         allowWithoutEnabledExtensions: Bool = false,
         profileId: UUID? = nil
     ) -> WKWebExtensionController? {
@@ -134,11 +127,11 @@ final class ExtensionRuntimeLifecycleOwner {
             controller = ensureExtensionController(reason: reason)
         }
 
-        if dependencies.runtimeState() == .loading, forceReload == false {
+        if dependencies.runtimeState() == .loading {
             return controller
         }
 
-        if dependencies.runtimeState() == .ready, forceReload == false {
+        if dependencies.runtimeState() == .ready {
             // Configuration demand can originate inside a WebView rebuild.
             // Re-entering reconciliation here would recursively submit the
             // same rebuild while its replacement is still being prepared.
@@ -151,7 +144,6 @@ final class ExtensionRuntimeLifecycleOwner {
 
         startExtensionRuntimeLoad(
             reason: reason,
-            forceReload: forceReload,
             allowWithoutEnabledExtensions: allowWithoutEnabledExtensions,
             profileId: resolvedProfileId
         )
@@ -161,15 +153,13 @@ final class ExtensionRuntimeLifecycleOwner {
     @discardableResult
     func requestExtensionRuntimeAndWait(
         reason: ExtensionManager.ExtensionRuntimeRequestReason,
-        forceReload: Bool = false,
         allowWithoutEnabledExtensions: Bool = false,
         profileId: UUID? = nil,
         extensionId: String? = nil
     ) async -> Bool {
         let resolvedProfileId = dependencies.resolvedProfileId(profileId)
 
-        if forceReload == false,
-           let resolvedProfileId,
+        if let resolvedProfileId,
            dependencies.extensionRuntimeReadinessContext(resolvedProfileId)
            .canUseExistingRuntime(extensionID: extensionId) {
             dependencies.markExtensionRuntimeReadyIfProfileContextsLoaded(resolvedProfileId)
@@ -178,15 +168,10 @@ final class ExtensionRuntimeLifecycleOwner {
 
         guard requestExtensionRuntime(
             reason: reason,
-            forceReload: forceReload,
             allowWithoutEnabledExtensions: allowWithoutEnabledExtensions,
             profileId: resolvedProfileId
         ) != nil else {
             return false
-        }
-
-        if let runtimeInitializationTask = dependencies.runtimeInitializationTask() {
-            await runtimeInitializationTask.value
         }
 
         if let resolvedProfileId,
@@ -221,19 +206,10 @@ final class ExtensionRuntimeLifecycleOwner {
 
     private func startExtensionRuntimeLoad(
         reason: ExtensionManager.ExtensionRuntimeRequestReason,
-        forceReload: Bool,
         allowWithoutEnabledExtensions: Bool,
         profileId: UUID?
     ) {
-        dependencies.cancelRuntimeInitializationTask()
-
         let resolvedProfileId = dependencies.resolvedProfileId(profileId)
-
-        if forceReload {
-            dependencies.resetLoadedExtensionRuntimeStateForReload()
-            dependencies.clearCachedWebExtensions()
-            dependencies.clearLoadErrorsAndResidency()
-        }
 
         let hasDemand =
             enabledPersistedExtensionEntities().isEmpty == false
@@ -255,7 +231,7 @@ final class ExtensionRuntimeLifecycleOwner {
         dependencies.setExtensionsLoaded(true)
         dependencies.markExtensionRuntimeReadyIfProfileContextsLoaded(resolvedProfileId)
         dependencies.trace(
-            "lazyRuntime controller-only reason=\(reason.rawValue) profileId=\(resolvedProfileId.uuidString) loadedContexts=\(dependencies.countLoadedExtensionContexts()) forceReload=\(forceReload)"
+            "lazyRuntime controller-only reason=\(reason.rawValue) profileId=\(resolvedProfileId.uuidString) loadedContexts=\(dependencies.countLoadedExtensionContexts())"
         )
     }
 
@@ -269,12 +245,6 @@ final class ExtensionRuntimeLifecycleOwner {
         }
     }
 
-    func validateExpectedExtensionLoadGeneration(_ expectedGeneration: UInt64?) throws {
-        guard let expectedGeneration else { return }
-        guard dependencies.extensionLoadGeneration() == expectedGeneration else {
-            throw CancellationError()
-        }
-    }
 }
 
 @available(macOS 15.5, *)
@@ -303,13 +273,6 @@ extension ExtensionRuntimeLifecycleOwner.Dependencies {
             },
             setAllowsRuntimeWithoutEnabledExtensions: { [weak manager] allows in
                 manager?.runtimeSession.allowsRuntimeWithoutEnabledExtensions = allows
-            },
-            runtimeInitializationTask: { [weak manager] in
-                manager?.runtimeSession.runtimeInitializationTask
-            },
-            cancelRuntimeInitializationTask: { [weak manager] in
-                manager?.runtimeSession.runtimeInitializationTask?.cancel()
-                manager?.runtimeSession.runtimeInitializationTask = nil
             },
             ensureExtensionController: { [weak manager] profileId in
                 guard let manager else {
@@ -344,22 +307,8 @@ extension ExtensionRuntimeLifecycleOwner.Dependencies {
             markExtensionRuntimeReadyIfProfileContextsLoaded: { [weak manager] profileId in
                 manager?.markExtensionRuntimeReadyIfProfileContextsLoaded(for: profileId)
             },
-            resetLoadedExtensionRuntimeStateForReload: { [weak manager] in
-                manager?.resetLoadedExtensionRuntimeStateForReload()
-            },
-            clearCachedWebExtensions: { [weak manager] in
-                manager?.runtimeSession.cachedWebExtensionsByID.removeAll()
-                manager?.runtimeSession.cachedWebExtensionRuntimeSourceKeysByID.removeAll()
-            },
-            clearLoadErrorsAndResidency: { [weak manager] in
-                manager?.runtimeSession.lastExtensionLoadErrors.removeAll()
-                manager?.runtimeSession.extensionRuntimeResidencyState.removeAll()
-            },
             countLoadedExtensionContexts: { [weak manager] in
                 manager?.countLoadedExtensionContexts() ?? 0
-            },
-            extensionLoadGeneration: { [weak manager] in
-                manager?.runtimeSession.extensionLoadGeneration ?? 0
             },
             installCapabilityOwner: manager.installCapabilityOwner,
             loadedExtensionManifests: { [weak manager] in
@@ -470,13 +419,11 @@ extension ExtensionManager {
     @discardableResult
     func requestExtensionRuntime(
         reason: ExtensionRuntimeRequestReason,
-        forceReload: Bool = false,
         allowWithoutEnabledExtensions: Bool = false,
         profileId: UUID? = nil
     ) -> WKWebExtensionController? {
         runtimeLifecycleOwner.requestExtensionRuntime(
             reason: reason,
-            forceReload: forceReload,
             allowWithoutEnabledExtensions: allowWithoutEnabledExtensions,
             profileId: profileId
         )
@@ -485,14 +432,12 @@ extension ExtensionManager {
     @discardableResult
     func requestExtensionRuntimeAndWait(
         reason: ExtensionRuntimeRequestReason,
-        forceReload: Bool = false,
         allowWithoutEnabledExtensions: Bool = false,
         profileId: UUID? = nil,
         extensionId: String? = nil
     ) async -> Bool {
         await runtimeLifecycleOwner.requestExtensionRuntimeAndWait(
             reason: reason,
-            forceReload: forceReload,
             allowWithoutEnabledExtensions: allowWithoutEnabledExtensions,
             profileId: profileId,
             extensionId: extensionId
@@ -503,7 +448,4 @@ extension ExtensionManager {
         runtimeLifecycleOwner.enabledPersistedExtensionEntities()
     }
 
-    func validateExpectedExtensionLoadGeneration(_ expectedGeneration: UInt64?) throws {
-        try runtimeLifecycleOwner.validateExpectedExtensionLoadGeneration(expectedGeneration)
-    }
 }

@@ -156,7 +156,7 @@ if rg -n 'updateWebViewsForProfile|reconcile(Profile|WebViews)' "$provisioning" 
 fi
 ready_request_body="$(
   sed -n \
-    '/if dependencies.runtimeState() == .ready, forceReload == false {/,/^        }/p' \
+    '/if dependencies.runtimeState() == .ready {/,/^        }/p' \
     "$runtime_lifecycle"
 )"
 if ! rg -Fq 'reason != .webViewConfiguration' <<<"$ready_request_body"; then

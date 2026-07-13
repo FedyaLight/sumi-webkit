@@ -11,7 +11,6 @@ final class ExtensionRuntimeSession {
     var extensionRuntimeResidencyState = ExtensionRuntimeResidencyState()
     var runtimeState: ExtensionManager.ExtensionRuntimeState = .idle
     var allowsRuntimeWithoutEnabledExtensions = false
-    var runtimeInitializationTask: Task<Void, Never>?
     var loadedExtensionManifests: [String: [String: Any]] = [:]
     var runtimeMetricsByExtensionID:
         [String: ExtensionManager.ExtensionRuntimeMetrics] = [:]

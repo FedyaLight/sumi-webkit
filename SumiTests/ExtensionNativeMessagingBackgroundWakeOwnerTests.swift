@@ -76,13 +76,18 @@ final class ExtensionNativeMessagingBackgroundWakeOwnerTests: XCTestCase {
 
     func testCancelWakeTasksForExtensionCancelsOnlyMatchingWakeKeys() async {
         let owner = ExtensionNativeMessagingBackgroundWakeOwner()
+        let firstProfileID = UUID()
+        let secondProfileID = UUID()
         let firstWakeStarted = expectation(description: "first wake started")
         let secondWakeStarted = expectation(description: "second wake started")
         var releaseFirstWake: CheckedContinuation<Void, Never>?
         var releaseSecondWake: CheckedContinuation<Void, Never>?
 
         owner.scheduleWake(
-            wakeKey: "first-profile:first-extension",
+            wakeKey: ExtensionRuntimeResidencyState.scopedKey(
+                extensionId: "first-extension",
+                profileId: firstProfileID
+            ),
             operation: "first",
             wake: {
                 firstWakeStarted.fulfill()
@@ -93,7 +98,10 @@ final class ExtensionNativeMessagingBackgroundWakeOwnerTests: XCTestCase {
             logFailure: { _, _ in /* no-op */ }
         )
         owner.scheduleWake(
-            wakeKey: "second-profile:second-extension",
+            wakeKey: ExtensionRuntimeResidencyState.scopedKey(
+                extensionId: "second-extension",
+                profileId: secondProfileID
+            ),
             operation: "second",
             wake: {
                 secondWakeStarted.fulfill()
@@ -108,12 +116,7 @@ final class ExtensionNativeMessagingBackgroundWakeOwnerTests: XCTestCase {
             of: [firstWakeStarted, secondWakeStarted],
             timeout: 1.0
         )
-        owner.cancelWakeTasks(
-            forExtensionId: "first-extension",
-            wakeKeyBelongsToExtension: { wakeKey, extensionId in
-                wakeKey.hasSuffix(":\(extensionId)")
-            }
-        )
+        owner.cancelWakeTasks(forExtensionId: "first-extension")
 
         releaseFirstWake?.resume()
         releaseSecondWake?.resume()

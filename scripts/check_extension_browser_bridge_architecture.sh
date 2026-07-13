@@ -24,7 +24,9 @@ runtime_publication_replay_scheduler='Sumi/Managers/ExtensionManager/ExtensionRu
 deferred_tab_closures='Sumi/Managers/ExtensionManager/ExtensionDeferredTabClosures.swift'
 browser_content_inventory='Sumi/Managers/ExtensionManager/ExtensionBrowserContentInventory.swift'
 runtime_reload_transaction='Sumi/Managers/ExtensionManager/ExtensionRuntimeReloadTransaction.swift'
-runtime_teardown='Sumi/Managers/ExtensionManager/ExtensionRuntimeTeardownOwner.swift'
+runtime_teardown='Sumi/Managers/ExtensionManager/ExtensionRuntimeActivityCancellation.swift'
+runtime_shutdown='Sumi/Managers/ExtensionManager/ExtensionRuntimeShutdown.swift'
+scoped_runtime_retirement='Sumi/Managers/ExtensionManager/ExtensionScopedRuntimeRetirement.swift'
 runtime_gate_tests='SumiTests/ExtensionRuntimePublicationGateTests.swift'
 content_inventory_tests='SumiTests/ExtensionBrowserContentInventoryTests.swift'
 auxiliary_window_lifecycle='Sumi/Managers/ExtensionManager/ExtensionAuxiliaryWindowLifecycle.swift'
@@ -109,6 +111,10 @@ required_files=(
   "$browser_content_inventory"
   "$runtime_reload_transaction"
   "$runtime_teardown"
+  "$runtime_shutdown"
+  "$scoped_runtime_retirement"
+  Sumi/Managers/ExtensionManager/ExtensionRuntimeMutationRegistry.swift
+  Sumi/Managers/ExtensionManager/ExtensionContextLoadRegistry.swift
   "$runtime_gate_tests"
   "$content_inventory_tests"
   "$auxiliary_window_lifecycle"
@@ -171,6 +177,8 @@ removed_files=(
   Sumi/Managers/ExtensionManager/BrowserExtensionBridgeAdapter.swift
   Sumi/Managers/ExtensionManager/ExtensionBrowserRuntimeBridgeOwner.swift
   Sumi/Managers/ExtensionManager/ExtensionManager+BrowserRuntimeEvents.swift
+  Sumi/Managers/ExtensionManager/ExtensionRuntimeStateResetOwner.swift
+  Sumi/Managers/ExtensionManager/ExtensionRuntimeTeardownOwner.swift
 )
 
 for file in "${removed_files[@]}"; do
@@ -180,6 +188,15 @@ for file in "${removed_files[@]}"; do
     status=1
   fi
 done
+
+retired_runtime_teardown_hits="$(
+  rg -n \
+    'ExtensionRuntime(StateReset|Teardown)Owner|tearDownExtensionRuntime\(|removeUIState:[[:space:]]*(true|false),[[:space:]]*releaseController:' \
+    Sumi SumiTests || true
+)"
+fail_matches \
+  "retired boolean runtime teardown surface returned" \
+  "$retired_runtime_teardown_hits"
 
 legacy_hits="$(
   rg -n '\b(ExtensionBrowserBridgeContext|BrowserExtensionBridgeAdapter|BrowserExtensionBridgeBundle|ExtensionBrowserRuntimeBridgeOwner|browserBridgeContext|extensionBridgeBundle|browserRuntimeBridgeOwner|browserRuntimeBridgeOwnerStorage|loadedBrowserRuntimeBridgeOwner)\b' \
@@ -282,13 +299,13 @@ fail_matches \
   "$loaded_reconciler_materialization_hits"
 
 if ! rg -Uq \
-    'manager\.loadedRuntimePublicationReconciler\?\.retire\([[:space:]]*runtime:[[:space:]]*manager\.runtime,[[:space:]]*auxiliaryControl:[[:space:]]*manager\.extensionAuxiliaryWindows' \
+    'resources\.publicationReconciler\?\.retire\([[:space:]]*runtime:[[:space:]]*resources\.runtime,[[:space:]]*auxiliaryControl:[[:space:]]*resources\.auxiliaryWindows' \
     "$runtime_teardown"; then
   printf 'error: runtime teardown does not use the loaded-only reconciler\n' >&2
   status=1
 fi
 cold_teardown_materialization_hits="$(
-  rg -n 'manager\.runtimePublicationReconciler\.retire|prepareRuntimePublicationComposition' \
+  rg -n 'runtimePublicationReconciler\.retire|prepareRuntimePublicationComposition' \
     "$runtime_teardown" || true
 )"
 fail_matches \
@@ -607,7 +624,7 @@ for required_publication_lifetime_regression in \
   testCallbackReloadIsCoalescedAfterCurrentGeneration \
   testTabPropertyEventRequiresCurrentOpenPublication; do
   if ! rg -Fq "func $required_publication_lifetime_regression" \
-      SumiTests/ExtensionRuntimeTeardownOwnerTests.swift \
+      SumiTests/ExtensionRuntimeShutdownTests.swift \
       "$auxiliary_identity_tests" \
       SumiTests/ExtensionActionPopupSourceReceiptTests.swift; then
     printf 'error: runtime publication lifetime regression missing: %s\n' \

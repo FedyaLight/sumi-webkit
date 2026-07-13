@@ -2,6 +2,15 @@ import Foundation
 import WebKit
 
 @available(macOS 15.5, *)
+struct ExtensionContextBindingReceipt: Hashable {
+    let key: ExtensionRuntimeResidencyState.ScopedKey
+    let contextIdentifier: ObjectIdentifier
+    let bindingRevision: UInt64
+    let controllerIdentifier: ObjectIdentifier?
+    let controllerBindingRevision: UInt64
+}
+
+@available(macOS 15.5, *)
 @MainActor
 struct ExtensionProfileRuntimeState {
     private(set) var controllersByProfile: [UUID: WKWebExtensionController] = [:]
@@ -88,6 +97,75 @@ struct ExtensionProfileRuntimeState {
         )
         let generation = bumpContextBindingGeneration(for: profileId)
         return (removed, generation)
+    }
+
+    func contextBindingReceipt(
+        extensionId: String,
+        profileId: UUID
+    ) -> ExtensionContextBindingReceipt? {
+        guard let context = contextsByProfile[profileId]?[extensionId]
+        else {
+            return nil
+        }
+
+        return ExtensionContextBindingReceipt(
+            key: .init(profileId: profileId, extensionId: extensionId),
+            contextIdentifier: ObjectIdentifier(context),
+            bindingRevision: contextBindingRevision(
+                extensionId: extensionId,
+                profileId: profileId
+            ),
+            controllerIdentifier: controllersByProfile[profileId].map(
+                ObjectIdentifier.init
+            ),
+            controllerBindingRevision: controllerBindingRevision(
+                for: profileId
+            )
+        )
+    }
+
+    func isCurrent(_ receipt: ExtensionContextBindingReceipt) -> Bool {
+        guard let context = contextsByProfile[receipt.key.profileId]?[
+            receipt.key.extensionId
+        ] else {
+            return false
+        }
+
+        return ObjectIdentifier(context) == receipt.contextIdentifier
+            && contextBindingRevision(
+                extensionId: receipt.key.extensionId,
+                profileId: receipt.key.profileId
+            ) == receipt.bindingRevision
+            && controllersByProfile[receipt.key.profileId].map(
+                ObjectIdentifier.init
+            ) == receipt.controllerIdentifier
+            && controllerBindingRevision(
+                for: receipt.key.profileId
+            ) == receipt.controllerBindingRevision
+    }
+
+    func context(
+        ifCurrent receipt: ExtensionContextBindingReceipt
+    ) -> WKWebExtensionContext? {
+        guard isCurrent(receipt) else { return nil }
+        return contextsByProfile[receipt.key.profileId]?[receipt.key.extensionId]
+    }
+
+    func controller(
+        ifCurrent receipt: ExtensionContextBindingReceipt
+    ) -> WKWebExtensionController? {
+        guard isCurrent(receipt) else { return nil }
+        return controllersByProfile[receipt.key.profileId]
+    }
+
+    mutating func removeContext(
+        ifCurrent receipt: ExtensionContextBindingReceipt
+    ) -> (context: WKWebExtensionContext, generation: UInt64)? {
+        guard isCurrent(receipt) else { return nil }
+        return removeContext(
+            extensionId: receipt.key.extensionId,
+            profileId: receipt.key.profileId
+        )
     }
 
     mutating func replaceContexts(

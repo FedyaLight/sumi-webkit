@@ -1,354 +1,226 @@
 import Foundation
 import SwiftData
-import WebKit
 
-/// Loads one persisted extension into a profile-scoped WebKit runtime.
-/// Package replacement and enablement persistence are separate transactions.
+/// Loads one persisted extension into one profile runtime and commits the
+/// manifest-derived metadata only after the exact WebKit binding is fully
+/// finalized. Installation activation, retirement, and multi-profile recovery
+/// are separate transactions.
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionRuntimeLoader {
-    enum EnableActivation {
-        case background(ExtensionManager.ExtensionBackgroundWakeReason?)
-        case safariAppExtension
-
-        func loadOperation(
-            expectedGeneration: UInt64
-        ) -> ExtensionRuntimeContextLoader.Operation {
-            switch self {
-            case .background:
-                return .loadEnabled(expectedGeneration: expectedGeneration)
-            case .safariAppExtension:
-                return .safariEnable
-            }
-        }
+    private enum MetadataCommit: Equatable {
+        case refreshFromManifest
+        case preservePersistedRecord
     }
 
-    enum InstallationOperation {
-        case directory
-        case safariAppExtension
+    private let modelContext: ModelContext
+    private let metadataStore: ExtensionInstallationMetadataStore
+    private let installedRecords: InstalledExtensionCollection
+    private let runtimeAccess: ExtensionRuntimeAccess
+    private let authority: ExtensionLoadedContextAuthority
+    private let rollback: ExtensionRuntimeRollback
+    private let contextLoader: ExtensionRuntimeContextLoader
+    private let finalizer: ExtensionLoadedContextFinalizer
+    private let diagnostics: ExtensionRuntimeDiagnostics
 
-        var contextLoadOperation: ExtensionRuntimeContextLoader.Operation {
-            switch self {
-            case .directory: .install
-            case .safariAppExtension: .safariEnable
-            }
-        }
-
-        var activationOperation: ExtensionInstallRuntimeActivator.Operation {
-            switch self {
-            case .directory: .install
-            case .safariAppExtension: .safariEnable
-            }
-        }
-    }
-
-    struct Environment {
-        let modelContext: ModelContext
-        let metadataStore: ExtensionInstallationMetadataStore
-        let installedRecords: InstalledExtensionCollection
-        let runtimeAccess: ExtensionRuntimeAccess
-        let resetRuntimeState: @MainActor (String, Bool) -> Void
-        let finalizeBackgroundRuntime: @MainActor (
-            String, UUID, ExtensionManager.ExtensionBackgroundWakeReason?
-        ) async -> Void
-        let touchContext: @MainActor (String, UUID) -> Void
-        let boundContextCount: @MainActor (UUID, String) -> Void
-        let markProfileRuntimeReady: @MainActor (UUID) -> Void
-        let loadContext: @MainActor (ExtensionRuntimeContextLoader.Request) async throws
-            -> WKWebExtensionContext
-        let activateInstalledRuntime: @MainActor (ExtensionInstallRuntimeActivator.Request)
-            async -> Void
-        let trace: @MainActor (String) -> Void
-    }
-
-    private let environment: Environment
-
-    init(environment: Environment) {
-        self.environment = environment
-    }
-
-    func resolvedProfileID(_ explicitProfileID: UUID? = nil) -> UUID? {
-        environment.runtimeAccess.resolvedProfileId(explicitProfileID)
-    }
-
-    func ensureController(for profileID: UUID) {
-        environment.runtimeAccess.ensureExtensionController(profileID)
-    }
-
-    func hasLoadedContext(extensionID: String, profileID: UUID) -> Bool {
-        environment.runtimeAccess.getExtensionContext(extensionID, profileID) != nil
-    }
-
-    func resetRuntimeState(extensionID: String, removeUIState: Bool) {
-        environment.resetRuntimeState(extensionID, removeUIState)
+    init(
+        modelContext: ModelContext,
+        metadataStore: ExtensionInstallationMetadataStore,
+        installedRecords: InstalledExtensionCollection,
+        runtimeAccess: ExtensionRuntimeAccess,
+        authority: ExtensionLoadedContextAuthority,
+        rollback: ExtensionRuntimeRollback,
+        contextLoader: ExtensionRuntimeContextLoader,
+        finalizer: ExtensionLoadedContextFinalizer,
+        diagnostics: ExtensionRuntimeDiagnostics
+    ) {
+        self.modelContext = modelContext
+        self.metadataStore = metadataStore
+        self.installedRecords = installedRecords
+        self.runtimeAccess = runtimeAccess
+        self.authority = authority
+        self.rollback = rollback
+        self.contextLoader = contextLoader
+        self.finalizer = finalizer
+        self.diagnostics = diagnostics
     }
 
     func loadEnabled(
         from entity: ExtensionEntity,
         profileID: UUID? = nil,
-        expectedLoadGeneration: UInt64? = nil,
-        postLoadBackgroundWakeReason: ExtensionManager.ExtensionBackgroundWakeReason? = nil
+        postLoadBackgroundWakeReason:
+            ExtensionManager.ExtensionBackgroundWakeReason? = nil,
+        mutationLease: ExtensionRuntimeMutationLease? = nil
     ) async throws -> InstalledExtension {
         try await loadEnabled(
             from: entity,
             profileID: profileID,
-            expectedLoadGeneration: expectedLoadGeneration,
-            activation: .background(postLoadBackgroundWakeReason)
+            activation: .background(postLoadBackgroundWakeReason),
+            mutationLease: mutationLease
         )
     }
 
     func loadEnabled(
         from entity: ExtensionEntity,
         profileID: UUID? = nil,
-        expectedLoadGeneration: UInt64? = nil,
-        activation: EnableActivation
+        activation: ExtensionLoadedContextFinalizer.Activation,
+        mutationLease: ExtensionRuntimeMutationLease? = nil
     ) async throws -> InstalledExtension {
-        let loadGeneration =
-            expectedLoadGeneration
-            ?? environment.runtimeAccess.runtimeSession.extensionLoadGeneration
-        let signpostState = PerformanceTrace.beginInterval("ExtensionManager.loadEnabledExtension")
+        guard let refreshed = try await activate(
+            entity,
+            profileID: profileID,
+            activation: activation,
+            mutationLease: mutationLease,
+            metadataCommit: .refreshFromManifest
+        ) else {
+            assertionFailure("Enabled runtime load must refresh its record")
+            throw CancellationError()
+        }
+        return refreshed
+    }
+
+    /// Restores a missing context after a failed lifecycle transaction while
+    /// preserving the exact metadata record already restored by that caller.
+    func restoreEnabledRuntime(
+        from entity: ExtensionEntity,
+        profileID: UUID,
+        mutationLease: ExtensionRuntimeMutationLease
+    ) async throws {
+        _ = try await activate(
+            entity,
+            profileID: profileID,
+            activation: .background(.enable),
+            mutationLease: mutationLease,
+            metadataCommit: .preservePersistedRecord
+        )
+    }
+
+    private func activate(
+        _ entity: ExtensionEntity,
+        profileID: UUID?,
+        activation: ExtensionLoadedContextFinalizer.Activation,
+        mutationLease: ExtensionRuntimeMutationLease?,
+        metadataCommit: MetadataCommit
+    ) async throws -> InstalledExtension? {
+        let signpostState = PerformanceTrace.beginInterval(
+            "ExtensionManager.loadEnabledExtension"
+        )
         defer {
-            PerformanceTrace.endInterval("ExtensionManager.loadEnabledExtension", signpostState)
+            PerformanceTrace.endInterval(
+                "ExtensionManager.loadEnabledExtension",
+                signpostState
+            )
         }
 
+        guard let resolvedProfileID = runtimeAccess.resolvedProfileId(
+            profileID
+        ) else {
+            throw ExtensionError.installationFailed(
+                "Extension runtime profile is unavailable"
+            )
+        }
+        let claim = try authority.beginLoad(
+            extensionID: entity.id,
+            profileID: resolvedProfileID,
+            mutationLease: mutationLease
+        )
+        defer { _ = authority.finish(claim) }
+
+        var loadedContext: ExtensionRuntimeContextLoader.LoadedContext?
         do {
-            guard let resolvedProfileID = resolvedProfileID(profileID) else {
-                throw ExtensionError.installationFailed(
-                    "Extension runtime profile is unavailable"
-                )
-            }
             let sourceKind =
-                WebExtensionSourceKind(rawValue: entity.sourceKindRawValue) ?? .directory
-            let extensionRoot = try environment.metadataStore.extensionResourcesRoot(
+                WebExtensionSourceKind(rawValue: entity.sourceKindRawValue)
+                    ?? .directory
+            let extensionRoot = try metadataStore.extensionResourcesRoot(
                 sourceKind: sourceKind,
                 packagePath: entity.packagePath,
                 sourceBundlePath: entity.sourceBundlePath
             )
-            let manifestURL = extensionRoot.appendingPathComponent("manifest.json")
+            let manifestURL = extensionRoot.appendingPathComponent(
+                "manifest.json"
+            )
             trace(
-                "loadEnabledExtension start extensionId=\(entity.id) profileId=\(resolvedProfileID.uuidString) expectedGeneration=\(loadGeneration) currentGeneration=\(environment.runtimeAccess.runtimeSession.extensionLoadGeneration) packagePath=\(extensionRoot.path)"
+                "loadEnabledExtension start extensionId=\(entity.id) "
+                    + "profileId=\(resolvedProfileID.uuidString) "
+                    + "packagePath=\(extensionRoot.path)"
             )
             let validationStart = CFAbsoluteTimeGetCurrent()
             let manifest = try ExtensionUtils.validateManifest(
                 at: manifestURL,
-                policy: WebExtensionManifestValidationPolicy.forSourceKind(sourceKind)
+                policy: WebExtensionManifestValidationPolicy.forSourceKind(
+                    sourceKind
+                )
             )
-            environment.runtimeAccess.runtimeSession.recordRuntimeMetric(for: entity.id) {
-                $0.manifestValidationDuration = CFAbsoluteTimeGetCurrent() - validationStart
+            runtimeAccess.runtimeSession.recordRuntimeMetric(for: entity.id) {
+                $0.manifestValidationDuration =
+                    CFAbsoluteTimeGetCurrent() - validationStart
             }
 
-            let extensionContext = try await environment.loadContext(
-                ExtensionRuntimeContextLoader.Request(
+            let loaded = try await contextLoader.load(
+                .init(
                     extensionId: entity.id,
                     profileId: resolvedProfileID,
                     sourceKind: sourceKind,
                     sourceBundlePath: entity.sourceBundlePath,
                     packageRoot: extensionRoot,
                     manifest: manifest,
-                    operation: activation.loadOperation(expectedGeneration: loadGeneration)
+                    operation: activation.loadOperation,
+                    claim: claim,
+                    mutationLease: mutationLease
                 )
             )
+            loadedContext = loaded
+            try authority.validate(loaded)
 
-            environment.runtimeAccess.clearExtensionLoadError(entity.id, resolvedProfileID)
-            environment.touchContext(entity.id, resolvedProfileID)
-            environment.boundContextCount(resolvedProfileID, entity.id)
-            await finalizeLoadedRuntime(
-                extensionID: entity.id,
-                profileID: resolvedProfileID,
-                context: extensionContext,
-                activation: activation
+            runtimeAccess.clearExtensionLoadError(
+                entity.id,
+                resolvedProfileID
             )
+            try await finalizer.finalize(loaded, activation: activation)
+            try authority.validate(loaded)
 
-            let refreshed = try environment.metadataStore.refreshedRecord(
+            guard metadataCommit == .refreshFromManifest else {
+                runtimeAccess.runtimeSession.loadedExtensionManifests[
+                    entity.id
+                ] = manifest
+                return nil
+            }
+
+            let refreshed = try metadataStore.refreshedRecord(
                 for: entity,
                 manifest: manifest
             )
-            await publishRecord(refreshed)
-            environment.metadataStore.update(entity, from: refreshed)
-            try environment.modelContext.save()
+            try authority.validate(loaded)
+            metadataStore.update(entity, from: refreshed)
+            try modelContext.save()
+            runtimeAccess.runtimeSession.loadedExtensionManifests[
+                entity.id
+            ] = manifest
+            installedRecords.upsert(refreshed)
             return refreshed
         } catch {
-            if let errorProfileID = resolvedProfileID(profileID) {
-                environment.runtimeAccess.recordExtensionLoadError(
+            if let loadedContext {
+                let rollbackResult = rollback.rollBack(loadedContext)
+                if rollbackResult.exactRollbackCompleted == false {
+                    throw ExtensionRuntimeTransactionFailure(
+                        operationError: error,
+                        rollback: rollbackResult
+                    )
+                }
+            }
+            if !(error is CancellationError), authority.isCurrent(claim) {
+                runtimeAccess.recordExtensionLoadError(
                     error,
                     entity.id,
-                    errorProfileID
+                    resolvedProfileID
                 )
             }
-            environment.resetRuntimeState(entity.id, false)
             throw error
-        }
-    }
-
-    func finalizeAlreadyLoadedRuntime(
-        extensionID: String,
-        profileID: UUID,
-        activation: EnableActivation
-    ) async {
-        guard let context = environment.runtimeAccess.getExtensionContext(
-            extensionID,
-            profileID
-        ) else {
-            return
-        }
-        await finalizeLoadedRuntime(
-            extensionID: extensionID,
-            profileID: profileID,
-            context: context,
-            activation: activation
-        )
-    }
-
-    func activateInstalledExtension(
-        extensionID: String,
-        sourceKind: WebExtensionSourceKind,
-        sourceBundlePath: String,
-        packageRoot: URL,
-        manifest: [String: Any],
-        operation: InstallationOperation
-    ) async throws {
-        guard let profileID = resolvedProfileID() else {
-            throw ExtensionError.installationFailed(
-                "Extension runtime profile is unavailable"
-            )
-        }
-        let context = try await environment.loadContext(
-            ExtensionRuntimeContextLoader.Request(
-                extensionId: extensionID,
-                profileId: profileID,
-                sourceKind: sourceKind,
-                sourceBundlePath: sourceBundlePath,
-                packageRoot: packageRoot,
-                manifest: manifest,
-                operation: operation.contextLoadOperation
-            )
-        )
-        await environment.activateInstalledRuntime(
-            ExtensionInstallRuntimeActivator.Request(
-                profileId: profileID,
-                extensionContext: context,
-                installedExtensionId: extensionID,
-                operation: operation.activationOperation
-            )
-        )
-    }
-
-    func restoreEnabledRuntime(
-        from entity: ExtensionEntity,
-        after operation: String
-    ) async {
-        do {
-            _ = try await loadEnabled(from: entity)
-        } catch {
-            if let profileID = resolvedProfileID() {
-                ExtensionManager.logger.error(
-                    "Failed to \(operation, privacy: .public) for extension \(entity.id, privacy: .public) profile \(profileID.uuidString, privacy: .public): \(error.localizedDescription, privacy: .public)"
-                )
-            } else {
-                ExtensionManager.logger.error(
-                    "Failed to \(operation, privacy: .public) for extension \(entity.id, privacy: .public): \(error.localizedDescription, privacy: .public)"
-                )
-            }
-        }
-    }
-
-    private func finalizeLoadedRuntime(
-        extensionID: String,
-        profileID: UUID,
-        context: WKWebExtensionContext,
-        activation: EnableActivation
-    ) async {
-        switch activation {
-        case .background(let wakeReason):
-            await environment.finalizeBackgroundRuntime(
-                extensionID,
-                profileID,
-                wakeReason
-            )
-            environment.markProfileRuntimeReady(profileID)
-        case .safariAppExtension:
-            await environment.activateInstalledRuntime(
-                ExtensionInstallRuntimeActivator.Request(
-                    profileId: profileID,
-                    extensionContext: context,
-                    installedExtensionId: extensionID,
-                    operation: .safariEnable
-                )
-            )
-        }
-    }
-
-    private func publishRecord(_ record: InstalledExtension) async {
-        await withCheckedContinuation { continuation in
-            Task { @MainActor [installedRecords = environment.installedRecords] in
-                await Task.yield()
-                installedRecords.upsert(record)
-                continuation.resume(returning: ())
-            }
         }
     }
 
     private func trace(_ message: @autoclosure () -> String) {
         guard ExtensionManager.isWebKitRuntimeTraceEnabled else { return }
-        environment.trace(message())
-    }
-}
-
-@available(macOS 15.5, *)
-extension ExtensionRuntimeLoader.Environment {
-    @MainActor
-    static func makeLive(manager: ExtensionManager) -> Self {
-        Self(
-            modelContext: manager.context,
-            metadataStore: manager.installationMetadataStore,
-            installedRecords: manager.installedExtensionCollection,
-            runtimeAccess: ExtensionRuntimeAccess(
-                profileRuntime: manager.profileRuntime,
-                controllerProvisioningOwner: manager.controllerProvisioningOwner,
-                runtimeSession: manager.runtimeSession,
-                runtime: { [weak manager] in manager?.runtime ?? .inactive }
-            ),
-            resetRuntimeState: { [weak manager] extensionID, removeUIState in
-                manager?.runtimeStateResetOwner.tearDownExtensionRuntimeState(
-                    for: extensionID,
-                    removeUIState: removeUIState
-                )
-            },
-            finalizeBackgroundRuntime: { [weak manager] extensionID, profileID, wakeReason in
-                await manager?.actionSurfacePublisher.finalizeEnabledExtensionRuntime(
-                    for: extensionID,
-                    profileId: profileID,
-                    backgroundWakeReason: wakeReason
-                )
-            },
-            touchContext: { [weak manager] extensionID, profileID in
-                manager?.contextResidencyOwner.touchLiveExtensionContext(
-                    extensionId: extensionID,
-                    profileId: profileID
-                )
-            },
-            boundContextCount: { [weak manager] profileID, extensionID in
-                manager?.contextResidencyOwner.enforceBoundedLiveExtensionContexts(
-                    keepingProfileId: profileID,
-                    keepingExtensionId: extensionID
-                )
-            },
-            markProfileRuntimeReady: { [weak manager] profileID in
-                manager?.contextResidencyOwner.markExtensionRuntimeReadyIfProfileContextsLoaded(
-                    for: profileID
-                )
-            },
-            loadContext: { [weak manager] request in
-                guard let manager else {
-                    throw ExtensionError.installationFailed("Extension manager is unavailable")
-                }
-                return try await ExtensionRuntimeContextLoader(manager: manager).load(request)
-            },
-            activateInstalledRuntime: { [weak manager] request in
-                guard let manager else { return }
-                await ExtensionInstallRuntimeActivator(manager: manager).activate(request)
-            },
-            trace: { [weak manager] message in manager?.runtimeDiagnostics.trace(message) }
-        )
+        diagnostics.trace(message())
     }
 }

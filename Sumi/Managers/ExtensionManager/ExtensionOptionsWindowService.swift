@@ -8,16 +8,19 @@ final class ExtensionOptionsWindowDelegate: NSObject, NSWindowDelegate, WKUIDele
     private let extensionId: String
     private weak var service: ExtensionOptionsWindowService?
     private weak var webView: WKWebView?
+    private weak var window: NSWindow?
     var isCleaningUp = false
 
     init(
         extensionId: String,
         service: ExtensionOptionsWindowService,
-        webView: WKWebView
+        webView: WKWebView,
+        window: NSWindow
     ) {
         self.extensionId = extensionId
         self.service = service
         self.webView = webView
+        self.window = window
         super.init()
     }
 
@@ -35,7 +38,7 @@ final class ExtensionOptionsWindowDelegate: NSObject, NSWindowDelegate, WKUIDele
         guard isCleaningUp == false else { return }
         service?.cleanupWindow(
             for: extensionId,
-            window: webView.window,
+            window: window,
             webView: webView,
             shouldOrderOut: true
         )
@@ -91,12 +94,38 @@ final class ExtensionOptionsWindowService {
         webView: WKWebView? = nil,
         shouldOrderOut: Bool
     ) {
-        guard let resolvedWindow = window ?? windows[extensionId] else {
-            delegates.removeValue(forKey: extensionId)
+        let resolvedWindow: NSWindow?
+        if let window {
+            resolvedWindow = window
+        } else if let webView {
+            let registeredWindow = windows[extensionId]
+            if let registeredWindow,
+               registeredWindow.contentView.map({
+                   firstWebView(in: $0) === webView
+               }) == true {
+                resolvedWindow = registeredWindow
+            } else {
+                // A WebKit close callback can arrive after its old window was
+                // detached and replaced. It may retire only that exact WebView.
+                SumiAuxiliaryWebViewShutdown.perform(on: webView)
+                return
+            }
+        } else {
+            resolvedWindow = windows[extensionId]
+        }
+        guard let resolvedWindow else {
             return
         }
 
-        let delegate = delegates[extensionId]
+        let ownsRegistration = windows[extensionId] === resolvedWindow
+        let delegate = ownsRegistration
+            ? delegates[extensionId]
+            : resolvedWindow.delegate as? ExtensionOptionsWindowDelegate
+        if ownsRegistration {
+            windows.removeValue(forKey: extensionId)
+            delegates.removeValue(forKey: extensionId)
+            profileIDsByExtensionID.removeValue(forKey: extensionId)
+        }
         delegate?.isCleaningUp = true
 
         let resolvedWebView = webView ?? resolvedWindow.contentView.flatMap {
@@ -112,9 +141,6 @@ final class ExtensionOptionsWindowService {
         resolvedWindow.contentViewController = nil
         resolvedWindow.contentView = nil
         resolvedWindow.delegate = nil
-        windows.removeValue(forKey: extensionId)
-        delegates.removeValue(forKey: extensionId)
-        profileIDsByExtensionID.removeValue(forKey: extensionId)
     }
 
     func presentOptionsPageWindow(
@@ -247,7 +273,8 @@ final class ExtensionOptionsWindowService {
         let delegate = ExtensionOptionsWindowDelegate(
             extensionId: extensionId,
             service: self,
-            webView: webView
+            webView: webView,
+            window: window
         )
         webView.uiDelegate = delegate
         window.delegate = delegate

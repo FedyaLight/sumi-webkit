@@ -12,11 +12,7 @@ final class SumiExtensionsModuleResidentDemandTests: XCTestCase {
     {
         let fixture = try makeFixture(hasEnabledExtension: true)
         defer {
-            fixture.manager.tearDownExtensionRuntime(
-                reason: #function,
-                removeUIState: true,
-                releaseController: true
-            )
+            _ = fixture.manager.shutDownExtensionRuntime(reason: #function)
         }
         let configuration = WKWebViewConfiguration()
 
@@ -67,6 +63,37 @@ final class SumiExtensionsModuleResidentDemandTests: XCTestCase {
             tab.extensionPageRuntimeOwner.isEligible(for: generation)
         )
         XCTAssertNil(fixture.manager.extensionController)
+    }
+
+    func testDisabledModuleRetriesShutdownAfterIrreversibleMutationFinishes()
+        async throws {
+        let fixture = try makeFixture(hasEnabledExtension: true)
+        let uninstall = try XCTUnwrap(
+            fixture.manager.runtimeMutationRegistry.begin(
+                extensionID: "resident-enabled",
+                operation: .uninstall
+            )
+        )
+        XCTAssertTrue(
+            fixture.manager.runtimeMutationRegistry.enterIrreversiblePhase(
+                uninstall
+            )
+        )
+
+        fixture.module.setEnabled(false)
+
+        XCTAssertTrue(
+            fixture.module.hasLoadedRuntime,
+            "the transaction retains its runtime until irreversible work ends"
+        )
+        XCTAssertTrue(
+            fixture.manager.runtimeMutationRegistry.finish(uninstall)
+        )
+        for _ in 0..<4 {
+            await Task.yield()
+        }
+
+        XCTAssertFalse(fixture.module.hasLoadedRuntime)
     }
 
     private func makeFixture(hasEnabledExtension: Bool) throws -> (

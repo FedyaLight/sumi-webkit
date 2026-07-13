@@ -194,8 +194,67 @@ final class ExtensionManager: NSObject, ObservableObject {
     lazy var installedExtensionCatalog = InstalledExtensionCatalog(
         environment: .makeLive(manager: self)
     )
+    lazy var extensionRuntimeAccess = ExtensionRuntimeAccess(
+        profileRuntime: profileRuntime,
+        controllerProvisioningOwner: controllerProvisioningOwner,
+        runtimeSession: runtimeSession,
+        runtime: { [weak self] in self?.runtime ?? .inactive }
+    )
+    lazy var runtimeContextLoader = ExtensionRuntimeContextLoader(
+        manager: self
+    )
+    lazy var installRuntimeActivation = ExtensionInstallRuntimeActivator(
+        manager: self
+    )
+    lazy var loadedContextFinalizer = ExtensionLoadedContextFinalizer(
+        authority: loadedContextAuthority,
+        actionSurfaces: { [weak self] in self?.actionSurfacePublisher },
+        residency: contextResidencyOwner,
+        installationActivation: installRuntimeActivation
+    )
     lazy var extensionRuntimeLoader = ExtensionRuntimeLoader(
-        environment: .makeLive(manager: self)
+        modelContext: context,
+        metadataStore: installationMetadataStore,
+        installedRecords: installedExtensionCollection,
+        runtimeAccess: extensionRuntimeAccess,
+        authority: loadedContextAuthority,
+        rollback: runtimeRollback,
+        contextLoader: runtimeContextLoader,
+        finalizer: loadedContextFinalizer,
+        diagnostics: runtimeDiagnostics
+    )
+    lazy var installationRuntimeActivation =
+        ExtensionInstallationRuntimeActivation(
+            runtimeAccess: extensionRuntimeAccess,
+            authority: loadedContextAuthority,
+            rollback: runtimeRollback,
+            contextLoader: runtimeContextLoader,
+            activation: installRuntimeActivation
+        )
+    lazy var enabledRuntimeActivation = ExtensionEnabledRuntimeActivation(
+        runtimeAccess: extensionRuntimeAccess,
+        authority: loadedContextAuthority,
+        loader: extensionRuntimeLoader,
+        finalizer: loadedContextFinalizer
+    )
+    lazy var runtimeRecovery = ExtensionRuntimeRecovery(
+        activation: enabledRuntimeActivation
+    )
+    lazy var runtimeRetirement = ExtensionRuntimeRetirement(
+        scopedRetirement: scopedRuntimeRetirement,
+        actionSurfaces: { [weak self] in self?.actionSurfacePublisher },
+        resources: { [weak self] in
+            self?.scopedRuntimeRetirementResources
+                ?? .init(
+                    auxiliaryWindows: nil,
+                    nativeMessagingWakes: nil,
+                    nativeMessagingRelay: nil
+            )
+        }
+    )
+    lazy var runtimeRollback = ExtensionRuntimeRollback(
+        authority: loadedContextAuthority,
+        retirement: runtimeRetirement
     )
     lazy var installedExtensionLifecycle = InstalledExtensionLifecycleService(
         environment: .makeLive(manager: self)
@@ -248,13 +307,43 @@ final class ExtensionManager: NSObject, ObservableObject {
     lazy var adapterCatalog = ExtensionAdapterCatalog(
         manager: self
     )
-    lazy var errorObservationOwner = ExtensionErrorObservationOwner(
-        manager: self
+    lazy var contextErrorObservation = ExtensionContextErrorObservation(
+        recordRuntimeMetric: { [runtimeSession] extensionId, update in
+            runtimeSession.recordRuntimeMetric(
+                for: extensionId,
+                update: update
+            )
+        },
+        trace: { [runtimeDiagnostics] message in
+            runtimeDiagnostics.trace(message)
+        }
+    )
+    lazy var contextRetirement = ExtensionContextRetirement(
+        profileRuntime: profileRuntime,
+        backgroundRuntimeState: backgroundRuntimeStateOwner,
+        runtimeSession: runtimeSession,
+        errorObservation: contextErrorObservation,
+        diagnostics: runtimeDiagnostics
+    )
+    lazy var loadedContextAuthority = ExtensionLoadedContextAuthority(
+        profileRuntime: profileRuntime,
+        mutationRegistry: runtimeMutationRegistry,
+        loadRegistry: contextLoadRegistry,
+        contextRetirement: contextRetirement
+    )
+    lazy var scopedRuntimeRetirement = ExtensionScopedRuntimeRetirement(
+        profileRuntime: profileRuntime,
+        mutationRegistry: runtimeMutationRegistry,
+        loadRegistry: contextLoadRegistry,
+        contextRetirement: contextRetirement,
+        runtimeSession: runtimeSession,
+        errorObservation: contextErrorObservation,
+        nativeMessagingPorts: nativeMessagingPortRegistry,
+        optionsWindows: optionsWindows,
+        actionAnchors: actionAnchorStore,
+        diagnostics: runtimeDiagnostics
     )
     lazy var controllerProvisioningOwner = ExtensionControllerProvisioningOwner(
-        dependencies: .live(manager: self)
-    )
-    lazy var runtimeStateResetOwner = ExtensionRuntimeStateResetOwner(
         dependencies: .live(manager: self)
     )
     lazy var contextResidencyOwner = ExtensionContextResidencyOwner(
@@ -375,6 +464,8 @@ final class ExtensionManager: NSObject, ObservableObject {
         manager: self
     )
     let profileRuntime: ExtensionProfileRuntime
+    let runtimeMutationRegistry = ExtensionRuntimeMutationRegistry()
+    let contextLoadRegistry = ExtensionContextLoadRegistry()
     lazy var contextPublications = ExtensionContextPublicationQuery(
         profileRuntime: profileRuntime
     )
@@ -403,7 +494,43 @@ final class ExtensionManager: NSObject, ObservableObject {
     let webExtensionStorageCleanupPlanner: WebExtensionStorageCleanupPlanner
     let installCapabilityOwner: SafariExtensionInstallCapabilityOwner
     let backgroundRuntimeStateOwner = ExtensionBackgroundRuntimeStateOwner()
-    let runtimeTeardownOwner = ExtensionRuntimeTeardownOwner()
+    lazy var runtimeActivityCancellation = ExtensionRuntimeActivityCancellation(
+        loadRegistry: contextLoadRegistry,
+        backgroundRuntimeState: backgroundRuntimeStateOwner,
+        nativeMessagingPorts: nativeMessagingPortRegistry,
+        diagnostics: runtimeDiagnostics
+    )
+    lazy var runtimeBookkeepingReset = ExtensionRuntimeBookkeepingReset(
+        runtimeSession: runtimeSession,
+        backgroundRuntimeState: backgroundRuntimeStateOwner,
+        errorObservation: contextErrorObservation,
+        recentTabRequests: recentExtensionTabRequests,
+        permissionPreludes:
+            permissionsOriginsCompatibilityPreludeInstallationOwner,
+        controllerProvisioning: controllerProvisioningOwner,
+        adapterStore: adapterStore,
+        optionsWindows: optionsWindows,
+        actionAnchors: actionAnchorStore
+    )
+    lazy var controllerRuntimeRelease = ExtensionControllerRuntimeRelease(
+        browserConfiguration: browserConfiguration,
+        profileRuntime: profileRuntime,
+        runtimeSession: runtimeSession
+    )
+    lazy var runtimeShutdown = ExtensionRuntimeShutdown(
+        activityCancellation: runtimeActivityCancellation,
+        mutationRegistry: runtimeMutationRegistry,
+        scopedRetirement: scopedRuntimeRetirement,
+        bookkeepingReset: runtimeBookkeepingReset,
+        controllerRelease: controllerRuntimeRelease,
+        profileRuntime: profileRuntime,
+        runtimeSession: runtimeSession,
+        errorObservation: contextErrorObservation,
+        optionsWindows: optionsWindows,
+        actionAnchors: actionAnchorStore,
+        nativeMessagingPorts: nativeMessagingPortRegistry,
+        diagnostics: runtimeDiagnostics
+    )
     var nativeMessagingBackgroundWakeOwner:
         ExtensionNativeMessagingBackgroundWakeOwner {
         deferredRuntimeOwnerStore.nativeMessagingBackgroundWakeOwner
@@ -411,6 +538,16 @@ final class ExtensionManager: NSObject, ObservableObject {
     var loadedNativeMessagingBackgroundWakeOwner:
         ExtensionNativeMessagingBackgroundWakeOwner? {
         deferredRuntimeOwnerStore.loadedNativeMessagingBackgroundWakeOwner
+    }
+
+    var scopedRuntimeRetirementResources:
+        ExtensionScopedRuntimeRetirement.Resources {
+        .init(
+            auxiliaryWindows: extensionAuxiliaryWindows,
+            nativeMessagingWakes: loadedNativeMessagingBackgroundWakeOwner,
+            nativeMessagingRelay:
+                loadedNativeMessagingRelayOwner?.loadedRelay
+        )
     }
 
     var initialDocumentRuntimePreparationOwner:
@@ -489,9 +626,10 @@ final class ExtensionManager: NSObject, ObservableObject {
 
         // The deinit teardown path reaches these owners; forming their weak
         // captures during deallocation traps, so they must exist up front.
-        _ = errorObservationOwner
+        _ = contextErrorObservation
+        _ = scopedRuntimeRetirement
+        _ = runtimeShutdown
         _ = controllerProvisioningOwner
-        _ = runtimeStateResetOwner
         _ = permissionsOriginsCompatibilityPreludeInstallationOwner
         _ = deferredRuntimeOwnerStore
 
@@ -511,11 +649,7 @@ final class ExtensionManager: NSObject, ObservableObject {
             PerformanceTrace.endInterval("ExtensionManager.deinit", signpostState)
         }
 
-        tearDownExtensionRuntime(
-            reason: "deinit",
-            removeUIState: true,
-            releaseController: true
-        )
+        _ = shutDownExtensionRuntime(reason: "deinit")
         #if DEBUG
             clearDebugState()
         #endif

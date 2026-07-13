@@ -194,11 +194,30 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             profile: profile
         )
 
-        await ExtensionInstallRuntimeActivator(manager: manager).activate(
+        let extensionID = try XCTUnwrap(manager.extensionID(for: extensionContext))
+        let claim = manager.contextLoadRegistry.begin(
+            for: .init(profileId: profile.id, extensionId: extensionID)
+        )
+        defer { _ = manager.contextLoadRegistry.finishIfCurrent(claim) }
+        let receipt = try XCTUnwrap(
+            manager.profileRuntime.contextBindingReceipt(
+                extensionId: extensionID,
+                profileId: profile.id
+            )
+        )
+        let controller = try XCTUnwrap(
+            manager.profileRuntime.controller(ifCurrent: receipt)
+        )
+        try await ExtensionInstallRuntimeActivator(manager: manager).activate(
             .init(
-                profileId: profile.id,
-                extensionContext: extensionContext,
-                installedExtensionId: "cold-install-activation",
+                loadedContext: .init(
+                    context: extensionContext,
+                    controller: controller,
+                    bindingReceipt: receipt,
+                    loadClaim: claim,
+                    mutationLease: nil
+                ),
+                installedExtensionId: extensionID,
                 operation: .install
             )
         )

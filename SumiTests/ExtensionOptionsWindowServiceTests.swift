@@ -26,6 +26,65 @@ final class ExtensionOptionsWindowServiceTests: XCTestCase {
         XCTAssertTrue(service.extensionIDs.isEmpty)
     }
 
+    func testCleanupOfStaleWindowPreservesRegisteredReplacementForSameExtension() {
+        let service = ExtensionOptionsWindowService()
+        let staleWindow = NSWindow()
+        let replacementWindow = NSWindow()
+
+        service.trackPresentedWindow(
+            staleWindow,
+            delegate: nil,
+            for: "extension-a"
+        )
+        service.trackPresentedWindow(
+            replacementWindow,
+            delegate: nil,
+            for: "extension-a"
+        )
+
+        service.cleanupWindow(
+            for: "extension-a",
+            window: staleWindow,
+            shouldOrderOut: true
+        )
+
+        XCTAssertIdentical(service.windows["extension-a"], replacementWindow)
+        XCTAssertEqual(service.extensionIDs, ["extension-a"])
+    }
+
+    func testStaleWebViewCloseWithoutWindowPreservesRegisteredReplacement() {
+        let service = ExtensionOptionsWindowService()
+        let staleWebView = WKWebView()
+        var staleWindow: NSWindow? = NSWindow()
+        staleWindow?.contentView = staleWebView
+        let delegate = ExtensionOptionsWindowDelegate(
+            extensionId: "extension-a",
+            service: service,
+            webView: staleWebView,
+            window: staleWindow!
+        )
+        service.trackPresentedWindow(
+            staleWindow!,
+            delegate: delegate,
+            for: "extension-a"
+        )
+
+        let replacementWindow = NSWindow()
+        service.trackPresentedWindow(
+            replacementWindow,
+            delegate: nil,
+            for: "extension-a"
+        )
+        staleWindow?.contentView = nil
+        staleWindow = nil
+        XCTAssertNil(staleWebView.window)
+
+        delegate.webViewDidClose(staleWebView)
+
+        XCTAssertIdentical(service.windows["extension-a"], replacementWindow)
+        XCTAssertEqual(service.extensionIDs, ["extension-a"])
+    }
+
     func testCloseAllWindowsRemovesAllTrackedWindows() {
         let service = ExtensionOptionsWindowService()
         service.trackPresentedWindow(NSWindow(), delegate: nil, for: "extension-a")

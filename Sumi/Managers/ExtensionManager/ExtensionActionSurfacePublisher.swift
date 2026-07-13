@@ -12,36 +12,43 @@ import WebKit
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionActionSurfacePublisher {
+    private let authority: ExtensionLoadedContextAuthority
     private let extensionIDForContext: @MainActor (WKWebExtensionContext) -> String?
     private let setActionSurfaceState: @MainActor (String, BrowserExtensionActionSurfaceState) -> Void
     private let removeActionSurfaceState: @MainActor (String) -> Void
     private let currentExtensionTab: @MainActor () -> Tab?
     private let stableAdapter: @MainActor (Tab) -> ExtensionTabAdapter?
-    private let resolvedProfileId: @MainActor (UUID?) -> UUID?
-    private let getExtensionContext: @MainActor (String, UUID) -> WKWebExtensionContext?
     private let ensureBackgroundAvailableIfRequired:
-        @MainActor (WKWebExtension, WKWebExtensionContext, ExtensionManager.ExtensionBackgroundWakeReason) async throws -> Void
+        @MainActor (
+            WKWebExtension,
+            WKWebExtensionContext,
+            ExtensionManager.ExtensionBackgroundWakeReason,
+            @escaping @MainActor () -> Bool
+        ) async throws -> Void
     private let reconcileOpenTabsAfterExtensionContextLoad: @MainActor (String) -> Void
 
     init(
+        authority: ExtensionLoadedContextAuthority,
         extensionIDForContext: @escaping @MainActor (WKWebExtensionContext) -> String?,
         setActionSurfaceState: @escaping @MainActor (String, BrowserExtensionActionSurfaceState) -> Void,
         removeActionSurfaceState: @escaping @MainActor (String) -> Void,
         currentExtensionTab: @escaping @MainActor () -> Tab?,
         stableAdapter: @escaping @MainActor (Tab) -> ExtensionTabAdapter?,
-        resolvedProfileId: @escaping @MainActor (UUID?) -> UUID?,
-        getExtensionContext: @escaping @MainActor (String, UUID) -> WKWebExtensionContext?,
         ensureBackgroundAvailableIfRequired:
-            @escaping @MainActor (WKWebExtension, WKWebExtensionContext, ExtensionManager.ExtensionBackgroundWakeReason) async throws -> Void,
+            @escaping @MainActor (
+                WKWebExtension,
+                WKWebExtensionContext,
+                ExtensionManager.ExtensionBackgroundWakeReason,
+                @escaping @MainActor () -> Bool
+            ) async throws -> Void,
         reconcileOpenTabsAfterExtensionContextLoad: @escaping @MainActor (String) -> Void
     ) {
+        self.authority = authority
         self.extensionIDForContext = extensionIDForContext
         self.setActionSurfaceState = setActionSurfaceState
         self.removeActionSurfaceState = removeActionSurfaceState
         self.currentExtensionTab = currentExtensionTab
         self.stableAdapter = stableAdapter
-        self.resolvedProfileId = resolvedProfileId
-        self.getExtensionContext = getExtensionContext
         self.ensureBackgroundAvailableIfRequired = ensureBackgroundAvailableIfRequired
         self.reconcileOpenTabsAfterExtensionContextLoad = reconcileOpenTabsAfterExtensionContextLoad
     }
@@ -80,17 +87,15 @@ final class ExtensionActionSurfacePublisher {
     /// After context load, seed action state and optionally wake background for explicit
     /// lifecycle events such as user-enabled extension activation.
     func finalizeEnabledExtensionRuntime(
-        for extensionId: String,
-        profileId: UUID? = nil,
+        _ loadedContext: ExtensionRuntimeContextLoader.LoadedContext,
         backgroundWakeReason: ExtensionManager.ExtensionBackgroundWakeReason? = nil
-    ) async {
-        guard let resolvedProfileId = self.resolvedProfileId(profileId),
-              let extensionContext = getExtensionContext(
-                  extensionId,
-                  resolvedProfileId
-              ) else { return }
+    ) async throws {
+        try validate(loadedContext)
+        let extensionId = loadedContext.bindingReceipt.key.extensionId
+        let extensionContext = loadedContext.context
 
         publishActionSurfaceStateForLoadedContext(extensionContext)
+        try validate(loadedContext)
 
         if let backgroundWakeReason {
             let webExtension = extensionContext.webExtension
@@ -98,18 +103,41 @@ final class ExtensionActionSurfacePublisher {
                 try await ensureBackgroundAvailableIfRequired(
                     webExtension,
                     extensionContext,
-                    backgroundWakeReason
+                    backgroundWakeReason,
+                    { [weak self] in
+                        self?.isCurrent(loadedContext) == true
+                    }
                 )
+            } catch is CancellationError {
+                throw CancellationError()
             } catch {
                 ExtensionManager.logger.error(
                     "Failed to wake background for \(extensionId, privacy: .public) after \(backgroundWakeReason.rawValue, privacy: .public): \(error.localizedDescription, privacy: .public)"
                 )
             }
         }
+        try validate(loadedContext)
 
         reconcileOpenTabsAfterExtensionContextLoad(
             "ExtensionActionSurfacePublisher.finalizeEnabledExtensionRuntime"
         )
+    }
+
+    private func validate(
+        _ loadedContext: ExtensionRuntimeContextLoader.LoadedContext
+    ) throws {
+        try authority.validate(loadedContext)
+    }
+
+    private func isCurrent(
+        _ loadedContext: ExtensionRuntimeContextLoader.LoadedContext
+    ) -> Bool {
+        do {
+            try authority.validate(loadedContext)
+            return true
+        } catch {
+            return false
+        }
     }
 }
 
@@ -117,6 +145,7 @@ final class ExtensionActionSurfacePublisher {
 extension ExtensionActionSurfacePublisher {
     convenience init(manager: ExtensionManager) {
         self.init(
+            authority: manager.loadedContextAuthority,
             extensionIDForContext: { [weak manager] context in
                 manager?.extensionID(for: context)
             },
@@ -133,17 +162,12 @@ extension ExtensionActionSurfacePublisher {
             stableAdapter: { [weak manager] tab in
                 manager?.adapterCatalog.stableAdapter(for: tab)
             },
-            resolvedProfileId: { [weak manager] profileId in
-                manager?.resolvedProfileId(explicitProfileId: profileId)
-            },
-            getExtensionContext: { [weak manager] extensionId, profileId in
-                manager?.getExtensionContext(for: extensionId, profileId: profileId)
-            },
-            ensureBackgroundAvailableIfRequired: { [weak manager] webExtension, context, reason in
+            ensureBackgroundAvailableIfRequired: { [weak manager] webExtension, context, reason, isCurrent in
                 _ = try await manager?.ensureBackgroundAvailableIfRequired(
                     for: webExtension,
                     context: context,
-                    reason: reason
+                    reason: reason,
+                    isCurrent: isCurrent
                 )
             },
             reconcileOpenTabsAfterExtensionContextLoad: { [weak manager] reason in

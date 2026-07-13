@@ -16,7 +16,8 @@ struct ExtensionManagerRuntime {
     typealias PrimaryTrackedWindowIdProvider = @MainActor (_ tabId: UUID) -> UUID?
     typealias UntrackedOwnedWebViewProvider = @MainActor (_ tab: Tab) -> WKWebView?
     typealias TrackedWebViewsProvider = @MainActor (_ tabId: UUID) -> [WKWebView]
-    typealias RebuildLiveWebViews = @MainActor (_ tab: Tab) -> Void
+    typealias RebuildLiveWebViews = @MainActor (_ tab: Tab)
+        -> ExtensionTabWebViewRebuildSubmissionOutcome
     typealias WebsiteDataMutationAdmissionWaiter = @MainActor (
         _ profileID: UUID
     ) async -> Bool
@@ -62,7 +63,7 @@ struct ExtensionManagerRuntime {
         primaryTrackedWindowId: { _ in nil },
         untrackedOwnedWebView: { _ in nil },
         trackedWebViews: { _ in [] },
-        rebuildLiveWebViews: { _ in /* No-op. */ },
+        rebuildLiveWebViews: { _ in .noLiveWindows },
         websiteDataMutationAdmissionIsBlocked: { _ in false },
         waitForWebsiteDataMutationAdmission: { _ in true },
         browserRuntimeAvailable: { false },

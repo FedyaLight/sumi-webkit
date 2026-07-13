@@ -89,6 +89,38 @@ final class ExtensionProfileRuntime {
         state.removeContext(extensionId: extensionId, profileId: profileId)
     }
 
+    func contextBindingReceipt(
+        extensionId: String,
+        profileId: UUID
+    ) -> ExtensionContextBindingReceipt? {
+        state.contextBindingReceipt(
+            extensionId: extensionId,
+            profileId: profileId
+        )
+    }
+
+    func isCurrent(_ receipt: ExtensionContextBindingReceipt) -> Bool {
+        state.isCurrent(receipt)
+    }
+
+    func context(
+        ifCurrent receipt: ExtensionContextBindingReceipt
+    ) -> WKWebExtensionContext? {
+        state.context(ifCurrent: receipt)
+    }
+
+    func controller(
+        ifCurrent receipt: ExtensionContextBindingReceipt
+    ) -> WKWebExtensionController? {
+        state.controller(ifCurrent: receipt)
+    }
+
+    func removeContext(
+        ifCurrent receipt: ExtensionContextBindingReceipt
+    ) -> (context: WKWebExtensionContext, generation: UInt64)? {
+        state.removeContext(ifCurrent: receipt)
+    }
+
     func contextBindingGeneration(for profileId: UUID) -> UInt64 {
         state.contextBindingGeneration(for: profileId)
     }

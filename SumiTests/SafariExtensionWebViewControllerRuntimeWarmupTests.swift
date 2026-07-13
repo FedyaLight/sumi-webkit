@@ -769,10 +769,8 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         let controller = manager.ensureExtensionController(for: profile.id)
 
         manager.testHooks.beforeControllerLoad = { _, _ in
-            manager.tearDownExtensionRuntime(
-                reason: "SafariExtensionWebViewControllerWiringTests",
-                removeUIState: true,
-                releaseController: true
+            _ = manager.shutDownExtensionRuntime(
+                reason: "SafariExtensionWebViewControllerWiringTests"
             )
         }
 
@@ -804,10 +802,8 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         XCTAssertTrue(extensionContext.isLoaded)
         XCTAssertFalse(controller.extensionContexts.isEmpty)
 
-        manager.tearDownExtensionRuntime(
-            reason: "SafariExtensionWebViewControllerWiringTests",
-            removeUIState: true,
-            releaseController: true
+        _ = manager.shutDownExtensionRuntime(
+            reason: "SafariExtensionWebViewControllerWiringTests"
         )
 
         XCTAssertFalse(extensionContext.isLoaded)
@@ -881,55 +877,19 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         webViewWithoutController.owningTab = tabWithoutController
         tabWithoutController.replaceUntrackedWebView(webViewWithoutController)
 
-        let affectedIDs = Set(
-            manager.tabsAffectedByLoadedUserExtensionRuntime().map(\.id)
-        )
-
-        XCTAssertTrue(manager.hasLoadedUserExtensionRuntime)
-        XCTAssertTrue(affectedIDs.contains(tabWithController.id))
-        XCTAssertTrue(affectedIDs.contains(tabWithoutController.id))
-    }
-
-    func testRuntimeTeardownClearsTabExtensionOverridesBeforeRebuild() throws {
-        let container = try makeTestContainer()
-        let profile = Profile(name: "Profile A")
-        let manager = makeManager(
-            context: container.mainContext,
-            profile: profile
-        ).manager
-        _ = manager.requestExtensionRuntime(
-            reason: .attach,
-            allowWithoutEnabledExtensions: true,
-            profileId: profile.id
-        )
-        manager.extensionsLoaded = true
-
-        let tab = makeTab(
-            profileId: profile.id,
-            url: URL(string: "https://accounts.google.com/")!
-        )
-        let webView = attachUsableExtensionWebView(
-            to: tab,
-            manager: manager,
-            profile: profile
-        )
-        tab.webViewConfigurationOverride = webView.configuration
-        tab.extensionPageRuntimeOwner.openNotifiedDocumentSequence = 1
-        tab.extensionPageRuntimeOwner.openNotifiedContextBindingGeneration = 1
-        tab.extensionPageRuntimeOwner.openNotifiedContextReadiness = .loaded
-
-        XCTAssertNotNil(webView.configuration.webExtensionController)
-        XCTAssertNotNil(tab.webViewConfigurationOverride)
-
-        manager.rebuildLiveWebViewsAfterUserExtensionRuntimeTeardown(
-            [tab],
+        let shutdown = manager.shutDownExtensionRuntime(
             reason: "SafariExtensionWebViewControllerWiringTests"
         )
+        let affectedIDs = Set(
+            manager.executeExtensionRuntimeRebuildPlan(
+                shutdown.tabRebuildPlan,
+                reason: "SafariExtensionWebViewControllerWiringTests"
+            ).map(\.tabID)
+        )
 
-        XCTAssertNil(tab.webViewConfigurationOverride)
-        XCTAssertNil(tab.extensionPageRuntimeOwner.openNotifiedDocumentSequence)
-        XCTAssertNil(tab.extensionPageRuntimeOwner.openNotifiedContextBindingGeneration)
-        XCTAssertEqual(tab.extensionPageRuntimeOwner.openNotifiedContextReadiness, .notNotified)
+        XCTAssertTrue(shutdown.completed)
+        XCTAssertTrue(affectedIDs.contains(tabWithController.id))
+        XCTAssertTrue(affectedIDs.contains(tabWithoutController.id))
     }
 
     func testPrepareExtensionRuntimeBeforeNavigationReNotifiesOnReload() throws {

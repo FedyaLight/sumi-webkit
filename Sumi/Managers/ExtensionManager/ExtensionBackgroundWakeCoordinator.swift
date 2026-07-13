@@ -53,7 +53,8 @@ final class ExtensionBackgroundWakeCoordinator {
     func ensureBackgroundAvailableIfRequired(
         for webExtension: WKWebExtension,
         context extensionContext: WKWebExtensionContext,
-        reason: ExtensionManager.ExtensionBackgroundWakeReason
+        reason: ExtensionManager.ExtensionBackgroundWakeReason,
+        isCurrent: @escaping @MainActor () -> Bool = { true }
     ) async throws -> Bool {
         let wakeKey = backgroundWakeKey(for: extensionContext)
         return try await backgroundRuntimeStateOwner.ensureBackgroundAvailableIfRequired(
@@ -61,6 +62,7 @@ final class ExtensionBackgroundWakeCoordinator {
             hasBackgroundContent: webExtension.hasBackgroundContent,
             reason: reason,
             trace: { [trace] in trace($0) },
+            isCurrent: isCurrent,
             loadBackgroundContent: { [debugBackgroundContentWake] in
                 if let backgroundContentWake = debugBackgroundContentWake() {
                     try await backgroundContentWake(wakeKey, extensionContext)
@@ -233,22 +235,20 @@ extension ExtensionManager {
     func ensureBackgroundAvailableIfRequired(
         for webExtension: WKWebExtension,
         context extensionContext: WKWebExtensionContext,
-        reason: ExtensionBackgroundWakeReason
+        reason: ExtensionBackgroundWakeReason,
+        isCurrent: @escaping @MainActor () -> Bool = { true }
     ) async throws -> Bool {
         try await backgroundWakeCoordinator.ensureBackgroundAvailableIfRequired(
             for: webExtension,
             context: extensionContext,
-            reason: reason
+            reason: reason,
+            isCurrent: isCurrent
         )
     }
 
     func cancelNativeMessagingBackgroundWakeTasks(forExtensionId extensionId: String) {
         loadedNativeMessagingBackgroundWakeOwner?.cancelWakeTasks(
-            forExtensionId: extensionId,
-            wakeKeyBelongsToExtension: { wakeKey, extensionId in
-                ExtensionRuntimeResidencyState.parseScopedKey(wakeKey)?
-                    .extensionId == extensionId
-            }
+            forExtensionId: extensionId
         )
     }
 

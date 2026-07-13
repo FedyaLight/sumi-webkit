@@ -16,7 +16,8 @@ final class ExtensionContextResidencyOwner {
     struct Dependencies {
         let profileRuntime: ExtensionProfileRuntime
         let runtimeSession: ExtensionRuntimeSession
-        let backgroundRuntimeStateOwner: ExtensionBackgroundRuntimeStateOwner
+        let contextLoadRegistry: ExtensionContextLoadRegistry
+        let contextRetirement: ExtensionContextRetirement
         let isExtensionSupportAvailable: @MainActor () -> Bool
         let extensionsModuleEnabledForRuntimeBoundary: @MainActor () -> Bool
         let ensureExtensionController: @MainActor (UUID) -> Void
@@ -25,7 +26,7 @@ final class ExtensionContextResidencyOwner {
         let readinessContext: @MainActor (UUID) -> ExtensionRuntimeReadinessContext?
         let extensionEntity: @MainActor (String) throws -> ExtensionEntity?
         let enabledPersistedExtensionEntities: @MainActor () -> [ExtensionEntity]
-        let loadEnabledExtension: @MainActor (ExtensionEntity, UUID, UInt64) async throws -> Void
+        let loadEnabledExtension: @MainActor (ExtensionEntity, UUID) async throws -> Void
         let setExtensionsLoaded: @MainActor (Bool) -> Void
         let trace: @MainActor (() -> String) -> Void
     }
@@ -92,6 +93,7 @@ final class ExtensionContextResidencyOwner {
     func quiesceForWebsiteDataMutation(profileIDs: Set<UUID>) -> Bool {
         guard profileIDs.isEmpty == false else { return true }
         dependencies.runtimeSession.extensionLoadGeneration &+= 1
+        dependencies.contextLoadRegistry.invalidate(profileIDs: profileIDs)
 
         let identities = profileIDs.flatMap { profileID in
             dependencies.profileRuntime.contexts(for: profileID).keys.map {
@@ -115,43 +117,26 @@ final class ExtensionContextResidencyOwner {
         extensionId: String,
         profileId: UUID
     ) -> Bool {
-        guard let context = dependencies.getExtensionContext(extensionId, profileId) else {
-            return true
-        }
-
-        let wakeKey = ExtensionRuntimeResidencyState.scopedKey(
+        let key = ExtensionRuntimeResidencyState.ScopedKey(
+            profileId: profileId,
             extensionId: extensionId,
-            profileId: profileId
         )
-        dependencies.backgroundRuntimeStateOwner.cancelAndRemoveRuntime(for: wakeKey)
-        guard let controller = dependencies.profileRuntime.controller(for: profileId) else {
-            dependencies.trace {
-                "Unable to unload extension \(extensionId) for profile \(profileId.uuidString): missing controller"
-            }
-            return false
-        }
-        do {
-            try controller.unload(context)
-        } catch {
-            dependencies.trace {
-                "Failed to unload extension \(extensionId) profile \(profileId.uuidString): \(error.localizedDescription)"
-            }
-            return false
-        }
-
-        dependencies.runtimeSession.extensionRuntimeResidencyState.remove(
-            extensionId: extensionId,
-            profileId: profileId
-        )
-        _ = dependencies.profileRuntime.removeContext(
+        dependencies.contextLoadRegistry.invalidate(key)
+        let outcome = dependencies.contextRetirement.retireCurrent(
             extensionId: extensionId,
             profileId: profileId
         )
 
         dependencies.trace {
-            "unloadExtensionContext extensionId=\(extensionId) profileId=\(profileId.uuidString) remainingContexts=\(self.dependencies.countLoadedContexts())"
+            "unloadExtensionContext extensionId=\(extensionId) profileId=\(profileId.uuidString) outcome=\(String(describing: outcome)) remainingContexts=\(self.dependencies.countLoadedContexts())"
         }
-        return true
+        switch outcome {
+        case .retired, .notBound:
+            return true
+        case .controllerUnavailable, .unloadFailed, .superseded,
+             .retirementInProgress:
+            return false
+        }
     }
 
     @discardableResult
@@ -187,8 +172,7 @@ final class ExtensionContextResidencyOwner {
 
         try await dependencies.loadEnabledExtension(
             entity,
-            profileId,
-            dependencies.runtimeSession.extensionLoadGeneration
+            profileId
         )
         touchLiveExtensionContext(extensionId: extensionId, profileId: profileId)
         enforceBoundedLiveExtensionContexts(
@@ -214,8 +198,7 @@ final class ExtensionContextResidencyOwner {
             do {
                 try await dependencies.loadEnabledExtension(
                     entity,
-                    profileId,
-                    dependencies.runtimeSession.extensionLoadGeneration
+                    profileId
                 )
             } catch {
                 ExtensionManager.logger.error(
@@ -249,7 +232,8 @@ extension ExtensionContextResidencyOwner.Dependencies {
         Self(
             profileRuntime: manager.profileRuntime,
             runtimeSession: manager.runtimeSession,
-            backgroundRuntimeStateOwner: manager.backgroundRuntimeStateOwner,
+            contextLoadRegistry: manager.contextLoadRegistry,
+            contextRetirement: manager.contextRetirement,
             isExtensionSupportAvailable: { [weak manager] in
                 manager?.isExtensionSupportAvailable ?? false
             },
@@ -274,11 +258,10 @@ extension ExtensionContextResidencyOwner.Dependencies {
             enabledPersistedExtensionEntities: { [weak manager] in
                 manager?.enabledPersistedExtensionEntities() ?? []
             },
-            loadEnabledExtension: { [weak manager] entity, profileId, generation in
+            loadEnabledExtension: { [weak manager] entity, profileId in
                 _ = try await manager?.extensionRuntimeLoader.loadEnabled(
                     from: entity,
-                    profileID: profileId,
-                    expectedLoadGeneration: generation
+                    profileID: profileId
                 )
             },
             setExtensionsLoaded: { [weak manager] loaded in

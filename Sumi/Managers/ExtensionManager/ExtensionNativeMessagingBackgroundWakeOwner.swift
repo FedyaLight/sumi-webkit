@@ -62,12 +62,13 @@ final class ExtensionNativeMessagingBackgroundWakeOwner {
         )
     }
 
-    func cancelWakeTasks(
-        forExtensionId extensionId: String,
-        wakeKeyBelongsToExtension: (_ wakeKey: String, _ extensionId: String) -> Bool
-    ) {
+    func cancelWakeTasks(forExtensionId extensionId: String) {
         for (wakeKey, scheduledTask) in tasksByWakeKey {
-            guard wakeKeyBelongsToExtension(wakeKey, extensionId) else { continue }
+            guard ExtensionRuntimeResidencyState.parseScopedKey(wakeKey)?
+                .extensionId == extensionId
+            else {
+                continue
+            }
 
             scheduledTask.task.cancel()
             tasksByWakeKey.removeValue(forKey: wakeKey)

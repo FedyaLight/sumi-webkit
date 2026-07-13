@@ -46,8 +46,21 @@ enum BrowserExtensionManagerRuntimeFactory {
                     .trackedWebViews(for: tabId) ?? []
             },
             rebuildLiveWebViews: { [weak browserManager] tab in
-                browserManager?.webViewRuntime.rebuildService
-                    .rebuildLiveWebViews(for: tab)
+                guard let browserManager else { return .failed }
+                switch browserManager.webViewRuntime.rebuildService
+                    .rebuildLiveWebViewsResult(
+                        for: tab,
+                        reason: "ExtensionRuntimeTabRebuildPlan"
+                    ) {
+                case .committed:
+                    return .committed
+                case .deferred:
+                    return .deferred
+                case .noLiveWindows:
+                    return .noLiveWindows
+                case .failed:
+                    return .failed
+                }
             },
             websiteDataMutationAdmissionIsBlocked: { [weak browserManager] profileID in
                 browserManager?.webViewRuntime.websiteDataCleanupService

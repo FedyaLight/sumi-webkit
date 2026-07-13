@@ -42,7 +42,7 @@ final class SafariExtensionProfileIsolationTests: XCTestCase {
             primaryTrackedWindowId: { _ in nil },
             untrackedOwnedWebView: { _ in nil },
             trackedWebViews: { _ in [] },
-            rebuildLiveWebViews: { _ in /* No-op. */ },
+            rebuildLiveWebViews: { _ in .noLiveWindows },
             websiteDataMutationAdmissionIsBlocked: { _ in false },
             waitForWebsiteDataMutationAdmission: { _ in true },
             browserRuntimeAvailable: { false },

@@ -26,37 +26,45 @@ final class ExtensionInstallRuntimeActivator {
     }
 
     struct Request {
-        let profileId: UUID
-        let extensionContext: WKWebExtensionContext
+        let loadedContext: ExtensionRuntimeContextLoader.LoadedContext
         let installedExtensionId: String
         let operation: Operation
     }
 
     private let manager: ExtensionManager
+    private let authority: ExtensionLoadedContextAuthority
 
     init(manager: ExtensionManager) {
         self.manager = manager
+        self.authority = manager.loadedContextAuthority
     }
 
-    func activate(_ request: Request) async {
+    func activate(_ request: Request) async throws {
+        try validate(request.loadedContext)
         // New install-time contexts must see existing tabs/windows before
         // `extensionsLoaded` flips, or MV3 onboarding (`tabs.create`) may race.
         manager.reloadRuntimePublications(
             reason: request.operation.resyncReason,
             allowWhenExtensionsNotLoaded: true,
-            profileID: request.profileId
+            profileID: request.loadedContext.bindingReceipt.key.profileId
         )
+        try validate(request.loadedContext)
 
-        let installedWebExtension = request.extensionContext.webExtension
+        let installedWebExtension = request.loadedContext.context.webExtension
         let installedDisplayName =
             installedWebExtension.displayName ?? request.installedExtensionId
         do {
             // Await background load so `runtime.onInstalled` can run in this install cycle.
             _ = try await manager.ensureBackgroundAvailableIfRequired(
                 for: installedWebExtension,
-                context: request.extensionContext,
-                reason: .install
+                context: request.loadedContext.context,
+                reason: .install,
+                isCurrent: { [weak self] in
+                    self?.isCurrent(request.loadedContext) == true
+                }
             )
+        } catch is CancellationError {
+            throw CancellationError()
         } catch {
             logBackgroundWakeFailure(
                 error,
@@ -64,7 +72,27 @@ final class ExtensionInstallRuntimeActivator {
                 installedDisplayName: installedDisplayName
             )
         }
-        manager.markExtensionRuntimeReadyIfProfileContextsLoaded(for: request.profileId)
+        try validate(request.loadedContext)
+        manager.markExtensionRuntimeReadyIfProfileContextsLoaded(
+            for: request.loadedContext.bindingReceipt.key.profileId
+        )
+    }
+
+    private func validate(
+        _ loadedContext: ExtensionRuntimeContextLoader.LoadedContext
+    ) throws {
+        try authority.validate(loadedContext)
+    }
+
+    private func isCurrent(
+        _ loadedContext: ExtensionRuntimeContextLoader.LoadedContext
+    ) -> Bool {
+        do {
+            try authority.validate(loadedContext)
+            return true
+        } catch {
+            return false
+        }
     }
 
     private func logBackgroundWakeFailure(

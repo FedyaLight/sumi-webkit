@@ -79,10 +79,8 @@ extension XCTestCase {
         addTeardownBlock { @MainActor in
             guard let manager = teardownBox.manager else { return }
             await manager.drainExtensionRuntimeTasksForTests()
-            manager.tearDownExtensionRuntime(
-                reason: "SafariExtensionTestExtensionManager.tearDown",
-                removeUIState: true,
-                releaseController: true
+            _ = manager.shutDownExtensionRuntime(
+                reason: "SafariExtensionTestExtensionManager.tearDown"
             )
             manager.clearDebugState()
             teardownBox.manager = nil

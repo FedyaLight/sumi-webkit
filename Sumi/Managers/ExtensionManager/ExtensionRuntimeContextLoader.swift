@@ -12,19 +12,18 @@ import WebKit
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionRuntimeContextLoader {
+    struct LoadedContext {
+        let context: WKWebExtensionContext
+        let controller: WKWebExtensionController
+        let bindingReceipt: ExtensionContextBindingReceipt
+        let loadClaim: ExtensionContextLoadClaim
+        let mutationLease: ExtensionRuntimeMutationLease?
+    }
+
     enum Operation {
-        case loadEnabled(expectedGeneration: UInt64)
+        case loadEnabled
         case install
         case safariEnable
-
-        var expectedGeneration: UInt64? {
-            switch self {
-            case .loadEnabled(let expectedGeneration):
-                return expectedGeneration
-            case .install, .safariEnable:
-                return nil
-            }
-        }
 
         var recordsRuntimeMetrics: Bool {
             switch self {
@@ -119,6 +118,8 @@ final class ExtensionRuntimeContextLoader {
         let packageRoot: URL
         let manifest: [String: Any]
         let operation: Operation
+        let claim: ExtensionContextLoadClaim
+        let mutationLease: ExtensionRuntimeMutationLease?
     }
 
     private let manager: ExtensionManager
@@ -127,14 +128,32 @@ final class ExtensionRuntimeContextLoader {
         self.manager = manager
     }
 
-    func load(_ request: Request) async throws -> WKWebExtensionContext {
+    func load(_ request: Request) async throws -> LoadedContext {
+        guard request.claim.key == .init(
+            profileId: request.profileId,
+            extensionId: request.extensionId
+        ) else {
+            throw CancellationError()
+        }
+        try manager.loadedContextAuthority.validate(
+            request.claim,
+            mutationLease: request.mutationLease
+        )
         guard await manager.runtime.waitForWebsiteDataMutationAdmission(
             request.profileId
         ) else {
             throw CancellationError()
         }
+        try validate(request.claim, mutationLease: request.mutationLease)
         let extensionController = manager.ensureExtensionController(
             for: request.profileId
+        )
+        let controllerRevision = manager.profileRuntime
+            .controllerBindingRevision(for: request.profileId)
+        try validateController(
+            extensionController,
+            revision: controllerRevision,
+            request: request
         )
 
         let webExtensionStart = CFAbsoluteTimeGetCurrent()
@@ -142,7 +161,13 @@ final class ExtensionRuntimeContextLoader {
             extensionId: request.extensionId,
             sourceKind: request.sourceKind,
             sourceBundlePath: request.sourceBundlePath,
-            packageRoot: request.packageRoot
+            packageRoot: request.packageRoot,
+            request: request
+        )
+        try validateController(
+            extensionController,
+            revision: controllerRevision,
+            request: request
         )
         // WebExtension creation may suspend. Re-enter the same admission
         // barrier before any context is attached to the profile data store.
@@ -151,6 +176,11 @@ final class ExtensionRuntimeContextLoader {
         ) else {
             throw CancellationError()
         }
+        try validateController(
+            extensionController,
+            revision: controllerRevision,
+            request: request
+        )
         manager.runtimeDiagnostics.traceNativeMessagingContextBinding(
             phase: request.operation.webExtensionCreatedPhase,
             extensionId: request.extensionId,
@@ -169,10 +199,6 @@ final class ExtensionRuntimeContextLoader {
                     CFAbsoluteTimeGetCurrent() - webExtensionStart
             }
         }
-
-        try manager.validateExpectedExtensionLoadGeneration(
-            request.operation.expectedGeneration
-        )
 
         let extensionContext = WKWebExtensionContext(for: webExtension)
         Self.configureContextIdentity(
@@ -209,10 +235,6 @@ final class ExtensionRuntimeContextLoader {
         )
         extensionContext.isInspectable =
             RuntimeDiagnostics.isDeveloperInspectionEnabled
-        manager.observeExtensionErrors(
-            for: extensionContext,
-            extensionId: request.extensionId
-        )
         manager.prepareExtensionContextForRuntime(
             extensionContext,
             extensionId: request.extensionId,
@@ -244,36 +266,60 @@ final class ExtensionRuntimeContextLoader {
             extensionId: request.extensionId,
             manifest: request.manifest
         )
-
-        manager.setExtensionContext(
-            extensionContext,
-            extensionId: request.extensionId,
-            profileId: request.profileId
-        )
-        manager.runtimeSession.loadedExtensionManifests[request.extensionId] = request.manifest
-        manager.runtimeDiagnostics.traceNativeMessagingContextBinding(
-            phase: request.operation.beforeControllerLoadPhase,
-            extensionId: request.extensionId,
-            profileId: request.profileId,
-            loadSource: runtimeLoadSource,
-            webExtension: webExtension,
-            extensionContext: extensionContext,
-            controller: extensionController,
-            manager: manager
+        try validateController(
+            extensionController,
+            revision: controllerRevision,
+            request: request
         )
 
+        var bindingReceipt: ExtensionContextBindingReceipt?
         do {
+            manager.setExtensionContext(
+                extensionContext,
+                extensionId: request.extensionId,
+                profileId: request.profileId
+            )
+            let receipt = try requireBindingReceipt(
+                extensionContext,
+                controller: extensionController,
+                request: request
+            )
+            bindingReceipt = receipt
+            manager.observeExtensionErrors(
+                for: extensionContext,
+                extensionId: request.extensionId,
+                profileId: request.profileId
+            )
+            manager.runtimeDiagnostics.traceNativeMessagingContextBinding(
+                phase: request.operation.beforeControllerLoadPhase,
+                extensionId: request.extensionId,
+                profileId: request.profileId,
+                loadSource: runtimeLoadSource,
+                webExtension: webExtension,
+                extensionContext: extensionContext,
+                controller: extensionController,
+                manager: manager
+            )
             #if DEBUG
                 try manager.testHooks.beforeControllerLoad?(
                     request.extensionId,
                     manager.webExtensionStorageSnapshot(for: request.extensionId)
                 )
             #endif
-            try manager.validateExpectedExtensionLoadGeneration(
-                request.operation.expectedGeneration
+            try validateBoundContext(
+                receipt,
+                context: extensionContext,
+                controller: extensionController,
+                request: request
             )
             let contextLoadStart = CFAbsoluteTimeGetCurrent()
             try extensionController.load(extensionContext)
+            try validateBoundContext(
+                receipt,
+                context: extensionContext,
+                controller: extensionController,
+                request: request
+            )
             if request.operation.recordsRuntimeMetrics {
                 manager.runtimeSession.recordRuntimeMetric(for: request.extensionId) {
                     $0.contextLoadDuration =
@@ -289,13 +335,26 @@ final class ExtensionRuntimeContextLoader {
                 extensionContext: extensionContext,
                 controller: extensionController,
                 configuration: extensionContext.webViewConfiguration,
-                manager: manager
+                    manager: manager
             )
         } catch {
-            manager.tearDownExtensionRuntimeState(
-                for: request.extensionId,
-                removeUIState: false
-            )
+            if let bindingReceipt {
+                let rollback = manager.runtimeRollback.rollBack(
+                    LoadedContext(
+                        context: extensionContext,
+                        controller: extensionController,
+                        bindingReceipt: bindingReceipt,
+                        loadClaim: request.claim,
+                        mutationLease: request.mutationLease
+                    )
+                )
+                if rollback.exactRollbackCompleted == false {
+                    throw ExtensionRuntimeTransactionFailure(
+                        operationError: error,
+                        rollback: rollback
+                    )
+                }
+            }
             throw error
         }
 
@@ -305,14 +364,27 @@ final class ExtensionRuntimeContextLoader {
             )
         }
 
-        return extensionContext
+        guard let bindingReceipt else {
+            assertionFailure(
+                "A successful WebExtension load must retain its binding receipt"
+            )
+            throw CancellationError()
+        }
+        return LoadedContext(
+            context: extensionContext,
+            controller: extensionController,
+            bindingReceipt: bindingReceipt,
+            loadClaim: request.claim,
+            mutationLease: request.mutationLease
+        )
     }
 
     private func cachedOrCreateWebExtension(
         extensionId: String,
         sourceKind: WebExtensionSourceKind,
         sourceBundlePath: String,
-        packageRoot: URL
+        packageRoot: URL,
+        request: Request
     ) async throws -> (
         extension: WKWebExtension,
         loadSource: SafariAppExtensionRuntimeLoadSource
@@ -333,6 +405,7 @@ final class ExtensionRuntimeContextLoader {
             ).standardizedFileURL.path,
             packageRootPath: packageRoot.standardizedFileURL.path
         )
+        try validate(request.claim, mutationLease: request.mutationLease)
         if let cached = manager.runtimeSession.cachedWebExtensionsByID[extensionId],
            manager.runtimeSession.cachedWebExtensionRuntimeSourceKeysByID[extensionId] == sourceKey {
             let loadSource: SafariAppExtensionRuntimeLoadSource =
@@ -347,9 +420,77 @@ final class ExtensionRuntimeContextLoader {
             sourceBundlePath: sourceBundlePath,
             packageRoot: packageRoot
         )
+        try validate(request.claim, mutationLease: request.mutationLease)
         manager.runtimeSession.cachedWebExtensionsByID[extensionId] = created.extension
         manager.runtimeSession.cachedWebExtensionRuntimeSourceKeysByID[extensionId] = sourceKey
         return created
+    }
+
+    private func validate(
+        _ claim: ExtensionContextLoadClaim,
+        mutationLease: ExtensionRuntimeMutationLease?
+    ) throws {
+        try manager.loadedContextAuthority.validate(
+            claim,
+            mutationLease: mutationLease
+        )
+    }
+
+    private func validateController(
+        _ controller: WKWebExtensionController,
+        revision: UInt64,
+        request: Request
+    ) throws {
+        try validate(
+            request.claim,
+            mutationLease: request.mutationLease
+        )
+        guard manager.profileRuntime.controller(for: request.claim.key.profileId)
+                === controller,
+              manager.profileRuntime.controllerBindingRevision(
+                  for: request.claim.key.profileId
+              ) == revision
+        else {
+            throw CancellationError()
+        }
+    }
+
+    private func requireBindingReceipt(
+        _ context: WKWebExtensionContext,
+        controller: WKWebExtensionController,
+        request: Request
+    ) throws -> ExtensionContextBindingReceipt {
+        try validate(
+            request.claim,
+            mutationLease: request.mutationLease
+        )
+        guard let receipt = manager.profileRuntime.contextBindingReceipt(
+            extensionId: request.claim.key.extensionId,
+            profileId: request.claim.key.profileId
+        ), manager.profileRuntime.context(ifCurrent: receipt) === context,
+           manager.profileRuntime.controller(ifCurrent: receipt) === controller
+        else {
+            throw CancellationError()
+        }
+        return receipt
+    }
+
+    private func validateBoundContext(
+        _ receipt: ExtensionContextBindingReceipt,
+        context: WKWebExtensionContext,
+        controller: WKWebExtensionController,
+        request: Request
+    ) throws {
+        try validate(
+            request.claim,
+            mutationLease: request.mutationLease
+        )
+        guard manager.profileRuntime.context(ifCurrent: receipt) === context,
+              manager.profileRuntime.controller(ifCurrent: receipt)
+                === controller
+        else {
+            throw CancellationError()
+        }
     }
 
     static func configureContextIdentity(

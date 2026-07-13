@@ -73,6 +73,16 @@ final class ExtensionBackgroundRuntimeStateOwner {
         runtimeStatesByWakeKey.removeValue(forKey: wakeKey)
     }
 
+    /// Stops an in-flight wake before a context unload without erasing the
+    /// readiness of a context that may remain bound when WebKit rejects unload.
+    func cancelWakePreservingRuntimeState(for wakeKey: String) {
+        let wake = wakeTasks.removeValue(forKey: wakeKey)
+        wake?.task.cancel()
+        if runtimeStatesByWakeKey[wakeKey] == .wakeInFlight {
+            runtimeStatesByWakeKey.removeValue(forKey: wakeKey)
+        }
+    }
+
     func removeRuntimeState(for wakeKey: String) {
         runtimeStatesByWakeKey.removeValue(forKey: wakeKey)
     }

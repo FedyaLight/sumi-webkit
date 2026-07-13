@@ -792,7 +792,14 @@ final class SumiExtensionsModule {
     }
 
     func cancelNativeMessagingSessionsIfLoaded(reason: String) {
-        cachedManager?.cancelNativeMessagingSessions(reason: reason)
+        guard let cachedManager else { return }
+        cachedManager.runtimeDiagnostics.trace(
+            "nativeMessagingCancelSessions reason=\(reason) "
+                + "count=\(cachedManager.nativeMessagingPortRegistry.count)"
+        )
+        cachedManager.nativeMessagingPortRegistry.disconnectAll()
+        cachedManager.loadedNativeMessagingRelayOwner?.loadedRelay?
+            .clearAllLoopGuardState()
     }
 
     func closeAllOptionsWindowsIfLoaded() {
@@ -863,18 +870,39 @@ final class SumiExtensionsModule {
             return
         }
 
-        let tabsToRebuild = cachedManager.tabsAffectedByLoadedUserExtensionRuntime()
-        cachedManager.tearDownExtensionRuntime(
-            reason: reason,
-            removeUIState: true,
-            releaseController: true
-        )
+        let result = cachedManager.shutDownExtensionRuntime(reason: reason)
         surfaceStore.bind(nil)
-        cachedManager.rebuildLiveWebViewsAfterUserExtensionRuntimeTeardown(
-            tabsToRebuild,
+        if result.completionStatus == .mutationInProgress {
+            scheduleRuntimeTeardownRetry(
+                manager: cachedManager,
+                reason: reason
+            )
+            return
+        }
+        guard result.completed else { return }
+        _ = cachedManager.executeExtensionRuntimeRebuildPlan(
+            result.tabRebuildPlan,
             reason: reason
         )
         self.cachedManager = nil
+    }
+
+    private func scheduleRuntimeTeardownRetry(
+        manager: ExtensionManager,
+        reason: String
+    ) {
+        manager.runtimeMutationRegistry.runWhenTerminalAdmissionAvailable {
+            [weak self, weak manager] in
+            Task { @MainActor [weak self, weak manager] in
+                guard let self, let manager,
+                      self.isEnabled == false,
+                      self.cachedManager === manager
+                else {
+                    return
+                }
+                self.tearDownLoadedRuntime(reason: "\(reason).deferred")
+            }
+        }
     }
 
     #if DEBUG

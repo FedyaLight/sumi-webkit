@@ -10,7 +10,11 @@ final class ExtensionInstallationService {
         let modelContext: ModelContext
         let metadataStore: ExtensionInstallationMetadataStore
         let installedRecords: InstalledExtensionCollection
-        let runtimeLoader: ExtensionRuntimeLoader
+        let runtimeActivation: ExtensionInstallationRuntimeActivation
+        let runtimeRecovery: ExtensionRuntimeRecovery
+        let runtimeRetirement: ExtensionRuntimeRetirement
+        let mutationRegistry: ExtensionRuntimeMutationRegistry
+        let loadRegistry: ExtensionContextLoadRegistry
         let isExtensionSupportAvailable: @MainActor () -> Bool
         let requestRuntime: @MainActor (
             ExtensionManager.ExtensionRuntimeRequestReason, Bool
@@ -87,6 +91,12 @@ final class ExtensionInstallationService {
         var originalRecord: InstalledExtension?
         var shouldRestoreRuntime = false
         var didAttemptPersistence = false
+        var runtimeActivation:
+            ExtensionInstallationRuntimeActivation.Transaction?
+        var mutationLease: ExtensionRuntimeMutationLease?
+        var previousRuntimeProfileIDs = Set<UUID>()
+        var didRetirePreviousRuntime = false
+        var candidateRecord: InstalledExtension?
 
         do {
             try transaction.stage(resourcesAt: source.resourcesURL)
@@ -112,16 +122,27 @@ final class ExtensionInstallationService {
                 manifest: stagedManifest,
                 existingEntity: sourceRecord
             )
+            let lease = try beginInstallationMutation(extensionID: resolvedID)
+            mutationLease = lease
+            environment.loadRegistry.invalidate(extensionId: resolvedID)
             extensionID = resolvedID
             existingEntity = try environment.metadataStore.extensionEntity(for: resolvedID)
             originalRecord = existingEntity.flatMap(InstalledExtension.init(from:))
             shouldRestoreRuntime = existingEntity?.isEnabled == true
 
             if let existingEntity {
-                environment.runtimeLoader.resetRuntimeState(
+                let retirement = retireRuntime(
                     extensionID: existingEntity.id,
-                    removeUIState: false
+                    cause: .packageReplacement,
+                    mutationLease: lease
                 )
+                previousRuntimeProfileIDs = retirement.initialProfileIDs
+                try await requireCompletedReplacementRetirement(
+                    retirement,
+                    existingEntity: existingEntity,
+                    mutationLease: lease
+                )
+                didRetirePreviousRuntime = true
             } else if environment.hasStoredDataCandidate(resolvedID) {
                 environment.traceStoreLifecycle(
                     "before-install-cleanup",
@@ -132,6 +153,7 @@ final class ExtensionInstallationService {
                     resolvedID,
                     .preserveDirectoryForImmediateRuntimeLoad
                 )
+                try validate(lease)
                 environment.traceStoreLifecycle(
                     "after-install-cleanup",
                     resolvedID,
@@ -160,14 +182,22 @@ final class ExtensionInstallationService {
                 sourceFingerprintURL: source.sourceFingerprintURL,
                 existingEntity: existingEntity
             )
+            candidateRecord = record
 
             if enableOnInstall {
-                try await environment.runtimeLoader.activateInstalledExtension(
+                let activation = try await environment.runtimeActivation
+                    .load(
                     extensionID: resolvedID,
                     sourceKind: source.sourceKind,
                     sourceBundlePath: source.sourceBundlePath.path,
                     packageRoot: installedRoot,
                     manifest: finalManifest,
+                    operation: .directory,
+                    mutationLease: lease
+                )
+                runtimeActivation = activation
+                try await environment.runtimeActivation.finalize(
+                    activation,
                     operation: .directory
                 )
             } else {
@@ -177,29 +207,98 @@ final class ExtensionInstallationService {
             if let beforePersist = environment.debugBeforePersist() {
                 try beforePersist(record)
             }
+            if let runtimeActivation {
+                try environment.runtimeActivation.validate(runtimeActivation)
+            }
+            try validate(lease)
             didAttemptPersistence = true
             try environment.metadataStore.persist(record: record)
-            await publish(record)
+            publish(record)
             transaction.commit()
+            if let runtimeActivation {
+                environment.runtimeActivation.finish(runtimeActivation)
+            }
+            runtimeActivation = nil
+            _ = environment.mutationRegistry.finish(lease)
+            mutationLease = nil
             return record
         } catch {
-            if let extensionID {
-                environment.runtimeLoader.resetRuntimeState(
-                    extensionID: extensionID,
-                    removeUIState: false
+            defer {
+                if let mutationLease {
+                    _ = environment.mutationRegistry.finish(mutationLease)
+                }
+            }
+            var runtimeRollbackPermitsExternalStateRollback =
+                (error as? ExtensionRuntimeTransactionFailure)?
+                    .rollback.permitsExternalStateRollback ?? true
+            var recoveryFailures: [String] = []
+            if let runtimeActivation {
+                runtimeRollbackPermitsExternalStateRollback = environment
+                    .runtimeActivation
+                    .rollback(runtimeActivation)
+                    .permitsExternalStateRollback
+            }
+            if runtimeRollbackPermitsExternalStateRollback {
+                transaction.rollback()
+                if didAttemptPersistence, let extensionID {
+                    do {
+                        try rollbackPersistedRecord(
+                            extensionID: extensionID,
+                            originalRecord: originalRecord
+                        )
+                    } catch {
+                        recoveryFailures.append(
+                            "metadata rollback failed: \(error.localizedDescription)"
+                        )
+                    }
+                }
+            }
+            if runtimeRollbackPermitsExternalStateRollback,
+               didRetirePreviousRuntime,
+               shouldRestoreRuntime,
+               let existingEntity,
+               let mutationLease {
+                do {
+                    try await environment.runtimeRecovery.recoverEnabledRuntime(
+                        from: existingEntity,
+                        profileIDs: previousRuntimeProfileIDs,
+                        mutationLease: mutationLease
+                    )
+                } catch {
+                    recoveryFailures.append(
+                        "previous runtime recovery failed: \(error.localizedDescription)"
+                    )
+                }
+            }
+            if runtimeRollbackPermitsExternalStateRollback == false {
+                if let candidateRecord {
+                    do {
+                        try environment.metadataStore.persist(
+                            record: candidateRecord
+                        )
+                    } catch {
+                        recoveryFailures.append(
+                            "live-runtime metadata commit failed: "
+                                + error.localizedDescription
+                        )
+                    }
+                    publish(candidateRecord)
+                    transaction.commit()
+                }
+                throw ExtensionError.installationFailed(
+                    "Installation failed and the new WebKit context could not be unloaded; the installed package and candidate metadata were preserved to keep the live runtime coherent"
+                        + (recoveryFailures.isEmpty
+                            ? ""
+                            : ". Recovery issues: "
+                                + recoveryFailures.joined(separator: "; "))
+                        + ". Original error: \(error.localizedDescription)"
                 )
             }
-            transaction.rollback()
-            if didAttemptPersistence, let extensionID {
-                rollbackPersistedRecord(
-                    extensionID: extensionID,
-                    originalRecord: originalRecord
-                )
-            }
-            if shouldRestoreRuntime, let existingEntity {
-                await environment.runtimeLoader.restoreEnabledRuntime(
-                    from: existingEntity,
-                    after: "restore existing runtime after failed installation"
+            if recoveryFailures.isEmpty == false {
+                throw ExtensionError.installationFailed(
+                    "Installation failed and recovery was incomplete: "
+                        + recoveryFailures.joined(separator: "; ")
+                        + ". Original error: \(error.localizedDescription)"
                 )
             }
             throw error
@@ -249,13 +348,30 @@ final class ExtensionInstallationService {
         let originalRecord = existingEntity.flatMap(InstalledExtension.init(from:))
         let shouldRestoreRuntime = existingEntity?.isEnabled == true
         var didAttemptPersistence = false
+        var runtimeActivation:
+            ExtensionInstallationRuntimeActivation.Transaction?
+        var previousRuntimeProfileIDs = Set<UUID>()
+        var didRetirePreviousRuntime = false
+        var candidateRecord: InstalledExtension?
+        let mutationLease = try beginInstallationMutation(
+            extensionID: extensionID
+        )
+        environment.loadRegistry.invalidate(extensionId: extensionID)
 
         do {
             if let existingEntity {
-                environment.runtimeLoader.resetRuntimeState(
+                let retirement = retireRuntime(
                     extensionID: existingEntity.id,
-                    removeUIState: false
+                    cause: .packageReplacement,
+                    mutationLease: mutationLease
                 )
+                previousRuntimeProfileIDs = retirement.initialProfileIDs
+                try await requireCompletedReplacementRetirement(
+                    retirement,
+                    existingEntity: existingEntity,
+                    mutationLease: mutationLease
+                )
+                didRetirePreviousRuntime = true
             }
             let record = try environment.metadataStore.makeInstalledRecord(
                 extensionId: extensionID,
@@ -267,14 +383,22 @@ final class ExtensionInstallationService {
                 sourceFingerprintURL: source.sourceFingerprintURL,
                 existingEntity: existingEntity
             )
+            candidateRecord = record
 
             if enableOnInstall {
-                try await environment.runtimeLoader.activateInstalledExtension(
+                let activation = try await environment.runtimeActivation
+                    .load(
                     extensionID: extensionID,
                     sourceKind: source.sourceKind,
                     sourceBundlePath: source.sourceBundlePath.path,
                     packageRoot: source.resourcesURL,
                     manifest: manifest,
+                    operation: .safariAppExtension,
+                    mutationLease: mutationLease
+                )
+                runtimeActivation = activation
+                try await environment.runtimeActivation.finalize(
+                    activation,
                     operation: .safariAppExtension
                 )
             } else {
@@ -284,25 +408,90 @@ final class ExtensionInstallationService {
             if let beforePersist = environment.debugBeforePersist() {
                 try beforePersist(record)
             }
+            if let runtimeActivation {
+                try environment.runtimeActivation.validate(runtimeActivation)
+            }
+            try validate(mutationLease)
             didAttemptPersistence = true
             try environment.metadataStore.persist(record: record)
-            await publish(record)
+            publish(record)
+            if let runtimeActivation {
+                environment.runtimeActivation.finish(runtimeActivation)
+            }
+            runtimeActivation = nil
+            _ = environment.mutationRegistry.finish(mutationLease)
             return record
         } catch {
-            environment.runtimeLoader.resetRuntimeState(
-                extensionID: existingEntity?.id ?? extensionID,
-                removeUIState: false
-            )
-            if didAttemptPersistence {
-                rollbackPersistedRecord(
-                    extensionID: extensionID,
-                    originalRecord: originalRecord
+            defer {
+                _ = environment.mutationRegistry.finish(mutationLease)
+            }
+            var runtimeRollbackPermitsExternalStateRollback =
+                (error as? ExtensionRuntimeTransactionFailure)?
+                    .rollback.permitsExternalStateRollback ?? true
+            var recoveryFailures: [String] = []
+            if let runtimeActivation {
+                runtimeRollbackPermitsExternalStateRollback = environment
+                    .runtimeActivation
+                    .rollback(runtimeActivation)
+                    .permitsExternalStateRollback
+            }
+            if runtimeRollbackPermitsExternalStateRollback,
+               didAttemptPersistence {
+                do {
+                    try rollbackPersistedRecord(
+                        extensionID: extensionID,
+                        originalRecord: originalRecord
+                    )
+                } catch {
+                    recoveryFailures.append(
+                        "metadata rollback failed: \(error.localizedDescription)"
+                    )
+                }
+            }
+            if runtimeRollbackPermitsExternalStateRollback,
+               didRetirePreviousRuntime,
+               shouldRestoreRuntime,
+               let existingEntity {
+                do {
+                    try await environment.runtimeRecovery.recoverEnabledRuntime(
+                        from: existingEntity,
+                        profileIDs: previousRuntimeProfileIDs,
+                        mutationLease: mutationLease
+                    )
+                } catch {
+                    recoveryFailures.append(
+                        "previous runtime recovery failed: \(error.localizedDescription)"
+                    )
+                }
+            }
+            if runtimeRollbackPermitsExternalStateRollback == false {
+                if let candidateRecord {
+                    do {
+                        try environment.metadataStore.persist(
+                            record: candidateRecord
+                        )
+                    } catch {
+                        recoveryFailures.append(
+                            "live-runtime metadata commit failed: "
+                                + error.localizedDescription
+                        )
+                    }
+                    publish(candidateRecord)
+                }
+                throw ExtensionError.installationFailed(
+                    "Safari extension activation failed and its WebKit context could not be unloaded; candidate metadata was preserved to keep the live runtime coherent"
+                        + (recoveryFailures.isEmpty
+                            ? ""
+                            : ". Recovery issues: "
+                                + recoveryFailures.joined(separator: "; "))
+                        + ". Original error: \(error.localizedDescription)"
                 )
             }
-            if shouldRestoreRuntime, let existingEntity {
-                await environment.runtimeLoader.restoreEnabledRuntime(
-                    from: existingEntity,
-                    after: "restore existing runtime after failed Safari extension enable"
+            if recoveryFailures.isEmpty == false {
+                throw ExtensionError.installationFailed(
+                    "Safari extension activation failed and recovery was incomplete: "
+                        + recoveryFailures.joined(separator: "; ")
+                        + ". Original error: \(error.localizedDescription)"
                 )
             }
             throw error
@@ -327,6 +516,66 @@ final class ExtensionInstallationService {
         return try ExtensionUtils.validateExtensionIDPathComponent(candidate)
     }
 
+    private func retireRuntime(
+        extensionID: String,
+        cause: ExtensionScopedRuntimeRetirement.Cause,
+        mutationLease: ExtensionRuntimeMutationLease
+    ) -> ExtensionScopedRuntimeRetirement.Result {
+        environment.runtimeRetirement.retire(
+            extensionID: extensionID,
+            cause: cause,
+            mutationLease: mutationLease
+        )
+    }
+
+    private func requireCompletedReplacementRetirement(
+        _ result: ExtensionScopedRuntimeRetirement.Result,
+        existingEntity: ExtensionEntity,
+        mutationLease: ExtensionRuntimeMutationLease
+    ) async throws {
+        guard result.completed else {
+            guard result.completionStatus == .contextsRemaining else {
+                throw CancellationError()
+            }
+            do {
+                try await environment.runtimeRecovery.recoverEnabledRuntime(
+                    from: existingEntity,
+                    profileIDs: result.initialProfileIDs,
+                    mutationLease: mutationLease
+                )
+            } catch {
+                throw ExtensionError.installationFailed(
+                    "Package replacement retirement was partial and runtime recovery failed: \(error.localizedDescription)"
+                )
+            }
+            throw ExtensionError.installationFailed(
+                "Extension runtime could not be unloaded for profiles: "
+                    + result.remainingProfileIDs.map(\.uuidString).sorted()
+                    .joined(separator: ", ")
+            )
+        }
+    }
+
+    private func beginInstallationMutation(
+        extensionID: String
+    ) throws -> ExtensionRuntimeMutationLease {
+        guard let lease = environment.mutationRegistry.begin(
+            extensionID: extensionID,
+            operation: .install
+        ) else {
+            throw ExtensionError.installationFailed(
+                "Another lifecycle operation is already running for this extension"
+            )
+        }
+        return lease
+    }
+
+    private func validate(_ lease: ExtensionRuntimeMutationLease) throws {
+        guard environment.mutationRegistry.isCurrent(lease) else {
+            throw CancellationError()
+        }
+    }
+
     private func geckoExtensionID(from manifest: [String: Any]) -> String? {
         guard let browserSettings = manifest["browser_specific_settings"] as? [String: Any],
               let gecko = browserSettings["gecko"] as? [String: Any] else {
@@ -338,33 +587,21 @@ final class ExtensionInstallationService {
     private func rollbackPersistedRecord(
         extensionID: String,
         originalRecord: InstalledExtension?
-    ) {
-        do {
-            if let entity = try environment.metadataStore.extensionEntity(for: extensionID) {
-                if let originalRecord {
-                    environment.metadataStore.update(entity, from: originalRecord)
-                } else {
-                    environment.modelContext.delete(entity)
-                }
-            } else if let originalRecord {
-                environment.modelContext.insert(ExtensionEntity(record: originalRecord))
+    ) throws {
+        if let entity = try environment.metadataStore.extensionEntity(for: extensionID) {
+            if let originalRecord {
+                environment.metadataStore.update(entity, from: originalRecord)
+            } else {
+                environment.modelContext.delete(entity)
             }
-            try environment.modelContext.save()
-        } catch {
-            ExtensionManager.logger.error(
-                "Failed to roll back extension metadata for \(extensionID, privacy: .public): \(error.localizedDescription, privacy: .public)"
-            )
+        } else if let originalRecord {
+            environment.modelContext.insert(ExtensionEntity(record: originalRecord))
         }
+        try environment.modelContext.save()
     }
 
-    private func publish(_ record: InstalledExtension) async {
-        await withCheckedContinuation { continuation in
-            Task { @MainActor [installedRecords = environment.installedRecords] in
-                await Task.yield()
-                installedRecords.upsert(record)
-                continuation.resume(returning: ())
-            }
-        }
+    private func publish(_ record: InstalledExtension) {
+        environment.installedRecords.upsert(record)
     }
 
     private func deliver(
@@ -391,7 +628,11 @@ extension ExtensionInstallationService.Environment {
             modelContext: manager.context,
             metadataStore: manager.installationMetadataStore,
             installedRecords: manager.installedExtensionCollection,
-            runtimeLoader: manager.extensionRuntimeLoader,
+            runtimeActivation: manager.installationRuntimeActivation,
+            runtimeRecovery: manager.runtimeRecovery,
+            runtimeRetirement: manager.runtimeRetirement,
+            mutationRegistry: manager.runtimeMutationRegistry,
+            loadRegistry: manager.contextLoadRegistry,
             isExtensionSupportAvailable: { [weak manager] in
                 manager?.isExtensionSupportAvailable ?? false
             },
