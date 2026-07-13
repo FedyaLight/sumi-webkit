@@ -114,6 +114,146 @@ final class BackgroundMediaOptimizationTests: XCTestCase {
         XCTAssertEqual(harness.recorder.commands[0].reason, "visibility,audio")
     }
 
+    func testInitAndDetachedCallsCreateNoResourcesOrDeferredWork() async {
+        let notificationCenter = CountingNotificationCenter()
+        let service = SumiBackgroundMediaOptimizationService(
+            notificationCenter: notificationCenter
+        )
+        let probe = BackgroundMediaRuntimeProbe()
+
+        XCTAssertEqual(notificationCenter.activeObserverCount, 0)
+        service.scheduleReconcile(reason: "detached-schedule")
+        service.invalidateAppliedCommand(for: probe.webView)
+        notificationCenter.post(name: .sumiEnergySaverPolicyChanged, object: nil)
+
+        service.attach(runtime: probe.makeRuntime())
+        await Task.yield()
+        await Task.yield()
+
+        XCTAssertEqual(notificationCenter.activeObserverCount, 1)
+        XCTAssertEqual(probe.energySaverReadCount, 0)
+        XCTAssertTrue(probe.commandReasons.isEmpty)
+
+        service.detach()
+        XCTAssertEqual(notificationCenter.activeObserverCount, 0)
+    }
+
+    func testReattachReplacesObserverAndRuntimeWithoutDuplication() async {
+        let notificationCenter = CountingNotificationCenter()
+        let service = SumiBackgroundMediaOptimizationService(
+            notificationCenter: notificationCenter
+        )
+        let retiredProbe = BackgroundMediaRuntimeProbe()
+        let replacementProbe = BackgroundMediaRuntimeProbe()
+        let commandRecorded = expectation(description: "replacement runtime command")
+        replacementProbe.onCommand = { commandRecorded.fulfill() }
+
+        service.attach(runtime: retiredProbe.makeRuntime())
+        service.attach(runtime: replacementProbe.makeRuntime())
+
+        XCTAssertEqual(notificationCenter.registrationCount, 2)
+        XCTAssertEqual(notificationCenter.removalCount, 1)
+        XCTAssertEqual(notificationCenter.activeObserverCount, 1)
+
+        notificationCenter.post(name: .sumiEnergySaverPolicyChanged, object: nil)
+        await fulfillment(of: [commandRecorded], timeout: 1)
+
+        XCTAssertEqual(retiredProbe.energySaverReadCount, 0)
+        XCTAssertTrue(retiredProbe.commandReasons.isEmpty)
+        XCTAssertEqual(replacementProbe.energySaverReadCount, 1)
+        XCTAssertEqual(
+            replacementProbe.commandReasons,
+            ["energy-saver-policy-changed"]
+        )
+    }
+
+    func testDetachCancelsQueuedReconcileAndDoesNotRunAgainstReplacementRuntime() async {
+        let service = SumiBackgroundMediaOptimizationService(
+            notificationCenter: CountingNotificationCenter()
+        )
+        let retiredProbe = BackgroundMediaRuntimeProbe()
+        let replacementProbe = BackgroundMediaRuntimeProbe()
+
+        service.attach(runtime: retiredProbe.makeRuntime())
+        service.scheduleReconcile(reason: "retired-runtime")
+        service.detach()
+        service.attach(runtime: replacementProbe.makeRuntime())
+        await Task.yield()
+        await Task.yield()
+
+        XCTAssertTrue(retiredProbe.commandReasons.isEmpty)
+        XCTAssertTrue(replacementProbe.commandReasons.isEmpty)
+
+        let commandRecorded = expectation(description: "replacement reconcile")
+        replacementProbe.onCommand = { commandRecorded.fulfill() }
+        service.scheduleReconcile(reason: "replacement-runtime")
+        await fulfillment(of: [commandRecorded], timeout: 1)
+
+        XCTAssertEqual(retiredProbe.energySaverReadCount, 0)
+        XCTAssertEqual(replacementProbe.energySaverReadCount, 1)
+        XCTAssertEqual(replacementProbe.commandReasons, ["replacement-runtime"])
+    }
+
+    func testReattachRejectsNotificationQueuedByRetiredObserver() async {
+        let notificationCenter = CountingNotificationCenter()
+        let service = SumiBackgroundMediaOptimizationService(
+            notificationCenter: notificationCenter
+        )
+        let retiredProbe = BackgroundMediaRuntimeProbe()
+        let replacementProbe = BackgroundMediaRuntimeProbe()
+        service.attach(runtime: retiredProbe.makeRuntime())
+
+        notificationCenter.post(name: .sumiEnergySaverPolicyChanged, object: nil)
+        service.detach()
+        service.attach(runtime: replacementProbe.makeRuntime())
+        await Task.yield()
+        await Task.yield()
+
+        XCTAssertEqual(retiredProbe.energySaverReadCount, 0)
+        XCTAssertEqual(replacementProbe.energySaverReadCount, 0)
+        XCTAssertTrue(retiredProbe.commandReasons.isEmpty)
+        XCTAssertTrue(replacementProbe.commandReasons.isEmpty)
+    }
+
+    func testDetachClearsCommandCacheBeforeReattach() {
+        let service = SumiBackgroundMediaOptimizationService()
+        let probe = BackgroundMediaRuntimeProbe()
+        let runtime = probe.makeRuntime()
+
+        service.attach(runtime: runtime)
+        service.reconcileNow(reason: "first-attachment")
+        service.detach()
+        service.attach(runtime: runtime)
+        service.reconcileNow(reason: "second-attachment")
+
+        XCTAssertEqual(
+            probe.commandReasons,
+            ["first-attachment", "second-attachment"]
+        )
+    }
+
+    func testDeinitRemovesObserverAndReleasesRuntime() {
+        let notificationCenter = CountingNotificationCenter()
+        var service: SumiBackgroundMediaOptimizationService? =
+            SumiBackgroundMediaOptimizationService(
+                notificationCenter: notificationCenter
+            )
+        var probe: BackgroundMediaRuntimeProbe? = BackgroundMediaRuntimeProbe()
+        weak let releasedProbe = probe
+        if let probe {
+            service?.attach(runtime: probe.makeRuntime())
+        }
+        probe = nil
+
+        XCTAssertEqual(notificationCenter.activeObserverCount, 1)
+        XCTAssertNotNil(releasedProbe)
+
+        service = nil
+
+        XCTAssertEqual(notificationCenter.activeObserverCount, 0)
+        XCTAssertNil(releasedProbe)
+    }
+
     func testAttachedRuntimeWithEmptyCatalogDoesNotExecuteCommands() {
         let service = SumiBackgroundMediaOptimizationService()
         var energySaverReadCount = 0
@@ -149,6 +289,74 @@ final class BackgroundMediaOptimizationTests: XCTestCase {
         XCTAssertEqual(commandCount, 0)
     }
 
+}
+
+private final class CountingNotificationCenter: NotificationCenter, @unchecked Sendable {
+    private(set) var registrationCount = 0
+    private(set) var removalCount = 0
+
+    var activeObserverCount: Int {
+        registrationCount - removalCount
+    }
+
+    override func addObserver(
+        forName name: Notification.Name?,
+        object observedObject: Any?,
+        queue: OperationQueue?,
+        using block: @Sendable @escaping (Notification) -> Void
+    ) -> NSObjectProtocol {
+        registrationCount += 1
+        return super.addObserver(
+            forName: name,
+            object: observedObject,
+            queue: queue,
+            using: block
+        )
+    }
+
+    override func removeObserver(_ observer: Any) {
+        removalCount += 1
+        super.removeObserver(observer)
+    }
+}
+
+@MainActor
+private final class BackgroundMediaRuntimeProbe {
+    let webViewRuntime = makeTestWebViewRuntimeGraph()
+    let windowID = UUID()
+    lazy var tab = Tab(
+        url: URL(string: "https://example.com/video")!,
+        name: "Runtime Probe",
+        webViewSessions: webViewRuntime.webViewSessions,
+        loadsCachedFaviconOnInit: false
+    )
+    lazy var webView: FocusableWKWebView = {
+        let webView = FocusableWKWebView()
+        webView.owningTab = tab
+        return webView
+    }()
+    private(set) var energySaverReadCount = 0
+    private(set) var commandReasons: [String] = []
+    var onCommand: (() -> Void)?
+
+    func makeRuntime() -> SumiBackgroundMediaOptimizationRuntime {
+        SumiBackgroundMediaOptimizationRuntime(
+            liveWebViewEntries: { [self] candidate in
+                guard candidate.id == tab.id else { return [] }
+                return [(windowID: Optional(windowID), webView: webView)]
+            },
+            energySaverActive: { [self] in
+                energySaverReadCount += 1
+                return false
+            },
+            allKnownTabs: { [self] in [tab] },
+            visibleTabIDsByWindow: { [self] in [windowID: []] },
+            executeJavaScriptCommand: { [self] _, _, arguments in
+                commandReasons.append(arguments["reason"] as? String ?? "")
+                onCommand?()
+            }
+        )
+    }
 }
 
 @MainActor

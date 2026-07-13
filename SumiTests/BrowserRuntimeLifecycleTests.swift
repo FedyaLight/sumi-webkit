@@ -90,6 +90,35 @@ final class BrowserRuntimeLifecycleTests: XCTestCase {
         XCTAssertEqual(harness.browsingDataRetentionCleanupCount, 0)
     }
 
+    func testShutdownDetachesBackgroundMediaOptimization() async {
+        let harness = Harness()
+        let lifecycle = harness.makeLifecycle()
+        var energySaverReadCount = 0
+        harness.backgroundMediaOptimization.attach(
+            runtime: SumiBackgroundMediaOptimizationRuntime(
+                liveWebViewEntries: { _ in [] },
+                energySaverActive: {
+                    energySaverReadCount += 1
+                    return false
+                },
+                allKnownTabs: { [] },
+                visibleTabIDsByWindow: { [:] }
+            )
+        )
+        lifecycle.start()
+
+        lifecycle.shutdown()
+        harness.backgroundMediaOptimization.scheduleReconcile(reason: "after-shutdown")
+        harness.notificationCenter.post(
+            name: .sumiEnergySaverPolicyChanged,
+            object: nil
+        )
+        await Task.yield()
+        await Task.yield()
+
+        XCTAssertEqual(energySaverReadCount, 0)
+    }
+
     func testDeinitPerformsShutdownExactlyOnce() {
         let harness = Harness()
         var lifecycle: BrowserRuntimeLifecycle? = harness.makeLifecycle()
@@ -154,6 +183,9 @@ final class BrowserRuntimeLifecycleTests: XCTestCase {
         let eventBus = TabStructureEventBus()
         let permissionObservation = PermissionObservationFake()
         let protectionRestore = ProtectionRestoreFake()
+        lazy var backgroundMediaOptimization = SumiBackgroundMediaOptimizationService(
+            notificationCenter: notificationCenter
+        )
         var runtimeWiringCancelCount = 0
         var tabManagerDataLoadedCount = 0
         var browsingDataRetentionCleanupCount = 0
@@ -166,6 +198,7 @@ final class BrowserRuntimeLifecycleTests: XCTestCase {
                 permissionObservation: permissionObservation,
                 onPermissionEvent: { _ in /* Routed by composition; unit fakes only observe start/cancel. */ },
                 protectionRestore: protectionRestore,
+                backgroundMediaOptimization: backgroundMediaOptimization,
                 runtimeGraphSubscription: AnyCancellable {
                     MainActor.assumeIsolated {
                         self.runtimeWiringCancelCount += 1

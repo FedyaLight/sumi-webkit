@@ -40,9 +40,12 @@ final class BrowserManagerLifecycleWiringTests: XCTestCase {
                 visibleTabIDsByWindow: { [:] }
             )
         )
-        // Runtime wiring schedules an initial window-registry reconcile before
-        // this test replaces the runtime. Drain that known request so each
-        // settings assignment below has an isolated observable increment.
+        // Runtime replacement intentionally cancels requests queued for the
+        // retired runtime. Establish the baseline with fresh work owned by the
+        // replacement so each settings assignment has an isolated increment.
+        browserManager.backgroundMediaOptimizationService.scheduleReconcile(
+            reason: "replacement-runtime-baseline"
+        )
         await waitUntil { backgroundMediaEnergySaverReads > 0 }
         let backgroundMediaBaseline = backgroundMediaEnergySaverReads
 

@@ -22,7 +22,8 @@ protocol BrowserStartupProtectionRestoring: AnyObject {
 
 /// Models the browser runtime's process lifecycle: one `start()` that begins
 /// startup observations, and one idempotent `shutdown()` that cancels those
-/// observations plus the runtime-graph subscription it owns.
+/// observations plus the runtime-graph subscription it owns and detaches
+/// background-media optimization before tab runtime teardown.
 ///
 /// Owns the lifecycle state machine (idle → started → shut down) so
 /// initialization and teardown each have a single executor instead of being
@@ -46,6 +47,7 @@ final class BrowserRuntimeLifecycle {
     private let permissionObservation: any BrowserPermissionObservationManaging
     private let onPermissionEvent: SumiPermissionEventOwner.EventHandler
     private let protectionRestore: any BrowserStartupProtectionRestoring
+    private let backgroundMediaOptimization: SumiBackgroundMediaOptimizationService
     private var runtimeGraphSubscription: AnyCancellable?
     private let handleTabManagerDataLoaded: @MainActor () -> Void
     private let scheduleBrowsingDataRetentionCleanup: @MainActor () -> Void
@@ -61,6 +63,7 @@ final class BrowserRuntimeLifecycle {
         permissionObservation: any BrowserPermissionObservationManaging,
         onPermissionEvent: @escaping SumiPermissionEventOwner.EventHandler,
         protectionRestore: any BrowserStartupProtectionRestoring,
+        backgroundMediaOptimization: SumiBackgroundMediaOptimizationService,
         runtimeGraphSubscription: AnyCancellable,
         handleTabManagerDataLoaded: @escaping @MainActor () -> Void,
         scheduleBrowsingDataRetentionCleanup: @escaping @MainActor () -> Void
@@ -71,6 +74,7 @@ final class BrowserRuntimeLifecycle {
         self.permissionObservation = permissionObservation
         self.onPermissionEvent = onPermissionEvent
         self.protectionRestore = protectionRestore
+        self.backgroundMediaOptimization = backgroundMediaOptimization
         self.runtimeGraphSubscription = runtimeGraphSubscription
         self.handleTabManagerDataLoaded = handleTabManagerDataLoaded
         self.scheduleBrowsingDataRetentionCleanup = scheduleBrowsingDataRetentionCleanup
@@ -109,11 +113,12 @@ final class BrowserRuntimeLifecycle {
         guard phase != .shutDown else { return }
         phase = .shutDown
 
+        runtimeGraphSubscription?.cancel()
+        runtimeGraphSubscription = nil
+        backgroundMediaOptimization.detach()
         permissionObservation.cancelPermissionEventObservation()
         protectionRestore.cancelProtectionRestoreTask()
 
-        runtimeGraphSubscription?.cancel()
-        runtimeGraphSubscription = nil
         initialDataLoadedCancellable?.cancel()
         initialDataLoadedCancellable = nil
 

@@ -23,6 +23,7 @@ extension BrowserRuntimeLifecycle {
                     .reconcile(reason: "permission-event")
             },
             protectionRestore: browserManager.startupProtectionRuntime,
+            backgroundMediaOptimization: browserManager.backgroundMediaOptimizationService,
             runtimeGraphSubscription: runtimeGraphSubscription,
             handleTabManagerDataLoaded: { [weak browserManager] in
                 browserManager?.handleTabManagerDataLoaded()

@@ -132,45 +132,78 @@ struct SumiBackgroundMediaOptimizationRuntime {
 
 @MainActor
 final class SumiBackgroundMediaOptimizationService {
+    private let notificationCenter: NotificationCenter
     private var runtime: SumiBackgroundMediaOptimizationRuntime?
     private var energySaverPolicyObserver: NSObjectProtocol?
     private var scheduledReconcileTask: Task<Void, Never>?
     private var pendingReasons: [String] = []
     private var didTruncatePendingReasons = false
     private var appliedCommandsByWebView: [ObjectIdentifier: SumiBackgroundMediaOptimizationCommand] = [:]
+    private var attachmentGeneration: UInt = 0
 
-    init() {
-        energySaverPolicyObserver = NotificationCenter.default.addObserver(
+    init(notificationCenter: NotificationCenter = .default) {
+        self.notificationCenter = notificationCenter
+    }
+
+    deinit {
+        MainActor.assumeIsolated {
+            detach()
+        }
+    }
+
+    func attach(runtime: SumiBackgroundMediaOptimizationRuntime) {
+        detach()
+        self.runtime = runtime
+        attachmentGeneration &+= 1
+        let generation = attachmentGeneration
+        energySaverPolicyObserver = notificationCenter.addObserver(
             forName: .sumiEnergySaverPolicyChanged,
             object: nil,
             queue: nil
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
-                self?.scheduleReconcile(reason: "energy-saver-policy-changed")
+                self?.scheduleReconcile(
+                    reason: "energy-saver-policy-changed",
+                    generation: generation
+                )
             }
         }
     }
 
-    deinit {
-        MainActor.assumeIsolated {
-            scheduledReconcileTask?.cancel()
-            if let energySaverPolicyObserver {
-                NotificationCenter.default.removeObserver(energySaverPolicyObserver)
-            }
-        }
-    }
+    func detach() {
+        guard runtime != nil
+            || energySaverPolicyObserver != nil
+            || scheduledReconcileTask != nil
+            || pendingReasons.isEmpty == false
+            || appliedCommandsByWebView.isEmpty == false
+        else { return }
 
-    func attach(runtime: SumiBackgroundMediaOptimizationRuntime) {
-        self.runtime = runtime
+        attachmentGeneration &+= 1
+        runtime = nil
+        if let energySaverPolicyObserver {
+            notificationCenter.removeObserver(energySaverPolicyObserver)
+            self.energySaverPolicyObserver = nil
+        }
+        scheduledReconcileTask?.cancel()
+        scheduledReconcileTask = nil
+        pendingReasons.removeAll()
+        didTruncatePendingReasons = false
+        appliedCommandsByWebView.removeAll()
     }
 
     func scheduleReconcile(reason: String) {
+        guard runtime != nil else { return }
         notePendingReason(reason)
         guard scheduledReconcileTask == nil else { return }
 
+        let generation = attachmentGeneration
         scheduledReconcileTask = Task { @MainActor [weak self] in
             await Task.yield()
-            guard let self, !Task.isCancelled else { return }
+            guard let self,
+                  !Task.isCancelled,
+                  self.attachmentGeneration == generation,
+                  self.runtime != nil
+            else { return }
 
             let reasons = self.pendingReasons
             let didTruncate = self.didTruncatePendingReasons
@@ -187,6 +220,7 @@ final class SumiBackgroundMediaOptimizationService {
     }
 
     func invalidateAppliedCommand(for webView: WKWebView) {
+        guard runtime != nil else { return }
         appliedCommandsByWebView.removeValue(forKey: ObjectIdentifier(webView))
     }
 
@@ -294,4 +328,8 @@ final class SumiBackgroundMediaOptimizationService {
         pendingReasons.append(reason)
     }
 
+    private func scheduleReconcile(reason: String, generation: UInt) {
+        guard attachmentGeneration == generation else { return }
+        scheduleReconcile(reason: reason)
+    }
 }

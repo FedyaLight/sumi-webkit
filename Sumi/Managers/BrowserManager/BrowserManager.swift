@@ -190,8 +190,8 @@ class BrowserManager: ObservableObject {
 
     isolated deinit {
         windowSessionPersistence.flushForBrowserRuntimeTeardown()
-        tabManager.detachBrowserRuntime()
         runtimeLifecycle.shutdown()
+        tabManager.detachBrowserRuntime()
         shutdownCleanupService.cleanupAfterBrowserRuntimeDeallocation()
         NotificationCenter.default.removeObserver(self)
     }
