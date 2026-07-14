@@ -3,8 +3,8 @@
 //  Sumi
 //
 
-import SwiftUI
 import SumiDomain
+import SwiftUI
 
 private typealias FolderListItem = SidebarFolderListItem
 private typealias FolderDisplayEntry = SidebarFolderDisplayEntry
@@ -22,14 +22,9 @@ struct TabFolderBodyListView: View {
     let pinProjection: SidebarPinFolderProjection
     let pinCommands: SidebarPinFolderCommands
     let spaceLifecycle: SidebarSpaceLifecycle
-    let shortcutPins: [ShortcutPin]
-    let childFolders: [TabFolder]
-    let childFoldersByParentId: [UUID: [TabFolder]]
-    let folderPinsByFolderId: [UUID: [ShortcutPin]]
-    @Binding var shortcutRestoreGaps: [ShortcutRestoreGap]
-    @Binding var shortcutRestoreAppearingGapIds: Set<UUID>
+    @Binding var shortcutRestoreSession: SpaceShortcutRestoreInteractionSession
     let elevatedFolderIds: Set<UUID>
-    let renderMode: SpaceViewRenderMode
+    let isInteractive: Bool
     let nestingDepth: Int
     let contentProjection: SidebarFolderContentProjection
     let projection: SidebarFolderViewProjection
@@ -38,34 +33,23 @@ struct TabFolderBodyListView: View {
     let folderLayoutAnimation: Animation?
     let contextMenuActionOwner: TabFolderContextMenuActionOwner
     let mutationActions: TabFolderMutationActions
-    let onPrepareShortcutRestoreGap: (UUID, SplitMemberID) -> Void
-    let onPerformShortcutRestoreWithPreparedGap: (
-        UUID,
-        SplitMemberID,
-        @escaping () -> Void
-    ) -> Void
-    let onActivateShortcutPin: (ShortcutPin) -> Void
+    let dragSnapshot: SidebarFolderDragSnapshot
 
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
-    @EnvironmentObject private var dragState: SidebarDragState
-
-    private var folderDragSnapshot: SidebarFolderDragSnapshot {
-        SidebarFolderDragSnapshot(dragState: dragState)
-    }
-
-    private var isInteractive: Bool {
-        renderMode.isInteractive
-    }
 
     private var tokens: ChromeThemeTokens {
         themeContext.tokens(settings: sumiSettings)
     }
 
     var body: some View {
-        let childFoldersById = Dictionary(uniqueKeysWithValues: childFolders.map { ($0.id, $0) })
-        let shortcutPinsById = Dictionary(uniqueKeysWithValues: shortcutPins.map { ($0.id, $0) })
+        let childFoldersById = Dictionary(
+            uniqueKeysWithValues: (inventory.childFoldersByParentID[folder.id] ?? []).map { ($0.id, $0) }
+        )
+        let shortcutPinsById = Dictionary(
+            uniqueKeysWithValues: (inventory.folderPinsByFolderID[folder.id] ?? []).map { ($0.id, $0) }
+        )
 
         LazyVStack(spacing: 0) {
             ForEach(contentProjection.bodyDisplayEntries) { entry in
@@ -73,44 +57,70 @@ struct TabFolderBodyListView: View {
                     switch entry.item {
                     case .folder(let folderId):
                         if let childFolder = childFoldersById[folderId] {
-                            nestedFolderView(childFolder, containerIndex: entry.dropIndex)
+                            TabFolderNestedFolderEntryView(
+                                folder: childFolder,
+                                browserContext: browserContext,
+                                space: space,
+                                inventory: inventory,
+                                selection: selection,
+                                pinProjection: pinProjection,
+                                pinCommands: pinCommands,
+                                spaceLifecycle: spaceLifecycle,
+                                shortcutRestoreSession: $shortcutRestoreSession,
+                                elevatedFolderIDs: elevatedFolderIds,
+                                isInteractive: isInteractive,
+                                parentFolderID: folder.id,
+                                containerIndex: entry.dropIndex,
+                                nestingDepth: nestingDepth
+                            )
                                 .sidebarFolderChildDropGeometry(
                                     spaceId: space.id,
                                     folderId: folder.id,
                                     childId: childFolder.id,
                                     index: entry.dropIndex,
-                                    generation: folderDragSnapshot.geometryGeneration,
+                                    generation: dragSnapshot.geometryGeneration,
                                     isActive: isInteractive && reportsGeometry && reportsFolderChildGeometry
                                 )
                         }
                     case .shortcut(let pinId):
                         if let pin = shortcutPinsById[pinId] {
-                            folderShortcutView(pin)
+                            shortcutEntry(pin)
                                 .sidebarFolderChildDropGeometry(
                                     spaceId: space.id,
                                     folderId: folder.id,
                                     childId: pin.id,
                                     index: entry.dropIndex,
-                                    generation: folderDragSnapshot.geometryGeneration,
+                                    generation: dragSnapshot.geometryGeneration,
                                     isActive: isInteractive && reportsGeometry && reportsFolderChildGeometry
                                 )
                         }
                     case .liveItem(let itemId):
                         if let item = projection.liveFolderItem(with: itemId) {
-                            liveFolderItemView(item)
+                            TabFolderLiveItemEntryView(
+                                item: item,
+                                folderID: folder.id,
+                                isSelected: projection.currentTabURLString == item.urlString,
+                                actionOwner: contextMenuActionOwner
+                            )
                         }
                     case .splitGroup(let groupId):
                         if let group = projection.splitGroup(with: groupId) {
-                            shortcutHostedSplitGroupView(
-                                group,
-                                items: projection.splitGroupItems(for: groupId)
+                            TabFolderSplitGroupEntryView(
+                                group: group,
+                                items: projection.splitGroupItems(for: groupId),
+                                space: space,
+                                inventory: inventory,
+                                browserContext: browserContext,
+                                isInteractive: isInteractive,
+                                folderLayoutAnimation: folderLayoutAnimation,
+                                shortcutRestoreSession: $shortcutRestoreSession
                             )
                                 .sidebarFolderChildDropGeometry(
                                     spaceId: space.id,
                                     folderId: folder.id,
                                     childId: group.id,
                                     index: entry.dropIndex,
-                                    generation: folderDragSnapshot.geometryGeneration,
+                                    generation: dragSnapshot.geometryGeneration,
                                     isActive: isInteractive && reportsGeometry && reportsFolderChildGeometry
                                 )
                         }
@@ -129,39 +139,6 @@ struct TabFolderBodyListView: View {
             folderNestingGuide(isVisible: !contentProjection.bodyItems.isEmpty)
         }
         .animation(folderLayoutAnimation, value: contentProjection.bodyItems)
-    }
-
-    private func nestedFolderView(_ childFolder: TabFolder, containerIndex: Int) -> some View {
-        TabFolderView(
-            folder: childFolder,
-            browserContext: browserContext,
-            space: space,
-            inventory: inventory,
-            selection: selection,
-            pinProjection: pinProjection,
-            pinCommands: pinCommands,
-            spaceLifecycle: spaceLifecycle,
-            shortcutPins: folderPinsByFolderId[childFolder.id] ?? [],
-            childFolders: childFoldersByParentId[childFolder.id] ?? [],
-            childFoldersByParentId: childFoldersByParentId,
-            folderPinsByFolderId: folderPinsByFolderId,
-            shortcutRestoreGaps: $shortcutRestoreGaps,
-            shortcutRestoreAppearingGapIds: $shortcutRestoreAppearingGapIds,
-            elevatedFolderIds: elevatedFolderIds,
-            renderMode: renderMode,
-            parentFolderId: folder.id,
-            containerIndex: containerIndex,
-            nestingDepth: nestingDepth + 1,
-            onUngroup: {
-                mutationActions.ungroupNestedFolder(childFolder)
-            },
-            onDelete: {
-                mutationActions.deleteNestedFolder(childFolder)
-            },
-            onPrepareShortcutRestoreGap: onPrepareShortcutRestoreGap,
-            onPerformShortcutRestoreWithPreparedGap: onPerformShortcutRestoreWithPreparedGap
-        )
-        .environment(windowState)
     }
 
     @ViewBuilder
@@ -187,7 +164,7 @@ struct TabFolderBodyListView: View {
         case .folder(let folderId):
             return elevatedFolderIds.contains(folderId)
         case .shortcut(let pinId):
-            guard let pin = shortcutPins.first(where: { $0.id == pinId }) else {
+            guard let pin = inventory.folderPinsByFolderID[folder.id]?.first(where: { $0.id == pinId }) else {
                 return false
             }
             if let placeholderGroup = projection.regularPlaceholderGroup(for: pin.id) {
@@ -219,11 +196,11 @@ struct TabFolderBodyListView: View {
     }
 
     private func shortcutRestoreGap(_ gapId: UUID) -> some View {
-        let isAppearing = shortcutRestoreAppearingGapIds.contains(gapId)
+        let isAppearing = shortcutRestoreSession.appearingGapIDs.contains(gapId)
         return ZStack(alignment: .topLeading) {
-            if let gap = shortcutRestoreGaps.first(where: { $0.id == gapId }),
+            if let gap = shortcutRestoreSession.gaps.first(where: { $0.id == gapId }),
                let pin = projection.shortcutPin(with: gap.pinId) {
-                folderShortcutView(pin)
+                shortcutEntry(pin)
                     .frame(height: SidebarRowLayout.rowHeight, alignment: .top)
             }
         }
@@ -235,124 +212,29 @@ struct TabFolderBodyListView: View {
         .accessibilityHidden(true)
     }
 
-    @ViewBuilder
-    private func shortcutHostedSplitGroupView(
-        _ group: SplitGroup,
-        items: [SplitGroupSidebarItem]
-    ) -> some View {
-        if !items.isEmpty {
-            ShortcutHostedSplitGroupRow(
-                group: group,
-                items: items,
-                spaceId: space.id,
-                splitLayout: browserContext.splitLayout,
-                emptySplitCreation: browserContext.emptySplitCreation,
-                isAppKitInteractionEnabled: isInteractive,
-                faviconImageReader: browserContext.faviconImageReader,
-                accessibilityID: "folder-shortcut-host-split-row-\(group.id.uuidString)",
-                onActivateMember: { memberID in
-                    browserContext.commands.focusSplitGroup(
-                        group.id,
-                        memberID,
-                        windowState.id
-                    )
-                },
-                onRestoreShortcutMember: { memberID in
-                    browserContext.commands.restoreShortcutSplitMember(
-                        group.id,
-                        memberID,
-                        windowState.id
-                    )
-                },
-                onCloseMember: { memberID in
-                    browserContext.commands.closeSplitMember(
-                        group.id,
-                        memberID,
-                        windowState.id
-                    )
-                },
-                onPrepareShortcutRestoreGap: { memberID in
-                    onPrepareShortcutRestoreGap(group.id, memberID)
-                },
-                onPerformShortcutRestoreWithPreparedGap: { memberID, update in
-                    onPerformShortcutRestoreWithPreparedGap(
-                        group.id,
-                        memberID,
-                        update
-                    )
-                }
-            )
-        }
-    }
-
-    @ViewBuilder
-    private func folderShortcutView(_ pin: ShortcutPin) -> some View {
-        if let placeholderGroup = projection.regularPlaceholderGroup(for: pin.id) {
-            ShortcutSplitPlaceholderRow(
-                pin: pin,
-                isSelected: isFolderSplitPlaceholderSelected(placeholderGroup, pin: pin),
-                accessibilityID: "folder-split-placeholder-\(pin.id.uuidString)",
-                isAppKitInteractionEnabled: isInteractive,
-                action: {
-                    browserContext.commands.focusSplitGroup(
-                        placeholderGroup.id,
-                        .shortcutPin(pin.id),
-                        windowState.id
-                    )
-                }
-            )
-            .opacity(
-                folderDragSnapshot.childOpacity(itemID: pin.id)
-            )
-        } else {
-            ShortcutSidebarRow(
-                pin: pin,
-                liveTab: projection.liveTab(for: pin.id),
-                faviconPartition: TabFolderShortcutPresentationOwner(
-                    pinProjection: pinProjection,
-                    selection: selection,
-                    windowState: windowState
-                ).faviconPartition(for: pin),
-                faviconImageReader: browserContext.faviconImageReader,
-                runtimeAffordance: TabFolderShortcutPresentationOwner(
-                    pinProjection: pinProjection,
-                    selection: selection,
-                    windowState: windowState
-                ).runtimeAffordance(for: pin),
-                accessibilityID: "folder-shortcut-\(pin.id.uuidString)",
-                contextMenuEntries: {
-                    contextMenuActionOwner.folderShortcutContextMenuEntries(pin)
-                },
-                action: { onActivateShortcutPin(pin) },
-                dragSourceZone: .folder(folder.id),
-                dragHasTrailingActionExclusion: true,
-                dragIsEnabled: isInteractive,
-                onResetToLaunchURL: { contextMenuActionOwner.resetShortcutPin(pin) },
-                onUnload: { contextMenuActionOwner.unloadShortcutPin(pin) },
-                onRemove: { contextMenuActionOwner.removeShortcutPin(pin) }
-            )
-            .opacity(
-                folderDragSnapshot.childOpacity(itemID: pin.id)
-            )
-        }
-    }
-
-    private func liveFolderItemView(_ item: SumiLiveFolderItem) -> some View {
-        SumiLiveFolderItemRow(
-            item: item,
-            isSelected: projection.currentTabURLString == item.urlString,
-            accessibilityID: "live-folder-item-\(folder.id.uuidString)-\(item.id)",
-            contextMenuEntries: {
-                contextMenuActionOwner.liveFolderItemContextMenuEntries(item)
-            },
-            action: {
-                browserContext.liveFolderManager.open(item: item, in: windowState)
-            },
-            onDismiss: {
-                browserContext.liveFolderManager.dismiss(item: item)
-            }
+    private func shortcutEntry(_ pin: ShortcutPin) -> TabFolderShortcutEntryView {
+        let placeholderGroup = projection.regularPlaceholderGroup(for: pin.id)
+        let presentationOwner = TabFolderShortcutPresentationOwner(
+            pinProjection: pinProjection,
+            selection: selection,
+            windowState: windowState
         )
-        .environment(windowState)
+        return TabFolderShortcutEntryView(
+            pin: pin,
+            placeholderGroup: placeholderGroup,
+            placeholderIsSelected: placeholderGroup.map {
+                isFolderSplitPlaceholderSelected($0, pin: pin)
+            } ?? false,
+            liveTab: projection.liveTab(for: pin.id),
+            faviconPartition: presentationOwner.faviconPartition(for: pin),
+            faviconImageReader: browserContext.faviconImageReader,
+            runtimeAffordance: presentationOwner.runtimeAffordance(for: pin),
+            folderID: folder.id,
+            isInteractive: isInteractive,
+            opacity: dragSnapshot.childOpacity(itemID: pin.id),
+            contextMenuActionOwner: contextMenuActionOwner,
+            mutationActions: mutationActions
+        )
     }
 
     private func isFolderSplitPlaceholderSelected(_ group: SplitGroup, pin: ShortcutPin) -> Bool {

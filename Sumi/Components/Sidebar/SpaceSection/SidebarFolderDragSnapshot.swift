@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import SwiftUI
 
 struct SidebarFolderDragSnapshot: Equatable {
     let isDragging: Bool
@@ -90,5 +91,17 @@ struct SidebarFolderDragSnapshot: Equatable {
             targetContainer: targetContainer,
             targetAlreadyContainsDraggedItem: targetAlreadyContainsDraggedItem
         )
+    }
+}
+
+/// Isolates the coarse `SidebarDragState.objectWillChange` stream to a tiny
+/// reader and hands the folder subtree one immutable interaction snapshot.
+struct SidebarFolderDragSnapshotReader<Content: View>: View {
+    @EnvironmentObject private var dragState: SidebarDragState
+
+    @ViewBuilder let content: (SidebarFolderDragSnapshot) -> Content
+
+    var body: some View {
+        content(SidebarFolderDragSnapshot(dragState: dragState))
     }
 }

@@ -3,6 +3,7 @@
 //  Sumi
 //
 
+import SumiDomain
 import SwiftUI
 
 /// Folder open/delete/ungroup mutations that previously lived inline on `TabFolderView`.
@@ -63,6 +64,10 @@ struct TabFolderMutationActions {
             tab,
             windowState
         )
+    }
+
+    func focusSplitGroup(_ groupID: UUID, memberID: SplitMemberID) {
+        browserContext.commands.focusSplitGroup(groupID, memberID, windowState.id)
     }
 
     func mutateFolderContent(_ update: () -> Void) {

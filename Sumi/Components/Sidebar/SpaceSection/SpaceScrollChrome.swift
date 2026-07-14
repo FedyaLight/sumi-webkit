@@ -6,36 +6,26 @@
 import AppKit
 import SwiftUI
 
-extension SpaceView {
-    var mainContentContainer: some View {
-        SpaceScrollView(
-            isInteractive: isInteractive,
-            spaceId: space.id,
-            scrollHoverCoordinator: scrollHoverCoordinator,
-            outerWidth: outerWidth,
-            onViewportChange: { viewport in
-                onScrollViewportChange(space.id, viewport)
-            }
-        ) {
-            VStack(spacing: 8) {
-                pinnedTabsSection
-
-                VStack(spacing: 8) {
-                    regularTabsSection
-                }
-            }
-        }
-    }
-}
-
 struct SidebarPassiveScrollIndicatorState: Equatable {
     let viewportHeight: CGFloat
     let contentHeight: CGFloat
     let contentOffset: CGFloat
 }
 
+struct SpaceSectionsView<Pinned: View, Regular: View>: View {
+    let pinnedSection: Pinned
+    let regularTabsSection: Regular
+
+    var body: some View {
+        VStack(spacing: 8) {
+            pinnedSection
+            regularTabsSection
+        }
+    }
+}
+
 /// A layout-stable wrapper that isolates scroll offsets and boundary state to prevent invalidating the parent SpaceView.
-struct SpaceScrollView<Content: View>: View {
+struct SpaceScrollChromeSurface<Content: View>: View {
     let isInteractive: Bool
     let spaceId: UUID
     @ObservedObject var scrollHoverCoordinator: NativeSurfaceScrollHoverCoordinator
@@ -48,7 +38,6 @@ struct SpaceScrollView<Content: View>: View {
 
     @Environment(\.resolvedThemeContext) var themeContext
     @Environment(\.sumiSettings) var sumiSettings
-    @EnvironmentObject private var dragState: SidebarDragState
 
     private var tokens: ChromeThemeTokens {
         themeContext.tokens(settings: sumiSettings)
@@ -67,12 +56,11 @@ struct SpaceScrollView<Content: View>: View {
             content()
                 .frame(width: contentWidth, alignment: .leading)
                 .background {
-                    SidebarTabListScrollRegistrationViewRepresentable(
+                    SpaceScrollDragRegistration(
                         isEnabled: isInteractive,
                         indicatorColor: scrollIndicatorColor,
                         contentViewportWidth: contentWidth,
-                        trailingProjection: scrollIndicatorTrailingProjection,
-                        dragAutoscrollRegistry: dragState.dragAutoscrollRegistry
+                        trailingProjection: scrollIndicatorTrailingProjection
                     )
                     .frame(width: 0, height: 0)
                     .allowsHitTesting(false)
@@ -111,6 +99,26 @@ struct SpaceScrollView<Content: View>: View {
                 .animation(.easeInOut(duration: 0.15), value: hasContentBelow)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+}
+
+/// Keeps high-frequency drag publications from invalidating the scroll surface.
+private struct SpaceScrollDragRegistration: View {
+    let isEnabled: Bool
+    let indicatorColor: NSColor
+    let contentViewportWidth: CGFloat
+    let trailingProjection: CGFloat
+
+    @EnvironmentObject private var dragState: SidebarDragState
+
+    var body: some View {
+        SidebarTabListScrollRegistrationViewRepresentable(
+            isEnabled: isEnabled,
+            indicatorColor: indicatorColor,
+            contentViewportWidth: contentViewportWidth,
+            trailingProjection: trailingProjection,
+            dragAutoscrollRegistry: dragState.dragAutoscrollRegistry
+        )
     }
 }
 

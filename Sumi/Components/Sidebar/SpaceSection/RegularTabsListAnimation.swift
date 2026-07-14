@@ -5,9 +5,11 @@
 
 import SwiftUI
 
-enum RegularTabRenderedItem: Hashable {
+enum RegularTabRenderedItem: Identifiable, Hashable {
     case tab(UUID)
     case gap(UUID)
+
+    var id: Self { self }
 }
 
 enum RegularTabRemovalMode: Equatable {

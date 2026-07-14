@@ -485,30 +485,6 @@ struct SidebarFolderViewProjectionReader<Content: View>: View {
         shortcutRestoreGaps: [ShortcutRestoreGap],
         inventory: SidebarSpaceInventorySnapshot,
         selection: SidebarWindowSelectionQuery,
-        browserContext: SidebarBrowserContext,
-        currentTab: Tab?,
-        @ViewBuilder content: @escaping (SidebarFolderViewProjection) -> Content
-    ) {
-        self.folder = folder
-        self.space = space
-        self.shortcutPins = shortcutPins
-        self.childFolders = childFolders
-        self.shortcutRestoreGaps = shortcutRestoreGaps
-        self.inventory = inventory
-        self.selection = selection
-        self.liveFolderManager = browserContext.liveFolderManager
-        self.currentTab = currentTab
-        self.content = content
-    }
-
-    init(
-        folder: TabFolder,
-        space: Space,
-        shortcutPins: [ShortcutPin],
-        childFolders: [TabFolder],
-        shortcutRestoreGaps: [ShortcutRestoreGap],
-        inventory: SidebarSpaceInventorySnapshot,
-        selection: SidebarWindowSelectionQuery,
         liveFolderManager: SumiLiveFolderManager,
         currentTab: Tab?,
         @ViewBuilder content: @escaping (SidebarFolderViewProjection) -> Content

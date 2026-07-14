@@ -23,6 +23,7 @@ struct TabFolderHeaderView: View {
     let hasActiveSelection: Bool
     let hasActiveProjection: Bool
     let geometryGeneration: Int
+    let isDragging: Bool
     let contextMenuEntries: () -> [SidebarContextMenuEntry]
     let onToggle: () -> Void
     let onActivateShortcutPin: (ShortcutPin) -> Void
@@ -33,11 +34,6 @@ struct TabFolderHeaderView: View {
     @Environment(\.resolvedThemeContext) private var themeContext
     @Environment(\.sidebarPresentationContext) private var sidebarPresentationContext
     @Environment(\.nativeSurfaceHoverUpdatesEnabled) private var nativeSurfaceHoverUpdatesEnabled
-    @EnvironmentObject private var dragState: SidebarDragState
-
-    private var folderDragSnapshot: SidebarFolderDragSnapshot {
-        SidebarFolderDragSnapshot(dragState: dragState)
-    }
 
     private var tokens: ChromeThemeTokens {
         themeContext.tokens(settings: sumiSettings)
@@ -61,7 +57,7 @@ struct TabFolderHeaderView: View {
             && nativeSurfaceHoverUpdatesEnabled
             && windowState.sidebarInteractionState.allowsFolderSearchHoverTracking
             && !folder.isOpen
-            && !folderDragSnapshot.isDragging
+            && !isDragging
     }
 
     var body: some View {

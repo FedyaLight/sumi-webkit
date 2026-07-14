@@ -103,13 +103,6 @@ extension SpacesSideBarView {
             allowsInteraction: allowsInteraction,
             scrollHoverCoordinator: scrollHoverCoordinator,
             isSidebarHovered: $isSidebarHovered,
-            onActivateTab: {
-                browserContext.commands.requestUserTabActivation($0, windowState)
-            },
-            onCloseTab: { browserContext.commands.closeTab($0, windowState) },
-            onMoveTabUp: { browserContext.commands.moveTabUp($0.id) },
-            onMoveTabDown: { browserContext.commands.moveTabDown($0.id) },
-            onMuteTab: { $0.toggleMute() },
             onScrollViewportChange: { spaceId, viewport in
                 transitionCoordinator.recordScrollViewport(viewport, for: spaceId)
             }
@@ -229,5 +222,4 @@ extension SpacesSideBarView {
         .environment(windowState)
         .padding(.horizontal, 8)
     }
-
 }

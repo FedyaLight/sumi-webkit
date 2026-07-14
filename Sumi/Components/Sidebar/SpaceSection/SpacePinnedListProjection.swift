@@ -1,5 +1,5 @@
 //
-//  SpacePinnedDisplayModel.swift
+//  SpacePinnedListProjection.swift
 //  Sumi
 //
 
@@ -24,7 +24,7 @@ struct SpacePinnedDisplayEntry: Identifiable {
 /// the relevant drag-projection state. Pure value type — no environment or
 /// observed-object dependencies — so the projection/merge logic can be
 /// exercised directly in tests.
-struct SpacePinnedDisplayModel {
+struct SpacePinnedListProjection {
     struct DragProjectionSnapshot {
         let isDropProjectionActive: Bool
         let sourceContainer: TabDragManager.DragContainer?
@@ -32,10 +32,9 @@ struct SpacePinnedDisplayModel {
         let hoveredSpaceId: UUID?
         let hoveredSlot: Int?
         let folderDropIntent: FolderDropIntent
-        /// Mirrors `SidebarDragState.shouldHideCommittedCrossContainerPlaceholder(into:targetAlreadyContainsDraggedItem:)`
-        /// for the `.spacePinned(spaceId)` target, with `targetAlreadyContainsDraggedItem`
-        /// already resolved by the caller.
-        let shouldHideCommittedCrossContainerPlaceholder: (_ targetAlreadyContainsDraggedItem: Bool) -> Bool
+        /// Resolved at the observation boundary so the projection remains a
+        /// closure-free value that can be compared and tested deterministically.
+        let hidesCommittedCrossContainerPlaceholder: Bool
 
         init(
             isDropProjectionActive: Bool,
@@ -44,7 +43,7 @@ struct SpacePinnedDisplayModel {
             hoveredSpaceId: UUID?,
             hoveredSlot: Int?,
             folderDropIntent: FolderDropIntent,
-            shouldHideCommittedCrossContainerPlaceholder: @escaping (_ targetAlreadyContainsDraggedItem: Bool) -> Bool
+            hidesCommittedCrossContainerPlaceholder: Bool
         ) {
             self.isDropProjectionActive = isDropProjectionActive
             self.sourceContainer = sourceContainer
@@ -52,7 +51,7 @@ struct SpacePinnedDisplayModel {
             self.hoveredSpaceId = hoveredSpaceId
             self.hoveredSlot = hoveredSlot
             self.folderDropIntent = folderDropIntent
-            self.shouldHideCommittedCrossContainerPlaceholder = shouldHideCommittedCrossContainerPlaceholder
+            self.hidesCommittedCrossContainerPlaceholder = hidesCommittedCrossContainerPlaceholder
         }
     }
 
@@ -79,11 +78,9 @@ struct SpacePinnedDisplayModel {
         guard dragProjection.folderDropIntent == .none else {
             return nil
         }
-        if let dragItemId = dragProjection.dragItemId {
-            let targetAlreadyContainsDraggedItem = items.contains { $0.id == dragItemId }
-            if dragProjection.shouldHideCommittedCrossContainerPlaceholder(targetAlreadyContainsDraggedItem) {
-                return nil
-            }
+        if dragProjection.dragItemId != nil,
+           dragProjection.hidesCommittedCrossContainerPlaceholder {
+            return nil
         }
         return slot
     }

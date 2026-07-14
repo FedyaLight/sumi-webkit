@@ -1,5 +1,5 @@
 //
-//  SpacePinnedDisplayModelTests.swift
+//  SpacePinnedListProjectionTests.swift
 //  SumiTests
 //
 
@@ -8,7 +8,7 @@ import XCTest
 @testable import Sumi
 
 @MainActor
-final class SpacePinnedDisplayModelTests: XCTestCase {
+final class SpacePinnedListProjectionTests: XCTestCase {
     private func makeSnapshot(
         isDropProjectionActive: Bool = false,
         sourceContainer: TabDragManager.DragContainer? = nil,
@@ -17,7 +17,7 @@ final class SpacePinnedDisplayModelTests: XCTestCase {
         hoveredSlot: Int? = nil,
         folderDropIntent: FolderDropIntent = .none,
         hidesPlaceholder: Bool = false
-    ) -> SpacePinnedDisplayModel.DragProjectionSnapshot {
+    ) -> SpacePinnedListProjection.DragProjectionSnapshot {
         .init(
             isDropProjectionActive: isDropProjectionActive,
             sourceContainer: sourceContainer,
@@ -25,7 +25,7 @@ final class SpacePinnedDisplayModelTests: XCTestCase {
             hoveredSpaceId: hoveredSpaceId,
             hoveredSlot: hoveredSlot,
             folderDropIntent: folderDropIntent,
-            shouldHideCommittedCrossContainerPlaceholder: { _ in hidesPlaceholder }
+            hidesCommittedCrossContainerPlaceholder: hidesPlaceholder
         )
     }
 
@@ -33,7 +33,7 @@ final class SpacePinnedDisplayModelTests: XCTestCase {
 
     func testProjectedInsertionIndexNilWhenProjectionInactive() {
         let spaceId = UUID()
-        let model = SpacePinnedDisplayModel(
+        let model = SpacePinnedListProjection(
             spaceId: spaceId,
             items: [],
             restoreGaps: [],
@@ -45,7 +45,7 @@ final class SpacePinnedDisplayModelTests: XCTestCase {
 
     func testProjectedInsertionIndexNilForDifferentSpace() {
         let spaceId = UUID()
-        let model = SpacePinnedDisplayModel(
+        let model = SpacePinnedListProjection(
             spaceId: spaceId,
             items: [],
             restoreGaps: [],
@@ -57,7 +57,7 @@ final class SpacePinnedDisplayModelTests: XCTestCase {
 
     func testProjectedInsertionIndexNilWhenFolderDropIntentIsActive() {
         let spaceId = UUID()
-        let model = SpacePinnedDisplayModel(
+        let model = SpacePinnedListProjection(
             spaceId: spaceId,
             items: [],
             restoreGaps: [],
@@ -74,7 +74,7 @@ final class SpacePinnedDisplayModelTests: XCTestCase {
 
     func testProjectedInsertionIndexReturnsSlotWhenActive() {
         let spaceId = UUID()
-        let model = SpacePinnedDisplayModel(
+        let model = SpacePinnedListProjection(
             spaceId: spaceId,
             items: [],
             restoreGaps: [],
@@ -87,7 +87,7 @@ final class SpacePinnedDisplayModelTests: XCTestCase {
     func testProjectedInsertionIndexNilWhenCrossContainerPlaceholderShouldHide() {
         let spaceId = UUID()
         let dragItemId = UUID()
-        let model = SpacePinnedDisplayModel(
+        let model = SpacePinnedListProjection(
             spaceId: spaceId,
             items: [.shortcut(dragItemId)],
             restoreGaps: [],
@@ -108,7 +108,7 @@ final class SpacePinnedDisplayModelTests: XCTestCase {
     func testProjectedSourceItemResolvesDraggedItemFromSameContainer() {
         let spaceId = UUID()
         let dragItemId = UUID()
-        let model = SpacePinnedDisplayModel(
+        let model = SpacePinnedListProjection(
             spaceId: spaceId,
             items: [.shortcut(dragItemId), .folder(UUID())],
             restoreGaps: [],
@@ -125,7 +125,7 @@ final class SpacePinnedDisplayModelTests: XCTestCase {
     func testProjectedSourceItemNilForDifferentSourceContainer() {
         let spaceId = UUID()
         let dragItemId = UUID()
-        let model = SpacePinnedDisplayModel(
+        let model = SpacePinnedListProjection(
             spaceId: spaceId,
             items: [.shortcut(dragItemId)],
             restoreGaps: [],
@@ -146,7 +146,7 @@ final class SpacePinnedDisplayModelTests: XCTestCase {
         let pinId = UUID()
         let folderId = UUID()
         let gap = ShortcutRestoreGap(pinId: pinId, container: .spacePinned(spaceId), index: 0)
-        let model = SpacePinnedDisplayModel(
+        let model = SpacePinnedListProjection(
             spaceId: spaceId,
             items: [.shortcut(pinId), .folder(folderId)],
             restoreGaps: [gap],
@@ -163,7 +163,7 @@ final class SpacePinnedDisplayModelTests: XCTestCase {
         let spaceId = UUID()
         let pinId = UUID()
         let gap = ShortcutRestoreGap(pinId: pinId, container: .folder(UUID()), index: 0)
-        let model = SpacePinnedDisplayModel(
+        let model = SpacePinnedListProjection(
             spaceId: spaceId,
             items: [.shortcut(pinId)],
             restoreGaps: [gap],
@@ -180,7 +180,7 @@ final class SpacePinnedDisplayModelTests: XCTestCase {
         let folderId = UUID()
         let gapA = ShortcutRestoreGap(pinId: pinA, container: .spacePinned(spaceId), index: 0)
         let gapB = ShortcutRestoreGap(pinId: pinB, container: .spacePinned(spaceId), index: 2)
-        let model = SpacePinnedDisplayModel(
+        let model = SpacePinnedListProjection(
             spaceId: spaceId,
             items: [.shortcut(pinA), .folder(folderId), .shortcut(pinB)],
             restoreGaps: [gapB, gapA],
@@ -200,7 +200,7 @@ final class SpacePinnedDisplayModelTests: XCTestCase {
         let folderIdA = UUID()
         let folderIdB = UUID()
         let dragItemId = UUID()
-        let model = SpacePinnedDisplayModel(
+        let model = SpacePinnedListProjection(
             spaceId: spaceId,
             items: [.folder(folderIdA), .folder(folderIdB)],
             restoreGaps: [],
@@ -220,7 +220,7 @@ final class SpacePinnedDisplayModelTests: XCTestCase {
     func testDisplayIDUsesDragItemIdForPlaceholder() {
         let spaceId = UUID()
         let dragItemId = UUID()
-        let model = SpacePinnedDisplayModel(
+        let model = SpacePinnedListProjection(
             spaceId: spaceId,
             items: [],
             restoreGaps: [],
@@ -232,7 +232,7 @@ final class SpacePinnedDisplayModelTests: XCTestCase {
 
     func testDisplayIDFallsBackToPlaceholderIndexWithoutDragItemId() {
         let spaceId = UUID()
-        let model = SpacePinnedDisplayModel(
+        let model = SpacePinnedListProjection(
             spaceId: spaceId,
             items: [],
             restoreGaps: [],

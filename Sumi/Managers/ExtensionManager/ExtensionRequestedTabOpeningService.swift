@@ -179,11 +179,7 @@ struct ExtensionRequestedTabOpeningService {
             )
         }
         if shouldBePinned {
-            // Registration above must precede selection for WebKit, while an
-            // active Tab must be displayed before regular-to-shortcut
-            // conversion. Otherwise the converter correctly classifies the
-            // inactive model as detached and retires its just-published
-            // runtime instead of adopting it into the target window.
+            // Display active Tabs before regular-to-shortcut conversion.
             guard browserContext.pinExtensionTab(
                 newTab,
                 targetWindow: committedResidence,

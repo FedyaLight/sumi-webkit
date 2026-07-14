@@ -3,6 +3,7 @@
 //  Sumi
 //
 
+import SumiDomain
 import SwiftUI
 
 /// Owns the context-menu entry construction and folder/pin mutation actions
@@ -162,6 +163,19 @@ struct SpacePinnedActionOwner {
 
     func unloadShortcutPin(_ pin: ShortcutPin) {
         browserContext.commands.unloadShortcutPin(pin, windowState)
+    }
+
+    func activateShortcutPin(_ pin: ShortcutPin) {
+        guard let tab = pinCommands.materialize(
+            pin,
+            in: windowState,
+            currentSpaceID: space.id
+        ) else { return }
+        browserContext.commands.requestUserTabActivation(tab, windowState)
+    }
+
+    func focusSplitGroup(_ groupID: UUID, memberID: SplitMemberID) {
+        browserContext.commands.focusSplitGroup(groupID, memberID, windowState.id)
     }
 
     func duplicateShortcutPin(_ pin: ShortcutPin) {

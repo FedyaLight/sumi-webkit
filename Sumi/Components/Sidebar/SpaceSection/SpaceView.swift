@@ -13,6 +13,10 @@ enum SpaceViewRenderMode {
     var isInteractive: Bool {
         self == .interactive
     }
+
+    func resolvesInteraction(allowsInteraction: Bool) -> Bool {
+        isInteractive && allowsInteraction
+    }
 }
 
 enum SpaceViewLayout {
@@ -38,6 +42,74 @@ struct ShortcutRestoreGap: Identifiable, Hashable {
     let index: Int
 }
 
+/// State shared only by the pinned and regular sections while a shortcut split
+/// member is restored back into its saved container.
+struct SpaceShortcutRestoreInteractionSession: Equatable {
+    var gaps: [ShortcutRestoreGap] = []
+    var appearingGapIDs: Set<UUID> = []
+
+    func gap(matching candidate: ShortcutRestoreGap) -> ShortcutRestoreGap? {
+        gaps.first {
+            $0.pinId == candidate.pinId && $0.container == candidate.container
+        }
+    }
+
+    @discardableResult
+    mutating func register(_ gap: ShortcutRestoreGap) -> Bool {
+        guard self.gap(matching: gap) == nil else { return false }
+        gaps.append(gap)
+        return true
+    }
+
+    mutating func remove(_ gap: ShortcutRestoreGap) {
+        gaps.removeAll { $0.id == gap.id }
+        appearingGapIDs.remove(gap.id)
+    }
+}
+
+enum SpaceShortcutRestoreInteraction {
+    static func prepare(
+        session: Binding<SpaceShortcutRestoreInteractionSession>,
+        gap: ShortcutRestoreGap,
+        animation: Animation?
+    ) {
+        guard let animation,
+              session.wrappedValue.gap(matching: gap) == nil
+        else { return }
+
+        SidebarMotionTransaction.withoutAnimation {
+            session.wrappedValue.appearingGapIDs.insert(gap.id)
+            _ = session.wrappedValue.register(gap)
+        }
+
+        SidebarRowStagedReveal.reveal(
+            [gap.id],
+            in: session.appearingGapIDs,
+            animation: animation
+        ) {
+            session.wrappedValue.gaps.contains { $0.id == gap.id }
+        }
+    }
+
+    static func perform(
+        session: Binding<SpaceShortcutRestoreInteractionSession>,
+        gap: ShortcutRestoreGap?,
+        update: () -> Void
+    ) {
+        guard let gap,
+              let existingGap = session.wrappedValue.gap(matching: gap)
+        else {
+            update()
+            return
+        }
+
+        SidebarMotionTransaction.withoutAnimation {
+            update()
+            session.wrappedValue.remove(existingGap)
+        }
+    }
+}
+
 struct SpaceView: View {
     let space: Space
     let browserContext: SidebarBrowserContext
@@ -51,25 +123,13 @@ struct SpaceView: View {
     let allowsInteraction: Bool
     let scrollHoverCoordinator: NativeSurfaceScrollHoverCoordinator
     @Binding var isSidebarHovered: Bool
-    @Environment(BrowserWindowState.self) var windowState
-    @Environment(WindowRegistry.self) var windowRegistry
-    @Environment(\.sumiSettings) var sumiSettings
-    @EnvironmentObject var dragState: SidebarDragState
-    @State var isNewTabHovered = false
-    @State var regularTabsListAnimation = RegularTabsListAnimationState()
-    @State var regularSplitSegmentRemovalIds = Set<UUID>()
-    @State var shortcutRestoreGaps: [ShortcutRestoreGap] = []
-    @State var shortcutRestoreAppearingGapIds = Set<UUID>()
-    @Environment(\.resolvedThemeContext) var themeContext
-    @Environment(\.accessibilityReduceMotion) var reduceMotion
+    @Environment(BrowserWindowState.self) private var windowState
+    @Environment(WindowRegistry.self) private var windowRegistry
+    @Environment(\.resolvedThemeContext) private var themeContext
+    @State private var shortcutRestoreSession = SpaceShortcutRestoreInteractionSession()
 
-    let onActivateTab: (Tab) -> Void
-    let onCloseTab: (Tab) -> Void
-    let onMoveTabUp: (Tab) -> Void
-    let onMoveTabDown: (Tab) -> Void
-    let onMuteTab: (Tab) -> Void
     let onScrollViewportChange: (UUID, SpaceSidebarSnapshotViewport) -> Void
-    var outerWidth: CGFloat {
+    private var outerWidth: CGFloat {
         let visibleWidth = windowState.sidebarWidth
         if visibleWidth > 0 {
             return visibleWidth
@@ -78,11 +138,11 @@ struct SpaceView: View {
         return max(fallbackWidth, 0)
     }
 
-    var innerWidth: CGFloat {
+    private var innerWidth: CGFloat {
         SpaceViewLayout.contentWidth(for: outerWidth)
     }
 
-    var spaceTitleActions: SpaceTitleActions {
+    private var spaceTitleActions: SpaceTitleActions {
         SpaceTitleActionOwner(
             browserContext: browserContext,
             spaceLifecycle: spaceLifecycle,
@@ -93,101 +153,84 @@ struct SpaceView: View {
         ).actions
     }
 
-    var isInteractive: Bool {
-        renderMode.isInteractive && allowsInteraction
+    private var isInteractive: Bool {
+        renderMode.resolvesInteraction(allowsInteraction: allowsInteraction)
+    }
+
+    private var pinnedSection: SpacePinnedSectionView {
+        SpacePinnedSectionView(
+            space: space,
+            inventory: inventory,
+            selection: selection,
+            pinProjection: pinProjection,
+            pinCommands: pinCommands,
+            spaceLifecycle: spaceLifecycle,
+            browserContext: browserContext,
+            isInteractive: isInteractive,
+            shortcutRestoreSession: $shortcutRestoreSession
+        )
+    }
+
+    private var regularTabsSection: SpaceRegularTabsView {
+        SpaceRegularTabsView(
+            space: space,
+            inventory: inventory,
+            selection: selection,
+            regularTabs: regularTabs,
+            browserContext: browserContext,
+            isInteractive: isInteractive,
+            innerWidth: innerWidth,
+            isSidebarHovered: $isSidebarHovered,
+            shortcutRestoreSession: $shortcutRestoreSession
+        )
     }
 
     var body: some View {
-        VStack(spacing: 4) {
-            SpaceTitle(
-                space: space,
-                actions: spaceTitleActions,
-                isAppKitInteractionEnabled: isInteractive
-            )
+        SpaceDropCommitSignalReader { isCompletingDrop in
+            VStack(spacing: 4) {
+                SpaceTitle(
+                    space: space,
+                    actions: spaceTitleActions,
+                    isAppKitInteractionEnabled: isInteractive
+                )
 
-            mainContentContainer
-        }
-        .padding(.horizontal, SpaceViewLayout.horizontalPadding)
-        .frame(minWidth: 0, maxWidth: outerWidth, alignment: .leading)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .contentShape(Rectangle())
-        .coordinateSpace(name: "SpaceViewCoordinateSpace")
-        .transaction { transaction in
-            if dragState.isCompletingDrop {
-                transaction.animation = nil
-                transaction.disablesAnimations = true
+                SpaceScrollChromeSurface(
+                    isInteractive: isInteractive,
+                    spaceId: space.id,
+                    scrollHoverCoordinator: scrollHoverCoordinator,
+                    outerWidth: outerWidth,
+                    onViewportChange: { viewport in
+                        onScrollViewportChange(space.id, viewport)
+                    }
+                ) {
+                    SpaceSectionsView(
+                        pinnedSection: pinnedSection,
+                        regularTabsSection: regularTabsSection
+                    )
+                }
+            }
+            .padding(.horizontal, SpaceViewLayout.horizontalPadding)
+            .frame(minWidth: 0, maxWidth: outerWidth, alignment: .leading)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .contentShape(Rectangle())
+            .coordinateSpace(name: "SpaceViewCoordinateSpace")
+            .transaction { transaction in
+                if isCompletingDrop {
+                    transaction.animation = nil
+                    transaction.disablesAnimations = true
+                }
             }
         }
     }
 }
 
-extension SpaceView {
-    func prepareShortcutRestoreGap(
-        groupID: UUID,
-        memberID: SplitMemberID
-    ) {
-        guard isInteractive,
-              !reduceMotion,
-              !sumiSettings.shouldReduceChromeMotion,
-              let gap = shortcutRestoreGap(
-                groupID: groupID,
-                memberID: memberID
-              ),
-              shortcutRestoreGaps.firstIndex(where: { $0.pinId == gap.pinId && $0.container == gap.container }) == nil
-        else {
-            return
-        }
+/// Reads only the drop-commit bit at the outer transaction boundary. The
+/// scroll surface remains free of the broad drag-state observation stream.
+private struct SpaceDropCommitSignalReader<Content: View>: View {
+    @EnvironmentObject private var dragState: SidebarDragState
+    @ViewBuilder let content: (Bool) -> Content
 
-        SidebarRowStagedReveal.insert(gap.id, into: &shortcutRestoreAppearingGapIds) {
-            shortcutRestoreGaps.append(gap)
-        }
-
-        SidebarRowStagedReveal.reveal(
-            [gap.id],
-            in: $shortcutRestoreAppearingGapIds,
-            animation: SidebarDropMotion.contentLayout
-        ) {
-            shortcutRestoreGaps.contains(where: { $0.id == gap.id })
-        }
-    }
-
-    func performShortcutRestoreWithPreparedGap(
-        groupID: UUID,
-        memberID: SplitMemberID,
-        update: @escaping () -> Void
-    ) {
-        guard let gap = shortcutRestoreGap(
-            groupID: groupID,
-            memberID: memberID
-        ),
-              let existingGap = shortcutRestoreGaps.first(where: { $0.pinId == gap.pinId && $0.container == gap.container })
-        else {
-            update()
-            return
-        }
-
-        SidebarMotionTransaction.withoutAnimation {
-            update()
-            shortcutRestoreGaps.removeAll { $0.id == existingGap.id }
-            _ = shortcutRestoreAppearingGapIds.remove(existingGap.id)
-        }
-    }
-
-    private func shortcutRestoreGap(
-        groupID: UUID,
-        memberID: SplitMemberID
-    ) -> ShortcutRestoreGap? {
-        SpaceShortcutRestorePlanner(
-            inventory: inventory,
-            space: space
-        ).shortcutRestoreGap(groupID: groupID, memberID: memberID)
-    }
-
-    var elevatedFolderIds: Set<UUID> {
-        SpaceElevatedFolderOwner(
-            inventory: inventory,
-            selection: selection,
-            windowState: windowState
-        ).elevatedFolderIds
+    var body: some View {
+        content(dragState.isCompletingDrop)
     }
 }

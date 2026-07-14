@@ -21,8 +21,7 @@ struct TabFolderContextMenuActionOwner {
     let windowState: BrowserWindowState
     let themeContext: ResolvedThemeContext
     let folderLayoutAnimation: Animation?
-    let onUngroup: () -> Void
-    let onDelete: () -> Void
+    let mutationActions: TabFolderMutationActions
 
     func folderShortcutContextMenuEntries(_ pin: ShortcutPin) -> [SidebarContextMenuEntry] {
         let presentationState = shortcutPresentationState(for: pin)
@@ -156,8 +155,8 @@ struct TabFolderContextMenuActionOwner {
                 },
                 alphabetize: alphabetizeTabs,
                 unloadActiveTabs: unloadActiveTabsAction,
-                ungroup: onUngroup,
-                delete: onDelete
+                ungroup: { mutationActions.ungroupNestedFolder(folder) },
+                delete: { mutationActions.deleteNestedFolder(folder) }
             )
         )
     }
@@ -178,6 +177,14 @@ struct TabFolderContextMenuActionOwner {
         mutateFolderContent {
             _ = pinCommands.remove(pin)
         }
+    }
+
+    func openLiveFolderItem(_ item: SumiLiveFolderItem) {
+        browserContext.liveFolderManager.open(item: item, in: windowState)
+    }
+
+    func dismissLiveFolderItem(_ item: SumiLiveFolderItem) {
+        browserContext.liveFolderManager.dismiss(item: item)
     }
 
     private func liveFolderHeaderContextMenuEntries() -> [SidebarContextMenuEntry] {
@@ -221,7 +228,7 @@ struct TabFolderContextMenuActionOwner {
                             systemImage: "trash",
                             role: .destructive,
                             classification: .structuralMutation,
-                            onAction: onDelete
+                            onAction: { mutationActions.deleteNestedFolder(folder) }
                         )
                     ),
                 ],
