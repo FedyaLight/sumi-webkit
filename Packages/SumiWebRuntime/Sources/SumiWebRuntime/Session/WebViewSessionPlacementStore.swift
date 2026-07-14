@@ -66,6 +66,48 @@ final class WebViewSessionPlacementStore {
         )
     }
 
+    func installRetirementReservation(for tabID: UUID) {
+        let previousWindowIDs = Set(
+            entries[tabID]?.windowWebViews.keys.map(\.self) ?? []
+        )
+        mutationRevision &+= 1
+        var reservation = Entry()
+        reservation.revision = mutationRevision
+        entries[tabID] = reservation
+        index.replaceWindowMembership(
+            for: tabID,
+            previousWindowIDs: previousWindowIDs,
+            replacementWindowIDs: []
+        )
+    }
+
+    func removeRetirementReservation(for tabID: UUID) {
+        guard let reservation = entries[tabID], reservation.isEmpty else {
+            preconditionFailure("Retirement reservation was not current")
+        }
+        storeMutated(Entry(), for: tabID)
+    }
+
+    func restoreExactly(
+        _ snapshot: WebViewSessionSnapshot,
+        for tabID: UUID
+    ) {
+        guard let reservation = entries[tabID], reservation.isEmpty,
+              !snapshot.allKnownWebViews.isEmpty else {
+            preconditionFailure("Retirement rollback state was not current")
+        }
+        mutationRevision &+= 1
+        var restored = entry(from: snapshot)
+        restored.revision = snapshot.generation
+        entries[tabID] = restored
+        index.replaceWindowMembership(
+            for: tabID,
+            previousWindowIDs: [],
+            replacementWindowIDs: Set(restored.windowWebViews.keys)
+        )
+        installActiveResidences(in: restored, tabID: tabID)
+    }
+
     func residence(of webView: WKWebView) -> WebViewResidence? {
         index.residence(of: webView)
     }

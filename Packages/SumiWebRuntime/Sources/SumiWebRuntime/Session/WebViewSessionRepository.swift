@@ -15,16 +15,16 @@ import WebKit
 public final class WebViewSessionRepository {
     private let placements: WebViewSessionPlacementStore
     private let transitions: WebViewOwnershipTransitionLedger
-    private let replacementTransactions: WebViewReplacementTransactionStore
+    private let transitionTransactions: WebViewSessionTransitionTransactionStore
     private let validator: WebViewSessionConsistencyValidator
-    private let replacementCoordinator: WebViewReplacementCoordinator
+    private let transitionCoordinator: WebViewSessionTransitionCoordinator
     public let queries: WebViewSessionQueryService
     package let placement: WebViewSessionPlacementService
 
     public init() {
         let placements = WebViewSessionPlacementStore()
         let transitions = WebViewOwnershipTransitionLedger()
-        let transactions = WebViewReplacementTransactionStore()
+        let transactions = WebViewSessionTransitionTransactionStore()
         let validator = WebViewSessionConsistencyValidator(
             placements: placements,
             transitions: transitions,
@@ -36,7 +36,7 @@ public final class WebViewSessionRepository {
         )
         self.placements = placements
         self.transitions = transitions
-        replacementTransactions = transactions
+        transitionTransactions = transactions
         self.validator = validator
         self.queries = queries
         placement = WebViewSessionPlacementService(
@@ -46,7 +46,7 @@ public final class WebViewSessionRepository {
             queries: queries,
             validator: validator
         )
-        replacementCoordinator = WebViewReplacementCoordinator(
+        transitionCoordinator = WebViewSessionTransitionCoordinator(
             placements: placements,
             transitions: transitions,
             transactions: transactions,
@@ -106,7 +106,7 @@ public final class WebViewSessionRepository {
         }
         let cleanupEntries = placements.drainActiveResidences()
             + transitions.drainTransitions()
-        replacementTransactions.removeAll()
+        transitionTransactions.removeAll()
         placements.advanceResidenceGeneration()
 
         let uniqueIDs = Set(cleanupEntries.map { ObjectIdentifier($0.webView) })
@@ -122,6 +122,9 @@ public final class WebViewSessionRepository {
         of webView: WKWebView,
         for tabID: UUID
     ) -> WebViewPendingCleanupLease? {
+        guard !transitionTransactions.containsTransaction(for: tabID) else {
+            return nil
+        }
         if case .pendingCleanup = residence(of: webView) {
             return transitions.claimPendingCleanup(of: webView, for: tabID)
         }
@@ -180,7 +183,7 @@ public final class WebViewSessionRepository {
         expectedGeneration: UInt64,
         for tabID: UUID
     ) -> WebViewDetachedSetReplacementResult {
-        guard !replacementTransactions.containsTransaction(for: tabID) else {
+        guard !transitionTransactions.containsTransaction(for: tabID) else {
             return .invalid
         }
         let currentGeneration = queries.generation(for: tabID)
@@ -307,10 +310,10 @@ public final class WebViewSessionRepository {
     @preconcurrency
     public func beginReplacementBatch(
         _ replacementEntries: [WebViewReplacementBatchEntry],
-        validateModel: @MainActor () -> Bool = { return true },
+        validateModel: @MainActor () -> Bool = { true },
         modelCommit: @MainActor () throws -> Void = { () }
     ) -> WebViewReplacementBatchBeginResult {
-        replacementCoordinator.begin(
+        transitionCoordinator.begin(
             replacementEntries,
             validateModel: validateModel,
             modelCommit: modelCommit
@@ -356,7 +359,7 @@ public final class WebViewSessionRepository {
     public func commitReplacementBatch(
         _ lease: WebViewReplacementBatchLease
     ) -> WebViewReplacementBatchCommitResult {
-        replacementCoordinator.commit(lease)
+        transitionCoordinator.commit(lease)
     }
 
     @preconcurrency
@@ -364,9 +367,39 @@ public final class WebViewSessionRepository {
         _ lease: WebViewReplacementBatchLease,
         modelRollback: @MainActor () throws -> Void = { () }
     ) -> WebViewReplacementBatchRollbackResult {
-        replacementCoordinator.rollback(
+        transitionCoordinator.rollback(
             lease,
             modelRollback: modelRollback
+        )
+    }
+
+    // MARK: - Transactional retirement
+
+    @preconcurrency
+    public func beginRetirementBatch(
+        _ retirementEntries: [WebViewRetirementBatchEntry],
+        modelTransaction: WebViewRetirementModelTransactionReceipt
+    ) -> WebViewRetirementBatchBeginResult {
+        transitionCoordinator.beginRetirement(
+            retirementEntries,
+            modelTransaction: modelTransaction
+        )
+    }
+
+    public func commitRetirementBatch(
+        _ lease: WebViewRetirementBatchLease
+    ) -> WebViewRetirementBatchCommitResult {
+        transitionCoordinator.commitRetirement(lease)
+    }
+
+    @preconcurrency
+    public func rollbackRetirementBatch(
+        _ lease: WebViewRetirementBatchLease,
+        modelTransaction: WebViewRetirementModelTransactionReceipt
+    ) -> WebViewRetirementBatchRollbackResult {
+        transitionCoordinator.rollbackRetirement(
+            lease,
+            modelTransaction: modelTransaction
         )
     }
 
@@ -384,7 +417,7 @@ public final class WebViewSessionRepository {
         replacement: WKWebView?,
         for tabID: UUID
     ) -> WebViewPendingCleanupLease? {
-        guard !replacementTransactions.containsTransaction(for: tabID),
+        guard !transitionTransactions.containsTransaction(for: tabID),
               var entry = placements.entry(for: tabID),
               expectedResidence.tabID == tabID,
               entry.windowWebViews.isEmpty,

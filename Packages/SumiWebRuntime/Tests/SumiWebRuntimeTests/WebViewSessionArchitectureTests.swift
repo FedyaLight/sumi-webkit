@@ -37,7 +37,7 @@ final class WebViewSessionArchitectureTests: XCTestCase {
         async {
         let ledger = WebViewOwnershipTransitionLedger()
         let batchID = UUID()
-        ledger.openReplacementBatch(batchID)
+        ledger.openTransactionBatch(batchID)
         let cancelledWaiter = Task { @MainActor in
             await ledger.waitUntilSettled()
         }
@@ -52,7 +52,7 @@ final class WebViewSessionArchitectureTests: XCTestCase {
         XCTAssertFalse(cancelledResult)
         XCTAssertTrue(ledger.hasTransitions)
         XCTAssertEqual(ledger.openBatchIDs, [batchID])
-        ledger.finishReplacementBatch(batchID)
+        ledger.finishTransactionBatch(batchID)
         let survivingResult = await survivingWaiter.value
         XCTAssertTrue(survivingResult)
         XCTAssertFalse(ledger.hasTransitions)
@@ -74,7 +74,7 @@ final class WebViewSessionArchitectureTests: XCTestCase {
             primaryWindowID: windowID,
             windowWebViews: [windowID: try XCTUnwrap(webView)]
         )
-        ledger.openReplacementBatch(batchID)
+        ledger.openTransactionBatch(batchID)
         ledger.retainRetirement(try XCTUnwrap(snapshot), lease: lease)
 
         snapshot = nil
@@ -89,11 +89,11 @@ final class WebViewSessionArchitectureTests: XCTestCase {
         )
         XCTAssertNil(ledger.webView(with: webViewID))
         XCTAssertFalse(containsWebView(in: ledger))
-        ledger.finishReplacementBatch(batchID)
+        ledger.finishTransactionBatch(batchID)
     }
 
     func testReplacementTransactionStoreRetainsFingerprintNotWebView() throws {
-        let transactionStore = WebViewReplacementTransactionStore()
+        let transactionStore = WebViewSessionTransitionTransactionStore()
         let tabID = UUID()
         let windowID = UUID()
         let batchLease = WebViewReplacementBatchLease(id: UUID())
@@ -111,13 +111,14 @@ final class WebViewSessionArchitectureTests: XCTestCase {
         )
         let fingerprint = WebViewPlacementFingerprint(try XCTUnwrap(snapshot))
         transactionStore.install(.init(
-            lease: batchLease,
-            replacementsByTabID: [
+            lease: .replacement(batchLease),
+            entriesByTabID: [
                 tabID: .init(
                     retirementLease: retirementLease,
                     installed: fingerprint
                 ),
-            ]
+            ],
+            modelTransactionID: nil
         ))
 
         snapshot = nil
@@ -125,19 +126,19 @@ final class WebViewSessionArchitectureTests: XCTestCase {
 
         let storedBatch = try XCTUnwrap(transactionStore.batch(for: batchLease))
         XCTAssertFalse(containsWebView(in: storedBatch))
-        XCTAssertEqual(storedBatch.replacementsByTabID[tabID]?.installed, fingerprint)
+        XCTAssertEqual(storedBatch.entriesByTabID[tabID]?.installed, fingerprint)
     }
 
     func testCommitAndRollbackRejectFingerprintConflictWithoutSettlingBatch() {
         let placements = WebViewSessionPlacementStore()
         let transitions = WebViewOwnershipTransitionLedger()
-        let transactions = WebViewReplacementTransactionStore()
+        let transactions = WebViewSessionTransitionTransactionStore()
         let validator = WebViewSessionConsistencyValidator(
             placements: placements,
             transitions: transitions,
             transactions: transactions
         )
-        let coordinator = WebViewReplacementCoordinator(
+        let coordinator = WebViewSessionTransitionCoordinator(
             placements: placements,
             transitions: transitions,
             transactions: transactions,
@@ -159,7 +160,7 @@ final class WebViewSessionArchitectureTests: XCTestCase {
                     )
                 ),
             ],
-            validateModel: { return true },
+            validateModel: { true },
             modelCommit: { () }
         )
         guard case .began(let lease) = begin else {

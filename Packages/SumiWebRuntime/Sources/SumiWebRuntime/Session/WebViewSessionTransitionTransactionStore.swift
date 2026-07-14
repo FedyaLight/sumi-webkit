@@ -1,18 +1,40 @@
 import Foundation
 
-/// Identity-only record of installed replacement transactions. Previous
+/// Identity-only record of installed replacement and retirement transactions.
+/// Previous
 /// generations are strongly owned only by `WebViewOwnershipTransitionLedger`;
 /// active generations are strongly owned only by the placement store.
 @MainActor
-final class WebViewReplacementTransactionStore {
-    struct Replacement {
+final class WebViewSessionTransitionTransactionStore {
+    enum SettlementPhase: Equatable {
+        case open
+        case rollingBack
+    }
+
+    enum BatchLease: Equatable {
+        case replacement(WebViewReplacementBatchLease)
+        case retirement(WebViewRetirementBatchLease)
+
+        var id: UUID {
+            switch self {
+            case .replacement(let lease):
+                return lease.id
+            case .retirement(let lease):
+                return lease.id
+            }
+        }
+    }
+
+    struct Entry {
         let retirementLease: WebViewRetirementLease
         let installed: WebViewPlacementFingerprint
     }
 
     struct Batch {
-        let lease: WebViewReplacementBatchLease
-        let replacementsByTabID: [UUID: Replacement]
+        let lease: BatchLease
+        let entriesByTabID: [UUID: Entry]
+        let modelTransactionID: UUID?
+        var settlementPhase: SettlementPhase = .open
     }
 
     private var batchesByID: [UUID: Batch] = [:]
@@ -30,7 +52,37 @@ final class WebViewReplacementTransactionStore {
     }
 
     func batch(for lease: WebViewReplacementBatchLease) -> Batch? {
-        guard let batch = batchesByID[lease.id], batch.lease == lease else {
+        guard let batch = batchesByID[lease.id],
+              batch.lease == .replacement(lease) else {
+            return nil
+        }
+        return batch
+    }
+
+    func batch(for lease: WebViewRetirementBatchLease) -> Batch? {
+        guard let batch = batchesByID[lease.id],
+              batch.lease == .retirement(lease),
+              batch.settlementPhase == .open else {
+            return nil
+        }
+        return batch
+    }
+
+    func claimRetirementRollback(
+        for lease: WebViewRetirementBatchLease
+    ) -> Batch? {
+        guard var batch = batch(for: lease) else { return nil }
+        batch.settlementPhase = .rollingBack
+        batchesByID[lease.id] = batch
+        return batch
+    }
+
+    func rollingBackBatch(
+        for lease: WebViewRetirementBatchLease
+    ) -> Batch? {
+        guard let batch = batchesByID[lease.id],
+              batch.lease == .retirement(lease),
+              batch.settlementPhase == .rollingBack else {
             return nil
         }
         return batch
@@ -38,11 +90,11 @@ final class WebViewReplacementTransactionStore {
 
     func install(_ batch: Batch) {
         precondition(batchesByID[batch.lease.id] == nil)
-        for tabID in batch.replacementsByTabID.keys {
+        for tabID in batch.entriesByTabID.keys {
             precondition(batchIDByTabID[tabID] == nil)
         }
         batchesByID[batch.lease.id] = batch
-        for tabID in batch.replacementsByTabID.keys {
+        for tabID in batch.entriesByTabID.keys {
             batchIDByTabID[tabID] = batch.lease.id
         }
     }
@@ -51,7 +103,7 @@ final class WebViewReplacementTransactionStore {
         if batchesByID[batch.lease.id]?.lease == batch.lease {
             batchesByID.removeValue(forKey: batch.lease.id)
         }
-        for tabID in batch.replacementsByTabID.keys
+        for tabID in batch.entriesByTabID.keys
             where batchIDByTabID[tabID] == batch.lease.id {
             batchIDByTabID.removeValue(forKey: tabID)
         }
@@ -66,16 +118,23 @@ final class WebViewReplacementTransactionStore {
         #if DEBUG
             for (tabID, batchID) in batchIDByTabID {
                 assert(
-                    batchesByID[batchID]?.replacementsByTabID[tabID] != nil,
-                    "Replacement tab index diverged during \(context)"
+                    batchesByID[batchID]?.entriesByTabID[tabID] != nil,
+                    "Transition tab index diverged during \(context)"
                 )
             }
             for (batchID, batch) in batchesByID {
                 assert(batch.lease.id == batchID)
-                for tabID in batch.replacementsByTabID.keys {
+                switch batch.lease {
+                case .replacement:
+                    assert(batch.modelTransactionID == nil)
+                    assert(batch.settlementPhase == .open)
+                case .retirement:
+                    assert(batch.modelTransactionID != nil)
+                }
+                for tabID in batch.entriesByTabID.keys {
                     assert(
                         batchIDByTabID[tabID] == batchID,
-                        "Replacement batch index diverged during \(context)"
+                        "Transition batch index diverged during \(context)"
                     )
                 }
             }

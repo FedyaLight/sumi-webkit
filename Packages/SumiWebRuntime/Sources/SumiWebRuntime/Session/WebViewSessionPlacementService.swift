@@ -7,14 +7,14 @@ import WebKit
 package final class WebViewSessionPlacementService {
     private unowned let placements: WebViewSessionPlacementStore
     private unowned let transitions: WebViewOwnershipTransitionLedger
-    private unowned let transactions: WebViewReplacementTransactionStore
+    private unowned let transactions: WebViewSessionTransitionTransactionStore
     private unowned let queries: WebViewSessionQueryService
     private unowned let validator: WebViewSessionConsistencyValidator
 
     init(
         placements: WebViewSessionPlacementStore,
         transitions: WebViewOwnershipTransitionLedger,
-        transactions: WebViewReplacementTransactionStore,
+        transactions: WebViewSessionTransitionTransactionStore,
         queries: WebViewSessionQueryService,
         validator: WebViewSessionConsistencyValidator
     ) {

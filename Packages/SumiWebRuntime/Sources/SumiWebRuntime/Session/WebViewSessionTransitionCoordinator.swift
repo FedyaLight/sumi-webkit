@@ -1,15 +1,16 @@
 import Foundation
 import WebKit
 
-/// Coordinates the multi-store replacement transaction. The transaction store
-/// keeps identity fingerprints, while active and retired generations remain
-/// strongly owned by their respective canonical stores.
+/// Coordinates replacement and pure-retirement transactions across the
+/// canonical placement, transition, and identity stores.
 @MainActor
-final class WebViewReplacementCoordinator {
+final class WebViewSessionTransitionCoordinator {
     private typealias Placement = WebViewSessionPlacementStore.Entry
-    private typealias Batch = WebViewReplacementTransactionStore.Batch
-    private typealias Replacement =
-        WebViewReplacementTransactionStore.Replacement
+    private typealias Batch = WebViewSessionTransitionTransactionStore.Batch
+    private typealias BatchLease =
+        WebViewSessionTransitionTransactionStore.BatchLease
+    private typealias TransactionEntry =
+        WebViewSessionTransitionTransactionStore.Entry
 
     private struct PreparedReplacement {
         let tabID: UUID
@@ -22,15 +23,20 @@ final class WebViewReplacementCoordinator {
         case rejected(WebViewReplacementBatchBeginResult)
     }
 
+    private enum RetirementPreparationResult {
+        case prepared([PreparedReplacement])
+        case rejected(WebViewRetirementBatchBeginResult)
+    }
+
     private unowned let placements: WebViewSessionPlacementStore
     private unowned let transitions: WebViewOwnershipTransitionLedger
-    private unowned let transactions: WebViewReplacementTransactionStore
+    private unowned let transactions: WebViewSessionTransitionTransactionStore
     private unowned let validator: WebViewSessionConsistencyValidator
 
     init(
         placements: WebViewSessionPlacementStore,
         transitions: WebViewOwnershipTransitionLedger,
-        transactions: WebViewReplacementTransactionStore,
+        transactions: WebViewSessionTransitionTransactionStore,
         validator: WebViewSessionConsistencyValidator
     ) {
         self.placements = placements
@@ -58,7 +64,11 @@ final class WebViewReplacementCoordinator {
         }
 
         let lease = WebViewReplacementBatchLease(id: UUID())
-        let batch = apply(prepared, lease: lease)
+        let batch = apply(
+            prepared,
+            lease: .replacement(lease),
+            modelTransactionID: nil
+        )
         do {
             try modelCommit()
         } catch {
@@ -77,6 +87,41 @@ final class WebViewReplacementCoordinator {
         return .began(lease)
     }
 
+    func beginRetirement(
+        _ retirementEntries: [WebViewRetirementBatchEntry],
+        modelTransaction: WebViewRetirementModelTransactionReceipt
+    ) -> WebViewRetirementBatchBeginResult {
+        let firstPreparation = prepareRetirement(retirementEntries)
+        guard case .prepared = firstPreparation else {
+            if case .rejected(let result) = firstPreparation { return result }
+            preconditionFailure("Unreachable retirement preparation state")
+        }
+        guard modelTransaction.isCurrent() else {
+            return .modelValidationFailed
+        }
+
+        let secondPreparation = prepareRetirement(retirementEntries)
+        guard case .prepared(let prepared) = secondPreparation else {
+            if case .rejected(let result) = secondPreparation { return result }
+            preconditionFailure("Unreachable retirement preparation state")
+        }
+
+        let lease = WebViewRetirementBatchLease(id: UUID())
+        _ = apply(
+            prepared,
+            lease: .retirement(lease),
+            modelTransactionID: modelTransaction.id
+        )
+        modelTransaction.commit()
+        guard transactions.batch(for: lease) != nil else {
+            validator.assertConsistency("retirement.commitDrained")
+            return .noLongerActive
+        }
+
+        validator.assertConsistency("retirement.begin")
+        return .began(lease)
+    }
+
     func commit(
         _ lease: WebViewReplacementBatchLease
     ) -> WebViewReplacementBatchCommitResult {
@@ -91,7 +136,7 @@ final class WebViewReplacementCoordinator {
         }
 
         var retired: [UUID: WebViewSessionSnapshot] = [:]
-        for (tabID, replacement) in batch.replacementsByTabID {
+        for (tabID, replacement) in batch.entriesByTabID {
             guard let snapshot = transitions.takeRetirement(
                 replacement.retirementLease
             ) else {
@@ -130,6 +175,86 @@ final class WebViewReplacementCoordinator {
         finish(batch)
         validator.assertConsistency("replacement.rollback")
         return .rolledBack(discarded: discarded)
+    }
+
+    func commitRetirement(
+        _ lease: WebViewRetirementBatchLease
+    ) -> WebViewRetirementBatchCommitResult {
+        guard let batch = transactions.batch(for: lease) else {
+            return .noLongerActive
+        }
+        if let conflict = conflict(in: batch) {
+            return .conflict(
+                tabID: conflict.tabID,
+                currentGeneration: conflict.currentGeneration
+            )
+        }
+
+        var retired: [UUID: WebViewSessionSnapshot] = [:]
+        for (tabID, entry) in batch.entriesByTabID {
+            guard let snapshot = transitions.retirementSnapshot(
+                for: entry.retirementLease
+            ) else {
+                return .conflict(
+                    tabID: tabID,
+                    currentGeneration: placements.generation(for: tabID)
+                )
+            }
+            retired[tabID] = snapshot
+        }
+        for tabID in orderedTabIDs(in: batch) {
+            guard let entry = batch.entriesByTabID[tabID],
+                  transitions.takeRetirement(entry.retirementLease) != nil
+            else {
+                preconditionFailure("Current retirement lost its snapshot")
+            }
+            placements.removeRetirementReservation(for: tabID)
+        }
+        finish(batch)
+        validator.assertConsistency("retirement.commit")
+        return .committed(retired: retired)
+    }
+
+    func rollbackRetirement(
+        _ lease: WebViewRetirementBatchLease,
+        modelTransaction: WebViewRetirementModelTransactionReceipt
+    ) -> WebViewRetirementBatchRollbackResult {
+        guard let batch = transactions.batch(for: lease) else {
+            return .noLongerActive
+        }
+        guard batch.modelTransactionID == modelTransaction.id else {
+            return .modelTransactionMismatch
+        }
+        if let conflict = conflict(in: batch) {
+            return .conflict(
+                tabID: conflict.tabID,
+                currentGeneration: conflict.currentGeneration
+            )
+        }
+        guard transactions.claimRetirementRollback(for: lease) != nil else {
+            return .noLongerActive
+        }
+
+        modelTransaction.rollback()
+        guard let currentBatch = transactions.rollingBackBatch(
+            for: lease
+        ) else {
+            validator.assertConsistency("retirement.rollbackDrained")
+            return .noLongerActive
+        }
+        guard currentBatch.modelTransactionID == modelTransaction.id else {
+            return .modelTransactionMismatch
+        }
+        if let conflict = conflict(in: currentBatch) {
+            return .conflict(
+                tabID: conflict.tabID,
+                currentGeneration: conflict.currentGeneration
+            )
+        }
+        restoreRetirement(currentBatch)
+        finish(currentBatch)
+        validator.assertConsistency("retirement.rollback")
+        return .rolledBack
     }
 
     private func prepare(
@@ -185,6 +310,48 @@ final class WebViewReplacementCoordinator {
         return .prepared(prepared)
     }
 
+    private func prepareRetirement(
+        _ requestedEntries: [WebViewRetirementBatchEntry]
+    ) -> RetirementPreparationResult {
+        guard !requestedEntries.isEmpty else {
+            return .rejected(.invalid(tabID: nil))
+        }
+        let orderedEntries = requestedEntries.sorted {
+            $0.tabID.uuidString < $1.tabID.uuidString
+        }
+        var seenTabIDs: Set<UUID> = []
+        var prepared: [PreparedReplacement] = []
+
+        for requested in orderedEntries {
+            guard seenTabIDs.insert(requested.tabID).inserted else {
+                return .rejected(.invalid(tabID: requested.tabID))
+            }
+            guard !transactions.containsTransaction(for: requested.tabID),
+                  !transitions.pendingCleanupTabIDs.contains(requested.tabID)
+            else {
+                return .rejected(.conflict(tabID: requested.tabID))
+            }
+            let currentGeneration = placements.generation(for: requested.tabID)
+            guard currentGeneration == requested.expectedGeneration else {
+                return .rejected(.stale(
+                    tabID: requested.tabID,
+                    currentGeneration: currentGeneration
+                ))
+            }
+
+            let previous = placements.snapshot(for: requested.tabID)
+            guard !previous.allKnownWebViews.isEmpty else {
+                return .rejected(.invalid(tabID: requested.tabID))
+            }
+            prepared.append(PreparedReplacement(
+                tabID: requested.tabID,
+                previous: previous,
+                replacement: Placement()
+            ))
+        }
+        return .prepared(prepared)
+    }
+
     private func replacementPlacement(
         for requested: WebViewReplacementBatchEntry,
         previous: WebViewSessionSnapshot
@@ -215,10 +382,11 @@ final class WebViewReplacementCoordinator {
 
     private func apply(
         _ prepared: [PreparedReplacement],
-        lease: WebViewReplacementBatchLease
+        lease: BatchLease,
+        modelTransactionID: UUID?
     ) -> Batch {
-        transitions.openReplacementBatch(lease.id)
-        var replacementsByTabID: [UUID: Replacement] = [:]
+        transitions.openTransactionBatch(lease.id)
+        var entriesByTabID: [UUID: TransactionEntry] = [:]
         for replacement in prepared {
             let retirementLease = WebViewRetirementLease(
                 batchID: lease.id,
@@ -232,15 +400,23 @@ final class WebViewReplacementCoordinator {
                 replacement.previous,
                 lease: retirementLease
             )
-            placements.storeMutated(
-                replacement.replacement,
-                for: replacement.tabID
-            )
-            placements.installActiveResidences(
-                in: replacement.replacement,
-                tabID: replacement.tabID
-            )
-            replacementsByTabID[replacement.tabID] = Replacement(
+            switch lease {
+            case .replacement:
+                placements.storeMutated(
+                    replacement.replacement,
+                    for: replacement.tabID
+                )
+                placements.installActiveResidences(
+                    in: replacement.replacement,
+                    tabID: replacement.tabID
+                )
+            case .retirement:
+                precondition(replacement.replacement.isEmpty)
+                placements.installRetirementReservation(
+                    for: replacement.tabID
+                )
+            }
+            entriesByTabID[replacement.tabID] = TransactionEntry(
                 retirementLease: retirementLease,
                 installed: WebViewPlacementFingerprint(
                     placements.snapshot(for: replacement.tabID)
@@ -249,7 +425,8 @@ final class WebViewReplacementCoordinator {
         }
         let batch = Batch(
             lease: lease,
-            replacementsByTabID: replacementsByTabID
+            entriesByTabID: entriesByTabID,
+            modelTransactionID: modelTransactionID
         )
         transactions.install(batch)
         return batch
@@ -258,10 +435,8 @@ final class WebViewReplacementCoordinator {
     private func conflict(
         in batch: Batch
     ) -> (tabID: UUID, currentGeneration: UInt64)? {
-        for tabID in batch.replacementsByTabID.keys.sorted(by: {
-            $0.uuidString < $1.uuidString
-        }) {
-            guard let replacement = batch.replacementsByTabID[tabID] else {
+        for tabID in orderedTabIDs(in: batch) {
+            guard let replacement = batch.entriesByTabID[tabID] else {
                 continue
             }
             let current = placements.snapshot(for: tabID)
@@ -278,10 +453,8 @@ final class WebViewReplacementCoordinator {
 
     private func restore(_ batch: Batch) -> [UUID: WebViewSessionSnapshot] {
         var discarded: [UUID: WebViewSessionSnapshot] = [:]
-        for tabID in batch.replacementsByTabID.keys.sorted(by: {
-            $0.uuidString < $1.uuidString
-        }) {
-            guard let replacement = batch.replacementsByTabID[tabID] else {
+        for tabID in orderedTabIDs(in: batch) {
+            guard let replacement = batch.entriesByTabID[tabID] else {
                 continue
             }
             let current = placements.snapshot(for: tabID)
@@ -299,10 +472,20 @@ final class WebViewReplacementCoordinator {
         return discarded
     }
 
+    private func restoreRetirement(_ batch: Batch) {
+        for tabID in orderedTabIDs(in: batch) {
+            guard let entry = batch.entriesByTabID[tabID],
+                  let previous = transitions.takeRetirement(
+                      entry.retirementLease
+                  ) else {
+                preconditionFailure("Rollback lost retired generation")
+            }
+            placements.restoreExactly(previous, for: tabID)
+        }
+    }
+
     private func bumpActiveGenerations(in batch: Batch) {
-        for tabID in batch.replacementsByTabID.keys.sorted(by: {
-            $0.uuidString < $1.uuidString
-        }) {
+        for tabID in orderedTabIDs(in: batch) {
             placements.storeMutated(
                 placements.entry(for: tabID) ?? Placement(),
                 for: tabID
@@ -312,7 +495,13 @@ final class WebViewReplacementCoordinator {
 
     private func finish(_ batch: Batch) {
         transactions.finish(batch)
-        transitions.finishReplacementBatch(batch.lease.id)
+        transitions.finishTransactionBatch(batch.lease.id)
+    }
+
+    private func orderedTabIDs(in batch: Batch) -> [UUID] {
+        batch.entriesByTabID.keys.sorted {
+            $0.uuidString < $1.uuidString
+        }
     }
 
     private func residence(of webView: WKWebView) -> WebViewResidence? {

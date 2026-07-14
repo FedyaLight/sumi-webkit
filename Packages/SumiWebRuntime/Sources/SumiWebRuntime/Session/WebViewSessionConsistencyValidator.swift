@@ -4,12 +4,12 @@
 final class WebViewSessionConsistencyValidator {
     private unowned let placements: WebViewSessionPlacementStore
     private unowned let transitions: WebViewOwnershipTransitionLedger
-    private unowned let transactions: WebViewReplacementTransactionStore
+    private unowned let transactions: WebViewSessionTransitionTransactionStore
 
     init(
         placements: WebViewSessionPlacementStore,
         transitions: WebViewOwnershipTransitionLedger,
-        transactions: WebViewReplacementTransactionStore
+        transactions: WebViewSessionTransitionTransactionStore
     ) {
         self.placements = placements
         self.transitions = transitions
@@ -30,15 +30,15 @@ final class WebViewSessionConsistencyValidator {
             )
             assert(
                 transactions.batchIDs == transitions.openBatchIDs,
-                "Replacement and transition batch sets diverged during \(context)"
+                "Transaction and transition batch sets diverged during \(context)"
             )
             for batch in transactions.batches.values {
-                for replacement in batch.replacementsByTabID.values {
+                for entry in batch.entriesByTabID.values {
                     assert(
                         transitions.retirementIsIntact(
-                            replacement.retirementLease
+                            entry.retirementLease
                         ),
-                        "Replacement retirement diverged during \(context)"
+                        "Transaction retirement diverged during \(context)"
                     )
                 }
             }

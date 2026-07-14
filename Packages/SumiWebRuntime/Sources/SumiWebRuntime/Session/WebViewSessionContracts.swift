@@ -29,6 +29,14 @@ public struct WebViewReplacementBatchLease: Equatable, Hashable, Sendable {
     }
 }
 
+public struct WebViewRetirementBatchLease: Equatable, Hashable, Sendable {
+    public let id: UUID
+
+    init(id: UUID) {
+        self.id = id
+    }
+}
+
 public struct WebViewRetirementLease: Equatable, Hashable, Sendable {
     public let batchID: UUID
     public let tabID: UUID
@@ -162,6 +170,42 @@ public struct WebViewReplacementBatchEntry {
     }
 }
 
+public struct WebViewRetirementBatchEntry: Equatable, Sendable {
+    public let tabID: UUID
+    public let expectedGeneration: UInt64
+
+    public init(tabID: UUID, expectedGeneration: UInt64) {
+        self.tabID = tabID
+        self.expectedGeneration = expectedGeneration
+    }
+}
+
+/// A prevalidated model transaction paired with one retirement batch. The
+/// repository stores only its identity fingerprint; the caller retains the
+/// receipt and supplies it again if the batch rolls back.
+@MainActor
+public struct WebViewRetirementModelTransactionReceipt {
+    let id: UUID
+    private let isCurrentAction: @MainActor () -> Bool
+    private let commitAction: @MainActor () -> Void
+    private let rollbackAction: @MainActor () -> Void
+
+    public init(
+        isCurrent: @escaping @MainActor () -> Bool,
+        commit: @escaping @MainActor () -> Void,
+        rollback: @escaping @MainActor () -> Void
+    ) {
+        id = UUID()
+        isCurrentAction = isCurrent
+        commitAction = commit
+        rollbackAction = rollback
+    }
+
+    func isCurrent() -> Bool { isCurrentAction() }
+    func commit() { commitAction() }
+    func rollback() { rollbackAction() }
+}
+
 public enum WebViewReplacementBatchBeginResult {
     case began(WebViewReplacementBatchLease)
     case stale(tabID: UUID, currentGeneration: UInt64)
@@ -179,6 +223,28 @@ public enum WebViewReplacementBatchCommitResult {
 public enum WebViewReplacementBatchRollbackResult {
     case rolledBack(discarded: [UUID: WebViewSessionSnapshot])
     case noLongerActive
+    case conflict(tabID: UUID, currentGeneration: UInt64)
+}
+
+public enum WebViewRetirementBatchBeginResult {
+    case began(WebViewRetirementBatchLease)
+    case stale(tabID: UUID, currentGeneration: UInt64)
+    case conflict(tabID: UUID)
+    case invalid(tabID: UUID?)
+    case modelValidationFailed
+    case noLongerActive
+}
+
+public enum WebViewRetirementBatchCommitResult {
+    case committed(retired: [UUID: WebViewSessionSnapshot])
+    case noLongerActive
+    case conflict(tabID: UUID, currentGeneration: UInt64)
+}
+
+public enum WebViewRetirementBatchRollbackResult {
+    case rolledBack
+    case noLongerActive
+    case modelTransactionMismatch
     case conflict(tabID: UUID, currentGeneration: UInt64)
 }
 

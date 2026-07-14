@@ -20,7 +20,7 @@ final class WebViewOwnershipTransitionLedger {
     private var retirementLeaseByWebViewID: [
         ObjectIdentifier: WebViewRetirementLease
     ] = [:]
-    private var openReplacementBatchIDs: Set<UUID> = []
+    private var openTransactionBatchIDs: Set<UUID> = []
     private var pendingCleanupWaiters: [
         UUID: CheckedContinuation<Bool, Never>
     ] = [:]
@@ -36,11 +36,11 @@ final class WebViewOwnershipTransitionLedger {
         Set(retirementSnapshotsByLease.keys.map(\.tabID))
     }
 
-    var openBatchIDs: Set<UUID> { openReplacementBatchIDs }
+    var openBatchIDs: Set<UUID> { openTransactionBatchIDs }
     var hasTransitions: Bool {
         !pendingCleanupByWebViewID.isEmpty
             || !retirementSnapshotsByLease.isEmpty
-            || !openReplacementBatchIDs.isEmpty
+            || !openTransactionBatchIDs.isEmpty
     }
 
     var transitionResidences: [ObjectIdentifier: WebViewResidence] {
@@ -210,15 +210,15 @@ final class WebViewOwnershipTransitionLedger {
         return true
     }
 
-    func openReplacementBatch(_ batchID: UUID) {
-        precondition(openReplacementBatchIDs.insert(batchID).inserted)
+    func openTransactionBatch(_ batchID: UUID) {
+        precondition(openTransactionBatchIDs.insert(batchID).inserted)
     }
 
     func retainRetirement(
         _ snapshot: WebViewSessionSnapshot,
         lease: WebViewRetirementLease
     ) {
-        precondition(openReplacementBatchIDs.contains(lease.batchID))
+        precondition(openTransactionBatchIDs.contains(lease.batchID))
         precondition(retirementSnapshotsByLease[lease] == nil)
         for webView in snapshot.allKnownWebViews {
             let webViewID = ObjectIdentifier(webView)
@@ -266,13 +266,13 @@ final class WebViewOwnershipTransitionLedger {
         return snapshot
     }
 
-    func finishReplacementBatch(_ batchID: UUID) {
+    func finishTransactionBatch(_ batchID: UUID) {
         precondition(
             retirementSnapshotsByLease.keys.map(\.batchID).contains(batchID)
                 == false,
-            "Replacement batch finished while retirement remained"
+            "Transaction batch finished while retirement remained"
         )
-        openReplacementBatchIDs.remove(batchID)
+        openTransactionBatchIDs.remove(batchID)
         resumeOwnershipTransitionWaitersIfPossible()
     }
 
@@ -296,7 +296,7 @@ final class WebViewOwnershipTransitionLedger {
         pendingCleanupByWebViewID.removeAll()
         retirementSnapshotsByLease.removeAll()
         retirementLeaseByWebViewID.removeAll()
-        openReplacementBatchIDs.removeAll()
+        openTransactionBatchIDs.removeAll()
         resumeAllPendingCleanupWaiters(returning: false)
         resumeAllOwnershipTransitionWaiters(returning: false)
         return cleanupEntries
@@ -312,7 +312,7 @@ final class WebViewOwnershipTransitionLedger {
                 assert(retirementLeaseByWebViewID[webViewID] == nil)
             }
             for (lease, snapshot) in retirementSnapshotsByLease {
-                assert(openReplacementBatchIDs.contains(lease.batchID))
+                assert(openTransactionBatchIDs.contains(lease.batchID))
                 for webView in snapshot.allKnownWebViews {
                     let webViewID = ObjectIdentifier(webView)
                     assert(expectedRetirementIndex[webViewID] == nil)
