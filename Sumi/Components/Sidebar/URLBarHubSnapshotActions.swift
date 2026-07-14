@@ -10,7 +10,7 @@ enum URLBarHubScreenshotQuality: Int, CaseIterable, Identifiable {
     var id: Int { rawValue }
     var scale: CGFloat { CGFloat(rawValue) }
     var label: String { "\(rawValue)x" }
-    var menuTitle: String {
+    var menuTitle: LocalizedStringResource {
         switch self {
         case .oneX:
             return "1x - Small"

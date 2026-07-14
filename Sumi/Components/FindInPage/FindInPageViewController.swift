@@ -155,11 +155,55 @@ final class FindInPageViewController: NSViewController {
     private var lastSyncedFocusRingStroke: Bool?
 
     private enum Copy {
-        static let statusFormat = "%lu / %lu"
-        static let placeholder = "Find in page"
-        static let closeTooltip = "Close"
-        static let nextTooltip = "Next"
-        static let previousTooltip = "Previous"
+        static let placeholder: LocalizedStringResource = "Find in page"
+        static let statusAccessibilityLabel: LocalizedStringResource = "Find match position"
+
+        static func status(current: UInt, total: UInt) -> LocalizedStringResource {
+            "Match \(current) of \(total)"
+        }
+
+        static func string(_ resource: LocalizedStringResource) -> String {
+            String(localized: resource)
+        }
+    }
+
+    private enum ChromeAction {
+        case previous
+        case next
+        case close
+
+        var title: LocalizedStringResource {
+            switch self {
+            case .previous:
+                return "Previous match"
+            case .next:
+                return "Next match"
+            case .close:
+                return "Close find bar"
+            }
+        }
+
+        var help: LocalizedStringResource {
+            switch self {
+            case .previous:
+                return "Previous match (Shift-Return)"
+            case .next:
+                return "Next match (Return)"
+            case .close:
+                return "Close find bar (Escape)"
+            }
+        }
+
+        var accessibilityIdentifier: String {
+            switch self {
+            case .previous:
+                return "FindInPageController.previousButton"
+            case .next:
+                return "FindInPageController.nextButton"
+            case .close:
+                return "FindInPageController.closeButton"
+            }
+        }
     }
 
     static func create() -> FindInPageViewController {
@@ -208,17 +252,17 @@ final class FindInPageViewController: NSViewController {
 
         let previousButton = makeChromeButton(
             imageName: "Find-Previous",
-            tooltip: Copy.previousTooltip,
+            descriptor: .previous,
             action: #selector(findInPagePrevious(_:))
         )
         let nextButton = makeChromeButton(
             imageName: "Find-Next",
-            tooltip: Copy.nextTooltip,
+            descriptor: .next,
             action: #selector(findInPageNext(_:))
         )
         let closeButton = makeChromeButton(
             imageName: "Close-Large",
-            tooltip: Copy.closeTooltip,
+            descriptor: .close,
             action: #selector(findInPageDone(_:))
         )
 
@@ -282,20 +326,15 @@ final class FindInPageViewController: NSViewController {
 
         configureAppKitViewsAfterNibLoad()
 
-        textField.placeholderString = Copy.placeholder
+        textField.placeholderString = Copy.string(Copy.placeholder)
         textField.delegate = self
 
-        closeButton.toolTip = Copy.closeTooltip
-        nextButton.toolTip = Copy.nextTooltip
-        previousButton.toolTip = Copy.previousTooltip
-
-        nextButton.setAccessibilityIdentifier("FindInPageController.nextButton")
-        closeButton.setAccessibilityIdentifier("FindInPageController.closeButton")
-        previousButton.setAccessibilityIdentifier("FindInPageController.previousButton")
         textField.setAccessibilityIdentifier("FindInPageController.textField")
         textField.setAccessibilityRole(.textField)
+        textField.setAccessibilityLabel(Copy.string(Copy.placeholder))
         statusField.setAccessibilityIdentifier("FindInPageController.statusField")
-        statusField.setAccessibilityRole(.textField)
+        statusField.setAccessibilityRole(.staticText)
+        statusField.setAccessibilityLabel(Copy.string(Copy.statusAccessibilityLabel))
 
         applyChromeColors(nil)
     }
@@ -307,7 +346,11 @@ final class FindInPageViewController: NSViewController {
         }
     }
 
-    private func makeChromeButton(imageName: String, tooltip: String, action: Selector) -> MouseOverButton {
+    private func makeChromeButton(
+        imageName: String,
+        descriptor: ChromeAction,
+        action: Selector
+    ) -> MouseOverButton {
         let button = MouseOverButton(frame: .zero)
         button.translatesAutoresizingMaskIntoConstraints = false
         button.bezelStyle = .shadowlessSquare
@@ -315,7 +358,9 @@ final class FindInPageViewController: NSViewController {
         button.imagePosition = .imageOnly
         button.imageScaling = .scaleProportionallyDown
         button.setButtonType(.momentaryChange)
-        button.toolTip = tooltip
+        button.toolTip = Copy.string(descriptor.help)
+        button.setAccessibilityTitle(Copy.string(descriptor.title))
+        button.setAccessibilityIdentifier(descriptor.accessibilityIdentifier)
         button.target = self
         button.action = action
         button.cornerRadius = 7
@@ -428,7 +473,7 @@ final class FindInPageViewController: NSViewController {
         statusField.stringValue = {
             guard let matchesFound,
                   let currentSelection else { return "" }
-            return String(format: Copy.statusFormat, currentSelection, matchesFound)
+            return Copy.string(Copy.status(current: currentSelection, total: matchesFound))
         }()
     }
 
@@ -481,7 +526,7 @@ final class FindInPageViewController: NSViewController {
             statusField.textColor = paint.secondaryText
             let font = textField.font ?? NSFont.systemFont(ofSize: NSFont.systemFontSize)
             textField.placeholderAttributedString = NSAttributedString(
-                string: Copy.placeholder,
+                string: Copy.string(Copy.placeholder),
                 attributes: [
                     .foregroundColor: paint.secondaryText.withAlphaComponent(0.85),
                     .font: font,
@@ -520,7 +565,7 @@ final class FindInPageViewController: NSViewController {
         statusPillView?.backgroundColor = NSColor.labelColor.withAlphaComponent(0.07)
         backgroundView.borderColor = NSColor.separatorColor.withAlphaComponent(0.45)
         textField.placeholderAttributedString = nil
-        textField.placeholderString = Copy.placeholder
+        textField.placeholderString = Copy.string(Copy.placeholder)
     }
 
     private func syncFocusRingWithFirstResponderIfNeeded() {

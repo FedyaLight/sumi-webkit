@@ -11,7 +11,7 @@ enum SumiBrowsingDataTimeRange: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    var title: String {
+    var title: LocalizedStringResource {
         switch self {
         case .last15Minutes:
             return "Last 15 min"
@@ -62,9 +62,19 @@ enum SumiBrowsingDataRetentionPeriod: Int, CaseIterable, Identifiable, Codable, 
 
     var id: Int { rawValue }
 
-    var title: String {
-        guard self != .off else { return "Off" }
-        return rawValue == 1 ? "1 day" : "\(rawValue) days"
+    var title: LocalizedStringResource {
+        switch self {
+        case .off:
+            return "Off"
+        case .oneDay:
+            return "1 day"
+        case .sevenDays:
+            return "7 days"
+        case .thirtyDays:
+            return "30 days"
+        case .ninetyDays:
+            return "90 days"
+        }
     }
 
     var isEnabled: Bool {
@@ -102,7 +112,7 @@ enum SumiBrowsingDataCategory: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    var title: String {
+    var title: LocalizedStringResource {
         switch self {
         case .history:
             return "Browsing history"

@@ -26,8 +26,6 @@ final class SplitPaneControlsView: NSVisualEffectView {
         stackView.translatesAutoresizingMaskIntoConstraints = false
         addSubview(stackView)
 
-        dragButton.toolTip = "Rearrange Split"
-        expandButton.toolTip = "Expand Tab"
         expandButton.target = self
         expandButton.action = #selector(expandTab)
         stackView.addArrangedSubview(dragButton)
@@ -111,6 +109,24 @@ private enum SplitPaneToolbarIcon {
         }
     }
 
+    var title: LocalizedStringResource {
+        switch self {
+        case .dragHandle:
+            return "Rearrange Split"
+        case .fullscreen:
+            return "Expand Tab"
+        }
+    }
+
+    var accessibilityIdentifier: String {
+        switch self {
+        case .dragHandle:
+            return "split-pane-rearrange"
+        case .fullscreen:
+            return "split-pane-expand-tab"
+        }
+    }
+
     private static let dragHandleImage: NSImage = {
         let image = NSImage(size: NSSize(width: 14, height: 14))
         image.lockFocus()
@@ -168,6 +184,7 @@ private enum SplitPaneToolbarIcon {
 private class SplitPaneToolbarButton: NSButton {
     init(icon: SplitPaneToolbarIcon) {
         super.init(frame: NSRect(x: 0, y: 0, width: 16, height: 16))
+        let title = String(localized: icon.title)
         image = icon.image
         imagePosition = .imageOnly
         imageScaling = .scaleProportionallyDown
@@ -177,6 +194,9 @@ private class SplitPaneToolbarButton: NSButton {
         contentTintColor = .labelColor
         wantsLayer = true
         layer?.cornerRadius = 4
+        toolTip = title
+        setAccessibilityTitle(title)
+        setAccessibilityIdentifier(icon.accessibilityIdentifier)
     }
 
     @available(*, unavailable)
@@ -220,6 +240,7 @@ private final class SplitPaneDragButton: SplitPaneToolbarButton, NSDraggingSourc
     init() {
         super.init(icon: .dragHandle)
         contentTintColor = .labelColor
+        setAccessibilityHelp(String(localized: "Drag to rearrange this split. Split Layout commands provide keyboard alternatives."))
     }
 
     func configure(

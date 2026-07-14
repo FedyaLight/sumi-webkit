@@ -13,11 +13,11 @@ struct SumiNavigationToolbarControlState: Equatable {
         isLoading ? "Stop" : "Refresh"
     }
 
-    var reloadAccessibilityTitle: String {
+    var reloadAccessibilityTitle: LocalizedStringResource {
         isLoading ? "Stop" : "Reload"
     }
 
-    var reloadTooltip: String {
+    var reloadTooltip: LocalizedStringResource {
         isLoading ? "Stop loading" : "Reload"
     }
 }
@@ -82,6 +82,7 @@ struct SumiNavigationToolbarControls: NSViewRepresentable {
             assetName: "Back",
             title: "Go Back",
             tooltip: "Go Back",
+            accessibilityIdentifier: "navigation-go-back",
             isEnabled: state.canGoBack
         )
         updateButton(
@@ -89,6 +90,7 @@ struct SumiNavigationToolbarControls: NSViewRepresentable {
             assetName: "Forward",
             title: "Go Forward",
             tooltip: "Go Forward",
+            accessibilityIdentifier: "navigation-go-forward",
             isEnabled: state.canGoForward
         )
         updateButton(
@@ -96,6 +98,7 @@ struct SumiNavigationToolbarControls: NSViewRepresentable {
             assetName: state.reloadAssetName,
             title: state.reloadAccessibilityTitle,
             tooltip: state.reloadTooltip,
+            accessibilityIdentifier: "navigation-reload-or-stop",
             isEnabled: state.canReload || state.isLoading
         )
     }
@@ -142,8 +145,9 @@ struct SumiNavigationToolbarControls: NSViewRepresentable {
     private func updateButton(
         _ button: MouseOverButton,
         assetName: String,
-        title: String,
-        tooltip: String,
+        title: LocalizedStringResource,
+        tooltip: LocalizedStringResource,
+        accessibilityIdentifier: String,
         isEnabled: Bool
     ) {
         button.image = Self.image(named: assetName)
@@ -152,8 +156,9 @@ struct SumiNavigationToolbarControls: NSViewRepresentable {
         button.mouseDownTintColor = theme.tintColor
         button.mouseOverColor = theme.hoverColor
         button.mouseDownColor = theme.mouseDownColor
-        button.toolTip = tooltip
-        button.setAccessibilityTitle(title)
+        button.toolTip = String(localized: tooltip)
+        button.setAccessibilityTitle(String(localized: title))
+        button.setAccessibilityIdentifier(accessibilityIdentifier)
         button.isEnabled = isEnabled
         button.alphaValue = isEnabled ? 1 : theme.disabledAlpha
     }

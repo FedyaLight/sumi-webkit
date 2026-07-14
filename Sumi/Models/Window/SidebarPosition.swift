@@ -12,7 +12,7 @@ enum SidebarPosition: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    var displayName: String {
+    var displayName: LocalizedStringResource {
         switch self {
         case .left:
             return "Left"

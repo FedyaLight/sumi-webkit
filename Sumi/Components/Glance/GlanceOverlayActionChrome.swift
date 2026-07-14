@@ -7,6 +7,28 @@ final class GlanceOverlayActionChrome: NSObject {
         case close
         case open
         case split
+
+        var title: LocalizedStringResource {
+            switch self {
+            case .close:
+                return "Close Glance"
+            case .open:
+                return "Open in Tab"
+            case .split:
+                return "Open in Split View"
+            }
+        }
+
+        var accessibilityIdentifier: String {
+            switch self {
+            case .close:
+                return "glance-action-close"
+            case .open:
+                return "glance-action-open-in-tab"
+            case .split:
+                return "glance-action-open-in-split"
+            }
+        }
     }
 
     private let stackView = GlanceActionButtonStack(
@@ -14,9 +36,12 @@ final class GlanceOverlayActionChrome: NSObject {
         spacing: GlanceOverlayLayout.Metrics.actionButtonSpacing,
         hitOutset: GlanceOverlayLayout.Metrics.actionButtonHitOutset
     )
-    private let closeButton = GlanceActionButton(symbolName: "xmark", toolTip: "Close Glance")
-    private let openButton = GlanceActionButton(symbolName: "arrow.up.left.and.arrow.down.right", toolTip: "Open in Tab")
-    private let splitButton = GlanceActionButton(symbolName: "square.split.2x1", toolTip: "Open in Split View")
+    private let closeButton = GlanceActionButton(symbolName: "xmark", action: .close)
+    private let openButton = GlanceActionButton(
+        symbolName: "arrow.up.left.and.arrow.down.right",
+        action: .open
+    )
+    private let splitButton = GlanceActionButton(symbolName: "square.split.2x1", action: .split)
     private let actionHandler: (Action) -> Void
 
     init(actionHandler: @escaping (Action) -> Void) {
@@ -259,22 +284,25 @@ private final class GlanceActionButton: NSButton {
         }
     }
 
-    init(symbolName: String, toolTip: String) {
+    init(symbolName: String, action: GlanceOverlayActionChrome.Action) {
         self.symbolName = symbolName
         super.init(frame: .zero)
         isBordered = false
         bezelStyle = .regularSquare
-        focusRingType = .none
+        focusRingType = .default
         imagePosition = .imageOnly
         imageScaling = .scaleProportionallyDown
-        refusesFirstResponder = true
+        refusesFirstResponder = false
         wantsLayer = true
         layer?.cornerCurve = .continuous
         layer?.shadowColor = NSColor.black.cgColor
         layer?.shadowOpacity = 0.10
         layer?.shadowRadius = 12
         layer?.shadowOffset = CGSize(width: 0, height: -2)
-        self.toolTip = toolTip
+        let title = String(localized: action.title)
+        toolTip = title
+        setAccessibilityTitle(title)
+        setAccessibilityIdentifier(action.accessibilityIdentifier)
         setButtonType(.momentaryChange)
         updateImage()
         updateAppearance()

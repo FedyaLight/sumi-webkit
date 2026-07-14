@@ -68,6 +68,7 @@ checks=(
   "scripts/check_package_topology.sh"
   "scripts/check_test_file_loc.sh"
   "scripts/check_ui_test_fixture_boundary.sh"
+  "scripts/check_localization_accessibility_boundary.sh"
 )
 
 for check in "${checks[@]}"; do

@@ -4,7 +4,7 @@ enum URLBarHubScreenshotCaptureTarget: Int, CaseIterable {
     case visiblePage
     case selectedArea
 
-    var title: String {
+    var title: LocalizedStringResource {
         switch self {
         case .visiblePage:
             return "Visible Page"
@@ -18,7 +18,7 @@ enum URLBarHubScreenshotDestination: Int, CaseIterable {
     case askEveryTime
     case downloads
 
-    var title: String {
+    var title: LocalizedStringResource {
         switch self {
         case .askEveryTime:
             return "Ask Every Time"
@@ -63,16 +63,19 @@ enum URLBarHubScreenshotSettingsPresenter {
         )
 
         let alert = NSAlert()
-        alert.messageText = "Screenshot Settings"
+        alert.messageText = String(localized: "Screenshot Settings")
         alert.accessoryView = makeAccessoryView(rows: [
-            ("Capture", targetPopup),
-            ("Save To", destinationPopup),
-            ("Scale", scalePopup),
+            ("Capture", targetPopup, "screenshot-settings-capture"),
+            ("Save To", destinationPopup, "screenshot-settings-destination"),
+            ("Scale", scalePopup, "screenshot-settings-scale"),
         ])
-        alert.addButton(withTitle: "Capture")
+        let captureButton = alert.addButton(withTitle: String(localized: "Capture"))
+        captureButton.keyEquivalent = "\r"
+        captureButton.setAccessibilityIdentifier("screenshot-settings-confirm")
 
-        let cancelButton = alert.addButton(withTitle: "Cancel")
+        let cancelButton = alert.addButton(withTitle: String(localized: "Cancel"))
         cancelButton.keyEquivalent = "\u{1b}"
+        cancelButton.setAccessibilityIdentifier("screenshot-settings-cancel")
 
         alert.sumiApplyNativeSurfaceAppearance(themeContext: themeContext)
         run(alert, window: window) { response in
@@ -104,10 +107,10 @@ enum URLBarHubScreenshotSettingsPresenter {
     private static func popup<Item: Equatable>(
         items: [Item],
         selected: Item,
-        title: (Item) -> String
+        title: (Item) -> LocalizedStringResource
     ) -> NSPopUpButton {
         let popup = NSPopUpButton(frame: .zero, pullsDown: false)
-        items.forEach { popup.addItem(withTitle: title($0)) }
+        items.forEach { popup.addItem(withTitle: String(localized: title($0))) }
         if let selectedIndex = items.firstIndex(of: selected) {
             popup.selectItem(at: selectedIndex)
         }
@@ -124,7 +127,9 @@ enum URLBarHubScreenshotSettingsPresenter {
         return items[selectedIndex]
     }
 
-    private static func makeAccessoryView(rows: [(String, NSView)]) -> NSView {
+    private static func makeAccessoryView(
+        rows: [(title: LocalizedStringResource, control: NSView, identifier: String)]
+    ) -> NSView {
         let rowHeight: CGFloat = 26
         let rowSpacing: CGFloat = 8
         let labelWidth: CGFloat = 78
@@ -134,12 +139,15 @@ enum URLBarHubScreenshotSettingsPresenter {
         let container = NSView(frame: NSRect(x: 0, y: 0, width: width, height: height))
 
         for (index, row) in rows.enumerated() {
-            let title = row.0
-            let control = row.1
+            let title = String(localized: row.title)
+            let control = row.control
             let y = height - rowHeight - CGFloat(index) * (rowHeight + rowSpacing)
             let label = NSTextField(labelWithString: title)
             label.frame = NSRect(x: 0, y: y + 3, width: labelWidth, height: 20)
             label.alignment = .right
+            label.setAccessibilityIdentifier("\(row.identifier)-label")
+            control.setAccessibilityIdentifier(row.identifier)
+            control.setAccessibilityTitle(title)
 
             control.frame = NSRect(
                 x: labelWidth + controlSpacing,

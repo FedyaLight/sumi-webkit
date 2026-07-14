@@ -13,7 +13,7 @@ enum SumiImportCategory: String, CaseIterable, Codable, Hashable, Identifiable, 
 
     var id: String { rawValue }
 
-    var title: String {
+    var title: LocalizedStringResource {
         switch self {
         case .profiles: return "Profiles"
         case .spaces: return "Spaces"
@@ -33,7 +33,7 @@ enum SumiImportApplyMode: String, Codable, CaseIterable, Identifiable, Sendable 
 
     var id: String { rawValue }
 
-    var title: String {
+    var title: LocalizedStringResource {
         switch self {
         case .merge: return "Merge"
         case .replace: return "Replace"

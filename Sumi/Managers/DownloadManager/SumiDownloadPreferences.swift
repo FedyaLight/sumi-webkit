@@ -25,7 +25,7 @@ enum SumiDownloadFallbackAction: String, Codable, CaseIterable, Identifiable, Se
 
     var id: String { rawValue }
 
-    var title: String {
+    var title: LocalizedStringResource {
         switch self {
         case .saveFile: return "Save files"
         case .ask: return "Ask whether to open or save files"
@@ -42,7 +42,7 @@ enum SumiContentHandlerKind: String, Codable, CaseIterable, Identifiable, Sendab
 
     var id: String { rawValue }
 
-    var title: String {
+    var title: LocalizedStringResource {
         switch self {
         case .openInSumi: return "Open in Sumi"
         case .saveFile: return "Save File"

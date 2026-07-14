@@ -465,6 +465,7 @@
         "SumiTests/GlancePromotionCompletionOwnerTests",
         "SumiTests/HoverSidebarManagerTests",
         "SumiTests/LiveShortcutTabRegistryTests",
+        "SumiTests/LocalizationAccessibilityContractTests",
         "SumiTests/NativeDialogPresentationOwnerTests",
         "SumiTests/NativeMessagingRelayHostTests",
         "SumiTests/NativeSurfaceScrollHoverCoordinatorTests",

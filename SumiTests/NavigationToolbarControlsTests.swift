@@ -85,8 +85,8 @@ final class NavigationToolbarControlsTests: XCTestCase {
             isLoading: false
         )
         XCTAssertEqual(idle.reloadAssetName, "Refresh")
-        XCTAssertEqual(idle.reloadAccessibilityTitle, "Reload")
-        XCTAssertEqual(idle.reloadTooltip, "Reload")
+        XCTAssertEqual(String(localized: idle.reloadAccessibilityTitle), "Reload")
+        XCTAssertEqual(String(localized: idle.reloadTooltip), "Reload")
 
         let loading = SumiNavigationToolbarControlState(
             canGoBack: false,
@@ -95,8 +95,8 @@ final class NavigationToolbarControlsTests: XCTestCase {
             isLoading: true
         )
         XCTAssertEqual(loading.reloadAssetName, "Stop")
-        XCTAssertEqual(loading.reloadAccessibilityTitle, "Stop")
-        XCTAssertEqual(loading.reloadTooltip, "Stop loading")
+        XCTAssertEqual(String(localized: loading.reloadAccessibilityTitle), "Stop")
+        XCTAssertEqual(String(localized: loading.reloadTooltip), "Stop loading")
     }
 }
 

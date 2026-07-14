@@ -38,6 +38,7 @@ struct PrivacySettingsView: View {
                         ) {
                             sumiSettings.privacySettingsRoute = .siteSettings(nil)
                         }
+                        .accessibilityIdentifier("privacy-site-settings")
                     }
 
                     if let protectionCoordinator {
@@ -76,6 +77,9 @@ private struct GlobalPrivacyControlSettingsView: View {
                 Toggle("", isOn: $isGPCEnabled)
                     .labelsHidden()
                     .toggleStyle(.switch)
+                    .accessibilityLabel("Send Global Privacy Control signal")
+                    .accessibilityIdentifier("privacy-global-privacy-control")
+                    .help("Tell sites not to sell or share your data")
             }
         }
     }
@@ -137,6 +141,8 @@ private struct AdblockProtectionSettingsView: View {
                 }
                 .labelsHidden()
                 .settingsTrailingControl(width: 150)
+                .accessibilityLabel("Protection level")
+                .accessibilityIdentifier("privacy-protection-level")
 
                 Button {
                     applySelectedLevel()
@@ -153,6 +159,8 @@ private struct AdblockProtectionSettingsView: View {
                 .buttonStyle(.borderedProminent)
                 .controlSize(.regular)
                 .disabled(isApplying || !coordinator.applyNeeded)
+                .accessibilityIdentifier("privacy-apply-protection-level")
+                .help("Apply the selected protection level")
             }
             .frame(maxWidth: .infinity, alignment: .trailing)
         }
@@ -179,6 +187,8 @@ private struct AdblockProtectionSettingsView: View {
             .buttonStyle(.bordered)
             .controlSize(.small)
             .disabled(isUpdatingBundles)
+            .accessibilityIdentifier("privacy-update-protection-bundles")
+            .help("Check for updated protection lists")
         }
     }
 

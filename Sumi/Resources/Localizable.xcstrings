@@ -1,0 +1,1220 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "" : {
+
+    },
+    "%@ - %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ - %2$@"
+          }
+        }
+      }
+    },
+    "%@, %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@, %2$@"
+          }
+        }
+      }
+    },
+    "%@, current setting %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@, current setting %2$@"
+          }
+        }
+      }
+    },
+    "%lld" : {
+
+    },
+    "%lld Selected" : {
+
+    },
+    "%lld bookmarks" : {
+
+    },
+    "%lld saved" : {
+
+    },
+    "%lld%%" : {
+
+    },
+    "1 day" : {
+
+    },
+    "16x - Maximum" : {
+
+    },
+    "1x - Small" : {
+
+    },
+    "2x - Default" : {
+
+    },
+    "30 days" : {
+
+    },
+    "4x - High Detail" : {
+
+    },
+    "7 days" : {
+
+    },
+    "8x - Ultra" : {
+
+    },
+    "90 days" : {
+
+    },
+    "Aa" : {
+
+    },
+    "About Sumi" : {
+
+    },
+    "Action" : {
+
+    },
+    "Actions" : {
+
+    },
+    "Active" : {
+
+    },
+    "Actual Size" : {
+
+    },
+    "Adblock & Protection" : {
+
+    },
+    "Add" : {
+
+    },
+    "Add Profile..." : {
+
+    },
+    "Add Rule" : {
+
+    },
+    "Add Search Engine" : {
+
+    },
+    "All sites" : {
+
+    },
+    "All time" : {
+
+    },
+    "Allow in Private Browsing" : {
+
+    },
+    "Always Ask" : {
+
+    },
+    "Appearance" : {
+
+    },
+    "Apply" : {
+
+    },
+    "Apply saved rules" : {
+
+    },
+    "Apply the selected data types to every browser profile" : {
+
+    },
+    "Apply the selected protection level" : {
+
+    },
+    "Ask Every Time" : {
+
+    },
+    "Ask whether to open or save files" : {
+
+    },
+    "At least one search engine is required" : {
+
+    },
+    "Authentication Required" : {
+
+    },
+    "Automatic cleanup:" : {
+
+    },
+    "Automatic permission cleanup" : {
+
+    },
+    "Back" : {
+
+    },
+    "Back to pinned URL" : {
+
+    },
+    "Background Color" : {
+
+    },
+    "Block element" : {
+
+    },
+    "Bookmark All Tabs…" : {
+
+    },
+    "Bookmark This Page…" : {
+
+    },
+    "Bookmarks" : {
+
+    },
+    "Boost Color" : {
+
+    },
+    "Boosts" : {
+
+    },
+    "Bring All to Front" : {
+
+    },
+    "Broader selection" : {
+
+    },
+    "Browsing data" : {
+
+    },
+    "Browsing history" : {
+
+    },
+    "CSS selector" : {
+
+    },
+    "Cached images and files" : {
+
+    },
+    "Cancel" : {
+
+    },
+    "Cancel history deletion" : {
+
+    },
+    "Capture" : {
+
+    },
+    "Change Icon" : {
+
+    },
+    "Change Profile Icon" : {
+
+    },
+    "Check for Updates" : {
+
+    },
+    "Check for Updates…" : {
+
+    },
+    "Check for updated protection lists" : {
+
+    },
+    "Choose Profile Icon" : {
+
+    },
+    "Choose Space Icon" : {
+
+    },
+    "Choose icon" : {
+
+    },
+    "Choose which site data Sumi should remove." : {
+
+    },
+    "Choose..." : {
+
+    },
+    "Chrome theme intensity" : {
+
+    },
+    "Clear" : {
+
+    },
+    "Clear All History" : {
+
+    },
+    "Clear Browsing History" : {
+
+    },
+    "Clear Cookies for Current Site" : {
+
+    },
+    "Clear Filter" : {
+
+    },
+    "Clear Selection" : {
+
+    },
+    "Clear Site Data" : {
+
+    },
+    "Clear all profiles" : {
+
+    },
+    "Clear filter" : {
+
+    },
+    "Clear the filter to reorder" : {
+
+    },
+    "Click to add" : {
+
+    },
+    "Close" : {
+
+    },
+    "Close Glance" : {
+
+    },
+    "Close Tab" : {
+
+    },
+    "Close Window" : {
+
+    },
+    "Close find bar" : {
+
+    },
+    "Close find bar (Escape)" : {
+
+    },
+    "Close other regular tabs in this space. If only the current tab remains, Clear closes it too." : {
+
+    },
+    "Close permission prompt" : {
+
+    },
+    "Code" : {
+
+    },
+    "Color" : {
+
+    },
+    "Configure Space" : {
+
+    },
+    "Configured Websites" : {
+
+    },
+    "Confirm history deletion" : {
+
+    },
+    "Content Type" : {
+
+    },
+    "Cookies & Site Data" : {
+
+    },
+    "Cookies and other site data" : {
+
+    },
+    "Copy Current URL" : {
+
+    },
+    "Copy Link" : {
+
+    },
+    "Could not add %@." : {
+
+    },
+    "Could not add %lld Safari extensions. %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Could not add %1$lld Safari extensions. %2$@"
+          }
+        }
+      }
+    },
+    "Create" : {
+
+    },
+    "Create Boost" : {
+
+    },
+    "Create Space" : {
+
+    },
+    "Create a space to start browsing" : {
+
+    },
+    "Customize Space Gradient..." : {
+
+    },
+    "Data from this site" : {
+
+    },
+    "Data to remove" : {
+
+    },
+    "Deactivate inactive tabs after" : {
+
+    },
+    "Default" : {
+
+    },
+    "Default Folder Icon" : {
+
+    },
+    "Delete" : {
+
+    },
+    "Delete %@" : {
+
+    },
+    "Delete Profile" : {
+
+    },
+    "Delete Profile..." : {
+
+    },
+    "Delete Site History" : {
+
+    },
+    "Delete cookies and site data?" : {
+
+    },
+    "Delete data for %@" : {
+
+    },
+    "Delete history entry" : {
+
+    },
+    "Delete rule" : {
+
+    },
+    "Delete search engine" : {
+
+    },
+    "Deletes history older than %@ and clears volatile WebKit data without removing sign-in storage." : {
+
+    },
+    "Deleting..." : {
+
+    },
+    "Disable %@" : {
+
+    },
+    "Disable content blocker" : {
+
+    },
+    "Disable extension" : {
+
+    },
+    "Disabled" : {
+
+    },
+    "Dismiss update notice" : {
+
+    },
+    "Domain" : {
+
+    },
+    "Done" : {
+
+    },
+    "Downloads" : {
+
+    },
+    "Drag to rearrange this split. Split Layout commands provide keyboard alternatives." : {
+
+    },
+    "Drag to reorder" : {
+
+    },
+    "Edit" : {
+
+    },
+    "Edit %@" : {
+
+    },
+    "Edit Bookmark" : {
+
+    },
+    "Edit Folder" : {
+
+    },
+    "Edit Profile" : {
+
+    },
+    "Edit Profile..." : {
+
+    },
+    "Edit Search Engine" : {
+
+    },
+    "Edit search engine" : {
+
+    },
+    "Element picker status" : {
+
+    },
+    "Element rules" : {
+
+    },
+    "Empty" : {
+
+    },
+    "Enable %@" : {
+
+    },
+    "Enable content blocker" : {
+
+    },
+    "Enable extension" : {
+
+    },
+    "Enable the Extensions module to manage installed extensions." : {
+
+    },
+    "Enabled" : {
+
+    },
+    "Enter a name." : {
+
+    },
+    "Erase Everything" : {
+
+    },
+    "Essentials" : {
+
+    },
+    "Expand Tab" : {
+
+    },
+    "Export Bookmarks…" : {
+
+    },
+    "Extension" : {
+
+    },
+    "Extension information and permissions" : {
+
+    },
+    "Extensions" : {
+
+    },
+    "Filter search engines" : {
+
+    },
+    "Find in Page" : {
+
+    },
+    "Find in page" : {
+
+    },
+    "Find match position" : {
+
+    },
+    "Focus source tab" : {
+
+    },
+    "Folders" : {
+
+    },
+    "Font" : {
+
+    },
+    "Forward" : {
+
+    },
+    "Found %lld issues while scanning Safari extensions." : {
+
+    },
+    "Found 1 issue while scanning Safari extensions." : {
+
+    },
+    "From %@" : {
+
+    },
+    "GitHub Issues" : {
+
+    },
+    "GitHub Pull Requests" : {
+
+    },
+    "Go Back" : {
+
+    },
+    "Go Forward" : {
+
+    },
+    "Hard Reload (Ignore Cache)" : {
+
+    },
+    "Hide Live Folder Item" : {
+
+    },
+    "Hide from Tab search" : {
+
+    },
+    "History" : {
+
+    },
+    "Import" : {
+
+    },
+    "Import Bookmarks…" : {
+
+    },
+    "Item" : {
+
+    },
+    "Item 1" : {
+
+    },
+    "Item 2" : {
+
+    },
+    "Large" : {
+
+    },
+    "Last 15 min" : {
+
+    },
+    "Last 24 hours" : {
+
+    },
+    "Last 4 weeks" : {
+
+    },
+    "Last 7 days" : {
+
+    },
+    "Last hour" : {
+
+    },
+    "Left" : {
+
+    },
+    "Loading site data..." : {
+
+    },
+    "Location" : {
+
+    },
+    "Make Default" : {
+
+    },
+    "Make Sumi Default Browser" : {
+
+    },
+    "Manage Bookmarks" : {
+
+    },
+    "Manage Extensions..." : {
+
+    },
+    "Manage this permission from site settings." : {
+
+    },
+    "Match %llu of %llu" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Match %1$llu of %2$llu"
+          }
+        }
+      }
+    },
+    "Merge" : {
+
+    },
+    "Mini" : {
+
+    },
+    "Minimize" : {
+
+    },
+    "Mode" : {
+
+    },
+    "Monochrome" : {
+
+    },
+    "More" : {
+
+    },
+    "More actions" : {
+
+    },
+    "Mute Audio" : {
+
+    },
+    "Name" : {
+
+    },
+    "Narrower selection" : {
+
+    },
+    "New Bookmark" : {
+
+    },
+    "New Bookmark…" : {
+
+    },
+    "New Folder" : {
+
+    },
+    "New Folder…" : {
+
+    },
+    "New Incognito Window" : {
+
+    },
+    "New Live Folder" : {
+
+    },
+    "New Space" : {
+
+    },
+    "New Tab" : {
+
+    },
+    "New Window" : {
+
+    },
+    "New profile" : {
+
+    },
+    "New space" : {
+
+    },
+    "Next match" : {
+
+    },
+    "Next match (Return)" : {
+
+    },
+    "No Bookmarks" : {
+
+    },
+    "No History" : {
+
+    },
+    "No Recently Closed Items" : {
+
+    },
+    "No Results" : {
+
+    },
+    "No Spaces" : {
+
+    },
+    "No custom icon" : {
+
+    },
+    "No downloads for this session." : {
+
+    },
+    "No elements zapped" : {
+
+    },
+    "No extension settings page." : {
+
+    },
+    "No extensions found." : {
+
+    },
+    "No items" : {
+
+    },
+    "No keyboard shortcuts declared." : {
+
+    },
+    "No matching tabs" : {
+
+    },
+    "No selectors saved for this site." : {
+
+    },
+    "No site data is stored for %@." : {
+
+    },
+    "No sites." : {
+
+    },
+    "Not now" : {
+
+    },
+    "OK" : {
+
+    },
+    "Off" : {
+
+    },
+    "On" : {
+
+    },
+    "Open" : {
+
+    },
+    "Open All" : {
+
+    },
+    "Open All in New Tabs" : {
+
+    },
+    "Open All in New Window" : {
+
+    },
+    "Open Command Bar" : {
+
+    },
+    "Open Extension Settings" : {
+
+    },
+    "Open System Settings" : {
+
+    },
+    "Open System Settings for %@" : {
+
+    },
+    "Open in New Tab" : {
+
+    },
+    "Open in New Window" : {
+
+    },
+    "Open in Split View" : {
+
+    },
+    "Open in Sumi" : {
+
+    },
+    "Open in Tab" : {
+
+    },
+    "Option A" : {
+
+    },
+    "Option B" : {
+
+    },
+    "Optional. If empty, Sumi uses the host from the search URL." : {
+
+    },
+    "Options" : {
+
+    },
+    "Other Websites" : {
+
+    },
+    "Password:" : {
+
+    },
+    "Pinned" : {
+
+    },
+    "Pre-restore backup: %@" : {
+
+    },
+    "Press keys..." : {
+
+    },
+    "Preview" : {
+
+    },
+    "Previous match" : {
+
+    },
+    "Previous match (Shift-Return)" : {
+
+    },
+    "Privacy" : {
+
+    },
+    "Privacy & Security" : {
+
+    },
+    "Profile" : {
+
+    },
+    "Profile name" : {
+
+    },
+    "Profiles" : {
+
+    },
+    "Protection level" : {
+
+    },
+    "Protection on this site" : {
+
+    },
+    "Protection settings are unavailable outside the browser runtime." : {
+
+    },
+    "Quit Sumi" : {
+
+    },
+    "RSS Feed" : {
+
+    },
+    "Read only" : {
+
+    },
+    "Rearrange Split" : {
+
+    },
+    "Recently Closed" : {
+
+    },
+    "Recently Visited" : {
+
+    },
+    "Record Shortcut" : {
+
+    },
+    "Recovering browser data…" : {
+
+    },
+    "Regular" : {
+
+    },
+    "Regular Tabs" : {
+
+    },
+    "Reload" : {
+
+    },
+    "Reload Page" : {
+
+    },
+    "Remember for this site" : {
+
+    },
+    "Remove" : {
+
+    },
+    "Remove %@" : {
+
+    },
+    "Remove Search Engine?" : {
+
+    },
+    "Remove exception" : {
+
+    },
+    "Remove rule" : {
+
+    },
+    "Reopen All Windows From Last Session" : {
+
+    },
+    "Reopen Last Closed Pinned Tab" : {
+
+    },
+    "Reopen Last Closed Tab" : {
+
+    },
+    "Reopen Last Closed Window" : {
+
+    },
+    "Replace" : {
+
+    },
+    "Rescan" : {
+
+    },
+    "Reset Permissions to Default" : {
+
+    },
+    "Reset zoom to 100%" : {
+
+    },
+    "Restart Sumi to apply this change." : {
+
+    },
+    "Restore" : {
+
+    },
+    "Restore Default Search Engines?" : {
+
+    },
+    "Restore Defaults" : {
+
+    },
+    "Right" : {
+
+    },
+    "Run Safari Extension Acceptance Check" : {
+
+    },
+    "Run Safari Extension Dev Diagnostics Report" : {
+
+    },
+    "Run Safari Extension Native Messaging Probe" : {
+
+    },
+    "Save" : {
+
+    },
+    "Save File" : {
+
+    },
+    "Save To" : {
+
+    },
+    "Save files" : {
+
+    },
+    "Saved pages and folders will appear here." : {
+
+    },
+    "Scale" : {
+
+    },
+    "Screenshot Settings" : {
+
+    },
+    "Screenshot Settings..." : {
+
+    },
+    "Search" : {
+
+    },
+    "Search %@" : {
+
+    },
+    "Search Bookmarks" : {
+
+    },
+    "Search History" : {
+
+    },
+    "Search URL" : {
+
+    },
+    "Search engine" : {
+
+    },
+    "Search or Enter URL..." : {
+
+    },
+    "Search shortcuts..." : {
+
+    },
+    "Select" : {
+
+    },
+    "Select All" : {
+
+    },
+    "Selected Area" : {
+
+    },
+    "Selector" : {
+
+    },
+    "Send Global Privacy Control signal" : {
+
+    },
+    "Settings" : {
+
+    },
+    "Settings…" : {
+
+    },
+    "Show All History" : {
+
+    },
+    "Show All History From This Site" : {
+
+    },
+    "Show in Folder" : {
+
+    },
+    "Show in Tab search" : {
+
+    },
+    "Shuffle Boost Settings" : {
+
+    },
+    "Sign In" : {
+
+    },
+    "Site Controls" : {
+
+    },
+    "Site Settings" : {
+
+    },
+    "Site data stored on this device" : {
+
+    },
+    "Sites can store preferences, session data, and cached files on your device. This data is available to the site and its subdomains." : {
+
+    },
+    "Skipped %lld extensions because they were unreadable." : {
+
+    },
+    "Skipped 1 extension because it was unreadable." : {
+
+    },
+    "Small" : {
+
+    },
+    "Sort" : {
+
+    },
+    "Spaces" : {
+
+    },
+    "Stop" : {
+
+    },
+    "Stop loading" : {
+
+    },
+    "Sumi could not recover an interrupted import." : {
+
+    },
+    "Sumi will not delete old browsing data automatically." : {
+
+    },
+    "Switch to Tab" : {
+
+    },
+    "Tab" : {
+
+    },
+    "Tab Search" : {
+
+    },
+    "Tell sites not to sell or share your data" : {
+
+    },
+    "The server %@ is requesting credentials." : {
+
+    },
+    "Themes" : {
+
+    },
+    "This will delete cookies and site data for %@." : {
+
+    },
+    "Time range:" : {
+
+    },
+    "Toggle Sidebar" : {
+
+    },
+    "Try Again" : {
+
+    },
+    "Try a different settings search." : {
+
+    },
+    "URL" : {
+
+    },
+    "Undo Close Tab" : {
+
+    },
+    "Unmute Audio" : {
+
+    },
+    "Unpreview" : {
+
+    },
+    "Update" : {
+
+    },
+    "Update Sumi" : {
+
+    },
+    "Update to %@" : {
+
+    },
+    "Updating" : {
+
+    },
+    "Use Default" : {
+
+    },
+    "Use on battery at or below" : {
+
+    },
+    "Use other app..." : {
+
+    },
+    "Use system default app" : {
+
+    },
+    "Use {query} where the typed search text should go." : {
+
+    },
+    "User name:" : {
+
+    },
+    "Version %@" : {
+
+    },
+    "Visible Page" : {
+
+    },
+    "Visited pages will appear here." : {
+
+    },
+    "Web Inspector" : {
+
+    },
+    "While Energy Saver is active" : {
+
+    },
+    "Your current list will be replaced with Sumi's default search engines." : {
+
+    },
+    "Zoom" : {
+
+    },
+    "Zoom %@. Reset zoom to 100%%." : {
+
+    },
+    "Zoom In" : {
+
+    },
+    "Zoom Out" : {
+
+    },
+    "collapsed" : {
+
+    },
+    "expanded" : {
+
+    },
+    "https://example.com" : {
+
+    },
+    "macOS Reduce Motion is always honored independently, including when Energy Saver is Off." : {
+
+    },
+    "not selected" : {
+
+    },
+    "selected" : {
+
+    },
+    "split placeholder" : {
+
+    }
+  },
+  "version" : "1.0"
+}

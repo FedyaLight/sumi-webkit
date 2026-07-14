@@ -139,11 +139,12 @@ struct SumiBrowsingDataDialog: View {
 
     private func automaticCleanupSubtitle(
         for period: SumiBrowsingDataRetentionPeriod
-    ) -> String {
+    ) -> LocalizedStringResource {
         guard period.isEnabled else {
             return "Sumi will not delete old browsing data automatically."
         }
-        return "Deletes history older than \(period.title) and clears volatile WebKit data without removing sign-in storage."
+        let localizedPeriod = String(localized: period.title)
+        return "Deletes history older than \(localizedPeriod) and clears volatile WebKit data without removing sign-in storage."
     }
 
     private func browsingDataToggle(_ category: SumiBrowsingDataCategory) -> some View {
@@ -249,7 +250,7 @@ final class SumiBrowsingDataDialogViewModel: ObservableObject {
         regularProfileCount > 1
     }
 
-    var deleteButtonTitle: String {
+    var deleteButtonTitle: LocalizedStringResource {
         isDeleting ? "Deleting..." : "Delete"
     }
 
