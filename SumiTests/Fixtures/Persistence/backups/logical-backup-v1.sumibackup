@@ -1,0 +1,30 @@
+{
+  "appBundleIdentifier": "com.sumi.browser",
+  "appVersion": "0.3.0",
+  "createdAt": "2026-06-04T12:00:00Z",
+  "data": {
+    "bookmarks": [],
+    "essentials": [],
+    "folders": [],
+    "pinnedLaunchers": [],
+    "profiles": [
+      {
+        "icon": "circle.fill",
+        "id": "00000000-0000-0000-0000-000000000401",
+        "index": 0,
+        "name": "Fixture Profile"
+      }
+    ],
+    "regularTabs": [],
+    "spaces": []
+  },
+  "format": "com.sumi.browser.backup",
+  "includedCategories": [
+    "profiles"
+  ],
+  "settings": {},
+  "version": 1,
+  "warnings": [
+    "Fixture captured from the shipped logical backup v1 schema."
+  ]
+}

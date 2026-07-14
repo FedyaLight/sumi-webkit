@@ -1,0 +1,26 @@
+{
+  "records": [
+    {
+      "count": 2,
+      "displayDomain": "fixture.example",
+      "firstSeenAt": 821692700,
+      "hasAutoDetected": false,
+      "hasRequested": true,
+      "hasResolvedPolicy": true,
+      "hasSettingsChange": false,
+      "id": "00000000-0000-0000-0000-000000000101|fixture.example|camera",
+      "isEphemeralProfile": false,
+      "lastRequestedAt": 821692750,
+      "lastResolvedAt": 821692800,
+      "lastState": "allow",
+      "permissionType": {
+        "type": "camera"
+      },
+      "profilePartitionId": "00000000-0000-0000-0000-000000000101",
+      "siteHost": "fixture.example",
+      "source": "user",
+      "updatedAt": 821692800
+    }
+  ],
+  "version": 1
+}

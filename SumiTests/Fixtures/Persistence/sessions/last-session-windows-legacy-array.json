@@ -1,0 +1,20 @@
+[
+  {
+    "id": "00000000-0000-0000-0000-000000000310",
+    "session": {
+      "activeShortcutsBySpace": [],
+      "activeTabsBySpace": [],
+      "currentSpaceId": "00000000-0000-0000-0000-000000000301",
+      "currentTabId": "00000000-0000-0000-0000-000000000302",
+      "floatingBarDraft": {
+        "navigateCurrentTab": false,
+        "text": ""
+      },
+      "isShowingEmptyState": false,
+      "isSidebarVisible": true,
+      "savedSidebarWidth": 260,
+      "sidebarContentWidth": 244,
+      "sidebarWidth": 260
+    }
+  }
+]

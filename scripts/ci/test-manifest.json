@@ -59,6 +59,7 @@
         "SumiTests/RuntimeStateCoalescerTests",
         "SumiTests/BrowserManagerRuntimeWiringTests",
         "SumiTests/BrowserManagerLifecycleWiringTests",
+        "SumiTests/PersistenceFixtureTests",
         "SumiTests/SumiPerformanceModularRegressionTests/testBrowserManagerStartupAndSettingsSurfacesDoNotConstructDisabledRuntimes",
         "SumiTests/SumiPerformanceModularRegressionTests/testEnablingOptionalModuleAfterStartupAttachesRuntime",
         "SumiTests/SumiPerformanceModularRegressionTests/testDefaultNormalTabAttachesOnlyCoreRuntimeAndNoOptionalModuleAssets",

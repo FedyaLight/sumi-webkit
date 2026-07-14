@@ -1,0 +1,44 @@
+{
+  "domains": [
+    {
+      "activeBoostId": "00000000-0000-0000-0000-000000000502",
+      "boosts": [
+        {
+          "createdAt": "2026-06-17T12:00:00Z",
+          "data": {
+            "autoTheme": false,
+            "boostName": "Fixture Boost",
+            "brightness": 0.5,
+            "changeWasMade": true,
+            "contrast": 0.75,
+            "customCSS": "",
+            "dotAngleDeg": 131.61,
+            "dotDistance": 0.91,
+            "dotPos": {
+              "x": 0.76,
+              "y": 0.66
+            },
+            "enableColorBoost": false,
+            "fontFamily": "",
+            "saturation": 0.5,
+            "secondaryDotAngleDegDelta": 55,
+            "secondaryDotPos": {
+              "x": 0.5,
+              "y": 0.81
+            },
+            "sizeOverride": 1,
+            "smartInvert": false,
+            "textCaseOverride": "none",
+            "zapSelectors": []
+          },
+          "host": "fixture.example",
+          "id": "00000000-0000-0000-0000-000000000502",
+          "profileId": "00000000-0000-0000-0000-000000000501",
+          "updatedAt": "2026-06-17T12:01:00Z"
+        }
+      ],
+      "host": "fixture.example",
+      "profileId": "00000000-0000-0000-0000-000000000501"
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "appBundleIdentifier": "com.sumi.browser",
+  "appVersion": "future",
+  "createdAt": "2026-06-04T12:00:00Z",
+  "data": {
+    "bookmarks": [],
+    "essentials": [],
+    "folders": [],
+    "pinnedLaunchers": [],
+    "profiles": [],
+    "regularTabs": [],
+    "spaces": []
+  },
+  "format": "com.sumi.browser.backup",
+  "includedCategories": [],
+  "settings": {},
+  "version": 2,
+  "warnings": []
+}

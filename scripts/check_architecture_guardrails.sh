@@ -49,6 +49,7 @@ checks=(
   "scripts/check_window_registration_transaction.sh"
   "scripts/check_split_architecture.sh"
   "scripts/check_startup_persistence_boundary.sh"
+  "scripts/check_persistence_inventory.sh"
   "scripts/check_tracker_radar_import_boundary.sh"
   "scripts/check_updater_sparkle_boundary.sh"
   "scripts/check_website_compositor_boundaries.sh"

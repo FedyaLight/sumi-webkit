@@ -95,6 +95,8 @@ default.profraw
 docs/
 !docs/
 docs/*
+!docs/persistence/
+!docs/persistence/**
 !docs/architecture.md
 !docs/roadmap.md
 !docs/SumiSafariExtensionCompatibility.md
