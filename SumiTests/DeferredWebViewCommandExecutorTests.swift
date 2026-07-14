@@ -98,6 +98,26 @@ final class DeferredWebViewCommandExecutorTests: XCTestCase {
         XCTAssertEqual(shutdownTabID, tabID)
     }
 
+    func testTrackedCleanupRejectionRemainsRetryable() {
+        let webView = WKWebView()
+        let owner = TrackedWebViewOwner(tabID: UUID(), windowID: UUID())
+        var finishCount = 0
+        let executor = DeferredWebViewCleanupExecutor(
+            sessions: WebViewSessionRepository(),
+            closeWebView: { _ in false },
+            removeFromContainers: { _ in false },
+            cleanupTrackedWebView: { _, _, _ in false },
+            shutdownOwnerlessWebView: { _, _ in },
+            finishRetirementIfDrained: { _ in finishCount += 1 }
+        )
+
+        XCTAssertEqual(
+            executor.removeTracked(webView, owner: owner, tab: nil),
+            .retry
+        )
+        XCTAssertEqual(finishCount, 0)
+    }
+
     private func makeExecutor(
         effects: ExecutorEffects,
         sessions: WebViewSessionRepository = WebViewSessionRepository(),

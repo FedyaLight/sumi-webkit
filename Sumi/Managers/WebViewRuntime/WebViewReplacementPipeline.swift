@@ -365,6 +365,14 @@ final class WebViewReplacementPipeline {
         settlementService.abortForProfiles(profileIDs, reason: reason)
     }
 
+    @discardableResult
+    func abort(
+        tabIDs: Set<UUID>,
+        reason: WebViewReplacementAbortReason
+    ) -> Int {
+        settlementService.abortForTabs(tabIDs, reason: reason)
+    }
+
     /// Repository terminal drain owns both the retired and replacement
     /// generations. Complete every outstanding receipt and cancel settlement
     /// timeouts without attempting a second rollback against the drained

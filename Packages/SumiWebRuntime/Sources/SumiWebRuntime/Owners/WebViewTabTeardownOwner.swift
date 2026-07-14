@@ -15,29 +15,35 @@ public struct WebViewTabTeardownResult: Equatable, Sendable {
     public let cleanedWebViewCount: Int
     public let deferredWebViewCount: Int
     public let unscheduledProtectedWebViewCount: Int
+    public let blockedWebViewCount: Int
 
     public init(
         discoveredWebViewCount: Int,
         cleanedWebViewCount: Int,
         deferredWebViewCount: Int,
-        unscheduledProtectedWebViewCount: Int
+        unscheduledProtectedWebViewCount: Int,
+        blockedWebViewCount: Int = 0
     ) {
         self.discoveredWebViewCount = discoveredWebViewCount
         self.cleanedWebViewCount = cleanedWebViewCount
         self.deferredWebViewCount = deferredWebViewCount
         self.unscheduledProtectedWebViewCount = unscheduledProtectedWebViewCount
+        self.blockedWebViewCount = blockedWebViewCount
     }
 
     public static let none = Self(
         discoveredWebViewCount: 0,
         cleanedWebViewCount: 0,
         deferredWebViewCount: 0,
-        unscheduledProtectedWebViewCount: 0
+        unscheduledProtectedWebViewCount: 0,
+        blockedWebViewCount: 0
     )
 
     public var foundWebViews: Bool { discoveredWebViewCount > 0 }
     public var isComplete: Bool {
-        deferredWebViewCount == 0 && unscheduledProtectedWebViewCount == 0
+        deferredWebViewCount == 0
+            && unscheduledProtectedWebViewCount == 0
+            && blockedWebViewCount == 0
     }
 }
 
@@ -49,7 +55,7 @@ public final class WebViewTabTeardownOwner {
     private let enqueueDeferredProtectedCommand:
         @MainActor (DeferredWebViewCommand, WKWebView, String) -> Bool
     private let cleanupUnprotectedTrackedWebView:
-        @MainActor (WKWebView, TrackedWebViewOwner, (any WebRuntimeTabHandle)?) -> Void
+        @MainActor (WKWebView, TrackedWebViewOwner, (any WebRuntimeTabHandle)?) -> Bool
     private let cleanupUnprotectedDetachedWebView:
         @MainActor (WKWebView, UUID, (any WebRuntimeTabHandle)?) -> Void
     private let refreshPrimaryTrackedWebView: @MainActor (any WebRuntimeTabHandle) -> Void
@@ -64,7 +70,7 @@ public final class WebViewTabTeardownOwner {
         enqueueDeferredProtectedCommand:
             @escaping @MainActor (DeferredWebViewCommand, WKWebView, String) -> Bool,
         cleanupUnprotectedTrackedWebView:
-            @escaping @MainActor (WKWebView, TrackedWebViewOwner, (any WebRuntimeTabHandle)?) -> Void,
+            @escaping @MainActor (WKWebView, TrackedWebViewOwner, (any WebRuntimeTabHandle)?) -> Bool,
         cleanupUnprotectedDetachedWebView:
             @escaping @MainActor (WKWebView, UUID, (any WebRuntimeTabHandle)?) -> Void,
         refreshPrimaryTrackedWebView: @escaping @MainActor (any WebRuntimeTabHandle) -> Void,
@@ -108,6 +114,7 @@ public final class WebViewTabTeardownOwner {
         var cleanedWebViewCount = 0
         var deferredWebViewCount = 0
         var unscheduledProtectedWebViewCount = 0
+        var blockedWebViewCount = 0
         var closedMediaWebViewIDs: Set<ObjectIdentifier> = []
 
         func deferCleanup(
@@ -140,13 +147,19 @@ public final class WebViewTabTeardownOwner {
                     if isWebViewProtectedFromCompositorMutation(webView) {
                         unscheduledProtectedWebViewCount += 1
                     } else {
-                        cleanupUnprotectedTrackedWebView(webView, owner, tab)
-                        cleanedWebViewCount += 1
+                        if cleanupUnprotectedTrackedWebView(webView, owner, tab) {
+                            cleanedWebViewCount += 1
+                        } else {
+                            blockedWebViewCount += 1
+                        }
                     }
                 }
             } else {
-                cleanupUnprotectedTrackedWebView(webView, owner, tab)
-                cleanedWebViewCount += 1
+                if cleanupUnprotectedTrackedWebView(webView, owner, tab) {
+                    cleanedWebViewCount += 1
+                } else {
+                    blockedWebViewCount += 1
+                }
             }
         }
 
@@ -166,6 +179,8 @@ public final class WebViewTabTeardownOwner {
                         .removeDetachedWebView(webView, for: tabID) {
                         cleanupUnprotectedDetachedWebView(webView, tabID, tab)
                         cleanedWebViewCount += 1
+                    } else {
+                        blockedWebViewCount += 1
                     }
                 }
             } else if webViewSessions.placement.removeDetachedWebView(
@@ -174,6 +189,8 @@ public final class WebViewTabTeardownOwner {
             ) {
                 cleanupUnprotectedDetachedWebView(webView, tabID, tab)
                 cleanedWebViewCount += 1
+            } else {
+                blockedWebViewCount += 1
             }
         }
 
@@ -184,14 +201,16 @@ public final class WebViewTabTeardownOwner {
             allWebViews.count
                 == cleanedWebViewCount
                     + deferredWebViewCount
-                    + unscheduledProtectedWebViewCount,
+                    + unscheduledProtectedWebViewCount
+                    + blockedWebViewCount,
             "Every discovered WebView must reach a teardown outcome"
         )
         return WebViewTabTeardownResult(
             discoveredWebViewCount: allWebViews.count,
             cleanedWebViewCount: cleanedWebViewCount,
             deferredWebViewCount: deferredWebViewCount,
-            unscheduledProtectedWebViewCount: unscheduledProtectedWebViewCount
+            unscheduledProtectedWebViewCount: unscheduledProtectedWebViewCount,
+            blockedWebViewCount: blockedWebViewCount
         )
     }
 

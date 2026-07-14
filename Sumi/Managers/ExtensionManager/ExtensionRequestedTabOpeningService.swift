@@ -168,16 +168,6 @@ struct ExtensionRequestedTabOpeningService {
                 .requestedTabUnavailable.nsError()
         }
 
-        if shouldBePinned {
-            guard browserContext.pinExtensionTab(
-                newTab,
-                targetWindow: committedResidence,
-                targetSpace: target.space
-            ) else {
-                throw ExtensionManagerCallbackError
-                    .requestedTabUnavailable.nsError()
-            }
-        }
         if shouldBeActive {
             guard let committedResidence else {
                 throw ExtensionManagerCallbackError
@@ -187,6 +177,21 @@ struct ExtensionRequestedTabOpeningService {
                 newTab,
                 in: committedResidence
             )
+        }
+        if shouldBePinned {
+            // Registration above must precede selection for WebKit, while an
+            // active Tab must be displayed before regular-to-shortcut
+            // conversion. Otherwise the converter correctly classifies the
+            // inactive model as detached and retires its just-published
+            // runtime instead of adopting it into the target window.
+            guard browserContext.pinExtensionTab(
+                newTab,
+                targetWindow: committedResidence,
+                targetSpace: target.space
+            ) else {
+                throw ExtensionManagerCallbackError
+                    .requestedTabUnavailable.nsError()
+            }
         }
 
         recentRequests.record(url)

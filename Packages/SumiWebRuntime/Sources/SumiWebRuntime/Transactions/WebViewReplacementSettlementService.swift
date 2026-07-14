@@ -268,6 +268,25 @@ public final class WebViewReplacementSettlementService {
     }
 
     @discardableResult
+    public func abortForTabs(
+        _ tabIDs: Set<UUID>,
+        reason: WebViewReplacementAbortReason
+    ) -> Int {
+        guard tabIDs.isEmpty == false else { return 0 }
+        let transactions = transactionsByID.values
+            .filter {
+                $0.tabIDs.isDisjoint(with: tabIDs) == false
+                    && isAwaitingBindings($0)
+            }
+            .sorted { $0.id.rawValue.uuidString < $1.id.rawValue.uuidString }
+        return transactions.reduce(into: 0) { count, transaction in
+            if rollback(transaction, reason: .abort(reason)) == .rolledBack {
+                count += 1
+            }
+        }
+    }
+
+    @discardableResult
     public func abortAll(reason: WebViewReplacementAbortReason) -> Int {
         let transactions = transactionsByID.values
             .filter(isAwaitingBindings)

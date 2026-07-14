@@ -49,6 +49,19 @@ extension NavigationAction {
         }
         return false
     }
+
+    /// `FrameInfo.webView` is weak and may disappear while the Navigation
+    /// package is awaiting an async responder. Its public
+    /// `isTargetingNewWindow` accessor asserts when both frame WebViews have
+    /// already been released. Preserve the release-build policy without
+    /// crossing that assertion: missing frame ownership is treated as a new
+    /// window and therefore cannot silently gain current-tab authority.
+    @MainActor
+    var sumiIsTargetingNewWindow: Bool {
+        let sourceWebViewID = sourceFrame.webView.map(ObjectIdentifier.init)
+        let targetWebViewID = targetFrame?.webView.map(ObjectIdentifier.init)
+        return sourceWebViewID != targetWebViewID || targetWebViewID == nil
+    }
 }
 
 extension SumiNavigationRedirectAction {
@@ -86,7 +99,7 @@ extension SumiNavigationAction {
             sourceURL: sourceFrame.url,
             sourceFrame: sourceFrame,
             targetFrame: targetFrame,
-            isTargetingNewWindow: navigationAction.isTargetingNewWindow,
+            isTargetingNewWindow: navigationAction.sumiIsTargetingNewWindow,
             isForMainFrame: navigationAction.isForMainFrame,
             isUserInitiated: navigationAction.isUserInitiated == true,
             navigationType: SumiNavigationType(navigationAction.navigationType),

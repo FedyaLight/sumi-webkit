@@ -786,6 +786,7 @@
         "SumiTests/WebExtensionStorageCleanupPlannerTests",
         "SumiTests/WebViewBackgroundTransitionLedgerTests",
         "SumiTests/WebViewCreationPlannerTests",
+        "SumiTests/WebViewHiddenCloneEvictionOwnerTests",
         "SumiTests/WebViewPresentationRoutingTests",
         "SumiTests/WebViewRuntimeGraphTrackedWebViewsTests",
         "SumiTests/WebViewRuntimeTabRegistryTests",

@@ -172,7 +172,7 @@ final class SumiWebRuntimeSmokeTests: XCTestCase {
             mediaProtectionOwner: mediaProtectionOwner,
             isWebViewProtectedFromCompositorMutation: { _ in false },
             enqueueDeferredProtectedCommand: { _, _, _ in false },
-            cleanupUnprotectedTrackedWebView: { _, _, _ in },
+            cleanupUnprotectedTrackedWebView: { _, _, _ in true },
             cleanupUnprotectedDetachedWebView: { _, _, _ in },
             refreshPrimaryTrackedWebView: { _ in },
             removeWebViewFromContainers: { _ in },
@@ -1072,7 +1072,7 @@ final class SumiWebRuntimeSmokeTests: XCTestCase {
             tabForID: { _ in nil },
             isWebViewProtectedFromCompositorMutation: { _ in false },
             enqueueDeferredProtectedCommand: { _, _, _ in false },
-            cleanupUnprotectedTrackedWebView: { _, _, _ in },
+            cleanupUnprotectedTrackedWebView: { _, _, _ in true },
             refreshPrimaryTrackedWebView: { _ in },
             removeCompositorContainerView: { removedContainers.append($0) },
             flushDeferredProtectedCommands: { flushedSourceIDs.append($0) },
@@ -1089,5 +1089,55 @@ final class SumiWebRuntimeSmokeTests: XCTestCase {
         XCTAssertEqual(flushedSourceIDs, [pendingCleanupWebViewID])
         XCTAssertFalse(media.isProtected(pendingCleanupWebView))
         XCTAssertTrue(finishedSuppression)
+    }
+
+    @MainActor
+    func testWindowCleanupRetainsContainerWhenTrackedCleanupIsRejected() {
+        final class StubVisiblePreparation: WebRuntimeVisiblePreparationControlling {
+            func cancelScheduledPreparation(for windowId: UUID) {}
+            func resetWindowRegistrations() {}
+        }
+
+        let repository = WebViewSessionRepository()
+        let windowID = UUID()
+        let trackedOwner = TrackedWebViewOwner(
+            tabID: UUID(),
+            windowID: windowID
+        )
+        let webView = WKWebView()
+        _ = WebViewTrackingLifecycleOwner().registerTrackedWebView(
+            webView,
+            for: trackedOwner,
+            in: repository,
+            removeFromContainers: { _ in },
+            installRuntimeObservations: { _ in },
+            uninstallRuntimeObservationsIfUntracked: { _ in },
+            pruneInvalidDeferredCommands: { _ in },
+            canDisplaceWebView: { _ in true },
+            removeRecentVisibility: { _ in },
+            cleanupDisplacedWebView: { _, _ in }
+        )
+        var removedContainers: [UUID] = []
+        let owner = WebViewWindowCleanupOwner(
+            cleanupScopeOwner: WebViewCleanupScopeOwner(),
+            webViewSessions: repository,
+            visibleWebViewRuntimeOwner: StubVisiblePreparation(),
+            mediaProtectionOwner: WebViewMediaProtectionOwner(),
+            tabForID: { _ in nil },
+            isWebViewProtectedFromCompositorMutation: { _ in false },
+            enqueueDeferredProtectedCommand: { _, _, _ in false },
+            cleanupUnprotectedTrackedWebView: { _, _, _ in false },
+            refreshPrimaryTrackedWebView: { _ in },
+            removeCompositorContainerView: { removedContainers.append($0) },
+            flushDeferredProtectedCommands: { _ in },
+            finishCleanupSuppression: { _ in }
+        )
+
+        XCTAssertFalse(owner.cleanupWindow(windowID))
+        XCTAssertTrue(removedContainers.isEmpty)
+        XCTAssertIdentical(
+            repository.webView(for: trackedOwner.tabID, in: windowID),
+            webView
+        )
     }
 }

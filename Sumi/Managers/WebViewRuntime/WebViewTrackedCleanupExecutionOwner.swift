@@ -12,12 +12,14 @@ import SumiWebRuntime
 @MainActor
 final class WebViewTrackedCleanupExecutionOwner {
     typealias DestructiveCleanupSuppressionFinisher = (WKWebView) -> Void
+    typealias ProcessRecoveryCancellation = (WKWebView) -> Void
     typealias RuntimeObservationUninstaller = (WKWebView) -> Void
     typealias DeferredCommandPruner = (String) -> Void
     typealias FallbackCleanup = (WKWebView, UUID) -> Void
     typealias RecentVisibilityRemover = (TrackedWebViewOwner) -> Void
 
     struct Runtime {
+        let cancelProcessRecovery: ProcessRecoveryCancellation
         let finishDestructiveCleanupSuppression: DestructiveCleanupSuppressionFinisher
         let uninstallRuntimeObservationsIfUntracked: RuntimeObservationUninstaller
         let pruneInvalidDeferredCommands: DeferredCommandPruner
@@ -25,6 +27,7 @@ final class WebViewTrackedCleanupExecutionOwner {
         let forgetRecentVisibility: RecentVisibilityRemover
     }
 
+    @discardableResult
     func cleanupUnprotectedTrackedWebView(
         _ webView: WKWebView,
         owner: TrackedWebViewOwner,
@@ -32,9 +35,8 @@ final class WebViewTrackedCleanupExecutionOwner {
         webViewSessions: WebViewSessionRepository,
         trackingLifecycleOwner: WebViewTrackingLifecycleOwner,
         runtime: Runtime
-    ) {
-        runtime.finishDestructiveCleanupSuppression(webView)
-        _ = trackingLifecycleOwner.unregisterTrackedWebViewSlot(
+    ) -> Bool {
+        guard trackingLifecycleOwner.unregisterTrackedWebViewSlot(
             owner: owner,
             expectedWebView: webView,
             in: webViewSessions,
@@ -43,12 +45,18 @@ final class WebViewTrackedCleanupExecutionOwner {
                 .uninstallRuntimeObservationsIfUntracked,
             pruneInvalidDeferredCommands: runtime.pruneInvalidDeferredCommands,
             forgetRecentVisibility: runtime.forgetRecentVisibility
-        )
+        ) != nil else {
+            return false
+        }
+
+        runtime.cancelProcessRecovery(webView)
+        runtime.finishDestructiveCleanupSuppression(webView)
 
         if let tab {
             tab.cleanupCloneWebView(webView)
         } else {
             runtime.fallbackCleanup(webView, owner.tabID)
         }
+        return true
     }
 }

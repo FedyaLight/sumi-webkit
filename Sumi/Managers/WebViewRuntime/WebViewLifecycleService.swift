@@ -80,8 +80,8 @@ final class WebViewLifecycleService {
             ).wasScheduled ?? false
         },
         cleanupUnprotectedTrackedWebView: { [weak self] webView, owner, tabHandle in
-            guard let self else { return }
-            self.cleanupUnprotectedTrackedWebView(
+            guard let self else { return false }
+            return self.cleanupUnprotectedTrackedWebView(
                 webView,
                 owner: owner,
                 tab: self.tabForPackageCallback(tabHandle)
@@ -132,8 +132,8 @@ final class WebViewLifecycleService {
             ).wasScheduled ?? false
         },
         cleanupUnprotectedTrackedWebView: { [weak self] webView, owner, tabHandle in
-            guard let self else { return }
-            self.cleanupUnprotectedTrackedWebView(
+            guard let self else { return false }
+            return self.cleanupUnprotectedTrackedWebView(
                 webView,
                 owner: owner,
                 tab: self.tabForPackageCallback(tabHandle)
@@ -157,11 +157,13 @@ final class WebViewLifecycleService {
         }
     )
 
-    func cleanupWindow(_ windowID: UUID) {
+    @discardableResult
+    func cleanupWindow(_ windowID: UUID) -> Bool {
         windowCleanup.cleanupWindow(windowID)
     }
 
-    func cleanupAllWebViews() {
+    @discardableResult
+    func cleanupAllWebViews() -> Bool {
         windowCleanup.cleanupAllWebViews()
     }
 
@@ -176,6 +178,10 @@ final class WebViewLifecycleService {
             guard runtimeTabs.bind(tab).isAccepted else { return .none }
         case .retirement:
             guard runtimeTabs.beginRetirement(tab) else { return .none }
+            _ = replacementPipeline.abort(
+                tabIDs: [tab.id],
+                reason: .tabDeparture
+            )
         }
         let result = tabTeardown.removeAllWebViews(
             for: tab,
@@ -220,18 +226,19 @@ final class WebViewLifecycleService {
         )
     }
 
+    @discardableResult
     func cleanupTrackedWebViewAfterWebKitClose(
         _ webView: WKWebView,
         owner: TrackedWebViewOwner
-    ) {
+    ) -> Bool {
         cleanupTrackedWebView(webView, owner: owner)
     }
 
+    @discardableResult
     func cleanupTrackedWebView(
         _ webView: WKWebView,
         owner: TrackedWebViewOwner
-    ) {
-        processRecovery.cancel(webView)
+    ) -> Bool {
         trackedRegistration.cleanupTrackedWebView(webView, owner: owner)
     }
 
@@ -264,13 +271,13 @@ final class WebViewLifecycleService {
         }
     }
 
+    @discardableResult
     func cleanupUnprotectedTrackedWebView(
         _ webView: WKWebView,
         owner: TrackedWebViewOwner,
         tab: Tab?
-    ) {
-        processRecovery.cancel(webView)
-        trackedRegistration.cleanupUnprotectedTrackedWebView(
+    ) -> Bool {
+        return trackedRegistration.cleanupUnprotectedTrackedWebView(
             webView,
             owner: owner,
             tab: tab

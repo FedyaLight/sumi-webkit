@@ -284,6 +284,64 @@ final class WebViewReplacementSettlementServiceTests: XCTestCase {
         XCTAssertEqual(secondOutcome, .committed)
     }
 
+    func testTabAbortRollsBackOnlyIntersectingTransaction() async {
+        let first = makeOneWindowFixture()
+        let second = makeOneWindowFixture(repository: first.repository)
+        let recorder = RetirementRuntimeRecorder(repository: first.repository)
+        let owner = recorder.makeOwner()
+        let firstReceipt = start(
+            owner,
+            lease: first.lease,
+            tabIDs: [first.tabID],
+            retired: [first.tabID: first.retired],
+            requirements: [
+                .init(webView: first.replacement, semanticRevision: 1),
+            ]
+        )
+        let secondReceipt = start(
+            owner,
+            lease: second.lease,
+            tabIDs: [second.tabID],
+            retired: [second.tabID: second.retired],
+            requirements: [
+                .init(webView: second.replacement, semanticRevision: 2),
+            ]
+        )
+
+        XCTAssertEqual(
+            owner.abortForTabs([first.tabID], reason: .tabDeparture),
+            1
+        )
+        XCTAssertEqual(owner.activeTransactionCount, 1)
+        let firstOutcome = await firstReceipt.waitForSettlement()
+        XCTAssertEqual(
+            firstOutcome,
+            .rolledBack(.abort(.tabDeparture))
+        )
+        XCTAssertIdentical(
+            first.repository.webView(for: first.tabID, in: first.windowID),
+            first.oldWebView
+        )
+        guard case .retiring = second.repository.residence(
+            of: second.oldWebView
+        ) else {
+            return XCTFail("Unrelated tab transaction was aborted")
+        }
+
+        let secondToken = try! XCTUnwrap(
+            secondReceipt.bindingToken(for: second.replacement)
+        )
+        XCTAssertEqual(
+            owner.markBound(
+                secondToken,
+                binding: binding(for: second.replacement, revision: 2)
+            ),
+            .committed
+        )
+        let secondOutcome = await secondReceipt.waitForSettlement()
+        XCTAssertEqual(secondOutcome, .committed)
+    }
+
     func testRollbackCASConflictIsFailClosedUntilTerminalReset() async {
         let fixture = makeOneWindowFixture()
         let recorder = RetirementRuntimeRecorder(repository: fixture.repository)

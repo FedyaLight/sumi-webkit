@@ -1,3 +1,4 @@
+import AppKit
 import SwiftData
 import WebKit
 import XCTest
@@ -233,6 +234,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
             profileId: profile.id
         )
         let windowState = BrowserWindowState()
+        windowState.tabManager = browserManager.tabManager
         windowState.currentProfileId = profile.id
         windowState.currentSpaceId = space.id
         windowRegistry.register(windowState)
@@ -293,21 +295,31 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         let controller = manager.ensureExtensionController(for: profile.id)
         manager.markExtensionRuntimePublicationReady()
 
-        let browserManager = makeBrowserManager(
+        let browserManager = makeBrowserManager(profile: profile)
+        manager.attach(browserManager: browserManager)
+        let bootstrapTab = makeTab(
+            profileId: profile.id,
+            url: URL(string: "about:blank")!,
+            browserManager: browserManager
+        )
+        bootstrapTab.attachBrowserRuntime(
+            TabBrowserRuntimeFactory.make(for: browserManager)
+        )
+        registerWindowDisplaying(
+            bootstrapTab,
+            profileId: profile.id,
+            browserManager: browserManager
+        )
+        attachUsableExtensionWebView(
+            to: bootstrapTab,
+            manager: manager,
             profile: profile
         )
-        let windowRegistry = WindowRegistry()
-        browserManager.windowRegistry = windowRegistry
-        let space = browserManager.tabManager.spaceServices.catalog.createSpace(
-            name: "Work",
-            profileId: profile.id
+        bootstrapTab.extensionPageRuntimeOwner.markEligible(
+            for: manager.tabPublicationRevisions.issue()
         )
-        let windowState = BrowserWindowState()
-        windowState.currentProfileId = profile.id
-        windowState.currentSpaceId = space.id
-        windowRegistry.register(windowState)
-        windowRegistry.setActive(windowState)
-        manager.attach(browserManager: browserManager)
+        XCTAssertTrue(manager.normalTabOpening.publishOpen(bootstrapTab))
+        let targetSpaceID = try XCTUnwrap(bootstrapTab.spaceId)
 
         let scratchDirectory = try makeScratchDirectory()
         let installed = try await installContentScriptProbeExtension(
@@ -350,7 +362,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         )
 
         XCTAssertEqual(tab.url, pageURL)
-        XCTAssertEqual(tab.spaceId, space.id)
+        XCTAssertEqual(tab.spaceId, targetSpaceID)
         XCTAssertNil(tab.webViewConfigurationOverride)
         XCTAssertNotNil(tab.resolvedAssignedWebView() ?? tab.resolvedCurrentWebView())
         XCTAssertEqual(
@@ -380,21 +392,30 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         let controller = manager.ensureExtensionController(for: profile.id)
         manager.markExtensionRuntimePublicationReady()
 
-        let browserManager = makeBrowserManager(
+        let browserManager = makeBrowserManager(profile: profile)
+        manager.attach(browserManager: browserManager)
+        let bootstrapTab = makeTab(
+            profileId: profile.id,
+            url: URL(string: "about:blank")!,
+            browserManager: browserManager
+        )
+        bootstrapTab.attachBrowserRuntime(
+            TabBrowserRuntimeFactory.make(for: browserManager)
+        )
+        registerWindowDisplaying(
+            bootstrapTab,
+            profileId: profile.id,
+            browserManager: browserManager
+        )
+        attachUsableExtensionWebView(
+            to: bootstrapTab,
+            manager: manager,
             profile: profile
         )
-        let windowRegistry = WindowRegistry()
-        browserManager.windowRegistry = windowRegistry
-        let space = browserManager.tabManager.spaceServices.catalog.createSpace(
-            name: "Work",
-            profileId: profile.id
+        bootstrapTab.extensionPageRuntimeOwner.markEligible(
+            for: manager.tabPublicationRevisions.issue()
         )
-        let windowState = BrowserWindowState()
-        windowState.currentProfileId = profile.id
-        windowState.currentSpaceId = space.id
-        windowRegistry.register(windowState)
-        windowRegistry.setActive(windowState)
-        manager.attach(browserManager: browserManager)
+        XCTAssertTrue(manager.normalTabOpening.publishOpen(bootstrapTab))
 
         let scratchDirectory = try makeScratchDirectory()
         let installed = try await installContentScriptNativeMessagingProbeExtension(
@@ -479,9 +500,36 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
             extensionsModule: extensionsModule,
             profile: profile
         )
+        browserManager.windowShellContentViewFactory = { _, _ in NSView() }
         let windowRegistry = WindowRegistry()
         browserManager.windowRegistry = windowRegistry
-        let space = browserManager.tabManager.spaceServices.catalog.createSpace(
+        let windowSessions = browserManager.windowSessionBundle
+        BrowserWindowRegistryBinding.install(
+            registration: windowSessions.restoration,
+            closing: BrowserWindowCloseWorkflow(
+                browserRuntime: browserManager,
+                recorder: windowSessions.history.recorder,
+                persistence: windowSessions.persistence,
+                extensions: browserManager.optionalModules.extensions,
+                webViews: browserManager.webViewRuntime.lifecycleService,
+                emptySplitPlaceholders: browserManager.splitComposition
+                    .emptyPlaceholders,
+                splitPreviews: browserManager.splitComposition.previews,
+                backgroundMedia: browserManager
+                    .backgroundMediaOptimizationService,
+                commands: browserManager.windowCommands
+            ),
+            activity: windowSessions.activation,
+            allWindowsClosed: BrowserAllWindowsClosedWorkflow(
+                browserRuntime: browserManager,
+                sessionRestore: windowSessions.restoreService,
+                siteDataPolicy: browserManager.dataServices
+                    .siteDataPolicyEnforcementService,
+                profiles: browserManager.profileManager
+            ),
+            on: windowRegistry
+        )
+        _ = browserManager.tabManager.spaceServices.catalog.createSpace(
             name: "Work",
             profileId: profile.id
         )
@@ -551,6 +599,8 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
             context: container.mainContext,
             profile: profile
         ).manager
+        let browserManager = makeBrowserManager(profile: profile)
+        manager.attach(browserManager: browserManager)
 
         let scratchDirectory = try makeScratchDirectory()
         let installed = try await installContentScriptBackgroundProbeExtension(
@@ -579,7 +629,17 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
 
         manager.markExtensionRuntimePublicationReady()
         let pageURL = URL(string: "http://127.0.0.1:8765/login-basic.html")!
-        let tab = makeTab(profileId: profile.id, url: pageURL)
+        let tab = makeTab(
+            profileId: profile.id,
+            url: pageURL,
+            browserManager: browserManager
+        )
+        tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
+        registerWindowDisplaying(
+            tab,
+            profileId: profile.id,
+            browserManager: browserManager
+        )
         tab.extensionPageRuntimeOwner.markEligible(for: manager.tabPublicationRevisions.issue())
         tab.extensionPageRuntimeOwner.openNotifiedDocumentSequence = 0
         tab.extensionPageRuntimeOwner.openNotifiedContextBindingGeneration = 0
@@ -605,6 +665,8 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
             context: container.mainContext,
             profile: profile
         ).manager
+        let browserManager = makeBrowserManager(profile: profile)
+        manager.attach(browserManager: browserManager)
 
         let scratchDirectory = try makeScratchDirectory()
         let installed = try await installContentScriptNativeMessagingProbeExtension(
@@ -640,7 +702,17 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         )
 
         let pageURL = URL(string: "http://127.0.0.1:8765/login-basic.html")!
-        let tab = makeTab(profileId: profile.id, url: pageURL)
+        let tab = makeTab(
+            profileId: profile.id,
+            url: pageURL,
+            browserManager: browserManager
+        )
+        tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
+        registerWindowDisplaying(
+            tab,
+            profileId: profile.id,
+            browserManager: browserManager
+        )
         defer {
             manager.testHooks.backgroundContentWake = nil
         }

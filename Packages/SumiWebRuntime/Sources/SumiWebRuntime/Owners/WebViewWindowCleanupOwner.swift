@@ -25,7 +25,7 @@ public final class WebViewWindowCleanupOwner {
     private let enqueueDeferredProtectedCommand:
         @MainActor (DeferredWebViewCommand, WKWebView, String) -> Bool
     private let cleanupUnprotectedTrackedWebView:
-        @MainActor (WKWebView, TrackedWebViewOwner, (any WebRuntimeTabHandle)?) -> Void
+        @MainActor (WKWebView, TrackedWebViewOwner, (any WebRuntimeTabHandle)?) -> Bool
     private let refreshPrimaryTrackedWebView: @MainActor (any WebRuntimeTabHandle) -> Void
     private let removeCompositorContainerView: @MainActor (UUID) -> Void
     private let flushDeferredProtectedCommands: @MainActor (ObjectIdentifier) -> Void
@@ -41,7 +41,7 @@ public final class WebViewWindowCleanupOwner {
         enqueueDeferredProtectedCommand:
             @escaping @MainActor (DeferredWebViewCommand, WKWebView, String) -> Bool,
         cleanupUnprotectedTrackedWebView:
-            @escaping @MainActor (WKWebView, TrackedWebViewOwner, (any WebRuntimeTabHandle)?) -> Void,
+            @escaping @MainActor (WKWebView, TrackedWebViewOwner, (any WebRuntimeTabHandle)?) -> Bool,
         refreshPrimaryTrackedWebView: @escaping @MainActor (any WebRuntimeTabHandle) -> Void,
         removeCompositorContainerView: @escaping @MainActor (UUID) -> Void,
         flushDeferredProtectedCommands: @escaping @MainActor (ObjectIdentifier) -> Void,
@@ -61,7 +61,8 @@ public final class WebViewWindowCleanupOwner {
         self.finishCleanupSuppression = finishCleanupSuppression
     }
 
-    public func cleanupWindow(_ windowId: UUID) {
+    @discardableResult
+    public func cleanupWindow(_ windowId: UUID) -> Bool {
         let signpostState = SumiWebRuntimeDiagnostics.beginInterval(
             "WebViewWindowCleanupOwner.cleanupWindow"
         )
@@ -78,17 +79,25 @@ public final class WebViewWindowCleanupOwner {
             entries: webViewSessions.queries.trackedWebViews(in: windowId),
             runtime: scopeRuntime()
         )
-        removeCompositorContainerView(windowId)
+        let didDrainWindow = webViewSessions.queries
+            .trackedWebViews(in: windowId)
+            .isEmpty
+        if didDrainWindow {
+            removeCompositorContainerView(windowId)
+        }
+        return didDrainWindow
     }
 
-    public func cleanupAllWebViews() {
+    @discardableResult
+    public func cleanupAllWebViews() -> Bool {
         cleanupScopeOwner.cleanupAllWebViews(
             entries: webViewSessions.queries.trackedWebViews(),
             totalWebViewCount: webViewSessions.queries.totalTrackedWebViewCount,
             runtime: scopeRuntime()
         )
 
-        if webViewSessions.queries.isTrackingEmpty {
+        let didDrainRuntime = webViewSessions.queries.isTrackingEmpty
+        if didDrainRuntime {
             visibleWebViewRuntimeOwner.resetWindowRegistrations()
             let newlyUnprotectedSourceIDs = mediaProtectionOwner
                 .removeVisualHandoffFullscreenAndNowPlayingState()
@@ -103,6 +112,7 @@ public final class WebViewWindowCleanupOwner {
         finishCleanupSuppression(
             mediaProtectionOwner.pruneStaleBookkeeping(reason: "cleanupAllWebViews")
         )
+        return didDrainRuntime
     }
 
     private func scopeRuntime() -> WebViewCleanupScopeOwner.Runtime {

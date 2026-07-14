@@ -56,7 +56,7 @@ final class WebViewTabTeardownOwnerTests: XCTestCase {
                 return true
             },
             cleanupTracked: { webView, trackedOwner, _ in
-                _ = tracking.unregisterTrackedWebViewSlot(
+                guard tracking.unregisterTrackedWebViewSlot(
                     owner: trackedOwner,
                     expectedWebView: webView,
                     in: repository,
@@ -64,8 +64,9 @@ final class WebViewTabTeardownOwnerTests: XCTestCase {
                     uninstallRuntimeObservationsIfUntracked: { _ in },
                     pruneInvalidDeferredCommands: { _ in },
                     forgetRecentVisibility: { _ in }
-                )
+                ) != nil else { return false }
                 tab.cleanupCloneWebView(webView)
+                return true
             }
         )
 
@@ -95,6 +96,37 @@ final class WebViewTabTeardownOwnerTests: XCTestCase {
         XCTAssertEqual(windowID, protectedWindowID)
     }
 
+    func testBlockedTrackedCleanupIsReportedAndResidenceStaysCanonical() {
+        let repository = WebViewSessionRepository()
+        let tab = TeardownTab(repository: repository)
+        let windowID = UUID()
+        let webView = WKWebView()
+        register(webView, tabID: tab.id, windowID: windowID, in: repository)
+        let owner = makeOwner(
+            repository: repository,
+            cleanupTracked: { _, _, _ in false }
+        )
+
+        let result = owner.removeAllWebViews(
+            for: tab,
+            closeActiveFullscreenMedia: false
+        )
+
+        XCTAssertEqual(result, .init(
+            discoveredWebViewCount: 1,
+            cleanedWebViewCount: 0,
+            deferredWebViewCount: 0,
+            unscheduledProtectedWebViewCount: 0,
+            blockedWebViewCount: 1
+        ))
+        XCTAssertFalse(result.isComplete)
+        XCTAssertEqual(
+            repository.residence(of: webView),
+            .window(.init(tabID: tab.id, windowID: windowID))
+        )
+        XCTAssertTrue(tab.cleanedWebViewIDs.isEmpty)
+    }
+
     private func makeOwner(
         repository: WebViewSessionRepository,
         isProtected: @escaping (WKWebView) -> Bool = { _ in false },
@@ -103,7 +135,7 @@ final class WebViewTabTeardownOwnerTests: XCTestCase {
             WKWebView,
             TrackedWebViewOwner,
             (any WebRuntimeTabHandle)?
-        ) -> Void = { _, _, _ in },
+        ) -> Bool = { _, _, _ in true },
         cleanupDetached: @escaping (
             WKWebView,
             UUID,

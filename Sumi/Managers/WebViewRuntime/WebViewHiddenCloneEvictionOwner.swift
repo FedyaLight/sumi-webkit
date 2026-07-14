@@ -16,7 +16,7 @@ final class WebViewHiddenCloneEvictionOwner {
     typealias GloballyVisibleTabIDs = () -> Set<UUID>
     typealias WebViewProtectionCheck = (WKWebView) -> Bool
     typealias ProtectedCommandEnqueuer = (DeferredWebViewCommand, WKWebView, String) -> Bool
-    typealias UnprotectedTrackedCleanup = (WKWebView, TrackedWebViewOwner, Tab) -> Void
+    typealias UnprotectedTrackedCleanup = (WKWebView, TrackedWebViewOwner, Tab) -> Bool
     typealias PrimaryTrackedWebViewRefresh = (Tab) -> Void
 
     struct Runtime {
@@ -29,12 +29,13 @@ final class WebViewHiddenCloneEvictionOwner {
         let refreshPrimaryTrackedWebView: PrimaryTrackedWebViewRefresh
     }
 
+    @discardableResult
     func evictHiddenWebViews(
         in windowId: UUID,
         visibleTabIDs: Set<UUID>,
         entries: [(TrackedWebViewOwner, WKWebView)],
         runtime: Runtime
-    ) {
+    ) -> Bool {
         let signpostState = PerformanceTrace.beginInterval(
             "WebViewHiddenCloneEvictionOwner.evictHiddenWebViews"
         )
@@ -49,9 +50,10 @@ final class WebViewHiddenCloneEvictionOwner {
             visibleTabIDs.contains(owner.tabID) == false
         }
 
-        guard hiddenEntries.isEmpty == false else { return }
+        guard hiddenEntries.isEmpty == false else { return true }
 
         let globallyVisibleTabIDs = runtime.globallyVisibleTabIDs()
+        var didCompleteEligibleCleanups = true
 
         for (owner, webView) in hiddenEntries.sorted(by: {
             if $0.0.tabID != $1.0.tabID {
@@ -80,16 +82,20 @@ final class WebViewHiddenCloneEvictionOwner {
                 }
             }
 
-            runtime.cleanupUnprotectedTrackedWebView(
+            guard runtime.cleanupUnprotectedTrackedWebView(
                 webView,
                 owner,
                 tab
-            )
+            ) else {
+                didCompleteEligibleCleanups = false
+                continue
+            }
             runtime.refreshPrimaryTrackedWebView(tab)
 
             RuntimeDiagnostics.debug(category: "WebViewHiddenCloneEvictionOwner") {
                 "Cleaned hidden clone for visible tab=\(owner.tabID.uuidString.prefix(8)) window=\(windowId.uuidString.prefix(8))."
             }
         }
+        return didCompleteEligibleCleanups
     }
 }

@@ -14,7 +14,7 @@ public final class WebViewCleanupScopeOwner {
     public typealias WebViewProtectionCheck = (WKWebView) -> Bool
     public typealias ProtectedCommandEnqueuer = (DeferredWebViewCommand, WKWebView, String) -> Bool
     public typealias UnprotectedTrackedCleanup =
-        (WKWebView, TrackedWebViewOwner, (any WebRuntimeTabHandle)?) -> Void
+        (WKWebView, TrackedWebViewOwner, (any WebRuntimeTabHandle)?) -> Bool
     public typealias PrimaryTrackedWebViewRefresh = (any WebRuntimeTabHandle) -> Void
 
     public struct Runtime {
@@ -105,11 +105,13 @@ public final class WebViewCleanupScopeOwner {
             }
 
             let tab = runtime.tabForID(owner.tabID)
-            runtime.cleanupUnprotectedTrackedWebView(
+            guard runtime.cleanupUnprotectedTrackedWebView(
                 webView,
                 owner,
                 tab
-            )
+            ) else {
+                continue
+            }
             if let tab {
                 runtime.refreshPrimaryTrackedWebView(tab)
             }

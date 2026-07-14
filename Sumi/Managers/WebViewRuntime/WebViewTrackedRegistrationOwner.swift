@@ -19,6 +19,7 @@ final class WebViewTrackedRegistrationOwner {
     private let pruneInvalidDeferredCommands: @MainActor (String) -> Void
     private let flushDeferredProtectedCommands: @MainActor (ObjectIdentifier) -> Void
     private let finishDestructiveCleanupNavigation: @MainActor (WKWebView) -> Void
+    private let cancelProcessRecovery: @MainActor (WKWebView) -> Void
     private let performFallbackWebViewCleanup: @MainActor (WKWebView, UUID) -> Void
     private let resolvedTab: @MainActor (UUID) -> Tab?
     private let refreshPrimaryTrackedWebView: @MainActor (Tab) -> Void
@@ -36,6 +37,7 @@ final class WebViewTrackedRegistrationOwner {
         removeWebViewFromContainers: @escaping @MainActor (WKWebView) -> Void,
         pruneInvalidDeferredCommands: @escaping @MainActor (String) -> Void,
         flushDeferredProtectedCommands: @escaping @MainActor (ObjectIdentifier) -> Void,
+        cancelProcessRecovery: @escaping @MainActor (WKWebView) -> Void,
         finishDestructiveCleanupNavigation: @escaping @MainActor (WKWebView) -> Void,
         performFallbackWebViewCleanup: @escaping @MainActor (WKWebView, UUID) -> Void,
         resolvedTab: @escaping @MainActor (UUID) -> Tab?,
@@ -53,6 +55,7 @@ final class WebViewTrackedRegistrationOwner {
         self.removeWebViewFromContainers = removeWebViewFromContainers
         self.pruneInvalidDeferredCommands = pruneInvalidDeferredCommands
         self.flushDeferredProtectedCommands = flushDeferredProtectedCommands
+        self.cancelProcessRecovery = cancelProcessRecovery
         self.finishDestructiveCleanupNavigation = finishDestructiveCleanupNavigation
         self.performFallbackWebViewCleanup = performFallbackWebViewCleanup
         self.resolvedTab = resolvedTab
@@ -152,26 +155,29 @@ final class WebViewTrackedRegistrationOwner {
         )
     }
 
+    @discardableResult
     func cleanupTrackedWebView(
         _ webView: WKWebView,
         owner: TrackedWebViewOwner
-    ) {
+    ) -> Bool {
         let tab = resolvedTab(owner.tabID)
-        cleanupUnprotectedTrackedWebView(
+        let didCleanup = cleanupUnprotectedTrackedWebView(
             webView,
             owner: owner,
             tab: tab
         )
-        if let tab {
+        if didCleanup, let tab {
             refreshPrimaryTrackedWebView(tab)
         }
+        return didCleanup
     }
 
+    @discardableResult
     func cleanupUnprotectedTrackedWebView(
         _ webView: WKWebView,
         owner: TrackedWebViewOwner,
         tab: Tab?
-    ) {
+    ) -> Bool {
         trackedCleanupExecutionOwner.cleanupUnprotectedTrackedWebView(
             webView,
             owner: owner,
@@ -226,6 +232,9 @@ final class WebViewTrackedRegistrationOwner {
 
     private func cleanupExecutionRuntime() -> WebViewTrackedCleanupExecutionOwner.Runtime {
         WebViewTrackedCleanupExecutionOwner.Runtime(
+            cancelProcessRecovery: { [cancelProcessRecovery] webView in
+                cancelProcessRecovery(webView)
+            },
             finishDestructiveCleanupSuppression: { [finishDestructiveCleanupNavigation] webView in
                 finishDestructiveCleanupNavigation(webView)
             },

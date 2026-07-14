@@ -89,6 +89,9 @@ final class WebViewRuntimeGraph {
         flushDeferredProtectedCommands: { [weak self] webViewID in
             self?.protectionRuntime.flush(for: webViewID)
         },
+        cancelProcessRecovery: { [weak self] webView in
+            self?.processRecoveryService.cancel(webView)
+        },
         finishDestructiveCleanupNavigation: { [weak self] webView in
             self?.websiteDataCleanupService.webViewDidLeaveRuntime(webView)
         },
@@ -556,7 +559,7 @@ private extension WebViewRuntimeAssembler.Dependencies {
                     webView,
                     owner: owner,
                     tab: tab
-                )
+                ) ?? false
             },
             refreshPrimaryTrackedWebView: { [weak graph] tab in
                 graph?.tabWebViewMaterialization.refreshPrimary(for: tab)
@@ -580,11 +583,13 @@ private enum DeferredWebViewCommandAssembly {
             },
             cleanupTrackedWebView: { [weak graph] webView, owner, tab in
                 guard let graph else { return false }
-                graph.lifecycleService.cleanupUnprotectedTrackedWebView(
+                guard graph.lifecycleService.cleanupUnprotectedTrackedWebView(
                     webView,
                     owner: owner,
                     tab: tab
-                )
+                ) else {
+                    return false
+                }
                 if let tab, graph.runtimeTabs.isRetiring(tab) == false {
                     graph.visibilityRuntime.refreshPrimaryWebView(for: tab)
                 }
@@ -609,21 +614,18 @@ private enum DeferredWebViewCommandAssembly {
         let windowMaintenance = DeferredWebViewWindowMaintenanceExecutor(
             cleanupWindow: { [weak graph] windowID in
                 guard let graph else { return false }
-                graph.lifecycleService.cleanupWindow(windowID)
-                return true
+                return graph.lifecycleService.cleanupWindow(windowID)
             },
             cleanupAllWebViews: { [weak graph] in
                 guard let graph else { return false }
-                graph.lifecycleService.cleanupAllWebViews()
-                return true
+                return graph.lifecycleService.cleanupAllWebViews()
             },
             evictHiddenWebViews: { [weak graph] windowID, visibleTabIDs in
                 guard let graph else { return false }
-                graph.visibilityRuntime.evictHiddenWebViewsIfNeeded(
+                return graph.visibilityRuntime.evictHiddenWebViewsIfNeeded(
                     in: windowID,
                     visibleTabIDs: visibleTabIDs
                 )
-                return true
             },
             visibleTabIDs: { [weak graph] windowID in
                 graph?.visibilityRuntime.visibleTabIDs(in: windowID) ?? []

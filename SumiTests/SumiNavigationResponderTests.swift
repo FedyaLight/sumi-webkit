@@ -853,6 +853,46 @@ final class SumiNavigationResponderTests: SumiNavigationResponderTestCase {
         XCTAssertTrue(sumiAction.modifierFlags.contains(.option))
     }
 
+    func testSumiNavigationActionAdapterTreatsReleasedFrameOwnersAsNewWindow() {
+        let url = URL(string: "https://released-frame.example/page")!
+        let origin = SumiSecurityOrigin(
+            protocol: "https",
+            host: "released-frame.example",
+            port: 0
+        )
+        var sourceFrame = origin.navigationFrameInfo(
+            webView: WKWebView(frame: .zero),
+            handle: FrameHandle(rawValue: UInt64(11))!,
+            isMainFrame: true,
+            url: url
+        )
+        var targetFrame = origin.navigationFrameInfo(
+            webView: WKWebView(frame: .zero),
+            handle: FrameHandle(rawValue: UInt64(12))!,
+            isMainFrame: true,
+            url: url
+        )
+        sourceFrame.webView = nil
+        targetFrame.webView = nil
+        let action = NavigationAction(
+            request: URLRequest(url: url),
+            navigationType: .other,
+            currentHistoryItemIdentity: nil,
+            redirectHistory: nil,
+            isUserInitiated: false,
+            sourceFrame: sourceFrame,
+            targetFrame: targetFrame,
+            shouldDownload: false,
+            mainFrameNavigation: nil
+        )
+
+        let sumiAction = SumiNavigationAction(action)
+
+        XCTAssertTrue(sumiAction.isTargetingNewWindow)
+        XCTAssertEqual(sumiAction.sourceFrame?.handle?.frameID, 11)
+        XCTAssertEqual(sumiAction.targetFrame?.handle?.frameID, 12)
+    }
+
     func testSumiNavigationActionWKAdapterPreservesSafeSourceFrameOriginWhenRequestIsMissing() {
         let webView = WKWebView(frame: .zero)
         let sourceFrame = SumiWKFrameInfoMock(

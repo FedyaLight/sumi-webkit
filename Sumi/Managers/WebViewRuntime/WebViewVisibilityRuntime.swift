@@ -71,10 +71,11 @@ final class WebViewVisibilityRuntime {
         materialization.refreshPrimary(for: tab)
     }
 
+    @discardableResult
     func evictHiddenWebViewsIfNeeded(
         in windowID: UUID,
         visibleTabIDs: Set<UUID>
-    ) {
+    ) -> Bool {
         runtimeAssembler.evictHiddenWebViews(
             in: windowID,
             visibleTabIDs: visibleTabIDs,

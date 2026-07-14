@@ -24,6 +24,7 @@ final class WebViewCleanupScopeOwnerTests: XCTestCase {
                 enqueueDeferredProtectedCommand: { _, _, _ in false },
                 cleanupUnprotectedTrackedWebView: { webView, owner, _ in
                     cleaned.append((ObjectIdentifier(webView), owner))
+                    return true
                 },
                 refreshPrimaryTrackedWebView: { _ in }
             )
@@ -48,11 +49,55 @@ final class WebViewCleanupScopeOwnerTests: XCTestCase {
                 tabForID: { _ in nil },
                 isWebViewProtectedFromCompositorMutation: { _ in true },
                 enqueueDeferredProtectedCommand: { _, _, _ in false },
-                cleanupUnprotectedTrackedWebView: { _, _, _ in cleanupCount += 1 },
+                cleanupUnprotectedTrackedWebView: { _, _, _ in
+                    cleanupCount += 1
+                    return true
+                },
                 refreshPrimaryTrackedWebView: { _ in }
             )
         )
 
         XCTAssertEqual(cleanupCount, 0)
+    }
+
+    func testRejectedCleanupDoesNotRefreshPrimaryWebView() {
+        let owner = WebViewCleanupScopeOwner()
+        let tab = StubTabHandle()
+        let trackedOwner = TrackedWebViewOwner(
+            tabID: tab.id,
+            windowID: UUID()
+        )
+        var refreshCount = 0
+
+        owner.cleanupWindow(
+            trackedOwner.windowID,
+            entries: [(trackedOwner, WKWebView())],
+            runtime: .init(
+                tabForID: { _ in tab },
+                isWebViewProtectedFromCompositorMutation: { _ in false },
+                enqueueDeferredProtectedCommand: { _, _, _ in false },
+                cleanupUnprotectedTrackedWebView: { _, _, _ in false },
+                refreshPrimaryTrackedWebView: { _ in refreshCount += 1 }
+            )
+        )
+
+        XCTAssertEqual(refreshCount, 0)
+    }
+}
+
+@MainActor
+private final class StubTabHandle: WebRuntimeTabHandle {
+    let id = UUID()
+    let webViewSession: WebViewSessionHandle
+    let requiresPrimaryWebView = true
+    var url = URL(string: "about:blank")!
+    let isEphemeral = false
+    let resolvedProfileId: UUID? = nil
+
+    init() {
+        webViewSession = WebViewSessionHandle(
+            tabID: id,
+            repository: WebViewSessionRepository()
+        )
     }
 }

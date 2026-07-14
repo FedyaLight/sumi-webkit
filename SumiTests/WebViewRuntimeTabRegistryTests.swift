@@ -206,6 +206,69 @@ final class WebViewRuntimeTabRegistryTests: XCTestCase {
         XCTAssertEqual(graph.runtimeTabs.bind(tab), .retiredIdentity)
     }
 
+    func testRetirementReportsBlockedRepositoryReplacementWithoutDestroyingIt() {
+        let repository = WebViewSessionRepository()
+        let graph = makeTestWebViewRuntimeGraph(webViewSessions: repository)
+        let tab = makeTab(webViewSessions: repository)
+        let windowID = UUID()
+        let current = FocusableWKWebView()
+        current.owningTab = tab
+        XCTAssertTrue(
+            graph.trackedWebViewAdmission.registerAuxiliaryTrackedWebView(
+                current,
+                for: tab,
+                in: windowID
+            ).isAccepted
+        )
+        _ = tab.webContentRecovery.beginRecovery(on: current)
+        XCTAssertTrue(graph.processRecoveryService.retain(current, for: tab))
+        XCTAssertTrue(graph.processRecoveryService.hasPendingRecovery(for: current))
+        let replacement = FocusableWKWebView()
+        replacement.owningTab = tab
+        guard case .began(let lease) = repository.beginWindowSetReplacement(
+            for: tab.id,
+            expectedGeneration: repository.queries.generation(for: tab.id),
+            webViewsByWindowID: [windowID: replacement],
+            primaryWindowID: windowID
+        ) else {
+            return XCTFail("Expected raw repository replacement transaction")
+        }
+
+        let blocked = graph.lifecycleService.removeAllWebViews(
+            for: tab,
+            intent: .retirement
+        )
+
+        XCTAssertEqual(blocked, .init(
+            discoveredWebViewCount: 1,
+            cleanedWebViewCount: 0,
+            deferredWebViewCount: 0,
+            unscheduledProtectedWebViewCount: 0,
+            blockedWebViewCount: 1
+        ))
+        XCTAssertTrue(graph.runtimeTabs.isRetiring(tab))
+        XCTAssertIdentical(
+            repository.webView(for: tab.id, in: windowID),
+            replacement
+        )
+        guard case .retiring = repository.residence(of: current) else {
+            return XCTFail("Retired generation lost its transaction residence")
+        }
+        XCTAssertTrue(graph.processRecoveryService.hasPendingRecovery(for: current))
+
+        guard case .rolledBack = repository.rollbackReplacementBatch(lease) else {
+            return XCTFail("Expected raw transaction rollback")
+        }
+        let completed = graph.lifecycleService.removeAllWebViews(
+            for: tab,
+            intent: .retirement
+        )
+        XCTAssertTrue(completed.isComplete)
+        XCTAssertTrue(repository.runtimeOwnedTabIDs.isEmpty)
+        XCTAssertFalse(graph.runtimeTabs.isRetiring(tab))
+        XCTAssertFalse(graph.processRecoveryService.hasPendingRecovery(for: current))
+    }
+
     func testRepeatedProtectedRetirementKeepsCleanupIdentityUntilResidenceDrains()
         async throws {
         let manager = BrowserManager()

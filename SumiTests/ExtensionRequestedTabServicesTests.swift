@@ -416,6 +416,13 @@ final class ExtensionRequestedTabServicesTests:
             extensionId: identity.extensionId,
             profileId: identity.profileId
         )
+        defer {
+            harness.manager.profileRuntime.setContext(
+                staleContext,
+                extensionId: identity.extensionId,
+                profileId: identity.profileId
+            )
+        }
 
         XCTAssertThrowsError(
             try harness.manager.requestedTabTargetResolver.resolve(
@@ -456,6 +463,13 @@ final class ExtensionRequestedTabServicesTests:
             extensionId: identity.extensionId,
             profileId: identity.profileId
         )
+        defer {
+            harness.manager.profileRuntime.setContext(
+                staleContext,
+                extensionId: identity.extensionId,
+                profileId: identity.profileId
+            )
+        }
 
         let tabAdapter = try XCTUnwrap(
             harness.manager.adapterStore.tabAdapters[harness.sourceTab.id]
@@ -683,12 +697,26 @@ final class ExtensionRequestedTabServicesTests:
 
     func testContextPublicationQueryFailsClosedAfterRuntimeRelease()
         async throws {
-        let harness = try await makeRequestedPublicationHarness()
-        let profileID = harness.profile.id
+        let directory = try makeScratchDirectory()
+        try JSONSerialization.data(
+            withJSONObject: [
+                "manifest_version": 3,
+                "name": "Context Publication Query",
+                "version": "1.0",
+            ],
+            options: [.sortedKeys]
+        ).write(
+            to: directory.appendingPathComponent("manifest.json"),
+            options: [.atomic]
+        )
+        let webExtension = try await WKWebExtension(
+            resourceBaseURL: directory
+        )
+        let context = WKWebExtensionContext(for: webExtension)
+        let profileID = UUID()
         var runtime: ExtensionProfileRuntime? = ExtensionProfileRuntime(
             initialProfileId: profileID
         )
-        let context = harness.extensionContext
         runtime?.setContext(
             context,
             extensionId: "released-runtime-extension",
@@ -700,7 +728,7 @@ final class ExtensionRequestedTabServicesTests:
 
         XCTAssertEqual(query.currentIdentity(for: context)?.profileID, profileID)
 
-        weak var releasedRuntime = runtime
+        weak let releasedRuntime = runtime
         runtime = nil
 
         XCTAssertNil(releasedRuntime)
@@ -738,6 +766,9 @@ final class ExtensionRequestedTabServicesTests:
         -> RequestedPublicationHarness {
         SafariExtensionLiveWebKitTestLease.holdForProcess()
         let container = try makeTestContainer()
+        addTeardownBlock {
+            _ = container
+        }
         let profile = Profile(name: "Requested Tab Transaction")
         let browserConfiguration = BrowserConfiguration()
         let moduleRegistry = SumiModuleRegistry(

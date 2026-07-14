@@ -29,7 +29,7 @@ final class WebViewRuntimeAssembler {
         let resolvedTab: @MainActor (UUID) -> Tab?
         let trackedLiveWebViews: @MainActor (Tab) -> [WKWebView]
         let cleanupUnprotectedTrackedWebView:
-            @MainActor (WKWebView, TrackedWebViewOwner, Tab?) -> Void
+            @MainActor (WKWebView, TrackedWebViewOwner, Tab?) -> Bool
         let refreshPrimaryTrackedWebView: @MainActor (Tab) -> Void
     }
 
@@ -81,11 +81,12 @@ final class WebViewRuntimeAssembler {
 
     // MARK: - Hidden Clone Eviction
 
+    @discardableResult
     func evictHiddenWebViews(
         in windowId: UUID,
         visibleTabIDs: Set<UUID>,
         globallyVisibleTabIDs: @escaping @MainActor () -> Set<UUID>
-    ) {
+    ) -> Bool {
         dependencies.hiddenCloneEvictionOwner.evictHiddenWebViews(
             in: windowId,
             visibleTabIDs: visibleTabIDs,
