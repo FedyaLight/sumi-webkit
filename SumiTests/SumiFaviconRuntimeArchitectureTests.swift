@@ -200,6 +200,7 @@ final class SumiFaviconRuntimeArchitectureTests: XCTestCase {
 private actor RuntimeCancellationAwareFaviconFetcher: SumiFaviconNetworkFetching {
     private var didStart = false
     private var didCancel = false
+    private var fetchContinuation: CheckedContinuation<Void, Never>?
     private var startWaiters: [CheckedContinuation<Void, Never>] = []
     private var cancellationWaiters: [CheckedContinuation<Void, Never>] = []
     private(set) var cancellationCount = 0
@@ -219,19 +220,30 @@ private actor RuntimeCancellationAwareFaviconFetcher: SumiFaviconNetworkFetching
         let startWaiters = startWaiters
         self.startWaiters.removeAll()
         startWaiters.forEach { $0.resume() }
-        do {
-            try await Task.sleep(nanoseconds: 60_000_000_000)
-            return .failure(.transport)
-        } catch is CancellationError {
-            cancellationCount += 1
-            didCancel = true
-            let cancellationWaiters = cancellationWaiters
-            self.cancellationWaiters.removeAll()
-            cancellationWaiters.forEach { $0.resume() }
-            return .cancelled
-        } catch {
-            return .failure(.transport)
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                guard Task.isCancelled == false else {
+                    continuation.resume()
+                    return
+                }
+                fetchContinuation = continuation
+            }
+        } onCancel: {
+            Task { await self.cancelFetch() }
         }
+        return .cancelled
+    }
+
+    private func cancelFetch() {
+        guard didCancel == false else { return }
+        cancellationCount += 1
+        didCancel = true
+        let fetchContinuation = fetchContinuation
+        self.fetchContinuation = nil
+        fetchContinuation?.resume()
+        let cancellationWaiters = cancellationWaiters
+        self.cancellationWaiters.removeAll()
+        cancellationWaiters.forEach { $0.resume() }
     }
 }
 

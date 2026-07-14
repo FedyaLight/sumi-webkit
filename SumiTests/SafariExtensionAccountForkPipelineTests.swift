@@ -1,3 +1,5 @@
+import AppKit
+import Combine
 import Network
 import SwiftData
 import WebKit
@@ -51,7 +53,6 @@ final class SafariExtensionAccountForkPipelineTests: XCTestCase {
         // delivered / sendResponse dropped" from fork-pipeline failures.
         let echo = try await sendExternalMessage(
             body: "{ type: 'echo' }",
-            resultSlot: "__sumiEchoResult",
             harness: harness
         )
         XCTAssertTrue(
@@ -218,7 +219,7 @@ final class SafariExtensionAccountForkPipelineTests: XCTestCase {
             XCTAssertEqual(
                 server.pageHits(for: accountTab.cacheToken),
                 1,
-                "attempt \(attempt): the account page was served \(server.pageHits(for: accountTab.cacheToken)) times for one tab — a double page load double-produces forks in the field (manualLoad=\(accountTab.usedManualInitialLoad))"
+                "attempt \(attempt): the account page was served \(server.pageHits(for: accountTab.cacheToken)) times for one tab — a double page load double-produces forks in the field"
             )
         }
     }
@@ -330,9 +331,22 @@ final class SafariExtensionAccountForkPipelineTests: XCTestCase {
     /// sender tab is unknown — see `runtimeWebPageSendMessage`).
     final class TabLifecycleLog {
         private(set) var entries: [String] = []
+        private var nextOpenHandler: ((UUID) -> Void)?
 
         func append(_ entry: String) {
             entries.append(entry)
+        }
+
+        func recordOpen(_ tabID: UUID) {
+            append("didOpenTab \(tabID)")
+            let handler = nextOpenHandler
+            nextOpenHandler = nil
+            handler?(tabID)
+        }
+
+        func onNextOpen(_ handler: @escaping (UUID) -> Void) {
+            precondition(nextOpenHandler == nil)
+            nextOpenHandler = handler
         }
 
         var summary: String {
@@ -366,12 +380,37 @@ final class SafariExtensionAccountForkPipelineTests: XCTestCase {
         let container = try makeTestContainer()
         let profile = Profile(name: "Account Fork Profile")
         let browserConfiguration = BrowserConfiguration()
+        let moduleRegistry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(
+                userDefaults: UserDefaults(suiteName: UUID().uuidString)!
+            )
+        )
+        moduleRegistry.enable(.extensions)
         let manager = makeSafariExtensionTestExtensionManager(
             context: container.mainContext,
             initialProfile: profile,
-            browserConfiguration: browserConfiguration
+            browserConfiguration: browserConfiguration,
+            moduleRegistry: moduleRegistry
         )
-        let browserManager = makeSafariExtensionTestBrowserManager(profile: profile)
+        let extensionsModule = SumiExtensionsModule(
+            moduleRegistry: moduleRegistry,
+            context: container.mainContext,
+            browserConfiguration: browserConfiguration,
+            initialProfileProvider: { profile },
+            managerFactory: { _, _, _, _ in manager }
+        )
+        let windowRegistry = WindowRegistry()
+        let browserManager = makeSafariExtensionTestBrowserManager(
+            moduleRegistry: moduleRegistry,
+            extensionsModule: extensionsModule,
+            profile: profile,
+            windowRegistry: windowRegistry
+        )
+        extensionsModule.attach(
+            runtime: BrowserExtensionsModuleRuntimeFactory.runtime(
+                for: browserManager
+            )
+        )
         manager.attach(browserManager: browserManager)
 
         // The startup restore task replaces the tab-manager structural state
@@ -382,7 +421,7 @@ final class SafariExtensionAccountForkPipelineTests: XCTestCase {
 
         let tabLifecycleLog = TabLifecycleLog()
         manager.testHooks.didOpenTab = { tabId in
-            tabLifecycleLog.append("didOpenTab \(tabId)")
+            tabLifecycleLog.recordOpen(tabId)
         }
         manager.testHooks.didCloseTab = { tabId in
             tabLifecycleLog.append("didCloseTab \(tabId)")
@@ -434,6 +473,26 @@ final class SafariExtensionAccountForkPipelineTests: XCTestCase {
         tab.profileId = profile.id
         tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
 
+        let windowState = BrowserWindowState()
+        windowState.tabManager = browserManager.tabManager
+        windowState.currentProfileId = profile.id
+        windowState.currentSpaceId = tab.spaceId
+        windowState.currentTabId = tab.id
+        let appKitWindow = NSWindow(
+            contentRect: NSRect(x: 120, y: 120, width: 900, height: 700),
+            styleMask: [.titled, .closable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        appKitWindow.isReleasedWhenClosed = false
+        windowRegistry.bindAppKitWindow(appKitWindow, to: windowState)
+        windowRegistry.register(windowState)
+        windowRegistry.setActive(windowState)
+        addTeardownBlock { @MainActor in
+            windowRegistry.unregister(windowState.id)
+            appKitWindow.close()
+        }
+
         let webView = FocusableWKWebView(frame: .zero, configuration: configuration)
         webView.owningTab = tab
         tab.replaceUntrackedWebView(webView)
@@ -442,6 +501,7 @@ final class SafariExtensionAccountForkPipelineTests: XCTestCase {
             tab,
             reason: "SafariExtensionAccountForkPipelineTests"
         )
+        XCTAssertTrue(manager.publishedExtensionTabs.containsPublishedTab(tab))
 
         let didFinish = expectation(description: "account page loaded")
         let delegate = NavigationDelegateBox {
@@ -472,7 +532,6 @@ final class SafariExtensionAccountForkPipelineTests: XCTestCase {
     ) async throws -> ForkSendResult {
         let payload = try await sendExternalMessage(
             body: "{ type: 'fork', selector: '\(selector)' }",
-            resultSlot: "__sumiForkResult",
             harness: harness
         )
         let response = payload["response"] as? [String: Any]
@@ -494,32 +553,6 @@ final class SafariExtensionAccountForkPipelineTests: XCTestCase {
         let tab: Tab
         let webView: WKWebView
         let cacheToken: String
-        /// True when the harness had to trigger the initial load itself
-        /// because the deferred initial-document handoff never fired in the
-        /// windowless test environment.
-        let usedManualInitialLoad: Bool
-    }
-
-    /// Live snapshot of the extension-created tab's page: what URL actually
-    /// loaded, whether the orchestrator content script made it in, and how
-    /// many times the server actually served this unique page URL.
-    private func pageStateDiagnostics(
-        webView: WKWebView,
-        accountURL: URL,
-        server: AccountForkHTTPServer
-    ) async -> String {
-        let href = (try? await evaluateString("String(location.href)", in: webView)) ?? nil
-        let readyState = (try? await evaluateString("String(document.readyState)", in: webView)) ?? nil
-        let orchestrator = (try? await datasetValue(in: webView, key: "sumiOrchestratorReady")) ?? nil
-        let cacheToken = URLComponents(url: accountURL, resolvingAgainstBaseURL: false)?
-            .queryItems?
-            .first { $0.name == "cache" }?
-            .value ?? "?"
-        return "href=\(href ?? "nil") readyState=\(readyState ?? "nil") "
-            + "orchestratorReady=\(orchestrator ?? "nil") "
-            + "webViewURL=\(webView.url?.absoluteString ?? "nil") "
-            + "isLoading=\(webView.isLoading) "
-            + "serverPageHits=\(server.pageHits(for: cacheToken))"
     }
 
     /// Asks the probe's service worker to open the account page via
@@ -532,9 +565,18 @@ final class SafariExtensionAccountForkPipelineTests: XCTestCase {
         label: String
     ) async throws -> ExtensionCreatedAccountTab {
         let accountURL = server.accountPageURL
+        let cacheToken = URLComponents(url: accountURL, resolvingAgainstBaseURL: false)?
+            .queryItems?
+            .first { $0.name == "cache" }?
+            .value ?? "?"
+        let didOpen = expectation(description: "\(label): extension tab opened")
+        var openedTabID: UUID?
+        harness.tabLifecycleLog.onNextOpen { tabID in
+            openedTabID = tabID
+            didOpen.fulfill()
+        }
         let open = try await sendExternalMessage(
             body: "{ type: 'open-account-tab', url: '\(accountURL.absoluteString)' }",
-            resultSlot: "__sumiOpenTabResult",
             harness: harness
         )
         let openResponse = open["response"] as? [String: Any]
@@ -542,109 +584,56 @@ final class SafariExtensionAccountForkPipelineTests: XCTestCase {
             openResponse?["ok"] as? Bool ?? false,
             "\(label): worker tabs.create failed: \(open)"
         )
-
-        var createdTab: Tab?
-        for _ in 0..<100 {
-            let allTabs = harness.browserManager.tabManager.tabCollectionMembershipOwner.allTabs()
-                + harness.browserManager.tabManager.shortcutPresentationOwner.activeEssentialTabs(
-                    for: harness.browserManager.tabManager.runtimePorts?.currentProfileId
-                )
-            if let match = allTabs.first(where: {
-                $0.url.absoluteString == accountURL.absoluteString
-            }) {
-                createdTab = match
-                break
-            }
-            try await Task.sleep(nanoseconds: 100_000_000)
-        }
+        await fulfillment(of: [didOpen], timeout: 10)
+        let exactTabID = try XCTUnwrap(openedTabID)
+        let allTabs = harness.browserManager.tabManager.tabCollectionMembershipOwner.allTabs()
+            + harness.browserManager.tabManager.shortcutPresentationOwner.activeEssentialTabs(
+                for: harness.browserManager.tabManager.runtimePorts?.currentProfileId
+            )
         let tab = try XCTUnwrap(
-            createdTab,
+            allTabs.first { $0.id == exactTabID },
             "\(label): tabs.create did not surface a tab for \(accountURL) in the tab manager; lifecycle=[\(harness.tabLifecycleLog.summary)]"
         )
-
-        var materializedWebView: WKWebView?
-        for _ in 0..<100 {
-            if let webView = tab.resolvedCurrentWebView() {
-                materializedWebView = webView
-                break
-            }
-            try await Task.sleep(nanoseconds: 100_000_000)
-        }
         let webView = try XCTUnwrap(
-            materializedWebView,
+            tab.resolvedCurrentWebView(),
             "\(label): Sumi never materialized a web view for the extension-created tab (isUnloaded=\(tab.isUnloaded)); adapter=[\(harness.adapterResolutionDiagnostics(for: tab))]"
         )
 
-        let cacheToken = URLComponents(url: accountURL, resolvingAgainstBaseURL: false)?
-            .queryItems?
-            .first { $0.name == "cache" }?
-            .value ?? "?"
-
-        // The initial navigation is deferred through the initial-document
-        // runtime handoff. Give it a generous window; when it never fires
-        // (windowless test environment lacks the window coordinator that
-        // completes materialization in the app), drive the same load the
-        // coordinator would have issued.
-        var usedManualInitialLoad = false
-        var pageLoaded = false
-        for _ in 0..<100 {
-            if server.pageHits(for: cacheToken) > 0 {
-                pageLoaded = true
-                break
-            }
-            try await Task.sleep(nanoseconds: 100_000_000)
+        let navigationSettled = expectation(
+            description: "\(label): account navigation settled"
+        )
+        var navigationObservation: AnyCancellable?
+        navigationObservation = webView.publisher(
+            for: \.url,
+            options: [.initial, .new]
+        )
+        .combineLatest(
+            webView.publisher(for: \.isLoading, options: [.initial, .new])
+        )
+        .filter { url, isLoading in
+            url == accountURL && isLoading == false
         }
-        if pageLoaded == false {
-            usedManualInitialLoad = true
-            tab.loadURL(accountURL)
-            for _ in 0..<100 {
-                if server.pageHits(for: cacheToken) > 0 {
-                    pageLoaded = true
-                    break
-                }
-                try await Task.sleep(nanoseconds: 100_000_000)
-            }
+        .prefix(1)
+        .sink { _ in
+            navigationSettled.fulfill()
         }
-        if pageLoaded == false {
-            let pageDiagnostics = await pageStateDiagnostics(
-                webView: webView,
-                accountURL: accountURL,
-                server: server
-            )
-            XCTFail(
-                "\(label): extension-created tab never loaded its URL (manualLoadTried=\(usedManualInitialLoad)); page=[\(pageDiagnostics)] adapter=[\(harness.adapterResolutionDiagnostics(for: tab))]"
-            )
-            throw ForkProbeFailure.contentScriptNotInjected
-        }
+        await fulfillment(of: [navigationSettled], timeout: 10)
+        withExtendedLifetime(navigationObservation) {}
 
         // The load may have swapped the tab's web view (replacement path);
         // always talk to the tab's current one from here on.
         let loadedWebView = tab.resolvedCurrentWebView() ?? webView
 
-        var forkInjected = false
-        for _ in 0..<100 {
-            if try await datasetValue(in: loadedWebView, key: "sumiForkReady") == "1" {
-                forkInjected = true
-                break
-            }
-            try await Task.sleep(nanoseconds: 100_000_000)
-        }
-        if forkInjected == false {
-            let pageDiagnostics = await pageStateDiagnostics(
-                webView: loadedWebView,
-                accountURL: accountURL,
-                server: server
-            )
-            XCTFail(
-                "\(label): fork.js was not injected into the extension-created account tab (manualLoad=\(usedManualInitialLoad)); page=[\(pageDiagnostics)] adapter=[\(harness.adapterResolutionDiagnostics(for: tab))]"
-            )
-            throw ForkProbeFailure.contentScriptNotInjected
-        }
+        try await waitForDatasetValue(
+            in: loadedWebView,
+            key: "sumiForkReady",
+            expected: "1",
+            failureMessage: "\(label): fork.js was not injected into the extension-created account tab"
+        )
         return ExtensionCreatedAccountTab(
             tab: tab,
             webView: loadedWebView,
-            cacheToken: cacheToken,
-            usedManualInitialLoad: usedManualInitialLoad
+            cacheToken: cacheToken
         )
     }
 
@@ -658,7 +647,6 @@ final class SafariExtensionAccountForkPipelineTests: XCTestCase {
         webView: WKWebView,
         harness: ForkProbeHarness
     ) async throws -> ForkSendResult {
-        let resultSlot = "__sumiBroadcastForkResult"
         let storeIDs = [
             "ghmbeldphafepmbegfdlkpapadhbakde",
             "hlaiofkbmjenhgeinjlmkafaipackfjh",
@@ -667,25 +655,32 @@ final class SafariExtensionAccountForkPipelineTests: XCTestCase {
         let idsLiteral = (storeIDs + [harness.runtimeIdentifier])
             .map { "'\($0)'" }
             .joined(separator: ", ")
-        let sendScript = """
-        (() => {
-          const slot = '\(resultSlot)';
-          window[slot] = null;
+        let json = try await webView.callAsyncJavaScript(
+            """
           const api =
             (globalThis.browser && globalThis.browser.runtime &&
              typeof globalThis.browser.runtime.sendMessage === 'function')
               ? globalThis.browser
               : (globalThis.chrome && globalThis.chrome.runtime) ? globalThis.chrome : null;
           if (!api) {
-            window[slot] = JSON.stringify({ delivered: false, error: 'runtime.sendMessage unavailable in page world' });
-            return 'unavailable';
+            return JSON.stringify({ delivered: false, error: 'runtime.sendMessage unavailable in page world' });
           }
           const message = { type: 'fork', selector: '\(selector)' };
           const sendOne = (id) => new Promise((resolve) => {
             let settled = false;
             const finish = (result) => {
-              if (!settled) { settled = true; resolve(result); }
+              if (!settled) {
+                settled = true;
+                clearTimeout(timeoutID);
+                resolve(result);
+              }
             };
+            const timeoutID = setTimeout(() => finish({
+              id,
+              ok: false,
+              response: null,
+              error: 'runtime.sendMessage did not settle'
+            }), 20000);
             try {
               const returned = api.runtime.sendMessage(id, message, (response) => {
                 const lastError = api.runtime.lastError
@@ -715,45 +710,32 @@ final class SafariExtensionAccountForkPipelineTests: XCTestCase {
             }
           });
           const ids = [\(idsLiteral)];
-          Promise.all(ids.map(sendOne)).then((results) => {
-            const winner = results.find((r) => r.ok) || results[results.length - 1];
-            window[slot] = JSON.stringify({
-              delivered: winner.ok,
-              winnerId: winner.id,
-              response: winner.response,
-              error: winner.error,
-              all: results
-            });
+          const results = await Promise.all(ids.map(sendOne));
+          const winner = results.find((r) => r.ok) || results[results.length - 1];
+          return JSON.stringify({
+            delivered: winner.ok,
+            winnerId: winner.id,
+            response: winner.response,
+            error: winner.error,
+            all: results
           });
-          return 'sent';
-        })();
-        """
-        _ = try await evaluateString(sendScript, in: webView)
-
-        for _ in 0..<200 {
-            if let json = try await evaluateString("window['\(resultSlot)']", in: webView),
-                let data = json.data(using: .utf8),
-                let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                let response = object["response"] as? [String: Any]
-                return ForkSendResult(
-                    delivered: object["delivered"] as? Bool ?? false,
-                    error: object["error"] as? String,
-                    responseOK: response?["ok"] as? Bool ?? false,
-                    responseStatus: response?["status"] as? Int,
-                    responseError: response?["error"] as? String,
-                    rawPayload: object
-                )
-            }
-            try await Task.sleep(nanoseconds: 100_000_000)
-        }
-        XCTFail("Timed out waiting for broadcast fork result")
+        """,
+            arguments: [:],
+            in: nil,
+            contentWorld: .page
+        ) as? String ?? ""
+        let data = try XCTUnwrap(json.data(using: .utf8))
+        let object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: data) as? [String: Any]
+        )
+        let response = object["response"] as? [String: Any]
         return ForkSendResult(
-            delivered: false,
-            error: "timeout",
-            responseOK: false,
-            responseStatus: nil,
-            responseError: nil,
-            rawPayload: [:]
+            delivered: object["delivered"] as? Bool ?? false,
+            error: object["error"] as? String,
+            responseOK: response?["ok"] as? Bool ?? false,
+            responseStatus: response?["status"] as? Int,
+            responseError: response?["error"] as? String,
+            rawPayload: object
         )
     }
 
@@ -764,52 +746,73 @@ final class SafariExtensionAccountForkPipelineTests: XCTestCase {
         harness: ForkProbeHarness
     ) async throws -> BrokerStats {
         let token = UUID().uuidString
-        _ = try await evaluateString(
-            "document.documentElement.setAttribute('data-sumi-stats-request', '\(token)'); 'requested'",
-            in: harness.webView
+        let json = try await harness.webView.callAsyncJavaScript(
+            """
+            const root = document.documentElement;
+            const readResult = () => root.dataset.sumiStatsResult || null;
+            const matchesToken = value => {
+              if (!value) return false;
+              try { return JSON.parse(value).token === token; } catch (_) { return false; }
+            };
+            return await new Promise(resolve => {
+              let timeoutID = null;
+              const observer = new MutationObserver(() => {
+                const value = readResult();
+                if (matchesToken(value)) finish(value);
+              });
+              const finish = value => {
+                observer.disconnect();
+                if (timeoutID !== null) clearTimeout(timeoutID);
+                resolve(value);
+              };
+              observer.observe(root, {
+                attributes: true,
+                attributeFilter: ['data-sumi-stats-result']
+              });
+              root.setAttribute('data-sumi-stats-request', token);
+              const immediateResult = readResult();
+              if (matchesToken(immediateResult)) {
+                finish(immediateResult);
+                return;
+              }
+              timeoutID = setTimeout(() => finish(readResult()), 10000);
+            });
+        """,
+            arguments: ["token": token],
+            in: nil,
+            contentWorld: .page
+        ) as? String ?? ""
+        let data = try XCTUnwrap(json.data(using: .utf8))
+        let object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: data) as? [String: Any]
         )
-        for _ in 0..<100 {
-            if let json = try await evaluateString(
-                "document.documentElement.dataset.sumiStatsResult || null",
-                in: harness.webView
-            ),
-                let data = json.data(using: .utf8),
-                let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                object["token"] as? String == token {
-                let state = object["state"] as? [String: Any]
-                if state == nil {
-                    XCTFail("Broker stats bridge returned no state; raw bridge payload: \(json)")
-                }
-                let events = (state?["events"] as? [[String: Any]]) ?? []
-                let eventLog = events
-                    .map { event in
-                        "\(event["event"] ?? "?"):\(event["type"] ?? "?") tab=\(event["senderTab"] ?? "nil") url=\(event["senderUrl"] ?? "nil")"
-                    }
-                    .joined(separator: " | ")
-                return BrokerStats(
-                    onMessage: state?["onMessage"] as? Int ?? -1,
-                    onMessageExternal: state?["onMessageExternal"] as? Int ?? -1,
-                    forkHandled: state?["forkHandled"] as? Int ?? -1,
-                    eventLog: eventLog
-                )
-            }
-            try await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertEqual(object["token"] as? String, token)
+        let state = object["state"] as? [String: Any]
+        if state == nil {
+            XCTFail("Broker stats bridge returned no state; raw bridge payload: \(json)")
         }
-        XCTFail("Timed out waiting for broker stats through the content-script path")
-        return BrokerStats(onMessage: -1, onMessageExternal: -1, forkHandled: -1, eventLog: "")
+        let events = (state?["events"] as? [[String: Any]]) ?? []
+        let eventLog = events
+            .map { event in
+                "\(event["event"] ?? "?"):\(event["type"] ?? "?") tab=\(event["senderTab"] ?? "nil") url=\(event["senderUrl"] ?? "nil")"
+            }
+            .joined(separator: " | ")
+        return BrokerStats(
+            onMessage: state?["onMessage"] as? Int ?? -1,
+            onMessageExternal: state?["onMessageExternal"] as? Int ?? -1,
+            forkHandled: state?["forkHandled"] as? Int ?? -1,
+            eventLog: eventLog
+        )
     }
 
     /// Sends a message from the page world to the extension the way
-    /// account.proton.me does, then polls for the promise result.
+    /// account.proton.me does and resolves on the callback/promise receipt.
     private func sendExternalMessage(
         body: String,
-        resultSlot: String,
         harness: ForkProbeHarness
     ) async throws -> [String: Any] {
-        let sendScript = """
-        (() => {
-          const slot = '\(resultSlot)';
-          window[slot] = null;
+        let json = try await harness.webView.callAsyncJavaScript(
+            """
           const api =
             (globalThis.browser && globalThis.browser.runtime &&
              typeof globalThis.browser.runtime.sendMessage === 'function')
@@ -819,7 +822,7 @@ final class SafariExtensionAccountForkPipelineTests: XCTestCase {
                 ? globalThis.chrome
                 : null;
           if (!api) {
-            window[slot] = JSON.stringify({
+            return JSON.stringify({
               delivered: false,
               error: 'runtime.sendMessage unavailable in page world',
               apiShape: {
@@ -829,77 +832,73 @@ final class SafariExtensionAccountForkPipelineTests: XCTestCase {
                 chromeRuntime: globalThis.chrome ? typeof globalThis.chrome.runtime : 'n/a'
               }
             });
-            return 'unavailable';
           }
-          const finish = (result) => {
-            if (window[slot] === null) {
-              window[slot] = JSON.stringify(result);
-            }
-          };
-          try {
-            const callbackResult = { used: false };
-            const returned = api.runtime.sendMessage(
-              '\(harness.runtimeIdentifier)',
-              \(body),
-              (response) => {
-                callbackResult.used = true;
-                const lastError = api.runtime.lastError
-                  ? String(api.runtime.lastError.message || api.runtime.lastError)
-                  : null;
-                finish({
-                  delivered: lastError === null,
-                  via: 'callback',
-                  response: response === undefined ? null : response,
-                  error: lastError
+          return await new Promise(resolve => {
+            let settled = false;
+            let timeoutID = null;
+            const finish = result => {
+              if (settled) return;
+              settled = true;
+              if (timeoutID !== null) clearTimeout(timeoutID);
+              resolve(JSON.stringify(result));
+            };
+            timeoutID = setTimeout(() => finish({
+              delivered: false,
+              via: 'timeout',
+              error: 'runtime.sendMessage did not settle'
+            }), 10000);
+            try {
+              const returned = api.runtime.sendMessage(
+                '\(harness.runtimeIdentifier)',
+                \(body),
+                (response) => {
+                  const lastError = api.runtime.lastError
+                    ? String(api.runtime.lastError.message || api.runtime.lastError)
+                    : null;
+                  finish({
+                    delivered: lastError === null,
+                    via: 'callback',
+                    response: response === undefined ? null : response,
+                    error: lastError
+                  });
+                }
+              );
+              if (returned && typeof returned.then === 'function') {
+                returned.then((response) => {
+                  finish({
+                    delivered: true,
+                    via: 'promise',
+                    response: response === undefined ? null : response,
+                    error: null
+                  });
+                }).catch((error) => {
+                  finish({
+                    delivered: false,
+                    via: 'promise',
+                    error: String((error && error.message) || error)
+                  });
                 });
               }
-            );
-            if (returned && typeof returned.then === 'function') {
-              returned.then((response) => {
-                finish({
-                  delivered: true,
-                  via: 'promise',
-                  response: response === undefined ? null : response,
-                  error: null
-                });
-              }).catch((error) => {
-                finish({
-                  delivered: false,
-                  via: 'promise',
-                  error: String((error && error.message) || error)
-                });
+            } catch (error) {
+              finish({
+                delivered: false,
+                via: 'throw',
+                error: String((error && error.message) || error)
               });
             }
-            return 'sent returned=' + typeof returned;
-          } catch (error) {
-            finish({
-              delivered: false,
-              via: 'throw',
-              error: String((error && error.message) || error)
-            });
-            return 'threw';
-          }
-        })();
-        """
-        _ = try await evaluateString(sendScript, in: harness.webView)
-
-        for _ in 0..<100 {
-            if let json = try await evaluateString(
-                "window['\(resultSlot)']",
-                in: harness.webView
-            ),
-                let data = json.data(using: .utf8),
-                let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                return object
-            }
-            try await Task.sleep(nanoseconds: 100_000_000)
-        }
-
-        XCTFail("Timed out waiting for external message result in \(resultSlot)")
-        return [:]
+          });
+        """,
+            arguments: [:],
+            in: nil,
+            contentWorld: .page
+        ) as? String ?? ""
+        let data = try XCTUnwrap(json.data(using: .utf8))
+        return try XCTUnwrap(
+            JSONSerialization.jsonObject(with: data) as? [String: Any]
+        )
     }
 
-    // MARK: - Page polling
+    // MARK: - Page state
 
     private func waitForDatasetValue(
         in webView: WKWebView,
@@ -909,13 +908,40 @@ final class SafariExtensionAccountForkPipelineTests: XCTestCase {
         file: StaticString = #filePath,
         line: UInt = #line
     ) async throws {
-        for _ in 0..<100 {
-            if try await datasetValue(in: webView, key: key) == expected {
-                return
-            }
-            try await Task.sleep(nanoseconds: 100_000_000)
+        let value = try await webView.callAsyncJavaScript(
+            """
+            const root = document.documentElement;
+            const attributeName = 'data-' + key.replace(
+                /[A-Z]/g,
+                letter => '-' + letter.toLowerCase()
+            );
+            const readValue = () => root.dataset[key] || null;
+            if (readValue() === expected) return expected;
+            return await new Promise(resolve => {
+                let timeoutID = null;
+                const observer = new MutationObserver(() => {
+                    if (readValue() === expected) finish(expected);
+                });
+                const finish = value => {
+                    observer.disconnect();
+                    if (timeoutID !== null) clearTimeout(timeoutID);
+                    resolve(value);
+                };
+                observer.observe(root, {
+                    attributes: true,
+                    attributeFilter: [attributeName]
+                });
+                timeoutID = setTimeout(() => finish(readValue()), 10000);
+            });
+            """,
+            arguments: ["key": key, "expected": expected],
+            in: nil,
+            contentWorld: .page
+        ) as? String
+        guard value == expected else {
+            XCTFail("\(failureMessage); observed=\(value ?? "nil")", file: file, line: line)
+            throw ForkProbeFailure.contentScriptNotInjected
         }
-        XCTFail(failureMessage, file: file, line: line)
     }
 
     private func datasetValue(

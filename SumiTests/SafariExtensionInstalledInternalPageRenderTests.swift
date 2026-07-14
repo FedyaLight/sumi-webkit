@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftData
 import WebKit
 import XCTest
@@ -321,7 +322,7 @@ final class SafariExtensionInstalledInternalPageRenderTests: XCTestCase {
         )
         webView.load(URLRequest(url: pageURL))
 
-        return try await pollRenderMetrics(in: webView)
+        return try await settledRenderMetrics(for: pageURL, in: webView)
     }
 
     private func renderMetricsThroughSumiTab(
@@ -358,28 +359,40 @@ final class SafariExtensionInstalledInternalPageRenderTests: XCTestCase {
             webView.configuration.websiteDataStore,
             controller.configuration.defaultWebsiteDataStore
         )
-        return try await pollRenderMetrics(in: webView)
+        return try await settledRenderMetrics(for: pageURL, in: webView)
     }
 
-    private func pollRenderMetrics(
+    private func settledRenderMetrics(
+        for pageURL: URL,
         in webView: WKWebView
     ) async throws -> InstalledExtensionPageRenderMetrics {
-        var lastMetrics = InstalledExtensionPageRenderMetrics.empty
-        for _ in 0..<80 {
-            try await Task.sleep(nanoseconds: 100_000_000)
-            if let metrics = try? await pageRenderMetrics(in: webView) {
-                lastMetrics = metrics
-                if metrics.readyState == "complete",
-                   metrics.loadedFromExtensionScheme,
-                   metrics.elementCount > 0,
-                   metrics.scriptCount > 0 {
-                    return metrics
-                }
-            }
+        let navigationSettled = expectation(
+            description: "installed extension page navigation settled"
+        )
+        var navigationObservation: AnyCancellable?
+        navigationObservation = webView.publisher(
+            for: \.url,
+            options: [.initial, .new]
+        )
+        .combineLatest(
+            webView.publisher(for: \.isLoading, options: [.initial, .new])
+        )
+        .filter { url, isLoading in
+            url == pageURL && isLoading == false
         }
+        .prefix(1)
+        .sink { _ in
+            navigationSettled.fulfill()
+        }
+        await fulfillment(of: [navigationSettled], timeout: 10)
+        withExtendedLifetime(navigationObservation) {}
 
-        XCTFail("Timed out waiting for extension page resources; \(lastMetrics.debugSummary)")
-        return lastMetrics
+        let metrics = try await pageRenderMetrics(in: webView)
+        XCTAssertEqual(metrics.readyState, "complete", metrics.debugSummary)
+        XCTAssertTrue(metrics.loadedFromExtensionScheme, metrics.debugSummary)
+        XCTAssertGreaterThan(metrics.elementCount, 0, metrics.debugSummary)
+        XCTAssertGreaterThan(metrics.scriptCount, 0, metrics.debugSummary)
+        return metrics
     }
 
     private func pageRenderMetrics(

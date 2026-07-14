@@ -82,7 +82,11 @@ final class SafariExtensionCommandAndContextMenuTests: XCTestCase {
             initialProfile: profile,
             browserConfiguration: browserConfiguration
         )
-        let browserManager = makeSafariExtensionTestBrowserManager(profile: profile)
+        let windowRegistry = WindowRegistry()
+        let browserManager = makeSafariExtensionTestBrowserManager(
+            profile: profile,
+            windowRegistry: windowRegistry
+        )
         manager.attach(browserManager: browserManager)
 
         // The startup restore task replaces the tab-manager structural state
@@ -129,6 +133,14 @@ final class SafariExtensionCommandAndContextMenuTests: XCTestCase {
         tab.profileId = profile.id
         tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
 
+        let windowState = BrowserWindowState()
+        windowState.tabManager = browserManager.tabManager
+        windowState.currentProfileId = profile.id
+        windowState.currentSpaceId = tab.spaceId
+        windowState.currentTabId = tab.id
+        windowRegistry.register(windowState)
+        windowRegistry.setActive(windowState)
+
         let webView = FocusableWKWebView(frame: .zero, configuration: configuration)
         webView.owningTab = tab
         tab.replaceUntrackedWebView(webView)
@@ -137,6 +149,7 @@ final class SafariExtensionCommandAndContextMenuTests: XCTestCase {
             tab,
             reason: "SafariExtensionCommandAndContextMenuTests"
         )
+        XCTAssertTrue(manager.publishedExtensionTabs.containsPublishedTab(tab))
 
         let didFinish = expectation(description: "page loaded")
         let delegate = NavigationDelegateBox {
@@ -152,13 +165,8 @@ final class SafariExtensionCommandAndContextMenuTests: XCTestCase {
         await fulfillment(of: [didFinish], timeout: 10)
         webView.navigationDelegate = nil
 
-        // Menu registration crosses the worker → UI process asynchronously.
-        var menuItems: [NSMenuItem] = []
-        for _ in 0..<50 {
-            menuItems = manager.pageContextMenuItems(for: tab)
-            if menuItems.isEmpty == false { break }
-            try await Task.sleep(nanoseconds: 100_000_000)
-        }
+        try await waitForMenuRegistration(in: webView)
+        let menuItems = manager.pageContextMenuItems(for: tab)
 
         XCTAssertTrue(
             containsMenuItem(titled: "Sumi Probe Menu Item", in: menuItems),
@@ -167,6 +175,44 @@ final class SafariExtensionCommandAndContextMenuTests: XCTestCase {
     }
 
     // MARK: - Helpers
+
+    private func waitForMenuRegistration(in webView: WKWebView) async throws {
+        let status = try await webView.callAsyncJavaScript(
+            """
+            const root = document.documentElement;
+            const readStatus = () => root.dataset.sumiMenuRegistration || null;
+            const existingStatus = readStatus();
+            if (existingStatus) {
+                return existingStatus;
+            }
+            return await new Promise(resolve => {
+                let timeoutID = null;
+                const observer = new MutationObserver(() => {
+                    const observedStatus = readStatus();
+                    if (observedStatus) {
+                        finish(observedStatus);
+                    }
+                });
+                const finish = value => {
+                    observer.disconnect();
+                    if (timeoutID !== null) {
+                        clearTimeout(timeoutID);
+                    }
+                    resolve(value);
+                };
+                observer.observe(root, {
+                    attributes: true,
+                    attributeFilter: ['data-sumi-menu-registration']
+                });
+                timeoutID = setTimeout(() => finish(readStatus()), 5000);
+            });
+            """,
+            arguments: [:],
+            in: nil,
+            contentWorld: .page
+        ) as? String
+        XCTAssertEqual(status, "ready", "menu registration failed: \(status ?? "timeout")")
+    }
 
     private func containsMenuItem(
         titled title: String,
@@ -223,6 +269,11 @@ final class SafariExtensionCommandAndContextMenuTests: XCTestCase {
             "background": ["service_worker": "background.js"],
             "permissions": ["contextMenus"],
             "host_permissions": ["*://*/*"],
+            "content_scripts": [[
+                "matches": ["http://127.0.0.1/*"],
+                "js": ["content.js"],
+                "run_at": "document_start",
+            ]],
             "commands": [
                 "sumi-probe-command": [
                     "suggested_key": ["default": "Alt+Shift+U"],
@@ -240,13 +291,27 @@ final class SafariExtensionCommandAndContextMenuTests: XCTestCase {
         (() => {
           const api = globalThis.browser || globalThis.chrome;
           const menus = api.menus || api.contextMenus;
+          let registrationStatus = 'error:menus-unavailable';
+          let finishRegistration;
+          const registrationSettled = new Promise(resolve => { finishRegistration = resolve; });
           if (menus && typeof menus.create === 'function') {
             menus.create({
               id: 'sumi-probe-menu-item',
               title: 'Sumi Probe Menu Item',
               contexts: ['all'],
+            }, () => {
+              const error = api.runtime && api.runtime.lastError;
+              registrationStatus = error ? `error:${error.message}` : 'ready';
+              finishRegistration();
             });
+          } else {
+            finishRegistration();
           }
+          api.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+            if (!message || message.type !== 'sumi-menu-registration') return false;
+            registrationSettled.then(() => sendResponse({ status: registrationStatus }));
+            return true;
+          });
           if (api.commands && api.commands.onCommand) {
             api.commands.onCommand.addListener(() => {});
           }
@@ -255,6 +320,32 @@ final class SafariExtensionCommandAndContextMenuTests: XCTestCase {
         try Data(backgroundScript.utf8)
             .write(
                 to: directoryURL.appendingPathComponent("background.js"),
+                options: [.atomic]
+            )
+
+        let contentScript = """
+        (() => {
+          const api = globalThis.browser || globalThis.chrome;
+          const publish = status => {
+            document.documentElement.dataset.sumiMenuRegistration = status;
+          };
+          const request = { type: 'sumi-menu-registration' };
+          if (globalThis.browser) {
+            api.runtime.sendMessage(request).then(
+              response => publish(response && response.status || 'error:empty-response'),
+              error => publish(`error:${String(error)}`)
+            );
+          } else {
+            api.runtime.sendMessage(request, response => {
+              const error = api.runtime.lastError;
+              publish(error ? `error:${error.message}` : response && response.status || 'error:empty-response');
+            });
+          }
+        })();
+        """
+        try Data(contentScript.utf8)
+            .write(
+                to: directoryURL.appendingPathComponent("content.js"),
                 options: [.atomic]
             )
 

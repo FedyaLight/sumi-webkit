@@ -180,30 +180,52 @@ final class SafariExtensionScriptingRuntimeTests: XCTestCase {
         file: StaticString = #filePath,
         line: UInt = #line
     ) async throws -> [String: Any] {
-        let script = """
-        (() => {
-          return document.documentElement.dataset.sumiScriptingProbe || null;
-        })();
-        """
-
-        var lastRaw: String?
-        for _ in 0..<100 {
-            if let raw = try? await webView.evaluateJavaScript(script) as? String {
-                lastRaw = raw
-                if let data = raw.data(using: .utf8),
-                   let object = try? JSONSerialization.jsonObject(with: data)
-                       as? [String: Any] {
-                    return object
-                }
+        let rawValue = try await webView.callAsyncJavaScript(
+            """
+            const readResult = () =>
+                document.documentElement.dataset.sumiScriptingProbe || null;
+            const existingResult = readResult();
+            if (existingResult !== null) {
+                return existingResult;
             }
-            try await Task.sleep(nanoseconds: 100_000_000)
+            return await new Promise(resolve => {
+                let timeoutID = null;
+                const observer = new MutationObserver(() => {
+                    const observedResult = readResult();
+                    if (observedResult !== null) {
+                        finish(observedResult);
+                    }
+                });
+                const finish = value => {
+                    observer.disconnect();
+                    if (timeoutID !== null) {
+                        clearTimeout(timeoutID);
+                    }
+                    resolve(value);
+                };
+                observer.observe(document.documentElement, {
+                    attributes: true,
+                    attributeFilter: ['data-sumi-scripting-probe']
+                });
+                timeoutID = setTimeout(() => finish(null), 10000);
+            });
+            """,
+            arguments: [:],
+            in: nil,
+            contentWorld: .page
+        ) as? String
+        guard let rawValue,
+              let data = rawValue.data(using: .utf8),
+              let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else {
+            XCTFail(
+                "Timed out waiting for scripting probe result",
+                file: file,
+                line: line
+            )
+            return [:]
         }
-        XCTFail(
-            "Timed out waiting for scripting probe result; last=\(lastRaw ?? "nil")",
-            file: file,
-            line: line
-        )
-        return [:]
+        return object
     }
 
     private func installScriptingProbeExtension(

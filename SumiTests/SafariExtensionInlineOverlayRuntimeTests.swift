@@ -21,10 +21,13 @@ final class SafariExtensionInlineOverlayRuntimeTests: XCTestCase {
             initialProfile: profile,
             browserConfiguration: browserConfiguration
         )
-        let browserManager = BrowserManager()
-        browserManager.profileManager.profiles = [profile]
-        browserManager.currentProfile = profile
+        let windowRegistry = WindowRegistry()
+        let browserManager = makeSafariExtensionTestBrowserManager(
+            profile: profile,
+            windowRegistry: windowRegistry
+        )
         manager.attach(browserManager: browserManager)
+        await browserManager.tabManager.storeRestore.startupRestoreTask?.value
 
         let installed = try await installSafariStyleInlineOverlayProbeExtension(
             manager: manager,
@@ -59,6 +62,14 @@ final class SafariExtensionInlineOverlayRuntimeTests: XCTestCase {
         tab.profileId = profile.id
         tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
 
+        let windowState = BrowserWindowState()
+        windowState.tabManager = browserManager.tabManager
+        windowState.currentProfileId = profile.id
+        windowState.currentSpaceId = tab.spaceId
+        windowState.currentTabId = tab.id
+        windowRegistry.register(windowState)
+        windowRegistry.setActive(windowState)
+
         let webView = FocusableWKWebView(frame: .zero, configuration: configuration)
         webView.owningTab = tab
         tab.replaceUntrackedWebView(webView)
@@ -67,6 +78,7 @@ final class SafariExtensionInlineOverlayRuntimeTests: XCTestCase {
             tab,
             reason: "SafariExtensionInlineOverlayRuntimeTests"
         )
+        XCTAssertTrue(manager.publishedExtensionTabs.containsPublishedTab(tab))
 
         let didFinish = expectation(description: "page loaded")
         let delegate = NavigationDelegateBox {
@@ -100,64 +112,65 @@ final class SafariExtensionInlineOverlayRuntimeTests: XCTestCase {
         file: StaticString = #filePath,
         line: UInt = #line
     ) async throws -> (status: String, height: Double, detail: String) {
-        let script = """
-        (() => {
-          const root = document.documentElement;
-          const iframe = document.getElementById('sumi-inline-overlay-probe-frame');
-          return JSON.stringify({
-            status: root.dataset.sumiInlineOverlayStatus || null,
-            detail: root.dataset.sumiInlineOverlayDetail || '',
-            height: iframe ? iframe.getBoundingClientRect().height : 0,
-            inlineHeight: iframe ? getComputedStyle(iframe).height : '',
-            backgroundMessage: root.dataset.sumiInlineBackgroundMessage || ''
-          });
-        })();
-        """
-
-        var lastResult: (status: String, height: Double, detail: String)?
-        for _ in 0..<70 {
-            if let json = try await evaluateString(script, in: webView),
-               let data = json.data(using: .utf8),
-               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                let status = object["status"] as? String
-                let height = object["height"] as? Double ?? 0
-                let detail = object["detail"] as? String ?? ""
-                if let status {
-                    let result = (status, height, detail)
-                    lastResult = result
-                    if status == "resized" || status.hasPrefix("error:") {
-                        return result
+        let json = try await webView.callAsyncJavaScript(
+            """
+            const readResult = () => {
+                const root = document.documentElement;
+                const iframe = document.getElementById('sumi-inline-overlay-probe-frame');
+                return JSON.stringify({
+                    status: root.dataset.sumiInlineOverlayStatus || null,
+                    detail: root.dataset.sumiInlineOverlayDetail || '',
+                    height: iframe ? iframe.getBoundingClientRect().height : 0,
+                    inlineHeight: iframe ? getComputedStyle(iframe).height : '',
+                    backgroundMessage: root.dataset.sumiInlineBackgroundMessage || ''
+                });
+            };
+            const isSettled = value => {
+                const status = JSON.parse(value).status;
+                return status === 'resized' || (status && status.startsWith('error:'));
+            };
+            const existingResult = readResult();
+            if (isSettled(existingResult)) {
+                return existingResult;
+            }
+            return await new Promise(resolve => {
+                let timeoutID = null;
+                const observer = new MutationObserver(() => {
+                    const observedResult = readResult();
+                    if (isSettled(observedResult)) {
+                        finish(observedResult);
                     }
-                }
-            }
-            try await Task.sleep(nanoseconds: 100_000_000)
+                });
+                const finish = value => {
+                    observer.disconnect();
+                    if (timeoutID !== null) {
+                        clearTimeout(timeoutID);
+                    }
+                    resolve(value);
+                };
+                observer.observe(document.documentElement, {
+                    attributes: true,
+                    attributeFilter: ['data-sumi-inline-overlay-status']
+                });
+                timeoutID = setTimeout(() => finish(readResult()), 7000);
+            });
+            """,
+            arguments: [:],
+            in: nil,
+            contentWorld: .page
+        ) as? String ?? ""
+        guard let data = json.data(using: .utf8),
+              let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let status = object["status"] as? String
+        else {
+            XCTFail("Timed out waiting for inline overlay resize", file: file, line: line)
+            return ("timeout", 0, "")
         }
-
-        XCTFail(
-            "Timed out waiting for inline overlay resize; last=\(String(describing: lastResult))",
-            file: file,
-            line: line
+        return (
+            status,
+            object["height"] as? Double ?? 0,
+            object["detail"] as? String ?? ""
         )
-        return lastResult ?? ("timeout", 0, "")
-    }
-
-    private func evaluateString(
-        _ script: String,
-        in webView: WKWebView
-    ) async throws -> String? {
-        try await withCheckedThrowingContinuation { continuation in
-            webView.evaluateJavaScript(script) { result, error in
-                if let error {
-                    continuation.resume(throwing: error)
-                    return
-                }
-                if result is NSNull {
-                    continuation.resume(returning: nil)
-                    return
-                }
-                continuation.resume(returning: result as? String)
-            }
-        }
     }
 
     private func installSafariStyleInlineOverlayProbeExtension(

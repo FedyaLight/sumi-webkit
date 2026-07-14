@@ -826,7 +826,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         let webView = try XCTUnwrap(tab.resolvedCurrentWebView())
         XCTAssertIdentical(webView.configuration.webExtensionController, controller)
 
-        let metrics = try await pollExtensionRenderMetrics(in: webView)
+        let metrics = try await awaitExtensionRenderMetrics(in: webView)
         XCTAssertTrue(metrics.loadedFromExtensionScheme, metrics.debugSummary)
         XCTAssertEqual(metrics.readyState, "complete", metrics.debugSummary)
         XCTAssertGreaterThan(metrics.elementCount, 0, metrics.debugSummary)
@@ -1532,7 +1532,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             )
         )
 
-        let metrics = try await pollExtensionRenderMetrics(in: webView)
+        let metrics = try await awaitExtensionRenderMetrics(in: webView)
         XCTAssertTrue(metrics.loadedFromExtensionScheme, metrics.debugSummary)
         XCTAssertEqual(metrics.readyState, "complete", metrics.debugSummary)
         XCTAssertGreaterThan(metrics.elementCount, 0, metrics.debugSummary)
@@ -1608,7 +1608,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         let contentView = try XCTUnwrap(window.contentView)
         let webView = try XCTUnwrap(Self.firstWebView(in: contentView))
 
-        let metrics = try await pollExtensionRenderMetrics(in: webView)
+        let metrics = try await awaitExtensionRenderMetrics(in: webView)
         XCTAssertTrue(metrics.loadedFromExtensionScheme, metrics.debugSummary)
         XCTAssertEqual(metrics.readyState, "complete", metrics.debugSummary)
         XCTAssertGreaterThan(metrics.elementCount, 0, metrics.debugSummary)

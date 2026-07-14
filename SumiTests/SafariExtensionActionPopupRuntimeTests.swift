@@ -276,10 +276,18 @@ final class SafariExtensionActionPopupRuntimeTests: XCTestCase {
         )
         let popupURL = extensionContext.baseURL
             .appendingPathComponent("assets/action_in_iframe.html")
+        let didFinish = expectation(description: "outer extension popup loaded")
+        let delegate = NavigationDelegateBox {
+            didFinish.fulfill()
+        }
+        webView.navigationDelegate = delegate
         webView.load(URLRequest(url: popupURL))
+        await fulfillment(of: [didFinish], timeout: 5)
+        webView.navigationDelegate = nil
 
-        let stateScript = """
-            (() => {
+        let lastState = try await webView.callAsyncJavaScript(
+            """
+            const readState = () => {
               const frame = document.getElementById("app");
               let innerText = "";
               let innerLoaded = "";
@@ -300,18 +308,37 @@ final class SafariExtensionActionPopupRuntimeTests: XCTestCase {
                 innerLoaded,
                 error
               ].join("|");
-            })();
-            """
-
-        var lastState = ""
-        for _ in 0..<50 {
-            try await Task.sleep(nanoseconds: 100_000_000)
-            if let state = try? await webView.evaluateJavaScript(stateScript) as? String {
-                lastState = state
-                if state.contains("|1|popup|true|popup|true|") {
-                    return
-                }
+            };
+            const expectedState = "|1|popup|true|popup|true|";
+            const existingState = readState();
+            if (existingState.includes(expectedState)) {
+                return existingState;
             }
+            return await new Promise(resolve => {
+                let timeoutID = null;
+                const observer = new MutationObserver(() => {
+                    const observedState = readState();
+                    if (observedState.includes(expectedState)) {
+                        finish(observedState);
+                    }
+                });
+                const finish = value => {
+                    observer.disconnect();
+                    if (timeoutID !== null) {
+                        clearTimeout(timeoutID);
+                    }
+                    resolve(value);
+                };
+                observer.observe(document.body, { attributes: true });
+                timeoutID = setTimeout(() => finish(readState()), 5000);
+            });
+            """,
+            arguments: [:],
+            in: nil,
+            contentWorld: .page
+        ) as? String ?? ""
+        if lastState.contains("|1|popup|true|popup|true|") {
+            return
         }
 
         XCTFail(
@@ -408,6 +435,18 @@ final class SafariExtensionActionPopupRuntimeTests: XCTestCase {
         let extensionContext: WKWebExtensionContext
         let adapter: ExtensionTabAdapter
         let result: BrowserExtensionActionPopupRequestResult
+    }
+
+    private final class NavigationDelegateBox: NSObject, WKNavigationDelegate {
+        private let onFinish: () -> Void
+
+        init(onFinish: @escaping () -> Void) {
+            self.onFinish = onFinish
+        }
+
+        func webView(_: WKWebView, didFinish _: WKNavigation!) {
+            onFinish()
+        }
     }
 
     private func makeActiveTabActionHarness(

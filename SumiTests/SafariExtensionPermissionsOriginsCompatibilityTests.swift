@@ -200,44 +200,56 @@ final class SafariExtensionPermissionsOriginsCompatibilityTests: XCTestCase {
         file: StaticString = #filePath,
         line: UInt = #line
     ) async throws -> String? {
-        let script = """
-        (() => {
-          const overlay = document.getElementById('sumi-permissions-origin-overlay');
-          if (overlay) {
-            return overlay.dataset.result || 'missing-result';
-          }
-          return document.documentElement.dataset.sumiPermissionsOriginError || null;
-        })();
-        """
-
-        for _ in 0..<50 {
-            if let result = try await evaluateString(script, in: webView) {
-                return result
-            }
-            try await Task.sleep(nanoseconds: 100_000_000)
-        }
-
-        XCTFail("Timed out waiting for permissions origin overlay", file: file, line: line)
-        return nil
-    }
-
-    private func evaluateString(
-        _ script: String,
-        in webView: WKWebView
-    ) async throws -> String? {
-        try await withCheckedThrowingContinuation { continuation in
-            webView.evaluateJavaScript(script) { result, error in
-                if let error {
-                    continuation.resume(throwing: error)
-                    return
+        let result = try await webView.callAsyncJavaScript(
+            """
+            const readResult = () => {
+                const overlay = document.getElementById(
+                    'sumi-permissions-origin-overlay'
+                );
+                if (overlay) {
+                    return overlay.dataset.result || 'missing-result';
                 }
-                if result is NSNull {
-                    continuation.resume(returning: nil)
-                    return
-                }
-                continuation.resume(returning: result as? String)
+                return document.documentElement.dataset.sumiPermissionsOriginError || null;
+            };
+            const existingResult = readResult();
+            if (existingResult !== null) {
+                return existingResult;
             }
+            return await new Promise(resolve => {
+                let timeoutID = null;
+                const observer = new MutationObserver(() => {
+                    const observedResult = readResult();
+                    if (observedResult !== null) {
+                        finish(observedResult);
+                    }
+                });
+                const finish = value => {
+                    observer.disconnect();
+                    if (timeoutID !== null) {
+                        clearTimeout(timeoutID);
+                    }
+                    resolve(value);
+                };
+                observer.observe(document.documentElement, {
+                    attributes: true,
+                    childList: true,
+                    subtree: true
+                });
+                timeoutID = setTimeout(() => finish(null), 5000);
+            });
+            """,
+            arguments: [:],
+            in: nil,
+            contentWorld: .page
+        ) as? String
+        if result == nil {
+            XCTFail(
+                "Timed out waiting for permissions origin overlay",
+                file: file,
+                line: line
+            )
         }
+        return result
     }
 
     private func installPermissionsOriginProbeExtension(

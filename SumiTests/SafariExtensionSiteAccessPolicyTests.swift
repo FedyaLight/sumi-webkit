@@ -776,21 +776,24 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
             name: "IdempotentPolicyProbe"
         )
         _ = try await manager.installedExtensionLifecycle.enable(installed.id)
+        let context = try XCTUnwrap(
+            manager.getExtensionContext(for: installed.id, profileId: profile.id)
+        )
+        let initialGrant = expectation(
+            forNotification: WKWebExtensionContext
+                .permissionMatchPatternsWereGrantedNotification,
+            object: context
+        )
         manager.setDefaultSiteAccess(
             .allow,
             extensionId: installed.id,
             profileId: profile.id
         )
-        let context = try XCTUnwrap(
-            manager.getExtensionContext(for: installed.id, profileId: profile.id)
-        )
+        await fulfillment(of: [initialGrant], timeout: 5)
+
         let allHosts = try XCTUnwrap(WKWebExtension.MatchPattern(string: "*://*/*"))
         XCTAssertNotNil(context.grantedPermissionMatchPatterns[allHosts])
         let grantedBefore = context.grantedPermissionMatchPatterns
-
-        // WebKit posts permission notifications asynchronously; drain the
-        // ones from the setup grants above before observing.
-        try await Task.sleep(nanoseconds: 300_000_000)
 
         let permissionEventNames: [Notification.Name] = [
             WKWebExtensionContext.permissionMatchPatternsWereGrantedNotification,
@@ -816,6 +819,11 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
                 NotificationCenter.default.removeObserver(observer)
             }
         }
+        let configuredDeny = expectation(
+            forNotification: WKWebExtensionContext
+                .permissionMatchPatternsWereDeniedNotification,
+            object: context
+        )
 
         // Context reconciliation may re-apply an unchanged policy repeatedly.
         for _ in 0..<3 {
@@ -827,13 +835,6 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
                 manifest: installed.manifest
             )
         }
-        try await Task.sleep(nanoseconds: 300_000_000)
-
-        XCTAssertEqual(
-            eventLog.names,
-            [],
-            "Unchanged policy re-application must not fire permission events"
-        )
         XCTAssertEqual(context.grantedPermissionMatchPatterns, grantedBefore)
 
         // A real configuration change must still write through.
@@ -847,10 +848,11 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
             WKWebExtension.MatchPattern(string: "https://denied.example.test/*")
         )
         XCTAssertNotNil(context.deniedPermissionMatchPatterns[deniedPattern])
-        try await Task.sleep(nanoseconds: 300_000_000)
-        XCTAssertFalse(
-            eventLog.names.isEmpty,
-            "A real configuration change must still fire permission events"
+        await fulfillment(of: [configuredDeny], timeout: 5)
+        XCTAssertEqual(
+            eventLog.names,
+            [WKWebExtensionContext.permissionMatchPatternsWereDeniedNotification.rawValue],
+            "Only the real configuration change may fire a permission event"
         )
     }
 
@@ -1268,15 +1270,12 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
     private func permissionsContainsResults(
         in extensionContext: WKWebExtensionContext
     ) async throws -> [String: Bool] {
-        let configuration = try XCTUnwrap(extensionContext.webViewConfiguration)
-        let webView = WKWebView(
-            frame: NSRect(x: 0, y: 0, width: 320, height: 240),
-            configuration: configuration
+        let webView = try await loadPermissionsProbePage(in: extensionContext)
+        let rawValue = try await waitForBodyDatasetResult(
+            in: webView,
+            resultKey: "result",
+            errorKey: "error"
         )
-        let pageURL = extensionContext.baseURL
-            .appendingPathComponent("probe.html")
-        webView.load(URLRequest(url: pageURL))
-        let rawValue = try await waitForPermissionsContainsResult(in: webView)
         let data = try XCTUnwrap(rawValue?.data(using: .utf8))
         let object = try JSONSerialization.jsonObject(with: data)
         if let result = object as? [String: String],
@@ -1296,15 +1295,12 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
         in extensionContext: WKWebExtensionContext,
         origins: [String]
     ) async throws -> [String: Bool] {
-        let configuration = try XCTUnwrap(extensionContext.webViewConfiguration)
-        let webView = WKWebView(
-            frame: NSRect(x: 0, y: 0, width: 320, height: 240),
-            configuration: configuration
+        let webView = try await loadPermissionsProbePage(in: extensionContext)
+        _ = try await waitForBodyDatasetResult(
+            in: webView,
+            resultKey: "result",
+            errorKey: "error"
         )
-        let pageURL = extensionContext.baseURL
-            .appendingPathComponent("probe.html")
-        webView.load(URLRequest(url: pageURL))
-        _ = try await waitForPermissionsContainsResult(in: webView)
 
         let originsJSON = try XCTUnwrap(
             String(
@@ -1333,54 +1329,104 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
         """
         _ = try? await webView.evaluateJavaScript(requestScript)
 
-        let pollScript = """
-        (() => {
-          if (document.body.dataset.requestError) {
-            return JSON.stringify({ error: document.body.dataset.requestError });
-          }
-          return document.body.dataset.requestResult || null;
-        })();
-        """
-        for _ in 0..<50 {
-            if let rawValue = try? await webView.evaluateJavaScript(pollScript) as? String {
-                let data = try XCTUnwrap(rawValue.data(using: .utf8))
-                let object = try JSONSerialization.jsonObject(with: data)
-                if let result = object as? [String: String],
-                   let error = result["error"] {
-                    XCTFail("permissions.request failed in extension page: \(error)")
-                    return [:]
-                }
-                return try XCTUnwrap(object as? [String: Bool])
-            }
-            try await Task.sleep(nanoseconds: 100_000_000)
+        let settledRequest = try await waitForBodyDatasetResult(
+            in: webView,
+            resultKey: "requestResult",
+            errorKey: "requestError"
+        )
+        let rawValue = try XCTUnwrap(settledRequest)
+        let data = try XCTUnwrap(rawValue.data(using: .utf8))
+        let object = try JSONSerialization.jsonObject(with: data)
+        if let result = object as? [String: String],
+           let error = result["error"] {
+            XCTFail("permissions.request failed in extension page: \(error)")
+            return [:]
         }
-        XCTFail("Timed out waiting for permissions.request result")
-        return [:]
+        return try XCTUnwrap(object as? [String: Bool])
     }
 
-    private func waitForPermissionsContainsResult(
-        in webView: WKWebView
-    ) async throws -> String? {
-        let script = """
-        (() => {
-          if (!document.body) {
-            return null;
-          }
-          if (document.body.dataset.error) {
-            return JSON.stringify({ error: document.body.dataset.error });
-          }
-          return document.body.dataset.result || null;
-        })();
-        """
-
-        for _ in 0..<50 {
-            if let result = try? await webView.evaluateJavaScript(script) as? String {
-                return result
-            }
-            try await Task.sleep(nanoseconds: 100_000_000)
+    private func loadPermissionsProbePage(
+        in extensionContext: WKWebExtensionContext
+    ) async throws -> WKWebView {
+        let configuration = try XCTUnwrap(extensionContext.webViewConfiguration)
+        let webView = WKWebView(
+            frame: NSRect(x: 0, y: 0, width: 320, height: 240),
+            configuration: configuration
+        )
+        let didFinish = expectation(description: "permissions probe page loaded")
+        let delegate = NavigationDelegateBox {
+            didFinish.fulfill()
         }
-        XCTFail("Timed out waiting for permissions.contains result")
-        return nil
+        webView.navigationDelegate = delegate
+        webView.load(
+            URLRequest(
+                url: extensionContext.baseURL.appendingPathComponent("probe.html")
+            )
+        )
+        await fulfillment(of: [didFinish], timeout: 5)
+        webView.navigationDelegate = nil
+        return webView
+    }
+
+    private func waitForBodyDatasetResult(
+        in webView: WKWebView,
+        resultKey: String,
+        errorKey: String
+    ) async throws -> String? {
+        try await webView.callAsyncJavaScript(
+            """
+            const readResult = () => {
+                if (!document.body) {
+                    return null;
+                }
+                const error = document.body.dataset[errorKey];
+                if (error) {
+                    return JSON.stringify({ error });
+                }
+                return document.body.dataset[resultKey] || null;
+            };
+            const existingResult = readResult();
+            if (existingResult !== null) {
+                return existingResult;
+            }
+            return await new Promise(resolve => {
+                let timeoutID = null;
+                const observer = new MutationObserver(() => {
+                    const observedResult = readResult();
+                    if (observedResult !== null) {
+                        finish(observedResult);
+                    }
+                });
+                const finish = value => {
+                    observer.disconnect();
+                    if (timeoutID !== null) {
+                        clearTimeout(timeoutID);
+                    }
+                    resolve(value);
+                };
+                observer.observe(document.body, { attributes: true });
+                timeoutID = setTimeout(() => finish(null), 5000);
+            });
+            """,
+            arguments: [
+                "resultKey": resultKey,
+                "errorKey": errorKey,
+            ],
+            in: nil,
+            contentWorld: .page
+        ) as? String
+    }
+
+    private final class NavigationDelegateBox: NSObject, WKNavigationDelegate {
+        private let onFinish: () -> Void
+
+        init(onFinish: @escaping () -> Void) {
+            self.onFinish = onFinish
+        }
+
+        func webView(_: WKWebView, didFinish _: WKNavigation!) {
+            onFinish()
+        }
     }
 
     private func manifest(in appexURL: URL) throws -> [String: Any] {

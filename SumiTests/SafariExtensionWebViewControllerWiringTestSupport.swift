@@ -1,3 +1,4 @@
+import Combine
 import SwiftData
 import WebKit
 import XCTest
@@ -139,31 +140,24 @@ class SafariExtensionWebViewControllerWiringTestCase: XCTestCase {
         return directory
     }
 
-    func pollExtensionRenderMetrics(
+    func awaitExtensionRenderMetrics(
         in webView: WKWebView
     ) async throws -> ExtensionRenderMetrics {
-        var lastMetrics = ExtensionRenderMetrics.empty
-        for _ in 0..<80 {
-            try await Task.sleep(nanoseconds: 100_000_000)
-            if let metrics = try? await extensionRenderMetrics(in: webView) {
-                lastMetrics = metrics
-                if metrics.readyState == "complete",
-                   metrics.loadedFromExtensionScheme,
-                   metrics.elementCount > 0,
-                   metrics.scriptCount > 0 {
-                    return metrics
-                }
+        let extensionPageLoaded = expectation(description: "extension page loaded")
+        var observation: AnyCancellable?
+        observation = webView.publisher(for: \.url, options: [.initial, .new])
+            .combineLatest(webView.publisher(for: \.isLoading, options: [.initial, .new]))
+            .filter { url, isLoading in
+                url?.scheme == "safari-web-extension" && !isLoading
             }
-        }
+            .prefix(1)
+            .sink { _ in
+                extensionPageLoaded.fulfill()
+            }
+        await fulfillment(of: [extensionPageLoaded], timeout: 8)
+        withExtendedLifetime(observation) {}
 
-        XCTFail("Timed out waiting for Sumi-created extension page; \(lastMetrics.debugSummary)")
-        return lastMetrics
-    }
-
-    func extensionRenderMetrics(
-        in webView: WKWebView
-    ) async throws -> ExtensionRenderMetrics {
-        let script = """
+        let rawValue = try await webView.evaluateJavaScript("""
             (() => [
               document.readyState,
               document.querySelectorAll('body *').length,
@@ -171,8 +165,7 @@ class SafariExtensionWebViewControllerWiringTestCase: XCTestCase {
               document.body ? (document.body.dataset.sumiRenderMarker || '') : '',
               location.href.startsWith('safari-web-extension://')
             ].join('|'))();
-            """
-        let rawValue = try await webView.evaluateJavaScript(script) as? String
+            """) as? String
         return try ExtensionRenderMetrics(rawValue: rawValue ?? "")
     }
 

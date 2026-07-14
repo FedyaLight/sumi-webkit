@@ -192,36 +192,44 @@ final class SafariExtension1PasswordRuntimeTests: XCTestCase {
             frame: NSRect(x: 0, y: 0, width: 320, height: 240),
             configuration: configuration
         )
+        let didFinish = expectation(description: "1Password credits page loaded")
+        let delegate = NavigationDelegateBox {
+            didFinish.fulfill()
+        }
+        webView.navigationDelegate = delegate
         webView.load(
             URLRequest(url: extensionContext.baseURL.appendingPathComponent("credits.html"))
         )
+        await fulfillment(of: [didFinish], timeout: 10)
+        webView.navigationDelegate = nil
 
-        for _ in 0..<50 {
-            try await Task.sleep(nanoseconds: 200_000_000)
-            let result = try? await webView.evaluateJavaScript(
-                """
-                (() => {
-                  const api = globalThis.browser || globalThis.chrome;
-                  if (!api || !api.runtime || !api.runtime.sendNativeMessage) { return 'no-api'; }
-                  if (!globalThis.__sumiNativeProbeStarted) {
-                    globalThis.__sumiNativeProbeStarted = true;
-                    globalThis.__sumiNativeProbeResult = 'pending';
-                    Promise.resolve(api.runtime.sendNativeMessage('', { name: 'request-os-version' }))
-                      .then(reply => {
-                        globalThis.__sumiNativeProbeResult =
-                          reply === undefined ? 'rejected' : 'replied';
-                      })
-                      .catch(() => { globalThis.__sumiNativeProbeResult = 'rejected'; });
-                  }
-                  return globalThis.__sumiNativeProbeResult;
-                })()
-                """
-            )
-            if let status = result as? String, status != "pending" {
-                return status
+        let result = try await webView.callAsyncJavaScript(
+            """
+            const api = globalThis.browser || globalThis.chrome;
+            if (!api || !api.runtime || !api.runtime.sendNativeMessage) {
+              return 'no-api';
             }
-        }
-        return "timeout"
+            return await new Promise((resolve) => {
+              let settled = false;
+              const finish = (value) => {
+                if (settled) return;
+                settled = true;
+                clearTimeout(deadline);
+                resolve(value);
+              };
+              const deadline = setTimeout(() => finish('timeout'), 10000);
+              Promise.resolve().then(() =>
+                api.runtime.sendNativeMessage('', { name: 'request-os-version' })
+              ).then((reply) => {
+                finish(reply === undefined ? 'rejected' : 'replied');
+              }).catch(() => finish('rejected'));
+            });
+            """,
+            arguments: [:],
+            in: nil,
+            contentWorld: .page
+        )
+        return result as? String ?? "invalid-result"
     }
 
     // MARK: - Helpers

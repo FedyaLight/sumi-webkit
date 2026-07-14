@@ -143,7 +143,6 @@ final class SafariExtensionLazyRuntimePolicyTests: XCTestCase {
 
         for profile in profiles.dropFirst() {
             manager.profileRuntimeTransition.switchProfile(profileID: profile.id)
-            try await Task.sleep(nanoseconds: 50_000_000)
         }
 
         XCTAssertEqual(
