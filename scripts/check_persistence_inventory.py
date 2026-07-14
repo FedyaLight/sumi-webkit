@@ -17,6 +17,9 @@ ROOT = Path(__file__).resolve().parent.parent
 MAP_PATH = ROOT / "docs/persistence/persistence-map.json"
 MANIFEST_PATH = ROOT / "SumiTests/Fixtures/Persistence/manifest.json"
 FIXTURE_ROOT = MANIFEST_PATH.parent
+BACKUP_SCOPE_SOURCE = ROOT / "Sumi/ImportExport/SumiImportExportModels.swift"
+BACKUP_SERVICE_SOURCE = ROOT / "Sumi/ImportExport/SumiBackupService.swift"
+ROADMAP_PATH = ROOT / "docs/roadmap.md"
 SOURCE_ROOTS = [
     "App",
     "Sumi",
@@ -143,6 +146,78 @@ def require_text(record: dict[str, object], field: str, context: str) -> None:
         raise ValueError(f"{context}.{field} must be non-empty text")
 
 
+def swift_enum_cases(source: str, enum_name: str) -> list[str]:
+    declaration = re.search(rf"\benum\s+{re.escape(enum_name)}\b[^{{]*{{", source)
+    if declaration is None:
+        raise ValueError(f"missing Swift backup scope enum: {enum_name}")
+    cases: list[str] = []
+    for line in source[declaration.end():].splitlines():
+        stripped = line.strip()
+        if stripped.startswith("case "):
+            cases.extend(value.strip() for value in stripped[5:].split(","))
+        elif cases:
+            break
+    if not cases:
+        raise ValueError(f"Swift backup scope enum has no cases: {enum_name}")
+    return cases
+
+
+def validate_backup_v1_scope(inventory: dict[str, object]) -> None:
+    scope = inventory.get("logicalBackupV1Scope")
+    if not isinstance(scope, dict):
+        raise ValueError("logicalBackupV1Scope must be an object")
+    if scope.get("versionOwner") != "SumiBackupV1Scope":
+        raise ValueError("logicalBackupV1Scope must be owned by SumiBackupV1Scope")
+
+    source = BACKUP_SCOPE_SOURCE.read_text(encoding="utf-8")
+    expected_categories = swift_enum_cases(source, "SumiImportCategory")
+    expected_exclusions = swift_enum_cases(
+        source, "SumiBackupV1ExcludedDataFamily"
+    )
+    if scope.get("includedCategories") != expected_categories:
+        raise ValueError("Backup v1 included categories drifted from Swift authority")
+    if scope.get("excludedDataFamilies") != expected_exclusions:
+        raise ValueError("Backup v1 exclusions drifted from Swift authority")
+
+    service = BACKUP_SERVICE_SOURCE.read_text(encoding="utf-8")
+    if "warnings: [SumiBackupV1Scope.warning]" not in service:
+        raise ValueError("backup archives must publish the SumiBackupV1Scope warning")
+
+    families = {
+        family.get("id"): family
+        for family in inventory.get("durableFamilies", [])
+        if isinstance(family, dict)
+    }
+    policy_requirements = {
+        "startup-swiftdata": ("History", "permission decisions", "extension metadata"),
+        "preferences-userdefaults": ("no UserDefaults preferences",),
+        "permissions-json": ("excludes permission decisions",),
+        "extension-packages": ("excludes extension metadata", "package payloads"),
+        "logical-backups": ("SumiBackupV1Scope", "regular tabs only"),
+    }
+    for family_id, phrases in policy_requirements.items():
+        family = families.get(family_id)
+        if not isinstance(family, dict):
+            raise ValueError(f"missing Backup v1 policy family: {family_id}")
+        policy = family.get("backupRestorePolicy", "")
+        for phrase in phrases:
+            if phrase not in policy:
+                raise ValueError(
+                    f"{family_id}.backupRestorePolicy lost Backup v1 scope phrase: {phrase}"
+                )
+
+    roadmap = ROADMAP_PATH.read_text(encoding="utf-8")
+    roadmap_requirements = (
+        "Backup v1 includes profiles, spaces and themes, bookmarks, essentials, "
+        "pinned launchers, folders, and regular tabs.",
+        "history, permission decisions, extension metadata and payloads",
+        "preferences, and session settings",
+    )
+    for phrase in roadmap_requirements:
+        if phrase not in roadmap:
+            raise ValueError(f"roadmap lost truthful Backup v1 scope: {phrase}")
+
+
 def validate_fixtures(manifest: dict[str, object], fixture_test: str) -> dict[str, str]:
     if manifest.get("formatVersion") != 1:
         raise ValueError("fixture manifest formatVersion must be 1")
@@ -211,6 +286,7 @@ def validate_map(
 ) -> None:
     if inventory.get("formatVersion") != 1:
         raise ValueError("persistence map formatVersion must be 1")
+    validate_backup_v1_scope(inventory)
     families = inventory.get("durableFamilies")
     if not isinstance(families, list) or not families:
         raise ValueError("persistence map must list durableFamilies")

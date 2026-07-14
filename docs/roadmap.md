@@ -20,7 +20,7 @@ Sumi now has first-class Arc/Zen migration and Sumi backup/restore surfaces in S
 
 - Arc and Zen imports preserve Sumi's own model: essentials remain profile-scoped launchers, pinned items remain space launchers, regular tabs remain regular tabs, and nested sidebar folder hierarchy is preserved instead of flattened.
 - Browser export writes a browser2zen-compatible JSON shape with `source: "sumi"` plus a Sumi extension block for exact future round-trips.
-- Sumi backup/restore uses `.sumibackup` logical JSON archives. Backup v1 excludes history, cookies, passwords, WebKit website data, caches, downloads, and extension payloads.
+- Sumi backup/restore uses `.sumibackup` logical JSON archives. Backup v1 includes profiles, spaces and themes, bookmarks, essentials, pinned launchers, folders, and regular tabs. It excludes history, permission decisions, extension metadata and payloads, cookies, passwords, WebKit website data, caches, downloads, preferences, and session settings.
 - Restore supports explicit Merge and Replace modes. Replace writes an automatic pre-restore backup and prunes old automatic pre-restore files so the feature does not accumulate unbounded app-support data.
 - Chrome, Safari, and Firefox are supported through the existing bookmarks importer; deeper browser organization import requires Arc/Zen data or a portable browser2zen/Sumi transfer file.
 

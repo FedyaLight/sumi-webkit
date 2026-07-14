@@ -477,6 +477,26 @@ final class SumiImportExportTests: XCTestCase {
         XCTAssertEqual(decoded.data, data)
     }
 
+    func testBackupV1ScopeMatchesPortableModelAndNamesEveryExclusion() {
+        XCTAssertEqual(
+            SumiBackupV1Scope.portableCategories,
+            [.profiles, .spaces, .themes, .bookmarks, .essentials,
+             .pinnedLaunchers, .folders, .regularTabs]
+        )
+        XCTAssertEqual(
+            SumiBackupV1Scope.excludedDataFamilies,
+            [.history, .permissionDecisions, .extensionMetadataAndPayloads,
+             .cookies, .passwords, .webKitWebsiteData, .caches, .downloads,
+             .preferencesAndSessionSettings]
+        )
+        for exclusion in SumiBackupV1Scope.excludedDataFamilies {
+            XCTAssertTrue(
+                SumiBackupV1Scope.warning.contains(exclusion.warningLabel),
+                "Backup warning omitted \(exclusion.rawValue)"
+            )
+        }
+    }
+
     @MainActor
     func testPreviewFileImportReportsNewerSumiBackupInsteadOfFallingBackToBrowser2Zen() throws {
         var archive = SumiPortableArchive(

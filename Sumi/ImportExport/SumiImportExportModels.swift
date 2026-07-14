@@ -27,6 +27,42 @@ enum SumiImportCategory: String, CaseIterable, Codable, Hashable, Identifiable, 
     }
 }
 
+enum SumiBackupV1ExcludedDataFamily: String, CaseIterable, Sendable {
+    case history
+    case permissionDecisions
+    case extensionMetadataAndPayloads
+    case cookies
+    case passwords
+    case webKitWebsiteData
+    case caches
+    case downloads
+    case preferencesAndSessionSettings
+
+    var warningLabel: String {
+        switch self {
+        case .history: return "history"
+        case .permissionDecisions: return "permission decisions"
+        case .extensionMetadataAndPayloads: return "extension metadata and payloads"
+        case .cookies: return "cookies"
+        case .passwords: return "passwords"
+        case .webKitWebsiteData: return "WebKit website data"
+        case .caches: return "caches"
+        case .downloads: return "downloads"
+        case .preferencesAndSessionSettings: return "preferences and session settings"
+        }
+    }
+}
+
+enum SumiBackupV1Scope {
+    static let portableCategories = SumiImportCategory.allCases
+    static let excludedDataFamilies = SumiBackupV1ExcludedDataFamily.allCases
+
+    static var warning: String {
+        let exclusions = excludedDataFamilies.map(\.warningLabel).joined(separator: ", ")
+        return "Backup v1 contains logical Sumi data only. \(exclusions) are not included."
+    }
+}
+
 enum SumiImportApplyMode: String, Codable, CaseIterable, Identifiable, Sendable {
     case merge
     case replace

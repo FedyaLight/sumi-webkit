@@ -28,11 +28,9 @@ final class SumiBackupService {
     }
 
     private func backupData(data: SumiPortableData) -> SumiPortableArchive {
-        return SumiPortableArchive(
+        SumiPortableArchive(
             includedCategories: Array(data.nonEmptyCategories).sorted { $0.rawValue < $1.rawValue },
-            warnings: [
-                "Backup v1 contains logical Sumi data only. Cookies, passwords, WebKit website data, caches, downloads, history, and extension payloads are not included.",
-            ],
+            warnings: [SumiBackupV1Scope.warning],
             settings: [:],
             data: data
         )
