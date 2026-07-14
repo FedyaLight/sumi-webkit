@@ -127,18 +127,17 @@ final class SumiEnergySaverPolicyTests: XCTestCase {
         XCTAssertFalse(didFire)
     }
 
-    func testProactiveTimerSchedulerUsesEarliestDeadlineAndCancelsWhenEmpty() {
+    func testProactiveTimerSchedulerUsesEarliestDeadlineAndCancelsWhenEmpty() async {
         let firstTabID = UUID()
         let secondTabID = UUID()
+        let controlledWait = ControlledSuspensionTimerWait()
         let hiddenStarts = [
             firstTabID: TimeInterval(10),
             secondTabID: TimeInterval(20),
         ]
         let scheduler = ProactiveTabSuspensionTimerScheduler(
             suspensionClock: TabSuspensionTimerSchedulerClock(liveUptime: 15),
-            timerSleep: { _ in
-                try await Task.sleep(nanoseconds: 1_000_000_000)
-            },
+            timerSleep: controlledWait.wait,
             handleDueTimers: { /* no-op */ }
         )
 
@@ -149,6 +148,7 @@ final class SumiEnergySaverPolicyTests: XCTestCase {
         )
         XCTAssertEqual(scheduler.scheduledDeadlineLiveUptimeForTesting, 40)
         XCTAssertTrue(scheduler.hasScheduledTaskForTesting)
+        await controlledWait.waitForRequestCount(1)
 
         scheduler.armTimer(
             for: secondTabID,
@@ -157,6 +157,8 @@ final class SumiEnergySaverPolicyTests: XCTestCase {
         )
         XCTAssertEqual(scheduler.scheduledDeadlineLiveUptimeForTesting, 25)
         XCTAssertEqual(scheduler.activeTimerCount, 2)
+        await controlledWait.waitForRequestCount(2)
+        await controlledWait.waitForCancellationCount(1)
 
         XCTAssertTrue(
             scheduler.cancelTimer(
@@ -166,6 +168,8 @@ final class SumiEnergySaverPolicyTests: XCTestCase {
         )
         XCTAssertEqual(scheduler.scheduledDeadlineLiveUptimeForTesting, 40)
         XCTAssertTrue(scheduler.hasScheduledTaskForTesting)
+        await controlledWait.waitForRequestCount(3)
+        await controlledWait.waitForCancellationCount(2)
 
         XCTAssertTrue(
             scheduler.cancelTimer(
@@ -176,12 +180,15 @@ final class SumiEnergySaverPolicyTests: XCTestCase {
         XCTAssertEqual(scheduler.activeTimerCount, 0)
         XCTAssertFalse(scheduler.hasScheduledTaskForTesting)
         XCTAssertTrue(scheduler.isIdle)
+        await controlledWait.waitForCancellationCount(3)
+        XCTAssertEqual(controlledWait.requestedDelays, [25, 10, 25])
     }
 
-    func testProactiveTimerSchedulerDueTimersRemoveOrphanedHiddenState() {
+    func testProactiveTimerSchedulerDueTimersRemoveOrphanedHiddenState() async {
         let dueTabID = UUID()
         let orphanedTabID = UUID()
         let futureTabID = UUID()
+        let controlledWait = ControlledSuspensionTimerWait()
         var hiddenStarts: [UUID: TimeInterval] = [
             dueTabID: 10,
             orphanedTabID: 10,
@@ -189,9 +196,7 @@ final class SumiEnergySaverPolicyTests: XCTestCase {
         ]
         let scheduler = ProactiveTabSuspensionTimerScheduler(
             suspensionClock: TabSuspensionTimerSchedulerClock(liveUptime: 20),
-            timerSleep: { _ in
-                try await Task.sleep(nanoseconds: 1_000_000_000)
-            },
+            timerSleep: controlledWait.wait,
             handleDueTimers: { /* no-op */ }
         )
 
@@ -210,6 +215,7 @@ final class SumiEnergySaverPolicyTests: XCTestCase {
             requestedDelay: 10,
             hiddenStartedAtLiveUptime: { hiddenStarts[$0] }
         )
+        await controlledWait.waitForRequestCount(1)
 
         hiddenStarts.removeValue(forKey: orphanedTabID)
         let dueTimers = scheduler.dueTimers {
@@ -220,6 +226,9 @@ final class SumiEnergySaverPolicyTests: XCTestCase {
         XCTAssertTrue(scheduler.containsTimer(for: dueTabID))
         XCTAssertFalse(scheduler.containsTimer(for: orphanedTabID))
         XCTAssertTrue(scheduler.containsTimer(for: futureTabID))
+        scheduler.cancelAllTimers()
+        await controlledWait.waitForCancellationCount(1)
+        XCTAssertEqual(controlledWait.requestedDelays, [0])
     }
 
     private func activation(

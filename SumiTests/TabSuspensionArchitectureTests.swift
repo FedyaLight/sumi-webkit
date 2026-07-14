@@ -182,8 +182,9 @@ final class TabSuspensionArchitectureTests: XCTestCase {
         XCTAssertNil(monitor.eventHandler)
     }
 
-    func testPolicyRebuildClearsStaleHiddenIntervalForNowVisibleTab() {
+    func testPolicyRebuildClearsStaleHiddenIntervalForNowVisibleTab() async {
         let clock = MutableSuspensionClock(liveUptime: 0)
+        let controlledWait = ControlledSuspensionTimerWait()
         var visibleTabIDs: Set<UUID> = []
         let webView = WKWebView()
         let url = URL(string: "https://example.com/rebuild")!
@@ -193,19 +194,17 @@ final class TabSuspensionArchitectureTests: XCTestCase {
             loadsCachedFaviconOnInit: false,
             mainFrameRuntimeTransaction: transaction
         )
-        let controller = TabSuspensionController(
+        var controller: TabSuspensionController? = TabSuspensionController(
             memoryMonitor: nil,
             suspensionClock: clock,
-            timerSleep: { _ in
-                try await Task.sleep(nanoseconds: 1_000_000_000)
-            }
+            timerSleep: controlledWait.wait
         )
         establishAllowedSuspensionDocument(
             on: webView,
             for: tab,
             transaction: transaction
         )
-        controller.install(
+        controller?.install(
             runtime: TabSuspensionRuntimePorts(
                 context: TabSuspensionContextRuntime(
                     selectedTabIDs: { [] },
@@ -224,26 +223,32 @@ final class TabSuspensionArchitectureTests: XCTestCase {
         )
 
         XCTAssertEqual(
-            controller.scheduledTimerDeadlineForTesting,
+            controller?.scheduledTimerDeadlineForTesting,
             TabSuspensionPolicy.balancedProactiveDeactivationDelay
         )
+        await controlledWait.waitForRequestCount(1)
 
         clock.liveUptime = 10
         visibleTabIDs = [tab.id]
-        controller.configurePolicy {
+        controller?.configurePolicy {
             TabSuspensionPolicy(memoryMode: .balanced)
         }
-        XCTAssertNil(controller.scheduledTimerDeadlineForTesting)
+        XCTAssertNil(controller?.scheduledTimerDeadlineForTesting)
+        await controlledWait.waitForCancellationCount(1)
 
         clock.liveUptime = 20
         visibleTabIDs = []
-        controller.configurePolicy {
+        controller?.configurePolicy {
             TabSuspensionPolicy(memoryMode: .balanced)
         }
         XCTAssertEqual(
-            controller.scheduledTimerDeadlineForTesting,
+            controller?.scheduledTimerDeadlineForTesting,
             20 + TabSuspensionPolicy.balancedProactiveDeactivationDelay
         )
+        await controlledWait.waitForRequestCount(2)
+
+        controller = nil
+        await controlledWait.waitForCancellationCount(2)
     }
 
     private func makeTab(path: String) -> Tab {

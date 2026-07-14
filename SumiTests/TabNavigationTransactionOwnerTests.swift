@@ -427,6 +427,9 @@ final class TabNavigationTransactionOwnerTests: XCTestCase {
         let originURL = URL(string: "https://example.com/watch?v=1")!
         let targetURL = URL(string: "https://example.com/watch?v=2")!
         var events: [String] = []
+        let didSettle = expectation(
+            description: "same-document move settled"
+        )
 
         owner.beginBackForwardNavigationTracking(
             on: webView,
@@ -447,11 +450,12 @@ final class TabNavigationTransactionOwnerTests: XCTestCase {
                 },
                 syncAcrossWindows: { _ in
                     events.append("sync")
+                    didSettle.fulfill()
                 }
             )
         )
 
-        await waitForSettle { events.count == 3 }
+        await fulfillment(of: [didSettle], timeout: 5)
 
         XCTAssertNil(owner.pendingMainFrameNavigationKind)
         XCTAssertFalse(owner.isFreezingNavDuringBackForwardGesture)
@@ -467,6 +471,9 @@ final class TabNavigationTransactionOwnerTests: XCTestCase {
         let webView = WKWebView(frame: .zero)
         let originURL = URL(string: "https://example.com/watch?v=1")!
         var events: [String] = []
+        let didSettle = expectation(
+            description: "unchanged same-document navigation settled"
+        )
 
         await loadHTML("<!doctype html><html><body>origin</body></html>", baseURL: originURL, into: webView)
         owner.beginBackForwardNavigationTracking(
@@ -479,6 +486,7 @@ final class TabNavigationTransactionOwnerTests: XCTestCase {
                 currentWebView: { webView },
                 finishHistorySwipeProtection: { _, _, _, _ in
                     events.append("finish-protection")
+                    didSettle.fulfill()
                     return false
                 },
                 scheduleRuntimeStatePersistence: {
@@ -490,7 +498,7 @@ final class TabNavigationTransactionOwnerTests: XCTestCase {
             )
         )
 
-        await waitForSettle { events == ["finish-protection"] }
+        await fulfillment(of: [didSettle], timeout: 5)
 
         XCTAssertNil(owner.pendingMainFrameNavigationKind)
         XCTAssertFalse(owner.isFreezingNavDuringBackForwardGesture)
@@ -515,20 +523,6 @@ final class TabNavigationTransactionOwnerTests: XCTestCase {
         for _ in 0..<3 {
             await Task.yield()
         }
-    }
-
-    private func waitForSettle(
-        _ condition: @MainActor () -> Bool,
-        file: StaticString = #filePath,
-        line: UInt = #line
-    ) async {
-        for _ in 0..<30 {
-            if condition() {
-                return
-            }
-            try? await Task.sleep(nanoseconds: 20_000_000)
-        }
-        XCTFail("Timed out waiting for settle", file: file, line: line)
     }
 
     private func loadHTML(
