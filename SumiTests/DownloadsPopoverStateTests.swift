@@ -7,14 +7,14 @@ final class DownloadsPopoverStateTests: XCTestCase {
     func testWindowDownloadsPopoverStateIsTransientAndDismissedByDefault() {
         let windowState = BrowserWindowState()
 
-        XCTAssertFalse(windowState.isDownloadsPopoverPresented)
+        XCTAssertFalse(windowState.presentationState.isDownloadsPopoverPresented)
 
-        windowState.isDownloadsPopoverPresented = true
+        windowState.presentationState.isDownloadsPopoverPresented = true
 
-        XCTAssertTrue(windowState.isDownloadsPopoverPresented)
+        XCTAssertTrue(windowState.presentationState.isDownloadsPopoverPresented)
 
-        windowState.isDownloadsPopoverPresented = false
-        XCTAssertFalse(windowState.isDownloadsPopoverPresented)
+        windowState.presentationState.isDownloadsPopoverPresented = false
+        XCTAssertFalse(windowState.presentationState.isDownloadsPopoverPresented)
     }
 
     func testDownloadsButtonStateDefaultsToVisibleInactiveManagerState() {

@@ -508,7 +508,7 @@ final class GlanceManagerTests: XCTestCase {
         XCTAssertTrue(placeholderTab.representsSumiEmptySurface)
         XCTAssertEqual(windowRegistry.activeWindow?.id, sourceWindow.id)
         XCTAssertEqual(sourceWindow.currentTabId, placeholderId)
-        XCTAssertTrue(sourceWindow.isFloatingBarVisible)
+        XCTAssertTrue(sourceWindow.presentationState.isFloatingBarVisible)
         XCTAssertEqual(sourceWindow.floatingBarPresentationReason, .splitTabPicker)
         XCTAssertTrue(sourceWindow.floatingBarDraftNavigatesCurrentTab)
         XCTAssertIdentical(previewTab.resolvedCurrentWebView(), webView)
@@ -547,7 +547,7 @@ final class GlanceManagerTests: XCTestCase {
         )
         XCTAssertEqual(sourceWindow.currentTabId, sourceTab.id)
         XCTAssertNil(browserManager.tabManager.tabCollectionMembershipOwner.tab(for: placeholderId))
-        XCTAssertFalse(sourceWindow.isFloatingBarVisible)
+        XCTAssertFalse(sourceWindow.presentationState.isFloatingBarVisible)
         XCTAssertEqual(sourceWindow.floatingBarPresentationReason, .none)
     }
 

@@ -122,7 +122,7 @@ struct BrowserWindowBridge: NSViewRepresentable {
 
         func detach() {
             removeObservers()
-            windowState.windowVisibilityState = .unknown
+            windowState.presentationState.visibility = .unknown
             windowRegistry.bindAppKitWindow(nil, to: windowState)
             window = nil
         }
@@ -130,7 +130,7 @@ struct BrowserWindowBridge: NSViewRepresentable {
         private func handleWindowWillClose() {
             windowRegistry.unregister(windowState.id)
             removeObservers()
-            windowState.windowVisibilityState = .unknown
+            windowState.presentationState.visibility = .unknown
             windowRegistry.bindAppKitWindow(nil, to: windowState)
             window = nil
         }
@@ -159,9 +159,9 @@ struct BrowserWindowBridge: NSViewRepresentable {
 
         private func refreshWindowVisibilityState() {
             let newState = SumiWindowVisibilityState(window: window)
-            guard windowState.windowVisibilityState != newState else { return }
+            guard windowState.presentationState.visibility != newState else { return }
 
-            windowState.windowVisibilityState = newState
+            windowState.presentationState.visibility = newState
             windowRegistry.notifyWindowVisibilityChanged(windowState)
         }
     }

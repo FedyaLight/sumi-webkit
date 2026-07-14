@@ -1,6 +1,6 @@
 @testable import Sumi
-import XCTest
 import SumiDomain
+import XCTest
 
 @MainActor
 final class ShellSelectionServiceTests: XCTestCase {
@@ -263,7 +263,7 @@ final class ShellSelectionServiceTests: XCTestCase {
         let windowState = BrowserWindowState()
         windowState.currentSpaceId = space.id
         windowState.currentTabId = staleCurrent.id
-        windowState.isAwaitingInitialSessionResolution = true
+        windowState.restorationState.isAwaitingInitialResolution = true
         windowState.selectionHistory.recentRegularTabIdsBySpace[space.id] = [recentRegular.id]
         windowState.activeTabForSpace[space.id] = rememberedRegular.id
 

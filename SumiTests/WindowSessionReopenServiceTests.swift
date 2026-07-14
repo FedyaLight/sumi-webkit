@@ -24,10 +24,10 @@ final class WindowSessionReopenServiceTests: XCTestCase {
             windowRegistry: { windowRegistry },
             createRestoredWindow: { receivedSnapshot in
                 events.append("prepare")
-                restoredWindow.restoredSessionWindowId = receivedSnapshot.id
+                restoredWindow.restorationState.restoredSessionWindowID = receivedSnapshot.id
                 restoredWindow.currentProfileId = receivedSnapshot
                     .session.currentProfileId
-                restoredWindow.isAwaitingInitialSessionResolution = false
+                restoredWindow.restorationState.isAwaitingInitialResolution = false
                 windowRegistry.register(restoredWindow)
                 return restoredWindow
             }
@@ -38,7 +38,7 @@ final class WindowSessionReopenServiceTests: XCTestCase {
         XCTAssertTrue(didReopen)
         XCTAssertEqual(events, ["prepare", "register"])
         XCTAssertEqual(registeredProfileID, snapshot.session.currentProfileId)
-        XCTAssertEqual(restoredWindow.restoredSessionWindowId, snapshot.id)
+        XCTAssertEqual(restoredWindow.restorationState.restoredSessionWindowID, snapshot.id)
     }
 
     func testReopenDoesNotClaimAnExistingWindow() async {
@@ -51,8 +51,8 @@ final class WindowSessionReopenServiceTests: XCTestCase {
         let service = WindowSessionReopenService(
             windowRegistry: { windowRegistry },
             createRestoredWindow: { snapshot in
-                restoredWindow.restoredSessionWindowId = snapshot.id
-                restoredWindow.isAwaitingInitialSessionResolution = false
+                restoredWindow.restorationState.restoredSessionWindowID = snapshot.id
+                restoredWindow.restorationState.isAwaitingInitialResolution = false
                 createdWindow = restoredWindow
                 windowRegistry.register(restoredWindow)
                 return restoredWindow
@@ -98,8 +98,8 @@ final class WindowSessionReopenServiceTests: XCTestCase {
             createRestoredWindow: { snapshot in
                 let window = windows[nextWindowIndex]
                 nextWindowIndex += 1
-                window.restoredSessionWindowId = snapshot.id
-                window.isAwaitingInitialSessionResolution = false
+                window.restorationState.restoredSessionWindowID = snapshot.id
+                window.restorationState.isAwaitingInitialResolution = false
                 prepared.append((snapshot, window))
                 windowRegistry.register(window)
                 return window
@@ -132,8 +132,8 @@ final class WindowSessionReopenServiceTests: XCTestCase {
             windowRegistry: { windowRegistry },
             createRestoredWindow: { receivedSnapshot in
                 creationCount += 1
-                restoredWindow.restoredSessionWindowId = receivedSnapshot.id
-                restoredWindow.isAwaitingInitialSessionResolution = false
+                restoredWindow.restorationState.restoredSessionWindowID = receivedSnapshot.id
+                restoredWindow.restorationState.isAwaitingInitialResolution = false
                 windowRegistry.register(restoredWindow)
                 return restoredWindow
             }
@@ -145,7 +145,7 @@ final class WindowSessionReopenServiceTests: XCTestCase {
 
         XCTAssertEqual(results, [true, true])
         XCTAssertEqual(creationCount, 1)
-        XCTAssertEqual(restoredWindow.restoredSessionWindowId, snapshot.id)
+        XCTAssertEqual(restoredWindow.restorationState.restoredSessionWindowID, snapshot.id)
     }
 
     func testReopenRejectsUnregisteredPreparedState() async {
@@ -154,7 +154,7 @@ final class WindowSessionReopenServiceTests: XCTestCase {
         let service = WindowSessionReopenService(
             windowRegistry: { windowRegistry },
             createRestoredWindow: { snapshot in
-                unregisteredWindow.restoredSessionWindowId = snapshot.id
+                unregisteredWindow.restorationState.restoredSessionWindowID = snapshot.id
                 return unregisteredWindow
             }
         )
@@ -188,8 +188,8 @@ final class WindowSessionReopenServiceTests: XCTestCase {
         let service = WindowSessionReopenService(
             windowRegistry: { windowRegistry },
             createRestoredWindow: { _ in
-                wrongWindow.restoredSessionWindowId = UUID()
-                wrongWindow.isAwaitingInitialSessionResolution = false
+                wrongWindow.restorationState.restoredSessionWindowID = UUID()
+                wrongWindow.restorationState.isAwaitingInitialResolution = false
                 windowRegistry.register(wrongWindow)
                 return wrongWindow
             }
@@ -218,8 +218,8 @@ final class WindowSessionReopenServiceTests: XCTestCase {
         let service = WindowSessionReopenService(
             windowRegistry: { windowRegistry },
             createRestoredWindow: { receivedSnapshot in
-                provisionalWindow.restoredSessionWindowId = receivedSnapshot.id
-                provisionalWindow.isAwaitingInitialSessionResolution = false
+                provisionalWindow.restorationState.restoredSessionWindowID = receivedSnapshot.id
+                provisionalWindow.restorationState.isAwaitingInitialResolution = false
                 XCTAssertEqual(
                     windowRegistry.beginRegistration(provisionalWindow),
                     .registered

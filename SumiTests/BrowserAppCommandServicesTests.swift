@@ -21,7 +21,7 @@ final class BrowserAppCommandServicesTests: XCTestCase {
             navigateCurrentTab: true
         )
 
-        XCTAssertTrue(windowState.isFloatingBarVisible)
+        XCTAssertTrue(windowState.presentationState.isFloatingBarVisible)
         XCTAssertEqual(windowState.floatingBarPresentationReason, .keyboard)
         XCTAssertEqual(windowState.floatingBarDraftText, "https://mouse.example/path")
         XCTAssertTrue(windowState.floatingBarDraftNavigatesCurrentTab)

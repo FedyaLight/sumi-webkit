@@ -53,7 +53,7 @@ final class StartupWindowRestoreServiceTests: XCTestCase {
                 let didReopen = reopenResults.removeFirst()
                 if didReopen {
                     let window = BrowserWindowState()
-                    window.restoredSessionWindowId = snapshot.id
+                    window.restorationState.restoredSessionWindowID = snapshot.id
                     windows.append(window)
                     sessions[window.id] = snapshot.session
                 }
@@ -241,7 +241,7 @@ final class StartupWindowRestoreServiceTests: XCTestCase {
             reopenWindow: { snapshot in
                 reopenRequests.append(snapshot.id)
                 let restoredWindow = BrowserWindowState()
-                restoredWindow.restoredSessionWindowId = snapshot.id
+                restoredWindow.restorationState.restoredSessionWindowID = snapshot.id
                 windows.append(restoredWindow)
                 sessions[restoredWindow.id] = snapshot.session
                 return true

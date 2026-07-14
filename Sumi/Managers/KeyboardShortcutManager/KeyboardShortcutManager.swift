@@ -287,7 +287,7 @@ class KeyboardShortcutManager {
 
     private func shouldBypassShortcutRouting(keyWindow: NSWindow) -> Bool {
         if let state = windowRegistry?.windowState(containing: keyWindow),
-           state.isFloatingBarVisible {
+           state.presentationState.isFloatingBarVisible {
             return true
         }
         if chromeRouter?.isNativeModalPresentedForShortcutRouting(in: keyWindow) == true {
@@ -298,7 +298,7 @@ class KeyboardShortcutManager {
 
     private func routeFloatingBarShortcutIfNeeded(_ event: NSEvent, keyWindow: NSWindow) -> LocalKeyRoutingResult? {
         guard let state = browserWindowState(containing: keyWindow),
-              state.isFloatingBarVisible
+              state.presentationState.isFloatingBarVisible
         else { return nil }
 
         guard let keyCombination = KeyCombination(from: event) else {

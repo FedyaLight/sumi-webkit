@@ -57,11 +57,10 @@ class BrowserWindowState {
     /// Unique identifier for this window instance
     let id: UUID
 
-    /// Stable identity of the archived window materialized into this runtime
-    /// instance. Unlike the mutable session snapshot, it survives navigation
-    /// and chrome-state changes and is used to prevent duplicate restoration.
-    @ObservationIgnored
-    var restoredSessionWindowId: UUID?
+    /// Runtime-only presentation, restoration and split-focus authorities.
+    /// Durable selection/sidebar/split values remain the session state below.
+    let presentationState = WindowPresentationState()
+    let restorationState: WindowRestorationState
 
     /// Present only for a shell created from WebKit's `createWebViewWith`
     /// callback. Ordinary browser windows never infer this role from shape.
@@ -94,10 +93,8 @@ class BrowserWindowState {
     /// Whether this window is intentionally showing an empty page state instead of a live tab
     var isShowingEmptyState: Bool = false
 
-    /// Suppresses global selection fallbacks until this window's persisted startup selection is resolved.
-    var isAwaitingInitialSessionResolution: Bool
-
-    /// Why the floating bar is currently being presented.
+    /// Durable restoration intent for the floating bar. Physical visibility
+    /// remains runtime-only in `presentationState`.
     var floatingBarPresentationReason: FloatingBarPresentationReason = .none
 
     /// Unified owner for all window-local chrome theme state.
@@ -118,21 +115,9 @@ class BrowserWindowState {
     /// Window-local owner for the Zen-style in-sidebar space creation flow.
     let spaceCreationSession = WindowSpaceCreationSessionOwner()
 
-    /// Deferred split focus request used when a sidebar placeholder targets a split in another space.
-    var pendingSplitGroupFocusRequest: SplitGroupFocusRequest?
-
     /// Split group and pane selected in this window. Runtime presentation maps
     /// the durable member identity to this window's exact live tab.
     var splitSelection: WindowSplitSelection?
-
-    /// Split selection from the persisted window session, resolved after tab
-    /// data finishes loading.
-    @ObservationIgnored
-    var pendingSessionSplitSelection: PendingWindowSplitSelection?
-
-    /// Decode-only migrated split group from older window-session snapshots.
-    @ObservationIgnored
-    var pendingSessionLegacySplitGroup: SumiDomain.SplitGroup?
 
     /// Window-scoped AppKit coordinator for sidebar context menus.
     @ObservationIgnored
@@ -159,20 +144,11 @@ class BrowserWindowState {
     /// Whether the sidebar is visible in this window
     var isSidebarVisible: Bool = true
 
-    /// Whether the downloads popover is visible in this window.
-    var isDownloadsPopoverPresented: Bool = false
-
-    /// Whether the floating bar is visible in this window
-    var isFloatingBarVisible: Bool = false
-
     /// Preserved text draft for the floating bar.
     var floatingBarDraftText: String = ""
 
     /// Whether the preserved draft targets the current tab on submit
     var floatingBarDraftNavigatesCurrentTab: Bool = false
-
-    /// Frame of the URL bar within this window
-    var urlBarFrame: CGRect = .zero
 
     /// Window-scoped owner for stacked in-app notifications and their dismiss timers.
     let inAppNotifications = BrowserNotificationCenter()
@@ -184,9 +160,6 @@ class BrowserWindowState {
     func shellWindow(in registry: WindowRegistry?) -> NSWindow? {
         registry?.appKitWindow(for: self)
     }
-
-    /// Physical AppKit visibility used by background media optimization.
-    var windowVisibilityState: SumiWindowVisibilityState = .unknown
 
     /// Reference to TabManager for computed properties
     /// Set by BrowserManager during window registration
@@ -214,7 +187,9 @@ class BrowserWindowState {
         sidebarRecoveryCoordinator: SidebarHostRecoveryHandling = SidebarHostRecoveryCoordinator()
     ) {
         self.id = id
-        self.isAwaitingInitialSessionResolution = awaitsInitialSessionResolution
+        self.restorationState = WindowRestorationState(
+            isAwaitingInitialResolution: awaitsInitialSessionResolution
+        )
         self.sidebarInputRecovery = SidebarInputRecoveryOwner(windowID: id)
         var initialThemeState = WindowThemeState()
         if let initialWorkspaceTheme {

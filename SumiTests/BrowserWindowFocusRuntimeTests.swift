@@ -98,7 +98,7 @@ final class BrowserWindowFocusRuntimeTests: XCTestCase {
         XCTAssertEqual(first.space.profileRuntimeState, .active)
         XCTAssertEqual(deferred.space.profileRuntimeState, .loadedInactive)
 
-        deferred.window.isAwaitingInitialSessionResolution = false
+        deferred.window.restorationState.isAwaitingInitialResolution = false
         browserManager.windowSessionBundle.activation
             .completeDeferredActivation(for: deferred.window)
 

@@ -41,8 +41,8 @@ final class WindowSessionRestoreTransactionTests: XCTestCase {
             currentProfile: Profile(name: "Current")
         )
 
-        XCTAssertNil(replacementWindow.restoredSessionWindowId)
+        XCTAssertNil(replacementWindow.restorationState.restoredSessionWindowID)
         XCTAssertNotEqual(replacementWindow.currentProfileId, archivedProfileID)
-        XCTAssertFalse(replacementWindow.isAwaitingInitialSessionResolution)
+        XCTAssertFalse(replacementWindow.restorationState.isAwaitingInitialResolution)
     }
 }

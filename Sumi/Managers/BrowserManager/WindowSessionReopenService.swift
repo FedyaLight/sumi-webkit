@@ -64,7 +64,7 @@ final class WindowSessionReopenService: WindowSessionReopening {
         guard let registry = windowRegistry() else { return false }
         if registry.allWindows.contains(where: {
             $0.isIncognito == false
-                && ($0.restoredSessionWindowId ?? $0.id) == snapshot.id
+                && ($0.restorationState.restoredSessionWindowID ?? $0.id) == snapshot.id
         }) {
             return true
         }
@@ -72,8 +72,8 @@ final class WindowSessionReopenService: WindowSessionReopening {
             return false
         }
         guard registry.windows[targetWindow.id] === targetWindow,
-              targetWindow.restoredSessionWindowId == snapshot.id,
-              targetWindow.isAwaitingInitialSessionResolution == false else {
+              targetWindow.restorationState.restoredSessionWindowID == snapshot.id,
+              targetWindow.restorationState.isAwaitingInitialResolution == false else {
             let shell = registry.appKitWindow(for: targetWindow)
             if registry.discardRejectedRegistration(targetWindow) {
                 shell?.close()

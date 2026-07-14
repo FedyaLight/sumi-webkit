@@ -162,7 +162,7 @@ final class BrowserLinkWindowTransaction {
                 )
             },
             validateBeforePublication: { target in
-                guard target.isAwaitingInitialSessionResolution == false,
+                guard target.restorationState.isAwaitingInitialResolution == false,
                       let initialTab,
                       let residence
                 else {

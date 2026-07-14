@@ -24,7 +24,7 @@ final class FocusedSpaceRuntimeStateSynchronizer {
     }
 
     func synchronize(_ windowState: BrowserWindowState?) {
-        guard windowState?.isAwaitingInitialSessionResolution != true else {
+        guard windowState?.restorationState.isAwaitingInitialResolution != true else {
             return
         }
 

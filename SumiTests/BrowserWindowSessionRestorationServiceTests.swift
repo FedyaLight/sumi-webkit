@@ -171,8 +171,7 @@ final class WindowSessionRegistrationTests: XCTestCase {
     }
 
     func testReentrantRestageReceiptCannotBeRemovedWithoutPublishOrCancellation()
-        throws
-    {
+        throws {
         let fixture = try makeFixture()
         let window = BrowserWindowState()
         fixture.registration.prepareRegistration(window)
@@ -234,8 +233,7 @@ final class WindowSessionRegistrationTests: XCTestCase {
     }
 
     func testReentrantDiscardDuringInitialTabPreparationCannotResurrectPendingReceipt()
-        throws
-    {
+        throws {
         let fixture = try makeFixture()
         let window = BrowserWindowState()
         fixture.registration.prepareRegistration(window)
@@ -275,8 +273,7 @@ final class WindowSessionRegistrationTests: XCTestCase {
     }
 
     func testReentrantDiscardDuringInitialTabCallbackCannotPublishStaleCommitResult()
-        throws
-    {
+        throws {
         let fixture = try makeFixture()
         let window = BrowserWindowState()
         fixture.registration.prepareRegistration(window)
@@ -321,8 +318,7 @@ final class WindowSessionRegistrationTests: XCTestCase {
     }
 
     func testRuntimeTeardownDuringInitialTabCallbackCannotLeavePublishedCommitResult()
-        throws
-    {
+        throws {
         let fixture = try makeFixture()
         let window = BrowserWindowState()
         fixture.registration.prepareRegistration(window)
@@ -598,7 +594,7 @@ final class WindowSessionRegistrationTests: XCTestCase {
         XCTAssertEqual(windowState.currentProfileId, ephemeralProfile.id)
         XCTAssertEqual(windowState.currentSpaceId, ephemeralSpace.id)
         XCTAssertEqual(windowState.currentTabId, ephemeralTabID)
-        XCTAssertFalse(windowState.isAwaitingInitialSessionResolution)
+        XCTAssertFalse(windowState.restorationState.isAwaitingInitialResolution)
         XCTAssertTrue(fixture.extensions.openedWindowIDs.isEmpty)
         XCTAssertEqual(fixture.startup.reconcileCallCount, 0)
     }
@@ -641,7 +637,7 @@ final class WindowSessionRegistrationTests: XCTestCase {
 
         fixture.registration.restore(windowState)
 
-        XCTAssertTrue(windowState.isAwaitingInitialSessionResolution)
+        XCTAssertTrue(windowState.restorationState.isAwaitingInitialResolution)
         XCTAssertTrue(fixture.extensions.openedWindowIDs.isEmpty)
         XCTAssertEqual(fixture.startup.reconcileCallCount, 0)
 
@@ -656,7 +652,7 @@ final class WindowSessionRegistrationTests: XCTestCase {
             registeredWindows: [windowState]
         )
 
-        XCTAssertFalse(windowState.isAwaitingInitialSessionResolution)
+        XCTAssertFalse(windowState.restorationState.isAwaitingInitialResolution)
         XCTAssertTrue(fixture.extensions.openedWindowIDs.isEmpty)
     }
 
@@ -674,7 +670,7 @@ final class WindowSessionRegistrationTests: XCTestCase {
         fixture.tabManager.spaceStateOwner.replaceSpaces([space])
         let originalWindow = BrowserWindowState()
         fixture.registration.restore(originalWindow)
-        XCTAssertTrue(originalWindow.isAwaitingInitialSessionResolution)
+        XCTAssertTrue(originalWindow.restorationState.isAwaitingInitialResolution)
 
         let replacement = BrowserWindowState(id: originalWindow.id)
         fixture.registration.completePendingRegistrations(
@@ -697,10 +693,10 @@ final class WindowSessionRegistrationTests: XCTestCase {
         fixture.tabManager.spaceStateOwner.replaceSpaces([space])
         let windowState = BrowserWindowState()
         fixture.registration.restore(windowState)
-        XCTAssertTrue(windowState.isAwaitingInitialSessionResolution)
+        XCTAssertTrue(windowState.restorationState.isAwaitingInitialResolution)
 
         fixture.registration.discardRegistration(windowState)
-        windowState.isAwaitingInitialSessionResolution = false
+        windowState.restorationState.isAwaitingInitialResolution = false
         fixture.registration.completePendingRegistrations(
             registeredWindows: [windowState]
         )
@@ -740,7 +736,7 @@ final class WindowSessionRegistrationTests: XCTestCase {
         XCTAssertTrue(extensions.focusedWindowIDs.isEmpty)
         XCTAssertNil(snapshotStore.loadSnapshot())
 
-        windowState.isAwaitingInitialSessionResolution = false
+        windowState.restorationState.isAwaitingInitialResolution = false
         activation.completeDeferredActivation(for: windowState)
         activation.completeDeferredActivation(for: windowState)
 

@@ -20,7 +20,7 @@ final class FloatingBarStateTests: XCTestCase {
             reason: .keyboard
         )
 
-        XCTAssertTrue(windowState.isFloatingBarVisible)
+        XCTAssertTrue(windowState.presentationState.isFloatingBarVisible)
         XCTAssertEqual(windowState.floatingBarPresentationReason, .keyboard)
         XCTAssertEqual(windowState.floatingBarDraftText, "https://example.com")
         XCTAssertTrue(windowState.floatingBarDraftNavigatesCurrentTab)
@@ -31,7 +31,7 @@ final class FloatingBarStateTests: XCTestCase {
         XCTAssertTrue(windowState.floatingBarDraftNavigatesCurrentTab)
 
         browserManager.urlBarBundle.floatingBar.presentation.showNewTab(in: windowState)
-        XCTAssertTrue(windowState.isFloatingBarVisible)
+        XCTAssertTrue(windowState.presentationState.isFloatingBarVisible)
         XCTAssertEqual(windowState.floatingBarPresentationReason, .emptySpace)
         XCTAssertEqual(windowState.floatingBarDraftText, "")
         XCTAssertFalse(windowState.floatingBarDraftNavigatesCurrentTab)
@@ -41,7 +41,7 @@ final class FloatingBarStateTests: XCTestCase {
             preserveDraft: false,
             cancelEmptySplitPlaceholder: true
         )
-        XCTAssertFalse(windowState.isFloatingBarVisible)
+        XCTAssertFalse(windowState.presentationState.isFloatingBarVisible)
         XCTAssertEqual(windowState.floatingBarPresentationReason, .none)
         XCTAssertEqual(windowState.floatingBarDraftText, "")
         XCTAssertFalse(windowState.floatingBarDraftNavigatesCurrentTab)
@@ -118,7 +118,7 @@ final class FloatingBarStateTests: XCTestCase {
                 .dismissActiveWindow(preserveDraft: true)
         }
 
-        XCTAssertFalse(windowState.isFloatingBarVisible)
+        XCTAssertFalse(windowState.presentationState.isFloatingBarVisible)
         XCTAssertEqual(windowState.floatingBarDraftText, "https://example.com")
         XCTAssertTrue(windowState.floatingBarDraftNavigatesCurrentTab)
     }

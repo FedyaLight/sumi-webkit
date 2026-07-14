@@ -49,7 +49,7 @@ final class BrowserWindowSelectionRepairService {
 
     @discardableResult
     func reconcile(_ windowState: BrowserWindowState) -> Bool {
-        guard !windowState.isAwaitingInitialSessionResolution else { return false }
+        guard !windowState.restorationState.isAwaitingInitialResolution else { return false }
 
         var didChange = clearMissingCurrentTab(in: windowState)
 

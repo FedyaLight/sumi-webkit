@@ -297,6 +297,7 @@
         "SumiTests/BrowserURLBarPermissionContextOwnerTests",
         "SumiTests/BrowserWindowChromeTests",
         "SumiTests/BrowserWindowShellServiceTests",
+        "SumiTests/BrowserWindowStateAuthorityTests",
         "SumiTests/ClosedShortcutRestoreServiceTests",
         "SumiTests/ClosedTabRestoreServiceTests",
         "SumiTests/ClosedWindowHistoryRecorderTests",

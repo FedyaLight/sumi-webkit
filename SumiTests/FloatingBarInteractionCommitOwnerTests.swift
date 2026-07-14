@@ -8,7 +8,7 @@ final class FloatingBarInteractionCommitOwnerTests: XCTestCase {
     func testCommitRequestSuppressesDuplicateUntilVisibilitySessionEnds() {
         let owner = FloatingBarInteractionCommitOwner()
         let windowState = BrowserWindowState()
-        windowState.isFloatingBarVisible = true
+        windowState.presentationState.isFloatingBarVisible = true
         owner.beginSession(windowID: windowState.id)
         var scheduled: [@MainActor () -> Void] = []
         var commitCount = 0
@@ -34,7 +34,7 @@ final class FloatingBarInteractionCommitOwnerTests: XCTestCase {
     func testDeferredCommitIsSuppressedAfterSessionEnds() {
         let owner = FloatingBarInteractionCommitOwner()
         let windowState = BrowserWindowState()
-        windowState.isFloatingBarVisible = true
+        windowState.presentationState.isFloatingBarVisible = true
         owner.beginSession(windowID: windowState.id)
         var scheduled: [@MainActor () -> Void] = []
         var commitCount = 0
@@ -52,7 +52,7 @@ final class FloatingBarInteractionCommitOwnerTests: XCTestCase {
     func testDeferredDismissIsSuppressedIfBarIsHiddenBeforeFlush() {
         let owner = FloatingBarInteractionCommitOwner()
         let windowState = BrowserWindowState()
-        windowState.isFloatingBarVisible = true
+        windowState.presentationState.isFloatingBarVisible = true
         owner.beginSession(windowID: windowState.id)
         var scheduled: [@MainActor () -> Void] = []
         var dismissCount = 0
@@ -61,7 +61,7 @@ final class FloatingBarInteractionCommitOwnerTests: XCTestCase {
             dismissCount += 1
         }))
 
-        windowState.isFloatingBarVisible = false
+        windowState.presentationState.isFloatingBarVisible = false
         scheduled[0]()
 
         XCTAssertEqual(dismissCount, 0)

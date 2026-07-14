@@ -72,7 +72,7 @@ final class FloatingBarPresentationService {
             windowState.floatingBarDraftNavigatesCurrentTab = navigateCurrentTab
         }
         windowState.floatingBarPresentationReason = reason
-        windowState.isFloatingBarVisible = true
+        windowState.presentationState.isFloatingBarVisible = true
         dismissThemePickerDiscardingIfNeeded()
         persistence()?.persist(windowState)
     }
@@ -81,7 +81,7 @@ final class FloatingBarPresentationService {
         windowState.floatingBarDraftText = ""
         windowState.floatingBarDraftNavigatesCurrentTab = false
         windowState.floatingBarPresentationReason = .emptySpace
-        windowState.isFloatingBarVisible = true
+        windowState.presentationState.isFloatingBarVisible = true
         dismissThemePickerDiscardingIfNeeded()
         persistence()?.persist(windowState)
     }
@@ -101,7 +101,7 @@ final class FloatingBarPresentationService {
             _ = splitPlaceholders()?.cancel(in: windowState)
         }
         windowState.floatingBarPresentationReason = .none
-        windowState.isFloatingBarVisible = false
+        windowState.presentationState.isFloatingBarVisible = false
         if !preserveDraft {
             windowState.floatingBarDraftText = ""
             windowState.floatingBarDraftNavigatesCurrentTab = false
@@ -111,7 +111,7 @@ final class FloatingBarPresentationService {
 
     func dismissActiveWindow(preserveDraft: Bool) {
         guard let activeWindow = windowRegistry()?.activeWindow,
-              activeWindow.isFloatingBarVisible
+              activeWindow.presentationState.isFloatingBarVisible
         else { return }
 
         dismiss(in: activeWindow, preserveDraft: preserveDraft)
@@ -120,7 +120,7 @@ final class FloatingBarPresentationService {
     @discardableResult
     func dismissIfVisible(in windowID: UUID, preserveDraft: Bool) -> Bool {
         guard let windowState = windowRegistry()?.windows[windowID],
-              windowState.isFloatingBarVisible
+              windowState.presentationState.isFloatingBarVisible
         else { return false }
 
         dismiss(in: windowState, preserveDraft: preserveDraft)
@@ -128,7 +128,7 @@ final class FloatingBarPresentationService {
     }
 
     func dismissAfterSelection(in windowState: BrowserWindowState) {
-        guard windowState.isFloatingBarVisible
+        guard windowState.presentationState.isFloatingBarVisible
             || windowState.floatingBarPresentationReason != .none
         else { return }
 

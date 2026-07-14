@@ -154,7 +154,7 @@ final class BrowserTerminationRuntimeLeaseTests: XCTestCase {
 
         coordinator.prepareForTermination()
 
-        XCTAssertFalse(windowState.isFloatingBarVisible)
+        XCTAssertFalse(windowState.presentationState.isFloatingBarVisible)
         XCTAssertEqual(windowState.floatingBarDraftText, "https://draft.example/path")
         XCTAssertTrue(windowState.floatingBarDraftNavigatesCurrentTab)
     }

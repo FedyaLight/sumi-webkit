@@ -282,7 +282,7 @@ final class SplitShortcutServicesTests: XCTestCase {
         )
 
         XCTAssertEqual(
-            fixture.windowState.pendingSplitGroupFocusRequest?.groupID,
+            fixture.windowState.presentationState.pendingSplitGroupFocusRequest?.groupID,
             fixture.group.id
         )
         XCTAssertEqual(fixture.probe.sessionWrites, 0)
@@ -489,7 +489,7 @@ final class SplitShortcutServicesTests: XCTestCase {
                 in: windowState
             )
         )
-        XCTAssertNil(windowState.pendingSplitGroupFocusRequest)
+        XCTAssertNil(windowState.presentationState.pendingSplitGroupFocusRequest)
         XCTAssertEqual(windowState.currentTabId, originalTabId)
         XCTAssertFalse(windowState.isShowingEmptyState)
         withExtendedLifetime(retainedServices) {

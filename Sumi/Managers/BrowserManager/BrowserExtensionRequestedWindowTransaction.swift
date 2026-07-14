@@ -126,7 +126,7 @@ final class BrowserExtensionRequestedWindowTransaction:
                 )
             },
             validateBeforePublication: { target in
-                guard target.isAwaitingInitialSessionResolution == false,
+                guard target.restorationState.isAwaitingInitialResolution == false,
                       let initialTab,
                       Self.validate(
                           initialTab,

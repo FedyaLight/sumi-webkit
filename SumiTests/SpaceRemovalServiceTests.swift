@@ -462,12 +462,12 @@ private extension BrowserWindowState {
             .regularTab(regular.id),
             .shortcutPin(shortcutPin.id),
         ]
-        pendingSplitGroupFocusRequest = SplitGroupFocusRequest(
+        presentationState.pendingSplitGroupFocusRequest = SplitGroupFocusRequest(
             groupID: pendingGroupId,
             preferredMemberID: nil,
             targetSpaceID: pendingGroupSpaceId
         )
-        pendingSessionSplitSelection = PendingWindowSplitSelection(
+        restorationState.pendingSplitSelection = PendingWindowSplitSelection(
             groupID: sessionGroupId,
             preferredMemberID: nil
         )
@@ -552,7 +552,7 @@ private final class SpaceRemovalRuntimeProbe {
                 .recentRegularTabIdsBySpace[removedSpaceId] == nil
             && persisted.selectionHistory
                 .recentSelectionItemsBySpace[removedSpaceId] == nil
-            && persisted.pendingSplitGroupFocusRequest == nil
-            && persisted.pendingSessionSplitSelection == nil
+            && persisted.presentationState.pendingSplitGroupFocusRequest == nil
+            && persisted.restorationState.pendingSplitSelection == nil
     }
 }

@@ -74,13 +74,13 @@ final class WindowSplitSessionCodingTests: XCTestCase {
 
         XCTAssertNil(windowState.splitSelection)
         XCTAssertEqual(
-            windowState.pendingSessionSplitSelection,
+            windowState.restorationState.pendingSplitSelection,
             PendingWindowSplitSelection(
                 groupID: selection.groupID,
                 preferredMemberID: selection.activeMemberID
             )
         )
-        XCTAssertNil(windowState.pendingSessionLegacySplitGroup)
+        XCTAssertNil(windowState.restorationState.pendingLegacySplitGroup)
     }
 
     func testSnapshotFactoryReadsWindowLocalSelectionWithoutSplitManager() {

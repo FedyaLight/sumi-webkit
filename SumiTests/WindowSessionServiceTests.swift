@@ -59,7 +59,7 @@ final class WindowSessionServiceTests: XCTestCase {
         service.setupWindowState(windowState, currentProfile: delegate.currentProfile)
 
         XCTAssertEqual(windowState.currentSpaceId, spaceId)
-        XCTAssertTrue(windowState.isAwaitingInitialSessionResolution)
+        XCTAssertTrue(windowState.restorationState.isAwaitingInitialResolution)
         XCTAssertTrue(windowState.workspaceTheme.visuallyEquals(initialTheme))
         XCTAssertFalse(windowState.workspaceTheme.visuallyEquals(.default))
         XCTAssertTrue(delegate.committedThemes.isEmpty)
@@ -249,7 +249,7 @@ final class WindowSessionServiceTests: XCTestCase {
 
         XCTAssertNil(browserManager.shellRuntime.windowTabs.currentTab(for: windowState))
 
-        windowState.isAwaitingInitialSessionResolution = false
+        windowState.restorationState.isAwaitingInitialResolution = false
 
         XCTAssertNil(browserManager.shellRuntime.windowTabs.currentTab(for: windowState))
         XCTAssertEqual(
@@ -342,7 +342,7 @@ final class WindowSessionServiceTests: XCTestCase {
         let delegate = TestWindowSessionDelegate(tabManager: tabManager)
         let service = delegate.makeRestoreService(lastWindowSessionKey: sessionKey)
         let windowState = BrowserWindowState()
-        windowState.isDownloadsPopoverPresented = true
+        windowState.presentationState.isDownloadsPopoverPresented = true
 
         service.applyWindowSessionSnapshot(snapshot, to: windowState)
 
@@ -359,7 +359,7 @@ final class WindowSessionServiceTests: XCTestCase {
         XCTAssertEqual(windowState.savedSidebarWidth, 340)
         XCTAssertEqual(windowState.sidebarContentWidth, BrowserWindowState.sidebarContentWidth(for: 312))
         XCTAssertFalse(windowState.isSidebarVisible)
-        XCTAssertFalse(windowState.isDownloadsPopoverPresented)
+        XCTAssertFalse(windowState.presentationState.isDownloadsPopoverPresented)
         XCTAssertEqual(windowState.floatingBarDraftText, "persisted draft")
         XCTAssertTrue(windowState.floatingBarDraftNavigatesCurrentTab)
     }
@@ -400,12 +400,12 @@ final class WindowSessionServiceTests: XCTestCase {
         )
 
         XCTAssertEqual(
-            restoredWindow.restoredSessionWindowId,
+            restoredWindow.restorationState.restoredSessionWindowID,
             archivedSnapshot.id
         )
         XCTAssertEqual(restoredWindow.currentSpaceId, archivedSpace.id)
         XCTAssertEqual(restoredWindow.currentProfileId, archivedProfileID)
-        XCTAssertTrue(restoredWindow.isAwaitingInitialSessionResolution)
+        XCTAssertTrue(restoredWindow.restorationState.isAwaitingInitialResolution)
 
         service.restoreRegisteredWindow(
             restoredWindow,
@@ -414,7 +414,7 @@ final class WindowSessionServiceTests: XCTestCase {
 
         XCTAssertEqual(restoredWindow.currentSpaceId, archivedSpace.id)
         XCTAssertEqual(restoredWindow.currentProfileId, archivedProfileID)
-        XCTAssertFalse(restoredWindow.isAwaitingInitialSessionResolution)
+        XCTAssertFalse(restoredWindow.restorationState.isAwaitingInitialResolution)
 
         let ordinaryWindow = BrowserWindowState(
             awaitsInitialSessionResolution: true
@@ -459,7 +459,7 @@ final class WindowSessionServiceTests: XCTestCase {
         XCTAssertEqual(windowState.currentTabId, staleLiveTabId)
         XCTAssertEqual(windowState.currentShortcutPinId, pin.id)
         XCTAssertEqual(windowState.currentShortcutPinRole, .essential)
-        XCTAssertTrue(windowState.isAwaitingInitialSessionResolution)
+        XCTAssertTrue(windowState.restorationState.isAwaitingInitialResolution)
 
         tabManager.spaceStateOwner.replaceSpaces([space])
         tabManager.spaceStateOwner.replaceCurrentSpace(space)
@@ -473,7 +473,7 @@ final class WindowSessionServiceTests: XCTestCase {
         XCTAssertEqual(windowState.currentShortcutPinId, pin.id)
         XCTAssertEqual(windowState.currentShortcutPinRole, .essential)
         XCTAssertFalse(windowState.isShowingEmptyState)
-        XCTAssertFalse(windowState.isAwaitingInitialSessionResolution)
+        XCTAssertFalse(windowState.restorationState.isAwaitingInitialResolution)
     }
 
     func testRememberedSpacePinnedShortcutSurvivesPreloadSetupAndMaterializesAfterTabLoad() throws {
@@ -509,7 +509,7 @@ final class WindowSessionServiceTests: XCTestCase {
 
         XCTAssertNil(windowState.currentShortcutPinId)
         XCTAssertEqual(windowState.selectedShortcutPinForSpace[space.id], pin.id)
-        XCTAssertTrue(windowState.isAwaitingInitialSessionResolution)
+        XCTAssertTrue(windowState.restorationState.isAwaitingInitialResolution)
 
         tabManager.spaceStateOwner.replaceSpaces([space])
         tabManager.spaceStateOwner.replaceCurrentSpace(space)
@@ -525,7 +525,7 @@ final class WindowSessionServiceTests: XCTestCase {
         XCTAssertEqual(windowState.currentSpaceId, space.id)
         XCTAssertEqual(windowState.selectedShortcutPinForSpace[space.id], pin.id)
         XCTAssertFalse(windowState.isShowingEmptyState)
-        XCTAssertFalse(windowState.isAwaitingInitialSessionResolution)
+        XCTAssertFalse(windowState.restorationState.isAwaitingInitialResolution)
     }
 
     func testActiveSplitGroupSnapshotRestoresGroupFocus() throws {
@@ -574,7 +574,7 @@ final class WindowSessionServiceTests: XCTestCase {
 
         XCTAssertEqual(delegate.focusedSplitGroupIds, [group.id])
         XCTAssertEqual(windowState.currentTabId, second.id)
-        XCTAssertNil(windowState.pendingSessionSplitSelection)
+        XCTAssertNil(windowState.restorationState.pendingSplitSelection)
     }
 
     func testDeferredSplitSelectionRetriesOnlyAfterTabDataLoad() throws {
@@ -645,7 +645,7 @@ final class WindowSessionServiceTests: XCTestCase {
         XCTAssertTrue(didPublishGroup)
         XCTAssertEqual(delegate.focusedSplitGroupIds, [])
         XCTAssertEqual(
-            windowState.pendingSessionSplitSelection,
+            windowState.restorationState.pendingSplitSelection,
             PendingWindowSplitSelection(
                 groupID: pendingSelection.groupID,
                 preferredMemberID: pendingSelection.activeMemberID
@@ -656,7 +656,7 @@ final class WindowSessionServiceTests: XCTestCase {
         service.handleTabManagerDataLoaded(windows: [windowState])
 
         XCTAssertEqual(delegate.focusedSplitGroupIds, [group.id])
-        XCTAssertNil(windowState.pendingSessionSplitSelection)
+        XCTAssertNil(windowState.restorationState.pendingSplitSelection)
         XCTAssertEqual(
             windowState.splitSelection,
             WindowSplitSelection(
@@ -691,8 +691,8 @@ final class WindowSessionServiceTests: XCTestCase {
         service.setupWindowState(windowState, currentProfile: delegate.currentProfile)
 
         XCTAssertEqual(windowState.currentTabId, left.id)
-        XCTAssertNotNil(windowState.pendingSessionSplitSelection)
-        XCTAssertNotNil(windowState.pendingSessionLegacySplitGroup)
+        XCTAssertNotNil(windowState.restorationState.pendingSplitSelection)
+        XCTAssertNotNil(windowState.restorationState.pendingLegacySplitGroup)
         XCTAssertNil(
             tabManager.splitGroupStore.group(containing: .regularTab(left.id))
         )
@@ -718,8 +718,8 @@ final class WindowSessionServiceTests: XCTestCase {
                 activeMemberID: .regularTab(right.id)
             )
         )
-        XCTAssertNil(windowState.pendingSessionSplitSelection)
-        XCTAssertNil(windowState.pendingSessionLegacySplitGroup)
+        XCTAssertNil(windowState.restorationState.pendingSplitSelection)
+        XCTAssertNil(windowState.restorationState.pendingLegacySplitGroup)
     }
 
     func testSetupWindowStateFallsBackToDefaultWhenLoadedSpaceIsMissing() async throws {

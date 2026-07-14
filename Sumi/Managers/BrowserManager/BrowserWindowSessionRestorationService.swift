@@ -93,7 +93,7 @@ final class BrowserWindowSessionRestorationService {
             }
 
             pending.isRegistryCommitted = true
-            if windowState.isAwaitingInitialSessionResolution {
+            if windowState.restorationState.isAwaitingInitialResolution {
                 pendingPublicationsByWindowID[windowState.id] = pending
             } else {
                 pendingPublicationsByWindowID.removeValue(
@@ -138,7 +138,7 @@ final class BrowserWindowSessionRestorationService {
             }
             guard pending.isRegistryCommitted,
                   windowState.isIncognito == false,
-                  windowState.isAwaitingInitialSessionResolution == false
+                  windowState.restorationState.isAwaitingInitialResolution == false
             else {
                 continue
             }

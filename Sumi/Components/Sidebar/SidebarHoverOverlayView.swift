@@ -327,7 +327,7 @@ struct SidebarHoverOverlayView: View {
                 )
             )
         }
-        .onChange(of: windowState.isAwaitingInitialSessionResolution) { _, _ in
+        .onChange(of: windowState.restorationState.isAwaitingInitialResolution) { _, _ in
             completeStartupEmptyStateSyncIfResolved()
         }
         .onChange(of: pinnedInteractionRequestsHostRetention) { _, isPinned in
@@ -388,7 +388,7 @@ struct SidebarHoverOverlayView: View {
 
     private func completeStartupEmptyStateSyncIfResolved() {
         guard isStartupEmptyStateSyncPending,
-              !windowState.isAwaitingInitialSessionResolution
+              !windowState.restorationState.isAwaitingInitialResolution
         else { return }
 
         if emptyStateRequestsCollapsedSidebar {

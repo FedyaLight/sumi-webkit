@@ -29,7 +29,7 @@ final class BrowserWindowTabContext {
     }
 
     func currentTab(for windowState: BrowserWindowState) -> Tab? {
-        guard !windowState.isAwaitingInitialSessionResolution,
+        guard !windowState.restorationState.isAwaitingInitialResolution,
               let selectionService = selectionService(),
               let tabStore = tabStore()
         else {

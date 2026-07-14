@@ -82,7 +82,7 @@ struct FloatingBarView: View {
 
     @ViewBuilder
     private func floatingBarBody(effectiveFloatingBarWidth: CGFloat) -> some View {
-        let isVisible = windowState.isFloatingBarVisible
+        let isVisible = windowState.presentationState.isFloatingBarVisible
         let tokens = self.tokens
         let urlBarPlaceholder = urlBarPlaceholderString
         let textFieldFont = ChromeThemeTypography.floatingBarInput
@@ -198,7 +198,7 @@ struct FloatingBarView: View {
                                                     browserContext.updateFloatingBarDraft(in: windowState, text: text)
                                                     searchSession.handleTextChanged(
                                                         text,
-                                                        isFloatingBarVisible: windowState.isFloatingBarVisible,
+                                                        isFloatingBarVisible: windowState.presentationState.isFloatingBarVisible,
                                                         presentationReason: windowState.floatingBarPresentationReason,
                                                         emptyStateMode: sumiSettings.floatingBarEmptyStateMode,
                                                         windowState: windowState,
@@ -325,11 +325,11 @@ struct FloatingBarView: View {
         .allowsHitTesting(isVisible)
         .opacity(isVisible ? 1.0 : 0.0)
         .onAppear {
-            if windowState.isFloatingBarVisible {
+            if windowState.presentationState.isFloatingBarVisible {
                 handleVisibilityChanged(true)
             }
         }
-        .onChange(of: windowState.isFloatingBarVisible) { _, newVisible in
+        .onChange(of: windowState.presentationState.isFloatingBarVisible) { _, newVisible in
             handleVisibilityChanged(newVisible)
         }
         .onDisappear {
@@ -339,7 +339,7 @@ struct FloatingBarView: View {
         }
         .onChange(of: browserContext.currentProfileId) { _, _ in
             searchSession.handleProfileContextChanged(
-                isFloatingBarVisible: windowState.isFloatingBarVisible
+                isFloatingBarVisible: windowState.presentationState.isFloatingBarVisible
             )
         }
         .onChange(of: searchSession.searchManager.suggestions.count) { _, _ in
@@ -408,7 +408,7 @@ struct FloatingBarView: View {
 
             focusRequestOwner.scheduleDeferredFocus(windowID: windowID) {
                 guard windowState.id == windowID,
-                      windowState.isFloatingBarVisible
+                      windowState.presentationState.isFloatingBarVisible
                 else { return }
                 focusSearchField(selectAll: !searchSession.text.isEmpty)
             }
@@ -426,7 +426,7 @@ struct FloatingBarView: View {
 
     private func refreshEmptyStateSuggestionsIfNeeded() {
         searchSession.refreshEmptyStateSuggestionsIfNeeded(
-            isFloatingBarVisible: windowState.isFloatingBarVisible,
+            isFloatingBarVisible: windowState.presentationState.isFloatingBarVisible,
             presentationReason: windowState.floatingBarPresentationReason,
             emptyStateMode: sumiSettings.floatingBarEmptyStateMode,
             windowState: windowState,
@@ -435,7 +435,7 @@ struct FloatingBarView: View {
     }
 
     private func focusSearchField(selectAll: Bool) {
-        guard windowState.isFloatingBarVisible else { return }
+        guard windowState.presentationState.isFloatingBarVisible else { return }
         isSearchFocused = true
         searchFocusSelectAll = selectAll
         searchFocusRequestID &+= 1
@@ -562,7 +562,7 @@ struct FloatingBarView: View {
         ) { event in
             interactionCommitOwner.monitorResult(
                 for: event,
-                isFloatingBarVisible: windowState.isFloatingBarVisible
+                isFloatingBarVisible: windowState.presentationState.isFloatingBarVisible
             ) {
                 // Defer the state mutation and return the original event so sidebar/browser chrome handles this click.
                 interactionCommitOwner.requestDismiss(in: windowState) {

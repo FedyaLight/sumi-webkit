@@ -508,7 +508,7 @@ final class LastSessionWindowsRestoreServiceTests: XCTestCase {
             allWindows: {
                 openSessions().map { snapshot in
                     let windowState = BrowserWindowState()
-                    windowState.restoredSessionWindowId = snapshot.id
+                    windowState.restorationState.restoredSessionWindowID = snapshot.id
                     sessionsByWindowId[windowState.id] = snapshot.session
                     return windowState
                 }

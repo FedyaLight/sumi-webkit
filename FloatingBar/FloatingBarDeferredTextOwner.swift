@@ -38,7 +38,7 @@ final class FloatingBarDeferredTextOwner {
         scheduler: DeferredScheduler = FloatingBarDeferredTextOwner.scheduleOnNextMainTurn,
         apply: @escaping @MainActor (String) -> Void
     ) -> Bool {
-        guard windowState.isFloatingBarVisible,
+        guard windowState.presentationState.isFloatingBarVisible,
               let session,
               session.windowID == windowState.id
         else {
@@ -52,7 +52,7 @@ final class FloatingBarDeferredTextOwner {
         scheduler { [weak self, weak windowState] in
             guard let self,
                   let windowState,
-                  windowState.isFloatingBarVisible,
+                  windowState.presentationState.isFloatingBarVisible,
                   self.session == session,
                   self.pendingChange == pendingChange
             else {

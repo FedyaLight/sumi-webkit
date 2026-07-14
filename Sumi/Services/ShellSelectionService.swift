@@ -45,7 +45,7 @@ final class ShellSelectionService {
         windowState: BrowserWindowState,
         tabStore: ShellSelectionTabStore
     ) -> Tab? {
-        if !windowState.isAwaitingInitialSessionResolution,
+        if !windowState.restorationState.isAwaitingInitialResolution,
            windowState.currentSpaceId == space.id,
            hasValidCurrentSelection(in: windowState, tabStore: tabStore),
            let currentTab = currentTab(for: windowState, tabStore: tabStore) {

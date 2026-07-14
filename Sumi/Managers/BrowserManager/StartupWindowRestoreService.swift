@@ -120,12 +120,12 @@ final class StartupWindowRestoreService {
             archivedSnapshots: sourceSnapshots,
             existingWindowIDs: existingWindowIDs,
             hasStartupWindow: liveLaunchWindow != nil,
-            startupWindowArchiveID: liveLaunchWindow?.restoredSessionWindowId
+            startupWindowArchiveID: liveLaunchWindow?.restorationState.restoredSessionWindowID
         )
 
         if let liveLaunchWindow,
            let primarySnapshot = restorationPlan.primarySnapshotForStartupWindow {
-            liveLaunchWindow.restoredSessionWindowId = primarySnapshot.id
+            liveLaunchWindow.restorationState.restoredSessionWindowID = primarySnapshot.id
             applySnapshot(primarySnapshot, liveLaunchWindow)
         }
 

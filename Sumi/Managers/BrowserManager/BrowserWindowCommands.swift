@@ -38,7 +38,7 @@ final class BrowserWindowCommands {
         ) -> Bool = { _ in true },
         validateBeforePublication: @escaping @MainActor (
             BrowserWindowState
-        ) -> Bool = { $0.isAwaitingInitialSessionResolution == false },
+        ) -> Bool = { $0.restorationState.isAwaitingInitialResolution == false },
         validateCommittedRegistration:
             @escaping BrowserWindowShellService.CommittedRegistrationValidator = { _ in true },
         discardPreparedState:

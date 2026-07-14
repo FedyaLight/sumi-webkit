@@ -39,7 +39,7 @@ final class BrowserWindowActivationService {
     }
 
     func activate(_ windowState: BrowserWindowState) {
-        guard windowState.isAwaitingInitialSessionResolution == false else {
+        guard windowState.restorationState.isAwaitingInitialResolution == false else {
             deferredActivationsByWindowID[windowState.id] = DeferredActivation(
                 windowIdentity: ObjectIdentifier(windowState)
             )
@@ -63,7 +63,7 @@ final class BrowserWindowActivationService {
             deferredActivationsByWindowID.removeAll()
             return
         }
-        guard activeWindow.isAwaitingInitialSessionResolution == false else {
+        guard activeWindow.restorationState.isAwaitingInitialResolution == false else {
             return
         }
 

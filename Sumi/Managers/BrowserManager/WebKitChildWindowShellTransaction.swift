@@ -90,7 +90,7 @@ final class WebKitChildWindowShellTransaction {
             },
             validateBeforeShell: { _ in childInstalled },
             validateBeforePublication: {
-                $0.isAwaitingInitialSessionResolution == false
+                $0.restorationState.isAwaitingInitialResolution == false
                     && $0.currentTabId != nil
                     && validateChildBeforePublication($0)
             },

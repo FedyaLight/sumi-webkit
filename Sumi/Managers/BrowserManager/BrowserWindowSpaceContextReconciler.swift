@@ -29,7 +29,7 @@ final class BrowserWindowSpaceContextReconciler {
     @discardableResult
     func reconcile(_ windowState: BrowserWindowState) -> Bool {
         guard !windowState.isIncognito,
-              !windowState.isAwaitingInitialSessionResolution
+              !windowState.restorationState.isAwaitingInitialResolution
         else {
             return false
         }
@@ -54,7 +54,7 @@ final class BrowserWindowSpaceContextReconciler {
 
     func synchronize(_ windowState: BrowserWindowState) {
         guard !windowState.isIncognito,
-              !windowState.isAwaitingInitialSessionResolution
+              !windowState.restorationState.isAwaitingInitialResolution
         else {
             return
         }

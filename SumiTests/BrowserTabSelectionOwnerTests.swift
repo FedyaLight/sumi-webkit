@@ -225,7 +225,7 @@ final class BrowserTabSelectionOwnerTests: XCTestCase {
         XCTAssertNil(windowState.currentShortcutPinId)
         XCTAssertNil(windowState.currentShortcutPinRole)
         XCTAssertTrue(windowState.isShowingEmptyState)
-        XCTAssertFalse(windowState.isFloatingBarVisible)
+        XCTAssertFalse(windowState.presentationState.isFloatingBarVisible)
         XCTAssertEqual(windowState.floatingBarPresentationReason, .none)
         XCTAssertEqual(
             probe.events,

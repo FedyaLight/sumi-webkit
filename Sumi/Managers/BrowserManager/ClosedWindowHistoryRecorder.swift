@@ -30,7 +30,7 @@ final class ClosedWindowHistoryRecorder {
             || !snapshot.isShowingEmptyState
         else { return }
         recentlyClosedManager().captureClosedWindow(
-            sessionWindowId: windowState.restoredSessionWindowId ?? windowState.id,
+            sessionWindowId: windowState.restorationState.restoredSessionWindowID ?? windowState.id,
             title: windowDisplayTitle(windowState),
             session: snapshot
         )

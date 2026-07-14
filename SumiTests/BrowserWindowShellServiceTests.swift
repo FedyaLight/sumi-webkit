@@ -76,7 +76,7 @@ final class BrowserWindowShellServiceTests: XCTestCase {
                 windowState.floatingBarDraftText = ""
                 windowState.floatingBarDraftNavigatesCurrentTab = false
                 windowState.floatingBarPresentationReason = .emptySpace
-                windowState.isFloatingBarVisible = true
+                windowState.presentationState.isFloatingBarVisible = true
             }
         }
 
@@ -97,7 +97,7 @@ final class BrowserWindowShellServiceTests: XCTestCase {
         XCTAssertTrue(windowState.ephemeralTabs.isEmpty)
         XCTAssertNil(windowState.currentTabId)
         XCTAssertTrue(windowState.isShowingEmptyState)
-        XCTAssertTrue(windowState.isFloatingBarVisible)
+        XCTAssertTrue(windowState.presentationState.isFloatingBarVisible)
         XCTAssertEqual(windowState.floatingBarPresentationReason, .emptySpace)
         XCTAssertEqual(windowState.floatingBarDraftText, "")
         XCTAssertFalse(windowState.floatingBarDraftNavigatesCurrentTab)
@@ -163,14 +163,14 @@ final class BrowserWindowShellServiceTests: XCTestCase {
             prepareWindowRegistration: { windowState in
                 events.append("register")
                 registeredState = windowState
-                XCTAssertEqual(windowState.restoredSessionWindowId, archiveID)
+                XCTAssertEqual(windowState.restorationState.restoredSessionWindowID, archiveID)
                 XCTAssertEqual(windowState.currentProfileId, profileID)
-                XCTAssertTrue(windowState.isAwaitingInitialSessionResolution)
+                XCTAssertTrue(windowState.restorationState.isAwaitingInitialResolution)
                 XCTAssertNotNil(
                     harness.windowRegistry.appKitWindow(for: windowState),
                     "The AppKit shell must be bound before registry publication"
                 )
-                windowState.isAwaitingInitialSessionResolution = false
+                windowState.restorationState.isAwaitingInitialResolution = false
             },
             publishWindowRegistration: { windowState in
                 events.append("publish")
@@ -183,7 +183,7 @@ final class BrowserWindowShellServiceTests: XCTestCase {
             activateWindow: { windowState in
                 events.append("active")
                 activeState = windowState
-                XCTAssertFalse(windowState.isAwaitingInitialSessionResolution)
+                XCTAssertFalse(windowState.restorationState.isAwaitingInitialResolution)
             }
         )
         let context = BrowserWindowShellService.Context(
@@ -194,7 +194,7 @@ final class BrowserWindowShellServiceTests: XCTestCase {
             tabManager: harness.tabManager,
             makeContentView: { registry, windowState in
                 events.append("content")
-                XCTAssertEqual(windowState.restoredSessionWindowId, archiveID)
+                XCTAssertEqual(windowState.restorationState.restoredSessionWindowID, archiveID)
                 XCTAssertEqual(windowState.currentProfileId, profileID)
                 XCTAssertNil(registry.windows[windowState.id])
                 return NSView()
@@ -207,12 +207,12 @@ final class BrowserWindowShellServiceTests: XCTestCase {
             using: context,
             initializeBeforePublication: { windowState in
                 events.append("prepare")
-                windowState.restoredSessionWindowId = archiveID
+                windowState.restorationState.restoredSessionWindowID = archiveID
                 windowState.currentProfileId = profileID
-                windowState.isAwaitingInitialSessionResolution = true
+                windowState.restorationState.isAwaitingInitialResolution = true
             },
             validateRestoredStateBeforePublication: {
-                $0.isAwaitingInitialSessionResolution == false
+                $0.restorationState.isAwaitingInitialResolution == false
             },
             compensateRejectedRegistration: { _ in
                 XCTFail("Accepted registration must not be compensated")
@@ -255,7 +255,7 @@ final class BrowserWindowShellServiceTests: XCTestCase {
             initializeBeforePublication: { windowState in
                 events.append("prepare")
                 preparedWindow = windowState
-                windowState.isAwaitingInitialSessionResolution = true
+                windowState.restorationState.isAwaitingInitialResolution = true
             },
             validateRestoredStateBeforePublication: { _ in false },
             compensateRejectedRegistration: { windowState in
@@ -278,8 +278,7 @@ final class BrowserWindowShellServiceTests: XCTestCase {
     }
 
     func testCommittedValidationRejectionCompensatesWithoutActivationOrVisibleShell()
-        throws
-    {
+        throws {
         let harness = try makeHarness()
         let service = BrowserWindowShellService()
         var events: [String] = []
@@ -360,8 +359,7 @@ final class BrowserWindowShellServiceTests: XCTestCase {
     }
 
     func testRejectedPrepublicationPreparationNeverBuildsOrRegistersShell()
-        throws
-    {
+        throws {
         let harness = try makeHarness()
         let service = BrowserWindowShellService()
         var events: [String] = []
@@ -415,7 +413,7 @@ final class BrowserWindowShellServiceTests: XCTestCase {
             windowState.isShowingEmptyState = true
             if presentNewTabFloatingBar {
                 windowState.floatingBarPresentationReason = .emptySpace
-                windowState.isFloatingBarVisible = true
+                windowState.presentationState.isFloatingBarVisible = true
             }
         }
 
@@ -542,8 +540,7 @@ final class BrowserWindowShellServiceTests: XCTestCase {
     }
 
     private func makePresentationRecordingWindow()
-        -> WindowPresentationRecordingWindow
-    {
+        -> WindowPresentationRecordingWindow {
         let window = WindowPresentationRecordingWindow(
             contentRect: NSRect(x: 0, y: 0, width: 200, height: 120),
             styleMask: [.titled],

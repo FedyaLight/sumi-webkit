@@ -27,7 +27,7 @@ final class SumiStartupSessionCoordinatorTests: XCTestCase {
         harness.windowState.currentShortcutPinId = pin.id
         harness.windowState.currentShortcutPinRole = .spacePinned
         harness.windowState.selectedShortcutPinForSpace[harness.space.id] = pin.id
-        harness.windowState.restoredSessionWindowId = UUID()
+        harness.windowState.restorationState.restoredSessionWindowID = UUID()
 
         harness.browserManager.profileLifecycleBundle.startupPolicy.apply(.nothing)
 
@@ -35,9 +35,9 @@ final class SumiStartupSessionCoordinatorTests: XCTestCase {
         XCTAssertNil(harness.browserManager.tabManager.shortcutPresentationOwner.shortcutLiveTab(for: pin.id, in: harness.windowState.id))
         XCTAssertNil(harness.windowState.currentTabId)
         XCTAssertNil(harness.windowState.currentShortcutPinId)
-        XCTAssertNil(harness.windowState.restoredSessionWindowId)
+        XCTAssertNil(harness.windowState.restorationState.restoredSessionWindowID)
         XCTAssertTrue(harness.windowState.isShowingEmptyState)
-        XCTAssertTrue(harness.windowState.isFloatingBarVisible)
+        XCTAssertTrue(harness.windowState.presentationState.isFloatingBarVisible)
         XCTAssertEqual(harness.windowState.floatingBarPresentationReason, .emptySpace)
         XCTAssertEqual(
             harness.browserManager.tabManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: harness.space.id).map(\.id),
@@ -72,7 +72,7 @@ final class SumiStartupSessionCoordinatorTests: XCTestCase {
         XCTAssertEqual(tabs.first?.url.absoluteString, "https://configured.example")
         XCTAssertEqual(harness.windowState.currentTabId, tabs.first?.id)
         XCTAssertFalse(harness.windowState.isShowingEmptyState)
-        XCTAssertFalse(harness.windowState.isFloatingBarVisible)
+        XCTAssertFalse(harness.windowState.presentationState.isFloatingBarVisible)
         XCTAssertEqual(harness.windowState.floatingBarPresentationReason, .none)
         XCTAssertEqual(
             harness.browserManager.lastSessionWindowsStore.tabSnapshot?.tabs.map(\.id).contains(previousTab.id),
@@ -99,7 +99,7 @@ final class SumiStartupSessionCoordinatorTests: XCTestCase {
         XCTAssertNil(harness.windowState.currentSpaceId)
         XCTAssertNil(harness.windowState.currentTabId)
         XCTAssertTrue(harness.windowState.isShowingEmptyState)
-        XCTAssertTrue(harness.windowState.isFloatingBarVisible)
+        XCTAssertTrue(harness.windowState.presentationState.isFloatingBarVisible)
         XCTAssertEqual(harness.windowState.floatingBarPresentationReason, .emptySpace)
     }
 
@@ -246,9 +246,9 @@ final class SumiStartupSessionCoordinatorTests: XCTestCase {
             .apply(.restorePreviousSession)
 
         await waitUntil {
-            harness.windowState.restoredSessionWindowId == archived.id
+            harness.windowState.restorationState.restoredSessionWindowID == archived.id
         }
-        XCTAssertEqual(harness.windowState.restoredSessionWindowId, archived.id)
+        XCTAssertEqual(harness.windowState.restorationState.restoredSessionWindowID, archived.id)
     }
 
     func testStartupRestorationDoesNotReapplySnapshotAlreadyInExistingWindow() {

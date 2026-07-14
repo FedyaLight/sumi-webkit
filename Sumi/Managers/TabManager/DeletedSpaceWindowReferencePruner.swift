@@ -40,10 +40,10 @@ struct DeletedSpaceWindowReferencePruner {
         }
 
         changed = pruneSelectionHistory(removal, in: windowState) || changed
-        if let request = windowState.pendingSplitGroupFocusRequest,
+        if let request = windowState.presentationState.pendingSplitGroupFocusRequest,
            request.targetSpaceID == removal.spaceId
             || removal.splitGroupIds.contains(request.groupID) {
-            windowState.pendingSplitGroupFocusRequest = nil
+            windowState.presentationState.pendingSplitGroupFocusRequest = nil
             changed = true
         }
         if windowState.splitSelection
@@ -51,13 +51,13 @@ struct DeletedSpaceWindowReferencePruner {
             windowState.splitSelection = nil
             changed = true
         }
-        if windowState.pendingSessionSplitSelection
+        if windowState.restorationState.pendingSplitSelection
             .map({ removal.splitGroupIds.contains($0.groupID) }) == true {
-            windowState.pendingSessionSplitSelection = nil
+            windowState.restorationState.pendingSplitSelection = nil
             changed = true
         }
         if legacySplitReferencesRemoval(windowState, removal: removal) {
-            windowState.pendingSessionLegacySplitGroup = nil
+            windowState.restorationState.pendingLegacySplitGroup = nil
             changed = true
         }
         return changed
@@ -67,7 +67,7 @@ struct DeletedSpaceWindowReferencePruner {
         _ windowState: BrowserWindowState,
         removal: SpaceRemovalFootprint
     ) -> Bool {
-        guard let group = windowState.pendingSessionLegacySplitGroup else {
+        guard let group = windowState.restorationState.pendingLegacySplitGroup else {
             return false
         }
         return group.container.spaceId == removal.spaceId

@@ -226,11 +226,11 @@ struct SpacesSideBarView: View {
         }
         .onAppear {
             handlePendingSplitGroupFocusRequest(
-                windowState.pendingSplitGroupFocusRequest,
+                windowState.presentationState.pendingSplitGroupFocusRequest,
                 spaces: spaces
             )
         }
-        .onChange(of: windowState.pendingSplitGroupFocusRequest) { _, request in
+        .onChange(of: windowState.presentationState.pendingSplitGroupFocusRequest) { _, request in
             handlePendingSplitGroupFocusRequest(request, spaces: spaces)
         }
     }
@@ -286,7 +286,7 @@ struct SpacesSideBarView: View {
         }
 
         guard let targetSpace = space(for: request.targetSpaceID, in: spaces) else {
-            windowState.pendingSplitGroupFocusRequest = nil
+            windowState.presentationState.pendingSplitGroupFocusRequest = nil
             return
         }
 

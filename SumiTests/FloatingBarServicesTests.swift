@@ -40,7 +40,7 @@ final class FloatingBarServicesTests: XCTestCase {
         )
 
         XCTAssertEqual(windowState.floatingBarDraftText, "preserved")
-        XCTAssertTrue(windowState.isFloatingBarVisible)
+        XCTAssertTrue(windowState.presentationState.isFloatingBarVisible)
         XCTAssertEqual(themeDismissCount, 1)
         XCTAssertEqual(persistence.persistedWindowIDs, [windowState.id])
 
@@ -54,7 +54,7 @@ final class FloatingBarServicesTests: XCTestCase {
         presentation.dismiss(in: windowState, preserveDraft: true)
 
         XCTAssertEqual(windowState.floatingBarDraftText, "changed")
-        XCTAssertFalse(windowState.isFloatingBarVisible)
+        XCTAssertFalse(windowState.presentationState.isFloatingBarVisible)
         XCTAssertEqual(split.cancelledWindowIDs, [windowState.id])
         XCTAssertEqual(
             persistence.persistedWindowIDs,
@@ -69,9 +69,9 @@ final class FloatingBarServicesTests: XCTestCase {
         registry.register(activeWindow)
         registry.register(otherWindow)
         registry.setActive(activeWindow)
-        activeWindow.isFloatingBarVisible = true
+        activeWindow.presentationState.isFloatingBarVisible = true
         activeWindow.floatingBarDraftText = "active draft"
-        otherWindow.isFloatingBarVisible = true
+        otherWindow.presentationState.isFloatingBarVisible = true
         let persistence = FloatingBarPersistenceSpy()
         let presentation = makePresentation(
             registry: registry,
@@ -80,7 +80,7 @@ final class FloatingBarServicesTests: XCTestCase {
 
         presentation.dismissActiveWindow(preserveDraft: true)
 
-        XCTAssertFalse(activeWindow.isFloatingBarVisible)
+        XCTAssertFalse(activeWindow.presentationState.isFloatingBarVisible)
         XCTAssertEqual(activeWindow.floatingBarDraftText, "active draft")
         XCTAssertFalse(
             presentation.dismissIfVisible(in: UUID(), preserveDraft: false)
@@ -104,7 +104,7 @@ final class FloatingBarServicesTests: XCTestCase {
                 ?? SumiSurface.emptyTabURL
         )
         windowState.floatingBarDraftNavigatesCurrentTab = true
-        windowState.isFloatingBarVisible = true
+        windowState.presentationState.isFloatingBarVisible = true
         let persistence = FloatingBarPersistenceSpy()
         let split = FloatingBarSplitPlaceholderSpy()
         let opening = FloatingBarTabOpeningSpy()
@@ -184,7 +184,7 @@ final class FloatingBarServicesTests: XCTestCase {
         commit.openNewTabSurface(in: windowState)
 
         XCTAssertEqual(opening.createdURLs, ["https://start.example"])
-        XCTAssertFalse(windowState.isFloatingBarVisible)
+        XCTAssertFalse(windowState.presentationState.isFloatingBarVisible)
     }
 
     private func makePresentation(

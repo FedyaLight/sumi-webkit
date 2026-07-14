@@ -20,7 +20,7 @@ final class OpenWindowSessionCatalog {
             .compactMap { windowState in
                 guard let session = makeWindowSessionSnapshot(windowState) else { return nil }
                 return LastSessionWindowSnapshot(
-                    id: windowState.restoredSessionWindowId ?? windowState.id,
+                    id: windowState.restorationState.restoredSessionWindowID ?? windowState.id,
                     session: session
                 )
             }

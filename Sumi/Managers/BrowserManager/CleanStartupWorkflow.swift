@@ -77,7 +77,7 @@ final class CleanStartupWorkflow {
             let fallbackSpaceId = resolvedStartupSpace(for: windowState)?.id
 
             windowState.currentTabId = nil
-            windowState.restoredSessionWindowId = nil
+            windowState.restorationState.restoredSessionWindowID = nil
             windowState.currentShortcutPinId = nil
             windowState.currentShortcutPinRole = nil
             windowState.activeTabForSpace.removeAll()
@@ -85,18 +85,18 @@ final class CleanStartupWorkflow {
             windowState.selectedShortcutPinForSpace.removeAll()
             windowState.selectionHistory.recentSelectionItemsBySpace.removeAll()
             windowState.splitSelection = nil
-            windowState.pendingSessionSplitSelection = nil
-            windowState.pendingSessionLegacySplitGroup = nil
+            windowState.restorationState.pendingSplitSelection = nil
+            windowState.restorationState.pendingLegacySplitGroup = nil
             windowState.isShowingEmptyState = windowState.id == selectedWindow.id
             windowState.floatingBarPresentationReason = .none
-            windowState.isFloatingBarVisible = false
+            windowState.presentationState.isFloatingBarVisible = false
             windowState.floatingBarDraftText = ""
             windowState.floatingBarDraftNavigatesCurrentTab = false
             windowState.currentSpaceId = fallbackSpaceId
             windowState.currentProfileId = fallbackSpaceId.flatMap {
                 tabManager.spaceStateOwner.space(with: $0)?.profileId
             }
-            windowState.isAwaitingInitialSessionResolution = false
+            windowState.restorationState.isAwaitingInitialResolution = false
             glanceManager.restoreSession(nil, in: windowState)
             windowState.compositorInvalidation.refresh()
         }

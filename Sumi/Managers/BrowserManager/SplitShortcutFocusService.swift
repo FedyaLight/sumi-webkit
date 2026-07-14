@@ -52,12 +52,12 @@ final class SplitShortcutFocusService {
         spaceId: UUID
     ) {
         guard let runtime = runtimeLease(),
-              let request = windowState.pendingSplitGroupFocusRequest,
+              let request = windowState.presentationState.pendingSplitGroupFocusRequest,
               request.targetSpaceID == spaceId else {
             return
         }
 
-        windowState.pendingSplitGroupFocusRequest = nil
+        windowState.presentationState.pendingSplitGroupFocusRequest = nil
         guard let group = runtime.tabManager.splitGroupStore.group(
             id: request.groupID
         ), applyFocusWithinRuntimeLease(
@@ -127,7 +127,7 @@ final class SplitShortcutFocusService {
         in windowState: BrowserWindowState
     ) {
         guard let hostSpaceID = group.container.spaceId else { return }
-        windowState.pendingSplitGroupFocusRequest = SplitGroupFocusRequest(
+        windowState.presentationState.pendingSplitGroupFocusRequest = SplitGroupFocusRequest(
             groupID: group.id,
             preferredMemberID: preferredMemberID,
             targetSpaceID: hostSpaceID
@@ -152,5 +152,4 @@ final class SplitShortcutFocusService {
         }
         return group.memberIDs.first
     }
-
 }

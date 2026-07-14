@@ -85,7 +85,7 @@ final class OpenWindowSessionCatalogTests: XCTestCase {
     func testRestoredWindowPublishesStableArchiveIdentityAfterSessionMutation() {
         let archivedWindowID = UUID()
         let restoredWindow = BrowserWindowState()
-        restoredWindow.restoredSessionWindowId = archivedWindowID
+        restoredWindow.restorationState.restoredSessionWindowID = archivedWindowID
         let mutatedSession = makeSessionRecoveryWindowSession(currentTabId: UUID())
         let catalog = makeCatalog(
             windows: [restoredWindow],

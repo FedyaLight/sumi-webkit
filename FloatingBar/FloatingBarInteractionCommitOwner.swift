@@ -110,7 +110,7 @@ final class FloatingBarInteractionCommitOwner {
         scheduler: DeferredScheduler,
         perform: @escaping @MainActor () -> Void
     ) -> Bool {
-        guard windowState.isFloatingBarVisible,
+        guard windowState.presentationState.isFloatingBarVisible,
               let session,
               session.windowID == windowState.id,
               pendingMutationSession == nil
@@ -122,7 +122,7 @@ final class FloatingBarInteractionCommitOwner {
         scheduler { [weak self, weak windowState] in
             guard let self,
                   let windowState,
-                  windowState.isFloatingBarVisible,
+                  windowState.presentationState.isFloatingBarVisible,
                   self.session == session,
                   self.pendingMutationSession == session
             else {

@@ -7,7 +7,7 @@ final class FloatingBarDeferredTextOwnerTests: XCTestCase {
     func testDeferredTextAppliesForCurrentVisibleSession() {
         let owner = FloatingBarDeferredTextOwner()
         let windowState = BrowserWindowState()
-        windowState.isFloatingBarVisible = true
+        windowState.presentationState.isFloatingBarVisible = true
         var scheduled: [@MainActor () -> Void] = []
         var appliedTexts: [String] = []
 
@@ -30,7 +30,7 @@ final class FloatingBarDeferredTextOwnerTests: XCTestCase {
     func testDeferredTextIsSuppressedAfterSessionEnds() {
         let owner = FloatingBarDeferredTextOwner()
         let windowState = BrowserWindowState()
-        windowState.isFloatingBarVisible = true
+        windowState.presentationState.isFloatingBarVisible = true
         var scheduled: [@MainActor () -> Void] = []
         var appliedTexts: [String] = []
 
@@ -53,7 +53,7 @@ final class FloatingBarDeferredTextOwnerTests: XCTestCase {
     func testDeferredTextIsSuppressedWhenBarHidesBeforeFlush() {
         let owner = FloatingBarDeferredTextOwner()
         let windowState = BrowserWindowState()
-        windowState.isFloatingBarVisible = true
+        windowState.presentationState.isFloatingBarVisible = true
         var scheduled: [@MainActor () -> Void] = []
         var appliedTexts: [String] = []
 
@@ -67,7 +67,7 @@ final class FloatingBarDeferredTextOwnerTests: XCTestCase {
             )
         )
 
-        windowState.isFloatingBarVisible = false
+        windowState.presentationState.isFloatingBarVisible = false
         scheduled[0]()
 
         XCTAssertTrue(appliedTexts.isEmpty)
@@ -76,7 +76,7 @@ final class FloatingBarDeferredTextOwnerTests: XCTestCase {
     func testLatestPendingTextWinsWithinCurrentSession() {
         let owner = FloatingBarDeferredTextOwner()
         let windowState = BrowserWindowState()
-        windowState.isFloatingBarVisible = true
+        windowState.presentationState.isFloatingBarVisible = true
         var scheduled: [@MainActor () -> Void] = []
         var appliedTexts: [String] = []
 

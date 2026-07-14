@@ -56,15 +56,15 @@ struct WindowSessionSnapshotApplier {
         windowState.sidebarContentWidth = BrowserWindowState
             .sidebarContentWidth(for: sidebarWidth)
         windowState.isSidebarVisible = snapshot.isSidebarVisible
-        windowState.isDownloadsPopoverPresented = false
+        windowState.presentationState.isDownloadsPopoverPresented = false
         windowState.floatingBarDraftText = snapshot.floatingBarDraft.text
         windowState.floatingBarDraftNavigatesCurrentTab = snapshot
             .floatingBarDraft.navigateCurrentTab
 
         windowState.splitSelection = nil
         if let selection = snapshot.splitSelection {
-            windowState.pendingSessionLegacySplitGroup = nil
-            windowState.pendingSessionSplitSelection = PendingWindowSplitSelection(
+            windowState.restorationState.pendingLegacySplitGroup = nil
+            windowState.restorationState.pendingSplitSelection = PendingWindowSplitSelection(
                 groupID: selection.groupID,
                 preferredMemberID: selection.activeMemberID
             )
@@ -73,16 +73,16 @@ struct WindowSessionSnapshotApplier {
 
         if let migration = snapshot.legacySplitSessionForMigration?
             .makeSplitMigration(spaceId: snapshot.currentSpaceId) {
-            windowState.pendingSessionLegacySplitGroup = migration.group
-            windowState.pendingSessionSplitSelection = PendingWindowSplitSelection(
+            windowState.restorationState.pendingLegacySplitGroup = migration.group
+            windowState.restorationState.pendingSplitSelection = PendingWindowSplitSelection(
                 groupID: migration.group.id,
                 preferredMemberID: migration.preferredMemberID
             )
             return
         }
 
-        windowState.pendingSessionLegacySplitGroup = nil
-        windowState.pendingSessionSplitSelection = snapshot
+        windowState.restorationState.pendingLegacySplitGroup = nil
+        windowState.restorationState.pendingSplitSelection = snapshot
             .legacyActiveSplitGroupID.map { groupID in
                 PendingWindowSplitSelection(
                     groupID: groupID,

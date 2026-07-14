@@ -156,7 +156,7 @@ final class WindowSessionRestoreService {
         }
 
         if restored && tabManager.startupRestoreLifecycle.hasLoadedInitialData == false {
-            windowState.isAwaitingInitialSessionResolution = true
+            windowState.restorationState.isAwaitingInitialResolution = true
             floatingBarSanitizer.sanitize(in: windowState)
             themeRestorer.restore(
                 for: windowState,
@@ -183,8 +183,8 @@ final class WindowSessionRestoreService {
             "A browser window cannot prepare two archived sessions"
         )
         windowState.tabManager = tabManager
-        windowState.restoredSessionWindowId = snapshot.id
-        windowState.isAwaitingInitialSessionResolution = true
+        windowState.restorationState.restoredSessionWindowID = snapshot.id
+        windowState.restorationState.isAwaitingInitialResolution = true
         preparedRegistrationsByWindowID[windowState.id] = PreparedRegistration(
             windowIdentity: ObjectIdentifier(windowState),
             kind: .archived(glanceSession: snapshot.session.glanceSession)
@@ -215,7 +215,7 @@ final class WindowSessionRestoreService {
             return false
         }
         windowState.tabManager = tabManager
-        windowState.isAwaitingInitialSessionResolution = true
+        windowState.restorationState.isAwaitingInitialResolution = true
         windowState.currentProfileId = profileID
         windowState.currentSpaceId = space.id
         preparedRegistrationsByWindowID[windowState.id] = PreparedRegistration(
@@ -264,7 +264,7 @@ final class WindowSessionRestoreService {
         switch prepared.kind {
         case .archived(let glanceSession):
             precondition(
-                windowState.restoredSessionWindowId != nil,
+                windowState.restorationState.restoredSessionWindowID != nil,
                 "Prepared archived window lost its stable session identity"
             )
             glanceManager.restoreSession(
@@ -277,7 +277,7 @@ final class WindowSessionRestoreService {
                 persistsWindowSession: false
             )
         case .contextualWindowWithInitialTab(let executionProfileID):
-            guard windowState.restoredSessionWindowId == nil,
+            guard windowState.restorationState.restoredSessionWindowID == nil,
                   finalizeContextualWindowWithInitialTab(
                       windowState,
                       executionProfileID: executionProfileID
@@ -382,9 +382,8 @@ final class WindowSessionRestoreService {
     private func completeInitialResolution(
         for windowState: BrowserWindowState
     ) {
-        windowState.isAwaitingInitialSessionResolution = false
+        windowState.restorationState.isAwaitingInitialResolution = false
         StartupPerformanceTrace.firstSelectedTabResolved()
         StartupPerformanceTrace.firstTabsClickable()
     }
-
 }

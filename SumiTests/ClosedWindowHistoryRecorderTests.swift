@@ -8,7 +8,7 @@ final class ClosedWindowHistoryRecorderTests: XCTestCase {
         let recentlyClosed = RecentlyClosedManager()
         let closingWindow = BrowserWindowState()
         let restoredSessionWindowId = UUID()
-        closingWindow.restoredSessionWindowId = restoredSessionWindowId
+        closingWindow.restorationState.restoredSessionWindowID = restoredSessionWindowId
         let closingSession = makeSessionRecoveryWindowSession(currentTabId: UUID())
         let recorder = makeRecorder(
             sessions: [closingWindow.id: closingSession],

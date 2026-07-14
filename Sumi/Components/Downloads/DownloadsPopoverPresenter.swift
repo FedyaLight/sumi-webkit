@@ -151,7 +151,7 @@ final class DownloadsPopoverPresenter: NSObject, NSPopoverDelegate {
         else {
             if allowRetry {
                 beginPendingTransientSessionIfNeeded(in: windowState)
-                windowState.isDownloadsPopoverPresented = true
+                windowState.presentationState.isDownloadsPopoverPresented = true
                 Task { @MainActor [weak self, weak windowState, weak downloadManager] in
                     await Task.yield()
                     await Task.yield()
@@ -164,7 +164,7 @@ final class DownloadsPopoverPresenter: NSObject, NSPopoverDelegate {
                 }
             } else {
                 finishPendingTransientSession(windowID: windowState.id, reason: "DownloadsPopoverPresenter.anchorUnavailable")
-                windowState.isDownloadsPopoverPresented = false
+                windowState.presentationState.isDownloadsPopoverPresented = false
             }
             return
         }
@@ -201,14 +201,14 @@ final class DownloadsPopoverPresenter: NSObject, NSPopoverDelegate {
         )
         activeSessions[windowState.id] = session
 
-        windowState.isDownloadsPopoverPresented = true
+        windowState.presentationState.isDownloadsPopoverPresented = true
         popover.show(relativeTo: anchorView.bounds, of: anchorView, preferredEdge: .maxY)
     }
 
     private func close(windowID: UUID) {
         guard let session = activeSessions[windowID] else {
             finishPendingTransientSession(windowID: windowID, reason: "DownloadsPopoverPresenter.closePending")
-            anchors[windowID]?.windowState?.isDownloadsPopoverPresented = false
+            anchors[windowID]?.windowState?.presentationState.isDownloadsPopoverPresented = false
             return
         }
 
@@ -236,8 +236,8 @@ final class DownloadsPopoverPresenter: NSObject, NSPopoverDelegate {
         )
         finishPendingTransientSession(windowID: windowID, reason: "DownloadsPopoverPresenter.finishClosedPending")
 
-        session?.windowState?.isDownloadsPopoverPresented = false
-        anchors[windowID]?.windowState?.isDownloadsPopoverPresented = false
+        session?.windowState?.presentationState.isDownloadsPopoverPresented = false
+        anchors[windowID]?.windowState?.presentationState.isDownloadsPopoverPresented = false
 
         let anchor = anchors[windowID]?.view
         let window = anchor?.window ?? session?.windowState.flatMap { windowRegistry?.appKitWindow(for: $0) }

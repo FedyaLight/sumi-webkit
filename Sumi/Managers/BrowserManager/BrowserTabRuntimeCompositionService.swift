@@ -103,7 +103,6 @@ enum BrowserTabRuntimeCompositionService {
             }
         )
     }
-
 }
 
 @MainActor
@@ -200,7 +199,7 @@ extension BrowserTabRuntimeCompositionService.Dependencies {
         guard let windowRegistry = browserManager.windowRegistry else { return [:] }
 
         var visibleTabIDsByWindow: [UUID: Set<UUID>] = [:]
-        for windowState in windowRegistry.windows.values where windowState.windowVisibilityState.isEffectivelyVisible {
+        for windowState in windowRegistry.windows.values where windowState.presentationState.visibility.isEffectivelyVisible {
             let tabIDs = VisibleTabPreparationPlan.visibleTabIDs(
                 currentTabId: browserManager.shellRuntime.windowTabs.currentTab(for: windowState)?.id,
                 splitTabIds: splitQuery.visibleTabIDs(in: windowState.id)

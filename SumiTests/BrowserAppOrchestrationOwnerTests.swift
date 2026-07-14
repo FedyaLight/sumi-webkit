@@ -154,7 +154,7 @@ final class BrowserAppOrchestrationOwnerTests: XCTestCase {
             prefill: "late",
             navigateCurrentTab: true
         )
-        XCTAssertFalse(lateWindowState.isFloatingBarVisible)
+        XCTAssertFalse(lateWindowState.presentationState.isFloatingBarVisible)
         registry.unregister(lateWindowState.id)
     }
 
@@ -187,7 +187,7 @@ final class BrowserAppOrchestrationOwnerTests: XCTestCase {
         XCTAssertNil(lateWindow.currentTabId)
 
         let targetSpaceID = UUID()
-        lateWindow.pendingSplitGroupFocusRequest = SplitGroupFocusRequest(
+        lateWindow.presentationState.pendingSplitGroupFocusRequest = SplitGroupFocusRequest(
             groupID: UUID(),
             preferredMemberID: nil,
             targetSpaceID: targetSpaceID
@@ -196,7 +196,7 @@ final class BrowserAppOrchestrationOwnerTests: XCTestCase {
             in: lateWindow,
             spaceId: targetSpaceID
         )
-        XCTAssertNotNil(lateWindow.pendingSplitGroupFocusRequest)
+        XCTAssertNotNil(lateWindow.presentationState.pendingSplitGroupFocusRequest)
 
         commands.glance.presentExternalURL(
             URL(string: "https://late-glance.example")!,

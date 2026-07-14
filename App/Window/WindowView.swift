@@ -108,7 +108,7 @@ struct WindowView: View {
                         sumiSettings: sumiSettings,
                         resolvedThemeContext: resolvedThemeContext,
                         colorScheme: nativeSurfaceColorScheme,
-                        isPresented: windowState.isFloatingBarVisible && !transientChromeModalSuppressed
+                        isPresented: windowState.presentationState.isFloatingBarVisible && !transientChromeModalSuppressed
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .zIndex(WindowTransientChromeZIndex.floatingBar)
@@ -185,7 +185,7 @@ struct WindowView: View {
             // column closed for ~0.3s before the collapsed overlay can mount, which
             // reads as a flash/blink. Snap the layout while the session is still
             // resolving so the window settles straight into its restored state.
-            let animatesLayout = !windowState.isAwaitingInitialSessionResolution
+            let animatesLayout = !windowState.restorationState.isAwaitingInitialResolution
             syncDockedSidebarLayout(isVisible: isVisible, animated: animatesLayout)
             Task { @MainActor in
                 await Task.yield()
@@ -219,8 +219,8 @@ struct WindowView: View {
         .onPreferenceChange(URLBarFramePreferenceKey.self) { frame in
             Task { @MainActor in
                 await Task.yield()
-                guard windowState.urlBarFrame != frame else { return }
-                windowState.urlBarFrame = frame
+                guard windowState.presentationState.urlBarFrame != frame else { return }
+                windowState.presentationState.urlBarFrame = frame
             }
         }
         .onChange(of: sumiSettings.windowSchemeMode) { _, _ in

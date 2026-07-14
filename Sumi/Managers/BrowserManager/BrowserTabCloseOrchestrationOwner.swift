@@ -46,7 +46,7 @@ final class BrowserTabCloseOrchestrationOwner {
     }
 
     func closeCurrentTab(in windowState: BrowserWindowState) {
-        if windowState.isFloatingBarVisible {
+        if windowState.presentationState.isFloatingBarVisible {
             return
         }
 
