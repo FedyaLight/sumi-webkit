@@ -20,7 +20,8 @@ final class SumiNativeMessagingPortSession: NSObject {
     private let logDiagnostic: (SafariExtensionNativeMessagingDiagnostic) -> Void
     private let companionProtocolErrorProvider: () -> NSError
     private let portInactivityTimeout: Duration
-    private var inactivityTask: Task<Void, Never>?
+    private let delayedActions: MainActorDelayedActionScheduler
+    private var cancelInactivityTimeout: MainActorDelayedActionScheduler.Cancellation?
     private let disconnectFinalizer: @MainActor (SumiNativeMessagingPortSession, (any Error)?) -> Void
     private var didFinalizeDisconnect = false
 
@@ -34,6 +35,7 @@ final class SumiNativeMessagingPortSession: NSObject {
         logDiagnostic: @escaping (SafariExtensionNativeMessagingDiagnostic) -> Void,
         companionProtocolErrorProvider: @escaping () -> NSError,
         portInactivityTimeout: Duration = SumiNativeMessagingConnection.defaultPortInactivityTimeout,
+        delayedActions: MainActorDelayedActionScheduler = .live,
         disconnectFinalizer: @escaping @MainActor (
             SumiNativeMessagingPortSession,
             (any Error)?
@@ -48,10 +50,15 @@ final class SumiNativeMessagingPortSession: NSObject {
         self.logDiagnostic = logDiagnostic
         self.companionProtocolErrorProvider = companionProtocolErrorProvider
         self.portInactivityTimeout = portInactivityTimeout
+        self.delayedActions = delayedActions
         self.disconnectFinalizer = disconnectFinalizer
         super.init()
         wirePort()
         armPortInactivityTimeout()
+    }
+
+    isolated deinit {
+        cancelInactivityTimeout?()
     }
 
     func disconnect() {
@@ -164,10 +171,9 @@ final class SumiNativeMessagingPortSession: NSObject {
     }
 
     private func armPortInactivityTimeout() {
-        inactivityTask?.cancel()
-        inactivityTask = Task { @MainActor [weak self] in
+        cancelPortInactivityTimeout()
+        cancelInactivityTimeout = delayedActions.schedule(after: portInactivityTimeout) { [weak self] in
             guard let self else { return }
-            try? await Task.sleep(for: self.portInactivityTimeout)
             guard self.port.isDisconnected == false else { return }
             self.logDiagnostic(
                 self.makeDiagnostic(
@@ -182,8 +188,8 @@ final class SumiNativeMessagingPortSession: NSObject {
     }
 
     private func cancelPortInactivityTimeout() {
-        inactivityTask?.cancel()
-        inactivityTask = nil
+        cancelInactivityTimeout?()
+        cancelInactivityTimeout = nil
     }
 
     private func finalizeDisconnect(throwing error: (any Error)?) {

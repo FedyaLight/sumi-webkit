@@ -21,6 +21,16 @@ struct MainActorDelayedActionScheduler {
         scheduleAction(delay, action)
     }
 
+    func schedule(
+        after delay: Duration,
+        action: @escaping @MainActor () -> Void
+    ) -> Cancellation {
+        let components = delay.components
+        let seconds = TimeInterval(components.seconds)
+            + TimeInterval(components.attoseconds) / 1_000_000_000_000_000_000
+        return scheduleAction(seconds, action)
+    }
+
     static var live: MainActorDelayedActionScheduler {
         MainActorDelayedActionScheduler { delay, action in
             let task = Task { @MainActor in

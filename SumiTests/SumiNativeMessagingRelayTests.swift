@@ -295,7 +295,6 @@ final class SumiNativeMessagingRelayTests: XCTestCase {
             expectation.fulfill()
         }
         await fulfillment(of: [expectation], timeout: 5)
-        try await Task.sleep(for: .milliseconds(50))
 
         XCTAssertEqual(replyCount, 1)
         XCTAssertEqual(replyValue as? [String: Bool], ["first": true])
@@ -340,13 +339,15 @@ final class SumiNativeMessagingRelayTests: XCTestCase {
         }
 
         let slowAdapter = SlowAdapter()
+        let delayedActions = ManualMainActorDelayedActionScheduler()
 
         let reply = await sendMessageReplyViaConnection(
             launcher: launcher,
             adapter: slowAdapter,
             installed: installed,
             hostBundleIdentifier: "com.example.host",
-            replyTimeout: .milliseconds(50)
+            replyTimeout: .milliseconds(50),
+            delayedActions: delayedActions
         )
 
         let error = try XCTUnwrap(reply.error as NSError?)
@@ -354,19 +355,30 @@ final class SumiNativeMessagingRelayTests: XCTestCase {
     }
 
     // 5. Cancellation path
-    func testOneShotCancellation() async {
-        let coordinator = SumiNativeMessagingOnceReplyCoordinator { _, _ in /* no-op */ }
-        var completed = false
-        coordinator.startRelay(timeout: .seconds(30)) {
-            try? await Task.sleep(for: .seconds(5))
-            guard Task.isCancelled == false else { return }
+    func testOneShotCompletionCancelsTimeout() {
+        let delayedActions = ManualMainActorDelayedActionScheduler()
+        var replyCount = 0
+        let coordinator = SumiNativeMessagingOnceReplyCoordinator(
+            delayedActions: delayedActions.scheduler
+        ) { _, _ in
+            replyCount += 1
         }
+        coordinator.startRelay(timeout: .seconds(30)) {
+            // Completion is driven explicitly below.
+        }
+        XCTAssertEqual(delayedActions.scheduledDelays, [30])
+        XCTAssertEqual(delayedActions.pendingActionCount, 1)
+
         coordinator.complete(
             nil,
             SumiNativeMessagingErrorMapper.relayError(code: .relayCancelled, diagnostic: nil)
         )
-        completed = coordinator.isFulfilled
-        XCTAssertTrue(completed)
+
+        XCTAssertTrue(coordinator.isFulfilled)
+        XCTAssertEqual(replyCount, 1)
+        XCTAssertEqual(delayedActions.pendingActionCount, 0)
+        delayedActions.runAll()
+        XCTAssertEqual(replyCount, 1)
     }
 
     // 6. Port connect success with fake adapter
@@ -738,7 +750,8 @@ final class SumiNativeMessagingRelayTests: XCTestCase {
         adapter: SumiNativeMessagingProtocolAdapter,
         installed: InstalledExtension,
         hostBundleIdentifier: String,
-        replyTimeout: Duration
+        replyTimeout: Duration,
+        delayedActions: ManualMainActorDelayedActionScheduler? = nil
     ) async -> (value: Any?, error: (any Error)?) {
         let detail = SumiCompanionAppResolutionDetail(
             requestedApplicationIdentifier: hostBundleIdentifier,
@@ -768,8 +781,10 @@ final class SumiNativeMessagingRelayTests: XCTestCase {
                 replyError = error
                 expectation.fulfill()
             },
-            replyTimeout: replyTimeout
+            replyTimeout: replyTimeout,
+            delayedActions: delayedActions?.scheduler ?? .live
         )
+        delayedActions?.runNext()
         await fulfillment(of: [expectation], timeout: 2)
         return (replyValue, replyError)
     }

@@ -213,8 +213,9 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         )
     }
 
-    func testDelayedDropCommitCleanupFinishesWithoutNewDrop() async throws {
-        let state = SidebarDragState()
+    func testDelayedDropCommitCleanupFinishesWithoutNewDrop() {
+        let delayedActions = ManualMainActorDelayedActionScheduler()
+        let state = SidebarDragState(delayedActions: delayedActions.scheduler)
         let spaceId = UUID()
         let draggedItemId = UUID()
         state.isDragging = true
@@ -227,8 +228,9 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         XCTAssertTrue(state.isCompletingDrop)
         XCTAssertTrue(state.isDropProjectionActive)
         XCTAssertEqual(state.projectionDragItemId, draggedItemId)
+        XCTAssertEqual(delayedActions.scheduledDelays, [0.05])
 
-        try await Task.sleep(for: .milliseconds(100))
+        delayedActions.runNext()
 
         XCTAssertFalse(state.isCompletingDrop)
         XCTAssertFalse(state.isDropProjectionActive)
@@ -236,8 +238,9 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         XCTAssertEqual(state.projectionHoveredSlot, .empty)
     }
 
-    func testStaleDelayedDropCommitCleanupDoesNotClearNewDropProjection() async throws {
-        let state = SidebarDragState()
+    func testStaleDelayedDropCommitCleanupDoesNotClearNewDropProjection() {
+        let delayedActions = ManualMainActorDelayedActionScheduler()
+        let state = SidebarDragState(delayedActions: delayedActions.scheduler)
         let spaceId = UUID()
         let firstDraggedItemId = UUID()
         let secondDraggedItemId = UUID()
@@ -252,11 +255,27 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         state.hoveredSlot = .spacePinned(spaceId: spaceId, slot: 1)
         state.beginDropCommit()
 
-        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(delayedActions.pendingActionCount, 0)
+        delayedActions.runAll()
 
         XCTAssertTrue(state.isCompletingDrop)
         XCTAssertTrue(state.isDropProjectionActive)
         XCTAssertEqual(state.projectionDragItemId, secondDraggedItemId)
+    }
+
+    func testDropCommitCleanupIsCancelledWhenDragStateIsReleased() {
+        let delayedActions = ManualMainActorDelayedActionScheduler()
+        var state: SidebarDragState? = SidebarDragState(delayedActions: delayedActions.scheduler)
+        state?.isDragging = true
+        state?.activeDragItemId = UUID()
+        state?.beginDropCommit()
+        state?.resetInteractionState()
+
+        XCTAssertEqual(delayedActions.pendingActionCount, 1)
+
+        state = nil
+
+        XCTAssertEqual(delayedActions.pendingActionCount, 0)
     }
 
     func testRegularTabReorderStaysInsideCurrentSpace() throws {

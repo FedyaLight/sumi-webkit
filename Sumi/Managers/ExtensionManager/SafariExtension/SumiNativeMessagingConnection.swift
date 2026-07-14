@@ -166,11 +166,21 @@ final class SumiLaunchPolicyGatedHostApplicationLauncher: SumiHostApplicationLau
 final class SumiNativeMessagingOnceReplyCoordinator {
     private var replyHandler: ((Any?, (any Error)?) -> Void)?
     private var fulfilled = false
+    private let delayedActions: MainActorDelayedActionScheduler
     private var relayTask: Task<Void, Never>?
-    private var timeoutTask: Task<Void, Never>?
+    private var cancelTimeout: MainActorDelayedActionScheduler.Cancellation?
 
-    init(_ replyHandler: @escaping (Any?, (any Error)?) -> Void) {
+    init(
+        delayedActions: MainActorDelayedActionScheduler = .live,
+        _ replyHandler: @escaping (Any?, (any Error)?) -> Void
+    ) {
+        self.delayedActions = delayedActions
         self.replyHandler = replyHandler
+    }
+
+    isolated deinit {
+        cancelTimeout?()
+        relayTask?.cancel()
     }
 
     func startRelay(
@@ -181,11 +191,11 @@ final class SumiNativeMessagingOnceReplyCoordinator {
             await operation()
         }
 
-        timeoutTask = Task { @MainActor in
-            try? await Task.sleep(for: timeout)
-            guard fulfilled == false else { return }
-            relayTask?.cancel()
-            complete(
+        cancelTimeout = delayedActions.schedule(after: timeout) {
+            guard self.fulfilled == false else { return }
+            self.cancelTimeout = nil
+            self.relayTask?.cancel()
+            self.complete(
                 nil,
                 SumiNativeMessagingErrorMapper.relayError(
                     code: .relayTimeout,
@@ -198,8 +208,10 @@ final class SumiNativeMessagingOnceReplyCoordinator {
     func complete(_ value: Any?, _ error: (any Error)?) {
         guard fulfilled == false else { return }
         fulfilled = true
-        timeoutTask?.cancel()
+        cancelTimeout?()
+        cancelTimeout = nil
         relayTask?.cancel()
+        relayTask = nil
         replyHandler?(value, error)
         replyHandler = nil
     }
@@ -237,6 +249,7 @@ enum SumiNativeMessagingConnection {
         logDiagnostic: @escaping (SafariExtensionNativeMessagingDiagnostic) -> Void,
         replyHandler: @escaping (Any?, (any Error)?) -> Void,
         replyTimeout: Duration = defaultReplyTimeout,
+        delayedActions: MainActorDelayedActionScheduler = .live,
         registerCoordinator: ((SumiNativeMessagingOnceReplyCoordinator) -> Void)? = nil,
         executionAdmission: @escaping @MainActor () -> Bool = { true }
     ) {
@@ -302,7 +315,10 @@ enum SumiNativeMessagingConnection {
             launchReason: .adapterOneShot
         )
 
-        let coordinator = SumiNativeMessagingOnceReplyCoordinator(replyHandler)
+        let coordinator = SumiNativeMessagingOnceReplyCoordinator(
+            delayedActions: delayedActions,
+            replyHandler
+        )
         registerCoordinator?(coordinator)
         let request = SumiNativeMessagingOneShotRequest(
             applicationIdentifier: applicationIdentifier,

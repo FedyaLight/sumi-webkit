@@ -66,13 +66,19 @@ final class BitwardenNativeMessagingAdapterTests: XCTestCase {
         var disconnectHandler: (((any Error)?) -> Void)?
         var disconnectError: (any Error)?
         private(set) var repliesSent: [Any] = []
+        private var firstReplyContinuation: CheckedContinuation<Void, Never>?
+        private var disconnectContinuation: CheckedContinuation<Void, Never>?
 
         func recordReplyToExtension(_ message: Any) {
             repliesSent.append(message)
+            firstReplyContinuation?.resume()
+            firstReplyContinuation = nil
         }
 
         func disconnect() {
             isDisconnected = true
+            disconnectContinuation?.resume()
+            disconnectContinuation = nil
             disconnectHandler?(disconnectError)
         }
 
@@ -83,6 +89,24 @@ final class BitwardenNativeMessagingAdapterTests: XCTestCase {
 
         func simulateIncomingMessage(_ message: Any?) {
             messageHandler?(message, nil)
+        }
+
+        func firstReply() async -> Any {
+            if let first = repliesSent.first { return first }
+            await withCheckedContinuation { continuation in
+                precondition(firstReplyContinuation == nil)
+                firstReplyContinuation = continuation
+            }
+            return repliesSent[0]
+        }
+
+        func firstDisconnectError() async -> (any Error)? {
+            if isDisconnected { return disconnectError }
+            await withCheckedContinuation { continuation in
+                precondition(disconnectContinuation == nil)
+                disconnectContinuation = continuation
+            }
+            return disconnectError
         }
     }
 
@@ -333,10 +357,12 @@ final class BitwardenNativeMessagingAdapterTests: XCTestCase {
 
     func testUnsupportedPortCommandRepliesWithoutDesktopRelay() async throws {
         let fake = BitwardenFakeDesktopProxyTransport(mode: .handshakeConnected)
+        let delayedActions = ManualMainActorDelayedActionScheduler()
         let adapter = BitwardenNativeMessagingAdapter(
             transportFactory: { fake },
             handshakeTimeout: .milliseconds(200),
-            replyTimeout: .milliseconds(80)
+            replyTimeout: .milliseconds(80),
+            delayedActions: delayedActions.scheduler
         )
         let launcher = makeLauncherWithProxy()
         let port = MockNativeMessagingPort()
@@ -360,8 +386,8 @@ final class BitwardenNativeMessagingAdapterTests: XCTestCase {
         XCTAssertEqual(reply["messageId"] as? Int, 99)
         XCTAssertEqual(reply["response"] as? Bool, false)
         XCTAssertFalse(port.isDisconnected)
-
-        try await Task.sleep(for: .milliseconds(120))
+        XCTAssertEqual(delayedActions.pendingActionCount, 0)
+        delayedActions.runAll()
         XCTAssertFalse(port.isDisconnected)
     }
 
@@ -452,18 +478,18 @@ final class BitwardenNativeMessagingAdapterTests: XCTestCase {
     private func firstReply(
         from port: MockNativeMessagingPort
     ) async throws -> [String: Any] {
-        for _ in 0..<100 where port.repliesSent.isEmpty {
-            try await Task.sleep(for: .milliseconds(10))
-        }
-        return try XCTUnwrap(port.repliesSent.first as? [String: Any])
+        let reply = await port.firstReply()
+        return try XCTUnwrap(reply as? [String: Any])
     }
 
     func testDisconnectCancelsPendingReplyTimeout() async throws {
         let fake = BitwardenFakeDesktopProxyTransport(mode: .handshakeConnected)
+        let delayedActions = ManualMainActorDelayedActionScheduler()
         let adapter = BitwardenNativeMessagingAdapter(
             transportFactory: { fake },
             handshakeTimeout: .milliseconds(200),
-            replyTimeout: .milliseconds(80)
+            replyTimeout: .milliseconds(80),
+            delayedActions: delayedActions.scheduler
         )
         let launcher = makeLauncherWithProxy()
         let port = MockNativeMessagingPort()
@@ -478,10 +504,12 @@ final class BitwardenNativeMessagingAdapterTests: XCTestCase {
             ]
         )
         XCTAssertEqual(fake.sentMessages.count, 1)
+        XCTAssertEqual(delayedActions.pendingActionCount, 1)
         fake.simulateDisconnect()
 
         XCTAssertTrue(port.isDisconnected)
-        try await Task.sleep(for: .milliseconds(120))
+        XCTAssertEqual(delayedActions.pendingActionCount, 0)
+        delayedActions.runAll()
         XCTAssertEqual(port.repliesSent.count, 0)
     }
 
@@ -901,6 +929,8 @@ final class BitwardenNativeMessagingAdapterTests: XCTestCase {
         let launcher = makeLauncherWithProxy()
         let port = MockNativeMessagingPort()
         let session = makeSession(port: port, adapter: adapter)
+        let sent = expectation(description: "early port message sent")
+        fake.onSend = { _ in sent.fulfill() }
 
         let connectExpectation = expectation(description: "connectCompletesEarly")
         var connectError: (any Error)?
@@ -922,7 +952,7 @@ final class BitwardenNativeMessagingAdapterTests: XCTestCase {
         )
         XCTAssertTrue(relayed)
 
-        try await Task.sleep(for: .milliseconds(200))
+        await fulfillment(of: [sent], timeout: 1)
         XCTAssertEqual(fake.sentMessages.count, 1)
     }
 
@@ -1085,16 +1115,7 @@ final class BitwardenNativeMessagingAdapterTests: XCTestCase {
     ) async -> (any Error)? {
         let connectError = await connect(adapter: adapter, session: session, launcher: launcher)
         XCTAssertNil(connectError)
-
-        let deadline = ContinuousClock.now + .seconds(2)
-        while ContinuousClock.now < deadline {
-            await Task.yield()
-            if port.isDisconnected {
-                return port.disconnectError
-            }
-            try? await Task.sleep(for: .milliseconds(25))
-        }
-        return nil
+        return await port.firstDisconnectError()
     }
 
     private func sendMessageReply(

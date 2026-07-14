@@ -21,6 +21,7 @@ final class BitwardenNativeMessagingAdapter: SumiNativeMessagingProtocolAdapter 
     private let transportFactory: () -> any BitwardenDesktopProxyTransporting
     private let handshakeTimeout: Duration
     private let replyTimeout: Duration
+    private let delayedActions: MainActorDelayedActionScheduler
     private var portSessions: [ObjectIdentifier: BitwardenPortSessionState] = [:]
 
     init(
@@ -28,11 +29,13 @@ final class BitwardenNativeMessagingAdapter: SumiNativeMessagingProtocolAdapter 
             BitwardenDesktopProxyProcessTransport()
         },
         handshakeTimeout: Duration = .seconds(30),
-        replyTimeout: Duration = SumiNativeMessagingConnection.defaultReplyTimeout
+        replyTimeout: Duration = SumiNativeMessagingConnection.defaultReplyTimeout,
+        delayedActions: MainActorDelayedActionScheduler = .live
     ) {
         self.transportFactory = transportFactory
         self.handshakeTimeout = handshakeTimeout
         self.replyTimeout = replyTimeout
+        self.delayedActions = delayedActions
     }
 
     func supports(hostBundleIdentifier: String) -> Bool {
@@ -111,7 +114,8 @@ final class BitwardenNativeMessagingAdapter: SumiNativeMessagingProtocolAdapter 
                 session: session,
                 transport: transport,
                 appId: appId,
-                replyTimeout: replyTimeout
+                replyTimeout: replyTimeout,
+                delayedActions: delayedActions
             )
             portSessions[sessionKey] = state
             SumiNativeMessagingRuntimeCounters.recordAdapterPortSessionOpened()
@@ -207,7 +211,8 @@ private final class BitwardenPortSessionState {
     private let transport: any BitwardenDesktopProxyTransporting
     let appId: String
     private let replyTimeout: Duration
-    private var pendingReplies: [Int: Task<Void, Never>] = [:]
+    private let delayedActions: MainActorDelayedActionScheduler
+    private var pendingReplies: [Int: MainActorDelayedActionScheduler.Cancellation] = [:]
     private var transportReady = false
     private var queuedExtensionMessages: [[String: Any]] = []
 
@@ -215,12 +220,14 @@ private final class BitwardenPortSessionState {
         session: SumiNativeMessagingPortSession,
         transport: any BitwardenDesktopProxyTransporting,
         appId: String,
-        replyTimeout: Duration
+        replyTimeout: Duration,
+        delayedActions: MainActorDelayedActionScheduler
     ) {
         self.session = session
         self.transport = transport
         self.appId = appId
         self.replyTimeout = replyTimeout
+        self.delayedActions = delayedActions
         transport.onReceive = { [weak self] incoming in
             self?.handleDesktopMessage(incoming)
         }
@@ -246,7 +253,7 @@ private final class BitwardenPortSessionState {
     }
 
     func shutdown() {
-        pendingReplies.values.forEach { $0.cancel() }
+        pendingReplies.values.forEach { $0() }
         pendingReplies.removeAll()
         transport.shutdown()
     }
@@ -257,7 +264,7 @@ private final class BitwardenPortSessionState {
         case .localSafari:
             if BitwardenSafariOneShotHandler.isBiometricPromptCommand(command) {
                 if let messageId = payload["messageId"] as? Int {
-                    pendingReplies.removeValue(forKey: messageId)?.cancel()
+                    pendingReplies.removeValue(forKey: messageId)?()
                 }
                 BitwardenSafariOneShotHandler.handleBiometricPrompt(payload: payload) { [weak self] reply in
                     self?.session?.sendReplyToExtension(reply)
@@ -266,7 +273,7 @@ private final class BitwardenPortSessionState {
             }
             if let reply = BitwardenSafariOneShotHandler.portReply(for: payload) {
                 if let messageId = payload["messageId"] as? Int {
-                    pendingReplies.removeValue(forKey: messageId)?.cancel()
+                    pendingReplies.removeValue(forKey: messageId)?()
                 }
                 session?.sendReplyToExtension(reply)
             }
@@ -307,7 +314,7 @@ private final class BitwardenPortSessionState {
     private func handleDesktopMessage(_ incoming: [String: Any]) {
         if let command = incoming["command"] as? String, command == "disconnected" {
             BitwardenDesktopTransportDiagnostics.log(outcome: .browserIntegrationDisabled, command: command)
-            pendingReplies.values.forEach { $0.cancel() }
+            pendingReplies.values.forEach { $0() }
             pendingReplies.removeAll()
             session?.disconnect()
             return
@@ -341,7 +348,7 @@ private final class BitwardenPortSessionState {
         }
 
         if let messageId = replyObject["messageId"] as? Int {
-            pendingReplies.removeValue(forKey: messageId)?.cancel()
+            pendingReplies.removeValue(forKey: messageId)?()
         }
 
         session?.sendReplyToExtension(replyObject)
@@ -380,7 +387,7 @@ private final class BitwardenPortSessionState {
 
     private func replyPortUnavailable(payload: [String: Any], command: String) {
         guard let messageId = payload["messageId"] as? Int else { return }
-        pendingReplies.removeValue(forKey: messageId)?.cancel()
+        pendingReplies.removeValue(forKey: messageId)?()
         let outcome = BitwardenPortCommand.transportOutcome(for: command)
         let response: Any = {
             switch command {
@@ -402,9 +409,8 @@ private final class BitwardenPortSessionState {
     }
 
     private func scheduleReplyTimeout(for messageId: Int, command: String?) {
-        pendingReplies[messageId]?.cancel()
-        pendingReplies[messageId] = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: self?.replyTimeout ?? .seconds(30))
+        pendingReplies[messageId]?()
+        pendingReplies[messageId] = delayedActions.schedule(after: replyTimeout) { [weak self] in
             guard let self, self.pendingReplies[messageId] != nil else { return }
             self.pendingReplies.removeValue(forKey: messageId)
             BitwardenDesktopTransportDiagnostics.log(

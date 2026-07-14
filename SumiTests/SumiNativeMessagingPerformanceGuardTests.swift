@@ -25,9 +25,11 @@ final class SumiNativeMessagingPerformanceGuardTests: XCTestCase {
         var messageHandler: ((Any?, (any Error)?) -> Void)?
         var disconnectHandler: (((any Error)?) -> Void)?
         var disconnectError: (any Error)?
+        var didDisconnect: (() -> Void)?
 
         func disconnect() {
             isDisconnected = true
+            didDisconnect?()
             disconnectHandler?(disconnectError)
         }
 
@@ -186,9 +188,12 @@ final class SumiNativeMessagingPerformanceGuardTests: XCTestCase {
 
     // MARK: - Idle cleanup
 
-    func testIdlePortSessionDisconnectsAfterInactivityTimeout() async throws {
+    func testIdlePortSessionDisconnectsAfterInactivityTimeout() async {
         let port = MockNativeMessagingPort()
         port.applicationIdentifier = "com.example.host"
+        let disconnected = expectation(description: "idle port disconnected")
+        port.didDisconnect = { disconnected.fulfill() }
+        let delayedActions = ManualMainActorDelayedActionScheduler()
         let session = SumiNativeMessagingPortSession(
             port: port,
             adapter: nil,
@@ -202,12 +207,16 @@ final class SumiNativeMessagingPerformanceGuardTests: XCTestCase {
                     diagnostic: nil
                 )
             },
-            portInactivityTimeout: .milliseconds(50)
+            portInactivityTimeout: .milliseconds(50),
+            delayedActions: delayedActions.scheduler
         )
         _ = session
 
-        try await Task.sleep(for: .milliseconds(120))
+        XCTAssertEqual(delayedActions.scheduledDelays, [0.05])
+        delayedActions.runNext()
+        await fulfillment(of: [disconnected], timeout: 1)
         XCTAssertTrue(port.isDisconnected)
+        XCTAssertEqual(delayedActions.pendingActionCount, 0)
     }
 
     func testContextUnloadClearsLiveNativeMessagingSessions() async throws {

@@ -207,9 +207,10 @@ final class SafariExtensionPopupNativeMessagingLifecycleTests: XCTestCase {
         XCTAssertEqual(error.code, SumiNativeMessagingRelay.ErrorCode.relayCancelled.rawValue)
     }
 
-    func testPortInactivityTimeoutDisconnectsIdlePort() async throws {
+    func testPortActivityRearmsInactivityTimeoutThenDisconnects() {
         let port = MockNativeMessagingPort()
         port.applicationIdentifier = "com.example.host"
+        let delayedActions = ManualMainActorDelayedActionScheduler()
         let session = SumiNativeMessagingPortSession(
             port: port,
             adapter: nil,
@@ -223,12 +224,18 @@ final class SafariExtensionPopupNativeMessagingLifecycleTests: XCTestCase {
                     diagnostic: nil
                 )
             },
-            portInactivityTimeout: .milliseconds(50)
+            portInactivityTimeout: .milliseconds(50),
+            delayedActions: delayedActions.scheduler
         )
         _ = session
 
-        try await Task.sleep(for: .milliseconds(120))
+        XCTAssertEqual(delayedActions.scheduledDelays, [0.05])
+        session.touchPortActivity()
+        XCTAssertEqual(delayedActions.scheduledDelays, [0.05, 0.05])
+        XCTAssertEqual(delayedActions.pendingActionCount, 1)
+        delayedActions.runNext()
         XCTAssertTrue(port.isDisconnected)
+        XCTAssertEqual(delayedActions.pendingActionCount, 0)
     }
 
     func testPopupCloseDoesNotRetireNativePortButContextUnloadDoes() async throws {

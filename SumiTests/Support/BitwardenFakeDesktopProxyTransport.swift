@@ -23,6 +23,7 @@ final class BitwardenFakeDesktopProxyTransport: BitwardenDesktopProxyTransportin
     private(set) var isConnected = false
     var onDisconnect: (() -> Void)?
     var onReceive: (([String: Any]) -> Void)?
+    var onSend: (([String: Any]) -> Void)?
 
     var mode: Mode
     var startDelay: Duration
@@ -73,6 +74,7 @@ final class BitwardenFakeDesktopProxyTransport: BitwardenDesktopProxyTransportin
             throw BitwardenDesktopProxyTransportError.portDisconnected
         }
         sentMessages.append(object)
+        onSend?(object)
         guard let nested = object["message"] as? [String: Any],
               let command = nested["command"] as? String
         else {

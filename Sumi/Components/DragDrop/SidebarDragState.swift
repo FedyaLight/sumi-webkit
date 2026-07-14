@@ -126,8 +126,9 @@ final class SidebarDragState: ObservableObject {
         }
     }
     @Published private var dropCommitProjection = SidebarDropCommitProjectionState()
+    private let delayedActions: MainActorDelayedActionScheduler
     private var dropCommitProjectionGeneration = 0
-    private var pendingDropCommitProjectionFinish: DispatchWorkItem?
+    private var cancelPendingDropCommitProjectionFinishAction: MainActorDelayedActionScheduler.Cancellation?
     private(set) var isInternalDragGeometryArmed: Bool = false
     private(set) var armedDragScope: SidebarDragScope?
 
@@ -141,6 +142,14 @@ final class SidebarDragState: ObservableObject {
     @Published var sidebarGeometryGeneration: Int = 0
     @Published private(set) var activeGeometryGeneration: Int = 0
     @Published private(set) var pendingGeometryGeneration: Int? = nil
+
+    init(delayedActions: MainActorDelayedActionScheduler = .live) {
+        self.delayedActions = delayedActions
+    }
+
+    isolated deinit {
+        cancelPendingDropCommitProjectionFinishAction?()
+    }
 
     private lazy var geometryRepository = SidebarDragGeometryRepository(
         geometrySnapshot: geometrySnapshot,
@@ -339,18 +348,14 @@ final class SidebarDragState: ObservableObject {
 
     private func scheduleDropCommitProjectionFinish(expectedGeneration: Int) {
         cancelPendingDropCommitProjectionFinish()
-        let workItem = DispatchWorkItem { [weak self] in
-            Task { @MainActor [weak self] in
-                self?.finishDropCommitProjection(expectedGeneration: expectedGeneration)
-            }
+        cancelPendingDropCommitProjectionFinishAction = delayedActions.schedule(after: 0.05) { [weak self] in
+            self?.finishDropCommitProjection(expectedGeneration: expectedGeneration)
         }
-        pendingDropCommitProjectionFinish = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: workItem)
     }
 
     private func cancelPendingDropCommitProjectionFinish() {
-        pendingDropCommitProjectionFinish?.cancel()
-        pendingDropCommitProjectionFinish = nil
+        cancelPendingDropCommitProjectionFinishAction?()
+        cancelPendingDropCommitProjectionFinishAction = nil
     }
 
     private func finishDropCommitProjection(expectedGeneration: Int? = nil) {
