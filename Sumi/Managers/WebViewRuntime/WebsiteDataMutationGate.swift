@@ -1,4 +1,5 @@
 import Foundation
+import SumiWebRuntime
 
 /// Process-wide admission barrier for destructive mutation of WebKit website
 /// data stores. The owner acquires one exclusive lease before discovering live
@@ -6,6 +7,8 @@ import Foundation
 /// gate so the discovered set can reach a stable fixed point.
 @MainActor
 final class WebsiteDataMutationGate {
+    typealias Lease = WebsiteDataMutationLeaseLedger.Lease
+
     enum OrdinaryRuntimeAdmissionOutcome: Equatable {
         case admitted
         case deferred
@@ -14,12 +17,6 @@ final class WebsiteDataMutationGate {
         var preventsImmediateMutation: Bool {
             self != .admitted
         }
-    }
-
-    struct Lease: Equatable, Sendable {
-        let id: UUID
-        let profileIDs: Set<UUID>
-        let admissionGeneration: UInt64
     }
 
     enum DeferredAdmissionKey: Hashable, Sendable {
@@ -33,18 +30,6 @@ final class WebsiteDataMutationGate {
         case untrackedReplacement(tabID: UUID)
     }
 
-    private struct Waiter {
-        let id: UUID
-        let profileIDs: Set<UUID>
-        let continuation: CheckedContinuation<Lease?, Never>
-    }
-
-    private struct AdmissionWaiter {
-        let id: UUID
-        let profileID: UUID
-        let continuation: CheckedContinuation<Bool, Never>
-    }
-
     private struct DeferredAdmission {
         let profileID: UUID
         let replay: @MainActor () -> Void
@@ -55,105 +40,38 @@ final class WebsiteDataMutationGate {
         let admission: DeferredAdmission
     }
 
-    private var activeLease: Lease?
-    private var waiters: [Waiter] = []
-    private var admissionWaiters: [AdmissionWaiter] = []
+    private let leaseLedger = WebsiteDataMutationLeaseLedger()
     private var deferredAdmissions: [DeferredAdmissionKey: DeferredAdmission] = [:]
     private var scheduledAdmissions: [UUID: ScheduledAdmission] = [:]
     private var restoreRevisionByTabID: [UUID: UInt64] = [:]
     private var internalSubmissionDepth = 0
-    private var admissionGeneration: UInt64 = 0
     private var isTerminallyShutDown = false
 
     func acquire(profileIDs: Set<UUID>) async -> Lease? {
-        guard profileIDs.isEmpty == false,
-              isTerminallyShutDown == false,
-              Task.isCancelled == false else {
-            return nil
-        }
-        if activeLease == nil {
-            return installLease(profileIDs: profileIDs)
-        }
-
-        let waiterID = UUID()
-        return await withTaskCancellationHandler {
-            await withCheckedContinuation { continuation in
-                if Task.isCancelled || isTerminallyShutDown {
-                    continuation.resume(returning: nil)
-                } else if activeLease == nil {
-                    continuation.resume(returning: installLease(profileIDs: profileIDs))
-                } else {
-                    waiters.append(
-                        Waiter(
-                            id: waiterID,
-                            profileIDs: profileIDs,
-                            continuation: continuation
-                        )
-                    )
-                }
-            }
-        } onCancel: { [weak self] in
-            Task { @MainActor [weak self] in
-                self?.cancelWaiter(waiterID)
-            }
-        }
+        await leaseLedger.acquire(scopeIDs: profileIDs)
     }
 
     func release(_ lease: Lease) {
-        guard activeLease == lease else { return }
-        activeLease = nil
+        guard leaseLedger.release(lease) else { return }
         restoreRevisionByTabID.removeAll()
-        admissionGeneration &+= 1
-        installNextLeaseIfPossible()
-        resumeNewlyAdmittedWaiters()
         replayNewlyAdmittedWork()
     }
 
     func blocksOrdinaryRuntimeAdmission(for profileID: UUID?) -> Bool {
-        guard let profileID, let activeLease else { return false }
-        return activeLease.profileIDs.contains(profileID)
+        leaseLedger.blocksAdmission(for: profileID)
     }
 
     /// Suspends asynchronous profile-scoped work instead of converting a
     /// temporary website-data transaction into a user-visible failure.
     func waitForOrdinaryRuntimeAdmission(for profileID: UUID) async -> Bool {
-        guard isTerminallyShutDown == false,
-              Task.isCancelled == false else {
-            return false
-        }
-        guard blocksOrdinaryRuntimeAdmission(for: profileID) else {
-            return true
-        }
-
-        let waiterID = UUID()
-        return await withTaskCancellationHandler {
-            await withCheckedContinuation { continuation in
-                if Task.isCancelled || isTerminallyShutDown {
-                    continuation.resume(returning: false)
-                } else if blocksOrdinaryRuntimeAdmission(for: profileID) == false {
-                    continuation.resume(returning: true)
-                } else {
-                    admissionWaiters.append(
-                        AdmissionWaiter(
-                            id: waiterID,
-                            profileID: profileID,
-                            continuation: continuation
-                        )
-                    )
-                }
-            }
-        } onCancel: { [weak self] in
-            Task { @MainActor [weak self] in
-                self?.cancelAdmissionWaiter(waiterID)
-            }
-        }
+        await leaseLedger.waitForAdmission(for: profileID)
     }
 
     func owns(_ lease: Lease) -> Bool {
-        activeLease == lease && isTerminallyShutDown == false
+        leaseLedger.owns(lease)
     }
 
-    var generation: UInt64 { admissionGeneration }
+    var generation: UInt64 { leaseLedger.generation }
 
     func withInternalSubmission<Result>(_ operation: () -> Result) -> Result {
         internalSubmissionDepth += 1
@@ -162,7 +80,7 @@ final class WebsiteDataMutationGate {
     }
 
     func authorizeRestoreSubmission(tabID: UUID, semanticRevision: UInt64) {
-        guard activeLease != nil else { return }
+        guard leaseLedger.hasActiveLease else { return }
         restoreRevisionByTabID[tabID] = semanticRevision
     }
 
@@ -231,69 +149,11 @@ final class WebsiteDataMutationGate {
 
     func resetForTerminalShutdown() {
         isTerminallyShutDown = true
-        activeLease = nil
+        leaseLedger.resetForTerminalShutdown()
         restoreRevisionByTabID.removeAll()
         internalSubmissionDepth = 0
-        admissionGeneration &+= 1
-        let pending = waiters
-        let pendingAdmissions = admissionWaiters
-        waiters.removeAll()
-        admissionWaiters.removeAll()
         deferredAdmissions.removeAll()
         scheduledAdmissions.removeAll()
-        pending.forEach { $0.continuation.resume(returning: nil) }
-        pendingAdmissions.forEach { $0.continuation.resume(returning: false) }
-    }
-
-    private func installLease(profileIDs: Set<UUID>) -> Lease {
-        admissionGeneration &+= 1
-        let lease = Lease(
-            id: UUID(),
-            profileIDs: profileIDs,
-            admissionGeneration: admissionGeneration
-        )
-        activeLease = lease
-        return lease
-    }
-
-    private func installNextLeaseIfPossible() {
-        guard activeLease == nil,
-              isTerminallyShutDown == false,
-              waiters.isEmpty == false else {
-            return
-        }
-        let waiter = waiters.removeFirst()
-        waiter.continuation.resume(
-            returning: installLease(profileIDs: waiter.profileIDs)
-        )
-    }
-
-    private func cancelWaiter(_ waiterID: UUID) {
-        guard let index = waiters.firstIndex(where: { $0.id == waiterID }) else {
-            return
-        }
-        waiters.remove(at: index).continuation.resume(returning: nil)
-    }
-
-    private func cancelAdmissionWaiter(_ waiterID: UUID) {
-        guard let index = admissionWaiters.firstIndex(where: { $0.id == waiterID }) else {
-            return
-        }
-        admissionWaiters.remove(at: index).continuation.resume(returning: false)
-    }
-
-    private func resumeNewlyAdmittedWaiters() {
-        var stillBlocked: [AdmissionWaiter] = []
-        var ready: [AdmissionWaiter] = []
-        for waiter in admissionWaiters {
-            if blocksOrdinaryRuntimeAdmission(for: waiter.profileID) {
-                stillBlocked.append(waiter)
-            } else {
-                ready.append(waiter)
-            }
-        }
-        admissionWaiters = stillBlocked
-        ready.forEach { $0.continuation.resume(returning: true) }
     }
 
     private func replayNewlyAdmittedWork() {

@@ -15,6 +15,8 @@ production_roots=(App Sumi SidebarChrome FloatingBar Settings UI Packages)
 canonical_cleanup_source="Sumi/Services/SumiWebsiteDataCleanupService.swift"
 extension_cleanup_source="Sumi/Managers/ExtensionManager/WebExtensionControllerDataCleanupOwner.swift"
 profile_mutation_source="Sumi/Services/SumiProfileWebsiteDataMutationService.swift"
+mutation_gate_source="Sumi/Managers/WebViewRuntime/WebsiteDataMutationGate.swift"
+lease_kernel_source="Packages/SumiWebRuntime/Sources/SumiWebRuntime/Transactions/WebsiteDataMutationLeaseLedger.swift"
 status=0
 
 mutation_hits="$({
@@ -89,11 +91,83 @@ while IFS= read -r match; do
   esac
 done <<< "$persistent_store_hits"
 
+# The package owns only the profile-agnostic lease/admission state machine.
+# Product replay keys, restore authority, and all concrete browser/WebKit types
+# stay in the app composition layer. This prevents the extraction from becoming
+# either a second state owner or an app-specific package in disguise.
+if [[ ! -f "$lease_kernel_source" ]]; then
+  printf 'error: website-data lease kernel is missing: %s\n' \
+    "$lease_kernel_source" >&2
+  status=1
+else
+  kernel_code="$(
+    perl -0777 -pe '
+      s{""".*?"""}{""}gs;
+      s{"(?:\\.|[^"\\])*"}{""}g;
+      s{/\*.*?\*/}{}gs;
+      s{//[^\n]*}{}g
+    ' "$lease_kernel_source"
+  )"
+  kernel_policy_hits="$(
+    rg -n \
+      '\b(BrowserManager|BrowserWindowState|Tab|Profile|WKWebView|WKWebsiteDataStore|DeferredAdmissionKey|semanticRevision|replay)\b|^import[[:space:]]+(AppKit|WebKit|SwiftUI)\b' \
+      <<< "$kernel_code" || true
+  )"
+  if [[ -n "$kernel_policy_hits" ]]; then
+    printf 'error: website-data lease kernel contains app/WebKit policy:\n%s\n' \
+      "$kernel_policy_hits" >&2
+    status=1
+  fi
+fi
+
+kernel_declarations="$(
+  rg -n --glob '*.swift' \
+    'final[[:space:]]+class[[:space:]]+WebsiteDataMutationLeaseLedger\b' \
+    "${production_roots[@]}" || true
+)"
+expected_kernel_declaration="$(
+  rg -n --with-filename \
+    'final[[:space:]]+class[[:space:]]+WebsiteDataMutationLeaseLedger\b' \
+    "$lease_kernel_source" 2>/dev/null || true
+)"
+if [[ -z "$expected_kernel_declaration" ]] || \
+   [[ "$kernel_declarations" != "$expected_kernel_declaration" ]]; then
+  printf 'error: WebsiteDataMutationLeaseLedger must have exactly one production owner in SumiWebRuntime:\n%s\n' \
+    "$kernel_declarations" >&2
+  status=1
+fi
+
+if ! rg -q '^import SumiWebRuntime$' "$mutation_gate_source" || \
+   ! rg -q 'private let leaseLedger = WebsiteDataMutationLeaseLedger\(\)' \
+     "$mutation_gate_source"; then
+  printf 'error: app website-data mutation gate does not compose the SumiWebRuntime lease kernel\n' >&2
+  status=1
+fi
+
+duplicated_lease_state="$(
+  rg -n \
+    'private var (activeLease|leaseWaiters|admissionWaiters|admissionGeneration)\b' \
+    "$mutation_gate_source" || true
+)"
+if [[ -n "$duplicated_lease_state" ]]; then
+  printf 'error: app mutation gate duplicates package-owned lease/admission state:\n%s\n' \
+    "$duplicated_lease_state" >&2
+  status=1
+fi
+
+if ! rg -q 'enum DeferredAdmissionKey:' "$mutation_gate_source" || \
+   ! rg -q 'private var deferredAdmissions:' "$mutation_gate_source" || \
+   ! rg -q 'private var restoreRevisionByTabID:' "$mutation_gate_source"; then
+  printf 'error: product replay/restore policy escaped the app mutation gate\n' >&2
+  status=1
+fi
+
 if [[ "$status" -ne 0 ]]; then
   cat >&2 <<'EOF'
 Website-data mutation boundary audit failed.
 Route browser-profile mutations through SumiWebsiteDataCleanupServicing and
-attach the owning caller to the destructive-cleanup preparer.
+attach the owning caller to the destructive-cleanup preparer. Keep the generic
+lease/admission kernel in SumiWebRuntime and product replay policy in the app.
 EOF
   exit "$status"
 fi
