@@ -10,20 +10,20 @@ final class WebViewPhysicalCleanupService {
     private let processRecovery: WebContentProcessRecoveryService
     private let mediaProtection: WebViewMediaProtectionOwner
     private let protectedCommands: DeferredProtectedCommandScheduler
-    private let runtimeAssembler: WebViewRuntimeAssembler
+    private let shutdownRuntime: WebViewShutdownRuntimeProvider
 
     init(
         webViewSessions: WebViewSessionRepository,
         processRecovery: WebContentProcessRecoveryService,
         mediaProtection: WebViewMediaProtectionOwner,
         protectedCommands: DeferredProtectedCommandScheduler,
-        runtimeAssembler: WebViewRuntimeAssembler
+        shutdownRuntime: WebViewShutdownRuntimeProvider
     ) {
         self.webViewSessions = webViewSessions
         self.processRecovery = processRecovery
         self.mediaProtection = mediaProtection
         self.protectedCommands = protectedCommands
-        self.runtimeAssembler = runtimeAssembler
+        self.shutdownRuntime = shutdownRuntime
     }
 
     func clean(_ webView: WKWebView, tabID: UUID) {
@@ -77,7 +77,7 @@ final class WebViewPhysicalCleanupService {
         }
         SumiWebViewShutdown.perform(
             on: webView,
-            runtime: runtimeAssembler.shutdownRuntime()
+            runtime: shutdownRuntime.runtime()
         )
     }
 }

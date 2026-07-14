@@ -21,12 +21,12 @@ final class WebViewLifecycleService {
     private let replacementPipeline: WebViewReplacementPipeline
     private let protection: WebViewProtectionRuntime
     private let compositor: WebViewCompositorRuntime
-    private let visibility: WebViewVisibilityRuntime
+    private let materialization: TabWebViewMaterializationService
     private let visibleRuntime: VisibleWebViewRuntimeOwner
     private let cleanupScope: WebViewCleanupScopeOwner
     private let trackedRegistration: WebViewTrackedRegistrationOwner
     private let physicalCleanup: WebViewPhysicalCleanupService
-    private let runtimeAssembler: WebViewRuntimeAssembler
+    private let shutdownRuntime: WebViewShutdownRuntimeProvider
 
     init(
         webViewSessions: WebViewSessionRepository,
@@ -40,12 +40,12 @@ final class WebViewLifecycleService {
         replacementPipeline: WebViewReplacementPipeline,
         protection: WebViewProtectionRuntime,
         compositor: WebViewCompositorRuntime,
-        visibility: WebViewVisibilityRuntime,
+        materialization: TabWebViewMaterializationService,
         visibleRuntime: VisibleWebViewRuntimeOwner,
         cleanupScope: WebViewCleanupScopeOwner,
         trackedRegistration: WebViewTrackedRegistrationOwner,
         physicalCleanup: WebViewPhysicalCleanupService,
-        runtimeAssembler: WebViewRuntimeAssembler
+        shutdownRuntime: WebViewShutdownRuntimeProvider
     ) {
         self.webViewSessions = webViewSessions
         self.runtimeTabs = runtimeTabs
@@ -58,12 +58,12 @@ final class WebViewLifecycleService {
         self.replacementPipeline = replacementPipeline
         self.protection = protection
         self.compositor = compositor
-        self.visibility = visibility
+        self.materialization = materialization
         self.visibleRuntime = visibleRuntime
         self.cleanupScope = cleanupScope
         self.trackedRegistration = trackedRegistration
         self.physicalCleanup = physicalCleanup
-        self.runtimeAssembler = runtimeAssembler
+        self.shutdownRuntime = shutdownRuntime
     }
 
     private lazy var tabTeardown = WebViewTabTeardownOwner(
@@ -100,7 +100,7 @@ final class WebViewLifecycleService {
                   let tab = self.tabForPackageCallback(tabHandle) else {
                 return
             }
-            self.visibility.refreshPrimaryWebView(for: tab)
+            self.materialization.refreshPrimary(for: tab)
         },
         removeWebViewFromContainers: { [weak self] webView in
             self?.compositor.removeWebViewFromContainers(webView)
@@ -144,7 +144,7 @@ final class WebViewLifecycleService {
                   let tab = self.tabForPackageCallback(tabHandle) else {
                 return
             }
-            self.visibility.refreshPrimaryWebView(for: tab)
+            self.materialization.refreshPrimary(for: tab)
         },
         removeCompositorContainerView: { [weak self] windowID in
             self?.compositor.removeContainer(for: windowID)
@@ -255,7 +255,7 @@ final class WebViewLifecycleService {
         websiteDataCleanup.resetForTerminalShutdown()
 
         if entries.isEmpty == false {
-            let shutdownRuntime = runtimeAssembler.shutdownRuntime()
+            let shutdownRuntime = shutdownRuntime.runtime()
             for entry in entries {
                 SumiWebViewShutdown.performTerminalShutdown(
                     on: entry.webView,
@@ -277,7 +277,7 @@ final class WebViewLifecycleService {
         owner: TrackedWebViewOwner,
         tab: Tab?
     ) -> Bool {
-        return trackedRegistration.cleanupUnprotectedTrackedWebView(
+        trackedRegistration.cleanupUnprotectedTrackedWebView(
             webView,
             owner: owner,
             tab: tab

@@ -9,23 +9,28 @@ import WebKit
 final class WebViewVisibilityRuntime {
     private let visibleRuntime: VisibleWebViewRuntimeOwner
     private let materialization: TabWebViewMaterializationService
-    private let runtimeAssembler: WebViewRuntimeAssembler
-    private let globallyVisibleTabIDs: @MainActor () -> Set<UUID>
+    private let visibleRuntimeProvider: VisibleWebViewRuntimeProvider
+    private let hiddenCloneEviction: HiddenCloneEvictionService
 
     init(
         visibleRuntime: VisibleWebViewRuntimeOwner,
         materialization: TabWebViewMaterializationService,
-        runtimeAssembler: WebViewRuntimeAssembler,
-        globallyVisibleTabIDs: @escaping @MainActor () -> Set<UUID>
+        visibleRuntimeProvider: VisibleWebViewRuntimeProvider,
+        hiddenCloneEviction: HiddenCloneEvictionService
     ) {
         self.visibleRuntime = visibleRuntime
         self.materialization = materialization
-        self.runtimeAssembler = runtimeAssembler
-        self.globallyVisibleTabIDs = globallyVisibleTabIDs
+        self.visibleRuntimeProvider = visibleRuntimeProvider
+        self.hiddenCloneEviction = hiddenCloneEviction
     }
 
     func visiblePreparationRuntime() -> VisibleWebViewPreparationRuntime {
-        runtimeAssembler.requireVisiblePreparationRuntime()
+        visibleRuntimeProvider.runtime { [hiddenCloneEviction] windowID, visibleTabIDs in
+            hiddenCloneEviction.evict(
+                in: windowID,
+                visibleTabIDs: visibleTabIDs
+            )
+        }
     }
 
     @discardableResult
@@ -76,10 +81,6 @@ final class WebViewVisibilityRuntime {
         in windowID: UUID,
         visibleTabIDs: Set<UUID>
     ) -> Bool {
-        runtimeAssembler.evictHiddenWebViews(
-            in: windowID,
-            visibleTabIDs: visibleTabIDs,
-            globallyVisibleTabIDs: globallyVisibleTabIDs
-        )
+        hiddenCloneEviction.evict(in: windowID, visibleTabIDs: visibleTabIDs)
     }
 }

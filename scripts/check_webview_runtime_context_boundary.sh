@@ -10,6 +10,9 @@ graph_file="Sumi/Managers/WebViewRuntime/WebViewRuntimeGraph.swift"
 browser_manager_file="Sumi/Managers/BrowserManager/BrowserManager.swift"
 runtime_factory_file="Sumi/Managers/BrowserManager/BrowserManagerWebViewRuntimeFactory.swift"
 runtime_lifecycle_file="Sumi/Managers/WebViewRuntime/WebViewLifecycleService.swift"
+visible_runtime_provider_file="Sumi/Managers/WebViewRuntime/VisibleWebViewRuntimeProvider.swift"
+hidden_clone_eviction_file="Sumi/Managers/WebViewRuntime/HiddenCloneEvictionService.swift"
+shutdown_runtime_provider_file="Sumi/Managers/WebViewRuntime/WebViewShutdownRuntimeProvider.swift"
 replacement_pipeline_file="Sumi/Managers/WebViewRuntime/WebViewReplacementPipeline.swift"
 tab_file="Sumi/Models/Tab/Tab.swift"
 main_frame_transaction_file="Sumi/Models/Tab/TabMainFrameRuntimeTransaction.swift"
@@ -61,6 +64,7 @@ fi
 retired_paths=(
   "Sumi/Managers/WebViewCoordinator"
   "Sumi/Managers/WebViewRuntime/WebViewCoordinator.swift"
+  "Sumi/Managers/WebViewRuntime/WebViewRuntimeAssembler.swift"
   "Sumi/Managers/BrowserManager/BrowserManagerWebViewCoordinatorRuntimeFactory.swift"
   "Packages/SumiWebRuntime/Sources/SumiWebRuntime/Context/WebViewCoordinatorBrowserRuntimeContext.swift"
   "Packages/SumiWebRuntime/Sources/SumiWebRuntime/Context/WebViewCoordinatorInitialDocumentRuntimeContext.swift"
@@ -73,6 +77,42 @@ retired_paths=(
 for retired_path in "${retired_paths[@]}"; do
   if [[ -e "$retired_path" ]]; then
     printf 'error: retired WebView coordinator path reintroduced: %s\n' "$retired_path" >&2
+    status=1
+  fi
+done
+
+runtime_role_files=(
+  "$visible_runtime_provider_file"
+  "$hidden_clone_eviction_file"
+  "$shutdown_runtime_provider_file"
+)
+for role_file in "${runtime_role_files[@]}"; do
+  if [[ ! -f "$role_file" ]]; then
+    printf 'error: role-exact WebView runtime layer missing: %s\n' "$role_file" >&2
+    status=1
+  fi
+done
+
+if rg -q '\bWebViewRuntimeAssembler\b|\bruntimeAssembler\b' \
+    "${all_swift_roots[@]}" -g '*.swift' -g '!**/.build/**'; then
+  printf 'error: retired multi-role WebViewRuntimeAssembler reintroduced\n' >&2
+  status=1
+fi
+
+role_limits=(
+  "$visible_runtime_provider_file:55:3"
+  "$hidden_clone_eviction_file:55:4"
+  "$shutdown_runtime_provider_file:20:1"
+)
+for role_limit in "${role_limits[@]}"; do
+  IFS=: read -r role_file max_lines max_collaborators <<< "$role_limit"
+  line_count="$(wc -l < "$role_file" | tr -d ' ')"
+  collaborator_count="$(rg --count-matches '^    private let ' "$role_file" || true)"
+  collaborator_count="${collaborator_count:-0}"
+  if (( line_count > max_lines || collaborator_count > max_collaborators )); then
+    printf 'error: WebView runtime role grew beyond freeze: %s (%s/%s LOC, %s/%s collaborators)\n' \
+      "$role_file" "$line_count" "$max_lines" \
+      "$collaborator_count" "$max_collaborators" >&2
     status=1
   fi
 done

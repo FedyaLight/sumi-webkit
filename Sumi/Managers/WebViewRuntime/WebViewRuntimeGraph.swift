@@ -9,8 +9,8 @@ import AppKit
 import CoreGraphics
 import Foundation
 import QuartzCore
-import WebKit
 import SumiWebRuntime
+import WebKit
 
 enum CompositorPaneDestination: String, CaseIterable {
     case single
@@ -185,8 +185,16 @@ final class WebViewRuntimeGraph {
         }
     )
 
-    fileprivate lazy var runtimeAssembler: WebViewRuntimeAssembler = WebViewRuntimeAssembler(
-        dependencies: .live(graph: self)
+    fileprivate lazy var visibleRuntimeProvider = VisibleWebViewRuntimeProvider(
+        webViewSessions: webViewSessions,
+        context: visibleContext,
+        visibleRuntime: visibleWebViewRuntimeOwner
+    )
+
+    fileprivate lazy var shutdownRuntime = WebViewShutdownRuntimeProvider(
+        removeWebViewFromContainers: { [weak self] webView in
+            self?.compositorRuntime.removeWebViewFromContainers(webView)
+        }
     )
 
     private(set) lazy var physicalCleanupService: WebViewPhysicalCleanupService =
@@ -195,7 +203,7 @@ final class WebViewRuntimeGraph {
             processRecovery: processRecoveryService,
             mediaProtection: mediaProtectionOwner,
             protectedCommands: deferredProtectedCommandScheduler,
-            runtimeAssembler: runtimeAssembler
+            shutdownRuntime: shutdownRuntime
         )
 
     private let webViewCreationPlanner = WebViewCreationPlanner()
@@ -315,10 +323,53 @@ final class WebViewRuntimeGraph {
     )
 
     lazy var tabWebViewMaterialization: TabWebViewMaterializationService =
-        WebViewRuntimeGraphAssembly.makeTabWebViewMaterialization(
-            graph: self,
+        TabWebViewMaterializationService.live(
+            webViewSessions: webViewSessions,
+            initialDocumentContext: initialDocumentContext,
+            placement: canonicalWebViewPlacement,
+            visibleRuntime: visibleRuntimeProvider,
+            windowServices: windowServices,
             planner: webViewCreationPlanner
         )
+
+    private lazy var hiddenCloneEviction = HiddenCloneEvictionService(
+        owner: hiddenCloneEvictionOwner,
+        webViewSessions: webViewSessions,
+        runtime: .init(
+            tabForID: { [weak self] tabID in
+                guard let self else { return nil }
+                return runtimeTabs.resolve(
+                    tabID,
+                    resolveRuntimeTab: resolveRuntimeTab
+                )
+            },
+            liveWebViews: { [weak self] tab in
+                self?.ownershipQuery.trackedLiveWebViews(for: tab) ?? []
+            },
+            globallyVisibleTabIDs: { [] },
+            isWebViewProtectedFromCompositorMutation: { [weak self] webView in
+                self?.mediaProtectionOwner.isProtected(webView) ?? false
+            },
+            enqueueDeferredProtectedCommand: { [weak self] command, webView, reason in
+                self?.deferredProtectedCommandScheduler.schedule(
+                    command,
+                    for: webView,
+                    reason: reason
+                ).wasScheduled ?? false
+            },
+            cleanupUnprotectedTrackedWebView: { [weak self] webView, owner, tab in
+                self?.trackedRegistrationOwner.cleanupUnprotectedTrackedWebView(
+                    webView,
+                    owner: owner,
+                    tab: tab
+                ) ?? false
+            },
+            refreshPrimaryTrackedWebView: { [weak self] tab in
+                self?.tabWebViewMaterialization.refreshPrimary(for: tab)
+            }
+        ),
+        globallyVisibleTabIDs: visibleContext.globallyVisibleTabIDs
+    )
 
     private(set) lazy var trackedWebViewAdmission = TrackedWebViewAdmissionService(
         runtimeTabs: runtimeTabs,
@@ -372,8 +423,8 @@ final class WebViewRuntimeGraph {
     private(set) lazy var visibilityRuntime: WebViewVisibilityRuntime = WebViewVisibilityRuntime(
         visibleRuntime: visibleWebViewRuntimeOwner,
         materialization: tabWebViewMaterialization,
-        runtimeAssembler: runtimeAssembler,
-        globallyVisibleTabIDs: visibleContext.globallyVisibleTabIDs
+        visibleRuntimeProvider: visibleRuntimeProvider,
+        hiddenCloneEviction: hiddenCloneEviction
     )
 
     private(set) lazy var lifecycleService: WebViewLifecycleService = WebViewLifecycleService(
@@ -394,12 +445,12 @@ final class WebViewRuntimeGraph {
         replacementPipeline: replacementPipeline,
         protection: protectionRuntime,
         compositor: compositorRuntime,
-        visibility: visibilityRuntime,
+        materialization: tabWebViewMaterialization,
         visibleRuntime: visibleWebViewRuntimeOwner,
         cleanupScope: cleanupScopeOwner,
         trackedRegistration: trackedRegistrationOwner,
         physicalCleanup: physicalCleanupService,
-        runtimeAssembler: runtimeAssembler
+        shutdownRuntime: shutdownRuntime
     )
 
     private(set) lazy var visiblePreparationService: WebViewVisiblePreparationService =
@@ -434,8 +485,7 @@ final class WebViewRuntimeGraph {
                 return self.visibleWebViewRuntimeOwner
                     .preferredPrimaryWebViewCandidate(
                         for: tabID,
-                        runtime: self.runtimeAssembler
-                            .requireVisiblePreparationRuntime(),
+                        runtime: self.visibleRuntimeProvider.runtime(),
                         webViewSessions: self.webViewSessions
                     )?.owner
             }
@@ -520,52 +570,6 @@ final class WebViewRuntimeGraph {
             )
         }
     )
-
-}
-
-private extension WebViewRuntimeAssembler.Dependencies {
-    @MainActor
-    static func live(graph: WebViewRuntimeGraph) -> Self {
-        Self(
-            webViewSessions: graph.webViewSessions,
-            visibleContext: graph.visibleContext,
-            visibleWebViewRuntimeOwner: graph.visibleWebViewRuntimeOwner,
-            hiddenCloneEvictionOwner: graph.hiddenCloneEvictionOwner,
-            removeWebViewFromContainers: { [weak graph] webView in
-                graph?.compositorRuntime.removeWebViewFromContainers(webView)
-            },
-            isWebViewProtectedFromCompositorMutation: { [weak graph] webView in
-                graph?.protectionRuntime.isProtected(webView) ?? false
-            },
-            enqueueDeferredProtectedCommand: { [weak graph] command, webView, reason in
-                graph?.protectionRuntime.schedule(
-                    command,
-                    for: webView,
-                    reason: reason
-                ) ?? .notProtected
-            },
-            resolvedTab: { [weak graph] tabID in
-                guard let graph else { return nil }
-                return graph.runtimeTabs.resolve(
-                    tabID,
-                    resolveRuntimeTab: graph.resolveRuntimeTab
-                )
-            },
-            trackedLiveWebViews: { [weak graph] tab in
-                graph?.ownershipQuery.trackedLiveWebViews(for: tab) ?? []
-            },
-            cleanupUnprotectedTrackedWebView: { [weak graph] webView, owner, tab in
-                graph?.lifecycleService.cleanupUnprotectedTrackedWebView(
-                    webView,
-                    owner: owner,
-                    tab: tab
-                ) ?? false
-            },
-            refreshPrimaryTrackedWebView: { [weak graph] tab in
-                graph?.tabWebViewMaterialization.refreshPrimary(for: tab)
-            }
-        )
-    }
 }
 
 private enum DeferredWebViewCommandAssembly {
@@ -597,13 +601,13 @@ private enum DeferredWebViewCommandAssembly {
             },
             shutdownOwnerlessWebView: {
                 [processRecovery = graph.processRecoveryService,
-                 runtimeAssembler = graph.runtimeAssembler]
+                 shutdownRuntime = graph.shutdownRuntime]
                 webView,
                 tabID in
                 processRecovery.cancel(webView)
                 SumiWebViewShutdown.perform(
                     on: webView,
-                    runtime: runtimeAssembler.shutdownRuntime()
+                    runtime: shutdownRuntime.runtime()
                 )
             },
             finishRetirementIfDrained: { [weak graph] tabID in
@@ -655,55 +659,6 @@ private enum DeferredWebViewCommandAssembly {
             cleanup: cleanup,
             windowMaintenance: windowMaintenance,
             configuration: configuration
-        )
-    }
-}
-
-private enum WebViewRuntimeGraphAssembly {
-    @MainActor
-    static func makeTabWebViewMaterialization(
-        graph: WebViewRuntimeGraph,
-        planner: WebViewCreationPlanner
-    ) -> TabWebViewMaterializationService {
-        TabWebViewMaterializationService(
-            runtime: TabWebViewMaterializationService.Runtime(
-                webViewSessions: graph.webViewSessions,
-                initialDocumentWarmup: { [weak graph] in
-                    guard let graph else {
-                        preconditionFailure("WebViewRuntimeGraph deallocated")
-                    }
-                    let context = graph.initialDocumentContext
-                    return InitialDocumentWarmupRuntime(
-                        needsInitialDocumentExtensionContextLoad: {
-                            context.needsInitialDocumentExtensionContextLoad($0)
-                        },
-                        ensureInitialExtensionContextsLoaded: {
-                            await context.ensureInitialExtensionContextsLoaded($0)
-                        },
-                        refreshCompositorForWindow: {
-                            context.refreshCompositorForWindow($0)
-                        }
-                    )
-                },
-                placement: graph.canonicalWebViewPlacement,
-                primaryCandidate: { [weak graph] tabID in
-                    guard let graph else { return nil }
-                    return graph.visibleWebViewRuntimeOwner
-                        .preferredPrimaryWebViewCandidate(
-                            for: tabID,
-                            runtime: graph.runtimeAssembler
-                                .requireVisiblePreparationRuntime(),
-                            webViewSessions: graph.webViewSessions
-                        )
-                },
-                notifyActivatedIfCurrent: { [weak graph] tab, windowID in
-                    graph?.windowServices.notifyTabActivatedIfCurrent(
-                        tab,
-                        windowID
-                    )
-                }
-            ),
-            planner: planner
         )
     }
 }
