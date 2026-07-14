@@ -290,7 +290,7 @@ final class BrowserWindowLifecycleWorkflowTests: XCTestCase {
             windowState.isIncognito = true
             windowState.tabManager = browserManager.tabManager
             windowState.ephemeralProfile = profile
-            windowState.ephemeralSpaces = [space]
+            windowState.replaceEphemeralSpaces([space])
             windowState.currentProfileId = profile.id
             windowState.currentSpaceId = space.id
             registry.register(windowState)

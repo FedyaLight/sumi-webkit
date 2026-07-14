@@ -5,10 +5,10 @@ import Foundation
 struct LiveShortcutTabSnapshot {
     let tabsByWindow: [UUID: [UUID: Tab]]
 
-    var orderedEntries: [LiveShortcutTabRegistry.Entry] {
+    var orderedEntries: [LiveShortcutTabEntry] {
         tabsByWindow.flatMap { windowID, tabsByPin in
             tabsByPin.map { pinID, tab in
-                LiveShortcutTabRegistry.Entry(
+                LiveShortcutTabEntry(
                     windowId: windowID,
                     pinId: pinID,
                     tab: tab
@@ -23,19 +23,19 @@ struct LiveShortcutTabSnapshot {
         }
     }
 
-    func entries(for pinID: UUID) -> [LiveShortcutTabRegistry.Entry] {
+    func entries(for pinID: UUID) -> [LiveShortcutTabEntry] {
         orderedEntries.filter { $0.pinId == pinID }
     }
 
-    func entries(in windowID: UUID) -> [LiveShortcutTabRegistry.Entry] {
+    func entries(in windowID: UUID) -> [LiveShortcutTabEntry] {
         orderedEntries.filter { $0.windowId == windowID }
     }
 
-    func entry(containing tab: Tab) -> LiveShortcutTabRegistry.Entry? {
+    func entry(containing tab: Tab) -> LiveShortcutTabEntry? {
         orderedEntries.first { $0.tab === tab }
     }
 
-    func entry(tabID: UUID) -> LiveShortcutTabRegistry.Entry? {
+    func entry(tabID: UUID) -> LiveShortcutTabEntry? {
         orderedEntries.first { $0.tab.id == tabID }
     }
 }

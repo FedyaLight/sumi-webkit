@@ -20,7 +20,7 @@ final class TabStructuralCollectionMutationOwner {
         let recordFoldersStructuralChange: @MainActor ([TabFolder], [TabFolder]) -> Void
         let recordShortcutPinsStructuralChange: @MainActor ([ShortcutPin], [ShortcutPin]) -> Void
         let queueTabLookupEntries: @MainActor ([Tab], [Tab]) -> Void
-        let requestStructuralPublish: @MainActor () -> Void
+        let requestStructuralPublish: @MainActor (TabStructureChangeScope) -> Void
     }
 
     private let dependencies: Dependencies
@@ -39,7 +39,7 @@ final class TabStructuralCollectionMutationOwner {
         dependencies.markRegularTabsSnapshotDirty(spaceId)
         dependencies.recordRegularTabsStructuralChange(previousTabs, sortedItems)
         dependencies.queueTabLookupEntries(previousTabs, sortedItems)
-        dependencies.requestStructuralPublish()
+        dependencies.requestStructuralPublish(.space(spaceId))
     }
 
     func setFolders(_ items: [TabFolder], for spaceId: UUID) {
@@ -50,7 +50,7 @@ final class TabStructuralCollectionMutationOwner {
         dependencies.setFoldersBySpace(foldersBySpace)
         dependencies.markFoldersSnapshotDirty(spaceId)
         dependencies.recordFoldersStructuralChange(previousFolders, items)
-        dependencies.requestStructuralPublish()
+        dependencies.requestStructuralPublish(.space(spaceId))
     }
 
     func setPinnedTabs(_ items: [ShortcutPin], for profileId: UUID) {
@@ -62,7 +62,7 @@ final class TabStructuralCollectionMutationOwner {
         syncShortcutPins(pinnedByProfile: pinnedByProfile, spacePinnedShortcuts: dependencies.spacePinnedShortcuts())
         dependencies.markPinnedSnapshotDirty(profileId)
         dependencies.recordShortcutPinsStructuralChange(previousPins, items)
-        dependencies.requestStructuralPublish()
+        dependencies.requestStructuralPublish(.profile(profileId))
     }
 
     func setSpacePinnedShortcuts(_ items: [ShortcutPin], for spaceId: UUID) {
@@ -74,7 +74,7 @@ final class TabStructuralCollectionMutationOwner {
         syncShortcutPins(pinnedByProfile: dependencies.pinnedByProfile(), spacePinnedShortcuts: spacePinnedShortcuts)
         dependencies.markSpacePinnedSnapshotDirty(spaceId)
         dependencies.recordShortcutPinsStructuralChange(previousPins, items)
-        dependencies.requestStructuralPublish()
+        dependencies.requestStructuralPublish(.space(spaceId))
     }
 
     private func syncShortcutPins(
@@ -152,8 +152,8 @@ extension TabStructuralCollectionMutationOwner.Dependencies {
             queueTabLookupEntries: { [weak tabManager] previous, current in
                 tabManager?.structuralLookupCoordinator.queueEntries(removing: previous, with: current)
             },
-            requestStructuralPublish: { [weak tabManager] in
-                tabManager?.structuralLookupCoordinator.requestPublish()
+            requestStructuralPublish: { [weak tabManager] scope in
+                tabManager?.structuralLookupCoordinator.requestPublish(scope: scope)
             }
         )
     }

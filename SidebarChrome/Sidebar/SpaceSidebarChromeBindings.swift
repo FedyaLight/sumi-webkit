@@ -71,3 +71,69 @@ struct SpaceSidebarUpdateNoticeStrip: View {
         }
     }
 }
+
+struct SpaceSidebarUpdateNoticeReader: View {
+    @ObservedObject var updaterService: SumiUpdaterService
+
+    var body: some View {
+        if let notice = updaterService.sidebarNotice {
+            SpaceSidebarUpdateNoticeStrip(
+                notice: notice,
+                onUpdate: { updaterService.startUpdateFromSidebarNotice() },
+                onDismiss: { updaterService.dismissSidebarNotice(notice) }
+            )
+        }
+    }
+}
+
+struct SpaceSidebarMiniPlayer: View {
+    @ObservedObject var nowPlayingController: SumiNativeNowPlayingController
+    let faviconImageReader: any BrowserFaviconImageReading
+    let configureMediaStore: (SumiBackgroundMediaCardStore, BrowserWindowState) -> Void
+
+    @Environment(BrowserWindowState.self) private var windowState
+    @Environment(\.sumiSettings) private var settings
+
+    var body: some View {
+        if SpaceSidebarChromeBindings.shouldMountMiniPlayer(
+            sidebarMiniPlayerEnabled: settings.sidebarMiniPlayerEnabled,
+            nowPlayingController: nowPlayingController,
+            windowState: windowState
+        ) {
+            MediaControlsView(
+                nowPlayingController: nowPlayingController,
+                faviconImageReader: faviconImageReader,
+                configureMediaStore: configureMediaStore
+            )
+            .environment(windowState)
+        }
+    }
+}
+
+struct SidebarSpaceCreationProfilesView: View {
+    let session: SpaceCreationSession
+    let currentProfiles: @MainActor () -> [Profile]
+    let profileUpdates: SidebarProfileUpdates
+    let isActive: Bool
+    let currentProfileID: @MainActor () -> UUID?
+    let onCreate: () -> Void
+    let onCancel: () -> Void
+
+    var body: some View {
+        SidebarScopedSnapshotReader(
+            current: currentProfiles,
+            changes: profileUpdates.profiles,
+            isActive: isActive
+        ) { profiles in
+            SidebarSpaceCreationView(
+                session: session,
+                profileContext: SpaceCreationProfileContext(
+                    profiles: profiles,
+                    currentProfileID: currentProfileID()
+                ),
+                onCreate: onCreate,
+                onCancel: onCancel
+            )
+        }
+    }
+}

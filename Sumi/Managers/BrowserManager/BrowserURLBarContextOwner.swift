@@ -285,18 +285,24 @@ private extension BrowserURLBarContextOwner {
         extensionsModule: SumiExtensionsModule
     ) -> URLBarExtensionActionContext {
         URLBarExtensionActionContext(
-            orderedPinnedToolbarSlotCount: { enabledExtensions in
-                extensionsModule.orderedPinnedToolbarSlots(
-                    enabledExtensions: enabledExtensions
+            moduleEnabledChanges: extensionsModule.enabledChanges,
+            toolbarPresentationSnapshot: { profileID in
+                extensionsModule.toolbarPresentationSnapshot(
+                    profileID: profileID
                 )
-                .count
             },
-            compactStrip: { [weak browserManager] extensions, windowState in
+            toolbarPresentationSnapshots: { profileID in
+                extensionsModule.toolbarPresentationSnapshots(
+                    profileID: profileID
+                )
+            },
+            compactStrip: { [weak browserManager] extensions, windowState, profileID in
                 guard let browserManager else { return AnyView(EmptyView()) }
                 return AnyView(
                     ExtensionActionView(
                         extensions: extensions,
                         layout: .compactStrip,
+                        profileId: profileID,
                         browserContext: ExtensionActionBrowserContext.live(
                             browserManager: browserManager,
                             windowState: windowState
@@ -304,12 +310,13 @@ private extension BrowserURLBarContextOwner {
                     )
                 )
             },
-            hubTiles: { [weak browserManager] extensions, windowState in
+            hubTiles: { [weak browserManager] extensions, windowState, profileID in
                 guard let browserManager else { return AnyView(EmptyView()) }
                 return AnyView(
                     ExtensionActionView(
                         extensions: extensions,
                         layout: .hubTiles,
+                        profileId: profileID,
                         browserContext: ExtensionActionBrowserContext.live(
                             browserManager: browserManager,
                             windowState: windowState
@@ -319,9 +326,6 @@ private extension BrowserURLBarContextOwner {
             },
             ensureActionMetadataLoadedIfNeeded: {
                 extensionsModule.ensureActionMetadataLoadedIfNeeded()
-            },
-            isPinnedToToolbar: { extensionId in
-                extensionsModule.isPinnedToToolbar(extensionId)
             }
         )
     }

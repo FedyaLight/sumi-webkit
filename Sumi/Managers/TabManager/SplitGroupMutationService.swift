@@ -11,7 +11,7 @@ final class SplitGroupMutationService {
     private let store: SplitGroupStore
     private let withStructuralTransaction: (@MainActor () -> Void) -> Void
     private let announceChange: () -> Void
-    private let requestStructuralPublish: () -> Void
+    private let requestStructuralPublish: (TabStructureChangeScope) -> Void
     private let markStructurallyDirty: () -> Void
     private let schedulePersistence: () -> Void
 
@@ -19,7 +19,7 @@ final class SplitGroupMutationService {
         store: SplitGroupStore,
         withStructuralTransaction: @escaping (@MainActor () -> Void) -> Void,
         announceChange: @escaping () -> Void,
-        requestStructuralPublish: @escaping () -> Void,
+        requestStructuralPublish: @escaping (TabStructureChangeScope) -> Void,
         markStructurallyDirty: @escaping () -> Void,
         schedulePersistence: @escaping () -> Void
     ) {
@@ -205,7 +205,7 @@ final class SplitGroupMutationService {
         withStructuralTransaction {
             announceChange()
             store.replaceAll(with: groups)
-            requestStructuralPublish()
+            requestStructuralPublish(scope(for: groups))
         }
         return true
     }
@@ -230,7 +230,7 @@ final class SplitGroupMutationService {
             store.replaceAll(with: replacement)
             alongside()
             markStructurallyDirty()
-            requestStructuralPublish()
+            requestStructuralPublish(scope(for: expected + replacement))
         }
         if persist {
             schedulePersistence()
@@ -256,7 +256,7 @@ final class SplitGroupMutationService {
             announceChange()
             store.replaceAll(with: replacement)
             markStructurallyDirty()
-            requestStructuralPublish()
+            requestStructuralPublish(scope(for: expected + replacement))
             committed = true
         }
         guard committed else { return false }
@@ -264,6 +264,15 @@ final class SplitGroupMutationService {
             schedulePersistence()
         }
         return true
+    }
+
+    private func scope(
+        for groups: [SumiDomain.SplitGroup]
+    ) -> TabStructureChangeScope {
+        guard groups.allSatisfy({ $0.container.spaceId != nil }) else {
+            return .all
+        }
+        return .spaces(Set(groups.compactMap(\.container.spaceId)))
     }
 }
 
@@ -283,8 +292,8 @@ extension SplitGroupMutationService {
             announceChange: { [weak tabManager] in
                 tabManager?.objectWillChange.send()
             },
-            requestStructuralPublish: { [weak tabManager] in
-                tabManager?.structuralLookupCoordinator.requestPublish()
+            requestStructuralPublish: { [weak tabManager] scope in
+                tabManager?.structuralLookupCoordinator.requestPublish(scope: scope)
             },
             markStructurallyDirty: { [weak tabManager] in
                 tabManager?.structuralPersistence

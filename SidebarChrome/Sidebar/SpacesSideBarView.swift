@@ -4,6 +4,7 @@
 //
 //
 
+import Combine
 import SwiftUI
 
 struct SidebarPageInputGraphIdentity: Hashable {
@@ -35,8 +36,6 @@ struct SpacesSideBarView: View {
 
     @State var isSidebarHovered: Bool = false
     @State var transitionCoordinator = SpaceSidebarTransitionCoordinator()
-    @StateObject var pageModel: SidebarSpacePageModel
-    @StateObject var chromeModel: SidebarChromeModel
     @StateObject var scrollHoverCoordinator = NativeSurfaceScrollHoverCoordinator()
     let browserContext: SidebarBrowserContext
     let inventory: SidebarInventoryProjection
@@ -46,6 +45,10 @@ struct SpacesSideBarView: View {
     let spaceLifecycle: SidebarSpaceLifecycle
     let regularTabs: any SidebarRegularTabsControlling
     let dragTransactions: SidebarDragTransactionPort
+    let inventoryUpdates: SidebarInventoryUpdates
+    let profileUpdates: SidebarProfileUpdates
+    let nowPlayingController: SumiNativeNowPlayingController
+    let updaterService: SumiUpdaterService
 
     init(
         browserContext: SidebarBrowserContext,
@@ -56,7 +59,8 @@ struct SpacesSideBarView: View {
         spaceLifecycle: SidebarSpaceLifecycle,
         regularTabs: any SidebarRegularTabsControlling,
         dragTransactions: SidebarDragTransactionPort,
-        updateStreams: SidebarUpdateStreams,
+        inventoryUpdates: SidebarInventoryUpdates,
+        profileUpdates: SidebarProfileUpdates,
         nowPlayingController: SumiNativeNowPlayingController,
         updaterService: SumiUpdaterService
     ) {
@@ -68,32 +72,14 @@ struct SpacesSideBarView: View {
         self.spaceLifecycle = spaceLifecycle
         self.regularTabs = regularTabs
         self.dragTransactions = dragTransactions
-        self._pageModel = StateObject(
-            wrappedValue: SidebarSpacePageModel(
-                browserContext: browserContext,
-                spaceLifecycle: spaceLifecycle,
-                updateStreams: updateStreams
-            )
-        )
-        self._chromeModel = StateObject(
-            wrappedValue: SidebarChromeModel(
-                browserContext: browserContext,
-                nowPlayingController: nowPlayingController,
-                updaterService: updaterService
-            )
-        )
+        self.inventoryUpdates = inventoryUpdates
+        self.profileUpdates = profileUpdates
+        self.nowPlayingController = nowPlayingController
+        self.updaterService = updaterService
     }
 
     var sidebarBrowserContext: SidebarBrowserContext {
         browserContext
-    }
-
-    var shouldMountMiniPlayer: Bool {
-        SpaceSidebarChromeBindings.shouldMountMiniPlayer(
-            sidebarMiniPlayerEnabled: sumiSettings.sidebarMiniPlayerEnabled,
-            nowPlayingController: chromeModel.nowPlayingController,
-            windowState: windowState
-        )
     }
 
     var transitionState: SpaceSidebarTransitionState {
@@ -115,7 +101,6 @@ struct SpacesSideBarView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .onDisappear {
-                pageModel.setActive(false)
                 transitionCoordinator.cancelLocalSpaceTransitionIfNeeded(
                     context: makeTransitionContext(spaces: availableSpaces),
                     cancelTheme: true
@@ -125,11 +110,7 @@ struct SpacesSideBarView: View {
             .onHover { state in
                 isSidebarHovered = allowsSidebarInteractiveWork ? state : false
             }
-            .onAppear {
-                pageModel.setActive(allowsSidebarInteractiveWork)
-            }
             .onChange(of: allowsSidebarInteractiveWork) { _, allowsInteractiveWork in
-                pageModel.setActive(allowsInteractiveWork)
                 if !allowsInteractiveWork {
                     isSidebarHovered = false
                 }
@@ -152,25 +133,17 @@ struct SpacesSideBarView: View {
     }
 
     var mainSidebarContent: some View {
-        let _ = pageModel.structuralRevision
-        let _ = pageModel.profileRuntimeRevision
-        let _ = pageModel.liveFolderRevision
-        let spaces = availableSpaces
-        let visualSpaceId = transitionCoordinator.visualSelectedSpaceId(
-            in: makeTransitionContext(spaces: spaces)
-        )
-
-        return VStack(spacing: 8) {
+        VStack(spacing: 8) {
             SidebarHeader(browserContext: browserContext.headerContext(windowState))
                 .environment(windowState)
 
             if let creationSession = windowState.spaceCreationSession.activeSession {
-                SidebarSpaceCreationView(
+                SidebarSpaceCreationProfilesView(
                     session: creationSession,
-                    profileContext: SpaceCreationProfileContext(
-                        profiles: pageModel.profiles,
-                        currentProfileID: browserContext.currentProfile()?.id
-                    ),
+                    currentProfiles: { browserContext.profileManager.profiles },
+                    profileUpdates: profileUpdates,
+                    isActive: allowsSidebarInteractiveWork,
+                    currentProfileID: { browserContext.currentProfile()?.id },
                     onCreate: { commitSpaceCreationSession(creationSession) },
                     onCancel: { cancelSpaceCreationSession(creationSession) }
                 )
@@ -178,38 +151,24 @@ struct SpacesSideBarView: View {
                 .transition(spaceCreationTransition)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                spacesPageView(spaces: spaces)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-                VStack(spacing: 8) {
-                    if let notice = chromeModel.updaterService.sidebarNotice {
-                        SpaceSidebarUpdateNoticeStrip(
-                            notice: notice,
-                            onUpdate: { chromeModel.updaterService.startUpdateFromSidebarNotice() },
-                            onDismiss: { chromeModel.updaterService.dismissSidebarNotice(notice) }
+                SidebarScopedSnapshotReader(
+                    current: { [spaceLifecycle, windowState] in
+                        spaceLifecycle.availableSpaces(
+                            isIncognito: windowState.isIncognito,
+                            ephemeralSpaces: windowState.ephemeralSpaces
+                        )
+                    },
+                    changes: sidebarSpaceCatalogChanges.map { [spaceLifecycle, windowState] _ in
+                        spaceLifecycle.availableSpaces(
+                            isIncognito: windowState.isIncognito,
+                            ephemeralSpaces: windowState.ephemeralSpaces
                         )
                     }
-
-                    if shouldMountMiniPlayer {
-                        MediaControlsView(
-                            nowPlayingController: chromeModel.nowPlayingController,
-                            faviconImageReader: browserContext.faviconImageReader
-                        ) { mediaStore, windowState in
-                            browserContext.configureMediaStore(mediaStore, windowState)
-                        }
-                            .environment(windowState)
-                    }
-
-                    SidebarBottomBar(
-                        browserContext: sidebarBrowserContext,
-                        spaceLifecycle: spaceLifecycle,
-                        visualSelectedSpaceId: visualSpaceId,
-                        onNewSpaceTap: beginSpaceCreationMode,
-                        onSelectSpace: { switchSpace(to: $0, spaces: spaces) }
-                    )
-                    .environment(windowState)
+                    .eraseToAnyPublisher(),
+                    isActive: allowsSidebarInteractiveWork
+                ) { spaces in
+                    sidebarInventoryContent(spaces: spaces)
                 }
-                .padding(.bottom, 8)
             }
         }
         .padding(.top, SidebarChromeMetrics.topControlInset)
@@ -224,6 +183,40 @@ struct SpacesSideBarView: View {
                 sidebarInteractionState.syncSidebarItemDrag(isDragging)
             }
         }
+    }
+
+    @ViewBuilder
+    private func sidebarInventoryContent(spaces: [Space]) -> some View {
+        let visualSpaceId = transitionCoordinator.visualSelectedSpaceId(
+            in: makeTransitionContext(spaces: spaces)
+        )
+
+        Group {
+            spacesPageView(spaces: spaces)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            VStack(spacing: 8) {
+                if allowsSidebarInteractiveWork {
+                    SpaceSidebarUpdateNoticeReader(updaterService: updaterService)
+
+                    SpaceSidebarMiniPlayer(
+                        nowPlayingController: nowPlayingController,
+                        faviconImageReader: browserContext.faviconImageReader,
+                        configureMediaStore: browserContext.configureMediaStore
+                    )
+                }
+
+                SidebarBottomBar(
+                    browserContext: sidebarBrowserContext,
+                    spaceLifecycle: spaceLifecycle,
+                    visualSelectedSpaceId: visualSpaceId,
+                    onNewSpaceTap: beginSpaceCreationMode,
+                    onSelectSpace: { switchSpace(to: $0, spaces: spaces) }
+                )
+                .environment(windowState)
+            }
+            .padding(.bottom, 8)
+        }
         .onAppear {
             handlePendingSplitGroupFocusRequest(
                 windowState.presentationState.pendingSplitGroupFocusRequest,
@@ -236,7 +229,7 @@ struct SpacesSideBarView: View {
     }
 
     var availableSpaces: [Space] {
-        pageModel.availableSpaces(
+        spaceLifecycle.availableSpaces(
             isIncognito: windowState.isIncognito,
             ephemeralSpaces: windowState.ephemeralSpaces
         )
@@ -250,11 +243,36 @@ struct SpacesSideBarView: View {
         sidebarPresentationContext.allowsInteractiveWork
     }
 
+    var sidebarSpaceCatalogChanges: AnyPublisher<Void, Never> {
+        if windowState.isIncognito {
+            return windowState.ephemeralInventoryAuthority.spaceCatalogChanges
+        }
+        return inventoryUpdates.catalogChanges
+            .map { _ in () }
+            .eraseToAnyPublisher()
+    }
+
+    func sidebarPageInventoryChanges(
+        spaceID: UUID,
+        profileID: UUID?
+    ) -> AnyPublisher<Void, Never> {
+        if windowState.isIncognito {
+            return windowState.ephemeralInventoryAuthority.tabInventoryChanges
+        }
+        return inventoryUpdates.pageChanges(
+            windowID: windowState.id,
+            spaceID: spaceID,
+            profileID: profileID
+        )
+        .map { _ in () }
+        .eraseToAnyPublisher()
+    }
+
     func makeTransitionContext(spaces: [Space]) -> SpaceSidebarTransitionCoordinator.Context {
         SpaceSidebarTransitionCoordinator.Context(
             spaces: spaces,
-            currentSpaces: { [windowState, pageModel] in
-                pageModel.availableSpaces(
+            currentSpaces: { [windowState, spaceLifecycle] in
+                spaceLifecycle.availableSpaces(
                     isIncognito: windowState.isIncognito,
                     ephemeralSpaces: windowState.ephemeralSpaces
                 )

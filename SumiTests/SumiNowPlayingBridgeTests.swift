@@ -246,7 +246,7 @@ final class SumiNativeNowPlayingRuntimeContextTests: XCTestCase {
         let lookupTab = makeTab("https://example.com/lookup")
         let incognitoWindow = BrowserWindowState()
         incognitoWindow.isIncognito = true
-        incognitoWindow.ephemeralTabs = [ephemeralTab]
+        incognitoWindow.replaceEphemeralTabs([ephemeralTab])
         let regularWindow = BrowserWindowState()
 
         let context = SumiNativeNowPlayingRuntimeContext.live(

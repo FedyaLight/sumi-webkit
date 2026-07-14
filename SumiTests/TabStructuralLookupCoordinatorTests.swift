@@ -69,17 +69,73 @@ final class TabStructuralLookupCoordinatorTests: XCTestCase {
         XCTAssertEqual(eventCount, 0)
     }
 
-    func testNotifyTransientShortcutStateChangedEmitsPublish() {
+    func testNotifyTransientShortcutStateChangedEmitsExactPagePublish() {
         let eventBus = TabStructureEventBus()
         let coordinator = makeCoordinator(eventBus: eventBus)
-        var eventCount = 0
-        let cancellable = eventBus.structureChangedPublisher.sink { eventCount += 1 }
-
-        withExtendedLifetime(cancellable) {
-            coordinator.notifyTransientShortcutStateChanged()
+        let windowID = UUID()
+        let pinID = UUID()
+        let spaceID = UUID()
+        let profileID = UUID()
+        let tab = Tab(spaceId: spaceID, loadsCachedFaviconOnInit: false)
+        tab.profileId = profileID
+        var scopes: [TabStructureChangeScope] = []
+        let cancellable = eventBus.scopedStructureChangesPublisher.sink {
+            scopes.append($0)
         }
 
-        XCTAssertEqual(eventCount, 1)
+        withExtendedLifetime(cancellable) {
+            coordinator.notifyTransientShortcutStateChanged(
+                entries: [
+                    LiveShortcutTabEntry(
+                        windowId: windowID,
+                        pinId: pinID,
+                        tab: tab
+                    ),
+                ]
+            )
+        }
+
+        XCTAssertEqual(
+            scopes,
+            [
+                TabStructureChangeScope.liveShortcut(
+                    windowID: windowID,
+                    spaceID: spaceID,
+                    profileID: profileID
+                ),
+            ]
+        )
+    }
+
+    func testNestedTransactionMergesTypedSidebarScopes() {
+        let eventBus = TabStructureEventBus()
+        let coordinator = makeCoordinator(eventBus: eventBus)
+        let spaceID = UUID()
+        let profileID = UUID()
+        var scopes: [TabStructureChangeScope] = []
+        let cancellable = eventBus.scopedStructureChangesPublisher.sink {
+            scopes.append($0)
+        }
+
+        coordinator.withTransaction {
+            coordinator.requestPublish(scope: .space(spaceID))
+            coordinator.withTransaction {
+                coordinator.requestPublish(scope: .profile(profileID))
+            }
+        }
+
+        XCTAssertEqual(
+            scopes,
+            [
+                TabStructureChangeScope(
+                    affectedSpaceIDs: [spaceID],
+                    affectedProfileIDs: [profileID],
+                    affectsSpaceCatalog: false,
+                    affectsAllPages: false
+                ),
+            ]
+        )
+        withExtendedLifetime(cancellable) {}
     }
 
     func testWithTransactionReturnsOperationValue() {

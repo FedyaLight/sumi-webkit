@@ -32,6 +32,7 @@ struct SumiLiveFolderRuntime {
 final class SumiLiveFolderManager: ObservableObject {
     @Published private(set) var sourcesByFolderId: [UUID: SumiLiveFolderSource] = [:]
     @Published private(set) var itemsBySourceId: [UUID: [SumiLiveFolderItem]] = [:]
+    private let folderContentChanged = PassthroughSubject<UUID, Never>()
 
     private var runtime = SumiLiveFolderRuntime.inactive
     private let store: SumiLiveFolderStore
@@ -110,6 +111,7 @@ final class SumiLiveFolderManager: ObservableObject {
 
     /// Stops background work and clears the attached runtime (W4/R9 disable path).
     func stopAndClearRuntime() {
+        let removedFolderIDs = Set(sourcesByFolderId.keys)
         for task in refreshTasksBySourceId.values {
             task.cancel()
         }
@@ -124,9 +126,11 @@ final class SumiLiveFolderManager: ObservableObject {
             NotificationCenter.default.removeObserver(appActiveObserverToken)
             self.appActiveObserverToken = nil
         }
-        sourcesByFolderId = [:]
-        itemsBySourceId = [:]
-        dismissedItemIdsBySourceId = [:]
+        mutateContent(for: removedFolderIDs) {
+            sourcesByFolderId = [:]
+            itemsBySourceId = [:]
+            dismissedItemIdsBySourceId = [:]
+        }
         hasLoadedState = false
         runtime = .inactive
         hasAttachedRuntime = false
@@ -148,6 +152,15 @@ final class SumiLiveFolderManager: ObservableObject {
             .sorted { lhs, rhs in
                 lhs.sortKeyDate > rhs.sortKeyDate
             }
+    }
+
+    /// Exact work-scoped invalidation for one rendered folder. Current content
+    /// is read separately at demand time by the sidebar snapshot reader.
+    func contentChanges(for folderId: UUID) -> AnyPublisher<Void, Never> {
+        folderContentChanged
+            .filter { $0 == folderId }
+            .map { _ in () }
+            .eraseToAnyPublisher()
     }
 
     func createRSSFolder(in spaceId: UUID, feedURLString: String) {
@@ -212,7 +225,9 @@ final class SumiLiveFolderManager: ObservableObject {
         }
         source.refreshIntervalSeconds = seconds
         source.nextRefreshAfter = Date().addingTimeInterval(seconds)
-        sourcesByFolderId[folderId] = source
+        mutateContent(for: folderId) {
+            sourcesByFolderId[folderId] = source
+        }
         persist()
         rescheduleBackgroundActivity()
     }
@@ -220,7 +235,13 @@ final class SumiLiveFolderManager: ObservableObject {
     func dismiss(item: SumiLiveFolderItem) {
         var dismissed = dismissedItemIdsBySourceId[item.sourceId] ?? []
         dismissed.insert(item.id)
-        dismissedItemIdsBySourceId[item.sourceId] = dismissed
+        if let folderID = sourcesByFolderId.values.first(where: { $0.id == item.sourceId })?.folderId {
+            mutateContent(for: folderID) {
+                dismissedItemIdsBySourceId[item.sourceId] = dismissed
+            }
+        } else {
+            dismissedItemIdsBySourceId[item.sourceId] = dismissed
+        }
         persist()
     }
 
@@ -228,12 +249,14 @@ final class SumiLiveFolderManager: ObservableObject {
         guard !folderIds.isEmpty else { return }
         let deletedSources = sourcesByFolderId.values.filter { folderIds.contains($0.folderId) }
         guard !deletedSources.isEmpty else { return }
-        for source in deletedSources {
-            refreshTasksBySourceId[source.id]?.cancel()
-            refreshTasksBySourceId[source.id] = nil
-            itemsBySourceId[source.id] = nil
-            dismissedItemIdsBySourceId[source.id] = nil
-            sourcesByFolderId[source.folderId] = nil
+        mutateContent(for: Set(deletedSources.map(\.folderId))) {
+            for source in deletedSources {
+                refreshTasksBySourceId[source.id]?.cancel()
+                refreshTasksBySourceId[source.id] = nil
+                itemsBySourceId[source.id] = nil
+                dismissedItemIdsBySourceId[source.id] = nil
+                sourcesByFolderId[source.folderId] = nil
+            }
         }
         persist()
         rescheduleBackgroundActivity()
@@ -248,9 +271,11 @@ final class SumiLiveFolderManager: ObservableObject {
     }
 
     private func insert(_ source: SumiLiveFolderSource) {
-        sourcesByFolderId[source.folderId] = source
-        itemsBySourceId[source.id] = []
-        dismissedItemIdsBySourceId[source.id] = []
+        mutateContent(for: source.folderId) {
+            sourcesByFolderId[source.folderId] = source
+            itemsBySourceId[source.id] = []
+            dismissedItemIdsBySourceId[source.id] = []
+        }
         persist()
         rescheduleBackgroundActivity()
     }
@@ -262,7 +287,9 @@ final class SumiLiveFolderManager: ObservableObject {
         }
 
         source.markAttempt()
-        sourcesByFolderId[source.folderId] = source
+        mutateContent(for: source.folderId) {
+            sourcesByFolderId[source.folderId] = source
+        }
 
         let cookies = await cookiesForSource(source)
         let response: SumiLiveFolderProviderResponse
@@ -294,41 +321,43 @@ final class SumiLiveFolderManager: ObservableObject {
         guard var latestSource = sourcesByFolderId[source.folderId] else { return }
         let now = Date()
 
-        switch response.outcome {
-        case .success(let items, let title, let activeRepositories):
-            let previousItems = Dictionary(
-                uniqueKeysWithValues: (itemsBySourceId[source.id] ?? []).map { ($0.id, $0) }
-            )
-            let merged = items.map { item -> SumiLiveFolderItem in
-                var next = item
-                next.firstSeenAt = previousItems[item.id]?.firstSeenAt ?? now
-                next.lastSeenAt = now
-                return next
+        mutateContent(for: latestSource.folderId) {
+            switch response.outcome {
+            case .success(let items, let title, let activeRepositories):
+                let previousItems = Dictionary(
+                    uniqueKeysWithValues: (itemsBySourceId[source.id] ?? []).map { ($0.id, $0) }
+                )
+                let merged = items.map { item -> SumiLiveFolderItem in
+                    var next = item
+                    next.firstSeenAt = previousItems[item.id]?.firstSeenAt ?? now
+                    next.lastSeenAt = now
+                    return next
+                }
+                itemsBySourceId[source.id] = merged
+                let liveIds = Set(merged.map(\.id))
+                dismissedItemIdsBySourceId[source.id]?.formIntersection(liveIds)
+                latestSource.activeRepositories = activeRepositories
+                if let title, !title.isEmpty, latestSource.kind == .rss {
+                    latestSource.title = title
+                    runtime.renameFolder(latestSource.folderId, title)
+                }
+                latestSource.markSuccess(
+                    at: now,
+                    etag: response.etag,
+                    lastModified: response.lastModified
+                )
+            case .notModified:
+                latestSource.markSuccess(
+                    at: now,
+                    etag: response.etag,
+                    lastModified: response.lastModified
+                )
+            case .failure(let errorKind, let retryAfter):
+                latestSource.markFailure(errorKind, retryAfter: retryAfter, at: now)
             }
-            itemsBySourceId[source.id] = merged
-            let liveIds = Set(merged.map(\.id))
-            dismissedItemIdsBySourceId[source.id]?.formIntersection(liveIds)
-            latestSource.activeRepositories = activeRepositories
-            if let title, !title.isEmpty, latestSource.kind == .rss {
-                latestSource.title = title
-                runtime.renameFolder(latestSource.folderId, title)
-            }
-            latestSource.markSuccess(
-                at: now,
-                etag: response.etag,
-                lastModified: response.lastModified
-            )
-        case .notModified:
-            latestSource.markSuccess(
-                at: now,
-                etag: response.etag,
-                lastModified: response.lastModified
-            )
-        case .failure(let errorKind, let retryAfter):
-            latestSource.markFailure(errorKind, retryAfter: retryAfter, at: now)
-        }
 
-        sourcesByFolderId[latestSource.folderId] = latestSource
+            sourcesByFolderId[latestSource.folderId] = latestSource
+        }
     }
 
     private func refreshDueSources(reason _: String) {
@@ -358,15 +387,36 @@ final class SumiLiveFolderManager: ObservableObject {
     }
 
     private func apply(_ diskState: SumiLiveFolderDiskState) {
-        sourcesByFolderId = Dictionary(
+        let previousFolderIDs = Set(sourcesByFolderId.keys)
+        let nextSources = Dictionary(
             uniqueKeysWithValues: diskState.sources.map { ($0.folderId, $0) }
         )
-        itemsBySourceId = Dictionary(
-            uniqueKeysWithValues: diskState.itemCaches.map { ($0.sourceId, $0.items) }
-        )
-        dismissedItemIdsBySourceId = Dictionary(
-            uniqueKeysWithValues: diskState.dismissals.map { ($0.sourceId, Set($0.itemIds)) }
-        )
+        mutateContent(for: previousFolderIDs.union(nextSources.keys)) {
+            sourcesByFolderId = nextSources
+            itemsBySourceId = Dictionary(
+                uniqueKeysWithValues: diskState.itemCaches.map { ($0.sourceId, $0.items) }
+            )
+            dismissedItemIdsBySourceId = Dictionary(
+                uniqueKeysWithValues: diskState.dismissals.map { ($0.sourceId, Set($0.itemIds)) }
+            )
+        }
+    }
+
+    private func mutateContent(
+        for folderID: UUID,
+        _ mutation: () -> Void
+    ) {
+        mutateContent(for: [folderID], mutation)
+    }
+
+    private func mutateContent(
+        for folderIDs: Set<UUID>,
+        _ mutation: () -> Void
+    ) {
+        mutation()
+        for folderID in folderIDs {
+            folderContentChanged.send(folderID)
+        }
     }
 
     private func reconcileOrphanedSources() {

@@ -1,3 +1,4 @@
+import Combine
 import XCTest
 
 @testable import Sumi
@@ -64,6 +65,59 @@ final class SumiLiveFolderManagerTests: XCTestCase {
         XCTAssertEqual(spy.openedTabs[0].urlString, item.urlString)
         XCTAssertIdentical(spy.openedTabs[0].windowState, windowState)
         XCTAssertEqual(spy.openedTabs[0].preferredSpaceId, spy.spaceId)
+    }
+
+    func testFolderContentChangesCoverMutationsWithoutUnrelatedFolderWork() throws {
+        let spy = LiveFolderRuntimeSpy()
+        let manager = makeManager(runtime: spy.runtime())
+        let unrelatedFolderID = UUID()
+        var targetChanges = 0
+        var unrelatedChanges = 0
+
+        let target = manager.contentChanges(for: spy.folderId).sink {
+            targetChanges += 1
+        }
+        let unrelated = manager.contentChanges(for: unrelatedFolderID).sink {
+            unrelatedChanges += 1
+        }
+        manager.createGitHubFolder(in: spy.spaceId, kind: .githubIssues)
+        XCTAssertEqual(targetChanges, 1)
+        XCTAssertEqual(unrelatedChanges, 0)
+
+        let source = try XCTUnwrap(manager.source(for: spy.folderId))
+        manager.setRefreshInterval(folderId: spy.folderId, seconds: 900)
+        XCTAssertEqual(targetChanges, 2)
+
+        manager.dismiss(item: makeItem(sourceID: source.id))
+        XCTAssertEqual(targetChanges, 3)
+
+        manager.deleteState(forFolderIds: [spy.folderId])
+        XCTAssertEqual(targetChanges, 4)
+
+        manager.createGitHubFolder(in: spy.spaceId, kind: .githubIssues)
+        XCTAssertEqual(targetChanges, 5)
+        manager.stopAndClearRuntime()
+
+        XCTAssertEqual(targetChanges, 6)
+        XCTAssertEqual(unrelatedChanges, 0)
+        withExtendedLifetime((target, unrelated)) {}
+    }
+
+    private func makeItem(sourceID: UUID) -> SumiLiveFolderItem {
+        SumiLiveFolderItem(
+            id: "item-1",
+            sourceId: sourceID,
+            title: "Scoped item",
+            urlString: "https://example.test/item-1",
+            subtitle: nil,
+            publishedAt: nil,
+            updatedAt: nil,
+            sortDate: nil,
+            stateBadge: nil,
+            iconSystemName: nil,
+            firstSeenAt: Date(),
+            lastSeenAt: Date()
+        )
     }
 
     private func makeManager(runtime: SumiLiveFolderRuntime) -> SumiLiveFolderManager {

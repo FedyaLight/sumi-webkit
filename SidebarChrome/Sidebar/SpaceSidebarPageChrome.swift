@@ -6,6 +6,16 @@
 
 import SwiftUI
 
+struct SidebarPageInventorySnapshot {
+    let space: SidebarSpaceInventorySnapshot
+    let essentialPins: [ShortcutPin]
+}
+
+private struct SidebarExtensionGridSnapshot {
+    let enabledExtensions: [BrowserExtensionToolbarDisplayRecord]
+    let slotCount: Int
+}
+
 extension SpacesSideBarView {
     func spacesPageView(spaces: [Space]) -> some View {
         Group {
@@ -77,19 +87,10 @@ extension SpacesSideBarView {
     @ViewBuilder
     func makeSpaceView(
         for space: Space,
+        inventory pageInventory: SidebarSpaceInventorySnapshot,
         renderMode: SpaceViewRenderMode,
         allowsInteraction: Bool
     ) -> some View {
-        let pageInventory = windowState.isIncognito
-            ? SidebarSpaceInventorySnapshot.ephemeral(
-                spaceID: space.id,
-                regularTabs: windowState.ephemeralTabs
-            )
-            : inventory.snapshot(for: space.id)
-                ?? SidebarSpaceInventorySnapshot.ephemeral(
-                    spaceID: space.id,
-                    regularTabs: []
-                )
         SpaceView(
             space: space,
             browserContext: sidebarBrowserContext,
@@ -119,13 +120,103 @@ extension SpacesSideBarView {
         pageRenderMode: SidebarPageRenderMode,
         includesPinnedGrid: Bool = true
     ) -> some View {
-        let pageProfileId = resolvedPageProfileId(for: space)
+        let allowsInteractiveWork = pageRenderMode == .interactive && allowsSidebarInteractiveWork
+
+        SidebarScopedSnapshotReader(
+            current: {
+                SidebarProfileRuntimeSnapshot(
+                    currentProfileID: browserContext.currentProfile()?.id,
+                    isTransitioning: browserContext.isTransitioningProfile()
+                )
+            },
+            changes: profileUpdates.runtime,
+            isActive: allowsInteractiveWork
+        ) { profileRuntime in
+            observedSidebarPage(
+                space: space,
+                pageRenderMode: pageRenderMode,
+                includesPinnedGrid: includesPinnedGrid,
+                profileRuntime: profileRuntime,
+                allowsInteractiveWork: allowsInteractiveWork
+            )
+        }
+    }
+
+    @ViewBuilder
+    private func observedSidebarPage(
+        space: Space,
+        pageRenderMode: SidebarPageRenderMode,
+        includesPinnedGrid: Bool,
+        profileRuntime: SidebarProfileRuntimeSnapshot,
+        allowsInteractiveWork: Bool
+    ) -> some View {
+        let pageProfileId = space.profileId
+            ?? windowState.currentProfileId
+            ?? profileRuntime.currentProfileID
         // Fallback-only identity change for unresolved AppKit owner/input graph recovery.
         let inputRecoveryGeneration = pageRenderMode == .interactive
             ? windowState.sidebarInputRecovery.generation
             : 0
-        let allowsInteractiveWork = pageRenderMode == .interactive && allowsSidebarInteractiveWork
 
+        SidebarScopedSnapshotReader(
+            current: {
+                sidebarPageInventorySnapshot(
+                    space: space,
+                    profileID: pageProfileId
+                )
+            },
+            changes: sidebarPageInventoryChanges(
+                spaceID: space.id,
+                profileID: pageProfileId
+            ).map { [inventory, windowState] _ in
+                SidebarPageInventorySnapshot(
+                    space: windowState.isIncognito
+                        ? SidebarSpaceInventorySnapshot.ephemeral(
+                            spaceID: space.id,
+                            regularTabs: windowState.ephemeralTabs
+                        )
+                        : inventory.snapshot(for: space.id)
+                            ?? SidebarSpaceInventorySnapshot.ephemeral(
+                                spaceID: space.id,
+                                regularTabs: []
+                            ),
+                    essentialPins: pageProfileId.map {
+                        inventory.essentialPins(profileID: $0)
+                    } ?? []
+                )
+            }
+            .eraseToAnyPublisher(),
+            isActive: allowsInteractiveWork
+        ) { pageInventory in
+            sidebarPageContent(
+                space: space,
+                pageRenderMode: pageRenderMode,
+                pageProfileId: pageProfileId,
+                pageInventory: pageInventory,
+                includesPinnedGrid: includesPinnedGrid,
+                isTransitioningProfile: profileRuntime.isTransitioning,
+                allowsInteractiveWork: allowsInteractiveWork
+            )
+        }
+        .id(
+            SidebarPageInputGraphIdentity(
+                spaceId: space.id,
+                profileId: pageProfileId,
+                recoveryGeneration: inputRecoveryGeneration
+            )
+        )
+    }
+
+    @ViewBuilder
+    private func sidebarPageContent(
+        space: Space,
+        pageRenderMode: SidebarPageRenderMode,
+        pageProfileId: UUID?,
+        pageInventory: SidebarPageInventorySnapshot,
+        includesPinnedGrid: Bool,
+        isTransitioningProfile: Bool,
+        allowsInteractiveWork: Bool
+    ) -> some View {
         VStack(spacing: 8) {
             if includesPinnedGrid && !windowState.isIncognito {
                 makeSidebarExtensionGrid(
@@ -136,12 +227,16 @@ extension SpacesSideBarView {
                 makePinnedGrid(
                     spaceId: space.id,
                     profileId: pageProfileId,
+                    inventory: pageInventory.space,
+                    items: pageInventory.essentialPins,
+                    isTransitioningProfile: isTransitioningProfile,
                     pageRenderMode: pageRenderMode
                 )
             }
 
             makeSpaceView(
                 for: space,
+                inventory: pageInventory.space,
                 renderMode: pageRenderMode.spaceRenderMode,
                 allowsInteraction: pageRenderMode == .interactive && allowsSidebarInteractiveWork
             )
@@ -155,13 +250,6 @@ extension SpacesSideBarView {
             generation: dragState.sidebarGeometryGeneration,
             isEnabled: allowsInteractiveWork
         )
-        .id(
-            SidebarPageInputGraphIdentity(
-                spaceId: space.id,
-                profileId: pageProfileId,
-                recoveryGeneration: inputRecoveryGeneration
-            )
-        )
     }
 
     @ViewBuilder
@@ -169,11 +257,110 @@ extension SpacesSideBarView {
         profileId: UUID?,
         pageRenderMode: SidebarPageRenderMode
     ) -> some View {
-        let enabledExtensions = chromeModel.extensionSurfaceStore.enabledExtensions
-        let slots = browserContext.extensionToolbarSlots(enabledExtensions, profileId)
         let allowsInteractiveWork = pageRenderMode == .interactive && allowsSidebarInteractiveWork
+        let surfaceStore = browserContext.extensionSurfaceStore
 
-        if SpaceSidebarChromeBindings.shouldShowSidebarExtensionGrid(slotCount: slots.count) {
+        SidebarScopedSnapshotReader(
+            current: {
+                sidebarExtensionGridSnapshot(profileID: profileId)
+            },
+            changes: surfaceStore.toolbarLayoutChanges(for: profileId).map {
+                sidebarExtensionGridSnapshot(profileID: profileId)
+            }
+            .eraseToAnyPublisher(),
+            isActive: allowsInteractiveWork
+        ) { snapshot in
+            SpaceSidebarExtensionGridContent(
+                enabledExtensions: snapshot.enabledExtensions,
+                slotCount: snapshot.slotCount,
+                profileId: profileId,
+                browserContext: browserContext,
+                allowsInteractiveWork: allowsInteractiveWork
+            )
+        }
+    }
+
+    @ViewBuilder
+    func makePinnedGrid(
+        spaceId: UUID,
+        profileId: UUID?,
+        inventory pageInventory: SidebarSpaceInventorySnapshot,
+        items: [ShortcutPin],
+        isTransitioningProfile: Bool,
+        pageRenderMode: SidebarPageRenderMode
+    ) -> some View {
+        let allowsInteractiveWork = pageRenderMode == .interactive && allowsSidebarInteractiveWork
+        let shouldAnimate = SpaceSidebarChromeBindings.shouldAnimateEssentialsLayout(
+            isActiveWindow: windowRegistry.activeWindow?.id == windowState.id,
+            isTransitioningProfile: isTransitioningProfile,
+            pageRenderMode: pageRenderMode,
+            allowsInteractiveWork: allowsInteractiveWork
+        )
+
+        PinnedGrid(
+            width: windowState.sidebarContentWidth,
+            browserContext: sidebarBrowserContext,
+            inventory: pageInventory,
+            items: items,
+            selection: selection,
+            pinProjection: pinProjection,
+            pinCommands: pinCommands,
+            spaceLifecycle: spaceLifecycle,
+            spaceId: spaceId,
+            profileId: profileId,
+            isTransitioningProfile: isTransitioningProfile,
+            animateLayout: shouldAnimate,
+            reportsGeometry: allowsInteractiveWork,
+            isAppKitInteractionEnabled: allowsInteractiveWork
+        )
+        .environment(windowState)
+        .padding(.horizontal, 8)
+    }
+
+    private func sidebarPageInventorySnapshot(
+        space: Space,
+        profileID: UUID?
+    ) -> SidebarPageInventorySnapshot {
+        SidebarPageInventorySnapshot(
+            space: windowState.isIncognito
+                ? SidebarSpaceInventorySnapshot.ephemeral(
+                    spaceID: space.id,
+                    regularTabs: windowState.ephemeralTabs
+                )
+                : inventory.snapshot(for: space.id)
+                    ?? SidebarSpaceInventorySnapshot.ephemeral(
+                        spaceID: space.id,
+                        regularTabs: []
+                    ),
+            essentialPins: profileID.map {
+                inventory.essentialPins(profileID: $0)
+            } ?? []
+        )
+    }
+
+    private func sidebarExtensionGridSnapshot(
+        profileID: UUID?
+    ) -> SidebarExtensionGridSnapshot {
+        let enabledExtensions = browserContext.extensionSurfaceStore
+            .toolbarDisplaySnapshot.enabledExtensions
+        return SidebarExtensionGridSnapshot(
+            enabledExtensions: enabledExtensions,
+            slotCount: browserContext.extensionToolbarSlots(enabledExtensions, profileID).count
+        )
+    }
+}
+
+private struct SpaceSidebarExtensionGridContent: View {
+    let enabledExtensions: [BrowserExtensionToolbarDisplayRecord]
+    let slotCount: Int
+    let profileId: UUID?
+    let browserContext: SidebarBrowserContext
+    let allowsInteractiveWork: Bool
+
+    @Environment(BrowserWindowState.self) private var windowState
+
+    var body: some View {
+        if SpaceSidebarChromeBindings.shouldShowSidebarExtensionGrid(slotCount: slotCount) {
             ExtensionActionView(
                 extensions: enabledExtensions,
                 layout: .sidebarGrid,
@@ -189,37 +376,5 @@ extension SpacesSideBarView {
                 }
             }
         }
-    }
-
-    @ViewBuilder
-    func makePinnedGrid(
-        spaceId: UUID,
-        profileId: UUID?,
-        pageRenderMode: SidebarPageRenderMode
-    ) -> some View {
-        let allowsInteractiveWork = pageRenderMode == .interactive && allowsSidebarInteractiveWork
-        let shouldAnimate = SpaceSidebarChromeBindings.shouldAnimateEssentialsLayout(
-            isActiveWindow: windowRegistry.activeWindow?.id == windowState.id,
-            isTransitioningProfile: browserContext.isTransitioningProfile(),
-            pageRenderMode: pageRenderMode,
-            allowsInteractiveWork: allowsInteractiveWork
-        )
-
-        PinnedGrid(
-            width: windowState.sidebarContentWidth,
-            browserContext: sidebarBrowserContext,
-            inventory: inventory,
-            selection: selection,
-            pinProjection: pinProjection,
-            pinCommands: pinCommands,
-            spaceLifecycle: spaceLifecycle,
-            spaceId: spaceId,
-            profileId: profileId,
-            animateLayout: shouldAnimate,
-            reportsGeometry: allowsInteractiveWork,
-            isAppKitInteractionEnabled: allowsInteractiveWork
-        )
-        .environment(windowState)
-        .padding(.horizontal, 8)
     }
 }

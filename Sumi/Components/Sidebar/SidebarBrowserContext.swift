@@ -67,7 +67,8 @@ struct SidebarBrowserContext {
     let headerContext: (BrowserWindowState) -> SidebarHeaderBrowserContext
     let isTransitioningProfile: () -> Bool
     let currentProfile: () -> Profile?
-    let extensionToolbarSlots: ([InstalledExtension], UUID?) -> [PinnedToolbarSlot]
+    let extensionToolbarSlots:
+        ([BrowserExtensionToolbarDisplayRecord], UUID?) -> [PinnedToolbarSlot]
     let extensionActionBrowserContext: (BrowserWindowState) -> ExtensionActionBrowserContext
     let savedSidebarWidth: (BrowserWindowState) -> CGFloat
     let configureMediaStore: (SumiBackgroundMediaCardStore, BrowserWindowState) -> Void

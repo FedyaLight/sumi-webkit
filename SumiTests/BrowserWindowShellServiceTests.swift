@@ -70,7 +70,7 @@ final class BrowserWindowShellServiceTests: XCTestCase {
         let context = makeContext(harness: harness) { windowState, presentNewTabFloatingBar in
             emptyStateRequests.append((windowState.id, presentNewTabFloatingBar))
             windowState.currentTabId = nil
-            windowState.ephemeralTabs.removeAll()
+            windowState.removeAllEphemeralTabs()
             windowState.isShowingEmptyState = true
             if presentNewTabFloatingBar {
                 windowState.floatingBarDraftText = ""
@@ -466,7 +466,7 @@ final class BrowserWindowShellServiceTests: XCTestCase {
 
         let ephemeralSpace = Space(name: "Incognito", profileId: ephemeralProfile.id)
         ephemeralSpace.isEphemeral = true
-        windowState.ephemeralSpaces.append(ephemeralSpace)
+        windowState.appendEphemeralSpace(ephemeralSpace)
         windowState.currentSpaceId = ephemeralSpace.id
 
         _ = harness.tabManager.ephemeralLifecycleOwner.createEphemeralTab(

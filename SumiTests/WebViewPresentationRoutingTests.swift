@@ -1,4 +1,6 @@
 import AppKit
+import Combine
+import SumiWebRuntime
 import SwiftData
 import WebKit
 import XCTest
@@ -492,7 +494,7 @@ final class WebViewPresentationRoutingTests: XCTestCase {
         sourceSpace.isEphemeral = true
         sourceWindow.isIncognito = true
         sourceWindow.ephemeralProfile = sourceProfile
-        sourceWindow.ephemeralSpaces = [sourceSpace]
+        sourceWindow.replaceEphemeralSpaces([sourceSpace])
         sourceWindow.currentProfileId = sourceProfile.id
         sourceWindow.currentSpaceId = sourceSpace.id
         sourceWindow.tabManager = browserManager.tabManager
@@ -588,6 +590,289 @@ final class WebViewPresentationRoutingTests: XCTestCase {
             [targetTab.id],
             "The private URL must exist only in the newly created ephemeral window."
         )
+    }
+
+    func testRejectedPrivateLinkMaterializationCannotRollbackReplacedAggregate()
+        async throws {
+        let browserManager = try makeBrowserManager()
+        let windowRegistry = WindowRegistry()
+        browserManager.windowRegistry = windowRegistry
+        browserManager.windowShellContentViewFactory = { _, _ in NSView() }
+        installRegistrationRestoration(
+            from: browserManager,
+            on: windowRegistry
+        )
+        defer { closePublishedShells(in: windowRegistry) }
+
+        let sourceWindow = BrowserWindowState()
+        let sourceProfile = browserManager.profileManager
+            .createEphemeralProfile(for: sourceWindow.id)
+        let sourceSpace = Space(
+            name: "Private Source",
+            profileId: sourceProfile.id
+        )
+        sourceSpace.isEphemeral = true
+        sourceWindow.isIncognito = true
+        sourceWindow.ephemeralProfile = sourceProfile
+        sourceWindow.replaceEphemeralSpaces([sourceSpace])
+        sourceWindow.currentProfileId = sourceProfile.id
+        sourceWindow.currentSpaceId = sourceSpace.id
+        sourceWindow.tabManager = browserManager.tabManager
+        let sourceTab = browserManager.tabManager.ephemeralLifecycleOwner
+            .createEphemeralTab(
+                url: try XCTUnwrap(
+                    URL(string: "https://private-source.example")
+                ),
+                in: sourceWindow,
+                profile: sourceProfile
+            )
+        let sourceConfiguration = WKWebViewConfiguration()
+        sourceConfiguration.websiteDataStore = sourceProfile.dataStore
+        let sourceWebView = FocusableWKWebView(
+            frame: .zero,
+            configuration: sourceConfiguration
+        )
+        sourceWebView.owningTab = sourceTab
+        let source = PhysicalWebViewSourceReceipt(
+            webView: sourceWebView,
+            trackedWebView: TrackedWebViewOwner(
+                tabID: sourceTab.id,
+                windowID: sourceWindow.id
+            ),
+            tab: sourceTab,
+            window: sourceWindow,
+            residence: .privateEphemeral,
+            presentationSpace: sourceSpace,
+            presentationProfile: sourceProfile,
+            executionProfile: sourceProfile,
+            dataStore: sourceProfile.dataStore,
+            appKitWindow: nil
+        )
+
+        var rejectedWindow: BrowserWindowState?
+        var originalTab: Tab?
+        var replacementProfile: Profile?
+        var replacementSpace: Space?
+        let replacementSelection = UUID()
+        var persistedWindows = 0
+        let transaction = BrowserLinkWindowTransaction(
+            commands: browserManager.windowCommands,
+            restoration: browserManager.windowSessionBundle.restoreService,
+            extensionPublication: browserManager.windowExtensionPublication,
+            profiles: browserManager.profileManager,
+            tabs: browserManager.tabManager,
+            persistWindow: { _ in persistedWindows += 1 },
+            materialize: { tab, window in
+                rejectedWindow = window
+                originalTab = tab
+                browserManager.tabManager.runtimeStateCoalescer.enqueue(
+                    TabRuntimeStateUpdate(
+                        id: tab.id,
+                        urlString: tab.url.absoluteString,
+                        currentURLString: tab.url.absoluteString,
+                        name: tab.name,
+                        canGoBack: false,
+                        canGoForward: false
+                    )
+                )
+                let profile = browserManager.profileManager
+                    .createEphemeralProfile(for: window.id)
+                let space = Space(
+                    name: "Replacement Private",
+                    profileId: profile.id
+                )
+                space.isEphemeral = true
+                replacementProfile = profile
+                replacementSpace = space
+                window.ephemeralProfile = profile
+                window.replaceEphemeralSpaces([space])
+                window.currentProfileId = profile.id
+                window.currentSpaceId = space.id
+                window.currentTabId = replacementSelection
+                return nil
+            }
+        )
+
+        XCTAssertNil(transaction.open(
+            try XCTUnwrap(URL(string: "https://private-target.example")),
+            from: source,
+            activate: false
+        ))
+
+        let window = try XCTUnwrap(rejectedWindow)
+        let tab = try XCTUnwrap(originalTab)
+        let profile = try XCTUnwrap(replacementProfile)
+        let space = try XCTUnwrap(replacementSpace)
+        XCTAssertEqual(persistedWindows, 0)
+        XCTAssertTrue(window.ephemeralProfile === profile)
+        XCTAssertEqual(window.currentProfileId, profile.id)
+        XCTAssertEqual(window.currentSpaceId, space.id)
+        XCTAssertEqual(window.currentTabId, replacementSelection)
+        XCTAssertEqual(window.ephemeralSpaces.count, 1)
+        XCTAssertTrue(window.ephemeralSpaces.first === space)
+        XCTAssertEqual(window.ephemeralTabs.count, 1)
+        XCTAssertTrue(window.ephemeralTabs.first === tab)
+        XCTAssertTrue(
+            browserManager.profileManager.hasEphemeralProfileLease(
+                profile,
+                forWindowID: window.id
+            )
+        )
+        let flushedRuntimeStateCount = await browserManager.tabManager
+            .runtimeStateCoalescer.flushImmediately()
+        XCTAssertEqual(
+            flushedRuntimeStateCount,
+            1,
+            "A stale rollback must not cancel the original tab's queued state."
+        )
+    }
+
+    func testPrivateLinkRollbackDefersInventoryUntilAggregateCommit() throws {
+        let browserManager = try makeBrowserManager()
+        let windowRegistry = WindowRegistry()
+        browserManager.windowRegistry = windowRegistry
+        browserManager.windowShellContentViewFactory = { _, _ in NSView() }
+        installRegistrationRestoration(
+            from: browserManager,
+            on: windowRegistry
+        )
+        defer { closePublishedShells(in: windowRegistry) }
+        let sourceWindow = BrowserWindowState()
+        let sourceProfile = browserManager.profileManager
+            .createEphemeralProfile(for: sourceWindow.id)
+        let sourceSpace = Space(
+            name: "Private Source",
+            profileId: sourceProfile.id
+        )
+        sourceSpace.isEphemeral = true
+        sourceWindow.isIncognito = true
+        sourceWindow.ephemeralProfile = sourceProfile
+        sourceWindow.replaceEphemeralSpaces([sourceSpace])
+        sourceWindow.currentProfileId = sourceProfile.id
+        sourceWindow.currentSpaceId = sourceSpace.id
+        sourceWindow.tabManager = browserManager.tabManager
+        let sourceTab = browserManager.tabManager.ephemeralLifecycleOwner
+            .createEphemeralTab(
+                url: try XCTUnwrap(
+                    URL(string: "https://private-atomic-source.example")
+                ),
+                in: sourceWindow,
+                profile: sourceProfile
+            )
+        let sourceConfiguration = WKWebViewConfiguration()
+        sourceConfiguration.websiteDataStore = sourceProfile.dataStore
+        let sourceWebView = FocusableWKWebView(
+            frame: .zero,
+            configuration: sourceConfiguration
+        )
+        sourceWebView.owningTab = sourceTab
+        let source = PhysicalWebViewSourceReceipt(
+            webView: sourceWebView,
+            trackedWebView: TrackedWebViewOwner(
+                tabID: sourceTab.id,
+                windowID: sourceWindow.id
+            ),
+            tab: sourceTab,
+            window: sourceWindow,
+            residence: .privateEphemeral,
+            presentationSpace: sourceSpace,
+            presentationProfile: sourceProfile,
+            executionProfile: sourceProfile,
+            dataStore: sourceProfile.dataStore,
+            appKitWindow: nil
+        )
+
+        var rejectedWindow: BrowserWindowState?
+        var originalTab: Tab?
+        var replacementProfile: Profile?
+        var replacementSpace: Space?
+        var replacementTab: Tab?
+        var replacementSelection: UUID?
+        var didObserveCommittedAggregate = false
+        var inventoryCancellable: AnyCancellable?
+        let transaction = BrowserLinkWindowTransaction(
+            commands: browserManager.windowCommands,
+            restoration: browserManager.windowSessionBundle.restoreService,
+            extensionPublication: browserManager.windowExtensionPublication,
+            profiles: browserManager.profileManager,
+            tabs: browserManager.tabManager,
+            persistWindow: { _ in XCTFail("Rejected window must not persist") },
+            materialize: { tab, window in
+                rejectedWindow = window
+                originalTab = tab
+                inventoryCancellable = window.ephemeralInventoryAuthority
+                    .tabInventoryChanges
+                    .sink {
+                        guard didObserveCommittedAggregate == false else {
+                            return
+                        }
+                        didObserveCommittedAggregate = true
+                        XCTAssertNil(window.currentTabId)
+                        XCTAssertNil(window.currentSpaceId)
+                        XCTAssertNil(window.currentProfileId)
+                        XCTAssertNil(window.ephemeralProfile)
+                        XCTAssertTrue(window.ephemeralTabs.isEmpty)
+                        XCTAssertTrue(window.ephemeralSpaces.isEmpty)
+
+                        let profile = browserManager.profileManager
+                            .createEphemeralProfile(for: window.id)
+                        let space = Space(
+                            name: "Replacement Private",
+                            profileId: profile.id
+                        )
+                        space.isEphemeral = true
+                        window.ephemeralProfile = profile
+                        window.replaceEphemeralSpaces([space])
+                        window.currentProfileId = profile.id
+                        window.currentSpaceId = space.id
+                        let tab = browserManager.tabManager
+                            .ephemeralLifecycleOwner.createEphemeralTab(
+                                url: URL(
+                                    string: "https://private-atomic-replacement.example"
+                                )!,
+                                in: window,
+                                profile: profile
+                            )
+                        window.currentTabId = tab.id
+                        replacementProfile = profile
+                        replacementSpace = space
+                        replacementTab = tab
+                        replacementSelection = tab.id
+                    }
+                return nil
+            }
+        )
+
+        XCTAssertNil(transaction.open(
+            try XCTUnwrap(
+                URL(string: "https://private-atomic-target.example")
+            ),
+            from: source,
+            activate: false
+        ))
+
+        let window = try XCTUnwrap(rejectedWindow)
+        let oldTab = try XCTUnwrap(originalTab)
+        let profile = try XCTUnwrap(replacementProfile)
+        let space = try XCTUnwrap(replacementSpace)
+        let tab = try XCTUnwrap(replacementTab)
+        XCTAssertTrue(didObserveCommittedAggregate)
+        XCTAssertFalse(window.ephemeralTabs.contains { $0 === oldTab })
+        XCTAssertTrue(window.ephemeralProfile === profile)
+        XCTAssertEqual(window.currentProfileId, profile.id)
+        XCTAssertEqual(window.currentSpaceId, space.id)
+        XCTAssertEqual(window.currentTabId, replacementSelection)
+        XCTAssertEqual(window.ephemeralSpaces.count, 1)
+        XCTAssertTrue(window.ephemeralSpaces.first === space)
+        XCTAssertEqual(window.ephemeralTabs.count, 1)
+        XCTAssertTrue(window.ephemeralTabs.first === tab)
+        XCTAssertTrue(
+            browserManager.profileManager.hasEphemeralProfileLease(
+                profile,
+                forWindowID: window.id
+            )
+        )
+        withExtendedLifetime(inventoryCancellable) {}
     }
 
     func testWebKitChildWindowPublishesExactTrackedChildBeforeRegistration()
@@ -926,7 +1211,7 @@ final class WebViewPresentationRoutingTests: XCTestCase {
         sourceSpace.isEphemeral = true
         sourceWindow.isIncognito = true
         sourceWindow.ephemeralProfile = sourceProfile
-        sourceWindow.ephemeralSpaces = [sourceSpace]
+        sourceWindow.replaceEphemeralSpaces([sourceSpace])
         sourceWindow.currentProfileId = sourceProfile.id
         sourceWindow.currentSpaceId = sourceSpace.id
         sourceWindow.tabManager = browserManager.tabManager
@@ -1311,7 +1596,6 @@ private final class ChildWindowExtensionPublicationProbe:
             )
         )
     }
-
 }
 
 @MainActor

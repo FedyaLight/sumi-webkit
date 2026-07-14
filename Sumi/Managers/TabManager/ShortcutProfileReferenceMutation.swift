@@ -87,6 +87,9 @@ final class ShortcutProfileReferenceMutationApplicator {
             tabManager.structuralPersistence.markPinnedSnapshotDirty(
                 for: plan.deletedProfileID
             )
+            tabManager.structuralLookupCoordinator.requestPublish(
+                scope: .profile(plan.deletedProfileID)
+            )
         }
 
         for profileID in plan.profilePinReplacements.keys.sorted(by: uuidOrder) {
@@ -108,7 +111,6 @@ final class ShortcutProfileReferenceMutationApplicator {
         }
 
         tabManager.structuralPersistence.scheduleStructuralPersistence()
-        tabManager.structuralLookupCoordinator.requestPublish()
     }
 
     private func uuidOrder(_ lhs: UUID, _ rhs: UUID) -> Bool {

@@ -83,13 +83,13 @@ final class ShortcutLiveTabRetirementTransaction {
     private func entries(
         pinIds: Set<UUID>,
         in windowId: UUID
-    ) -> [LiveShortcutTabRegistry.Entry] {
+    ) -> [LiveShortcutTabEntry] {
         registry.entries(in: windowId).filter { pinIds.contains($0.pinId) }
     }
 
     private func entries(
         pinIds: Set<UUID>
-    ) -> [LiveShortcutTabRegistry.Entry] {
+    ) -> [LiveShortcutTabEntry] {
         pinIds.flatMap { registry.entries(for: $0) }
     }
 

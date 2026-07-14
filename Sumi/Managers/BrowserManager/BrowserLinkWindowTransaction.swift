@@ -13,7 +13,7 @@ final class BrowserLinkWindowTransaction {
             executionProfileID: UUID,
             tabProfileID: UUID?
         )
-        case ephemeral(profile: Profile)
+        case ephemeral(receipt: BrowserLinkPrivateWindowRollbackReceipt)
     }
 
     private weak var commands: BrowserWindowCommands?
@@ -69,10 +69,10 @@ final class BrowserLinkWindowTransaction {
         } else {
             guard source.window.isIncognito == false,
                   source.presentationSpace.profileId
-                    == source.presentationProfile.id,
+                  == source.presentationProfile.id,
                   source.window.currentSpaceId == source.presentationSpace.id,
                   source.window.currentProfileId
-                    == source.presentationProfile.id,
+                  == source.presentationProfile.id,
                   source.dataStore === source.executionProfile.dataStore
             else { return nil }
             regularSource = source
@@ -99,8 +99,8 @@ final class BrowserLinkWindowTransaction {
                     guard let space = tabs.spaceStateOwner.space(
                         with: regularSource.presentationSpace.id
                     ), space === regularSource.presentationSpace,
-                       space.profileId
-                        == regularSource.presentationProfile.id else {
+                    space.profileId
+                    == regularSource.presentationProfile.id else {
                         return
                     }
                     let tab = tabs.regularTabLifecycleOwner.createNewTab(
@@ -108,7 +108,7 @@ final class BrowserLinkWindowTransaction {
                         in: space,
                         activate: false,
                         executionProfileID:
-                            regularSource.descendantProfileID
+                        regularSource.descendantProfileID
                     )
                     let effectiveExecutionProfileID = tab.profileId
                         ?? regularSource.presentationProfile.id
@@ -116,7 +116,7 @@ final class BrowserLinkWindowTransaction {
                     residence = .regular(
                         spaceID: space.id,
                         presentationProfileID:
-                            regularSource.presentationProfile.id,
+                        regularSource.presentationProfile.id,
                         executionProfileID: effectiveExecutionProfileID,
                         tabProfileID: tab.profileId
                     )
@@ -124,7 +124,7 @@ final class BrowserLinkWindowTransaction {
                         profileID: regularSource.presentationProfile.id,
                         spaceID: regularSource.presentationSpace.id,
                         initialTabExecutionProfileID:
-                            effectiveExecutionProfileID,
+                        effectiveExecutionProfileID,
                         forRegistration: target
                     ) else {
                         return
@@ -138,7 +138,7 @@ final class BrowserLinkWindowTransaction {
                     )
                 } else {
                     let profile = profiles.createEphemeralProfile(for: target.id)
-                    Self.preparePrivateWindow(
+                    let space = Self.preparePrivateWindow(
                         target,
                         profile: profile,
                         tabs: tabs
@@ -149,7 +149,15 @@ final class BrowserLinkWindowTransaction {
                         profile: profile
                     )
                     initialTab = tab
-                    residence = .ephemeral(profile: profile)
+                    residence = .ephemeral(
+                        receipt: BrowserLinkPrivateWindowRollbackReceipt(
+                            window: target,
+                            profile: profile,
+                            space: space,
+                            tab: tab,
+                            tabs: tabs
+                        )
+                    )
                 }
             },
             validateBeforeShell: { target in
@@ -158,7 +166,8 @@ final class BrowserLinkWindowTransaction {
                     initialTab,
                     residence: residence,
                     in: target,
-                    tabs: tabs
+                    tabs: tabs,
+                    profiles: profiles
                 )
             },
             validateBeforePublication: { target in
@@ -172,7 +181,8 @@ final class BrowserLinkWindowTransaction {
                     initialTab,
                     residence: residence,
                     in: target,
-                    tabs: tabs
+                    tabs: tabs,
+                    profiles: profiles
                 ) else {
                     return false
                 }
@@ -219,7 +229,7 @@ final class BrowserLinkWindowTransaction {
             activate: activate
         )
 
-        guard let targetWindow, let initialTab else { return nil }
+        guard let targetWindow, initialTab != nil else { return nil }
         persistWindow(targetWindow)
         precondition(initialWebView != nil)
         targetWindow.compositorInvalidation.refresh()
@@ -230,7 +240,7 @@ final class BrowserLinkWindowTransaction {
         _ window: BrowserWindowState,
         profile: Profile,
         tabs: TabManager
-    ) {
+    ) -> Space {
         window.isIncognito = true
         window.ephemeralProfile = profile
         window.currentProfileId = profile.id
@@ -241,16 +251,18 @@ final class BrowserLinkWindowTransaction {
             profileId: profile.id
         )
         space.isEphemeral = true
-        window.ephemeralSpaces = [space]
+        window.replaceEphemeralSpaces([space])
         window.currentSpaceId = space.id
         window.tabManager = tabs
+        return space
     }
 
     private static func validate(
         _ tab: Tab,
         residence: Residence,
         in window: BrowserWindowState,
-        tabs: TabManager
+        tabs: TabManager,
+        profiles: ProfileManager
     ) -> Bool {
         guard window.currentTabId == tab.id else { return false }
         switch residence {
@@ -267,7 +279,7 @@ final class BrowserLinkWindowTransaction {
                   profileID == presentationProfileID,
                   window.currentProfileId == presentationProfileID,
                   (tab.profileId ?? presentationProfileID)
-                    == executionProfileID,
+                  == executionProfileID,
                   tab.profileId == tabProfileID
             else {
                 return false
@@ -275,13 +287,13 @@ final class BrowserLinkWindowTransaction {
             return tabs.regularTabCollectionOwner
                 .tabs(in: spaceID)
                 .contains(where: { $0 === tab })
-        case .ephemeral(let profile):
-            return window.isIncognito
-                && window.ephemeralProfile === profile
-                && window.currentProfileId == profile.id
-                && tab.profileId == profile.id
-                && tab.spaceId == nil
-                && window.ephemeralTabs.contains(where: { $0 === tab })
+        case .ephemeral(let receipt):
+            return receipt.tab === tab
+                && receipt.admits(
+                    window,
+                    tabs: tabs,
+                    profiles: profiles
+                )
         }
     }
 
@@ -290,31 +302,46 @@ final class BrowserLinkWindowTransaction {
         residence: Residence,
         from window: BrowserWindowState
     ) {
-        guard let tabs else { return }
-        tab.performComprehensiveWebViewCleanup()
-        tabs.structuralPersistence.cancelRuntimeStatePersistence(for: tab.id)
-        window.currentTabId = nil
-
+        guard let tabs, let profiles else { return }
         switch residence {
         case .regular(let spaceID, _, _, _):
-            if tabs.regularTabCollectionOwner.remove(
-                tab.id,
-                from: spaceID,
-                currentSpaceId: window.currentSpaceId
-            ) != nil {
-                tabs.tabCollectionMembershipOwner.detach(tab)
-                tabs.structuralPersistence.scheduleStructuralPersistence()
+            guard let admission = ExactTabResidenceAdmission.regular(
+                tab,
+                in: spaceID,
+                tabs: tabs
+            ) else { return }
+            tabs.structuralPersistence.cancelRuntimeStatePersistence(for: tab.id)
+            tab.performComprehensiveWebViewCleanup()
+            guard admission.remove(
+                tabs: tabs,
+                currentSpaceID: window.currentSpaceId
+            ) else { return }
+            if window.currentTabId == tab.id {
+                window.currentTabId = nil
             }
+            tabs.tabCollectionMembershipOwner.detach(tab)
+            tabs.structuralPersistence.scheduleStructuralPersistence()
             restoration?.cancelPreparedWindowRegistration(window)
-        case .ephemeral(let profile):
-            window.ephemeralTabs.removeAll { $0 === tab }
-            window.ephemeralSpaces.removeAll()
-            window.ephemeralProfile = nil
-            window.currentProfileId = nil
-            window.currentSpaceId = nil
-            _ = profiles?.cancelEphemeralProfileCreation(
+        case .ephemeral(let receipt):
+            guard receipt.tab === tab,
+                  receipt.admits(window, tabs: tabs, profiles: profiles)
+            else { return }
+            tabs.structuralPersistence.cancelRuntimeStatePersistence(for: tab.id)
+            tab.performComprehensiveWebViewCleanup()
+            guard receipt.commitRollbackAggregate(
+                in: window,
+                tabs: tabs,
+                profiles: profiles
+            ) else {
+                return
+            }
+            // This exact-CAS lease cancellation is the only effect after
+            // deferred inventory publication. A subscriber may already have
+            // installed a replacement aggregate; its different profile object
+            // cannot be cancelled by this stale receipt.
+            _ = profiles.cancelEphemeralProfileCreation(
                 for: window.id,
-                expected: profile
+                expected: receipt.profile
             )
         }
     }

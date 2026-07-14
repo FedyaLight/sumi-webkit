@@ -159,9 +159,12 @@ final class WebKitChildWindowOpeningService: WebKitChildWindowOpening {
                 )
             },
             discardChild: { [weak self] targetWindow in
-                extensionPublication.discardRegistration(targetWindow)
                 guard let self, let child else { return }
-                self.discard(child, from: targetWindow)
+                self.discard(
+                    child,
+                    from: targetWindow,
+                    extensionPublication: extensionPublication
+                )
             }
         )
         guard let targetWindow, let child else { return nil }
@@ -300,9 +303,19 @@ final class WebKitChildWindowOpeningService: WebKitChildWindowOpening {
 
     private func discard(
         _ child: Child,
-        from targetWindow: BrowserWindowState
+        from targetWindow: BrowserWindowState,
+        extensionPublication: WindowExtensionPublicationTransaction
     ) {
         guard let lifecycle, let tabs else { return }
+        guard let admission = rollbackAdmission(
+            for: child,
+            in: targetWindow,
+            tabs: tabs
+        ) else {
+            return
+        }
+        tabs.structuralPersistence.cancelRuntimeStatePersistence(for: child.tab.id)
+        extensionPublication.discardRegistration(targetWindow)
         lifecycle.cleanupTrackedWebView(
             child.webView,
             owner: TrackedWebViewOwner(
@@ -310,7 +323,12 @@ final class WebKitChildWindowOpeningService: WebKitChildWindowOpening {
                 windowID: targetWindow.id
             )
         )
-        discardModel(child, from: targetWindow, tabs: tabs)
+        discardModel(
+            child,
+            admission: admission,
+            from: targetWindow,
+            tabs: tabs
+        )
     }
 
     private func discardUnplaced(
@@ -318,35 +336,73 @@ final class WebKitChildWindowOpeningService: WebKitChildWindowOpening {
         from targetWindow: BrowserWindowState,
         tabs: TabManager
     ) {
+        guard let admission = rollbackAdmission(
+            for: child,
+            in: targetWindow,
+            tabs: tabs
+        ) else {
+            return
+        }
+        tabs.structuralPersistence.cancelRuntimeStatePersistence(for: child.tab.id)
         child.tab.cleanupCloneWebView(child.webView)
-        discardModel(child, from: targetWindow, tabs: tabs)
+        discardModel(
+            child,
+            admission: admission,
+            from: targetWindow,
+            tabs: tabs
+        )
     }
 
     private func discardModel(
         _ child: Child,
+        admission: ExactTabResidenceAdmission,
         from targetWindow: BrowserWindowState,
         tabs: TabManager
     ) {
-        tabs.structuralPersistence.cancelRuntimeStatePersistence(for: child.tab.id)
-        if targetWindow.currentTabId == child.tab.id {
-            targetWindow.currentTabId = nil
-        }
-        if targetWindow.webKitChildWindowIdentity?.initialTabID == child.tab.id {
-            targetWindow.webKitChildWindowIdentity = nil
-        }
+        guard admission.remove(
+            tabs: tabs,
+            currentSpaceID: targetWindow.currentSpaceId
+        ) else { return }
 
         switch child.residence {
-        case .regular(let spaceID):
-            if tabs.regularTabCollectionOwner.remove(
-                child.tab.id,
-                from: spaceID,
-                currentSpaceId: targetWindow.currentSpaceId
-            ) != nil {
-                tabs.tabCollectionMembershipOwner.detach(child.tab)
-                tabs.structuralPersistence.scheduleStructuralPersistence()
-            }
+        case .regular:
+            clearChildWindowIdentity(child.tab, in: targetWindow)
+            tabs.tabCollectionMembershipOwner.detach(child.tab)
+            tabs.structuralPersistence.scheduleStructuralPersistence()
         case .ephemeral:
-            targetWindow.ephemeralTabs.removeAll { $0 === child.tab }
+            clearChildWindowIdentity(child.tab, in: targetWindow)
+        }
+    }
+
+    private func rollbackAdmission(
+        for child: Child,
+        in targetWindow: BrowserWindowState,
+        tabs: TabManager
+    ) -> ExactTabResidenceAdmission? {
+        switch child.residence {
+        case .regular(let spaceID):
+            ExactTabResidenceAdmission.regular(
+                child.tab,
+                in: spaceID,
+                tabs: tabs
+            )
+        case .ephemeral:
+            ExactTabResidenceAdmission.ephemeral(
+                child.tab,
+                in: targetWindow
+            )
+        }
+    }
+
+    private func clearChildWindowIdentity(
+        _ tab: Tab,
+        in targetWindow: BrowserWindowState
+    ) {
+        if targetWindow.currentTabId == tab.id {
+            targetWindow.currentTabId = nil
+        }
+        if targetWindow.webKitChildWindowIdentity?.initialTabID == tab.id {
+            targetWindow.webKitChildWindowIdentity = nil
         }
     }
 }

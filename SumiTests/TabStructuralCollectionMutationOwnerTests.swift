@@ -160,7 +160,7 @@ final class TabStructuralCollectionMutationOwnerTests: XCTestCase {
                     queueTabLookupEntries: {
                         self.queuedLookupChanges.append((previous: $0, current: $1))
                     },
-                    requestStructuralPublish: {
+                    requestStructuralPublish: { _ in
                         self.publishCount += 1
                     }
                 )

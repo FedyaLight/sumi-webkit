@@ -25,7 +25,7 @@ final class ActivePageBrowserManagerIntegrationTests: XCTestCase {
         )
         let webView = FocusableWKWebView()
         webView.owningTab = tab
-        window.ephemeralTabs = [tab]
+        window.replaceEphemeralTabs([tab])
         window.currentTabId = tab.id
         registry.register(window)
         registry.setActive(window)

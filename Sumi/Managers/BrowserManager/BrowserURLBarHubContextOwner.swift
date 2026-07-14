@@ -18,7 +18,6 @@ final class BrowserURLBarHubContextOwner {
     }
 
     private let bookmarkManager: SumiBookmarkManager
-    private let extensionSurfaceStore: BrowserExtensionSurfaceStore
     private let permissionContextOwner: BrowserURLBarPermissionContextOwner
     private let protectionCoordinator: SumiProtectionCoordinator
     private let adblockZapperStore: SumiAdblockZapperStore
@@ -30,7 +29,6 @@ final class BrowserURLBarHubContextOwner {
 
     init(
         bookmarkManager: SumiBookmarkManager,
-        extensionSurfaceStore: BrowserExtensionSurfaceStore,
         permissionContextOwner: BrowserURLBarPermissionContextOwner,
         protectionCoordinator: SumiProtectionCoordinator,
         adblockZapperStore: SumiAdblockZapperStore,
@@ -41,7 +39,6 @@ final class BrowserURLBarHubContextOwner {
         capabilities: Capabilities
     ) {
         self.bookmarkManager = bookmarkManager
-        self.extensionSurfaceStore = extensionSurfaceStore
         self.permissionContextOwner = permissionContextOwner
         self.protectionCoordinator = protectionCoordinator
         self.adblockZapperStore = adblockZapperStore
@@ -62,7 +59,6 @@ final class BrowserURLBarHubContextOwner {
         let currentProfileAuthority = browserManager.currentProfileAuthority
         self.init(
             bookmarkManager: browserManager.bookmarkManager,
-            extensionSurfaceStore: browserManager.optionalModules.extensions.surfaceStore,
             permissionContextOwner: permissionContextOwner,
             protectionCoordinator: browserManager.protectionCoordinator,
             adblockZapperStore: browserManager.adblockZapperStore,
@@ -105,7 +101,6 @@ final class BrowserURLBarHubContextOwner {
         URLBarHubBrowserContext(
             bookmarkManager: bookmarkManager,
             bookmarkPresentationRequest: capabilities.bookmarkEditorPresentationRequest(),
-            extensionSurfaceStore: extensionSurfaceStore,
             extensionActions: capabilities.extensionActionContext(),
             permission: permissionContextOwner.context,
             permissionDependencies: permissionContextOwner.loadDependencies,

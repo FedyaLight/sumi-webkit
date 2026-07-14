@@ -112,7 +112,7 @@ final class ExtensionIconCache {
 
 @available(macOS 15.5, *)
 struct ExtensionActionView: View {
-    let extensions: [InstalledExtension]
+    let extensions: [BrowserExtensionToolbarDisplayRecord]
     var layout: ExtensionActionLayout = .compactStrip
     var visibleActionLimit: Int?
     var profileId: UUID?
@@ -124,6 +124,7 @@ struct ExtensionActionView: View {
             CompactExtensionActionStrip(
                 extensions: extensions,
                 visibleActionLimit: visibleActionLimit,
+                profileId: profileId,
                 browserContext: browserContext
             )
         case .sidebarGrid:
@@ -144,7 +145,7 @@ struct ExtensionActionView: View {
 
 @available(macOS 15.5, *)
 private struct HubExtensionTilesGrid: View {
-    let extensions: [InstalledExtension]
+    let extensions: [BrowserExtensionToolbarDisplayRecord]
     let profileId: UUID?
     let browserContext: ExtensionActionBrowserContext
 
@@ -185,7 +186,7 @@ private struct HubExtensionTilesGrid: View {
     }
 
     private func tileView(
-        _ ext: InstalledExtension,
+        _ ext: BrowserExtensionToolbarDisplayRecord,
         suppressActivation: (() -> Bool)?
     ) -> some View {
         ExtensionActionButton(
@@ -197,7 +198,9 @@ private struct HubExtensionTilesGrid: View {
         )
     }
 
-    private func menuEntries(for ext: InstalledExtension) -> [SidebarContextMenuEntry] {
+    private func menuEntries(
+        for ext: BrowserExtensionToolbarDisplayRecord
+    ) -> [SidebarContextMenuEntry] {
         extensionActionMenuEntries(
             for: ext,
             layout: .hubTiles,
@@ -217,10 +220,9 @@ private struct HubExtensionTilesGrid: View {
 
     /// Unpinned, enabled, action-bearing extensions in their persisted hub
     /// order (falling back to the incoming order for any not yet ordered).
-    private var hubExtensions: [InstalledExtension] {
+    private var hubExtensions: [BrowserExtensionToolbarDisplayRecord] {
         let candidates = extensions
             .filter { $0.isEnabled && $0.hasAction }
-            .filter { browserContext.extensionsModule.isPinnedToToolbar($0.id) == false }
 
         let orderedIDs = browserContext.extensionsModule.orderedUnpinnedExtensionIDs(
             candidateIDs: candidates.map(\.id),
@@ -236,7 +238,7 @@ private struct HubExtensionTilesGrid: View {
 
 @available(macOS 15.5, *)
 private struct SidebarExtensionActionGrid: View {
-    let extensions: [InstalledExtension]
+    let extensions: [BrowserExtensionToolbarDisplayRecord]
     let profileId: UUID?
     let browserContext: ExtensionActionBrowserContext
     private static let gridSpacing: CGFloat = 8
@@ -333,7 +335,7 @@ private struct SidebarExtensionActionGrid: View {
         )
     }
 
-    private var enabledExtensions: [InstalledExtension] {
+    private var enabledExtensions: [BrowserExtensionToolbarDisplayRecord] {
         extensions.filter { $0.isEnabled }
     }
 
@@ -347,8 +349,9 @@ private struct SidebarExtensionActionGrid: View {
 
 @available(macOS 15.5, *)
 private struct CompactExtensionActionStrip: View {
-    let extensions: [InstalledExtension]
+    let extensions: [BrowserExtensionToolbarDisplayRecord]
     let visibleActionLimit: Int?
+    let profileId: UUID?
     let browserContext: ExtensionActionBrowserContext
 
     private static let coordinateSpaceName = "compact-extension-reorder"
@@ -394,6 +397,7 @@ private struct CompactExtensionActionStrip: View {
             ExtensionActionButton(
                 ext: ext,
                 layout: .compactStrip,
+                profileId: profileId,
                 browserContext: browserContext,
                 suppressActivation: suppressActivation
             )
@@ -408,13 +412,13 @@ private struct CompactExtensionActionStrip: View {
                 layout: .compactStrip,
                 presentation: ExtensionActionPresentationContext(
                     browserContext: browserContext,
-                    profileId: nil
+                    profileId: profileId
                 )
             )
         }
     }
 
-    private var enabledExtensions: [InstalledExtension] {
+    private var enabledExtensions: [BrowserExtensionToolbarDisplayRecord] {
         extensions.filter { $0.isEnabled }
     }
 
@@ -424,7 +428,8 @@ private struct CompactExtensionActionStrip: View {
 
     private var pinnedSlots: [PinnedToolbarSlot] {
         browserContext.extensionsModule.orderedPinnedToolbarSlots(
-            enabledExtensions: enabledExtensions
+            enabledExtensions: enabledExtensions,
+            profileId: profileId
         )
     }
 
@@ -446,7 +451,7 @@ private struct CompactExtensionActionStrip: View {
 @available(macOS 15.5, *)
 @MainActor
 private func extensionActionMenuEntries(
-    for ext: InstalledExtension,
+    for ext: BrowserExtensionToolbarDisplayRecord,
     layout: ExtensionActionLayout,
     presentation: ExtensionActionPresentationContext
 ) -> [SidebarContextMenuEntry] {
@@ -514,19 +519,47 @@ private func extensionActionMenuEntries(
 
 @available(macOS 15.5, *)
 struct ExtensionActionButton: View {
-    let ext: InstalledExtension
+    let ext: BrowserExtensionToolbarDisplayRecord
     var layout: ExtensionActionLayout = .compactStrip
     var profileId: UUID?
     let browserContext: ExtensionActionBrowserContext
     /// When it returns true, a just-completed reorder drag suppresses the
     /// synthetic click so dragging the icon does not also open its popup.
     var suppressActivation: (() -> Bool)?
-    @EnvironmentObject private var extensionSurfaceStore:
-        BrowserExtensionSurfaceStore
+    private let iconCache: ExtensionIconCache
+    @StateObject private var actionModel: BrowserExtensionActionButtonModel
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
     @State private var isHovering: Bool = false
     @State private var isPressed = false
+
+    init(
+        ext: BrowserExtensionToolbarDisplayRecord,
+        layout: ExtensionActionLayout = .compactStrip,
+        profileId: UUID? = nil,
+        browserContext: ExtensionActionBrowserContext,
+        suppressActivation: (() -> Bool)? = nil
+    ) {
+        self.ext = ext
+        self.layout = layout
+        self.profileId = profileId
+        self.browserContext = browserContext
+        self.suppressActivation = suppressActivation
+        let surfaceStore = browserContext.extensionsModule.surfaceStore
+        iconCache = surfaceStore.iconCache
+        _actionModel = StateObject(
+            wrappedValue: BrowserExtensionActionButtonModel(
+                changes: surfaceStore.actionPresentationChanges,
+                query: { target in
+                    guard browserContext.windowState === target.window,
+                          browserContext.currentTab() === target.tab
+                    else { return nil }
+                    return browserContext.extensionsModule
+                        .actionPresentationSnapshot(for: target)
+                }
+            )
+        )
+    }
 
     var body: some View {
         Group {
@@ -541,8 +574,8 @@ struct ExtensionActionButton: View {
             .buttonStyle(.plain)
         }
         .help(actionTitle)
-        .disabled(actionState?.isEnabled == false)
-        .opacity(actionState?.isEnabled == false ? 0.55 : 1)
+        .disabled(actionState.isEnabled == false)
+        .opacity(actionState.isEnabled == false ? 0.55 : 1)
         .onHover { state in
             isHovering = state
         }
@@ -555,6 +588,12 @@ struct ExtensionActionButton: View {
                     isPressed = false
                 }
         )
+        .task(id: actionPresentationTarget) {
+            actionModel.setTarget(actionPresentationTarget)
+        }
+        .onDisappear {
+            actionModel.setTarget(nil)
+        }
     }
 
     private var buttonLabel: some View {
@@ -627,7 +666,7 @@ struct ExtensionActionButton: View {
 
     @ViewBuilder
     private func iconView(tint: Color) -> some View {
-        if let actionIcon = actionState?.icon {
+        if let actionIcon = actionState.icon {
             Image(nsImage: actionIcon)
                 .resizable()
                 .interpolation(.high)
@@ -635,10 +674,10 @@ struct ExtensionActionButton: View {
                 .scaledToFit()
                 .frame(width: 16, height: 16)
         } else if let iconPath = ext.iconPath,
-           let nsImage = extensionSurfaceStore.iconCache.image(
-               extensionId: ext.id,
-               iconPath: iconPath
-           ) {
+                  let nsImage = iconCache.image(
+                      extensionId: ext.id,
+                      iconPath: iconPath
+                  ) {
             Image(nsImage: nsImage)
                 .resizable()
                 .interpolation(.high)
@@ -672,16 +711,27 @@ struct ExtensionActionButton: View {
             .frame(minWidth: 10, minHeight: 10)
             .background(
                 Capsule(style: .continuous)
-                    .fill(Color.red.opacity(actionState?.hasUnreadBadgeText == true ? 0.95 : 0.78))
+                    .fill(Color.red.opacity(actionState.hasUnreadBadgeText ? 0.95 : 0.78))
             )
     }
 
-    private var actionState: BrowserExtensionActionSurfaceState? {
-        extensionSurfaceStore.actionStatesByExtensionID[ext.id]
+    private var actionState: BrowserExtensionActionButtonSnapshot {
+        actionModel.snapshot(for: actionPresentationTarget)
+    }
+
+    private var actionPresentationTarget: ExtensionActionPresentationTarget? {
+        guard let tab = browserContext.currentTab(),
+              browserContext.windowState.currentTabId == tab.id
+        else { return nil }
+        return browserContext.extensionsModule.actionPresentationTarget(
+            extensionID: ext.id,
+            tab: tab,
+            window: browserContext.windowState
+        )
     }
 
     private var actionTitle: String {
-        guard let label = actionState?.label
+        guard let label = actionState.label?
             .trimmingCharacters(in: .whitespacesAndNewlines),
             label.isEmpty == false
         else {
@@ -691,7 +741,7 @@ struct ExtensionActionButton: View {
     }
 
     private var visibleBadgeText: String? {
-        guard let badgeText = actionState?.badgeText
+        guard let badgeText = actionState.badgeText?
             .trimmingCharacters(in: .whitespacesAndNewlines),
             badgeText.isEmpty == false
         else {

@@ -119,6 +119,10 @@ final class RegularTabCollectionOwner {
         stateOwner.contains(tab)
     }
 
+    func containsIdentical(_ tab: Tab, in spaceId: UUID) -> Bool {
+        stateOwner.containsIdentical(tab, in: spaceId)
+    }
+
     func firstIndex(of tab: Tab, in spaceId: UUID) -> Int? {
         stateOwner.firstIndex(of: tab, in: spaceId)
     }
@@ -221,6 +225,28 @@ final class RegularTabCollectionOwner {
         guard regularTabs.isEmpty == false,
               let index = regularTabs.firstIndex(where: { $0.id == tabId })
         else {
+            return nil
+        }
+
+        let removed = regularTabs.remove(at: index)
+        setTabs(regularTabs, spaceId)
+        return Removal(
+            tab: removed,
+            spaceId: spaceId,
+            indexInCurrentSpace: spaceId == currentSpaceId ? index : nil
+        )
+    }
+
+    /// Exact-instance rollback removal. UUID-only removal remains available
+    /// for intentional user commands, but transactions must not let a stale
+    /// receipt remove a newer physical Tab that reused the same UUID.
+    func remove(
+        ifIdentical tab: Tab,
+        from spaceId: UUID,
+        currentSpaceId: UUID?
+    ) -> Removal? {
+        var regularTabs = stateOwner.tabs(in: spaceId)
+        guard let index = regularTabs.firstIndex(where: { $0 === tab }) else {
             return nil
         }
 

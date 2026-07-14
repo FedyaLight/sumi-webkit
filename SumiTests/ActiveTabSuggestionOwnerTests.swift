@@ -67,7 +67,7 @@ final class ActiveTabSuggestionOwnerTests: XCTestCase {
         let ephemeral = makeTab(name: "Ephemeral", url: "https://b.example")
         let windowState = BrowserWindowState()
         windowState.isIncognito = true
-        windowState.ephemeralTabs = [ephemeral]
+        windowState.replaceEphemeralTabs([ephemeral])
 
         let owner = makeOwner(allTabs: [regular])
         let suggestions = owner.suggestions(for: windowState)

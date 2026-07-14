@@ -202,7 +202,7 @@ final class PhysicalWebViewSourceResolverTests: XCTestCase {
         space.isEphemeral = true
         window.isIncognito = true
         window.ephemeralProfile = profile
-        window.ephemeralSpaces = [space]
+        window.replaceEphemeralSpaces([space])
         window.currentProfileId = profile.id
         window.currentSpaceId = space.id
         window.tabManager = browser.tabManager

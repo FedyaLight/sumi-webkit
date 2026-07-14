@@ -31,14 +31,15 @@ final class BrowserURLBarHubContextOwnerTests: XCTestCase {
         let permissionContextOwner = BrowserURLBarPermissionContextOwner(browserManager: browserManager)
         var metadataLoadCount = 0
         let extensionActions = URLBarExtensionActionContext(
-            orderedPinnedToolbarSlotCount: { _ in 7 },
-            compactStrip: { _, _ in AnyView(EmptyView()) },
-            hubTiles: { _, _ in AnyView(EmptyView()) },
+            moduleEnabledChanges: Just(true).eraseToAnyPublisher(),
+            toolbarPresentationSnapshot: { _ in .empty },
+            toolbarPresentationSnapshots: { _ in
+                Empty().eraseToAnyPublisher()
+            },
+            compactStrip: { _, _, _ in AnyView(EmptyView()) },
+            hubTiles: { _, _, _ in AnyView(EmptyView()) },
             ensureActionMetadataLoadedIfNeeded: {
                 metadataLoadCount += 1
-            },
-            isPinnedToToolbar: { extensionId in
-                extensionId == "pinned-extension"
             }
         )
         let resolvedSnapshot = SiteControlsSnapshot.resolve(url: nil, profile: nil)
@@ -53,15 +54,16 @@ final class BrowserURLBarHubContextOwnerTests: XCTestCase {
         let context = owner.context
 
         XCTAssertIdentical(context.bookmarkManager, browserManager.bookmarkManager)
-        XCTAssertIdentical(context.extensionSurfaceStore, browserManager.optionalModules.extensions.surfaceStore)
         XCTAssertIdentical(context.adblockZapperStore, browserManager.adblockZapperStore)
         XCTAssertIdentical(context.permission.popupStore, browserManager.permissionRuntime.blockedPopupStore)
         XCTAssertIdentical(
             context.permissionDependencies.blockedPopupStore,
             browserManager.permissionRuntime.blockedPopupStore
         )
-        XCTAssertEqual(context.extensionActions.orderedPinnedToolbarSlotCount([]), 7)
-        XCTAssertTrue(context.extensionActions.isPinnedToToolbar("pinned-extension"))
+        XCTAssertEqual(
+            context.extensionActions.toolbarPresentationSnapshot(nil),
+            .empty
+        )
         XCTAssertEqual(context.siteControlsSnapshot(nil, nil, false, false), resolvedSnapshot)
 
         context.extensionActions.ensureActionMetadataLoadedIfNeeded()
@@ -89,11 +91,14 @@ final class BrowserURLBarHubContextOwnerTests: XCTestCase {
         )
         let permissionContextOwner = BrowserURLBarPermissionContextOwner(browserManager: browserManager)
         let extensionActions = URLBarExtensionActionContext(
-            orderedPinnedToolbarSlotCount: { _ in 0 },
-            compactStrip: { _, _ in AnyView(EmptyView()) },
-            hubTiles: { _, _ in AnyView(EmptyView()) },
-            ensureActionMetadataLoadedIfNeeded: {},
-            isPinnedToToolbar: { _ in false }
+            moduleEnabledChanges: Just(false).eraseToAnyPublisher(),
+            toolbarPresentationSnapshot: { _ in .empty },
+            toolbarPresentationSnapshots: { _ in
+                Empty().eraseToAnyPublisher()
+            },
+            compactStrip: { _, _, _ in AnyView(EmptyView()) },
+            hubTiles: { _, _, _ in AnyView(EmptyView()) },
+            ensureActionMetadataLoadedIfNeeded: {}
         )
         let owner = BrowserURLBarHubContextOwner(
             browserManager: browserManager,

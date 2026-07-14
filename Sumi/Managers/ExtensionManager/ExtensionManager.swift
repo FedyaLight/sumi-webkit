@@ -22,7 +22,12 @@ final class ExtensionManager: NSObject, ObservableObject {
         ExtensionContextPreparation.registerWebExtensionURLScheme
     @Published var actionStatesByExtensionID:
         [String: BrowserExtensionActionSurfaceState] = [:]
-    @Published private(set) var isExtensionSupportAvailable = true
+    let actionPresentationChanges = PassthroughSubject<
+        ExtensionActionPresentationChange,
+        Never
+    >()
+    @Published private(set) var isExtensionSupportAvailable =
+        ExtensionUtils.isExtensionSupportAvailable
     var extensionsLoaded: Bool {
         runtimeLoadStatus.extensionsLoaded
     }

@@ -45,7 +45,7 @@ final class TabProfileResolutionOwnerTests: XCTestCase {
         let windowState = BrowserWindowState()
         windowState.isIncognito = true
         windowState.ephemeralProfile = ephemeralProfile
-        windowState.ephemeralTabs = [tab]
+        windowState.replaceEphemeralTabs([tab])
         harness.windowRegistry.register(windowState)
 
         XCTAssertIdentical(

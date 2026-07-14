@@ -238,7 +238,9 @@ final class TabProfileTransitionService {
                 .markRegularTabsStructurallyDirty(for: spaceID)
         }
         tabManager.structuralPersistence.scheduleStructuralPersistence()
-        tabManager.structuralLookupCoordinator.requestPublish()
+        tabManager.structuralLookupCoordinator.requestPublish(
+            scope: tab.spaceId.map { .space($0) } ?? .runtimeOnly
+        )
     }
 
     private func reconcileStableInheritance(for tab: Tab) -> Bool {

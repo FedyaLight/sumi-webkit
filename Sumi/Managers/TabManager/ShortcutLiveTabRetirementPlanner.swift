@@ -118,7 +118,7 @@ final class ShortcutLiveTabRetirementPlanner {
     }
 
     private func reconcileRetiredEntries(
-        _ entries: [LiveShortcutTabRegistry.Entry],
+        _ entries: [LiveShortcutTabEntry],
         using runtime: RuntimePortRegistry,
         result: inout ShortcutLiveTabRetirementResult
     ) {

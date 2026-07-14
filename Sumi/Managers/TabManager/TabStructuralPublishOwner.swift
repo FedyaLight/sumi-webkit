@@ -5,7 +5,7 @@ import OSLog
 final class TabStructuralPublishOwner {
     private let eventBus: TabStructureEventBus
     private var structuralUpdateDepth = 0
-    private var pendingStructuralPublish = false
+    private var pendingStructuralScope: TabStructureChangeScope?
     private var actionsAfterStructuralBatch: [@MainActor () -> Void] = []
     private var structuralTransactionSignpostState: OSSignpostIntervalState?
     private(set) var mutationRevision: UInt64 = 0
@@ -30,15 +30,15 @@ final class TabStructuralPublishOwner {
         return try operation()
     }
 
-    func requestPublish() {
+    func requestPublish(scope: TabStructureChangeScope = .all) {
         if structuralUpdateDepth > 0 {
-            pendingStructuralPublish = true
+            pendingStructuralScope = pendingStructuralScope?.merging(scope) ?? scope
             return
         }
 
         mutationRevision += 1
         PerformanceTrace.emitEvent("TabManager.structuralPublish.immediate")
-        emitStructureChanged()
+        emitStructureChanged(scope: scope)
     }
 
     func runAfterCurrentBatch(_ action: @escaping @MainActor () -> Void) {
@@ -49,8 +49,8 @@ final class TabStructuralPublishOwner {
         actionsAfterStructuralBatch.append(action)
     }
 
-    private func emitStructureChanged() {
-        eventBus.publishStructureChanged()
+    private func emitStructureChanged(scope: TabStructureChangeScope) {
+        eventBus.publishStructureChanged(scope: scope)
     }
 
     private func begin() {
@@ -67,15 +67,15 @@ final class TabStructuralPublishOwner {
         guard structuralUpdateDepth == 0 else { return }
 
         flushPendingLookupBatch()
-        let shouldPublish = pendingStructuralPublish
-        pendingStructuralPublish = false
+        let scope = pendingStructuralScope
+        pendingStructuralScope = nil
         if let state = structuralTransactionSignpostState {
             PerformanceTrace.endInterval("TabManager.structuralTransaction", state)
             structuralTransactionSignpostState = nil
         }
-        if shouldPublish {
+        if let scope {
             PerformanceTrace.emitEvent("TabManager.structuralPublish.coalesced")
-            emitStructureChanged()
+            emitStructureChanged(scope: scope)
         }
         let actions = actionsAfterStructuralBatch
         actionsAfterStructuralBatch.removeAll(keepingCapacity: true)

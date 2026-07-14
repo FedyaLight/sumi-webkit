@@ -1,16 +1,21 @@
 import AppKit
 import Combine
+import SumiDomain
 import SwiftUI
 import WebKit
-import SumiDomain
 
 @MainActor
 struct URLBarExtensionActionContext {
-    let orderedPinnedToolbarSlotCount: ([InstalledExtension]) -> Int
-    let compactStrip: ([InstalledExtension], BrowserWindowState) -> AnyView
-    let hubTiles: ([InstalledExtension], BrowserWindowState) -> AnyView
+    let moduleEnabledChanges: AnyPublisher<Bool, Never>
+    let toolbarPresentationSnapshot:
+        (UUID?) -> BrowserExtensionToolbarPresentationSnapshot
+    let toolbarPresentationSnapshots:
+        (UUID?) -> AnyPublisher<BrowserExtensionToolbarPresentationSnapshot, Never>
+    let compactStrip:
+        ([BrowserExtensionToolbarDisplayRecord], BrowserWindowState, UUID?) -> AnyView
+    let hubTiles:
+        ([BrowserExtensionToolbarDisplayRecord], BrowserWindowState, UUID?) -> AnyView
     let ensureActionMetadataLoadedIfNeeded: () -> Void
-    let isPinnedToToolbar: (String) -> Bool
 }
 
 @MainActor
@@ -40,7 +45,6 @@ struct URLBarPermissionContext {
 struct URLBarHubBrowserContext {
     let bookmarkManager: SumiBookmarkManager
     let bookmarkPresentationRequest: SumiBookmarkEditorPresentationRequest?
-    let extensionSurfaceStore: BrowserExtensionSurfaceStore
     let extensionActions: URLBarExtensionActionContext
     let permission: URLBarPermissionContext
     let permissionDependencies: SumiCurrentSitePermissionsViewModel.LoadDependencies

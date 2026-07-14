@@ -4,8 +4,14 @@
 //
 //
 
+import Combine
 import SumiDomain
 import SwiftUI
+
+struct SidebarLiveFolderSnapshot: Equatable {
+    let source: SumiLiveFolderSource?
+    let items: [SumiLiveFolderItem]
+}
 
 struct TabFolderView: View {
     var folder: TabFolder
@@ -36,44 +42,68 @@ struct TabFolderView: View {
     }
 
     var body: some View {
-        SidebarFolderDragSnapshotReader { dragSnapshot in
-            SidebarFolderViewProjectionReader(
-                folder: folder,
-                space: space,
-                shortcutPins: shortcutPinsInFolder,
-                childFolders: childFolders,
-                shortcutRestoreGaps: shortcutRestoreSession.gaps,
-                inventory: inventory,
-                selection: selection,
-                liveFolderManager: browserContext.liveFolderManager,
-                currentTab: selection.currentTab(in: windowState)
-            ) { projection in
-                TabFolderContentView(
+        let liveFolderManager = browserContext.liveFolderManager
+        SidebarScopedSnapshotReader(
+            current: {
+                liveFolderSnapshot(manager: liveFolderManager)
+            },
+            changes: liveFolderManager.contentChanges(for: folder.id)
+                .map { [liveFolderManager] in
+                    liveFolderSnapshot(manager: liveFolderManager)
+                }
+                .removeDuplicates()
+                .eraseToAnyPublisher(),
+            isActive: isInteractive
+        ) { liveFolderSnapshot in
+            SidebarFolderDragSnapshotReader { dragSnapshot in
+                SidebarFolderViewProjectionReader(
                     folder: folder,
-                    browserContext: browserContext,
                     space: space,
+                    shortcutPins: shortcutPinsInFolder,
+                    childFolders: childFolders,
+                    shortcutRestoreGaps: shortcutRestoreSession.gaps,
                     inventory: inventory,
                     selection: selection,
-                    pinProjection: pinProjection,
-                    pinCommands: pinCommands,
-                    spaceLifecycle: spaceLifecycle,
-                    shortcutRestoreSession: $shortcutRestoreSession,
-                    displayedCollapsedProjectionIDs: $displayedCollapsedProjectionIDs,
-                    elevatedFolderIds: elevatedFolderIds,
-                    isInteractive: isInteractive,
-                    parentFolderId: parentFolderId,
-                    containerIndex: containerIndex,
-                    nestingDepth: nestingDepth,
-                    projection: projection,
-                    dragSnapshot: dragSnapshot
-                )
-                    .transaction { transaction in
-                        if dragSnapshot.isCompletingDrop {
-                            transaction.animation = nil
-                            transaction.disablesAnimations = true
+                    liveFolderSnapshot: liveFolderSnapshot,
+                    currentTab: selection.currentTab(in: windowState)
+                ) { projection in
+                    TabFolderContentView(
+                        folder: folder,
+                        browserContext: browserContext,
+                        space: space,
+                        inventory: inventory,
+                        selection: selection,
+                        pinProjection: pinProjection,
+                        pinCommands: pinCommands,
+                        spaceLifecycle: spaceLifecycle,
+                        shortcutRestoreSession: $shortcutRestoreSession,
+                        displayedCollapsedProjectionIDs: $displayedCollapsedProjectionIDs,
+                        elevatedFolderIds: elevatedFolderIds,
+                        isInteractive: isInteractive,
+                        parentFolderId: parentFolderId,
+                        containerIndex: containerIndex,
+                        nestingDepth: nestingDepth,
+                        projection: projection,
+                        dragSnapshot: dragSnapshot
+                    )
+                        .transaction { transaction in
+                            if dragSnapshot.isCompletingDrop {
+                                transaction.animation = nil
+                                transaction.disablesAnimations = true
+                            }
                         }
-                    }
+                }
             }
         }
+    }
+
+    private func liveFolderSnapshot(
+        manager: SumiLiveFolderManager
+    ) -> SidebarLiveFolderSnapshot {
+        let source = manager.source(for: folder.id)
+        return SidebarLiveFolderSnapshot(
+            source: source,
+            items: source == nil ? [] : manager.visibleItems(for: folder.id)
+        )
     }
 }

@@ -33,7 +33,7 @@ final class TabStructureEventBusTests: XCTestCase {
         bus.publishStructureChanged()
         bus.publishInitialDataLoaded()
 
-        XCTAssertEqual(events, [.structureChanged, .initialDataLoaded])
+        XCTAssertEqual(events, [.structureChanged(.all), .initialDataLoaded])
         withExtendedLifetime(cancellable) {}
     }
 

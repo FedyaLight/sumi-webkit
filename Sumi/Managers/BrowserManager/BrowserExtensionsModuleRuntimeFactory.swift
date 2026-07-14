@@ -14,9 +14,6 @@ enum BrowserExtensionsModuleRuntimeFactory {
             },
             liveTabs: { [weak browserManager] in
                 browserManager?.tabManager.tabCollectionMembershipOwner.allTabs() ?? []
-            },
-            invalidateTabStructuralRevision: { [weak browserManager] in
-                browserManager?.tabStructuralRevision &+= 1
             }
         )
     }

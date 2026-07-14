@@ -340,14 +340,11 @@ struct SidebarFolderViewProjection {
         shortcutRestoreGaps: [ShortcutRestoreGap],
         inventory: SidebarSpaceInventorySnapshot,
         selection: SidebarWindowSelectionQuery,
-        liveFolderManager: SumiLiveFolderManager,
+        liveFolderSource: SumiLiveFolderSource?,
+        liveFolderItems: [SumiLiveFolderItem],
         currentTab: Tab?,
         windowState: BrowserWindowState
     ) {
-        let liveFolderSource = liveFolderManager.source(for: folder.id)
-        let liveFolderItems = liveFolderSource == nil
-            ? []
-            : liveFolderManager.visibleItems(for: folder.id)
         let visualItems = inventory.folderItems(for: folder.id)
         let shortcutHostedGroups = visualItems.compactMap { item -> SplitGroup? in
             guard case .splitGroup(let groupID) = item else { return nil }
@@ -471,7 +468,7 @@ struct SidebarFolderViewProjectionReader<Content: View>: View {
     let shortcutRestoreGaps: [ShortcutRestoreGap]
     let inventory: SidebarSpaceInventorySnapshot
     let selection: SidebarWindowSelectionQuery
-    let liveFolderManager: SumiLiveFolderManager
+    let liveFolderSnapshot: SidebarLiveFolderSnapshot
     let currentTab: Tab?
     @ViewBuilder let content: (SidebarFolderViewProjection) -> Content
 
@@ -485,7 +482,7 @@ struct SidebarFolderViewProjectionReader<Content: View>: View {
         shortcutRestoreGaps: [ShortcutRestoreGap],
         inventory: SidebarSpaceInventorySnapshot,
         selection: SidebarWindowSelectionQuery,
-        liveFolderManager: SumiLiveFolderManager,
+        liveFolderSnapshot: SidebarLiveFolderSnapshot,
         currentTab: Tab?,
         @ViewBuilder content: @escaping (SidebarFolderViewProjection) -> Content
     ) {
@@ -496,7 +493,7 @@ struct SidebarFolderViewProjectionReader<Content: View>: View {
         self.shortcutRestoreGaps = shortcutRestoreGaps
         self.inventory = inventory
         self.selection = selection
-        self.liveFolderManager = liveFolderManager
+        self.liveFolderSnapshot = liveFolderSnapshot
         self.currentTab = currentTab
         self.content = content
     }
@@ -511,7 +508,8 @@ struct SidebarFolderViewProjectionReader<Content: View>: View {
                 shortcutRestoreGaps: shortcutRestoreGaps,
                 inventory: inventory,
                 selection: selection,
-                liveFolderManager: liveFolderManager,
+                liveFolderSource: liveFolderSnapshot.source,
+                liveFolderItems: liveFolderSnapshot.items,
                 currentTab: currentTab,
                 windowState: windowState
             )

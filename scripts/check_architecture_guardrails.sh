@@ -67,6 +67,7 @@ checks=(
   "scripts/check_history_tab_recorder_location.sh"
   "scripts/check_sidebar_chrome_folder_boundary.sh"
   "scripts/check_sidebar_view_coupling.sh"
+  "scripts/check_sidebar_observation_boundary.sh"
   "scripts/check_space_view_decomposition.sh"
   "scripts/check_no_exported_domain_webruntime.sh"
   "scripts/check_package_topology.sh"

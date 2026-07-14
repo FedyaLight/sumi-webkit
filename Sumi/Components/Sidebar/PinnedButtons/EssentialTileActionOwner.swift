@@ -19,7 +19,7 @@ struct EssentialTileContextMenuActions {
 @MainActor
 struct EssentialTileActionOwner {
     let browserContext: SidebarBrowserContext
-    let inventory: SidebarInventoryProjection
+    let inventory: SidebarSpaceInventorySnapshot
     let selection: SidebarWindowSelectionQuery
     let pinProjection: SidebarPinFolderProjection
     let pinCommands: SidebarPinFolderCommands
@@ -149,7 +149,9 @@ struct EssentialTileActionOwner {
     private var essentialFolderChoices: [SidebarContextMenuChoice] {
         guard let contextMenuSpace else { return [] }
         return makeSidebarContextMenuFolderChoices(
-            folders: Array(inventory.snapshot(for: contextMenuSpace.id)?.foldersByID.values ?? Dictionary<UUID, TabFolder>().values)
+            folders: contextMenuSpace.id == inventory.spaceID
+                ? Array(inventory.foldersByID.values)
+                : []
         )
     }
 

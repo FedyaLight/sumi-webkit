@@ -4,6 +4,7 @@
 //
 //
 
+import Combine
 import Foundation
 import SumiDomain
 import SwiftUI
@@ -34,6 +35,34 @@ struct PendingWindowSplitSelection: Equatable, Sendable {
 /// closing a shell that contains only its original script-created context.
 struct WebKitChildWindowIdentity: Equatable, Sendable {
     let initialTabID: UUID
+}
+
+/// Exact, window-local publication boundary for private-browsing inventory.
+///
+/// Private tabs and spaces never enter the shared model store, so shared tab
+/// structure events cannot describe their mutations. Sidebar consumers use
+/// these two role-specific streams while mounted and take a fresh snapshot
+/// when remounted.
+@MainActor
+final class BrowserWindowEphemeralInventoryAuthority {
+    private let tabInventoryChanged = PassthroughSubject<Void, Never>()
+    private let spaceCatalogChanged = PassthroughSubject<Void, Never>()
+
+    var tabInventoryChanges: AnyPublisher<Void, Never> {
+        tabInventoryChanged.eraseToAnyPublisher()
+    }
+
+    var spaceCatalogChanges: AnyPublisher<Void, Never> {
+        spaceCatalogChanged.eraseToAnyPublisher()
+    }
+
+    fileprivate func publishTabInventoryChanged() {
+        tabInventoryChanged.send()
+    }
+
+    fileprivate func publishSpaceCatalogChanged() {
+        spaceCatalogChanged.send()
+    }
 }
 
 /// Represents the state of a single browser window, allowing multiple windows
@@ -175,10 +204,171 @@ class BrowserWindowState {
     var ephemeralProfile: Profile?
 
     /// Ephemeral spaces created in this incognito session
-    var ephemeralSpaces: [Space] = []
+    @ObservationIgnored
+    private(set) var ephemeralSpaces: [Space] = [] {
+        didSet {
+            guard oldValue.elementsEqual(
+                ephemeralSpaces,
+                by: { $0 === $1 }
+            ) == false else { return }
+            publishEphemeralSpaceCatalogChanged()
+        }
+    }
 
     /// Ephemeral tabs created in this incognito session
-    var ephemeralTabs: [Tab] = []
+    @ObservationIgnored
+    private(set) var ephemeralTabs: [Tab] = [] {
+        didSet {
+            guard oldValue.elementsEqual(
+                ephemeralTabs,
+                by: { $0 === $1 }
+            ) == false else { return }
+            publishEphemeralTabInventoryChanged()
+        }
+    }
+
+    /// Private inventory is intentionally absent from this window's broad
+    /// Observation graph. Consumers opt into the exact role they render.
+    @ObservationIgnored
+    let ephemeralInventoryAuthority = BrowserWindowEphemeralInventoryAuthority()
+
+    @ObservationIgnored
+    private var defersEphemeralInventoryPublication = false
+
+    @ObservationIgnored
+    private var deferredEphemeralTabInventoryChange = false
+
+    @ObservationIgnored
+    private var deferredEphemeralSpaceCatalogChange = false
+
+    func appendEphemeralSpace(_ space: Space) {
+        guard ephemeralSpaces.contains(where: { $0.id == space.id }) == false else { return }
+        ephemeralSpaces.append(space)
+    }
+
+    func replaceEphemeralSpaces(_ spaces: [Space]) {
+        ephemeralSpaces = spaces
+    }
+
+    func removeAllEphemeralSpaces() {
+        guard ephemeralSpaces.isEmpty == false else { return }
+        ephemeralSpaces.removeAll()
+    }
+
+    @discardableResult
+    func removeEphemeralSpace(ifIdentical space: Space) -> Bool {
+        guard let index = ephemeralSpaces.firstIndex(where: { $0 === space })
+        else { return false }
+        ephemeralSpaces.remove(at: index)
+        return true
+    }
+
+    func appendEphemeralTab(_ tab: Tab) {
+        guard ephemeralTabs.contains(where: { $0.id == tab.id }) == false else { return }
+        ephemeralTabs.append(tab)
+    }
+
+    func replaceEphemeralTabs(_ tabs: [Tab]) {
+        ephemeralTabs = tabs
+    }
+
+    @discardableResult
+    func removeEphemeralTab(id: UUID) -> Tab? {
+        guard let index = ephemeralTabs.firstIndex(where: { $0.id == id }) else {
+            return nil
+        }
+        return ephemeralTabs.remove(at: index)
+    }
+
+    func containsEphemeralTab(ifIdentical tab: Tab) -> Bool {
+        ephemeralTabs.contains { $0 === tab }
+    }
+
+    /// Rollback-only removal receipt. A stale transaction must not remove a
+    /// newer tab that reused the same UUID after the transaction began.
+    @discardableResult
+    func removeEphemeralTab(ifIdentical tab: Tab) -> Bool {
+        guard let index = ephemeralTabs.firstIndex(where: { $0 === tab }) else {
+            return false
+        }
+        ephemeralTabs.remove(at: index)
+        return true
+    }
+
+    func removeAllEphemeralTabs() {
+        guard ephemeralTabs.isEmpty == false else { return }
+        ephemeralTabs.removeAll()
+    }
+
+    /// Commits the complete unpublished private-window aggregate before either
+    /// inventory stream can re-enter. Every guard runs before the first write;
+    /// after mutation begins there is no failing tail and no window write after
+    /// deferred publication starts.
+    @discardableResult
+    func rollbackUnpublishedPrivateAggregate(
+        expectedProfile: Profile,
+        expectedSpace: Space,
+        expectedTab: Tab,
+        expectedTabManager: TabManager,
+        expectedChildWindowIdentity: WebKitChildWindowIdentity?
+    ) -> Bool {
+        guard isIncognito,
+              tabManager === expectedTabManager,
+              ephemeralProfile === expectedProfile,
+              currentProfileId == expectedProfile.id,
+              currentSpaceId == expectedSpace.id,
+              currentTabId == expectedTab.id,
+              webKitChildWindowIdentity == expectedChildWindowIdentity,
+              ephemeralSpaces.count == 1,
+              ephemeralSpaces.first === expectedSpace,
+              ephemeralTabs.count == 1,
+              ephemeralTabs.first === expectedTab,
+              expectedSpace.isEphemeral,
+              expectedSpace.profileId == expectedProfile.id,
+              expectedTab.spaceId == nil,
+              expectedTab.profileId == expectedProfile.id
+        else { return false }
+
+        defersEphemeralInventoryPublication = true
+        currentTabId = nil
+        currentSpaceId = nil
+        currentProfileId = nil
+        ephemeralProfile = nil
+        ephemeralTabs.removeAll()
+        ephemeralSpaces.removeAll()
+        defersEphemeralInventoryPublication = false
+        flushDeferredEphemeralInventoryPublication()
+        return true
+    }
+
+    private func publishEphemeralTabInventoryChanged() {
+        guard defersEphemeralInventoryPublication == false else {
+            deferredEphemeralTabInventoryChange = true
+            return
+        }
+        ephemeralInventoryAuthority.publishTabInventoryChanged()
+    }
+
+    private func publishEphemeralSpaceCatalogChanged() {
+        guard defersEphemeralInventoryPublication == false else {
+            deferredEphemeralSpaceCatalogChange = true
+            return
+        }
+        ephemeralInventoryAuthority.publishSpaceCatalogChanged()
+    }
+
+    private func flushDeferredEphemeralInventoryPublication() {
+        let publishesTabs = deferredEphemeralTabInventoryChange
+        let publishesSpaces = deferredEphemeralSpaceCatalogChange
+        deferredEphemeralTabInventoryChange = false
+        deferredEphemeralSpaceCatalogChange = false
+        if publishesTabs {
+            ephemeralInventoryAuthority.publishTabInventoryChanged()
+        }
+        if publishesSpaces {
+            ephemeralInventoryAuthority.publishSpaceCatalogChanged()
+        }
+    }
 
     init(
         id: UUID = UUID(),

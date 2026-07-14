@@ -6,10 +6,10 @@
 //
 
 import AppKit
+import SumiDomain
 import SwiftUI
 import UniformTypeIdentifiers
 import WebKit
-import SumiDomain
 
 enum URLBarPresentationMode {
     case sidebar
@@ -41,7 +41,6 @@ struct URLBarView: View {
     // Keeps the URL-bar view invalidated as Glance session state changes;
     // page identity itself still comes exclusively from ActivePageResolver.
     @EnvironmentObject private var glanceManager: GlanceManager
-    @EnvironmentObject var extensionSurfaceStore: BrowserExtensionSurfaceStore
     @Environment(BrowserWindowState.self) var windowState
     @Environment(WindowRegistry.self) var windowRegistry
     @Environment(\.sumiSettings) var sumiSettings
@@ -56,6 +55,7 @@ struct URLBarView: View {
     @StateObject var permissionIndicatorViewModel = SumiPermissionIndicatorViewModel()
     @StateObject var permissionPromptPresenter = SumiPermissionPromptPresenter()
     @StateObject var permissionRuntimeControlsModel = SumiPermissionRuntimeControlsViewModel()
+    @StateObject var extensionDisplayModel: URLBarExtensionDisplayModel
 
     init(
         browserContext: URLBarBrowserContext,
@@ -63,6 +63,20 @@ struct URLBarView: View {
     ) {
         self.browserContext = browserContext
         self.presentationMode = presentationMode
+        _extensionDisplayModel = StateObject(
+            wrappedValue: URLBarExtensionDisplayModel(
+                moduleEnabledChanges:
+                    browserContext.extensionActions.moduleEnabledChanges,
+                current: { profileID in
+                    browserContext.extensionActions
+                        .toolbarPresentationSnapshot(profileID)
+                },
+                changes: { profileID in
+                    browserContext.extensionActions
+                        .toolbarPresentationSnapshots(profileID)
+                }
+            )
+        )
     }
 
     var body: some View {
@@ -117,6 +131,13 @@ struct URLBarView: View {
         }
         .onAppear {
             permissionPromptPresenter.windowRegistry = windowRegistry
+            extensionDisplayModel.setDemanded(
+                true,
+                profileID: extensionToolbarProfileID
+            )
+        }
+        .onChange(of: extensionToolbarProfileID) { _, profileID in
+            extensionDisplayModel.setDemanded(true, profileID: profileID)
         }
         .onChange(of: browserContext.bookmarkEditorPresentationRequest) { _, request in
             handleBookmarkEditorPresentationRequest(request)
@@ -143,6 +164,10 @@ struct URLBarView: View {
             }
         }
         .onDisappear {
+            extensionDisplayModel.setDemanded(
+                false,
+                profileID: extensionToolbarProfileID
+            )
             closePermissionIndicatorPopover()
             browserContext.closeURLBarHubPopover(windowState)
             permissionPromptPresenter.clear()
@@ -181,6 +206,10 @@ struct URLBarView: View {
             return profile
         }
         return browserContext.currentProfile()
+    }
+
+    var extensionToolbarProfileID: UUID? {
+        currentTab?.profileId ?? effectiveProfileId
     }
 
     var siteControlsSnapshot: SiteControlsSnapshot {

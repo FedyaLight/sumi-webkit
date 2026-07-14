@@ -55,6 +55,10 @@ final class RegularTabCollectionStateOwner {
         return (tabsBySpace[spaceId] ?? []).contains { $0.id == tab.id }
     }
 
+    func containsIdentical(_ tab: Tab, in spaceId: UUID) -> Bool {
+        (tabsBySpace[spaceId] ?? []).contains { $0 === tab }
+    }
+
     func firstIndex(of tab: Tab, in spaceId: UUID) -> Int? {
         tabsBySpace[spaceId]?.firstIndex { $0.id == tab.id }
     }

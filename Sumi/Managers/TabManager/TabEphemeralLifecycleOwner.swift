@@ -30,7 +30,7 @@ final class TabEphemeralLifecycleOwner {
         newTab.profileId = profile.id
         prepareTabForRuntime(newTab)
 
-        windowState.ephemeralTabs.append(newTab)
+        windowState.appendEphemeralTab(newTab)
         windowState.currentTabId = newTab.id
 
         RuntimeDiagnostics.emit("🔒 [TabEphemeralLifecycleOwner] Created ephemeral tab: \(newTab.id) in window: \(windowState.id)")

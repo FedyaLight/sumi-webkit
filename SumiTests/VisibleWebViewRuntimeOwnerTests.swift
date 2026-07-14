@@ -73,7 +73,7 @@ final class VisibleWebViewRuntimeOwnerTests: XCTestCase {
         let ephemeralTab = makeWebTab(urlString: "https://example.com/private")
         regularWindow.currentTabId = regularTab.id
         ephemeralWindow.currentTabId = ephemeralTab.id
-        ephemeralWindow.ephemeralTabs = [ephemeralTab]
+        ephemeralWindow.replaceEphemeralTabs([ephemeralTab])
 
         var createdTabs: [Tab] = []
         for (window, expectedTab) in [

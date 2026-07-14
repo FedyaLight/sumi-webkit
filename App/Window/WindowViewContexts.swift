@@ -66,7 +66,8 @@ final class WindowSidebarContext {
     let spaceLifecycle: SidebarSpaceLifecycle
     let regularTabs: any SidebarRegularTabsControlling
     let dragTransactions: SidebarDragTransactionPort
-    let updates: SidebarUpdateStreams
+    let inventoryUpdates: SidebarInventoryUpdates
+    let profileUpdates: SidebarProfileUpdates
     let hostActions: SidebarHostActions
     let hostRecoveryCoordinator: SidebarHostRecoveryHandling
     let updaterService: SumiUpdaterService
@@ -84,7 +85,8 @@ final class WindowSidebarContext {
         spaceLifecycle: SidebarSpaceLifecycle,
         regularTabs: any SidebarRegularTabsControlling,
         dragTransactions: SidebarDragTransactionPort,
-        updates: SidebarUpdateStreams,
+        inventoryUpdates: SidebarInventoryUpdates,
+        profileUpdates: SidebarProfileUpdates,
         hostActions: SidebarHostActions,
         hostRecoveryCoordinator: SidebarHostRecoveryHandling,
         updaterService: SumiUpdaterService,
@@ -100,7 +102,8 @@ final class WindowSidebarContext {
         self.spaceLifecycle = spaceLifecycle
         self.regularTabs = regularTabs
         self.dragTransactions = dragTransactions
-        self.updates = updates
+        self.inventoryUpdates = inventoryUpdates
+        self.profileUpdates = profileUpdates
         self.hostActions = hostActions
         self.hostRecoveryCoordinator = hostRecoveryCoordinator
         self.updaterService = updaterService

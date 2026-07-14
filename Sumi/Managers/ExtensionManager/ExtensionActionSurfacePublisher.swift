@@ -16,6 +16,10 @@ final class ExtensionActionSurfacePublisher {
     private let extensionIDForContext: @MainActor (WKWebExtensionContext) -> String?
     private let setActionSurfaceState: @MainActor (String, BrowserExtensionActionSurfaceState) -> Void
     private let removeActionSurfaceState: @MainActor (String) -> Void
+    private let publishActionPresentationChange:
+        @MainActor (ExtensionActionPresentationChange) -> Void
+    private let exactContextIdentity:
+        @MainActor (WKWebExtensionContext) -> (extensionID: String, profileID: UUID)?
     private let currentExtensionTab: @MainActor () -> Tab?
     private let stableAdapter: @MainActor (Tab) -> ExtensionTabAdapter?
     private let ensureBackgroundAvailableIfRequired:
@@ -32,21 +36,29 @@ final class ExtensionActionSurfacePublisher {
         extensionIDForContext: @escaping @MainActor (WKWebExtensionContext) -> String?,
         setActionSurfaceState: @escaping @MainActor (String, BrowserExtensionActionSurfaceState) -> Void,
         removeActionSurfaceState: @escaping @MainActor (String) -> Void,
+        publishActionPresentationChange: @escaping @MainActor (
+            ExtensionActionPresentationChange
+        ) -> Void,
+        exactContextIdentity: @escaping @MainActor (
+            WKWebExtensionContext
+        ) -> (extensionID: String, profileID: UUID)?,
         currentExtensionTab: @escaping @MainActor () -> Tab?,
         stableAdapter: @escaping @MainActor (Tab) -> ExtensionTabAdapter?,
         ensureBackgroundAvailableIfRequired:
-            @escaping @MainActor (
-                WKWebExtension,
-                WKWebExtensionContext,
-                ExtensionManager.ExtensionBackgroundWakeReason,
-                @escaping @MainActor () -> Bool
-            ) async throws -> Void,
+        @escaping @MainActor (
+            WKWebExtension,
+            WKWebExtensionContext,
+            ExtensionManager.ExtensionBackgroundWakeReason,
+            @escaping @MainActor () -> Bool
+        ) async throws -> Void,
         reconcileOpenTabsAfterExtensionContextLoad: @escaping @MainActor (String) -> Void
     ) {
         self.authority = authority
         self.extensionIDForContext = extensionIDForContext
         self.setActionSurfaceState = setActionSurfaceState
         self.removeActionSurfaceState = removeActionSurfaceState
+        self.publishActionPresentationChange = publishActionPresentationChange
+        self.exactContextIdentity = exactContextIdentity
         self.currentExtensionTab = currentExtensionTab
         self.stableAdapter = stableAdapter
         self.ensureBackgroundAvailableIfRequired = ensureBackgroundAvailableIfRequired
@@ -63,10 +75,25 @@ final class ExtensionActionSurfacePublisher {
         ) else { return }
 
         setActionSurfaceState(update.extensionID, update.state)
+        guard let identity = exactContextIdentity(extensionContext),
+              identity.extensionID == update.extensionID
+        else { return }
+        publishActionPresentationChange(
+            ExtensionActionPresentationChange(
+                extensionID: identity.extensionID,
+                profileID: identity.profileID
+            )
+        )
     }
 
     func clearActionSurfaceState(for extensionId: String) {
         removeActionSurfaceState(extensionId)
+        publishActionPresentationChange(
+            ExtensionActionPresentationChange(
+                extensionID: extensionId,
+                profileID: nil
+            )
+        )
     }
 
     /// Publishes URL-hub action metadata when WebKit has not yet delivered `didUpdate action`.
@@ -154,6 +181,18 @@ extension ExtensionActionSurfacePublisher {
             },
             removeActionSurfaceState: { [weak manager] extensionId in
                 manager?.actionStatesByExtensionID.removeValue(forKey: extensionId)
+            },
+            publishActionPresentationChange: { [weak manager] change in
+                manager?.actionPresentationChanges.send(change)
+            },
+            exactContextIdentity: { [weak manager] context in
+                manager?.profileRuntime.exactContextIdentity(for: context)
+                    .map {
+                        (
+                            extensionID: $0.extensionId,
+                            profileID: $0.profileId
+                        )
+                    }
             },
             currentExtensionTab: { [weak manager] in
                 manager?.extensionWindowQuery?

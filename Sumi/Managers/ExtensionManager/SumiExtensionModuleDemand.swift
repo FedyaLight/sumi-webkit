@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 
 @MainActor
@@ -5,6 +6,7 @@ final class SumiExtensionModuleDemand {
     private let lifetime: SumiExtensionManagerLifetime
     private let contentBlocking: SumiExtensionContentBlockingSurface
     private let toolbarActions: SumiExtensionToolbarActionSurface
+    private let enabledState: CurrentValueSubject<Bool, Never>
 
     init(
         lifetime: SumiExtensionManagerLifetime,
@@ -14,10 +16,14 @@ final class SumiExtensionModuleDemand {
         self.lifetime = lifetime
         self.contentBlocking = contentBlocking
         self.toolbarActions = toolbarActions
+        enabledState = CurrentValueSubject(lifetime.isEnabled)
     }
 
     var isEnabled: Bool { lifetime.isEnabled }
     var hasLoadedRuntime: Bool { lifetime.hasLoadedRuntime }
+    var enabledChanges: AnyPublisher<Bool, Never> {
+        enabledState.removeDuplicates().eraseToAnyPublisher()
+    }
 
     func setEnabled(_ isEnabled: Bool) {
         let wasEnabled = lifetime.isEnabled
@@ -36,6 +42,9 @@ final class SumiExtensionModuleDemand {
         } else if wasEnabled == false {
             lifetime.attachRuntimeFromProviderIfNeeded()
             contentBlocking.markReloadRequiredForLiveTabs()
+        }
+        if wasEnabled != isEnabled {
+            enabledState.send(isEnabled)
         }
     }
 

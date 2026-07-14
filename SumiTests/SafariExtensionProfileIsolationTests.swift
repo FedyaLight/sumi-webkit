@@ -34,6 +34,8 @@ final class SafariExtensionProfileIsolationTests: XCTestCase {
             },
             ephemeralProfile: { _ in nil },
             windowState: { _ in nil },
+            windowRegistrationReceipt: { _ in nil },
+            registeredWindow: { _ in nil },
             activeWindowState: { nil },
             allTabs: { [] },
             allWindowStates: { [] },

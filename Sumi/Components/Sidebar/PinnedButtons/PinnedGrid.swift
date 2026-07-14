@@ -34,13 +34,15 @@ struct PinnedGrid: View {
 
     let width: CGFloat
     let browserContext: SidebarBrowserContext
-    let inventory: SidebarInventoryProjection
+    let inventory: SidebarSpaceInventorySnapshot
+    let items: [ShortcutPin]
     let selection: SidebarWindowSelectionQuery
     let pinProjection: SidebarPinFolderProjection
     let pinCommands: SidebarPinFolderCommands
     let spaceLifecycle: SidebarSpaceLifecycle
     let spaceId: UUID?
     let profileId: UUID?
+    let isTransitioningProfile: Bool
     let animateLayout: Bool
     let reportsGeometry: Bool
     let isAppKitInteractionEnabled: Bool
@@ -53,13 +55,15 @@ struct PinnedGrid: View {
     init(
         width: CGFloat,
         browserContext: SidebarBrowserContext,
-        inventory: SidebarInventoryProjection,
+        inventory: SidebarSpaceInventorySnapshot,
+        items: [ShortcutPin],
         selection: SidebarWindowSelectionQuery,
         pinProjection: SidebarPinFolderProjection,
         pinCommands: SidebarPinFolderCommands,
         spaceLifecycle: SidebarSpaceLifecycle,
         spaceId: UUID? = nil,
         profileId: UUID? = nil,
+        isTransitioningProfile: Bool,
         animateLayout: Bool = true,
         reportsGeometry: Bool = true,
         isAppKitInteractionEnabled: Bool = true
@@ -67,12 +71,14 @@ struct PinnedGrid: View {
         self.width = width
         self.browserContext = browserContext
         self.inventory = inventory
+        self.items = items
         self.selection = selection
         self.pinProjection = pinProjection
         self.pinCommands = pinCommands
         self.spaceLifecycle = spaceLifecycle
         self.spaceId = spaceId
         self.profileId = profileId
+        self.isTransitioningProfile = isTransitioningProfile
         self.animateLayout = animateLayout
         self.reportsGeometry = reportsGeometry
         self.isAppKitInteractionEnabled = isAppKitInteractionEnabled
@@ -83,9 +89,6 @@ struct PinnedGrid: View {
 
         // Use profile-filtered essentials
         let effectiveProfileId = profileId ?? windowState.currentProfileId ?? browserContext.currentProfile()?.id
-        let items: [ShortcutPin] = effectiveProfileId != nil
-            ? inventory.essentialPins(profileID: effectiveProfileId)
-            : []
         let layout = PinnedGridLayoutModel(
             width: width,
             items: items,
@@ -95,7 +98,7 @@ struct PinnedGrid: View {
             animateLayout: animateLayout,
             reportsGeometry: reportsGeometry,
             isActiveWindow: windowRegistry.activeWindow?.id == windowState.id,
-            isTransitioningProfile: browserContext.isTransitioningProfile(),
+            isTransitioningProfile: isTransitioningProfile,
             shouldReduceMotion: shouldReduceMotion
         )
         let projectedLayout = layout.projectedLayout
@@ -192,7 +195,7 @@ struct PinnedGrid: View {
                 transaction.disablesAnimations = true
             }
         }
-        .allowsHitTesting(!browserContext.isTransitioningProfile())
+        .allowsHitTesting(!isTransitioningProfile)
     }
 
     @ViewBuilder
@@ -249,7 +252,7 @@ struct PinnedGrid: View {
                 onActivate: { activate(pin) },
                 onUnload: { essentialTileActionOwner.unload(pin) },
                 contextMenuActions: contextMenuActions,
-                dragIsEnabled: !browserContext.isTransitioningProfile() && isAppKitInteractionEnabled,
+                dragIsEnabled: !isTransitioningProfile && isAppKitInteractionEnabled,
                 isAppKitInteractionEnabled: isAppKitInteractionEnabled
             )
             .frame(width: tileSize.width, height: tileSize.height, alignment: .center)
@@ -288,7 +291,8 @@ struct PinnedGrid: View {
 
     private func splitPlaceholderGroup(for pin: ShortcutPin) -> SplitGroup? {
         guard let spaceID = spaceId ?? windowState.currentSpaceId,
-              let group = inventory.snapshot(for: spaceID)?.splitGroup(
+              spaceID == inventory.spaceID,
+              let group = inventory.splitGroup(
                 containing: .shortcutPin(pin.id)
               ), !group.container.isShortcutSidebar else {
             return nil
@@ -338,7 +342,7 @@ struct PinnedGrid: View {
     private func mutateContentLayout(_ update: @escaping () -> Void) {
         guard animateLayout,
               windowRegistry.activeWindow?.id == windowState.id,
-              !browserContext.isTransitioningProfile(),
+              !isTransitioningProfile,
               !reduceMotion,
               !dragState.isCompletingDrop else {
             update()

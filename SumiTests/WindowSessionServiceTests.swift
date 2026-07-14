@@ -875,7 +875,7 @@ final class WindowSessionServiceTests: XCTestCase {
         windowState.isIncognito = true
         windowState.currentProfileId = ephemeralProfileId
         windowState.currentSpaceId = ephemeralSpaceId
-        windowState.ephemeralTabs = [ephemeralTab]
+        windowState.replaceEphemeralTabs([ephemeralTab])
         windowState.currentTabId = ephemeralTab.id
         windowState.tabManager = browserManager.tabManager
 

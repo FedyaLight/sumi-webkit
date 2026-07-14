@@ -6,8 +6,8 @@
 //
 
 import Combine
-import SwiftUI
 import SumiWebRuntime
+import SwiftUI
 
 private struct URLBarHubPopoverContentSizePreferenceKey: PreferenceKey {
     static let defaultValue: CGSize = .zero
@@ -51,6 +51,7 @@ struct URLBarHubPopover: View {
     @State private var bookmarkErrorMessage: String?
     @State private var readerModeIsActive = false
     @StateObject private var pageActionOwner = URLBarHubPageActionOwner()
+    @StateObject private var extensionDisplayModel: URLBarExtensionDisplayModel
     @AppStorage("URLBarHubScreenshotQualityScale") private var screenshotQualityScale = URLBarHubScreenshotQuality.twoX.rawValue
     @AppStorage("URLBarHubScreenshotCaptureTarget") private var screenshotCaptureTarget = URLBarHubScreenshotCaptureTarget.visiblePage.rawValue
     @AppStorage("URLBarHubScreenshotDestination") private var screenshotDestination = URLBarHubScreenshotDestination.askEveryTime.rawValue
@@ -83,6 +84,20 @@ struct URLBarHubPopover: View {
                 faviconService: browserContext.faviconService
             )
         )
+        self._extensionDisplayModel = StateObject(
+            wrappedValue: URLBarExtensionDisplayModel(
+                moduleEnabledChanges:
+                    browserContext.extensionActions.moduleEnabledChanges,
+                current: { profileID in
+                    browserContext.extensionActions
+                        .toolbarPresentationSnapshot(profileID)
+                },
+                changes: { profileID in
+                    browserContext.extensionActions
+                        .toolbarPresentationSnapshots(profileID)
+                }
+            )
+        )
     }
 
     private var snapshot: SiteControlsSnapshot {
@@ -113,10 +128,9 @@ struct URLBarHubPopover: View {
         return browserContext.activeBoostId(currentTab?.url, activeProfile?.id)
     }
 
-    private var unpinnedEnabledExtensionActions: [InstalledExtension] {
-        browserContext.extensionSurfaceStore.enabledExtensions
-            .filter(\.hasAction)
-            .filter { browserContext.extensionActions.isPinnedToToolbar($0.id) == false }
+    private var unpinnedEnabledExtensionActions:
+        [BrowserExtensionToolbarDisplayRecord] {
+        extensionDisplayModel.snapshot.unpinnedEnabledActionExtensions
     }
 
     private var permissionDependencies: SumiCurrentSitePermissionsViewModel.LoadDependencies {
@@ -187,6 +201,10 @@ struct URLBarHubPopover: View {
         .animation(URLBarHubNavigationModel.modeAnimation, value: navigation.containerWidth)
         .onAppear {
             pageActionOwner.windowRegistry = windowRegistry
+            extensionDisplayModel.setDemanded(
+                true,
+                profileID: activeProfile?.id
+            )
             browserContext.extensionActions.ensureActionMetadataLoadedIfNeeded()
             handleBookmarkPresentationRequest(browserContext.bookmarkPresentationRequest)
         }
@@ -204,6 +222,9 @@ struct URLBarHubPopover: View {
             readerModeIsActive = false
             refreshCoordinator.scheduleCoalescedRefresh()
             schedulePermissionsReloadAfterStoreChange()
+        }
+        .onChange(of: activeProfile?.id) { _, profileID in
+            extensionDisplayModel.setDemanded(true, profileID: profileID)
         }
         .onReceive(NotificationCenter.default.publisher(for: .sumiTabNavigationStateDidChange)) { notification in
             handleNavigationStateDidChange(notification)
@@ -233,6 +254,10 @@ struct URLBarHubPopover: View {
             schedulePermissionsReloadAfterStoreChange()
         }
         .onDisappear {
+            extensionDisplayModel.setDemanded(
+                false,
+                profileID: activeProfile?.id
+            )
             permissionsSession.cancel()
             refreshCoordinator.cancel()
         }

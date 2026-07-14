@@ -40,13 +40,12 @@ final class ShortcutTabMaterializer {
     ) -> Tab {
         structuralLookup.withTransaction {
             if let existing = registry.tab(for: pin.id, in: windowId) {
-                let changed = bindings.applyExisting(
+                _ = bindings.applyExisting(
                     pin,
                     to: existing,
                     currentSpaceId: currentSpaceId
                 )
                 membership.attach(existing)
-                if changed { structuralLookup.requestPublish() }
                 return existing
             }
 

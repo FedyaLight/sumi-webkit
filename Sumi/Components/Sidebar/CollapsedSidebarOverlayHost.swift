@@ -24,7 +24,8 @@ struct CollapsedSidebarOverlayHost: View {
     let spaceLifecycle: SidebarSpaceLifecycle
     let regularTabs: any SidebarRegularTabsControlling
     let dragTransactions: SidebarDragTransactionPort
-    let updateStreams: SidebarUpdateStreams
+    let inventoryUpdates: SidebarInventoryUpdates
+    let profileUpdates: SidebarProfileUpdates
     var updaterService: SumiUpdaterService
     var hostActions: SidebarHostActions
     var windowState: BrowserWindowState
@@ -68,7 +69,8 @@ struct CollapsedSidebarOverlayHost: View {
                     spaceLifecycle: spaceLifecycle,
                     regularTabs: regularTabs,
                     dragTransactions: dragTransactions,
-                    updateStreams: updateStreams,
+                    inventoryUpdates: inventoryUpdates,
+                    profileUpdates: profileUpdates,
                     updaterService: updaterService,
                     hostActions: hostActions,
                     windowState: windowState,

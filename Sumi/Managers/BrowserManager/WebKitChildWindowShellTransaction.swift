@@ -124,7 +124,7 @@ final class WebKitChildWindowShellTransaction {
             profileId: profile.id
         )
         space.isEphemeral = true
-        window.ephemeralSpaces = [space]
+        window.replaceEphemeralSpaces([space])
         window.currentSpaceId = space.id
         window.tabManager = tabs
     }

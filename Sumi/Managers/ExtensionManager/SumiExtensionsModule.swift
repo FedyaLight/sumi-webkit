@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import SwiftData
 
@@ -58,7 +59,8 @@ final class SumiExtensionsModule {
             lifetime: managerLifetime
         )
         let toolbarActions = SumiExtensionToolbarActionSurface(
-            lifetime: managerLifetime
+            lifetime: managerLifetime,
+            surfaceStore: resolvedSurfaceStore
         )
         let settingsCatalog = SumiExtensionSettingsCatalogSurface(
             lifetime: managerLifetime,
@@ -83,6 +85,7 @@ final class SumiExtensionsModule {
     }
 
     var isEnabled: Bool { demand.isEnabled }
+    var enabledChanges: AnyPublisher<Bool, Never> { demand.enabledChanges }
     var hasLoadedRuntime: Bool { demand.hasLoadedRuntime }
     var hasAttachedRuntime: Bool { managerLifetime.hasAttachedRuntime }
 

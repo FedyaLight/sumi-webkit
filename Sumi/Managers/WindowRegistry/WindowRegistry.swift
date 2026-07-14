@@ -42,6 +42,16 @@ class WindowRegistry {
         }
     }
 
+    /// Exact authority for one committed physical window registration. A
+    /// same-ID replacement receives a new generation, so stale UI cannot
+    /// become current again through durable-identity ABA.
+    struct WindowRegistrationReceipt: Equatable, Hashable {
+        fileprivate let registryIdentity: ObjectIdentifier
+        fileprivate let windowID: UUID
+        fileprivate let windowIdentity: ObjectIdentifier
+        fileprivate let generation: UInt64
+    }
+
     private struct WindowAwaiter {
         let existingWindowIDs: Set<UUID>
         let continuation: CheckedContinuation<BrowserWindowState?, Never>
@@ -56,6 +66,12 @@ class WindowRegistry {
     /// object into `_windows`.
     @ObservationIgnored
     private var provisionalWindows: [UUID: BrowserWindowState] = [:]
+
+    @ObservationIgnored
+    private var registrationReceipts: [UUID: WindowRegistrationReceipt] = [:]
+
+    @ObservationIgnored
+    private var nextRegistrationGeneration: UInt64 = 0
 
     @ObservationIgnored
     private var windowAwaiters: [UUID: WindowAwaiter] = [:]
@@ -167,6 +183,13 @@ class WindowRegistry {
 
         provisionalWindows.removeValue(forKey: window.id)
         _windows[window.id] = window
+        nextRegistrationGeneration &+= 1
+        registrationReceipts[window.id] = WindowRegistrationReceipt(
+            registryIdentity: ObjectIdentifier(self),
+            windowID: window.id,
+            windowIdentity: ObjectIdentifier(window),
+            generation: nextRegistrationGeneration
+        )
         eventSink?.publishWindowRegistration(window)
         guard _windows[window.id] === window,
               validatePublication(window),
@@ -177,6 +200,7 @@ class WindowRegistry {
             // half-committed registration.
             if _windows[window.id] === window {
                 _windows.removeValue(forKey: window.id)
+                registrationReceipts.removeValue(forKey: window.id)
                 unbindAppKitWindow(for: window.id)
                 if activeWindowId == window.id {
                     activeWindowId = nil
@@ -214,6 +238,7 @@ class WindowRegistry {
 
         let wasActive = activeWindowId == id
         _windows.removeValue(forKey: id)
+        registrationReceipts.removeValue(forKey: id)
         unbindAppKitWindow(for: id)
         if wasActive {
             activeWindowId = nil
@@ -304,6 +329,28 @@ class WindowRegistry {
 
     func notifyWindowVisibilityChanged(_ window: BrowserWindowState) {
         eventSink?.changeWindowVisibility(window)
+    }
+
+    func registrationReceipt(
+        for window: BrowserWindowState
+    ) -> WindowRegistrationReceipt? {
+        guard _windows[window.id] === window,
+              let receipt = registrationReceipts[window.id],
+              receipt.registryIdentity == ObjectIdentifier(self),
+              receipt.windowIdentity == ObjectIdentifier(window)
+        else { return nil }
+        return receipt
+    }
+
+    func window(
+        ifCurrent receipt: WindowRegistrationReceipt
+    ) -> BrowserWindowState? {
+        guard receipt.registryIdentity == ObjectIdentifier(self),
+              registrationReceipts[receipt.windowID] == receipt,
+              let window = _windows[receipt.windowID],
+              ObjectIdentifier(window) == receipt.windowIdentity
+        else { return nil }
+        return window
     }
 
     private func focusedRegisteredWindow() -> BrowserWindowState? {

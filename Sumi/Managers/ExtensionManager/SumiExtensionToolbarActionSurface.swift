@@ -1,22 +1,29 @@
 import AppKit
+import Combine
 import Foundation
 import WebKit
 
 @MainActor
 final class SumiExtensionToolbarActionSurface {
     private let lifetime: SumiExtensionManagerLifetime
+    private let surfaceStore: BrowserExtensionSurfaceStore
     private let siteAccess: SumiExtensionToolbarSiteAccessOwner
+    private let actionPresentation: ExtensionActionPresentationQuery
     private var pendingActionAnchors: [String: [WeakAnchor]] = [:]
 
-    init(lifetime: SumiExtensionManagerLifetime) {
+    init(
+        lifetime: SumiExtensionManagerLifetime,
+        surfaceStore: BrowserExtensionSurfaceStore
+    ) {
         self.lifetime = lifetime
+        self.surfaceStore = surfaceStore
         siteAccess = SumiExtensionToolbarSiteAccessOwner(
             managerIfLoadedAndEnabled: { [weak lifetime] in lifetime?.loadedManagerIfEnabled() },
             managerIfEnabled: { [weak lifetime] in lifetime?.managerIfEnabled() },
-            fallbackProfileId: { [weak lifetime] in lifetime?.currentProfileID },
-            invalidateTabStructuralRevision: { [weak lifetime] in
-                lifetime?.invalidateTabStructuralRevision()
-            }
+            fallbackProfileId: { [weak lifetime] in lifetime?.currentProfileID }
+        )
+        actionPresentation = ExtensionActionPresentationQuery(
+            manager: { [weak lifetime] in lifetime?.loadedManagerIfEnabled() }
         )
     }
 
@@ -29,7 +36,7 @@ final class SumiExtensionToolbarActionSurface {
     }
 
     func orderedPinnedToolbarSlots(
-        enabledExtensions: [InstalledExtension],
+        enabledExtensions: [BrowserExtensionToolbarDisplayRecord],
         profileID: UUID? = nil
     ) -> [PinnedToolbarSlot] {
         siteAccess.orderedPinnedToolbarSlots(
@@ -38,14 +45,50 @@ final class SumiExtensionToolbarActionSurface {
         )
     }
 
+    func toolbarPresentationSnapshot(
+        profileID: UUID?
+    ) -> BrowserExtensionToolbarPresentationSnapshot {
+        guard lifetime.isEnabled else { return .empty }
+        _ = ensureActionMetadataLoadedIfNeeded()
+        return BrowserExtensionToolbarPresentationSnapshot(
+            display: surfaceStore.toolbarDisplaySnapshot,
+            pinnedExtensionIDs: siteAccess.pinnedToolbarExtensionIDs(
+                profileId: profileID
+            )
+        )
+    }
+
+    func toolbarPresentationSnapshots(
+        profileID: UUID?
+    ) -> AnyPublisher<BrowserExtensionToolbarPresentationSnapshot, Never> {
+        Publishers.Merge(
+            surfaceStore.toolbarDisplaySnapshots.dropFirst().map { _ in () }
+                .eraseToAnyPublisher(),
+            surfaceStore.toolbarLayoutChanges(for: profileID)
+        )
+        .compactMap { [weak self] _ in
+            self?.toolbarPresentationSnapshot(profileID: profileID)
+        }
+        .removeDuplicates()
+        .eraseToAnyPublisher()
+    }
+
     func isPinnedToToolbar(_ extensionID: String) -> Bool {
         siteAccess.isPinnedToToolbar(extensionID)
     }
 
-    func pinToToolbar(_ extensionID: String) { siteAccess.pinToToolbar(extensionID) }
-    func unpinFromToolbar(_ extensionID: String) { siteAccess.unpinFromToolbar(extensionID) }
+    func pinToToolbar(_ extensionID: String) {
+        publishToolbarLayoutIfChanged(siteAccess.pinToToolbar(extensionID))
+    }
+
+    func unpinFromToolbar(_ extensionID: String) {
+        publishToolbarLayoutIfChanged(siteAccess.unpinFromToolbar(extensionID))
+    }
+
     func movePinnedToolbarSlot(id: String, to index: Int) {
-        siteAccess.movePinnedToolbarSlot(id: id, to: index)
+        publishToolbarLayoutIfChanged(
+            siteAccess.movePinnedToolbarSlot(id: id, to: index)
+        )
     }
 
     func orderedUnpinnedExtensionIDs(candidateIDs: [String], profileID: UUID?) -> [String] {
@@ -54,6 +97,13 @@ final class SumiExtensionToolbarActionSurface {
 
     func moveUnpinnedExtension(id: String, to index: Int, within order: [String]) {
         siteAccess.moveUnpinnedExtension(id: id, to: index, within: order)
+    }
+
+    private func publishToolbarLayoutIfChanged(_ didChange: Bool) {
+        guard didChange else { return }
+        surfaceStore.publishToolbarLayoutChanged(
+            for: siteAccess.currentProfileID()
+        )
     }
 
     func siteAccessPolicy(extensionID: String, profileID: UUID? = nil) -> SafariExtensionSiteAccessPolicy? {
@@ -204,6 +254,24 @@ final class SumiExtensionToolbarActionSurface {
         lifetime.loadedManagerIfEnabled()?.adapterCatalog.stableAdapter(for: tab)
     }
 
+    func actionPresentationTarget(
+        extensionID: String,
+        tab: Tab,
+        window: BrowserWindowState
+    ) -> ExtensionActionPresentationTarget? {
+        actionPresentation.target(
+            extensionID: extensionID,
+            tab: tab,
+            window: window
+        )
+    }
+
+    func actionPresentationSnapshot(
+        for target: ExtensionActionPresentationTarget
+    ) -> BrowserExtensionActionButtonSnapshot? {
+        actionPresentation.snapshot(for: target)
+    }
+
     func closeAllOptionsWindowsIfLoaded() {
         lifetime.residentManager()?.optionsWindows.closeAllWindows()
     }
@@ -235,19 +303,31 @@ final class SumiExtensionToolbarActionSurface {
 
 @MainActor
 extension SumiExtensionsModule {
+    func toolbarPresentationSnapshot(
+        profileID: UUID?
+    ) -> BrowserExtensionToolbarPresentationSnapshot {
+        toolbarActions.toolbarPresentationSnapshot(profileID: profileID)
+    }
+
+    func toolbarPresentationSnapshots(
+        profileID: UUID?
+    ) -> AnyPublisher<BrowserExtensionToolbarPresentationSnapshot, Never> {
+        toolbarActions.toolbarPresentationSnapshots(profileID: profileID)
+    }
+
     @discardableResult
     func ensureActionMetadataLoadedIfNeeded() -> Bool {
         toolbarActions.ensureActionMetadataLoadedIfNeeded()
     }
 
     func orderedPinnedToolbarSlots(
-        enabledExtensions: [InstalledExtension]
+        enabledExtensions: [BrowserExtensionToolbarDisplayRecord]
     ) -> [PinnedToolbarSlot] {
         toolbarActions.orderedPinnedToolbarSlots(enabledExtensions: enabledExtensions)
     }
 
     func orderedPinnedToolbarSlots(
-        enabledExtensions: [InstalledExtension],
+        enabledExtensions: [BrowserExtensionToolbarDisplayRecord],
         profileId: UUID?
     ) -> [PinnedToolbarSlot] {
         toolbarActions.orderedPinnedToolbarSlots(
@@ -364,6 +444,24 @@ extension SumiExtensionsModule {
 
     func stableAdapter(for tab: Tab) -> ExtensionTabAdapter? {
         toolbarActions.stableAdapter(for: tab)
+    }
+
+    func actionPresentationTarget(
+        extensionID: String,
+        tab: Tab,
+        window: BrowserWindowState
+    ) -> ExtensionActionPresentationTarget? {
+        toolbarActions.actionPresentationTarget(
+            extensionID: extensionID,
+            tab: tab,
+            window: window
+        )
+    }
+
+    func actionPresentationSnapshot(
+        for target: ExtensionActionPresentationTarget
+    ) -> BrowserExtensionActionButtonSnapshot? {
+        toolbarActions.actionPresentationSnapshot(for: target)
     }
 
     func setActionAnchorIfLoaded(for extensionId: String, anchorView: NSView) {

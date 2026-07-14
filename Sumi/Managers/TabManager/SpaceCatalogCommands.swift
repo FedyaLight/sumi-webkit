@@ -42,7 +42,6 @@ final class SpaceCatalogCommands {
         self.announceChange = announceChange
         self.notifications = notifications
     }
-
     @discardableResult
     func createSpace(
         name: String,
@@ -76,11 +75,11 @@ final class SpaceCatalogCommands {
             if spaces.currentSpace == nil {
                 spaces.replaceCurrentSpace(space)
             }
+            transactions.requestPublish(scope: .space(space.id, catalog: true))
             persistence.scheduleStructuralPersistence()
             return space
         }
     }
-
     @discardableResult
     func reorderSpace(spaceId: UUID, to targetIndex: Int) -> Bool {
         transactions.withTransaction {
@@ -98,6 +97,7 @@ final class SpaceCatalogCommands {
             }
 
             persistence.markAllSpacesStructurallyDirty()
+            transactions.requestPublish(scope: .space(spaceId, catalog: true))
             persistence.scheduleStructuralPersistence()
             return true
         }
@@ -113,6 +113,7 @@ final class SpaceCatalogCommands {
             announceChange()
             spaces.renameSpace(spaceId: spaceId, to: newName)
             persistence.markAllSpacesStructurallyDirty()
+            transactions.requestPublish(scope: .space(spaceId, catalog: true))
             persistence.scheduleStructuralPersistence()
             notifications()?.presentSpaceRenamedNotification(name: newName)
         }
@@ -127,6 +128,7 @@ final class SpaceCatalogCommands {
             announceChange()
             spaces.updateIcon(spaceId: spaceId, to: icon)
             persistence.markAllSpacesStructurallyDirty()
+            transactions.requestPublish(scope: .space(spaceId, catalog: true))
             persistence.scheduleStructuralPersistence()
         }
     }

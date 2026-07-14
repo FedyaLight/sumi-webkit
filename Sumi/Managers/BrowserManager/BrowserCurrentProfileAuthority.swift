@@ -6,6 +6,7 @@ import Combine
 @MainActor
 final class BrowserCurrentProfileAuthority {
     @Published private(set) var currentProfile: Profile?
+    @Published private(set) var isTransitioning = false
 
     init(_ currentProfile: Profile?) {
         self.currentProfile = currentProfile
@@ -13,6 +14,10 @@ final class BrowserCurrentProfileAuthority {
 
     fileprivate func setCurrentProfile(_ profile: Profile?) {
         currentProfile = profile
+    }
+
+    fileprivate func setTransitioning(_ isTransitioning: Bool) {
+        self.isTransitioning = isTransitioning
     }
 }
 
@@ -22,6 +27,13 @@ extension BrowserManager {
         set {
             objectWillChange.send()
             currentProfileAuthority.setCurrentProfile(newValue)
+        }
+    }
+
+    var isTransitioningProfile: Bool {
+        get { currentProfileAuthority.isTransitioning }
+        set {
+            currentProfileAuthority.setTransitioning(newValue)
         }
     }
 }

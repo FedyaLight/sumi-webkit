@@ -11,7 +11,8 @@ struct SidebarColumnHostedRootView: View {
     let spaceLifecycle: SidebarSpaceLifecycle
     let regularTabs: any SidebarRegularTabsControlling
     let dragTransactions: SidebarDragTransactionPort
-    let updateStreams: SidebarUpdateStreams
+    let inventoryUpdates: SidebarInventoryUpdates
+    let profileUpdates: SidebarProfileUpdates
     @Environment(\.accessibilityReduceTransparency) private var accessibilityReduceTransparency
 
     var body: some View {
@@ -24,7 +25,8 @@ struct SidebarColumnHostedRootView: View {
             spaceLifecycle: spaceLifecycle,
             regularTabs: regularTabs,
             dragTransactions: dragTransactions,
-            updateStreams: updateStreams,
+            inventoryUpdates: inventoryUpdates,
+            profileUpdates: profileUpdates,
             nowPlayingController: environmentContext.nowPlayingController,
             updaterService: environmentContext.updaterService
         )
@@ -148,7 +150,8 @@ enum SidebarColumnHostedRoot {
         spaceLifecycle: SidebarSpaceLifecycle,
         regularTabs: any SidebarRegularTabsControlling,
         dragTransactions: SidebarDragTransactionPort,
-        updateStreams: SidebarUpdateStreams
+        inventoryUpdates: SidebarInventoryUpdates,
+        profileUpdates: SidebarProfileUpdates
     ) -> SidebarColumnHostedRootView {
         SidebarColumnHostedRootView(
             environmentContext: environmentContext,
@@ -160,7 +163,8 @@ enum SidebarColumnHostedRoot {
             spaceLifecycle: spaceLifecycle,
             regularTabs: regularTabs,
             dragTransactions: dragTransactions,
-            updateStreams: updateStreams
+            inventoryUpdates: inventoryUpdates,
+            profileUpdates: profileUpdates
         )
     }
 }
@@ -174,7 +178,8 @@ struct SidebarColumnRepresentable: NSViewControllerRepresentable {
     let spaceLifecycle: SidebarSpaceLifecycle
     let regularTabs: any SidebarRegularTabsControlling
     let dragTransactions: SidebarDragTransactionPort
-    let updateStreams: SidebarUpdateStreams
+    let inventoryUpdates: SidebarInventoryUpdates
+    let profileUpdates: SidebarProfileUpdates
     var updaterService: SumiUpdaterService
     var hostActions: SidebarHostActions
     var windowState: BrowserWindowState
@@ -237,7 +242,8 @@ struct SidebarColumnRepresentable: NSViewControllerRepresentable {
             spaceLifecycle: spaceLifecycle,
             regularTabs: regularTabs,
             dragTransactions: dragTransactions,
-            updateStreams: updateStreams
+            inventoryUpdates: inventoryUpdates,
+            profileUpdates: profileUpdates
         )
         controller.updateHostedSidebar(
             root: root,

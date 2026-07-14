@@ -61,7 +61,9 @@ struct ExtensionActionPresentationContext {
     let browserContext: ExtensionActionBrowserContext
     let profileId: UUID?
 
-    func presentActionPopup(for installedExtension: InstalledExtension) async {
+    func presentActionPopup(
+        for installedExtension: BrowserExtensionToolbarDisplayRecord
+    ) async {
         // The target is click-time authority. Waiting for startup selection
         // could silently retarget this action to a tab selected after the
         // click, so capture once before the first suspension.
@@ -109,7 +111,9 @@ struct ExtensionActionPresentationContext {
         browserContext.extensionsModule.unpinFromToolbar(extensionId)
     }
 
-    func openOptionsPage(for installedExtension: InstalledExtension) async {
+    func openOptionsPage(
+        for installedExtension: BrowserExtensionToolbarDisplayRecord
+    ) async {
         await browserContext.extensionsModule.openOptionsPage(
             extensionId: installedExtension.id,
             profileId: extensionActionProfileId

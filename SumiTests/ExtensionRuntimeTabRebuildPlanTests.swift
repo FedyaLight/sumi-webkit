@@ -200,6 +200,8 @@ final class ExtensionRuntimeTabRebuildPlanTests: XCTestCase {
             profile: { _ in nil },
             ephemeralProfile: { _ in nil },
             windowState: { _ in nil },
+            windowRegistrationReceipt: { _ in nil },
+            registeredWindow: { _ in nil },
             activeWindowState: { nil },
             allTabs: { [] },
             allWindowStates: { [] },

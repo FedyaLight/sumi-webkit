@@ -74,6 +74,24 @@ each SwiftUI body evaluation. The sidebar boundary retains its existing
 role-specific projections and commands; it is not a replacement service
 locator for unrelated window features.
 
+Sidebar rendering observes those roles at the narrowest consumer. Typed
+`TabStructureChangeScope` events identify affected window, Space, and profile
+pages; unrelated pages are filtered before their snapshot builders run. Every
+scoped reader subscribes at activation before taking its fresh demand-time
+snapshot. Delivery is scheduled on the main run loop, so the fresh read lands
+first and an exact mutation queued during that read wins afterward without a
+read-to-subscribe gap. Profile collection
+and profile-transition snapshots remain independent streams. Live Folder
+mutations publish exact folder IDs instead of remapping global dictionaries,
+and toolbar layout changes use a dedicated leaf publisher rather than
+`objectWillChange`. URL-bar and AppKit-hosted Hub extension projections
+subscribe only while their surface is mounted and the extension module is
+enabled; pinning invalidation is scoped to the rendered profile. Updater and
+now-playing models are likewise observed only by mounted leaf chrome. A hidden
+prewarmed sidebar installs none of these subscriptions. There is no
+BrowserManager structural revision, sidebar-wide relay, or discard-read
+invalidation counter.
+
 ## WebView Session Ownership
 
 `SumiApp` creates exactly one `WebViewSessionRepository` for a browser process.

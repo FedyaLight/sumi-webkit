@@ -3,7 +3,7 @@ import OSLog
 
 @available(macOS 15.5, *)
 enum PinnedToolbarSlot: Identifiable {
-    case webExtension(InstalledExtension)
+    case webExtension(BrowserExtensionToolbarDisplayRecord)
 
     var id: String {
         switch self {
@@ -79,14 +79,23 @@ final class ExtensionToolbarPinningOwner {
         publishedPinnedIDs().contains(extensionId)
     }
 
-    func pinToToolbar(_ extensionId: String) {
+    func pinnedToolbarExtensionIDs(profileId: UUID?) -> [String] {
+        let profileKey = Self.pinnedToolbarProfileKey(for: profileId)
+        return Self.normalizedPinnedToolbarExtensionIDs(
+            idsByProfile[profileKey] ?? []
+        )
+    }
+
+    @discardableResult
+    func pinToToolbar(_ extensionId: String) -> Bool {
         updatePinnedToolbarExtensionIDs { ids in
             guard ids.contains(extensionId) == false else { return }
             ids.append(extensionId)
         }
     }
 
-    func unpinFromToolbar(_ extensionId: String) {
+    @discardableResult
+    func unpinFromToolbar(_ extensionId: String) -> Bool {
         updatePinnedToolbarExtensionIDs { ids in
             ids.removeAll { $0 == extensionId }
         }
@@ -95,7 +104,8 @@ final class ExtensionToolbarPinningOwner {
     /// Move an already-pinned slot to a new index within the pinned order. The
     /// target index is interpreted against the array with the moved slot
     /// removed, matching `ReorderMove.targetIndex`.
-    func movePinnedToolbarSlot(id: String, to targetIndex: Int) {
+    @discardableResult
+    func movePinnedToolbarSlot(id: String, to targetIndex: Int) -> Bool {
         updatePinnedToolbarExtensionIDs { ids in
             guard let from = ids.firstIndex(of: id) else { return }
             let slot = ids.remove(at: from)
@@ -122,7 +132,7 @@ final class ExtensionToolbarPinningOwner {
 
     /// Ordered toolbar buttons for enabled, pinned extensions.
     func orderedPinnedToolbarSlots(
-        enabledExtensions: [InstalledExtension],
+        enabledExtensions: [BrowserExtensionToolbarDisplayRecord],
         profileId: UUID?
     ) -> [PinnedToolbarSlot] {
         let enabledByID = Dictionary(
@@ -143,15 +153,23 @@ final class ExtensionToolbarPinningOwner {
         }
     }
 
-    private func updatePinnedToolbarExtensionIDs(_ update: (inout [String]) -> Void) {
+    @discardableResult
+    private func updatePinnedToolbarExtensionIDs(
+        _ update: (inout [String]) -> Void
+    ) -> Bool {
         let profileKey = Self.pinnedToolbarProfileKey(for: currentProfileId())
-        var ids = idsByProfile[profileKey] ?? []
+        let previous = Self.normalizedPinnedToolbarExtensionIDs(
+            idsByProfile[profileKey] ?? []
+        )
+        var ids = previous
         update(&ids)
 
         let normalized = Self.normalizedPinnedToolbarExtensionIDs(ids)
+        guard normalized != previous else { return false }
         idsByProfile[profileKey] = normalized
         setPublishedPinnedIDs(normalized)
         persistPinnedToolbarExtensionIDsByProfile()
+        return true
     }
 
     private func persistPinnedToolbarExtensionIDsByProfile() {
@@ -239,15 +257,22 @@ extension ExtensionManager {
         toolbarPinningOwner.isPinnedToToolbar(extensionId)
     }
 
-    func pinToToolbar(_ extensionId: String) {
+    func pinnedToolbarExtensionIDs(profileId: UUID?) -> [String] {
+        toolbarPinningOwner.pinnedToolbarExtensionIDs(profileId: profileId)
+    }
+
+    @discardableResult
+    func pinToToolbar(_ extensionId: String) -> Bool {
         toolbarPinningOwner.pinToToolbar(extensionId)
     }
 
-    func unpinFromToolbar(_ extensionId: String) {
+    @discardableResult
+    func unpinFromToolbar(_ extensionId: String) -> Bool {
         toolbarPinningOwner.unpinFromToolbar(extensionId)
     }
 
-    func movePinnedToolbarSlot(id: String, to targetIndex: Int) {
+    @discardableResult
+    func movePinnedToolbarSlot(id: String, to targetIndex: Int) -> Bool {
         toolbarPinningOwner.movePinnedToolbarSlot(id: id, to: targetIndex)
     }
 
@@ -260,7 +285,7 @@ extension ExtensionManager {
     }
 
     func orderedPinnedToolbarSlots(
-        enabledExtensions: [InstalledExtension]
+        enabledExtensions: [BrowserExtensionToolbarDisplayRecord]
     ) -> [PinnedToolbarSlot] {
         toolbarPinningOwner.orderedPinnedToolbarSlots(
             enabledExtensions: enabledExtensions,
@@ -269,7 +294,7 @@ extension ExtensionManager {
     }
 
     func orderedPinnedToolbarSlots(
-        enabledExtensions: [InstalledExtension],
+        enabledExtensions: [BrowserExtensionToolbarDisplayRecord],
         profileId: UUID?
     ) -> [PinnedToolbarSlot] {
         toolbarPinningOwner.orderedPinnedToolbarSlots(

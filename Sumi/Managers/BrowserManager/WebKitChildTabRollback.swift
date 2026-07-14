@@ -17,21 +17,34 @@ enum WebKitChildTabRollback {
         sourceWindow: BrowserWindowState,
         tabs: TabManager
     ) {
-        tab.cleanupCloneWebView(webView)
-        tabs.structuralPersistence.cancelRuntimeStatePersistence(for: tab.id)
-
+        let admission: ExactTabResidenceAdmission?
         switch residence {
         case .regular(let spaceID):
-            if tabs.regularTabCollectionOwner.remove(
-                tab.id,
-                from: spaceID,
-                currentSpaceId: sourceWindow.currentSpaceId
-            ) != nil {
-                tabs.tabCollectionMembershipOwner.detach(tab)
-                tabs.structuralPersistence.scheduleStructuralPersistence()
-            }
+            admission = ExactTabResidenceAdmission.regular(
+                tab,
+                in: spaceID,
+                tabs: tabs
+            )
+        case .ephemeral:
+            admission = ExactTabResidenceAdmission.ephemeral(
+                tab,
+                in: sourceWindow
+            )
+        }
+        guard let admission else { return }
+
+        tabs.structuralPersistence.cancelRuntimeStatePersistence(for: tab.id)
+        tab.cleanupCloneWebView(webView)
+        guard admission.remove(
+            tabs: tabs,
+            currentSpaceID: sourceWindow.currentSpaceId
+        ) else { return }
+
+        switch residence {
+        case .regular:
+            tabs.tabCollectionMembershipOwner.detach(tab)
+            tabs.structuralPersistence.scheduleStructuralPersistence()
         case .ephemeral(let previousTabID):
-            sourceWindow.ephemeralTabs.removeAll { $0 === tab }
             if sourceWindow.currentTabId == tab.id {
                 sourceWindow.currentTabId = previousTabID
             }

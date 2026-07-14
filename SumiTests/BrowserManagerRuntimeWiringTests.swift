@@ -62,7 +62,6 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         var installedTabSuspensionRuntime: TabSuspensionRuntimePorts?
         var tabSuspensionInstallCount = 0
         var attachedBackgroundMediaRuntime: SumiBackgroundMediaOptimizationRuntime?
-        var tabStructuralRevisionCount = 0
         var tabSuspensionReconcileReasons: [String] = []
         var backgroundMediaReconcileReasons: [String] = []
         var refreshedLazyRestoreContexts: [TabSuspensionEvaluationContext] = []
@@ -96,12 +95,11 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
                 attachedBackgroundMediaRuntime = runtime
             },
             tabStructuralChanges: structuralChanges.eraseToAnyPublisher(),
-            incrementTabStructuralRevision: {
-                tabStructuralRevisionCount += 1
-                structuralChangeHandled.fulfill()
-            },
             scheduleTabSuspensionReconcile: { reason in
                 tabSuspensionReconcileReasons.append(reason)
+                if reason == "tab-structure-changed" {
+                    structuralChangeHandled.fulfill()
+                }
             },
             scheduleBackgroundMediaReconcile: { reason in
                 backgroundMediaReconcileReasons.append(reason)
@@ -182,7 +180,6 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         structuralChanges.send()
         await fulfillment(of: [structuralChangeHandled], timeout: 1)
 
-        XCTAssertEqual(tabStructuralRevisionCount, 1)
         XCTAssertEqual(
             tabSuspensionReconcileReasons,
             ["tab-selection", "tab-structure-changed"]

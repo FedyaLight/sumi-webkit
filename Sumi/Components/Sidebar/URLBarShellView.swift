@@ -6,10 +6,10 @@
 //
 
 import AppKit
+import SumiDomain
 import SwiftUI
 import UniformTypeIdentifiers
 import WebKit
-import SumiDomain
 
 extension URLBarView {
     @ViewBuilder
@@ -67,11 +67,13 @@ extension URLBarView {
         if SumiSurface.isBookmarksSurfaceURL(url) {
             return String(localized: "Bookmarks")
         }
-        if ExtensionURLIdentity.isOwned(url) {
-            return ExtensionDisplayNameResolver.displayName(
-                forOwnedURL: url,
-                installedExtensions: extensionSurfaceStore.installedExtensions
-            ) ?? String(localized: "Extension")
+        if ExtensionUtils.isExtensionOwnedURL(url) {
+            let extensionID = ExtensionUtils.extensionID(
+                fromExtensionOwnedURL: url
+            )
+            return extensionDisplayModel.snapshot.extensions
+                .first(where: { $0.id == extensionID })?.name
+                ?? String(localized: "Extension")
         }
         guard let host = url.host else {
             return url.absoluteString

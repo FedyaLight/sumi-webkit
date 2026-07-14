@@ -7,12 +7,6 @@ import Foundation
 /// empty-window pruning, and structural publication cannot drift apart.
 @MainActor
 final class LiveShortcutTabRegistry {
-    struct Entry {
-        let windowId: UUID
-        let pinId: UUID
-        let tab: Tab
-    }
-
     private let storage: TabTransientTabRegistryOwner
     private let structuralLookup: TabStructuralLookupCoordinator
 
@@ -43,19 +37,19 @@ final class LiveShortcutTabRegistry {
         storage.transientShortcutTabsByWindow[windowId]?[pinId]
     }
 
-    func entries(for pinId: UUID) -> [Entry] {
+    func entries(for pinId: UUID) -> [LiveShortcutTabEntry] {
         readModel.entries(for: pinId)
     }
 
-    func entries(in windowId: UUID) -> [Entry] {
+    func entries(in windowId: UUID) -> [LiveShortcutTabEntry] {
         readModel.entries(in: windowId)
     }
 
-    func entry(containing tab: Tab) -> Entry? {
+    func entry(containing tab: Tab) -> LiveShortcutTabEntry? {
         readModel.entry(containing: tab)
     }
 
-    func entry(tabId: UUID) -> Entry? {
+    func entry(tabId: UUID) -> LiveShortcutTabEntry? {
         readModel.entry(tabID: tabId)
     }
 
@@ -72,7 +66,9 @@ final class LiveShortcutTabRegistry {
         storage.updateTransientShortcutTabsByWindow { tabsByWindow in
             tabsByWindow[windowId, default: [:]][pinId] = tab
         }
-        structuralLookup.notifyTransientShortcutStateChanged()
+        structuralLookup.notifyTransientShortcutStateChanged(
+            entries: [LiveShortcutTabEntry(windowId: windowId, pinId: pinId, tab: tab)]
+        )
         return true
     }
 
@@ -94,70 +90,74 @@ final class LiveShortcutTabRegistry {
             tabsByWindow[windowId]?.removeValue(forKey: sourcePinId)
             tabsByWindow[windowId, default: [:]][targetPinId] = tab
         }
-        structuralLookup.notifyTransientShortcutStateChanged()
+        structuralLookup.notifyTransientShortcutStateChanged(
+            entries: [LiveShortcutTabEntry(windowId: windowId, pinId: targetPinId, tab: tab)]
+        )
         return true
     }
 
     @discardableResult
-    func remove(pinId: UUID, in windowId: UUID) -> Entry? {
+    func remove(pinId: UUID, in windowId: UUID) -> LiveShortcutTabEntry? {
         guard let tab = storage.removeTransientShortcutTab(
             pinId: pinId,
             in: windowId
         ) else { return nil }
-        structuralLookup.notifyTransientShortcutStateChanged()
-        return Entry(windowId: windowId, pinId: pinId, tab: tab)
+        let entry = LiveShortcutTabEntry(windowId: windowId, pinId: pinId, tab: tab)
+        structuralLookup.notifyTransientShortcutStateChanged(entries: [entry])
+        return entry
     }
 
     @discardableResult
-    func remove(tabId: UUID) -> Entry? {
+    func remove(tabId: UUID) -> LiveShortcutTabEntry? {
         guard let removed = storage.removeTransientShortcutTab(tabId: tabId) else {
             return nil
         }
-        structuralLookup.notifyTransientShortcutStateChanged()
-        return Entry(
+        let entry = LiveShortcutTabEntry(
             windowId: removed.windowId,
             pinId: removed.pinId,
             tab: removed.tab
         )
+        structuralLookup.notifyTransientShortcutStateChanged(entries: [entry])
+        return entry
     }
 
     @discardableResult
-    func removeAll(pinId: UUID, excluding windowId: UUID? = nil) -> [Entry] {
+    func removeAll(pinId: UUID, excluding windowId: UUID? = nil) -> [LiveShortcutTabEntry] {
         removeAll {
             $0.pinId == pinId && $0.windowId != windowId
         }
     }
 
     @discardableResult
-    func removeAll(pinIds: Set<UUID>) -> [Entry] {
+    func removeAll(pinIds: Set<UUID>) -> [LiveShortcutTabEntry] {
         removeAll { pinIds.contains($0.pinId) }
     }
 
     @discardableResult
-    func removeAll(pinIds: Set<UUID>, in windowId: UUID) -> [Entry] {
+    func removeAll(pinIds: Set<UUID>, in windowId: UUID) -> [LiveShortcutTabEntry] {
         removeAll {
             $0.windowId == windowId && pinIds.contains($0.pinId)
         }
     }
 
     @discardableResult
-    func removeAll(in windowId: UUID) -> [Entry] {
+    func removeAll(in windowId: UUID) -> [LiveShortcutTabEntry] {
         removeAll { $0.windowId == windowId }
     }
 
     @discardableResult
-    func removeAll(inSpace spaceId: UUID) -> [Entry] {
+    func removeAll(inSpace spaceId: UUID) -> [LiveShortcutTabEntry] {
         removeAll { $0.tab.spaceId == spaceId }
     }
 
     @discardableResult
-    func removeAll() -> [Entry] {
+    func removeAll() -> [LiveShortcutTabEntry] {
         removeAll { _ in true }
     }
 
     private func removeAll(
-        matching predicate: (Entry) -> Bool
-    ) -> [Entry] {
+        matching predicate: (LiveShortcutTabEntry) -> Bool
+    ) -> [LiveShortcutTabEntry] {
         let matches = readModel.orderedEntries.filter(predicate)
         guard matches.isEmpty == false else { return [] }
         storage.updateTransientShortcutTabsByWindow { tabsByWindow in
@@ -168,7 +168,7 @@ final class LiveShortcutTabRegistry {
                 }
             }
         }
-        structuralLookup.notifyTransientShortcutStateChanged()
+        structuralLookup.notifyTransientShortcutStateChanged(entries: matches)
         return matches
     }
 }

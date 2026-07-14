@@ -8,6 +8,12 @@ struct ExtensionManagerRuntime {
     typealias ProfileProvider = @MainActor (_ profileId: UUID) -> Profile?
     typealias EphemeralProfileProvider = @MainActor (_ profileId: UUID) -> Profile?
     typealias WindowStateProvider = @MainActor (_ windowId: UUID) -> BrowserWindowState?
+    typealias WindowRegistrationReceiptProvider = @MainActor (
+        _ window: BrowserWindowState
+    ) -> WindowRegistry.WindowRegistrationReceipt?
+    typealias RegisteredWindowProvider = @MainActor (
+        _ receipt: WindowRegistry.WindowRegistrationReceipt
+    ) -> BrowserWindowState?
     typealias ActiveWindowStateProvider = @MainActor () -> BrowserWindowState?
     typealias AllTabsProvider = @MainActor () -> [Tab]
     typealias AllWindowStatesProvider = @MainActor () -> [BrowserWindowState]
@@ -36,6 +42,8 @@ struct ExtensionManagerRuntime {
     let profile: ProfileProvider
     let ephemeralProfile: EphemeralProfileProvider
     let windowState: WindowStateProvider
+    let windowRegistrationReceipt: WindowRegistrationReceiptProvider
+    let registeredWindow: RegisteredWindowProvider
     let activeWindowState: ActiveWindowStateProvider
     let allTabs: AllTabsProvider
     let allWindowStates: AllWindowStatesProvider
@@ -55,6 +63,8 @@ struct ExtensionManagerRuntime {
         profile: { _ in nil },
         ephemeralProfile: { _ in nil },
         windowState: { _ in nil },
+        windowRegistrationReceipt: { _ in nil },
+        registeredWindow: { _ in nil },
         activeWindowState: { nil },
         allTabs: { [] },
         allWindowStates: { [] },

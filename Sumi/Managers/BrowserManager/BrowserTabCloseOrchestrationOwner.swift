@@ -110,9 +110,7 @@ final class BrowserTabCloseOrchestrationOwner {
     private func closeIncognitoTab(_ tab: Tab, in windowState: BrowserWindowState) {
         tab.performComprehensiveWebViewCleanup()
 
-        if let index = windowState.ephemeralTabs.firstIndex(where: { $0.id == tab.id }) {
-            windowState.ephemeralTabs.remove(at: index)
-        }
+        windowState.removeEphemeralTab(id: tab.id)
 
         if let nextTab = windowState.ephemeralTabs.last {
             selectTab(nextTab, windowState)

@@ -36,7 +36,6 @@ final class ShortcutTabBindingSynchronizer {
         let runtime = runtimePorts()
         var changedWindowStates: [UUID: BrowserWindowState] = [:]
         structuralLookup.withTransaction {
-            var changed = false
             for entry in registry.entries(for: pin.id) {
                 let windowState = runtime?.windowState(for: entry.windowId)
                 let sourceIdentity = ShortcutBindingIdentity(tab: entry.tab)
@@ -47,11 +46,11 @@ final class ShortcutTabBindingSynchronizer {
                         in: $0
                     )
                 } ?? false
-                changed = applyExisting(
+                _ = applyExisting(
                     pin,
                     to: entry.tab,
                     currentSpaceId: windowState?.currentSpaceId
-                ) || changed
+                )
                 if let windowState,
                    ShortcutSelectionTransition.apply(
                        tab: entry.tab,
@@ -63,7 +62,6 @@ final class ShortcutTabBindingSynchronizer {
                     changedWindowStates[windowState.id] = windowState
                 }
             }
-            if changed { structuralLookup.requestPublish() }
         }
         persist(changedWindowStates, using: runtime)
     }
@@ -148,6 +146,7 @@ final class ShortcutTabBindingSynchronizer {
         to tab: Tab,
         currentSpaceId: UUID?
     ) -> Bool {
+        let previousPageScope = registry.entry(containing: tab)?.pageScope
         let targetSpaceId = resolution.resolvedLiveSpaceId(
             for: pin,
             currentSpaceId: currentSpaceId
@@ -176,6 +175,12 @@ final class ShortcutTabBindingSynchronizer {
         tab.spaceId = targetSpaceId
         tab.folderId = targetFolderId
         profiles.assignProfile(targetProfileId, to: tab)
+        if changed, let entry = registry.entry(containing: tab) {
+            structuralLookup.publishTransientShortcutPageChange(
+                entry,
+                previousScope: previousPageScope
+            )
+        }
         return changed
     }
 

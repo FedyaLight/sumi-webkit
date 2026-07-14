@@ -20,6 +20,12 @@ enum BrowserExtensionManagerRuntimeFactory {
             windowState: { [weak browserManager] windowId in
                 browserManager?.windowRegistry?.windows[windowId]
             },
+            windowRegistrationReceipt: { [weak browserManager] window in
+                browserManager?.windowRegistry?.registrationReceipt(for: window)
+            },
+            registeredWindow: { [weak browserManager] receipt in
+                browserManager?.windowRegistry?.window(ifCurrent: receipt)
+            },
             activeWindowState: { [weak browserManager] in
                 browserManager?.windowRegistry?.activeWindow
             },

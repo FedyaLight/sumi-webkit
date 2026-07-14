@@ -11,7 +11,7 @@ struct ShortcutTabPromotionResult {
 struct ShortcutTabPromotionPlan {
     let pinID: UUID
     let tab: Tab
-    let chosenEntry: LiveShortcutTabRegistry.Entry?
+    let chosenEntry: LiveShortcutTabEntry?
     let selectedWindowStates: [BrowserWindowState]
     let targetSpaceID: UUID
     let targetIndex: Int?

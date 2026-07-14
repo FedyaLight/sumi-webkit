@@ -6,27 +6,22 @@ final class SumiExtensionToolbarSiteAccessOwner {
     typealias LoadedManagerProvider = @MainActor () -> ExtensionManager?
     typealias EnabledManagerProvider = @MainActor () -> ExtensionManager?
     typealias CurrentProfileIDProvider = @MainActor () -> UUID?
-    typealias StructuralRevisionInvalidator = @MainActor () -> Void
-
     private let managerIfLoadedAndEnabled: LoadedManagerProvider
     private let managerIfEnabled: EnabledManagerProvider
     private let fallbackProfileId: CurrentProfileIDProvider
-    private let invalidateTabStructuralRevision: StructuralRevisionInvalidator
 
     init(
         managerIfLoadedAndEnabled: @escaping LoadedManagerProvider,
         managerIfEnabled: @escaping EnabledManagerProvider,
-        fallbackProfileId: @escaping CurrentProfileIDProvider,
-        invalidateTabStructuralRevision: @escaping StructuralRevisionInvalidator
+        fallbackProfileId: @escaping CurrentProfileIDProvider
     ) {
         self.managerIfLoadedAndEnabled = managerIfLoadedAndEnabled
         self.managerIfEnabled = managerIfEnabled
         self.fallbackProfileId = fallbackProfileId
-        self.invalidateTabStructuralRevision = invalidateTabStructuralRevision
     }
 
     func orderedPinnedToolbarSlots(
-        enabledExtensions: [InstalledExtension],
+        enabledExtensions: [BrowserExtensionToolbarDisplayRecord],
         profileId: UUID?
     ) -> [PinnedToolbarSlot] {
         guard let manager = managerIfLoadedAndEnabled() else { return [] }
@@ -40,19 +35,30 @@ final class SumiExtensionToolbarSiteAccessOwner {
         managerIfLoadedAndEnabled()?.isPinnedToToolbar(extensionId) ?? false
     }
 
-    func pinToToolbar(_ extensionId: String) {
-        managerIfEnabled()?.pinToToolbar(extensionId)
-        invalidateTabStructuralRevision()
+    func pinnedToolbarExtensionIDs(profileId: UUID?) -> [String] {
+        managerIfLoadedAndEnabled()?.pinnedToolbarExtensionIDs(
+            profileId: profileId
+        ) ?? []
     }
 
-    func unpinFromToolbar(_ extensionId: String) {
-        managerIfEnabled()?.unpinFromToolbar(extensionId)
-        invalidateTabStructuralRevision()
+    func currentProfileID() -> UUID? {
+        managerIfLoadedAndEnabled()?.profileRuntime.currentProfileId
+            ?? fallbackProfileId()
     }
 
-    func movePinnedToolbarSlot(id: String, to targetIndex: Int) {
-        managerIfEnabled()?.movePinnedToolbarSlot(id: id, to: targetIndex)
-        invalidateTabStructuralRevision()
+    @discardableResult
+    func pinToToolbar(_ extensionId: String) -> Bool {
+        managerIfEnabled()?.pinToToolbar(extensionId) ?? false
+    }
+
+    @discardableResult
+    func unpinFromToolbar(_ extensionId: String) -> Bool {
+        managerIfEnabled()?.unpinFromToolbar(extensionId) ?? false
+    }
+
+    @discardableResult
+    func movePinnedToolbarSlot(id: String, to targetIndex: Int) -> Bool {
+        managerIfEnabled()?.movePinnedToolbarSlot(id: id, to: targetIndex) ?? false
     }
 
     func orderedUnpinnedExtensionIDs(
@@ -76,7 +82,6 @@ final class SumiExtensionToolbarSiteAccessOwner {
             to: targetIndex,
             within: currentOrder
         )
-        invalidateTabStructuralRevision()
     }
 
     func siteAccessPolicy(

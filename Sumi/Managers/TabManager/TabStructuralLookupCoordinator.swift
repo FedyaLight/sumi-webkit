@@ -59,17 +59,27 @@ final class TabStructuralLookupCoordinator {
         )
     }
 
-    func requestPublish() {
-        publishOwner.requestPublish()
+    func requestPublish(scope: TabStructureChangeScope = .all) {
+        publishOwner.requestPublish(scope: scope)
     }
 
     func runAfterCurrentBatch(_ action: @escaping @MainActor () -> Void) {
         publishOwner.runAfterCurrentBatch(action)
     }
 
-    func notifyTransientShortcutStateChanged() {
+    func notifyTransientShortcutStateChanged(
+        entries: [LiveShortcutTabEntry]
+    ) {
         queueTransientRefresh()
-        requestPublish()
+        entries.forEach { publishTransientShortcutPageChange($0) }
+    }
+
+    func publishTransientShortcutPageChange(
+        _ entry: LiveShortcutTabEntry,
+        previousScope: TabStructureChangeScope? = nil
+    ) {
+        if let previousScope { requestPublish(scope: previousScope) }
+        requestPublish(scope: entry.pageScope)
     }
 
     func queueEntries(removing previousTabs: [Tab], with currentTabs: [Tab]) {

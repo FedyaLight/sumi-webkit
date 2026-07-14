@@ -11,7 +11,6 @@ enum BrowserTabRuntimeCompositionService {
             SumiBackgroundMediaOptimizationRuntime
         ) -> Void
         let tabStructuralChanges: AnyPublisher<Void, Never>
-        let incrementTabStructuralRevision: @MainActor () -> Void
         let scheduleTabSuspensionReconcile: @MainActor (_ reason: String) -> Void
         let scheduleBackgroundMediaReconcile: @MainActor (_ reason: String) -> Void
         let trackedWebViewEntries: @MainActor (Tab) -> [
@@ -68,7 +67,6 @@ enum BrowserTabRuntimeCompositionService {
     }
 
     private static func handleTabManagerStructuralChange(dependencies: Dependencies) {
-        dependencies.incrementTabStructuralRevision()
         scheduleTabRuntimeReconcile(
             dependencies: dependencies,
             reason: "tab-structure-changed"
@@ -148,9 +146,6 @@ extension BrowserTabRuntimeCompositionService.Dependencies {
                 browserManager?.backgroundMediaOptimizationService.attach(runtime: runtime)
             },
             tabStructuralChanges: browserManager.tabManager.tabStructureEventBus.structureChangedPublisher,
-            incrementTabStructuralRevision: { [weak browserManager] in
-                browserManager?.tabStructuralRevision &+= 1
-            },
             scheduleTabSuspensionReconcile: { reason in
                 tabSuspensionController.scheduleReconciliation(reason: reason)
             },

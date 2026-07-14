@@ -21,7 +21,7 @@ final class TabFolderMutationOwner {
         let runtimePorts: @MainActor () -> RuntimePortRegistry?
         let markFoldersStructurallyDirty: @MainActor (UUID) -> Void
         let markRegularTabsStructurallyDirty: @MainActor (UUID) -> Void
-        let requestStructuralPublish: @MainActor () -> Void
+        let requestStructuralPublish: @MainActor (TabStructureChangeScope) -> Void
         let scheduleStructuralPersistence: @MainActor () -> Void
     }
 
@@ -84,7 +84,7 @@ final class TabFolderMutationOwner {
         guard let folder = dependencies.folderCollectionStateOwner.folder(by: folderId) else { return }
         folder.name = newName
         dependencies.markFoldersStructurallyDirty(folder.spaceId)
-        dependencies.requestStructuralPublish()
+        dependencies.requestStructuralPublish(.space(folder.spaceId))
         dependencies.scheduleStructuralPersistence()
     }
 
@@ -94,7 +94,7 @@ final class TabFolderMutationOwner {
 
         folder.icon = SumiZenFolderIconCatalog.normalizedFolderIconValue(trimmedIcon)
         dependencies.markFoldersStructurallyDirty(folder.spaceId)
-        dependencies.requestStructuralPublish()
+        dependencies.requestStructuralPublish(.space(folder.spaceId))
         dependencies.scheduleStructuralPersistence()
     }
 
@@ -107,7 +107,7 @@ final class TabFolderMutationOwner {
 
             folder.isOpen = isOpen
             dependencies.markFoldersStructurallyDirty(folder.spaceId)
-            dependencies.requestStructuralPublish()
+            dependencies.requestStructuralPublish(.space(folder.spaceId))
             dependencies.scheduleStructuralPersistence()
         }
     }
@@ -234,7 +234,7 @@ final class TabFolderMutationOwner {
 
             if didChange {
                 dependencies.markFoldersStructurallyDirty(spaceId)
-                dependencies.requestStructuralPublish()
+                dependencies.requestStructuralPublish(.space(spaceId))
                 dependencies.scheduleStructuralPersistence()
             }
         }
@@ -521,8 +521,8 @@ extension TabFolderMutationOwner.Dependencies {
             markRegularTabsStructurallyDirty: { [weak tabManager] spaceId in
                 tabManager?.structuralPersistence.markRegularTabsStructurallyDirty(for: spaceId)
             },
-            requestStructuralPublish: { [weak tabManager] in
-                tabManager?.structuralLookupCoordinator.requestPublish()
+            requestStructuralPublish: { [weak tabManager] scope in
+                tabManager?.structuralLookupCoordinator.requestPublish(scope: scope)
             },
             scheduleStructuralPersistence: { [weak tabManager] in
                 tabManager?.structuralPersistence.scheduleStructuralPersistence()

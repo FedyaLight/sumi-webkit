@@ -1,6 +1,6 @@
-import XCTest
-import SumiDomain
 @testable import Sumi
+import SumiDomain
+import XCTest
 
 @MainActor
 final class SplitGroupStoreTests: XCTestCase {
@@ -142,7 +142,7 @@ private final class MutationHarness {
             operation()
         },
         announceChange: { [weak self] in self?.announceCount += 1 },
-        requestStructuralPublish: { [weak self] in self?.publishCount += 1 },
+        requestStructuralPublish: { [weak self] _ in self?.publishCount += 1 },
         markStructurallyDirty: { [weak self] in self?.dirtyCount += 1 },
         schedulePersistence: { [weak self] in self?.persistenceCount += 1 }
     )

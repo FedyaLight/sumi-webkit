@@ -580,7 +580,7 @@ final class WindowSessionRegistrationTests: XCTestCase {
         windowState.isIncognito = true
         windowState.tabManager = fixture.tabManager
         windowState.ephemeralProfile = ephemeralProfile
-        windowState.ephemeralSpaces = [ephemeralSpace]
+        windowState.replaceEphemeralSpaces([ephemeralSpace])
         windowState.currentProfileId = ephemeralProfile.id
         windowState.currentSpaceId = ephemeralSpace.id
         windowState.currentTabId = ephemeralTabID

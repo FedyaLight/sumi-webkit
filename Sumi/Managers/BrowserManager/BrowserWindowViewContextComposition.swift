@@ -134,21 +134,24 @@ extension WindowSidebarContext {
             dragOperations: tabManager.sidebarDragRouter,
             urlDropService: urlDrops
         )
-        let updateStreams = SidebarUpdateStreams(
-            inventoryRevision: browserManager.$tabStructuralRevision.eraseToAnyPublisher(),
+        let inventoryUpdates = SidebarInventoryUpdates(
+            changes: tabManager.tabStructureEventBus.scopedStructureChangesPublisher
+        )
+        let profileUpdates = SidebarProfileUpdates(
             profiles: browserManager.profileManager.$profiles.eraseToAnyPublisher(),
-            profileRuntimeChanged: Publishers.Merge(
-                currentProfileAuthority.$currentProfile.map { _ in () },
-                browserManager.$isTransitioningProfile.map { _ in () }
+            runtime: Publishers.CombineLatest(
+                currentProfileAuthority.$currentProfile,
+                currentProfileAuthority.$isTransitioning
             )
-            .eraseToAnyPublisher(),
-            liveFoldersChanged: Publishers.Merge(
-                browserManager.liveFolderManager.$sourcesByFolderId.map { _ in () },
-                browserManager.liveFolderManager.$itemsBySourceId.map { _ in () }
-            )
+            .map { profile, isTransitioning in
+                SidebarProfileRuntimeSnapshot(
+                    currentProfileID: profile?.id,
+                    isTransitioning: isTransitioning
+                )
+            }
+            .removeDuplicates()
             .eraseToAnyPublisher()
         )
-
         return WindowSidebarContext(
             browserContext: SidebarBrowserContext.live(
                 browserManager: browserManager,
@@ -164,7 +167,8 @@ extension WindowSidebarContext {
                 liveFolderManager: browserManager.liveFolderManager
             ),
             dragTransactions: dragTransactions,
-            updates: updateStreams,
+            inventoryUpdates: inventoryUpdates,
+            profileUpdates: profileUpdates,
             hostActions: SidebarHostActions(
                 updateSidebarWidth: { [sidebarPresentation] width, windowState, persist in
                     sidebarPresentation.updateSidebarWidth(

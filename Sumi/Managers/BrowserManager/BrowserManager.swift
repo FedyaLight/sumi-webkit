@@ -18,10 +18,8 @@ class BrowserManager: ObservableObject {
     @Published var zoomStateRevision: Int = 0
     @Published var bookmarkEditorPresentationRequest: SumiBookmarkEditorPresentationRequest?
     let currentProfileAuthority: BrowserCurrentProfileAuthority
-    @Published var isTransitioningProfile: Bool = false
     @Published var workspaceThemePickerSession: WorkspaceThemePickerSession?
     @Published var nativeModalPresentation: BrowserNativeModalPresentation?
-    @Published var tabStructuralRevision: UInt = 0
 
     let webViewSessions: WebViewSessionRepository
     var modelContext: ModelContext

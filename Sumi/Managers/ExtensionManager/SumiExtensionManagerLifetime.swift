@@ -6,18 +6,15 @@ struct SumiExtensionsModuleRuntime {
     typealias CurrentProfileProvider = @MainActor () -> Profile?
     typealias ManagerAttacher = @MainActor (_ manager: ExtensionManager) -> Void
     typealias LiveTabsProvider = @MainActor () -> [Tab]
-    typealias StructuralRevisionInvalidator = @MainActor () -> Void
 
     let currentProfile: CurrentProfileProvider
     let attachManager: ManagerAttacher
     let liveTabs: LiveTabsProvider
-    let invalidateTabStructuralRevision: StructuralRevisionInvalidator
 
     static let inactive = SumiExtensionsModuleRuntime(
         currentProfile: { nil },
         attachManager: { _ in },
-        liveTabs: { [] },
-        invalidateTabStructuralRevision: {}
+        liveTabs: { [] }
     )
 }
 
@@ -93,10 +90,6 @@ final class SumiExtensionManagerLifetime {
     func clearAttachedRuntime() {
         runtime = .inactive
         hasAttachedRuntime = false
-    }
-
-    func invalidateTabStructuralRevision() {
-        runtime.invalidateTabStructuralRevision()
     }
 
     func loadedManagerIfEnabled() -> ExtensionManager? {

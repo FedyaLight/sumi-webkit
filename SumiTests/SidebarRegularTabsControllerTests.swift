@@ -140,7 +140,7 @@ final class SidebarRegularTabsControllerTests: XCTestCase {
         let second = makeTab(spaceId: space.id, index: 0)
         let windowState = BrowserWindowState()
         windowState.isIncognito = true
-        windowState.ephemeralTabs = [first, second]
+        windowState.replaceEphemeralTabs([first, second])
 
         let controller = SidebarRegularTabsController(
             dependencies: SidebarRegularTabsController.Dependencies(

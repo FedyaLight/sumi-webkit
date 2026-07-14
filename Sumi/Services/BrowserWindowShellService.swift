@@ -162,7 +162,7 @@ final class BrowserWindowShellService {
             profileId: ephemeralProfile.id
         )
         ephemeralSpace.isEphemeral = true
-        windowState.ephemeralSpaces.append(ephemeralSpace)
+        windowState.appendEphemeralSpace(ephemeralSpace)
         windowState.currentSpaceId = ephemeralSpace.id
         windowState.tabManager = context.tabManager
 
@@ -210,8 +210,8 @@ final class BrowserWindowShellService {
 
         let ephemeralTabs = windowState.ephemeralTabs
         let ephemeralSpaces = windowState.ephemeralSpaces
-        windowState.ephemeralTabs.removeAll()
-        windowState.ephemeralSpaces.removeAll()
+        windowState.removeAllEphemeralTabs()
+        windowState.removeAllEphemeralSpaces()
         windowState.currentTabId = nil
 
         let releasedProfileID = await context.profileManager

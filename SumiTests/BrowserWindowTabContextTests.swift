@@ -25,7 +25,7 @@ final class BrowserWindowTabContextTests: XCTestCase {
         let tab = makeTab("https://private.example")
         let windowState = BrowserWindowState()
         windowState.isIncognito = true
-        windowState.ephemeralTabs = [tab]
+        windowState.replaceEphemeralTabs([tab])
         windowState.currentTabId = tab.id
         let harness = BrowserWindowTabContextHarness(windows: [windowState])
         let owner = harness.makeOwner()
@@ -37,7 +37,7 @@ final class BrowserWindowTabContextTests: XCTestCase {
         let tab = makeTab("https://private-selection.example")
         let windowState = BrowserWindowState()
         windowState.isIncognito = true
-        windowState.ephemeralTabs = [tab]
+        windowState.replaceEphemeralTabs([tab])
         windowState.currentTabId = tab.id
         let harness = BrowserWindowTabContextHarness(windows: [windowState])
         let context = harness.makeOwner()
@@ -70,7 +70,7 @@ final class BrowserWindowTabContextTests: XCTestCase {
         let tab = makeTab("https://private.example")
         let incognitoWindow = BrowserWindowState()
         incognitoWindow.isIncognito = true
-        incognitoWindow.ephemeralTabs = [tab]
+        incognitoWindow.replaceEphemeralTabs([tab])
         let harness = BrowserWindowTabContextHarness(windows: [incognitoWindow])
         let owner = harness.makeOwner()
 
@@ -147,7 +147,7 @@ final class BrowserWindowTabContextTests: XCTestCase {
         let background = makeTab("https://private-background.example")
         let windowState = BrowserWindowState()
         windowState.isIncognito = true
-        windowState.ephemeralTabs = [current, background]
+        windowState.replaceEphemeralTabs([current, background])
         windowState.currentTabId = current.id
         let harness = BrowserWindowTabContextHarness(windows: [windowState])
 

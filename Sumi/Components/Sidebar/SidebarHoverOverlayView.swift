@@ -130,7 +130,8 @@ struct SidebarHoverOverlayView: View {
     let spaceLifecycle: SidebarSpaceLifecycle
     let regularTabs: any SidebarRegularTabsControlling
     let dragTransactions: SidebarDragTransactionPort
-    let updateStreams: SidebarUpdateStreams
+    let inventoryUpdates: SidebarInventoryUpdates
+    let profileUpdates: SidebarProfileUpdates
     let updaterService: SumiUpdaterService
     let hostActions: SidebarHostActions
     @ObservedObject private var dragState: SidebarDragState
@@ -154,7 +155,8 @@ struct SidebarHoverOverlayView: View {
         spaceLifecycle: SidebarSpaceLifecycle,
         regularTabs: any SidebarRegularTabsControlling,
         dragTransactions: SidebarDragTransactionPort,
-        updateStreams: SidebarUpdateStreams,
+        inventoryUpdates: SidebarInventoryUpdates,
+        profileUpdates: SidebarProfileUpdates,
         updaterService: SumiUpdaterService,
         hostActions: SidebarHostActions,
         sidebarDragState: SidebarDragState
@@ -170,7 +172,8 @@ struct SidebarHoverOverlayView: View {
         self.spaceLifecycle = spaceLifecycle
         self.regularTabs = regularTabs
         self.dragTransactions = dragTransactions
-        self.updateStreams = updateStreams
+        self.inventoryUpdates = inventoryUpdates
+        self.profileUpdates = profileUpdates
         self.updaterService = updaterService
         self.hostActions = hostActions
         self._dragState = ObservedObject(wrappedValue: sidebarDragState)
@@ -347,7 +350,8 @@ struct SidebarHoverOverlayView: View {
             spaceLifecycle: spaceLifecycle,
             regularTabs: regularTabs,
             dragTransactions: dragTransactions,
-            updateStreams: updateStreams,
+            inventoryUpdates: inventoryUpdates,
+            profileUpdates: profileUpdates,
             updaterService: updaterService,
             hostActions: hostActions,
             windowState: windowState,

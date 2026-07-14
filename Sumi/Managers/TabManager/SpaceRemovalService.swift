@@ -51,6 +51,7 @@ final class SpaceRemovalService {
                 state.spaces.replaceCurrentSpace(state.spaces.firstSpace)
             }
 
+            transactions.requestPublish(scope: .space(spaceId, catalog: true))
             persistence.scheduleStructuralPersistence()
             changedWindows = windowStates.reconcile(
                 retirement.footprint,

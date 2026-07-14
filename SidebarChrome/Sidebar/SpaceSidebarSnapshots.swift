@@ -4,8 +4,8 @@
 //
 //
 
-import SwiftUI
 import SumiDomain
+import SwiftUI
 
 enum SpaceSidebarSnapshotFolderLayout {
     static let contentLeadingPadding: CGFloat = 14
@@ -346,23 +346,32 @@ enum SpaceSidebarTransitionSnapshotBuilder {
         browserContext: SidebarBrowserContext
     ) -> ExtensionActionGridSnapshot? {
         let surfaceStore = browserContext.extensionSurfaceStore
-        let slots = browserContext.extensionToolbarSlots(surfaceStore.enabledExtensions, profileId)
+        let slots = browserContext.extensionToolbarSlots(
+            surfaceStore.toolbarDisplaySnapshot.enabledExtensions,
+            profileId
+        )
         guard ExtensionActionPlacement.resolve(totalActions: slots.count) == .sidebarGrid else {
             return nil
         }
 
+        return transitionExtensionActionsSnapshot(
+            slots: slots,
+            surfaceStore: surfaceStore
+        )
+    }
+
+    static func transitionExtensionActionsSnapshot(
+        slots: [PinnedToolbarSlot],
+        surfaceStore: BrowserExtensionSurfaceStore
+    ) -> ExtensionActionGridSnapshot {
         let snapshots = slots.map { slot -> ExtensionActionSlotSnapshot in
             switch slot {
             case .webExtension(let ext):
-                let actionState = surfaceStore.actionStatesByExtensionID[ext.id]
-                let icon = actionState?.icon ?? extensionIcon(for: ext, surfaceStore: surfaceStore)
-                let badgeText = actionState?.badgeText
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
                 return ExtensionActionSlotSnapshot(
                     id: ext.id,
-                    icon: icon,
-                    badgeText: badgeText?.isEmpty == false ? badgeText : nil,
-                    hasUnreadBadgeText: actionState?.hasUnreadBadgeText == true
+                    icon: extensionIcon(for: ext, surfaceStore: surfaceStore),
+                    badgeText: nil,
+                    hasUnreadBadgeText: false
                 )
             }
         }
@@ -371,7 +380,7 @@ enum SpaceSidebarTransitionSnapshotBuilder {
     }
 
     private static func extensionIcon(
-        for extensionRecord: InstalledExtension,
+        for extensionRecord: BrowserExtensionToolbarDisplayRecord,
         surfaceStore: BrowserExtensionSurfaceStore
     ) -> NSImage? {
         guard let iconPath = extensionRecord.iconPath else { return nil }

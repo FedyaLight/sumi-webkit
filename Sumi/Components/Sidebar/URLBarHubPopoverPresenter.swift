@@ -528,7 +528,6 @@ struct URLBarHubPopoverRootView: View {
                 onClose: onClose,
                 onContentSizeChange: onContentSizeChange
             )
-            .environmentObject(browserContext.extensionSurfaceStore)
             .environment(windowState)
             .environment(windowRegistry)
             .environment(\.sumiSettings, settings)

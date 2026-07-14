@@ -125,7 +125,6 @@ extension EnvironmentValues {
 extension View {
     func sidebarHostEnvironment(_ context: SidebarHostEnvironmentContext) -> some View {
         self
-            .environmentObject(context.browserContext.extensionSurfaceStore)
             .environmentObject(context.nowPlayingController)
             .environment(context.windowState)
             .environment(context.windowRegistry)

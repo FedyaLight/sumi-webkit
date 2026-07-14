@@ -619,6 +619,16 @@ private final class RecoveryFixture {
             },
             setActionSurfaceState: { _, _ in },
             removeActionSurfaceState: { _ in },
+            publishActionPresentationChange: { _ in },
+            exactContextIdentity: { [weak manager] context in
+                manager?.profileRuntime.exactContextIdentity(for: context)
+                    .map {
+                        (
+                            extensionID: $0.extensionId,
+                            profileID: $0.profileId
+                        )
+                    }
+            },
             currentExtensionTab: { nil },
             stableAdapter: { _ in nil },
             ensureBackgroundAvailableIfRequired: {

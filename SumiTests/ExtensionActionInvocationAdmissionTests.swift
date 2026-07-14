@@ -1043,6 +1043,8 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
         let extensionID: String
         let tab: Tab
         let context: WKWebExtensionContext
+        let windowRegistry: WindowRegistry
+        let windowState: BrowserWindowState
 
         @MainActor
         func openPopup() async -> BrowserExtensionActionPopupRequestResult {
@@ -1098,6 +1100,277 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
             }
             return metrics.backgroundWakeCount
         }
+    }
+
+    func testPresentationQueryIsolatesSameExtensionAcrossTwoPublishedPages()
+        async throws {
+        let harness = try await makeHarness(name: "PresentationTwoPages")
+        let secondWindow = BrowserWindowState()
+        secondWindow.tabManager = harness.browserManager.tabManager
+        XCTAssertEqual(
+            harness.windowRegistry.register(secondWindow),
+            .registered
+        )
+        addTeardownBlock { @MainActor in
+            harness.windowRegistry.unregister(secondWindow.id)
+        }
+        let firstTab = makePublishedPresentationTab(
+            url: Self.clickedPageURL,
+            profileID: harness.profileID,
+            harness: harness,
+            windowState: harness.windowState
+        )
+        let secondTab = makePublishedPresentationTab(
+            url: URL(string: "https://second.example/")!,
+            profileID: harness.profileID,
+            harness: harness,
+            windowState: secondWindow
+        )
+        let query = ExtensionActionPresentationQuery {
+            harness.manager
+        }
+        let firstTarget = try XCTUnwrap(query.target(
+            extensionID: harness.extensionID,
+            tab: firstTab,
+            window: harness.windowState
+        ))
+        let secondTarget = try XCTUnwrap(query.target(
+            extensionID: harness.extensionID,
+            tab: secondTab,
+            window: secondWindow
+        ))
+        let firstAdapter = try XCTUnwrap(
+            harness.manager.adapterCatalog.stableAdapter(for: firstTab)
+        )
+        let secondAdapter = try XCTUnwrap(
+            harness.manager.adapterCatalog.stableAdapter(for: secondTab)
+        )
+        let firstAction = try XCTUnwrap(
+            harness.context.action(for: firstAdapter)
+        )
+        let secondAction = try XCTUnwrap(
+            harness.context.action(for: secondAdapter)
+        )
+        XCTAssertNotEqual(firstTarget.tabIdentifier, secondTarget.tabIdentifier)
+        XCTAssertEqual(
+            firstTarget.adapterIdentifier,
+            ObjectIdentifier(firstAdapter)
+        )
+        XCTAssertEqual(
+            secondTarget.adapterIdentifier,
+            ObjectIdentifier(secondAdapter)
+        )
+        XCTAssertNotEqual(firstTarget.adapterIdentifier, secondTarget.adapterIdentifier)
+        XCTAssertIdentical(
+            firstAction.associatedTab as? ExtensionTabAdapter,
+            firstAdapter
+        )
+        XCTAssertIdentical(
+            secondAction.associatedTab as? ExtensionTabAdapter,
+            secondAdapter
+        )
+        XCTAssertNotNil(query.snapshot(for: firstTarget))
+        XCTAssertNotNil(query.snapshot(for: secondTarget))
+    }
+
+    func testPresentationQueryUsesAccountForkExecutionContextNotPresentationProfile()
+        async throws {
+        let harness = try await makeHarness(name: "PresentationAccountFork")
+        let executionProfile = Profile(name: "Presentation Execution")
+        harness.browserManager.profileManager.profiles.append(executionProfile)
+        let executionProfileID = executionProfile.id
+        let executionContext = WKWebExtensionContext(
+            for: harness.context.webExtension
+        )
+        harness.manager.setExtensionContext(
+            executionContext,
+            extensionId: harness.extensionID,
+            profileId: executionProfileID
+        )
+        let executionController = harness.manager.ensureExtensionController(
+            for: executionProfileID
+        )
+        try executionController.load(executionContext)
+        addTeardownBlock {
+            try? executionController.unload(executionContext)
+        }
+        let forkedTab = makePublishedPresentationTab(
+            url: URL(string: "https://account-fork.example/")!,
+            profileID: executionProfileID,
+            harness: harness
+        )
+        let query = ExtensionActionPresentationQuery {
+            harness.manager
+        }
+
+        let target = try XCTUnwrap(query.target(
+            extensionID: harness.extensionID,
+            tab: forkedTab,
+            window: harness.windowState
+        ))
+
+        XCTAssertNotEqual(executionProfileID, harness.profileID)
+        XCTAssertEqual(
+            harness.manager.profileRuntime.currentProfileId,
+            harness.profileID
+        )
+        XCTAssertFalse(executionContext === harness.context)
+        XCTAssertEqual(target.profileID, executionProfileID)
+        XCTAssertEqual(
+            target.contextReceipt.key.profileId,
+            executionProfileID
+        )
+        XCTAssertNotNil(query.snapshot(for: target))
+    }
+
+    func testPresentationQueryRejectsAmbiguousContextBinding() async throws {
+        let harness = try await makeHarness(name: "PresentationAmbiguous")
+        let publishedTab = makePublishedPresentationTab(
+            url: Self.clickedPageURL,
+            profileID: harness.profileID,
+            harness: harness
+        )
+        let query = ExtensionActionPresentationQuery {
+            harness.manager
+        }
+        XCTAssertNotNil(query.target(
+            extensionID: harness.extensionID,
+            tab: publishedTab,
+            window: harness.windowState
+        ))
+
+        _ = harness.manager.profileRuntime.setContext(
+            harness.context,
+            extensionId: harness.extensionID,
+            profileId: UUID()
+        )
+
+        XCTAssertNil(query.target(
+            extensionID: harness.extensionID,
+            tab: publishedTab,
+            window: harness.windowState
+        ))
+    }
+
+    func testPresentationQueryRejectsSameIDWindowReplacement() async throws {
+        let harness = try await makeHarness(name: "PresentationWindowABA")
+        let tab = makePublishedPresentationTab(
+            url: Self.clickedPageURL,
+            profileID: harness.profileID,
+            harness: harness
+        )
+        let query = ExtensionActionPresentationQuery {
+            harness.manager
+        }
+        let staleTarget = try XCTUnwrap(query.target(
+            extensionID: harness.extensionID,
+            tab: tab,
+            window: harness.windowState
+        ))
+        XCTAssertNotNil(query.snapshot(for: staleTarget))
+
+        harness.windowRegistry.unregister(harness.windowState.id)
+        let replacement = BrowserWindowState(id: harness.windowState.id)
+        replacement.tabManager = harness.browserManager.tabManager
+        replacement.currentProfileId = harness.profileID
+        replacement.currentSpaceId = tab.spaceId
+        replacement.currentTabId = tab.id
+        XCTAssertEqual(
+            harness.windowRegistry.register(replacement),
+            .registered
+        )
+
+        XCTAssertNil(query.snapshot(for: staleTarget))
+        XCTAssertNil(query.target(
+            extensionID: harness.extensionID,
+            tab: tab,
+            window: harness.windowState
+        ))
+        XCTAssertNil(query.target(
+            extensionID: harness.extensionID,
+            tab: tab,
+            window: replacement
+        ))
+    }
+
+    func testPresentationQueryRejectsSameRegularTabClaimedByTwoWindows()
+        async throws {
+        let harness = try await makeHarness(name: "PresentationTwoWindows")
+        let tab = makePublishedPresentationTab(
+            url: Self.clickedPageURL,
+            profileID: harness.profileID,
+            harness: harness
+        )
+        let secondWindow = BrowserWindowState()
+        secondWindow.tabManager = harness.browserManager.tabManager
+        secondWindow.currentProfileId = harness.profileID
+        secondWindow.currentSpaceId = tab.spaceId
+        secondWindow.currentTabId = tab.id
+        XCTAssertEqual(
+            harness.windowRegistry.register(secondWindow),
+            .registered
+        )
+        addTeardownBlock { @MainActor in
+            harness.windowRegistry.unregister(secondWindow.id)
+        }
+        let query = ExtensionActionPresentationQuery {
+            harness.manager
+        }
+
+        XCTAssertNil(query.target(
+            extensionID: harness.extensionID,
+            tab: tab,
+            window: harness.windowState
+        ))
+        XCTAssertNil(query.target(
+            extensionID: harness.extensionID,
+            tab: tab,
+            window: secondWindow
+        ))
+    }
+
+    private func makePublishedPresentationTab(
+        url: URL,
+        profileID: UUID,
+        harness: Harness,
+        windowState: BrowserWindowState? = nil
+    ) -> Tab {
+        let windowState = windowState ?? harness.windowState
+        let configuration = harness.manager.browserConfiguration
+            .auxiliaryWebViewConfiguration(surface: .extensionOptions)
+        harness.manager.prepareWebViewConfigForExtensionRuntime(
+            configuration,
+            profileId: profileID,
+            reason: #function
+        )
+        let tab = harness.browserManager.tabManager
+            .regularTabLifecycleOwner.createNewTab(
+                url: url.absoluteString,
+                in: harness.browserManager.tabManager.spaceStateOwner.currentSpace,
+                activate: false,
+                webViewConfigurationOverride: configuration,
+                executionProfileID: profileID
+            )
+        tab.attachBrowserRuntime(
+            TabBrowserRuntimeFactory.make(for: harness.browserManager)
+        )
+        let webView = FocusableWKWebView(
+            frame: .zero,
+            configuration: configuration
+        )
+        webView.owningTab = tab
+        tab.replaceUntrackedWebView(webView)
+        windowState.currentProfileId = profileID
+        windowState.currentSpaceId = tab.spaceId
+        windowState.currentTabId = tab.id
+        harness.manager.normalTabRegistration.register(
+            tab,
+            reason: #function
+        )
+        XCTAssertTrue(
+            harness.manager.publishedExtensionTabs.containsPublishedTab(tab)
+        )
+        return tab
     }
 
     private func clearHooks(_ harness: Harness) {
@@ -1201,6 +1474,13 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
             context: container.mainContext,
             initialProfile: profile
         )
+        let windowRegistry = WindowRegistry()
+        let browserManager = makeSafariExtensionTestBrowserManager(
+            profile: profile,
+            windowRegistry: windowRegistry
+        )
+        manager.attach(browserManager: browserManager)
+        await browserManager.tabManager.storeRestore.startupRestoreTask?.value
         let installed = try await installPromptingExtension(
             manager: manager,
             name: name
@@ -1209,23 +1489,31 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
         let context = try XCTUnwrap(
             manager.getExtensionContext(for: installed.id, profileId: profile.id)
         )
-        let browserManager = makeSafariExtensionTestBrowserManager(
-            profile: profile
-        )
-        manager.attach(browserManager: browserManager)
         let tab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: Self.clickedPageURL.absoluteString,
             in: browserManager.tabManager.spaceStateOwner.currentSpace,
             activate: false
         )
         tab.profileId = profile.id
+        let windowState = BrowserWindowState()
+        windowState.tabManager = browserManager.tabManager
+        windowState.currentProfileId = profile.id
+        windowState.currentSpaceId = tab.spaceId
+        windowState.currentTabId = tab.id
+        windowRegistry.register(windowState)
+        windowRegistry.setActive(windowState)
+        addTeardownBlock { @MainActor in
+            windowRegistry.unregister(windowState.id)
+        }
         return Harness(
             manager: manager,
             browserManager: browserManager,
             profileID: profile.id,
             extensionID: installed.id,
             tab: tab,
-            context: context
+            context: context,
+            windowRegistry: windowRegistry,
+            windowState: windowState
         )
     }
 

@@ -13,8 +13,8 @@ final class ExtensionBrowserContentInventoryTests: XCTestCase {
         let secondEphemeral = Tab()
         let firstWindow = BrowserWindowState()
         let secondWindow = BrowserWindowState()
-        firstWindow.ephemeralTabs = [firstEphemeral]
-        secondWindow.ephemeralTabs = [secondEphemeral]
+        firstWindow.replaceEphemeralTabs([firstEphemeral])
+        secondWindow.replaceEphemeralTabs([secondEphemeral])
         let runtime = makeRuntime(
             tabs: [first, second],
             windows: [firstWindow, secondWindow]
@@ -155,6 +155,8 @@ final class ExtensionBrowserContentInventoryTests: XCTestCase {
             profile: { _ in nil },
             ephemeralProfile: { _ in nil },
             windowState: { _ in nil },
+            windowRegistrationReceipt: { _ in nil },
+            registeredWindow: { _ in nil },
             activeWindowState: { nil },
             allTabs: { tabs },
             allWindowStates: { windows },

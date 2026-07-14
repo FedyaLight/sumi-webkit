@@ -335,7 +335,7 @@ final class SpaceProfileTransitionService {
             for: spaceID
         )
         tabManager.structuralPersistence.scheduleStructuralPersistence()
-        tabManager.structuralLookupCoordinator.requestPublish()
+        tabManager.structuralLookupCoordinator.requestPublish(scope: .space(spaceID, catalog: true))
     }
 
     private func immediateSettlement(

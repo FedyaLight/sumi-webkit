@@ -19,7 +19,8 @@ struct URLBarHubControlsView: View {
     let showsBoostsSection: Bool
     let currentSiteBoosts: [SumiBoost]
     let currentActiveBoostId: UUID?
-    let unpinnedEnabledExtensionActions: [InstalledExtension]
+    let unpinnedEnabledExtensionActions:
+        [BrowserExtensionToolbarDisplayRecord]
     let permissionDependencies: SumiCurrentSitePermissionsViewModel.LoadDependencies
     let readerModeIsActive: Bool
     let bookmarkErrorMessage: String?
@@ -95,7 +96,8 @@ struct URLBarHubControlsView: View {
 
             browserContext.extensionActions.hubTiles(
                 unpinnedEnabledExtensionActions,
-                windowState
+                windowState,
+                activeProfile?.id
             )
             .environment(windowState)
         }

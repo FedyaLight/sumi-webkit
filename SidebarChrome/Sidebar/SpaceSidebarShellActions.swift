@@ -63,7 +63,7 @@ extension SpacesSideBarView {
         let source = windowState.resolveSidebarPresentationSource(in: windowRegistry)
         let defaultProfileID = windowState.currentProfileId
             ?? browserContext.currentProfile()?.id
-            ?? pageModel.profiles.first?.id
+            ?? browserContext.profileManager.profiles.first?.id
 
         windowState.spaceCreationSession.begin(
             source: source,
@@ -78,7 +78,7 @@ extension SpacesSideBarView {
         let profileId: UUID?
         if session.createsNewProfile {
             guard isNewProfileNameAvailable(for: session) else { return }
-            let createdProfile = pageModel.profileManager.createProfile(
+            let createdProfile = browserContext.profileManager.createProfile(
                 name: session.trimmedNewProfileName,
                 icon: session.resolvedNewProfileIcon
             )
@@ -114,9 +114,8 @@ extension SpacesSideBarView {
     func isNewProfileNameAvailable(for session: SpaceCreationSession) -> Bool {
         let trimmed = session.trimmedNewProfileName
         guard !trimmed.isEmpty else { return false }
-        return !pageModel.profiles.contains {
+        return !browserContext.profileManager.profiles.contains {
             $0.name.caseInsensitiveCompare(trimmed) == .orderedSame
         }
     }
-
 }

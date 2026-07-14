@@ -62,8 +62,9 @@ extension URLBarView {
     var urlBarExtensionActions: some View {
         if ExtensionActionPlacement.resolve(totalActions: orderedExtensionActionCount) == .urlBar {
             browserContext.extensionActions.compactStrip(
-                extensionSurfaceStore.enabledExtensions,
-                windowState
+                extensionDisplayModel.snapshot.enabledExtensions,
+                windowState,
+                extensionToolbarProfileID
             )
             .environment(windowState)
             .accessibilityIdentifier("urlbar-extension-action-strip")
@@ -71,9 +72,10 @@ extension URLBarView {
     }
 
     var orderedExtensionActionCount: Int {
-        browserContext.extensionActions.orderedPinnedToolbarSlotCount(
-            extensionSurfaceStore.enabledExtensions
-        )
+        let pinnedIDs = Set(extensionDisplayModel.snapshot.pinnedExtensionIDs)
+        return extensionDisplayModel.snapshot.enabledExtensions.count {
+            $0.hasAction && pinnedIDs.contains($0.id)
+        }
     }
 
     func copyLinkButton(for currentTab: Tab) -> some View {

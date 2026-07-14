@@ -315,7 +315,6 @@ struct SumiApp: App {
             .ignoresSafeArea(.all)
             .writingToolsBehavior(.disabled)
             .environmentObject(dependencies.browserManager.glanceManager)
-            .environmentObject(dependencies.browserManager.optionalModules.extensions.surfaceStore)
             .environmentObject(dependencies.nowPlayingController)
             .environment(dependencies.windowRegistry)
             .environment(\.sumiSettings, dependencies.settingsManager)
