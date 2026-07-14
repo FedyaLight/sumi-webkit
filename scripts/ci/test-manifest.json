@@ -803,6 +803,12 @@
       "configuration": "Debug",
       "role": "ui-test",
       "selectors": [
+        "SumiUITests/SumiLaunchSmokeUIFixtureTests/testBundledFixtureResolvesWithExactFamilyAndHashes",
+        "SumiUITests/SumiLaunchSmokeUIFixtureTests/testFixtureResolutionRejectsPartialAndTamperedFamilies",
+        "SumiUITests/SumiLaunchSmokeUIFixtureTests/testPreparationIgnoresAmbientDeveloperStore",
+        "SumiUITests/SumiLaunchSmokeUIFixtureTests/testPreparedStoresAreFreshAndIsolated",
+        "SumiUITests/SumiLaunchSmokeUIFixtureTests/testScratchSeedUsesDeterministicSmokeIdentifiers",
+        "SumiUITests/SumiLaunchSmokeUIFixtureTests/testScratchSeedingLeavesBundledSourceImmutable",
         "SumiUITests/SumiLaunchSmokeUITests/testLaunchesMainWindow"
       ]
     }

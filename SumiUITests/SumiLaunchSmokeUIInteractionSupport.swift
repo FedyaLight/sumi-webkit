@@ -36,10 +36,9 @@ extension SumiLaunchSmokeUITestCase {
 
         let title = element(withIdentifier: "space-title-\(fixture.personalSpaceID)", in: app)
         XCTAssertTrue(
-            title.waitForExistence(timeout: 5),
-            "Personal space title did not become available for \(fixture.personalSpaceID). Target icon was \(spaceIcon.identifier)"
+            Self.waitForObservableReadiness(of: title, timeout: 5),
+            "Personal space title did not become visible and hittable for \(fixture.personalSpaceID). Target icon was \(spaceIcon.identifier)"
         )
-        Thread.sleep(forTimeInterval: 0.35)
     }
 
     @MainActor
@@ -1477,8 +1476,28 @@ extension SumiLaunchSmokeUITestCase {
 
     @MainActor
     static func dismissThemePicker(app: XCUIApplication, window: XCUIElement) {
-        Thread.sleep(forTimeInterval: 0.25)
+        let predicate = NSPredicate(
+            format: "identifier == %@",
+            "workspace-theme-picker-panel"
+        )
+        let picker = app.descendants(matching: .any).matching(predicate).firstMatch
+        XCTAssertTrue(
+            waitForObservableReadiness(of: picker, timeout: 5),
+            "Workspace theme picker did not become visible and hittable before dismissal"
+        )
         window.coordinate(withNormalizedOffset: CGVector(dx: 0.96, dy: 0.08)).click()
+    }
+
+    @MainActor
+    static func waitForObservableReadiness(
+        of element: XCUIElement,
+        timeout: TimeInterval
+    ) -> Bool {
+        let expectation = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == true AND hittable == true"),
+            object: element
+        )
+        return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
     }
 
     @MainActor

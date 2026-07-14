@@ -42,7 +42,6 @@ class SumiLaunchSmokeUITestCase: XCTestCase {
     }
 
     enum FixtureError: LocalizedError {
-        case missingStore(String)
         case sqliteFailure(String)
         case malformedJSON
         case missingValue(String)
@@ -50,8 +49,6 @@ class SumiLaunchSmokeUITestCase: XCTestCase {
 
         var errorDescription: String? {
             switch self {
-            case .missingStore(let path):
-                "Missing current-profile store at \(path)"
             case .sqliteFailure(let message):
                 message
             case .malformedJSON:
@@ -65,6 +62,7 @@ class SumiLaunchSmokeUITestCase: XCTestCase {
     }
 
     override func setUpWithError() throws {
+        try super.setUpWithError()
         continueAfterFailure = false
     }
 
@@ -78,6 +76,7 @@ class SumiLaunchSmokeUITestCase: XCTestCase {
             try? FileManager.default.removeItem(at: sidebarDragMarkerURL)
         }
         sidebarDragMarkerURL = nil
+        try super.tearDownWithError()
     }
 
     nonisolated func skipUnlessInteractionE2E() throws {
@@ -91,7 +90,10 @@ class SumiLaunchSmokeUITestCase: XCTestCase {
     func launchApp(
         preferencesHomeURL: URL? = nil,
         additionalEnvironment: [String: String] = [:]
-    ) -> XCUIApplication {
+    ) throws -> XCUIApplication {
+        if smokeAppSupportURL == nil {
+            _ = try prepareSmokeStoreURL()
+        }
         let app = XCUIApplication()
         app.launchArguments.append("--uitest-smoke")
         app.launchArguments.append("--uitest-sidebar-drag-marker=\(sidebarDragMarkerFileURL().path)")
@@ -104,12 +106,7 @@ class SumiLaunchSmokeUITestCase: XCTestCase {
         if let preferencesHomeURL {
             resolvedPreferencesHomeURL = preferencesHomeURL
         } else if smokeAppSupportURL != nil {
-            do {
-                resolvedPreferencesHomeURL = try prepareSmokePreferencesHome()
-            } catch {
-                XCTFail("Failed to prepare smoke preferences home: \(error.localizedDescription)")
-                resolvedPreferencesHomeURL = nil
-            }
+            resolvedPreferencesHomeURL = try prepareSmokePreferencesHome()
         } else {
             resolvedPreferencesHomeURL = nil
         }

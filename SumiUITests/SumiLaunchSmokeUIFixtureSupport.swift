@@ -1,12 +1,24 @@
 import AppKit
-import Darwin
 import Foundation
 import SQLite3
 import XCTest
 
+enum SumiSmokeFixtureIDs {
+    static let profile = "00000000000000000000000000000601"
+    static let personalSpace = "0000000000000000000000000000a001"
+    static let topLevelLauncher = "0000000000000000000000000000a002"
+    static let regularTab = "0000000000000000000000000000a003"
+    static let secondaryRegularTab = "0000000000000000000000000000a004"
+    static let folder = "0000000000000000000000000000a005"
+    static let folderLauncher = "0000000000000000000000000000a006"
+    static let essential = "0000000000000000000000000000a007"
+    static let primaryThemeColor = "00000000-0000-0000-0000-00000000A008"
+    static let secondaryThemeColor = "00000000-0000-0000-0000-00000000A009"
+}
+
 extension SumiLaunchSmokeUITestCase {
     func loadPersonalSidebarFixture() throws -> PersonalSidebarFixture {
-        let storeURL = try prepareSmokeStoreURL()
+        let storeURL = try requiredSmokeStoreURL()
 
         let personalSpaceID = try requiredScalar(
             sql: """
@@ -31,135 +43,69 @@ extension SumiLaunchSmokeUITestCase {
             description: "Personal space \(personalSpaceID) does not have a profile id"
         )
 
-        let topLevelLauncherID = try optionalScalar(
+        let topLevelLauncherID = try requiredScalar(
             sql: """
             SELECT lower(hex(ZID)) AS value
             FROM ZTABENTITY
-            WHERE ZISSPACEPINNED = 1
-              AND lower(hex(ZSPACEID)) = '\(personalSpaceID)'
-              AND ZFOLDERID IS NULL
-            ORDER BY ZINDEX
+            WHERE lower(hex(ZID)) = '\(SumiSmokeFixtureIDs.topLevelLauncher)'
             LIMIT 1;
             """,
             storeURL: storeURL,
             description: "Personal space \(personalSpaceID) does not have a top-level launcher"
-        ) ?? insertSmokeTab(
-            storeURL: storeURL,
-            name: "Smoke Launcher",
-            urlString: "https://example.com/sumi-smoke-launcher",
-            isPinned: false,
-            isSpacePinned: true,
-            spaceID: personalSpaceID,
-            profileID: nil,
-            folderID: nil,
-            indexWhereClause: """
-            ZISSPACEPINNED = 1
-              AND lower(hex(ZSPACEID)) = '\(personalSpaceID)'
-              AND ZFOLDERID IS NULL
-            """
         )
 
-        let regularTabWhereClause = """
-        lower(hex(ZSPACEID)) = '\(personalSpaceID)'
-          AND COALESCE(ZISSPACEPINNED, 0) = 0
-          AND COALESCE(ZISPINNED, 0) = 0
-          AND ZFOLDERID IS NULL
-        """
-        let regularTabID = try insertSmokeTab(
+        let regularTabID = try requiredScalar(
+            sql: """
+            SELECT lower(hex(ZID)) AS value
+            FROM ZTABENTITY
+            WHERE lower(hex(ZID)) = '\(SumiSmokeFixtureIDs.regularTab)'
+            LIMIT 1;
+            """,
             storeURL: storeURL,
-            name: "Smoke Regular Tab",
-            urlString: "https://example.com/sumi-smoke-regular",
-            isPinned: false,
-            isSpacePinned: false,
-            spaceID: personalSpaceID,
-            profileID: profileID,
-            folderID: nil,
-            indexWhereClause: regularTabWhereClause
+            description: "Personal space \(personalSpaceID) does not have the primary regular smoke tab"
         )
-        let secondaryRegularTabID = try insertSmokeTab(
+        let secondaryRegularTabID = try requiredScalar(
+            sql: """
+            SELECT lower(hex(ZID)) AS value
+            FROM ZTABENTITY
+            WHERE lower(hex(ZID)) = '\(SumiSmokeFixtureIDs.secondaryRegularTab)'
+            LIMIT 1;
+            """,
             storeURL: storeURL,
-            name: "Smoke Secondary Regular Tab",
-            urlString: "https://example.com/sumi-smoke-regular-secondary",
-            isPinned: false,
-            isSpacePinned: false,
-            spaceID: personalSpaceID,
-            profileID: profileID,
-            folderID: nil,
-            indexWhereClause: regularTabWhereClause
-        )
-        try moveSmokeRegularTabsToTop(
-            storeURL: storeURL,
-            personalSpaceID: personalSpaceID,
-            primaryTabID: regularTabID,
-            secondaryTabID: secondaryRegularTabID
+            description: "Personal space \(personalSpaceID) does not have the secondary regular smoke tab"
         )
 
-        let folderID = try optionalScalar(
+        let folderID = try requiredScalar(
             sql: """
             SELECT lower(hex(ZID)) AS value
             FROM ZFOLDERENTITY
-            WHERE lower(hex(ZSPACEID)) = '\(personalSpaceID)'
-            ORDER BY ZINDEX
+            WHERE lower(hex(ZID)) = '\(SumiSmokeFixtureIDs.folder)'
             LIMIT 1;
             """,
             storeURL: storeURL,
             description: "Personal space \(personalSpaceID) does not have a folder"
-        ) ?? insertSmokeFolder(
-            storeURL: storeURL,
-            name: "Smoke Folder",
-            spaceID: personalSpaceID
         )
 
-        let folderLauncherID = try optionalScalar(
+        let folderLauncherID = try requiredScalar(
             sql: """
             SELECT lower(hex(ZID)) AS value
             FROM ZTABENTITY
-            WHERE ZISSPACEPINNED = 1
-              AND lower(hex(ZFOLDERID)) = '\(folderID)'
-            ORDER BY ZINDEX
+            WHERE lower(hex(ZID)) = '\(SumiSmokeFixtureIDs.folderLauncher)'
             LIMIT 1;
             """,
             storeURL: storeURL,
             description: "Folder \(folderID) does not have a launcher child"
-        ) ?? insertSmokeTab(
-            storeURL: storeURL,
-            name: "Smoke Folder Launcher",
-            urlString: "https://example.com/sumi-smoke-folder-launcher",
-            isPinned: false,
-            isSpacePinned: true,
-            spaceID: personalSpaceID,
-            profileID: nil,
-            folderID: folderID,
-            indexWhereClause: """
-            ZISSPACEPINNED = 1
-              AND lower(hex(ZFOLDERID)) = '\(folderID)'
-            """
         )
 
-        let essentialID = try optionalScalar(
+        let essentialID = try requiredScalar(
             sql: """
             SELECT lower(hex(ZID)) AS value
             FROM ZTABENTITY
-            WHERE ZISPINNED = 1
-              AND lower(hex(ZPROFILEID)) = '\(profileID)'
-            ORDER BY ZINDEX
+            WHERE lower(hex(ZID)) = '\(SumiSmokeFixtureIDs.essential)'
             LIMIT 1;
             """,
             storeURL: storeURL,
             description: "Profile \(profileID) does not have an essential shortcut"
-        ) ?? insertSmokeTab(
-            storeURL: storeURL,
-            name: "Smoke Essential",
-            urlString: "https://example.com/sumi-smoke-essential",
-            isPinned: true,
-            isSpacePinned: false,
-            spaceID: nil,
-            profileID: profileID,
-            folderID: nil,
-            indexWhereClause: """
-            ZISPINNED = 1
-              AND lower(hex(ZPROFILEID)) = '\(profileID)'
-            """
         )
 
         return PersonalSidebarFixture(
@@ -175,23 +121,26 @@ extension SumiLaunchSmokeUITestCase {
     }
 
     func prepareSmokeStoreURL() throws -> URL {
-        let sourceStoreURL = defaultStoreURL()
-        guard FileManager.default.fileExists(atPath: sourceStoreURL.path) else {
-            throw FixtureError.missingStore(sourceStoreURL.path)
+        let fixtureFamily = try SumiSmokeStoreFixture.resolveBundledFamily()
+        let directory = try makeSmokeScratchDirectory(prefix: "SumiSmoke")
+        var shouldRemoveDirectory = true
+        defer {
+            if shouldRemoveDirectory {
+                try? FileManager.default.removeItem(at: directory)
+            }
         }
 
-        let directory = try makeSmokeScratchDirectory(prefix: "SumiSmoke")
-
-        let storeURL = directory.appendingPathComponent("default.store", isDirectory: false)
-        try backupSQLiteStore(sourceStoreURL, to: storeURL)
+        let storeURL = try fixtureFamily.copyVerifiedFamily(to: directory)
+        try seedSmokeStore(at: storeURL)
 
         smokeAppSupportURL = directory
         smokeAppSupportDirectories.append(directory)
+        shouldRemoveDirectory = false
         return storeURL
     }
 
     func prepareStartupThemeSmokeFixture() throws -> URL {
-        let storeURL = try prepareSmokeStoreURL()
+        let storeURL = try requiredSmokeStoreURL()
         let spaceID = try firstSpaceID(in: storeURL)
 
         let themeData = try startupSmokeWorkspaceThemeData()
@@ -209,7 +158,7 @@ extension SumiLaunchSmokeUITestCase {
     }
 
     func prepareSmokePreferencesHome(isSidebarVisible: Bool = true) throws -> URL {
-        let storeURL = smokeStoreURL ?? defaultStoreURL()
+        let storeURL = try requiredSmokeStoreURL()
         let spaceID = try preferredSmokeStartupSpaceID(in: storeURL)
         let snapshotData = try startupSmokeWindowSessionData(
             spaceID: spaceID,
@@ -254,7 +203,7 @@ extension SumiLaunchSmokeUITestCase {
                     "texture": 0.0,
                     "colors": [
                         [
-                            "id": UUID().uuidString,
+                            "id": SumiSmokeFixtureIDs.primaryThemeColor,
                             "hex": "#FF3B30",
                             "isCustom": false,
                             "isPrimary": true,
@@ -267,7 +216,7 @@ extension SumiLaunchSmokeUITestCase {
                             "type": "explicit-lightness",
                         ],
                         [
-                            "id": UUID().uuidString,
+                            "id": SumiSmokeFixtureIDs.secondaryThemeColor,
                             "hex": "#34C759",
                             "isCustom": false,
                             "isPrimary": false,
@@ -371,13 +320,145 @@ extension SumiLaunchSmokeUITestCase {
         return Double(blackPixels) / Double(sampledPixels)
     }
 
+    func seedSmokeStore(at storeURL: URL) throws {
+        let profileID = try requiredScalar(
+            sql: """
+            SELECT lower(hex(ZID)) AS value
+            FROM ZPROFILEENTITY
+            WHERE lower(hex(ZID)) = '\(SumiSmokeFixtureIDs.profile)'
+            LIMIT 1;
+            """,
+            storeURL: storeURL,
+            description: "Pinned UI smoke fixture is missing its source profile"
+        )
+
+        try insertSmokeSpace(
+            storeURL: storeURL,
+            id: SumiSmokeFixtureIDs.personalSpace,
+            profileID: profileID
+        )
+        try insertSmokeTab(
+            storeURL: storeURL,
+            id: SumiSmokeFixtureIDs.topLevelLauncher,
+            name: "Smoke Launcher",
+            urlString: "https://example.com/sumi-smoke-launcher",
+            isPinned: false,
+            isSpacePinned: true,
+            spaceID: SumiSmokeFixtureIDs.personalSpace,
+            profileID: nil,
+            folderID: nil,
+            indexWhereClause: """
+            ZISSPACEPINNED = 1
+              AND lower(hex(ZSPACEID)) = '\(SumiSmokeFixtureIDs.personalSpace)'
+              AND ZFOLDERID IS NULL
+            """
+        )
+
+        let regularTabWhereClause = """
+        lower(hex(ZSPACEID)) = '\(SumiSmokeFixtureIDs.personalSpace)'
+          AND COALESCE(ZISSPACEPINNED, 0) = 0
+          AND COALESCE(ZISPINNED, 0) = 0
+          AND ZFOLDERID IS NULL
+        """
+        try insertSmokeTab(
+            storeURL: storeURL,
+            id: SumiSmokeFixtureIDs.regularTab,
+            name: "Smoke Regular Tab",
+            urlString: "https://example.com/sumi-smoke-regular",
+            isPinned: false,
+            isSpacePinned: false,
+            spaceID: SumiSmokeFixtureIDs.personalSpace,
+            profileID: profileID,
+            folderID: nil,
+            indexWhereClause: regularTabWhereClause
+        )
+        try insertSmokeTab(
+            storeURL: storeURL,
+            id: SumiSmokeFixtureIDs.secondaryRegularTab,
+            name: "Smoke Secondary Regular Tab",
+            urlString: "https://example.com/sumi-smoke-regular-secondary",
+            isPinned: false,
+            isSpacePinned: false,
+            spaceID: SumiSmokeFixtureIDs.personalSpace,
+            profileID: profileID,
+            folderID: nil,
+            indexWhereClause: regularTabWhereClause
+        )
+        try moveSmokeRegularTabsToTop(
+            storeURL: storeURL,
+            personalSpaceID: SumiSmokeFixtureIDs.personalSpace,
+            primaryTabID: SumiSmokeFixtureIDs.regularTab,
+            secondaryTabID: SumiSmokeFixtureIDs.secondaryRegularTab
+        )
+
+        try insertSmokeFolder(
+            storeURL: storeURL,
+            id: SumiSmokeFixtureIDs.folder,
+            name: "Smoke Folder",
+            spaceID: SumiSmokeFixtureIDs.personalSpace
+        )
+        try insertSmokeTab(
+            storeURL: storeURL,
+            id: SumiSmokeFixtureIDs.folderLauncher,
+            name: "Smoke Folder Launcher",
+            urlString: "https://example.com/sumi-smoke-folder-launcher",
+            isPinned: false,
+            isSpacePinned: true,
+            spaceID: SumiSmokeFixtureIDs.personalSpace,
+            profileID: nil,
+            folderID: SumiSmokeFixtureIDs.folder,
+            indexWhereClause: """
+            ZISSPACEPINNED = 1
+              AND lower(hex(ZFOLDERID)) = '\(SumiSmokeFixtureIDs.folder)'
+            """
+        )
+        try insertSmokeTab(
+            storeURL: storeURL,
+            id: SumiSmokeFixtureIDs.essential,
+            name: "Smoke Essential",
+            urlString: "https://example.com/sumi-smoke-essential",
+            isPinned: true,
+            isSpacePinned: false,
+            spaceID: nil,
+            profileID: profileID,
+            folderID: nil,
+            indexWhereClause: """
+            ZISPINNED = 1
+              AND lower(hex(ZPROFILEID)) = '\(profileID)'
+            """
+        )
+    }
+
+    func insertSmokeSpace(
+        storeURL: URL,
+        id: String,
+        profileID: String
+    ) throws {
+        let entity = try nextPrimaryKeyInfo(entityName: "SpaceEntity", storeURL: storeURL)
+        try executeSQLite(
+            sql: """
+            INSERT INTO ZSPACEENTITY (
+                Z_PK, Z_ENT, Z_OPT, ZINDEX, ZICON, ZNAME, ZID, ZPROFILEID
+            ) VALUES (
+                \(entity.primaryKey), \(entity.entity), 1, 0,
+                \(sqlString("house.fill")), \(sqlString("Personal")),
+                \(sqlBlob(id)), \(sqlBlob(profileID))
+            );
+            UPDATE Z_PRIMARYKEY
+            SET Z_MAX = MAX(Z_MAX, \(entity.primaryKey))
+            WHERE Z_NAME = 'SpaceEntity';
+            """,
+            storeURL: storeURL
+        )
+    }
+
     func insertSmokeFolder(
         storeURL: URL,
+        id: String,
         name: String,
         spaceID: String
-    ) throws -> String {
+    ) throws {
         let entity = try nextPrimaryKeyInfo(entityName: "FolderEntity", storeURL: storeURL)
-        let folderID = uuidHexString()
         let index = try nextIndex(
             storeURL: storeURL,
             tableName: "ZFOLDERENTITY",
@@ -391,7 +472,7 @@ extension SumiLaunchSmokeUITestCase {
             ) VALUES (
                 \(entity.primaryKey), \(entity.entity), 1, \(index), 1,
                 \(sqlString("#007AFF")), \(sqlString("")), \(sqlString(name)),
-                \(sqlBlob(folderID)), \(sqlBlob(spaceID))
+                \(sqlBlob(id)), \(sqlBlob(spaceID))
             );
             UPDATE Z_PRIMARYKEY
             SET Z_MAX = MAX(Z_MAX, \(entity.primaryKey))
@@ -399,12 +480,11 @@ extension SumiLaunchSmokeUITestCase {
             """,
             storeURL: storeURL
         )
-
-        return folderID
     }
 
     func insertSmokeTab(
         storeURL: URL,
+        id: String,
         name: String,
         urlString: String,
         isPinned: Bool,
@@ -413,9 +493,8 @@ extension SumiLaunchSmokeUITestCase {
         profileID: String?,
         folderID: String?,
         indexWhereClause: String
-    ) throws -> String {
+    ) throws {
         let entity = try nextPrimaryKeyInfo(entityName: "TabEntity", storeURL: storeURL)
-        let tabID = uuidHexString()
         let index = try nextIndex(
             storeURL: storeURL,
             tableName: "ZTABENTITY",
@@ -433,7 +512,7 @@ extension SumiLaunchSmokeUITestCase {
                 \(isPinned ? 1 : 0), \(isSpacePinned ? 1 : 0),
                 \(sqlString(urlString)), \(sqlString("globe")),
                 \(sqlString(name)), \(sqlString(urlString)),
-                \(sqlBlob(folderID)), \(sqlBlob(tabID)), \(sqlBlob(profileID)), \(sqlBlob(spaceID))
+                \(sqlBlob(folderID)), \(sqlBlob(id)), \(sqlBlob(profileID)), \(sqlBlob(spaceID))
             );
             UPDATE Z_PRIMARYKEY
             SET Z_MAX = MAX(Z_MAX, \(entity.primaryKey))
@@ -441,8 +520,6 @@ extension SumiLaunchSmokeUITestCase {
             """,
             storeURL: storeURL
         )
-
-        return tabID
     }
 
     func moveSmokeRegularTabsToTop(
@@ -538,37 +615,6 @@ extension SumiLaunchSmokeUITestCase {
         }
     }
 
-    func backupSQLiteStore(
-        _ sourceURL: URL,
-        to targetURL: URL
-    ) throws {
-        let sourceDatabase = try openSQLiteDatabase(
-            at: sourceURL,
-            flags: SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX
-        )
-        defer { sqlite3_close(sourceDatabase) }
-
-        let targetDatabase = try openSQLiteDatabase(
-            at: targetURL,
-            flags: SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX
-        )
-        defer { sqlite3_close(targetDatabase) }
-
-        guard let backup = sqlite3_backup_init(targetDatabase, "main", sourceDatabase, "main") else {
-            throw FixtureError.sqliteFailure(
-                sqliteErrorMessage(targetDatabase, fallback: "Unknown sqlite3 backup error")
-            )
-        }
-
-        let stepStatus = sqlite3_backup_step(backup, -1)
-        let finishStatus = sqlite3_backup_finish(backup)
-        guard stepStatus == SQLITE_DONE, finishStatus == SQLITE_OK else {
-            throw FixtureError.sqliteFailure(
-                sqliteErrorMessage(targetDatabase, fallback: "Unknown sqlite3 backup error")
-            )
-        }
-    }
-
     func sqlString(_ value: String) -> String {
         "'\(value.replacingOccurrences(of: "'", with: "''"))'"
     }
@@ -580,12 +626,6 @@ extension SumiLaunchSmokeUITestCase {
 
     func hexString(from data: Data) -> String {
         data.map { String(format: "%02x", $0) }.joined()
-    }
-
-    func uuidHexString() -> String {
-        UUID().uuidString
-            .replacingOccurrences(of: "-", with: "")
-            .lowercased()
     }
 
     func requiredScalar(
@@ -785,6 +825,13 @@ extension SumiLaunchSmokeUITestCase {
         smokeAppSupportURL?.appendingPathComponent("default.store", isDirectory: false)
     }
 
+    func requiredSmokeStoreURL() throws -> URL {
+        if let smokeStoreURL {
+            return smokeStoreURL
+        }
+        return try prepareSmokeStoreURL()
+    }
+
     func accessibilityUUIDString(fromHex hex: String) throws -> String {
         guard hex.count == 32 else {
             throw FixtureError.missingValue("Malformed UUID hex value \(hex)")
@@ -814,15 +861,4 @@ extension SumiLaunchSmokeUITestCase {
         }
     }
 
-    func defaultStoreURL() -> URL {
-        let homeDirectory: URL
-        if let passwd = getpwuid(getuid()) {
-            homeDirectory = URL(fileURLWithPath: String(cString: passwd.pointee.pw_dir))
-        } else {
-            homeDirectory = FileManager.default.homeDirectoryForCurrentUser
-        }
-
-        return homeDirectory
-            .appendingPathComponent("Library/Application Support/com.sumi.browser/default.store")
-    }
 }

@@ -11,7 +11,7 @@ final class SumiSidebarContextMenuUITests: SumiLaunchSmokeUITestCase {
     }
 
     func testVisibleSidebarContextMenuCanBeReopenedAfterDismiss() throws {
-        let app = launchApp(preferencesHomeURL: try prepareSmokePreferencesHome())
+        let app = try launchApp(preferencesHomeURL: try prepareSmokePreferencesHome())
         let window = app.windows.element(boundBy: 0)
 
         XCTAssertTrue(window.waitForExistence(timeout: 5))
@@ -25,7 +25,7 @@ final class SumiSidebarContextMenuUITests: SumiLaunchSmokeUITestCase {
     }
 
     func testCollapsedHoverSidebarContextMenuCanBeReopenedAfterDismiss() throws {
-        let app = launchApp(preferencesHomeURL: try prepareSmokePreferencesHome(isSidebarVisible: false))
+        let app = try launchApp(preferencesHomeURL: try prepareSmokePreferencesHome(isSidebarVisible: false))
         let window = app.windows.element(boundBy: 0)
 
         XCTAssertTrue(window.waitForExistence(timeout: 5))
@@ -55,7 +55,7 @@ final class SumiSidebarContextMenuUITests: SumiLaunchSmokeUITestCase {
 
     func testPersonalVisibleSidebarContextMenusCanBeReopenedAfterDismiss() throws {
         let fixture = try loadPersonalSidebarFixture()
-        let app = launchApp()
+        let app = try launchApp()
         let window = app.windows.element(boundBy: 0)
 
         XCTAssertTrue(window.waitForExistence(timeout: 5))
@@ -141,7 +141,7 @@ final class SumiSidebarContextMenuUITests: SumiLaunchSmokeUITestCase {
 
     func testPersonalCollapsedHoverSidebarContextMenusCanBeReopenedAfterDismiss() throws {
         let fixture = try loadPersonalSidebarFixture()
-        let app = launchApp(preferencesHomeURL: try prepareSmokePreferencesHome(isSidebarVisible: false))
+        let app = try launchApp(preferencesHomeURL: try prepareSmokePreferencesHome(isSidebarVisible: false))
         let window = app.windows.element(boundBy: 0)
 
         XCTAssertTrue(window.waitForExistence(timeout: 5))
@@ -228,7 +228,7 @@ final class SumiSidebarContextMenuUITests: SumiLaunchSmokeUITestCase {
 
     func testPersonalVisibleSidebarTransientActionsKeepSidebarInteractive() throws {
         let fixture = try loadPersonalSidebarFixture()
-        let app = launchApp()
+        let app = try launchApp()
         let window = app.windows.element(boundBy: 0)
 
         XCTAssertTrue(window.waitForExistence(timeout: 5))
@@ -320,7 +320,7 @@ final class SumiSidebarContextMenuUITests: SumiLaunchSmokeUITestCase {
 
     func testPersonalCollapsedHoverSidebarTransientActionsKeepSidebarInteractive() throws {
         let fixture = try loadPersonalSidebarFixture()
-        let app = launchApp(preferencesHomeURL: try prepareSmokePreferencesHome(isSidebarVisible: false))
+        let app = try launchApp(preferencesHomeURL: try prepareSmokePreferencesHome(isSidebarVisible: false))
         let window = app.windows.element(boundBy: 0)
 
         XCTAssertTrue(window.waitForExistence(timeout: 5))
@@ -412,7 +412,7 @@ final class SumiSidebarContextMenuUITests: SumiLaunchSmokeUITestCase {
 
     func testPersonalVisibleSidebarActionAffordancesWorkAfterContextMenuDismiss() throws {
         let fixture = try loadPersonalSidebarFixture()
-        let app = launchApp()
+        let app = try launchApp()
         let window = app.windows.element(boundBy: 0)
 
         XCTAssertTrue(window.waitForExistence(timeout: 5))
@@ -437,7 +437,7 @@ final class SumiSidebarContextMenuUITests: SumiLaunchSmokeUITestCase {
 
     func testPersonalCollapsedHoverSidebarActionAffordancesWorkAfterContextMenuDismiss() throws {
         let fixture = try loadPersonalSidebarFixture()
-        let app = launchApp(preferencesHomeURL: try prepareSmokePreferencesHome(isSidebarVisible: false))
+        let app = try launchApp(preferencesHomeURL: try prepareSmokePreferencesHome(isSidebarVisible: false))
         let window = app.windows.element(boundBy: 0)
 
         XCTAssertTrue(window.waitForExistence(timeout: 5))
@@ -462,7 +462,7 @@ final class SumiSidebarContextMenuUITests: SumiLaunchSmokeUITestCase {
 
     func testPersonalVisibleSidebarDragReinitiatesAfterContextMenuDismiss() throws {
         let fixture = try loadPersonalSidebarFixture()
-        let app = launchApp()
+        let app = try launchApp()
         let window = app.windows.element(boundBy: 0)
 
         XCTAssertTrue(window.waitForExistence(timeout: 5))
@@ -484,7 +484,7 @@ final class SumiSidebarContextMenuUITests: SumiLaunchSmokeUITestCase {
 
     func testPersonalVisibleLivePinnedLauncherDragReinitiatesAfterContextMenuDismiss() throws {
         let fixture = try loadPersonalSidebarFixture()
-        let app = launchApp()
+        let app = try launchApp()
         let window = app.windows.element(boundBy: 0)
 
         XCTAssertTrue(window.waitForExistence(timeout: 5))
@@ -525,7 +525,7 @@ final class SumiSidebarContextMenuUITests: SumiLaunchSmokeUITestCase {
 
     func testPersonalVisibleRegularTabDragReinitiatesAfterContextMenuDismiss() throws {
         let fixture = try loadPersonalSidebarFixture()
-        let app = launchApp()
+        let app = try launchApp()
         let window = app.windows.element(boundBy: 0)
 
         XCTAssertTrue(window.waitForExistence(timeout: 5))
@@ -543,7 +543,7 @@ final class SumiSidebarContextMenuUITests: SumiLaunchSmokeUITestCase {
 
     func testPersonalVisibleSidebarDragReinitiatesAfterContextMenuActionDismiss() throws {
         let fixture = try loadPersonalSidebarFixture()
-        let app = launchApp()
+        let app = try launchApp()
         let window = app.windows.element(boundBy: 0)
 
         XCTAssertTrue(window.waitForExistence(timeout: 5))
@@ -569,7 +569,7 @@ final class SumiSidebarContextMenuUITests: SumiLaunchSmokeUITestCase {
 
     func testPersonalVisibleRegularTabDragReordersAfterContextMenuDismiss() throws {
         let fixture = try loadPersonalSidebarFixture()
-        let app = launchApp()
+        let app = try launchApp()
         let window = app.windows.element(boundBy: 0)
 
         XCTAssertTrue(window.waitForExistence(timeout: 5))
@@ -587,7 +587,7 @@ final class SumiSidebarContextMenuUITests: SumiLaunchSmokeUITestCase {
 
     func testPersonalVisibleRegularTabDragRecoversAfterMoveDownContextMenuAction() throws {
         let fixture = try loadPersonalSidebarFixture()
-        let app = launchApp()
+        let app = try launchApp()
         let window = app.windows.element(boundBy: 0)
 
         XCTAssertTrue(window.waitForExistence(timeout: 5))
@@ -606,7 +606,7 @@ final class SumiSidebarContextMenuUITests: SumiLaunchSmokeUITestCase {
 
     func testPersonalCollapsedHoverRegularTabDragRecoversAfterMoveDownContextMenuAction() throws {
         let fixture = try loadPersonalSidebarFixture()
-        let app = launchApp(preferencesHomeURL: try prepareSmokePreferencesHome(isSidebarVisible: false))
+        let app = try launchApp(preferencesHomeURL: try prepareSmokePreferencesHome(isSidebarVisible: false))
         let window = app.windows.element(boundBy: 0)
 
         XCTAssertTrue(window.waitForExistence(timeout: 5))
@@ -625,7 +625,7 @@ final class SumiSidebarContextMenuUITests: SumiLaunchSmokeUITestCase {
 
     func testPersonalVisiblePinnedLauncherBecomesRegularTabAfterMoveToRegularTabs() throws {
         let fixture = try loadPersonalSidebarFixture()
-        let app = launchApp()
+        let app = try launchApp()
         let window = app.windows.element(boundBy: 0)
 
         XCTAssertTrue(window.waitForExistence(timeout: 5))
@@ -650,7 +650,7 @@ final class SumiSidebarContextMenuUITests: SumiLaunchSmokeUITestCase {
 
     func testPersonalVisibleEssentialRemovalKeepsRegularTabDragInteractive() throws {
         let fixture = try loadPersonalSidebarFixture()
-        let app = launchApp()
+        let app = try launchApp()
         let window = app.windows.element(boundBy: 0)
 
         XCTAssertTrue(window.waitForExistence(timeout: 5))
@@ -675,7 +675,7 @@ final class SumiSidebarContextMenuUITests: SumiLaunchSmokeUITestCase {
 
     func testPersonalCollapsedHoverEssentialRemovalKeepsRegularTabDragInteractive() throws {
         let fixture = try loadPersonalSidebarFixture()
-        let app = launchApp(preferencesHomeURL: try prepareSmokePreferencesHome(isSidebarVisible: false))
+        let app = try launchApp(preferencesHomeURL: try prepareSmokePreferencesHome(isSidebarVisible: false))
         let window = app.windows.element(boundBy: 0)
 
         XCTAssertTrue(window.waitForExistence(timeout: 5))
@@ -700,7 +700,7 @@ final class SumiSidebarContextMenuUITests: SumiLaunchSmokeUITestCase {
 
     func testPersonalVisibleEssentialMoveToRegularTabsKeepsRegularTabDragInteractive() throws {
         let fixture = try loadPersonalSidebarFixture()
-        let app = launchApp()
+        let app = try launchApp()
         let window = app.windows.element(boundBy: 0)
 
         XCTAssertTrue(window.waitForExistence(timeout: 5))
@@ -725,7 +725,7 @@ final class SumiSidebarContextMenuUITests: SumiLaunchSmokeUITestCase {
 
     func testPersonalVisibleRegularTabDragRecoversAfterDuplicateContextMenuAction() throws {
         let fixture = try loadPersonalSidebarFixture()
-        let app = launchApp()
+        let app = try launchApp()
         let window = app.windows.element(boundBy: 0)
 
         XCTAssertTrue(window.waitForExistence(timeout: 5))
@@ -763,7 +763,7 @@ final class SumiSidebarContextMenuUITests: SumiLaunchSmokeUITestCase {
 
     func testPersonalVisibleRegularTabDragReordersAfterContextMenuSubmenuDismiss() throws {
         let fixture = try loadPersonalSidebarFixture()
-        let app = launchApp()
+        let app = try launchApp()
         let window = app.windows.element(boundBy: 0)
 
         XCTAssertTrue(window.waitForExistence(timeout: 5))
@@ -782,7 +782,7 @@ final class SumiSidebarContextMenuUITests: SumiLaunchSmokeUITestCase {
 
     func testPersonalCollapsedHoverRegularTabDragReordersAfterContextMenuDismiss() throws {
         let fixture = try loadPersonalSidebarFixture()
-        let app = launchApp(preferencesHomeURL: try prepareSmokePreferencesHome(isSidebarVisible: false))
+        let app = try launchApp(preferencesHomeURL: try prepareSmokePreferencesHome(isSidebarVisible: false))
         let window = app.windows.element(boundBy: 0)
 
         XCTAssertTrue(window.waitForExistence(timeout: 5))
@@ -800,7 +800,7 @@ final class SumiSidebarContextMenuUITests: SumiLaunchSmokeUITestCase {
 
     func testPersonalCollapsedHoverPinnedDragReinitiatesAfterContextMenuDismiss() throws {
         let fixture = try loadPersonalSidebarFixture()
-        let app = launchApp(preferencesHomeURL: try prepareSmokePreferencesHome(isSidebarVisible: false))
+        let app = try launchApp(preferencesHomeURL: try prepareSmokePreferencesHome(isSidebarVisible: false))
         let window = app.windows.element(boundBy: 0)
 
         XCTAssertTrue(window.waitForExistence(timeout: 5))
@@ -827,7 +827,7 @@ final class SumiSidebarContextMenuUITests: SumiLaunchSmokeUITestCase {
             XCTFail("Smoke fixture does not expose a top-level launcher row")
             return
         }
-        let app = launchApp(additionalEnvironment: sidebarShortcutDriftEnvironment(shortcutPinID: topLevelLauncherID))
+        let app = try launchApp(additionalEnvironment: sidebarShortcutDriftEnvironment(shortcutPinID: topLevelLauncherID))
         let window = app.windows.element(boundBy: 0)
 
         XCTAssertTrue(window.waitForExistence(timeout: 5))
@@ -858,7 +858,7 @@ final class SumiSidebarContextMenuUITests: SumiLaunchSmokeUITestCase {
             XCTFail("Smoke fixture does not expose a top-level launcher row")
             return
         }
-        let app = launchApp(additionalEnvironment: sidebarShortcutDriftEnvironment(shortcutPinID: topLevelLauncherID))
+        let app = try launchApp(additionalEnvironment: sidebarShortcutDriftEnvironment(shortcutPinID: topLevelLauncherID))
         let window = app.windows.element(boundBy: 0)
 
         XCTAssertTrue(window.waitForExistence(timeout: 5))

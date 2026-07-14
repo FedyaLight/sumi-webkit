@@ -5,15 +5,15 @@ import XCTest
 
 @MainActor
 final class SumiLaunchSmokeUITests: SumiLaunchSmokeUITestCase {
-    func testLaunchesMainWindow() {
-        let app = launchApp()
+    func testLaunchesMainWindow() throws {
+        let app = try launchApp()
 
         XCTAssertTrue(app.windows.element(boundBy: 0).waitForExistence(timeout: 5))
     }
 
     func testRendersSpaceSwitcherShell() throws {
         let fixture = try loadPersonalSidebarFixture()
-        let app = launchApp(preferencesHomeURL: try prepareSmokePreferencesHome())
+        let app = try launchApp(preferencesHomeURL: try prepareSmokePreferencesHome())
         let window = app.windows.element(boundBy: 0)
         let spaceIcon = element(withIdentifier: "space-icon-\(fixture.personalSpaceID)", in: app)
 
@@ -22,7 +22,7 @@ final class SumiLaunchSmokeUITests: SumiLaunchSmokeUITestCase {
     }
 
     func testNativeTrafficLightsAreHittableInNormalWindow() throws {
-        let app = launchApp(preferencesHomeURL: try prepareSmokePreferencesHome())
+        let app = try launchApp(preferencesHomeURL: try prepareSmokePreferencesHome())
         let window = app.windows.element(boundBy: 0)
 
         XCTAssertTrue(window.waitForExistence(timeout: 5))
@@ -31,7 +31,7 @@ final class SumiLaunchSmokeUITests: SumiLaunchSmokeUITestCase {
     }
 
     func testGreenTrafficLightHoverOpensCompactMenu() throws {
-        let app = launchApp(preferencesHomeURL: try prepareSmokePreferencesHome())
+        let app = try launchApp(preferencesHomeURL: try prepareSmokePreferencesHome())
         let window = app.windows.element(boundBy: 0)
 
         XCTAssertTrue(window.waitForExistence(timeout: 5))
@@ -53,7 +53,7 @@ final class SumiLaunchSmokeUITests: SumiLaunchSmokeUITestCase {
     }
 
     func testCloseTrafficLightHoverDoesNotTriggerCustomZoomMenu() throws {
-        let app = launchApp(preferencesHomeURL: try prepareSmokePreferencesHome())
+        let app = try launchApp(preferencesHomeURL: try prepareSmokePreferencesHome())
         let window = app.windows.element(boundBy: 0)
 
         XCTAssertTrue(window.waitForExistence(timeout: 5))
@@ -76,7 +76,7 @@ final class SumiLaunchSmokeUITests: SumiLaunchSmokeUITestCase {
     }
 
     func testTrafficLightHoverKeepsStandardButtonsStableAndHittable() throws {
-        let app = launchApp(preferencesHomeURL: try prepareSmokePreferencesHome())
+        let app = try launchApp(preferencesHomeURL: try prepareSmokePreferencesHome())
         let window = app.windows.element(boundBy: 0)
 
         XCTAssertTrue(window.waitForExistence(timeout: 5))
@@ -106,7 +106,7 @@ final class SumiLaunchSmokeUITests: SumiLaunchSmokeUITestCase {
     }
 
     func testTrafficLightsStaySeparatedAfterWindowDoubleClickZoom() throws {
-        let app = launchApp(preferencesHomeURL: try prepareSmokePreferencesHome())
+        let app = try launchApp(preferencesHomeURL: try prepareSmokePreferencesHome())
         let window = app.windows.element(boundBy: 0)
 
         XCTAssertTrue(window.waitForExistence(timeout: 5))
@@ -120,7 +120,7 @@ final class SumiLaunchSmokeUITests: SumiLaunchSmokeUITestCase {
     }
 
     func testCollapsedHoverSidebarKeepsNativeTrafficLightsHittable() throws {
-        let app = launchApp(preferencesHomeURL: try prepareSmokePreferencesHome(isSidebarVisible: false))
+        let app = try launchApp(preferencesHomeURL: try prepareSmokePreferencesHome(isSidebarVisible: false))
         let window = app.windows.element(boundBy: 0)
 
         XCTAssertTrue(window.waitForExistence(timeout: 5))
@@ -128,7 +128,7 @@ final class SumiLaunchSmokeUITests: SumiLaunchSmokeUITestCase {
     }
 
     func testCollapsedHoverSidebarCanBeRevealedFromRestoredSession() throws {
-        let app = launchApp(preferencesHomeURL: try prepareSmokePreferencesHome(isSidebarVisible: false))
+        let app = try launchApp(preferencesHomeURL: try prepareSmokePreferencesHome(isSidebarVisible: false))
         let window = app.windows.element(boundBy: 0)
 
         XCTAssertTrue(window.waitForExistence(timeout: 5))
@@ -139,7 +139,7 @@ final class SumiLaunchSmokeUITests: SumiLaunchSmokeUITestCase {
 
     func testLaunchWithPersistedBrightThemeDoesNotRenderDominantBlackWindow() throws {
         let preferencesHomeURL = try prepareStartupThemeSmokeFixture()
-        let app = launchApp(preferencesHomeURL: preferencesHomeURL)
+        let app = try launchApp(preferencesHomeURL: preferencesHomeURL)
         let window = app.windows.element(boundBy: 0)
 
         XCTAssertTrue(window.waitForExistence(timeout: 5))

@@ -67,6 +67,7 @@ checks=(
   "scripts/check_no_exported_domain_webruntime.sh"
   "scripts/check_package_topology.sh"
   "scripts/check_test_file_loc.sh"
+  "scripts/check_ui_test_fixture_boundary.sh"
 )
 
 for check in "${checks[@]}"; do

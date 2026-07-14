@@ -4,7 +4,7 @@ import XCTest
 @MainActor
 final class SumiFloatingBarFocusUITests: SumiLaunchSmokeUITestCase {
     func testCommandTFocusesFloatingBarInputForImmediateTyping() throws {
-        let app = launchApp(preferencesHomeURL: try prepareSmokePreferencesHome())
+        let app = try launchApp(preferencesHomeURL: try prepareSmokePreferencesHome())
         let window = app.windows.element(boundBy: 0)
         XCTAssertTrue(window.waitForExistence(timeout: 5))
 
