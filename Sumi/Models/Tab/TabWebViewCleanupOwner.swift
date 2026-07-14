@@ -144,13 +144,17 @@ enum TabWebViewCleanupOwner {
     }
 
     @MainActor
-    static func cleanupWebView(_ webView: WKWebView, context: Context) {
+    @discardableResult
+    static func cleanupWebView(
+        _ webView: WKWebView,
+        context: Context
+    ) -> Bool {
         if context.deferProtectedWebViewCleanup(
             webView,
             context.tabId,
             "Tab.cleanupCloneWebView"
         ) {
-            return
+            return false
         }
 
         let hasSurvivingOwnedWebView = context.remainingOwnedWebViews().contains {
@@ -178,32 +182,38 @@ enum TabWebViewCleanupOwner {
             context.removeNavigationStateObservers(webView)
             context.removeNavigationDelegateBundle(webView)
         }
+        return true
     }
 
     @MainActor
-    static func performComprehensiveCleanup(context: Context) {
+    @discardableResult
+    static func performComprehensiveCleanup(context: Context) -> Bool {
         let teardown = context.removeAllWebViews(true, .retirement)
         let remainingWebViews = uniqueWebViews(context.remainingOwnedWebViews())
-        guard teardown.foundWebViews || remainingWebViews.isEmpty == false else { return }
+        guard teardown.foundWebViews || remainingWebViews.isEmpty == false else {
+            return teardown.isComplete
+        }
 
         RuntimeDiagnostics.debug(
             "Performing comprehensive WebView cleanup for '\(context.tabName())'.",
             category: "Tab"
         )
 
-        if teardown.isComplete {
-            for webView in remainingWebViews {
-                cleanupWebView(webView, context: context)
-            }
+        let detachedCleanupCompleted = teardown.isComplete
+            && remainingWebViews.map {
+                cleanupWebView($0, context: context)
+            }.allSatisfy { $0 }
+        if detachedCleanupCompleted {
             context.clearDetachedWebViews()
         }
 
         RuntimeDiagnostics.debug(
-            teardown.isComplete
+            detachedCleanupCompleted
                 ? "Completed WebView cleanup for '\(context.tabName())'."
-                : "Deferred \(teardown.deferredWebViewCount) protected WebView cleanup(s) for '\(context.tabName())'.",
+                : "Deferred protected WebView cleanup for '\(context.tabName())'.",
             category: "Tab"
         )
+        return teardown.isComplete && detachedCleanupCompleted
     }
 
     @MainActor
@@ -218,10 +228,11 @@ enum TabWebViewCleanupOwner {
             return
         }
 
-        if teardown.isComplete {
-            for webView in remainingWebViews {
-                cleanupWebView(webView, context: context)
-            }
+        let detachedCleanupCompleted = teardown.isComplete
+            && remainingWebViews.map {
+                cleanupWebView($0, context: context)
+            }.allSatisfy { $0 }
+        if detachedCleanupCompleted {
             context.clearDetachedWebViews()
         }
 

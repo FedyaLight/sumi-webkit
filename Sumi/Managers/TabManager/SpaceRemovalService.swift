@@ -37,10 +37,10 @@ final class SpaceRemovalService {
             }
 
             let runtime = windowStates.runtimeLease()
-            let retirement = contentRetirement.prepare(
+            guard let plan = contentRetirement.plan(
                 spaceId: spaceId,
                 using: runtime
-            )
+            ), let retirement = contentRetirement.commit(plan) else { return }
             preparedRetirement = retirement
             persistence.markSpaceStructurallyDeleted(spaceId)
 

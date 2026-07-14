@@ -47,7 +47,7 @@ final class RegularTabShortcutCommitTransaction {
             }
             let committed: Bool
             if replacement == candidate.structure.expectedSplitGroups {
-                applyRuntime(
+                committed = applyRuntime(
                     pin,
                     transition: .replacingSource(
                         groupID: candidate.structure.sourceSplitGroupID,
@@ -55,13 +55,12 @@ final class RegularTabShortcutCommitTransaction {
                     ),
                     authorization
                 )
-                committed = true
             } else {
-                committed = splitMutations.replaceAll(
+                committed = splitMutations.replaceAllAtomically(
                     expected: candidate.structure.expectedSplitGroups,
                     with: replacement,
                     persist: false,
-                    alongside: { [self] in
+                    applying: { [self] in
                         applyRuntime(
                             pin,
                             transition: .replacingSource(
@@ -97,7 +96,7 @@ final class RegularTabShortcutCommitTransaction {
                 persist: false,
                 applying: { [self] in
                     guard applyingSplitSideEffect() else { return false }
-                    applyRuntime(
+                    return applyRuntime(
                         pin,
                         transition: .movingToShortcutSidebar(
                             sourceGroupID: prepared.conversion.structure
@@ -107,7 +106,6 @@ final class RegularTabShortcutCommitTransaction {
                         ),
                         authorization
                     )
-                    return true
                 }
             )
             guard committed else {
@@ -144,7 +142,7 @@ final class RegularTabShortcutCommitTransaction {
         _ pin: ShortcutPin,
         transition: RegularTabShortcutWindowTransitionPlan,
         _ authorization: AuthorizedTabShortcutConversion
-    ) {
+    ) -> Bool {
         switch authorization {
         case .displayed(let value):
             displayedTransition.apply(
@@ -152,8 +150,9 @@ final class RegularTabShortcutCommitTransaction {
                 transition: transition,
                 using: value
             )
+            return true
         case .detached(let value):
-            detachedTransition.apply(
+            return detachedTransition.apply(
                 to: pin,
                 transition: transition,
                 using: value

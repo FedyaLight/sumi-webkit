@@ -136,6 +136,26 @@ final class TabWebViewCleanupOwnerTests: XCTestCase {
         XCTAssertEqual(receivedIntent, .retirement)
     }
 
+    func testComprehensiveCleanupReportsProtectedDetachedWebViewAsIncomplete() {
+        let webView = WKWebView(frame: .zero)
+        var didClearOwnership = false
+        let context = makeContext(
+            tabId: UUID(),
+            deferProtectedWebViewCleanup: { candidate, _, _ in
+                candidate === webView
+            },
+            remainingOwnedWebViews: { [webView] },
+            clearDetachedWebViews: { didClearOwnership = true }
+        )
+
+        let completed = TabWebViewCleanupOwner.performComprehensiveCleanup(
+            context: context
+        )
+
+        XCTAssertFalse(completed)
+        XCTAssertFalse(didClearOwnership)
+    }
+
     func testUnloadMarksTeardownAsSuspension() {
         var receivedIntent: TabWebViewTeardownIntent?
         let context = makeContext(
@@ -164,6 +184,8 @@ final class TabWebViewCleanupOwnerTests: XCTestCase {
         removeNavigationStateObservers: @escaping (WKWebView) -> Void = { _ in /* No-op. */ },
         removeNavigationDelegateBundle: @escaping (WKWebView) -> Void = { _ in /* No-op. */ },
         webViewDidLeaveRuntime: @escaping (WKWebView) -> Void = { _ in /* No-op. */ },
+        remainingOwnedWebViews: @escaping () -> [WKWebView] = { [] },
+        clearDetachedWebViews: @escaping () -> Void = { /* No-op. */ },
         removeAllWebViews: @escaping (
             Bool,
             TabWebViewTeardownIntent
@@ -176,8 +198,8 @@ final class TabWebViewCleanupOwnerTests: XCTestCase {
             deferProtectedWebViewCleanup: deferProtectedWebViewCleanup,
             shutdownRuntime: shutdownRuntime,
             notifyNowPlayingTabUnloaded: { _ in /* No-op. */ },
-            remainingOwnedWebViews: { [] },
-            clearDetachedWebViews: { /* No-op. */ },
+            remainingOwnedWebViews: remainingOwnedWebViews,
+            clearDetachedWebViews: clearDetachedWebViews,
             removeAllWebViews: removeAllWebViews,
             currentPermissionPageId: currentPermissionPageId,
             profilePartitionId: profilePartitionId,

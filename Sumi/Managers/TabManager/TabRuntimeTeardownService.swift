@@ -1,19 +1,20 @@
 import Foundation
 
-/// Ends live runtime ownership for a batch of tabs without mutating their
-/// persisted structural containers. Callers remove those containers once,
-/// after every tab has stopped producing runtime state.
+/// Publishes terminal runtime teardown after structural owners commit.
 @MainActor
 final class TabRuntimeTeardownService {
     private let persistence: TabStructuralPersistenceService
     private let membership: TabCollectionMembershipOwner
+    let preparation: TabRuntimeTeardownPreparationService
 
     init(
         persistence: TabStructuralPersistenceService,
-        membership: TabCollectionMembershipOwner
+        membership: TabCollectionMembershipOwner,
+        preparation: TabRuntimeTeardownPreparationService = .init()
     ) {
         self.persistence = persistence
         self.membership = membership
+        self.preparation = preparation
     }
 
     @discardableResult
@@ -21,19 +22,28 @@ final class TabRuntimeTeardownService {
         _ tabs: [Tab],
         using runtime: RuntimePortRegistry
     ) -> Set<UUID> {
-        var seen = Set<UUID>()
-        let uniqueTabs = tabs.filter { seen.insert($0.id).inserted }
-        guard !uniqueTabs.isEmpty else { return [] }
+        guard let prepared = preparation.prepare(tabs, using: runtime) else {
+            return []
+        }
+        return finish(prepared)
+    }
 
-        let tabIds = Set(uniqueTabs.map(\.id))
-        uniqueTabs.forEach {
+    /// Publishes the infallible terminal phase.
+    @discardableResult
+    func finish(_ prepared: PreparedTabRuntimeTeardown) -> Set<UUID> {
+        let tabIds = prepared.tabIds
+        guard tabIds.isEmpty == false else { return [] }
+        prepared.tabs.forEach {
             persistence.cancelRuntimeStatePersistence(for: $0.id)
         }
-        runtime.handleTabClosures(tabIds)
+        prepared.runtime.handleTabClosures(tabIds)
 
-        for tab in uniqueTabs {
+        for tab in prepared.tabs {
             if membership.isAuxiliaryMiniWindowTab(tab) {
-                runtime.closeAuxiliaryMiniWindow(for: tab, reason: .bulkCleanup)
+                prepared.runtime.closeAuxiliaryMiniWindow(
+                    for: tab,
+                    reason: .bulkCleanup
+                )
                 if membership.isAuxiliaryMiniWindowTab(tab) == false {
                     continue
                 }
@@ -42,9 +52,8 @@ final class TabRuntimeTeardownService {
                 _ = membership.removeTransientExtensionTab(id: tab.id)
             }
 
-            runtime.notifyTabClosedIfLoaded(tab)
-            tab.performComprehensiveWebViewCleanup()
-            runtime.webViewLifecycle.unloadTab(tab)
+            prepared.runtime.notifyTabClosedIfLoaded(tab)
+            prepared.runtime.webViewLifecycle.unloadTab(tab)
             membership.detach(tab)
             NotificationCenter.default.post(
                 name: .sumiTabLifecycleDidChange,

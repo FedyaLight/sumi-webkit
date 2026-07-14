@@ -1,5 +1,6 @@
 import Combine
 import SumiDomain
+import SumiWebRuntime
 import XCTest
 
 @testable import Sumi
@@ -313,7 +314,7 @@ final class RegularTabShortcutConversionServiceTests: XCTestCase {
             SplitGroup.make(
                 members: [
                     .regularTab(source.id),
-                    .regularTab(companion.id)
+                    .regularTab(companion.id),
                 ],
                 layoutKind: .vertical,
                 container: .regularTabs(spaceId: space.id)
@@ -390,6 +391,48 @@ final class RegularTabShortcutConversionServiceTests: XCTestCase {
         XCTAssertTrue(tabManager.regularTabCollectionOwner.contains(tab))
         XCTAssertFalse(tab.isShortcutLiveInstance)
         XCTAssertTrue(tabManager.liveShortcutTabs.snapshot.isEmpty)
+    }
+
+    func testDetachedConversionRejectsBlockedPhysicalCleanupAtomically() throws {
+        let tabManager = try makeInMemoryTabManager()
+        let space = tabManager.spaceServices.catalog.createSpace(name: "Space")
+        let tab = tabManager.regularTabLifecycleOwner.createNewTab(
+            url: "https://blocked.example",
+            in: space,
+            activate: false
+        )
+        var cleanupRuntime = TabWebViewCleanupRuntime.inactive
+        cleanupRuntime.removeAllWebViews = { _, _, _ in
+            WebViewTabTeardownResult(
+                discoveredWebViewCount: 1,
+                cleanedWebViewCount: 0,
+                deferredWebViewCount: 0,
+                unscheduledProtectedWebViewCount: 0,
+                blockedWebViewCount: 1
+            )
+        }
+        tab.navigationRuntime.webViewCleanupRuntime = cleanupRuntime
+
+        let converted = tabManager.shortcutPinCommandOwner
+            .convertTabToShortcutPin(
+                tab,
+                role: .spacePinned,
+                profileId: nil,
+                spaceId: space.id,
+                folderId: nil,
+                at: 0
+            )
+
+        XCTAssertNil(converted)
+        XCTAssertTrue(tabManager.regularTabCollectionOwner.contains(tab))
+        XCTAssertIdentical(
+            tabManager.tabCollectionMembershipOwner.tab(for: tab.id),
+            tab
+        )
+        XCTAssertTrue(
+            tabManager.shortcutPinCollectionStateOwner
+                .spacePinnedPins(for: space.id).isEmpty
+        )
     }
 
     func testShortcutSidebarDropMovesStableMemberAndEveryWindowToTargetGroup() throws {

@@ -48,16 +48,29 @@ final class DetachedTabShortcutConverter {
         to pin: ShortcutPin,
         transition: RegularTabShortcutWindowTransitionPlan,
         using authorization: AuthorizedDetachedTabShortcutConversion
-    ) {
+    ) -> Bool {
         let tab = authorization.tab
         let runtime = authorization.runtime
+        let preparedTeardown: PreparedTabRuntimeTeardown?
+        if let runtime {
+            guard let prepared = runtimeTeardown.preparation.prepare(
+                [tab],
+                using: runtime
+            ) else { return false }
+            preparedTeardown = prepared
+        } else {
+            guard tab.performComprehensiveWebViewCleanup() else { return false }
+            preparedTeardown = nil
+        }
 
         containerRemoval.removeFromCurrentContainer(tab)
-        membership.detach(tab)
+        if runtime == nil {
+            membership.detach(tab)
+        }
         if selection.currentTab === tab {
             selection.replaceCurrentTab(nil)
         }
-        if let runtime {
+        if let runtime, let preparedTeardown {
             let changedWindows = windowReconciler.reconcile(
                 originalTabId: tab.id,
                 splitTransition: transition,
@@ -67,9 +80,10 @@ final class DetachedTabShortcutConverter {
                 using: runtime
             )
             structuralLookup.runAfterCurrentBatch { [runtimeTeardown] in
-                runtimeTeardown.teardown([tab], using: runtime)
+                runtimeTeardown.finish(preparedTeardown)
                 changedWindows.forEach(runtime.persistWindowSession(for:))
             }
         }
+        return true
     }
 }

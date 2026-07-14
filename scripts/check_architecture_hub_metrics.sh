@@ -371,11 +371,13 @@ tab_space_services=(
 )
 tab_space_removal_helpers=(
   "Sumi/Managers/TabManager/SpaceContentRetirementService.swift"
+  "Sumi/Managers/TabManager/SpaceContentRetirementTransaction.swift"
   "Sumi/Managers/TabManager/SpaceSplitGroupRetirementService.swift"
   "Sumi/Managers/TabManager/SpaceTabInventory.swift"
   "Sumi/Managers/TabManager/DeletedSpaceWindowStateReconciler.swift"
   "Sumi/Managers/TabManager/DeletedSpaceWindowReferencePruner.swift"
   "Sumi/Managers/TabManager/TabRuntimeTeardownService.swift"
+  "Sumi/Managers/TabManager/TabRuntimeTeardownPreparationService.swift"
 )
 tab_space_group="Sumi/Managers/TabManager/TabSpaceServices.swift"
 tab_space_composition="Sumi/Managers/TabManager/TabSpaceServices+Live.swift"
@@ -448,6 +450,7 @@ tab_lifecycle_bag_capabilities="${tab_lifecycle_bag_capabilities:-0}"
 # must not return to the activation/conversion owner. The successor is one
 # role-exact service plus a stateless reconciler, not another Owner/bag.
 shortcut_retirement_file="Sumi/Managers/TabManager/ShortcutLiveTabRetirementService.swift"
+shortcut_retirement_transaction_file="Sumi/Managers/TabManager/ShortcutLiveTabRetirementTransaction.swift"
 shortcut_selection_file="Sumi/Managers/TabManager/ShortcutSelectionReconciler.swift"
 shortcut_registry_file="Sumi/Managers/TabManager/LiveShortcutTabRegistry.swift"
 shortcut_registry_snapshot="Sumi/Managers/TabManager/LiveShortcutTabSnapshot.swift"
@@ -481,6 +484,7 @@ shortcut_runtime_files=(
   "$shortcut_structure_plan_file"
   "$shortcut_promotion_file"
   "$shortcut_retirement_file"
+  "$shortcut_retirement_transaction_file"
   "$shortcut_selection_file"
 )
 for service_file in "${shortcut_runtime_files[@]}"; do
@@ -1090,6 +1094,8 @@ check_max "SpaceRemovalService.swift LOC" "$(count_lines Sumi/Managers/TabManage
 check_max "SpaceRemovalService stored collaborators" "$(count_stored_collaborators Sumi/Managers/TabManager/SpaceRemovalService.swift)" 6
 check_max "SpaceContentRetirementService.swift LOC" "$(count_lines Sumi/Managers/TabManager/SpaceContentRetirementService.swift)" 80
 check_max "SpaceContentRetirementService stored collaborators" "$(count_stored_collaborators Sumi/Managers/TabManager/SpaceContentRetirementService.swift)" 5
+check_max "Space content retirement transaction LOC" "$(count_lines Sumi/Managers/TabManager/SpaceContentRetirementTransaction.swift)" 65
+check_max "Space content retirement transaction collaborators" "$(count_stored_collaborators Sumi/Managers/TabManager/SpaceContentRetirementTransaction.swift)" 4
 check_max "SpaceSplitGroupRetirementService.swift LOC" "$(count_lines Sumi/Managers/TabManager/SpaceSplitGroupRetirementService.swift)" 65
 check_max "Space split-group retirement collaborators" "$(count_stored_collaborators Sumi/Managers/TabManager/SpaceSplitGroupRetirementService.swift)" 2
 check_max "SpaceTabInventory.swift LOC" "$(count_lines Sumi/Managers/TabManager/SpaceTabInventory.swift)" 40
@@ -1100,6 +1106,8 @@ check_max "DeletedSpaceWindowReferencePruner.swift LOC" "$(count_lines Sumi/Mana
 check_max "Deleted Space reference pruner collaborators" "$(count_stored_collaborators Sumi/Managers/TabManager/DeletedSpaceWindowReferencePruner.swift)" 0
 check_max "TabRuntimeTeardownService.swift LOC" "$(count_lines Sumi/Managers/TabManager/TabRuntimeTeardownService.swift)" 65
 check_max "TabRuntimeTeardownService stored collaborators" "$(count_stored_collaborators Sumi/Managers/TabManager/TabRuntimeTeardownService.swift)" 3
+check_max "Tab runtime teardown preparation LOC" "$(count_lines Sumi/Managers/TabManager/TabRuntimeTeardownPreparationService.swift)" 30
+check_max "Tab runtime teardown preparation collaborators" "$(count_stored_collaborators Sumi/Managers/TabManager/TabRuntimeTeardownPreparationService.swift)" 0
 check_max "SpaceActivationService.swift LOC" "$(count_lines Sumi/Managers/TabManager/SpaceActivationService.swift)" 160
 check_max "SpaceActivationService stored collaborators" "$(count_stored_collaborators Sumi/Managers/TabManager/SpaceActivationService.swift)" 6
 check_max "TabCreationPlacementService.swift LOC" "$(count_lines Sumi/Managers/TabManager/TabCreationPlacementService.swift)" 135
@@ -1194,6 +1202,8 @@ check_max "ShortcutTabPromotionService.swift LOC" "$(count_lines "$shortcut_prom
 check_max "ShortcutTabPromotionService collaborators" "$(count_stored_collaborators "$shortcut_promotion_file")" 8
 check_max "ShortcutLiveTabRetirementService.swift LOC" "$(count_lines "$shortcut_retirement_file")" 150
 check_max "ShortcutLiveTabRetirementService collaborators" "$(count_stored_collaborators "$shortcut_retirement_file")" 4
+check_max "Shortcut retirement transaction LOC" "$(count_lines Sumi/Managers/TabManager/ShortcutLiveTabRetirementTransaction.swift)" 105
+check_max "Shortcut retirement transaction collaborators" "$(count_stored_collaborators Sumi/Managers/TabManager/ShortcutLiveTabRetirementTransaction.swift)" 4
 check_max "ShortcutSelectionReconciler.swift LOC" "$(count_lines "$shortcut_selection_file")" 90
 check_max "ShortcutSelectionReconciler collaborators" "$(count_stored_collaborators "$shortcut_selection_file")" 0
 check_max "ShortcutSelectionTransition.swift LOC" "$(count_lines "$shortcut_selection_transition_file")" 185

@@ -1,4 +1,5 @@
 import Combine
+import SumiWebRuntime
 import XCTest
 
 @testable import Sumi
@@ -17,20 +18,20 @@ final class TabLastSessionMergeTests: XCTestCase {
         let live = TabLastSessionLiveState(
             spaces: [
                 .init(id: liveSpaceId, profileId: liveProfileId),
-                .init(id: updatedSpaceId, profileId: liveProfileId)
+                .init(id: updatedSpaceId, profileId: liveProfileId),
             ],
             currentSpaceId: liveSpaceId,
             foldersBySpace: [:],
             essentialPinsByProfile: [:],
             spacePinnedShortcuts: [:],
             regularTabsBySpace: [
-                liveSpaceId: [.init(id: liveTabId, index: 7)]
+                liveSpaceId: [.init(id: liveTabId, index: 7)],
             ]
         )
         let snapshot = TabPersistenceSnapshot(
             spaces: [
                 space(id: updatedSpaceId, name: "Updated", index: 1, profileId: liveProfileId),
-                space(id: restoredSpaceId, name: "Restored", index: 0, profileId: restoredProfileId)
+                space(id: restoredSpaceId, name: "Restored", index: 0, profileId: restoredProfileId),
             ],
             tabs: [
                 regularTab(
@@ -44,7 +45,7 @@ final class TabLastSessionMergeTests: XCTestCase {
                     spaceId: restoredSpaceId,
                     index: 0,
                     profileId: restoredProfileId
-                )
+                ),
             ],
             folders: [],
             state: .init(currentTabID: restoredTabId, currentSpaceID: restoredSpaceId)
@@ -89,7 +90,7 @@ final class TabLastSessionMergeTests: XCTestCase {
             tabs: [
                 regularTab(id: higherId, spaceId: spaceId, index: 2, profileId: profileId),
                 regularTab(id: lowerId, spaceId: spaceId, index: 2, profileId: profileId),
-                regularTab(id: folderAndTabId, spaceId: spaceId, index: 0, profileId: profileId)
+                regularTab(id: folderAndTabId, spaceId: spaceId, index: 0, profileId: profileId),
             ],
             folders: [
                 TabPersistenceFolder(
@@ -100,7 +101,7 @@ final class TabLastSessionMergeTests: XCTestCase {
                     spaceId: spaceId,
                     isOpen: true,
                     index: 0
-                )
+                ),
             ],
             state: .init(currentTabID: nil, currentSpaceID: nil)
         )
@@ -147,7 +148,7 @@ final class TabLastSessionMergeTests: XCTestCase {
                     name: "Restored",
                     index: 0,
                     profileId: restoredProfileId
-                )
+                ),
             ],
             tabs: [
                 regularTab(
@@ -161,7 +162,7 @@ final class TabLastSessionMergeTests: XCTestCase {
                     spaceId: restoredSpaceId,
                     index: 1,
                     profileId: nil
-                )
+                ),
             ],
             folders: [],
             state: .init(
@@ -203,12 +204,7 @@ final class TabLastSessionMergeTests: XCTestCase {
 
     func testStartupResetRetiresEveryRegularTabAndClearsSelection() throws {
         var retiredTabIds = Set<UUID>()
-        let tabManager = try makeInMemoryTabManager(
-            requireRemoveAllWebViews: { tab, closeActiveFullscreenMedia in
-                XCTAssertTrue(closeActiveFullscreenMedia)
-                retiredTabIds.insert(tab.id)
-            }
-        )
+        let tabManager = try makeInMemoryTabManager()
         let space = tabManager.spaceServices.catalog.createSpace(name: "Space", profileId: UUID())
         let first = tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://example.com/one",
@@ -219,6 +215,24 @@ final class TabLastSessionMergeTests: XCTestCase {
             in: space,
             activate: false
         )
+        for tab in [first, second] {
+            var cleanupRuntime = TabWebViewCleanupRuntime.inactive
+            cleanupRuntime.removeAllWebViews = {
+                tab,
+                closeActiveFullscreenMedia,
+                intent in
+                XCTAssertTrue(closeActiveFullscreenMedia)
+                XCTAssertEqual(intent, .retirement)
+                retiredTabIds.insert(tab.id)
+                return WebViewTabTeardownResult(
+                    discoveredWebViewCount: 1,
+                    cleanedWebViewCount: 1,
+                    deferredWebViewCount: 0,
+                    unscheduledProtectedWebViewCount: 0
+                )
+            }
+            tab.navigationRuntime.webViewCleanupRuntime = cleanupRuntime
+        }
         space.activeTabId = first.id
         tabManager.selectionStateOwner.replaceCurrentTab(first)
 
@@ -230,6 +244,41 @@ final class TabLastSessionMergeTests: XCTestCase {
         XCTAssertNil(space.activeTabId)
         XCTAssertNil(tabManager.tabCollectionMembershipOwner.tab(for: first.id))
         XCTAssertNil(tabManager.tabCollectionMembershipOwner.tab(for: second.id))
+    }
+
+    func testStartupResetDoesNotCommitWhenPhysicalCleanupIsBlocked() throws {
+        let tabManager = try makeInMemoryTabManager()
+        let space = tabManager.spaceServices.catalog.createSpace(name: "Space")
+        let tab = tabManager.regularTabLifecycleOwner.createNewTab(
+            url: "https://example.com/blocked",
+            in: space
+        )
+        space.activeTabId = tab.id
+        tabManager.selectionStateOwner.replaceCurrentTab(tab)
+        var cleanupRuntime = TabWebViewCleanupRuntime.inactive
+        cleanupRuntime.removeAllWebViews = { _, _, _ in
+            WebViewTabTeardownResult(
+                discoveredWebViewCount: 1,
+                cleanedWebViewCount: 0,
+                deferredWebViewCount: 0,
+                unscheduledProtectedWebViewCount: 0,
+                blockedWebViewCount: 1
+            )
+        }
+        tab.navigationRuntime.webViewCleanupRuntime = cleanupRuntime
+
+        tabManager.startupStateReset.resetRegularTabsAndShortcutLiveInstances()
+
+        XCTAssertEqual(
+            tabManager.regularTabCollectionStateOwner.tabs(in: space.id).map(\.id),
+            [tab.id]
+        )
+        XCTAssertIdentical(tabManager.selectionStateOwner.currentTab, tab)
+        XCTAssertEqual(space.activeTabId, tab.id)
+        XCTAssertIdentical(
+            tabManager.tabCollectionMembershipOwner.tab(for: tab.id),
+            tab
+        )
     }
 }
 

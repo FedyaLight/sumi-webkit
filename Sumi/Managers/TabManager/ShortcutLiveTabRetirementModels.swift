@@ -50,18 +50,21 @@ enum ShortcutRetirementWindowCommitPolicy {
 struct PreparedShortcutLiveTabRetirement {
     let tabs: [Tab]
     let runtime: RuntimePortRegistry?
+    let runtimeTeardown: PreparedTabRuntimeTeardown?
     let windowCommitPolicy: ShortcutRetirementWindowCommitPolicy
     var result: ShortcutLiveTabRetirementResult
 
     init(
         tabs: [Tab],
         runtime: RuntimePortRegistry?,
+        runtimeTeardown: PreparedTabRuntimeTeardown? = nil,
         windowCommitPolicy: ShortcutRetirementWindowCommitPolicy = .callerOwned,
         result: ShortcutLiveTabRetirementResult
     ) {
         precondition(tabs.isEmpty || runtime != nil)
         self.tabs = tabs
         self.runtime = runtime
+        self.runtimeTeardown = runtimeTeardown
         self.windowCommitPolicy = windowCommitPolicy
         self.result = result
     }

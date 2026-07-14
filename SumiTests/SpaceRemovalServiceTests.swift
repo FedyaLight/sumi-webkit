@@ -1,5 +1,6 @@
 import Foundation
 import SumiDomain
+import SumiWebRuntime
 import WebKit
 import XCTest
 
@@ -94,6 +95,7 @@ final class SpaceRemovalServiceTests: XCTestCase {
             windowState: fixture.windowState,
             removedSpaceId: fixture.removedSpace.id
         )
+        runtimeProbe.installCleanupRuntimes(on: fixture.removedTabs)
         let service = makeService(
             tabManager,
             runtimePorts: runtimeProbe.makeRuntimePorts()
@@ -141,6 +143,52 @@ final class SpaceRemovalServiceTests: XCTestCase {
         let flushedRuntimeStates = await tabManager.structuralPersistence
             .flushRuntimeStatePersistenceAwaitingResult()
         XCTAssertEqual(flushedRuntimeStates, 0)
+    }
+
+    func testBlockedPhysicalCleanupLeavesSpaceAndMembershipIntact() throws {
+        let tabManager = try makeInMemoryTabManager()
+        let fixture = try makeLiveRemovalFixture(in: tabManager)
+        let runtimeProbe = SpaceRemovalRuntimeProbe(
+            windowState: fixture.windowState,
+            removedSpaceId: fixture.removedSpace.id
+        )
+        var blockedRuntime = TabWebViewCleanupRuntime.inactive
+        blockedRuntime.removeAllWebViews = { _, _, _ in
+            WebViewTabTeardownResult(
+                discoveredWebViewCount: 1,
+                cleanedWebViewCount: 0,
+                deferredWebViewCount: 0,
+                unscheduledProtectedWebViewCount: 0,
+                blockedWebViewCount: 1
+            )
+        }
+        fixture.regular.navigationRuntime.webViewCleanupRuntime = blockedRuntime
+        let service = makeService(
+            tabManager,
+            runtimePorts: runtimeProbe.makeRuntimePorts()
+        )
+
+        service.removeSpace(fixture.removedSpace.id)
+
+        XCTAssertTrue(
+            tabManager.spaceStateOwner.spaces.contains {
+                $0 === fixture.removedSpace
+            }
+        )
+        XCTAssertIdentical(
+            tabManager.selectionStateOwner.currentTab,
+            fixture.auxiliary
+        )
+        for tab in fixture.removedTabs {
+            XCTAssertIdentical(
+                tabManager.tabCollectionMembershipOwner.tab(for: tab.id),
+                tab
+            )
+        }
+        XCTAssertTrue(runtimeProbe.batchSplitClosures.isEmpty)
+        XCTAssertTrue(runtimeProbe.extensionNotifications.isEmpty)
+        XCTAssertTrue(runtimeProbe.unloadedTabIds.isEmpty)
+        XCTAssertEqual(fixture.regular.webViewSession.allKnownWebViews.count, 1)
     }
 
     func testHistoryOnlyCleanupPersistsRepairedWindowSession() throws {
@@ -477,6 +525,24 @@ private final class SpaceRemovalRuntimeProbe {
                 self?.auxiliaryCloseTabIds.insert(tab.id)
             }
         )
+    }
+
+    func installCleanupRuntimes(on tabs: [Tab]) {
+        for tab in tabs {
+            var runtime = TabWebViewCleanupRuntime.inactive
+            runtime.removeAllWebViews = { [weak self] tab, closeFullscreen, intent in
+                XCTAssertEqual(intent, .retirement)
+                self?.fullscreenCloseRequests.append(closeFullscreen)
+                self?.removedWebViewTabIds.insert(tab.id)
+                return WebViewTabTeardownResult(
+                    discoveredWebViewCount: 1,
+                    cleanedWebViewCount: 1,
+                    deferredWebViewCount: 0,
+                    unscheduledProtectedWebViewCount: 0
+                )
+            }
+            tab.navigationRuntime.webViewCleanupRuntime = runtime
+        }
     }
 
     private func isClean(_ persisted: BrowserWindowState) -> Bool {

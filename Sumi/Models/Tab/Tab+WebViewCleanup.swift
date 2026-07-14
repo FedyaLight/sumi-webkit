@@ -13,8 +13,11 @@ extension Tab {
     }
 
     /// MEMORY LEAK FIX: Comprehensive cleanup for the main tab WebView
-    public func performComprehensiveWebViewCleanup() {
-        TabWebViewCleanupOwner.performComprehensiveCleanup(context: webViewCleanupContext())
+    @discardableResult
+    public func performComprehensiveWebViewCleanup() -> Bool {
+        TabWebViewCleanupOwner.performComprehensiveCleanup(
+            context: webViewCleanupContext()
+        )
     }
 
     private func webViewCleanupContext() -> TabWebViewCleanupOwner.Context {

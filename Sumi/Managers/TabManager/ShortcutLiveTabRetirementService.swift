@@ -5,7 +5,7 @@ import Foundation
 @MainActor
 final class ShortcutLiveTabRetirementService {
     private let registry: LiveShortcutTabRegistry
-    private let planner: ShortcutLiveTabRetirementPlanner
+    private let transaction: ShortcutLiveTabRetirementTransaction
     private let structuralLookup: TabStructuralLookupCoordinator
     private let runtimeTeardown: TabRuntimeTeardownService
 
@@ -16,9 +16,10 @@ final class ShortcutLiveTabRetirementService {
         runtimeTeardown: TabRuntimeTeardownService
     ) {
         self.registry = registry
-        planner = ShortcutLiveTabRetirementPlanner(
+        transaction = ShortcutLiveTabRetirementTransaction(
             registry: registry,
-            runtimePorts: runtimePorts
+            runtimePorts: runtimePorts,
+            runtimeTeardown: runtimeTeardown
         )
         self.structuralLookup = structuralLookup
         self.runtimeTeardown = runtimeTeardown
@@ -36,6 +37,7 @@ final class ShortcutLiveTabRetirementService {
         prepared = PreparedShortcutLiveTabRetirement(
             tabs: prepared.tabs,
             runtime: prepared.runtime,
+            runtimeTeardown: prepared.runtimeTeardown,
             windowCommitPolicy: .retirementService,
             result: prepared.result
         )
@@ -60,13 +62,13 @@ final class ShortcutLiveTabRetirementService {
         in windowId: UUID
     ) -> PreparedShortcutLiveTabRetirement? {
         structuralLookup.withTransaction {
-            planner.prepare(pinId: pinId, in: windowId)
+            prepareRetirement(pinId: pinId, in: windowId)
         }
     }
 
     func retireDeletedPin(_ pinId: UUID) -> ShortcutLiveTabRetirementResult {
         guard let prepared = structuralLookup.withTransaction({
-            planner.prepareDeletedPins([pinId])
+            prepareDeletedPinRetirement(pinId)
         }) else { return ShortcutLiveTabRetirementResult() }
         finishAfterCurrentBatch(prepared)
         return prepared.result
@@ -76,34 +78,32 @@ final class ShortcutLiveTabRetirementService {
         pinId: UUID,
         in windowId: UUID
     ) -> PreparedShortcutLiveTabRetirement? {
-        planner.prepare(pinId: pinId, in: windowId)
+        transaction.prepareRetirement(pinId: pinId, in: windowId)
     }
 
     func prepareRetirements(
         pinIds: Set<UUID>,
         in windowId: UUID
     ) -> PreparedShortcutLiveTabRetirement? {
-        planner.prepare(pinIds: pinIds, in: windowId)
+        transaction.prepareRetirements(pinIds: pinIds, in: windowId)
     }
 
     func prepareDeletedPinRetirement(
         _ pinId: UUID
     ) -> PreparedShortcutLiveTabRetirement? {
-        planner.prepareDeletedPins([pinId])
+        transaction.prepareDeletedPinRetirements([pinId])
     }
 
     func prepareDeletedPinRetirements(
         _ pinIds: Set<UUID>
     ) -> PreparedShortcutLiveTabRetirement? {
-        planner.prepareDeletedPins(pinIds)
+        transaction.prepareDeletedPinRetirements(pinIds)
     }
 
     func finish(
         _ prepared: PreparedShortcutLiveTabRetirement
     ) -> ShortcutLiveTabRetirementResult {
-        let retiredIds = prepared.runtime.map {
-            runtimeTeardown.teardown(prepared.tabs, using: $0)
-        } ?? []
+        let retiredIds = prepared.runtimeTeardown.map(runtimeTeardown.finish) ?? []
         assert(retiredIds == Set(prepared.result.retiredTabIds))
         guard prepared.windowCommitPolicy == .retirementService else {
             return prepared.result

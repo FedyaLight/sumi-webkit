@@ -46,8 +46,17 @@ final class TabStartupStateReset {
             state.regularTabs.tabs(in: $0.id)
         }
         let closingTabs = shortcutTabs + regularTabs
-        let runtime = runtimePorts()
-        guard closingTabs.isEmpty || runtime != nil else { return }
+        let preparedTeardown: PreparedTabRuntimeTeardown?
+        if closingTabs.isEmpty {
+            preparedTeardown = nil
+        } else {
+            guard let runtime = runtimePorts(),
+                  let prepared = runtimeTeardown.preparation.prepare(
+                      closingTabs,
+                      using: runtime
+                  ) else { return }
+            preparedTeardown = prepared
+        }
 
         structuralLookup.withTransaction {
             lazyRestore.clear()
@@ -87,9 +96,9 @@ final class TabStartupStateReset {
 
             state.selection.replaceCurrentTab(nil)
             persistence.scheduleStructuralPersistenceFromMain()
-            if let runtime {
+            if let preparedTeardown {
                 structuralLookup.runAfterCurrentBatch { [runtimeTeardown] in
-                    runtimeTeardown.teardown(closingTabs, using: runtime)
+                    runtimeTeardown.finish(preparedTeardown)
                 }
             }
         }

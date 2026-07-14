@@ -5,19 +5,15 @@ import Foundation
 @MainActor
 final class ShortcutLiveTabRetirementPlanner {
     private let registry: LiveShortcutTabRegistry
-    private let runtimePorts: () -> RuntimePortRegistry?
 
-    init(
-        registry: LiveShortcutTabRegistry,
-        runtimePorts: @escaping () -> RuntimePortRegistry?
-    ) {
+    init(registry: LiveShortcutTabRegistry) {
         self.registry = registry
-        self.runtimePorts = runtimePorts
     }
 
     func prepare(
         pinId: UUID,
-        in windowId: UUID
+        in windowId: UUID,
+        using runtime: RuntimePortRegistry?
     ) -> PreparedShortcutLiveTabRetirement? {
         guard registry.tab(for: pinId, in: windowId) != nil else {
             return PreparedShortcutLiveTabRetirement(
@@ -26,7 +22,7 @@ final class ShortcutLiveTabRetirementPlanner {
                 result: ShortcutLiveTabRetirementResult()
             )
         }
-        guard let runtime = runtimePorts(),
+        guard let runtime,
               let entry = registry.remove(pinId: pinId, in: windowId) else {
             return nil
         }
@@ -51,7 +47,8 @@ final class ShortcutLiveTabRetirementPlanner {
 
     func prepare(
         pinIds: Set<UUID>,
-        in windowId: UUID
+        in windowId: UUID,
+        using runtime: RuntimePortRegistry?
     ) -> PreparedShortcutLiveTabRetirement? {
         let existingEntries = registry.entries(in: windowId).filter {
             pinIds.contains($0.pinId)
@@ -63,7 +60,7 @@ final class ShortcutLiveTabRetirementPlanner {
                 result: ShortcutLiveTabRetirementResult()
             )
         }
-        guard let runtime = runtimePorts() else { return nil }
+        guard let runtime else { return nil }
 
         let entries = registry.removeAll(pinIds: pinIds, in: windowId)
         var result = ShortcutLiveTabRetirementResult(
@@ -88,11 +85,11 @@ final class ShortcutLiveTabRetirementPlanner {
     }
 
     func prepareDeletedPins(
-        _ pinIds: Set<UUID>
+        _ pinIds: Set<UUID>,
+        using runtime: RuntimePortRegistry?
     ) -> PreparedShortcutLiveTabRetirement? {
         let orderedPinIds = pinIds.sorted { $0.uuidString < $1.uuidString }
         let existingEntries = orderedPinIds.flatMap(registry.entries(for:))
-        let runtime = runtimePorts()
         guard existingEntries.isEmpty || runtime != nil else { return nil }
 
         let entries = registry.removeAll(pinIds: pinIds)
