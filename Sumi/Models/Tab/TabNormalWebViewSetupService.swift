@@ -1,6 +1,6 @@
 import Foundation
-import WebKit
 import SumiWebRuntime
+import WebKit
 
 @MainActor
 enum TabUntrackedWebViewEnsureOutcome {
@@ -37,7 +37,12 @@ final class TabNormalWebViewSetupService {
     /// Order: profile defer → parked reuse → aux override → factory+replace → registration/handoff.
     @discardableResult
     func ensureUntrackedNormalWebView(
-        context: TabNormalWebViewRuntimeContext,
+        request: TabNormalWebViewSetupRequest,
+        admission: TabNormalWebViewCreationAdmissionStage,
+        residence: TabNormalWebViewResidenceStage,
+        configuration: TabNormalWebViewConfigurationStage,
+        preparation: TabNormalWebViewPreparationStage,
+        initialDocument: TabNormalWebViewInitialDocumentStage,
         policyTransaction: TabConfigurationPolicyTransaction,
         provisioningOwner: TabWebViewProvisioningOwner,
         reason: String,
@@ -45,92 +50,96 @@ final class TabNormalWebViewSetupService {
     ) -> TabUntrackedWebViewEnsureOutcome {
         guard let tab else { return .failed }
         precondition(
-            context.tabId == tab.id,
-            "Normal WebView setup context must describe the bound Tab"
+            request.tabID == tab.id,
+            "Normal WebView setup request must describe the bound Tab"
         )
-        if let currentWebView = context.currentWebView() {
+        if let currentWebView = residence.currentWebView() {
             return .available(currentWebView)
         }
 
-        context.beginSuspendedRestoreIfNeeded()
-        let reusableExistingWebView = context.parkedWebView()
+        admission.beginSuspendedRestore()
+        let reusableExistingWebView = residence.parkedWebView()
         var didReuseExistingWebView = false
         var didCreateAuxiliaryOverrideWebView = false
         var didCreateNormalWebView = false
 
-        guard let profile = context.resolveProfile() else {
-            return context.deferWebViewUntilProfileAvailable()
+        guard let profile = request.resolvedProfile else {
+            return admission.deferUntilProfileAvailable()
                 ? .deferred
                 : .failed
         }
 
-        let configurationContext = context.configurationContext()
-        let auxiliaryOverrideConfiguration = context.configurationRuntime.auxiliaryOverrideConfiguration(
-            profile,
-            configurationContext
-        )
+        let auxiliaryOverrideConfiguration = configuration
+            .auxiliaryOverrideConfiguration(profile)
 
         if let existingWebView = reusableExistingWebView {
-            if canReuseAsNormalTabWebView(existingWebView, context: context) {
+            if configuration.canReuse(
+                existingWebView,
+                request.targetURL,
+                profile
+            ) {
                 guard install(
                     existingWebView,
                     for: tab,
                     using: installation,
-                    context: context
+                    residence: residence
                 ) else {
                     return .failed
                 }
                 didReuseExistingWebView = true
-                let replaceNormalTabUserScripts = context.replaceNormalTabUserScripts
-                let currentURL = context.currentURL
+                let replaceNormalTabUserScripts = initialDocument.replaceNormalTabUserScripts
+                let targetURL = request.targetURL
                 Task { @MainActor [weak existingWebView] in
                     guard let existingWebView else { return }
                     await replaceNormalTabUserScripts(
                         existingWebView.configuration.userContentController,
-                        currentURL()
+                        targetURL
                     )
                 }
             } else {
-                if context.retireParkedWebView(
+                if residence.retireParkedWebView(
                     existingWebView,
                     "\(reason).discardIncompatibleParkedWebView"
                 ) == false {
-                    context.cleanupCloneWebView(existingWebView)
-                    context.clearParkedExistingWebView()
+                    residence.cleanupRejectedWebView(existingWebView)
+                    residence.clearParkedWebView()
                 }
             }
         }
 
-        if !context.hasCurrentWebView {
-            let setupWebView = context.setupWebView
-            if context.deferWebsiteDataMutationWebViewMaterialization(
-                { setupWebView(registerTabWithExtensionRuntime) }
+        if !residence.hasCurrentWebView {
+            let replaySetup = admission.replaySetup
+            if admission.deferMaterialization(
+                { replaySetup(registerTabWithExtensionRuntime) }
             ) {
                 return .deferred
             }
             if let auxiliaryOverrideConfiguration {
-                configurationContext.prepareWebViewConfigForExtensionRuntime(
+                configuration.prepareForExtensionRuntime(
                     auxiliaryOverrideConfiguration,
                     profile.id,
                     "\(reason).configuration"
                 )
                 let overrideWebView = provisioningOwner.createAuxiliaryOverrideWebView(
                     auxiliaryOverrideConfiguration,
-                    context: context,
-                    currentURL: context.currentURL(),
+                    preparation: preparation,
+                    currentURL: request.targetURL,
                     reason: reason
                 )
                 guard install(
                     overrideWebView,
                     for: tab,
                     using: installation,
-                    context: context
+                    residence: residence
                 ) else {
                     return .failed
                 }
                 didCreateAuxiliaryOverrideWebView = true
             } else if let normalWebView = provisioningOwner.makeNormalTabWebView(
-                context: context,
+                request: request,
+                profile: profile,
+                configuration: configuration,
+                preparation: preparation,
                 policyTransaction: policyTransaction,
                 reason: reason
             ) {
@@ -138,7 +147,7 @@ final class TabNormalWebViewSetupService {
                     normalWebView,
                     for: tab,
                     using: installation,
-                    context: context
+                    residence: residence
                 ) else {
                     return .failed
                 }
@@ -146,63 +155,62 @@ final class TabNormalWebViewSetupService {
             }
         }
 
-        if let webView = context.currentWebView() {
+        if let webView = residence.currentWebView() {
             if didReuseExistingWebView || !(webView is FocusableWKWebView) {
-                context.preparationRuntime.prepareReusedOrExternallyCreatedWebView(webView)
+                preparation.prepareReusedWebView(webView)
             }
         }
 
-        if let webView = context.currentWebView() {
-            context.preparationRuntime.applyOwnedWebViewNavPreferences(webView)
+        if let webView = residence.currentWebView() {
+            preparation.applyNavigationPreferences(webView)
         }
 
         let shouldDelayInitialTabRuntimeRegistration =
             shouldDelayInitialTabRuntimeRegistration(
-                isPopupHost: context.isPopupHost(),
-                hasExistingWebView: context.hasParkedWebView,
+                isPopupHost: request.isPopupHost,
+                hasExistingWebView: residence.hasParkedWebView,
                 didCreateAuxiliaryOverrideWebView: didCreateAuxiliaryOverrideWebView,
-                url: context.currentURL()
+                url: request.targetURL
             )
 
-        guard let committedWebView = context.currentWebView() else {
+        guard let committedWebView = residence.currentWebView() else {
             return .failed
         }
 
         if registerTabWithExtensionRuntime,
            shouldDelayInitialTabRuntimeRegistration == false {
-            provisioningOwner.registerTabWithExtensionRuntimeIfNeeded(
-                context: context,
-                reason: reason
-            )
+            initialDocument.registerExtensionRuntime(reason)
         }
 
-        guard context.currentWebView() === committedWebView else {
-            return supersededOutcome(context: context)
+        guard residence.currentWebView() === committedWebView else {
+            return supersededOutcome(
+                admission: admission,
+                residence: residence
+            )
         }
 
         if didCreateAuxiliaryOverrideWebView,
-           ExtensionUtils.isExtensionOwnedURL(context.currentURL()),
-           context.currentWebView() === committedWebView {
-            loadExtensionOwnedInitialURL(
-                context.currentURL(),
-                on: committedWebView,
-                context: context
+           ExtensionUtils.isExtensionOwnedURL(request.targetURL),
+           residence.currentWebView() === committedWebView {
+            initialDocument.loadExtensionOwnedInitialURL(
+                committedWebView,
+                request.targetURL
             )
-            context.finishSuspendedRestoreIfNeeded()
+            admission.finishSuspendedRestore()
             return .available(committedWebView)
         }
 
-        if didCreateNormalWebView && context.isPopupHost() == false {
-            context.scheduleInitialDocumentRuntimeHandoff(
+        if didCreateNormalWebView && request.isPopupHost == false {
+            initialDocument.scheduleRuntimeHandoff(
                 committedWebView,
-                context.currentURL(),
+                request.targetURL,
                 profile.id,
                 "\(reason).beforeInitialLoad"
             )
         }
 
-        context.finishSuspendedRestoreIfNeeded()
-        guard let currentWebView = context.currentWebView() else {
+        admission.finishSuspendedRestore()
+        guard let currentWebView = residence.currentWebView() else {
             return .failed
         }
         guard currentWebView === committedWebView else {
@@ -212,10 +220,11 @@ final class TabNormalWebViewSetupService {
     }
 
     private func supersededOutcome(
-        context: TabNormalWebViewRuntimeContext
+        admission: TabNormalWebViewCreationAdmissionStage,
+        residence: TabNormalWebViewResidenceStage
     ) -> TabUntrackedWebViewEnsureOutcome {
-        context.finishSuspendedRestoreIfNeeded()
-        guard let currentWebView = context.currentWebView() else {
+        admission.finishSuspendedRestore()
+        guard let currentWebView = residence.currentWebView() else {
             return .failed
         }
         return .superseded(currentWebView)
@@ -225,23 +234,23 @@ final class TabNormalWebViewSetupService {
         _ webView: WKWebView,
         for tab: Tab,
         using installation: (any UntrackedWebViewInstalling)?,
-        context: TabNormalWebViewRuntimeContext
+        residence: TabNormalWebViewResidenceStage
     ) -> Bool {
         guard let installation else {
-            if context.currentWebView() !== webView,
-               context.parkedWebView() !== webView {
-                context.cleanupCloneWebView(webView)
+            if residence.currentWebView() !== webView,
+               residence.parkedWebView() !== webView {
+                residence.cleanupRejectedWebView(webView)
             }
             return false
         }
         let outcome = installation.installUntracked(webView, for: tab)
         guard outcome.isAccepted else {
             if outcome.callerRetainsWebView {
-                context.cleanupCloneWebView(webView)
+                residence.cleanupRejectedWebView(webView)
             }
             return false
         }
-        return context.currentWebView() === webView
+        return residence.currentWebView() === webView
     }
 
     func shouldDelayInitialTabRuntimeRegistration(
@@ -259,29 +268,5 @@ final class TabNormalWebViewSetupService {
     static func isInitialDocumentExtensionWarmupURL(_ url: URL) -> Bool {
         let scheme = url.scheme?.lowercased()
         return scheme == "http" || scheme == "https"
-    }
-
-    private func loadExtensionOwnedInitialURL(
-        _ targetURL: URL,
-        on webView: WKWebView,
-        context: TabNormalWebViewRuntimeContext
-    ) {
-        context.loadMainFrameRequest(
-            webView,
-            WebRuntimeNavigationRequestFactory.navigationRequest(for: targetURL)
-        )
-        context.applyCachedFaviconOrPlaceholder(targetURL)
-    }
-
-    private func canReuseAsNormalTabWebView(
-        _ webView: WKWebView,
-        context: TabNormalWebViewRuntimeContext
-    ) -> Bool {
-        context.configurationRuntime.canReuseAsNormalTabWebView(
-            webView,
-            context.currentURL(),
-            context.resolveProfile(),
-            context.configurationContext()
-        )
     }
 }

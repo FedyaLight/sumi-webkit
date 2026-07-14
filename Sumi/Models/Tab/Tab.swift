@@ -9,8 +9,8 @@ import Combine
 import Foundation
 import Navigation
 import SumiDomain
-import WebKit
 import SumiWebRuntime
+import WebKit
 
 @MainActor
 public class Tab: NSObject, Identifiable, ObservableObject {
@@ -68,7 +68,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     let webViewConfigurationOwner = TabWebViewConfigurationOwner()
     let normalWebViewSetup = TabNormalWebViewSetupService()
     let webViewProvisioningOwner = TabWebViewProvisioningOwner()
-    lazy var normalWebViewRuntimeContextOwner = TabNormalWebViewRuntimeContextOwner(tab: self)
     private let closeLifecycleOwner = TabCloseLifecycleOwner()
     let navigationCommandOwner = TabNavigationCommandOwner()
     lazy var profileWebViewCreationGate = TabProfileWebViewCreationGate(
@@ -677,7 +676,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     func removeNavigationStateObservers(from webView: WKWebView) {
         navigationStateController.remove(webView)
     }
-
 }
 
 // MARK: - Hashable & Equatable

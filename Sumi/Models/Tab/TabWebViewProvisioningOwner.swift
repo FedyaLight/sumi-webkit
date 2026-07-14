@@ -8,13 +8,13 @@ final class TabWebViewProvisioningOwner {
     @discardableResult
     func createAuxiliaryMiniWindowWebViewFromWebKitConfiguration(
         _ configuration: WKWebViewConfiguration,
-        context: TabNormalWebViewRuntimeContext,
+        preparation: TabNormalWebViewPreparationStage,
         currentURL: URL?,
         isExtensionOriginated: Bool,
         reason: String
     ) -> WKWebView {
         let webView = AuxiliaryWebViewFactory.makeWebViewPreservingWebKitConfiguration(configuration)
-        context.preparationRuntime.prepareCreatedFocusableWebView(
+        preparation.prepareCreatedWebView(
             webView,
             currentURL,
             reason,
@@ -28,14 +28,14 @@ final class TabWebViewProvisioningOwner {
     @discardableResult
     func createPopupWebViewFromWebKitConfiguration(
         _ configuration: WKWebViewConfiguration,
-        context: TabNormalWebViewRuntimeContext,
+        preparation: TabNormalWebViewPreparationStage,
         currentURL: URL?,
         isExtensionOriginated: Bool,
         reason: String
     ) -> FocusableWKWebView {
         let webView = FocusableWKWebView(frame: .zero, configuration: configuration)
         webView.configuration.sumiIsNormalTabWebViewConfiguration = false
-        context.preparationRuntime.prepareCreatedFocusableWebView(
+        preparation.prepareCreatedWebView(
             webView,
             currentURL,
             reason,
@@ -49,12 +49,12 @@ final class TabWebViewProvisioningOwner {
     @discardableResult
     func createAuxiliaryOverrideWebView(
         _ configuration: WKWebViewConfiguration,
-        context: TabNormalWebViewRuntimeContext,
+        preparation: TabNormalWebViewPreparationStage,
         currentURL: URL?,
         reason: String
     ) -> WKWebView {
         let webView = AuxiliaryWebViewFactory.makeWebViewPreservingWebKitConfiguration(configuration)
-        context.preparationRuntime.prepareCreatedFocusableWebView(
+        preparation.prepareCreatedWebView(
             webView,
             currentURL,
             reason,
@@ -65,17 +65,19 @@ final class TabWebViewProvisioningOwner {
 
     func prepareAssignedWebView(
         _ webView: WKWebView,
-        context: TabNormalWebViewRuntimeContext
+        preparation: TabNormalWebViewPreparationStage
     ) {
-        context.preparationRuntime.prepareAssignedWebView(webView)
+        preparation.prepareAssignedWebView(webView)
     }
 
     @discardableResult
     func makeNormalTabWebView(
-        context: TabNormalWebViewRuntimeContext,
+        request: TabNormalWebViewSetupRequest,
+        profile: Profile,
+        configuration: TabNormalWebViewConfigurationStage,
+        preparation: TabNormalWebViewPreparationStage,
         policyTransaction: TabConfigurationPolicyTransaction,
         reason: String,
-        explicitProfile: Profile? = nil,
         prepareExtensionRuntime: Bool = true,
         prepareCandidateConfiguration: ((WKWebViewConfiguration, UUID) -> Void)? = nil
     ) -> WKWebView? {
@@ -84,35 +86,20 @@ final class TabWebViewProvisioningOwner {
             StartupPerformanceTrace.firstWebViewCreationFinished(startupTrace)
         }
 
-        guard let profile = explicitProfile ?? context.resolveProfile() else {
-            RuntimeDiagnostics.emit(
-                "[Tab] Unable to create normal WebView during \(reason); profile is unresolved."
-            )
-            if context.deferWebViewUntilProfileAvailable() == false {
-                RuntimeDiagnostics.emit(
-                    "[Tab] WebView creation cannot resume because no profile update source is attached."
-                )
-            }
-            return nil
-        }
+        let preparedConfiguration = configuration.prepareNormalConfiguration(
+            request.targetURL,
+            profile,
+            configuration.normalTabUserScripts(request.targetURL, profile.id)
+        )
 
-        guard let preparedConfiguration = normalTabWebViewConfiguration(
-            context: context,
-            profile: profile,
-            reason: reason
-        ) else {
-            return nil
-        }
-
-        let configuration = preparedConfiguration.configuration
-        let configurationContext = context.configurationContext()
-        configurationContext.prepareWebViewConfigForExtensionRuntime(
-            configuration,
+        let webViewConfiguration = preparedConfiguration.configuration
+        configuration.prepareForExtensionRuntime(
+            webViewConfiguration,
             profile.id,
             "\(reason).configuration"
         )
-        prepareCandidateConfiguration?(configuration, profile.id)
-        guard configuration.websiteDataStore === profile.dataStore else {
+        prepareCandidateConfiguration?(webViewConfiguration, profile.id)
+        guard webViewConfiguration.websiteDataStore === profile.dataStore else {
             RuntimeDiagnostics.emit(
                 "[Tab] Rejected normal WebView during \(reason); its data store does not belong to profile \(profile.id)."
             )
@@ -121,71 +108,52 @@ final class TabWebViewProvisioningOwner {
 
         var policyState = preparedConfiguration.policyState
         policyState.websiteDataStoreIdentity = ObjectIdentifier(
-            configuration.websiteDataStore
+            webViewConfiguration.websiteDataStore
         )
         policyState.autoplayState = SumiRuntimePermissionController
             .autoplayState(
-                from: configuration
+                from: webViewConfiguration
                     .mediaTypesRequiringUserActionForPlayback
             )
         let policyChange = policyTransaction.prepare(policyState)
-        let webView = FocusableWKWebView(frame: .zero, configuration: configuration)
+        let webView = FocusableWKWebView(
+            frame: .zero,
+            configuration: webViewConfiguration
+        )
         webView.sumiPreparedConfigurationPolicyChange =
             policyChange
         configureNormalTabWebView(
             webView,
-            context: context,
+            preparation: preparation,
+            currentURL: request.targetURL,
             reason: reason,
             prepareExtensionRuntime: prepareExtensionRuntime
         )
         return webView
     }
 
-    func registerTabWithExtensionRuntimeIfNeeded(
-        context: TabNormalWebViewRuntimeContext,
-        reason: String
-    ) {
-        context.registerTabWithExtensionRuntimeIfNeeded(reason)
-    }
-
     func applyWebViewConfigurationOverride(
         _ configuration: WKWebViewConfiguration,
-        context: TabNormalWebViewRuntimeContext
+        profileID: UUID?,
+        stage: TabNormalWebViewConfigurationStage
     ) {
-        context.configurationRuntime.applyWebViewConfigurationOverride(
-            configuration,
-            context.resolveProfile()?.id ?? context.profileId(),
-            context.configurationContext()
-        )
+        stage.applyConfigurationOverride(configuration, profileID)
     }
 
     private func configureNormalTabWebView(
         _ webView: FocusableWKWebView,
-        context: TabNormalWebViewRuntimeContext,
+        preparation: TabNormalWebViewPreparationStage,
+        currentURL: URL,
         reason: String,
         prepareExtensionRuntime: Bool
     ) {
-        context.preparationRuntime.prepareCreatedFocusableWebView(
+        preparation.prepareCreatedWebView(
             webView,
-            context.currentURL(),
+            currentURL,
             reason,
             CreatedWebViewPreparationOptions(
                 prepareExtensionRuntime: prepareExtensionRuntime
             )
-        )
-    }
-
-    private func normalTabWebViewConfiguration(
-        context: TabNormalWebViewRuntimeContext,
-        profile: Profile,
-        reason _: String
-    ) -> PreparedNormalTabWebViewConfiguration? {
-        let currentURL = context.currentURL()
-        return context.configurationRuntime.normalTabWebViewConfiguration(
-            currentURL,
-            profile,
-            context.normalTabUserScriptsProvider(currentURL, profile.id),
-            context.configurationContext()
         )
     }
 }

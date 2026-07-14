@@ -28,50 +28,35 @@ final class TabNormalWebViewSetupServiceTests: XCTestCase {
         var didMakeNormal = false
         let profile = Profile(name: "Ensure Parked Profile")
 
-        let context = TabNormalWebViewRuntimeContext(
-            tabId: tab.id,
-            currentURL: { URL(string: "https://example.com/parked")! },
-            isPopupHost: { false },
+        let request = makeRequest(
+            tabID: tab.id,
+            url: URL(string: "https://example.com/parked")!,
+            profile: profile
+        )
+        let residence = TabNormalWebViewResidenceStage(
             currentWebView: { tab.webViewSession.currentWebView },
             parkedWebView: { tab.webViewSession.parkedWebView },
-            profileId: { profile.id },
-            resolveProfile: { profile },
-            deferWebViewUntilProfileAvailable: { false },
-            beginSuspendedRestoreIfNeeded: { /* No-op. */ },
-            finishSuspendedRestoreIfNeeded: { /* No-op. */ },
-            setupWebView: { _ in /* No-op. */ },
-            deferWebsiteDataMutationWebViewMaterialization: { _ in false },
-            clearParkedExistingWebView: { /* No-op. */ },
+            clearParkedWebView: { /* No-op. */ },
             retireParkedWebView: { _, _ in false },
-            cleanupCloneWebView: { _ in /* No-op. */ },
-            configurationContext: { .empty },
-            configurationRuntime: TabNormalWebViewConfigurationRuntime(
-                normalTabWebViewConfiguration: { _, _, _, _ in
+            cleanupRejectedWebView: { _ in /* No-op. */ }
+        )
+        let configurationStage = makeConfigurationStage(
+                prepareNormalConfiguration: { _, _, _ in
                     didMakeNormal = true
                     return Self.preparedConfiguration(for: profile)
                 },
-                auxiliaryOverrideConfiguration: { _, _ in nil },
-                applyWebViewConfigurationOverride: { _, _, _ in /* No-op. */ },
-                canReuseAsNormalTabWebView: { webView, _, _, _ in
+                canReuse: { webView, _, _ in
                     webView === parkedWebView
                 }
-            ),
-            preparationRuntime: TabNormalWebViewPreparationRuntime(
-                prepareCreatedFocusableWebView: { _, _, _, _ in /* No-op. */ },
-                prepareAssignedWebView: { _ in /* No-op. */ },
-                prepareReusedOrExternallyCreatedWebView: { _ in /* No-op. */ },
-                applyOwnedWebViewNavPreferences: { _ in /* No-op. */ }
-            ),
-            normalTabUserScriptsProvider: { _, _ in SumiNormalTabUserScripts() },
-            replaceNormalTabUserScripts: { _, _ in /* No-op. */ },
-            loadMainFrameRequest: { _, _ in /* No-op. */ },
-            applyCachedFaviconOrPlaceholder: { _ in /* No-op. */ },
-            registerTabWithExtensionRuntimeIfNeeded: { _ in /* No-op. */ },
-            scheduleInitialDocumentRuntimeHandoff: { _, _, _, _ in /* No-op. */ }
         )
 
         let ensured = setup.ensureUntrackedNormalWebView(
-            context: context,
+            request: request,
+            admission: makeAdmissionStage(),
+            residence: residence,
+            configuration: configurationStage,
+            preparation: makePreparationStage(),
+            initialDocument: makeInitialDocumentStage(),
             policyTransaction: tab.configurationPolicyTransaction,
             provisioningOwner: TabWebViewProvisioningOwner(),
             reason: "TabNormalWebViewSetupServiceTests.parkedReuse"
@@ -110,55 +95,49 @@ final class TabNormalWebViewSetupServiceTests: XCTestCase {
                 return .committed
             }
         )
-        let context = TabNormalWebViewRuntimeContext(
-            tabId: tab.id,
-            currentURL: { URL(string: "file:///tmp/reentrant.html")! },
-            isPopupHost: { false },
+        let request = makeRequest(
+            tabID: tab.id,
+            url: URL(string: "file:///tmp/reentrant.html")!,
+            profile: profile
+        )
+        let residence = TabNormalWebViewResidenceStage(
             currentWebView: { currentWebView },
             parkedWebView: { parkedWebView },
-            profileId: { profile.id },
-            resolveProfile: { profile },
-            deferWebViewUntilProfileAvailable: { false },
-            beginSuspendedRestoreIfNeeded: { beginRestoreCount += 1 },
-            finishSuspendedRestoreIfNeeded: { finishRestoreCount += 1 },
-            setupWebView: { _ in },
-            deferWebsiteDataMutationWebViewMaterialization: { _ in false },
-            clearParkedExistingWebView: {},
+            clearParkedWebView: {},
             retireParkedWebView: { _, _ in false },
-            cleanupCloneWebView: { _ in },
-            configurationContext: { .empty },
-            configurationRuntime: TabNormalWebViewConfigurationRuntime(
-                normalTabWebViewConfiguration: { _, _, _, _ in
+            cleanupRejectedWebView: { _ in }
+        )
+        let configurationStage = makeConfigurationStage(
+                prepareNormalConfiguration: { _, _, _ in
                     Self.preparedConfiguration(for: profile)
                 },
-                auxiliaryOverrideConfiguration: { _, _ in nil },
-                applyWebViewConfigurationOverride: { _, _, _ in },
-                canReuseAsNormalTabWebView: { webView, _, _, _ in
+                canReuse: { webView, _, _ in
                     webView === parkedWebView
                 }
-            ),
-            preparationRuntime: TabNormalWebViewPreparationRuntime(
-                prepareCreatedFocusableWebView: { _, _, _, _ in },
-                prepareAssignedWebView: { _ in },
-                prepareReusedOrExternallyCreatedWebView: { _ in },
-                applyOwnedWebViewNavPreferences: { _ in }
-            ),
-            normalTabUserScriptsProvider: { _, _ in SumiNormalTabUserScripts() },
-            replaceNormalTabUserScripts: { _, _ in },
-            loadMainFrameRequest: { _, _ in
+        )
+        let admission = makeAdmissionStage(
+            begin: { beginRestoreCount += 1 },
+            finish: { finishRestoreCount += 1 }
+        )
+        let initialDocument = makeInitialDocumentStage(
+            loadExtensionOwnedInitialURL: { _, _ in
                 XCTFail("Stale setup must not load a replacement WebView")
             },
-            applyCachedFaviconOrPlaceholder: { _ in },
-            registerTabWithExtensionRuntimeIfNeeded: { _ in
+            registerExtensionRuntime: { _ in
                 currentWebView = replacementWebView
             },
-            scheduleInitialDocumentRuntimeHandoff: { _, _, _, _ in
+            scheduleRuntimeHandoff: { _, _, _, _ in
                 handoffCount += 1
             }
         )
 
         let outcome = setup.ensureUntrackedNormalWebView(
-            context: context,
+            request: request,
+            admission: admission,
+            residence: residence,
+            configuration: configurationStage,
+            preparation: makePreparationStage(),
+            initialDocument: initialDocument,
             policyTransaction: policyTransaction,
             provisioningOwner: TabWebViewProvisioningOwner(),
             reason: "test.registration-reentrancy"
@@ -195,56 +174,48 @@ final class TabNormalWebViewSetupServiceTests: XCTestCase {
                 return .committed
             }
         )
-        let context = TabNormalWebViewRuntimeContext(
-            tabId: tab.id,
-            currentURL: { URL(string: "https://example.com/deferred-materialization")! },
-            isPopupHost: { false },
+        let request = makeRequest(
+            tabID: tab.id,
+            url: URL(string: "https://example.com/deferred-materialization")!,
+            profile: profile
+        )
+        let residence = TabNormalWebViewResidenceStage(
             currentWebView: { webViewSession.currentWebView },
             parkedWebView: { nil },
-            profileId: { profile.id },
-            resolveProfile: { profile },
-            deferWebViewUntilProfileAvailable: { false },
-            beginSuspendedRestoreIfNeeded: {},
-            finishSuspendedRestoreIfNeeded: {},
-            setupWebView: { registerTabWithExtensionRuntime in
-                setupReplay.run(registerTabWithExtensionRuntime)
-            },
-            deferWebsiteDataMutationWebViewMaterialization: { replay in
+            clearParkedWebView: {},
+            retireParkedWebView: { _, _ in false },
+            cleanupRejectedWebView: { _ in }
+        )
+        let admission = makeAdmissionStage(
+            deferMaterialization: { replay in
                 guard shouldDefer else { return false }
                 retainedReplay = replay
                 return true
             },
-            clearParkedExistingWebView: {},
-            retireParkedWebView: { _, _ in false },
-            cleanupCloneWebView: { _ in },
-            configurationContext: { .empty },
-            configurationRuntime: TabNormalWebViewConfigurationRuntime(
-                normalTabWebViewConfiguration: { _, _, _, _ in
+            replaySetup: { registerTabWithExtensionRuntime in
+                setupReplay.run(registerTabWithExtensionRuntime)
+            }
+        )
+        let configurationStage = makeConfigurationStage(
+                prepareNormalConfiguration: { _, _, _ in
                     creationCount += 1
                     return Self.preparedConfiguration(for: profile)
-                },
-                auxiliaryOverrideConfiguration: { _, _ in nil },
-                applyWebViewConfigurationOverride: { _, _, _ in },
-                canReuseAsNormalTabWebView: { _, _, _, _ in false }
-            ),
-            preparationRuntime: TabNormalWebViewPreparationRuntime(
-                prepareCreatedFocusableWebView: { _, _, _, _ in },
-                prepareAssignedWebView: { _ in },
-                prepareReusedOrExternallyCreatedWebView: { _ in },
-                applyOwnedWebViewNavPreferences: { _ in }
-            ),
-            normalTabUserScriptsProvider: { _, _ in SumiNormalTabUserScripts() },
-            replaceNormalTabUserScripts: { _, _ in },
-            loadMainFrameRequest: { _, _ in },
-            applyCachedFaviconOrPlaceholder: { _ in },
-            registerTabWithExtensionRuntimeIfNeeded: { _ in
-                registrationCount += 1
-            },
-            scheduleInitialDocumentRuntimeHandoff: { _, _, _, _ in }
+                }
         )
+        let initialDocument = makeInitialDocumentStage(
+            registerExtensionRuntime: { _ in
+                registrationCount += 1
+            }
+        )
+        let preparationStage = makePreparationStage()
         setupReplay.action = { registerTabWithExtensionRuntime in
             _ = setup.ensureUntrackedNormalWebView(
-                context: context,
+                request: request,
+                admission: admission,
+                residence: residence,
+                configuration: configurationStage,
+                preparation: preparationStage,
+                initialDocument: initialDocument,
                 policyTransaction: policyTransaction,
                 provisioningOwner: TabWebViewProvisioningOwner(),
                 reason: "TabNormalWebViewSetupServiceTests.replayedMaterialization",
@@ -254,7 +225,12 @@ final class TabNormalWebViewSetupServiceTests: XCTestCase {
         }
 
         let outcome = setup.ensureUntrackedNormalWebView(
-            context: context,
+            request: request,
+            admission: admission,
+            residence: residence,
+            configuration: configurationStage,
+            preparation: preparationStage,
+            initialDocument: initialDocument,
             policyTransaction: policyTransaction,
             provisioningOwner: TabWebViewProvisioningOwner(),
             reason: "TabNormalWebViewSetupServiceTests.deferredMaterialization",
@@ -343,6 +319,76 @@ final class TabNormalWebViewSetupServiceTests: XCTestCase {
                 didCreateAuxiliaryOverrideWebView: false,
                 url: try XCTUnwrap(URL(string: "webkit-extension://extension-id/options.html"))
             )
+        )
+    }
+
+    private func makeRequest(
+        tabID: UUID,
+        url: URL,
+        profile: Profile
+    ) -> TabNormalWebViewSetupRequest {
+        TabNormalWebViewSetupRequest(
+            tabID: tabID,
+            targetURL: url,
+            isPopupHost: false,
+            resolvedProfile: profile
+        )
+    }
+
+    private func makeAdmissionStage(
+        begin: @escaping () -> Void = {},
+        finish: @escaping () -> Void = {},
+        deferMaterialization: @escaping (
+            @MainActor @Sendable @escaping () -> Void
+        ) -> Bool = { _ in false },
+        replaySetup: @MainActor @Sendable @escaping (Bool) -> Void = { _ in }
+    ) -> TabNormalWebViewCreationAdmissionStage {
+        TabNormalWebViewCreationAdmissionStage(
+            deferUntilProfileAvailable: { false },
+            beginSuspendedRestore: begin,
+            finishSuspendedRestore: finish,
+            deferMaterialization: deferMaterialization,
+            replaySetup: replaySetup
+        )
+    }
+
+    private func makeConfigurationStage(
+        prepareNormalConfiguration: @escaping (
+            URL,
+            Profile,
+            SumiNormalTabUserScripts
+        ) -> PreparedNormalTabWebViewConfiguration,
+        canReuse: @escaping (WKWebView, URL, Profile?) -> Bool = { _, _, _ in false }
+    ) -> TabNormalWebViewConfigurationStage {
+        TabNormalWebViewConfigurationStage(
+            normalTabUserScripts: { _, _ in SumiNormalTabUserScripts() },
+            prepareNormalConfiguration: prepareNormalConfiguration,
+            auxiliaryOverrideConfiguration: { _ in nil },
+            prepareForExtensionRuntime: { _, _, _ in },
+            applyConfigurationOverride: { _, _ in },
+            canReuse: canReuse
+        )
+    }
+
+    private func makePreparationStage() -> TabNormalWebViewPreparationStage {
+        TabNormalWebViewPreparationStage(
+            prepareCreatedWebView: { _, _, _, _ in },
+            prepareAssignedWebView: { _ in },
+            prepareReusedWebView: { _ in },
+            applyNavigationPreferences: { _ in }
+        )
+    }
+
+    private func makeInitialDocumentStage(
+        loadExtensionOwnedInitialURL: @escaping (WKWebView, URL) -> Void = { _, _ in },
+        registerExtensionRuntime: @escaping (String) -> Void = { _ in },
+        scheduleRuntimeHandoff: @escaping (WKWebView?, URL, UUID?, String) -> Void = { _, _, _, _ in }
+    ) -> TabNormalWebViewInitialDocumentStage {
+        TabNormalWebViewInitialDocumentStage(
+            replaceNormalTabUserScripts: { _, _ in },
+            loadExtensionOwnedInitialURL: loadExtensionOwnedInitialURL,
+            registerExtensionRuntime: registerExtensionRuntime,
+            scheduleRuntimeHandoff: scheduleRuntimeHandoff
         )
     }
 

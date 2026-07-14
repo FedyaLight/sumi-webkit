@@ -330,8 +330,8 @@ final class TabRuntimeRoutingTests: XCTestCase {
             ensureInitialExtensionContextsIfNeeded: { _ in /* No-op. */ }
         )
 
-        tab.normalWebViewRuntimeContext()
-            .registerTabWithExtensionRuntimeIfNeeded("test.registration")
+        tab.normalWebViewInitialDocumentStage()
+            .registerExtensionRuntime("test.registration")
 
         XCTAssertFalse(tab.hasBrowserRuntime)
         XCTAssertEqual(registeredTabIds, [tab.id])

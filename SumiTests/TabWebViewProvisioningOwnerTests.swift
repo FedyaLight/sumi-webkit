@@ -59,17 +59,17 @@ final class TabWebViewProvisioningOwnerTests: XCTestCase {
         var preparedProfileId: UUID?
         let owner = TabWebViewProvisioningOwner()
 
-        let context = makeContext(
-            profileId: { fallbackProfileId },
-            resolveProfile: { nil },
-            configurationRuntime: makeConfigurationRuntime(
-                applyWebViewConfigurationOverride: { _, profileId, _ in
+        let stage = makeConfigurationStage(
+            applyConfigurationOverride: { _, profileId in
                     preparedProfileId = profileId
-                }
-            )
+            }
         )
 
-        owner.applyWebViewConfigurationOverride(WKWebViewConfiguration(), context: context)
+        owner.applyWebViewConfigurationOverride(
+            WKWebViewConfiguration(),
+            profileID: fallbackProfileId,
+            stage: stage
+        )
 
         XCTAssertEqual(preparedProfileId, fallbackProfileId)
     }
@@ -78,18 +78,16 @@ final class TabWebViewProvisioningOwnerTests: XCTestCase {
         let owner = TabWebViewProvisioningOwner()
         var capturedOptions: CreatedWebViewPreparationOptions?
         var capturedReason: String?
-        let context = makeContext(
-            preparationRuntime: makePreparationRuntime(
+        let preparation = makePreparationStage(
                 prepareCreatedFocusableWebView: { _, _, reason, options in
                     capturedReason = reason
                     capturedOptions = options
                 }
-            )
         )
 
         _ = owner.createPopupWebViewFromWebKitConfiguration(
             WKWebViewConfiguration(),
-            context: context,
+            preparation: preparation,
             currentURL: URL(string: "https://example.com/popup"),
             isExtensionOriginated: true,
             reason: "test.popup"
@@ -109,29 +107,27 @@ final class TabWebViewProvisioningOwnerTests: XCTestCase {
         var configuredProfileID: UUID?
         var managedScriptProfileID: UUID?
         let policyTransaction = makePolicyTransaction()
-        let context = makeContext(
-            profileId: { oldProfile.id },
-            resolveProfile: { oldProfile },
-            configurationRuntime: makeConfigurationRuntime(
-                normalTabWebViewConfiguration: { _, profile, _, _ in
-                    configuredProfileID = profile.id
-                    let configuration = WKWebViewConfiguration()
-                    configuration.websiteDataStore = profile.dataStore
-                    return configuration
-                }
-            ),
+        let configuration = makeConfigurationStage(
             normalTabUserScriptsProvider: { _, profileID in
                 managedScriptProfileID = profileID
                 return SumiNormalTabUserScripts()
+            },
+            prepareNormalConfiguration: { _, profile, _ in
+                configuredProfileID = profile.id
+                let configuration = WKWebViewConfiguration()
+                configuration.websiteDataStore = profile.dataStore
+                return configuration
             }
         )
 
         _ = try XCTUnwrap(
             owner.makeNormalTabWebView(
-                context: context,
+                request: makeRequest(profile: oldProfile),
+                profile: targetProfile,
+                configuration: configuration,
+                preparation: makePreparationStage(),
                 policyTransaction: policyTransaction,
                 reason: "test.explicit-profile",
-                explicitProfile: targetProfile,
                 prepareExtensionRuntime: false
             )
         )
@@ -148,12 +144,11 @@ final class TabWebViewProvisioningOwnerTests: XCTestCase {
         let policyTransaction = makePolicyTransaction(
             policyLedger: policyLedger
         )
-        let context = makeContext(
-            resolveProfile: { profile }
-        )
-
         let result = try XCTUnwrap(owner.makeNormalTabWebView(
-            context: context,
+            request: makeRequest(profile: profile),
+            profile: profile,
+            configuration: makeConfigurationStage(),
+            preparation: makePreparationStage(),
             policyTransaction: policyTransaction,
             reason: "test.wrong-data-store",
             prepareExtensionRuntime: false
@@ -168,42 +163,12 @@ final class TabWebViewProvisioningOwnerTests: XCTestCase {
         XCTAssertEqual(policyLedger.revision, 0)
     }
 
-    private func makeContext(
-        profileId: @escaping () -> UUID? = { nil },
-        resolveProfile: @escaping () -> Profile? = { nil },
-        configurationContext: @escaping () -> TabWebViewConfigurationContext = { .empty },
-        configurationRuntime: TabNormalWebViewConfigurationRuntime? = nil,
-        preparationRuntime: TabNormalWebViewPreparationRuntime? = nil,
-        normalTabUserScriptsProvider: @escaping (
-            URL?,
-            UUID?
-        ) -> SumiNormalTabUserScripts = { _, _ in SumiNormalTabUserScripts() }
-    ) -> TabNormalWebViewRuntimeContext {
-        return TabNormalWebViewRuntimeContext(
-            tabId: UUID(),
-            currentURL: { URL(string: "https://example.com")! },
-            isPopupHost: { false },
-            currentWebView: { nil },
-            parkedWebView: { nil },
-            profileId: profileId,
-            resolveProfile: resolveProfile,
-            deferWebViewUntilProfileAvailable: { false },
-            beginSuspendedRestoreIfNeeded: { /* No-op. */ },
-            finishSuspendedRestoreIfNeeded: { /* No-op. */ },
-            setupWebView: { _ in /* No-op. */ },
-            deferWebsiteDataMutationWebViewMaterialization: { _ in false },
-            clearParkedExistingWebView: { /* No-op. */ },
-            retireParkedWebView: { _, _ in false },
-            cleanupCloneWebView: { _ in /* No-op. */ },
-            configurationContext: configurationContext,
-            configurationRuntime: configurationRuntime ?? makeConfigurationRuntime(),
-            preparationRuntime: preparationRuntime ?? makePreparationRuntime(),
-            normalTabUserScriptsProvider: normalTabUserScriptsProvider,
-            replaceNormalTabUserScripts: { _, _ in /* No-op. */ },
-            loadMainFrameRequest: { _, _ in /* No-op. */ },
-            applyCachedFaviconOrPlaceholder: { _ in /* No-op. */ },
-            registerTabWithExtensionRuntimeIfNeeded: { _ in /* No-op. */ },
-            scheduleInitialDocumentRuntimeHandoff: { _, _, _, _ in /* No-op. */ }
+    private func makeRequest(profile: Profile?) -> TabNormalWebViewSetupRequest {
+        TabNormalWebViewSetupRequest(
+            tabID: UUID(),
+            targetURL: URL(string: "https://example.com")!,
+            isPopupHost: false,
+            resolvedProfile: profile
         )
     }
 
@@ -217,40 +182,38 @@ final class TabWebViewProvisioningOwnerTests: XCTestCase {
         )
     }
 
-    private func makeConfigurationRuntime(
-        normalTabWebViewConfiguration: @escaping (
+    private func makeConfigurationStage(
+        normalTabUserScriptsProvider: @escaping (
+            URL?,
+            UUID?
+        ) -> SumiNormalTabUserScripts = { _, _ in SumiNormalTabUserScripts() },
+        prepareNormalConfiguration: @escaping (
             URL,
             Profile,
-            SumiNormalTabUserScripts,
-            TabWebViewConfigurationContext
-        ) -> WKWebViewConfiguration = { _, profile, _, _ in
+            SumiNormalTabUserScripts
+        ) -> WKWebViewConfiguration = { _, profile, _ in
             let configuration = WKWebViewConfiguration()
             configuration.websiteDataStore = profile.dataStore
             return configuration
         },
-        auxiliaryOverrideConfiguration: @escaping (
-            Profile,
-            TabWebViewConfigurationContext
-        ) -> WKWebViewConfiguration? = { _, _ in nil },
-        applyWebViewConfigurationOverride: @escaping (
+        auxiliaryOverrideConfiguration: @escaping (Profile) -> WKWebViewConfiguration? = { _ in nil },
+        applyConfigurationOverride: @escaping (
             WKWebViewConfiguration,
-            UUID?,
-            TabWebViewConfigurationContext
-        ) -> Void = { _, _, _ in /* No-op. */ },
-        canReuseAsNormalTabWebView: @escaping (
+            UUID?
+        ) -> Void = { _, _ in /* No-op. */ },
+        canReuse: @escaping (
             WKWebView,
             URL,
-            Profile?,
-            TabWebViewConfigurationContext
-        ) -> Bool = { _, _, _, _ in false }
-    ) -> TabNormalWebViewConfigurationRuntime {
-        TabNormalWebViewConfigurationRuntime(
-            normalTabWebViewConfiguration: { url, profile, scripts, context in
-                let configuration = normalTabWebViewConfiguration(
+            Profile?
+        ) -> Bool = { _, _, _ in false }
+    ) -> TabNormalWebViewConfigurationStage {
+        TabNormalWebViewConfigurationStage(
+            normalTabUserScripts: normalTabUserScriptsProvider,
+            prepareNormalConfiguration: { url, profile, scripts in
+                let configuration = prepareNormalConfiguration(
                     url,
                     profile,
-                    scripts,
-                    context
+                    scripts
                 )
                 return PreparedNormalTabWebViewConfiguration(
                     configuration: configuration,
@@ -266,12 +229,13 @@ final class TabWebViewProvisioningOwnerTests: XCTestCase {
                 )
             },
             auxiliaryOverrideConfiguration: auxiliaryOverrideConfiguration,
-            applyWebViewConfigurationOverride: applyWebViewConfigurationOverride,
-            canReuseAsNormalTabWebView: canReuseAsNormalTabWebView
+            prepareForExtensionRuntime: { _, _, _ in /* No-op. */ },
+            applyConfigurationOverride: applyConfigurationOverride,
+            canReuse: canReuse
         )
     }
 
-    private func makePreparationRuntime(
+    private func makePreparationStage(
         prepareCreatedFocusableWebView: @escaping (
             FocusableWKWebView,
             URL?,
@@ -281,12 +245,12 @@ final class TabWebViewProvisioningOwnerTests: XCTestCase {
         prepareAssignedWebView: @escaping (WKWebView) -> Void = { _ in /* No-op. */ },
         prepareReusedOrExternallyCreatedWebView: @escaping (WKWebView) -> Void = { _ in /* No-op. */ },
         applyOwnedWebViewNavPreferences: @escaping (WKWebView) -> Void = { _ in /* No-op. */ }
-    ) -> TabNormalWebViewPreparationRuntime {
-        TabNormalWebViewPreparationRuntime(
-            prepareCreatedFocusableWebView: prepareCreatedFocusableWebView,
+    ) -> TabNormalWebViewPreparationStage {
+        TabNormalWebViewPreparationStage(
+            prepareCreatedWebView: prepareCreatedFocusableWebView,
             prepareAssignedWebView: prepareAssignedWebView,
-            prepareReusedOrExternallyCreatedWebView: prepareReusedOrExternallyCreatedWebView,
-            applyOwnedWebViewNavPreferences: applyOwnedWebViewNavPreferences
+            prepareReusedWebView: prepareReusedOrExternallyCreatedWebView,
+            applyNavigationPreferences: applyOwnedWebViewNavPreferences
         )
     }
 

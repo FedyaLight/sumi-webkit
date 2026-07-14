@@ -54,7 +54,7 @@ extension Tab {
     ) -> WKWebView {
         webViewProvisioningOwner.createAuxiliaryMiniWindowWebViewFromWebKitConfiguration(
             configuration,
-            context: normalWebViewRuntimeContext(),
+            preparation: normalWebViewPreparationStage(),
             currentURL: currentURL,
             isExtensionOriginated: isExtensionOriginated,
             reason: reason
@@ -70,7 +70,7 @@ extension Tab {
     ) -> FocusableWKWebView {
         webViewProvisioningOwner.createPopupWebViewFromWebKitConfiguration(
             configuration,
-            context: normalWebViewRuntimeContext(),
+            preparation: normalWebViewPreparationStage(),
             currentURL: currentURL,
             isExtensionOriginated: isExtensionOriginated,
             reason: reason
@@ -82,7 +82,7 @@ extension Tab {
     func prepareAssignedWebView(_ webView: WKWebView) {
         webViewProvisioningOwner.prepareAssignedWebView(
             webView,
-            context: normalWebViewRuntimeContext()
+            preparation: normalWebViewPreparationStage()
         )
     }
 
@@ -108,8 +108,16 @@ extension Tab {
         prepareExtensionRuntime: Bool,
         prepareCandidateConfiguration: ((WKWebViewConfiguration, UUID) -> Void)? = nil
     ) -> WKWebView? {
-        webViewProvisioningOwner.makeNormalTabWebView(
-            context: normalWebViewRuntimeContext(),
+        let request = normalWebViewSetupRequest()
+        guard let profile = request.resolvedProfile else {
+            deferNormalWebViewCreationUntilProfileAvailable(reason: reason)
+            return nil
+        }
+        return webViewProvisioningOwner.makeNormalTabWebView(
+            request: request,
+            profile: profile,
+            configuration: normalWebViewConfigurationStage(),
+            preparation: normalWebViewPreparationStage(),
             policyTransaction: configurationPolicyTransaction,
             reason: reason,
             prepareExtensionRuntime: prepareExtensionRuntime,
@@ -126,12 +134,25 @@ extension Tab {
         prepareExtensionRuntime: Bool
     ) -> WKWebView? {
         webViewProvisioningOwner.makeNormalTabWebView(
-            context: normalWebViewRuntimeContext(),
+            request: normalWebViewSetupRequest(explicitProfile: explicitProfile),
+            profile: explicitProfile,
+            configuration: normalWebViewConfigurationStage(),
+            preparation: normalWebViewPreparationStage(),
             policyTransaction: configurationPolicyTransaction,
             reason: reason,
-            explicitProfile: explicitProfile,
             prepareExtensionRuntime: prepareExtensionRuntime
         )
+    }
+
+    private func deferNormalWebViewCreationUntilProfileAvailable(reason: String) {
+        RuntimeDiagnostics.emit(
+            "[Tab] Unable to create normal WebView during \(reason); profile is unresolved."
+        )
+        if normalWebViewCreationAdmissionStage().deferUntilProfileAvailable() == false {
+            RuntimeDiagnostics.emit(
+                "[Tab] WebView creation cannot resume because no profile update source is attached."
+            )
+        }
     }
 
     func prepareNormalWebViewExtensionRuntime(
@@ -151,12 +172,11 @@ extension Tab {
         configuration: WKWebViewConfiguration,
         reason: String
     ) -> WKWebView {
-        let runtimeContext = normalWebViewRuntimeContext()
         let webView = AuxiliaryWebViewFactory
             .makeWebViewPreservingWebKitConfiguration(configuration)
-        runtimeContext.preparationRuntime.prepareCreatedFocusableWebView(
+        normalWebViewPreparationStage().prepareCreatedWebView(
             webView,
-            runtimeContext.currentURL(),
+            url,
             reason,
             .auxiliaryOverride
         )
@@ -164,10 +184,7 @@ extension Tab {
     }
 
     public func registerTabWithExtensionRuntimeIfNeeded(reason: String) {
-        webViewProvisioningOwner.registerTabWithExtensionRuntimeIfNeeded(
-            context: normalWebViewRuntimeContext(),
-            reason: reason
-        )
+        normalWebViewInitialDocumentStage().registerExtensionRuntime(reason)
     }
 
     // MARK: - WebView Runtime
@@ -432,7 +449,12 @@ extension Tab {
         registerTabWithExtensionRuntime: Bool = true
     ) -> TabUntrackedWebViewEnsureOutcome {
         normalWebViewSetup.ensureUntrackedNormalWebView(
-            context: normalWebViewRuntimeContext(),
+            request: normalWebViewSetupRequest(),
+            admission: normalWebViewCreationAdmissionStage(),
+            residence: normalWebViewResidenceStage(),
+            configuration: normalWebViewConfigurationStage(),
+            preparation: normalWebViewPreparationStage(),
+            initialDocument: normalWebViewInitialDocumentStage(),
             policyTransaction: configurationPolicyTransaction,
             provisioningOwner: webViewProvisioningOwner,
             reason: reason,
@@ -459,11 +481,8 @@ extension Tab {
     func applyWebViewConfigurationOverride(_ configuration: WKWebViewConfiguration) {
         webViewProvisioningOwner.applyWebViewConfigurationOverride(
             configuration,
-            context: normalWebViewRuntimeContext()
+            profileID: resolveProfile()?.id ?? profileId,
+            stage: normalWebViewConfigurationStage()
         )
-    }
-
-    func normalWebViewRuntimeContext() -> TabNormalWebViewRuntimeContext {
-        normalWebViewRuntimeContextOwner.makeContext()
     }
 }

@@ -183,12 +183,12 @@ owner_wrapper_hits="$(
 fail_matches "configuration-policy behavior was hidden in an owner/dependency bag" \
   "$owner_wrapper_hits"
 
-context_policy_bag_hits="$(
+setup_stage_policy_bag_hits="$(
   rg -n '\blet[[:space:]]+(sessionGeneration|canCommitConfigurationPolicy|commitConfigurationPolicy|configurationPolicyLedger)\b' \
-    Sumi/Models/Tab/TabNormalWebViewRuntimeContext.swift || true
+    Sumi/Models/Tab/TabNormalWebViewSetupStages.swift || true
 )"
-fail_matches "normal WebView context regained configuration-policy transaction state" \
-  "$context_policy_bag_hits"
+fail_matches "normal WebView setup stage regained configuration-policy transaction state" \
+  "$setup_stage_policy_bag_hits"
 
 direct_registration_hits="$(
   rg -n '\.registerTrackedWebView\(' Sumi -g '*.swift' \
@@ -199,7 +199,7 @@ fail_matches "normal WebView policy admission bypassed through generic registrat
 
 require_pattern \
   "$provisioning" \
-  'configuration\.websiteDataStore[[:space:]]*===[[:space:]]*profile\.dataStore' \
+  'webViewConfiguration\.websiteDataStore[[:space:]]*===[[:space:]]*profile\.dataStore' \
   "normal WebView provisioning must enforce exact profile data-store identity"
 require_pattern \
   "$pipeline" \

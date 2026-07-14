@@ -399,7 +399,7 @@ while IFS= read -r match; do
 done <<< "$detached_app_hits"
 
 # Detached residence publication must enter through the exact installation or
-# replacement authority. Tab setup/context may prepare candidates, but may not
+# replacement authority. Tab setup stages may prepare candidates, but may not
 # carry raw handle mutation capabilities.
 raw_detached_handle_mutation_hits="$(
   rg -n '\.(replaceUntracked|adoptParkedAsUntracked)\s*\(' \
@@ -415,15 +415,69 @@ while IFS= read -r match; do
   fi
 done <<< "$raw_detached_handle_mutation_hits"
 
-setup_context_mutation_hits="$(
+setup_stage_mutation_hits="$(
   rg -n '\b(adoptParkedWebViewAsCurrent|replaceUntrackedWebView)\b' \
-    Sumi/Models/Tab/TabNormalWebViewRuntimeContext.swift \
-    Sumi/Models/Tab/TabNormalWebViewRuntimeContextOwner.swift \
+    Sumi/Models/Tab/TabNormalWebViewSetupStages.swift \
+    Sumi/Models/Tab/Tab+NormalWebViewSetupStages.swift \
     Sumi/Models/Tab/TabNormalWebViewSetupService.swift || true
 )"
 fail_matches \
   "normal WebView setup regained raw detached residence mutation" \
-  "$setup_context_mutation_hits"
+  "$setup_stage_mutation_hits"
+
+# The retired 24-role context may not return under a new owner or compatibility
+# alias. Setup roles are phase-specific values; their declarations cannot reach
+# a browser root, retain Tab, or start background work. Provisioning receives
+# only request/configuration/preparation and exact profile/policy inputs.
+for retired_context_source in \
+  Sumi/Models/Tab/TabNormalWebViewRuntimeContext.swift \
+  Sumi/Models/Tab/TabNormalWebViewRuntimeContextOwner.swift; do
+  if [[ -e "$retired_context_source" ]]; then
+    printf 'error: retired normal WebView context source returned: %s\n' \
+      "$retired_context_source" >&2
+    status=1
+  fi
+done
+
+retired_context_hits="$(
+  rg -n '\b(TabNormalWebViewRuntimeContext|TabNormalWebViewRuntimeContextOwner)\b' \
+    "${all_swift_roots[@]}" -g '*.swift' -g '!**/.build/**' || true
+)"
+fail_matches "retired normal WebView context type returned" "$retired_context_hits"
+
+setup_stage_backreference_hits="$(
+  rg -n '\b(BrowserManager|TabManager|TabBrowserRuntime)\b|\b(let|var)[[:space:]]+[A-Za-z0-9_]*tab[[:space:]]*:[[:space:]]*Tab\b' \
+    Sumi/Models/Tab/TabNormalWebViewSetupStages.swift || true
+)"
+fail_matches \
+  "normal WebView setup stage gained a root/Tab backreference" \
+  "$setup_stage_backreference_hits"
+
+setup_stage_background_work_hits="$(
+  rg -n '\b(Timer|Task|AnyCancellable|NotificationCenter|DispatchQueue|Publisher)\b' \
+    Sumi/Models/Tab/TabNormalWebViewSetupStages.swift || true
+)"
+fail_matches \
+  "normal WebView setup stage gained background or observation work" \
+  "$setup_stage_background_work_hits"
+
+provisioning_stage_leak_hits="$(
+  rg -n '\bTabNormalWebView(CreationAdmission|Residence|InitialDocument)Stage\b|\b(let|var)[[:space:]]+[A-Za-z0-9_]+[[:space:]]*:[[:space:]]*Tab\b|[,(][[:space:]]*Tab[?,)]' \
+    Sumi/Models/Tab/TabWebViewProvisioningOwner.swift || true
+)"
+fail_matches \
+  "normal WebView provisioning gained residence/lifecycle/document reach-through" \
+  "$provisioning_stage_leak_hits"
+
+exact_setup_identity_hits="$(
+  rg --count-matches 'residence\.currentWebView\(\)[[:space:]]*===[[:space:]]*committedWebView' \
+    Sumi/Models/Tab/TabNormalWebViewSetupService.swift || true
+)"
+if [[ "$exact_setup_identity_hits" -lt 2 ]]; then
+  printf 'error: normal WebView setup must revalidate exact committed identity around effects (%s < 2)\n' \
+    "$exact_setup_identity_hits" >&2
+  status=1
+fi
 
 # Pending-cleanup ownership is a two-step transaction. A focused cleanup
 # service acquires the lease before deferral; the exact lease is consumed only
