@@ -2,146 +2,122 @@ import Foundation
 import SumiWebRuntime
 import WebKit
 
-struct TabMainFrameCommitTransition {
-    let role: TabMainFrameLifecycleRole
-    let evidence: TabCommittedDocumentEvidence?
-    let publication: TabMainFrameCommitPublication?
-}
-
 /// Issues and validates publications that belong to one active main-frame
 /// navigation. Completed navigation and promotion settlement are deliberately
 /// outside this component.
 @MainActor
 final class TabMainFrameActiveNavigationSettlement {
     private typealias SharedCommitIdentity =
-        TabMainFrameEffectLedger.SharedCommitIdentity
+        TabMainFrameAuthorityEffectLedger.SharedCommitIdentity
 
-    private let participants: TabMainFrameParticipantRegistry
+    private let participantTransitions: TabMainFrameParticipantTransitionApplier
     private let authorityState: TabMainFrameAuthorityState
-    private let authorityReducer: TabMainFrameAuthorityReducer
-    private let effectClaims: TabMainFrameEffectLedger
+    private let authorityEffects: TabMainFrameAuthorityEffectLedger
+    private let committer: TabMainFrameTransitionCommitter
 
     init(
-        participants: TabMainFrameParticipantRegistry,
+        participantTransitions: TabMainFrameParticipantTransitionApplier,
         authorityState: TabMainFrameAuthorityState,
-        authorityReducer: TabMainFrameAuthorityReducer,
-        effectClaims: TabMainFrameEffectLedger
+        authorityEffects: TabMainFrameAuthorityEffectLedger,
+        committer: TabMainFrameTransitionCommitter
     ) {
-        self.participants = participants
+        self.participantTransitions = participantTransitions
         self.authorityState = authorityState
-        self.authorityReducer = authorityReducer
-        self.effectClaims = effectClaims
+        self.authorityEffects = authorityEffects
+        self.committer = committer
     }
 
     func claimTransactionStartEffects(
         from webView: WKWebView,
         navigationID: ObjectIdentifier,
+        navigationLifetime: AnyObject,
         currentIntent: TabMainFrameNavigationIntent
-    ) -> TabMainFrameEffectDecision<TabMainFrameActiveAuthorityLease> {
+    ) -> TabMainFrameTransitionDecision<TabMainFrameActiveAuthorityLease> {
         guard let lease = authorityLease(
             from: webView,
             navigationID: navigationID,
+            navigationLifetime: navigationLifetime,
             currentIntent: currentIntent
         ) else { return .stale }
-        switch effectClaims.claimTransactionStart() {
+        switch authorityEffects.claimTransactionStart() {
         case .claimed: return .publish(lease)
-        case .alreadyClaimed: return .alreadyClaimed(lease)
+        case .alreadyClaimed: return .alreadyPublished(lease)
         }
     }
 
     func claimAuthorityTargetPreparation(
         from webView: WKWebView,
         navigationID: ObjectIdentifier,
+        navigationLifetime: AnyObject,
         currentIntent: TabMainFrameNavigationIntent
-    ) -> TabMainFrameEffectDecision<TabMainFrameActiveAuthorityLease> {
+    ) -> TabMainFrameTransitionDecision<TabMainFrameActiveAuthorityLease> {
         guard let lease = authorityLease(
             from: webView,
             navigationID: navigationID,
+            navigationLifetime: navigationLifetime,
             currentIntent: currentIntent
         ) else { return .stale }
-        switch effectClaims.claimAuthorityTargetPreparation() {
+        switch authorityEffects.claimAuthorityTargetPreparation() {
         case .claimed: return .publish(lease)
-        case .alreadyClaimed: return .alreadyClaimed(lease)
+        case .alreadyClaimed: return .alreadyPublished(lease)
         }
     }
 
     func claimLocalStartEffects(
         from webView: WKWebView,
         navigationID: ObjectIdentifier,
+        navigationLifetime: AnyObject,
         currentIntent: TabMainFrameNavigationIntent
-    ) -> TabMainFrameEffectDecision<URL> {
-        guard let participant = participants.exactEntry(for: webView),
-              participant.revision == currentIntent.revision,
-              participant.phase == .active(navigationID: navigationID) else {
-            return .stale
-        }
-        switch effectClaims.claimLocalStart(participantID: participant.id) {
-        case .claimed: return .publish(participant.targetURL)
-        case .alreadyClaimed: return .alreadyClaimed(participant.targetURL)
-        }
+    ) -> TabMainFrameTransitionDecision<URL> {
+        participantTransitions.claimLocalStart(
+            from: webView,
+            navigationID: navigationID,
+            navigationLifetime: navigationLifetime,
+            currentIntent: currentIntent
+        )
     }
 
     func settleCommit(
         from webView: WKWebView,
         navigationID: ObjectIdentifier,
+        navigationLifetime: AnyObject,
         committedURL: URL,
         isPDF: Bool,
         currentIntent: TabMainFrameNavigationIntent
-    ) -> TabMainFrameCommitTransition {
-        guard let record = authorityReducer.recordCommit(
-            from: webView,
+    ) -> TabMainFrameTransitionOutput.Commit {
+        guard let receipt = committer.commitDocument(
+            webView: webView,
             navigationID: navigationID,
+            navigationLifetime: navigationLifetime,
+            revision: currentIntent.revision,
             committedURL: committedURL,
-            isPDF: isPDF,
-            currentIntent: currentIntent,
-            participants: participants
-        ) else {
-            return TabMainFrameCommitTransition(
-                role: .stale,
-                evidence: nil,
-                publication: nil
-            )
-        }
-        guard record.role.isAuthority else {
-            return TabMainFrameCommitTransition(
-                role: record.role,
-                evidence: record.evidence,
-                publication: nil
-            )
-        }
-        guard let authority = authorityLease(
-            from: webView,
-            navigationID: navigationID,
-            currentIntent: currentIntent
-        ) else {
-            return TabMainFrameCommitTransition(
-                role: .stale,
-                evidence: record.evidence,
-                publication: nil
-            )
-        }
-        let identity = SharedCommitIdentity(
-            target: WebRuntimeNavigationIdentity(committedURL),
             isPDF: isPDF
-        )
-        guard let permit = effectClaims.reserveSharedCommit(identity: identity) else {
-            return TabMainFrameCommitTransition(
-                role: .authority,
-                evidence: record.evidence,
+        ) else {
+            return .init(role: .stale, evidence: nil, publication: nil)
+        }
+        switch receipt {
+        case let .participant(participant):
+            return .init(
+                role: .participant,
+                evidence: participant.committedEvidence(webView: webView),
                 publication: nil
             )
-        }
-        return TabMainFrameCommitTransition(
-            role: .authority,
-            evidence: record.evidence,
-            publication: TabMainFrameCommitPublication(
-                webView: webView,
-                targetURL: committedURL,
-                isPDF: isPDF,
-                authority: authority,
-                permit: permit
+        case let .authority(participant, authority, permit):
+            let publication = permit.map {
+                TabMainFrameCommitPublication(
+                    webView: webView,
+                    targetURL: committedURL,
+                    isPDF: isPDF,
+                    authority: authority,
+                    permit: $0
+                )
+            }
+            return .init(
+                role: .authority,
+                evidence: participant.committedEvidence(webView: webView),
+                publication: publication
             )
-        )
+        }
     }
 
     func consumeCommitPublication(
@@ -151,14 +127,16 @@ final class TabMainFrameActiveNavigationSettlement {
         guard remainsCurrent(
             publication.authority,
             currentIntent: currentIntent
-        ), let participant = participants[publication.authority.webViewID],
+        ), let participant = participantTransitions.entry(
+            for: publication.authority.webViewID
+        ),
            publication.webView === participant.webViewReference.resolve(),
            publication.targetURL == publication.authority.targetURL,
            participant.committedDocumentURL == publication.targetURL,
            (participant.isPDFResponse ?? false) == publication.isPDF else {
             return false
         }
-        return effectClaims.consumeSharedCommit(
+        return authorityEffects.consumeSharedCommit(
             publication.permit,
             identity: SharedCommitIdentity(
                 target: WebRuntimeNavigationIdentity(publication.targetURL),
@@ -172,14 +150,9 @@ final class TabMainFrameActiveNavigationSettlement {
         currentIntent: TabMainFrameNavigationIntent
     ) -> Bool {
         guard lease.revision == currentIntent.revision,
-              lease.documentGeneration == authorityReducer.documentGeneration,
-              let participant = participants[lease.webViewID],
-              participant.id == lease.participantID,
-              participant.revision == lease.revision,
-              participant.documentGeneration == lease.documentGeneration,
-              participant.phase == .active(navigationID: lease.navigationID),
-              participant.targetURL == lease.targetURL,
-              participant.webViewReference.resolve() != nil else {
+              lease.documentGeneration == authorityState.snapshot.documentGeneration,
+              let participant = participantTransitions.entry(for: lease.webViewID),
+              participant.matches(lease) else {
             return false
         }
         return authorityState.matches(lease)
@@ -191,48 +164,30 @@ final class TabMainFrameActiveNavigationSettlement {
         navigationID: ObjectIdentifier?,
         currentIntent: TabMainFrameNavigationIntent
     ) -> Bool {
-        let webViewID = ObjectIdentifier(webView)
         guard let navigationID,
-              authorityReducer.isExactAuthority(
-                  webViewID: webViewID,
+              participantTransitions.acceptActiveTarget(
+                  targetURL,
+                  webView: webView,
                   navigationID: navigationID,
                   revision: currentIntent.revision
-              ), let previousTarget = participants[webViewID]?.targetURL,
-              participants.updateTarget(targetURL, webViewID: webViewID) else {
-            return false
-        }
-        if previousTarget != targetURL {
-            authorityState.noteTargetMutation(
-                webViewID: webViewID,
-                revision: currentIntent.revision
-            )
-        }
+              ) else { return false }
         return true
     }
 
     private func authorityLease(
         from webView: WKWebView,
         navigationID: ObjectIdentifier,
+        navigationLifetime: AnyObject,
         currentIntent: TabMainFrameNavigationIntent
     ) -> TabMainFrameActiveAuthorityLease? {
-        guard let participant = participants.exactEntry(for: webView),
-              participant.revision == currentIntent.revision,
-              participant.documentGeneration == authorityReducer.documentGeneration,
-              participant.phase == .active(navigationID: navigationID),
-              authorityReducer.isExactAuthority(
-                  webViewID: ObjectIdentifier(webView),
-                  navigationID: navigationID,
-                  revision: currentIntent.revision
-              ) else {
-            return nil
-        }
-        return authorityState.activeLease(
-            participantID: participant.id,
-            webViewID: ObjectIdentifier(webView),
-            navigationID: navigationID,
-            revision: participant.revision,
-            documentGeneration: participant.documentGeneration,
-            targetURL: participant.targetURL
-        )
+        guard let participant = participantTransitions.entry(
+            for: ObjectIdentifier(webView)
+        ), participant.webViewReference.matches(webView),
+           participant.revision == currentIntent.revision,
+           participant.phase == .active(navigationID: navigationID),
+           participant.navigationIdentityReference?.matches(
+               navigationLifetime
+           ) == true else { return nil }
+        return authorityState.activeLease(in: authorityState.snapshot, participant: participant)
     }
 }

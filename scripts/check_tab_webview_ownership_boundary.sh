@@ -21,6 +21,13 @@ main_frame_load_runtime="Sumi/Models/Tab/TabMainFrameLoadRuntime.swift"
 web_view_rebuild_epoch="Sumi/Models/Tab/TabWebViewRebuildEpoch.swift"
 main_frame_transaction="Sumi/Models/Tab/TabMainFrameRuntimeTransaction.swift"
 main_frame_capabilities="Sumi/Models/Tab/TabMainFrameRuntimeCapabilities.swift"
+authority_effect_ledger="Sumi/Models/Tab/TabMainFrameAuthorityEffectLedger.swift"
+participant_effect_ledger="Sumi/Models/Tab/TabMainFrameParticipantEffectLedger.swift"
+authority_reducer="Sumi/Models/Tab/TabMainFrameAuthorityReducer.swift"
+participant_transition_applier="Sumi/Models/Tab/TabMainFrameParticipantTransitionApplier.swift"
+authority_transition_applier="Sumi/Models/Tab/TabMainFrameAuthorityTransitionApplier.swift"
+transition_output="Sumi/Models/Tab/TabMainFrameTransitionOutput.swift"
+recovery_capabilities="Sumi/Models/Tab/TabWebContentRecoveryCapabilities.swift"
 recovery_marker_ledger="Sumi/Models/Tab/TabWebContentRecoveryMarkerLedger.swift"
 committed_document_runtime="Sumi/Models/Tab/TabCommittedDocumentRuntime.swift"
 status=0
@@ -36,6 +43,10 @@ fail_matches() {
 for required in "$repository_source" "$handle_source" "$main_frame_load_runtime" \
   "$web_view_rebuild_epoch" \
   "$main_frame_transaction" "$main_frame_capabilities" \
+  "$authority_effect_ledger" "$participant_effect_ledger" \
+  "$authority_reducer" "$participant_transition_applier" \
+  "$authority_transition_applier" "$transition_output" \
+  "$recovery_capabilities" \
   "$recovery_marker_ledger" \
   "$committed_document_runtime"; do
   if [[ ! -f "$required" ]]; then
@@ -142,7 +153,7 @@ while IFS= read -r match; do
       fi
       ;;
     Sumi/Models/Tab/Navigation/SumiTabLifecycleNavigationResponder.swift)
-      if [[ ! "$content" =~ ^[[:space:]]+(private[[:space:]]+let[[:space:]]+(lifecycle|promotion):[[:space:]]+any[[:space:]]+TabMainFrame(Lifecycle|Promotion)Settlement|lifecycle:[[:space:]]+any[[:space:]]+TabMainFrameLifecycleSettlement,|promotion:[[:space:]]+any[[:space:]]+TabMainFramePromotionSettlement)$ ]]; then
+      if [[ ! "$content" =~ ^[[:space:]]+(private[[:space:]]+let[[:space:]]+(lifecycle|promotion):[[:space:]]+any[[:space:]]+TabMainFrame(Lifecycle|Promotion)Settlement|lifecycle:[[:space:]]+any[[:space:]]+TabMainFrameLifecycleSettlement,|promotion:[[:space:]]+any[[:space:]]+TabMainFramePromotionSettlement,?)$ ]]; then
         printf 'error: lifecycle/promotion capability escaped responder private storage/init: %s\n' \
           "$match" >&2
         status=1
@@ -238,6 +249,7 @@ test_transaction_injection_files="$(
     | sort || true
 )"
 allowed_test_transaction_injection_files="$(cat <<'EOF'
+SumiTests/BrowserWebViewRoutingServiceTests.swift
 SumiTests/NormalTabInitialDocumentRuntimeHandoffTests.swift
 SumiTests/SumiGPCTests.swift
 SumiTests/SumiReaderPresentationTests.swift
@@ -248,6 +260,7 @@ SumiTests/TabRuntimeRoutingTests.swift
 SumiTests/TabScriptMessageHandlerIsolationTests.swift
 SumiTests/TabSuspensionArchitectureTests.swift
 SumiTests/TabWebViewMaterializationAndRebuildTests.swift
+SumiTests/WebViewRuntimeTabRegistryTests.swift
 EOF
 )"
 if [[ "$test_transaction_injection_files" != \
@@ -608,30 +621,123 @@ done <<< "$recovery_marker_mutation_hits"
 
 tab_recovery_capability_storage_count="$(
   rg --count-matches \
-    '^    let webContentRecovery: any TabWebContentRecovery$' \
+    '^    let webContentRecoveryMarkers: any TabWebContentRecoveryMarkerQuery$' \
     Sumi/Models/Tab/Tab.swift 2>/dev/null || true
 )"
 tab_recovery_capability_storage_count="${tab_recovery_capability_storage_count:-0}"
 if [[ "$tab_recovery_capability_storage_count" -ne 1 ]]; then
-  printf 'error: Tab must retain exactly one protocol-typed WebContent recovery capability (%s != 1)\n' \
+  printf 'error: Tab must retain exactly one read-only WebContent recovery query (%s != 1)\n' \
     "$tab_recovery_capability_storage_count" >&2
   status=1
 fi
 
 production_recovery_begin_hits="$(
-  rg -n '\.webContentRecovery\.beginRecovery\s*\(' \
+  rg -n '\brecovery\.beginRecovery\s*\(' \
     "${production_roots[@]}" -g '*.swift' || true
 )"
 production_recovery_begin_count="$(
   printf '%s\n' "$production_recovery_begin_hits" | sed '/^$/d' | wc -l | tr -d ' '
 )"
 if [[ "$production_recovery_begin_count" -ne 1 ]] ||
-   [[ "$production_recovery_begin_hits" != \
-     Sumi/Models/Tab/Navigation/SumiTabLifecycleNavigationResponder.swift:* ]]; then
+   [[ "${production_recovery_begin_hits%%:*}" != \
+     "Sumi/Models/Tab/Navigation/SumiTabLifecycleNavigationResponder.swift" ]]; then
   printf 'error: WebContent recovery admission must remain in the exact lifecycle callback (%s)\n' \
     "${production_recovery_begin_hits:-none}" >&2
   status=1
 fi
+
+tab_recovery_admission_hits="$(
+  rg -n '\bTabWebContentRecoveryAdmission\b' Sumi/Models/Tab/Tab.swift || true
+)"
+fail_matches "Tab regained WebContent recovery admission authority" \
+  "$tab_recovery_admission_hits"
+
+recovery_admission_type_hits="$(
+  rg -n '\bTabWebContentRecoveryAdmission\b' \
+    "${production_roots[@]}" -g '*.swift' || true
+)"
+while IFS= read -r match; do
+  [[ -z "$match" ]] && continue
+  file="${match%%:*}"
+  case "$file" in
+    "$recovery_capabilities"|"$main_frame_transaction"|Sumi/Models/Tab/Navigation/SumiTabLifecycleNavigationResponder.swift)
+      ;;
+    *)
+      printf 'error: recovery admission capability escaped transaction/responder boundary: %s\n' \
+        "$match" >&2
+      status=1
+      ;;
+  esac
+done <<< "$recovery_admission_type_hits"
+
+# Reducer decisions are applied by lifecycle orchestration. The reducer may
+# inspect immutable participant entries, but cannot reach into participant or
+# effect ledgers and mutate a second authority behind the caller's back.
+reducer_cross_ledger_hits="$(
+  rg -n '\b(TabMainFrameParticipantRegistry|TabMainFrameAuthorityEffectLedger|TabMainFrameParticipantEffectLedger)\b' \
+    "$authority_reducer" \
+    | rg -v 'TabMainFrameParticipantRegistry\.Entry|TabMainFrameAuthorityEffectLedger\.SharedCommitIdentity' \
+    || true
+)"
+fail_matches "main-frame authority reducer regained ledger reach-through" \
+  "$reducer_cross_ledger_hits"
+
+if ! rg -q '^enum TabMainFrameAuthorityReducer \{' "$authority_reducer"; then
+  printf 'error: main-frame authority reducer must remain a stateless enum\n' >&2
+  status=1
+fi
+reducer_stored_state_hits="$(
+  rg -n '^    (private )?(let|var) [a-zA-Z_]' "$authority_reducer" || true
+)"
+fail_matches "main-frame authority reducer regained stored state" \
+  "$reducer_stored_state_hits"
+
+retired_decision_family_hits="$(
+  rg -n '\bTabMainFrame(Effect|Commit|Finish|SameDocument)Decision\b' \
+    "${all_swift_roots[@]}" -g '*.swift' -g '!**/.build/**' || true
+)"
+fail_matches "parallel main-frame callback decision family reintroduced" \
+  "$retired_decision_family_hits"
+
+retired_combined_effect_ledger_hits="$(
+  rg -n '\bTabMainFrameEffectLedger\b' "${all_swift_roots[@]}" \
+    -g '*.swift' -g '!**/.build/**' || true
+)"
+fail_matches "combined authority/participant effect ledger reintroduced" \
+  "$retired_combined_effect_ledger_hits"
+
+effect_ledger_construction_hits="$(
+  rg -n '\bTabMainFrame(Authority|Participant)EffectLedger\s*\(' \
+    "${production_roots[@]}" -g '*.swift' || true
+)"
+while IFS= read -r match; do
+  [[ -z "$match" ]] && continue
+  if [[ "${match%%:*}" != "Sumi/Models/Tab/TabMainFrameLifecycleMachine.swift" ]]; then
+    printf 'error: main-frame effect ledger constructed outside lifecycle composition: %s\n' \
+      "$match" >&2
+    status=1
+  fi
+done <<< "$effect_ledger_construction_hits"
+
+transition_applier_construction_hits="$(
+  rg -n '\bTabMainFrame(Participant|Authority)TransitionApplier\s*\(' \
+    "${production_roots[@]}" -g '*.swift' || true
+)"
+while IFS= read -r match; do
+  [[ -z "$match" ]] && continue
+  if [[ "${match%%:*}" != "Sumi/Models/Tab/TabMainFrameLifecycleMachine.swift" ]]; then
+    printf 'error: main-frame transition applier constructed outside lifecycle composition: %s\n' \
+      "$match" >&2
+    status=1
+  fi
+done <<< "$transition_applier_construction_hits"
+
+lifecycle_direct_ledger_storage_hits="$(
+  rg -n '^    private let [a-zA-Z_]+: TabMainFrame(ParticipantRegistry|AuthorityState|AuthorityEffectLedger|ParticipantEffectLedger)$' \
+    Sumi/Models/Tab/TabMainFrameLifecycleMachine.swift || true
+)"
+fail_matches "lifecycle machine regained direct ledger storage" \
+  "$lifecycle_direct_ledger_storage_hits"
 
 rebuild_epoch_construction_hits="$(
   rg -n '\bTabWebViewRebuildEpoch\s*\(' \

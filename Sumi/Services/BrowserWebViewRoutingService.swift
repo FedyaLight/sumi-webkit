@@ -149,7 +149,7 @@ final class BrowserWebViewRoutingService {
     ) -> Bool {
         guard let tab = tabLookup(tabId),
               tab.webViewSession.owns(webView),
-              tab.webContentRecovery.isRecoveryRequired(on: webView) else {
+              tab.webContentRecoveryMarkers.isRecoveryRequired(on: webView) else {
             return false
         }
         return commands.retainRecovery(tab, webView)
@@ -162,7 +162,7 @@ final class BrowserWebViewRoutingService {
     ) -> TabMainFrameReloadCommandOutcome {
         guard let tab = tabLookup(tabId),
               tab.webViewSession.owns(webView),
-              tab.webContentRecovery.isRecoveryRequired(on: webView) else {
+              tab.webContentRecoveryMarkers.isRecoveryRequired(on: webView) else {
             return .failed
         }
         return commands.recover(tab, webView)

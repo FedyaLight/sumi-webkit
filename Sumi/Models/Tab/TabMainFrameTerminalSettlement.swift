@@ -7,26 +7,26 @@ import WebKit
 @MainActor
 final class TabMainFrameTerminalSettlement {
     struct Result {
-        let decision: TabMainFrameFinishDecision
+        let decision: TabMainFrameTransitionDecision<TabMainFrameFinishPublication>
         let evidence: TabCommittedDocumentEvidence?
         let presentationURLToAdopt: URL?
     }
 
     private let participants: TabMainFrameParticipantRegistry
-    private let authorityReducer: TabMainFrameAuthorityReducer
-    private let effectClaims: TabMainFrameEffectLedger
+    private let authorityEffects: TabMainFrameAuthorityEffectLedger
     private let completedAuthority: TabMainFrameCompletedAuthorityProof
+    private let committer: TabMainFrameTransitionCommitter
 
     init(
         participants: TabMainFrameParticipantRegistry,
-        authorityReducer: TabMainFrameAuthorityReducer,
-        effectClaims: TabMainFrameEffectLedger,
-        completedAuthority: TabMainFrameCompletedAuthorityProof
+        authorityEffects: TabMainFrameAuthorityEffectLedger,
+        completedAuthority: TabMainFrameCompletedAuthorityProof,
+        committer: TabMainFrameTransitionCommitter
     ) {
         self.participants = participants
-        self.authorityReducer = authorityReducer
-        self.effectClaims = effectClaims
+        self.authorityEffects = authorityEffects
         self.completedAuthority = completedAuthority
+        self.committer = committer
     }
 
     func settleFinish(
@@ -53,58 +53,36 @@ final class TabMainFrameTerminalSettlement {
                 presentationURLToAdopt: nil
             )
         }
-        let settlement = authorityReducer.settleTerminalSuccess(
-            from: webView,
+        guard let receipt = committer.commitTerminal(
+            webView: webView,
             navigationID: navigationID,
             navigationLifetime: navigationLifetime,
-            terminalURL: terminalURL,
-            currentIntent: currentIntent,
-            participants: participants,
-            effectClaims: effectClaims
-        )
-        switch settlement.role {
-        case .stale:
-            return Result(
-                decision: .stale,
-                evidence: settlement.evidence,
-                presentationURLToAdopt: nil
+            revision: currentIntent.revision,
+            terminalURL: terminalURL
+        ) else {
+            return .init(decision: .stale, evidence: nil, presentationURLToAdopt: nil)
+        }
+        switch receipt {
+        case let .participant(participant, reduction):
+            return .init(
+                decision: .participant,
+                evidence: participant.committedEvidence(webView: webView),
+                presentationURLToAdopt: reduction.presentationURLToAdopt
             )
-        case .participant:
-            _ = participants.finish(
-                webView: webView,
-                navigationID: navigationID,
-                navigationLifetime: navigationLifetime,
-                revision: currentIntent.revision,
-                kind: .document
-            )
-            return Result(
-                decision: .completedReplica,
-                evidence: settlement.evidence,
-                presentationURLToAdopt: nil
-            )
-        case .authority:
-            guard let completed = participants.finish(
-                webView: webView,
-                navigationID: navigationID,
-                navigationLifetime: navigationLifetime,
-                revision: currentIntent.revision,
-                kind: .document
-            ) else {
-                return Result(
-                    decision: .stale,
-                    evidence: settlement.evidence,
-                    presentationURLToAdopt: nil
-                )
-            }
-            authorityReducer.markCompleted()
-            let decision = finishPublication(
-                for: completed,
-                webView: webView
-            )
-            return Result(
+        case let .authority(participant, reduction, lease, permit):
+            let decision = permit.map {
+                TabMainFrameTransitionDecision.publish(TabMainFrameFinishPublication(
+                    webView: webView,
+                    presentationURL: participant.targetURL,
+                    isPDF: participant.isPDFResponse ?? false,
+                    authority: lease,
+                    permit: $0
+                ))
+            } ?? .alreadyPublished(nil)
+            return .init(
                 decision: decision,
-                evidence: settlement.evidence,
-                presentationURLToAdopt: settlement.presentationURLToAdopt
+                evidence: participant.committedEvidence(webView: webView),
+                presentationURLToAdopt: reduction.presentationURLToAdopt
             )
         }
     }
@@ -112,18 +90,17 @@ final class TabMainFrameTerminalSettlement {
     func promotedFinishPublication(
         matching continuation: TabMainFrameAuthorityContinuation,
         currentIntent: TabMainFrameNavigationIntent
-    ) -> TabMainFrameFinishDecision {
-        guard authorityReducer.isCurrentAuthority(
-            continuation,
-            revision: currentIntent.revision,
-            participants: participants
-        ), continuation.isCompleted,
-           let participant = participants[continuation.webViewID],
+    ) -> TabMainFrameTransitionDecision<TabMainFrameFinishPublication> {
+        guard continuation.isCompleted,
+           let participant = completedAuthority.participant(
+               matching: .continuation(continuation),
+               currentIntent: currentIntent
+           ),
            case .completed(_, .document) = participant.phase else {
             return .stale
         }
-        if effectClaims.hasPublishedSharedFinish {
-            return .alreadyPublished
+        if authorityEffects.hasPublishedSharedFinish {
+            return .alreadyPublished(nil)
         }
         return finishPublication(
             for: participant,
@@ -145,7 +122,7 @@ final class TabMainFrameTerminalSettlement {
            publication.isPDF == publication.authority.isPDF else {
             return false
         }
-        return effectClaims.consumeSharedFinish(
+        return authorityEffects.consumeSharedFinish(
             publication.permit,
             participantID: publication.authority.participantID
         )
@@ -155,10 +132,10 @@ final class TabMainFrameTerminalSettlement {
         _ lease: TabMainFrameCompletedAuthorityLease,
         currentIntent: TabMainFrameNavigationIntent
     ) -> Bool {
-        completedAuthority.remainsCurrent(
-            lease,
+        completedAuthority.participant(
+            matching: .lease(lease),
             currentIntent: currentIntent
-        )
+        ) != nil
     }
 
     private func reissueFinishPublication(
@@ -166,23 +143,15 @@ final class TabMainFrameTerminalSettlement {
         navigationID: ObjectIdentifier,
         navigationLifetime: AnyObject,
         currentIntent: TabMainFrameNavigationIntent
-    ) -> TabMainFrameFinishDecision {
-        guard let participant = participants.exactCompletedEntry(
-            for: webView,
-            navigationID: navigationID,
-            navigationLifetime: navigationLifetime,
-            revision: currentIntent.revision
-        ), case .completed(_, .document) = participant.phase,
-           participant.documentGeneration == authorityReducer.documentGeneration,
-           let authority = authorityReducer.authority,
-           authority.revision == participant.revision,
-           authority.documentGeneration == participant.documentGeneration,
-           authority.webViewID == ObjectIdentifier(webView),
-           authority.isCompleted else {
+    ) -> TabMainFrameTransitionDecision<TabMainFrameFinishPublication> {
+        guard let participant = completedAuthority.participant(
+            matching: .terminal(webView, navigationID, navigationLifetime),
+            currentIntent: currentIntent
+        ) else {
             return .stale
         }
-        if effectClaims.hasPublishedSharedFinish {
-            return .alreadyPublished
+        if authorityEffects.hasPublishedSharedFinish {
+            return .alreadyPublished(nil)
         }
         return finishPublication(for: participant, webView: webView)
     }
@@ -190,13 +159,13 @@ final class TabMainFrameTerminalSettlement {
     private func finishPublication(
         for participant: TabMainFrameParticipantRegistry.Entry,
         webView: WKWebView
-    ) -> TabMainFrameFinishDecision {
+    ) -> TabMainFrameTransitionDecision<TabMainFrameFinishPublication> {
         guard case .completed(_, .document) = participant.phase,
-              let permit = effectClaims.reserveSharedFinish(
+              let permit = authorityEffects.reserveSharedFinish(
                   participantID: participant.id
               ), let lease = completedAuthority.issue(for: participant) else {
-            return effectClaims.hasPublishedSharedFinish
-                ? .alreadyPublished
+            return authorityEffects.hasPublishedSharedFinish
+                ? .alreadyPublished(nil)
                 : .stale
         }
         return .publish(TabMainFrameFinishPublication(
@@ -207,5 +176,4 @@ final class TabMainFrameTerminalSettlement {
             permit: permit
         ))
     }
-
 }

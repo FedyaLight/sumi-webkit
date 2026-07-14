@@ -29,6 +29,45 @@ final class TabMainFrameParticipantRegistry {
         var isPDFResponse: Bool?
         var navigationIdentityReference: WeakNavigationIdentityReference?
 
+        func hasSameFacts(as other: Entry) -> Bool {
+            id == other.id
+                && webViewReference.identifier == other.webViewReference.identifier
+                && webViewReference.resolve() === other.webViewReference.resolve()
+                && revision == other.revision
+                && documentGeneration == other.documentGeneration
+                && targetURL == other.targetURL
+                && phase == other.phase
+                && hasCommittedDocument == other.hasCommittedDocument
+                && committedDocumentURL == other.committedDocumentURL
+                && isPDFResponse == other.isPDFResponse
+                && navigationIdentityReference?.identifier == other.navigationIdentityReference?.identifier
+                && navigationIdentityReference?.resolve() === other.navigationIdentityReference?.resolve()
+        }
+
+        func matches(_ lease: TabMainFrameActiveAuthorityLease) -> Bool {
+            id == lease.participantID
+                && revision == lease.revision
+                && documentGeneration == lease.documentGeneration
+                && phase == .active(navigationID: lease.navigationID)
+                && targetURL == lease.targetURL
+                && webViewReference.resolve() != nil
+        }
+
+        func matches(_ lease: TabMainFrameCompletedAuthorityLease) -> Bool {
+            id == lease.participantID
+                && revision == lease.revision
+                && documentGeneration == lease.documentGeneration
+                && phase == .completed(
+                    navigationID: lease.navigationID,
+                    kind: lease.completionKind
+                )
+                && hasCommittedDocument == lease.hasCommittedDocument
+                && committedDocumentURL == lease.committedDocumentURL
+                && targetURL == lease.presentationURL
+                && (isPDFResponse ?? false) == lease.isPDF
+                && webViewReference.resolve() != nil
+        }
+
         func committedEvidence(webView: WKWebView) -> TabCommittedDocumentEvidence? {
             guard let committedDocumentURL else { return nil }
             return TabCommittedDocumentEvidence(
@@ -55,18 +94,42 @@ final class TabMainFrameParticipantRegistry {
         let replacedParticipantIDs: [UUID]
     }
 
+    struct EntryMutationPlan {
+        fileprivate let sourceEntry: Entry
+        fileprivate let expectedRevision: UInt64
+        fileprivate let webViewID: ObjectIdentifier
+        fileprivate let expectedParticipantID: UUID
+        fileprivate let expectedWebViewReference: WeakWebViewReference
+        var nextEntry: Entry
+        fileprivate let retiredNavigationID: ObjectIdentifier?
+        fileprivate let retiredNavigationReference: WeakNavigationIdentityReference?
+
+        func hasSourceFacts(_ entry: Entry) -> Bool {
+            sourceEntry.hasSameFacts(as: entry)
+        }
+    }
+
+    struct PreparedEntryMutation {
+        let plan: EntryMutationPlan
+        var previousEntry: Entry { plan.sourceEntry }
+
+        fileprivate init(plan: EntryMutationPlan) {
+            self.plan = plan
+        }
+    }
+
     private var entriesByWebViewID: [ObjectIdentifier: Entry] = [:]
     private var retiredNavigationIdentities: [
         ObjectIdentifier: WeakNavigationIdentityReference
     ] = [:]
+    private(set) var mutationRevision: UInt64 = 0
 
     var entries: [ObjectIdentifier: Entry] {
         entriesByWebViewID
     }
 
     subscript(webViewID: ObjectIdentifier) -> Entry? {
-        get { entriesByWebViewID[webViewID] }
-        set { entriesByWebViewID[webViewID] = newValue }
+        entriesByWebViewID[webViewID]
     }
 
     func entry(for webViewID: ObjectIdentifier) -> Entry? {
@@ -78,22 +141,40 @@ final class TabMainFrameParticipantRegistry {
         return entry?.webViewReference.matches(webView) == true ? entry : nil
     }
 
+    func canApply(_ plan: EntryMutationPlan) -> Bool {
+        let next = plan.nextEntry
+        guard plan.expectedRevision == mutationRevision,
+              plan.webViewID == next.webViewReference.identifier,
+              plan.expectedParticipantID == next.id,
+              plan.expectedWebViewReference.identifier == plan.webViewID,
+              let expectedWebView = plan.expectedWebViewReference.resolve(),
+              next.webViewReference.matches(expectedWebView),
+              plan.retiredNavigationID
+                == plan.retiredNavigationReference?.identifier,
+              let current = entriesByWebViewID[plan.webViewID] else {
+            return false
+        }
+        return current.id == plan.expectedParticipantID
+            && current.webViewReference.matches(expectedWebView)
+            && current.hasSameFacts(as: plan.sourceEntry)
+    }
+
+    func applyPrevalidated(_ plan: EntryMutationPlan) -> Entry {
+        precondition(canApply(plan), "participant plan must be prevalidated")
+        if let retiredNavigationID = plan.retiredNavigationID {
+            retireNavigationIdentity(
+                retiredNavigationID,
+                reference: plan.retiredNavigationReference
+            )
+        }
+        entriesByWebViewID[plan.webViewID] = plan.nextEntry
+        mutationRevision &+= 1
+        return plan.nextEntry
+    }
+
     func contains(_ webView: WKWebView, revision: UInt64) -> Bool {
         guard let entry = exactEntry(for: webView) else { return false }
         return entry.revision == revision
-    }
-
-    func activeEntry(
-        webViewID: ObjectIdentifier,
-        navigationID: ObjectIdentifier,
-        revision: UInt64
-    ) -> Entry? {
-        guard let entry = entriesByWebViewID[webViewID],
-              entry.revision == revision,
-              entry.phase == .active(navigationID: navigationID) else {
-            return nil
-        }
-        return entry
     }
 
     func exactActiveEntry(
@@ -193,11 +274,8 @@ final class TabMainFrameParticipantRegistry {
             replacedParticipantID = replaced.id
         }
         entriesByWebViewID[webViewID] = entry
+        mutationRevision &+= 1
         return InstallResult(replacedParticipantID: replacedParticipantID)
-    }
-
-    func remove(_ webView: WKWebView) -> Entry? {
-        removeAll([webView]).first
     }
 
     func removeAll(_ webViews: [WKWebView]) -> [Entry] {
@@ -215,13 +293,8 @@ final class TabMainFrameParticipantRegistry {
             removed.append(entry)
         }
         pruneRetiredNavigationIdentities()
+        if removed.isEmpty == false { mutationRevision &+= 1 }
         return removed
-    }
-
-    func remove(webViewID: ObjectIdentifier) -> Entry? {
-        guard let entry = entriesByWebViewID[webViewID] else { return nil }
-        retireNavigationIdentity(of: entry)
-        return entriesByWebViewID.removeValue(forKey: webViewID)
     }
 
     func removeAllForNewIntent() -> [UUID] {
@@ -229,6 +302,7 @@ final class TabMainFrameParticipantRegistry {
         entriesByWebViewID.values.forEach(retireNavigationIdentity)
         entriesByWebViewID.removeAll()
         pruneRetiredNavigationIdentities()
+        mutationRevision &+= 1
         return participantIDs
     }
 
@@ -246,24 +320,33 @@ final class TabMainFrameParticipantRegistry {
     func attachNavigationIdentityIfPossible(
         navigationID: ObjectIdentifier,
         lifetime: AnyObject?,
-        webViewID: ObjectIdentifier
-    ) {
-        guard var entry = entriesByWebViewID[webViewID],
+        webView: WKWebView
+    ) -> Bool {
+        let webViewID = ObjectIdentifier(webView)
+        guard var entry = exactEntry(for: webView),
               entry.phase == .active(navigationID: navigationID),
+              entry.navigationIdentityReference.map({ reference in
+                  lifetime.map(reference.matches) ?? true
+              }) ?? true,
               attachNavigationIdentity(
                   navigationID: navigationID,
                   lifetime: lifetime,
                   to: &entry
               ) else {
-            return
+            return false
         }
         entriesByWebViewID[webViewID] = entry
+        mutationRevision &+= 1
+        return true
     }
 
     func isRetiredNavigationIdentity(
         _ navigationID: ObjectIdentifier,
         lifetime: AnyObject?
     ) -> Bool {
+        if let lifetime, ObjectIdentifier(lifetime) != navigationID {
+            return false
+        }
         pruneRetiredNavigationIdentities()
         guard let reference = retiredNavigationIdentities[navigationID],
               let retiredLifetime = reference.resolve() else {
@@ -301,38 +384,170 @@ final class TabMainFrameParticipantRegistry {
         }
     }
 
-    func recordCommit(
+    func prepareCommit(
         webView: WKWebView,
         navigationID: ObjectIdentifier,
+        navigationLifetime: AnyObject,
         revision: UInt64,
         committedURL: URL,
         isPDF: Bool
-    ) -> Entry? {
-        let webViewID = ObjectIdentifier(webView)
-        guard var entry = activeEntry(
-            webViewID: webViewID,
+    ) -> PreparedEntryMutation? {
+        guard let previousEntry = exactActiveEntry(
+            for: webView,
             navigationID: navigationID,
+            navigationLifetime: navigationLifetime,
             revision: revision
-        ) else {
+        ) else { return nil }
+        var nextEntry = previousEntry
+        nextEntry.targetURL = committedURL
+        nextEntry.hasCommittedDocument = true
+        nextEntry.committedDocumentURL = committedURL
+        nextEntry.isPDFResponse = isPDF
+        return preparedMutation(
+            previousEntry: previousEntry,
+            nextEntry: nextEntry,
+            webView: webView
+        )
+    }
+
+    func prepareTerminalSuccess(
+        webView: WKWebView,
+        navigationID: ObjectIdentifier,
+        navigationLifetime: AnyObject,
+        revision: UInt64,
+        terminalURL: URL?
+    ) -> PreparedEntryMutation? {
+        guard let previousEntry = exactActiveEntry(
+            for: webView,
+            navigationID: navigationID,
+            navigationLifetime: navigationLifetime,
+            revision: revision
+        ) else { return nil }
+        var nextEntry = previousEntry
+        nextEntry.hasCommittedDocument = true
+        nextEntry.committedDocumentURL = nextEntry.committedDocumentURL
+            ?? terminalURL
+            ?? nextEntry.targetURL
+        nextEntry.targetURL = terminalURL ?? nextEntry.targetURL
+        nextEntry.phase = .completed(
+            navigationID: navigationID,
+            kind: .document
+        )
+        return preparedMutation(
+            previousEntry: previousEntry,
+            nextEntry: nextEntry,
+            webView: webView
+        )
+    }
+
+    func prepareSameDocumentSuccess(
+        webView: WKWebView,
+        navigationID: ObjectIdentifier,
+        navigationLifetime: AnyObject,
+        revision: UInt64,
+        presentationURL: URL
+    ) -> PreparedEntryMutation? {
+        guard let previousEntry = exactActiveEntry(
+            for: webView,
+            navigationID: navigationID,
+            navigationLifetime: navigationLifetime,
+            revision: revision
+        ) else { return nil }
+        var nextEntry = previousEntry
+        nextEntry.targetURL = presentationURL
+        nextEntry.phase = .completed(
+            navigationID: navigationID,
+            kind: .sameDocument
+        )
+        return preparedMutation(
+            previousEntry: previousEntry,
+            nextEntry: nextEntry,
+            webView: webView
+        )
+    }
+
+    func prepareTargetMutation(
+        _ targetURL: URL,
+        webView: WKWebView
+    ) -> PreparedEntryMutation? {
+        guard let previousEntry = exactEntry(for: webView) else { return nil }
+        var nextEntry = previousEntry
+        nextEntry.targetURL = targetURL
+        return preparedMutation(
+            previousEntry: previousEntry,
+            nextEntry: nextEntry,
+            webView: webView
+        )
+    }
+
+    func prepareContinuation(
+        webView: WKWebView,
+        navigationID: ObjectIdentifier,
+        navigationLifetime: AnyObject,
+        revision: UInt64
+    ) -> PreparedEntryMutation? {
+        guard ObjectIdentifier(navigationLifetime) == navigationID,
+              let previousEntry = exactEntry(for: webView),
+              previousEntry.revision == revision else {
             return nil
         }
-        entry.targetURL = committedURL
-        entry.hasCommittedDocument = true
-        entry.committedDocumentURL = committedURL
-        entry.isPDFResponse = isPDF
-        entriesByWebViewID[webViewID] = entry
-        return entry
+        var nextEntry = previousEntry
+        guard attachNavigationIdentity(
+            navigationID: navigationID,
+            lifetime: navigationLifetime,
+            to: &nextEntry
+        ) else { return nil }
+        let previousNavigationID: ObjectIdentifier?
+        switch previousEntry.phase {
+        case .active(let navigationID): previousNavigationID = navigationID
+        case .completed(let navigationID, _): previousNavigationID = navigationID
+        }
+        let prepared = preparedMutation(
+            previousEntry: previousEntry,
+            nextEntry: nextEntry,
+            webView: webView
+        )
+        return PreparedEntryMutation(plan: EntryMutationPlan(
+            sourceEntry: prepared.previousEntry,
+            expectedRevision: prepared.plan.expectedRevision,
+            webViewID: prepared.plan.webViewID,
+            expectedParticipantID: prepared.plan.expectedParticipantID,
+            expectedWebViewReference: prepared.plan.expectedWebViewReference,
+            nextEntry: prepared.plan.nextEntry,
+            retiredNavigationID: previousNavigationID,
+            retiredNavigationReference: previousEntry.navigationIdentityReference
+        ))
+    }
+
+    private func preparedMutation(
+        previousEntry: Entry,
+        nextEntry: Entry,
+        webView: WKWebView
+    ) -> PreparedEntryMutation {
+        PreparedEntryMutation(plan: EntryMutationPlan(
+            sourceEntry: previousEntry,
+            expectedRevision: mutationRevision,
+            webViewID: ObjectIdentifier(webView),
+            expectedParticipantID: previousEntry.id,
+            expectedWebViewReference: WeakWebViewReference(webView),
+            nextEntry: nextEntry,
+            retiredNavigationID: nil,
+            retiredNavigationReference: nil
+        ))
     }
 
     func recordResponse(
         isPDF: Bool,
-        webViewID: ObjectIdentifier,
+        webView: WKWebView,
         navigationID: ObjectIdentifier,
+        navigationLifetime: AnyObject,
         revision: UInt64
     ) -> Entry? {
-        guard var entry = activeEntry(
-            webViewID: webViewID,
+        let webViewID = ObjectIdentifier(webView)
+        guard var entry = exactActiveEntry(
+            for: webView,
             navigationID: navigationID,
+            navigationLifetime: navigationLifetime,
             revision: revision
         ) else {
             return nil
@@ -340,72 +555,22 @@ final class TabMainFrameParticipantRegistry {
         guard entry.hasCommittedDocument == false else { return entry }
         entry.isPDFResponse = isPDF
         entriesByWebViewID[webViewID] = entry
+        mutationRevision &+= 1
         return entry
     }
 
     func responseIsPDF(
-        webViewID: ObjectIdentifier,
+        webView: WKWebView,
         navigationID: ObjectIdentifier,
+        navigationLifetime: AnyObject,
         revision: UInt64
     ) -> Bool? {
-        activeEntry(
-            webViewID: webViewID,
+        exactActiveEntry(
+            for: webView,
             navigationID: navigationID,
+            navigationLifetime: navigationLifetime,
             revision: revision
         )?.isPDFResponse
-    }
-
-    func markTerminalSuccess(
-        webView: WKWebView,
-        navigationID: ObjectIdentifier,
-        navigationLifetime: AnyObject,
-        revision: UInt64,
-        terminalURL: URL?
-    ) -> Entry? {
-        let webViewID = ObjectIdentifier(webView)
-        guard var entry = exactActiveEntry(
-            for: webView,
-            navigationID: navigationID,
-            navigationLifetime: navigationLifetime,
-            revision: revision
-        ) else {
-            return nil
-        }
-        entry.hasCommittedDocument = true
-        entry.committedDocumentURL = entry.committedDocumentURL
-            ?? terminalURL
-            ?? entry.targetURL
-        entry.targetURL = terminalURL ?? entry.targetURL
-        entriesByWebViewID[webViewID] = entry
-        return entry
-    }
-
-    func updateTarget(_ targetURL: URL, webViewID: ObjectIdentifier) -> Bool {
-        guard var entry = entriesByWebViewID[webViewID] else { return false }
-        entry.targetURL = targetURL
-        entriesByWebViewID[webViewID] = entry
-        return true
-    }
-
-    func finish(
-        webView: WKWebView,
-        navigationID: ObjectIdentifier,
-        navigationLifetime: AnyObject,
-        revision: UInt64,
-        kind: TabMainFrameCompletionKind
-    ) -> Entry? {
-        let webViewID = ObjectIdentifier(webView)
-        guard var entry = exactActiveEntry(
-            for: webView,
-            navigationID: navigationID,
-            navigationLifetime: navigationLifetime,
-            revision: revision
-        ) else {
-            return nil
-        }
-        entry.phase = .completed(navigationID: navigationID, kind: kind)
-        entriesByWebViewID[webViewID] = entry
-        return entry
     }
 
     func removeExactActiveNavigation(
@@ -415,70 +580,17 @@ final class TabMainFrameParticipantRegistry {
         revision: UInt64
     ) -> Entry? {
         let webViewID = ObjectIdentifier(webView)
-        guard let entry = activeEntry(
-            webViewID: webViewID,
+        guard let entry = exactActiveEntry(
+            for: webView,
             navigationID: navigationID,
+            navigationLifetime: navigationLifetime,
             revision: revision
-        ), ObjectIdentifier(navigationLifetime) == navigationID,
-           entry.webViewReference.matches(webView),
-           entry.navigationIdentityReference?.matches(navigationLifetime) == true else {
+        ) else {
             return nil
         }
         retireNavigationIdentity(of: entry)
         entriesByWebViewID.removeValue(forKey: webViewID)
-        return entry
-    }
-
-    func prepareContinuation(
-        webViewID: ObjectIdentifier,
-        navigationID: ObjectIdentifier,
-        navigationLifetime: AnyObject,
-        revision: UInt64
-    ) -> Entry? {
-        guard var entry = entriesByWebViewID[webViewID],
-              entry.revision == revision else {
-            return nil
-        }
-        let previousNavigationID: ObjectIdentifier?
-        switch entry.phase {
-        case .active(let navigationID):
-            previousNavigationID = navigationID
-        case .completed(let navigationID, _):
-            previousNavigationID = navigationID
-        }
-        let previousIdentity = entry.navigationIdentityReference
-        guard attachNavigationIdentity(
-            navigationID: navigationID,
-            lifetime: navigationLifetime,
-            to: &entry
-        ) else {
-            return nil
-        }
-        if let previousNavigationID {
-            retireNavigationIdentity(
-                previousNavigationID,
-                reference: previousIdentity
-            )
-        }
-        return entry
-    }
-
-    func storeContinuation(
-        _ entry: Entry,
-        webViewID: ObjectIdentifier,
-        navigationID: ObjectIdentifier,
-        targetURL: URL,
-        kind: TabMainFrameContinuationKind
-    ) -> Entry {
-        var entry = entry
-        entry.targetURL = targetURL
-        entry.phase = .active(navigationID: navigationID)
-        if kind == .clientRedirect {
-            entry.hasCommittedDocument = false
-            entry.committedDocumentURL = nil
-            entry.isPDFResponse = nil
-        }
-        entriesByWebViewID[webViewID] = entry
+        mutationRevision &+= 1
         return entry
     }
 
@@ -486,7 +598,7 @@ final class TabMainFrameParticipantRegistry {
         revision: UInt64,
         from previousGeneration: UInt64,
         to documentGeneration: UInt64,
-        matching identity: TabMainFrameEffectLedger.SharedCommitIdentity
+        matching identity: TabMainFrameAuthorityEffectLedger.SharedCommitIdentity
     ) -> [TabCommittedDocumentEvidence] {
         let compatibleWebViewIDs = entriesByWebViewID.compactMap {
             webViewID, entry -> ObjectIdentifier? in
@@ -494,7 +606,7 @@ final class TabMainFrameParticipantRegistry {
                   entry.documentGeneration == previousGeneration,
                   entry.hasCommittedDocument,
                   entry.committedDocumentURL.map({
-                      TabMainFrameEffectLedger.SharedCommitIdentity(
+                      TabMainFrameAuthorityEffectLedger.SharedCommitIdentity(
                           target: WebRuntimeNavigationIdentity($0),
                           isPDF: entry.isPDFResponse ?? false
                       )
@@ -508,6 +620,7 @@ final class TabMainFrameParticipantRegistry {
             guard var entry = entriesByWebViewID[webViewID] else { continue }
             entry.documentGeneration = documentGeneration
             entriesByWebViewID[webViewID] = entry
+            mutationRevision &+= 1
             guard let webView = entry.webViewReference.resolve(),
                   let evidence = entry.committedEvidence(webView: webView) else {
                 continue
@@ -521,7 +634,7 @@ final class TabMainFrameParticipantRegistry {
         webView: WKWebView,
         revision: UInt64,
         documentGeneration: UInt64,
-        sharedCommitIdentity: TabMainFrameEffectLedger.SharedCommitIdentity
+        sharedCommitIdentity: TabMainFrameAuthorityEffectLedger.SharedCommitIdentity
     ) -> (entry: Entry, evidence: TabCommittedDocumentEvidence)? {
         let webViewID = ObjectIdentifier(webView)
         guard let entry = entriesByWebViewID[webViewID],
@@ -531,7 +644,7 @@ final class TabMainFrameParticipantRegistry {
               entry.hasCommittedDocument,
               let committedDocumentURL = entry.committedDocumentURL,
               let isPDF = entry.isPDFResponse,
-              sharedCommitIdentity == TabMainFrameEffectLedger.SharedCommitIdentity(
+              sharedCommitIdentity == TabMainFrameAuthorityEffectLedger.SharedCommitIdentity(
                   target: WebRuntimeNavigationIdentity(committedDocumentURL),
                   isPDF: isPDF
               ), let evidence = entry.committedEvidence(webView: webView) else {

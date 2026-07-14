@@ -315,6 +315,7 @@ final class TabNavigationCommandsTests: XCTestCase {
         guard case .publish = transaction.settleCommit(
             from: webView,
             navigationID: committedNavigationID,
+            navigationLifetime: committedNavigation,
             committedURL: committedURL
         ) else {
             return XCTFail("Expected the durable document commit to publish")
@@ -381,6 +382,7 @@ final class TabNavigationCommandsTests: XCTestCase {
         guard case .publish = transaction.settleCommit(
             from: htmlWebView,
             navigationID: ObjectIdentifier(htmlNavigation),
+            navigationLifetime: htmlNavigation,
             committedURL: committedURL
         ) else {
             return XCTFail("Expected HTML authority commit to publish")
@@ -388,11 +390,13 @@ final class TabNavigationCommandsTests: XCTestCase {
         transaction.noteResponse(
             isPDF: true,
             from: pdfWebView,
-            navigationID: ObjectIdentifier(pdfNavigation)
+            navigationID: ObjectIdentifier(pdfNavigation),
+            navigationLifetime: pdfNavigation
         )
-        guard case .recordedReplica = transaction.settleCommit(
+        guard case .participant = transaction.settleCommit(
             from: pdfWebView,
             navigationID: ObjectIdentifier(pdfNavigation),
+            navigationLifetime: pdfNavigation,
             committedURL: committedURL
         ) else {
             return XCTFail("PDF mismatch must remain a non-canonical replica")

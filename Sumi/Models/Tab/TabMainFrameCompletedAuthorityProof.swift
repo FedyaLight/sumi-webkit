@@ -1,64 +1,63 @@
 import Foundation
+import WebKit
 
-/// Issues and revalidates an immutable proof for either kind of completed
-/// main-frame authority. Terminal and same-document settlement share this
-/// identity rule without depending on each other's publication policy.
+/// Issues and resolves immutable completed-authority proofs against the exact
+/// registry and authority-state owners used by the lifecycle composition.
 @MainActor
 final class TabMainFrameCompletedAuthorityProof {
+    enum Query {
+        case lease(TabMainFrameCompletedAuthorityLease)
+        case continuation(TabMainFrameAuthorityContinuation)
+        case terminal(WKWebView, ObjectIdentifier, AnyObject)
+    }
+
     private let participants: TabMainFrameParticipantRegistry
     private let authorityState: TabMainFrameAuthorityState
-    private let authorityReducer: TabMainFrameAuthorityReducer
 
     init(
         participants: TabMainFrameParticipantRegistry,
-        authorityState: TabMainFrameAuthorityState,
-        authorityReducer: TabMainFrameAuthorityReducer
+        authorityState: TabMainFrameAuthorityState
     ) {
         self.participants = participants
         self.authorityState = authorityState
-        self.authorityReducer = authorityReducer
     }
 
-    func issue(
-        for participant: TabMainFrameParticipantRegistry.Entry
-    ) -> TabMainFrameCompletedAuthorityLease? {
-        guard case .completed(let navigationID, let kind) = participant.phase else {
-            return nil
-        }
-        return authorityState.completedLease(
-            participantID: participant.id,
-            webViewID: participant.webViewReference.identifier,
-            navigationID: navigationID,
-            completionKind: kind,
-            revision: participant.revision,
-            documentGeneration: participant.documentGeneration,
-            committedDocumentURL: participant.committedDocumentURL,
-            presentationURL: participant.targetURL,
-            isPDF: participant.isPDFResponse ?? false
+    func issue(for participant: TabMainFrameParticipantRegistry.Entry) -> TabMainFrameCompletedAuthorityLease? {
+        authorityState.completedLease(
+            in: authorityState.snapshot,
+            participant: participant
         )
     }
 
-    func remainsCurrent(
-        _ lease: TabMainFrameCompletedAuthorityLease,
+    func participant(
+        matching query: Query,
         currentIntent: TabMainFrameNavigationIntent
-    ) -> Bool {
-        guard lease.revision == currentIntent.revision,
-              lease.documentGeneration == authorityReducer.documentGeneration,
-              let participant = participants[lease.webViewID],
-              participant.id == lease.participantID,
-              participant.revision == lease.revision,
-              participant.documentGeneration == lease.documentGeneration,
-              participant.phase == .completed(
-                  navigationID: lease.navigationID,
-                  kind: lease.completionKind
-              ),
-              participant.hasCommittedDocument == lease.hasCommittedDocument,
-              participant.committedDocumentURL == lease.committedDocumentURL,
-              participant.targetURL == lease.presentationURL,
-              (participant.isPDFResponse ?? false) == lease.isPDF,
-              participant.webViewReference.resolve() != nil else {
-            return false
+    ) -> TabMainFrameParticipantRegistry.Entry? {
+        switch query {
+        case .lease(let lease):
+            guard lease.revision == currentIntent.revision,
+                  lease.documentGeneration == authorityState.snapshot.documentGeneration,
+                  let participant = participants[lease.webViewID],
+                  participant.matches(lease),
+                  authorityState.matches(lease) else { return nil }
+            return participant
+        case .continuation(let continuation):
+            let participant = participants.exactEntry(for: continuation.webView)
+            return TabMainFrameAuthorityReducer.isCurrentAuthority(
+                in: authorityState.snapshot,
+                continuation,
+                revision: currentIntent.revision,
+                participant: participant
+            ) ? participant : nil
+        case let .terminal(webView, navigationID, navigationLifetime):
+            guard let participant = participants.exactCompletedEntry(
+                for: webView,
+                navigationID: navigationID,
+                navigationLifetime: navigationLifetime,
+                revision: currentIntent.revision
+            ), case .completed(_, .document) = participant.phase,
+               issue(for: participant) != nil else { return nil }
+            return participant
         }
-        return authorityState.matches(lease)
     }
 }

@@ -278,6 +278,7 @@ final class TabSuspensionArchitectureTests: XCTestCase {
         guard case .publish = transaction.settleCommit(
             from: webView,
             navigationID: navigationID,
+            navigationLifetime: navigation,
             committedURL: tab.url
         ) else {
             return XCTFail("Expected suspension authority commit to publish")

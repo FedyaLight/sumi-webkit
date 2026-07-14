@@ -368,6 +368,7 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
             mainFrameRuntimeTransaction.settleCommit(
                 from: authorityWebView,
                 navigationID: authorityID,
+                navigationLifetime: authorityNavigation,
                 committedURL: settledURL
             ),
             from: authorityWebView,
@@ -378,6 +379,7 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
             mainFrameRuntimeTransaction.settleCommit(
                 from: hiddenWebView,
                 navigationID: hiddenID,
+                navigationLifetime: hiddenNavigation,
                 committedURL: settledURL
             )
         )
@@ -507,6 +509,7 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
             mainFrameRuntimeTransaction.settleCommit(
                 from: authorityWebView,
                 navigationID: authorityID,
+                navigationLifetime: authorityNavigation,
                 committedURL: committedURL
             ),
             from: authorityWebView,
@@ -517,6 +520,7 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
             mainFrameRuntimeTransaction.settleCommit(
                 from: siblingWebView,
                 navigationID: siblingID,
+                navigationLifetime: siblingNavigation,
                 committedURL: committedURL
             )
         )
@@ -570,6 +574,7 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
             mainFrameRuntimeTransaction.settleCommit(
                 from: firstWebView,
                 navigationID: firstID,
+                navigationLifetime: firstNavigation,
                 committedURL: firstURL
             ),
             from: firstWebView,
@@ -580,6 +585,7 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
             mainFrameRuntimeTransaction.settleCommit(
                 from: promotedWebView,
                 navigationID: promotedID,
+                navigationLifetime: promotedNavigation,
                 committedURL: promotedURL
             )
         )
@@ -612,6 +618,7 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
             mainFrameRuntimeTransaction.settleCommit(
                 from: laterWebView,
                 navigationID: laterID,
+                navigationLifetime: laterNavigation,
                 committedURL: laterURL
             )
         )
@@ -661,6 +668,7 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
             mainFrameRuntimeTransaction.settleCommit(
                 from: originalWebView,
                 navigationID: ObjectIdentifier(originalNavigation),
+                navigationLifetime: originalNavigation,
                 committedURL: originalURL
             ),
             from: originalWebView,
@@ -672,6 +680,7 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
                 mainFrameRuntimeTransaction.settleCommit(
                     from: webView,
                     navigationID: ObjectIdentifier(navigation),
+                    navigationLifetime: navigation,
                     committedURL: promotedURL
                 )
             )
@@ -912,11 +921,11 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
             matching: nil
         ))
 
-        let recoveryPlan = tab.webContentRecovery.beginRecovery(on: webView)
+        let recoveryPlan = mainFrameRuntimeTransaction.beginRecovery(on: webView)
 
         XCTAssertEqual(recoveryPlan.scope, .global(targetURL))
         XCTAssertNil(recoveryPlan.authorityContinuation)
-        XCTAssertTrue(tab.webContentRecovery.isRecoveryRequired(on: webView))
+        XCTAssertTrue(tab.webContentRecoveryMarkers.isRecoveryRequired(on: webView))
         XCTAssertFalse(mainFrameRuntimeTransaction.role(
             from: webView,
             navigationID: navigationID,
@@ -954,6 +963,7 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
             mainFrameRuntimeTransaction.settleCommit(
                 from: authorityWebView,
                 navigationID: authorityID,
+                navigationLifetime: authorityNavigation,
                 committedURL: targetURL
             ),
             from: authorityWebView,
@@ -964,6 +974,7 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
             mainFrameRuntimeTransaction.settleCommit(
                 from: crashedReplica,
                 navigationID: replicaID,
+                navigationLifetime: replicaNavigation,
                 committedURL: targetURL
             )
         )
@@ -980,7 +991,7 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
             terminalURL: nil
         )
 
-        let recoveryPlan = tab.webContentRecovery.beginRecovery(on: crashedReplica)
+        let recoveryPlan = mainFrameRuntimeTransaction.beginRecovery(on: crashedReplica)
 
         XCTAssertEqual(recoveryPlan.scope, .replica(intent))
         XCTAssertNil(recoveryPlan.authorityContinuation)
@@ -989,7 +1000,7 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
                 == true
         )
         XCTAssertNil(tab.committedDocumentRuntime.lease(for: crashedReplica))
-        XCTAssertTrue(tab.webContentRecovery.isRecoveryRequired(on: crashedReplica))
+        XCTAssertTrue(tab.webContentRecoveryMarkers.isRecoveryRequired(on: crashedReplica))
         XCTAssertTrue(tab.mainFrameLoads.isCurrent(intent))
     }
 
@@ -1001,7 +1012,7 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
         tab.makeMainFrameLifecycleResponder()
             .webContentProcessDidTerminate(on: webView)
 
-        XCTAssertFalse(tab.webContentRecovery.isRecoveryRequired(on: webView))
+        XCTAssertFalse(tab.webContentRecoveryMarkers.isRecoveryRequired(on: webView))
         XCTAssertEqual(tab.mainFrameLoads.currentIntent.targetURL, targetURL)
     }
 
@@ -1476,7 +1487,7 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
     }
 
     private func assertPublishedCommit(
-        _ decision: TabMainFrameCommitDecision,
+        _ decision: TabMainFrameTransitionDecision<TabMainFrameCommitPublication>,
         from webView: WKWebView,
         navigationID: ObjectIdentifier,
         targetURL: URL,
@@ -1500,11 +1511,11 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
     }
 
     private func assertRecordedReplica(
-        _ decision: TabMainFrameCommitDecision,
+        _ decision: TabMainFrameTransitionDecision<TabMainFrameCommitPublication>,
         file: StaticString = #filePath,
         line: UInt = #line
     ) {
-        guard case .recordedReplica = decision else {
+        guard case .participant = decision else {
             return XCTFail("Expected replica commit, got \(decision)", file: file, line: line)
         }
     }

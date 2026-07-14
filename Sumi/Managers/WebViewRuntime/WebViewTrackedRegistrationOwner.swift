@@ -106,7 +106,7 @@ final class WebViewTrackedRegistrationOwner {
         guard case .rejected = result else {
             mediaProtectionOwner.note(webView)
             if let tab = resolvedTab(tabId),
-               tab.webContentRecovery.isRecoveryRequired(on: webView) {
+               tab.webContentRecoveryMarkers.isRecoveryRequired(on: webView) {
                 _ = tab.navigationRuntime.webViewRouting
                     .recoverWebContentProcess(tab.id, webView)
             }

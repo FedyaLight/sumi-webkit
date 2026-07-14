@@ -1056,6 +1056,7 @@ final class SumiReaderPresentationTests: XCTestCase {
         guard case .publish = transaction.settleCommit(
             from: webView,
             navigationID: navigationID,
+            navigationLifetime: navigationLifetime,
             committedURL: url
         ) else {
             XCTFail("Expected the committed reader document to publish")

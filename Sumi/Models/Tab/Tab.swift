@@ -62,7 +62,9 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     private let mainFrameRuntimeTransaction: TabMainFrameRuntimeTransaction
     let mainFrameLoads: any TabMainFrameLoads
     let mainFrameSubmission: any TabMainFrameSubmissionSettlement
-    let webContentRecovery: any TabWebContentRecovery
+    /// Read by recovery routing as a fail-closed marker status. Recovery
+    /// admission itself is callback-local in the lifecycle responder.
+    let webContentRecoveryMarkers: any TabWebContentRecoveryMarkerQuery
     let webViewRebuildEpoch = TabWebViewRebuildEpoch()
     let committedDocumentRuntime: TabCommittedDocumentRuntime
     let webViewConfigurationOwner = TabWebViewConfigurationOwner()
@@ -216,7 +218,8 @@ public class Tab: NSObject, Identifiable, ObservableObject {
             tab: self,
             submission: mainFrameRuntimeTransaction,
             lifecycle: mainFrameRuntimeTransaction,
-            promotion: mainFrameRuntimeTransaction
+            promotion: mainFrameRuntimeTransaction,
+            recovery: mainFrameRuntimeTransaction
         )
     }
 
@@ -535,7 +538,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         self.mainFrameRuntimeTransaction = mainFrameRuntimeTransaction
         self.mainFrameLoads = mainFrameRuntimeTransaction.mainFrameLoads
         self.mainFrameSubmission = mainFrameRuntimeTransaction
-        self.webContentRecovery = mainFrameRuntimeTransaction
+        self.webContentRecoveryMarkers = mainFrameRuntimeTransaction
         self.committedDocumentRuntime =
             mainFrameRuntimeTransaction.committedDocumentRuntime
         self.name = name

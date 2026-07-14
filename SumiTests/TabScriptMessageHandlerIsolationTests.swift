@@ -607,6 +607,7 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
         guard case .publish = transaction.settleCommit(
             from: webView,
             navigationID: navigationID,
+            navigationLifetime: navigation,
             committedURL: url
         ) else {
             return XCTFail("Expected script-message document authority to publish")

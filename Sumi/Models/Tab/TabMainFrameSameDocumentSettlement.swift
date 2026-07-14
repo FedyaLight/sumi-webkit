@@ -7,20 +7,20 @@ import WebKit
 @MainActor
 final class TabMainFrameSameDocumentSettlement {
     private let participants: TabMainFrameParticipantRegistry
-    private let authorityReducer: TabMainFrameAuthorityReducer
-    private let effectClaims: TabMainFrameEffectLedger
+    private let participantEffects: TabMainFrameParticipantEffectLedger
     private let completedAuthority: TabMainFrameCompletedAuthorityProof
+    private let committer: TabMainFrameTransitionCommitter
 
     init(
         participants: TabMainFrameParticipantRegistry,
-        authorityReducer: TabMainFrameAuthorityReducer,
-        effectClaims: TabMainFrameEffectLedger,
-        completedAuthority: TabMainFrameCompletedAuthorityProof
+        participantEffects: TabMainFrameParticipantEffectLedger,
+        completedAuthority: TabMainFrameCompletedAuthorityProof,
+        committer: TabMainFrameTransitionCommitter
     ) {
         self.participants = participants
-        self.authorityReducer = authorityReducer
-        self.effectClaims = effectClaims
+        self.participantEffects = participantEffects
         self.completedAuthority = completedAuthority
+        self.committer = committer
     }
 
     func settle(
@@ -29,66 +29,27 @@ final class TabMainFrameSameDocumentSettlement {
         navigationLifetime: AnyObject,
         presentationURL: URL,
         currentIntent: TabMainFrameNavigationIntent
-    ) -> TabMainFrameSameDocumentDecision {
-        let webViewID = ObjectIdentifier(webView)
-        guard let participant = participants.exactActiveEntry(
-            for: webView,
-            navigationID: navigationID,
-            navigationLifetime: navigationLifetime,
-            revision: currentIntent.revision
-        ) else {
-            return .stale
-        }
-        let role = authorityReducer.claimDocumentAuthority(
-            for: participant,
-            webViewID: webViewID,
-            navigationID: navigationID
-        )
-        guard role.isParticipant else { return .stale }
-        let previousTarget = participant.targetURL
-        guard participants.updateTarget(
-            presentationURL,
-            webViewID: webViewID
-        ) else {
-            return .stale
-        }
-        guard role.isAuthority else {
-            _ = participants.finish(
-                webView: webView,
-                navigationID: navigationID,
-                navigationLifetime: navigationLifetime,
-                revision: currentIntent.revision,
-                kind: .sameDocument
-            )
-            return .completedReplica
-        }
-        if previousTarget != presentationURL {
-            authorityReducer.noteTargetMutation(
-                webViewID: webViewID,
-                revision: currentIntent.revision
-            )
-        }
-        guard let completed = participants.finish(
+    ) -> TabMainFrameTransitionDecision<TabMainFrameSameDocumentPublication> {
+        guard let receipt = committer.commitSameDocument(
             webView: webView,
             navigationID: navigationID,
             navigationLifetime: navigationLifetime,
             revision: currentIntent.revision,
-            kind: .sameDocument
-        ) else {
-            return .stale
+            presentationURL: presentationURL
+        ) else { return .stale }
+        switch receipt {
+        case .participant:
+            return .participant
+        case let .authority(completed, lease, permit):
+            return permit.map {
+                .publish(TabMainFrameSameDocumentPublication(
+                    webView: webView,
+                    presentationURL: completed.targetURL,
+                    authority: lease,
+                    permit: $0
+                ))
+            } ?? .alreadyPublished(nil)
         }
-        authorityReducer.markCompleted()
-        guard let permit = effectClaims.reserveSameDocument(
-            participantID: completed.id
-        ), let lease = completedAuthority.issue(for: completed) else {
-            return .stale
-        }
-        return .publish(TabMainFrameSameDocumentPublication(
-            webView: webView,
-            presentationURL: completed.targetURL,
-            authority: lease,
-            permit: permit
-        ))
     }
 
     func consume(
@@ -104,7 +65,7 @@ final class TabMainFrameSameDocumentSettlement {
            publication.presentationURL == participant.targetURL else {
             return false
         }
-        return effectClaims.consumeSameDocument(
+        return participantEffects.consumeSameDocument(
             publication.permit,
             participantID: publication.authority.participantID
         )
@@ -115,10 +76,9 @@ final class TabMainFrameSameDocumentSettlement {
         currentIntent: TabMainFrameNavigationIntent
     ) -> Bool {
         lease.completionKind == .sameDocument
-            && completedAuthority.remainsCurrent(
-                lease,
+            && completedAuthority.participant(
+                matching: .lease(lease),
                 currentIntent: currentIntent
-            )
+            ) != nil
     }
-
 }

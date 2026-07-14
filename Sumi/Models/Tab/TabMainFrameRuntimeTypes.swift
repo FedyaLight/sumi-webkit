@@ -35,15 +35,21 @@ enum TabMainFrameCompletionKind: Equatable {
     case sameDocument
 }
 
-enum TabMainFrameEffectDecision<Lease> {
+/// Public callback vocabulary for every exact main-frame transition. A caller
+/// either rejects stale evidence, records a non-authoritative participant,
+/// observes an already settled publication, or receives the one value it may
+/// publish. No callback family defines parallel settlement semantics.
+enum TabMainFrameTransitionDecision<Value> {
     case stale
-    case alreadyClaimed(Lease)
-    case publish(Lease)
+    case participant
+    case alreadyPublished(Value?)
+    case publish(Value)
 
-    var value: Lease? {
+    var value: Value? {
         switch self {
-        case .stale: nil
-        case .alreadyClaimed(let lease), .publish(let lease): lease
+        case .stale, .participant: nil
+        case .alreadyPublished(let value): value
+        case .publish(let value): value
         }
     }
 }
@@ -127,13 +133,6 @@ struct TabMainFrameCommitPublication {
     let permit: TabMainFrameCommitPermit
 }
 
-enum TabMainFrameCommitDecision {
-    case stale
-    case recordedReplica
-    case alreadyPublished
-    case publish(TabMainFrameCommitPublication)
-}
-
 struct TabMainFrameFinishPermit: Hashable {
     let id: UUID
 }
@@ -146,13 +145,6 @@ struct TabMainFrameFinishPublication {
     let permit: TabMainFrameFinishPermit
 }
 
-enum TabMainFrameFinishDecision {
-    case stale
-    case completedReplica
-    case alreadyPublished
-    case publish(TabMainFrameFinishPublication)
-}
-
 struct TabMainFrameSameDocumentPublication {
     let webView: WKWebView
     let presentationURL: URL
@@ -162,12 +154,6 @@ struct TabMainFrameSameDocumentPublication {
 
 struct TabMainFrameSameDocumentPermit: Hashable {
     let id: UUID
-}
-
-enum TabMainFrameSameDocumentDecision {
-    case stale
-    case completedReplica
-    case publish(TabMainFrameSameDocumentPublication)
 }
 
 struct TabMainFrameDocumentLease: Equatable {

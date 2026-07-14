@@ -41,14 +41,14 @@ protocol TabMainFrameLifecycleSettlement: AnyObject {
 
     func prepareAuthorityForCommit(
         from webView: WKWebView,
-        navigationID: ObjectIdentifier
+        navigationID: ObjectIdentifier, navigationLifetime: AnyObject
     ) -> TabMainFrameLifecycleRole
 
     func settleCommit(
         from webView: WKWebView,
-        navigationID: ObjectIdentifier,
+        navigationID: ObjectIdentifier, navigationLifetime: AnyObject,
         committedURL: URL
-    ) -> TabMainFrameCommitDecision
+    ) -> TabMainFrameTransitionDecision<TabMainFrameCommitPublication>
 
     func consumeCommitPublication(
         _ publication: TabMainFrameCommitPublication
@@ -56,18 +56,18 @@ protocol TabMainFrameLifecycleSettlement: AnyObject {
 
     func claimTransactionStartEffects(
         from webView: WKWebView,
-        navigationID: ObjectIdentifier
-    ) -> TabMainFrameEffectDecision<TabMainFrameActiveAuthorityLease>
+        navigationID: ObjectIdentifier, navigationLifetime: AnyObject
+    ) -> TabMainFrameTransitionDecision<TabMainFrameActiveAuthorityLease>
 
     func claimAuthorityTargetPreparation(
         from webView: WKWebView,
-        navigationID: ObjectIdentifier
-    ) -> TabMainFrameEffectDecision<TabMainFrameActiveAuthorityLease>
+        navigationID: ObjectIdentifier, navigationLifetime: AnyObject
+    ) -> TabMainFrameTransitionDecision<TabMainFrameActiveAuthorityLease>
 
     func claimLocalStartEffects(
         from webView: WKWebView,
-        navigationID: ObjectIdentifier
-    ) -> TabMainFrameEffectDecision<URL>
+        navigationID: ObjectIdentifier, navigationLifetime: AnyObject
+    ) -> TabMainFrameTransitionDecision<URL>
 
     func remainsCurrent(_ lease: TabMainFrameActiveAuthorityLease) -> Bool
 
@@ -76,7 +76,7 @@ protocol TabMainFrameLifecycleSettlement: AnyObject {
         navigationID: ObjectIdentifier,
         navigationLifetime: AnyObject,
         terminalURL: URL?
-    ) -> TabMainFrameFinishDecision
+    ) -> TabMainFrameTransitionDecision<TabMainFrameFinishPublication>
 
     func consumeFinishPublication(
         _ publication: TabMainFrameFinishPublication
@@ -89,7 +89,7 @@ protocol TabMainFrameLifecycleSettlement: AnyObject {
         navigationID: ObjectIdentifier,
         navigationLifetime: AnyObject,
         presentationURL: URL
-    ) -> TabMainFrameSameDocumentDecision
+    ) -> TabMainFrameTransitionDecision<TabMainFrameSameDocumentPublication>
 
     func consumeSameDocumentPublication(
         _ publication: TabMainFrameSameDocumentPublication
@@ -98,7 +98,7 @@ protocol TabMainFrameLifecycleSettlement: AnyObject {
     func noteResponse(
         isPDF: Bool,
         from webView: WKWebView,
-        navigationID: ObjectIdentifier
+        navigationID: ObjectIdentifier, navigationLifetime: AnyObject
     )
 }
 
@@ -110,7 +110,7 @@ protocol TabMainFramePromotionSettlement: AnyObject {
 
     func prepareSharedFinishPublication(
         matching continuation: TabMainFrameAuthorityContinuation
-    ) -> TabMainFrameFinishDecision
+    ) -> TabMainFrameTransitionDecision<TabMainFrameFinishPublication>
 
     func consumeFinishPublication(
         _ publication: TabMainFrameFinishPublication

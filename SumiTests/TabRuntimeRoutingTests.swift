@@ -20,15 +20,18 @@ final class TabRuntimeRoutingTests: XCTestCase {
     }
 
     func testProcessRecoveryUsesUnifiedRoutingWithoutConsumingMarker() {
+        let targetURL = URL(string: "https://example.com/recovery")!
+        let transaction = TabMainFrameRuntimeTransaction(initialURL: targetURL)
         let tab = Tab(
-            url: URL(string: "https://example.com/recovery")!,
-            loadsCachedFaviconOnInit: false
+            url: targetURL,
+            loadsCachedFaviconOnInit: false,
+            mainFrameRuntimeTransaction: transaction
         )
         let webView = WKWebView()
         tab.replaceUntrackedWebView(webView)
         let routing = RecordingTabWebViewRouting()
         tab.navigationRuntime.webViewRouting = routing.runtime
-        _ = tab.webContentRecovery.beginRecovery(on: webView)
+        _ = transaction.beginRecovery(on: webView)
 
         let outcome = tab.navigationRuntime.webViewRouting
             .recoverWebContentProcess(tab.id, webView)
@@ -40,17 +43,22 @@ final class TabRuntimeRoutingTests: XCTestCase {
             routing.processRecoveryCalls.first?.1,
             ObjectIdentifier(webView)
         )
-        XCTAssertTrue(tab.webContentRecovery.isRecoveryRequired(on: webView))
+        XCTAssertTrue(tab.webContentRecoveryMarkers.isRecoveryRequired(on: webView))
     }
 
     func testGlobalProcessRecoveryRetainsOwnerBeforeConfigurationFailure() {
         let targetURL = URL(string: "https://example.com/recovery-failure")!
-        let tab = Tab(url: targetURL, loadsCachedFaviconOnInit: false)
+        let transaction = TabMainFrameRuntimeTransaction(initialURL: targetURL)
+        let tab = Tab(
+            url: targetURL,
+            loadsCachedFaviconOnInit: false,
+            mainFrameRuntimeTransaction: transaction
+        )
         let webView = WKWebView()
         tab.replaceUntrackedWebView(webView)
         let routing = RecordingTabWebViewRouting()
         tab.navigationRuntime.webViewRouting = routing.runtime
-        _ = tab.webContentRecovery.beginRecovery(on: webView)
+        _ = transaction.beginRecovery(on: webView)
 
         let outcome = tab.navigationCommandOwner.recoverWebContentProcess(
             tab,
@@ -67,19 +75,22 @@ final class TabRuntimeRoutingTests: XCTestCase {
             ObjectIdentifier(webView)
         )
         XCTAssertTrue(routing.processRecoveryCalls.isEmpty)
-        XCTAssertTrue(tab.webContentRecovery.isRecoveryRequired(on: webView))
+        XCTAssertTrue(tab.webContentRecoveryMarkers.isRecoveryRequired(on: webView))
     }
 
     func testWebViewDepartureCancelsRetainedProcessRecoveryBeforeRetiringMarker() {
+        let targetURL = URL(string: "https://example.com/departure")!
+        let transaction = TabMainFrameRuntimeTransaction(initialURL: targetURL)
         let tab = Tab(
-            url: URL(string: "https://example.com/departure")!,
-            loadsCachedFaviconOnInit: false
+            url: targetURL,
+            loadsCachedFaviconOnInit: false,
+            mainFrameRuntimeTransaction: transaction
         )
         let webView = WKWebView()
         tab.replaceUntrackedWebView(webView)
         let routing = RecordingTabWebViewRouting()
         tab.navigationRuntime.webViewRouting = routing.runtime
-        _ = tab.webContentRecovery.beginRecovery(on: webView)
+        _ = transaction.beginRecovery(on: webView)
 
         tab.webViewDidLeaveNavigationRuntime(webView)
 
@@ -87,7 +98,46 @@ final class TabRuntimeRoutingTests: XCTestCase {
             routing.cancelledProcessRecoveryWebViewIDs,
             [ObjectIdentifier(webView)]
         )
-        XCTAssertFalse(tab.webContentRecovery.isRecoveryRequired(on: webView))
+        XCTAssertFalse(tab.webContentRecoveryMarkers.isRecoveryRequired(on: webView))
+    }
+
+    func testRecoveryAdmissionIsOwnedByExactLifecycleResponderCallback() {
+        let targetURL = URL(string: "https://example.com/admission-boundary")!
+        let transaction = TabMainFrameRuntimeTransaction(initialURL: targetURL)
+        let tab = Tab(
+            url: targetURL,
+            loadsCachedFaviconOnInit: false,
+            mainFrameRuntimeTransaction: transaction
+        )
+        let ownedWebView = WKWebView()
+        let foreignWebView = WKWebView()
+        tab.replaceUntrackedWebView(ownedWebView)
+        let routing = RecordingTabWebViewRouting()
+        tab.navigationRuntime.webViewRouting = routing.runtime
+        let responder = tab.makeMainFrameLifecycleResponder()
+        let initialIntent = tab.mainFrameLoads.currentIntent
+
+        responder.webContentProcessDidTerminate(on: foreignWebView)
+
+        XCTAssertEqual(tab.mainFrameLoads.currentIntent, initialIntent)
+        XCTAssertFalse(
+            tab.webContentRecoveryMarkers.isRecoveryRequired(on: foreignWebView)
+        )
+        XCTAssertFalse(
+            tab.webContentRecoveryMarkers.isRecoveryRequired(on: ownedWebView)
+        )
+        XCTAssertTrue(routing.processRecoveryCalls.isEmpty)
+
+        responder.webContentProcessDidTerminate(on: ownedWebView)
+
+        XCTAssertTrue(
+            tab.webContentRecoveryMarkers.isRecoveryRequired(on: ownedWebView)
+        )
+        XCTAssertEqual(routing.processRecoveryCalls.count, 1)
+        XCTAssertEqual(
+            routing.processRecoveryCalls.first?.1,
+            ObjectIdentifier(ownedWebView)
+        )
     }
 
     func testReplicaProcessTerminationKeepsSemanticRevisionAndRepairsExactReplica() {
@@ -136,7 +186,7 @@ final class TabRuntimeRoutingTests: XCTestCase {
             navigationID: ObjectIdentifier(authorityNavigation),
             isCurrent: true
         ).isAuthority)
-        XCTAssertTrue(tab.webContentRecovery.isRecoveryRequired(on: crashedReplica))
+        XCTAssertTrue(tab.webContentRecoveryMarkers.isRecoveryRequired(on: crashedReplica))
     }
 
     func testAuthorityProcessTerminationStartsGlobalRevisionAndRetainsExactRepair() {
@@ -172,7 +222,7 @@ final class TabRuntimeRoutingTests: XCTestCase {
             routing.processRecoveryCalls.first?.1,
             ObjectIdentifier(crashedWebView)
         )
-        XCTAssertTrue(tab.webContentRecovery.isRecoveryRequired(on: crashedWebView))
+        XCTAssertTrue(tab.webContentRecoveryMarkers.isRecoveryRequired(on: crashedWebView))
 
         tab.makeMainFrameLifecycleResponder()
             .webContentProcessDidTerminate(on: crashedWebView)

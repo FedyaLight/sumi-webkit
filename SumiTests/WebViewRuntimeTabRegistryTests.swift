@@ -209,7 +209,13 @@ final class WebViewRuntimeTabRegistryTests: XCTestCase {
     func testRetirementReportsBlockedRepositoryReplacementWithoutDestroyingIt() {
         let repository = WebViewSessionRepository()
         let graph = makeTestWebViewRuntimeGraph(webViewSessions: repository)
-        let tab = makeTab(webViewSessions: repository)
+        let transaction = TabMainFrameRuntimeTransaction(
+            initialURL: URL(string: "about:blank")!
+        )
+        let tab = makeTab(
+            webViewSessions: repository,
+            mainFrameRuntimeTransaction: transaction
+        )
         let windowID = UUID()
         let current = FocusableWKWebView()
         current.owningTab = tab
@@ -220,7 +226,7 @@ final class WebViewRuntimeTabRegistryTests: XCTestCase {
                 in: windowID
             ).isAccepted
         )
-        _ = tab.webContentRecovery.beginRecovery(on: current)
+        _ = transaction.beginRecovery(on: current)
         XCTAssertTrue(graph.processRecoveryService.retain(current, for: tab))
         XCTAssertTrue(graph.processRecoveryService.hasPendingRecovery(for: current))
         let replacement = FocusableWKWebView()
@@ -426,13 +432,15 @@ final class WebViewRuntimeTabRegistryTests: XCTestCase {
 
     private func makeTab(
         id: UUID = UUID(),
-        webViewSessions: WebViewSessionRepository
+        webViewSessions: WebViewSessionRepository,
+        mainFrameRuntimeTransaction: TabMainFrameRuntimeTransaction? = nil
     ) -> Tab {
         Tab(
             id: id,
             url: URL(string: "about:blank")!,
             webViewSessions: webViewSessions,
-            loadsCachedFaviconOnInit: false
+            loadsCachedFaviconOnInit: false,
+            mainFrameRuntimeTransaction: mainFrameRuntimeTransaction
         )
     }
 }

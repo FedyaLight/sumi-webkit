@@ -77,7 +77,7 @@ final class WebContentProcessRecoveryService {
         for tab: Tab
     ) -> Bool {
         guard tab.webViewSession.owns(webView),
-              tab.webContentRecovery.isRecoveryRequired(on: webView) else {
+              tab.webContentRecoveryMarkers.isRecoveryRequired(on: webView) else {
             return false
         }
         let webViewID = ObjectIdentifier(webView)
@@ -148,7 +148,7 @@ final class WebContentProcessRecoveryService {
               let tab = request.tabReference.resolve(),
               tab.id == request.tabID,
               tab.webViewSession.owns(expectedWebView),
-              tab.webContentRecovery.isRecoveryRequired(on: expectedWebView) else {
+              tab.webContentRecoveryMarkers.isRecoveryRequired(on: expectedWebView) else {
             finish(webViewID: webViewID, matching: requestID)
             return .failed
         }
@@ -172,7 +172,7 @@ final class WebContentProcessRecoveryService {
             return outcome
         }
         guard tab.webViewSession.owns(expectedWebView),
-              tab.webContentRecovery.isRecoveryRequired(on: expectedWebView) else {
+              tab.webContentRecoveryMarkers.isRecoveryRequired(on: expectedWebView) else {
             finish(webViewID: webViewID, matching: requestID)
             return outcome
         }

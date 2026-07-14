@@ -114,6 +114,43 @@ final class TabMainFrameFinishSettlementTests: XCTestCase {
         XCTAssertEqual(abandoned.permit, reissued.permit)
     }
 
+    func testReissuedAbandonedFinishBecomesStaleAfterSuccessorIntent() throws {
+        let fixture = try makeCommittedAuthorityFixture()
+        guard case .publish(let abandoned) = fixture.transaction.settleFinish(
+            from: fixture.webView,
+            navigationID: fixture.navigationID,
+            navigationLifetime: fixture.navigationLifetime,
+            terminalURL: fixture.targetURL
+        ) else {
+            return XCTFail("Expected exact finish publication")
+        }
+        guard case .publish(let reissued) = fixture.transaction.settleFinish(
+            from: fixture.webView,
+            navigationID: fixture.navigationID,
+            navigationLifetime: fixture.navigationLifetime,
+            terminalURL: fixture.targetURL
+        ) else {
+            return XCTFail("Expected exact abandoned publication reissue")
+        }
+        XCTAssertEqual(abandoned.permit, reissued.permit)
+
+        let successorURL = try XCTUnwrap(
+            URL(string: "https://example.com/successor")
+        )
+        _ = fixture.tab.beginMainFrameNavigationIntent(to: successorURL)
+
+        XCTAssertFalse(fixture.transaction.consumeFinishPublication(abandoned))
+        XCTAssertFalse(fixture.transaction.consumeFinishPublication(reissued))
+        guard case .stale = fixture.transaction.settleFinish(
+            from: fixture.webView,
+            navigationID: fixture.navigationID,
+            navigationLifetime: fixture.navigationLifetime,
+            terminalURL: fixture.targetURL
+        ) else {
+            return XCTFail("Successor intent must retire the exact old finish identity")
+        }
+    }
+
     func testSameDocumentPublicationIsOneShotAndCannotPublishFinishEffects() throws {
         let fixture = try makeCommittedAuthorityFixture()
         let presentationURL = try XCTUnwrap(
@@ -155,7 +192,7 @@ final class TabMainFrameFinishSettlementTests: XCTestCase {
         let presentationURL = try XCTUnwrap(
             URL(string: "https://example.com/document#replica")
         )
-        guard case .completedReplica = fixture.transaction.settleSameDocument(
+        guard case .participant = fixture.transaction.settleSameDocument(
             from: fixture.replicaWebView,
             navigationID: fixture.replicaNavigationID,
             navigationLifetime: fixture.replicaNavigationLifetime,
@@ -208,7 +245,7 @@ final class TabMainFrameFinishSettlementTests: XCTestCase {
     func testPromotedExactAuthorityRecoversAbandonedFinishReservationOnce() throws {
         let fixture = try makeCommittedAuthorityWithReplicaFixture()
 
-        guard case .completedReplica = fixture.transaction.settleFinish(
+        guard case .participant = fixture.transaction.settleFinish(
             from: fixture.replicaWebView,
             navigationID: fixture.replicaNavigationID,
             navigationLifetime: fixture.replicaNavigationLifetime,
@@ -329,7 +366,7 @@ final class TabMainFrameFinishSettlementTests: XCTestCase {
     func testReplicaFinishCompletesLifecycleWithoutSharedEffects() throws {
         let fixture = try makeCommittedAuthorityWithReplicaFixture()
 
-        guard case .completedReplica = fixture.transaction.settleFinish(
+        guard case .participant = fixture.transaction.settleFinish(
             from: fixture.replicaWebView,
             navigationID: fixture.replicaNavigationID,
             navigationLifetime: fixture.replicaNavigationLifetime,
@@ -410,6 +447,7 @@ final class TabMainFrameFinishSettlementTests: XCTestCase {
         let commitDecision = transaction.settleCommit(
             from: webView,
             navigationID: navigationID,
+            navigationLifetime: navigation,
             committedURL: targetURL
         )
         let commitPublication: TabMainFrameCommitPublication? = {
@@ -480,6 +518,7 @@ final class TabMainFrameFinishSettlementTests: XCTestCase {
         let commitDecision = transaction.settleCommit(
             from: authorityWebView,
             navigationID: ObjectIdentifier(authorityNavigation),
+            navigationLifetime: authorityNavigation,
             committedURL: targetURL
         )
         let commitPublication: TabMainFrameCommitPublication? = {
@@ -495,9 +534,10 @@ final class TabMainFrameFinishSettlementTests: XCTestCase {
         let replicaDecision = transaction.settleCommit(
             from: replicaWebView,
             navigationID: ObjectIdentifier(replicaNavigation),
+            navigationLifetime: replicaNavigation,
             committedURL: targetURL
         )
-        guard case .recordedReplica = replicaDecision else {
+        guard case .participant = replicaDecision else {
             XCTFail("Expected committed replica")
             return try XCTUnwrap(nil as CommittedAuthorityWithReplicaFixture?)
         }

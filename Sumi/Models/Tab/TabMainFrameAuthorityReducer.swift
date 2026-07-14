@@ -2,14 +2,14 @@ import Foundation
 import SumiWebRuntime
 import WebKit
 
-/// Reduces exact participant facts into logical authority and document-
-/// generation transitions. Exact authority phase/epoch storage lives in
-/// `TabMainFrameAuthorityState`; participant and effect ledgers remain separate.
-@MainActor
-final class TabMainFrameAuthorityReducer {
-    private typealias SharedCommitIdentity =
-        TabMainFrameEffectLedger.SharedCommitIdentity
-    typealias AuthorityState = TabMainFrameAuthorityState.Value
+/// Pure reducer for logical main-frame authority. It never stores state and
+/// never reaches into participant or effect ledgers: callers provide one
+/// immutable snapshot and atomically apply the returned next-state plan.
+enum TabMainFrameAuthorityReducer {
+    typealias Snapshot = TabMainFrameAuthoritySnapshot
+    typealias Authority = Snapshot.Value
+    typealias SharedCommitIdentity =
+        TabMainFrameAuthorityEffectLedger.SharedCommitIdentity
 
     struct ContinuationReduction {
         var participant: TabMainFrameParticipantRegistry.Entry
@@ -22,95 +22,117 @@ final class TabMainFrameAuthorityReducer {
         let participant: TabMainFrameParticipantRegistry.Entry
     }
 
-    private struct RedirectGenerationKey: Hashable {
-        let sourceGeneration: UInt64
-        let target: WebRuntimeNavigationIdentity
+    struct PromotionPreparation {
+        struct Migration {
+            let previousGeneration: UInt64
+            let identity: SharedCommitIdentity
+        }
+
+        let migration: Migration?
+        let targetURLToAdopt: URL?
     }
 
-    private(set) var documentGeneration: UInt64 = 0
-    private let authorityState: TabMainFrameAuthorityState
-    private var redirectGenerationByKey: [RedirectGenerationKey: UInt64] = [:]
-
-    init(authorityState: TabMainFrameAuthorityState) {
-        self.authorityState = authorityState
+    struct TerminalSuccessReduction {
+        let role: TabMainFrameLifecycleRole
+        let presentationURLToAdopt: URL?
     }
 
-    var authority: AuthorityState? { authorityState.current }
-
-    func resetForNewIntent() {
-        documentGeneration = 0
-        authorityState.replace(with: nil)
-        redirectGenerationByKey.removeAll()
+    static func reset(
+        _ snapshot: Snapshot
+    ) -> TabMainFrameAuthorityPlan<Void> {
+        var next = replacingAuthority(in: snapshot, with: nil)
+        next.documentGeneration = 0
+        next.redirectGenerationByKey.removeAll()
+        return TabMainFrameAuthorityPlan(nextSnapshot: next, output: ())
     }
 
-    func installAuthority(
+    static func installAuthority(
+        in snapshot: Snapshot,
         revision: UInt64,
         webViewID: ObjectIdentifier,
         documentGeneration: UInt64,
         navigationID: ObjectIdentifier?,
         hasCommittedDocument: Bool = false,
         isCompleted: Bool = false
-    ) {
-        authorityState.replace(with: AuthorityState(
+    ) -> TabMainFrameAuthorityPlan<Void> {
+        let authority = Authority(
             revision: revision,
             webViewID: webViewID,
             documentGeneration: documentGeneration,
             navigationID: navigationID,
             hasCommittedDocument: hasCommittedDocument,
             isCompleted: isCompleted
-        ))
+        )
+        return TabMainFrameAuthorityPlan(
+            nextSnapshot: replacingAuthority(in: snapshot, with: authority),
+            output: ()
+        )
     }
 
-    func clearAuthority() {
-        authorityState.replace(with: nil)
+    static func clearAuthority(
+        in snapshot: Snapshot
+    ) -> TabMainFrameAuthorityPlan<Void> {
+        TabMainFrameAuthorityPlan(
+            nextSnapshot: replacingAuthority(in: snapshot, with: nil),
+            output: ()
+        )
     }
 
-    func removeAuthorityIfMatching(
-        webViewIDs: Set<ObjectIdentifier>,
+    static func removeAuthority(
+        in snapshot: Snapshot,
+        matching webViewIDs: Set<ObjectIdentifier>,
         revision: UInt64
-    ) -> Bool {
-        guard authority?.revision == revision,
-              authority.map({ webViewIDs.contains($0.webViewID) }) == true else {
-            return false
+    ) -> TabMainFrameAuthorityPlan<Bool> {
+        guard snapshot.authority?.revision == revision,
+              snapshot.authority.map({ webViewIDs.contains($0.webViewID) }) == true else {
+            return TabMainFrameAuthorityPlan(
+                nextSnapshot: snapshot,
+                output: false
+            )
         }
-        authorityState.replace(with: nil)
-        return true
+        return TabMainFrameAuthorityPlan(
+            nextSnapshot: replacingAuthority(in: snapshot, with: nil),
+            output: true
+        )
     }
 
-    func hasLiveAuthority(
+    static func hasLiveAuthority(
+        in snapshot: Snapshot,
         revision: UInt64,
-        participants: TabMainFrameParticipantRegistry
+        participant: TabMainFrameParticipantRegistry.Entry?
     ) -> Bool {
-        guard let authority,
+        guard let authority = snapshot.authority,
               authority.revision == revision,
-              authority.documentGeneration == documentGeneration,
-              let participant = participants.entry(for: authority.webViewID),
+              authority.documentGeneration == snapshot.documentGeneration,
+              let participant,
               participant.revision == revision,
-              participant.documentGeneration == documentGeneration,
+              participant.documentGeneration == snapshot.documentGeneration,
               participant.webViewReference.resolve() != nil else {
             return false
         }
         return true
     }
 
-    func isExactAuthority(
+    static func isExactAuthority(
+        in snapshot: Snapshot,
         webViewID: ObjectIdentifier,
         navigationID: ObjectIdentifier,
         revision: UInt64
     ) -> Bool {
-        guard let authority else { return false }
+        guard let authority = snapshot.authority else { return false }
         return authority.revision == revision
-            && authority.documentGeneration == documentGeneration
+            && authority.documentGeneration == snapshot.documentGeneration
             && authority.webViewID == webViewID
             && authority.navigationID == navigationID
     }
 
-    func ownsParticipant(
+    static func ownsParticipant(
+        in snapshot: Snapshot,
         _ participant: TabMainFrameParticipantRegistry.Entry,
         webViewID: ObjectIdentifier,
         previousNavigationID: ObjectIdentifier?
     ) -> Bool {
-        guard let authority,
+        guard let authority = snapshot.authority,
               authority.revision == participant.revision,
               authority.webViewID == webViewID else {
             return false
@@ -121,364 +143,371 @@ final class TabMainFrameAuthorityReducer {
         return authority.navigationID == nil && authority.isCompleted
     }
 
-    func markCommitted() {
-        authorityState.markCommitted()
-    }
-
-    func markCompleted() {
-        authorityState.markCompleted()
-    }
-
-    func noteTargetMutation(
-        webViewID: ObjectIdentifier,
-        revision: UInt64
-    ) {
-        authorityState.noteTargetMutation(
-            webViewID: webViewID,
-            revision: revision
+    static func markCommitted(
+        in snapshot: Snapshot
+    ) -> TabMainFrameAuthorityPlan<Void> {
+        guard var authority = snapshot.authority,
+              authority.hasCommittedDocument == false else {
+            return TabMainFrameAuthorityPlan(nextSnapshot: snapshot, output: ())
+        }
+        authority.hasCommittedDocument = true
+        return TabMainFrameAuthorityPlan(
+            nextSnapshot: replacingAuthority(in: snapshot, with: authority),
+            output: ()
         )
     }
 
-    func lifecycleRole(
+    static func markCompleted(
+        in snapshot: Snapshot
+    ) -> TabMainFrameAuthorityPlan<Void> {
+        guard var authority = snapshot.authority else {
+            return TabMainFrameAuthorityPlan(nextSnapshot: snapshot, output: ())
+        }
+        authority.navigationID = nil
+        authority.isCompleted = true
+        return TabMainFrameAuthorityPlan(
+            nextSnapshot: replacingAuthority(in: snapshot, with: authority),
+            output: ()
+        )
+    }
+
+    static func noteTargetMutation(
+        in snapshot: Snapshot,
+        webViewID: ObjectIdentifier,
+        revision: UInt64
+    ) -> TabMainFrameAuthorityPlan<Void> {
+        guard snapshot.authority?.webViewID == webViewID,
+              snapshot.authority?.revision == revision else {
+            return TabMainFrameAuthorityPlan(nextSnapshot: snapshot, output: ())
+        }
+        var next = snapshot
+        next.authorityEpoch &+= 1
+        return TabMainFrameAuthorityPlan(nextSnapshot: next, output: ())
+    }
+
+    static func lifecycleRole(
+        in snapshot: Snapshot,
         for participant: TabMainFrameParticipantRegistry.Entry,
         webViewID: ObjectIdentifier,
         navigationID: ObjectIdentifier
     ) -> TabMainFrameLifecycleRole {
         isExactAuthority(
+            in: snapshot,
             webViewID: webViewID,
             navigationID: navigationID,
             revision: participant.revision
         ) ? .authority : .participant
     }
 
-    func claimDocumentAuthority(
+    static func claimDocumentAuthority(
+        in snapshot: Snapshot,
         for participant: TabMainFrameParticipantRegistry.Entry,
         webViewID: ObjectIdentifier,
         navigationID: ObjectIdentifier
-    ) -> TabMainFrameLifecycleRole {
-        guard participant.documentGeneration == documentGeneration else {
-            return .participant
+    ) -> TabMainFrameAuthorityPlan<TabMainFrameLifecycleRole> {
+        guard participant.documentGeneration == snapshot.documentGeneration else {
+            return TabMainFrameAuthorityPlan(
+                nextSnapshot: snapshot,
+                output: .participant
+            )
         }
         if isExactAuthority(
+            in: snapshot,
             webViewID: webViewID,
             navigationID: navigationID,
             revision: participant.revision
         ) {
-            if participant.hasCommittedDocument {
-                markCommitted()
-            }
-            return .authority
+            let committed = participant.hasCommittedDocument
+                ? markCommitted(in: snapshot).nextSnapshot
+                : snapshot
+            return TabMainFrameAuthorityPlan(
+                nextSnapshot: committed,
+                output: .authority
+            )
         }
-        if let authority,
+        if let authority = snapshot.authority,
            authority.revision == participant.revision,
            authority.hasCommittedDocument {
-            return .participant
+            return TabMainFrameAuthorityPlan(
+                nextSnapshot: snapshot,
+                output: .participant
+            )
         }
-        installAuthority(
+        let installed = installAuthority(
+            in: snapshot,
             revision: participant.revision,
             webViewID: webViewID,
             documentGeneration: participant.documentGeneration,
             navigationID: navigationID,
             hasCommittedDocument: participant.hasCommittedDocument
         )
-        return .authority
+        return TabMainFrameAuthorityPlan(
+            nextSnapshot: installed.nextSnapshot,
+            output: .authority
+        )
     }
 
-    func recordCommit(
-        from webView: WKWebView,
+    static func reduceCommit(
+        in snapshot: Snapshot,
+        previousParticipant: TabMainFrameParticipantRegistry.Entry?,
+        participant: TabMainFrameParticipantRegistry.Entry,
+        webViewID: ObjectIdentifier,
         navigationID: ObjectIdentifier,
-        committedURL: URL,
-        isPDF: Bool,
-        currentIntent: TabMainFrameNavigationIntent,
-        participants: TabMainFrameParticipantRegistry
-    ) -> (role: TabMainFrameLifecycleRole, evidence: TabCommittedDocumentEvidence?)? {
-        let webViewID = ObjectIdentifier(webView)
-        let previousParticipant = participants.exactEntry(for: webView)
-        guard let participant = participants.recordCommit(
-            webView: webView,
-            navigationID: navigationID,
-            revision: currentIntent.revision,
-            committedURL: committedURL,
-            isPDF: isPDF
-        ) else {
-            return nil
-        }
-        let evidence = participant.committedEvidence(webView: webView)
-        let role = claimDocumentAuthority(
+        revision: UInt64
+    ) -> TabMainFrameAuthorityPlan<TabMainFrameLifecycleRole> {
+        let claim = claimDocumentAuthority(
+            in: snapshot,
             for: participant,
             webViewID: webViewID,
             navigationID: navigationID
         )
-        let changedCommittedDocument =
-            previousParticipant?.committedDocumentURL != participant.committedDocumentURL
+        let changedCommittedDocument = previousParticipant?.committedDocumentURL != participant.committedDocumentURL
             || previousParticipant?.targetURL != participant.targetURL
             || previousParticipant?.isPDFResponse != participant.isPDFResponse
-        if role.isAuthority,
-           previousParticipant?.hasCommittedDocument == true,
-           changedCommittedDocument {
-            authorityState.noteTargetMutation(
+        let next = claim.output.isAuthority
+            && previousParticipant?.hasCommittedDocument == true
+            && changedCommittedDocument
+            ? noteTargetMutation(
+                in: claim.nextSnapshot,
                 webViewID: webViewID,
-                revision: currentIntent.revision
-            )
-        }
-        return (role, evidence)
+                revision: revision
+            ).nextSnapshot
+            : claim.nextSnapshot
+        return TabMainFrameAuthorityPlan(
+            nextSnapshot: next,
+            output: claim.output
+        )
     }
 
-    struct TerminalSuccessSettlement {
-        let role: TabMainFrameLifecycleRole
-        let evidence: TabCommittedDocumentEvidence?
-        let presentationURLToAdopt: URL?
-    }
-
-    func settleTerminalSuccess(
-        from webView: WKWebView,
+    static func reduceTerminalSuccess(
+        in snapshot: Snapshot,
+        participant: TabMainFrameParticipantRegistry.Entry,
+        webViewID: ObjectIdentifier,
         navigationID: ObjectIdentifier,
-        navigationLifetime: AnyObject,
         terminalURL: URL?,
-        currentIntent: TabMainFrameNavigationIntent,
-        participants: TabMainFrameParticipantRegistry,
-        effectClaims: TabMainFrameEffectLedger
-    ) -> TerminalSuccessSettlement {
-        let webViewID = ObjectIdentifier(webView)
-        guard let participant = participants.markTerminalSuccess(
-            webView: webView,
-            navigationID: navigationID,
-            navigationLifetime: navigationLifetime,
-            revision: currentIntent.revision,
-            terminalURL: terminalURL
-        ) else {
-            return TerminalSuccessSettlement(
-                role: .stale,
-                evidence: nil,
-                presentationURLToAdopt: nil
+        sharedFinishPublished: Bool
+    ) -> TabMainFrameAuthorityPlan<TerminalSuccessReduction> {
+        let terminalPlan: (Snapshot, TabMainFrameLifecycleRole) -> TabMainFrameAuthorityPlan<TerminalSuccessReduction> = {
+            TabMainFrameAuthorityPlan(
+                nextSnapshot: $0,
+                output: TerminalSuccessReduction(role: $1, presentationURLToAdopt: nil)
             )
         }
-        let evidence = participant.committedEvidence(webView: webView)
-
-        guard participant.documentGeneration == documentGeneration else {
-            return TerminalSuccessSettlement(
-                role: .participant,
-                evidence: evidence,
-                presentationURLToAdopt: nil
-            )
+        guard participant.documentGeneration == snapshot.documentGeneration else {
+            return terminalPlan(snapshot, .participant)
         }
-        if effectClaims.hasPublishedSharedFinish {
-            return TerminalSuccessSettlement(
-                role: lifecycleRole(
-                    for: participant,
-                    webViewID: webViewID,
-                    navigationID: navigationID
-                ),
-                evidence: evidence,
-                presentationURLToAdopt: nil
+        if sharedFinishPublished {
+            let role = lifecycleRole(
+                in: snapshot,
+                for: participant,
+                webViewID: webViewID,
+                navigationID: navigationID
             )
+            let next = role.isAuthority
+                ? markCompleted(in: snapshot).nextSnapshot
+                : snapshot
+            return terminalPlan(next, role)
         }
-        if hasOtherCommittedAuthority(than: webViewID, for: participant) {
-            return TerminalSuccessSettlement(
-                role: .participant,
-                evidence: evidence,
-                presentationURLToAdopt: nil
-            )
+        if hasOtherCommittedAuthority(
+            in: snapshot,
+            than: webViewID,
+            for: participant
+        ) {
+            return terminalPlan(snapshot, .participant)
         }
+        var next: Snapshot
         if isExactAuthority(
+            in: snapshot,
             webViewID: webViewID,
             navigationID: navigationID,
             revision: participant.revision
         ) {
-            markCommitted()
+            next = markCommitted(in: snapshot).nextSnapshot
         } else {
-            installAuthority(
+            next = installAuthority(
+                in: snapshot,
                 revision: participant.revision,
                 webViewID: webViewID,
                 documentGeneration: participant.documentGeneration,
                 navigationID: navigationID,
                 hasCommittedDocument: true
-            )
+            ).nextSnapshot
         }
-        return TerminalSuccessSettlement(
-            role: .authority,
-            evidence: evidence,
-            presentationURLToAdopt: terminalURL
+        next = markCompleted(in: next).nextSnapshot
+        return TabMainFrameAuthorityPlan(
+            nextSnapshot: next,
+            output: TerminalSuccessReduction(
+                role: .authority,
+                presentationURLToAdopt: terminalURL
+            )
         )
     }
 
-    func hasOtherCommittedAuthority(
+    static func reduceSameDocumentSuccess(
+        in snapshot: Snapshot,
+        previousParticipant: TabMainFrameParticipantRegistry.Entry,
+        participant: TabMainFrameParticipantRegistry.Entry,
+        webViewID: ObjectIdentifier,
+        navigationID: ObjectIdentifier
+    ) -> TabMainFrameAuthorityPlan<TabMainFrameLifecycleRole> {
+        let claim = claimDocumentAuthority(
+            in: snapshot,
+            for: participant,
+            webViewID: webViewID,
+            navigationID: navigationID
+        )
+        guard claim.output.isAuthority else {
+            return claim
+        }
+        let targeted = previousParticipant.targetURL != participant.targetURL
+            ? noteTargetMutation(
+                in: claim.nextSnapshot,
+                webViewID: webViewID,
+                revision: participant.revision
+            ).nextSnapshot
+            : claim.nextSnapshot
+        return TabMainFrameAuthorityPlan(
+            nextSnapshot: markCompleted(in: targeted).nextSnapshot,
+            output: .authority
+        )
+    }
+
+    static func hasOtherCommittedAuthority(
+        in snapshot: Snapshot,
         than webViewID: ObjectIdentifier,
         for participant: TabMainFrameParticipantRegistry.Entry
     ) -> Bool {
-        guard let authority else { return false }
+        guard let authority = snapshot.authority else { return false }
         return authority.revision == participant.revision
             && authority.documentGeneration == participant.documentGeneration
             && authority.webViewID != webViewID
             && authority.hasCommittedDocument
     }
 
-    func isCommittedDocumentAuthority(
+    static func isCommittedDocumentAuthority(
+        in snapshot: Snapshot,
         _ participant: TabMainFrameParticipantRegistry.Entry,
         webViewID: ObjectIdentifier
     ) -> Bool {
-        guard let authority else { return false }
+        guard let authority = snapshot.authority else { return false }
         return authority.revision == participant.revision
             && authority.documentGeneration == participant.documentGeneration
             && authority.webViewID == webViewID
             && authority.hasCommittedDocument
     }
 
-    func beginNewDocumentGeneration() {
-        documentGeneration &+= 1
-    }
-
-    func reduceContinuation(
+    static func reduceContinuation(
+        in snapshot: Snapshot,
         participant: TabMainFrameParticipantRegistry.Entry,
         webViewID: ObjectIdentifier,
+        navigationID: ObjectIdentifier,
         targetURL: URL,
         kind: TabMainFrameContinuationKind,
         ownsAuthority: Bool
-    ) -> ContinuationReduction {
+    ) -> TabMainFrameAuthorityPlan<ContinuationReduction> {
+        var next = snapshot
         var participant = participant
         var becomesAuthority = kind != .clientRedirect && ownsAuthority
         var beganNewGeneration = false
 
         if kind == .clientRedirect {
-            let key = RedirectGenerationKey(
+            let key = Snapshot.RedirectGenerationKey(
                 sourceGeneration: participant.documentGeneration,
                 target: WebRuntimeNavigationIdentity(targetURL)
             )
-            if let generation = redirectGenerationByKey[key] {
+            if let generation = next.redirectGenerationByKey[key] {
                 participant.documentGeneration = generation
-                becomesAuthority = generation == documentGeneration
-                    && authority == nil
+                becomesAuthority = generation == next.documentGeneration
+                    && next.authority == nil
             } else if ownsAuthority,
-                      participant.documentGeneration == documentGeneration {
-                beginNewDocumentGeneration()
-                redirectGenerationByKey[key] = documentGeneration
-                participant.documentGeneration = documentGeneration
+                      participant.documentGeneration == next.documentGeneration {
+                next.documentGeneration &+= 1
+                next.redirectGenerationByKey[key] = next.documentGeneration
+                participant.documentGeneration = next.documentGeneration
                 becomesAuthority = true
                 beganNewGeneration = true
             }
         }
-        return ContinuationReduction(
-            participant: participant,
-            becomesAuthority: becomesAuthority,
-            beganNewDocumentGeneration: beganNewGeneration
+        participant.targetURL = targetURL
+        participant.phase = .active(navigationID: navigationID)
+        if kind == .clientRedirect {
+            participant.hasCommittedDocument = false
+            participant.committedDocumentURL = nil
+            participant.isPDFResponse = nil
+        }
+        if becomesAuthority,
+           participant.documentGeneration == next.documentGeneration {
+            next = installAuthority(
+                in: next,
+                revision: participant.revision,
+                webViewID: webViewID,
+                documentGeneration: participant.documentGeneration,
+                navigationID: navigationID,
+                hasCommittedDocument: participant.hasCommittedDocument
+            ).nextSnapshot
+        }
+        return TabMainFrameAuthorityPlan(
+            nextSnapshot: next,
+            output: ContinuationReduction(
+                participant: participant,
+                becomesAuthority: becomesAuthority,
+                beganNewDocumentGeneration: beganNewGeneration
+            )
         )
     }
 
-    func transferToContinuation(
-        webViewID: ObjectIdentifier,
-        navigationID: ObjectIdentifier,
-        navigationLifetime: AnyObject,
-        targetURL: URL,
-        kind: TabMainFrameContinuationKind,
-        currentIntent: TabMainFrameNavigationIntent,
-        participants: TabMainFrameParticipantRegistry,
-        effectClaims: TabMainFrameEffectLedger
-    ) -> (role: TabMainFrameLifecycleRole, targetURLToAdopt: URL?) {
-        guard let existingParticipant = participants.entry(for: webViewID),
-              existingParticipant.revision == currentIntent.revision else {
-            return (.stale, nil)
+    static func preparePromotion(
+        in snapshot: Snapshot,
+        of participant: TabMainFrameParticipantRegistry.Entry,
+        sharedCommitIdentity: SharedCommitIdentity?
+    ) -> TabMainFrameAuthorityPlan<PromotionPreparation> {
+        guard participant.hasCommittedDocument,
+              let committedDocumentURL = participant.committedDocumentURL,
+              let sharedCommitIdentity,
+              sharedCommitIdentity != SharedCommitIdentity(
+                  target: WebRuntimeNavigationIdentity(committedDocumentURL),
+                  isPDF: participant.isPDFResponse ?? false
+              ) else {
+            return TabMainFrameAuthorityPlan(
+                nextSnapshot: snapshot,
+                output: PromotionPreparation(
+                    migration: nil,
+                    targetURLToAdopt: nil
+                )
+            )
         }
-        let previousNavigationID: ObjectIdentifier?
-        switch existingParticipant.phase {
-        case .active(let navigationID):
-            previousNavigationID = navigationID
-        case .completed:
-            previousNavigationID = nil
-        }
-        let ownsAuthority = ownsParticipant(
-            existingParticipant,
-            webViewID: webViewID,
-            previousNavigationID: previousNavigationID
+        let identity = SharedCommitIdentity(
+            target: WebRuntimeNavigationIdentity(committedDocumentURL),
+            isPDF: participant.isPDFResponse ?? false
         )
-        guard let preparedParticipant = participants.prepareContinuation(
-            webViewID: webViewID,
-            navigationID: navigationID,
-            navigationLifetime: navigationLifetime,
-            revision: currentIntent.revision
-        ) else {
-            return (.stale, nil)
-        }
-
-        let reduction = reduceContinuation(
-            participant: preparedParticipant,
-            webViewID: webViewID,
-            targetURL: targetURL,
-            kind: kind,
-            ownsAuthority: ownsAuthority
+        var next = snapshot
+        next.documentGeneration &+= 1
+        return TabMainFrameAuthorityPlan(
+            nextSnapshot: next,
+            output: PromotionPreparation(
+                migration: PromotionPreparation.Migration(
+                    previousGeneration: participant.documentGeneration,
+                    identity: identity
+                ),
+                targetURLToAdopt: participant.targetURL
+            )
         )
-        if reduction.beganNewDocumentGeneration {
-            effectClaims.resetForDocumentGeneration()
-        }
-        effectClaims.resetLocalStart(participantID: reduction.participant.id)
-        let participant = participants.storeContinuation(
-            reduction.participant,
-            webViewID: webViewID,
-            navigationID: navigationID,
-            targetURL: targetURL,
-            kind: kind
-        )
-
-        guard participant.documentGeneration == documentGeneration,
-              reduction.becomesAuthority else {
-            return (.participant, nil)
-        }
-        installAuthority(
-            revision: participant.revision,
-            webViewID: webViewID,
-            documentGeneration: documentGeneration,
-            navigationID: navigationID,
-            hasCommittedDocument: participant.hasCommittedDocument
-        )
-        return (.authority, targetURL)
     }
 
-    func promoteAuthorityCandidate(
-        participants: TabMainFrameParticipantRegistry,
-        effectClaims: TabMainFrameEffectLedger,
-        preferredWebViewID: ObjectIdentifier?,
-        currentIntent: TabMainFrameNavigationIntent
-    ) -> TabMainFrameAuthorityPromotion? {
-        guard let candidate = selectPromotionCandidate(
-            from: participants.entries,
-            revision: currentIntent.revision,
-            preferredWebViewID: preferredWebViewID
-        ), let webView = candidate.participant.webViewReference.resolve() else {
-            clearAuthority()
-            return nil
-        }
-
-        var promotedParticipant = candidate.participant
-        var targetURLToAdopt: URL?
-        var migratedEvidence: [TabCommittedDocumentEvidence] = []
-        if promotedParticipant.hasCommittedDocument,
-           let committedDocumentURL = promotedParticipant.committedDocumentURL,
-           let sharedCommitIdentity = effectClaims.sharedCommitIdentity,
-           sharedCommitIdentity != SharedCommitIdentity(
-               target: WebRuntimeNavigationIdentity(committedDocumentURL),
-               isPDF: promotedParticipant.isPDFResponse ?? false
-           ) {
-            let previousGeneration = promotedParticipant.documentGeneration
-            let promotedIdentity = SharedCommitIdentity(
-                target: WebRuntimeNavigationIdentity(committedDocumentURL),
-                isPDF: promotedParticipant.isPDFResponse ?? false
-            )
-            beginNewDocumentGeneration()
-            effectClaims.resetForDocumentGeneration()
-            migratedEvidence = participants.migrateCommittedReplicas(
-                revision: currentIntent.revision,
-                from: previousGeneration,
-                to: documentGeneration,
-                matching: promotedIdentity
-            )
-            promotedParticipant = participants.entry(for: candidate.webViewID)
-                ?? promotedParticipant
-            targetURLToAdopt = promotedParticipant.targetURL
-        }
-
+    static func installPromotion(
+        in snapshot: Snapshot,
+        candidate: CandidateSelection,
+        participant: TabMainFrameParticipantRegistry.Entry,
+        webView: WKWebView,
+        targetURLToAdopt: URL?,
+        migratedEvidence: [TabCommittedDocumentEvidence],
+        hasPublishedSharedCommit: Bool,
+        hasPublishedSharedFinish: Bool
+    ) -> TabMainFrameAuthorityPlan<TabMainFrameTransitionOutput.AuthorityPromotion> {
         let navigationID: ObjectIdentifier?
         let isCompleted: Bool
         let completionKind: TabMainFrameCompletionKind?
-        switch promotedParticipant.phase {
+        switch participant.phase {
         case .active(let candidateNavigationID):
             navigationID = candidateNavigationID
             isCompleted = false
@@ -488,91 +517,53 @@ final class TabMainFrameAuthorityReducer {
             isCompleted = true
             completionKind = kind
         }
-        installAuthority(
-            revision: currentIntent.revision,
+        let installed = installAuthority(
+            in: snapshot,
+            revision: participant.revision,
             webViewID: candidate.webViewID,
-            documentGeneration: promotedParticipant.documentGeneration,
+            documentGeneration: participant.documentGeneration,
             navigationID: navigationID,
-            hasCommittedDocument: promotedParticipant.hasCommittedDocument,
+            hasCommittedDocument: participant.hasCommittedDocument,
             isCompleted: isCompleted
         )
         let continuation = TabMainFrameAuthorityContinuation(
             webView: webView,
             navigationID: navigationID,
-            targetURL: promotedParticipant.targetURL,
-            isPDF: promotedParticipant.isPDFResponse ?? false,
+            targetURL: participant.targetURL,
+            isPDF: participant.isPDFResponse ?? false,
             isCompleted: isCompleted,
-            needsSharedCommitEffects: promotedParticipant.hasCommittedDocument
-                && effectClaims.hasPublishedSharedCommit == false,
+            needsSharedCommitEffects: participant.hasCommittedDocument
+                && hasPublishedSharedCommit == false,
             needsSharedFinishEffects: isCompleted
                 && completionKind == .document
-                && effectClaims.hasPublishedSharedFinish == false,
-            revision: promotedParticipant.revision,
-            documentGeneration: promotedParticipant.documentGeneration,
-            participantID: promotedParticipant.id,
+                && hasPublishedSharedFinish == false,
+            revision: participant.revision,
+            documentGeneration: participant.documentGeneration,
+            participantID: participant.id,
             webViewID: candidate.webViewID,
-            source: .lifecycle(authorityEpoch: authorityState.currentEpoch)
-        )
-        return TabMainFrameAuthorityPromotion(
-            continuation: continuation,
-            targetURLToAdopt: targetURLToAdopt,
-            migratedEvidence: migratedEvidence
-        )
-    }
-
-    func rehydrate(
-        _ candidates: [TabCommittedDocumentCandidate],
-        preferredAuthorityWebViewID: ObjectIdentifier?,
-        intent: TabMainFrameNavigationIntent,
-        participants: TabMainFrameParticipantRegistry,
-        effectClaims: TabMainFrameEffectLedger
-    ) -> TabMainFrameRehydrationResult {
-        let rehydration = participants.rehydrate(
-            candidates,
-            preferredAuthorityWebViewID: preferredAuthorityWebViewID,
-            intent: intent,
-            documentGeneration: documentGeneration
-        )
-        rehydration.replacedParticipantIDs.forEach(
-            effectClaims.removeParticipant
-        )
-        for participant in rehydration.entries {
-            _ = effectClaims.claimLocalStart(participantID: participant.id)
-        }
-        guard let authorityWebViewID = rehydration.authorityWebViewID,
-              let participant = rehydration.authorityEntry,
-              let committedURL = participant.committedDocumentURL else {
-            return TabMainFrameRehydrationResult(
-                evidence: rehydration.evidence,
-                authorityWebViewID: nil
+            source: .lifecycle(
+                authorityEpoch: installed.nextSnapshot.authorityEpoch
             )
-        }
-        installAuthority(
-            revision: intent.revision,
-            webViewID: authorityWebViewID,
-            documentGeneration: documentGeneration,
-            navigationID: nil,
-            hasCommittedDocument: true,
-            isCompleted: true
         )
-        effectClaims.markRehydrated(identity: SharedCommitIdentity(
-            target: WebRuntimeNavigationIdentity(committedURL),
-            isPDF: participant.isPDFResponse ?? false
-        ))
-        return TabMainFrameRehydrationResult(
-            evidence: rehydration.evidence,
-            authorityWebViewID: authorityWebViewID
+        return TabMainFrameAuthorityPlan(
+            nextSnapshot: installed.nextSnapshot,
+            output: TabMainFrameTransitionOutput.AuthorityPromotion(
+                continuation: continuation,
+                targetURLToAdopt: targetURLToAdopt,
+                migratedEvidence: migratedEvidence
+            )
         )
     }
 
-    func selectPromotionCandidate(
+    static func selectPromotionCandidate(
+        in snapshot: Snapshot,
         from entries: [ObjectIdentifier: TabMainFrameParticipantRegistry.Entry],
         revision: UInt64,
         preferredWebViewID: ObjectIdentifier?
     ) -> CandidateSelection? {
         let candidates = entries.filter { _, participant in
             participant.revision == revision
-                && participant.documentGeneration == documentGeneration
+                && participant.documentGeneration == snapshot.documentGeneration
                 && participant.webViewReference.resolve() != nil
         }
         guard let candidate = candidates.min(by: { lhs, rhs in
@@ -587,16 +578,17 @@ final class TabMainFrameAuthorityReducer {
         )
     }
 
-    func isCurrentAuthority(
+    static func isCurrentAuthority(
+        in snapshot: Snapshot,
         _ continuation: TabMainFrameAuthorityContinuation,
         revision: UInt64,
-        participants: TabMainFrameParticipantRegistry
+        participant: TabMainFrameParticipantRegistry.Entry?
     ) -> Bool {
         guard case .lifecycle(let continuationEpoch) = continuation.source,
-              authorityState.matches(epoch: continuationEpoch),
+              snapshot.authorityEpoch == continuationEpoch,
               continuation.revision == revision,
-              continuation.documentGeneration == documentGeneration,
-              let participant = participants.entry(for: continuation.webViewID),
+              continuation.documentGeneration == snapshot.documentGeneration,
+              let participant,
               participant.id == continuation.participantID,
               participant.revision == continuation.revision,
               participant.documentGeneration == continuation.documentGeneration,
@@ -607,7 +599,7 @@ final class TabMainFrameAuthorityReducer {
                   continuation,
                   participant: participant
               ),
-              let authority else {
+              let authority = snapshot.authority else {
             return false
         }
         return authority.revision == continuation.revision
@@ -617,7 +609,19 @@ final class TabMainFrameAuthorityReducer {
             && authority.isCompleted == continuation.isCompleted
     }
 
-    private func continuationPhaseMatches(
+    private static func replacingAuthority(
+        in snapshot: Snapshot,
+        with replacement: Authority?
+    ) -> Snapshot {
+        var next = snapshot
+        if snapshot.authority != replacement {
+            next.authorityEpoch &+= 1
+        }
+        next.authority = replacement
+        return next
+    }
+
+    private static func continuationPhaseMatches(
         _ continuation: TabMainFrameAuthorityContinuation,
         participant: TabMainFrameParticipantRegistry.Entry
     ) -> Bool {
@@ -629,11 +633,8 @@ final class TabMainFrameAuthorityReducer {
         return participant.phase == .active(navigationID: navigationID)
     }
 
-    private func candidateRank(
-        _ candidate: Dictionary<
-            ObjectIdentifier,
-            TabMainFrameParticipantRegistry.Entry
-        >.Element,
+    private static func candidateRank(
+        _ candidate: [ObjectIdentifier: TabMainFrameParticipantRegistry.Entry].Element,
         preferredWebViewID: ObjectIdentifier?
     ) -> (recoverability: Int, preference: Int, identity: UInt) {
         let recoverability: Int
@@ -657,5 +658,4 @@ final class TabMainFrameAuthorityReducer {
             UInt(bitPattern: candidate.key)
         )
     }
-
 }

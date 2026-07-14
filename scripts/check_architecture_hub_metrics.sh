@@ -85,6 +85,18 @@ tab_main_frame_transaction_methods="$(
 )"
 tab_main_frame_transaction_methods="${tab_main_frame_transaction_methods:-0}"
 tab_main_frame_capabilities="Sumi/Models/Tab/TabMainFrameRuntimeCapabilities.swift"
+tab_main_frame_types="Sumi/Models/Tab/TabMainFrameRuntimeTypes.swift"
+tab_main_frame_transition_output="Sumi/Models/Tab/TabMainFrameTransitionOutput.swift"
+tab_recovery_capabilities="Sumi/Models/Tab/TabWebContentRecoveryCapabilities.swift"
+tab_main_frame_participant_applier="Sumi/Models/Tab/TabMainFrameParticipantTransitionApplier.swift"
+tab_main_frame_continuation_applier="Sumi/Models/Tab/TabMainFrameContinuationTransitionApplier.swift"
+tab_main_frame_authority_applier="Sumi/Models/Tab/TabMainFrameAuthorityTransitionApplier.swift"
+tab_main_frame_participant_registry="Sumi/Models/Tab/TabMainFrameParticipantRegistry.swift"
+tab_main_frame_committer="Sumi/Models/Tab/TabMainFrameTransitionCommitter.swift"
+tab_main_frame_target_committer="Sumi/Models/Tab/TabMainFrameTargetTransitionCommitter.swift"
+tab_main_frame_prepared_transition="Sumi/Models/Tab/TabMainFramePreparedTransition.swift"
+tab_main_frame_authority_effects="Sumi/Models/Tab/TabMainFrameAuthorityEffectLedger.swift"
+tab_main_frame_participant_effects="Sumi/Models/Tab/TabMainFrameParticipantEffectLedger.swift"
 tab_main_frame_capabilities_loc="$(count_lines "$tab_main_frame_capabilities")"
 tab_main_frame_capability_methods="$(
   rg --count-matches '^\s*func ' \
@@ -94,7 +106,7 @@ tab_main_frame_capability_methods="${tab_main_frame_capability_methods:-0}"
 tab_main_frame_authority_reducer="Sumi/Models/Tab/TabMainFrameAuthorityReducer.swift"
 tab_main_frame_authority_reducer_loc="$(count_lines "$tab_main_frame_authority_reducer")"
 tab_main_frame_authority_reducer_methods="$(
-  rg --count-matches '^\s*(public |private |internal |fileprivate )?func ' \
+  rg --count-matches '^\s*(public |private |internal |fileprivate )?(static )?func ' \
     "$tab_main_frame_authority_reducer" 2>/dev/null || true
 )"
 tab_main_frame_authority_reducer_methods="${tab_main_frame_authority_reducer_methods:-0}"
@@ -888,6 +900,12 @@ check_max "TabMainFrameRuntimeTransaction methods" \
   "$tab_main_frame_transaction_methods" 37
 check_max "TabMainFrameRuntimeCapabilities.swift LOC" \
   "$tab_main_frame_capabilities_loc" 124
+check_max "TabMainFrameRuntimeTypes.swift LOC" \
+  "$(count_lines "$tab_main_frame_types")" 215
+check_max "TabMainFrameTransitionOutput.swift LOC" \
+  "$(count_lines "$tab_main_frame_transition_output")" 60
+check_max "TabWebContentRecoveryCapabilities.swift LOC" \
+  "$(count_lines "$tab_recovery_capabilities")" 20
 check_max "TabMainFrameRuntimeCapabilities methods" \
   "$tab_main_frame_capability_methods" 23
 check_max "TabMainFrameAuthorityReducer.swift LOC" \
@@ -940,6 +958,102 @@ check_max "Completed authority proof methods" \
   "$(rg --count-matches '^\s*(public |private |internal |fileprivate )?func ' "${tab_main_frame_settlement_files[4]}")" 2
 check_max "Completed authority proof collaborators" \
   "$(rg --count-matches '^    private (let|weak var) [a-zA-Z_]' "${tab_main_frame_settlement_files[4]}")" 3
+check_max "Main-frame authority effect ledger LOC" \
+  "$(count_lines "$tab_main_frame_authority_effects")" 270
+check_max "Main-frame participant effect ledger LOC" \
+  "$(count_lines "$tab_main_frame_participant_effects")" 150
+check_max "Main-frame split effect ledger aggregate LOC" \
+  "$(( $(count_lines "$tab_main_frame_authority_effects") + $(count_lines "$tab_main_frame_participant_effects") ))" 420
+# Focused appliers may sequence their exact ledgers, but neither can grow into
+# the lifecycle machine's old cross-domain orchestration surface.
+check_max "Main-frame participant applier LOC" \
+  "$(count_lines "$tab_main_frame_participant_applier")" 380
+check_max "Main-frame participant registry LOC" \
+  "$(count_lines "$tab_main_frame_participant_registry")" 729
+check_max "Main-frame participant applier collaborators" \
+  "$(rg --count-matches '^    private let [a-zA-Z_]' "$tab_main_frame_participant_applier")" 4
+check_max "Main-frame authority applier LOC" \
+  "$(count_lines "$tab_main_frame_authority_applier")" 160
+check_max "Main-frame authority applier collaborators" \
+  "$(rg --count-matches '^    private let [a-zA-Z_]' "$tab_main_frame_authority_applier")" 4
+check_max "Main-frame continuation applier LOC" \
+  "$(count_lines "$tab_main_frame_continuation_applier")" 145
+check_max "Main-frame transition committer LOC" \
+  "$(count_lines "$tab_main_frame_committer")" 220
+check_max "Main-frame transition committer collaborators" \
+  "$(rg --count-matches '^    private let [a-zA-Z_]' "$tab_main_frame_committer")" 4
+check_max "Main-frame target committer LOC" \
+  "$(count_lines "$tab_main_frame_target_committer")" 80
+# This aggregate deliberately includes every state owner, reducer, applier,
+# receipt/type surface and transaction boundary. New files cannot evade it.
+tab_main_frame_complete_topology_loc="$(wc -l \
+  "$tab_main_frame_authority_reducer" \
+  "$tab_main_frame_authority_state" \
+  "$tab_main_frame_participant_registry" \
+  "$tab_main_frame_lifecycle_machine" \
+  "${tab_main_frame_settlement_files[@]}" \
+  "$tab_main_frame_authority_effects" \
+  "$tab_main_frame_participant_effects" \
+  "$tab_main_frame_participant_applier" \
+  "$tab_main_frame_continuation_applier" \
+  "$tab_main_frame_authority_applier" \
+  "$tab_main_frame_committer" \
+  "$tab_main_frame_target_committer" \
+  "$tab_main_frame_prepared_transition" \
+  "$tab_main_frame_types" \
+  "$tab_main_frame_transition_output" | tail -1 | awk '{print $1}')"
+check_max "Main-frame complete transition topology LOC" \
+  "$tab_main_frame_complete_topology_loc" 4150
+external_main_frame_prevalidated_apply="$({
+  rg -n 'applyPrevalidated' Sumi/Models/Tab/TabMainFrame*.swift || true
+} | rg -v "$(basename "$tab_main_frame_committer")|$(basename "$tab_main_frame_target_committer")|$(basename "$tab_main_frame_authority_state")|$(basename "$tab_main_frame_participant_registry")|$(basename "$tab_main_frame_authority_effects")|$(basename "$tab_main_frame_participant_effects")" || true)"
+check_exact "Prevalidated main-frame apply outside commit/owners" \
+  "$(printf '%s' "$external_main_frame_prevalidated_apply" | sed '/^$/d' | wc -l | tr -d ' ')" 0
+external_main_frame_composition="$({
+  rg -n 'TabMainFrameContinuationTransitionApplier\(|TabMainFrameTransitionCommitter\.lifecycleComposition\(' \
+    Sumi/Models/Tab -g '*.swift' || true
+} | rg -v "$(basename "$tab_main_frame_lifecycle_machine")" || true)"
+check_exact "Main-frame commit/applier construction outside composition root" \
+  "$(printf '%s' "$external_main_frame_composition" | sed '/^$/d' | wc -l | tr -d ' ')" 0
+external_main_frame_state_construction="$({
+  rg -n 'TabMainFrame(ParticipantRegistry|AuthorityState)\(\)' \
+    Sumi/Models/Tab -g '*.swift' || true
+} | rg -v "$(basename "$tab_main_frame_lifecycle_machine")" || true)"
+check_exact "Main-frame mutable-owner construction outside composition root" \
+  "$(printf '%s' "$external_main_frame_state_construction" | sed '/^$/d' | wc -l | tr -d ' ')" 0
+check_exact "Main-frame mutable-owner construction in composition root" \
+  "$(rg --count-matches 'TabMainFrame(ParticipantRegistry|AuthorityState)\(\)' "$tab_main_frame_lifecycle_machine")" 2
+external_prepared_transition_construction="$({
+  rg -n 'TabMainFramePreparedTransition\.(document|terminal|sameDocument|continuation)\(' \
+    Sumi/Models/Tab -g '*.swift' || true
+} | rg -v "$(basename "$tab_main_frame_committer")" || true)"
+check_exact "Prepared main-frame transaction outside committer" \
+  "$(printf '%s' "$external_prepared_transition_construction" | sed '/^$/d' | wc -l | tr -d ' ')" 0
+check_exact "Prepared transition reducer ownership" \
+  "$(rg --count-matches 'TabMainFrameAuthorityReducer\.reduce(Commit|TerminalSuccess|SameDocumentSuccess|Continuation)\(' "$tab_main_frame_prepared_transition")" 4
+check_exact "Transition committer supplied authority plans" \
+  "$(rg --count-matches 'TabMainFrameAuthorityPlan' "$tab_main_frame_committer" || true)" 0
+check_exact "Prepared transition exact source correlation" \
+  "$(rg --count-matches 'plan\.hasSourceFacts\(source\)' "$tab_main_frame_prepared_transition")" 4
+check_exact "Registry mutation-plan source CAS" \
+  "$(rg --count-matches 'current\.hasSameFacts\(as: plan\.sourceEntry\)' "$tab_main_frame_participant_registry")" 1
+main_frame_adversarial_oracles="$({
+  rg --count-matches \
+    'func test(HeldRegistryMutationCannotPassCommitPreflight|DocumentPreparationRejectsSameIdentityAliasWithoutMutation|TerminalPreparationRejectsSameIdentityAliasWithoutMutation|SameDocumentPreparationRejectsSameIdentityAliasWithoutMutation|ContinuationPreparationRejectsSameIdentityAliasWithoutMutation|MalformedLifetimeCannotEraseExactRegistryTombstoneOrMutateOwners)' \
+    SumiTests/TabMainFrameRuntimeTransactionTests.swift || true
+})"
+check_exact "Main-frame provenance/tombstone adversarial oracles" \
+  "${main_frame_adversarial_oracles:-0}" 6
+main_frame_plan_callback_fields="$({
+  rg -n '^\s+(fileprivate )?let [a-zA-Z_][a-zA-Z0-9_]*:.*->' \
+    "$tab_main_frame_authority_state" \
+    "$tab_main_frame_participant_registry" \
+    "$tab_main_frame_authority_effects" \
+    "$tab_main_frame_participant_effects" \
+    "$tab_main_frame_prepared_transition" || true
+})"
+check_exact "Main-frame transaction-plan callback fields" \
+  "$(printf '%s' "$main_frame_plan_callback_fields" | sed '/^$/d' | wc -l | tr -d ' ')" 0
 check_exact "Retired terminal finish choreography" \
   "$retired_terminal_finish_choreography" 0
 check_max "SumiTabLifecycleNavigationResponder.swift LOC" \

@@ -909,20 +909,23 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
         guard case .publish = transaction.settleCommit(
             from: oldPrimary,
             navigationID: ObjectIdentifier(primaryNavigation),
+            navigationLifetime: primaryNavigation,
             committedURL: targetURL
         ) else {
             return XCTFail("Expected old primary to publish the shared commit")
         }
-        guard case .recordedReplica = transaction.settleCommit(
+        guard case .participant = transaction.settleCommit(
             from: oldClone,
             navigationID: ObjectIdentifier(cloneNavigation),
+            navigationLifetime: cloneNavigation,
             committedURL: targetURL
         ) else {
             return XCTFail("Expected old clone to remain a recorded replica")
         }
-        guard case .recordedReplica = transaction.settleCommit(
+        guard case .participant = transaction.settleCommit(
             from: replacement,
             navigationID: ObjectIdentifier(replacementNavigation),
+            navigationLifetime: replacementNavigation,
             committedURL: targetURL
         ) else {
             return XCTFail("Expected replacement to remain a recorded replica")
@@ -1434,7 +1437,8 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
         XCTAssertEqual(
             transaction.prepareAuthorityForCommit(
                 from: discardedReplacement,
-                navigationID: ObjectIdentifier(replacementNavigation)
+                navigationID: ObjectIdentifier(replacementNavigation),
+                navigationLifetime: replacementNavigation
             ),
             .authority
         )

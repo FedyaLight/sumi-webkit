@@ -1,43 +1,14 @@
 import Foundation
-import SumiWebRuntime
 import WebKit
 
-struct TabMainFrameAuthorityPromotion {
-    let continuation: TabMainFrameAuthorityContinuation
-    let targetURLToAdopt: URL?
-    let migratedEvidence: [TabCommittedDocumentEvidence]
-}
-
-enum TabMainFrameLifecycleRoutingResult {
-    case accepted(role: TabMainFrameLifecycleRole, targetURLToAdopt: URL?)
-    case unmatched
-    case retired
-}
-
-struct TabMainFrameLifecycleDeparture {
-    let removedParticipant: Bool
-    let wasAuthoritative: Bool
-}
-
-enum TabMainFrameLifecycleAbortTransition {
-    case ignored
-    case participant
-    case authority(TabMainFrameAuthorityPromotion?)
-}
-
-struct TabMainFrameRehydrationResult {
-    let evidence: [TabCommittedDocumentEvidence]
-    let authorityWebViewID: ObjectIdentifier?
-}
-
-/// Coordinates exact-navigation lifecycle routing, promotion and departure.
-/// Publication settlement is exposed through cohesive active, terminal,
-/// same-document and promotion components backed by the same state ledgers.
+/// Composes participant and authority transition appliers over one exact state
+/// graph. It exposes lifecycle queries/settlements but does not itself sequence
+/// registry and effect-ledger mutations.
 @MainActor
 final class TabMainFrameLifecycleMachine {
-    private let participants: TabMainFrameParticipantRegistry
-    private let authorityReducer: TabMainFrameAuthorityReducer
-    private let effectClaims: TabMainFrameEffectLedger
+    private let participantTransitions: TabMainFrameParticipantTransitionApplier
+    private let continuationTransitions: TabMainFrameContinuationTransitionApplier
+    private let authorityTransitions: TabMainFrameAuthorityTransitionApplier
     let activeNavigation: TabMainFrameActiveNavigationSettlement
     let terminal: TabMainFrameTerminalSettlement
     let sameDocument: TabMainFrameSameDocumentSettlement
@@ -46,79 +17,83 @@ final class TabMainFrameLifecycleMachine {
     init() {
         let participants = TabMainFrameParticipantRegistry()
         let authorityState = TabMainFrameAuthorityState()
-        let authorityReducer = TabMainFrameAuthorityReducer(
-            authorityState: authorityState
-        )
-        let effectClaims = TabMainFrameEffectLedger()
-        self.participants = participants
-        self.authorityReducer = authorityReducer
-        self.effectClaims = effectClaims
-        let completedAuthority = TabMainFrameCompletedAuthorityProof(
+        let authorityEffects = TabMainFrameAuthorityEffectLedger()
+        let participantEffects = TabMainFrameParticipantEffectLedger()
+        let committer = TabMainFrameTransitionCommitter.lifecycleComposition(
             participants: participants,
             authorityState: authorityState,
-            authorityReducer: authorityReducer
+            authorityEffects: authorityEffects,
+            participantEffects: participantEffects
+        )
+        let participantTransitions = TabMainFrameParticipantTransitionApplier(
+            participants: participants,
+            authorityState: authorityState,
+            authorityEffects: authorityEffects,
+            participantEffects: participantEffects
+        )
+        self.participantTransitions = participantTransitions
+        self.continuationTransitions = TabMainFrameContinuationTransitionApplier(
+            participants: participants,
+            authorityState: authorityState,
+            committer: committer
+        )
+        self.authorityTransitions = TabMainFrameAuthorityTransitionApplier(
+            participants: participants,
+            authorityState: authorityState,
+            authorityEffects: authorityEffects,
+            participantEffects: participantEffects
+        )
+        let completedAuthority = TabMainFrameCompletedAuthorityProof(
+            participants: participants,
+            authorityState: authorityState
         )
         let terminal = TabMainFrameTerminalSettlement(
             participants: participants,
-            authorityReducer: authorityReducer,
-            effectClaims: effectClaims,
-            completedAuthority: completedAuthority
+            authorityEffects: authorityEffects,
+            completedAuthority: completedAuthority,
+            committer: committer
         )
         self.activeNavigation = TabMainFrameActiveNavigationSettlement(
-            participants: participants,
+            participantTransitions: participantTransitions,
             authorityState: authorityState,
-            authorityReducer: authorityReducer,
-            effectClaims: effectClaims
+            authorityEffects: authorityEffects,
+            committer: committer
         )
         self.terminal = terminal
         self.sameDocument = TabMainFrameSameDocumentSettlement(
             participants: participants,
-            authorityReducer: authorityReducer,
-            effectClaims: effectClaims,
-            completedAuthority: completedAuthority
+            participantEffects: participantEffects,
+            completedAuthority: completedAuthority,
+            committer: committer
         )
         self.promotion = TabMainFramePromotionReplaySettlement(
             participants: participants,
-            authorityReducer: authorityReducer,
-            effectClaims: effectClaims,
+            authorityState: authorityState,
+            authorityEffects: authorityEffects,
             terminal: terminal
         )
     }
 
     var documentGeneration: UInt64 {
-        authorityReducer.documentGeneration
+        participantTransitions.documentGeneration
     }
 
     func resetForNewIntent() {
-        participants.removeAllForNewIntent().forEach(
-            effectClaims.removeParticipant
-        )
-        authorityReducer.resetForNewIntent()
-        effectClaims.resetForDocumentGeneration()
+        participantTransitions.resetForNewIntent()
     }
 
     func hasParticipant(on webView: WKWebView, revision: UInt64) -> Bool {
-        participants.contains(webView, revision: revision)
+        participantTransitions.hasParticipant(on: webView, revision: revision)
     }
 
     func hasLiveAuthority(revision: UInt64) -> Bool {
-        authorityReducer.hasLiveAuthority(
-            revision: revision,
-            participants: participants
-        )
+        participantTransitions.hasLiveAuthority(revision: revision)
     }
 
     func authorityState(
         revision: UInt64
     ) -> TabMainFrameIntentLedger.AuthorityState? {
-        guard hasLiveAuthority(revision: revision),
-              let authority = authorityReducer.authority else {
-            return nil
-        }
-        return TabMainFrameIntentLedger.AuthorityState(
-            webViewID: authority.webViewID,
-            isCompleted: authority.isCompleted
-        )
+        participantTransitions.authority(revision: revision)
     }
 
     func activateSubmission(
@@ -127,26 +102,12 @@ final class TabMainFrameLifecycleMachine {
         navigationLifetime: AnyObject,
         currentIntent: TabMainFrameNavigationIntent
     ) -> Bool {
-        guard binding.revision == currentIntent.revision,
-              let install = participants.installSubmission(
-                  binding,
-                  navigationID: navigationID,
-                  navigationLifetime: navigationLifetime
-              ) else {
-            return false
-        }
-        if let replacedParticipantID = install.replacedParticipantID {
-            effectClaims.removeParticipant(replacedParticipantID)
-        }
-        if binding.becomesAuthority {
-            authorityReducer.installAuthority(
-                revision: binding.revision,
-                webViewID: binding.webViewID,
-                documentGeneration: binding.documentGeneration,
-                navigationID: navigationID
-            )
-        }
-        return true
+        participantTransitions.activateSubmission(
+            binding,
+            navigationID: navigationID,
+            navigationLifetime: navigationLifetime,
+            currentIntent: currentIntent
+        )
     }
 
     func semanticRevision(
@@ -154,7 +115,7 @@ final class TabMainFrameLifecycleMachine {
         navigationID: ObjectIdentifier,
         navigationLifetime: AnyObject
     ) -> UInt64? {
-        participants.semanticRevision(
+        participantTransitions.semanticRevision(
             for: webView,
             navigationID: navigationID,
             navigationLifetime: navigationLifetime
@@ -162,7 +123,7 @@ final class TabMainFrameLifecycleMachine {
     }
 
     func loadingWebViews(revision: UInt64) -> [WKWebView] {
-        participants.loadingWebViews(revision: revision)
+        participantTransitions.loadingWebViews(revision: revision)
     }
 
     func routeLifecycle(
@@ -172,56 +133,14 @@ final class TabMainFrameLifecycleMachine {
         targetURL: URL,
         continuationKind: TabMainFrameContinuationKind?,
         currentIntent: TabMainFrameNavigationIntent
-    ) -> TabMainFrameLifecycleRoutingResult {
-        guard participants.isRetiredNavigationIdentity(
-            navigationID,
-            lifetime: navigationLifetime
-        ) == false else {
-            return .retired
-        }
-
-        // WebKit may deliver the same terminal same-document callback more
-        // than once. A completed physical navigation must never be reactivated
-        // as its own continuation because that would reset one-shot permits.
-        if participants.exactCompletedEntry(
-            for: webView,
-            navigationID: navigationID,
-            navigationLifetime: navigationLifetime,
-            revision: currentIntent.revision
-        ) != nil {
-            return .retired
-        }
-
-        let webViewID = ObjectIdentifier(webView)
-        let existingRole = lifecycleRole(
-            webViewID: webViewID,
-            navigationID: navigationID,
-            currentIntent: currentIntent
-        )
-        if existingRole != .stale {
-            participants.attachNavigationIdentityIfPossible(
-                navigationID: navigationID,
-                lifetime: navigationLifetime,
-                webViewID: webViewID
-            )
-            return .accepted(role: existingRole, targetURLToAdopt: nil)
-        }
-
-        guard let continuationKind else { return .unmatched }
-        let continuation = authorityReducer.transferToContinuation(
-            webViewID: webViewID,
+    ) -> TabMainFrameTransitionOutput.LifecycleRouting {
+        continuationTransitions.routeLifecycle(
+            from: webView,
             navigationID: navigationID,
             navigationLifetime: navigationLifetime,
             targetURL: targetURL,
-            kind: continuationKind,
-            currentIntent: currentIntent,
-            participants: participants,
-            effectClaims: effectClaims
-        )
-        guard continuation.role != .stale else { return .unmatched }
-        return .accepted(
-            role: continuation.role,
-            targetURLToAdopt: continuation.targetURLToAdopt
+            continuationKind: continuationKind,
+            currentIntent: currentIntent
         )
     }
 
@@ -231,22 +150,11 @@ final class TabMainFrameLifecycleMachine {
         navigationID: ObjectIdentifier,
         navigationLifetime: AnyObject
     ) {
-        let webViewID = ObjectIdentifier(webView)
-        let install = participants.installLifecycleOwnedEntry(
-            intent: intent,
+        participantTransitions.startLifecycleOwnedIntent(
+            intent,
             webView: webView,
             navigationID: navigationID,
-            navigationLifetime: navigationLifetime,
-            documentGeneration: documentGeneration
-        )
-        if let replacedParticipantID = install.replacedParticipantID {
-            effectClaims.removeParticipant(replacedParticipantID)
-        }
-        authorityReducer.installAuthority(
-            revision: intent.revision,
-            webViewID: webViewID,
-            documentGeneration: documentGeneration,
-            navigationID: navigationID
+            navigationLifetime: navigationLifetime
         )
     }
 
@@ -256,10 +164,10 @@ final class TabMainFrameLifecycleMachine {
         isCurrent: Bool?,
         currentIntent: TabMainFrameNavigationIntent
     ) -> TabMainFrameLifecycleRole {
-        guard isCurrent != false, let navigationID else { return .stale }
-        return lifecycleRole(
-            webViewID: ObjectIdentifier(webView),
+        participantTransitions.lifecycleRole(
+            from: webView,
             navigationID: navigationID,
+            isCurrent: isCurrent,
             currentIntent: currentIntent
         )
     }
@@ -267,20 +175,14 @@ final class TabMainFrameLifecycleMachine {
     func prepareAuthorityForCommit(
         from webView: WKWebView,
         navigationID: ObjectIdentifier,
+        navigationLifetime: AnyObject,
         currentIntent: TabMainFrameNavigationIntent
     ) -> TabMainFrameLifecycleRole {
-        let webViewID = ObjectIdentifier(webView)
-        guard let participant = participants.activeEntry(
-            webViewID: webViewID,
+        participantTransitions.prepareAuthorityForCommit(
+            from: webView,
             navigationID: navigationID,
-            revision: currentIntent.revision
-        ) else {
-            return .stale
-        }
-        return authorityReducer.claimDocumentAuthority(
-            for: participant,
-            webViewID: webViewID,
-            navigationID: navigationID
+            navigationLifetime: navigationLifetime,
+            currentIntent: currentIntent
         )
     }
 
@@ -288,69 +190,46 @@ final class TabMainFrameLifecycleMachine {
         isPDF: Bool,
         from webView: WKWebView,
         navigationID: ObjectIdentifier,
+        navigationLifetime: AnyObject,
         currentIntent: TabMainFrameNavigationIntent
     ) -> TabMainFrameLifecycleRole {
-        let webViewID = ObjectIdentifier(webView)
-        guard let participant = participants.recordResponse(
+        participantTransitions.recordResponse(
             isPDF: isPDF,
-            webViewID: webViewID,
+            from: webView,
             navigationID: navigationID,
-            revision: currentIntent.revision
-        ) else {
-            return .stale
-        }
-        return authorityReducer.lifecycleRole(
-            for: participant,
-            webViewID: webViewID,
-            navigationID: navigationID
+            navigationLifetime: navigationLifetime,
+            currentIntent: currentIntent
         )
     }
 
     func responseIsPDF(
         from webView: WKWebView,
         navigationID: ObjectIdentifier,
+        navigationLifetime: AnyObject,
         currentIntent: TabMainFrameNavigationIntent
     ) -> Bool? {
-        participants.responseIsPDF(
-            webViewID: ObjectIdentifier(webView),
+        participantTransitions.responseIsPDF(
+            from: webView,
             navigationID: navigationID,
-            revision: currentIntent.revision
+            navigationLifetime: navigationLifetime,
+            currentIntent: currentIntent
         )
     }
 
     func departure(
         of webView: WKWebView,
         currentIntent: TabMainFrameNavigationIntent
-    ) -> TabMainFrameLifecycleDeparture {
-        departure(
-            of: [webView],
-            currentIntent: currentIntent
-        )
+    ) -> TabMainFrameTransitionOutput.LifecycleDeparture {
+        departure(of: [webView], currentIntent: currentIntent)
     }
 
     func departure(
         of webViews: [WKWebView],
         currentIntent: TabMainFrameNavigationIntent
-    ) -> TabMainFrameLifecycleDeparture {
-        let departingWebViewIDs = Set(webViews.compactMap { webView in
-            participants.exactEntry(for: webView).map { _ in
-                ObjectIdentifier(webView)
-            }
-        })
-        let removed = participants.removeAll(webViews)
-        removed.forEach { effectClaims.removeParticipant($0.id) }
-        guard authorityReducer.removeAuthorityIfMatching(
-            webViewIDs: departingWebViewIDs,
-            revision: currentIntent.revision
-        ) else {
-            return TabMainFrameLifecycleDeparture(
-                removedParticipant: removed.isEmpty == false,
-                wasAuthoritative: false
-            )
-        }
-        return TabMainFrameLifecycleDeparture(
-            removedParticipant: removed.isEmpty == false,
-            wasAuthoritative: true
+    ) -> TabMainFrameTransitionOutput.LifecycleDeparture {
+        participantTransitions.departure(
+            of: webViews,
+            currentIntent: currentIntent
         )
     }
 
@@ -359,37 +238,28 @@ final class TabMainFrameLifecycleMachine {
         navigationID: ObjectIdentifier,
         navigationLifetime: AnyObject,
         currentIntent: TabMainFrameNavigationIntent
-    ) -> TabMainFrameLifecycleAbortTransition {
-        let webViewID = ObjectIdentifier(webView)
-        let isAuthoritative = authorityReducer.isExactAuthority(
-            webViewID: webViewID,
-            navigationID: navigationID,
-            revision: currentIntent.revision
-        )
-        guard let participant = participants.removeExactActiveNavigation(
-            webView: webView,
+    ) -> TabMainFrameTransitionOutput.LifecycleAbort {
+        switch participantTransitions.abortNavigation(
+            from: webView,
             navigationID: navigationID,
             navigationLifetime: navigationLifetime,
-            revision: currentIntent.revision
-        ) else {
-            return .ignored
-        }
-        effectClaims.removeParticipant(participant.id)
-        guard isAuthoritative else { return .participant }
-        authorityReducer.clearAuthority()
-        return .authority(promoteAuthorityCandidate(
-            preferredWebViewID: nil,
             currentIntent: currentIntent
-        ))
+        ) {
+        case .ignored: return .ignored
+        case .participant: return .participant
+        case .authority:
+            return .authority(promoteAuthorityCandidate(
+                preferredWebViewID: nil,
+                currentIntent: currentIntent
+            ))
+        }
     }
 
     func promoteAuthorityCandidate(
         preferredWebViewID: ObjectIdentifier?,
         currentIntent: TabMainFrameNavigationIntent
-    ) -> TabMainFrameAuthorityPromotion? {
-        authorityReducer.promoteAuthorityCandidate(
-            participants: participants,
-            effectClaims: effectClaims,
+    ) -> TabMainFrameTransitionOutput.AuthorityPromotion? {
+        authorityTransitions.promoteAuthorityCandidate(
             preferredWebViewID: preferredWebViewID,
             currentIntent: currentIntent
         )
@@ -399,22 +269,9 @@ final class TabMainFrameLifecycleMachine {
         for webView: WKWebView,
         currentIntent: TabMainFrameNavigationIntent
     ) -> (evidence: TabCommittedDocumentEvidence, isAuthority: Bool)? {
-        let webViewID = ObjectIdentifier(webView)
-        guard let sharedCommitIdentity = effectClaims.sharedCommitIdentity,
-              let proof = participants.committedDocumentProof(
-                  webView: webView,
-                  revision: currentIntent.revision,
-                  documentGeneration: documentGeneration,
-                  sharedCommitIdentity: sharedCommitIdentity
-              ) else {
-            return nil
-        }
-        return (
-            proof.evidence,
-            authorityReducer.isCommittedDocumentAuthority(
-                proof.entry,
-                webViewID: webViewID
-            ),
+        authorityTransitions.documentEvidence(
+            for: webView,
+            currentIntent: currentIntent
         )
     }
 
@@ -422,32 +279,11 @@ final class TabMainFrameLifecycleMachine {
         _ candidates: [TabCommittedDocumentCandidate],
         preferredAuthorityWebViewID: ObjectIdentifier?,
         intent: TabMainFrameNavigationIntent
-    ) -> TabMainFrameRehydrationResult {
-        authorityReducer.rehydrate(
+    ) -> TabMainFrameTransitionOutput.Rehydration {
+        authorityTransitions.rehydrate(
             candidates,
             preferredAuthorityWebViewID: preferredAuthorityWebViewID,
-            intent: intent,
-            participants: participants,
-            effectClaims: effectClaims
-        )
-    }
-
-    private func lifecycleRole(
-        webViewID: ObjectIdentifier,
-        navigationID: ObjectIdentifier,
-        currentIntent: TabMainFrameNavigationIntent
-    ) -> TabMainFrameLifecycleRole {
-        guard let participant = participants.activeEntry(
-            webViewID: webViewID,
-            navigationID: navigationID,
-            revision: currentIntent.revision
-        ) else {
-            return .stale
-        }
-        return authorityReducer.lifecycleRole(
-            for: participant,
-            webViewID: webViewID,
-            navigationID: navigationID
+            intent: intent
         )
     }
 }

@@ -2,12 +2,6 @@ import Foundation
 import SumiWebRuntime
 import WebKit
 
-@MainActor
-protocol TabWebContentRecovery: AnyObject {
-    func beginRecovery(on webView: WKWebView) -> TabWebContentProcessRecoveryPlan
-    func isRecoveryRequired(on webView: WKWebView) -> Bool
-}
-
 /// Atomic boundary for main-frame transitions that change more than one
 /// authority. `Tab` exposes narrow load, submission, document, and recovery
 /// capabilities; lifecycle settlement is injected into its WebKit responder.
@@ -17,18 +11,9 @@ final class TabMainFrameRuntimeTransaction:
     TabMainFrameSubmissionSettlement,
     TabMainFrameLifecycleSettlement,
     TabMainFramePromotionSettlement,
-    TabWebContentRecovery
+    TabWebContentRecoveryAdmission,
+    TabWebContentRecoveryMarkerQuery
 {
-    struct LifecycleAcceptance {
-        let role: TabMainFrameLifecycleRole
-        let beganNewIntent: Bool
-    }
-
-    struct FailedSubmissionRollback {
-        let targetURL: URL
-        let navigationStateSource: WKWebView?
-    }
-
     let mainFrameLoads: TabMainFrameLoadRuntime
     private let lifecycle: TabMainFrameLifecycleMachine
     private let activeNavigation: TabMainFrameActiveNavigationSettlement
@@ -286,9 +271,12 @@ final class TabMainFrameRuntimeTransaction:
         targetURL: URL?,
         allowsUserInitiatedSupersession: Bool,
         continuationKind: TabMainFrameContinuationKind?
-    ) -> LifecycleAcceptance {
+    ) -> TabMainFrameTransitionOutput.LifecycleAcceptance {
         guard let navigationID, let targetURL else {
-            return LifecycleAcceptance(role: .stale, beganNewIntent: false)
+            return TabMainFrameTransitionOutput.LifecycleAcceptance(
+                role: .stale,
+                beganNewIntent: false
+            )
         }
         switch lifecycle.routeLifecycle(
             from: webView,
@@ -299,7 +287,10 @@ final class TabMainFrameRuntimeTransaction:
             currentIntent: mainFrameLoads.currentIntent
         ) {
         case .retired:
-            return LifecycleAcceptance(role: .stale, beganNewIntent: false)
+            return TabMainFrameTransitionOutput.LifecycleAcceptance(
+                role: .stale,
+                beganNewIntent: false
+            )
         case .accepted(let role, let targetURLToAdopt):
             if let targetURLToAdopt {
                 mainFrameLoads.updateTargetWithinRevision(targetURLToAdopt)
@@ -314,7 +305,10 @@ final class TabMainFrameRuntimeTransaction:
                 }
             }
             recoveryMarkers.clear(on: webView)
-            return LifecycleAcceptance(role: role, beganNewIntent: false)
+            return TabMainFrameTransitionOutput.LifecycleAcceptance(
+                role: role,
+                beganNewIntent: false
+            )
         case .unmatched:
             break
         }
@@ -323,7 +317,10 @@ final class TabMainFrameRuntimeTransaction:
             on: webView,
             allowsUserInitiatedSupersession: allowsUserInitiatedSupersession
         ) else {
-            return LifecycleAcceptance(role: .stale, beganNewIntent: false)
+            return TabMainFrameTransitionOutput.LifecycleAcceptance(
+                role: .stale,
+                beganNewIntent: false
+            )
         }
 
         let intent = mainFrameLoads.beginLifecycleIntent(to: targetURL)
@@ -335,7 +332,10 @@ final class TabMainFrameRuntimeTransaction:
             navigationLifetime: navigationLifetime
         )
         recoveryMarkers.clear(on: webView)
-        return LifecycleAcceptance(role: .authority, beganNewIntent: true)
+        return TabMainFrameTransitionOutput.LifecycleAcceptance(
+            role: .authority,
+            beganNewIntent: true
+        )
     }
 
     func role(
@@ -353,44 +353,44 @@ final class TabMainFrameRuntimeTransaction:
 
     func prepareAuthorityForCommit(
         from webView: WKWebView,
-        navigationID: ObjectIdentifier
+        navigationID: ObjectIdentifier, navigationLifetime: AnyObject
     ) -> TabMainFrameLifecycleRole {
         lifecycle.prepareAuthorityForCommit(
             from: webView,
-            navigationID: navigationID,
+            navigationID: navigationID, navigationLifetime: navigationLifetime,
             currentIntent: mainFrameLoads.currentIntent
         )
     }
 
     func claimTransactionStartEffects(
         from webView: WKWebView,
-        navigationID: ObjectIdentifier
-    ) -> TabMainFrameEffectDecision<TabMainFrameActiveAuthorityLease> {
+        navigationID: ObjectIdentifier, navigationLifetime: AnyObject
+    ) -> TabMainFrameTransitionDecision<TabMainFrameActiveAuthorityLease> {
         activeNavigation.claimTransactionStartEffects(
             from: webView,
-            navigationID: navigationID,
+            navigationID: navigationID, navigationLifetime: navigationLifetime,
             currentIntent: mainFrameLoads.currentIntent
         )
     }
 
     func claimAuthorityTargetPreparation(
         from webView: WKWebView,
-        navigationID: ObjectIdentifier
-    ) -> TabMainFrameEffectDecision<TabMainFrameActiveAuthorityLease> {
+        navigationID: ObjectIdentifier, navigationLifetime: AnyObject
+    ) -> TabMainFrameTransitionDecision<TabMainFrameActiveAuthorityLease> {
         activeNavigation.claimAuthorityTargetPreparation(
             from: webView,
-            navigationID: navigationID,
+            navigationID: navigationID, navigationLifetime: navigationLifetime,
             currentIntent: mainFrameLoads.currentIntent
         )
     }
 
     func claimLocalStartEffects(
         from webView: WKWebView,
-        navigationID: ObjectIdentifier
-    ) -> TabMainFrameEffectDecision<URL> {
+        navigationID: ObjectIdentifier, navigationLifetime: AnyObject
+    ) -> TabMainFrameTransitionDecision<URL> {
         activeNavigation.claimLocalStartEffects(
             from: webView,
-            navigationID: navigationID,
+            navigationID: navigationID, navigationLifetime: navigationLifetime,
             currentIntent: mainFrameLoads.currentIntent
         )
     }
@@ -404,7 +404,7 @@ final class TabMainFrameRuntimeTransaction:
 
     func prepareSharedFinishPublication(
         matching continuation: TabMainFrameAuthorityContinuation
-    ) -> TabMainFrameFinishDecision {
+    ) -> TabMainFrameTransitionDecision<TabMainFrameFinishPublication> {
         promotion.finishPublication(
             matching: continuation,
             currentIntent: mainFrameLoads.currentIntent
@@ -423,24 +423,24 @@ final class TabMainFrameRuntimeTransaction:
     func noteResponse(
         isPDF: Bool,
         from webView: WKWebView,
-        navigationID: ObjectIdentifier
+        navigationID: ObjectIdentifier, navigationLifetime: AnyObject
     ) {
         _ = lifecycle.recordResponse(
             isPDF: isPDF,
             from: webView,
-            navigationID: navigationID,
+            navigationID: navigationID, navigationLifetime: navigationLifetime,
             currentIntent: mainFrameLoads.currentIntent
         )
     }
 
     func settleCommit(
         from webView: WKWebView,
-        navigationID: ObjectIdentifier,
+        navigationID: ObjectIdentifier, navigationLifetime: AnyObject,
         committedURL: URL
-    ) -> TabMainFrameCommitDecision {
+    ) -> TabMainFrameTransitionDecision<TabMainFrameCommitPublication> {
         let isPDF = lifecycle.responseIsPDF(
             from: webView,
-            navigationID: navigationID,
+            navigationID: navigationID, navigationLifetime: navigationLifetime,
             currentIntent: mainFrameLoads.currentIntent
         ) ?? false
         let transition = committedDocumentRuntime.performTransition(
@@ -448,7 +448,7 @@ final class TabMainFrameRuntimeTransaction:
         ) {
             let transition = activeNavigation.settleCommit(
                 from: webView,
-                navigationID: navigationID,
+                navigationID: navigationID, navigationLifetime: navigationLifetime,
                 committedURL: committedURL,
                 isPDF: isPDF,
                 currentIntent: mainFrameLoads.currentIntent
@@ -465,12 +465,12 @@ final class TabMainFrameRuntimeTransaction:
         case .stale:
             return .stale
         case .participant:
-            return .recordedReplica
+            return .participant
         case .authority where transition.publication == nil:
-            return .alreadyPublished
+            return .alreadyPublished(nil)
         case .authority:
             guard let publication = transition.publication else {
-                return .alreadyPublished
+                return .alreadyPublished(nil)
             }
             return .publish(publication)
         }
@@ -490,7 +490,7 @@ final class TabMainFrameRuntimeTransaction:
         navigationID: ObjectIdentifier,
         navigationLifetime: AnyObject,
         terminalURL: URL?
-    ) -> TabMainFrameFinishDecision {
+    ) -> TabMainFrameTransitionDecision<TabMainFrameFinishPublication> {
         committedDocumentRuntime.performTransition(
             reason: .terminalSuccess
         ) {
@@ -544,7 +544,7 @@ final class TabMainFrameRuntimeTransaction:
         navigationID: ObjectIdentifier,
         navigationLifetime: AnyObject,
         presentationURL: URL
-    ) -> TabMainFrameSameDocumentDecision {
+    ) -> TabMainFrameTransitionDecision<TabMainFrameSameDocumentPublication> {
         let decision = sameDocument.settle(
             from: webView,
             navigationID: navigationID,
@@ -651,7 +651,7 @@ final class TabMainFrameRuntimeTransaction:
 
     func rollbackAfterFailedSubmission(
         survivingWebViews: [WKWebView]
-    ) -> FailedSubmissionRollback {
+    ) -> TabMainFrameTransitionOutput.FailedSubmissionRollback {
         committedDocumentRuntime.performTransition(
             reason: .submissionFailure
         ) {
@@ -663,7 +663,7 @@ final class TabMainFrameRuntimeTransaction:
                 )
             }
             let navigationStateSource = committedDocumentRuntime.sourceWebView()
-            return FailedSubmissionRollback(
+            return TabMainFrameTransitionOutput.FailedSubmissionRollback(
                 targetURL: applyDurableDocumentRollback(),
                 navigationStateSource: navigationStateSource
             )
@@ -690,7 +690,7 @@ final class TabMainFrameRuntimeTransaction:
     }
 
     private func apply(
-        _ promotion: TabMainFrameAuthorityPromotion?
+        _ promotion: TabMainFrameTransitionOutput.AuthorityPromotion?
     ) -> TabMainFrameAuthorityContinuation? {
         guard let promotion else { return nil }
         committedDocumentRuntime.recordReplicas(promotion.migratedEvidence)

@@ -16,17 +16,20 @@ final class SumiTabLifecycleNavigationResponder:
     private let submission: any TabMainFrameSubmissionSettlement
     private let lifecycle: any TabMainFrameLifecycleSettlement
     private let promotion: any TabMainFramePromotionSettlement
+    private let recovery: any TabWebContentRecoveryAdmission
 
     init(
         tab: Tab,
         submission: any TabMainFrameSubmissionSettlement,
         lifecycle: any TabMainFrameLifecycleSettlement,
-        promotion: any TabMainFramePromotionSettlement
+        promotion: any TabMainFramePromotionSettlement,
+        recovery: any TabWebContentRecoveryAdmission
     ) {
         self.tab = tab
         self.submission = submission
         self.lifecycle = lifecycle
         self.promotion = promotion
+        self.recovery = recovery
     }
 
     func navigationWillStart(_ context: SumiNavigationContext) {
@@ -70,13 +73,12 @@ final class SumiTabLifecycleNavigationResponder:
             navigationID: context.navigationID,
             isCurrent: nil
         )
-        if roleAfterLocalEffects.isAuthority {
-            _ = publishAuthorityStartEffectsIfNeeded(
-                context,
-                tab: tab,
-                webView: webView
-            )
-        }
+        guard roleAfterLocalEffects.isAuthority else { return }
+        _ = publishAuthorityStartEffectsIfNeeded(
+            context,
+            tab: tab,
+            webView: webView
+        )
     }
 
     func navigationDidStart(_ context: SumiNavigationContext) {
@@ -165,13 +167,12 @@ final class SumiTabLifecycleNavigationResponder:
     ) async -> SumiNavigationResponsePolicy? {
         guard response.isForMainFrame else { return .next }
 
-        if let context, let webView = context.webView {
-            lifecycle.noteResponse(
-                isPDF: response.mimeType?.lowercased() == "application/pdf",
-                from: webView,
-                navigationID: context.navigationID
-            )
-        }
+        guard let context, let webView = context.webView else { return .next }
+        lifecycle.noteResponse(
+            isPDF: response.mimeType?.lowercased() == "application/pdf",
+            from: webView,
+            navigationID: context.navigationID, navigationLifetime: context.navigationLifetime
+        )
         return .next
     }
 
@@ -202,7 +203,7 @@ final class SumiTabLifecycleNavigationResponder:
         ).isParticipant else { return }
         let preparedRole = lifecycle.prepareAuthorityForCommit(
             from: webView,
-            navigationID: context.navigationID
+            navigationID: context.navigationID, navigationLifetime: context.navigationLifetime
         )
         guard preparedRole.isParticipant else { return }
         if preparedRole.isAuthority {
@@ -217,7 +218,7 @@ final class SumiTabLifecycleNavigationResponder:
         }
         let decision = lifecycle.settleCommit(
             from: webView,
-            navigationID: context.navigationID,
+            navigationID: context.navigationID, navigationLifetime: context.navigationLifetime,
             committedURL: committedURL
         )
         guard case .publish(let publication) = decision else { return }
@@ -446,7 +447,7 @@ final class SumiTabLifecycleNavigationResponder:
             .handleDestructiveDataCleanupProcessTermination(webView) {
             return
         }
-        let recoveryPlan = tab.webContentRecovery.beginRecovery(on: webView)
+        let recoveryPlan = recovery.beginRecovery(on: webView)
         if let continuation = recoveryPlan.authorityContinuation {
             TabMainFrameLifecycleReducer.replayIfNeeded(
                 continuation,
@@ -537,16 +538,15 @@ final class SumiTabLifecycleNavigationResponder:
         }
         let decision = lifecycle.claimLocalStartEffects(
             from: webView,
-            navigationID: context.navigationID
+            navigationID: context.navigationID, navigationLifetime: context.navigationLifetime
         )
         guard let targetURL = decision.value else { return }
-        if case .publish = decision {
-            tab.navigationRuntime.lifecycleNavigationRuntime.prepareExtensionWebView(
-                webView,
-                targetURL,
-                "SumiTabLifecycleNavigationResponder.start"
-            )
-        }
+        guard case .publish = decision else { return }
+        tab.navigationRuntime.lifecycleNavigationRuntime.prepareExtensionWebView(
+            webView,
+            targetURL,
+            "SumiTabLifecycleNavigationResponder.start"
+        )
     }
 
     private func publishAuthorityStartEffectsIfNeeded(
@@ -559,7 +559,7 @@ final class SumiTabLifecycleNavigationResponder:
         }
         let transactionStart = lifecycle.claimTransactionStartEffects(
             from: webView,
-            navigationID: context.navigationID
+            navigationID: context.navigationID, navigationLifetime: context.navigationLifetime
         )
         guard let transactionLease = transactionStart.value else { return nil }
         if case .publish = transactionStart {
@@ -576,7 +576,7 @@ final class SumiTabLifecycleNavigationResponder:
         }
         let targetPreparation = lifecycle.claimAuthorityTargetPreparation(
             from: webView,
-            navigationID: context.navigationID
+            navigationID: context.navigationID, navigationLifetime: context.navigationLifetime
         )
         guard let targetLease = targetPreparation.value else { return nil }
         if case .publish = targetPreparation {
