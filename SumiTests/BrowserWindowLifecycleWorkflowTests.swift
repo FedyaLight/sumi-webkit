@@ -216,11 +216,12 @@ final class BrowserWindowLifecycleWorkflowTests: XCTestCase {
             commands: browserManager.windowCommands
         )
 
-        workflow.handleWindowClose(incognitoWindow)
+        let cleanup = workflow.handleWindowClose(incognitoWindow)
 
         XCTAssertTrue(recentlyClosed.items.isEmpty)
         XCTAssertEqual(store.snapshots, [archivedSnapshot])
-        await waitUntil { incognitoWindow.ephemeralProfile == nil }
+        await cleanup?.value
+        XCTAssertNil(incognitoWindow.ephemeralProfile)
     }
 
     func testAllWindowsClosedCleanupUsesSynchronousProfileSnapshot() async {
@@ -267,7 +268,7 @@ final class BrowserWindowLifecycleWorkflowTests: XCTestCase {
 
         siteDataPolicy.finishCleanup()
         await siteDataPolicy.waitUntilFinished()
-        await waitUntil { releasedBrowserManager == nil }
+        XCTAssertNil(releasedBrowserManager)
     }
 
     func testIncognitoCloseKeepsExactRuntimeAliveUntilAsyncCleanupFinishes() async throws {
@@ -308,13 +309,14 @@ final class BrowserWindowLifecycleWorkflowTests: XCTestCase {
             )
         }
 
-        workflow.handleWindowClose(windowState)
+        let cleanup = workflow.handleWindowClose(windowState)
         weak let releasedBrowserManager = browserManager
         browserManager = nil
 
         XCTAssertNotNil(releasedBrowserManager)
-        await waitUntil { windowState.ephemeralProfile == nil }
-        await waitUntil { releasedBrowserManager == nil }
+        await cleanup?.value
+        XCTAssertNil(windowState.ephemeralProfile)
+        XCTAssertNil(releasedBrowserManager)
         XCTAssertTrue(windowState.ephemeralSpaces.isEmpty)
         XCTAssertNil(windowState.currentSpaceId)
     }
@@ -379,22 +381,6 @@ final class BrowserWindowLifecycleWorkflowTests: XCTestCase {
         XCTAssertTrue(wasAlreadyDetached)
         XCTAssertEqual(events, ["close", "allClosed"])
         XCTAssertNil(registry.windows[windowState.id])
-    }
-
-    private func waitUntil(
-        _ predicate: @MainActor () -> Bool
-    ) async {
-        let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: .seconds(2))
-        while predicate() == false, clock.now < deadline {
-            do {
-                try await Task.sleep(for: .milliseconds(5))
-            } catch {
-                XCTFail("Wait was cancelled: \(error)")
-                return
-            }
-        }
-        XCTAssertTrue(predicate())
     }
 
     private func makeClosePersistence(

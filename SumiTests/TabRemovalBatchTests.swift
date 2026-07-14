@@ -87,7 +87,12 @@ final class TabRemovalBatchTests: XCTestCase {
         XCTAssertNil(tabManager.splitGroupStore.group(id: group.id))
         XCTAssertNil(tabManager.regularTabCollectionOwner.tab(for: closed.id))
 
-        let didPersistFinalState = try await waitUntilPersisted {
+        let scheduledPersistence = try XCTUnwrap(
+            tabManager.structuralPersistence.scheduledPersistTask
+        )
+        await scheduledPersistence.value
+
+        let didPersistFinalState = try {
             let context = ModelContext(container)
             let persistedTabIDs = Set(
                 try context.fetch(FetchDescriptor<TabEntity>()).map(\.id)
@@ -106,7 +111,7 @@ final class TabRemovalBatchTests: XCTestCase {
             return groups.allSatisfy {
                 !$0.contains(.regularTab(closed.id))
             }
-        }
+        }()
         XCTAssertTrue(didPersistFinalState)
         withExtendedLifetime(cancellable) {}
     }
@@ -203,17 +208,6 @@ final class TabRemovalBatchTests: XCTestCase {
             tabManager.splitGroupMutations.insert(group, persist: false)
         )
         return group
-    }
-
-    private func waitUntilPersisted(
-        attempts: Int = 40,
-        condition: @escaping @MainActor () throws -> Bool
-    ) async throws -> Bool {
-        for _ in 0..<attempts {
-            if try condition() { return true }
-            try await Task.sleep(nanoseconds: 50_000_000)
-        }
-        return try condition()
     }
 }
 

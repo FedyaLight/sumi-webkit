@@ -135,9 +135,11 @@ final class BrowserAppOrchestrationOwner {
         )
         windowRegistryEventSinkReceipt = eventSinkReceipt
 
-        Task { @MainActor [browserManager] in
-            await browserManager.privacyBundle.automaticDataCleanupOwner.runAutomaticPermissionCleanupIfNeeded(
-                for: browserManager.currentProfile
+        let automaticDataCleanup = browserManager.privacyBundle.automaticDataCleanupOwner
+        let currentProfile = browserManager.currentProfile
+        Task { @MainActor [automaticDataCleanup, currentProfile] in
+            await automaticDataCleanup.runAutomaticPermissionCleanupIfNeeded(
+                for: currentProfile
             )
         }
 

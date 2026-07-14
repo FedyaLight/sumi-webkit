@@ -173,7 +173,6 @@ final class RecentlyClosedItemReopenServiceTests: XCTestCase {
         weak let releasedSessionRecovery = sessionRecovery
 
         browserManager = nil
-        await waitUntil { releasedBrowserManager == nil }
 
         XCTAssertNil(
             releasedBrowserManager,
@@ -183,22 +182,6 @@ final class RecentlyClosedItemReopenServiceTests: XCTestCase {
 
         sessionRecovery = nil
         XCTAssertNil(releasedSessionRecovery)
-    }
-
-    private func waitUntil(
-        _ predicate: @MainActor () -> Bool
-    ) async {
-        let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: .seconds(2))
-        while predicate() == false, clock.now < deadline {
-            do {
-                try await Task.sleep(for: .milliseconds(5))
-            } catch {
-                XCTFail("Wait was cancelled: \(error)")
-                return
-            }
-        }
-        XCTAssertTrue(predicate())
     }
 
     private func makeHarness() -> Harness {

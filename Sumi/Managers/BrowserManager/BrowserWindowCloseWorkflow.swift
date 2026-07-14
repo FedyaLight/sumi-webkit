@@ -38,13 +38,14 @@ final class BrowserWindowCloseWorkflow {
         self.commands = commands
     }
 
-    func handleWindowClose(_ windowState: BrowserWindowState) {
+    @discardableResult
+    func handleWindowClose(_ windowState: BrowserWindowState) -> Task<Void, Never>? {
         guard let browserRuntime else {
             webViews.cleanupAfterBrowserRuntimeDeallocation()
             RuntimeDiagnostics.emit(
                 "⚠️ [WindowLifecycle] Window \(windowState.id) closed after browser runtime deallocation; terminal WebView cleanup completed"
             )
-            return
+            return nil
         }
 
         guard let extensions,
@@ -56,7 +57,7 @@ final class BrowserWindowCloseWorkflow {
             assertionFailure(
                 "A live browser runtime lost a window-close collaborator"
             )
-            return
+            return nil
         }
 
         if windowState.isIncognito == false {
@@ -69,9 +70,9 @@ final class BrowserWindowCloseWorkflow {
         splitPreviews.removeWindow(windowState.id)
         backgroundMedia.scheduleReconcile(reason: "window-closed")
 
-        guard windowState.isIncognito else { return }
+        guard windowState.isIncognito else { return nil }
 
-        Task { @MainActor [browserRuntime, commands] in
+        return Task { @MainActor [browserRuntime, commands] in
             _ = browserRuntime
             await commands.closeIncognitoWindow(windowState)
         }

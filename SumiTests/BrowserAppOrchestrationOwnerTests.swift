@@ -137,14 +137,6 @@ final class BrowserAppOrchestrationOwnerTests: XCTestCase {
 
         browserManager = nil
 
-        await waitUntil {
-            releasedBrowserManager == nil
-                && releasedRestorationService == nil
-                && releasedActivationService == nil
-                && releasedWindowExtensionPublication == nil
-                && releasedTabManager == nil
-                && releasedProfileManager == nil
-        }
         XCTAssertNil(releasedBrowserManager)
         XCTAssertNil(releasedRestorationService)
         XCTAssertNil(releasedActivationService)
@@ -173,7 +165,7 @@ final class BrowserAppOrchestrationOwnerTests: XCTestCase {
         )
 
         browserManager = nil
-        await waitUntil { commands.hasReleasedLiveKernel }
+        XCTAssertTrue(commands.hasReleasedLiveKernel)
 
         let lateWindow = BrowserWindowState()
         XCTAssertNil(commands.sidebarActions.spaceForSidebarActions(in: lateWindow))
@@ -214,22 +206,6 @@ final class BrowserAppOrchestrationOwnerTests: XCTestCase {
         let historyCount = commands.recentlyClosed.items.count
         commands.sessionRecovery.reopenMostRecentClosedItem()
         XCTAssertEqual(commands.recentlyClosed.items.count, historyCount)
-    }
-
-    private func waitUntil(
-        _ predicate: @MainActor () -> Bool
-    ) async {
-        let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: .seconds(2))
-        while predicate() == false, clock.now < deadline {
-            do {
-                try await Task.sleep(for: .milliseconds(5))
-            } catch {
-                XCTFail("Wait was cancelled: \(error)")
-                return
-            }
-        }
-        XCTAssertTrue(predicate())
     }
 
     private func makeHarness() -> Harness {

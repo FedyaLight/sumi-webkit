@@ -19,6 +19,7 @@ final class TabStructuralPersistenceService {
     private var snapshotCache = TabStructuralSnapshotCache()
     private var persistenceGeneration = 0
     private(set) var scheduledPersistTask: Task<Void, Never>?
+    private(set) var selectionPersistTask: Task<Void, Never>?
     private var persistRequestID: UInt64 = 0
 
     init(
@@ -44,10 +45,8 @@ final class TabStructuralPersistenceService {
 
     // MARK: - Scheduling
 
-    nonisolated func scheduleStructuralPersistence() {
-        Task { @MainActor [weak self] in
-            self?.scheduleStructuralPersistenceOnMain()
-        }
+    func scheduleStructuralPersistence() {
+        scheduleStructuralPersistenceOnMain()
     }
 
     func scheduleStructuralPersistenceFromMain() {
@@ -185,7 +184,9 @@ final class TabStructuralPersistenceService {
     func persistSelection() {
         let tabID = persistableCurrentTabID()
         let spaceID = state.spaces.currentSpaceId
-        Task { [selectionStore] in
+        let precedingPersist = selectionPersistTask
+        selectionPersistTask = Task { [selectionStore] in
+            await precedingPersist?.value
             let signpostState = PerformanceTrace.beginInterval("TabManager.persistSelection")
             defer {
                 PerformanceTrace.endInterval("TabManager.persistSelection", signpostState)

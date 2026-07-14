@@ -1,3 +1,4 @@
+import Combine
 import CryptoKit
 import Foundation
 import SumiDomain
@@ -429,7 +430,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         )
         await replacementController.waitForContentBlockingAssetsInstalled()
 
-        try await waitForWebViewURL(replacementWebView, toEqual: tab.url)
+        await waitForWebViewURL(replacementWebView, toEqual: tab.url)
         XCTAssertFalse(tab.isSafariContentBlockerReloadRequired)
         XCTAssertTrue(
             harness.ruleListIdentifiers.isDisjoint(
@@ -1302,76 +1303,24 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         )
     }
 
-    @discardableResult
-    private func waitForAssets(
-        on controller: SumiNormalTabUserContentControlling,
-        timeout: TimeInterval = 5,
-        where predicate: (SumiNormalTabContentBlockingAssetSummary) -> Bool
-    ) async throws -> SumiNormalTabContentBlockingAssetSummary {
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
-            let summary = controller.contentBlockingAssetSummary
-            if summary.isInstalled, predicate(summary) {
-                return summary
-            }
-            try await Task.sleep(nanoseconds: 50_000_000)
-        }
-        XCTFail("Timed out waiting for normal-tab content-blocking assets: \(controller.contentBlockingAssetSummary)")
-        return controller.contentBlockingAssetSummary
-    }
-
-    @discardableResult
-    private func waitForAssets(
-        on tab: Tab,
-        timeout: TimeInterval = 5,
-        where predicate: (SumiNormalTabContentBlockingAssetSummary) -> Bool
-    ) async throws -> SumiNormalTabContentBlockingAssetSummary {
-        let deadline = Date().addingTimeInterval(timeout)
-        var latestSummary: SumiNormalTabContentBlockingAssetSummary?
-        while Date() < deadline {
-            guard let controller = tab.resolvedCurrentWebView()?
-                .configuration
-                .userContentController
-                .sumiNormalTabUserContentController
-            else {
-                try await Task.sleep(nanoseconds: 50_000_000)
-                continue
-            }
-            let summary = controller.contentBlockingAssetSummary
-            latestSummary = summary
-            if summary.isInstalled, predicate(summary) {
-                return summary
-            }
-            try await Task.sleep(nanoseconds: 50_000_000)
-        }
-        XCTFail("Timed out waiting for current-tab content-blocking assets: \(latestSummary.map { String(describing: $0) } ?? "nil")")
-        return latestSummary ?? SumiNormalTabContentBlockingAssetSummary(
-            isInstalled: false,
-            globalRuleListCount: 0,
-            updateRuleCount: 0,
-            isContentBlockingFeatureEnabled: false,
-            globalRuleListIdentifiers: [],
-            lookupSucceededIdentifiers: [],
-            lookupFailedIdentifiers: [],
-            addedToUserContentControllerIdentifiers: [],
-            ruleListLookupDuration: nil,
-            tabAttachmentDuration: nil
-        )
-    }
-
     private func waitForWebViewURL(
         _ webView: WKWebView,
         toEqual expectedURL: URL,
         timeout: TimeInterval = 5
-    ) async throws {
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
-            if webView.url == expectedURL {
-                return
+    ) async {
+        let didPublishExpectedURL = expectation(
+            description: "WebView publishes expected URL"
+        )
+        let observation = webView.publisher(
+            for: \.url,
+            options: [.initial, .new]
+        ).sink { url in
+            if url == expectedURL {
+                didPublishExpectedURL.fulfill()
             }
-            try await Task.sleep(nanoseconds: 50_000_000)
         }
-        XCTFail("Timed out waiting for WebView URL \(expectedURL); latest URL: \(webView.url?.absoluteString ?? "nil")")
+        await fulfillment(of: [didPublishExpectedURL], timeout: timeout)
+        withExtendedLifetime(observation) {}
     }
 
     private func temporaryDirectory(prefix: String) -> URL {

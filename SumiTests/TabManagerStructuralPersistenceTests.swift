@@ -188,7 +188,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
         XCTAssertTrue(liveTab.webViewSession.untrackedWebView === liveWebView)
         XCTAssertFalse(tabManager.spaceStateOwner.spaces.contains { $0.id == persistedFixture.spaceAId })
 
-        try await waitForStore(in: container) { context in
+        try await waitForStore(in: container, after: tabManager.structuralPersistence) { context in
             try fetchTab(liveTab.id, in: context) != nil
         }
     }
@@ -199,7 +199,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
         let space = tabManager.spaceServices.catalog.createSpace(name: "Work", profileId: UUID())
         let tab = tabManager.regularTabLifecycleOwner.createNewTab(in: space, activate: true)
 
-        try await waitForStore(in: container) { context in
+        try await waitForStore(in: container, after: tabManager.structuralPersistence) { context in
             guard let storedTab = try fetchTab(tab.id, in: context) else { return false }
             return storedTab.spaceId == space.id
                 && storedTab.isPinned == false
@@ -213,7 +213,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
         XCTAssertFalse(storedTab.isSpacePinned)
 
         tabManager.tabClosureService.removeTab(tab.id)
-        try await waitForStore(in: container) { context in
+        try await waitForStore(in: container, after: tabManager.structuralPersistence) { context in
             try fetchTab(tab.id, in: context) == nil
         }
 
@@ -252,7 +252,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
 
         XCTAssertNil(first.profileId)
         XCTAssertEqual(follower.profileId, profile.id)
-        try await waitForStore(in: container) { context in
+        try await waitForStore(in: container, after: tabManager.structuralPersistence) { context in
             try fetchTab(follower.id, in: context)?.profileId == profile.id
         }
 
@@ -261,7 +261,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
         try XCTUnwrap(transition.settlement)(.committed)
 
         XCTAssertNil(follower.profileId)
-        try await waitForStore(in: container) { context in
+        try await waitForStore(in: container, after: tabManager.structuralPersistence) { context in
             guard let storedSpace = try fetchSpace(space.id, in: context),
                   let storedFollower = try fetchTab(follower.id, in: context)
             else { return false }
@@ -320,7 +320,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
             activate: true
         )
 
-        try await waitForStore(in: container) { context in
+        try await waitForStore(in: container, after: tabManager.structuralPersistence) { context in
             guard let storedTab = try fetchTab(tab.id, in: context),
                   let state = try context.fetch(FetchDescriptor<TabsStateEntity>()).first
             else {
@@ -346,7 +346,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
         tabManager.structuralPersistence.markRegularTabsStructurallyDirty(for: space.id)
         tabManager.structuralPersistence.scheduleStructuralPersistence()
 
-        try await waitForStore(in: container) { context in
+        try await waitForStore(in: container, after: tabManager.structuralPersistence) { context in
             let state = try context.fetch(FetchDescriptor<TabsStateEntity>()).first
             return try fetchTab(tab.id, in: context) == nil
                 && state?.currentTabID == nil
@@ -424,7 +424,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
         XCTAssertEqual(tabManager.spaceStateOwner.currentSpace?.id, spaceId)
         XCTAssertEqual(tabManager.selectionStateOwner.currentTab?.id, normalTabId)
 
-        try await waitForStore(in: container) { context in
+        try await waitForStore(in: container, after: tabManager.structuralPersistence) { context in
             let state = try context.fetch(FetchDescriptor<TabsStateEntity>()).first
             return try fetchTab(webKitExtensionTabId, in: context) == nil
                 && fetchTab(safariExtensionTabId, in: context) == nil
@@ -444,7 +444,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
         tabManager.folderMutationOwner.moveTabToFolder(tab: tab, folderId: folder.id)
         let pin = try XCTUnwrap(tabManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: space.id).first)
 
-        try await waitForStore(in: container) { context in
+        try await waitForStore(in: container, after: tabManager.structuralPersistence) { context in
             guard let storedFolder = try fetchFolder(folder.id, in: context),
                   let storedPin = try fetchTab(pin.id, in: context)
             else {
@@ -464,7 +464,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
         XCTAssertEqual(storedPin.folderId, folder.id)
 
         tabManager.folderMutationOwner.ungroupFolder(folder.id)
-        try await waitForStore(in: container) { context in
+        try await waitForStore(in: container, after: tabManager.structuralPersistence) { context in
             guard let storedPin = try fetchTab(pin.id, in: context) else { return false }
             return try fetchFolder(folder.id, in: context) == nil
                 && storedPin.folderId == nil
@@ -493,7 +493,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
         let pinIds = Set(pins.map(\.id))
         XCTAssertEqual(pins.count, 2)
 
-        try await waitForStore(in: container) { context in
+        try await waitForStore(in: container, after: tabManager.structuralPersistence) { context in
             try fetchFolder(folder.id, in: context) != nil
                 && fetchFolder(nested.id, in: context) != nil
                 && pins.allSatisfy { pin in
@@ -502,7 +502,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
         }
 
         tabManager.folderMutationOwner.deleteFolder(folder.id)
-        try await waitForStore(in: container) { context in
+        try await waitForStore(in: container, after: tabManager.structuralPersistence) { context in
             guard try fetchFolder(folder.id, in: context) == nil,
                   try fetchFolder(nested.id, in: context) == nil else {
                 return false
@@ -523,12 +523,12 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
         let folder = tabManager.folderMutationOwner.createFolder(for: space.id, name: "Docs")
 
         tabManager.folderMutationOwner.setFolder(folder.id, open: true)
-        try await waitForStore(in: container) { context in
+        try await waitForStore(in: container, after: tabManager.structuralPersistence) { context in
             try fetchFolder(folder.id, in: context)?.isOpen == true
         }
 
         tabManager.folderMutationOwner.setFolder(folder.id, open: false)
-        try await waitForStore(in: container) { context in
+        try await waitForStore(in: container, after: tabManager.structuralPersistence) { context in
             try fetchFolder(folder.id, in: context)?.isOpen == false
         }
     }
@@ -566,7 +566,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
             [firstPin.id, secondPin.id, folder.id]
         )
 
-        try await waitForStore(in: container) { context in
+        try await waitForStore(in: container, after: tabManager.structuralPersistence) { context in
             guard let storedFolder = try fetchFolder(folder.id, in: context),
                   let storedFirstPin = try fetchTab(firstPin.id, in: context),
                   let storedSecondPin = try fetchTab(secondPin.id, in: context)
@@ -601,7 +601,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
         tabManager.sidebarDragRouter.moveTab(tabA.id, to: spaceB.id)
         tabManager.regularTabCollectionOwner.reorderRegularTabs(tabA, in: spaceB.id, to: 0)
 
-        try await waitForStore(in: container) { context in
+        try await waitForStore(in: container, after: tabManager.structuralPersistence) { context in
             guard let storedMovedTab = try fetchTab(tabA.id, in: context),
                   let storedExistingTab = try fetchTab(tabB.id, in: context)
             else {
@@ -635,7 +635,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
         XCTAssertEqual(tabManager.spaceStateOwner.spaces.map(\.id), [second.id, third.id, first.id])
         XCTAssertEqual(tabManager.spaceStateOwner.currentSpace?.id, second.id)
 
-        try await waitForStore(in: container) { context in
+        try await waitForStore(in: container, after: tabManager.structuralPersistence) { context in
             let storedSpaces = try fetchSpacesSortedByIndex(in: context)
             return storedSpaces.map(\.id) == [second.id, third.id, first.id]
                 && storedSpaces.map(\.index) == [0, 1, 2]
@@ -658,7 +658,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
 
         XCTAssertTrue(tabManager.spaceServices.catalog.reorderSpace(spaceId: first.id, to: 2))
 
-        try await waitForStore(in: container) { context in
+        try await waitForStore(in: container, after: tabManager.structuralPersistence) { context in
             try fetchSpacesSortedByIndex(in: context).map(\.id) == [second.id, third.id, first.id]
         }
 
@@ -694,12 +694,12 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
         _ = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/one", in: space, activate: true)
         let second = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/two", in: space, activate: false)
 
-        try await waitForPersistedState(in: container) { state in
+        try await waitForPersistedState(in: container, after: tabManager.structuralPersistence) { state in
             state.currentSpaceID == space.id
         }
         tabManager.activeSelectionOwner.setActiveTab(second)
 
-        try await waitForPersistedState(in: container) { state in
+        try await waitForPersistedState(in: container, after: tabManager.structuralPersistence) { state in
             state.currentTabID == second.id && state.currentSpaceID == space.id
         }
     }
@@ -715,7 +715,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
         let second = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/second", in: secondSpace, activate: false)
 
         tabManager.activeSelectionOwner.setActiveTab(first)
-        try await waitForStore(in: container) { context in
+        try await waitForStore(in: container, after: tabManager.structuralPersistence) { context in
             guard let state = try context.fetch(FetchDescriptor<TabsStateEntity>()).first else {
                 return false
             }
@@ -735,7 +735,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
         XCTAssertEqual(secondSpace.activeTabId, second.id)
         XCTAssertTrue(tabManager.structuralPersistence.dirtySet.isEmpty)
         XCTAssertNil(tabManager.structuralPersistence.scheduledPersistTask)
-        try await waitForPersistedState(in: container) { state in
+        try await waitForPersistedState(in: container, after: tabManager.structuralPersistence) { state in
             state.currentTabID == second.id && state.currentSpaceID == secondSpace.id
         }
 
@@ -746,7 +746,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
         XCTAssertEqual(firstSpace.activeTabId, alternate.id)
         XCTAssertTrue(tabManager.structuralPersistence.dirtySet.isEmpty)
         XCTAssertNil(tabManager.structuralPersistence.scheduledPersistTask)
-        try await waitForPersistedState(in: container) { state in
+        try await waitForPersistedState(in: container, after: tabManager.structuralPersistence) { state in
             state.currentTabID == alternate.id && state.currentSpaceID == firstSpace.id
         }
     }
@@ -757,7 +757,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
         let space = tabManager.spaceServices.catalog.createSpace(name: "Runtime", profileId: UUID())
         let tab = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/initial", in: space, activate: true)
 
-        try await waitForStore(in: container) { context in
+        try await waitForStore(in: container, after: tabManager.structuralPersistence) { context in
             try fetchTab(tab.id, in: context) != nil
         }
 
@@ -807,7 +807,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
 
         XCTAssertTrue(tabManager.splitGroupMutations.insert(resizedGroup))
 
-        try await waitForPersistedState(in: container) { state in
+        try await waitForPersistedState(in: container, after: tabManager.structuralPersistence) { state in
             guard let data = state.splitGroupsData,
                   let archive = try? TabPersistenceCodec()
                     .decodeSplitGroupArchive(from: data),
@@ -874,7 +874,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
         )
         XCTAssertTrue(tabManager.splitGroupMutations.insert(group))
 
-        try await waitForPersistedState(in: container) { state in
+        try await waitForPersistedState(in: container, after: tabManager.structuralPersistence) { state in
             guard let data = state.splitGroupsData,
                   let archive = try? TabPersistenceCodec()
                     .decodeSplitGroupArchive(from: data),
@@ -908,7 +908,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
         let space = tabManager.spaceServices.catalog.createSpace(name: "Clean", profileId: UUID())
         let folder = tabManager.folderMutationOwner.createFolder(for: space.id, name: "Keep")
         _ = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/keep", in: space, activate: true)
-        try await waitForStore(in: container) { context in
+        try await waitForStore(in: container, after: tabManager.structuralPersistence) { context in
             try fetchFolder(folder.id, in: context) != nil
         }
 
@@ -1190,7 +1190,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
         XCTAssertTrue(tabManager.structuralPersistence.dirtySet.isEmpty)
         XCTAssertNil(tabManager.structuralPersistence.scheduledPersistTask)
 
-        try await waitForStore(in: container) { context in
+        try await waitForStore(in: container, after: tabManager.structuralPersistence) { context in
             let repairedStoredPin = try fetchTab(folderChildPinId, in: context)
             let state = try context.fetch(FetchDescriptor<TabsStateEntity>()).first
             return try fetchTab(orphanTabId, in: context) == nil
@@ -1258,7 +1258,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
         XCTAssertTrue(tabManager.structuralPersistence.dirtySet.isEmpty)
         XCTAssertNil(tabManager.structuralPersistence.scheduledPersistTask)
 
-        try await waitForStore(in: container) { context in
+        try await waitForStore(in: container, after: tabManager.structuralPersistence) { context in
             try fetchTab(pinnedId, in: context)?.iconAsset == nil
                 && fetchTab(spacePinnedId, in: context)?.iconAsset == nil
         }
@@ -1271,7 +1271,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
 
         let firstLoad = await tabManager.storeRestore.loadFromStoreAwaitingResult()
         XCTAssertTrue(firstLoad)
-        try await waitPastStructuralDebounce()
+        await awaitStructuralPersistence(tabManager.structuralPersistence)
 
         XCTAssertEqual(tabManager.spaceStateOwner.spaces.map(\.id), [fixture.spaceAId, fixture.spaceBId])
         XCTAssertEqual(tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[fixture.spaceAId]?.map(\.id), [fixture.firstTabId, fixture.secondTabId])
@@ -1281,7 +1281,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
 
         let secondLoad = await tabManager.storeRestore.loadFromStoreAwaitingResult()
         XCTAssertTrue(secondLoad)
-        try await waitPastStructuralDebounce()
+        await awaitStructuralPersistence(tabManager.structuralPersistence)
 
         XCTAssertEqual(tabManager.spaceStateOwner.spaces.map(\.id), [fixture.spaceAId, fixture.spaceBId])
         XCTAssertEqual(tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[fixture.spaceAId]?.map(\.id), [fixture.firstTabId, fixture.secondTabId])
@@ -1295,7 +1295,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
 
         let didLoad = await tabManager.storeRestore.loadFromStoreAwaitingResult()
         XCTAssertTrue(didLoad)
-        try await waitPastStructuralDebounce()
+        await awaitStructuralPersistence(tabManager.structuralPersistence)
 
         let restoredSpace = try XCTUnwrap(tabManager.spaceStateOwner.spaces.first { $0.id == fixture.spaceAId })
         let created = tabManager.regularTabLifecycleOwner.createNewTab(
@@ -1304,7 +1304,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
             activate: false
         )
 
-        try await waitForStore(in: container) { context in
+        try await waitForStore(in: container, after: tabManager.structuralPersistence) { context in
             try fetchTab(created.id, in: context) != nil
         }
         XCTAssertNotNil(try fetchTab(created.id, in: ModelContext(container)))
@@ -1319,7 +1319,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
         let second = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/two", in: space, activate: false)
         let third = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/three", in: space, activate: false)
 
-        try await waitForStore(in: container) { context in
+        try await waitForStore(in: container, after: tabManager.structuralPersistence) { context in
             try fetchTab(first.id, in: context) != nil
                 && (try fetchTab(second.id, in: context)) != nil
                 && (try fetchTab(third.id, in: context)) != nil
@@ -1330,7 +1330,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
             tabManager.regularTabCollectionOwner.reorderRegularTabs(second, in: space.id, to: 3)
         }
 
-        try await waitForStore(in: container) { context in
+        try await waitForStore(in: container, after: tabManager.structuralPersistence) { context in
             try fetchTab(third.id, in: context)?.index == 0
                 && (try fetchTab(first.id, in: context))?.index == 1
                 && (try fetchTab(second.id, in: context))?.index == 2
@@ -1508,16 +1508,13 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
 
     private func waitForPersistedState(
         in container: ModelContainer,
+        after persistence: TabStructuralPersistenceService,
         matching predicate: (TabsStateEntity) throws -> Bool
     ) async throws {
-        for _ in 0..<50 {
-            let context = ModelContext(container)
-            if let state = try context.fetch(FetchDescriptor<TabsStateEntity>()).first,
-               try predicate(state) {
-                return
-            }
-            try await Task.sleep(nanoseconds: 20_000_000)
-        }
+        let structuralPersist = persistence.scheduledPersistTask
+        let selectionPersist = persistence.selectionPersistTask
+        await structuralPersist?.value
+        await selectionPersist?.value
 
         let context = ModelContext(container)
         let state = try XCTUnwrap(context.fetch(FetchDescriptor<TabsStateEntity>()).first)
@@ -1526,23 +1523,23 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
 
     private func waitForStore(
         in container: ModelContainer,
+        after persistence: TabStructuralPersistenceService,
         file: StaticString = #filePath,
         line: UInt = #line,
         matching predicate: (ModelContext) throws -> Bool
     ) async throws {
-        for _ in 0..<50 {
-            let context = ModelContext(container)
-            if try predicate(context) {
-                return
-            }
-            try await Task.sleep(nanoseconds: 20_000_000)
-        }
+        let structuralPersist = persistence.scheduledPersistTask
+        let selectionPersist = persistence.selectionPersistTask
+        await structuralPersist?.value
+        await selectionPersist?.value
 
         let context = ModelContext(container)
         XCTAssertTrue(try predicate(context), file: file, line: line)
     }
 
-    private func waitPastStructuralDebounce() async throws {
-        try await Task.sleep(nanoseconds: 350_000_000)
+    private func awaitStructuralPersistence(
+        _ persistence: TabStructuralPersistenceService
+    ) async {
+        await persistence.scheduledPersistTask?.value
     }
 }

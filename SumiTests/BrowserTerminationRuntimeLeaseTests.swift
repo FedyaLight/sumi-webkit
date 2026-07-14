@@ -51,7 +51,7 @@ final class BrowserTerminationRuntimeLeaseTests: XCTestCase {
             await lease.finalizeTermination()
             didFinalize = true
         }
-        await waitUntil { publishingGate.didEnter }
+        await publishingGate.waitUntilEntered()
 
         XCTAssertFalse(publishingGate.didRunOnMainThread)
         XCTAssertFalse(didFinalize)
@@ -111,7 +111,7 @@ final class BrowserTerminationRuntimeLeaseTests: XCTestCase {
         let finalization = Task { @MainActor in
             await lease.finalizeTermination()
         }
-        await waitUntil { siteDataPolicy.cleanupStarted }
+        await siteDataPolicy.waitUntilStarted()
 
         XCTAssertNotNil(browserManager.glanceManager.currentSession)
         XCTAssertEqual(siteDataPolicy.profileIDs, [profile.id])
@@ -218,7 +218,7 @@ final class BrowserTerminationRuntimeLeaseTests: XCTestCase {
 
         XCTAssertFalse(retainedAuxiliarySessions.contains(retainedPopupWebView))
         lease = nil
-        await waitUntil { releasedBrowserManager == nil }
+        XCTAssertNil(releasedBrowserManager)
     }
 
     func testBrowserRuntimeDeinitPerformsTerminalAuxiliaryCleanupWithoutLease() async throws {
@@ -256,7 +256,7 @@ final class BrowserTerminationRuntimeLeaseTests: XCTestCase {
 
         browserManager = nil
 
-        await waitUntil { releasedBrowserManager == nil }
+        XCTAssertNil(releasedBrowserManager)
         XCTAssertFalse(retainedAuxiliarySessions.contains(retainedPopupWebView))
     }
 
@@ -328,27 +328,12 @@ final class BrowserTerminationRuntimeLeaseTests: XCTestCase {
             permissionSiteActivityStore: permissionSiteActivityStore
         )
     }
-
-    private func waitUntil(
-        _ predicate: @escaping @MainActor () -> Bool
-    ) async {
-        let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: .seconds(2))
-        while predicate() == false, clock.now < deadline {
-            do {
-                try await Task.sleep(for: .milliseconds(5))
-            } catch {
-                XCTFail("Wait was cancelled: \(error)")
-                return
-            }
-        }
-        XCTAssertTrue(predicate())
-    }
 }
 
 @MainActor
 private final class GatedTerminationSiteDataPolicy: BrowserSiteDataPolicyEnforcing {
     private var continuation: CheckedContinuation<Void, Never>?
+    private var startWaiters: [CheckedContinuation<Void, Never>] = []
     private(set) var cleanupStarted = false
     private(set) var profileIDs: [UUID] = []
 
@@ -373,7 +358,15 @@ private final class GatedTerminationSiteDataPolicy: BrowserSiteDataPolicyEnforci
     func performAllWindowsClosedCleanup(profiles: [Profile]) async {
         cleanupStarted = true
         profileIDs = profiles.map(\.id)
+        let startWaiters = startWaiters
+        self.startWaiters.removeAll()
+        startWaiters.forEach { $0.resume() }
         await withCheckedContinuation { continuation = $0 }
+    }
+
+    func waitUntilStarted() async {
+        guard cleanupStarted == false else { return }
+        await withCheckedContinuation { startWaiters.append($0) }
     }
 
     func resumeCleanup() {
@@ -386,6 +379,7 @@ private final class GatedPermissionPublisher: @unchecked Sendable {
     private let lock = NSLock()
     private let releaseGate = DispatchSemaphore(value: 0)
     private var entered = false
+    private var enterWaiters: [CheckedContinuation<Void, Never>] = []
     private var ranOnMainThread = false
     private var stages: [SumiPermissionCanonicalSnapshotPublisher.Stage] = []
 
@@ -402,15 +396,31 @@ private final class GatedPermissionPublisher: @unchecked Sendable {
     }
 
     func observe(_ stage: SumiPermissionCanonicalSnapshotPublisher.Stage) {
-        let shouldWait = lock.withLock {
+        let result: (shouldWait: Bool, waiters: [CheckedContinuation<Void, Never>]) = lock.withLock {
             stages.append(stage)
             ranOnMainThread = ranOnMainThread || Thread.isMainThread
-            guard stage == .temporaryWrite, !entered else { return false }
+            guard stage == .temporaryWrite, !entered else { return (false, []) }
             entered = true
-            return true
+            let waiters = enterWaiters
+            enterWaiters.removeAll()
+            return (true, waiters)
         }
-        if shouldWait {
+        result.waiters.forEach { $0.resume() }
+        if result.shouldWait {
             releaseGate.wait()
+        }
+    }
+
+    func waitUntilEntered() async {
+        await withCheckedContinuation { continuation in
+            let shouldResume = lock.withLock {
+                guard entered == false else { return true }
+                enterWaiters.append(continuation)
+                return false
+            }
+            if shouldResume {
+                continuation.resume()
+            }
         }
     }
 

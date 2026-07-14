@@ -3,7 +3,7 @@ import SumiDomain
 import SwiftData
 
 /// Restores the persisted tab structure from the SwiftData store at startup and
-/// schedules repair persistence when restored data needed normalization.
+/// persists repairs before an awaited restore reports completion.
 @MainActor
 final class TabStoreRestoreService {
     private let payloadLoader: any TabRestorePayloadLoading
@@ -145,7 +145,7 @@ final class TabStoreRestoreService {
             }
 
             let applyResult = applyRestorePayload(payload)
-            enqueueRestoreRepairIfNeeded(applyResult)
+            await persistRestoreRepairIfNeeded(applyResult)
             return true
         } catch {
             RuntimeDiagnostics.debug("SwiftData load error: \(String(describing: error))", category: "TabManager")
@@ -221,26 +221,24 @@ final class TabStoreRestoreService {
         return RestoreApplyResult(snapshot: snapshot, reasons: uniqueRepairReasons)
     }
 
-    private func enqueueRestoreRepairIfNeeded(_ result: RestoreApplyResult) {
+    private func persistRestoreRepairIfNeeded(_ result: RestoreApplyResult) async {
         guard let snapshot = result.snapshot else {
             return
         }
 
         let generation = persistence.reservePersistenceGeneration()
         let reasonSummary = result.reasons.joined(separator: ", ")
-        Task {
-            let signpostState = PerformanceTrace.beginInterval("TabManager.restoreRepairFullReconcile")
-            defer {
-                PerformanceTrace.endInterval("TabManager.restoreRepairFullReconcile", signpostState)
-            }
-            RuntimeDiagnostics.debug(
-                "Persisting restore repair via full reconcile: \(reasonSummary)",
-                category: "TabManager"
-            )
-            _ = await structuralStore.persistFullReconcile(
-                snapshot: snapshot,
-                generation: generation
-            )
+        let signpostState = PerformanceTrace.beginInterval("TabManager.restoreRepairFullReconcile")
+        defer {
+            PerformanceTrace.endInterval("TabManager.restoreRepairFullReconcile", signpostState)
         }
+        RuntimeDiagnostics.debug(
+            "Persisting restore repair via full reconcile: \(reasonSummary)",
+            category: "TabManager"
+        )
+        _ = await structuralStore.persistFullReconcile(
+            snapshot: snapshot,
+            generation: generation
+        )
     }
 }
