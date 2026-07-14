@@ -37,6 +37,7 @@ checks=(
   "scripts/check_prepared_bundle_runtime_boundary.sh"
   "scripts/check_safari_extension_clean_import.sh"
   "scripts/check_settings_browser_manager_boundary.sh"
+  "scripts/check_general_settings_boundaries.sh"
   "scripts/check_sidebar_browser_manager_boundary.sh"
   "scripts/check_sidebar_drop_coordinator_boundary.sh"
   "scripts/check_tab_closure_service_boundary.sh"
