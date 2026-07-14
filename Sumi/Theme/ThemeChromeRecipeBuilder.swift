@@ -1,4 +1,5 @@
 import AppKit
+import SumiDomain
 import SwiftUI
 
 struct ThemeContrastDecision: Equatable {

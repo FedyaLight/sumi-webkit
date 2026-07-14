@@ -1,4 +1,5 @@
 @testable import Sumi
+import SumiDomain
 import SwiftData
 import SwiftUI
 import XCTest
@@ -234,29 +235,15 @@ final class WorkspaceThemePersistenceTests: XCTestCase {
         defer { harness.reset() }
 
         let spaceId = UUID()
-        let expectedTheme = WorkspaceTheme(
-            gradientTheme: WorkspaceGradientTheme(
-                colors: [
-                    WorkspaceThemeColor(
-                        hex: "#FF3B30",
-                        isPrimary: true,
-                        position: .topLeft
-                    ),
-                    WorkspaceThemeColor(
-                        hex: "#34C759",
-                        position: .bottom
-                    ),
-                ],
-                opacity: 0.82,
-                texture: 0.25
-            )
+        let expectedTheme = try XCTUnwrap(
+            WorkspaceTheme.decode(Self.currentThemeFixture)
         )
         let space = SpaceEntity(
             id: spaceId,
             name: "Startup",
             icon: "sparkles",
             index: 0,
-            workspaceThemeData: expectedTheme.encoded
+            workspaceThemeData: Self.currentThemeFixture
         )
         context.insert(space)
         try context.save()
@@ -307,4 +294,8 @@ final class WorkspaceThemePersistenceTests: XCTestCase {
             ),
         ]
     }
+
+    private static let currentThemeFixture = Data(
+        ##"{"gradientTheme":{"colors":[{"algorithm":"floating","hex":"#445566","id":"00000000-0000-0000-0000-000000000001","isCustom":false,"isPrimary":true,"lightness":0.35,"position":{"x":0.66,"y":0.5},"type":"explicit-lightness"}],"opacity":0.74,"texture":0.1875,"type":"gradient"},"usesExplicitColorScheme":true}"##.utf8
+    )
 }

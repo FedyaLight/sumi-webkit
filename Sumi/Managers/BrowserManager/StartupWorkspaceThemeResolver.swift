@@ -1,5 +1,6 @@
 import Foundation
 import OSLog
+import SumiDomain
 import SwiftData
 
 @MainActor

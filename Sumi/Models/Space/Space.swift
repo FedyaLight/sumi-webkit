@@ -5,6 +5,7 @@
 //
 
 import AppKit
+import SumiDomain
 import SwiftUI
 
 enum SumiProfileRuntimeState: String, Codable, CaseIterable {

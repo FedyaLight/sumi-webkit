@@ -1,3 +1,4 @@
+import SumiDomain
 import SwiftUI
 
 struct SumiWorkspaceThemePreset: Identifiable, Hashable {

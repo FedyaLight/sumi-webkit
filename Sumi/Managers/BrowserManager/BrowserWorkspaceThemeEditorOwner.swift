@@ -1,3 +1,4 @@
+import SumiDomain
 import SwiftUI
 
 /// Presents the workspace gradient/theme editor and manages its picker

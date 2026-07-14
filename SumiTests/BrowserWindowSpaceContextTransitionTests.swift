@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 @testable import Sumi
 import XCTest
 

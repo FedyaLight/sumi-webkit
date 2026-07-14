@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 /// Commits the window-local Space/Profile context and its matching chrome
 /// theme. Process-wide activation, tab handoff, and persistence remain outside

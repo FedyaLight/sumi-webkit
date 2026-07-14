@@ -5,6 +5,7 @@
 //
 
 import AppKit
+import SumiDomain
 import SwiftUI
 
 // MARK: - Status Bar View

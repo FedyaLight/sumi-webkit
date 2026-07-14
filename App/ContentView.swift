@@ -4,6 +4,7 @@
 //
 //
 
+import SumiDomain
 import SwiftUI
 
 struct ContentView: View {

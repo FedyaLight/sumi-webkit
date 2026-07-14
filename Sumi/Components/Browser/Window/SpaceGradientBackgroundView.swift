@@ -1,3 +1,4 @@
+import SumiDomain
 import SwiftUI
 
 // Dithered gradient rendering

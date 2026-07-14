@@ -1,3 +1,4 @@
+import SumiDomain
 import SwiftUI
 #if canImport(AppKit)
 import AppKit

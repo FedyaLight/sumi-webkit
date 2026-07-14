@@ -1,4 +1,5 @@
 import AppKit
+import SumiDomain
 @testable import Sumi
 import XCTest
 

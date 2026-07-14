@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 /// Window-level browser boundary handed to `WindowView`: typed feature
 /// contexts plus narrow closures over browser state, so the window shell never

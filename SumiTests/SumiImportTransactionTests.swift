@@ -112,6 +112,61 @@ final class SumiImportTransactionTests: XCTestCase {
         XCTAssertIdentical(materialized.currentTab, tab)
     }
 
+    func testMaterializationUsesCheckedWorkspaceThemeBytesBeforeStructuredFallback() throws {
+        let browserManager = BrowserManager()
+        let profileID = UUID()
+        let spaceID = UUID()
+        let themeBytes = try XCTUnwrap(
+            Data(base64Encoded: Self.currentThemeFixtureBase64)
+        )
+        let portableData = SumiPortableData(
+            profiles: [portableProfile(id: profileID.uuidString, name: "Theme Profile")],
+            spaces: [
+                SumiPortableSpace(
+                    id: spaceID.uuidString,
+                    name: "Theme Space",
+                    icon: "circle",
+                    index: 0,
+                    profileId: profileID.uuidString,
+                    themeDataBase64: Self.currentThemeFixtureBase64,
+                    color: SumiPortableRGBColor(r: 1, g: 0, b: 0)
+                ),
+            ]
+        )
+        let plan = SumiImportPlan(
+            baseline: SumiPortableData(),
+            targetRuntimeData: portableData,
+            bookmarkMutation: .none,
+            categories: [.profiles, .spaces, .themes],
+            mode: .replace,
+            warnings: []
+        )
+        let checkpoint = SumiImportRuntimeState(
+            profiles: [],
+            currentProfile: nil,
+            spaces: [],
+            tabsBySpace: [:],
+            foldersBySpace: [:],
+            pinnedByProfile: [:],
+            spacePinnedShortcuts: [:],
+            pendingPinnedWithoutProfile: [],
+            splitGroups: [],
+            currentSpace: nil,
+            currentTab: nil
+        )
+
+        let materialized = try SumiImportRuntimeMaterializer(
+            tabFactory: browserManager.tabManager.tabFactory,
+            tabBrowserRuntime: .inactive
+        ).materialize(plan, preserving: checkpoint)
+
+        let expectedTheme = try XCTUnwrap(WorkspaceTheme.decode(themeBytes))
+        let importedTheme = try XCTUnwrap(materialized.spaces.first?.workspaceTheme)
+        XCTAssertEqual(importedTheme, expectedTheme)
+        XCTAssertEqual(importedTheme.gradientTheme.colors.first?.hex, "#445566")
+        XCTAssertNotEqual(importedTheme.gradientTheme.colors.first?.hex, "#FF0000")
+    }
+
     func testBookmarkOnlyReplaceIsIdempotentWithoutRuntimeChurn() async throws {
         let fixture = makeTransactionFixture()
         let baseline = SumiPortableData(bookmarks: [bookmarkNode("Before")])
@@ -1454,6 +1509,9 @@ final class SumiImportTransactionTests: XCTestCase {
             currentTab: nil
         )
     }
+
+    private static let currentThemeFixtureBase64 =
+        "eyJncmFkaWVudFRoZW1lIjp7ImNvbG9ycyI6W3siYWxnb3JpdGhtIjoiZmxvYXRpbmciLCJoZXgiOiIjNDQ1NTY2IiwiaWQiOiIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDAwMDEiLCJpc0N1c3RvbSI6ZmFsc2UsImlzUHJpbWFyeSI6dHJ1ZSwibGlnaHRuZXNzIjowLjM1LCJwb3NpdGlvbiI6eyJ4IjowLjY2LCJ5IjowLjV9LCJ0eXBlIjoiZXhwbGljaXQtbGlnaHRuZXNzIn1dLCJvcGFjaXR5IjowLjc0LCJ0ZXh0dXJlIjowLjE4NzUsInR5cGUiOiJncmFkaWVudCJ9LCJ1c2VzRXhwbGljaXRDb2xvclNjaGVtZSI6dHJ1ZX0="
 }
 
 @MainActor

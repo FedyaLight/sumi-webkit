@@ -5,6 +5,7 @@
 
 import AppKit
 import Combine
+import SumiDomain
 import SwiftUI
 
 struct SumiWindowProgressBar: View {

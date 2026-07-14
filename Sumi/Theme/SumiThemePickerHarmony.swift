@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import SumiDomain
 
 struct SumiThemePickerActionState: Equatable {
     let canAdd: Bool
@@ -167,7 +168,7 @@ enum SumiThemePickerHarmony: String, CaseIterable, Identifiable {
     case triadic
     case floating
 
-    static let maxDots = 3
+    static let maxDots = WorkspaceGradientTheme.maximumColorCount
 
     var id: String { rawValue }
 

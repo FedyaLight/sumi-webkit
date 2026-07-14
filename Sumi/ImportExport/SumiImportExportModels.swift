@@ -174,7 +174,7 @@ struct SumiPortableSpace: Codable, Equatable, Identifiable, Sendable {
     var profileId: String?
     var themeDataBase64: String?
     var color: SumiPortableRGBColor?
-    /// Full source gradient (up to `WorkspaceResolvedGradient.maxStops` used);
+    /// Full source gradient (up to `WorkspaceGradientTheme.maximumColorCount` used);
     /// `color` stays populated with the primary stop for format compatibility.
     var colors: [SumiPortableRGBColor]? = nil
     var themeOpacity: Double? = nil

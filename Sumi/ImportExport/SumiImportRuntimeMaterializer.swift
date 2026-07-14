@@ -421,7 +421,7 @@ private enum SumiImportedThemeDecoder {
 
         let stops = record.colors ?? record.color.map { [$0] } ?? []
         guard !stops.isEmpty else { return .default }
-        let limited = Array(stops.prefix(WorkspaceResolvedGradient.maxStops))
+        let limited = Array(stops.prefix(WorkspaceGradientTheme.maximumColorCount))
         let positions = positions(stopCount: limited.count)
         let opacity = record.themeOpacity.map {
             max($0, WorkspaceGradientTheme.customChromeThemeDisableThreshold)

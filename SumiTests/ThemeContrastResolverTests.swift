@@ -1,4 +1,5 @@
 @testable import Sumi
+import SumiDomain
 import SwiftUI
 import XCTest
 

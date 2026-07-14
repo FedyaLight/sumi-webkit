@@ -1,4 +1,5 @@
 import AppKit
+import SumiDomain
 import SwiftUI
 
 /// SwiftUI color recipe for browser chrome. Non-color spacing/metrics live in

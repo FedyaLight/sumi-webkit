@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 /// Mutates the ordered Space catalog and its user-editable metadata.
 ///

@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 /// Keeps one window's Space/Profile identity coherent without process-global
 /// fallbacks.

@@ -28,6 +28,7 @@ checks=(
   "scripts/check_modernization_debt.sh"
   "scripts/check_di_ceremony_debt.sh"
   "scripts/check_domain_isolation_boundary.sh"
+  "scripts/check_workspace_theme_architecture.sh"
   "scripts/check_download_architecture.sh"
   "scripts/check_webruntime_isolation_boundary.sh"
   "scripts/check_import_export_boundaries.sh"

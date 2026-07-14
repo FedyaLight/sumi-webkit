@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import SumiDomain
 
 /// Applies a last-session merge plan as one structural transaction. Mutable
 /// browser state is deliberately confined here; planning stays value-only.
