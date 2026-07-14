@@ -50,7 +50,8 @@ final class BrowserChromeBundle {
             browserManager: browserManager
         )
         self.workspaceThemeTransitionOwner = BrowserWorkspaceThemeTransitionOwner(
-            browserManager: browserManager
+            shellRuntime: browserManager.shellRuntime,
+            coordinator: browserManager.workspaceThemeCoordinator
         )
         self.workspaceThemeEditorOwner = Self.makeWorkspaceThemeEditor(browserManager)
         self.nativeSurfaceRoutingOwner = BrowserNativeSurfaceRoutingOwner(

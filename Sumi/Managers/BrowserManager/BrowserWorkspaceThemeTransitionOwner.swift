@@ -5,10 +5,15 @@ import SwiftUI
 /// theming through `WorkspaceThemeCoordinator`.
 @MainActor
 final class BrowserWorkspaceThemeTransitionOwner {
-    private weak var browserManager: BrowserManager?
+    private let shellRuntime: BrowserShellRuntime
+    private let coordinator: WorkspaceThemeCoordinator
 
-    init(browserManager: BrowserManager) {
-        self.browserManager = browserManager
+    init(
+        shellRuntime: BrowserShellRuntime,
+        coordinator: WorkspaceThemeCoordinator
+    ) {
+        self.shellRuntime = shellRuntime
+        self.coordinator = coordinator
     }
 
     func updateWorkspaceTheme(
@@ -17,16 +22,16 @@ final class BrowserWorkspaceThemeTransitionOwner {
         animate: Bool
     ) {
         guard !windowState.isIncognito else { return }
-        browserManager?.workspaceThemeCoordinator.update(
+        coordinator.update(
             for: windowState,
             to: newTheme,
             animate: animate,
-            isActiveWindow: browserManager?.windowRegistry?.activeWindow?.id == windowState.id
+            isActiveWindow: shellRuntime.windowRegistry?.activeWindow?.id == windowState.id
         )
     }
 
     func commitWorkspaceTheme(_ workspaceTheme: WorkspaceTheme, for windowState: BrowserWindowState) {
-        browserManager?.workspaceThemeCoordinator.restore(workspaceTheme, in: windowState)
+        coordinator.restore(workspaceTheme, in: windowState)
     }
 
     @discardableResult
@@ -37,7 +42,7 @@ final class BrowserWorkspaceThemeTransitionOwner {
         initialProgress: Double = 0,
         in windowState: BrowserWindowState
     ) -> SpaceTransitionIdentity? {
-        browserManager?.workspaceThemeCoordinator.beginInteractiveTransition(
+        coordinator.beginInteractiveTransition(
             from: sourceSpace,
             to: destinationSpace,
             identity: identity,
@@ -51,7 +56,7 @@ final class BrowserWorkspaceThemeTransitionOwner {
         identity: SpaceTransitionIdentity? = nil,
         in windowState: BrowserWindowState
     ) {
-        browserManager?.workspaceThemeCoordinator.updateInteractiveTransition(
+        coordinator.updateInteractiveTransition(
             progress: progress,
             identity: identity,
             in: windowState
@@ -62,7 +67,7 @@ final class BrowserWorkspaceThemeTransitionOwner {
         identity: SpaceTransitionIdentity? = nil,
         in windowState: BrowserWindowState
     ) {
-        browserManager?.workspaceThemeCoordinator.cancelInteractiveTransition(
+        coordinator.cancelInteractiveTransition(
             in: windowState,
             identity: identity
         )
@@ -73,7 +78,7 @@ final class BrowserWorkspaceThemeTransitionOwner {
         in windowState: BrowserWindowState,
         identity: SpaceTransitionIdentity? = nil
     ) {
-        browserManager?.workspaceThemeCoordinator.finishInteractiveTransition(
+        coordinator.finishInteractiveTransition(
             to: destinationSpace.workspaceTheme,
             in: windowState,
             identity: identity
@@ -86,7 +91,7 @@ final class BrowserWorkspaceThemeTransitionOwner {
         for space: Space,
         animate: Bool
     ) {
-        guard let windowRegistry = browserManager?.windowRegistry else { return }
+        guard let windowRegistry = shellRuntime.windowRegistry else { return }
         for windowState in windowRegistry.windows.values {
             guard !windowState.isIncognito else { continue }
             if windowState.currentSpaceId == space.id {

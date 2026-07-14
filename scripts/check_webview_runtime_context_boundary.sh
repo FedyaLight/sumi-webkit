@@ -46,6 +46,7 @@ is_allowed_web_view_runtime_access() {
     Sumi/Managers/BrowserManager/BrowserManager.swift|\
     Sumi/Managers/BrowserManager/BrowserManagerRuntimeWiring.swift|\
     Sumi/Managers/BrowserManager/BrowserTabCompositorRuntimeWiring.swift|\
+    Sumi/Managers/BrowserManager/BrowserTabManagerRuntimePortsFactory.swift|\
     Sumi/Managers/BrowserManager/BrowserTabManagerWebViewLifecycleFactory.swift|\
     Sumi/Managers/BrowserManager/BrowserTabRuntimeCompositionService.swift|\
     Sumi/Managers/BrowserManager/BrowserTabSelectionOwner+Live.swift|\

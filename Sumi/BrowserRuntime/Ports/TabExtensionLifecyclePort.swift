@@ -8,18 +8,18 @@ protocol TabExtensionLifecyclePort {
 
 @MainActor
 struct LiveTabExtensionLifecyclePort: TabExtensionLifecyclePort {
-    private let runtime: BrowserManagerRuntimeReference
+    private let extensions: SumiExtensionRuntimeSurface
 
-    init(runtime: BrowserManagerRuntimeReference) {
-        self.runtime = runtime
+    init(extensions: SumiExtensionRuntimeSurface) {
+        self.extensions = extensions
     }
 
     func notifyTabClosedIfLoaded(_ tab: Tab) {
-        runtime.require().optionalModules.extensions.notifyTabClosedIfLoaded(tab)
+        extensions.notifyTabClosed(tab)
     }
 
     func notifyTabActivatedIfLoaded(newTab: Tab, previous: Tab?) {
-        runtime.require().optionalModules.extensions.notifyTabActivatedIfLoaded(
+        extensions.notifyTabActivated(
             newTab: newTab,
             previous: previous
         )

@@ -13,44 +13,58 @@ protocol TabWindowQueryPort {
 
 @MainActor
 struct LiveTabWindowQueryPort: TabWindowQueryPort {
-    private let runtime: BrowserManagerRuntimeReference
+    private let shellRuntime: BrowserShellRuntime
+    private let compositor: TabCompositorManager
+    private let windowStateReconciler: BrowserWindowStateReconciler
+    private let persistence: WindowSessionPersistenceCoordinator
+    private let workspaceThemes: BrowserWorkspaceThemeTransitionOwner
 
-    init(runtime: BrowserManagerRuntimeReference) {
-        self.runtime = runtime
+    init(
+        shellRuntime: BrowserShellRuntime,
+        compositor: TabCompositorManager,
+        windowStateReconciler: BrowserWindowStateReconciler,
+        persistence: WindowSessionPersistenceCoordinator,
+        workspaceThemes: BrowserWorkspaceThemeTransitionOwner
+    ) {
+        self.shellRuntime = shellRuntime
+        self.compositor = compositor
+        self.windowStateReconciler = windowStateReconciler
+        self.persistence = persistence
+        self.workspaceThemes = workspaceThemes
     }
 
     func windowState(for windowId: UUID) -> BrowserWindowState? {
-        runtime.require().windowRegistry?.windows[windowId]
+        shellRuntime.windowRegistry?.windows[windowId]
     }
 
     func forEachWindow(_ body: (UUID, BrowserWindowState) -> Void) {
-        let windows = runtime.require().windowRegistry?.windows.map { ($0.key, $0.value) } ?? []
+        let windows = shellRuntime.windowRegistry?.windows.map { ($0.key, $0.value) } ?? []
         for (windowId, windowState) in windows {
             body(windowId, windowState)
         }
     }
 
     func forEachWindowState(_ body: (BrowserWindowState) -> Void) {
-        let windowStates = runtime.require().windowRegistry?.allWindows ?? []
+        let windowStates = shellRuntime.windowRegistry?.allWindows ?? []
         for windowState in windowStates {
             body(windowState)
         }
     }
 
     func updateTabVisibility() {
-        runtime.require().compositorManager.updateTabVisibility()
+        compositor.updateTabVisibility()
     }
 
     func validateWindowStates() -> Set<UUID> {
-        runtime.require().windowStateReconciler.validateWindowStates()
+        windowStateReconciler.validateWindowStates()
     }
 
     func persistWindowSession(for windowState: BrowserWindowState) {
-        runtime.require().windowSessionBundle.persistence.persist(windowState)
+        persistence.persist(windowState)
     }
 
     func syncWorkspaceThemeAcrossWindows(for space: Space, animate: Bool) {
-        runtime.require().chromeBundle.workspaceThemeTransitionOwner.syncWorkspaceThemeAcrossWindows(
+        workspaceThemes.syncWorkspaceThemeAcrossWindows(
             for: space,
             animate: animate
         )

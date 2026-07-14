@@ -605,11 +605,25 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         windowRegistry.setActive(windowState)
 
         XCTAssertTrue(browserManager.shellRuntime.windowVisuals.prepareVisibleWebViews(for: windowState))
-        XCTAssertNotNil(
+        let materialized = try XCTUnwrap(
             browserManager.webViewRuntime.ownershipQuery.webView(
                 for: tab.id,
                 in: windowState.id
             )
+        )
+        let runtimePorts = try XCTUnwrap(browserManager.tabManager.runtimePorts)
+
+        runtimePorts.webViewLifecycle.materializeVisibleTabWebViewIfNeeded(
+            tab,
+            in: windowState
+        )
+
+        XCTAssertIdentical(
+            browserManager.webViewRuntime.ownershipQuery.webView(
+                for: tab.id,
+                in: windowState.id
+            ),
+            materialized
         )
     }
 
@@ -676,6 +690,33 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         XCTAssertIdentical(
             runtimePorts.notifications() as AnyObject,
             browserManager.notificationPresenter
+        )
+    }
+
+    func testWindowQueryPortTracksTheExactShellRegistryBinding() throws {
+        let browserManager = BrowserManager(
+            startupPersistence: BrowserManagerStartupPersistence(
+                container: try makeInMemoryStartupContainer()
+            )
+        )
+        let runtimePorts = try XCTUnwrap(browserManager.tabManager.runtimePorts)
+        let firstWindow = BrowserWindowState()
+        let firstRegistry = WindowRegistry()
+        firstRegistry.register(firstWindow)
+
+        browserManager.windowRegistry = firstRegistry
+
+        XCTAssertIdentical(runtimePorts.windowState(for: firstWindow.id), firstWindow)
+
+        let replacementWindow = BrowserWindowState()
+        let replacementRegistry = WindowRegistry()
+        replacementRegistry.register(replacementWindow)
+        browserManager.windowRegistry = replacementRegistry
+
+        XCTAssertNil(runtimePorts.windowState(for: firstWindow.id))
+        XCTAssertIdentical(
+            runtimePorts.windowState(for: replacementWindow.id),
+            replacementWindow
         )
     }
 

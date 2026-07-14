@@ -74,6 +74,35 @@ if [[ -n "$session_side_effect_root_lookup_hits" ]]; then
   exit 1
 fi
 
+retired_runtime_reference_hits="$(
+  rg -n 'BrowserManagerRuntimeReference|runtime\.require\(\)' \
+    Sumi -g '*.swift' 2>/dev/null || true
+)"
+if [[ -n "$retired_runtime_reference_hits" ]]; then
+  printf 'error: Tab runtime feature ports must retain exact services, not a late BrowserManager reference:\n%s\n' \
+    "$retired_runtime_reference_hits" >&2
+  exit 1
+fi
+
+for exact_port in \
+  Sumi/BrowserRuntime/Ports/TabWindowQueryPort.swift \
+  Sumi/BrowserRuntime/Ports/TabExtensionLifecyclePort.swift \
+  Sumi/Managers/BrowserManager/BrowserTabManagerWebViewLifecycleFactory.swift; do
+  root_lookup_hits="$(
+    rg -n 'BrowserManager|OptionalModuleHost' "$exact_port" 2>/dev/null || true
+  )"
+  if [[ -n "$root_lookup_hits" ]]; then
+    printf 'error: %s must retain its exact feature authorities, not the browser/module root:\n%s\n' \
+      "$exact_port" "$root_lookup_hits" >&2
+    exit 1
+  fi
+done
+
+if [[ -e Sumi/BrowserRuntime/Ports/BrowserManagerRuntimeReference.swift ]]; then
+  printf 'error: retired BrowserManager runtime reference was reintroduced\n' >&2
+  exit 1
+fi
+
 inactive_registry_hits="$(
   rg -n 'RuntimePortRegistry\.inactive|TabManagerWebViewLifecycleService\.inactive|static\s+(let|var)\s+inactive\s*(:\s*RuntimePortRegistry|=\s*RuntimePortRegistry)' \
     Sumi -g '*.swift' 2>/dev/null || true

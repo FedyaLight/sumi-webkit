@@ -13,6 +13,7 @@ glance_routing="Sumi/Models/Tab/Navigation/LinkGlanceRouting.swift"
 delegate_bundle="Sumi/Models/Tab/Navigation/SumiTabNavigationDelegateBundle.swift"
 runtime_factory="Sumi/Managers/BrowserManager/TabBrowserRuntimeFactory.swift"
 lifecycle_factory="Sumi/Managers/BrowserManager/BrowserTabManagerWebViewLifecycleFactory.swift"
+runtime_ports_factory="Sumi/Managers/BrowserManager/BrowserTabManagerRuntimePortsFactory.swift"
 glance_runtime="Sumi/Managers/BrowserManager/BrowserGlanceRuntimeService.swift"
 extension_opening="Sumi/Managers/BrowserManager/ExtensionExternalTabOpeningService.swift"
 physical_popup="Sumi/Managers/BrowserManager/PhysicalWebPopupOpeningService.swift"
@@ -92,6 +93,7 @@ for required in \
   "$delegate_bundle" \
   "$runtime_factory" \
   "$lifecycle_factory" \
+  "$runtime_ports_factory" \
   "$glance_runtime" \
   "$extension_opening" \
   "$physical_popup" \
@@ -317,9 +319,9 @@ require_pattern \
   "WebKit child publication must validate inside the pre-registry transaction"
 
 require_pattern \
-  "$lifecycle_factory" \
-  'let[[:space:]]+tabBrowserRuntime[[:space:]]*=[[:space:]]*TabBrowserRuntimeFactory\.make\(for:[[:space:]]*browserManager\)' \
-  "Tab lifecycle composition must share one assembled runtime"
+  "$runtime_ports_factory" \
+  'tabBrowserRuntime:[[:space:]]*TabBrowserRuntimeFactory\.make\(for:[[:space:]]*browserManager\)' \
+  "Tab runtime-port composition must inject one assembled runtime into lifecycle"
 require_pattern \
   "$lifecycle_factory" \
   'attachBrowserRuntime\(tabBrowserRuntime\)' \

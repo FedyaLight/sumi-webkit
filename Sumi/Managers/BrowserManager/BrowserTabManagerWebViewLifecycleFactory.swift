@@ -3,23 +3,31 @@ import Foundation
 @MainActor
 enum BrowserTabManagerWebViewLifecycleFactory {
     static func service(
-        runtime: BrowserManagerRuntimeReference
+        webViewLifecycle: WebViewLifecycleService,
+        ownershipQuery: WebViewOwnershipQuery,
+        trackedAdmission: TrackedWebViewAdmissionService,
+        rebuild: WebViewRebuildService,
+        profileAssignment: WebViewProfileAssignmentService,
+        compositor: TabCompositorManager,
+        webViewRouting: BrowserWebViewRoutingService,
+        tabBrowserRuntime: TabBrowserRuntime
     ) -> TabManagerWebViewLifecycleService {
-        let browserManager = runtime.require()
-        let webViewLifecycle = browserManager.webViewRuntime.lifecycleService
-        let ownershipQuery = browserManager.webViewRuntime.ownershipQuery
-        let rebuild = browserManager.webViewRuntime.rebuildService
-        let profileAssignment = browserManager.webViewRuntime.profileAssignmentService
-        let tabBrowserRuntime = TabBrowserRuntimeFactory.make(for: browserManager)
-        return TabManagerWebViewLifecycleService(
+        TabManagerWebViewLifecycleService(
             materializeVisibleTabWebViewIfNeeded: { tab, windowState in
-                runtime.require().materializeVisibleTabWebViewIfNeeded(tab, in: windowState)
+                compositor.markTabAccessed(tab.id)
+                guard ownershipQuery.webView(
+                    for: tab.id,
+                    in: windowState.id
+                ) == nil else {
+                    return
+                }
+                _ = trackedAdmission.webView(for: tab, in: windowState.id)
             },
             loadTab: { tab in
-                runtime.require().compositorManager.loadTab(tab)
+                compositor.loadTab(tab)
             },
             unloadTab: { tab in
-                runtime.require().compositorManager.unloadTab(tab)
+                compositor.unloadTab(tab)
             },
             requireRemoveAllWebViews: { tab, closeActiveFullscreenMedia in
                 webViewLifecycle.removeAllWebViews(
@@ -32,7 +40,7 @@ enum BrowserTabManagerWebViewLifecycleFactory {
                 ownershipQuery.windowIDs(for: tabId)
             },
             primaryTrackedWindowId: { tabId in
-                runtime.require().webViewRoutingService.primaryTrackedWindowId(for: tabId)
+                webViewRouting.primaryTrackedWindowId(for: tabId)
             },
             rebuildLiveWebViews: { tab, preferredPrimaryWindowId, url in
                 if #available(macOS 15.5, *) {
@@ -55,10 +63,10 @@ enum BrowserTabManagerWebViewLifecycleFactory {
                 }
             },
             anyLiveWebView: { tab in
-                runtime.require().webViewRoutingService.anyLiveWebView(for: tab)
+                webViewRouting.anyLiveWebView(for: tab)
             },
             hasUntrackedOwnedWebView: { tab in
-                runtime.require().webViewRoutingService.hasUntrackedOwnedWebView(for: tab)
+                webViewRouting.hasUntrackedOwnedWebView(for: tab)
             },
             abortProfileTransitions: { profileIDs in
                 profileAssignment.abortProfileTransitions(
