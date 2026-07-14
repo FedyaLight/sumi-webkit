@@ -106,14 +106,30 @@ func sumiPermissionIntegrationWaitForActiveQuery(
     file: StaticString = #filePath,
     line: UInt = #line
 ) async -> SumiPermissionAuthorizationQuery {
-    for _ in 0..<200 {
-        if let query = await coordinator.activeQuery(forPageId: pageId) {
+    if let query = await coordinator.activeQuery(forPageId: pageId) {
+        return query
+    }
+
+    let events = await coordinator.events()
+    if let query = await coordinator.activeQuery(forPageId: pageId) {
+        return query
+    }
+
+    for await event in events {
+        let query: SumiPermissionAuthorizationQuery?
+        switch event {
+        case .queryActivated(let activated), .queryPromoted(let activated):
+            query = activated.pageId == pageId ? activated : nil
+        default:
+            query = nil
+        }
+        if let query {
             return query
         }
-        try? await Task.sleep(nanoseconds: 5_000_000)
     }
-    XCTFail("Timed out waiting for active permission query", file: file, line: line)
-    await coordinator.cancel(pageId: pageId, reason: "test-timeout-waiting-for-active-query")
+
+    XCTFail("Permission event stream ended before the query became active", file: file, line: line)
+    await coordinator.cancel(pageId: pageId, reason: "test-event-stream-ended-before-active-query")
     return SumiPermissionAuthorizationQuery(
         id: "missing-query",
         pageId: pageId,

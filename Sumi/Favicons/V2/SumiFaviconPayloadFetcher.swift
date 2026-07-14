@@ -44,11 +44,12 @@ final class SumiFaviconPayloadFetcher: @unchecked Sendable {
             || candidate.sourceKind == .appleTouchRoot
             ? SumiFaviconFetchContext.publicRootFallback
             : context
-        switch await fetchScheduler.fetch(
+        let request = await fetchScheduler.request(
             candidate: candidate,
             context: resolvedContext,
             priority: priority
-        ) {
+        )
+        switch await request.value {
         case .success(let response):
             return .payload(response)
         case .failure(let failureKind):

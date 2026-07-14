@@ -85,7 +85,7 @@ final class SumiFaviconLiveDiscoveryPipeline: @unchecked Sendable {
                 declaredType: "application/manifest+json",
                 partition: partition
             )
-            let result = await fetchScheduler.fetch(
+            let request = await fetchScheduler.request(
                 candidate: manifestCandidate,
                 context: .session(
                     webView: webView,
@@ -93,6 +93,7 @@ final class SumiFaviconLiveDiscoveryPipeline: @unchecked Sendable {
                 ),
                 priority: .visibleSidebarOrTabStrip
             )
+            let result = await request.value
             if case .success(let response) = result,
                response.data.count <= SumiFaviconConstants.maxPayloadBytes {
                 candidates.append(

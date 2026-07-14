@@ -31,13 +31,19 @@ final class SpaceSidebarTransitionCoordinator {
     var transitionSnapshot: SpaceSidebarTransitionSnapshot?
 
     @ObservationIgnored
-    private var transitionTask: Task<Void, Never>?
+    private let delayedActions: MainActorDelayedActionScheduler
+    @ObservationIgnored
+    private var cancelScheduledCompletion: MainActorDelayedActionScheduler.Cancellation?
     @ObservationIgnored
     private var pendingCompletionContext: CompletionContext?
     @ObservationIgnored
     private var pendingCompletionToken: UUID?
     @ObservationIgnored
     private var scrollViewportsBySpaceId: [UUID: SpaceSidebarSnapshotViewport] = [:]
+
+    init(delayedActions: MainActorDelayedActionScheduler = .live) {
+        self.delayedActions = delayedActions
+    }
 
     func recordScrollViewport(_ viewport: SpaceSidebarSnapshotViewport, for spaceId: UUID) {
         guard scrollViewportsBySpaceId[spaceId] != viewport else { return }
@@ -347,8 +353,8 @@ final class SpaceSidebarTransitionCoordinator {
     }
 
     func cancelPendingSpaceTransition() {
-        transitionTask?.cancel()
-        transitionTask = nil
+        cancelScheduledCompletion?()
+        cancelScheduledCompletion = nil
         pendingCompletionContext = nil
         pendingCompletionToken = nil
     }
@@ -378,17 +384,7 @@ final class SpaceSidebarTransitionCoordinator {
         )
         pendingCompletionToken = completionToken
 
-        transitionTask = Task { @MainActor [weak self, completionToken] in
-            let nanoseconds = UInt64(max(duration, 0) * 1_000_000_000)
-            if nanoseconds > 0 {
-                do {
-                    try await Task.sleep(nanoseconds: nanoseconds)
-                } catch {
-                    return
-                }
-            }
-            guard !Task.isCancelled else { return }
-
+        cancelScheduledCompletion = delayedActions.schedule(after: duration) { [weak self, completionToken] in
             self?.finishScheduledSpaceTransition(
                 commit: commit,
                 destinationSpaceId: destinationSpaceId,
@@ -588,7 +584,7 @@ final class SpaceSidebarTransitionCoordinator {
         )
         pendingCompletionContext = nil
         pendingCompletionToken = nil
-        transitionTask = nil
+        cancelScheduledCompletion = nil
     }
 
     private func discardScheduledSpaceTransition(context: CompletionContext) {
@@ -603,7 +599,7 @@ final class SpaceSidebarTransitionCoordinator {
         )
         pendingCompletionContext = nil
         pendingCompletionToken = nil
-        transitionTask = nil
+        cancelScheduledCompletion = nil
     }
 
     private func captureTransitionSnapshot(

@@ -17,7 +17,8 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
         let settingsHarness = TestDefaultsHarness()
         let settings = SumiSettingsService(userDefaults: settingsHarness.defaults)
         let dragState = SidebarDragState()
-        let coordinator = SpaceSidebarTransitionCoordinator()
+        let delayedActions = ManualMainActorDelayedActionScheduler()
+        let coordinator = SpaceSidebarTransitionCoordinator(delayedActions: delayedActions.scheduler)
 
         defer {
             coordinator.cancelPendingSpaceTransition()
@@ -45,9 +46,8 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
         coordinator.switchSpace(to: staleDestination, context: context)
         browserHarness.tabManager.spaceStateOwner.replaceSpaces([source, replacement])
 
-        try await Task.sleep(
-            nanoseconds: UInt64((SpaceSidebarRenderPolicy.completionDelay + 0.15) * 1_000_000_000)
-        )
+        XCTAssertEqual(delayedActions.scheduledDelays, [SpaceSidebarRenderPolicy.completionDelay])
+        delayedActions.runNext()
 
         let activeSpaceId = try XCTUnwrap(windowState.currentSpaceId)
         XCTAssertTrue(browserHarness.tabManager.spaceStateOwner.spaces.contains { $0.id == activeSpaceId })
@@ -120,7 +120,8 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
         let settingsHarness = TestDefaultsHarness()
         let settings = SumiSettingsService(userDefaults: settingsHarness.defaults)
         let dragState = SidebarDragState()
-        let coordinator = SpaceSidebarTransitionCoordinator()
+        let delayedActions = ManualMainActorDelayedActionScheduler()
+        let coordinator = SpaceSidebarTransitionCoordinator(delayedActions: delayedActions.scheduler)
         let sourceViewport = SpaceSidebarSnapshotViewport(
             contentOffsetY: 36,
             contentHeight: 360,
@@ -166,9 +167,8 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
         XCTAssertEqual(activeSnapshot.source.scrollViewport, sourceViewport)
         XCTAssertEqual(activeSnapshot.destination.scrollViewport, destinationViewport)
 
-        try await Task.sleep(
-            nanoseconds: UInt64((SpaceSidebarRenderPolicy.completionDelay + 0.15) * 1_000_000_000)
-        )
+        XCTAssertEqual(delayedActions.scheduledDelays, [SpaceSidebarRenderPolicy.completionDelay])
+        delayedActions.runNext()
 
         XCTAssertEqual(windowState.currentSpaceId, destination.id)
         XCTAssertFalse(windowState.isInteractiveSpaceTransition)
@@ -220,7 +220,8 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
         let settingsHarness = TestDefaultsHarness()
         let settings = SumiSettingsService(userDefaults: settingsHarness.defaults)
         let dragState = SidebarDragState()
-        let coordinator = SpaceSidebarTransitionCoordinator()
+        let delayedActions = ManualMainActorDelayedActionScheduler()
+        let coordinator = SpaceSidebarTransitionCoordinator(delayedActions: delayedActions.scheduler)
         let sourceViewport = SpaceSidebarSnapshotViewport(
             contentOffsetY: 48,
             contentHeight: 390,
@@ -276,9 +277,8 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
             context: context
         )
 
-        try await Task.sleep(
-            nanoseconds: UInt64((SpaceSidebarRenderPolicy.completionDelay + 0.15) * 1_000_000_000)
-        )
+        XCTAssertEqual(delayedActions.scheduledDelays, [SpaceSidebarRenderPolicy.completionDelay])
+        delayedActions.runNext()
 
         XCTAssertEqual(windowState.currentSpaceId, destination.id)
         XCTAssertNil(coordinator.transitionSnapshot)
@@ -317,7 +317,8 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
         let settingsHarness = TestDefaultsHarness()
         let settings = SumiSettingsService(userDefaults: settingsHarness.defaults)
         let dragState = SidebarDragState()
-        let coordinator = SpaceSidebarTransitionCoordinator()
+        let delayedActions = ManualMainActorDelayedActionScheduler()
+        let coordinator = SpaceSidebarTransitionCoordinator(delayedActions: delayedActions.scheduler)
 
         defer {
             coordinator.cancelPendingSpaceTransition()
@@ -354,9 +355,9 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
         XCTAssertNil(coordinator.transitionSnapshot)
         XCTAssertFalse(coordinator.transitionState.hasDestination)
 
-        try await Task.sleep(
-            nanoseconds: UInt64((SpaceSidebarRenderPolicy.completionDelay + 0.20) * 1_000_000_000)
-        )
+        XCTAssertEqual(delayedActions.scheduledDelays, [SpaceSidebarRenderPolicy.completionDelay])
+        XCTAssertEqual(delayedActions.pendingActionCount, 0)
+        delayedActions.runAll()
 
         XCTAssertEqual(windowState.currentSpaceId, directDestination.id, "scheduled completion should not override direct switch")
         XCTAssertFalse(windowState.displayedWorkspaceTheme.visuallyEquals(scheduledDestination.workspaceTheme))
@@ -403,7 +404,8 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
         let settingsHarness = TestDefaultsHarness()
         let settings = SumiSettingsService(userDefaults: settingsHarness.defaults)
         let dragState = SidebarDragState()
-        let coordinator = SpaceSidebarTransitionCoordinator()
+        let delayedActions = ManualMainActorDelayedActionScheduler()
+        let coordinator = SpaceSidebarTransitionCoordinator(delayedActions: delayedActions.scheduler)
 
         defer {
             coordinator.cancelPendingSpaceTransition()
@@ -453,9 +455,9 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
         XCTAssertEqual(dragState.pendingGeometryGeneration, pendingGeneration)
         XCTAssertEqual(dragState.activeGeometryGeneration, 0)
 
-        try await Task.sleep(
-            nanoseconds: UInt64((SpaceSidebarRenderPolicy.completionDelay + 0.20) * 1_000_000_000)
-        )
+        XCTAssertEqual(delayedActions.scheduledDelays, [SpaceSidebarRenderPolicy.completionDelay])
+        XCTAssertEqual(delayedActions.pendingActionCount, 0)
+        delayedActions.runAll()
 
         XCTAssertEqual(windowState.currentSpaceId, directDestination.id)
         XCTAssertFalse(windowState.displayedWorkspaceTheme.visuallyEquals(scheduledDestination.workspaceTheme))
@@ -530,7 +532,7 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
 
         fixture.switchRelativeSpace(offset: -1, spaces: spaces)
 
-        try await waitForScheduledSpaceTransitionCompletion()
+        fixture.completeScheduledSpaceTransition()
 
         XCTAssertEqual(fixture.windowState.currentSpaceId, lastSpace.id)
         guard case .setActiveSpaceFromTransition(let committedSpaceId, _) = fixture.browserHarness.transitionEvents.last else {
@@ -552,7 +554,7 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
 
         fixture.switchRelativeSpace(offset: 1, spaces: spaces)
 
-        try await waitForScheduledSpaceTransitionCompletion()
+        fixture.completeScheduledSpaceTransition()
 
         XCTAssertEqual(fixture.windowState.currentSpaceId, firstSpace.id)
         guard case .setActiveSpaceFromTransition(let committedSpaceId, _) = fixture.browserHarness.transitionEvents.last else {
@@ -600,7 +602,7 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
 
         XCTAssertEqual(fixture.coordinator.transitionState.destinationSpaceId, nextSpace.id)
 
-        try await waitForScheduledSpaceTransitionCompletion()
+        fixture.completeScheduledSpaceTransition()
         XCTAssertEqual(fixture.windowState.currentSpaceId, nextSpace.id)
     }
 
@@ -613,7 +615,8 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
         let settingsHarness = TestDefaultsHarness()
         let settings = SumiSettingsService(userDefaults: settingsHarness.defaults)
         let dragState = SidebarDragState()
-        let coordinator = SpaceSidebarTransitionCoordinator()
+        let delayedActions = ManualMainActorDelayedActionScheduler()
+        let coordinator = SpaceSidebarTransitionCoordinator(delayedActions: delayedActions.scheduler)
 
         windowState.tabManager = browserHarness.tabManager
         windowState.currentSpaceId = currentSpace.id
@@ -626,14 +629,9 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
             browserHarness: browserHarness,
             settingsHarness: settingsHarness,
             coordinator: coordinator,
+            delayedActions: delayedActions,
             dragState: dragState,
             settings: settings
-        )
-    }
-
-    private func waitForScheduledSpaceTransitionCompletion() async throws {
-        try await Task.sleep(
-            nanoseconds: UInt64((SpaceSidebarRenderPolicy.completionDelay + 0.15) * 1_000_000_000)
         )
     }
 
@@ -643,6 +641,7 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
         let browserHarness: TestSidebarBrowserContextHarness
         let settingsHarness: TestDefaultsHarness
         let coordinator: SpaceSidebarTransitionCoordinator
+        let delayedActions: ManualMainActorDelayedActionScheduler
         let dragState: SidebarDragState
         let settings: SumiSettingsService
 
@@ -666,6 +665,12 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
         @MainActor
         func switchRelativeSpace(offset: Int, spaces switchSpaces: [Space]) {
             coordinator.switchRelativeSpace(offset: offset, context: context(spaces: switchSpaces))
+        }
+
+        @MainActor
+        func completeScheduledSpaceTransition() {
+            XCTAssertEqual(delayedActions.scheduledDelays, [SpaceSidebarRenderPolicy.completionDelay])
+            delayedActions.runNext()
         }
 
         @MainActor

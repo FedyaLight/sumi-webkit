@@ -6,12 +6,17 @@ import Foundation
 final class WindowSessionPersistenceScheduler {
     typealias LiveCommitCallback = @MainActor () -> Void
 
-    private var tasks: [UUID: Task<Void, Never>] = [:]
+    private let delayedActions: MainActorDelayedActionScheduler
+    private var cancellations: [UUID: MainActorDelayedActionScheduler.Cancellation] = [:]
     private var writes: [UUID: WindowSessionDurableWrite] = [:]
     private var liveCommitCallbacks: [UUID: LiveCommitCallback] = [:]
 
+    init(delayedActions: MainActorDelayedActionScheduler = .live) {
+        self.delayedActions = delayedActions
+    }
+
     isolated deinit {
-        tasks.values.forEach { $0.cancel() }
+        cancellations.values.forEach { $0() }
     }
 
     func schedule(
@@ -25,13 +30,8 @@ final class WindowSessionPersistenceScheduler {
         cancel(for: windowID)
         writes[windowID] = write
         liveCommitCallbacks[windowID] = afterDurableCommit
-        tasks[windowID] = Task { @MainActor [weak self] in
-            do {
-                try await Task.sleep(nanoseconds: delayNanoseconds)
-            } catch {
-                return
-            }
-            guard Task.isCancelled == false else { return }
+        let delay = TimeInterval(delayNanoseconds) / 1_000_000_000
+        cancellations[windowID] = delayedActions.schedule(after: delay) { [weak self] in
             self?.execute(windowID)
         }
     }
@@ -45,8 +45,8 @@ final class WindowSessionPersistenceScheduler {
         let pending = writes.values.sorted {
             $0.windowID.uuidString < $1.windowID.uuidString
         }
-        tasks.values.forEach { $0.cancel() }
-        tasks.removeAll()
+        cancellations.values.forEach { $0() }
+        cancellations.removeAll()
         writes.removeAll()
         liveCommitCallbacks.removeAll()
 
@@ -72,21 +72,20 @@ final class WindowSessionPersistenceScheduler {
     }
 
     func cancel(for windowID: UUID) {
-        tasks[windowID]?.cancel()
-        tasks.removeValue(forKey: windowID)
+        cancellations.removeValue(forKey: windowID)?()
         writes.removeValue(forKey: windowID)
         liveCommitCallbacks.removeValue(forKey: windowID)
     }
 
     func cancelAll() {
-        tasks.values.forEach { $0.cancel() }
-        tasks.removeAll()
+        cancellations.values.forEach { $0() }
+        cancellations.removeAll()
         writes.removeAll()
         liveCommitCallbacks.removeAll()
     }
 
     private func execute(_ windowID: UUID) {
-        tasks.removeValue(forKey: windowID)
+        cancellations.removeValue(forKey: windowID)
         guard let write = writes.removeValue(forKey: windowID) else {
             liveCommitCallbacks.removeValue(forKey: windowID)
             return

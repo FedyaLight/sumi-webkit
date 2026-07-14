@@ -1,3 +1,4 @@
+import Combine
 import SwiftData
 import XCTest
 
@@ -68,6 +69,14 @@ final class SumiPermissionSourceRegressionTests: XCTestCase {
         )
         await Task.yield()
 
+        let activityRecorded = expectation(description: "permission activity recorded")
+        let activityObservation = siteActivityStore.$revision
+            .dropFirst()
+            .first()
+            .sink { _ in
+                activityRecorded.fulfill()
+            }
+
         let requestTask = Task {
             await browserManager.permissionRuntime.permissionCoordinator.requestPermission(
                 sumiPermissionIntegrationContext([.camera])
@@ -77,20 +86,21 @@ final class SumiPermissionSourceRegressionTests: XCTestCase {
             browserManager.permissionRuntime.permissionCoordinator
         )
 
-        await waitUntil {
-            recentActivityStore.records.contains {
-                $0.permissionType == .camera && $0.action == .asked
-            } && siteActivityStore.records(
-                forSiteOf: query.topOrigin,
-                profilePartitionId: query.profilePartitionId,
-                isEphemeralProfile: query.isEphemeralProfile
-            ).contains {
-                $0.permissionType == .camera && $0.hasRequested
-            }
-        }
+        await fulfillment(of: [activityRecorded], timeout: 1)
+        XCTAssertTrue(recentActivityStore.records.contains {
+            $0.permissionType == .camera && $0.action == .asked
+        })
+        XCTAssertTrue(siteActivityStore.records(
+            forSiteOf: query.topOrigin,
+            profilePartitionId: query.profilePartitionId,
+            isEphemeralProfile: query.isEphemeralProfile
+        ).contains {
+            $0.permissionType == .camera && $0.hasRequested
+        })
 
         await browserManager.permissionRuntime.permissionCoordinator.dismiss(query.id)
         _ = await requestTask.value
+        withExtendedLifetime(activityObservation) { /* Keep observation through the assertion. */ }
     }
 
     @MainActor
@@ -99,21 +109,6 @@ final class SumiPermissionSourceRegressionTests: XCTestCase {
             for: SumiStartupPersistence.schema,
             configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
         )
-    }
-
-    @MainActor
-    private func waitUntil(
-        _ condition: @MainActor () -> Bool,
-        file: StaticString = #filePath,
-        line: UInt = #line
-    ) async {
-        for _ in 0..<100 {
-            if condition() {
-                return
-            }
-            try? await Task.sleep(nanoseconds: 10_000_000)
-        }
-        XCTFail("Timed out waiting for condition", file: file, line: line)
     }
 }
 

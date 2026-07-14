@@ -1,4 +1,5 @@
 import SwiftData
+import Observation
 import XCTest
 
 @testable import Sumi
@@ -342,19 +343,59 @@ final class SearchManagerHistorySuggestionTests: XCTestCase {
 
     private func waitForSuggestions(
         in searchManager: SearchManager,
-        matching predicate: ([SearchManager.SearchSuggestion]) -> Bool,
+        matching predicate: @escaping ([SearchManager.SearchSuggestion]) -> Bool,
         file: StaticString = #filePath,
         line: UInt = #line
     ) async -> [SearchManager.SearchSuggestion] {
-        for _ in 0..<50 {
-            let suggestions = searchManager.suggestions
-            if predicate(suggestions) {
-                return suggestions
-            }
-            try? await Task.sleep(nanoseconds: 20_000_000)
+        let ready = expectation(description: "search suggestions matched predicate")
+        let observation = SearchSuggestionObservation(
+            searchManager: searchManager,
+            predicate: predicate,
+            onMatch: { ready.fulfill() }
+        )
+        observation.start()
+        await fulfillment(of: [ready], timeout: 1)
+        withExtendedLifetime(observation) { /* Retain observation until settlement. */ }
+        if !predicate(searchManager.suggestions) {
+            XCTFail("Search suggestions changed before settlement", file: file, line: line)
         }
-        XCTFail("Timed out waiting for search suggestions", file: file, line: line)
         return searchManager.suggestions
+    }
+}
+
+@MainActor
+private final class SearchSuggestionObservation {
+    private weak var searchManager: SearchManager?
+    private let predicate: ([SearchManager.SearchSuggestion]) -> Bool
+    private let onMatch: () -> Void
+    private var isFinished = false
+
+    init(
+        searchManager: SearchManager,
+        predicate: @escaping ([SearchManager.SearchSuggestion]) -> Bool,
+        onMatch: @escaping () -> Void
+    ) {
+        self.searchManager = searchManager
+        self.predicate = predicate
+        self.onMatch = onMatch
+    }
+
+    func start() {
+        observe()
+    }
+
+    private func observe() {
+        guard !isFinished, let searchManager else { return }
+        let suggestions = withObservationTracking {
+            searchManager.suggestions
+        } onChange: { [weak self] in
+            Task { @MainActor in
+                self?.observe()
+            }
+        }
+        guard predicate(suggestions) else { return }
+        isFinished = true
+        onMatch()
     }
 }
 

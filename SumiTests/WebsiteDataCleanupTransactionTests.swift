@@ -9,6 +9,7 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
     func testDeletionWaitsForExactBlankBarrierAndRestoreBarrier() async throws {
         let fixture = makeFixture()
         let ownerReference = CleanupOwnerReference()
+        let blankSubmitted = CleanupTestSignal()
         var blankIdentity: WebsiteDataCleanupTransaction.CleanupNavigationIdentity?
         var events: [String] = []
         var canonicalRuntimeTabReadCount = 0
@@ -32,6 +33,7 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
                         lifetime: lifetime
                     )
                 blankIdentity = identity
+                blankSubmitted.signal()
                 return identity
             },
             restoreTab: { _, targetURL in
@@ -63,7 +65,7 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
                 events.append("deleted")
             }
         }
-        await waitUntil { blankIdentity != nil }
+        await blankSubmitted.wait()
         XCTAssertFalse(events.contains("deleted"))
 
         let identity = try XCTUnwrap(blankIdentity)
@@ -91,6 +93,9 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
 
     func testProtectedWebViewIsAwaitedInsteadOfSkipped() async throws {
         let fixture = makeFixture()
+        let permissionRequested = CleanupTestSignal()
+        let blankSubmitted = CleanupTestSignal()
+        let deletionCompleted = CleanupTestSignal()
         var permissionContinuation: CheckedContinuation<Bool, Never>?
         var blankIdentity: WebsiteDataCleanupTransaction.CleanupNavigationIdentity?
         var didDelete = false
@@ -100,7 +105,10 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
             runtimeTabs: { [fixture.tab] },
             liveWebViews: { _ in [fixture.webView] },
             waitForMutationPermission: { _ in
-                await withCheckedContinuation { permissionContinuation = $0 }
+                await withCheckedContinuation {
+                    permissionContinuation = $0
+                    permissionRequested.signal()
+                }
             },
             loadBlankNavigation: { _ in
                 let lifetime = NSObject()
@@ -110,6 +118,7 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
                         lifetime: lifetime
                     )
                 blankIdentity = identity
+                blankSubmitted.signal()
                 return identity
             },
             restoreTab: { _, targetURL in
@@ -137,15 +146,16 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
                 profileIDs: [fixture.profileID]
             ) {
                 didDelete = true
+                deletionCompleted.signal()
             }
         }
-        await waitUntil { permissionContinuation != nil }
+        await permissionRequested.wait()
         XCTAssertNil(blankIdentity)
         XCTAssertFalse(didDelete)
 
         permissionContinuation?.resume(returning: true)
         permissionContinuation = nil
-        await waitUntil { blankIdentity != nil }
+        await blankSubmitted.wait()
         let identity = try XCTUnwrap(blankIdentity)
         owner.navigationDidTerminate(
             on: fixture.webView,
@@ -153,10 +163,10 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
             navigationLifetime: identity.lifetime,
             succeeded: true
         )
-        await waitUntil { didDelete }
+        await deletionCompleted.wait()
 
         // Restore performs a second exact protection check.
-        await waitUntil { permissionContinuation != nil }
+        await permissionRequested.wait(for: 2)
         permissionContinuation?.resume(returning: true)
         permissionContinuation = nil
 
@@ -166,6 +176,7 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
 
     func testSameIdentifierWithDifferentLifetimeCannotCrossBlankBarrier() async throws {
         let fixture = makeFixture()
+        let blankSubmitted = CleanupTestSignal()
         var blankIdentity: WebsiteDataCleanupTransaction.CleanupNavigationIdentity?
         var didDelete = false
         let ownerReference = CleanupOwnerReference()
@@ -182,6 +193,7 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
                         lifetime: lifetime
                     )
                 blankIdentity = identity
+                blankSubmitted.signal()
                 return identity
             },
             restoreTab: { _, targetURL in
@@ -212,7 +224,7 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
                 didDelete = true
             }
         }
-        await waitUntil { blankIdentity != nil }
+        await blankSubmitted.wait()
         let identity = try XCTUnwrap(blankIdentity)
 
         owner.navigationDidTerminate(
@@ -221,7 +233,6 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
             navigationLifetime: NSObject(),
             succeeded: true
         )
-        await Task.yield()
         XCTAssertFalse(didDelete)
 
         owner.navigationDidTerminate(
@@ -240,6 +251,7 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
         let secondWebView = WKWebView()
         fixture.tab.parkExistingWebView(secondWebView)
         let ownerReference = CleanupOwnerReference()
+        let firstBlankSubmitted = CleanupTestSignal()
         var firstBlankIdentity: WebsiteDataCleanupTransaction
             .CleanupNavigationIdentity?
         var blankSubmissionCount = 0
@@ -260,6 +272,7 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
                         lifetime: lifetime
                     )
                 firstBlankIdentity = identity
+                firstBlankSubmitted.signal()
                 return identity
             },
             restoreTab: { _, targetURL in
@@ -293,7 +306,7 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
                 didDelete = true
             }
         }
-        await waitUntil { firstBlankIdentity != nil }
+        await firstBlankSubmitted.wait()
         let identity = try XCTUnwrap(firstBlankIdentity)
         owner.navigationDidTerminate(
             on: fixture.webView,
@@ -315,6 +328,8 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
         fixture.tab.parkExistingWebView(secondWebView)
         let webViews = [fixture.webView, secondWebView]
         let ownerReference = CleanupOwnerReference()
+        let firstBlankSubmitted = CleanupTestSignal()
+        let secondBlankSubmitted = CleanupTestSignal()
         var blankIdentities: [
             ObjectIdentifier: WebsiteDataCleanupTransaction.CleanupNavigationIdentity
         ] = [:]
@@ -337,6 +352,11 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
                         lifetime: lifetime
                     )
                 blankIdentities[ObjectIdentifier(webView)] = identity
+                if webView === fixture.webView {
+                    firstBlankSubmitted.signal()
+                } else if webView === secondWebView {
+                    secondBlankSubmitted.signal()
+                }
                 return identity
             },
             restoreTab: { _, targetURL in
@@ -371,9 +391,7 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
             }
         }
 
-        await waitUntil {
-            blankIdentities[ObjectIdentifier(fixture.webView)] != nil
-        }
+        await firstBlankSubmitted.wait()
         let firstIdentity = try XCTUnwrap(
             blankIdentities[ObjectIdentifier(fixture.webView)]
         )
@@ -383,9 +401,7 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
             navigationLifetime: firstIdentity.lifetime,
             succeeded: true
         )
-        await waitUntil {
-            blankIdentities[ObjectIdentifier(secondWebView)] != nil
-        }
+        await secondBlankSubmitted.wait()
         XCTAssertFalse(didDelete)
         let secondIdentity = try XCTUnwrap(
             blankIdentities[ObjectIdentifier(secondWebView)]
@@ -411,6 +427,8 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
     func testPostDeletionRestoreFailureRetriesUntilExactSuccess() async throws {
         let fixture = makeFixture()
         let ownerReference = CleanupOwnerReference()
+        let blankSubmitted = CleanupTestSignal()
+        let restoreSubmitted = CleanupTestSignal()
         var blankIdentity: WebsiteDataCleanupTransaction.CleanupNavigationIdentity?
         var restoreSubmissionCount = 0
         var didDelete = false
@@ -427,10 +445,12 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
                         lifetime: lifetime
                     )
                 blankIdentity = identity
+                blankSubmitted.signal()
                 return identity
             },
             restoreTab: { _, targetURL in
                 restoreSubmissionCount += 1
+                restoreSubmitted.signal()
                 guard restoreSubmissionCount > 1 else {
                     return .init(outcome: .failed, semanticRevision: nil)
                 }
@@ -461,7 +481,7 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
                 didDelete = true
             }
         }
-        await waitUntil { blankIdentity != nil }
+        await blankSubmitted.wait()
         let identity = try XCTUnwrap(blankIdentity)
         owner.navigationDidTerminate(
             on: fixture.webView,
@@ -470,7 +490,7 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
             succeeded: true
         )
 
-        await waitUntil { restoreSubmissionCount == 2 }
+        await restoreSubmitted.wait(for: 2)
         let didComplete = await transaction.value
         XCTAssertTrue(didComplete)
         XCTAssertTrue(didDelete)
@@ -480,7 +500,7 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
     func testProcessTerminationDuringBlankAbortsDeletionAndRestoresOwnedParticipant() async throws {
         let fixture = makeFixture()
         let ownerReference = CleanupOwnerReference()
-        var blankIdentity: WebsiteDataCleanupTransaction.CleanupNavigationIdentity?
+        let blankSubmitted = CleanupTestSignal()
         var restoreSubmissionCount = 0
         var didDelete = false
 
@@ -495,7 +515,7 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
                         id: ObjectIdentifier(lifetime),
                         lifetime: lifetime
                     )
-                blankIdentity = identity
+                blankSubmitted.signal()
                 return identity
             },
             restoreTab: { _, targetURL in
@@ -527,7 +547,7 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
                 didDelete = true
             }
         }
-        await waitUntil { blankIdentity != nil }
+        await blankSubmitted.wait()
 
         XCTAssertTrue(owner.webContentProcessDidTerminate(on: fixture.webView))
 
@@ -543,6 +563,8 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
         fixture.tab.parkExistingWebView(secondWebView)
         let webViews = [fixture.webView, secondWebView]
         let ownerReference = CleanupOwnerReference()
+        let firstBlankSubmitted = CleanupTestSignal()
+        let secondBlankSubmitted = CleanupTestSignal()
         var blankIdentities: [
             ObjectIdentifier: WebsiteDataCleanupTransaction.CleanupNavigationIdentity
         ] = [:]
@@ -561,6 +583,11 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
                         lifetime: lifetime
                     )
                 blankIdentities[ObjectIdentifier(webView)] = identity
+                if webView === fixture.webView {
+                    firstBlankSubmitted.signal()
+                } else if webView === secondWebView {
+                    secondBlankSubmitted.signal()
+                }
                 return identity
             },
             restoreTab: { _, targetURL in
@@ -593,7 +620,7 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
                 didDelete = true
             }
         }
-        await waitUntil { blankIdentities[ObjectIdentifier(fixture.webView)] != nil }
+        await firstBlankSubmitted.wait()
         let firstBlank = try XCTUnwrap(
             blankIdentities[ObjectIdentifier(fixture.webView)]
         )
@@ -603,7 +630,7 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
             navigationLifetime: firstBlank.lifetime,
             succeeded: true
         )
-        await waitUntil { blankIdentities[ObjectIdentifier(secondWebView)] != nil }
+        await secondBlankSubmitted.wait()
 
         let foreignLifetime = NSObject()
         owner.navigationWillStart(
@@ -635,6 +662,8 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
         var webViews = [fixture.webView]
         var residenceGeneration: UInt64 = 1
         let ownerReference = CleanupOwnerReference()
+        let firstBlankSubmitted = CleanupTestSignal()
+        let secondBlankSubmitted = CleanupTestSignal()
         var blankIdentities: [
             ObjectIdentifier: WebsiteDataCleanupTransaction.CleanupNavigationIdentity
         ] = [:]
@@ -652,6 +681,11 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
                         lifetime: lifetime
                     )
                 blankIdentities[ObjectIdentifier(webView)] = identity
+                if webView === fixture.webView {
+                    firstBlankSubmitted.signal()
+                } else if webView === secondWebView {
+                    secondBlankSubmitted.signal()
+                }
                 return identity
             },
             restoreTab: { _, targetURL in
@@ -684,7 +718,7 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
                 didDelete = true
             }
         }
-        await waitUntil { blankIdentities[ObjectIdentifier(fixture.webView)] != nil }
+        await firstBlankSubmitted.wait()
         let firstBlank = try XCTUnwrap(
             blankIdentities[ObjectIdentifier(fixture.webView)]
         )
@@ -698,7 +732,7 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
         webViews.append(secondWebView)
         residenceGeneration &+= 1
 
-        await waitUntil { blankIdentities[ObjectIdentifier(secondWebView)] != nil }
+        await secondBlankSubmitted.wait()
         XCTAssertFalse(didDelete)
         let secondBlank = try XCTUnwrap(
             blankIdentities[ObjectIdentifier(secondWebView)]
@@ -721,6 +755,8 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
         fixture.tab.parkExistingWebView(secondWebView)
         let webViews = [fixture.webView, secondWebView]
         let ownerReference = CleanupOwnerReference()
+        let firstBlankSubmitted = CleanupTestSignal()
+        let secondBlankSubmitted = CleanupTestSignal()
         var blankIdentities: [
             ObjectIdentifier: WebsiteDataCleanupTransaction.CleanupNavigationIdentity
         ] = [:]
@@ -739,6 +775,11 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
                         lifetime: lifetime
                     )
                 blankIdentities[ObjectIdentifier(webView)] = identity
+                if webView === fixture.webView {
+                    firstBlankSubmitted.signal()
+                } else if webView === secondWebView {
+                    secondBlankSubmitted.signal()
+                }
                 return identity
             },
             restoreTab: { _, targetURL in
@@ -771,7 +812,7 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
                 didDelete = true
             }
         }
-        await waitUntil { blankIdentities[ObjectIdentifier(fixture.webView)] != nil }
+        await firstBlankSubmitted.wait()
         let firstBlank = try XCTUnwrap(
             blankIdentities[ObjectIdentifier(fixture.webView)]
         )
@@ -781,7 +822,7 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
             navigationLifetime: firstBlank.lifetime,
             succeeded: true
         )
-        await waitUntil { blankIdentities[ObjectIdentifier(secondWebView)] != nil }
+        await secondBlankSubmitted.wait()
         transaction.cancel()
 
         let didComplete = await transaction.value
@@ -854,6 +895,7 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
 
     func testCancellationBeforePhysicalMutationDoesNotRestoreUntouchedWebView() async {
         let fixture = makeFixture()
+        let permissionRequested = CleanupTestSignal()
         var permissionContinuation: CheckedContinuation<Bool, Never>?
         var didDelete = false
         var restoreCount = 0
@@ -865,6 +907,7 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
             waitForMutationPermission: { _ in
                 await withCheckedContinuation { continuation in
                     permissionContinuation = continuation
+                    permissionRequested.signal()
                 }
             },
             loadBlankNavigation: { _ in
@@ -884,7 +927,7 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
                 didDelete = true
             }
         }
-        await waitUntil { permissionContinuation != nil }
+        await permissionRequested.wait()
         cleanup.cancel()
         permissionContinuation?.resume(returning: true)
         permissionContinuation = nil
@@ -899,6 +942,7 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
     func testRestoreWatchdogRetriesWhenAcceptedSubmissionNeverStarts() async throws {
         let fixture = makeFixture()
         let ownerReference = CleanupOwnerReference()
+        let blankSubmitted = CleanupTestSignal()
         var blankIdentity: WebsiteDataCleanupTransaction.CleanupNavigationIdentity?
         var restoreCount = 0
 
@@ -914,6 +958,7 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
                         lifetime: lifetime
                     )
                 blankIdentity = identity
+                blankSubmitted.signal()
                 return identity
             },
             restoreTab: { _, targetURL in
@@ -947,7 +992,7 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
                 profileIDs: [fixture.profileID]
             ) {}
         }
-        await waitUntil { blankIdentity != nil }
+        await blankSubmitted.wait()
         let identity = try XCTUnwrap(blankIdentity)
         owner.navigationDidTerminate(
             on: fixture.webView,
@@ -964,8 +1009,9 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
     func testSameURLForeignRevisionCannotClaimRestoreReceipt() async throws {
         let fixture = makeFixture()
         let ownerReference = CleanupOwnerReference()
+        let blankSubmitted = CleanupTestSignal()
+        let restoreReceiptReturned = CleanupTestSignal()
         var blankIdentity: WebsiteDataCleanupTransaction.CleanupNavigationIdentity?
-        var restoreReceiptReturned = false
 
         let owner = WebsiteDataCleanupTransaction(
             runtimeTabs: { [fixture.tab] },
@@ -979,6 +1025,7 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
                         lifetime: lifetime
                     )
                 blankIdentity = identity
+                blankSubmitted.signal()
                 return identity
             },
             restoreTab: { _, targetURL in
@@ -996,7 +1043,7 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
                     navigationLifetime: foreignLifetime,
                     succeeded: true
                 )
-                restoreReceiptReturned = true
+                restoreReceiptReturned.signal()
                 return .init(outcome: .accepted, semanticRevision: 1)
             },
             restoreAttemptTimeout: .seconds(1)
@@ -1008,7 +1055,7 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
                 profileIDs: [fixture.profileID]
             ) {}
         }
-        await waitUntil { blankIdentity != nil }
+        await blankSubmitted.wait()
         let identity = try XCTUnwrap(blankIdentity)
         owner.navigationDidTerminate(
             on: fixture.webView,
@@ -1016,8 +1063,7 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
             navigationLifetime: identity.lifetime,
             succeeded: true
         )
-        await waitUntil { restoreReceiptReturned }
-        await Task.yield()
+        await restoreReceiptReturned.wait()
 
         let exactLifetime = NSObject()
         owner.navigationWillStart(
@@ -1040,6 +1086,7 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
 
     func testRetiringResidenceBarrierCompletesBeforeLiveDiscoveryAndDeletion() async {
         let fixture = makeFixture()
+        let barrierRequested = CleanupTestSignal()
         var barrierContinuation: CheckedContinuation<Bool, Never>?
         var barrierCallCount = 0
         var discoveryCount = 0
@@ -1061,6 +1108,7 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
                 guard barrierCallCount == 1 else { return true }
                 return await withCheckedContinuation {
                     barrierContinuation = $0
+                    barrierRequested.signal()
                 }
             }
         )
@@ -1072,7 +1120,7 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
                 didDelete = true
             }
         }
-        await waitUntil { barrierContinuation != nil }
+        await barrierRequested.wait()
         XCTAssertEqual(discoveryCount, 0)
         XCTAssertFalse(didDelete)
 
@@ -1089,6 +1137,7 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
         let replacement = WKWebView()
         var liveWebViews = [fixture.webView]
         let ownerReference = CleanupOwnerReference()
+        let blankSubmitted = CleanupTestSignal()
         var blankIdentity: WebsiteDataCleanupTransaction.CleanupNavigationIdentity?
         var restoreCount = 0
 
@@ -1104,6 +1153,7 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
                         lifetime: lifetime
                     )
                 blankIdentity = identity
+                blankSubmitted.signal()
                 return identity
             },
             restoreTab: { _, targetURL in
@@ -1138,7 +1188,7 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
                 profileIDs: [fixture.profileID]
             ) {}
         }
-        await waitUntil { blankIdentity != nil }
+        await blankSubmitted.wait()
         let identity = try XCTUnwrap(blankIdentity)
         owner.navigationDidTerminate(
             on: fixture.webView,
@@ -1207,7 +1257,7 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
     func testResidenceBarrierTimeoutFailsClosedAndReleasesAdmissionGate() async {
         let fixture = makeFixture()
         let gate = WebsiteDataMutationGate()
-        var barrierStarted = false
+        let barrierStarted = CleanupTestSignal()
         var didDelete = false
         let owner = WebsiteDataCleanupTransaction(
             runtimeTabs: { [fixture.tab] },
@@ -1219,7 +1269,9 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
             },
             mutationGate: gate,
             waitForRetiringResidenceBarrier: {
-                barrierStarted = true
+                barrierStarted.signal()
+                // This sleep is a cancellation sentinel. The production
+                // timeout must cancel it; elapsed time never makes it succeed.
                 while Task.isCancelled == false {
                     do {
                         try await Task.sleep(for: .seconds(1))
@@ -1239,7 +1291,7 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
                 didDelete = true
             }
         }
-        await waitUntil { barrierStarted }
+        await barrierStarted.wait()
         let admission = Task { @MainActor in
             await gate.waitForOrdinaryRuntimeAdmission(for: fixture.profileID)
         }
@@ -1265,22 +1317,6 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
             webView: webView
         )
     }
-
-    private func waitUntil(
-        _ predicate: @escaping @MainActor () -> Bool
-    ) async {
-        let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: .seconds(2))
-        while predicate() == false, clock.now < deadline {
-            do {
-                try await Task.sleep(for: .milliseconds(5))
-            } catch {
-                XCTFail("Cleanup test wait was cancelled")
-                return
-            }
-        }
-        XCTAssertTrue(predicate())
-    }
 }
 
 @MainActor
@@ -1294,4 +1330,27 @@ private struct CleanupFixture {
 @MainActor
 private final class CleanupOwnerReference {
     weak var owner: WebsiteDataCleanupTransaction?
+}
+
+@MainActor
+private final class CleanupTestSignal {
+    private var count = 0
+    private var waiters: [(
+        targetCount: Int,
+        continuation: CheckedContinuation<Void, Never>
+    )] = []
+
+    func signal() {
+        count += 1
+        let ready = waiters.filter { $0.targetCount <= count }
+        waiters.removeAll { $0.targetCount <= count }
+        ready.forEach { $0.continuation.resume() }
+    }
+
+    func wait(for targetCount: Int = 1) async {
+        guard count < targetCount else { return }
+        await withCheckedContinuation { continuation in
+            waiters.append((targetCount, continuation))
+        }
+    }
 }

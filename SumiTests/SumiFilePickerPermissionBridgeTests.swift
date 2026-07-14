@@ -120,7 +120,7 @@ final class SumiFilePickerPermissionBridgeTests: XCTestCase {
             results.append(urls)
             expectation.fulfill()
         }
-        await waitUntilPresenterReceivesRequest(presenter)
+        await presenter.waitForPresentation()
         presenter.completeTwice(.selected([fileURL("selected.txt")]), then: .cancelled)
 
         await fulfillment(of: [expectation], timeout: 1)
@@ -144,7 +144,7 @@ final class SumiFilePickerPermissionBridgeTests: XCTestCase {
             results.append(urls)
             expectation.fulfill()
         }
-        await waitUntilPresenterReceivesRequest(presenter)
+        await presenter.waitForPresentation()
         bridge.cancel(pageId: "tab-a:1", reason: "navigation")
         presenter.complete(.selected([fileURL("late.txt")]))
 
@@ -170,7 +170,7 @@ final class SumiFilePickerPermissionBridgeTests: XCTestCase {
             results.append(urls)
             expectation.fulfill()
         }
-        await waitUntilPresenterReceivesRequest(presenter)
+        await presenter.waitForPresentation()
         currentPageId.value = "tab-a:2"
         presenter.complete(.selected([fileURL("late.txt")]))
 
@@ -221,7 +221,7 @@ final class SumiFilePickerPermissionBridgeTests: XCTestCase {
             results.append(urls)
             expectation.fulfill()
         }
-        await waitUntilPresenterReceivesRequest(presenter)
+        await presenter.waitForPresentation()
         document.isCurrent = false
         presenter.complete(.selected([fileURL("stale.txt")]))
 
@@ -246,7 +246,7 @@ final class SumiFilePickerPermissionBridgeTests: XCTestCase {
             results.append(urls)
             expectation.fulfill()
         }
-        await waitUntilPresenterReceivesRequest(presenter)
+        await presenter.waitForPresentation()
         bridge.cancel(tabId: "tab-a", reason: "cleanup")
         presenter.complete(.selected([fileURL("late.txt")]))
 
@@ -334,14 +334,6 @@ final class SumiFilePickerPermissionBridgeTests: XCTestCase {
         return results
     }
 
-    private func waitUntilPresenterReceivesRequest(
-        _ presenter: FilePickerFakePanelPresenter
-    ) async {
-        for _ in 0..<50 where presenter.requests.isEmpty {
-            try? await Task.sleep(nanoseconds: 1_000_000)
-        }
-    }
-
     private func filePickerRequest(
         requestingOrigin: SumiPermissionOrigin = SumiPermissionOrigin(string: "https://example.com"),
         allowsMultipleSelection: Bool = false,
@@ -414,11 +406,16 @@ private final class FilePickerCurrentDocumentState {
 @MainActor
 private final class FilePickerFakePanelPresenter: SumiFilePickerPanelPresenting {
     private let nextResult: SumiFilePickerPanelResult?
+    private let presentationEvents: AsyncStream<Void>
+    private let presentationEventContinuation: AsyncStream<Void>.Continuation
     private var completions: [@MainActor (SumiFilePickerPanelResult) -> Void] = []
     private(set) var requests: [SumiFilePickerPanelPresentationRequest] = []
 
     init(nextResult: SumiFilePickerPanelResult? = nil) {
         self.nextResult = nextResult
+        let events = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
+        presentationEvents = events.stream
+        presentationEventContinuation = events.continuation
     }
 
     func presentFilePicker(
@@ -427,10 +424,17 @@ private final class FilePickerFakePanelPresenter: SumiFilePickerPanelPresenting 
         completion: @escaping @MainActor (SumiFilePickerPanelResult) -> Void
     ) {
         requests.append(request)
+        presentationEventContinuation.yield()
         if let nextResult {
             completion(nextResult)
         } else {
             completions.append(completion)
+        }
+    }
+
+    func waitForPresentation() async {
+        for await _ in presentationEvents {
+            return
         }
     }
 

@@ -10,8 +10,11 @@ import XCTest
 @MainActor
 final class WindowSessionPersistenceSchedulerTests: XCTestCase {
     func testSchedulerDeinitCancelsPendingPersistence() async throws {
+        let delayedActions = ManualMainActorDelayedActionScheduler()
         var scheduler: WindowSessionPersistenceScheduler? =
-            WindowSessionPersistenceScheduler()
+            WindowSessionPersistenceScheduler(
+                delayedActions: delayedActions.scheduler
+            )
         let windowState = BrowserWindowState()
         let pending = makeDurableWrite(windowState: windowState)
 
@@ -24,7 +27,8 @@ final class WindowSessionPersistenceSchedulerTests: XCTestCase {
         )
 
         scheduler = nil
-        try await Task.sleep(nanoseconds: 200_000_000)
+        XCTAssertEqual(delayedActions.pendingActionCount, 0)
+        delayedActions.runAll()
 
         XCTAssertNil(pending.snapshotStore.loadSnapshot())
     }
@@ -130,13 +134,17 @@ final class WindowSessionPersistenceSchedulerTests: XCTestCase {
     }
 
     func testTimedScheduledCommitInvokesLiveArchiveRefreshOnce() async throws {
-        let harness = makeCoordinatorHarness()
+        let delayedActions = ManualMainActorDelayedActionScheduler()
+        let harness = makeCoordinatorHarness(
+            delayedActions: delayedActions.scheduler
+        )
 
         harness.coordinator.schedule(
             harness.persistedWindow,
             delayNanoseconds: 10_000_000
         )
-        try await Task.sleep(nanoseconds: 80_000_000)
+        XCTAssertEqual(delayedActions.scheduledDelays, [0.01])
+        delayedActions.runNext()
 
         XCTAssertEqual(
             harness.snapshotStore.loadSnapshot()?.snapshot.currentProfileId,
@@ -247,7 +255,10 @@ final class WindowSessionPersistenceSchedulerTests: XCTestCase {
     }
 
     func testDelayedCommitWithEmptyLiveProjectionPreservesArchive() async throws {
-        let harness = makeCoordinatorHarness()
+        let delayedActions = ManualMainActorDelayedActionScheduler()
+        let harness = makeCoordinatorHarness(
+            delayedActions: delayedActions.scheduler
+        )
         harness.observation.windows = [harness.persistedWindow]
         harness.coordinator.persist(harness.persistedWindow)
         let archivedSnapshots = harness.historyStore.snapshots
@@ -257,7 +268,8 @@ final class WindowSessionPersistenceSchedulerTests: XCTestCase {
         )
         harness.observation.windows = []
 
-        try await Task.sleep(nanoseconds: 80_000_000)
+        XCTAssertEqual(delayedActions.scheduledDelays, [0.01])
+        delayedActions.runNext()
 
         XCTAssertEqual(harness.historyStore.snapshots, archivedSnapshots)
         XCTAssertEqual(harness.observation.archiveWriteCount, 1)
@@ -310,14 +322,18 @@ final class WindowSessionPersistenceSchedulerTests: XCTestCase {
         var windows: [BrowserWindowState] = []
     }
 
-    private func makeCoordinatorHarness() -> CoordinatorHarness {
+    private func makeCoordinatorHarness(
+        delayedActions: MainActorDelayedActionScheduler = .live
+    ) -> CoordinatorHarness {
         let defaults = makeUserDefaults()
         let snapshotStore = WindowSessionSnapshotStore(
             key: "window-session",
             userDefaults: defaults,
             environment: { [:] }
         )
-        let scheduler = WindowSessionPersistenceScheduler()
+        let scheduler = WindowSessionPersistenceScheduler(
+            delayedActions: delayedActions
+        )
         let snapshotFactory = WindowSessionSnapshotFactory(
             glanceManager: GlanceManager()
         )

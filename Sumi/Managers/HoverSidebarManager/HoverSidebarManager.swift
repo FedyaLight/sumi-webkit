@@ -147,15 +147,20 @@ final class HoverSidebarManager: ObservableObject {
     private let mouseUpdateMinimumInterval: CFTimeInterval = 1.0 / 60.0
     private let eventMonitors: HoverSidebarEventMonitorClient
     private let mouseLocationProvider: () -> CGPoint
+    private let delayedActions: MainActorDelayedActionScheduler
+    private var cancelScheduledOverlayVisibilityAction: MainActorDelayedActionScheduler.Cancellation?
+    private var cancelInactiveHostReleaseAction: MainActorDelayedActionScheduler.Cancellation?
 
     init(
         eventMonitors: HoverSidebarEventMonitorClient = .live(),
         mouseLocationProvider: @escaping () -> CGPoint = { NSEvent.mouseLocation },
-        inactiveHostRetentionDelay: TimeInterval = 2
+        inactiveHostRetentionDelay: TimeInterval = 2,
+        delayedActions: MainActorDelayedActionScheduler = .live
     ) {
         self.eventMonitors = eventMonitors
         self.mouseLocationProvider = mouseLocationProvider
         self.inactiveHostRetentionDelay = inactiveHostRetentionDelay
+        self.delayedActions = delayedActions
     }
 
     // MARK: - Lifecycle
@@ -227,6 +232,8 @@ final class HoverSidebarManager: ObservableObject {
     func stop() {
         isActive = false
         uninstallMonitors()
+        invalidateOverlayVisibilityWork()
+        invalidateOverlayHostPrewarmWork()
         DispatchQueue.main.async { [weak self] in
             self?.resetOverlayVisibilityAndHost()
         }
@@ -361,14 +368,15 @@ final class HoverSidebarManager: ObservableObject {
         pointerSidebarPosition: SidebarPosition? = nil
     ) {
         retainOverlayHostWhileCollapsed()
-        overlayVisibilityGeneration &+= 1
+        invalidateOverlayVisibilityWork()
         let generation = overlayVisibilityGeneration
 
-        DispatchQueue.main.async { [weak self] in
+        cancelScheduledOverlayVisibilityAction = delayedActions.schedule(after: 0) { [weak self] in
             guard let self,
                   generation == self.overlayVisibilityGeneration
             else { return }
 
+            self.cancelScheduledOverlayVisibilityAction = nil
             if validatesPointerIntent,
                !self.shouldCompletePendingPointerReveal(
                     sidebarPosition: pointerSidebarPosition ?? self.sidebarPosition
@@ -427,7 +435,7 @@ final class HoverSidebarManager: ObservableObject {
     }
 
     func deferOverlayHostRetentionWhileCollapsed() {
-        overlayHostPrewarmGeneration &+= 1
+        invalidateOverlayHostPrewarmWork()
         let generation = overlayHostPrewarmGeneration
 
         Task { @MainActor [weak self] in
@@ -444,8 +452,8 @@ final class HoverSidebarManager: ObservableObject {
     }
 
     func releaseOverlayHostForMemoryPressure() {
-        overlayVisibilityGeneration &+= 1
-        overlayHostPrewarmGeneration &+= 1
+        invalidateOverlayVisibilityWork()
+        invalidateOverlayHostPrewarmWork()
         hideOverlayImmediately()
         overlayHostLifecycleState = .unmounted
     }
@@ -464,7 +472,7 @@ final class HoverSidebarManager: ObservableObject {
     }
 
     private func hideOverlay(animationDuration: TimeInterval) {
-        overlayVisibilityGeneration &+= 1
+        invalidateOverlayVisibilityWork()
         withAnimation(sidebarOverlayAnimation(fallbackDuration: animationDuration)) {
             overlayHostLifecycleState = .retainedHidden
         }
@@ -473,26 +481,27 @@ final class HoverSidebarManager: ObservableObject {
     private func scheduleOverlayHide(animationDuration: TimeInterval) {
         guard !isEmptyStateOverlayForceActive else { return }
 
-        overlayVisibilityGeneration &+= 1
+        invalidateOverlayVisibilityWork()
         let generation = overlayVisibilityGeneration
 
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + HoverSidebarCompactMetrics.keepHoverDuration
+        cancelScheduledOverlayVisibilityAction = delayedActions.schedule(
+            after: HoverSidebarCompactMetrics.keepHoverDuration
         ) { [weak self] in
             guard let self,
                   generation == self.overlayVisibilityGeneration
             else { return }
 
+            self.cancelScheduledOverlayVisibilityAction = nil
             self.hideOverlay(animationDuration: animationDuration)
         }
     }
 
     private func cancelScheduledOverlayHide() {
-        overlayVisibilityGeneration &+= 1
+        invalidateOverlayVisibilityWork()
     }
 
     private func prewarmOverlayHost() {
-        overlayHostPrewarmGeneration &+= 1
+        invalidateOverlayHostPrewarmWork()
         if overlayHostLifecycleState == .unmounted {
             overlayHostLifecycleState = .retainedHidden
         }
@@ -549,15 +558,16 @@ final class HoverSidebarManager: ObservableObject {
     }
 
     private func releaseOverlayHostWhenInactive(after delay: TimeInterval) {
-        overlayHostPrewarmGeneration &+= 1
+        invalidateOverlayHostPrewarmWork()
         let generation = overlayHostPrewarmGeneration
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+        cancelInactiveHostReleaseAction = delayedActions.schedule(after: delay) { [weak self] in
             guard let self,
                   generation == self.overlayHostPrewarmGeneration,
                   !self.isOverlayVisible
             else { return }
 
+            self.cancelInactiveHostReleaseAction = nil
             self.overlayHostLifecycleState = .unmounted
         }
     }
@@ -572,8 +582,8 @@ final class HoverSidebarManager: ObservableObject {
     /// and prewarm generations so any in-flight animated reveal or deferred host
     /// release is cancelled. Mirrors `hideOverlayImmediately()`.
     private func revealOverlayImmediately() {
-        overlayHostPrewarmGeneration &+= 1
-        overlayVisibilityGeneration &+= 1
+        invalidateOverlayHostPrewarmWork()
+        invalidateOverlayVisibilityWork()
         var transaction = Transaction()
         transaction.disablesAnimations = true
         transaction.animation = nil
@@ -600,9 +610,21 @@ final class HoverSidebarManager: ObservableObject {
 
     private func resetOverlayVisibilityAndHost() {
         isEmptyStateOverlayForceActive = false
-        overlayVisibilityGeneration &+= 1
-        overlayHostPrewarmGeneration &+= 1
+        invalidateOverlayVisibilityWork()
+        invalidateOverlayHostPrewarmWork()
         overlayHostLifecycleState = .unmounted
+    }
+
+    private func invalidateOverlayVisibilityWork() {
+        overlayVisibilityGeneration &+= 1
+        cancelScheduledOverlayVisibilityAction?()
+        cancelScheduledOverlayVisibilityAction = nil
+    }
+
+    private func invalidateOverlayHostPrewarmWork() {
+        overlayHostPrewarmGeneration &+= 1
+        cancelInactiveHostReleaseAction?()
+        cancelInactiveHostReleaseAction = nil
     }
 
     private func uninstallMonitors() {

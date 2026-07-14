@@ -21,17 +21,21 @@ final class SumiPermissionCoordinatorPendingQueryTests: XCTestCase {
 
     func testCancellingCoalescedRequestKeepsPrimaryQueryActive() async {
         let coordinator = makeCoordinator()
+        var events = await coordinator.events().makeAsyncIterator()
         let primaryContext = pendingQueryContext(permissionTypes: [.camera], id: "camera-primary")
         let primaryTask = Task {
             await coordinator.requestPermission(primaryContext)
         }
-        let primaryQuery = await waitForActiveQuery(coordinator)
+        let primaryQuery = await waitForActiveQuery(from: &events)
 
         let coalescedContext = pendingQueryContext(permissionTypes: [.camera], id: "camera-coalesced")
         let coalescedTask = Task {
             await coordinator.requestPermission(coalescedContext)
         }
-        await waitForCoalescedRequest(coordinator, requestId: "camera-coalesced")
+        await waitForCoalescedRequest(
+            from: &events,
+            requestId: "camera-coalesced"
+        )
 
         let cancellation = await coordinator.cancel(
             requestId: "camera-coalesced",
@@ -54,23 +58,26 @@ final class SumiPermissionCoordinatorPendingQueryTests: XCTestCase {
 
     func testSettlingActiveQueryPromotesQueuedQueryInSnapshot() async {
         let coordinator = makeCoordinator()
+        var events = await coordinator.events().makeAsyncIterator()
         let firstContext = pendingQueryContext(permissionTypes: [.camera], id: "camera-primary")
         let firstTask = Task {
             await coordinator.requestPermission(firstContext)
         }
-        let firstQuery = await waitForActiveQuery(coordinator)
+        let firstQuery = await waitForActiveQuery(from: &events)
 
         let secondContext = pendingQueryContext(permissionTypes: [.microphone], id: "microphone-queued")
         let secondTask = Task {
             await coordinator.requestPermission(secondContext)
         }
-        await waitForQueueCount(coordinator, pageId: "tab-a:1", count: 1)
+        await waitForQueuedQuery(from: &events, pageId: "tab-a:1")
+        let queuedSnapshot = await coordinator.stateSnapshot()
+        XCTAssertEqual(queuedSnapshot.queueCountByPageId["tab-a:1"], 1)
 
         await coordinator.approveOnce(firstQuery.id)
         let firstDecision = await firstTask.value
         XCTAssertEqual(firstDecision.outcome, .granted)
 
-        let promotedQuery = await waitForActiveQuery(coordinator) { query in
+        let promotedQuery = await waitForActiveQuery(from: &events) { query in
             query.id != firstQuery.id
         }
         XCTAssertEqual(promotedQuery.permissionTypes, [.microphone])
@@ -109,53 +116,54 @@ final class SumiPermissionCoordinatorPendingQueryTests: XCTestCase {
     }
 
     private func waitForActiveQuery(
-        _ coordinator: SumiPermissionCoordinator,
+        from events: inout AsyncStream<SumiPermissionCoordinatorEvent>.Iterator,
         where isMatch: (SumiPermissionAuthorizationQuery) -> Bool = { _ in true },
         file: StaticString = #filePath,
         line: UInt = #line
     ) async -> SumiPermissionAuthorizationQuery {
-        for _ in 0..<200 {
-            if let query = await coordinator.activeQuery(forPageId: "tab-a:1"),
-               isMatch(query) {
+        while let event = await events.next() {
+            let query: SumiPermissionAuthorizationQuery
+            switch event {
+            case .queryActivated(let activated), .queryPromoted(let activated):
+                query = activated
+            default:
+                continue
+            }
+            if isMatch(query) {
                 return query
             }
-            try? await Task.sleep(nanoseconds: 5_000_000)
         }
-        XCTFail("Timed out waiting for active permission query", file: file, line: line)
-        fatalError("Timed out waiting for active permission query")
+        XCTFail("Permission event stream ended before an active query", file: file, line: line)
+        fatalError("Permission event stream ended before an active query")
     }
 
     private func waitForCoalescedRequest(
-        _ coordinator: SumiPermissionCoordinator,
+        from events: inout AsyncStream<SumiPermissionCoordinatorEvent>.Iterator,
         requestId: String,
         file: StaticString = #filePath,
         line: UInt = #line
     ) async {
-        for _ in 0..<200 {
-            let snapshot = await coordinator.stateSnapshot()
-            if case .queryCoalesced(_, let coalescedRequestId) = snapshot.latestEvent,
+        while let event = await events.next() {
+            if case .queryCoalesced(_, let coalescedRequestId) = event,
                coalescedRequestId == requestId {
                 return
             }
-            try? await Task.sleep(nanoseconds: 5_000_000)
         }
-        XCTFail("Timed out waiting for coalesced permission query", file: file, line: line)
+        XCTFail("Permission event stream ended before query coalescing", file: file, line: line)
     }
 
-    private func waitForQueueCount(
-        _ coordinator: SumiPermissionCoordinator,
+    private func waitForQueuedQuery(
+        from events: inout AsyncStream<SumiPermissionCoordinatorEvent>.Iterator,
         pageId: String,
-        count: Int,
         file: StaticString = #filePath,
         line: UInt = #line
     ) async {
-        for _ in 0..<200 {
-            let snapshot = await coordinator.stateSnapshot()
-            if snapshot.queueCountByPageId[pageId] == count {
+        while let event = await events.next() {
+            if case .queryQueued(let query, _) = event,
+               query.pageId == pageId {
                 return
             }
-            try? await Task.sleep(nanoseconds: 5_000_000)
         }
-        XCTFail("Timed out waiting for permission queue count", file: file, line: line)
+        XCTFail("Permission event stream ended before query queuing", file: file, line: line)
     }
 }

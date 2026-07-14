@@ -47,13 +47,15 @@ final class HistoryManager: ObservableObject {
 
     private let faviconCleaner: any HistoryFaviconCleaning
     private let visitedLinkStore: any HistoryVisitedLinkStoring
+    private let delayedActions: MainActorDelayedActionScheduler
     private let maxHistoryDays = 100
     private var cleanupTask: Task<Void, Never>?
     private var changeTask: Task<Void, Never>?
-    private var scheduledRefreshTask: Task<Void, Never>?
+    private var cancelScheduledRefresh: MainActorDelayedActionScheduler.Cancellation?
+    private var summaryRefreshTask: Task<Void, Never>?
     private var visitedLinkPreloadTask: Task<Void, Never>?
     private var recentVisitedCache: [HistoryListItem] = []
-    private static let changeRefreshDebounceNanoseconds: UInt64 = 120_000_000
+    private static let changeRefreshDebounce: TimeInterval = 0.12
 
     var currentProfileId: UUID?
 
@@ -61,12 +63,14 @@ final class HistoryManager: ObservableObject {
         context: ModelContext,
         profileId: UUID? = nil,
         faviconCleaner: any HistoryFaviconCleaning,
-        visitedLinkStore: any HistoryVisitedLinkStoring
+        visitedLinkStore: any HistoryVisitedLinkStoring,
+        delayedActions: MainActorDelayedActionScheduler = .live
     ) {
         self.store = HistoryStore(container: context.container)
         self.currentProfileId = profileId
         self.faviconCleaner = faviconCleaner
         self.visitedLinkStore = visitedLinkStore
+        self.delayedActions = delayedActions
         scheduleDeferredHistoryCleanupIfNeeded()
         preloadVisitedLinksForCurrentProfile()
         Task { [weak self] in
@@ -74,17 +78,21 @@ final class HistoryManager: ObservableObject {
         }
     }
 
-    deinit {
+    isolated deinit {
         cleanupTask?.cancel()
         changeTask?.cancel()
-        scheduledRefreshTask?.cancel()
+        cancelScheduledRefresh?()
+        summaryRefreshTask?.cancel()
         visitedLinkPreloadTask?.cancel()
     }
 
     func switchProfile(_ profileId: UUID?) {
         currentProfileId = profileId
         preloadVisitedLinksForCurrentProfile()
-        scheduledRefreshTask?.cancel()
+        cancelScheduledRefresh?()
+        cancelScheduledRefresh = nil
+        summaryRefreshTask?.cancel()
+        summaryRefreshTask = nil
         recentVisitedCache = []
         canClearHistory = false
         Task { [weak self] in
@@ -94,6 +102,13 @@ final class HistoryManager: ObservableObject {
 
     func refreshAfterExternalMutation() async {
         await refreshSummary(incrementRevision: true)
+    }
+
+    /// Waits until the serialized history mutations accepted before this call
+    /// have finished. Callers that need a terminal boundary must stop admitting
+    /// new mutations first.
+    func flushPendingChanges() async {
+        await changeTask?.value
     }
 
     @discardableResult
@@ -163,11 +178,15 @@ final class HistoryManager: ObservableObject {
     }
 
     private func scheduleCoalescedSummaryRefresh() {
-        scheduledRefreshTask?.cancel()
-        scheduledRefreshTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: Self.changeRefreshDebounceNanoseconds)
-            guard !Task.isCancelled else { return }
-            await self?.refreshSummary(incrementRevision: true)
+        cancelScheduledRefresh?()
+        cancelScheduledRefresh = delayedActions.schedule(
+            after: Self.changeRefreshDebounce
+        ) { [weak self] in
+            guard let self else { return }
+            self.cancelScheduledRefresh = nil
+            self.summaryRefreshTask = Task { @MainActor [weak self] in
+                await self?.refreshSummary(incrementRevision: true)
+            }
         }
     }
 

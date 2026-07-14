@@ -27,7 +27,11 @@ final class SafariExtensionScriptingRuntimeTests: XCTestCase {
             initialProfile: profile,
             browserConfiguration: browserConfiguration
         )
-        let browserManager = makeSafariExtensionTestBrowserManager(profile: profile)
+        let windowRegistry = WindowRegistry()
+        let browserManager = makeSafariExtensionTestBrowserManager(
+            profile: profile,
+            windowRegistry: windowRegistry
+        )
         manager.attach(browserManager: browserManager)
 
         // The startup restore task replaces the tab-manager structural state
@@ -82,6 +86,14 @@ final class SafariExtensionScriptingRuntimeTests: XCTestCase {
         tab.profileId = profile.id
         tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
 
+        let windowState = BrowserWindowState()
+        windowState.tabManager = browserManager.tabManager
+        windowState.currentProfileId = profile.id
+        windowState.currentSpaceId = tab.spaceId
+        windowState.currentTabId = tab.id
+        windowRegistry.register(windowState)
+        windowRegistry.setActive(windowState)
+
         let webView = FocusableWKWebView(frame: .zero, configuration: configuration)
         webView.owningTab = tab
         tab.replaceUntrackedWebView(webView)
@@ -89,6 +101,10 @@ final class SafariExtensionScriptingRuntimeTests: XCTestCase {
         manager.normalTabRegistration.register(
             tab,
             reason: "SafariExtensionScriptingRuntimeTests"
+        )
+        XCTAssertTrue(
+            manager.publishedExtensionTabs.containsPublishedTab(tab),
+            "The scripting target must cross the exact window and tab publication boundaries before the worker resolves sender.tab"
         )
 
         let didFinish = expectation(description: "page loaded")

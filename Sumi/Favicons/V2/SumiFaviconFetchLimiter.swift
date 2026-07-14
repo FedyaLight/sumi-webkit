@@ -1,5 +1,20 @@
 import Foundation
 
+struct SumiFaviconFetchQueueOrder: Equatable, Sendable {
+    let priority: SumiFaviconFetchPriority
+    let origin: String
+
+    static func isOrderedBefore(
+        _ lhs: SumiFaviconFetchQueueOrder,
+        _ rhs: SumiFaviconFetchQueueOrder
+    ) -> Bool {
+        if lhs.priority != rhs.priority {
+            return lhs.priority > rhs.priority
+        }
+        return lhs.origin < rhs.origin
+    }
+}
+
 actor SumiFaviconFetchLimiter {
     private struct Waiter {
         let id: UUID
@@ -7,6 +22,10 @@ actor SumiFaviconFetchLimiter {
         let origin: String
         let priority: SumiFaviconFetchPriority
         let continuation: CheckedContinuation<Bool, Never>
+
+        var queueOrder: SumiFaviconFetchQueueOrder {
+            SumiFaviconFetchQueueOrder(priority: priority, origin: origin)
+        }
     }
 
     private let globalLimit: Int
@@ -47,10 +66,7 @@ actor SumiFaviconFetchLimiter {
                     )
                 )
                 waiters.sort {
-                    if $0.priority != $1.priority {
-                        return $0.priority > $1.priority
-                    }
-                    return $0.origin < $1.origin
+                    SumiFaviconFetchQueueOrder.isOrderedBefore($0.queueOrder, $1.queueOrder)
                 }
             }
         } onCancel: {

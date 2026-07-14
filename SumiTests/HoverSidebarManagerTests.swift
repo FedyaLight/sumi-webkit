@@ -234,10 +234,12 @@ final class HoverSidebarManagerTests: XCTestCase {
 
     func testInactiveCollapsedWindowReleasesPrewarmedHostAfterRetentionDelay() async {
         let recorder = EventMonitorRecorder()
+        let delayedActions = ManualMainActorDelayedActionScheduler()
         let manager = HoverSidebarManager(
             eventMonitors: recorder.client,
             mouseLocationProvider: { .zero },
-            inactiveHostRetentionDelay: 0.03
+            inactiveHostRetentionDelay: 0.03,
+            delayedActions: delayedActions.scheduler
         )
         let browserManager = BrowserManager()
         let windowRegistry = WindowRegistry()
@@ -258,7 +260,8 @@ final class HoverSidebarManagerTests: XCTestCase {
         windowRegistry.setActive(hostedWindow)
 
         manager.start()
-        await waitForPrewarmedHost(manager)
+        manager.refreshMonitoring()
+        manager.retainOverlayHostWhileCollapsed()
 
         XCTAssertTrue(manager.isOverlayHostPrewarmed)
 
@@ -268,17 +271,20 @@ final class HoverSidebarManagerTests: XCTestCase {
         XCTAssertFalse(manager.isOverlayVisible)
         XCTAssertTrue(manager.isOverlayHostPrewarmed)
 
-        await sleep(milliseconds: 60)
+        XCTAssertEqual(delayedActions.scheduledDelays, [0.03])
+        delayedActions.runNext()
 
         XCTAssertFalse(manager.isOverlayHostPrewarmed)
     }
 
     func testStartupEmptyStateForceSurvivesInactiveReconciliationBeforeWindowActivation() async {
         let recorder = EventMonitorRecorder()
+        let delayedActions = ManualMainActorDelayedActionScheduler()
         let manager = HoverSidebarManager(
             eventMonitors: recorder.client,
             mouseLocationProvider: { .zero },
-            inactiveHostRetentionDelay: 0.03
+            inactiveHostRetentionDelay: 0.03,
+            delayedActions: delayedActions.scheduler
         )
         let browserManager = BrowserManager()
         let windowRegistry = WindowRegistry()
@@ -308,7 +314,8 @@ final class HoverSidebarManagerTests: XCTestCase {
         XCTAssertEqual(manager.overlayHostLifecycleState, .visible)
 
         await drainMainQueue()
-        await sleep(milliseconds: 60)
+        XCTAssertTrue(delayedActions.scheduledDelays.isEmpty)
+        delayedActions.runAll()
 
         XCTAssertEqual(manager.overlayHostLifecycleState, .visible)
 
@@ -317,10 +324,12 @@ final class HoverSidebarManagerTests: XCTestCase {
 
     func testReactivatingCollapsedWindowCancelsInactiveHostRelease() async {
         let recorder = EventMonitorRecorder()
+        let delayedActions = ManualMainActorDelayedActionScheduler()
         let manager = HoverSidebarManager(
             eventMonitors: recorder.client,
             mouseLocationProvider: { .zero },
-            inactiveHostRetentionDelay: 0.03
+            inactiveHostRetentionDelay: 0.03,
+            delayedActions: delayedActions.scheduler
         )
         let browserManager = BrowserManager()
         let windowRegistry = WindowRegistry()
@@ -341,7 +350,8 @@ final class HoverSidebarManagerTests: XCTestCase {
         windowRegistry.setActive(hostedWindow)
 
         manager.start()
-        await waitForPrewarmedHost(manager)
+        manager.refreshMonitoring()
+        manager.retainOverlayHostWhileCollapsed()
 
         XCTAssertTrue(manager.isOverlayHostPrewarmed)
 
@@ -349,7 +359,9 @@ final class HoverSidebarManagerTests: XCTestCase {
         manager.refreshMonitoring()
         windowRegistry.setActive(hostedWindow)
         manager.refreshMonitoring()
-        await sleep(milliseconds: 60)
+        XCTAssertEqual(delayedActions.scheduledDelays, [0.03])
+        XCTAssertEqual(delayedActions.pendingActionCount, 0)
+        delayedActions.runAll()
 
         XCTAssertTrue(manager.isOverlayHostPrewarmed)
     }
@@ -363,7 +375,6 @@ final class HoverSidebarManagerTests: XCTestCase {
         await drainMainQueue()
 
         manager.retainOverlayHostForPinnedInteraction()
-        await sleep(milliseconds: 60)
 
         XCTAssertFalse(manager.isOverlayVisible)
         XCTAssertTrue(manager.isOverlayHostPrewarmed)
@@ -409,7 +420,8 @@ final class HoverSidebarManagerTests: XCTestCase {
         XCTAssertFalse(harness.manager.isOverlayVisible)
 
         mouse = CGPoint(x: 650, y: 300)
-        await drainMainQueue()
+        XCTAssertEqual(harness.delayedActions.scheduledDelays, [0])
+        harness.delayedActions.runNext()
 
         XCTAssertTrue(harness.manager.isOverlayHostPrewarmed)
         XCTAssertFalse(harness.manager.isOverlayVisible)
@@ -425,7 +437,8 @@ final class HoverSidebarManagerTests: XCTestCase {
         harness.manager.requestPointerOverlayReveal(animationDuration: 0)
 
         mouse = CGPoint(x: 180, y: 300)
-        await drainMainQueue()
+        XCTAssertEqual(harness.delayedActions.scheduledDelays, [0])
+        harness.delayedActions.runNext()
 
         XCTAssertTrue(harness.manager.isOverlayVisible)
         XCTAssertTrue(harness.manager.isOverlayHostPrewarmed)
@@ -445,7 +458,8 @@ final class HoverSidebarManagerTests: XCTestCase {
         )
 
         mouse = CGPoint(x: 820, y: 300)
-        await drainMainQueue()
+        XCTAssertEqual(harness.delayedActions.scheduledDelays, [0])
+        harness.delayedActions.runNext()
 
         XCTAssertTrue(harness.manager.isOverlayVisible)
         XCTAssertTrue(harness.manager.isOverlayHostPrewarmed)
@@ -481,7 +495,8 @@ final class HoverSidebarManagerTests: XCTestCase {
         windowRegistry.setActive(windowState)
 
         manager.start()
-        await waitForPrewarmedHost(manager)
+        manager.refreshMonitoring()
+        manager.retainOverlayHostWhileCollapsed()
 
         XCTAssertEqual(
             recorder.localMasks,
@@ -530,30 +545,21 @@ final class HoverSidebarManagerTests: XCTestCase {
 
 @MainActor
 private func drainMainQueue() async {
-    await Task.yield()
-    await Task.yield()
-}
-
-@MainActor
-private func waitForPrewarmedHost(_ manager: HoverSidebarManager) async {
-    for _ in 0..<10 {
-        if manager.isOverlayHostPrewarmed {
-            return
+    await withCheckedContinuation { continuation in
+        DispatchQueue.main.async {
+            continuation.resume()
         }
-        await drainMainQueue()
     }
-}
-
-private func sleep(milliseconds: UInt64) async {
-    try? await Task.sleep(nanoseconds: milliseconds * 1_000_000)
 }
 
 @MainActor
 private struct PointerRevealHarness {
     let manager: HoverSidebarManager
+    let delayedActions: ManualMainActorDelayedActionScheduler
     let browserManager: BrowserManager
     let windowRegistry: WindowRegistry
     let windowState: BrowserWindowState
+    let appKitWindow: NSWindow
     let recorder: EventMonitorRecorder
 }
 
@@ -562,24 +568,24 @@ private func makePointerRevealHarness(
     mouseLocationProvider: @escaping () -> CGPoint
 ) -> PointerRevealHarness {
     let recorder = EventMonitorRecorder()
+    let delayedActions = ManualMainActorDelayedActionScheduler()
     let manager = HoverSidebarManager(
         eventMonitors: recorder.client,
         mouseLocationProvider: mouseLocationProvider,
-        inactiveHostRetentionDelay: 0
+        inactiveHostRetentionDelay: 0,
+        delayedActions: delayedActions.scheduler
     )
     let browserManager = BrowserManager()
     let windowRegistry = WindowRegistry()
     let windowState = BrowserWindowState()
+    let appKitWindow = NSWindow(
+        contentRect: NSRect(x: 100, y: 100, width: 800, height: 600),
+        styleMask: [.titled],
+        backing: .buffered,
+        defer: false
+    )
     windowState.tabManager = browserManager.tabManager
-    windowRegistry.bindAppKitWindow(
-            NSWindow(
-            contentRect: NSRect(x: 100, y: 100, width: 800, height: 600),
-            styleMask: [.titled],
-            backing: .buffered,
-            defer: false
-            ),
-            to: windowState
-        )
+    windowRegistry.bindAppKitWindow(appKitWindow, to: windowState)
     windowState.isSidebarVisible = false
 
     browserManager.windowRegistry = windowRegistry
@@ -589,13 +595,14 @@ private func makePointerRevealHarness(
     windowRegistry.register(windowState)
     windowRegistry.setActive(windowState)
     manager.start()
-    manager.refreshMonitoring()
 
     return PointerRevealHarness(
         manager: manager,
+        delayedActions: delayedActions,
         browserManager: browserManager,
         windowRegistry: windowRegistry,
         windowState: windowState,
+        appKitWindow: appKitWindow,
         recorder: recorder
     )
 }

@@ -13,27 +13,26 @@ final class SumiPermissionEventOwnerTests: XCTestCase {
             userDefaults: UserDefaults(suiteName: "SumiPermissionEventOwner-\(UUID().uuidString)")!
         )
         var handledEvents: [SumiPermissionCoordinatorEvent] = []
+        let handledExpectation = expectation(description: "permission event handled")
         let owner = SumiPermissionEventOwner(
             coordinator: coordinator,
             recentActivityStore: recentActivityStore,
             siteActivityStore: siteActivityStore,
             onEvent: { event in
                 handledEvents.append(event)
+                handledExpectation.fulfill()
             }
         )
 
-        await waitUntil {
-            await coordinator.subscriptionCount == 1
-        }
+        let subscriptionEvent = await coordinator.nextLifecycleEvent()
+        XCTAssertEqual(subscriptionEvent, .subscribed)
         let subscriptionCount = await coordinator.subscriptionCount
         XCTAssertEqual(subscriptionCount, 1)
 
         let query = Self.permissionQuery()
         await coordinator.emit(.queryActivated(query))
 
-        await waitUntil {
-            handledEvents.count == 1 && recentActivityStore.records.count == 1
-        }
+        await fulfillment(of: [handledExpectation], timeout: 1)
         XCTAssertEqual(handledEvents, [.queryActivated(query)])
         XCTAssertEqual(recentActivityStore.records.first?.permissionType, .camera)
         XCTAssertEqual(recentActivityStore.records.first?.action, .asked)
@@ -48,9 +47,10 @@ final class SumiPermissionEventOwnerTests: XCTestCase {
         XCTAssertEqual(siteRecords.first?.hasRequested, true)
 
         owner.cancel()
-        await waitUntil {
-            await coordinator.terminationCount == 1
-        }
+        let terminationEvent = await coordinator.nextLifecycleEvent()
+        let terminationCount = await coordinator.terminationCount
+        XCTAssertEqual(terminationEvent, .terminated)
+        XCTAssertEqual(terminationCount, 1)
     }
 
     private static func permissionQuery() -> SumiPermissionAuthorizationQuery {
@@ -73,26 +73,25 @@ final class SumiPermissionEventOwnerTests: XCTestCase {
             disablesPersistentAllow: false
         )
     }
-
-    private func waitUntil(
-        _ condition: () async -> Bool,
-        file: StaticString = #filePath,
-        line: UInt = #line
-    ) async {
-        for _ in 0..<100 {
-            if await condition() {
-                return
-            }
-            try? await Task.sleep(nanoseconds: 10_000_000)
-        }
-        XCTFail("Timed out waiting for condition", file: file, line: line)
-    }
 }
 
 private actor PermissionEventOwnerFakeCoordinator: SumiPermissionCoordinating {
+    enum LifecycleEvent: Equatable {
+        case subscribed
+        case terminated
+    }
+
     private var continuations: [AsyncStream<SumiPermissionCoordinatorEvent>.Continuation] = []
+    private let lifecycleEvents: AsyncStream<LifecycleEvent>
+    private let lifecycleEventContinuation: AsyncStream<LifecycleEvent>.Continuation
     private(set) var subscriptionCount = 0
     private(set) var terminationCount = 0
+
+    init() {
+        let events = AsyncStream<LifecycleEvent>.makeStream(bufferingPolicy: .unbounded)
+        lifecycleEvents = events.stream
+        lifecycleEventContinuation = events.continuation
+    }
 
     func requestPermission(
         _ context: SumiPermissionSecurityContext
@@ -124,6 +123,7 @@ private actor PermissionEventOwnerFakeCoordinator: SumiPermissionCoordinating {
 
     func events() async -> AsyncStream<SumiPermissionCoordinatorEvent> {
         subscriptionCount += 1
+        lifecycleEventContinuation.yield(.subscribed)
         let pair = AsyncStream<SumiPermissionCoordinatorEvent>.makeStream(
             of: SumiPermissionCoordinatorEvent.self,
             bufferingPolicy: .bufferingNewest(50)
@@ -145,5 +145,13 @@ private actor PermissionEventOwnerFakeCoordinator: SumiPermissionCoordinating {
 
     private func recordTermination() {
         terminationCount += 1
+        lifecycleEventContinuation.yield(.terminated)
+    }
+
+    func nextLifecycleEvent() async -> LifecycleEvent? {
+        for await event in lifecycleEvents {
+            return event
+        }
+        return nil
     }
 }

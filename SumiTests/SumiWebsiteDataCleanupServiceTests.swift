@@ -59,18 +59,25 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
         let store = FakeDDGWebsiteDataStore(
             records: [FakeDDGWebsiteDataRecord(displayName: "example.com")]
         )
-        store.delayNanoseconds = 50_000_000
+        let operationGate = CleanupOperationGate()
+        store.modifiedSinceRemovalGate = operationGate
         let service = SumiWebsiteDataCleanupService()
 
         async let first: Void = service.clearAllProfileWebsiteData(
             using: store,
             storeIdentifier: "coalesced-store"
         )
-        await Task.yield()
-        async let second: Void = service.clearAllProfileWebsiteData(
-            using: store,
-            storeIdentifier: "coalesced-store"
-        )
+        await operationGate.waitUntilStarted()
+        let secondRequestStarted = CleanupTestSignal()
+        async let second: Void = { @MainActor in
+            secondRequestStarted.signal()
+            await service.clearAllProfileWebsiteData(
+                using: store,
+                storeIdentifier: "coalesced-store"
+            )
+        }()
+        await secondRequestStarted.wait()
+        operationGate.open()
         _ = await (first, second)
 
         XCTAssertEqual(store.modifiedSinceRemovals.count, 1)
@@ -89,8 +96,8 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
                 FakeDDGWebsiteDataRecord(displayName: "sub.example.com"),
             ]
         )
-        store.recordFetchDelayNanoseconds = 50_000_000
-        store.recordRemovalDelayNanoseconds = 50_000_000
+        let operationGate = CleanupOperationGate()
+        store.recordFetchGate = operationGate
         let service = SumiWebsiteDataCleanupService()
 
         async let first: Void = service.removeWebsiteDataForDomains(
@@ -100,14 +107,20 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
             using: store,
             storeIdentifier: "coalesced-domain-store"
         )
-        await Task.yield()
-        async let second: Void = service.removeWebsiteDataForDomains(
-            ["example.com"],
-            ofTypes: WKWebsiteDataStore.sumiCacheDataTypes,
-            includingCookies: true,
-            using: store,
-            storeIdentifier: "coalesced-domain-store"
-        )
+        await operationGate.waitUntilStarted()
+        let secondRequestStarted = CleanupTestSignal()
+        async let second: Void = { @MainActor in
+            secondRequestStarted.signal()
+            await service.removeWebsiteDataForDomains(
+                ["example.com"],
+                ofTypes: WKWebsiteDataStore.sumiCacheDataTypes,
+                includingCookies: true,
+                using: store,
+                storeIdentifier: "coalesced-domain-store"
+            )
+        }()
+        await secondRequestStarted.wait()
+        operationGate.open()
         _ = await (first, second)
 
         XCTAssertEqual(store.fetchTypes, [WKWebsiteDataStore.sumiCacheDataTypes])
@@ -1277,9 +1290,8 @@ private final class FakeDDGWebsiteDataStore: SumiWebsiteDataStore {
     var modifiedSinceRemovals: [(types: Set<String>, date: Date)] = []
     var recordRemovals: [(types: Set<String>, records: [FakeDDGWebsiteDataRecord])] = []
     var fetchTypes: [Set<String>] = []
-    var delayNanoseconds: UInt64 = 0
-    var recordFetchDelayNanoseconds: UInt64 = 0
-    var recordRemovalDelayNanoseconds: UInt64 = 0
+    var modifiedSinceRemovalGate: CleanupOperationGate?
+    var recordFetchGate: CleanupOperationGate?
 
     private let cookieStore: FakeDDGCookieStore
 
@@ -1292,13 +1304,13 @@ private final class FakeDDGWebsiteDataStore: SumiWebsiteDataStore {
     }
 
     func removeData(ofTypes types: Set<String>, modifiedSince date: Date) async {
-        await delayIfNeeded()
+        await modifiedSinceRemovalGate?.wait()
         modifiedSinceRemovals.append((types, date))
     }
 
     func dataRecords(ofTypes types: Set<String>) async -> [FakeDDGWebsiteDataRecord] {
         fetchTypes.append(types)
-        await delayIfNeeded(recordFetchDelayNanoseconds)
+        await recordFetchGate?.wait()
         return records
     }
 
@@ -1306,18 +1318,7 @@ private final class FakeDDGWebsiteDataStore: SumiWebsiteDataStore {
         ofTypes types: Set<String>,
         for records: [FakeDDGWebsiteDataRecord]
     ) async {
-        await delayIfNeeded(recordRemovalDelayNanoseconds)
         recordRemovals.append((types, records))
-    }
-
-    private func delayIfNeeded() async {
-        guard delayNanoseconds > 0 else { return }
-        try? await Task.sleep(nanoseconds: delayNanoseconds)
-    }
-
-    private func delayIfNeeded(_ nanoseconds: UInt64) async {
-        guard nanoseconds > 0 else { return }
-        try? await Task.sleep(nanoseconds: nanoseconds)
     }
 }
 
@@ -1351,9 +1352,7 @@ private struct FakeDDGWebsiteDataRecord: SumiWebsiteDataRecord, Hashable {
 @MainActor
 private final class FakeCleanupService: SumiWebsiteDataCleanupServicing {
     var cookieResponses: [[HTTPCookie]] = []
-    var cookieFetchDelays: [UInt64] = []
     var recordResponses: [[WKWebsiteDataRecord]] = []
-    var recordFetchDelays: [UInt64] = []
     private(set) var cookieFetchCount = 0
     private(set) var recordFetchCount = 0
     private(set) var cookieRemovalSelections: [SumiCookieRemovalSelection] = []
@@ -1376,7 +1375,6 @@ private final class FakeCleanupService: SumiWebsiteDataCleanupServicing {
         _ = dataStore
         let index = cookieFetchCount
         cookieFetchCount += 1
-        await delay(cookieFetchDelays[safe: index] ?? 0)
         return cookieResponses[safe: index] ?? []
     }
 
@@ -1388,7 +1386,6 @@ private final class FakeCleanupService: SumiWebsiteDataCleanupServicing {
         _ = dataStore
         let index = recordFetchCount
         recordFetchCount += 1
-        await delay(recordFetchDelays[safe: index] ?? 0)
         return recordResponses[safe: index] ?? []
     }
 
@@ -1464,10 +1461,52 @@ private final class FakeCleanupService: SumiWebsiteDataCleanupServicing {
         prunedKeepSets.append(identifiersToKeep)
         return []
     }
+}
 
-    private func delay(_ nanoseconds: UInt64) async {
-        guard nanoseconds > 0 else { return }
-        try? await Task.sleep(nanoseconds: nanoseconds)
+@MainActor
+private final class CleanupOperationGate {
+    private let started = CleanupTestSignal()
+    private var releaseContinuation: CheckedContinuation<Void, Never>?
+    private var isOpen = false
+
+    func wait() async {
+        started.signal()
+        guard isOpen == false else { return }
+        await withCheckedContinuation { releaseContinuation = $0 }
+    }
+
+    func waitUntilStarted() async {
+        await started.wait()
+    }
+
+    func open() {
+        guard isOpen == false else { return }
+        isOpen = true
+        releaseContinuation?.resume()
+        releaseContinuation = nil
+    }
+}
+
+@MainActor
+private final class CleanupTestSignal {
+    private var count = 0
+    private var waiters: [(
+        targetCount: Int,
+        continuation: CheckedContinuation<Void, Never>
+    )] = []
+
+    func signal() {
+        count += 1
+        let ready = waiters.filter { $0.targetCount <= count }
+        waiters.removeAll { $0.targetCount <= count }
+        ready.forEach { $0.continuation.resume() }
+    }
+
+    func wait(for targetCount: Int = 1) async {
+        guard count < targetCount else { return }
+        await withCheckedContinuation { continuation in
+            waiters.append((targetCount, continuation))
+        }
     }
 }
 

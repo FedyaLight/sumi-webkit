@@ -2,28 +2,32 @@ import Foundation
 
 @MainActor
 final class GlancePromotionCompletionOwner {
-    static let fallbackDelayNanoseconds: UInt64 = 1_000_000_000
+    static let fallbackDelay: TimeInterval = 1
 
     private struct PendingPromotion: Equatable {
         let sessionID: UUID
         let generation: UInt64
     }
 
+    private let delayedActions: MainActorDelayedActionScheduler
     private var pendingPromotion: PendingPromotion?
-    private var fallbackTask: Task<Void, Never>?
+    private var cancelFallback: MainActorDelayedActionScheduler.Cancellation?
     private var nextGeneration: UInt64 = 0
+
+    init(delayedActions: MainActorDelayedActionScheduler = .live) {
+        self.delayedActions = delayedActions
+    }
 
     var isAwaitingAttachment: Bool {
         pendingPromotion != nil
     }
 
-    deinit {
-        fallbackTask?.cancel()
+    isolated deinit {
+        cancelFallback?()
     }
 
     func beginAwaitingAttachment(
         sessionID: UUID,
-        fallbackDelayNanoseconds: UInt64 = GlancePromotionCompletionOwner.fallbackDelayNanoseconds,
         onFallback: @escaping @MainActor () -> Void
     ) {
         nextGeneration &+= 1
@@ -32,16 +36,16 @@ final class GlancePromotionCompletionOwner {
             generation: nextGeneration
         )
         self.pendingPromotion = pendingPromotion
-        fallbackTask?.cancel()
-        fallbackTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: fallbackDelayNanoseconds)
-            guard !Task.isCancelled,
-                  let self,
+        cancelFallback?()
+        cancelFallback = delayedActions.schedule(
+            after: Self.fallbackDelay
+        ) { [weak self] in
+            guard let self,
                   self.pendingPromotion == pendingPromotion
             else { return }
 
             self.pendingPromotion = nil
-            self.fallbackTask = nil
+            self.cancelFallback = nil
             onFallback()
         }
     }
@@ -56,7 +60,7 @@ final class GlancePromotionCompletionOwner {
     func cancel() {
         nextGeneration &+= 1
         pendingPromotion = nil
-        fallbackTask?.cancel()
-        fallbackTask = nil
+        cancelFallback?()
+        cancelFallback = nil
     }
 }

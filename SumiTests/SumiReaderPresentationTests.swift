@@ -1203,26 +1203,32 @@ final class SumiReaderPresentationTests: XCTestCase {
     private func waitForReaderLinkInteraction(
         on webView: WKWebView
     ) async -> Bool {
-        for _ in 0..<100 {
-            do {
-                let value = try await webView.evaluateJavaScript(
-                    "Boolean(window.__sumiLinkInteractionInstalled)",
-                    in: nil,
-                    contentWorld: .defaultClient
-                )
-                if value as? Bool == true {
-                    return true
-                }
-            } catch {
-                // The initial Reader document may not have committed yet.
-            }
-            do {
-                try await Task.sleep(nanoseconds: 20_000_000)
-            } catch {
-                return false
-            }
+        if await hasReaderLinkInteraction(on: webView) {
+            return true
         }
-        return false
+
+        guard webView.isLoading else { return false }
+        let loadFinished = keyValueObservingExpectation(
+            for: webView,
+            keyPath: #keyPath(WKWebView.loading)
+        ) { object, _ in
+            (object as? WKWebView)?.isLoading == false
+        }
+        await fulfillment(of: [loadFinished], timeout: 5)
+        return await hasReaderLinkInteraction(on: webView)
+    }
+
+    private func hasReaderLinkInteraction(on webView: WKWebView) async -> Bool {
+        do {
+            let value = try await webView.evaluateJavaScript(
+                "Boolean(window.__sumiLinkInteractionInstalled)",
+                in: nil,
+                contentWorld: .defaultClient
+            )
+            return value as? Bool == true
+        } catch {
+            return false
+        }
     }
 
     private func dispatchMouseOver(

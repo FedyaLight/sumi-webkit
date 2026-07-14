@@ -1,5 +1,25 @@
 import Foundation
 
+struct SumiFaviconFetchRequest: Sendable {
+    fileprivate enum Storage: Sendable {
+        case immediate(SumiFaviconFetchResult)
+        case scheduled(Task<SumiFaviconFetchResult, Never>)
+    }
+
+    fileprivate let storage: Storage
+
+    var value: SumiFaviconFetchResult {
+        get async {
+            switch storage {
+            case .immediate(let result):
+                return result
+            case .scheduled(let task):
+                return await task.value
+            }
+        }
+    }
+}
+
 /// Coalesces identical fetches and owns their short-lived failure cache. The
 /// limiter and network transports are separate capabilities.
 actor SumiFaviconFetchScheduler {
@@ -15,7 +35,7 @@ actor SumiFaviconFetchScheduler {
 
     private struct ScheduledFetch {
         let token: UUID
-        let task: Task<SumiFaviconFetchResult?, Never>
+        let task: Task<SumiFaviconFetchResult, Never>
     }
 
     private struct CachedFailure {
@@ -39,45 +59,56 @@ actor SumiFaviconFetchScheduler {
         )
     }
 
-    func fetch(
+    func request(
         candidate: SumiFaviconCandidate,
         context: SumiFaviconFetchContext,
         priority: SumiFaviconFetchPriority,
         now: Date = Date()
-    ) async -> SumiFaviconFetchResult {
+    ) -> SumiFaviconFetchRequest {
         let key = FetchKey(partition: candidate.partition, url: candidate.iconURL)
         if let cachedFailure = cachedFailureByKey[key],
            cachedFailure.expiresAt > now {
-            return .failure(cachedFailure.kind)
+            return SumiFaviconFetchRequest(storage: .immediate(.failure(cachedFailure.kind)))
         }
         if let scheduledFetch = inFlight[key] {
-            return await scheduledFetch.task.value ?? .cancelled
+            return SumiFaviconFetchRequest(storage: .scheduled(scheduledFetch.task))
         }
 
         let origin = originKey(for: candidate.iconURL)
         let token = UUID()
-        let task = Task<SumiFaviconFetchResult?, Never> { [fetcher, limiter] in
+        let task = Task<SumiFaviconFetchResult, Never> { [weak self, fetcher, limiter] in
             let acquired = await limiter.acquire(
                 partition: candidate.partition,
                 origin: origin,
                 priority: priority
             )
-            guard acquired else { return nil }
-            guard !Task.isCancelled else {
+            let result: SumiFaviconFetchResult
+            if !acquired {
+                result = .cancelled
+            } else if Task.isCancelled {
                 await limiter.release(origin: origin)
-                return nil
+                result = .cancelled
+            } else {
+                let fetched = await fetcher.fetch(url: candidate.iconURL, context: context)
+                await limiter.release(origin: origin)
+                result = Task.isCancelled ? .cancelled : fetched
             }
-            let result = await fetcher.fetch(url: candidate.iconURL, context: context)
-            await limiter.release(origin: origin)
-            return Task.isCancelled ? nil : result
+            await self?.completeFetch(key: key, token: token, result: result, now: now)
+            return result
         }
         inFlight[key] = ScheduledFetch(token: token, task: task)
-        let result = await task.value
-        if inFlight[key]?.token == token {
-            inFlight.removeValue(forKey: key)
-        }
+        return SumiFaviconFetchRequest(storage: .scheduled(task))
+    }
 
-        if let result, case .failure(let failureKind) = result {
+    private func completeFetch(
+        key: FetchKey,
+        token: UUID,
+        result: SumiFaviconFetchResult,
+        now: Date
+    ) {
+        guard inFlight[key]?.token == token else { return }
+        inFlight.removeValue(forKey: key)
+        if case .failure(let failureKind) = result {
             cachedFailureByKey[key] = CachedFailure(
                 kind: failureKind,
                 expiresAt: now.addingTimeInterval(
@@ -85,7 +116,6 @@ actor SumiFaviconFetchScheduler {
                 )
             )
         }
-        return result ?? .cancelled
     }
 
     func cancel(partition: SumiFaviconPartition) async {

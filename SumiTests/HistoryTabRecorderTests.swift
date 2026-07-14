@@ -1,3 +1,4 @@
+import Combine
 import SwiftData
 import XCTest
 
@@ -15,14 +16,14 @@ final class HistoryTabRecorderTests: XCTestCase {
             kind: .regular,
             tab: harness.tab
         )
-        try await waitForVisitCount(1, harness: harness)
+        await harness.browserManager.historyManager.flushPendingChanges()
 
         harness.tab.navigationRuntime.historyRecorder.didCommitMainFrameNavigation(
             to: secondURL,
             kind: .backForward,
             tab: harness.tab
         )
-        try await settleHistoryTasks()
+        await harness.browserManager.historyManager.flushPendingChanges()
 
         let visits = try await visits(in: harness.store, profileId: harness.profile.id)
         XCTAssertEqual(visits.count, 1)
@@ -42,21 +43,21 @@ final class HistoryTabRecorderTests: XCTestCase {
             kind: .regular,
             tab: harness.tab
         )
-        try await waitForVisitCount(1, harness: harness)
+        await harness.browserManager.historyManager.flushPendingChanges()
 
         harness.tab.navigationRuntime.historyRecorder.didSameDocumentNavigation(
             to: anchorURL,
             type: .anchorNavigation,
             tab: harness.tab
         )
-        try await waitForVisitCount(2, harness: harness)
+        await harness.browserManager.historyManager.flushPendingChanges()
 
         harness.tab.navigationRuntime.historyRecorder.didSameDocumentNavigation(
             to: pushURL,
             type: .sessionStatePush,
             tab: harness.tab
         )
-        try await waitForVisitCount(3, harness: harness)
+        await harness.browserManager.historyManager.flushPendingChanges()
 
         harness.tab.navigationRuntime.historyRecorder.didSameDocumentNavigation(
             to: replaceURL,
@@ -68,7 +69,7 @@ final class HistoryTabRecorderTests: XCTestCase {
             type: .sessionStatePop,
             tab: harness.tab
         )
-        try await settleHistoryTasks()
+        await harness.browserManager.historyManager.flushPendingChanges()
 
         let visits = try await visits(in: harness.store, profileId: harness.profile.id)
         XCTAssertEqual(visits.map(\.url), [pushURL, anchorURL, baseURL])
@@ -84,14 +85,14 @@ final class HistoryTabRecorderTests: XCTestCase {
             kind: .regular,
             tab: harness.tab
         )
-        try await waitForVisitCount(1, harness: harness)
+        await harness.browserManager.historyManager.flushPendingChanges()
 
         harness.tab.navigationRuntime.historyRecorder.didSameDocumentNavigation(
             to: unknownSameDocumentURL,
             type: nil,
             tab: harness.tab
         )
-        try await settleHistoryTasks()
+        await harness.browserManager.historyManager.flushPendingChanges()
 
         let visits = try await visits(in: harness.store, profileId: harness.profile.id)
         XCTAssertEqual(visits.map(\.url), [baseURL])
@@ -107,10 +108,10 @@ final class HistoryTabRecorderTests: XCTestCase {
             kind: .regular,
             tab: harness.tab
         )
-        try await waitForVisitCount(1, harness: harness)
+        await harness.browserManager.historyManager.flushPendingChanges()
 
         harness.tab.navigationRuntime.historyRecorder.updateTitle("Resolved Title", tab: harness.tab)
-        try await waitForTitle("Resolved Title", harness: harness)
+        await harness.browserManager.historyManager.flushPendingChanges()
 
         let visits = try await visits(in: harness.store, profileId: harness.profile.id)
         XCTAssertEqual(visits.count, 1)
@@ -119,8 +120,6 @@ final class HistoryTabRecorderTests: XCTestCase {
 
     func testBurstNavigationHistoryWritesCoalesceUIRefresh() async throws {
         let harness = try makeHarness()
-        try await settleHistoryTasks()
-
         let baselineRevision = harness.browserManager.historyManager.revision
 
         for index in 0..<3 {
@@ -131,20 +130,27 @@ final class HistoryTabRecorderTests: XCTestCase {
             )
         }
 
-        try await waitForVisitCount(3, harness: harness)
-        try await waitUntil {
-            harness.browserManager.historyManager.revision > baselineRevision
-        }
+        await harness.browserManager.historyManager.flushPendingChanges()
+        XCTAssertEqual(harness.delayedActions.pendingActionCount, 1)
+        let refresh = expectation(description: "coalesced history summary refresh")
+        let revisionObservation = harness.browserManager.historyManager.$revision
+            .dropFirst()
+            .first()
+            .sink { _ in refresh.fulfill() }
 
-        let refreshedRevision = harness.browserManager.historyManager.revision
-        try await Task.sleep(nanoseconds: 300_000_000)
-        XCTAssertEqual(harness.browserManager.historyManager.revision, refreshedRevision)
+        harness.delayedActions.runAll()
+        await fulfillment(of: [refresh], timeout: 1)
+
+        XCTAssertEqual(harness.browserManager.historyManager.revision, baselineRevision + 1)
+        withExtendedLifetime(revisionObservation) { /* Retain through the revision assertion. */ }
     }
 
     func testEphemeralAndNonHTTPURLsAreNotRecorded() async throws {
         let harness = try makeHarness()
         let ephemeralProfile = Profile.createEphemeral()
-        let ephemeralTab = Tab(url: URL(string: "https://private.example.com")!)
+        let ephemeralTab = harness.browserManager.tabManager.tabFactory.makeTab(
+            url: URL(string: "https://private.example.com")!
+        )
         ephemeralTab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: harness.browserManager))
         ephemeralTab.profileId = ephemeralProfile.id
         harness.browserManager.profileManager.profiles.append(ephemeralProfile)
@@ -159,7 +165,7 @@ final class HistoryTabRecorderTests: XCTestCase {
             kind: .regular,
             tab: harness.tab
         )
-        try await settleHistoryTasks()
+        await harness.browserManager.historyManager.flushPendingChanges()
 
         let regularVisits = try await visits(in: harness.store, profileId: harness.profile.id)
         let ephemeralVisits = try await visits(in: harness.store, profileId: ephemeralProfile.id)
@@ -172,20 +178,25 @@ final class HistoryTabRecorderTests: XCTestCase {
         browserManager: BrowserManager,
         store: HistoryStore,
         profile: Profile,
-        tab: Tab
+        tab: Tab,
+        delayedActions: ManualMainActorDelayedActionScheduler
     ) {
         let container = try ModelContainer(
             for: Schema([HistoryEntryEntity.self, HistoryVisitEntity.self]),
             configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
         )
         let context = ModelContext(container)
-        let browserManager = BrowserManager()
+        let browserManager = BrowserManager(
+            notificationService: FakeSumiNotificationService()
+        )
+        let delayedActions = ManualMainActorDelayedActionScheduler()
         let profile = Profile(name: "Primary")
         let historyManager = HistoryManager(
             context: context,
             profileId: profile.id,
             faviconCleaner: TabDependencyIsolationDefaults.historyFaviconCleaner,
-            visitedLinkStore: TabDependencyIsolationDefaults.historyVisitedLinkStore
+            visitedLinkStore: TabDependencyIsolationDefaults.historyVisitedLinkStore,
+            delayedActions: delayedActions.scheduler
         )
         let tab = browserManager.tabManager.tabFactory.makeTab(
             url: URL(string: "https://example.com")!,
@@ -199,43 +210,7 @@ final class HistoryTabRecorderTests: XCTestCase {
         tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
         tab.profileId = profile.id
 
-        return (container, browserManager, historyManager.store, profile, tab)
-    }
-
-    private func waitForVisitCount(
-        _ count: Int,
-        harness: (
-            container: ModelContainer,
-            browserManager: BrowserManager,
-            store: HistoryStore,
-            profile: Profile,
-            tab: Tab
-        ),
-        file: StaticString = #filePath,
-        line: UInt = #line
-    ) async throws {
-        try await waitUntil(file: file, line: line) {
-            let visits = try await visits(in: harness.store, profileId: harness.profile.id)
-            return visits.count == count
-        }
-    }
-
-    private func waitForTitle(
-        _ title: String,
-        harness: (
-            container: ModelContainer,
-            browserManager: BrowserManager,
-            store: HistoryStore,
-            profile: Profile,
-            tab: Tab
-        ),
-        file: StaticString = #filePath,
-        line: UInt = #line
-    ) async throws {
-        try await waitUntil(file: file, line: line) {
-            let visits = try await visits(in: harness.store, profileId: harness.profile.id)
-            return visits.first?.title == title
-        }
+        return (container, browserManager, historyManager.store, profile, tab, delayedActions)
     }
 
     private func visits(
@@ -248,25 +223,5 @@ final class HistoryTabRecorderTests: XCTestCase {
             referenceDate: Date(),
             calendar: .autoupdatingCurrent
         )
-    }
-
-    private func waitUntil(
-        timeoutNanoseconds: UInt64 = 1_000_000_000,
-        file: StaticString = #filePath,
-        line: UInt = #line,
-        condition: () async throws -> Bool
-    ) async throws {
-        let deadline = Date().addingTimeInterval(TimeInterval(timeoutNanoseconds) / 1_000_000_000)
-        while Date() < deadline {
-            if try await condition() {
-                return
-            }
-            try await Task.sleep(nanoseconds: 20_000_000)
-        }
-        XCTFail("Timed out waiting for history condition", file: file, line: line)
-    }
-
-    private func settleHistoryTasks() async throws {
-        try await Task.sleep(nanoseconds: 120_000_000)
     }
 }

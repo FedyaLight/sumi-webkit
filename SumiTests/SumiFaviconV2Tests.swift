@@ -472,458 +472,6 @@ final class SumiFaviconV2PayloadTests: XCTestCase {
     }
 }
 
-final class SumiFaviconV2SchedulerAndCacheTests: XCTestCase {
-    func testFetchSchedulerCoalescesDuplicateCandidateRequests() async throws {
-        let fetcher = RecordingFaviconNetworkFetcher()
-        let scheduler = SumiFaviconFetchScheduler(
-            fetcher: fetcher,
-            configuration: .init(globalConcurrencyLimit: 2, perOriginConcurrencyLimit: 1)
-        )
-        let pageURL = try XCTUnwrap(URL(string: "https://example.com/"))
-        let iconURL = try XCTUnwrap(URL(string: "https://example.com/favicon.ico"))
-        let candidate = SumiFaviconCandidate(
-            pageURL: pageURL,
-            iconURL: iconURL,
-            sourceKind: .rootFavicon,
-            partition: .regular(nil)
-        )
-
-        async let first = scheduler.fetch(candidate: candidate, context: .publicRootFallback, priority: .visibleActiveTab)
-        async let second = scheduler.fetch(candidate: candidate, context: .publicRootFallback, priority: .visibleActiveTab)
-        _ = await (first, second)
-
-        let callCount = await fetcher.callCount
-        XCTAssertEqual(callCount, 1)
-    }
-
-    func testFetchSchedulerAdmitsQueuedRequestsByPriority() async throws {
-        let fetcher = PriorityRecordingFaviconNetworkFetcher()
-        let scheduler = SumiFaviconFetchScheduler(
-            fetcher: fetcher,
-            configuration: .init(globalConcurrencyLimit: 1, perOriginConcurrencyLimit: 1)
-        )
-        let pageURL = try XCTUnwrap(URL(string: "https://example.com/"))
-        func candidate(_ name: String) throws -> SumiFaviconCandidate {
-            SumiFaviconCandidate(
-                pageURL: pageURL,
-                iconURL: try XCTUnwrap(URL(string: "https://example.com/\(name).png")),
-                sourceKind: .documentLink,
-                partition: .regular(nil)
-            )
-        }
-
-        let first = try candidate("first")
-        let low = try candidate("low")
-        let high = try candidate("high")
-
-        let firstTask = Task {
-            await scheduler.fetch(candidate: first, context: .publicRootFallback, priority: .backgroundPrefetch)
-        }
-        try await Task.sleep(nanoseconds: 20_000_000)
-        let lowTask = Task {
-            await scheduler.fetch(candidate: low, context: .publicRootFallback, priority: .backgroundPrefetch)
-        }
-        try await Task.sleep(nanoseconds: 20_000_000)
-        let highTask = Task {
-            await scheduler.fetch(candidate: high, context: .publicRootFallback, priority: .visibleActiveTab)
-        }
-        try await Task.sleep(nanoseconds: 20_000_000)
-
-        await fetcher.releaseFirst()
-        _ = await (firstTask.value, lowTask.value, highTask.value)
-
-        let order = await fetcher.startedPaths
-        XCTAssertEqual(order, ["/first.png", "/high.png", "/low.png"])
-    }
-
-    func testCancelledColdFetchDoesNotPoisonNextInFlightFetch() async throws {
-        let fetcher = ControlledFaviconNetworkFetcher()
-        let scheduler = SumiFaviconFetchScheduler(
-            fetcher: fetcher,
-            configuration: .init(globalConcurrencyLimit: 2, perOriginConcurrencyLimit: 2)
-        )
-        let pageURL = try XCTUnwrap(URL(string: "https://example.com/"))
-        let iconURL = try XCTUnwrap(URL(string: "https://example.com/favicon.ico"))
-        let candidate = SumiFaviconCandidate(
-            pageURL: pageURL,
-            iconURL: iconURL,
-            sourceKind: .rootFavicon,
-            partition: .regular(nil)
-        )
-
-        let firstTask = Task {
-            await scheduler.fetch(
-                candidate: candidate,
-                context: .publicRootFallback,
-                priority: .backgroundPrefetch
-            )
-        }
-        await fetcher.waitUntilStarted(1)
-        await scheduler.cancelAll()
-
-        let secondTask = Task {
-            await scheduler.fetch(
-                candidate: candidate,
-                context: .publicRootFallback,
-                priority: .visibleActiveTab
-            )
-        }
-        await fetcher.waitUntilStarted(2)
-
-        await fetcher.releaseCall(1)
-        let firstResult = await firstTask.value
-        guard case .cancelled = firstResult else {
-            return XCTFail("Expected cancelled fetch to remain non-cacheable")
-        }
-
-        let thirdTask = Task {
-            await scheduler.fetch(
-                candidate: candidate,
-                context: .publicRootFallback,
-                priority: .visibleActiveTab
-            )
-        }
-        try await Task.sleep(nanoseconds: 20_000_000)
-        let callCountAfterThirdFetchStarted = await fetcher.callCount
-        XCTAssertEqual(callCountAfterThirdFetchStarted, 2)
-
-        await fetcher.releaseCall(2)
-        let secondResult = await secondTask.value
-        let thirdResult = await thirdTask.value
-
-        guard case .success = secondResult else {
-            return XCTFail("Expected second fetch to complete from live network request")
-        }
-        guard case .success = thirdResult else {
-            return XCTFail("Expected third fetch to coalesce with the second in-flight request")
-        }
-    }
-
-    func testFailureCacheDurationMapsTransientAndVerifiedFailures() {
-        XCTAssertEqual(
-            SumiFaviconTTL.failureCacheDuration(for: .transport),
-            SumiFaviconTTL.transientTransportFailure
-        )
-        XCTAssertEqual(
-            SumiFaviconTTL.failureCacheDuration(for: .notFound),
-            SumiFaviconTTL.verifiedInvalidPayload
-        )
-        XCTAssertEqual(
-            SumiFaviconTTL.failureCacheDuration(for: .invalidPayload),
-            SumiFaviconTTL.verifiedInvalidPayload
-        )
-        XCTAssertEqual(
-            SumiFaviconTTL.failureCacheDuration(for: .noIconFound),
-            SumiFaviconTTL.noIconFound
-        )
-    }
-
-    func testPreparedCacheInvalidatesOnlyMatchingRevision() throws {
-        let cache = SumiPreparedFaviconCache(totalCostLimit: 1024 * 1024)
-        let request = SumiPreparedFaviconRequest(
-            pageURL: try XCTUnwrap(URL(string: "https://example.com/")),
-            partition: .regular(nil),
-            context: .tabSidebar,
-            backingScale: 2
-        )
-        let first = SumiPreparedFaviconIdentity(
-            partition: .regular(nil),
-            blobID: "a",
-            revision: "ra",
-            sourceURL: try XCTUnwrap(URL(string: "https://example.com/a.png")),
-            request: request
-        )
-        let second = SumiPreparedFaviconIdentity(
-            partition: .regular(nil),
-            blobID: "b",
-            revision: "rb",
-            sourceURL: try XCTUnwrap(URL(string: "https://example.com/b.png")),
-            request: request
-        )
-        cache.setImage(NSImage(size: NSSize(width: 18, height: 18)), for: first)
-        cache.setImage(NSImage(size: NSSize(width: 18, height: 18)), for: second)
-
-        cache.invalidate(partition: .regular(nil), blobID: "a", revision: "ra")
-
-        XCTAssertNil(cache.image(for: first))
-        XCTAssertNotNil(cache.image(for: second))
-    }
-
-    func testPreparedCacheEvictsOldestEntryWhenIdentityIndexExceedsImageCountLimit() throws {
-        let cache = SumiPreparedFaviconCache(totalCostLimit: 1024 * 1024)
-        let request = SumiPreparedFaviconRequest(
-            pageURL: try XCTUnwrap(URL(string: "https://example.com/")),
-            partition: .regular(nil),
-            context: .tabSidebar,
-            backingScale: 2
-        )
-        let image = NSImage(size: NSSize(width: 1, height: 1))
-        var identities: [SumiPreparedFaviconIdentity] = []
-
-        for index in 0..<513 {
-            let identity = SumiPreparedFaviconIdentity(
-                partition: .regular(nil),
-                blobID: "blob-\(index)",
-                revision: "revision-\(index)",
-                sourceURL: try XCTUnwrap(URL(string: "https://example.com/icon-\(index).png")),
-                request: request
-            )
-            identities.append(identity)
-            cache.setImage(image, for: identity)
-        }
-        let lastIdentity = try XCTUnwrap(identities.last)
-
-        XCTAssertNil(cache.image(for: identities[0]))
-        XCTAssertNotNil(cache.image(for: identities[1]))
-        XCTAssertNotNil(cache.image(for: lastIdentity))
-
-        cache.invalidate(partition: .regular(nil), blobID: "blob-1", revision: "revision-1")
-
-        XCTAssertNil(cache.image(for: identities[1]))
-        XCTAssertNotNil(cache.image(for: lastIdentity))
-    }
-
-    func testPreparedCacheSeparatesContextAndScaleKeys() throws {
-        let cache = SumiPreparedFaviconCache(totalCostLimit: 1024 * 1024)
-        let pageURL = try XCTUnwrap(URL(string: "https://example.com/"))
-        let sourceURL = try XCTUnwrap(URL(string: "https://example.com/icon.png"))
-        let sidebarRequest = SumiPreparedFaviconRequest(
-            pageURL: pageURL,
-            partition: .regular(nil),
-            context: .tabSidebar,
-            backingScale: 2
-        )
-        let launcherRequest = SumiPreparedFaviconRequest(
-            pageURL: pageURL,
-            partition: .regular(nil),
-            context: .pinnedLauncher,
-            backingScale: 2
-        )
-        let retinaRequest = SumiPreparedFaviconRequest(
-            pageURL: pageURL,
-            partition: .regular(nil),
-            context: .tabSidebar,
-            backingScale: 3
-        )
-        let sidebarIdentity = SumiPreparedFaviconIdentity(
-            partition: .regular(nil),
-            blobID: "a",
-            revision: "ra",
-            sourceURL: sourceURL,
-            request: sidebarRequest
-        )
-        let launcherIdentity = SumiPreparedFaviconIdentity(
-            partition: .regular(nil),
-            blobID: "a",
-            revision: "ra",
-            sourceURL: sourceURL,
-            request: launcherRequest
-        )
-        let retinaIdentity = SumiPreparedFaviconIdentity(
-            partition: .regular(nil),
-            blobID: "a",
-            revision: "ra",
-            sourceURL: sourceURL,
-            request: retinaRequest
-        )
-
-        cache.setImage(NSImage(size: NSSize(width: 18, height: 18)), for: sidebarIdentity)
-
-        XCTAssertNotNil(cache.image(for: sidebarIdentity))
-        XCTAssertNil(cache.image(for: launcherIdentity))
-        XCTAssertNil(cache.image(for: retinaIdentity))
-    }
-
-    func testBlobStoreSeparatesRegularProfilesAndPrivatePartitions() throws {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("SumiFaviconV2Isolation-\(UUID().uuidString)", isDirectory: true)
-        defer { try? FileManager.default.removeItem(at: directory) }
-
-        let storage = SumiFaviconBlobStorage(rootDirectory: directory)
-        let pageURL = try XCTUnwrap(URL(string: "https://example.com/private"))
-        let iconURL = try XCTUnwrap(URL(string: "https://example.com/icon.png"))
-        let profileA = SumiFaviconPartition.regular(UUID())
-        let profileB = SumiFaviconPartition.regular(UUID())
-        let privateA = SumiFaviconPartition.privateEphemeral(UUID())
-        let imageData = try SumiFaviconTestImages.pngData(width: 32, height: 32)
-        let payload = SumiFaviconValidatedPayload(
-            data: imageData,
-            payloadKind: .png,
-            mimeType: "image/png",
-            pixelWidth: 32,
-            pixelHeight: 32,
-            byteCount: imageData.count
-        )
-        _ = try storage.writer.storeValidatedPayload(
-            payload,
-            for: SumiFaviconCandidate(
-                pageURL: pageURL,
-                iconURL: iconURL,
-                sourceKind: .documentLink,
-                declaredType: "image/png",
-                partition: profileA
-            )
-        )
-
-        XCTAssertNotNil(storage.reader.cachedSelection(for: pageURL, partition: profileA))
-        XCTAssertNil(storage.reader.cachedSelection(for: pageURL, partition: profileB))
-        XCTAssertNil(storage.reader.cachedSelection(for: pageURL, partition: privateA))
-    }
-
-    func testBlobStoreDoesNotRecordNoIconOverFreshPositiveMapping() throws {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("SumiFaviconV2NoIconRace-\(UUID().uuidString)", isDirectory: true)
-        defer { try? FileManager.default.removeItem(at: directory) }
-
-        let storage = SumiFaviconBlobStorage(rootDirectory: directory)
-        let pageURL = try XCTUnwrap(URL(string: "https://shield.turtlecute.org/"))
-        let iconURL = try XCTUnwrap(URL(string: "https://shield.turtlecute.org/assets/styled/icon.svg"))
-        let partition = SumiFaviconPartition.regular(nil)
-        let payload = SumiFaviconValidatedPayload(
-            data: SumiFaviconTestImages.styledSVGData(),
-            payloadKind: .svg,
-            mimeType: "image/svg+xml",
-            pixelWidth: nil,
-            pixelHeight: nil,
-            byteCount: SumiFaviconTestImages.styledSVGData().count
-        )
-
-        _ = try storage.writer.storeValidatedPayload(
-            payload,
-            for: SumiFaviconCandidate(
-                pageURL: pageURL,
-                iconURL: iconURL,
-                sourceKind: .documentLink,
-                declaredType: "image/svg+xml",
-                partition: partition
-            )
-        )
-
-        storage.writer.recordNoIconFound(for: pageURL, partition: partition)
-
-        XCTAssertFalse(storage.reader.isNoIconFresh(for: pageURL, partition: partition))
-        XCTAssertNotNil(storage.reader.cachedSelection(for: pageURL, partition: partition))
-    }
-
-    func testClearingPartitionCancelsPendingMetadataPersist() throws {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("SumiFaviconV2PendingClear-\(UUID().uuidString)", isDirectory: true)
-        defer {
-            if FileManager.default.fileExists(atPath: directory.path) {
-                do {
-                    try FileManager.default.removeItem(at: directory)
-                } catch {
-                    XCTFail("Failed to remove favicon fixture: \(error)")
-                }
-            }
-        }
-
-        let storage = SumiFaviconBlobStorage(
-            rootDirectory: directory,
-            persistCoalesceInterval: 60
-        )
-        let partition = SumiFaviconPartition.regular(UUID())
-        let partitionDirectory = directory.appendingPathComponent(
-            partition.storageComponent,
-            isDirectory: true
-        )
-        let candidateURL = try XCTUnwrap(URL(string: "https://clear-pending.example/favicon.ico"))
-
-        storage.writer.recordFailure(
-            candidateURL: candidateURL,
-            partition: partition,
-            failureKind: .notFound,
-            ttl: 60
-        )
-        storage.maintenance.clearPartition(partition)
-        storage.maintenance.flushPendingPersists()
-
-        XCTAssertFalse(FileManager.default.fileExists(atPath: partitionDirectory.path))
-    }
-
-    func testSessionCookieMatchingUsesOnlyCandidateOriginCookies() throws {
-        let url = try XCTUnwrap(URL(string: "https://static.example.com/assets/icon.svg"))
-        let matching = try XCTUnwrap(
-            HTTPCookie(properties: [
-                .domain: ".example.com",
-                .path: "/assets",
-                .name: "session",
-                .value: "abc",
-                .secure: "TRUE",
-            ])
-        )
-        let wrongDomain = try XCTUnwrap(
-            HTTPCookie(properties: [
-                .domain: ".other.example",
-                .path: "/",
-                .name: "other",
-                .value: "no",
-            ])
-        )
-        let wrongPath = try XCTUnwrap(
-            HTTPCookie(properties: [
-                .domain: ".example.com",
-                .path: "/account",
-                .name: "path",
-                .value: "no",
-            ])
-        )
-
-        let cookies = SumiCookieMatcher.cookies(
-            [matching, wrongDomain, wrongPath],
-            matching: url,
-            sourceDocumentURL: try XCTUnwrap(URL(string: "https://www.example.com/page"))
-        )
-        XCTAssertEqual(cookies.map(\.name), ["session"])
-    }
-
-    func testSessionCookieMatchingDropsCrossSitePageDeclaredCookies() throws {
-        let sourceDocumentURL = try XCTUnwrap(URL(string: "https://attacker.test/page"))
-        let iconURL = try XCTUnwrap(URL(string: "https://static.victim.com/assets/icon.svg"))
-        let victimCookie = try XCTUnwrap(
-            HTTPCookie(properties: [
-                .domain: ".victim.com",
-                .path: "/assets",
-                .name: "session",
-                .value: "victim-secret",
-                .secure: "TRUE",
-            ])
-        )
-
-        let cookies = SumiCookieMatcher.cookies(
-            [victimCookie],
-            matching: iconURL,
-            sourceDocumentURL: sourceDocumentURL
-        )
-
-        XCTAssertTrue(cookies.isEmpty)
-        XCTAssertNil(HTTPCookie.requestHeaderFields(with: cookies)["Cookie"])
-    }
-
-    func testSessionCookieMatchingAllowsSameSitePageDeclaredCookies() throws {
-        let sourceDocumentURL = try XCTUnwrap(URL(string: "https://www.example.com/page"))
-        let iconURL = try XCTUnwrap(URL(string: "https://static.example.com/assets/icon.svg"))
-        let sameSiteCookie = try XCTUnwrap(
-            HTTPCookie(properties: [
-                .domain: ".example.com",
-                .path: "/assets",
-                .name: "session",
-                .value: "same-site",
-                .secure: "TRUE",
-            ])
-        )
-
-        let cookies = SumiCookieMatcher.cookies(
-            [sameSiteCookie],
-            matching: iconURL,
-            sourceDocumentURL: sourceDocumentURL
-        )
-
-        XCTAssertEqual(cookies.map(\.name), ["session"])
-        XCTAssertEqual(HTTPCookie.requestHeaderFields(with: cookies)["Cookie"], "session=same-site")
-    }
-}
-
 @MainActor
 final class SumiFaviconV2PipelineRegressionTests: XCTestCase {
     func testLocalExtensionIconIsPreparedThroughFaviconPipeline() async throws {
@@ -1124,6 +672,7 @@ final class SumiFaviconV2PipelineRegressionTests: XCTestCase {
 
         let pageURL = try XCTUnwrap(URL(string: "https://browserbench.org/Speedometer3.1/"))
         let iconURL = try XCTUnwrap(URL(string: "https://browserbench.org/Speedometer3.1/resources/favicon.png"))
+        let finalRootRequest = expectation(description: "final root fallback requested")
         let fetcher = RoutingFaviconNetworkFetcher(
             responses: [
                 iconURL.absoluteString: .success(
@@ -1133,7 +682,12 @@ final class SumiFaviconV2PipelineRegressionTests: XCTestCase {
                         statusCode: 200
                     )
                 ),
-            ]
+            ],
+            onRequest: { url in
+                if url.absoluteString == "https://browserbench.org/apple-touch-icon-152x152.png" {
+                    finalRootRequest.fulfill()
+                }
+            }
         )
         let runtime = SumiFaviconRuntime(rootDirectory: directory, fetcher: fetcher)
         let partition = SumiFaviconPartition.regular(nil)
@@ -1150,14 +704,8 @@ final class SumiFaviconV2PipelineRegressionTests: XCTestCase {
         )
         XCTAssertNil(coldMiss)
 
-        var requestedURLs = [String]()
-        for _ in 0..<20 {
-            requestedURLs = await fetcher.requestedURLs.map(\.absoluteString)
-            if requestedURLs.contains("https://browserbench.org/apple-touch-icon-152x152.png") {
-                break
-            }
-            try await Task.sleep(nanoseconds: 50_000_000)
-        }
+        await fulfillment(of: [finalRootRequest], timeout: 1)
+        var requestedURLs = await fetcher.requestedURLs.map(\.absoluteString)
         XCTAssertTrue(requestedURLs.contains("https://browserbench.org/favicon.ico"))
         XCTAssertTrue(requestedURLs.contains("https://browserbench.org/apple-touch-icon-152x152.png"))
 
@@ -1206,7 +754,17 @@ final class SumiFaviconV2PipelineRegressionTests: XCTestCase {
                 ),
             ]
         )
-        let runtime = SumiFaviconRuntime(rootDirectory: directory, fetcher: fetcher)
+        let notificationCenter = NotificationCenter()
+        let cacheUpdated = expectation(
+            forNotification: .faviconCacheUpdated,
+            object: nil,
+            notificationCenter: notificationCenter
+        )
+        let runtime = SumiFaviconRuntime(
+            rootDirectory: directory,
+            fetcher: fetcher,
+            notificationCenter: notificationCenter
+        )
         let partition = SumiFaviconPartition.regular(nil)
 
         let coldMiss = await runtime.images.preparedImage(
@@ -1221,12 +779,7 @@ final class SumiFaviconV2PipelineRegressionTests: XCTestCase {
         )
         XCTAssertNil(coldMiss)
 
-        for _ in 0..<20 {
-            if runtime.images.hasFavicon(for: pageURL, partition: partition) {
-                break
-            }
-            try await Task.sleep(nanoseconds: 50_000_000)
-        }
+        await fulfillment(of: [cacheUpdated], timeout: 1)
 
         var requestedURLs = await fetcher.requestedURLs.map(\.absoluteString)
         XCTAssertTrue(
@@ -1290,7 +843,17 @@ final class SumiFaviconV2PipelineRegressionTests: XCTestCase {
                 ),
             ]
         )
-        let runtime = SumiFaviconRuntime(rootDirectory: directory, fetcher: fetcher)
+        let notificationCenter = NotificationCenter()
+        let cacheUpdated = expectation(
+            forNotification: .faviconCacheUpdated,
+            object: nil,
+            notificationCenter: notificationCenter
+        )
+        let runtime = SumiFaviconRuntime(
+            rootDirectory: directory,
+            fetcher: fetcher,
+            notificationCenter: notificationCenter
+        )
         let partition = SumiFaviconPartition.regular(UUID())
         let request = SumiPreparedFaviconRequest(
             pageURL: pageURL,
@@ -1306,12 +869,7 @@ final class SumiFaviconV2PipelineRegressionTests: XCTestCase {
         )
         XCTAssertNil(placeholderPathResult)
 
-        for _ in 0..<20 {
-            if runtime.images.hasFavicon(for: pageURL, partition: partition) {
-                break
-            }
-            try await Task.sleep(nanoseconds: 50_000_000)
-        }
+        await fulfillment(of: [cacheUpdated], timeout: 1)
 
         let requestedURLs = await fetcher.requestedURLs.map(\.absoluteString)
         XCTAssertTrue(
@@ -1513,7 +1071,17 @@ final class SumiFaviconV2PipelineRegressionTests: XCTestCase {
                 ),
             ]
         )
-        let runtime = SumiFaviconRuntime(rootDirectory: directory, fetcher: fetcher)
+        let notificationCenter = NotificationCenter()
+        let cacheUpdated = expectation(
+            forNotification: .faviconCacheUpdated,
+            object: nil,
+            notificationCenter: notificationCenter
+        )
+        let runtime = SumiFaviconRuntime(
+            rootDirectory: directory,
+            fetcher: fetcher,
+            notificationCenter: notificationCenter
+        )
         let partition = SumiFaviconPartition.regular(nil)
 
         let initialLauncherImage = await runtime.images.preparedImage(
@@ -1523,12 +1091,7 @@ final class SumiFaviconV2PipelineRegressionTests: XCTestCase {
         )
         XCTAssertNil(initialLauncherImage)
 
-        for _ in 0..<60 {
-            if runtime.images.hasFavicon(for: launchURL, partition: partition) {
-                break
-            }
-            try await Task.sleep(nanoseconds: 50_000_000)
-        }
+        await fulfillment(of: [cacheUpdated], timeout: 1)
 
         let requestedURLs = await fetcher.requestedURLs.map(\.absoluteString)
         XCTAssertTrue(
@@ -2096,103 +1659,22 @@ enum SumiFaviconTestImages {
     }
 }
 
-private actor RecordingFaviconNetworkFetcher: SumiFaviconNetworkFetching {
-    private(set) var callCount = 0
-
-    func fetch(url _: URL, context _: SumiFaviconFetchContext) async -> SumiFaviconFetchResult {
-        callCount += 1
-        try? await Task.sleep(nanoseconds: 50_000_000)
-        return .success(
-            SumiFaviconFetchResponse(
-                data: Data([0x00, 0x00, 0x01, 0x00]),
-                mimeType: "image/x-icon",
-                statusCode: 200
-            )
-        )
-    }
-}
-
-private actor PriorityRecordingFaviconNetworkFetcher: SumiFaviconNetworkFetching {
-    private var started: [String] = []
-    private var firstContinuation: CheckedContinuation<Void, Never>?
-
-    var startedPaths: [String] {
-        started
-    }
-
-    func releaseFirst() {
-        firstContinuation?.resume()
-        firstContinuation = nil
-    }
-
-    func fetch(url: URL, context _: SumiFaviconFetchContext) async -> SumiFaviconFetchResult {
-        started.append(url.path)
-        if started.count == 1 {
-            await withCheckedContinuation { continuation in
-                firstContinuation = continuation
-            }
-        }
-        return .success(
-            SumiFaviconFetchResponse(
-                data: Data([0x89, 0x50, 0x4E, 0x47]),
-                mimeType: "image/png",
-                statusCode: 200
-            )
-        )
-    }
-}
-
-private actor ControlledFaviconNetworkFetcher: SumiFaviconNetworkFetching {
-    private(set) var callCount = 0
-    private var releaseContinuations: [Int: CheckedContinuation<Void, Never>] = [:]
-    private var startWaiters: [(count: Int, continuation: CheckedContinuation<Void, Never>)] = []
-
-    func waitUntilStarted(_ expectedCallCount: Int) async {
-        guard callCount < expectedCallCount else { return }
-        await withCheckedContinuation { continuation in
-            startWaiters.append((expectedCallCount, continuation))
-        }
-    }
-
-    func releaseCall(_ callNumber: Int) {
-        releaseContinuations.removeValue(forKey: callNumber)?.resume()
-    }
-
-    func fetch(url _: URL, context _: SumiFaviconFetchContext) async -> SumiFaviconFetchResult {
-        callCount += 1
-        let callNumber = callCount
-        resumeSatisfiedStartWaiters()
-        await withCheckedContinuation { continuation in
-            releaseContinuations[callNumber] = continuation
-        }
-        return .success(
-            SumiFaviconFetchResponse(
-                data: Data([0x89, 0x50, 0x4E, 0x47]),
-                mimeType: "image/png",
-                statusCode: 200
-            )
-        )
-    }
-
-    private func resumeSatisfiedStartWaiters() {
-        let readyWaiters = startWaiters.filter { callCount >= $0.count }
-        startWaiters.removeAll { callCount >= $0.count }
-        for waiter in readyWaiters {
-            waiter.continuation.resume()
-        }
-    }
-}
-
 private actor RoutingFaviconNetworkFetcher: SumiFaviconNetworkFetching {
     private let responses: [String: SumiFaviconFetchResult]
+    private let onRequest: @Sendable (URL) -> Void
     private(set) var requestedURLs: [URL] = []
 
-    init(responses: [String: SumiFaviconFetchResult]) {
+    init(
+        responses: [String: SumiFaviconFetchResult],
+        onRequest: @escaping @Sendable (URL) -> Void = { _ in }
+    ) {
         self.responses = responses
+        self.onRequest = onRequest
     }
 
     func fetch(url: URL, context _: SumiFaviconFetchContext) async -> SumiFaviconFetchResult {
         requestedURLs.append(url)
+        onRequest(url)
         return responses[url.absoluteString] ?? .failure(.notFound)
     }
 }

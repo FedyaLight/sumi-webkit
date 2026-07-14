@@ -250,14 +250,12 @@ final class SumiPermissionPromptBridgeIntegrationTests: XCTestCase {
         file: StaticString = #filePath,
         line: UInt = #line
     ) async -> SumiPermissionAuthorizationQuery {
-        for _ in 0..<100 {
-            if let query = await coordinator.activeQuery(forPageId: pageId) {
-                return query
-            }
-            try? await Task.sleep(nanoseconds: 10_000_000)
-        }
-        XCTFail("Timed out waiting for active permission query", file: file, line: line)
-        fatalError("Timed out waiting for active permission query")
+        await sumiPermissionIntegrationWaitForActiveQuery(
+            coordinator,
+            pageId: pageId,
+            file: file,
+            line: line
+        )
     }
 
     private func mediaRequest(

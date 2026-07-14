@@ -51,7 +51,7 @@ final class SumiNativeNowPlayingControllerFeatureGateTests: XCTestCase {
         XCTAssertNil(controller.cardState)
     }
 
-    func testScheduleRefreshIsNoOpWhenFeatureDisabled() async {
+    func testScheduleRefreshIsNoOpWhenFeatureDisabled() {
         let controller = SumiNativeNowPlayingController(
             candidateProvider: { _ in [] },
             infoProvider: { _, _, _ in nil },
@@ -61,8 +61,6 @@ final class SumiNativeNowPlayingControllerFeatureGateTests: XCTestCase {
 
         controller.setFeatureEnabled(false)
         controller.scheduleRefresh(delayNanoseconds: 0)
-
-        try? await Task.sleep(nanoseconds: 50_000_000)
 
         XCTAssertNil(controller.cardState)
     }

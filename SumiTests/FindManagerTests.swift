@@ -18,10 +18,11 @@ final class FindManagerTests: XCTestCase {
         webView.results = [.found(matches: 6), .found(matches: 6)]
         let findInPage = FindInPageTabExtension()
         findInPage.model.find("test")
+        let findCalls = webView.expectFindCallCount(2)
 
         findInPage.show(with: webView)
 
-        try await webView.waitForFindCallCount(2)
+        await fulfillment(of: [findCalls], timeout: 1)
         XCTAssertEqual(
             webView.events,
             [
@@ -48,12 +49,14 @@ final class FindManagerTests: XCTestCase {
         ]
         let findInPage = FindInPageTabExtension()
         findInPage.model.find("test")
+        let initialFindCalls = webView.expectFindCallCount(2)
         findInPage.show(with: webView)
-        try await webView.waitForFindCallCount(2)
+        await fulfillment(of: [initialFindCalls], timeout: 1)
 
         webView.events.removeAll()
+        let repeatFindCall = webView.expectFindCallCount(1)
         findInPage.show(with: webView)
-        try await webView.waitForFindCallCount(1)
+        await fulfillment(of: [repeatFindCall], timeout: 1)
         XCTAssertEqual(
             webView.events,
             [
@@ -63,13 +66,15 @@ final class FindManagerTests: XCTestCase {
         )
 
         webView.events.removeAll()
+        let nextFindCall = webView.expectFindCallCount(1)
         findInPage.findNext()
-        try await webView.waitForFindCallCount(1)
+        await fulfillment(of: [nextFindCall], timeout: 1)
         XCTAssertEqual(webView.events, [.find("test", rawOptions: 113, maxCount: 1000)])
 
         webView.events.removeAll()
+        let previousFindCall = webView.expectFindCallCount(1)
         findInPage.findPrevious()
-        try await webView.waitForFindCallCount(1)
+        await fulfillment(of: [previousFindCall], timeout: 1)
         XCTAssertEqual(webView.events, [.find("test", rawOptions: 121, maxCount: 1000)])
 
         webView.events.removeAll()
@@ -83,13 +88,15 @@ final class FindManagerTests: XCTestCase {
         webView.results = [.found(matches: 6), .found(matches: 6), .found(matches: 4)]
         let findInPage = FindInPageTabExtension()
         findInPage.model.find("test")
+        let initialFindCalls = webView.expectFindCallCount(2)
         findInPage.show(with: webView)
-        try await webView.waitForFindCallCount(2)
+        await fulfillment(of: [initialFindCalls], timeout: 1)
 
         webView.events.removeAll()
+        let updatedFindCall = webView.expectFindCallCount(1)
         findInPage.model.find("testing")
 
-        try await webView.waitForFindCallCount(1)
+        await fulfillment(of: [updatedFindCall], timeout: 1)
         XCTAssertEqual(
             webView.events,
             [
@@ -150,6 +157,7 @@ private final class RecordingFindInPageWebView: FindInPageWebView {
 
     var events: [Event] = []
     var results: [FocusableWKWebView.FindResult] = []
+    private var expectedFindCalls: (count: Int, expectation: XCTestExpectation)?
 
     var findRawOptions: [UInt] {
         events.compactMap {
@@ -175,6 +183,11 @@ private final class RecordingFindInPageWebView: FindInPageWebView {
 
     func find(_ string: String, with options: _WKFindOptions, maxCount: UInt) async -> FocusableWKWebView.FindResult {
         events.append(.find(string, rawOptions: options.rawValue, maxCount: maxCount))
+        if let expectedFindCalls,
+           findRawOptions.count >= expectedFindCalls.count {
+            self.expectedFindCalls = nil
+            expectedFindCalls.expectation.fulfill()
+        }
         return results.isEmpty ? .found(matches: 1) : results.removeFirst()
     }
 
@@ -182,13 +195,9 @@ private final class RecordingFindInPageWebView: FindInPageWebView {
         events.append(.clearFindInPageState)
     }
 
-    func waitForFindCallCount(_ expectedCount: Int) async throws {
-        for _ in 0..<100 {
-            if findRawOptions.count >= expectedCount {
-                return
-            }
-            try await Task.sleep(nanoseconds: 10_000_000)
-        }
-        XCTFail("Timed out waiting for \(expectedCount) find calls; saw \(findRawOptions.count)")
+    func expectFindCallCount(_ count: Int) -> XCTestExpectation {
+        let expectation = XCTestExpectation(description: "received \(count) find calls")
+        expectedFindCalls = (count, expectation)
+        return expectation
     }
 }
