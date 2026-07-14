@@ -812,7 +812,8 @@
         "SumiUITests/SumiLaunchSmokeUIFixtureTests/testPreparedStoresAreFreshAndIsolated",
         "SumiUITests/SumiLaunchSmokeUIFixtureTests/testScratchSeedUsesDeterministicSmokeIdentifiers",
         "SumiUITests/SumiLaunchSmokeUIFixtureTests/testScratchSeedingLeavesBundledSourceImmutable",
-        "SumiUITests/SumiLaunchSmokeUITests/testLaunchesMainWindow"
+        "SumiUITests/SumiLaunchSmokeUITests/testLaunchesMainWindow",
+        "SumiUITests/SumiURLHubCommitUITests/testURLHubCommitNavigatesActiveTabToLocalFixturePage"
       ]
     }
   ]
