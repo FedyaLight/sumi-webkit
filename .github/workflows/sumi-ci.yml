@@ -14,11 +14,6 @@ concurrency:
   group: sumi-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  DERIVED_DATA_PATH: ${{ github.workspace }}/build/DerivedData
-  RESULT_BUNDLE_PATH: ${{ github.workspace }}/build/BuildResults/Sumi.xcresult
-  TEST_RESULT_BUNDLE_PATH: ${{ github.workspace }}/build/BuildResults/SumiPRSmoke.xcresult
-
 jobs:
   manifest:
     name: Validate CI manifest
@@ -28,8 +23,6 @@ jobs:
       developer_dir: ${{ steps.selection.outputs.developer_dir }}
       package_matrix: ${{ steps.selection.outputs.package_matrix }}
       xcode_matrix: ${{ steps.selection.outputs.xcode_matrix }}
-      xcode_project: ${{ steps.selection.outputs.xcode_project }}
-      xcode_destination: ${{ steps.selection.outputs.xcode_destination }}
 
     steps:
       - name: Check out repository
@@ -39,20 +32,16 @@ jobs:
         id: selection
         run: |
           set -euo pipefail
-          scripts/ci/run_tests.sh validate
+          scripts/ci/check_test_sharding.sh
           runner="$(scripts/ci/run_tests.sh toolchain-field pr runner)"
           developer_dir="$(scripts/ci/run_tests.sh toolchain-field pr developer_dir)"
           package_matrix="$(scripts/ci/run_tests.sh matrix pr swift-package)"
           xcode_matrix="$(scripts/ci/run_tests.sh matrix pr xcode-test)"
-          xcode_project="$(scripts/ci/run_tests.sh xcode-field project)"
-          xcode_destination="$(scripts/ci/run_tests.sh xcode-field destination)"
           {
             echo "runner=$runner"
             echo "developer_dir=$developer_dir"
             echo "package_matrix=$package_matrix"
             echo "xcode_matrix=$xcode_matrix"
-            echo "xcode_project=$xcode_project"
-            echo "xcode_destination=$xcode_destination"
           } >> "$GITHUB_OUTPUT"
 
   architecture-packages:
@@ -64,7 +53,6 @@ jobs:
       DEVELOPER_DIR: ${{ needs.manifest.outputs.developer_dir }}
     strategy:
       fail-fast: false
-      max-parallel: 1
       matrix: ${{ fromJSON(needs.manifest.outputs.package_matrix) }}
 
     steps:
@@ -75,20 +63,19 @@ jobs:
         run: scripts/ci/run_tests.sh verify-toolchain pr
 
       - name: Test ${{ matrix.name }}
-        run: scripts/ci/run_tests.sh run "${{ matrix.suite }}"
+        run: scripts/ci/run_tests.sh run pr "${{ matrix.suite }}"
 
-  build-and-test:
-    name: Build and ${{ matrix.name }}
-    needs:
-      - manifest
-      - architecture-packages
+  app-tests:
+    name: PR shard / ${{ matrix.name }}
+    needs: manifest
     runs-on: ${{ needs.manifest.outputs.runner }}
     timeout-minutes: 60
     env:
       DEVELOPER_DIR: ${{ needs.manifest.outputs.developer_dir }}
     strategy:
       fail-fast: false
-      max-parallel: 1
+      # Four app shards run together; this bounds paid macOS capacity while preserving real job sharding.
+      max-parallel: 4
       matrix: ${{ fromJSON(needs.manifest.outputs.xcode_matrix) }}
 
     steps:
@@ -98,44 +85,19 @@ jobs:
       - name: Verify production toolchain
         run: scripts/ci/run_tests.sh verify-toolchain pr
 
-      - name: Build Sumi app
-        run: |
-          set -euo pipefail
-          rm -rf "$RESULT_BUNDLE_PATH"
-          mkdir -p "$(dirname "$RESULT_BUNDLE_PATH")"
-
-          xcodebuild \
-            -quiet \
-            -project "${{ needs.manifest.outputs.xcode_project }}" \
-            -scheme "${{ matrix.scheme }}" \
-            -configuration "${{ matrix.configuration }}" \
-            -destination "${{ needs.manifest.outputs.xcode_destination }}" \
-            -derivedDataPath "$DERIVED_DATA_PATH" \
-            -resultBundlePath "$RESULT_BUNDLE_PATH" \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            build
-
       - name: Run ${{ matrix.name }}
         env:
-          SUMI_CI_DERIVED_DATA: ${{ env.DERIVED_DATA_PATH }}
-          SUMI_CI_RESULT_BUNDLE: ${{ env.TEST_RESULT_BUNDLE_PATH }}
-        run: scripts/ci/run_tests.sh run "${{ matrix.suite }}"
+          SUMI_CI_BUILD_RESULT_BUNDLE: ${{ github.workspace }}/${{ matrix.build_result_bundle }}
+          SUMI_CI_RESULT_BUNDLE: ${{ github.workspace }}/${{ matrix.result_bundle }}
+        run: scripts/ci/run_tests.sh run pr "${{ matrix.suite }}"
 
-      - name: Upload Sumi build result
+      - name: Upload shard results
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: Sumi-build.xcresult
-          path: build/BuildResults/Sumi.xcresult
-          if-no-files-found: ignore
-          retention-days: 7
-
-      - name: Upload PR smoke test result
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: Sumi-pr-smoke.xcresult
-          path: build/BuildResults/SumiPRSmoke.xcresult
+          name: Sumi-pr-${{ matrix.suite }}-results
+          path: |
+            ${{ matrix.build_result_bundle }}
+            ${{ matrix.result_bundle }}
           if-no-files-found: ignore
           retention-days: 7

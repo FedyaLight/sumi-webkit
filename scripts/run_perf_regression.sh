@@ -5,7 +5,9 @@ SCRIPT_DIR="$(cd -- "$(dirname "$0")" && pwd)"
 ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 CI_TEST_RUNNER="$ROOT/scripts/ci/run_tests.sh"
 PROJECT="${SUMI_XCODE_PROJECT:-$ROOT/$("$CI_TEST_RUNNER" xcode-field project)}"
-SCHEME="${SUMI_SCHEME:-$("$CI_TEST_RUNNER" suite-field performance-regression scheme)}"
+PERFORMANCE_PROFILE="performance"
+PERFORMANCE_SUITE="$("$CI_TEST_RUNNER" list "$PERFORMANCE_PROFILE" xcode-test | sed -n '1p')"
+SCHEME="${SUMI_SCHEME:-$("$CI_TEST_RUNNER" suite-field "$PERFORMANCE_SUITE" scheme)}"
 DESTINATION="${SUMI_XCODE_DESTINATION:-platform=macOS,arch=arm64}"
 DERIVED_DATA="${SUMI_PERF_DERIVED_DATA:-$ROOT/.build/performance/perf-derived-data}"
 TRACE_DIR="${SUMI_PERF_TRACE_DIR:-$ROOT/.build/profiles}"
@@ -45,11 +47,14 @@ build_configuration() {
 
 verify() {
   local -a optimized_stack_tests=()
+  local suite
   local selector_output
-  selector_output="$("$CI_TEST_RUNNER" selectors performance-regression)"
-  while IFS= read -r selector; do
-    [[ -n "$selector" ]] && optimized_stack_tests+=("-only-testing:$selector")
-  done <<< "$selector_output"
+  while IFS= read -r suite; do
+    selector_output="$("$CI_TEST_RUNNER" selectors "$suite" "$PERFORMANCE_PROFILE")"
+    while IFS= read -r selector; do
+      [[ -n "$selector" ]] && optimized_stack_tests+=("-only-testing:$selector")
+    done <<< "$selector_output"
+  done <<< "$("$CI_TEST_RUNNER" list "$PERFORMANCE_PROFILE" xcode-test)"
 
   mkdir -p "$DERIVED_DATA"
   build_configuration Debug

@@ -18,63 +18,89 @@ usage() {
   cat <<USAGE
 Usage:
   scripts/ci/run_tests.sh validate
-  scripts/ci/run_tests.sh run <suite-id>
+  scripts/ci/run_tests.sh inventory
+  scripts/ci/run_tests.sh run <profile-id> <suite-id>
   scripts/ci/run_tests.sh profile <profile-id> [suite-kind]
   scripts/ci/run_tests.sh matrix <profile-id> [suite-kind]
   scripts/ci/run_tests.sh list <profile-id> [suite-kind]
   scripts/ci/run_tests.sh verify-toolchain <profile-id>
   scripts/ci/run_tests.sh suite-field <suite-id> <field>
-  scripts/ci/run_tests.sh selectors <suite-id>
+  scripts/ci/run_tests.sh selectors <suite-id> [profile-id]
   scripts/ci/run_tests.sh toolchain-field <profile-id> <field>
   scripts/ci/run_tests.sh xcode-field <field>
 
 Environment:
   SUMI_CI_TEST_MANIFEST  Manifest override (primarily for parser tests)
   SUMI_CI_DERIVED_DATA  DerivedData path
+  SUMI_CI_BUILD_RESULT_BUNDLE build-for-testing .xcresult output path
   SUMI_CI_RESULT_BUNDLE .xcresult output path
 USAGE
 }
 
 run_xcode_suite() {
-  local suite="$1"
+  local profile="$1"
+  local suite="$2"
   local project="${SUMI_XCODE_PROJECT:-$(manifest xcode-field project)}"
   local destination="${SUMI_XCODE_DESTINATION:-$(manifest xcode-field destination)}"
   local parallel_testing
   local scheme
   local configuration
-  local derived_data="${SUMI_CI_DERIVED_DATA:-$repo_root/build/ci-derived-data}"
-  local result_bundle="${SUMI_CI_RESULT_BUNDLE:-$repo_root/build/BuildResults/${suite}.xcresult}"
+  local stem="${profile}-${suite}"
+  local derived_data="${SUMI_CI_DERIVED_DATA:-$repo_root/build/ci-derived-data/$stem}"
+  local build_result_bundle="${SUMI_CI_BUILD_RESULT_BUNDLE:-$repo_root/build/BuildResults/${stem}-build.xcresult}"
+  local result_bundle="${SUMI_CI_RESULT_BUNDLE:-$repo_root/build/BuildResults/${stem}.xcresult}"
+  local -a common_arguments=()
   local -a selectors=()
   local selector_output
 
   parallel_testing="$(manifest xcode-field parallel_testing_enabled)"
   scheme="$(manifest suite-field "$suite" scheme)"
   configuration="$(manifest suite-field "$suite" configuration)"
-  selector_output="$(manifest selectors "$suite")"
+  selector_output="$(manifest selectors "$suite" "$profile")"
   while IFS= read -r selector; do
     [[ -n "$selector" ]] && selectors+=("-only-testing:$selector")
   done <<< "$selector_output"
 
-  mkdir -p "$(dirname "$result_bundle")" "$derived_data"
-  rm -rf "$result_bundle"
+  mkdir -p "$(dirname "$build_result_bundle")" "$(dirname "$result_bundle")" "$derived_data"
+  rm -rf "$build_result_bundle" "$result_bundle"
+  common_arguments=(
+    -project "$project"
+    -scheme "$scheme"
+    -configuration "$configuration"
+    -destination "$destination"
+    -derivedDataPath "$derived_data"
+    -parallel-testing-enabled "$parallel_testing"
+    CODE_SIGNING_ALLOWED=NO
+    CODE_SIGNING_REQUIRED=NO
+  )
   xcodebuild \
-    -project "$project" \
-    -scheme "$scheme" \
-    -configuration "$configuration" \
-    -destination "$destination" \
-    -derivedDataPath "$derived_data" \
+    "${common_arguments[@]}" \
+    -resultBundlePath "$build_result_bundle" \
+    build-for-testing
+  xcodebuild \
+    "${common_arguments[@]}" \
     -resultBundlePath "$result_bundle" \
-    -parallel-testing-enabled "$parallel_testing" \
-    CODE_SIGNING_ALLOWED=NO \
-    CODE_SIGNING_REQUIRED=NO \
     "${selectors[@]}" \
-    test
+    test-without-building
 }
 
 run_suite() {
-  local suite="$1"
+  local profile="$1"
+  local suite="$2"
   local kind
   local name
+  local selected_suite
+  local selected=false
+  while IFS= read -r selected_suite; do
+    if [[ "$selected_suite" == "$suite" ]]; then
+      selected=true
+      break
+    fi
+  done <<< "$(manifest list "$profile")"
+  if [[ "$selected" != true ]]; then
+    echo "error: profile $profile does not select suite $suite" >&2
+    exit 2
+  fi
   kind="$(manifest suite-field "$suite" kind)"
   name="$(manifest suite-field "$suite" name)"
   echo "==> $name [$suite]"
@@ -84,7 +110,7 @@ run_suite() {
       swift test --package-path "$repo_root/$(manifest suite-field "$suite" path)"
       ;;
     xcode-test)
-      run_xcode_suite "$suite"
+      run_xcode_suite "$profile" "$suite"
       ;;
     *)
       echo "error: validated manifest returned unsupported suite kind: $kind" >&2
@@ -102,7 +128,7 @@ run_profile() {
   [[ -n "$kind" ]] && query+=("$kind")
   suite_output="$(manifest "${query[@]}")"
   while IFS= read -r suite; do
-    [[ -n "$suite" ]] && run_suite "$suite"
+    [[ -n "$suite" ]] && run_suite "$profile" "$suite"
   done <<< "$suite_output"
 }
 
@@ -127,9 +153,13 @@ case "$command" in
     [[ $# -eq 1 ]] || { usage; exit 2; }
     manifest validate
     ;;
+  inventory)
+    [[ $# -eq 1 ]] || { usage; exit 2; }
+    manifest inventory
+    ;;
   run)
-    [[ $# -eq 2 ]] || { usage; exit 2; }
-    run_suite "$2"
+    [[ $# -eq 3 ]] || { usage; exit 2; }
+    run_suite "$2" "$3"
     ;;
   profile)
     [[ $# -ge 2 && $# -le 3 ]] || { usage; exit 2; }
@@ -147,7 +177,11 @@ case "$command" in
     [[ $# -eq 3 ]] || { usage; exit 2; }
     manifest "$@"
     ;;
-  selectors|xcode-field)
+  selectors)
+    [[ $# -ge 2 && $# -le 3 ]] || { usage; exit 2; }
+    manifest "$@"
+    ;;
+  xcode-field)
     [[ $# -eq 2 ]] || { usage; exit 2; }
     manifest "$@"
     ;;

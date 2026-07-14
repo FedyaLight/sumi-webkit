@@ -30,7 +30,7 @@ jobs:
         id: selection
         run: |
           set -euo pipefail
-          scripts/ci/run_tests.sh validate
+          scripts/ci/check_test_sharding.sh
           runner="$(scripts/ci/run_tests.sh toolchain-field nightly runner)"
           developer_dir="$(scripts/ci/run_tests.sh toolchain-field nightly developer_dir)"
           package_matrix="$(scripts/ci/run_tests.sh matrix nightly swift-package)"
@@ -51,7 +51,6 @@ jobs:
       DEVELOPER_DIR: ${{ needs.manifest.outputs.developer_dir }}
     strategy:
       fail-fast: false
-      max-parallel: 1
       matrix: ${{ fromJSON(needs.manifest.outputs.package_matrix) }}
 
     steps:
@@ -62,21 +61,19 @@ jobs:
         run: scripts/ci/run_tests.sh verify-toolchain nightly
 
       - name: Test ${{ matrix.name }}
-        run: scripts/ci/run_tests.sh run "${{ matrix.suite }}"
+        run: scripts/ci/run_tests.sh run nightly "${{ matrix.suite }}"
 
   app-tests:
     name: Nightly / ${{ matrix.name }}
-    needs:
-      - manifest
-      - architecture-packages
+    needs: manifest
     runs-on: ${{ needs.manifest.outputs.runner }}
     timeout-minutes: 120
     env:
       DEVELOPER_DIR: ${{ needs.manifest.outputs.developer_dir }}
-      SUMI_CI_RESULT_BUNDLE: ${{ github.workspace }}/build/BuildResults/SumiNightly-${{ matrix.suite }}.xcresult
     strategy:
       fail-fast: false
-      max-parallel: 1
+      # Limit the five app/UI jobs to four concurrent paid macOS runners.
+      max-parallel: 4
       matrix: ${{ fromJSON(needs.manifest.outputs.xcode_matrix) }}
 
     steps:
@@ -87,13 +84,18 @@ jobs:
         run: scripts/ci/run_tests.sh verify-toolchain nightly
 
       - name: Run ${{ matrix.name }}
-        run: scripts/ci/run_tests.sh run "${{ matrix.suite }}"
+        env:
+          SUMI_CI_BUILD_RESULT_BUNDLE: ${{ github.workspace }}/${{ matrix.build_result_bundle }}
+          SUMI_CI_RESULT_BUNDLE: ${{ github.workspace }}/${{ matrix.result_bundle }}
+        run: scripts/ci/run_tests.sh run nightly "${{ matrix.suite }}"
 
       - name: Upload nightly test result
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: Sumi-nightly-${{ matrix.suite }}.xcresult
-          path: build/BuildResults/SumiNightly-${{ matrix.suite }}.xcresult
+          name: Sumi-nightly-${{ matrix.suite }}-results
+          path: |
+            ${{ matrix.build_result_bundle }}
+            ${{ matrix.result_bundle }}
           if-no-files-found: ignore
           retention-days: 7
