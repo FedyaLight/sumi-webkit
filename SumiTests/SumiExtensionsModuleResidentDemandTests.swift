@@ -38,7 +38,7 @@ final class SumiExtensionsModuleResidentDemandTests: XCTestCase {
         )
 
         XCTAssertIdentical(
-            fixture.module.managerIfLoadedAndEnabled(),
+            fixture.module.managerForTesting(materializeIfNeeded: false),
             fixture.manager
         )
         XCTAssertNil(configuration.webExtensionController)
@@ -130,7 +130,7 @@ final class SumiExtensionsModuleResidentDemandTests: XCTestCase {
             initialProfileProvider: { profile },
             managerFactory: { _, _, _, _ in manager }
         )
-        XCTAssertIdentical(module.managerIfEnabled(), manager)
+        XCTAssertIdentical(module.managerForTesting(), manager)
         return (container, module, manager, profile)
     }
 

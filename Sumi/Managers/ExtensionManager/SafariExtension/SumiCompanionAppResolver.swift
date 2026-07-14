@@ -77,7 +77,7 @@ enum SumiCompanionAppResolver {
         requestedApplicationIdentifier: String?,
         extensionId: String?,
         installedExtensions: [InstalledExtension],
-        importStore: SafariExtensionImportStore
+        importStore: any SafariExtensionImportRecordProviding
     ) -> IdentityResolution? {
         let trimmedRequest = requestedApplicationIdentifier?
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -127,7 +127,7 @@ enum SumiCompanionAppResolver {
         requestedApplicationIdentifier: String?,
         extensionId: String?,
         installedExtensions: [InstalledExtension],
-        importStore: SafariExtensionImportStore,
+        importStore: any SafariExtensionImportRecordProviding,
         launcher: SumiHostApplicationLaunching,
         adapterRegistry: SumiNativeMessagingAdapterRegistry = .production(),
         launchPolicy: SumiCompanionAppLaunchPolicy = SumiCompanionAppLaunchPolicy()
@@ -273,7 +273,7 @@ enum SumiCompanionAppResolver {
     private static func containingApplicationIdentity(
         extensionId: String?,
         installedExtensions: [InstalledExtension],
-        importStore: SafariExtensionImportStore
+        importStore: any SafariExtensionImportRecordProviding
     ) -> IdentityResolution? {
         guard let extensionId, extensionId.isEmpty == false else {
             return nil

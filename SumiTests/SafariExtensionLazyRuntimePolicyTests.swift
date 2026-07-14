@@ -48,7 +48,7 @@ final class SafariExtensionLazyRuntimePolicyTests: XCTestCase {
             initialProfileProvider: { profile }
         )
 
-        let manager = try XCTUnwrap(module.managerIfEnabled())
+        let manager = try XCTUnwrap(module.managerForTesting())
         registry.disable(.extensions)
 
         XCTAssertEqual(
@@ -87,7 +87,7 @@ final class SafariExtensionLazyRuntimePolicyTests: XCTestCase {
         )
 
         module.attach(runtime: BrowserExtensionsModuleRuntimeFactory.runtime(for: browserManager))
-        _ = try XCTUnwrap(module.managerIfEnabled())
+        _ = try XCTUnwrap(module.managerForTesting())
 
         XCTAssertIdentical(initialProfileUsedByFactory, runtimeProfile)
         let attachedManager = try XCTUnwrap(createdManager)

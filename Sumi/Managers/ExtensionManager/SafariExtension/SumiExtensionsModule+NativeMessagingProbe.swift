@@ -10,24 +10,7 @@ import Foundation
 @MainActor
 extension SumiExtensionsModule {
     func safariExtensionNativeMessagingProbe() -> SafariExtensionNativeMessagingProbeReport {
-        var issues: [SafariExtensionScannerIssue] = []
-        let discovered = SafariExtensionScanner().scanInstalledExtensions(issues: &issues)
-        refreshDiscoveredSafariWebExtensionCandidates(discovered)
-
-        let manager = managerIfLoadedAndEnabled()
-        let adapterRegistry =
-            manager?.loadedNativeMessagingRelayOwner?.loadedRelay?.diagnosticsAdapterRegistry
-            ?? SumiNativeMessagingAdapterRegistry.production()
-        let report = SafariExtensionNativeMessagingProbeBuilder.build(
-            discovered: discovered,
-            importStore: SafariExtensionImportStore.process,
-            installedExtensions: manager?.installedExtensionCollection.records ?? [],
-            extensionManager: manager,
-            extensionsModuleEnabled: isEnabled,
-            adapterRegistry: adapterRegistry
-        )
-        SafariExtensionNativeMessagingProbeBuilder.logIfDiagnosticsEnabled(report)
-        return report
+        compatibilityDiagnostics.nativeMessagingProbe()
     }
 
     #if DEBUG

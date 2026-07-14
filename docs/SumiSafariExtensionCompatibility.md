@@ -1043,7 +1043,7 @@ Clean-import audits: `scripts/check_safari_extension_clean_import.sh`.
 | Post-enable runtime finalize | Background wake + action surface seed | **Added (Cycle 3)** |
 | Dev compatibility report | `SafariExtensionCompatibilityReport` | **Extended (Cycle 6)** — platform blockers + acceptance matrix |
 | Acceptance harness | `SafariExtensionAcceptanceMatrix` | **Added (Cycle 6)** — DEBUG/test automated checks |
-| Module off = zero runtime | `SumiExtensionsModule.tearDownLoadedRuntime` | Implemented |
+| Module off = zero runtime | `SumiExtensionModuleDemand` + `SumiExtensionManagerLifetime.tearDownLoadedRuntime` | Implemented |
 
 ### Cycle 1 addition
 

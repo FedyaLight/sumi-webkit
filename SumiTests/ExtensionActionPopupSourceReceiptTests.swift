@@ -1119,7 +1119,7 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
             )
         )
         XCTAssertIdentical(
-            try XCTUnwrap(extensionsModule.managerIfEnabled()),
+            try XCTUnwrap(extensionsModule.managerForTesting()),
             extensionManager
         )
         extensionManager.runtimeDemand

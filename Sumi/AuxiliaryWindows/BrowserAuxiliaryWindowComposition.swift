@@ -4,8 +4,7 @@ import WebKit
 
 @MainActor
 private final class BrowserAuxiliaryWindowContext:
-    AuxiliaryWindowContextResolving
-{
+    AuxiliaryWindowContextResolving {
     private let windowRegistry: @MainActor () -> WindowRegistry?
     private let currentProfile: @MainActor () -> UUID?
     private let spaces: TabSpaceCollectionStateOwner
@@ -52,8 +51,7 @@ private final class BrowserAuxiliaryWindowContext:
 
 @MainActor
 private final class BrowserAuxiliaryWindowTabs:
-    AuxiliaryWindowTabLifecycle
-{
+    AuxiliaryWindowTabLifecycle {
     private let transientTabs: TabTransientWebKitTabLifecycleOwner
     private let webViewInstaller: any UntrackedWebViewInstalling
     private let context: any AuxiliaryWindowContextResolving
@@ -118,8 +116,7 @@ private final class BrowserAuxiliaryWindowTabs:
 
 @MainActor
 private final class BrowserAuxiliaryWindowPermissions:
-    AuxiliaryWindowPermissionHandling
-{
+    AuxiliaryWindowPermissionHandling {
     private let popup: SumiPopupPermissionBridge
     private let filePicker: SumiFilePickerPermissionBridge
 
@@ -165,8 +162,7 @@ private final class BrowserAuxiliaryWindowPermissions:
 
 @MainActor
 private final class BrowserAuxiliaryWindowMutationAdmission:
-    AuxiliaryWindowMutationAdmitting
-{
+    AuxiliaryWindowMutationAdmitting {
     private let cleanup: WebsiteDataCleanupService
 
     init(cleanup: WebsiteDataCleanupService) {
@@ -178,7 +174,7 @@ private final class BrowserAuxiliaryWindowMutationAdmission:
     }
 
     func waitForAdmission(profileID: UUID) async -> Bool {
-        return await cleanup.waitForAdmission(profileID: profileID)
+        await cleanup.waitForAdmission(profileID: profileID)
     }
 }
 
@@ -211,7 +207,7 @@ extension ExtensionManager: AuxiliaryWindowExtensionEventHandling {
 extension SumiExtensionsModule: AuxiliaryWindowExtensionRuntimeResolving {
     func loadedEnabledAuxiliaryWindowIntegration()
         -> AuxiliaryWindowExtensionIntegration? {
-        managerIfLoadedAndEnabled()?.auxiliaryWindowIntegration()
+        runtimeSurface.loadedAuxiliaryWindowIntegration()
     }
 }
 

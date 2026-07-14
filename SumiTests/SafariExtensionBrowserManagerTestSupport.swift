@@ -158,7 +158,7 @@ extension XCTestCase {
                 guard let browserManager = teardownBox.browserManager else { return }
                 if #available(macOS 15.5, *),
                    let extensionManager = browserManager.optionalModules.extensions
-                   .managerIfLoadedAndEnabled() {
+                   .managerForTesting(materializeIfNeeded: false) {
                     await extensionManager.drainExtensionRuntimeTasksForTests()
                 }
                 await browserManager.drainBrowserRuntimeTasksForTests(cancel: true)

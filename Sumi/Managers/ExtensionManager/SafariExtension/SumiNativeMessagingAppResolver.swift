@@ -25,7 +25,7 @@ enum SumiNativeMessagingAppResolver {
         requestedApplicationIdentifier: String?,
         extensionId: String?,
         installedExtensions: [InstalledExtension],
-        importStore: SafariExtensionImportStore
+        importStore: any SafariExtensionImportRecordProviding
     ) -> SumiNativeMessagingAppResolution? {
         guard let identity = SumiCompanionAppResolver.resolveIdentity(
             requestedApplicationIdentifier: requestedApplicationIdentifier,

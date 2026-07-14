@@ -466,7 +466,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         extensionsModule.attach(runtime: BrowserExtensionsModuleRuntimeFactory.runtime(for: browserManager))
 
         let scratchDirectory = try makeScratchDirectory()
-        let manager = try XCTUnwrap(extensionsModule.managerIfEnabled())
+        let manager = try XCTUnwrap(extensionsModule.managerForTesting())
         let installed = try await installUnpackedExtension(
             manager: manager,
             scratchDirectory: scratchDirectory,
@@ -515,7 +515,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         )
 
         let scratchDirectory = try makeScratchDirectory()
-        let manager = try XCTUnwrap(extensionsModule.managerIfEnabled())
+        let manager = try XCTUnwrap(extensionsModule.managerForTesting())
         let installed = try await installContentScriptNativeMessagingProbeExtension(
             manager: manager,
             scratchDirectory: scratchDirectory
@@ -606,7 +606,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         windowRegistry.setActive(windowState)
 
         let scratchDirectory = try makeScratchDirectory()
-        let manager = try XCTUnwrap(extensionsModule.managerIfEnabled())
+        let manager = try XCTUnwrap(extensionsModule.managerForTesting())
         let installed = try await installContentScriptNativeMessagingProbeExtension(
             manager: manager,
             scratchDirectory: scratchDirectory
@@ -1045,7 +1045,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             profileId: profile.id
         )
         manager.attach(browserManager: browserManager)
-        XCTAssertIdentical(extensionsModule.managerIfEnabled(), manager)
+        XCTAssertIdentical(extensionsModule.managerForTesting(), manager)
 
         let scratchDirectory = try makeScratchDirectory()
         let installed = try await installUnpackedExtension(
@@ -1147,7 +1147,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             profileId: profile.id
         )
         manager.attach(browserManager: browserManager)
-        XCTAssertIdentical(extensionsModule.managerIfEnabled(), manager)
+        XCTAssertIdentical(extensionsModule.managerForTesting(), manager)
 
         let scratchDirectory = try makeScratchDirectory()
         let installed = try await installUnpackedExtension(
@@ -1653,7 +1653,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             profileId: profile.id
         )
         manager.attach(browserManager: browserManager)
-        XCTAssertIdentical(extensionsModule.managerIfEnabled(), manager)
+        XCTAssertIdentical(extensionsModule.managerForTesting(), manager)
 
         let scratchDirectory = try makeScratchDirectory()
         let installed = try await installUnpackedExtension(

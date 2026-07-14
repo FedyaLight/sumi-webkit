@@ -71,6 +71,11 @@ struct SafariExtensionCompatibilityReport: Codable, Equatable, Sendable {
 
 protocol SafariExtensionImportRecordProviding: AnyObject {
     func importedRecords() -> [SafariExtensionImportedRecord]
+    func discoveredCandidates() -> [SafariExtensionImportCandidateRecord]
+}
+
+extension SafariExtensionImportRecordProviding {
+    func discoveredCandidates() -> [SafariExtensionImportCandidateRecord] { [] }
 }
 
 extension SafariExtensionImportStore: SafariExtensionImportRecordProviding {}
@@ -413,21 +418,6 @@ enum SafariExtensionCompatibilityReportBuilder {
 @MainActor
 extension SumiExtensionsModule {
     func safariExtensionCompatibilityReport() -> SafariExtensionCompatibilityReport {
-        var issues: [SafariExtensionScannerIssue] = []
-        let discovered = SafariExtensionScanner().scanInstalledExtensions(issues: &issues)
-        refreshDiscoveredSafariWebExtensionCandidates(discovered)
-
-        let manager = managerIfLoadedAndEnabled()
-        let installed = manager?.installedExtensionCollection.records ?? []
-        let report = SafariExtensionCompatibilityReportBuilder.build(
-            discovered: discovered,
-            importStore: safariExtensionImportRecordsForDiagnostics(),
-            installedExtensions: installed,
-            extensionManager: manager,
-            extensionsModuleEnabled: isEnabled,
-            runtime: .make(extensionManager: manager)
-        )
-        SafariExtensionCompatibilityReportBuilder.logIfDiagnosticsEnabled(report)
-        return report
+        compatibilityDiagnostics.compatibilityReport()
     }
 }

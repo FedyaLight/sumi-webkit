@@ -201,7 +201,7 @@ done
 deferred_shutdown_body="$(
   sed -n \
     '/private func scheduleRuntimeTeardownRetry(/,/^    }/p' \
-    Sumi/Managers/ExtensionManager/SumiExtensionsModule.swift
+    Sumi/Managers/ExtensionManager/SumiExtensionManagerLifetime.swift
 )"
 if rg -n 'Timer|asyncAfter|Task\.sleep' <<<"$deferred_shutdown_body"; then
   printf 'error: deferred extension shutdown regained polling or timers\n' >&2

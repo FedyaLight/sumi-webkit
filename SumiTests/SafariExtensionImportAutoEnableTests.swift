@@ -105,7 +105,7 @@ final class SafariExtensionImportAutoEnableTests: XCTestCase {
         )
         let firstResult = await module.syncDiscoveredSafariWebExtensions([candidate])
         let installed = try XCTUnwrap(firstResult.addedExtensions.first)
-        let manager = try XCTUnwrap(module.managerIfLoadedAndEnabled())
+        let manager = try XCTUnwrap(module.managerForTesting(materializeIfNeeded: false))
         let entity = try XCTUnwrap(try manager.extensionEntity(for: installed.id))
         try manager.installationMetadataStore.setEnabled(true, for: entity)
         let enabledRecord = manager.installationMetadataStore.record(
@@ -143,7 +143,7 @@ final class SafariExtensionImportAutoEnableTests: XCTestCase {
 
         XCTAssertTrue(result.addedExtensions.isEmpty)
         XCTAssertTrue(importStore.markedImports.isEmpty)
-        XCTAssertTrue(module.managerIfLoadedAndEnabled()?.installedExtensionCollection.records.isEmpty ?? false)
+        XCTAssertTrue(module.managerForTesting(materializeIfNeeded: false)?.installedExtensionCollection.records.isEmpty ?? false)
     }
 
     private func makeCandidate(

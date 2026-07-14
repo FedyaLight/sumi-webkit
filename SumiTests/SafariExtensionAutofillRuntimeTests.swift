@@ -47,7 +47,7 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
         )
 
         XCTAssertTrue(module.hasLoadedRuntime)
-        let manager = try XCTUnwrap(module.managerIfEnabled())
+        let manager = try XCTUnwrap(module.managerForTesting())
         XCTAssertIdentical(
             configuration.webExtensionController,
             manager.ensureExtensionController(for: profile.id)

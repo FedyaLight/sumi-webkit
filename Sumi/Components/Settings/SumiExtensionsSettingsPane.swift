@@ -36,7 +36,7 @@ enum ExtensionSettingsRuntimeReadiness: Equatable {
 
     @MainActor
     init(extensionsModule: SumiExtensionsModule) {
-        self = extensionsModule.managerIfEnabled() != nil
+        self = extensionsModule.extensionRuntimeIsAvailable()
             ? .ready
             : .unavailable
     }

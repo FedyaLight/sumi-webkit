@@ -432,19 +432,6 @@ enum SafariExtensionRaindropTabAdapterProbe {
 @MainActor
 extension SumiExtensionsModule {
     func safariExtensionAcceptanceMatrix() -> SafariExtensionAcceptanceMatrix {
-        var issues: [SafariExtensionScannerIssue] = []
-        let discovered = SafariExtensionScanner().scanInstalledExtensions(issues: &issues)
-        refreshDiscoveredSafariWebExtensionCandidates(discovered)
-
-        let manager = managerIfLoadedAndEnabled()
-        let matrix = SafariExtensionAcceptanceMatrixBuilder.build(
-            discovered: discovered,
-            importStore: safariExtensionImportRecordsForDiagnostics(),
-            installedExtensions: manager?.installedExtensionCollection.records ?? [],
-            extensionManager: manager,
-            extensionsModuleEnabled: isEnabled
-        )
-        SafariExtensionAcceptanceMatrixBuilder.logIfDiagnosticsEnabled(matrix)
-        return matrix
+        compatibilityDiagnostics.acceptanceMatrix()
     }
 }

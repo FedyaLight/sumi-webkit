@@ -649,29 +649,26 @@ enum SafariExtensionPasswordManagerFormFixtureProbe {
 @MainActor
 extension SumiExtensionsModule {
     func safariExtensionRuntimeDiagnosticReport() -> SafariExtensionRuntimeDiagnosticReport {
-        var issues: [SafariExtensionScannerIssue] = []
-        let discovered = SafariExtensionScanner().scanInstalledExtensions(issues: &issues)
-        refreshDiscoveredSafariWebExtensionCandidates(discovered)
-
-        let manager = managerIfLoadedAndEnabled()
-        let adapterRegistry =
-            manager?.loadedNativeMessagingRelayOwner?.loadedRelay?.diagnosticsAdapterRegistry
-            ?? SumiNativeMessagingAdapterRegistry.production()
-        let report = SafariExtensionRuntimeDiagnosticsBuilder.build(
-            discovered: discovered,
-            importStore: safariExtensionImportRecordsForDiagnostics(),
-            installedExtensions: manager?.installedExtensionCollection.records ?? [],
-            contentBlockerRecords: installedSafariContentBlockers(),
-            attachedSafariContentRuleListIdentifiers: safariContentBlockerAttachedRuleListIdentifiers(),
-            extensionManager: manager,
-            extensionsModuleEnabled: isEnabled,
-            adapterRegistry: adapterRegistry
-        )
-        SafariExtensionRuntimeDiagnosticsBuilder.logIfDiagnosticsEnabled(report)
-        return report
+        compatibilityDiagnostics.runtimeDiagnosticReport()
     }
 
     #if DEBUG
+    func printSafariExtensionAcceptanceCheckToConsole() {
+        guard isEnabled else {
+            print("SafariExtensionAcceptanceMatrix: skipped — Extensions module is disabled")
+            return
+        }
+
+        let matrix = safariExtensionAcceptanceMatrix()
+        do {
+            let json = try SafariExtensionDiagnosticJSON.prettyPrintedString(matrix)
+            print("SafariExtensionAcceptanceMatrix:\n\(json)")
+        } catch {
+            print("SafariExtensionAcceptanceMatrix: encode failed: \(error.localizedDescription)")
+        }
+        SafariExtensionAcceptanceMatrixBuilder.logIfDiagnosticsEnabled(matrix)
+    }
+
     func printSafariExtensionDevDiagnosticsReportToConsole() {
         guard isEnabled else {
             print("SafariExtensionDevDiagnosticsReport: skipped — Extensions module is disabled")

@@ -71,6 +71,14 @@ normal_tab_properties='Sumi/Managers/ExtensionManager/ExtensionTabPropertyPublis
 normal_tab_rebind='Sumi/Managers/ExtensionManager/ExtensionTabLifecycleRebindTransaction.swift'
 normal_tab_deferred='Sumi/Managers/ExtensionManager/ExtensionDeferredTabRegistration.swift'
 normal_tab_events='Sumi/Managers/ExtensionManager/ExtensionTabLifecycleEmitter.swift'
+extensions_module='Sumi/Managers/ExtensionManager/SumiExtensionsModule.swift'
+extension_module_demand='Sumi/Managers/ExtensionManager/SumiExtensionModuleDemand.swift'
+extension_manager_lifetime='Sumi/Managers/ExtensionManager/SumiExtensionManagerLifetime.swift'
+extension_runtime_surface='Sumi/Managers/ExtensionManager/SumiExtensionRuntimeSurface.swift'
+extension_settings_surface='Sumi/Managers/ExtensionManager/SumiExtensionSettingsCatalogSurface.swift'
+extension_toolbar_surface='Sumi/Managers/ExtensionManager/SumiExtensionToolbarActionSurface.swift'
+extension_content_blocking_surface='Sumi/Managers/ExtensionManager/SumiExtensionContentBlockingSurface.swift'
+extension_diagnostics_surface='Sumi/Managers/ExtensionManager/SumiExtensionCompatibilityDiagnosticsSurface.swift'
 window_request_router='Sumi/Managers/ExtensionManager/ExtensionWindowRequestRouter.swift'
 requested_tab_opening='Sumi/Managers/ExtensionManager/ExtensionRequestedTabOpeningService.swift'
 requested_tab_registrar='Sumi/Managers/ExtensionManager/ExtensionCreatedTabRuntimeRegistrar.swift'
@@ -432,7 +440,7 @@ for required_exact_close_boundary in \
   'adapterStore.removeTabAdapter('; do
   if ! rg -Fq "$required_exact_close_boundary" \
       "$runtime_publication_reconciler" \
-      Sumi/Managers/ExtensionManager/SumiExtensionsModule.swift \
+      "$extension_runtime_surface" \
       Sumi/Managers/ExtensionManager/ExtensionNormalTabCloseTransaction.swift \
       Sumi/Managers/ExtensionManager/ExtensionNormalTabCloseReceipt.swift; then
     printf 'error: exact pre-handoff Tab closure is lost: %s\n' \
@@ -648,13 +656,70 @@ for required_current_tab_property_boundary in \
 done
 
 if (( $(rg -c 'runtimePublicationGate\.admitStructuralBrowserEvent\(\)' \
-      Sumi/Managers/ExtensionManager/SumiExtensionsModule.swift || true) < 2 )); then
+      "$extension_runtime_surface" || true) < 2 )); then
   printf 'error: normal open/close routes bypass structural reload admission\n' >&2
   status=1
 fi
 if ! rg -Fq 'runtimePublicationGate.exactTabCloseDisposition()' \
-    Sumi/Managers/ExtensionManager/SumiExtensionsModule.swift; then
+    "$extension_runtime_surface"; then
   printf 'error: normal Tab close bypasses exact reload disposition\n' >&2
+  status=1
+fi
+
+for module_role in \
+  "$extension_module_demand|final class SumiExtensionModuleDemand" \
+  "$extension_manager_lifetime|final class SumiExtensionManagerLifetime" \
+  "$extension_runtime_surface|final class SumiExtensionRuntimeSurface" \
+  "$extension_settings_surface|final class SumiExtensionSettingsCatalogSurface" \
+  "$extension_toolbar_surface|final class SumiExtensionToolbarActionSurface" \
+  "$extension_content_blocking_surface|final class SumiExtensionContentBlockingSurface" \
+  "$extension_diagnostics_surface|final class SumiExtensionCompatibilityDiagnosticsSurface"; do
+  module_role_file="${module_role%%|*}"
+  module_role_declaration="${module_role#*|}"
+  if ! rg -Fq "$module_role_declaration" "$module_role_file"; then
+    printf 'error: SumiExtensionsModule role boundary is missing: %s\n' \
+      "$module_role_declaration" >&2
+    status=1
+  fi
+done
+
+module_owned_runtime_hits="$(
+  rg -n 'private (var|let) (cachedManager|runtime|runtimeProvider|pendingActionAnchors)' \
+    "$extensions_module" || true
+)"
+fail_matches \
+  "SumiExtensionsModule regained mutable manager/runtime ownership" \
+  "$module_owned_runtime_hits"
+
+for lazy_content_boundary in \
+  'private var owner: SumiSafariContentBlockerAPIOwner?' \
+  'func clearRuntimeIfMaterialized()' \
+  'private func resolvedOwner() -> SumiSafariContentBlockerAPIOwner'; do
+  if ! rg -Fq "$lazy_content_boundary" "$extension_content_blocking_surface"; then
+    printf 'error: disabled extension module regained eager content-blocker work: %s\n' \
+      "$lazy_content_boundary" >&2
+    status=1
+  fi
+done
+
+module_manager_consumer_hits="$(
+  rg -n '\.(managerIfEnabled|managerIfLoadedAndEnabled)\(' App Sumi -g '*.swift' \
+    | rg -v 'SumiExtensionsModule\.swift|SumiExtension(ManagerLifetime|RuntimeSurface|SettingsCatalogSurface|ToolbarActionSurface|CompatibilityDiagnosticsSurface)\.swift' \
+    || true
+)"
+fail_matches \
+  "production consumer regained ExtensionManager through SumiExtensionsModule" \
+  "$module_manager_consumer_hits"
+
+diagnostics_process_store_hits="$(
+  rg -n 'SafariExtensionImportStore\.process' "$extension_diagnostics_surface" || true
+)"
+fail_matches \
+  "extension diagnostics bypassed the injected catalog authority" \
+  "$diagnostics_process_store_hits"
+if ! rg -Fq 'settingsCatalog.importRecordsForDiagnostics()' \
+    "$extension_diagnostics_surface"; then
+  printf 'error: extension diagnostics lost the injected catalog authority\n' >&2
   status=1
 fi
 if ! rg -Fq 'guard case .active = phase else { return }' \

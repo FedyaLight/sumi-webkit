@@ -31,7 +31,7 @@ final class ExtensionSettingsRuntimeGateTests: XCTestCase {
 
         XCTAssertTrue(module.isEnabled)
         XCTAssertEqual(readiness, .unavailable)
-        XCTAssertNil(module.managerIfEnabled())
+        XCTAssertNil(module.managerForTesting())
         XCTAssertEqual(probe.sessionConstructionCount, 0)
         XCTAssertEqual(probe.sessionBeginCount, 0)
         XCTAssertEqual(probe.scanCallCount, 0)

@@ -1055,7 +1055,7 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
         extensionsModule.attach(runtime: BrowserExtensionsModuleRuntimeFactory.runtime(for: browserManager))
         extensionManager.attach(browserManager: browserManager)
         await browserManager.tabManager.storeRestore.startupRestoreTask?.value
-        XCTAssertIdentical(extensionsModule.managerIfEnabled(), extensionManager)
+        XCTAssertIdentical(extensionsModule.managerForTesting(), extensionManager)
         if allowNormalTabRuntimeWithoutInstalledExtensions {
             extensionManager.runtimeDemand
                 .recordRuntimeDemandWithoutEnabledExtensions()

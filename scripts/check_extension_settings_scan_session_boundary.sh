@@ -53,7 +53,7 @@ reject_pattern() {
   fi
 }
 
-require_pattern 'extensionsModule\.managerIfEnabled\(\) != nil' "$pane" \
+require_pattern 'extensionsModule\.extensionRuntimeIsAvailable\(\)' "$pane" \
   "extension settings must preserve fail-closed runtime readiness"
 require_pattern 'struct ExtensionSettingsRuntimeGate' "$pane" \
   "extension settings must gate enabled-content construction on readiness"

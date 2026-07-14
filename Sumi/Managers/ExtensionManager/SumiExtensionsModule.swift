@@ -1,83 +1,24 @@
-import AppKit
 import Foundation
 import SwiftData
-import WebKit
 
-@MainActor
-struct SumiExtensionsModuleRuntime {
-    typealias CurrentProfileProvider = @MainActor () -> Profile?
-    typealias ManagerAttacher = @MainActor (_ manager: ExtensionManager) -> Void
-    typealias LiveTabsProvider = @MainActor () -> [Tab]
-    typealias StructuralRevisionInvalidator = @MainActor () -> Void
-
-    let currentProfile: CurrentProfileProvider
-    let attachManager: ManagerAttacher
-    let liveTabs: LiveTabsProvider
-    let invalidateTabStructuralRevision: StructuralRevisionInvalidator
-
-    static let inactive = SumiExtensionsModuleRuntime(
-        currentProfile: { nil },
-        attachManager: { _ in /* No-op. */ },
-        liveTabs: { [] },
-        invalidateTabStructuralRevision: { /* No-op. */ }
-    )
-}
-
-struct SafariWebExtensionSyncResult {
-    let addedExtensions: [InstalledExtension]
-    let failedMessages: [String]
-    let skippedUnreadableCount: Int
-}
-
+/// Public extension-subsystem boundary.
+///
+/// Mutable runtime ownership lives in role-exact collaborators. This type
+/// composes those roles and preserves the product-facing API without exposing
+/// `ExtensionManager` as a service locator.
 @MainActor
 final class SumiExtensionsModule {
-    private let moduleRegistry: SumiModuleRegistry
-    private let context: ModelContext?
-    private let browserConfiguration: BrowserConfiguration
-    private let initialProfileProvider: @MainActor () -> Profile?
-    let safariExtensionImportStore: any SafariExtensionImportStoring & SafariExtensionImportRecordProviding
-    private let managerFactory: @MainActor (
-        ModelContext,
-        Profile?,
-        BrowserConfiguration,
-        SumiModuleRegistry
-    ) -> ExtensionManager
+    private let demand: SumiExtensionModuleDemand
+    private let managerLifetime: SumiExtensionManagerLifetime
+    let settingsCatalog: SumiExtensionSettingsCatalogSurface
+    let contentBlocking: SumiExtensionContentBlockingSurface
+    let toolbarActions: SumiExtensionToolbarActionSurface
+    let runtimeSurface: SumiExtensionRuntimeSurface
+    let compatibilityDiagnostics: SumiExtensionCompatibilityDiagnosticsSurface
 
-    let surfaceStore: BrowserExtensionSurfaceStore
-
-    private var cachedManager: ExtensionManager?
-    private var pendingActionAnchors: [String: [WeakAnchor]] = [:]
-    private var runtime = SumiExtensionsModuleRuntime.inactive
-    private var runtimeProvider: (@MainActor () -> SumiExtensionsModuleRuntime)?
-    private(set) var hasAttachedRuntime = false
-
-    // Phase 5B collaborators — module remains the public façade.
-    private lazy var contentBlockerAPI: SumiSafariContentBlockerAPIOwner = {
-        SumiSafariContentBlockerAPIOwner(
-            context: context,
-            defaults: moduleRegistry.userDefaults,
-            isModuleEnabled: { [weak self] in self?.isEnabled ?? false },
-            liveTabs: { [weak self] in self?.runtime.liveTabs() ?? [] }
-        )
-    }()
-
-    private lazy var safariWebExtensionImport: SumiSafariWebExtensionImportOwner = {
-        SumiSafariWebExtensionImportOwner(
-            importStore: safariExtensionImportStore,
-            managerIfEnabled: { [weak self] in self?.managerIfEnabled() }
-        )
-    }()
-
-    private lazy var toolbarSiteAccess: SumiExtensionToolbarSiteAccessOwner = {
-        SumiExtensionToolbarSiteAccessOwner(
-            managerIfLoadedAndEnabled: { [weak self] in self?.managerIfLoadedAndEnabled() },
-            managerIfEnabled: { [weak self] in self?.managerIfEnabled() },
-            fallbackProfileId: { [weak self] in self?.runtime.currentProfile()?.id },
-            invalidateTabStructuralRevision: { [weak self] in
-                self?.runtime.invalidateTabStructuralRevision()
-            }
-        )
-    }()
+    var surfaceStore: BrowserExtensionSurfaceStore {
+        managerLifetime.surfaceStore
+    }
 
     init(
         moduleRegistry: SumiModuleRegistry = .unavailable(),
@@ -100,827 +41,77 @@ final class SumiExtensionsModule {
         },
         surfaceStore: BrowserExtensionSurfaceStore? = nil
     ) {
-        self.moduleRegistry = moduleRegistry
-        self.context = context
-        self.browserConfiguration = browserConfiguration ?? .shared
-        self.initialProfileProvider = initialProfileProvider
-        self.safariExtensionImportStore = safariExtensionImportStore
-        self.managerFactory = managerFactory
-        self.surfaceStore = surfaceStore ?? BrowserExtensionSurfaceStore(
+        let resolvedSurfaceStore = surfaceStore ?? BrowserExtensionSurfaceStore(
             extensionManager: nil
+        )
+        let managerLifetime = SumiExtensionManagerLifetime(
+            moduleRegistry: moduleRegistry,
+            context: context,
+            browserConfiguration: browserConfiguration ?? .shared,
+            initialProfileProvider: initialProfileProvider,
+            managerFactory: managerFactory,
+            surfaceStore: resolvedSurfaceStore
+        )
+        let contentBlocking = SumiExtensionContentBlockingSurface(
+            context: context,
+            moduleRegistry: moduleRegistry,
+            lifetime: managerLifetime
+        )
+        let toolbarActions = SumiExtensionToolbarActionSurface(
+            lifetime: managerLifetime
+        )
+        let settingsCatalog = SumiExtensionSettingsCatalogSurface(
+            lifetime: managerLifetime,
+            importStore: safariExtensionImportStore
+        )
+
+        self.managerLifetime = managerLifetime
+        self.contentBlocking = contentBlocking
+        self.toolbarActions = toolbarActions
+        self.settingsCatalog = settingsCatalog
+        runtimeSurface = SumiExtensionRuntimeSurface(lifetime: managerLifetime)
+        compatibilityDiagnostics = SumiExtensionCompatibilityDiagnosticsSurface(
+            lifetime: managerLifetime,
+            settingsCatalog: settingsCatalog,
+            contentBlocking: contentBlocking
+        )
+        demand = SumiExtensionModuleDemand(
+            lifetime: managerLifetime,
+            contentBlocking: contentBlocking,
+            toolbarActions: toolbarActions
         )
     }
 
-    var isEnabled: Bool {
-        moduleRegistry.isEnabled(.extensions)
-    }
+    var isEnabled: Bool { demand.isEnabled }
+    var hasLoadedRuntime: Bool { demand.hasLoadedRuntime }
+    var hasAttachedRuntime: Bool { managerLifetime.hasAttachedRuntime }
 
-    var hasLoadedRuntime: Bool {
-        cachedManager != nil
-    }
-
-    /// Stores a factory used when the module is enabled after BrowserManager wiring.
-    func bindRuntimeProvider(_ provider: @escaping @MainActor () -> SumiExtensionsModuleRuntime) {
-        runtimeProvider = provider
+    func bindRuntimeProvider(
+        _ provider: @escaping @MainActor () -> SumiExtensionsModuleRuntime
+    ) {
+        demand.bindRuntimeProvider(provider)
     }
 
     func attach(runtime: SumiExtensionsModuleRuntime) {
-        self.runtime = runtime
-        hasAttachedRuntime = true
-        if let cachedManager {
-            runtime.attachManager(cachedManager)
-        }
-        ensureActionMetadataLoadedIfNeeded()
+        demand.attach(runtime: runtime)
     }
 
     func setEnabled(_ isEnabled: Bool) {
-        let wasEnabled = self.isEnabled
-        moduleRegistry.setEnabled(isEnabled, for: .extensions)
-        if isEnabled == false {
-            if wasEnabled {
-                // The desired policy already reflects the disabled module, but
-                // live-tab discovery still needs the attached browser runtime.
-                // Mark reloads before tearing that runtime down.
-                contentBlockerAPI.markReloadRequiredForLiveTabs()
-            }
-            tearDownLoadedRuntime(reason: "SumiExtensionsModule.setEnabled(false)")
-            contentBlockerAPI.clearRuntime()
-            pendingActionAnchors.removeAll()
-            clearAttachedRuntime()
-        } else if wasEnabled == false {
-            // Bind runtime only; do not eagerly load ExtensionManager / action
-            // metadata — that stays on first real use (managerIfEnabled paths).
-            attachRuntimeFromProviderIfNeeded()
-            contentBlockerAPI.markReloadRequiredForLiveTabs()
-        }
+        demand.setEnabled(isEnabled)
     }
 
-    private func attachRuntimeFromProviderIfNeeded() {
-        guard hasAttachedRuntime == false, let runtimeProvider else { return }
-        runtime = runtimeProvider()
-        hasAttachedRuntime = true
-    }
-
-    private func clearAttachedRuntime() {
-        runtime = .inactive
-        hasAttachedRuntime = false
-    }
-
-    func managerIfLoadedAndEnabled() -> ExtensionManager? {
-        guard isEnabled else { return nil }
-        return cachedManager
-    }
-
-    /// Does not materialize the optional extension runtime solely for cleanup.
-    /// If it is already resident, every targeted profile context must leave
-    /// WebKit before the shared website data store is mutated.
     func quiesceForWebsiteDataMutation(profileIDs: Set<UUID>) -> Bool {
-        guard #available(macOS 15.5, *) else { return true }
-        guard let cachedManager else { return true }
-        return cachedManager.quiesceForWebsiteDataMutation(
-            profileIDs: profileIDs
-        )
-    }
-
-    func managerIfEnabled() -> ExtensionManager? {
-        guard isEnabled else { return nil }
-
-        if let cachedManager {
-            transferPendingActionAnchors(to: cachedManager)
-            surfaceStore.bind(cachedManager)
-            return cachedManager
-        }
-
-        guard let context else { return nil }
-
-        let manager = managerFactory(
-            context,
-            runtime.currentProfile() ?? initialProfileProvider(),
-            browserConfiguration,
-            moduleRegistry
-        )
-        cachedManager = manager
-        runtime.attachManager(manager)
-        transferPendingActionAnchors(to: manager)
-        surfaceStore.bind(manager)
-        return manager
-    }
-
-    @discardableResult
-    func ensureActionMetadataLoadedIfNeeded() -> Bool {
-        guard isEnabled, context != nil else { return false }
-
-        if cachedManager != nil {
-            return true
-        }
-
-        guard hasEnabledPersistedExtensions() else {
-            return false
-        }
-
-        return managerIfEnabled() != nil
-    }
-
-    func normalTabUserScripts() -> [SumiPageScript] {
-        managerIfNeededForNormalTabRuntime()?.normalTabUserScripts() ?? []
-    }
-
-    func prepareWebViewConfigForExtensionRuntime(
-        _ configuration: WKWebViewConfiguration,
-        profileId: UUID? = nil,
-        reason: String
-    ) {
-        managerIfNeededForNormalTabRuntime()?.prepareWebViewConfigForExtensionRuntime(
-            configuration,
-            profileId: profileId,
-            reason: reason
-        )
-    }
-
-    func prepareWebViewForExtensionRuntime(
-        _ webView: WKWebView,
-        currentURL: URL?,
-        reason: String
-    ) {
-        managerIfNeededForNormalTabRuntime()?.prepareWebViewForExtensionRuntime(
-            webView,
-            currentURL: currentURL,
-            reason: reason
-        )
-    }
-
-    @discardableResult
-    func prepareExtensionPageNavigationIfNeeded(
-        _ tab: Tab,
-        targetURL: URL,
-        reason: String
-    ) -> TabWebViewReplacementOutcome {
-        managerIfNeededForNormalTabRuntime()?.prepareExtensionPageNavigation(
-            tab,
-            targetURL: targetURL,
-            reason: reason
-        ) ?? .notNeeded
-    }
-
-    func registerTabWithExtensionRuntimeIfLoaded(
-        _ tab: Tab,
-        reason: String
-    ) {
-        managerIfNeededForNormalTabRuntime()?.normalTabRegistration.register(
-            tab,
-            reason: reason
-        )
-    }
-
-    func reconcileExtensionRuntimeOnUserGestureIfNeeded(
-        _ tab: Tab,
-        reason: String
-    ) {
-        managerIfLoadedAndEnabled()?.tabLifecycleRebind
-            .reconcileOnUserGestureIfNeeded(tab, reason: reason)
-    }
-
-    func publishWindowIfLoaded(
-        _ windowState: BrowserWindowState
-    ) -> BrowserWindowExtensionPublicationOutcome {
-        guard let manager = managerIfLoadedAndEnabled(),
-              manager.extensionsLoaded
-        else {
-            return .notParticipating
-        }
-        guard manager.runtimePublicationGate.admitStructuralBrowserEvent(),
-              let publication = manager.normalWindowLifecycle
-              .publication(for: windowState)
-        else {
-            return .suppressed
-        }
-        return .published(publication)
-    }
-
-    @discardableResult
-    func notifyWindowOpenedIfLoaded(
-        _ windowState: BrowserWindowState
-    ) -> Bool {
-        if case .published = publishWindowIfLoaded(windowState) {
-            return true
-        }
-        return false
-    }
-
-    func notifyWindowClosedIfLoaded(_ windowState: BrowserWindowState) {
-        guard let manager = managerIfLoadedAndEnabled(),
-              manager.runtimePublicationGate.admitStructuralBrowserEvent()
-        else {
-            return
-        }
-        manager.normalWindowLifecycle.closed(windowState)
-    }
-
-    func notifyWindowFocusedIfLoaded(_ windowState: BrowserWindowState) {
-        managerIfLoadedAndEnabled()?.focusPublishedWindow(windowState)
-    }
-
-    func switchProfileIfLoaded(_ profile: Profile) {
-        managerIfLoadedAndEnabled()?.profileRuntimeTransition.switchProfile(
-            profileID: profile.id
-        )
-    }
-
-    func notifyTabActivatedIfLoaded(newTab: Tab, previous: Tab?) {
-        guard let manager = managerIfLoadedAndEnabled(),
-              manager.runtimePublicationGate.acceptsBrowserEvents
-        else {
-            return
-        }
-        manager.normalTabActivation.activate(newTab, previous: previous)
-    }
-
-    func notifyTabClosedIfLoaded(_ tab: Tab) {
-        guard let manager = managerIfLoadedAndEnabled() else { return }
-        switch manager.runtimePublicationGate.exactTabCloseDisposition() {
-        case .perform:
-            manager.normalTabClosure.close(tab)
-        case .deferUntilReloadHandoff:
-            _ = manager.runtimePublicationReconciler.deferTabClose(tab)
-        case .reject:
-            break
-        }
-    }
-
-    func notifyTabPropertiesChangedIfLoaded(
-        _ tab: Tab,
-        properties: WKWebExtension.TabChangedProperties
-    ) {
-        managerIfLoadedAndEnabled()?.tabPropertyPublisher.publishChange(
-            for: tab,
-            requested: properties
-        )
-    }
-
-    /// Safari parity: dispatches a keyboard event to loaded extension
-    /// commands after Sumi's own shortcuts declined it. Returns true when an
-    /// extension command consumed the event.
-    func performExtensionKeyboardCommandIfLoaded(for event: NSEvent) -> Bool {
-        managerIfLoadedAndEnabled()?.performExtensionKeyboardCommand(for: event) ?? false
-    }
-
-    /// Safari parity: extension-provided context-menu items for a page tab.
-    /// Fetch immediately before showing the menu; items must not be cached.
-    func pageContextMenuItemsIfLoaded(for tab: Tab) -> [NSMenuItem] {
-        managerIfLoadedAndEnabled()?.pageContextMenuItems(for: tab) ?? []
-    }
-
-    func markTabEligibleAfterCommittedNavigationIfLoaded(
-        _ tab: Tab,
-        reason: String
-    ) {
-        managerIfLoadedAndEnabled()?.normalTabRegistration
-            .markEligibleAfterCommittedNavigation(tab, reason: reason)
-    }
-
-    func prepareExtensionRuntimeBeforeCommittedMainFrameNavigationIfLoaded(
-        _ tab: Tab,
-        destinationURL: URL,
-        reason: String
-    ) {
-        managerIfLoadedAndEnabled()?.tabLifecycleRebind
-            .prepareBeforeCommittedMainFrameNavigation(
-                tab,
-                destinationURL: destinationURL,
-                reason: reason
-            )
-    }
-
-    func ensureInitialExtensionContextsIfNeeded(profileId: UUID) async {
-        guard isEnabled else { return }
-        await managerIfNeededForNormalTabRuntime()?
-            .ensureInitialExtensionContextsLoaded(for: profileId)
-    }
-
-    func needsInitialDocumentExtensionContextLoadIfNeeded(profileId: UUID) -> Bool {
-        guard isEnabled else { return false }
-        return managerIfNeededForNormalTabRuntime()?
-            .profileNeedsInitialDocumentExtensionContextLoad(profileId: profileId)
-            ?? false
-    }
-
-    func consumeRecentlyOpenedExtensionTabRequestIfLoaded(for url: URL) -> Bool {
-        managerIfLoadedAndEnabled()?.recentExtensionTabRequests.consume(url)
-            ?? false
-    }
-
-    func registerExtensionCreatedTabWithExtensionRuntimeIfLoaded(
-        _ tab: Tab,
-        reason: String
-    ) {
-        guard let manager = managerIfNeededForNormalTabRuntime() else { return }
-        manager.extensionCreatedTabRegistrar.register(
-            tab,
-            runtime: manager.runtime,
-            reason: reason
-        )
-    }
-
-    /// Silent half of initial-Tab/window publication. This deliberately uses
-    /// only an already loaded, enabled runtime; opening a browser window must
-    /// never boot the optional extension subsystem.
-    func prepareInitialTabExtensionPublication(
-        window: BrowserWindowState,
-        tab: Tab,
-        webView: FocusableWKWebView,
-        reason: String
-    ) -> InitialTabExtensionPreparation {
-        guard window.isIncognito == false, tab.isEphemeral == false else {
-            return .privateWindow
-        }
-        guard let manager = managerIfLoadedAndEnabled(),
-              manager.extensionsLoaded
-        else {
-            return .notParticipating
-        }
-        guard let windowProfileID = manager.resolvedProfileId(for: window),
-              let tabProfileID = manager.resolvedProfileId(for: tab)
-        else {
-            return .rejected
-        }
-        guard windowProfileID == tabProfileID
-        else {
-            return .suppressed
-        }
-        guard manager.existingTabControllers
-            .existingController(for: tab) != nil else {
-            return .notParticipating
-        }
-        guard manager.profileNeedsInitialDocumentExtensionContextLoad(
-            profileId: tabProfileID
-        ) == false else {
-            return .suppressed
-        }
-        guard let windowRegistry = manager.extensionWindowQuery,
-              let receipt = manager.initialTabPublicationPreparer.prepare(
-            window: window,
-            tab: tab,
-            webView: webView,
-            runtime: manager.runtime,
-            windowRegistry: windowRegistry,
-            reason: reason
-        ) else {
-            return .rejected
-        }
-        return .prepared(receipt)
-    }
-
-    func enableExtension(_ extensionId: String) async throws -> InstalledExtension {
-        guard let manager = managerIfEnabled() else {
-            throw ExtensionError.unsupportedOS
-        }
-        let enabled = try await manager.installedExtensionLifecycle.enable(extensionId)
-        _ = safariExtensionCompatibilityReport()
-        return enabled
-    }
-
-    func disableExtension(_ extensionId: String) async throws {
-        guard let manager = managerIfEnabled() else { return }
-        try await manager.installedExtensionLifecycle.disable(extensionId)
-    }
-
-    func uninstallExtension(_ extensionId: String) async throws {
-        guard let manager = managerIfEnabled() else { return }
-        safariWebExtensionImport.removeImportedRecord(
-            forInstalledExtensionId: extensionId
-        )
-        try await manager.installedExtensionLifecycle.uninstall(extensionId)
-    }
-
-    func enableSafariAppExtension(
-        from candidate: DiscoveredSafariExtensionCandidate
-    ) async throws -> InstalledExtension {
-        try await safariWebExtensionImport.enableAppExtension(from: candidate)
-    }
-
-    func syncDiscoveredSafariWebExtensions(
-        _ candidates: [DiscoveredSafariExtensionCandidate]
-    ) async -> SafariWebExtensionSyncResult {
-        await safariWebExtensionImport.syncDiscoveredWebExtensions(candidates)
-    }
-
-    func refreshDiscoveredSafariWebExtensionCandidates(
-        _ candidates: [DiscoveredSafariExtensionCandidate]
-    ) {
-        safariWebExtensionImport.refreshDiscoveredCandidates(candidates)
-    }
-
-    func safariExtensionImportRecordsForDiagnostics() -> any SafariExtensionImportRecordProviding {
-        safariWebExtensionImport.recordsForDiagnostics()
-    }
-
-    func installedSafariContentBlockers() -> [InstalledSafariContentBlockerRecord] {
-        contentBlockerAPI.installedContentBlockers()
-    }
-
-    func safariContentBlockerRecord(
-        forBundleIdentifier bundleIdentifier: String
-    ) -> InstalledSafariContentBlockerRecord? {
-        contentBlockerAPI.contentBlockerRecord(
-            forBundleIdentifier: bundleIdentifier
-        )
-    }
-
-    func enableSafariContentBlocker(
-        from candidate: DiscoveredSafariExtensionCandidate
-    ) async throws -> InstalledSafariContentBlockerRecord {
-        try await contentBlockerAPI.enableContentBlocker(from: candidate)
-    }
-
-    func setSafariContentBlockerEnabled(
-        _ enabled: Bool,
-        bundleIdentifier: String
-    ) async throws -> InstalledSafariContentBlockerRecord? {
-        try await contentBlockerAPI.setContentBlockerEnabled(
-            enabled,
-            bundleIdentifier: bundleIdentifier
-        )
-    }
-
-    func enabledSafariContentBlockingServices(
-        for url: URL?,
-        profileId: UUID?
-    ) -> [SumiContentBlockingService] {
-        contentBlockerAPI.enabledContentBlockingServices(
-            for: url,
-            profileId: profileId
-        )
-    }
-
-    func safariContentBlockerAttachmentState(
-        for url: URL?
-    ) -> SumiSafariContentBlockerAttachmentState {
-        contentBlockerAPI.attachmentState(for: url)
-    }
-
-    func safariContentBlockerSiteState(
-        for url: URL?
-    ) -> SumiSafariContentBlockerSiteState {
-        contentBlockerAPI.siteState(for: url)
-    }
-
-    func safariContentBlockerAttachedRuleListIdentifiers() -> [String] {
-        contentBlockerAPI.attachedRuleListIdentifiers()
-    }
-
-    func setSafariContentBlockerSiteOverride(
-        _ override: SumiSafariContentBlockerSiteOverride,
-        for url: URL?
-    ) {
-        contentBlockerAPI.setSiteOverride(override, for: url)
-    }
-
-    func orderedPinnedToolbarSlots(
-        enabledExtensions: [InstalledExtension]
-    ) -> [PinnedToolbarSlot] {
-        orderedPinnedToolbarSlots(
-            enabledExtensions: enabledExtensions,
-            profileId: nil
-        )
-    }
-
-    func orderedPinnedToolbarSlots(
-        enabledExtensions: [InstalledExtension],
-        profileId: UUID?
-    ) -> [PinnedToolbarSlot] {
-        toolbarSiteAccess.orderedPinnedToolbarSlots(
-            enabledExtensions: enabledExtensions,
-            profileId: profileId
-        )
-    }
-
-    func isPinnedToToolbar(_ extensionId: String) -> Bool {
-        toolbarSiteAccess.isPinnedToToolbar(extensionId)
-    }
-
-    func pinToToolbar(_ extensionId: String) {
-        toolbarSiteAccess.pinToToolbar(extensionId)
-    }
-
-    func unpinFromToolbar(_ extensionId: String) {
-        toolbarSiteAccess.unpinFromToolbar(extensionId)
-    }
-
-    func movePinnedToolbarSlot(id: String, to targetIndex: Int) {
-        toolbarSiteAccess.movePinnedToolbarSlot(id: id, to: targetIndex)
-    }
-
-    func orderedUnpinnedExtensionIDs(
-        candidateIDs: [String],
-        profileId: UUID?
-    ) -> [String] {
-        toolbarSiteAccess.orderedUnpinnedExtensionIDs(
-            candidateIDs: candidateIDs,
-            profileId: profileId
-        )
-    }
-
-    func moveUnpinnedExtension(
-        id: String,
-        to targetIndex: Int,
-        within currentOrder: [String]
-    ) {
-        toolbarSiteAccess.moveUnpinnedExtension(
-            id: id,
-            to: targetIndex,
-            within: currentOrder
-        )
-    }
-
-    func siteAccessPolicy(
-        extensionId: String,
-        profileId: UUID? = nil
-    ) -> SafariExtensionSiteAccessPolicy? {
-        toolbarSiteAccess.siteAccessPolicy(
-            extensionId: extensionId,
-            profileId: profileId
-        )
-    }
-
-    func setDefaultSiteAccess(
-        _ access: SafariExtensionSiteAccessLevel,
-        extensionId: String,
-        profileId: UUID? = nil
-    ) {
-        toolbarSiteAccess.setDefaultSiteAccess(
-            access,
-            extensionId: extensionId,
-            profileId: profileId
-        )
-    }
-
-    func setPrivateBrowsingAccess(
-        _ isAllowed: Bool,
-        extensionId: String,
-        profileId: UUID? = nil
-    ) {
-        toolbarSiteAccess.setPrivateBrowsingAccess(
-            isAllowed,
-            extensionId: extensionId,
-            profileId: profileId
-        )
-    }
-
-    func setConfiguredSiteAccess(
-        _ access: SafariExtensionSiteAccessLevel,
-        extensionId: String,
-        profileId: UUID? = nil,
-        matchPatternString: String
-    ) {
-        toolbarSiteAccess.setConfiguredSiteAccess(
-            access,
-            extensionId: extensionId,
-            profileId: profileId,
-            matchPatternString: matchPatternString
-        )
-    }
-
-    func getExtensionContext(
-        for extensionId: String
-    ) -> WKWebExtensionContext? {
-        managerIfLoadedAndEnabled()?.getExtensionContext(for: extensionId)
-    }
-
-    func openOptionsPage(
-        extensionId: String,
-        profileId: UUID? = nil
-    ) async {
-        guard let manager = managerIfEnabled() else { return }
-        let resolvedProfileId =
-            profileId
-            ?? manager.profileRuntime.currentProfileId
-            ?? runtime.currentProfile()?.id
-        guard let resolvedProfileId else {
-            return
-        }
-        let context: WKWebExtensionContext?
-        do {
-            context = try await manager.ensureExtensionLoaded(
-                extensionId: extensionId,
-                profileId: resolvedProfileId
-            )
-        } catch {
-            RuntimeDiagnostics.debug(category: "Extensions") {
-                "Unable to load extension context for options page \(extensionId): \(error.localizedDescription)"
-            }
-            return
-        }
-        guard let context else {
-            RuntimeDiagnostics.debug(category: "Extensions") {
-                "Extension context was unavailable for options page \(extensionId)"
-            }
-            return
-        }
-
-        await withCheckedContinuation { continuation in
-            manager.optionsWindows.presentOptionsPageWindow(
-                for: context,
-                manager: manager
-            ) { error in
-                if let error {
-                    RuntimeDiagnostics.debug(category: "Extensions") {
-                        "Unable to open extension options for \(extensionId): \(error.localizedDescription)"
-                    }
-                }
-                continuation.resume()
-            }
-        }
-    }
-
-    func openActionPopupFromURLHub(
-        extensionId: String,
-        currentTab: Tab?,
-        anchorSessionToken: UUID
-    ) async -> BrowserExtensionActionPopupRequestResult {
-        guard isEnabled else {
-            return .blocked(
-                .moduleDisabled,
-                message: "The Extensions module is disabled."
-            )
-        }
-        guard let manager = managerIfEnabled() else {
-            return .blocked(
-                .runtimeUnavailable,
-                message: "Sumi could not create the local extension manager for this action popup."
-            )
-        }
-        transferPendingActionAnchors(to: manager)
-        return await manager.extensionActionInvocation.openPopup(
-            extensionID: extensionId,
-            currentTab: currentTab,
-            popupTargetRequest: .explicitAnchor(anchorSessionToken)
-        )
-    }
-
-    func stableAdapter(for tab: Tab) -> ExtensionTabAdapter? {
-        managerIfLoadedAndEnabled()?.adapterCatalog.stableAdapter(for: tab)
-    }
-
-    func setActionAnchorIfLoaded(for extensionId: String, anchorView: NSView) {
-        storePendingActionAnchor(for: extensionId, anchorView: anchorView)
-        managerIfLoadedAndEnabled()?.actionAnchorStore.setAnchor(
-            for: extensionId,
-            anchorView: anchorView
-        )
-    }
-
-    @discardableResult
-    func captureActionPopupAnchor(
-        extensionId: String,
-        windowId: UUID,
-        profileId: UUID?,
-        tab: Tab? = nil
-    ) -> UUID? {
-        managerIfEnabled()?.actionPopupAnchorResolver.captureActionPopupAnchor(
-            extensionId: extensionId,
-            windowId: windowId,
-            profileId: profileId,
-            tab: tab
-        )
-    }
-
-    func cancelNativeMessagingSessionsIfLoaded(reason: String) {
-        guard let cachedManager else { return }
-        cachedManager.runtimeDiagnostics.trace(
-            "nativeMessagingCancelSessions reason=\(reason) "
-                + "count=\(cachedManager.nativeMessagingPortRegistry.count)"
-        )
-        cachedManager.nativeMessagingPortRegistry.disconnectAll()
-        cachedManager.loadedNativeMessagingRelayOwner?.loadedRelay?
-            .clearAllLoopGuardState()
-    }
-
-    func closeAllOptionsWindowsIfLoaded() {
-        cachedManager?.optionsWindows.closeAllWindows()
-    }
-
-    private func storePendingActionAnchor(
-        for extensionId: String,
-        anchorView: NSView
-    ) {
-        var anchors = pendingActionAnchors[extensionId] ?? []
-        anchors.removeAll { $0.view == nil || $0.view === anchorView }
-        anchors.append(WeakAnchor(view: anchorView, window: anchorView.window))
-        pendingActionAnchors[extensionId] = Array(anchors.suffix(8))
-    }
-
-    private func transferPendingActionAnchors(to manager: ExtensionManager) {
-        for (extensionId, anchors) in pendingActionAnchors {
-            for anchor in anchors {
-                guard let view = anchor.view else { continue }
-                manager.actionAnchorStore.setAnchor(for: extensionId, anchorView: view)
-            }
-        }
-    }
-
-    /// Boots the profile-scoped `WKWebExtensionController` for normal-tab WebViews when
-    /// persisted extensions are enabled. Does not require extension contexts to be loaded.
-    private func managerIfNeededForNormalTabRuntime() -> ExtensionManager? {
-        guard isEnabled else { return nil }
-        if let cachedManager {
-            let hasRuntimeDemand =
-                cachedManager.installedExtensionCollection.records.contains(
-                    where: \.isEnabled
-                )
-                || cachedManager.runtimeDemand.admitsRuntime(
-                    hasEnabledExtensions: false,
-                    allowWithoutEnabledExtensions: false
-                )
-            return hasRuntimeDemand ? cachedManager : nil
-        }
-        guard hasEnabledPersistedExtensions() else { return nil }
-        return managerIfEnabled()
-    }
-
-    private func hasEnabledPersistedExtensions() -> Bool {
-        guard let context else { return false }
-        // Runs on the hot normal-tab WebView provisioning path (eager extension-controller
-        // provisioning), so push the `isEnabled` filter into the store and count rather than
-        // materializing every ExtensionEntity and scanning in memory.
-        let descriptor = FetchDescriptor<ExtensionEntity>(
-            predicate: #Predicate { $0.isEnabled }
-        )
-        do {
-            return try context.fetchCount(descriptor) > 0
-        } catch {
-            RuntimeDiagnostics.debug(category: "Extensions") {
-                "Could not count enabled persisted extensions: \(error.localizedDescription)"
-            }
-            return false
-        }
+        demand.quiesceForWebsiteDataMutation(profileIDs: profileIDs)
     }
 
     #if DEBUG
-        func drainSafariContentBlockerRuntimeForTests(cancel: Bool = false) async {
-            await contentBlockerAPI.drainRuntimeForTests(cancel: cancel)
-        }
-    #endif
-
-    private func tearDownLoadedRuntime(reason: String) {
-        guard let cachedManager else {
-            surfaceStore.bind(nil)
-            return
-        }
-
-        let result = cachedManager.shutDownExtensionRuntime(reason: reason)
-        surfaceStore.bind(nil)
-        if result.completionStatus == .mutationInProgress {
-            scheduleRuntimeTeardownRetry(
-                manager: cachedManager,
-                reason: reason
-            )
-            return
-        }
-        guard result.completed else { return }
-        _ = cachedManager.executeExtensionRuntimeRebuildPlan(
-            result.tabRebuildPlan,
-            reason: reason
-        )
-        self.cachedManager = nil
-    }
-
-    private func scheduleRuntimeTeardownRetry(
-        manager: ExtensionManager,
-        reason: String
-    ) {
-        manager.runtimeMutationRegistry.runWhenTerminalAdmissionAvailable {
-            [weak self, weak manager] in
-            Task { @MainActor [weak self, weak manager] in
-                guard let self, let manager,
-                      self.isEnabled == false,
-                      self.cachedManager === manager
-                else {
-                    return
-                }
-                self.tearDownLoadedRuntime(reason: "\(reason).deferred")
+        /// Low-level runtime tests may inspect the injected manager. Product
+        /// consumers must use a role-exact module surface instead.
+        func managerForTesting(materializeIfNeeded: Bool = true) -> ExtensionManager? {
+            if materializeIfNeeded {
+                return managerLifetime.managerIfEnabled()
             }
+            return managerLifetime.loadedManagerIfEnabled()
         }
-    }
-
-    #if DEBUG
-    /// Prints the acceptance matrix to stdout (Extensions menu, DEBUG builds).
-    func printSafariExtensionAcceptanceCheckToConsole() {
-        guard isEnabled else {
-            print("SafariExtensionAcceptanceMatrix: skipped — Extensions module is disabled")
-            return
-        }
-
-        let matrix = safariExtensionAcceptanceMatrix()
-        let json: String
-        do {
-            json = try SafariExtensionDiagnosticJSON.prettyPrintedString(matrix)
-        } catch {
-            print("SafariExtensionAcceptanceMatrix: encode failed: \(error.localizedDescription)")
-            return
-        }
-
-        print("SafariExtensionAcceptanceMatrix:\n\(json)")
-        SafariExtensionAcceptanceMatrixBuilder.logIfDiagnosticsEnabled(matrix)
-    }
     #endif
 }

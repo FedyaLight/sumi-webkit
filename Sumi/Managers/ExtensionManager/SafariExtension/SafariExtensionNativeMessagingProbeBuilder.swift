@@ -13,7 +13,7 @@ enum SafariExtensionNativeMessagingProbeBuilder {
     static func build(
         targets: [SafariExtensionCompatibilityTargets.Target] = SafariExtensionCompatibilityTargets.all,
         discovered: [DiscoveredSafariExtensionCandidate],
-        importStore: SafariExtensionImportStore = .process,
+        importStore: any SafariExtensionImportRecordProviding = SafariExtensionImportStore.process,
         installedExtensions: [InstalledExtension] = [],
         extensionManager: ExtensionManager? = nil,
         extensionsModuleEnabled: Bool = true,
@@ -231,7 +231,7 @@ enum SafariExtensionNativeMessagingProbeBuilder {
     private static func previewResolverBucket(
         target: SafariExtensionCompatibilityTargets.Target,
         installed: InstalledExtension?,
-        importStore: SafariExtensionImportStore
+        importStore: any SafariExtensionImportRecordProviding
     ) -> SumiNativeMessagingResolverBucket? {
         guard let installed else { return nil }
         let resolution = SumiNativeMessagingAppResolver.resolve(
@@ -259,7 +259,7 @@ enum SafariExtensionNativeMessagingProbeBuilder {
     private static func previewAdapterStatus(
         target: SafariExtensionCompatibilityTargets.Target,
         installed: InstalledExtension?,
-        importStore: SafariExtensionImportStore,
+        importStore: any SafariExtensionImportRecordProviding,
         adapterRegistry: SumiNativeMessagingAdapterRegistry,
         extensionsModuleEnabled: Bool,
         compatibilityImported: Bool,
@@ -391,7 +391,7 @@ enum SafariExtensionNativeMessagingProbeBuilder {
     private static func previewHostBundleIdentifier(
         target: SafariExtensionCompatibilityTargets.Target,
         installed: InstalledExtension?,
-        importStore: SafariExtensionImportStore
+        importStore: any SafariExtensionImportRecordProviding
     ) -> String? {
         if let installed,
            let identity = SumiCompanionAppResolver.resolveIdentity(

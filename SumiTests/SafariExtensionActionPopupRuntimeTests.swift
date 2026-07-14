@@ -537,7 +537,7 @@ final class SafariExtensionActionPopupRuntimeTests: XCTestCase {
                 for: browserManager
             )
         )
-        XCTAssertIdentical(extensionsModule.managerIfEnabled(), manager)
+        XCTAssertIdentical(extensionsModule.managerForTesting(), manager)
         return AttachedBrowserFixture(
             manager: manager,
             browserManager: browserManager,
