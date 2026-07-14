@@ -1,29 +1,25 @@
 import Foundation
-import WebKit
 import SumiWebRuntime
+import WebKit
 
-@MainActor
-enum BrowserWebViewRuntimeFactory {
-    static func make(
-        for browserManager: BrowserManager
-    ) -> WebViewRuntimeGraph {
+extension BrowserManager {
+    func composeWebViewRuntime() -> WebViewRuntimeGraph {
         WebViewRuntimeGraph(
-            webViewSessions: browserManager.webViewSessions,
-            resolveRuntimeTab: runtimeTabResolver(for: browserManager),
-            resolveCollectionTab: { [weak browserManager] tabID in
-                browserManager?.tabManager.tabCollectionMembershipOwner.tab(for: tabID)
+            webViewSessions: webViewSessions,
+            resolveRuntimeTab: webViewRuntimeTabResolver(),
+            resolveCollectionTab: { [weak tabManager] tabID in
+                tabManager?.tabCollectionMembershipOwner.tab(for: tabID)
             },
-            windowServices: windowServices(for: browserManager),
-            deferredServices: deferredServices(for: browserManager),
-            visibleContext: visiblePreparationContext(for: browserManager),
-            initialDocumentContext: initialDocumentContext(for: browserManager)
+            windowServices: webViewWindowServices(),
+            deferredServices: deferredWebViewServices(),
+            visibleContext: visibleWebViewRuntimeContext(),
+            initialDocumentContext: initialDocumentWebViewRuntimeContext()
         )
     }
 
-    private static func runtimeTabResolver(
-        for browserManager: BrowserManager
-    ) -> WebViewRuntimeTabRegistry.RuntimeTabResolver {
-        { [weak browserManager] tabID in
+    private func webViewRuntimeTabResolver() -> WebViewRuntimeTabRegistry.RuntimeTabResolver {
+        let browserManager = self
+        return { [weak browserManager] tabID in
             guard let manager = browserManager else { return nil }
             if let tab = manager.tabManager.tabCollectionMembershipOwner
                 .tab(for: tabID) {
@@ -36,10 +32,9 @@ enum BrowserWebViewRuntimeFactory {
         }
     }
 
-    private static func windowServices(
-        for browserManager: BrowserManager
-    ) -> WebViewWindowServices {
-        WebViewWindowServices(
+    private func webViewWindowServices() -> WebViewWindowServices {
+        let browserManager = self
+        return WebViewWindowServices(
             liveWindowIDs: { [weak browserManager] in
                 guard let windowIDs = browserManager?.windowRegistry?.windows.keys
                 else { return [] }
@@ -55,7 +50,7 @@ enum BrowserWebViewRuntimeFactory {
                 return manager.shellRuntime.windowTabs.currentTab(for: window)?.id
             },
             selectTab: { [weak browserManager] tabId, windowId in
-                let manager = requireBrowserManager(
+                let manager = BrowserManager.requireBrowserManager(
                     browserManager,
                     operation: "select fullscreen owner tab"
                 )
@@ -65,7 +60,7 @@ enum BrowserWebViewRuntimeFactory {
                 manager.selectTab(tab, in: windowState)
             },
             refreshCompositor: { [weak browserManager] windowId in
-                let manager = requireBrowserManager(
+                let manager = BrowserManager.requireBrowserManager(
                     browserManager,
                     operation: "refresh compositor"
                 )
@@ -75,7 +70,7 @@ enum BrowserWebViewRuntimeFactory {
                 manager.shellRuntime.windowVisuals.refreshCompositor(for: windowState)
             },
             notifyTabActivatedIfCurrent: { [weak browserManager] tab, windowID in
-                let manager = requireBrowserManager(
+                let manager = BrowserManager.requireBrowserManager(
                     browserManager,
                     operation: "notify extension tab activation"
                 )
@@ -92,12 +87,11 @@ enum BrowserWebViewRuntimeFactory {
         )
     }
 
-    private static func deferredServices(
-        for browserManager: BrowserManager
-    ) -> DeferredWebViewServices {
-        DeferredWebViewServices(
+    private func deferredWebViewServices() -> DeferredWebViewServices {
+        let browserManager = self
+        return DeferredWebViewServices(
             handleWebKitClose: { [weak browserManager] webView in
-                requireBrowserManager(
+                BrowserManager.requireBrowserManager(
                     browserManager,
                     operation: "handle unprotected WebKit close"
                 ).webViewCloseRouter.handleNormalWebViewDidClose(webView)
@@ -107,7 +101,7 @@ enum BrowserWebViewRuntimeFactory {
                 tab,
                 _,
                 intent in
-                let manager = requireBrowserManager(
+                let manager = BrowserManager.requireBrowserManager(
                     browserManager,
                     operation: "execute deferred profile assignment"
                 )
@@ -120,7 +114,7 @@ enum BrowserWebViewRuntimeFactory {
             validateSpaceProfileAssignment: {
                 [weak browserManager]
                 intent in
-                requireBrowserManager(
+                BrowserManager.requireBrowserManager(
                     browserManager,
                     operation: "validate deferred space profile assignment"
                 ).tabManager.profileAssignments.spaces
@@ -129,7 +123,7 @@ enum BrowserWebViewRuntimeFactory {
             executeSpaceProfileAssignment: {
                 [weak browserManager]
                 intent in
-                requireBrowserManager(
+                BrowserManager.requireBrowserManager(
                     browserManager,
                     operation: "execute deferred space profile assignment"
                 ).tabManager.profileAssignments.spaces
@@ -138,10 +132,9 @@ enum BrowserWebViewRuntimeFactory {
         )
     }
 
-    private static func initialDocumentContext(
-        for browserManager: BrowserManager
-    ) -> InitialDocumentWebViewRuntimeContext {
-        InitialDocumentWebViewRuntimeContext(
+    private func initialDocumentWebViewRuntimeContext() -> InitialDocumentWebViewRuntimeContext {
+        let browserManager = self
+        return InitialDocumentWebViewRuntimeContext(
             needsInitialDocumentExtensionContextLoad: { [weak browserManager] profileId in
                 guard let browserManager else { return false }
                 return browserManager.optionalModules.extensions
@@ -161,18 +154,23 @@ enum BrowserWebViewRuntimeFactory {
         )
     }
 
-    private static func visiblePreparationContext(
-        for browserManager: BrowserManager
-    ) -> WebViewVisibleRuntimeContext {
+    private func visibleWebViewRuntimeContext() -> WebViewVisibleRuntimeContext {
+        let browserManager = self
         let tabSuspensionController = browserManager.tabSuspensionController
         let splitQuery = browserManager.splitComposition.query
         return WebViewVisibleRuntimeContext(
             windowState: { [weak browserManager] windowId in
-                requireWindowRegistry(browserManager, operation: "resolve visible window").windows[windowId]
+                BrowserManager.requireWindowRegistry(
+                    browserManager,
+                    operation: "resolve visible window"
+                ).windows[windowId]
             },
             currentTabId: { [weak browserManager] windowHandle in
                 guard let windowState = windowHandle.concreteWindowState else { return nil }
-                return requireBrowserManager(browserManager, operation: "resolve visible current tab")
+                return BrowserManager.requireBrowserManager(
+                    browserManager,
+                    operation: "resolve visible current tab"
+                )
                     .shellRuntime.windowTabs.currentTab(for: windowState)?.id
             },
             splitVisibleTabIds: { [weak splitQuery] windowId in
@@ -184,14 +182,17 @@ enum BrowserWebViewRuntimeFactory {
                    let ephemeralTab = windowState.ephemeralTabs.first(where: { $0.id == tabId }) {
                     return ephemeralTab
                 }
-                return requireBrowserManager(browserManager, operation: "resolve visible tab")
+                return BrowserManager.requireBrowserManager(
+                    browserManager,
+                    operation: "resolve visible tab"
+                )
                     .tabManager.tabCollectionMembershipOwner.tab(for: tabId)
             },
             canMaterializeWebViewDuringStartup: { [weak browserManager] tabHandle, windowHandle in
                 guard let windowState = windowHandle.concreteWindowState else {
                     return false
                 }
-                let manager = requireBrowserManager(
+                let manager = BrowserManager.requireBrowserManager(
                     browserManager,
                     operation: "check visible WebView startup materialization"
                 )
@@ -205,7 +206,10 @@ enum BrowserWebViewRuntimeFactory {
                 return manager.startupProtectionRuntime.canMaterializeWebViewDuringStartup(tab)
             },
             markTabAccessed: { [weak browserManager] tabId in
-                requireBrowserManager(browserManager, operation: "mark visible tab accessed")
+                BrowserManager.requireBrowserManager(
+                    browserManager,
+                    operation: "mark visible tab accessed"
+                )
                     .compositorManager.markTabAccessed(tabId)
             },
             globallyVisibleTabIDs: { [weak tabSuspensionController] in
@@ -215,11 +219,17 @@ enum BrowserWebViewRuntimeFactory {
                 tabSuspensionController?.scheduleReconciliation(reason: reason)
             },
             scheduleBackgroundMediaReconcile: { [weak browserManager] reason in
-                requireBrowserManager(browserManager, operation: "schedule background media reconcile")
+                BrowserManager.requireBrowserManager(
+                    browserManager,
+                    operation: "schedule background media reconcile"
+                )
                     .backgroundMediaOptimizationService.scheduleReconcile(reason: reason)
             },
             refreshCompositor: { [weak browserManager] windowId in
-                let manager = requireBrowserManager(browserManager, operation: "refresh visible compositor")
+                let manager = BrowserManager.requireBrowserManager(
+                    browserManager,
+                    operation: "refresh visible compositor"
+                )
                 guard let windowState = manager.windowRegistry?.windows[windowId] else {
                     return
                 }

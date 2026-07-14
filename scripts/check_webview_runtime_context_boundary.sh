@@ -8,7 +8,7 @@ production_roots=(App Sumi Settings SidebarChrome FloatingBar UI)
 all_swift_roots=("${production_roots[@]}" SumiTests SumiUITests Packages/SumiWebRuntime)
 graph_file="Sumi/Managers/WebViewRuntime/WebViewRuntimeGraph.swift"
 browser_manager_file="Sumi/Managers/BrowserManager/BrowserManager.swift"
-runtime_factory_file="Sumi/Managers/BrowserManager/BrowserManagerWebViewRuntimeFactory.swift"
+runtime_composition_file="Sumi/Managers/BrowserManager/BrowserManager+WebViewRuntimeComposition.swift"
 runtime_lifecycle_file="Sumi/Managers/WebViewRuntime/WebViewLifecycleService.swift"
 visible_runtime_provider_file="Sumi/Managers/WebViewRuntime/VisibleWebViewRuntimeProvider.swift"
 hidden_clone_eviction_file="Sumi/Managers/WebViewRuntime/HiddenCloneEvictionService.swift"
@@ -70,6 +70,7 @@ retired_paths=(
   "Sumi/Managers/WebViewRuntime/WebViewCoordinator.swift"
   "Sumi/Managers/WebViewRuntime/WebViewRuntimeAssembler.swift"
   "Sumi/Managers/WebViewRuntime/DeferredProtectedCommandScheduler.swift"
+  "Sumi/Managers/BrowserManager/BrowserManagerWebViewRuntimeFactory.swift"
   "Sumi/Managers/BrowserManager/BrowserManagerWebViewCoordinatorRuntimeFactory.swift"
   "Packages/SumiWebRuntime/Sources/SumiWebRuntime/Context/WebViewCoordinatorBrowserRuntimeContext.swift"
   "Packages/SumiWebRuntime/Sources/SumiWebRuntime/Context/WebViewCoordinatorInitialDocumentRuntimeContext.swift"
@@ -176,23 +177,59 @@ retired_god_context_hits="$(
 )"
 fail_matches "retired WebView runtime god context/store reintroduced" "$retired_god_context_hits"
 
-if [[ ! -f "$runtime_factory_file" ]]; then
-  printf 'error: exact WebView runtime factory missing: %s\n' "$runtime_factory_file" >&2
+if [[ ! -f "$runtime_composition_file" ]]; then
+  printf 'error: BrowserManager WebView runtime composition missing: %s\n' \
+    "$runtime_composition_file" >&2
   status=1
 else
-  factory_make_body="$(
-    sed -n '/^    static func make(/,/^    }$/p' "$runtime_factory_file"
+  runtime_composition_body="$(
+    sed -n '/^    func composeWebViewRuntime()/,/^    }$/p' \
+      "$runtime_composition_file"
   )"
-  if ! rg -q '^    static func make\(' <<< "$factory_make_body" \
-      || ! rg -q '\) -> WebViewRuntimeGraph \{' <<< "$factory_make_body" \
-      || ! rg -q '^[[:space:]]*WebViewRuntimeGraph\(' <<< "$factory_make_body"; then
-    printf 'error: BrowserWebViewRuntimeFactory.make must construct the exact WebViewRuntimeGraph\n' >&2
+  if ! rg -q '^    func composeWebViewRuntime\(\) -> WebViewRuntimeGraph \{' \
+      <<< "$runtime_composition_body" \
+      || ! rg -q '^[[:space:]]*WebViewRuntimeGraph\(' \
+      <<< "$runtime_composition_body"; then
+    printf 'error: BrowserManager root must construct the exact WebViewRuntimeGraph\n' >&2
+    status=1
+  fi
+  exact_composition_inputs=(
+    webViewSessions
+    resolveRuntimeTab
+    resolveCollectionTab
+    windowServices
+    deferredServices
+    visibleContext
+    initialDocumentContext
+  )
+  for exact_composition_input in "${exact_composition_inputs[@]}"; do
+    if ! rg -q "^[[:space:]]*${exact_composition_input}:" \
+        <<< "$runtime_composition_body"; then
+      printf 'error: WebView runtime composition lost exact input: %s\n' \
+        "$exact_composition_input" >&2
+      status=1
+    fi
+  done
+  if rg -q '\bBrowserWebViewRuntimeFactory\b|^[[:space:]]*for:' \
+      <<< "$runtime_composition_body"; then
+    printf 'error: WebView runtime composition regained a manager-taking factory\n' >&2
     status=1
   fi
 fi
 
-if ! rg -q 'BrowserWebViewRuntimeFactory\.make\(' "$browser_manager_file"; then
-  printf 'error: BrowserManager must construct its WebView runtime through BrowserWebViewRuntimeFactory.make\n' >&2
+if ! rg -q 'webViewRuntime = composeWebViewRuntime\(\)' "$browser_manager_file" \
+    || [[ "$(rg -c '^[[:space:]]*WebViewRuntimeGraph\(' "$runtime_composition_file")" != 1 ]]; then
+  printf 'error: BrowserManager root must compose one exact WebView runtime\n' >&2
+  status=1
+fi
+runtime_composition_line_count="$(wc -l < "$runtime_composition_file" | tr -d ' ')"
+runtime_composition_call_count="$(
+  rg --count-matches '\bcomposeWebViewRuntime\(' "${production_roots[@]}" \
+    -g '*.swift' | awk -F: '{ total += $2 } END { print total + 0 }'
+)"
+if (( runtime_composition_line_count > 265 || runtime_composition_call_count != 2 )); then
+  printf 'error: WebView root composition regrew or escaped (%s/265 LOC, %s/2 declaration+call)\n' \
+    "$runtime_composition_line_count" "$runtime_composition_call_count" >&2
   status=1
 fi
 
@@ -208,7 +245,7 @@ while IFS= read -r match; do
   [[ -z "$match" ]] && continue
   file="${match%%:*}"
   case "$file" in
-    "$graph_file"|"$runtime_factory_file")
+    "$graph_file"|"$runtime_composition_file")
       ;;
     *)
       printf 'error: WebViewRuntimeGraph escaped composition storage: %s\n' "$match" >&2

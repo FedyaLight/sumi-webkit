@@ -210,17 +210,17 @@ so activation code cannot acquire the mutation side of the ledger.
 
 ## Runtime Assembly
 
-`BrowserManager` owns one `WebViewRuntimeGraph` built by
-`BrowserWebViewRuntimeFactory.make` from its canonical
-`WebViewSessionRepository`. Construction supplies immutable, exact inputs: the
-runtime-tab resolver, `WebViewWindowServices`, `DeferredWebViewServices`,
-`WebViewVisibleRuntimeContext`, `InitialDocumentWebViewRuntimeContext`, and
-`WebViewShutdownRuntimeContext`. The graph distributes those capabilities while
-constructing concrete services; it has no service locator, late-binding context
-store, instance behavior, observation, or SwiftUI environment role. Feature
-code receives concrete runtime services instead of the graph, and graph-coupled
-adapter construction stays in the graph file so each service retains only its
-narrow `Dependencies` value.
+`BrowserManager` owns one `WebViewRuntimeGraph`, constructed directly by its
+root-only WebView runtime composition extension from the canonical
+`WebViewSessionRepository`. There is no manager-taking factory. Construction
+supplies exact inputs: the runtime-tab resolver, collection-tab resolver,
+`WebViewWindowServices`, `DeferredWebViewServices`,
+`WebViewVisibleRuntimeContext`, and `InitialDocumentWebViewRuntimeContext`.
+The graph composes concrete services; it has no service locator, late-binding
+context store, observation, or SwiftUI environment role. Feature code receives
+concrete runtime services instead of the graph. Protected-command admission,
+processing/retry, and terminal execution are separate roles, and their live
+composition cannot reach back through `BrowserManager`, the graph, or lifecycle.
 
 There is no browser-wide WebView runtime context and no attach/detach lifecycle.
 Window lookup and compositor effects come from the exact window capability;

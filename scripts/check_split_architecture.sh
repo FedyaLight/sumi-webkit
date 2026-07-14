@@ -176,7 +176,7 @@ split_composition_access_hits="$(
     -g '!BrowserWindowViewRuntimeWiring.swift' \
     -g '!BrowserTabManagerRuntimePortsFactory.swift' \
     -g '!BrowserTabRuntimeCompositionService.swift' \
-    -g '!BrowserManagerWebViewRuntimeFactory.swift' \
+    -g '!BrowserManager+WebViewRuntimeComposition.swift' \
     -g '!BrowserKeyboardShortcutCommandOwner.swift' \
     -g '!BrowserGlanceRuntimeService.swift' \
     -g '!BrowserURLBarBundle+Live.swift' \

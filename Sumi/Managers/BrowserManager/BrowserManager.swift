@@ -6,11 +6,11 @@
 
 import AppKit
 import Combine
+import SumiDomain
+import SumiWebRuntime
 import SwiftData
 import SwiftUI
 import WebKit
-import SumiDomain
-import SumiWebRuntime
 
 @MainActor
 class BrowserManager: ObservableObject {
@@ -61,9 +61,7 @@ class BrowserManager: ObservableObject {
     let liveFolderManager = SumiLiveFolderManager()
     /// Canonical process-lifetime WebView service graph. It shares the same
     /// session repository as every Tab created by this browser kernel.
-    private(set) lazy var webViewRuntime = BrowserWebViewRuntimeFactory.make(
-        for: self
-    )
+    private(set) lazy var webViewRuntime = composeWebViewRuntime()
     private(set) lazy var splitComposition = BrowserSplitServices.live(
         browserManager: self
     )
