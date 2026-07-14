@@ -5,12 +5,40 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
 compositor="Sumi/Components/WebsiteView/WebsiteCompositorView.swift"
+composition_root="Sumi/Components/WebsiteView/TabCompositorWrapper.swift"
 display_state="Sumi/Components/WebsiteView/WebsiteDisplayState.swift"
 browser_context="Sumi/Components/WebsiteView/WindowWebContentBrowserContext.swift"
 presentation="Sumi/Models/Window/WindowSplitPresentation.swift"
 projection="Sumi/Managers/SplitRuntime/WindowSplitProjection.swift"
 obsolete_split_repair="Sumi/Components/WebsiteView/WindowWebContentSplitRepairScheduler.swift"
 status=0
+
+if grep -q 'struct TabCompositorWrapper' "$compositor"; then
+  echo "TabCompositorWrapper must remain a separate SwiftUI composition root." >&2
+  status=1
+fi
+
+if ! grep -q 'struct TabCompositorWrapper: NSViewControllerRepresentable' "$composition_root"; then
+  echo "TabCompositorWrapper composition root is missing." >&2
+  status=1
+fi
+
+raw_split_dependencies="$(grep -nE '^[[:space:]]+(resolveDragTab|splitPreviews|splitLayout|splitDrops|splitDropTargets|sidebarDragState):' "$compositor" || [[ $? -eq 1 ]])"
+if [[ -n "$raw_split_dependencies" ]]; then
+  printf 'WindowWebContentController must receive a composed split-host view, not its raw construction dependencies:\n%s\n' "$raw_split_dependencies" >&2
+  status=1
+fi
+
+if ! grep -q 'containerView: WindowWebContentSplitHostLayoutView' "$compositor"; then
+  echo "WindowWebContentController must own an explicitly composed split-host view." >&2
+  status=1
+fi
+
+dependency_bags="$(grep -nE '(WindowWebContentControllerDependencies|WindowWebContentControllerGraph)' "$compositor" "$composition_root" || [[ $? -eq 1 ]])"
+if [[ -n "$dependency_bags" ]]; then
+  printf 'Do not hide compositor dependencies in a broad bag or graph:\n%s\n' "$dependency_bags" >&2
+  status=1
+fi
 
 role_declarations="$(grep -nE '^(struct WebsiteDisplayState|protocol WindowWebContentBrowserContext|final class BrowserManagerWindowWebContentContext|private func hostedWebViewCount|enum WindowWebContentPresentationDecision|final class WindowWebContentVisualHandoffFlowOwner)' "$compositor" || [[ $? -eq 1 ]])"
 if [[ -n "$role_declarations" ]]; then
