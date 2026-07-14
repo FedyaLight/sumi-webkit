@@ -222,6 +222,27 @@ concrete runtime services instead of the graph. Protected-command admission,
 processing/retry, and terminal execution are separate roles, and their live
 composition cannot reach back through `BrowserManager`, the graph, or lifecycle.
 
+Selected-profile state has one mutable owner,
+`BrowserCurrentProfileAuthority`. `BrowserManager.currentProfile` is only the
+composition-root compatibility write surface and forwards into that authority;
+it is not a second store. Feature graphs that need profile selection capture the
+authority directly, including its publisher, instead of retaining or weakly
+re-entering the complete `BrowserManager` graph. The authority exposes no public
+mutation surface of its own.
+
+The Tab profile-query port is assembled once from that profile authority,
+`ProfileManager`, and the settings-attachment coordinator. Settings remain a
+weak, replaceable app-shell binding, but the late binding is owned by the exact
+coordinator rather than discovered by re-entering `BrowserManager` for every
+query. Profile transactions therefore reuse immutable collaborators instead of
+rebuilding dependencies on demand.
+
+The Tab session-side-effects port likewise retains the process's concrete
+recently-closed store, notification presenter, WebView close router, and Live
+Folders service. The recently-closed store is immutable in the process graph;
+tests no longer replace it after runtime-port assembly. Calls through this port
+therefore cannot switch to a different service through a later root lookup.
+
 There is no browser-wide WebView runtime context and no attach/detach lifecycle.
 Window lookup and compositor effects come from the exact window capability;
 protected-command replay uses the exact deferred capability; visible

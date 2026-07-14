@@ -3,9 +3,10 @@ import Foundation
 @MainActor
 enum BrowserExtensionsModuleRuntimeFactory {
     static func runtime(for browserManager: BrowserManager) -> SumiExtensionsModuleRuntime {
-        SumiExtensionsModuleRuntime(
-            currentProfile: { [weak browserManager] in
-                browserManager?.currentProfile
+        let currentProfileAuthority = browserManager.currentProfileAuthority
+        return SumiExtensionsModuleRuntime(
+            currentProfile: { [currentProfileAuthority] in
+                currentProfileAuthority.currentProfile
             },
             attachManager: { [weak browserManager] manager in
                 guard let browserManager else { return }

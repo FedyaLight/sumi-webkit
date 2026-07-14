@@ -659,6 +659,26 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         )
     }
 
+    func testSessionSideEffectsPortRetainsExactProcessServices() throws {
+        let browserManager = BrowserManager()
+        let runtimePorts = try XCTUnwrap(browserManager.tabManager.runtimePorts)
+        let tab = browserManager.tabManager.tabFactory.makeTab(
+            url: URL(string: "https://example.com/closed")!,
+            loadsCachedFaviconOnInit: false
+        )
+
+        runtimePorts.captureClosedTab(tab, sourceSpaceId: nil)
+
+        guard case .tab(let closedTab) = browserManager.recentlyClosedManager.mostRecentItem else {
+            return XCTFail("Expected the exact process recently-closed service to receive the item")
+        }
+        XCTAssertEqual(closedTab.url, tab.url)
+        XCTAssertIdentical(
+            runtimePorts.notifications() as AnyObject,
+            browserManager.notificationPresenter
+        )
+    }
+
     func testShellRuntimeWindowRegistryBindingUpdatesDependentRuntimeManagers() throws {
         let browserManager = BrowserManager(
             startupPersistence: BrowserManagerStartupPersistence(
@@ -1010,6 +1030,34 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         XCTAssertEqual(browserContext.currentTab(windowState)?.id, settingsTab.id)
         XCTAssertTrue(settingsTab.representsSumiSettingsSurface)
 
+        var browserManagerChangeCount = 0
+        var publishedProfileIDs: [UUID?] = []
+        let browserManagerChanges = browserManager.objectWillChange.sink {
+            browserManagerChangeCount += 1
+        }
+        let currentProfileChanges = browserManager.currentProfileAuthority
+            .$currentProfile
+            .sink { publishedProfileIDs.append($0?.id) }
+        let replacementProfile = Profile(name: "Replacement Settings Context")
+
+        browserManager.currentProfile = replacementProfile
+
+        XCTAssertEqual(browserManagerChangeCount, 1)
+        XCTAssertEqual(
+            publishedProfileIDs,
+            [profile.id, replacementProfile.id]
+        )
+        XCTAssertIdentical(
+            browserManager.currentProfileAuthority.currentProfile,
+            replacementProfile
+        )
+        XCTAssertEqual(
+            browserManager.tabManager.runtimePorts?.currentProfileId,
+            replacementProfile.id
+        )
+        XCTAssertIdentical(browserContext.currentProfile(), replacementProfile)
+        withExtendedLifetime((browserManagerChanges, currentProfileChanges)) {}
+
         let repository = browserContext.makePermissionRepository()
         XCTAssertNotNil(repository)
 
@@ -1350,8 +1398,7 @@ private final class FakeBrowserFaviconService:
     BrowserFaviconLocalIconIngesting,
     BrowserFaviconPrefetchScheduling,
     HistoryFaviconCleaning,
-    SumiBrowsingDataFaviconCleaning
-{
+    SumiBrowsingDataFaviconCleaning {
     private(set) var partitionProfileIds: [UUID?] = []
     private(set) var invalidatedSites: [(domain: String, profileId: UUID?)] = []
     private(set) var syncedShortcutPinURLs: [[URL]] = []

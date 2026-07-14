@@ -1,6 +1,6 @@
+import SumiDomain
 import SwiftUI
 import WebKit
-import SumiDomain
 
 @MainActor
 final class BrowserURLBarContextOwner {
@@ -65,6 +65,7 @@ final class BrowserURLBarContextOwner {
         let urlBarHubPopoverPresenter = browserManager.chromeBundle.commands.urlBarHubPopoverPresenter
         let webViewRoutingService = browserManager.webViewRoutingService
         let zoomManager = browserManager.zoomManager
+        let currentProfileAuthority = browserManager.currentProfileAuthority
         let permissionContextOwner = BrowserURLBarPermissionContextOwner(
             browserManager: browserManager
         )
@@ -174,8 +175,8 @@ final class BrowserURLBarContextOwner {
                 profiles: { [weak browserManager] in
                     browserManager?.profileManager.profiles ?? []
                 },
-                currentProfile: { [weak browserManager] in
-                    browserManager?.currentProfile
+                currentProfile: { [currentProfileAuthority] in
+                    currentProfileAuthority.currentProfile
                 },
                 siteControlsSnapshot: siteControlsSnapshot,
                 focusFloatingBar: { [weak browserManager] windowState, prefill, navigateCurrentTab in

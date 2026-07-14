@@ -79,6 +79,7 @@ struct SidebarBrowserContext {
         browserManager: BrowserManager,
         spaceLifecycle: SidebarSpaceLifecycle
     ) -> SidebarBrowserContext {
+        let currentProfileAuthority = browserManager.currentProfileAuthority
         return SidebarBrowserContext(
             profileManager: browserManager.profileManager,
             liveFolderManager: browserManager.liveFolderManager,
@@ -155,8 +156,8 @@ struct SidebarBrowserContext {
             isTransitioningProfile: { [weak browserManager] in
                 browserManager?.isTransitioningProfile ?? false
             },
-            currentProfile: { [weak browserManager] in
-                browserManager?.currentProfile
+            currentProfile: { [currentProfileAuthority] in
+                currentProfileAuthority.currentProfile
             },
             extensionToolbarSlots: { [weak browserManager] enabledExtensions, profileId in
                 guard let browserManager else { return [] }

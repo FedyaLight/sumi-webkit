@@ -19,7 +19,8 @@ enum TabBrowserNavigationRuntimeFactory {
     static func profileResolutionRuntime(
         for browserManager: BrowserManager
     ) -> TabProfileResolutionRuntime {
-        .make(
+        let currentProfileAuthority = browserManager.currentProfileAuthority
+        return .make(
             ephemeralProfileForTab: { [weak browserManager] tabId, profileId in
                 guard let browserManager else { return nil }
                 if let tracked = browserManager.windowRegistry?.windows.values.first(where: { window in
@@ -43,8 +44,8 @@ enum TabBrowserNavigationRuntimeFactory {
                 }
                 return browserManager.profileManager.profiles.first { $0.id == profileId }
             },
-            currentProfile: { [weak browserManager] in
-                browserManager?.currentProfile
+            currentProfile: { [currentProfileAuthority] in
+                currentProfileAuthority.currentProfile
             },
             firstProfile: { [weak browserManager] in
                 browserManager?.profileManager.profiles.first
@@ -90,12 +91,13 @@ enum TabBrowserNavigationRuntimeFactory {
     static func historyRecordingRuntime(
         for browserManager: BrowserManager
     ) -> TabHistoryRecordingRuntime {
-        .make(
+        let currentProfileAuthority = browserManager.currentProfileAuthority
+        return .make(
             historyManager: { [weak browserManager] in
                 browserManager?.historyManager
             },
-            currentProfileId: { [weak browserManager] in
-                browserManager?.currentProfile?.id
+            currentProfileId: { [currentProfileAuthority] in
+                currentProfileAuthority.currentProfile?.id
             }
         )
     }
@@ -178,7 +180,6 @@ enum TabBrowserNavigationRuntimeFactory {
             }
         )
     }
-
 }
 
 @MainActor

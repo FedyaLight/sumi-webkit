@@ -59,6 +59,7 @@ final class BrowserURLBarHubContextOwner {
         siteControlsSnapshot: @escaping @MainActor (URL?, Profile?, Bool, Bool) -> SiteControlsSnapshot,
         settingsNavigation: BrowserSettingsNavigationService
     ) {
+        let currentProfileAuthority = browserManager.currentProfileAuthority
         self.init(
             bookmarkManager: browserManager.bookmarkManager,
             extensionSurfaceStore: browserManager.optionalModules.extensions.surfaceStore,
@@ -75,8 +76,8 @@ final class BrowserURLBarHubContextOwner {
                 profiles: { [weak browserManager] in
                     browserManager?.profileManager.profiles ?? []
                 },
-                currentProfile: { [weak browserManager] in
-                    browserManager?.currentProfile
+                currentProfile: { [currentProfileAuthority] in
+                    currentProfileAuthority.currentProfile
                 },
                 bookmarkEditorPresentationRequest: { [weak browserManager] in
                     browserManager?.bookmarkEditorPresentationRequest

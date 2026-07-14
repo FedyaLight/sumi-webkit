@@ -12,14 +12,25 @@ protocol TabSessionSideEffectsPort {
 
 @MainActor
 struct LiveTabSessionSideEffectsPort: TabSessionSideEffectsPort {
-    private let runtime: BrowserManagerRuntimeReference
+    private let recentlyClosedManager: RecentlyClosedManager
+    private let notificationPresenter: any BrowserNotificationPresenting
+    private let webViewCloseRouter: BrowserWebViewCloseRouter
+    private let liveFolderManager: SumiLiveFolderManager
 
-    init(runtime: BrowserManagerRuntimeReference) {
-        self.runtime = runtime
+    init(
+        recentlyClosedManager: RecentlyClosedManager,
+        notificationPresenter: any BrowserNotificationPresenting,
+        webViewCloseRouter: BrowserWebViewCloseRouter,
+        liveFolderManager: SumiLiveFolderManager
+    ) {
+        self.recentlyClosedManager = recentlyClosedManager
+        self.notificationPresenter = notificationPresenter
+        self.webViewCloseRouter = webViewCloseRouter
+        self.liveFolderManager = liveFolderManager
     }
 
     func captureClosedTab(_ tab: Tab, sourceSpaceId: UUID?) {
-        runtime.require().recentlyClosedManager.captureClosedTab(
+        recentlyClosedManager.captureClosedTab(
             tab,
             sourceSpaceId: sourceSpaceId,
             currentURL: tab.url,
@@ -29,22 +40,22 @@ struct LiveTabSessionSideEffectsPort: TabSessionSideEffectsPort {
     }
 
     func captureDeletedShortcutLauncher(_ pin: ShortcutPin) {
-        runtime.require().recentlyClosedManager.captureDeletedShortcutLauncher(pin)
+        recentlyClosedManager.captureDeletedShortcutLauncher(pin)
     }
 
     func notifications() -> (any BrowserNotificationPresenting)? {
-        runtime.require().notificationPresenter
+        notificationPresenter
     }
 
     func closeAuxiliaryMiniWindow(for tab: Tab, reason: AuxiliaryWindowCloseReason) {
-        runtime.require().webViewCloseRouter.closeAuxiliaryMiniWindow(for: tab, reason: reason)
+        webViewCloseRouter.closeAuxiliaryMiniWindow(for: tab, reason: reason)
     }
 
     func isLiveFolder(_ folderId: UUID) -> Bool {
-        runtime.require().liveFolderManager.isLiveFolder(folderId)
+        liveFolderManager.isLiveFolder(folderId)
     }
 
     func deleteLiveFolderState(forFolderIds folderIds: Set<UUID>) {
-        runtime.require().liveFolderManager.deleteState(forFolderIds: folderIds)
+        liveFolderManager.deleteState(forFolderIds: folderIds)
     }
 }

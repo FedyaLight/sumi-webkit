@@ -46,6 +46,7 @@ private final class SumiCommandsBrowserManagerAdapter:
     SumiCommandHistoryRouting,
     SumiCommandBookmarkRouting {
     private weak var browserManager: BrowserManager?
+    private let currentProfileAuthority: BrowserCurrentProfileAuthority
     private let defaultBrowserService: SumiDefaultBrowserService
 
     init(
@@ -53,11 +54,12 @@ private final class SumiCommandsBrowserManagerAdapter:
         defaultBrowserService: SumiDefaultBrowserService
     ) {
         self.browserManager = browserManager
+        self.currentProfileAuthority = browserManager.currentProfileAuthority
         self.defaultBrowserService = defaultBrowserService
     }
 
     var currentProfile: Profile? {
-        browserManager?.currentProfile
+        currentProfileAuthority.currentProfile
     }
 
     func activePageTabForActiveWindow() -> Tab? {

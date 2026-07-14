@@ -9,6 +9,7 @@ extension WindowViewBrowserContext {
         defaultBrowserService: SumiDefaultBrowserService
     ) -> WindowViewBrowserContext {
         let tabManager = browserManager.tabManager
+        let currentProfileAuthority = browserManager.currentProfileAuthority
         let runtimeIsAlive: @MainActor () -> Bool = { [weak tabManager] in
             tabManager != nil
         }
@@ -97,7 +98,7 @@ extension WindowViewBrowserContext {
             inventoryRevision: browserManager.$tabStructuralRevision.eraseToAnyPublisher(),
             profiles: browserManager.profileManager.$profiles.eraseToAnyPublisher(),
             profileRuntimeChanged: Publishers.Merge(
-                browserManager.$currentProfile.map { _ in () },
+                currentProfileAuthority.$currentProfile.map { _ in () },
                 browserManager.$isTransitioningProfile.map { _ in () }
             )
             .eraseToAnyPublisher(),
@@ -150,8 +151,8 @@ extension WindowViewBrowserContext {
             showGradientEditor: { [weak browserManager] source in
                 browserManager?.chromeBundle.workspaceThemeEditorOwner.showGradientEditor(source: source)
             },
-            currentProfileID: { [weak browserManager] in
-                browserManager?.currentProfile?.id
+            currentProfileID: { [currentProfileAuthority] in
+                currentProfileAuthority.currentProfile?.id
             },
             essentialPins: { [weak browserManager] profileId in
                 browserManager?.tabManager.shortcutPinCollectionStateOwner.essentialPins(for: profileId) ?? []
@@ -215,14 +216,22 @@ extension WindowViewBrowserContext {
     private static func browsingDataDialogContext(
         browserManager: BrowserManager
     ) -> () -> SumiBrowsingDataDialogContext {
-        { [browserManager, cleanupService = browserManager.browsingDataCleanupService] in
+        {
+            [
+                browserManager,
+                cleanupService = browserManager.browsingDataCleanupService,
+                currentProfileAuthority = browserManager.currentProfileAuthority
+            ] in
             SumiBrowsingDataDialogContext(
                 cleanupService: cleanupService,
                 profileSnapshot: { [weak browserManager] in
                     browserManager?.profileManager.profiles ?? []
                 },
                 activeCleanupDependencies: {
-                    activeCleanupDependencies(browserManager: browserManager)
+                    activeCleanupDependencies(
+                        browserManager: browserManager,
+                        currentProfileAuthority: currentProfileAuthority
+                    )
                 },
                 dismissNativeModalPresentation: { [weak browserManager] in
                     browserManager?.chromeBundle.nativeDialogPresentationOwner.dismissNativeModalPresentation()
@@ -232,10 +241,11 @@ extension WindowViewBrowserContext {
     }
 
     private static func activeCleanupDependencies(
-        browserManager: BrowserManager?
+        browserManager: BrowserManager?,
+        currentProfileAuthority: BrowserCurrentProfileAuthority
     ) -> BrowsingDataDialogCleanupDependencies? {
         guard let browserManager,
-              browserManager.currentProfile != nil
+              currentProfileAuthority.currentProfile != nil
         else {
             return nil
         }

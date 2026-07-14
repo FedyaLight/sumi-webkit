@@ -5,11 +5,12 @@ import Foundation
 @MainActor
 enum BrowserProfileDeletionWorkflow {
     static func delete(_ profile: Profile, from browserRuntime: BrowserManager) {
+        let currentProfileAuthority = browserRuntime.currentProfileAuthority
         SumiProfileMaintenanceService().deleteProfile(
             profile,
             using: SumiProfileMaintenanceService.Context(
-                currentProfile: { [weak browserRuntime] in
-                    browserRuntime?.currentProfile
+                currentProfile: { [currentProfileAuthority] in
+                    currentProfileAuthority.currentProfile
                 },
                 profileManager: browserRuntime.profileManager,
                 migrateProfileReferences: { [weak browserRuntime] deleted, fallback in

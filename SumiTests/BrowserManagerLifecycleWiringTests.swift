@@ -55,6 +55,7 @@ final class BrowserManagerLifecycleWiringTests: XCTestCase {
         browserManager.sumiSettings = settings
 
         XCTAssertIdentical(browserManager.downloadManager.settings, settings)
+        XCTAssertIdentical(browserManager.tabManager.runtimePorts?.settings, settings)
         XCTAssertEqual(
             browserManager.tabSuspensionController.currentPolicyForTesting,
             TabSuspensionPolicy(settings: settings)
@@ -80,6 +81,7 @@ final class BrowserManagerLifecycleWiringTests: XCTestCase {
         browserManager.sumiSettings = replacement
 
         XCTAssertIdentical(browserManager.downloadManager.settings, replacement)
+        XCTAssertIdentical(browserManager.tabManager.runtimePorts?.settings, replacement)
         XCTAssertEqual(
             browserManager.tabSuspensionController.currentPolicyForTesting,
             TabSuspensionPolicy(settings: replacement)
@@ -97,6 +99,7 @@ final class BrowserManagerLifecycleWiringTests: XCTestCase {
         browserManager.sumiSettings = nil
 
         XCTAssertNil(browserManager.downloadManager.settings)
+        XCTAssertNil(browserManager.tabManager.runtimePorts?.settings)
         XCTAssertEqual(
             browserManager.tabSuspensionController.currentPolicyForTesting,
             TabSuspensionPolicy(settings: nil)

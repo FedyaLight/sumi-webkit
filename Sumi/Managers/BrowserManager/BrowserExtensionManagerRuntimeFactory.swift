@@ -4,9 +4,10 @@ import Foundation
 @MainActor
 enum BrowserExtensionManagerRuntimeFactory {
     static func runtime(for browserManager: BrowserManager) -> ExtensionManagerRuntime {
+        let currentProfileAuthority = browserManager.currentProfileAuthority
         return ExtensionManagerRuntime(
-            currentProfile: { [weak browserManager] in
-                browserManager?.currentProfile
+            currentProfile: { [currentProfileAuthority] in
+                currentProfileAuthority.currentProfile
             },
             profile: { [weak browserManager] profileId in
                 browserManager?.profileManager.profiles.first { $0.id == profileId }

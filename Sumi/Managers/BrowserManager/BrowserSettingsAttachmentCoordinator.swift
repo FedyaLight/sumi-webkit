@@ -9,6 +9,7 @@ import Foundation
 /// them knows the browser hub.
 @MainActor
 final class BrowserSettingsAttachmentCoordinator {
+    private weak var currentSettings: SumiSettingsService?
     private let downloadManager: DownloadManager
     private let tabSuspension: TabSuspensionController
     private let backgroundMedia: SumiBackgroundMediaOptimizationService
@@ -29,7 +30,12 @@ final class BrowserSettingsAttachmentCoordinator {
         self.automaticDataCleanup = automaticDataCleanup
     }
 
+    var settings: SumiSettingsService? {
+        currentSettings
+    }
+
     func attach(_ settings: SumiSettingsService?) {
+        currentSettings = settings
         downloadManager.settings = settings
         // Weak capture keeps the policy source tracking the live settings
         // object without retaining it past its owner.

@@ -6,6 +6,7 @@ import Foundation
 @MainActor
 enum TabBrowserRuntimeFactory {
     static func make(for browserManager: BrowserManager) -> TabBrowserRuntime {
+        let currentProfileAuthority = browserManager.currentProfileAuthority
         let webViewRuntime = browserManager.webViewRuntime
         let physicalSources = PhysicalWebViewSourceResolver(
             ownership: webViewRuntime.ownershipQuery,
@@ -115,8 +116,8 @@ enum TabBrowserRuntimeFactory {
             webViewConfigurationContext: { [weak browserManager] in
                 browserManager.map { TabBrowserWebViewRuntimeFactory.configurationContext(for: $0) } ?? .empty
             },
-            currentProfileUpdates: { [weak browserManager] in
-                browserManager?.$currentProfile.eraseToAnyPublisher()
+            currentProfileUpdates: { [currentProfileAuthority] in
+                currentProfileAuthority.$currentProfile.eraseToAnyPublisher()
             },
             settings: { [weak browserManager] in
                 browserManager?.sumiSettings

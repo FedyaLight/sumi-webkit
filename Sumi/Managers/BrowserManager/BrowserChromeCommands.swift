@@ -11,9 +11,11 @@ final class BrowserChromeCommands {
     let urlBarHubPopoverPresenter: URLBarHubPopoverPresenter
 
     private weak var browserManager: BrowserManager?
+    private let currentProfileAuthority: BrowserCurrentProfileAuthority
 
     init(browserManager: BrowserManager) {
         self.browserManager = browserManager
+        self.currentProfileAuthority = browserManager.currentProfileAuthority
         let recovery = browserManager.sidebarHostRecoveryCoordinator
         self.downloadsPopoverPresenter = DownloadsPopoverPresenter(
             sidebarRecoveryCoordinator: recovery
@@ -92,11 +94,12 @@ final class BrowserChromeCommands {
 
     private func makePrivacyContext() -> BrowserPrivacyService.Context? {
         guard browserManager != nil else { return nil }
+        let currentProfileAuthority = currentProfileAuthority
         return BrowserPrivacyService.Context(
             currentDataStore: { [weak browserManager] in
                 browserManager?.shellRuntime.activePageResolver
                     .resolveActiveWindow()?.tab.resolveProfile()?.dataStore
-                    ?? browserManager?.currentProfile?.dataStore
+                    ?? currentProfileAuthority.currentProfile?.dataStore
                     ?? WKWebsiteDataStore.default()
             },
             currentTab: { [weak browserManager] in

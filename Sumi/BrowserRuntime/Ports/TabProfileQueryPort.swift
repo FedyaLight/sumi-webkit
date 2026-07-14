@@ -12,30 +12,37 @@ protocol TabProfileQueryPort {
 
 @MainActor
 struct LiveTabProfileQueryPort: TabProfileQueryPort {
-    private let runtime: BrowserManagerRuntimeReference
+    private let currentProfileAuthority: BrowserCurrentProfileAuthority
+    private let profileManager: ProfileManager
+    private let settingsAttachment: BrowserSettingsAttachmentCoordinator
 
-    init(runtime: BrowserManagerRuntimeReference) {
-        self.runtime = runtime
+    init(
+        currentProfileAuthority: BrowserCurrentProfileAuthority,
+        profileManager: ProfileManager,
+        settingsAttachment: BrowserSettingsAttachmentCoordinator
+    ) {
+        self.currentProfileAuthority = currentProfileAuthority
+        self.profileManager = profileManager
+        self.settingsAttachment = settingsAttachment
     }
 
     var currentProfileId: UUID? {
-        runtime.require().currentProfile?.id
+        currentProfileAuthority.currentProfile?.id
     }
 
     var defaultProfileId: UUID? {
-        let browserManager = runtime.require()
-        return browserManager.currentProfile?.id ?? browserManager.profileManager.profiles.first?.id
+        currentProfileAuthority.currentProfile?.id ?? profileManager.profiles.first?.id
     }
 
     var settings: SumiSettingsService? {
-        runtime.require().sumiSettings
+        settingsAttachment.settings
     }
 
     func profileExists(_ profileId: UUID) -> Bool {
-        runtime.require().profileManager.profiles.contains { $0.id == profileId }
+        profileManager.profiles.contains { $0.id == profileId }
     }
 
     func profile(with profileId: UUID) -> Profile? {
-        runtime.require().profileManager.profiles.first { $0.id == profileId }
+        profileManager.profiles.first { $0.id == profileId }
     }
 }

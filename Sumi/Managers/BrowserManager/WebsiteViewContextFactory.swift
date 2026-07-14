@@ -72,15 +72,17 @@ enum WebsiteViewContextFactory {
     static func settingsPageBrowserContext(
         for browserManager: BrowserManager
     ) -> SettingsBrowserContext {
-        SettingsBrowserContext(
+        let currentProfileAuthority = browserManager.currentProfileAuthority
+        return SettingsBrowserContext(
             profileManager: browserManager.profileManager,
             tabManager: browserManager.tabManager,
             extensionsModule: browserManager.optionalModules.extensions,
             extensionSurfaceStore: browserManager.optionalModules.extensions.surfaceStore,
-            currentProfile: { [weak browserManager] in
-                browserManager?.currentProfile
+            currentProfile: { [currentProfileAuthority] in
+                currentProfileAuthority.currentProfile
             },
-            currentProfileUpdates: browserManager.$currentProfile.eraseToAnyPublisher(),
+            currentProfileUpdates: currentProfileAuthority.$currentProfile
+                .eraseToAnyPublisher(),
             currentTab: { [weak browserManager] windowState in
                 browserManager?.shellRuntime.windowTabs.currentTab(for: windowState)
             },
@@ -156,14 +158,16 @@ enum WebsiteViewContextFactory {
     static func historyPageBrowserContext(
         for browserManager: BrowserManager
     ) -> HistoryPageBrowserContext {
-        HistoryPageBrowserContext(
+        let currentProfileAuthority = browserManager.currentProfileAuthority
+        return HistoryPageBrowserContext(
             historyManager: browserManager.historyManager,
             faviconService: browserManager.dataServices.faviconService,
             faviconImageReader: browserManager.dataServices.faviconCapabilities.images,
-            currentProfile: { [weak browserManager] in
-                browserManager?.currentProfile
+            currentProfile: { [currentProfileAuthority] in
+                currentProfileAuthority.currentProfile
             },
-            currentProfileUpdates: browserManager.$currentProfile.eraseToAnyPublisher(),
+            currentProfileUpdates: currentProfileAuthority.$currentProfile
+                .eraseToAnyPublisher(),
             nativeModalPresentationUpdates: browserManager.$nativeModalPresentation
                 .map { _ in () }
                 .eraseToAnyPublisher(),
@@ -205,14 +209,16 @@ enum WebsiteViewContextFactory {
     static func bookmarksPageBrowserContext(
         for browserManager: BrowserManager
     ) -> BookmarksPageBrowserContext {
-        BookmarksPageBrowserContext(
+        let currentProfileAuthority = browserManager.currentProfileAuthority
+        return BookmarksPageBrowserContext(
             bookmarkManager: browserManager.bookmarkManager,
             faviconService: browserManager.dataServices.faviconService,
             faviconImageReader: browserManager.dataServices.faviconCapabilities.images,
-            currentProfile: { [weak browserManager] in
-                browserManager?.currentProfile
+            currentProfile: { [currentProfileAuthority] in
+                currentProfileAuthority.currentProfile
             },
-            currentProfileUpdates: browserManager.$currentProfile.eraseToAnyPublisher(),
+            currentProfileUpdates: currentProfileAuthority.$currentProfile
+                .eraseToAnyPublisher(),
             currentTab: { [weak browserManager] windowState in
                 browserManager?.shellRuntime.windowTabs.currentTab(for: windowState)
             },

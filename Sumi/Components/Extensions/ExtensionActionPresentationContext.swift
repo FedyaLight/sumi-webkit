@@ -22,7 +22,8 @@ struct ExtensionActionBrowserContext {
         browserManager: BrowserManager,
         windowState: BrowserWindowState
     ) -> ExtensionActionBrowserContext {
-        ExtensionActionBrowserContext(
+        let currentProfileAuthority = browserManager.currentProfileAuthority
+        return ExtensionActionBrowserContext(
             extensionsModule: browserManager.optionalModules.extensions,
             windowState: windowState,
             currentTab: { [weak browserManager, weak windowState] in
@@ -34,8 +35,8 @@ struct ExtensionActionBrowserContext {
                         tabStore: browserManager.tabManager.runtimeStore
                     )
             },
-            currentProfileID: { [weak browserManager] in
-                browserManager?.currentProfile?.id
+            currentProfileID: { [currentProfileAuthority] in
+                currentProfileAuthority.currentProfile?.id
             },
             openSettingsTab: { [weak browserManager, weak windowState] tab in
                 guard let browserManager, let windowState else { return }

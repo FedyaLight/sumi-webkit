@@ -29,6 +29,7 @@ final class BrowserAutomaticDataCleanupOwner {
     }
 
     convenience init(browserManager: BrowserManager) {
+        let currentProfileAuthority = browserManager.currentProfileAuthority
         self.init(
             permissionRuntime: { [weak browserManager] in
                 browserManager?.permissionRuntime
@@ -45,8 +46,8 @@ final class BrowserAutomaticDataCleanupOwner {
             profiles: { [weak browserManager] in
                 browserManager?.profileManager.profiles ?? []
             },
-            currentProfileId: { [weak browserManager] in
-                browserManager?.currentProfile?.id
+            currentProfileId: { [currentProfileAuthority] in
+                currentProfileAuthority.currentProfile?.id
             }
         )
     }

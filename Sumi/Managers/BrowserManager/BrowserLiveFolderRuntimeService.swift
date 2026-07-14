@@ -3,7 +3,8 @@ import Foundation
 @MainActor
 enum BrowserLiveFolderRuntimeService {
     static func runtime(for browserManager: BrowserManager) -> SumiLiveFolderRuntime {
-        SumiLiveFolderRuntime(
+        let currentProfileAuthority = browserManager.currentProfileAuthority
+        return SumiLiveFolderRuntime(
             spaceContext: { [weak browserManager] spaceId in
                 guard let space = browserManager?.tabManager.spaceStateOwner.spaces.first(where: { $0.id == spaceId }) else {
                     return nil
@@ -38,7 +39,7 @@ enum BrowserLiveFolderRuntimeService {
                    let profileId = space.profileId {
                     return browserManager.profileManager.profiles.first { $0.id == profileId }
                 }
-                return browserManager.currentProfile
+                return currentProfileAuthority.currentProfile
             },
             folderIds: { [weak browserManager] in
                 guard let browserManager else { return [] }

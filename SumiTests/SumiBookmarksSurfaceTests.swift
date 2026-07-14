@@ -110,7 +110,6 @@ final class SumiBookmarksSurfaceTests: XCTestCase {
             faviconCleaner: TabDependencyIsolationDefaults.historyFaviconCleaner,
             visitedLinkStore: TabDependencyIsolationDefaults.historyVisitedLinkStore
         )
-        browserManager.recentlyClosedManager = RecentlyClosedManager()
         browserManager.lastSessionWindowsStore = LastSessionWindowsStore()
         browserManager.bookmarkManager = makeBookmarkManager()
         browserManager.windowRegistry = windowRegistry

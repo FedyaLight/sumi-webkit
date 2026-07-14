@@ -17,7 +17,7 @@ class BrowserManager: ObservableObject {
     static let lastWindowSessionKey = "sumi.windowSession.last.v3"
     @Published var zoomStateRevision: Int = 0
     @Published var bookmarkEditorPresentationRequest: SumiBookmarkEditorPresentationRequest?
-    @Published var currentProfile: Profile?
+    let currentProfileAuthority: BrowserCurrentProfileAuthority
     @Published var isTransitioningProfile: Bool = false
     @Published var workspaceThemePickerSession: WorkspaceThemePickerSession?
     @Published var nativeModalPresentation: BrowserNativeModalPresentation?
@@ -39,7 +39,7 @@ class BrowserManager: ObservableObject {
     let authenticationManager: AuthenticationManager
     var historyManager: HistoryManager
     var bookmarkManager: SumiBookmarkManager
-    var recentlyClosedManager: RecentlyClosedManager
+    let recentlyClosedManager: RecentlyClosedManager
     var lastSessionWindowsStore: LastSessionWindowsStore {
         didSet { startupSessionRestoreOwner.reload(from: lastSessionWindowsStore) }
     }
@@ -86,7 +86,7 @@ class BrowserManager: ObservableObject {
     /// Process-lifetime runtime lifecycle: started once in init, shut down once in deinit.
     private lazy var runtimeLifecycle = BrowserRuntimeLifecycle.live(browserManager: self)
     /// Reached only from `sumiSettings.didSet`; private so feature code cannot use it as a service locator.
-    private lazy var settingsAttachment = BrowserSettingsAttachmentCoordinator.live(browserManager: self)
+    private(set) lazy var settingsAttachment = BrowserSettingsAttachmentCoordinator.live(browserManager: self)
     lazy var webViewCloseRouter = BrowserWebViewCloseRouter(browserManager: self)
     lazy var notificationPresenter = BrowserNotificationPresenter(browserManager: self)
     lazy var shortcutActionRouter = BrowserShortcutActionRouter(dependencies: .live(browserManager: self))
@@ -159,7 +159,9 @@ class BrowserManager: ObservableObject {
         self.startupWorkspaceTheme = graph.startupWorkspaceTheme
         self.windowSessionPersistence = graph.windowSessionPersistence
         self.profileManager = graph.profileManager
-        self.currentProfile = graph.currentProfile
+        self.currentProfileAuthority = BrowserCurrentProfileAuthority(
+            graph.currentProfile
+        )
         self.optionalModules = graph.optionalModules
         self.tabManager = graph.tabManager
         self.downloadManager = graph.downloadManager

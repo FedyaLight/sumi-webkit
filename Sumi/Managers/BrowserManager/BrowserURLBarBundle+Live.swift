@@ -73,14 +73,15 @@ extension BrowserURLBarBundle {
         commit: FloatingBarCommitService
     ) -> FloatingBarBrowserContextFactory {
         let dataServices = browserManager.dataServices
+        let currentProfileAuthority = browserManager.currentProfileAuthority
         return FloatingBarBrowserContextFactory(
-            currentProfileId: { [weak browserManager] in
-                browserManager?.currentProfile?.id
+            currentProfileId: { [currentProfileAuthority] in
+                currentProfileAuthority.currentProfile?.id
             },
-            faviconContext: { [weak browserManager] in
+            faviconContext: { [currentProfileAuthority] in
                 FloatingBarFaviconContext(
                     partition: dataServices.faviconService.partition(
-                        profile: browserManager?.currentProfile
+                        profile: currentProfileAuthority.currentProfile
                     ),
                     imageReader: dataServices.faviconCapabilities.images,
                     prefetch: dataServices.faviconCapabilities.prefetch

@@ -49,8 +49,28 @@ fail_open_port_hits="$(
     Sumi/BrowserRuntime/Ports -g 'Tab*Port.swift' 2>/dev/null || true
 )"
 if [[ -n "$fail_open_port_hits" ]]; then
-  printf 'error: Tab runtime ports must use BrowserManagerRuntimeReference and fail on a broken lifetime graph:\n%s\n' \
+  printf 'error: Tab runtime ports must not fail open after their browser feature graph is released:\n%s\n' \
     "$fail_open_port_hits" >&2
+  exit 1
+fi
+
+profile_root_lookup_hits="$(
+  rg -n 'BrowserManager(RuntimeReference)?|runtime\.require\(\)' \
+    Sumi/BrowserRuntime/Ports/TabProfileQueryPort.swift 2>/dev/null || true
+)"
+if [[ -n "$profile_root_lookup_hits" ]]; then
+  printf 'error: the profile query port must retain exact profile/settings authorities, not re-enter BrowserManager:\n%s\n' \
+    "$profile_root_lookup_hits" >&2
+  exit 1
+fi
+
+session_side_effect_root_lookup_hits="$(
+  rg -n 'BrowserManager(RuntimeReference)?|runtime\.require\(\)' \
+    Sumi/BrowserRuntime/Ports/TabSessionSideEffectsPort.swift 2>/dev/null || true
+)"
+if [[ -n "$session_side_effect_root_lookup_hits" ]]; then
+  printf 'error: the session side-effects port must retain exact services, not re-enter BrowserManager:\n%s\n' \
+    "$session_side_effect_root_lookup_hits" >&2
   exit 1
 fi
 
