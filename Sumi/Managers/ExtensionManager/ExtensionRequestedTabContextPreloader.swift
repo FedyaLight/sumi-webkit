@@ -32,6 +32,21 @@ struct ExtensionRequestedTabContextPreloader {
         extensionContext: WKWebExtensionContext? = nil
     ) async throws -> UUID? {
         let load = loadResolver.resolve(url, controller: controller)
+        return try await prepare(
+            load: load,
+            requestedWindow: requestedWindow,
+            controller: controller,
+            extensionContext: extensionContext
+        )
+    }
+
+    @discardableResult
+    func prepare(
+        load: ExtensionRequestedTabLoad,
+        requestedWindow: (any WKWebExtensionWindow)?,
+        controller: WKWebExtensionController,
+        extensionContext: WKWebExtensionContext?
+    ) async throws -> UUID? {
         guard load.requiresContentScriptPreload else { return nil }
         let target = try placement.resolve(
             requestedWindow: requestedWindow,

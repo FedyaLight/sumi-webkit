@@ -29,7 +29,8 @@ final class ExtensionRequestedTabInitialTargetResolver {
 
     func resolve(
         requestedWindow: (any WKWebExtensionWindow)?,
-        extensionContext: WKWebExtensionContext?
+        extensionContext: WKWebExtensionContext?,
+        residencePolicy: ExtensionRequestedTabResidencePolicy
     ) throws -> ExtensionRequestedTabTarget {
         guard let browser = browserContext() else {
             throw ExtensionManagerCallbackError
@@ -50,7 +51,8 @@ final class ExtensionRequestedTabInitialTargetResolver {
             case .auxiliary(let session):
                 return target(
                     for: session.tab,
-                    extensionContext: extensionContext
+                    extensionContext: extensionContext,
+                    residencePolicy: residencePolicy
                 )
             case .normal(let window):
                 return ExtensionRequestedTabTarget(
@@ -72,7 +74,8 @@ final class ExtensionRequestedTabInitialTargetResolver {
            ) {
             return target(
                 for: session.tab,
-                extensionContext: extensionContext
+                extensionContext: extensionContext,
+                residencePolicy: residencePolicy
             )
         }
 
@@ -85,6 +88,13 @@ final class ExtensionRequestedTabInitialTargetResolver {
         )
         let window = browser.activeExtensionWindowState.flatMap {
             candidate -> BrowserWindowState? in
+            let publicationIsCurrent = profileID.map { profileID in
+                residencePolicy.requiresExtensionPublication == false
+                    || publications.publishedWindowAdapter(
+                        for: candidate,
+                        profileID: profileID
+                    ) != nil
+            } ?? false
             guard browser.extensionWindowState(for: candidate.id)
                     === candidate,
                   let profileID,
@@ -92,10 +102,7 @@ final class ExtensionRequestedTabInitialTargetResolver {
                       candidate,
                       profileId: profileID,
                       runtime: currentRuntime
-                  ), publications.publishedWindowAdapter(
-                      for: candidate,
-                      profileID: profileID
-                  ) != nil
+                  ), publicationIsCurrent
             else {
                 return nil
             }
@@ -125,20 +132,23 @@ final class ExtensionRequestedTabInitialTargetResolver {
 
     private func target(
         for openerTab: Tab,
-        extensionContext: WKWebExtensionContext?
+        extensionContext: WKWebExtensionContext?,
+        residencePolicy: ExtensionRequestedTabResidencePolicy
     ) -> ExtensionRequestedTabTarget {
         ExtensionRequestedTabTarget(
-            window: publishedNormalWindow(
+            window: eligibleNormalWindow(
                 for: openerTab,
-                extensionContext: extensionContext
+                extensionContext: extensionContext,
+                residencePolicy: residencePolicy
             ),
             space: browserContext()?.extensionTargetSpace(for: openerTab)
         )
     }
 
-    private func publishedNormalWindow(
+    private func eligibleNormalWindow(
         for openerTab: Tab,
-        extensionContext: WKWebExtensionContext?
+        extensionContext: WKWebExtensionContext?,
+        residencePolicy: ExtensionRequestedTabResidencePolicy
     ) -> BrowserWindowState? {
         guard let browser = browserContext() else { return nil }
         let currentRuntime = runtime()
@@ -156,20 +166,24 @@ final class ExtensionRequestedTabInitialTargetResolver {
             browser.activeExtensionWindowState,
         ]
         return candidates.compactMap { $0 }.first { window in
+            let publicationIsCurrent = profileID.map { profileID in
+                residencePolicy.requiresExtensionPublication == false
+                    || publications.publishedWindowAdapter(
+                        for: window,
+                        profileID: profileID
+                    ) != nil
+            } ?? false
             guard browser.extensionWindowState(for: window.id) === window,
                   let profileID,
                   profileRuntime.windowMatchesProfile(
                       window,
                       profileId: profileID,
                       runtime: currentRuntime
-                  )
+                  ), publicationIsCurrent
             else {
                 return false
             }
-            return publications.publishedWindowAdapter(
-                for: window,
-                profileID: profileID
-            ) != nil
+            return true
         }
     }
 }

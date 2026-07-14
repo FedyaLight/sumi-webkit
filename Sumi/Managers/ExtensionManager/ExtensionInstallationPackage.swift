@@ -99,8 +99,8 @@ final class ExtensionInstallationPackage {
                     appexBundleURL: appexBundleURL,
                     bundleIdentifier: bundleIdentifier,
                     safariRuntimeIdentity: safariRuntimeIdentity,
-                    manifestFingerprint: ExtensionUtils.fingerprint(
-                        data: manifestData
+                    manifestFingerprint: ExtensionPackageFingerprint.data(
+                        manifestData
                     ),
                     manifestPolicy: policy
                 )
@@ -169,7 +169,7 @@ final class ExtensionInstallationPackage {
             }
             let manifestURL = root.appendingPathComponent("manifest.json")
             let manifestData = try Data(contentsOf: manifestURL)
-            guard ExtensionUtils.fingerprint(data: manifestData)
+            guard ExtensionPackageFingerprint.data(manifestData)
                     == manifestFingerprint else {
                 throw ExtensionError.installationFailed(
                     "The Safari extension manifest changed during installation"
@@ -226,7 +226,7 @@ final class ExtensionInstallationPackage {
                 as? [String: Any] else {
             throw ExtensionError.invalidManifest("Invalid JSON structure")
         }
-        try ExtensionUtils.validateManifestContents(
+        try ExtensionManifestValidation.validateContents(
             manifest,
             policy: policy
         )

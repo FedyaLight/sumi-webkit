@@ -38,7 +38,7 @@ struct ExtensionActionAdmissionPolicy {
         guard let url, let scheme = url.scheme?.lowercased() else {
             return "nil"
         }
-        if ExtensionUtils.isExtensionOwnedURL(url) {
+        if ExtensionURLIdentity.isOwned(url) {
             let resource = url.lastPathComponent.isEmpty
                 ? "<resource>"
                 : url.lastPathComponent

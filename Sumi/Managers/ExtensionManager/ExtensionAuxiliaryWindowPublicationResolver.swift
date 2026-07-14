@@ -140,6 +140,8 @@ final class ExtensionAuxiliaryWindowPublicationResolver {
     ) -> WKWebExtensionContext? {
         if let override = session.tab.webExtensionContextOverride {
             guard let ownerExtensionID = session.ownerExtensionID,
+                  profileRuntime.contexts(for: profileID)[ownerExtensionID]
+                    === override,
                   profileRuntime.profileId(for: override) == profileID,
                   profileRuntime.extensionId(for: override)
                     == ownerExtensionID else {

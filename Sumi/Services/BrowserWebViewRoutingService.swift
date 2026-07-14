@@ -112,7 +112,7 @@ final class BrowserWebViewRoutingService {
 
     func syncTabAcrossWindows(_ tabId: UUID, originatingWebView: WKWebView? = nil) {
         guard let tab = tabLookup(tabId) else { return }
-        guard ExtensionUtils.isExtensionOwnedURL(tab.url) == false else { return }
+        guard ExtensionURLIdentity.isOwned(tab.url) == false else { return }
         commands.sync(tab, tab.url, originatingWebView)
     }
 

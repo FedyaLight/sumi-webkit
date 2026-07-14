@@ -132,6 +132,42 @@ extension AuxiliaryWindowLifecycleTests {
             ownerExtensionID: ownerExtensionID
         )
         let configuration = extensionPopupConfiguration(for: harness)
+        let preexistingWebView = try XCTUnwrap(
+            presentOwnerPopup(in: harness, configuration: configuration)
+        )
+        let siblingWebView = try XCTUnwrap(
+            presentOwnerPopup(in: harness, configuration: configuration)
+        )
+        defer {
+            for webView in [preexistingWebView, siblingWebView] {
+                harness.browserManager.auxiliaryWindows.teardown.teardown(
+                    for: webView,
+                    reason: .bulkCleanup
+                )
+            }
+        }
+        let originalWindowIdentities = Set(
+            harness.extensionContext.openWindows.map {
+                ObjectIdentifier($0 as AnyObject)
+            }
+        )
+        let originalTabIdentities = Set(
+            harness.extensionContext.openTabs.map {
+                ObjectIdentifier($0 as AnyObject)
+            }
+        )
+        let originalSessionIDs = Set(
+            harness.browserManager.auxiliaryWindows.sessions
+                .sessionsSnapshot().map(\.id)
+        )
+        let originalMiniWindowAdapterIDs = Set(
+            harness.extensionManager.adapterStore
+                .miniWindowAdaptersSnapshot().map(\.sessionId)
+        )
+        XCTAssertEqual(originalWindowIdentities.count, 2)
+        XCTAssertEqual(originalTabIdentities.count, 2)
+        XCTAssertEqual(originalSessionIDs.count, 2)
+        XCTAssertEqual(originalMiniWindowAdapterIDs, originalSessionIDs)
         var didReplace = false
         var openedTabCount = 0
         var closedTabCount = 0
@@ -166,13 +202,29 @@ extension AuxiliaryWindowLifecycleTests {
         XCTAssertTrue(didReplace)
         XCTAssertEqual(openedTabCount, 0)
         XCTAssertEqual(closedTabCount, 0)
-        XCTAssertTrue(harness.extensionContext.openWindows.isEmpty)
-        XCTAssertTrue(harness.extensionContext.openTabs.isEmpty)
+        XCTAssertEqual(
+            Set(harness.extensionContext.openWindows.map {
+                ObjectIdentifier($0 as AnyObject)
+            }),
+            originalWindowIdentities
+        )
+        XCTAssertEqual(
+            Set(harness.extensionContext.openTabs.map {
+                ObjectIdentifier($0 as AnyObject)
+            }),
+            originalTabIdentities
+        )
         XCTAssertTrue(replacement.openWindows.isEmpty)
         XCTAssertTrue(replacement.openTabs.isEmpty)
-        XCTAssertTrue(
-            harness.browserManager.auxiliaryWindows.sessions
-                .sessionsSnapshot().isEmpty
+        XCTAssertEqual(
+            Set(harness.browserManager.auxiliaryWindows.sessions
+                .sessionsSnapshot().map(\.id)),
+            originalSessionIDs
+        )
+        XCTAssertEqual(
+            Set(harness.extensionManager.adapterStore
+                .miniWindowAdaptersSnapshot().map(\.sessionId)),
+            originalMiniWindowAdapterIDs
         )
     }
 

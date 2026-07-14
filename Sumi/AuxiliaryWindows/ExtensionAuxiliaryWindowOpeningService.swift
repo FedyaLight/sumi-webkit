@@ -4,6 +4,17 @@ import WebKit
 
 @available(macOS 15.5, *)
 @MainActor
+struct ExtensionAuxiliaryWindowCallbackRuntime {
+    let contextLoading: any ExtensionInitialDocumentContextReadiness
+    let loadResolver: ExtensionRequestedTabLoadResolver
+    let contextPreloader: ExtensionRequestedTabContextPreloader
+    let recentRequests: ExtensionRecentTabRequestHistory
+    let configurationPreparation: ExtensionWebViewConfigurationPreparation
+    let integration: AuxiliaryWindowExtensionIntegration
+}
+
+@available(macOS 15.5, *)
+@MainActor
 final class ExtensionAuxiliaryWindowOpeningService {
     private let context: any AuxiliaryWindowContextResolving
     private let tabs: any AuxiliaryWindowTabLifecycle
@@ -30,11 +41,12 @@ final class ExtensionAuxiliaryWindowOpeningService {
 
     func present(
         configuration: WKWebExtension.WindowConfiguration,
-        controller: WKWebExtensionController,
-        extensionContext: WKWebExtensionContext,
-        extensionManager: ExtensionManager,
+        evidence: ExtensionControllerCallbackEvidence,
+        callbackAdmission: ExtensionControllerCallbackAdmission,
+        runtime: ExtensionAuxiliaryWindowCallbackRuntime,
         parentWindow: NSWindow?
-    ) async -> ExtensionMiniWindowAdapter? {
+    ) async -> ExtensionPopupWindowPresentationReceipt? {
+        guard callbackAdmission.isCurrent(evidence) else { return nil }
         let isPrivate = configuration.shouldBePrivate
             || context.activeWindow?.isIncognito == true
         guard isPrivate == false else {
@@ -47,44 +59,59 @@ final class ExtensionAuxiliaryWindowOpeningService {
         )
         let activeWindow = context.activeWindow
         let openerTab = activeWindow.flatMap(context.currentTab(in:))
-        let profileID = extensionManager.profileId(for: extensionContext)
-            ?? openerTab?.profileId
-            ?? context.currentProfileID
-
-        if let profileID {
-            guard await admission.waitForAdmission(profileID: profileID) else {
-                return nil
-            }
-            await extensionManager.ensureInitialExtensionContextsLoaded(
-                for: profileID
-            )
+        let profileID = evidence.profileID
+        guard openerTab?.profileId.map({ $0 == profileID }) ?? true else {
+            return nil
         }
 
         let firstURL = configuration.tabURLs.first
-        let resolvedLoad = extensionManager.requestedTabLoadResolver.resolve(
+        let resolvedLoad = runtime.loadResolver.resolve(
             firstURL,
-            controller: controller
+            controller: evidence.controller
         )
+        guard resolvedLoad.hasUnresolvedExtensionOwnership == false else {
+            return nil
+        }
+        if case .extensionOwned(let loadContext) = resolvedLoad.ownership {
+            guard loadContext === evidence.context else { return nil }
+        }
         let loadURL = resolvedLoad.url ?? firstURL
-        let isExtensionOwnedLoad = ExtensionUtils.isExtensionOwnedURL(loadURL)
         let tabExtensionContext = resolvedLoad.extensionContext
-            ?? (isExtensionOwnedLoad ? extensionContext : nil)
+
+        guard callbackAdmission.isCurrent(evidence),
+              await admission.waitForAdmission(profileID: profileID),
+              callbackAdmission.isCurrent(evidence)
+        else {
+            return nil
+        }
+        if runtime.contextLoading
+            .profileNeedsInitialDocumentExtensionContextLoad(
+                profileId: profileID
+            ) {
+            await runtime.contextLoading.ensureInitialExtensionContextsLoaded(
+                for: profileID
+            )
+            guard callbackAdmission.isCurrent(evidence) else { return nil }
+        }
 
         if let loadURL {
-            await extensionManager.requestedTabContextPreloader.prepare(
+            await runtime.contextPreloader.prepare(
                 load: ExtensionRequestedTabLoad(
                     url: loadURL,
-                    extensionContext: tabExtensionContext
+                    ownership: resolvedLoad.ownership
                 ),
                 targetWindow: activeWindow,
                 targetSpace: context.currentSpace,
-                controller: controller
+                controller: evidence.controller
             )
-            extensionManager.recentExtensionTabRequests.record(loadURL)
+            guard callbackAdmission.isCurrent(evidence) else { return nil }
+            runtime.recentRequests.record(loadURL)
         }
 
-        if let profileID,
-           await admission.waitForAdmission(profileID: profileID) == false {
+        guard callbackAdmission.isCurrent(evidence),
+              await admission.waitForAdmission(profileID: profileID),
+              callbackAdmission.isCurrent(evidence)
+        else {
             return nil
         }
 
@@ -98,20 +125,36 @@ final class ExtensionAuxiliaryWindowOpeningService {
         ) else {
             return nil
         }
+        guard callbackAdmission.isCurrent(evidence) else {
+            tabs.discardCreatedMiniWindowTab(tab, unplacedWebView: nil)
+            return nil
+        }
 
-        let webViewConfiguration = (tabExtensionContext ?? extensionContext)
+        let webViewConfiguration = (tabExtensionContext ?? evidence.context)
             .webViewConfiguration ?? WKWebViewConfiguration()
-        extensionManager.prepareWebViewConfigForExtensionRuntime(
+        guard callbackAdmission.isCurrent(evidence) else {
+            tabs.discardCreatedMiniWindowTab(tab, unplacedWebView: nil)
+            return nil
+        }
+        runtime.configurationPreparation.prepareWebViewConfigForExtensionRuntime(
             webViewConfiguration,
             profileId: profileID,
             reason: "ExtensionAuxiliaryWindowOpeningService.webView"
         )
+        guard callbackAdmission.isCurrent(evidence) else {
+            tabs.discardCreatedMiniWindowTab(tab, unplacedWebView: nil)
+            return nil
+        }
         let webView = tab.createAuxiliaryMiniWindowWebViewFromWebKitConfiguration(
             webViewConfiguration,
             currentURL: loadURL,
             isExtensionOriginated: true,
             reason: "ExtensionAuxiliaryWindowOpeningService.present"
         )
+        guard callbackAdmission.isCurrent(evidence) else {
+            tabs.discardCreatedMiniWindowTab(tab, unplacedWebView: webView)
+            return nil
+        }
         let installation = tabs.install(webView, for: tab)
         guard installation.isAccepted else {
             tabs.discardCreatedMiniWindowTab(
@@ -122,12 +165,15 @@ final class ExtensionAuxiliaryWindowOpeningService {
             )
             return nil
         }
+        guard callbackAdmission.isCurrent(evidence) else {
+            tab.performComprehensiveWebViewCleanup()
+            tabs.removeMiniWindowTab(tab)
+            return nil
+        }
 
-        let extensionIntegration = extensionManager
-            .auxiliaryWindowIntegration()
         let extensionID = AuxiliaryWindowExtensionIdentityResolver.resolve(
-            extensionIntegration: extensionIntegration,
-            extensionContext: extensionContext,
+            extensionIntegration: runtime.integration,
+            extensionContext: evidence.context,
             openerTab: openerTab,
             extensionOwnedSourceURL: firstURL,
             explicitExtensionID: nil
@@ -143,7 +189,7 @@ final class ExtensionAuxiliaryWindowOpeningService {
                 shouldActivateApp: configuration.shouldBeFocused,
                 isPrivate: false,
                 nestedDepth: 0,
-                extensionIntegration: extensionIntegration,
+                extensionIntegration: runtime.integration,
                 extensionID: extensionID
             ),
             nestedPopups: popups
@@ -157,7 +203,8 @@ final class ExtensionAuxiliaryWindowOpeningService {
             return nil
         }
 
-        guard session.extensionEvents?
+        guard callbackAdmission.isCurrent(evidence),
+              session.extensionEvents?
             .notifyAuxiliaryWindowOpened(session) == true else {
             teardown.teardown(
                 for: session.webView,
@@ -166,8 +213,26 @@ final class ExtensionAuxiliaryWindowOpeningService {
             return nil
         }
         if let loadURL {
+            guard callbackAdmission.isCurrent(evidence) else {
+                teardown.teardown(
+                    for: session.webView,
+                    reason: .presentationFailure
+                )
+                return nil
+            }
             tab.loadURL(loadURL)
         }
-        return adapter
+        return ExtensionPopupWindowPresentationReceipt(
+            sessionID: session.id,
+            adapter: adapter,
+            retireExactSession: {
+                [weak teardown = self.teardown, weak session] in
+                guard let teardown, let session else { return }
+                teardown.teardown(
+                    for: session.webView,
+                    reason: .presentationFailure
+                )
+            }
+        )
     }
 }

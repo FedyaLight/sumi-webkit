@@ -22,8 +22,7 @@ final class ExtensionManager: NSObject, ObservableObject {
         ExtensionContextPreparation.registerWebExtensionURLScheme
     @Published var actionStatesByExtensionID:
         [String: BrowserExtensionActionSurfaceState] = [:]
-    @Published private(set) var isExtensionSupportAvailable =
-        ExtensionUtils.isExtensionSupportAvailable
+    @Published private(set) var isExtensionSupportAvailable = true
     var extensionsLoaded: Bool {
         runtimeLoadStatus.extensionsLoaded
     }
@@ -225,7 +224,8 @@ final class ExtensionManager: NSObject, ObservableObject {
     lazy var loadedContextFinalizer = ExtensionLoadedContextFinalizer(
         authority: loadedContextAuthority,
         actionSurfaces: { [weak self] in self?.actionSurfacePublisher },
-        residency: contextResidencyOwner,
+        retention: contextRetentionOwner,
+        settlement: contextSettlementOwner,
         installationActivation: installRuntimeActivation
     )
     lazy var extensionRuntimeLoader = ExtensionRuntimeLoader(
@@ -248,7 +248,7 @@ final class ExtensionManager: NSObject, ObservableObject {
             rollback: runtimeRollback,
             contextLoader: extensionContextLoader,
             activation: installRuntimeActivation,
-            residency: contextResidencyOwner
+            settlement: contextSettlementOwner
         )
     lazy var enabledRuntimeActivation = ExtensionEnabledRuntimeActivation(
         runtimeAccess: extensionRuntimeAccess,
@@ -430,8 +430,44 @@ final class ExtensionManager: NSObject, ObservableObject {
             }
         )
     }()
+    lazy var contextRetentionOwner = ExtensionContextRetentionOwner(
+        profileRuntime: profileRuntime,
+        runtimeResidency: runtimeResidency,
+        extensionLoadRevisions: extensionLoadRevisions,
+        loadRegistry: contextLoadRegistry,
+        retirement: contextRetirement,
+        diagnostics: runtimeDiagnostics
+    )
+    lazy var contextLoadingOwner = ExtensionContextLoadingOwner(
+        installedExtensions: installedExtensionCollection,
+        runtimeAccess: extensionRuntimeAccess,
+        metadataStore: installationMetadataStore,
+        retention: contextRetentionOwner,
+        runtimeIsEnabled: { [weak self] in
+            self?.isExtensionSupportAvailable == true
+                && self?.extensionsModuleEnabledForRuntimeBoundary() == true
+        },
+        loadEnabledExtension: { [weak self] entity, profileID in
+            guard let self else { return }
+            _ = try await self.extensionRuntimeLoader.loadEnabled(
+                from: entity,
+                profileID: profileID
+            )
+        }
+    )
+    lazy var contextSettlementOwner = ExtensionContextSettlementOwner(
+        profileRuntime: profileRuntime,
+        runtimeLifecycle: runtimeLifecycle,
+        installedExtensions: installedExtensionCollection,
+        markPublicationReady: { [weak self] in
+            self?.markExtensionRuntimePublicationReady()
+        },
+        diagnostics: runtimeDiagnostics
+    )
     lazy var contextResidencyOwner = ExtensionContextResidencyOwner(
-        dependencies: .live(manager: self)
+        retention: contextRetentionOwner,
+        loading: contextLoadingOwner,
+        settlement: contextSettlementOwner
     )
     private let unattachedTabWebViewResolver =
         ExtensionUnavailableTabWebViewProjection()
@@ -516,7 +552,24 @@ final class ExtensionManager: NSObject, ObservableObject {
                 self?.runtimeDiagnostics.trace(message)
             }
         )
-    lazy var deferredRuntimeOwnerStore = ExtensionDeferredRuntimeOwnerStore(manager: self)
+    private var deferredRuntimeOwnerStoreStorage:
+        ExtensionDeferredRuntimeOwnerStore?
+    var deferredRuntimeOwnerStore: ExtensionDeferredRuntimeOwnerStore {
+        if let deferredRuntimeOwnerStoreStorage {
+            return deferredRuntimeOwnerStoreStorage
+        }
+        let store = ExtensionDeferredRuntimeOwnerStore(
+            installedExtensions: installedExtensionCollection,
+            runtimeCatalog: runtimeCatalog,
+            runtimeQuery: ExtensionDeferredRuntimeQuery(modules: moduleRegistry),
+            profileQuery: profileRuntime,
+            contextLoading: contextResidencyOwner,
+            backgroundWake: backgroundWakeCoordinator,
+            failureLogger: ExtensionDeferredRuntimeFailureLogger()
+        )
+        deferredRuntimeOwnerStoreStorage = store
+        return store
+    }
     let runtimeDiagnostics = ExtensionRuntimeDiagnostics()
     lazy var controllerDelegateBridge = ExtensionControllerDelegateBridge(manager: self)
     lazy var webViewConfigurationPreparation =
@@ -676,7 +729,8 @@ final class ExtensionManager: NSObject, ObservableObject {
     }
     var loadedNativeMessagingBackgroundWakeOwner:
         ExtensionNativeMessagingBackgroundWakeOwner? {
-        deferredRuntimeOwnerStore.loadedNativeMessagingBackgroundWakeOwner
+        deferredRuntimeOwnerStoreStorage?
+            .loadedNativeMessagingBackgroundWakeOwner
     }
 
     var scopedRuntimeRetirementResources:
@@ -695,7 +749,8 @@ final class ExtensionManager: NSObject, ObservableObject {
     }
     var loadedInitialDocumentRuntimePreparationOwner:
         ExtensionInitialDocumentRuntimePreparationOwner? {
-        deferredRuntimeOwnerStore.loadedInitialDocumentRuntimePreparationOwner
+        deferredRuntimeOwnerStoreStorage?
+            .loadedInitialDocumentRuntimePreparationOwner
     }
 
     let actionAnchorStore = ExtensionActionAnchorStore()
@@ -761,8 +816,6 @@ final class ExtensionManager: NSObject, ObservableObject {
         _ = runtimeShutdown
         _ = controllerProvisioningOwner
         _ = permissionsOriginsCompatibilityPreludeInstallationOwner
-        _ = deferredRuntimeOwnerStore
-
         guard isExtensionSupportAvailable else {
             markExtensionRuntimePublicationReady()
             runtimeLifecycle.markUnavailable()

@@ -8,7 +8,7 @@ struct ExtensionRequestedTabOpeningService {
     let loadResolver: ExtensionRequestedTabLoadResolver
     let placement: ExtensionRequestedTabTargetResolver
     let materializer: ExtensionRequestedTabWebViewMaterializer
-    let registrar: ExtensionCreatedTabRuntimeRegistrar
+    let runtimeAdmission: ExtensionRequestedTabRuntimeAdmission
     private let browserContext: @MainActor () -> (any ExtensionTabCreation)?
     private let profileRuntime: ExtensionProfileRuntime
     private let runtime: @MainActor () -> ExtensionManagerRuntime
@@ -29,7 +29,9 @@ struct ExtensionRequestedTabOpeningService {
         self.loadResolver = loadResolver
         self.placement = placement
         self.materializer = materializer
-        self.registrar = registrar
+        runtimeAdmission = ExtensionRequestedTabRuntimeAdmission(
+            registrar: registrar
+        )
         self.browserContext = browserContext
         self.profileRuntime = profileRuntime
         self.runtime = runtime
@@ -44,31 +46,41 @@ struct ExtensionRequestedTabOpeningService {
         requestedWindow: (any WKWebExtensionWindow)?,
         controller: WKWebExtensionController,
         extensionContext: WKWebExtensionContext? = nil,
+        evidence: ExtensionControllerCallbackEvidence? = nil,
+        callbackAdmission: ExtensionControllerCallbackAdmission? = nil,
         reason: String
     ) throws -> Tab {
+        let invocation = ExtensionRequestedTabInvocationAuthority(
+            profileRuntime: profileRuntime,
+            controller: controller,
+            sourceContext: extensionContext,
+            evidence: evidence,
+            callbackAdmission: callbackAdmission
+        )
+        guard invocation.isCurrent else {
+            throw CancellationError()
+        }
         guard let browserContext = browserContext() else {
             throw ExtensionManagerCallbackError
                 .requestedTabBrowserManagerUnavailable.nsError()
         }
 
+        let load = loadResolver.resolve(url, controller: controller)
+        guard load.hasUnresolvedExtensionOwnership == false else {
+            throw ExtensionManagerCallbackError.requestedTabUnavailable.nsError()
+        }
+        let residencePolicy: ExtensionRequestedTabResidencePolicy =
+            load.isOrdinaryBrowserRequest
+                ? .ordinaryBrowser
+                : .extensionPublished
         let target = try placement.resolve(
             requestedWindow: requestedWindow,
-            extensionContext: extensionContext
+            extensionContext: extensionContext,
+            residencePolicy: residencePolicy
         )
-        let load = loadResolver.resolve(url, controller: controller)
-        let controllerProfileID = profileRuntime.profileId(for: controller)
-        for context in [extensionContext, load.extensionContext].compactMap({
-            $0
-        }) {
-            guard let identity = profileRuntime.exactContextIdentity(
-                for: context
-            ), identity.profileId == controllerProfileID else {
-                throw ExtensionManagerCallbackError
-                    .requestedTabUnavailable.nsError()
-            }
-        }
-        let opensTransientInternalTab = shouldOpenTransientInternalTab(
-            load: load,
+        try invocation.validateSource(for: load)
+        guard invocation.isCurrent else { throw CancellationError() }
+        let opensTransientInternalTab = load.shouldOpenTransientInternalTab(
             shouldBeActive: shouldBeActive,
             shouldBePinned: shouldBePinned
         )
@@ -124,22 +136,27 @@ struct ExtensionRequestedTabOpeningService {
             }
         }
 
+        guard invocation.isCurrent else { throw CancellationError() }
         if let targetWindow = target.window {
             browserContext.placeExtensionTab(newTab, in: targetWindow)
         }
 
-        let preparedResidence = try placement.publishedResidence(
+        guard invocation.isCurrent else { throw CancellationError() }
+        let preparedResidence = try placement.validatedResidence(
             for: newTab,
             target: target,
-            extensionContext: extensionContext
+            extensionContext: extensionContext,
+            residencePolicy: residencePolicy
         )
         guard opensTransientInternalTab || preparedResidence != nil else {
             throw ExtensionManagerCallbackError
                 .requestedTabUnavailable.nsError()
         }
         if let preparedResidence {
+            guard invocation.isCurrent else { throw CancellationError() }
             browserContext.placeExtensionTab(newTab, in: preparedResidence)
         }
+        guard invocation.isCurrent else { throw CancellationError() }
         materializer.materializeNormalTabIfNeeded(
             newTab,
             targetWindow: preparedResidence
@@ -149,19 +166,27 @@ struct ExtensionRequestedTabOpeningService {
             isActive: shouldBeActive,
             hasWindowSelection: false
         )
-        guard registrar.register(
+        guard invocation.isCurrent else { throw CancellationError() }
+        let publicationControllerIsReady = extensionContext.map { context in
+            controller.extensionContexts.contains { $0 === context }
+        } ?? true
+        guard runtimeAdmission.admit(
             newTab,
+            load: load,
+            publicationControllerIsReady: publicationControllerIsReady,
             runtime: runtime(),
             reason: reason
         ) else {
             throw ExtensionManagerCallbackError
                 .requestedTabUnavailable.nsError()
         }
+        guard invocation.isCurrent else { throw CancellationError() }
 
-        let committedResidence = try placement.publishedResidence(
+        let committedResidence = try placement.validatedResidence(
             for: newTab,
             target: target,
-            extensionContext: extensionContext
+            extensionContext: extensionContext,
+            residencePolicy: residencePolicy
         )
         guard opensTransientInternalTab || committedResidence != nil else {
             throw ExtensionManagerCallbackError
@@ -173,6 +198,7 @@ struct ExtensionRequestedTabOpeningService {
                 throw ExtensionManagerCallbackError
                     .requestedTabUnavailable.nsError()
             }
+            guard invocation.isCurrent else { throw CancellationError() }
             browserContext.selectExtensionTab(
                 newTab,
                 in: committedResidence
@@ -180,6 +206,7 @@ struct ExtensionRequestedTabOpeningService {
         }
         if shouldBePinned {
             // Display active Tabs before regular-to-shortcut conversion.
+            guard invocation.isCurrent else { throw CancellationError() }
             guard browserContext.pinExtensionTab(
                 newTab,
                 targetWindow: committedResidence,
@@ -190,51 +217,20 @@ struct ExtensionRequestedTabOpeningService {
             }
         }
 
+        guard invocation.isCurrent else { throw CancellationError() }
         recentRequests.record(url)
         didCommit = true
 
-        SafariExtensionPermissionLifecycleDiagnostics.logTabBinding(
-            SafariExtensionTabBindingSnapshot(
-                route: opensTransientInternalTab
-                    ? .extensionInternal
-                    : .normalBrowserTab,
-                profileBucket: SafariExtensionPermissionLifecycleDiagnostics
-                    .bucket(
-                        profileRuntime.resolvedProfileId(
-                            for: newTab,
-                            runtime: runtime()
-                        )
-                            ?? diagnosticProfileId
-                    ),
-                tabBucket: SafariExtensionPermissionLifecycleDiagnostics
-                    .bucket(newTab.id),
-                dataStoreMatched: nil,
-                controllerMatched: nil,
-                tabAdapterCreated: hasTabAdapter(newTab),
-                didOpenTabTiming: newTab.extensionPageRuntimeOwner
-                    .hasAnyDidOpenTabNotification()
-                    ? .beforeNavigation
-                    : .deferred,
-                firstNavigationHost: SafariExtensionPermissionLifecycleDiagnostics
-                    .host(from: load.url),
-                firstCommitHost: nil
-            )
+        ExtensionRequestedTabBindingDiagnostics.record(
+            tab: newTab,
+            load: load,
+            opensTransientInternalTab: opensTransientInternalTab,
+            diagnosticProfileID: diagnosticProfileId,
+            profileRuntime: profileRuntime,
+            runtime: runtime(),
+            hasTabAdapter: hasTabAdapter(newTab)
         )
         return newTab
     }
 
-    private func shouldOpenTransientInternalTab(
-        load: ExtensionRequestedTabLoad,
-        shouldBeActive: Bool,
-        shouldBePinned: Bool
-    ) -> Bool {
-        guard shouldBeActive == false,
-              shouldBePinned == false,
-              load.extensionContext != nil,
-              let url = load.url
-        else {
-            return false
-        }
-        return ExtensionUtils.isExtensionOwnedURL(url)
-    }
 }

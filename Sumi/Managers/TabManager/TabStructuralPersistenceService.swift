@@ -224,7 +224,7 @@ final class TabStructuralPersistenceService {
         guard tab.isShortcutLiveInstance == false else { return false }
         guard tab.isPinned == false, tab.isSpacePinned == false else { return false }
         guard tab.spaceId != nil else { return false }
-        guard ExtensionUtils.isExtensionOwnedURL(tab.url) == false else { return false }
+        guard ExtensionURLIdentity.isOwned(tab.url) == false else { return false }
         return true
     }
 

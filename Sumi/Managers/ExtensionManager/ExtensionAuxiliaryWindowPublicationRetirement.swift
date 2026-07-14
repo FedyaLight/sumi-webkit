@@ -93,6 +93,10 @@ final class ExtensionAuxiliaryWindowPublicationRetirement {
         }
 
         let closedTab: Bool
+        let removesAdapters = mode.removesPublishedAdapters
+            || control?.auxiliaryWindowSession(for: session.id) !== session
+        let removesPreparedAdaptersBeforeWindowClose =
+            publication.tabReceipt.isPrepared && removesAdapters
         if publication.tabReceipt.isPrepared {
             _ = publication.tabReceipt.cancelForWindowRetirement()
             closedTab = false
@@ -105,8 +109,14 @@ final class ExtensionAuxiliaryWindowPublicationRetirement {
                         sessionID: session.id,
                         tabID: session.tab.id
                     ))
-                }
+            }
             #endif
+        }
+
+        // Retire didOpenWindow's implicit Tab projection before balancing a
+        // rejected Window callback.
+        if removesPreparedAdaptersBeforeWindowClose {
+            removeAdapters(for: publication, session: session)
         }
 
         publication.context.didCloseWindow(publication.adapter)
@@ -122,26 +132,13 @@ final class ExtensionAuxiliaryWindowPublicationRetirement {
             )
         }
 
-        let removesAdapters = mode.removesPublishedAdapters
-            || control?.auxiliaryWindowSession(for: session.id) !== session
-        if removesAdapters {
-            _ = adapterStore.removeTabAdapter(
-                for: session.tab.id,
-                ifIdenticalTo: publication.tabReceipt.adapter
-            )
-            _ = adapterStore.removeMiniWindowAdapter(
-                for: session.id,
-                ifIdenticalTo: publication.adapter
-            )
+        if removesAdapters && removesPreparedAdaptersBeforeWindowClose == false {
+            removeAdapters(for: publication, session: session)
         }
-        return ExtensionAuxiliaryWindowRetirementOutcome(
-            closedTab: closedTab
-        )
+        return ExtensionAuxiliaryWindowRetirementOutcome(closedTab: closedTab)
     }
 
-    func removeUnpublishedWindowAdapter(
-        for session: AuxiliaryWindowSession
-    ) {
+    func removeUnpublishedWindowAdapter(for session: AuxiliaryWindowSession) {
         guard ledger.isClosing(session) == false,
               let adapter = session.miniWindowAdapter else {
             return
@@ -149,6 +146,19 @@ final class ExtensionAuxiliaryWindowPublicationRetirement {
         _ = adapterStore.removeMiniWindowAdapter(
             for: session.id,
             ifIdenticalTo: adapter
+        )
+    }
+
+    private func removeAdapters(
+        for publication: ExtensionAuxiliaryWindowPublication, session: AuxiliaryWindowSession
+    ) {
+        _ = adapterStore.removeTabAdapter(
+            for: session.tab.id,
+            ifIdenticalTo: publication.tabReceipt.adapter
+        )
+        _ = adapterStore.removeMiniWindowAdapter(
+            for: session.id,
+            ifIdenticalTo: publication.adapter
         )
     }
 

@@ -67,9 +67,9 @@ extension URLBarView {
         if SumiSurface.isBookmarksSurfaceURL(url) {
             return String(localized: "Bookmarks")
         }
-        if ExtensionUtils.isExtensionOwnedURL(url) {
-            return ExtensionUtils.displayName(
-                forExtensionOwnedURL: url,
+        if ExtensionURLIdentity.isOwned(url) {
+            return ExtensionDisplayNameResolver.displayName(
+                forOwnedURL: url,
                 installedExtensions: extensionSurfaceStore.installedExtensions
             ) ?? String(localized: "Extension")
         }

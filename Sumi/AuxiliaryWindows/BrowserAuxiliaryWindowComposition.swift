@@ -182,7 +182,7 @@ extension ExtensionManager: AuxiliaryWindowExtensionEventHandling {
     func auxiliaryWindowIntegration() -> AuxiliaryWindowExtensionIntegration {
         AuxiliaryWindowExtensionIntegration(
             installedExtensions: installedExtensionCollection.records,
-            events: self,
+            events: WeakAuxiliaryWindowExtensionEvents(target: self),
             resolveExtensionID: { [weak self] context, openerTab, sourceURL in
                 self?.ownerExtensionID(
                     extensionContext: context,

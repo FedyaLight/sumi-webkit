@@ -38,9 +38,9 @@ enum ExtensionInstallSourceResolver {
             return
         }
 
-        guard let serviceWorkerURL = ExtensionUtils.url(
+        guard let serviceWorkerURL = ExtensionPathSafety.manifestRelativeURL(
             baseURL,
-            appendingManifestRelativePath: serviceWorker
+            path: serviceWorker
         ) else {
             throw ExtensionError.installationFailed(
                 "MV3 service worker path is invalid: \(serviceWorker)"

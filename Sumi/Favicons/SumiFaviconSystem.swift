@@ -37,7 +37,7 @@ enum SumiFaviconLookupKey {
 
     private static func isCacheableScheme(_ scheme: String) -> Bool {
         scheme == "http" || scheme == "https"
-            || ExtensionUtils.extensionOwnedURLSchemes.contains(scheme)
+            || ExtensionURLIdentity.ownedSchemes.contains(scheme)
     }
 }
 

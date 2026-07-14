@@ -8,6 +8,15 @@ import WebKit
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionWindowRequestRouter {
+    private struct CallbackAuthority {
+        let evidence: ExtensionControllerCallbackEvidence
+        let admission: ExtensionControllerCallbackAdmission
+
+        @MainActor
+        func isCurrent() -> Bool {
+            admission.isCurrent(evidence)
+        }
+    }
     private let profileRuntime: ExtensionProfileRuntime
     private let targetResolver: ExtensionRequestedTabTargetResolver
     private let loadResolver: ExtensionRequestedTabLoadResolver
@@ -54,6 +63,46 @@ final class ExtensionWindowRequestRouter {
             (any Error)?
         ) -> Void
     ) {
+        open(
+            tabURLs: tabURLs,
+            controller: controller,
+            extensionContext: extensionContext,
+            authority: nil,
+            completion: completion
+        )
+    }
+
+    func open(
+        tabURLs: [URL],
+        evidence: ExtensionControllerCallbackEvidence,
+        admission: ExtensionControllerCallbackAdmission,
+        completion: @escaping (
+            (any WKWebExtensionWindow)?,
+            (any Error)?
+        ) -> Void
+    ) {
+        open(
+            tabURLs: tabURLs,
+            controller: evidence.controller,
+            extensionContext: evidence.context,
+            authority: CallbackAuthority(
+                evidence: evidence,
+                admission: admission
+            ),
+            completion: completion
+        )
+    }
+
+    private func open(
+        tabURLs: [URL],
+        controller: WKWebExtensionController,
+        extensionContext: WKWebExtensionContext?,
+        authority: CallbackAuthority?,
+        completion: @escaping (
+            (any WKWebExtensionWindow)?,
+            (any Error)?
+        ) -> Void
+    ) {
         guard tabURLs.count <= 1 else {
             completion(
                 nil,
@@ -62,7 +111,8 @@ final class ExtensionWindowRequestRouter {
             )
             return
         }
-        guard let profileID = profileRuntime.profileId(for: controller),
+        guard authority?.isCurrent() ?? true,
+              let profileID = profileRuntime.profileId(for: controller),
               profileRuntime.controllersByProfile[profileID] === controller,
               extensionContext.map({
                   profileRuntime.profileId(for: $0) == profileID
@@ -92,6 +142,7 @@ final class ExtensionWindowRequestRouter {
                    profileID: profileID,
                    controller: controller,
                    extensionContext: extensionContext,
+                   authority: authority,
                    completion: completion
                ) {
                 return
@@ -101,6 +152,7 @@ final class ExtensionWindowRequestRouter {
                 profileID: profileID,
                 controller: controller,
                 extensionContext: extensionContext,
+                authority: authority,
                 completion: completion
             )
         }
@@ -109,7 +161,7 @@ final class ExtensionWindowRequestRouter {
     private nonisolated static func isExternalWebPopupURL(_ url: URL) -> Bool {
         guard let scheme = url.scheme?.lowercased(),
               scheme == "http" || scheme == "https",
-              ExtensionUtils.isExtensionOwnedURL(url) == false
+              ExtensionURLIdentity.isOwned(url) == false
         else { return false }
         return true
     }
@@ -119,6 +171,7 @@ final class ExtensionWindowRequestRouter {
         profileID: UUID,
         controller: WKWebExtensionController,
         extensionContext: WKWebExtensionContext?,
+        authority: CallbackAuthority?,
         completion: @escaping (
             (any WKWebExtensionWindow)?,
             (any Error)?
@@ -144,7 +197,8 @@ final class ExtensionWindowRequestRouter {
             targetSpace: space,
             profileID: profileID,
             controller: controller,
-            extensionContext: extensionContext
+            extensionContext: extensionContext,
+            authority: authority
         ), query.extensionWindowState(for: window.id) === window,
            publishedWindow(window, profileID) === adapter,
            targetResolver.targetSpace(
@@ -163,6 +217,8 @@ final class ExtensionWindowRequestRouter {
                 requestedWindow: adapter,
                 controller: controller,
                 extensionContext: extensionContext,
+                evidence: authority?.evidence,
+                callbackAdmission: authority?.admission,
                 reason: "ExtensionWindowRequestRouter.externalTab"
             )
         } catch {
@@ -174,7 +230,8 @@ final class ExtensionWindowRequestRouter {
             return true
         }
 
-        guard query.extensionWindowState(for: window.id) === window,
+        guard authority?.isCurrent() ?? true,
+              query.extensionWindowState(for: window.id) === window,
               publishedWindow(window, profileID) === adapter
         else {
             completion(
@@ -193,6 +250,7 @@ final class ExtensionWindowRequestRouter {
         profileID: UUID,
         controller: WKWebExtensionController,
         extensionContext: WKWebExtensionContext?,
+        authority: CallbackAuthority?,
         completion: @escaping (
             (any WKWebExtensionWindow)?,
             (any Error)?
@@ -215,7 +273,8 @@ final class ExtensionWindowRequestRouter {
             targetSpace: space,
             profileID: profileID,
             controller: controller,
-            extensionContext: extensionContext
+            extensionContext: extensionContext,
+            authority: authority
         ), targetResolver.targetSpace(
             for: nil,
             contextProfileId: profileID
@@ -225,7 +284,8 @@ final class ExtensionWindowRequestRouter {
                controller: controller,
                extensionContext: extensionContext,
                load: load,
-               space: space
+               space: space,
+               authority: authority
            ),
            let creator = windowCreation(),
            let preparedWindow = creator.prepareExtensionRequestedWindow(
@@ -250,7 +310,8 @@ final class ExtensionWindowRequestRouter {
             controller: controller,
             extensionContext: extensionContext,
             load: load,
-            space: space
+            space: space,
+            authority: authority
         ), let adapter = publishedWindow(window, profileID)
         else {
             preparedWindow.cancel()
@@ -267,7 +328,8 @@ final class ExtensionWindowRequestRouter {
                   controller: controller,
                   extensionContext: extensionContext,
                   load: load,
-                  space: space
+                  space: space,
+                  authority: authority
               ),
               publishedWindow(window, profileID) === adapter,
               preparedWindow.accept()
@@ -288,14 +350,16 @@ final class ExtensionWindowRequestRouter {
         targetSpace: Space,
         profileID: UUID,
         controller: WKWebExtensionController,
-        extensionContext: WKWebExtensionContext?
+        extensionContext: WKWebExtensionContext?,
+        authority: CallbackAuthority?
     ) async -> Bool {
         guard requestIsCurrent(
             profileID: profileID,
             controller: controller,
             extensionContext: extensionContext,
             load: load,
-            space: targetSpace
+            space: targetSpace,
+            authority: authority
         ) else {
             return false
         }
@@ -314,7 +378,8 @@ final class ExtensionWindowRequestRouter {
             controller: controller,
             extensionContext: extensionContext,
             load: load,
-            space: targetSpace
+            space: targetSpace,
+            authority: authority
         )
     }
 
@@ -323,9 +388,11 @@ final class ExtensionWindowRequestRouter {
         controller: WKWebExtensionController,
         extensionContext: WKWebExtensionContext?,
         load: ExtensionRequestedTabLoad,
-        space: Space
+        space: Space,
+        authority: CallbackAuthority?
     ) -> Bool {
-        guard space.profileId == profileID,
+        guard authority?.isCurrent() ?? true,
+              space.profileId == profileID,
               profileRuntime.profileId(for: controller) == profileID,
               profileRuntime.controllersByProfile[profileID] === controller
         else {

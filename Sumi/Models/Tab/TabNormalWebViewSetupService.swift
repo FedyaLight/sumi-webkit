@@ -190,7 +190,7 @@ final class TabNormalWebViewSetupService {
         }
 
         if didCreateAuxiliaryOverrideWebView,
-           ExtensionUtils.isExtensionOwnedURL(request.targetURL),
+           ExtensionURLIdentity.isOwned(request.targetURL),
            residence.currentWebView() === committedWebView {
             initialDocument.loadExtensionOwnedInitialURL(
                 committedWebView,

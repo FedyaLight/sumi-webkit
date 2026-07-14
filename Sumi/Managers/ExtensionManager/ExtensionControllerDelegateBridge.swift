@@ -15,14 +15,15 @@ import WebKit
 @MainActor
 final class ExtensionControllerDelegateBridge: NSObject, WKWebExtensionControllerDelegate {
     private weak var manager: ExtensionManager?
-
+    private let openingCallbacks = ExtensionControllerOpeningCallbackHandler()
     init(manager: ExtensionManager) {
         self.manager = manager
         super.init()
     }
 
-    // MARK: - Windows
+    func loadedManagerForCallback() -> ExtensionManager? { manager }
 
+    // MARK: - Windows
     func webExtensionController(
         _ controller: WKWebExtensionController,
         focusedWindowFor extensionContext: WKWebExtensionContext
@@ -38,7 +39,6 @@ final class ExtensionControllerDelegateBridge: NSObject, WKWebExtensionControlle
     }
 
     // MARK: - Actions
-
     func webExtensionController(
         _ controller: WKWebExtensionController,
         didUpdate action: WKWebExtension.Action,
@@ -91,7 +91,6 @@ final class ExtensionControllerDelegateBridge: NSObject, WKWebExtensionControlle
     }
 
     // MARK: - Permission Prompts
-
     // Every permission callback must prove it came from the exact currently
     // bound controller/context pair before any lookup, prompt scheduling or
     // mutation. A failed capture answers fail-closed exactly once.
@@ -172,56 +171,32 @@ final class ExtensionControllerDelegateBridge: NSObject, WKWebExtensionControlle
     }
 
     // MARK: - Tabs & Windows Opening
-
     func webExtensionController(
         _ controller: WKWebExtensionController,
         openNewTabUsing configuration: WKWebExtension.TabConfiguration,
         for extensionContext: WKWebExtensionContext,
         completionHandler: @escaping ((any WKWebExtensionTab)?, (any Error)?) -> Void
     ) {
-        Task { @MainActor [weak self] in
-            guard let manager = self?.manager else {
-                completionHandler(
-                    nil,
-                    ExtensionManagerCallbackError.extensionManagerUnavailable.nsError()
-                )
-                return
-            }
-            guard manager.attachedBrowserManager != nil,
-                  manager.controllerRuntimeComposition != nil
-            else {
-                completionHandler(
-                    nil,
-                    ExtensionManagerCallbackError.browserManagerUnavailable
-                        .nsError()
-                )
-                return
-            }
-
-            do {
-                try await manager.requestedTabContextPreloader.prepare(
-                    url: configuration.url,
-                    requestedWindow: configuration.window,
-                    controller: controller,
-                    extensionContext: extensionContext
-                )
-                let newTab = try manager.requestedTabOpening.open(
-                    url: configuration.url,
-                    shouldBeActive: configuration.shouldBeActive,
-                    shouldBePinned: configuration.shouldBePinned,
-                    requestedWindow: configuration.window,
-                    controller: controller,
-                    extensionContext: extensionContext,
-                    reason: "webExtensionController.openNewTabUsing"
-                )
-                completionHandler(manager.adapterCatalog.stableAdapter(for: newTab), nil)
-            } catch {
-                completionHandler(
-                    nil,
-                    SumiWebExtensionCallbackErrorMapper.webExtensionCallbackError(from: error)
-                )
-            }
+        guard let manager,
+              let invocation = ExtensionControllerOpeningCallbackComposition
+                  .invocation(
+                      from: manager,
+                      context: extensionContext,
+                      controller: controller
+                  )
+        else {
+            completionHandler(
+                nil,
+                CancellationError()
+            )
+            return
         }
+        openingCallbacks.openNewTab(
+            configuration: configuration,
+            evidence: invocation.evidence,
+            runtime: invocation.runtime.tabOpeningCallback,
+            completionHandler: completionHandler
+        )
     }
 
     func webExtensionController(
@@ -230,67 +205,29 @@ final class ExtensionControllerDelegateBridge: NSObject, WKWebExtensionControlle
         for extensionContext: WKWebExtensionContext,
         completionHandler: @escaping ((any WKWebExtensionWindow)?, (any Error)?) -> Void
     ) {
-        guard let manager else {
+        guard let manager,
+              let invocation = ExtensionControllerOpeningCallbackComposition
+                  .invocation(
+                      from: manager,
+                      context: extensionContext,
+                      controller: controller
+                  )
+        else {
             completionHandler(
                 nil,
-                ExtensionManagerCallbackError.extensionManagerUnavailable.nsError()
+                CancellationError()
             )
             return
         }
-        guard configuration.shouldBePrivate == false else {
-            completionHandler(
-                nil,
-                ExtensionManagerCallbackError.privateWindowsUnsupported.nsError()
-            )
-            return
-        }
-
-        if configuration.windowType == .popup {
-            Task { @MainActor [weak self] in
-                guard let manager = self?.manager,
-                      let windowQuery = manager.extensionWindowQuery,
-                      let windowPresentation = manager.extensionWindowPresentation
-                else {
-                    completionHandler(
-                        nil,
-                        ExtensionManagerCallbackError.browserManagerUnavailable.nsError()
-                    )
-                    return
-                }
-
-                let parentWindow = windowQuery.activeExtensionWindowState.flatMap {
-                    windowQuery.appKitWindow(for: $0)
-                }
-                let adapter = await windowPresentation.presentExtensionPopupWindow(
-                    configuration: configuration,
-                    controller: controller,
-                    extensionContext: extensionContext,
-                    extensionManager: manager,
-                    parentWindow: parentWindow
-                )
-
-                if let adapter {
-                    completionHandler(adapter, nil)
-                } else {
-                    completionHandler(
-                        nil,
-                        ExtensionManagerCallbackError.extensionPopupWindowUnavailable.nsError()
-                    )
-                }
-            }
-            return
-        }
-
-        manager.openExtensionWindowUsingTabURLs(
-            configuration.tabURLs,
-            controller: controller,
-            extensionContext: extensionContext,
+        openingCallbacks.openNewWindow(
+            configuration: configuration,
+            evidence: invocation.evidence,
+            runtime: invocation.runtime,
             completionHandler: completionHandler
         )
     }
 
     // MARK: - Native Messaging
-
     // Both native-messaging callbacks must prove exact controller/context
     // authority before any counter, diagnostic, wake scheduling, relay
     // materialization or port registration. A failed capture answers
@@ -356,23 +293,4 @@ final class ExtensionControllerDelegateBridge: NSObject, WKWebExtensionControlle
         )
     }
 
-    // MARK: - Options Page
-
-    func webExtensionController(
-        _ controller: WKWebExtensionController,
-        openOptionsPageFor extensionContext: WKWebExtensionContext,
-        completionHandler: @escaping (Error?) -> Void
-    ) {
-        guard let manager else {
-            completionHandler(
-                ExtensionManagerCallbackError.extensionManagerUnavailable.nsError()
-            )
-            return
-        }
-        manager.optionsWindows.presentOptionsPageWindow(
-            for: extensionContext,
-            manager: manager,
-            completionHandler: completionHandler
-        )
-    }
 }

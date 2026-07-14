@@ -12,6 +12,25 @@ import XCTest
 @available(macOS 15.5, *)
 @MainActor
 final class AuxiliaryWindowLifecycleTests: XCTestCase {
+    private final class InvalidatingInitialDocumentContextLoader:
+        ExtensionInitialDocumentContextReadiness {
+        private let invalidate: @MainActor () -> Void
+
+        init(invalidate: @escaping @MainActor () -> Void) {
+            self.invalidate = invalidate
+        }
+
+        func profileNeedsInitialDocumentExtensionContextLoad(
+            profileId _: UUID
+        ) -> Bool {
+            true
+        }
+
+        func ensureInitialExtensionContextsLoaded(for _: UUID) async {
+            invalidate()
+        }
+    }
+
     private final class RecordingWKWebView: WKWebView {
         private(set) var loadedRequestURLs: [URL] = []
 
@@ -89,6 +108,42 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
         harness.browserManager.auxiliaryWindows.teardown.closeAll(reason: .bulkCleanup)
     }
 
+    func testWeakExtensionEventsFailClosedAfterEventRootDeallocation() throws {
+        let harness = makeHarness()
+        let popupWebView = try XCTUnwrap(
+            harness.browserManager.auxiliaryWindows.popups.presentWebPopup(
+                configuration: WKWebViewConfiguration(),
+                request: URLRequest(
+                    url: URL(string: "https://example.com/popup")!
+                ),
+                windowFeatures: WKWindowFeatures(),
+                openerTab: harness.sourceTab
+            )
+        )
+        defer {
+            harness.browserManager.auxiliaryWindows.teardown.teardown(
+                for: popupWebView,
+                reason: .bulkCleanup
+            )
+        }
+        let session = try XCTUnwrap(
+            harness.browserManager.auxiliaryWindows.sessions.session(
+                for: popupWebView
+            )
+        )
+        var eventRoot: AuxiliaryWindowExtensionEventProbe? =
+            AuxiliaryWindowExtensionEventProbe()
+        weak let weakEventRoot = eventRoot
+        let events = WeakAuxiliaryWindowExtensionEvents(
+            target: try XCTUnwrap(eventRoot)
+        )
+
+        eventRoot = nil
+
+        XCTAssertNil(weakEventRoot)
+        XCTAssertFalse(events.notifyAuxiliaryWindowOpened(session))
+    }
+
     func testCloseAllForExtensionIdRemovesRegisteredMiniWindowAdapter()
         async throws {
         let harness = try await makeExtensionHarness(
@@ -160,10 +215,10 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
         XCTAssertEqual(mainWindow.frame, originalMainFrame)
     }
 
-    func testPrivateExtensionPopupWindowIsBlockedBeforeProfileRuntimeMaterializes() async throws {
+    func testPrivateExtensionPopupWindowIsBlockedBeforeAuxiliaryMaterialization() async throws {
         let harness = try await makeExtensionHarness(
             ownerExtensionID: "private-popup-owner",
-            allowNormalTabRuntimeWithoutInstalledExtensions: false
+            publishNormalWindow: true
         )
         let configuration = AuxiliaryWindowConfigurationMock(
             windowType: .popup,
@@ -171,13 +226,13 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
             shouldBePrivate: true
         ).windowConfiguration
 
-        XCTAssertNil(harness.extensionManager.extensionController)
-
+        let callback = try auxiliaryCallback(for: harness)
         let adapter = await harness.browserManager.auxiliaryWindows.extensionWindows.present(
             configuration: configuration,
-            controller: harness.controller,
-            extensionContext: harness.extensionContext,
-            extensionManager: harness.extensionManager,
+            evidence: callback.evidence,
+            callbackAdmission: harness.extensionManager
+                .controllerCallbackAdmission,
+            runtime: callback.runtime,
             parentWindow: harness.windowRegistry.appKitWindow(for: harness.windowState)
         )
 
@@ -187,31 +242,46 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
             harness.extensionManager.adapterStore.miniWindowAdaptersSnapshot()
                 .isEmpty
         )
-        XCTAssertNil(
-            harness.extensionManager.extensionController,
-            "Private extension popups must not create the normal profile-backed extension controller"
-        )
     }
 
     func testNonPrivateExtensionPopupWindowStillUsesProfileRuntime() async throws {
-        let harness = try await makeExtensionHarness(ownerExtensionID: "normal-popup-owner")
+        let harness = try await makeExtensionHarness(
+            ownerExtensionID: "normal-popup-owner",
+            publishNormalWindow: true
+        )
         let configuration = AuxiliaryWindowConfigurationMock(
             windowType: .popup,
-            tabURLs: [URL(string: "safari-web-extension://normal-popup-owner/popup.html")!],
+            tabURLs: [
+                harness.extensionContext.baseURL.appendingPathComponent(
+                    "popup.html"
+                )
+            ],
             shouldBePrivate: false
         ).windowConfiguration
 
-        let maybeAdapter = await harness.browserManager.auxiliaryWindows
+        await harness.extensionManager
+            .ensureInitialExtensionContextsLoaded(for: harness.profile.id)
+        XCTAssertFalse(
+            harness.extensionManager.initialDocumentRuntimePreparationOwner
+                .profileNeedsInitialDocumentExtensionContextLoad(
+                    profileId: harness.profile.id
+                )
+        )
+        let callback = try auxiliaryCallback(for: harness)
+        let maybePresentation = await harness.browserManager.auxiliaryWindows
             .extensionWindows.present(
                 configuration: configuration,
-                controller: harness.controller,
-                extensionContext: harness.extensionContext,
-                extensionManager: harness.extensionManager,
+                evidence: callback.evidence,
+                callbackAdmission: harness.extensionManager
+                    .controllerCallbackAdmission,
+                runtime: callback.runtime,
                 parentWindow: harness.windowRegistry.appKitWindow(for: harness.windowState)
-            )
-        let adapter = try XCTUnwrap(maybeAdapter)
+        )
+        let presentation = try XCTUnwrap(maybePresentation)
         let session = try XCTUnwrap(
-            harness.browserManager.auxiliaryWindows.sessions.session(for: adapter.sessionId)
+            harness.browserManager.auxiliaryWindows.sessions.session(
+                for: presentation.sessionID
+            )
         )
         defer {
             harness.browserManager.auxiliaryWindows.teardown.teardown(
@@ -231,6 +301,144 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
         )
     }
 
+    func testPopupInvalidatedAfterPresentationRetiresExactSessionAndKeepsSibling()
+        async throws {
+        let harness = try await makeExtensionHarness(
+            ownerExtensionID: "final-admission-owner",
+            publishNormalWindow: true
+        )
+        let siblingWebView = try XCTUnwrap(
+            harness.browserManager.auxiliaryWindows.popups.presentWebPopup(
+                configuration: WKWebViewConfiguration(),
+                request: URLRequest(
+                    url: URL(string: "https://sibling.example.test")!
+                ),
+                windowFeatures: WKWindowFeatures(),
+                openerTab: harness.sourceTab
+            )
+        )
+        let sibling = try XCTUnwrap(
+            harness.browserManager.auxiliaryWindows.sessions.session(
+                for: siblingWebView
+            )
+        )
+        defer {
+            harness.browserManager.auxiliaryWindows.teardown.teardown(
+                for: siblingWebView,
+                reason: .bulkCleanup
+            )
+        }
+
+        let replacement = WKWebExtensionContext(
+            for: harness.extensionContext.webExtension
+        )
+        harness.extensionManager.testHooks.didOpenTab = { _ in
+            _ = harness.extensionManager.profileRuntime.setContext(
+                replacement,
+                extensionId: "final-admission-owner",
+                profileId: harness.profile.id
+            )
+        }
+        defer { harness.extensionManager.testHooks.didOpenTab = nil }
+        let completed = expectation(description: "stale popup callback settled")
+        var callbackWindow: (any WKWebExtensionWindow)?
+        var callbackError: (any Error)?
+        let configuration = AuxiliaryWindowConfigurationMock(
+            windowType: .popup,
+            tabURLs: [],
+            shouldBePrivate: false
+        ).windowConfiguration
+
+        harness.extensionManager.controllerDelegateBridge.webExtensionController(
+            harness.controller,
+            openNewWindowUsing: configuration,
+            for: harness.extensionContext
+        ) { window, error in
+            callbackWindow = window
+            callbackError = error
+            completed.fulfill()
+        }
+        await fulfillment(of: [completed], timeout: 2.0)
+
+        XCTAssertNil(callbackWindow)
+        XCTAssertNotNil(callbackError)
+        XCTAssertEqual(
+            harness.browserManager.auxiliaryWindows.sessions
+                .sessionsSnapshot().map(\.id),
+            [sibling.id]
+        )
+        XCTAssertTrue(
+            harness.browserManager.auxiliaryWindows.sessions.contains(
+                siblingWebView
+            )
+        )
+    }
+
+    func testInitialContextPreparationInvalidatingCallbackFailsBeforeAuxiliaryMaterialization()
+        async throws {
+        let ownerExtensionID = "initial-context-replacement-owner"
+        let harness = try await makeExtensionHarness(
+            ownerExtensionID: ownerExtensionID,
+            publishNormalWindow: true
+        )
+        let replacementContext = try await makeExtensionContext(
+            ownerExtensionID: ownerExtensionID
+        )
+        let callback = try auxiliaryCallback(for: harness)
+        let invalidatingLoader = InvalidatingInitialDocumentContextLoader {
+            harness.extensionManager.setExtensionContext(
+                replacementContext,
+                extensionId: ownerExtensionID,
+                profileId: harness.profile.id
+            )
+        }
+        let runtime = ExtensionAuxiliaryWindowCallbackRuntime(
+            contextLoading: invalidatingLoader,
+            loadResolver: callback.runtime.loadResolver,
+            contextPreloader: callback.runtime.contextPreloader,
+            recentRequests: callback.runtime.recentRequests,
+            configurationPreparation:
+                callback.runtime.configurationPreparation,
+            integration: callback.runtime.integration
+        )
+        let configuration = AuxiliaryWindowConfigurationMock(
+            windowType: .popup,
+            tabURLs: [
+                harness.extensionContext.baseURL.appendingPathComponent(
+                    "popup.html"
+                )
+            ],
+            shouldBePrivate: false
+        ).windowConfiguration
+
+        let adapter = await harness.browserManager.auxiliaryWindows
+            .extensionWindows.present(
+                configuration: configuration,
+                evidence: callback.evidence,
+                callbackAdmission: harness.extensionManager
+                    .controllerCallbackAdmission,
+                runtime: runtime,
+                parentWindow: harness.appKitWindow
+            )
+
+        XCTAssertNil(adapter)
+        XCTAssertIdentical(
+            harness.extensionManager.getExtensionContext(
+                for: ownerExtensionID,
+                profileId: harness.profile.id
+            ),
+            replacementContext
+        )
+        XCTAssertTrue(
+            harness.browserManager.tabManager.transientTabRegistryOwner
+                .auxiliaryMiniWindowTabsByID.isEmpty
+        )
+        XCTAssertTrue(
+            harness.extensionManager.adapterStore
+                .miniWindowAdaptersSnapshot().isEmpty
+        )
+    }
+
     func testPrivateExtensionNormalWindowIsRejectedBeforeTabCreation() async throws {
         let harness = try await makeExtensionHarness(
             ownerExtensionID: "private-window-owner",
@@ -240,6 +448,7 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
             .flatMap(\.self)
             .filter { $0.isAuxiliaryMiniWindow == false }
             .count
+        let initialController = harness.extensionManager.extensionController
         let openedWindow = expectation(description: "private extension window rejected")
         var completionWindow: (any WKWebExtensionWindow)?
         var completionError: (any Error)?
@@ -271,9 +480,10 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
                 .count,
             initialRegularTabCount
         )
-        XCTAssertNil(
+        XCTAssertIdentical(
             harness.extensionManager.extensionController,
-            "Private extension windows must not create the normal profile-backed extension controller"
+            initialController,
+            "Private extension windows must not replace the callback's existing controller"
         )
     }
 
@@ -747,6 +957,19 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
             ).first
         )
         let authURL = URL(string: "https://account.example.test/login?client_id=abc")!
+        var lifecycleEvents: [String] = []
+        harness.extensionManager.testHooks.didOpenTab = { tabID in
+            guard tabID != harness.sourceTab.id else { return }
+            lifecycleEvents.append("didOpen")
+        }
+        harness.extensionManager.testHooks.didCloseTab = { tabID in
+            guard tabID != harness.sourceTab.id else { return }
+            lifecycleEvents.append("didClose")
+        }
+        defer {
+            harness.extensionManager.testHooks.didOpenTab = nil
+            harness.extensionManager.testHooks.didCloseTab = nil
+        }
 
         let authTab = try harness.extensionManager.requestedTabOpening.open(
             url: authURL,
@@ -774,6 +997,7 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
         )
         XCTAssertNil(harness.browserManager.auxiliaryWindows.sessions.session(for: authTab))
         XCTAssertEqual(harness.windowState.currentTabId, authTab.id)
+        XCTAssertTrue(lifecycleEvents.isEmpty)
 
         harness.extensionManager.runtimeDemand
             .recordRuntimeDemandWithoutEnabledExtensions()
@@ -783,10 +1007,16 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
             currentURL: nil,
             reason: "AuxiliaryWindowLifecycleTests.materializedExternalNormalTab"
         )
-        harness.extensionManager.extensionCreatedTabRegistrar.register(
-            authTab,
-            runtime: harness.extensionManager.runtime,
-            reason: "AuxiliaryWindowLifecycleTests.materializedExternalNormalTab"
+        try harness.controller.load(harness.extensionContext)
+        defer {
+            try? harness.controller.unload(harness.extensionContext)
+        }
+        XCTAssertTrue(
+            harness.extensionManager.extensionCreatedTabRegistrar.register(
+                authTab,
+                runtime: harness.extensionManager.runtime,
+                reason: "AuxiliaryWindowLifecycleTests.materializedExternalNormalTab"
+            )
         )
         XCTAssertIdentical(
             webView.configuration.websiteDataStore,
@@ -798,6 +1028,7 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
         )
         XCTAssertNotNil(harness.extensionManager.adapterCatalog.stableAdapter(for: authTab))
         XCTAssertTrue(authTab.extensionPageRuntimeOwner.didNotifyOpenToExtensions)
+        XCTAssertEqual(lifecycleEvents, ["didOpen"])
     }
 
     func testExtensionExternalWindowCreateUsesNormalBrowserTab() async throws {
@@ -1141,8 +1372,11 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
                 )
             )
         } else {
-            controller = WKWebExtensionController(
-                configuration: .nonPersistent()
+            // Requested-tab callbacks use the profile's exact controller.
+            // This fixture deliberately keeps runtime publication lazy; the
+            // ordinary external Tab is published after materialization below.
+            controller = extensionManager.ensureExtensionController(
+                for: profile.id
             )
         }
 
@@ -1168,6 +1402,33 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
         configuration.webExtensionController = harness.extensionManager
             .ensureExtensionController(for: harness.profile.id)
         return configuration
+    }
+
+    func auxiliaryCallback(
+        for harness: ExtensionHarness
+    ) throws -> (
+        evidence: ExtensionControllerCallbackEvidence,
+        runtime: ExtensionAuxiliaryWindowCallbackRuntime
+    ) {
+        let manager = harness.extensionManager
+        let evidence = try XCTUnwrap(
+            manager.controllerCallbackAdmission.capture(
+                context: harness.extensionContext,
+                controller: harness.controller
+            )
+        )
+        return (
+            evidence,
+            ExtensionAuxiliaryWindowCallbackRuntime(
+                contextLoading: manager.initialDocumentRuntimePreparationOwner,
+                loadResolver: manager.requestedTabLoadResolver,
+                contextPreloader: manager.requestedTabContextPreloader,
+                recentRequests: manager.recentExtensionTabRequests,
+                configurationPreparation:
+                    manager.webViewConfigurationPreparation,
+                integration: manager.auxiliaryWindowIntegration()
+            )
+        )
     }
 
     func presentOwnerPopup(
@@ -1252,6 +1513,18 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
             configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
         )
     }
+}
+
+@MainActor
+private final class AuxiliaryWindowExtensionEventProbe:
+    AuxiliaryWindowExtensionEventHandling {
+    func notifyAuxiliaryWindowOpened(_: AuxiliaryWindowSession) -> Bool {
+        true
+    }
+
+    func notifyAuxiliaryWindowFocused(_: AuxiliaryWindowSession) {}
+
+    func notifyAuxiliaryWindowClosed(_: AuxiliaryWindowSession) {}
 }
 
 @MainActor

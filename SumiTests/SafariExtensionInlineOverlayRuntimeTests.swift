@@ -665,7 +665,7 @@ final class SafariExtensionInlineOverlayRuntimeTests: XCTestCase {
             .write(to: overlayDirectory.appendingPathComponent("menu-list.js"), options: [.atomic])
 
         let resolvedExtensionId = UUID().uuidString
-        let destinationDirectory = ExtensionUtils.extensionsDirectory()
+        let destinationDirectory = ExtensionPathSafety.extensionsDirectory()
             .appendingPathComponent(resolvedExtensionId, isDirectory: true)
         if FileManager.default.fileExists(atPath: destinationDirectory.path) {
             try FileManager.default.removeItem(at: destinationDirectory)
@@ -675,7 +675,7 @@ final class SafariExtensionInlineOverlayRuntimeTests: XCTestCase {
             try? FileManager.default.removeItem(at: destinationDirectory)
         }
 
-        let installedManifest = try ExtensionUtils.validateManifest(
+        let installedManifest = try ExtensionManifestValidation.validate(
             at: destinationDirectory.appendingPathComponent("manifest.json"),
             policy: .safariWebExtension
         )

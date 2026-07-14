@@ -69,6 +69,10 @@ final class SumiModuleRegistry {
         return settingsStore.isEnabled(moduleID)
     }
 
+    var isAvailable: Bool {
+        availability == .available
+    }
+
     func setEnabled(_ isEnabled: Bool, for moduleID: SumiModuleID) {
         guard availability == .available else { return }
         settingsStore.setEnabled(isEnabled, for: moduleID)

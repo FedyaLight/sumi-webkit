@@ -7,8 +7,17 @@ protocol ExtensionInitialDocumentContextLoading: AnyObject {
 }
 
 @available(macOS 15.5, *)
+@MainActor
+protocol ExtensionInitialDocumentContextReadiness:
+    ExtensionInitialDocumentContextLoading {
+    func profileNeedsInitialDocumentExtensionContextLoad(
+        profileId: UUID
+    ) -> Bool
+}
+
+@available(macOS 15.5, *)
 extension ExtensionInitialDocumentRuntimePreparationOwner:
-    ExtensionInitialDocumentContextLoading {}
+    ExtensionInitialDocumentContextReadiness {}
 
 @available(macOS 15.5, *)
 @MainActor

@@ -155,7 +155,21 @@ final class ExtensionAuxiliaryTabPublicationReceipt {
 
     @discardableResult
     func cancelForWindowRetirement() -> Bool {
-        cancel(removingCreatedAdapter: false)
+        guard phase == .prepared else { return false }
+        let wasImplicitlyVisibleThroughWindow = ownerContext.openTabs.contains {
+            ($0 as AnyObject) === adapter
+        }
+        let restored = tab.extensionPageRuntimeOwner
+            .rollbackWindowPrepublication(stateToken)
+        phase = .finished
+        if wasImplicitlyVisibleThroughWindow {
+            // WebKit exposes a Window's initial Tab as soon as didOpenWindow
+            // returns, before Sumi commits the explicit didOpenTab half. This
+            // is physical rollback of that implicit projection, not a close
+            // event for a committed Tab publication.
+            ownerContext.didCloseTab(adapter, windowIsClosing: true)
+        }
+        return restored
     }
 
     private func cancel(removingCreatedAdapter: Bool) -> Bool {

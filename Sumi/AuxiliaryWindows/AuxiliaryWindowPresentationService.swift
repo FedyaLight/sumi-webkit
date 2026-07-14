@@ -25,7 +25,7 @@ enum AuxiliaryWindowExtensionIdentityResolver {
 
         for candidate in [extensionOwnedSourceURL, openerTab?.url] {
             guard let url = candidate,
-                  ExtensionUtils.isExtensionOwnedURL(url),
+                  ExtensionURLIdentity.isOwned(url),
                   let host = url.host,
                   host.isEmpty == false else {
                 continue
@@ -63,12 +63,12 @@ enum AuxiliaryWindowTitleResolver {
         extensionID: String?,
         installedExtensions: [InstalledExtension]
     ) -> String {
-        if ExtensionUtils.isExtensionOwnedURL(url) {
-            return ExtensionUtils.displayName(
-                forExtensionOwnedURL: url,
+        if ExtensionURLIdentity.isOwned(url) {
+            return ExtensionDisplayNameResolver.displayName(
+                forOwnedURL: url,
                 installedExtensions: installedExtensions
-            ) ?? ExtensionUtils.displayName(
-                forExtensionID: extensionID,
+            ) ?? ExtensionDisplayNameResolver.displayName(
+                for: extensionID,
                 installedExtensions: installedExtensions
             ) ?? "Extension"
         }

@@ -22,19 +22,22 @@ final class ExtensionLoadedContextFinalizer {
     private let authority: ExtensionLoadedContextAuthority
     private let actionSurfaces: @MainActor () ->
         ExtensionActionSurfacePublisher?
-    private let residency: ExtensionContextResidencyOwner
+    private let retention: ExtensionContextRetentionOwner
+    private let settlement: ExtensionContextSettlementOwner
     private let installationActivation: ExtensionInstallRuntimeActivator
 
     init(
         authority: ExtensionLoadedContextAuthority,
         actionSurfaces: @escaping @MainActor () ->
             ExtensionActionSurfacePublisher?,
-        residency: ExtensionContextResidencyOwner,
+        retention: ExtensionContextRetentionOwner,
+        settlement: ExtensionContextSettlementOwner,
         installationActivation: ExtensionInstallRuntimeActivator
     ) {
         self.authority = authority
         self.actionSurfaces = actionSurfaces
-        self.residency = residency
+        self.retention = retention
+        self.settlement = settlement
         self.installationActivation = installationActivation
     }
 
@@ -44,13 +47,13 @@ final class ExtensionLoadedContextFinalizer {
     ) async throws {
         try authority.validate(loadedContext)
         let key = loadedContext.bindingReceipt.key
-        residency.touchLiveExtensionContext(
-            extensionId: key.extensionId,
-            profileId: key.profileId
+        retention.touch(
+            extensionID: key.extensionId,
+            profileID: key.profileId
         )
-        residency.enforceBoundedLiveExtensionContexts(
-            keepingProfileId: key.profileId,
-            keepingExtensionId: key.extensionId
+        retention.enforceLimit(
+            keepingProfileID: key.profileId,
+            keepingExtensionID: key.extensionId
         )
         try authority.validate(loadedContext)
 
@@ -80,7 +83,7 @@ final class ExtensionLoadedContextFinalizer {
         _ loadedContext: ExtensionLoadedContext
     ) throws {
         try authority.validate(loadedContext)
-        guard residency.settleLoadedContext(loadedContext) else {
+        guard settlement.settle(loadedContext) else {
             throw CancellationError()
         }
     }

@@ -69,8 +69,8 @@ final class SumiNativeMessagingSendRelayFlow {
             applicationIdentifier: applicationIdentifier,
             extensionId: extensionId,
             extensionDisplayName: extensionDisplayName
-                ?? ExtensionUtils.displayName(
-                    forExtensionID: extensionId,
+                ?? ExtensionDisplayNameResolver.displayName(
+                    for: extensionId,
                     installedExtensions: installedExtensions
                 ),
             profileId: profileId,

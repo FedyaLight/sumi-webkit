@@ -387,6 +387,84 @@ final class ExtensionScopedRuntimeRetirementTests: XCTestCase {
         withExtendedLifetime((disabledAnchor, replacementAnchor)) {}
     }
 
+    func testAuxiliaryCloseReentrancyCannotRetireReplacementOptionsWindow()
+        async throws {
+        let fixture = try await makeFixture(extensionID: "options-reentrancy")
+        let originalWindow = NSWindow()
+        let originalReceipt = fixture.optionsWindows.trackPresentedWindow(
+            originalWindow,
+            delegate: nil,
+            for: fixture.extensionID
+        )
+        let replacementWindow = NSWindow()
+        var replacementReceipt: ExtensionOptionsWindowReceipt?
+        fixture.auxiliaryWindows.willCloseExtensionSessions = {
+            [optionsWindows = fixture.optionsWindows] extensionID in
+            replacementReceipt = optionsWindows.trackPresentedWindow(
+                replacementWindow,
+                delegate: nil,
+                for: extensionID
+            )
+        }
+        let lease = try XCTUnwrap(
+            fixture.mutationRegistry.begin(
+                extensionID: fixture.extensionID,
+                operation: .disable
+            )
+        )
+
+        let result = fixture.retirement { _, _ in }.retire(
+            extensionID: fixture.extensionID,
+            cause: .disabled,
+            admission: .mutation(lease),
+            resources: fixture.resources
+        )
+
+        XCTAssertTrue(result.completed)
+        XCTAssertNotEqual(replacementReceipt, originalReceipt)
+        XCTAssertEqual(
+            fixture.optionsWindows.receipt(for: fixture.extensionID),
+            replacementReceipt
+        )
+        XCTAssertIdentical(
+            fixture.optionsWindows.windows[fixture.extensionID],
+            replacementWindow
+        )
+    }
+
+    func testCapturedAuxiliaryReceiptCannotCloseReentrantReplacementSession()
+        async throws {
+        let fixture = try await makeFixture(
+            extensionID: "auxiliary-session-reentrancy"
+        )
+        fixture.auxiliaryWindows.willCloseExtensionSessions = {
+            [auxiliaryWindows = fixture.auxiliaryWindows] extensionID in
+            auxiliaryWindows.replaceSession(for: extensionID)
+        }
+        let lease = try XCTUnwrap(
+            fixture.mutationRegistry.begin(
+                extensionID: fixture.extensionID,
+                operation: .disable
+            )
+        )
+
+        let result = fixture.retirement { _, _ in }.retire(
+            extensionID: fixture.extensionID,
+            cause: .disabled,
+            admission: .mutation(lease),
+            resources: fixture.resources
+        )
+
+        XCTAssertTrue(result.completed)
+        XCTAssertTrue(
+            fixture.auxiliaryWindows.hasSession(for: fixture.extensionID)
+        )
+        XCTAssertEqual(
+            fixture.auxiliaryWindows.closedExtensionIDs,
+            [fixture.extensionID]
+        )
+    }
+
     func testUnloadFailureLeavesUISessionsPortsCachesAndManifestUntouched()
         async throws {
         let fixture = try await makeFixture(extensionID: "unload-failure")
@@ -1266,8 +1344,11 @@ private final class ScopedRetirementFixture {
 @MainActor
 private final class ScopedRetirementAuxiliaryWindowSpy:
     ExtensionAuxiliaryWindowControl {
+    private let sessionIdentity = NSObject()
+    private var currentSessionIDs: [String: UUID] = [:]
     var closedExtensionIDs: [String] = []
     var closeReasons: [AuxiliaryWindowCloseReason] = []
+    var willCloseExtensionSessions: ((String) -> Void)?
 
     func auxiliaryWindowSession(for tab: Tab) -> AuxiliaryWindowSession? {
         nil
@@ -1299,12 +1380,46 @@ private final class ScopedRetirementAuxiliaryWindowSpy:
 
     func closeAuxiliaryWindowWebView(_ webView: WKWebView) {}
 
-    func closeAuxiliaryWindowSessions(
-        forExtensionId extensionId: String,
+    func auxiliaryWindowSessionReceipts(
+        forExtensionID extensionID: String
+    ) -> [ExtensionAuxiliaryWindowSessionReceipt] {
+        let sessionID = currentSessionIDs[extensionID] ?? UUID()
+        currentSessionIDs[extensionID] = sessionID
+        return [
+            ExtensionAuxiliaryWindowSessionReceipt(
+                sessionID: sessionID,
+                ownerExtensionID: extensionID,
+                sessionIdentity: ObjectIdentifier(sessionIdentity)
+            ),
+        ]
+    }
+
+    func closeAuxiliaryWindowSession(
+        _ receipt: ExtensionAuxiliaryWindowSessionReceipt,
         reason: AuxiliaryWindowCloseReason
     ) {
-        closedExtensionIDs.append(extensionId)
+        guard currentSessionIDs[receipt.ownerExtensionID]
+                == receipt.sessionID
+        else {
+            return
+        }
+        willCloseExtensionSessions?(receipt.ownerExtensionID)
+        if currentSessionIDs[receipt.ownerExtensionID]
+            == receipt.sessionID {
+            currentSessionIDs.removeValue(
+                forKey: receipt.ownerExtensionID
+            )
+        }
+        closedExtensionIDs.append(receipt.ownerExtensionID)
         closeReasons.append(reason)
+    }
+
+    func replaceSession(for extensionID: String) {
+        currentSessionIDs[extensionID] = UUID()
+    }
+
+    func hasSession(for extensionID: String) -> Bool {
+        currentSessionIDs[extensionID] != nil
     }
 
     func containsAuxiliaryWebView(_ webView: WKWebView) -> Bool {

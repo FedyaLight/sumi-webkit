@@ -177,7 +177,7 @@ struct TabRestoreTabPlanner: Sendable {
             fallback: record.urlString,
             repairReasons: &repairReasons
         )
-        guard ExtensionUtils.isExtensionOwnedURL(url) == false else {
+        guard ExtensionURLIdentity.isOwned(url) == false else {
             repairReasons.insert("removed extension-owned restored tab")
             return
         }

@@ -172,7 +172,7 @@ struct LegacyExtensionBackupRecovery {
                 contentsOf: manifest,
                 options: [.mappedIfSafe]
             )
-            return ExtensionUtils.fingerprint(data: data)
+            return ExtensionPackageFingerprint.data(data)
         } catch {
             return nil
         }

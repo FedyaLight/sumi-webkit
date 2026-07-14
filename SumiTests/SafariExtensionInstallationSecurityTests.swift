@@ -35,8 +35,8 @@ final class SafariExtensionInstallationSecurityTests: XCTestCase {
         ]
 
         for extensionId in validIDs {
-            let directory = try ExtensionUtils.extensionDirectory(
-                forExtensionID: extensionId,
+            let directory = try ExtensionPathSafety.extensionDirectory(
+                for: extensionId,
                 under: root
             )
 
@@ -60,8 +60,8 @@ final class SafariExtensionInstallationSecurityTests: XCTestCase {
             "line\nbreak",
         ] {
             XCTAssertThrowsError(
-                try ExtensionUtils.extensionDirectory(
-                    forExtensionID: extensionId,
+                try ExtensionPathSafety.extensionDirectory(
+                    for: extensionId,
                     under: root
                 ),
                 "Expected unsafe extension id to be rejected: \(extensionId)"
@@ -82,7 +82,7 @@ final class SafariExtensionInstallationSecurityTests: XCTestCase {
             name: "MaliciousGeckoID",
             geckoId: maliciousID
         )
-        let escapedDestination = ExtensionUtils.extensionsDirectory()
+        let escapedDestination = ExtensionPathSafety.extensionsDirectory()
             .appendingPathComponent(maliciousID, isDirectory: true)
             .standardizedFileURL
         addTeardownBlock {
@@ -132,7 +132,7 @@ final class SafariExtensionInstallationSecurityTests: XCTestCase {
         }
         XCTAssertEqual(
             ExtensionPackageLayout(
-                extensionsRoot: ExtensionUtils.extensionsDirectory()
+                extensionsRoot: ExtensionPathSafety.extensionsDirectory()
             ).packageRootKind(installedPackage),
             .managedGeneration
         )

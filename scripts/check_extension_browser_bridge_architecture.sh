@@ -81,7 +81,10 @@ extension_content_blocking_surface='Sumi/Managers/ExtensionManager/SumiExtension
 extension_diagnostics_surface='Sumi/Managers/ExtensionManager/SumiExtensionCompatibilityDiagnosticsSurface.swift'
 window_request_router='Sumi/Managers/ExtensionManager/ExtensionWindowRequestRouter.swift'
 requested_tab_opening='Sumi/Managers/ExtensionManager/ExtensionRequestedTabOpeningService.swift'
+controller_opening_callbacks='Sumi/Managers/ExtensionManager/ExtensionControllerOpeningCallbackHandler.swift'
 requested_tab_registrar='Sumi/Managers/ExtensionManager/ExtensionCreatedTabRuntimeRegistrar.swift'
+requested_tab_runtime_admission='Sumi/Managers/ExtensionManager/ExtensionRequestedTabRuntimeAdmission.swift'
+requested_tab_binding_diagnostics='Sumi/Managers/ExtensionManager/ExtensionRequestedTabBindingDiagnostics.swift'
 requested_tab_receipt='Sumi/Managers/ExtensionManager/ExtensionCreatedTabPublicationReceipt.swift'
 requested_tab_validator='Sumi/Managers/ExtensionManager/ExtensionCreatedTabPublicationValidator.swift'
 requested_tab_target_resolver='Sumi/Managers/ExtensionManager/ExtensionRequestedTabTargetResolver.swift'
@@ -156,7 +159,10 @@ required_files=(
   "${extension_tab_roles[@]}"
   "$window_request_router"
   "$requested_tab_opening"
+  "$controller_opening_callbacks"
   "$requested_tab_registrar"
+  "$requested_tab_runtime_admission"
+  "$requested_tab_binding_diagnostics"
   "$requested_tab_receipt"
   "$requested_tab_validator"
   "$requested_tab_target_resolver"
@@ -764,7 +770,8 @@ for native_popup_route in \
   'openNewWindowUsing configuration' \
   'requestedWindow: configuration.window'; do
   if ! rg -Fq "$native_popup_route" \
-      Sumi/Managers/ExtensionManager/ExtensionControllerDelegateBridge.swift; then
+      Sumi/Managers/ExtensionManager/ExtensionControllerDelegateBridge.swift \
+      "$controller_opening_callbacks"; then
     printf 'error: native WebKit popup route missing: %s\n' \
       "$native_popup_route" >&2
     status=1
@@ -1228,7 +1235,8 @@ if (( inactive_creation_count < 2 )); then
 fi
 
 requested_tab_register_line="$(
-  rg -n -m1 'guard registrar\.register\(' "$requested_tab_opening" \
+  rg -n -m1 'guard runtimeAdmission\.admit\(' \
+    "$requested_tab_opening" \
     | cut -d: -f1 || true
 )"
 requested_tab_select_line="$(
@@ -1238,15 +1246,15 @@ requested_tab_select_line="$(
 if [[ -z "$requested_tab_register_line" \
       || -z "$requested_tab_select_line" \
       || "$requested_tab_register_line" -ge "$requested_tab_select_line" ]]; then
-  printf 'error: requested Tab must cross didOpenTab before didActivateTab\n' >&2
+  printf 'error: requested Tab must settle registration policy before activation\n' >&2
   status=1
 fi
 
 for required_requested_transaction_boundary in \
   'discardExtensionRequestedTab(' \
   'restoringSelectionTo: rollbackSelectionID' \
-  'try placement.publishedResidence(' \
-  'guard registrar.register(' \
+  'try placement.validatedResidence(' \
+  'guard runtimeAdmission.admit(' \
   'runtime: runtime()' \
   'guard browserContext.pinExtensionTab(' \
   'browserContext.selectExtensionTab('; do
@@ -1266,7 +1274,7 @@ if (( captured_target_revalidation_count < 2 )); then
   status=1
 fi
 requested_window_reresolution_hits="$(
-  rg -U -n 'func publishedResidence\([^)]*requestedWindow' \
+  rg -U -n 'func validatedResidence\([^)]*requestedWindow' \
     "$requested_tab_target_resolver" || true
 )"
 fail_matches \

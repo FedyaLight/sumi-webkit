@@ -65,12 +65,29 @@ final class BrowserExtensionAuxiliaryWindowAdapter:
         )
     }
 
-    func closeAuxiliaryWindowSessions(
-        forExtensionId extensionId: String,
+    func auxiliaryWindowSessionReceipts(
+        forExtensionID extensionID: String
+    ) -> [ExtensionAuxiliaryWindowSessionReceipt] {
+        sessions.sessions(forExtensionID: extensionID).compactMap { session in
+            guard session.ownerExtensionID == extensionID else { return nil }
+            return ExtensionAuxiliaryWindowSessionReceipt(
+                session: session,
+                ownerExtensionID: extensionID
+            )
+        }
+    }
+
+    func closeAuxiliaryWindowSession(
+        _ receipt: ExtensionAuxiliaryWindowSessionReceipt,
         reason: AuxiliaryWindowCloseReason
     ) {
-        teardown.closeAll(
-            forExtensionID: extensionId,
+        guard let session = sessions.session(for: receipt.sessionID),
+              receipt.represents(session)
+        else {
+            return
+        }
+        teardown.teardown(
+            for: session.webView,
             reason: reason
         )
     }

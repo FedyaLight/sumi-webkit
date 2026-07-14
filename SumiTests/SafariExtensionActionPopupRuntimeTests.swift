@@ -649,7 +649,7 @@ final class SafariExtensionActionPopupRuntimeTests: XCTestCase {
         )
 
         let resolvedExtensionId = extensionId ?? UUID().uuidString
-        let extensionsDirectory = ExtensionUtils.extensionsDirectory()
+        let extensionsDirectory = ExtensionPathSafety.extensionsDirectory()
         let destinationDirectory = extensionsDirectory.appendingPathComponent(
             resolvedExtensionId,
             isDirectory: true
@@ -660,7 +660,7 @@ final class SafariExtensionActionPopupRuntimeTests: XCTestCase {
         try FileManager.default.copyItem(at: packageRoot, to: destinationDirectory)
 
         let manifestURL = destinationDirectory.appendingPathComponent("manifest.json")
-        let manifest = try ExtensionUtils.validateManifest(
+        let manifest = try ExtensionManifestValidation.validate(
             at: manifestURL,
             policy: .safariWebExtension
         )

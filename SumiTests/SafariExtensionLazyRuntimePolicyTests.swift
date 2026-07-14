@@ -17,6 +17,36 @@ final class SafariExtensionLazyRuntimePolicyTests: XCTestCase {
 
         XCTAssertEqual(manager.countLoadedExtensionContexts(), 0)
         XCTAssertTrue(manager.profileRuntime.contextsByProfile.isEmpty)
+        XCTAssertNil(manager.loadedInitialDocumentRuntimePreparationOwner)
+        XCTAssertNil(manager.loadedNativeMessagingBackgroundWakeOwner)
+    }
+
+    func testAuxiliaryIntegrationReceiptDoesNotRetainExtensionManager()
+        async throws {
+        let container = try makeTestContainer()
+        let profile = Profile(name: "Weak Auxiliary Events")
+        var manager: ExtensionManager? = ExtensionManager(
+            context: container.mainContext,
+            initialProfile: profile
+        )
+        weak var weakManager = manager
+        let integration = try XCTUnwrap(manager).auxiliaryWindowIntegration()
+        let receiptHeld = expectation(description: "integration held by task")
+        var releaseTask: CheckedContinuation<Void, Never>?
+        let callbackTask = Task { @MainActor in
+            withExtendedLifetime(integration) {
+                receiptHeld.fulfill()
+            }
+            await withCheckedContinuation { releaseTask = $0 }
+            withExtendedLifetime(integration) {}
+        }
+        await fulfillment(of: [receiptHeld], timeout: 1.0)
+
+        manager = nil
+
+        XCTAssertNil(weakManager)
+        releaseTask?.resume()
+        await callbackTask.value
     }
 
     func testDetachedDelegateModuleStateUsesInjectedRegistry() throws {
@@ -113,6 +143,8 @@ final class SafariExtensionLazyRuntimePolicyTests: XCTestCase {
         XCTAssertEqual(manager.countLoadedExtensionContexts(), 0)
         XCTAssertTrue(manager.profileRuntime.contextsByProfile.isEmpty)
         XCTAssertTrue(manager.profileRuntime.controllersByProfile.isEmpty)
+        XCTAssertNil(manager.loadedInitialDocumentRuntimePreparationOwner)
+        XCTAssertNil(manager.loadedNativeMessagingBackgroundWakeOwner)
     }
 
     func testEightProfilesWithOneExtensionCreatesAtMostOneContextUntilUsed() async throws {

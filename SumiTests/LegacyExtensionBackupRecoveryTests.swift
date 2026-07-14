@@ -97,8 +97,8 @@ final class LegacyExtensionBackupRecoveryTests: XCTestCase {
             name: "Interrupted",
             to: fixture.durableRoot
         )
-        let durableFingerprint = ExtensionUtils.fingerprint(
-            string: "missing durable manifest"
+        let durableFingerprint = ExtensionPackageFingerprint.string(
+            "missing durable manifest"
         )
         let stale = try fixture.makeBackup(manifestName: "Stale")
 
@@ -206,8 +206,8 @@ final class LegacyExtensionBackupRecoveryTests: XCTestCase {
             context: container.mainContext,
             extensionsDirectory: fixture.extensionsRoot
         )
-        let durableFingerprint = ExtensionUtils.fingerprint(
-            string: "missing durable manifest"
+        let durableFingerprint = ExtensionPackageFingerprint.string(
+            "missing durable manifest"
         )
         try store.persist(
             record: fixture.record(fingerprint: durableFingerprint)
@@ -363,5 +363,5 @@ private func writeLegacyRecoveryTestManifest(
         options: [.sortedKeys]
     )
     try data.write(to: packageRoot.appendingPathComponent("manifest.json"))
-    return ExtensionUtils.fingerprint(data: data)
+    return ExtensionPackageFingerprint.data(data)
 }

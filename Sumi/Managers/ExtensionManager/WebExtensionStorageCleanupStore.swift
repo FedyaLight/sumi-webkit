@@ -50,8 +50,8 @@ struct WebExtensionStorageCleanupStore {
     private func directoryForStorageName(_ storageName: String) -> URL? {
         guard let storageRoot = storageRootDirectory() else { return nil }
         do {
-            return try ExtensionUtils.extensionDirectory(
-                forExtensionID: storageName,
+            return try ExtensionPathSafety.extensionDirectory(
+                for: storageName,
                 under: storageRoot
             )
         } catch {

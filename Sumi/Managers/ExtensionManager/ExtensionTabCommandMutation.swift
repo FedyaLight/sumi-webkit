@@ -174,7 +174,7 @@ final class ExtensionTabCommandMutation {
             return
         }
         let tab = publication.tab
-        if ExtensionUtils.isExtensionOwnedURL(url) == false {
+        if ExtensionURLIdentity.isOwned(url) == false {
             _ = tabMutation?.promoteTransientExtensionTab(tab)
             guard evidence.isCurrent(publication, visibleTo: context) else {
                 complete(completion, error: tabUnavailableUntilReloadError)

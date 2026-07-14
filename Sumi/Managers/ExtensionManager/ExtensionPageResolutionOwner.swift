@@ -29,7 +29,7 @@ final class ExtensionPageResolutionOwner {
 
         for candidate in [extensionOwnedSourceURL, openerTab?.url] {
             guard let url = candidate,
-                  ExtensionUtils.isExtensionOwnedURL(url),
+                  ExtensionURLIdentity.isOwned(url),
                   let host = url.host,
                   host.isEmpty == false
             else {
@@ -61,28 +61,28 @@ final class ExtensionPageResolutionOwner {
 
         let pagePath: String?
         if let persistedPath = installedExtension.optionsPagePath,
-           let normalizedPath = ExtensionUtils.existingValidatedOptionsPagePath(
+           let normalizedPath = ExtensionOptionsPageResolution.existingValidatedPath(
                persistedPath,
                in: extensionRoot
            ) {
             pagePath = normalizedPath
-        } else if let declaredPath = ExtensionUtils.optionsPagePath(from: manifest),
-                  let normalizedPath = ExtensionUtils.existingValidatedOptionsPagePath(
+        } else if let declaredPath = ExtensionManifestSemantics.optionsPagePath(from: manifest),
+                  let normalizedPath = ExtensionOptionsPageResolution.existingValidatedPath(
                       declaredPath,
                       in: extensionRoot
                   ) {
             pagePath = normalizedPath
         } else {
-            pagePath = ExtensionUtils.storedOptionsPagePath(
+            pagePath = ExtensionOptionsPageResolution.storedPath(
                 from: manifest,
                 in: extensionRoot
             )
         }
 
         guard let pagePath else { return nil }
-        return ExtensionUtils.url(
+        return ExtensionPathSafety.manifestRelativeURL(
             extensionContext.baseURL,
-            appendingManifestRelativePath: pagePath
+            path: pagePath
         )
     }
 }

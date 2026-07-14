@@ -250,7 +250,7 @@ final class ExtensionActionPageAccessAuthorizer {
             + permissions.filter(isHostPermissionPattern)
             + contentScriptMatches
         return hostPatterns.contains {
-            ExtensionUtils.hostPatternMatchesURL($0, url: currentURL)
+            ExtensionHostPermissionMatcher.matches($0, url: currentURL)
         }
     }
 

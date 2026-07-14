@@ -252,7 +252,7 @@ final class ExtensionRuntimeLifecycleBoundaryTests: XCTestCase {
         )
 
         XCTAssertTrue(
-            fixture.residency.settleLoadedContext(fixture.loadedContext)
+            fixture.settlement.settle(fixture.loadedContext)
         )
         XCTAssertTrue(fixture.loadStatus.extensionsLoaded)
         XCTAssertEqual(fixture.lifecycle.state, .ready)
@@ -272,7 +272,7 @@ final class ExtensionRuntimeLifecycleBoundaryTests: XCTestCase {
         )
 
         XCTAssertFalse(
-            fixture.residency.settleLoadedContext(fixture.loadedContext)
+            fixture.settlement.settle(fixture.loadedContext)
         )
         XCTAssertFalse(fixture.loadStatus.extensionsLoaded)
         XCTAssertEqual(fixture.lifecycle.state, .loading)
@@ -323,53 +323,19 @@ final class ExtensionRuntimeLifecycleBoundaryTests: XCTestCase {
         let runtimeLifecycle = ExtensionRuntimeLifecycleAuthority()
         runtimeLifecycle.beginLoading()
         let runtimeLoadStatus = ExtensionRuntimeLoadStatusAuthority()
-        let runtimeResidency = ExtensionRuntimeResidencyAuthority()
-        let extensionLoadRevisions = ExtensionLoadRevisionAuthority()
         let installedExtensions = InstalledExtensionCollection()
         installedExtensions.connectRecordChanges {}
         installedExtensions.upsert(makeInstalledExtension(id: extensionID))
         let contextLoadRegistry = ExtensionContextLoadRegistry()
         let claim = contextLoadRegistry.begin(for: receipt.key)
-        let contextRetirement = ExtensionContextRetirement(
+        let settlement = ExtensionContextSettlementOwner(
             profileRuntime: profileRuntime,
-            backgroundRuntimeState: ExtensionBackgroundRuntimeStateOwner(),
-            runtimeResidency: runtimeResidency,
-            errorObservation: ExtensionContextErrorObservation(
-                recordErrorUpdateDuration: { _, _ in },
-                trace: { _ in },
-                isEnabled: { false }
-            ),
-            diagnostics: ExtensionRuntimeDiagnostics(),
-            unloadContext: { _, _ in },
-            isLoadedContext: { _, context in context.isLoaded }
-        )
-        let residency = ExtensionContextResidencyOwner(
-            dependencies: .init(
-                profileRuntime: profileRuntime,
-                runtimeResidency: runtimeResidency,
-                runtimeLifecycle: runtimeLifecycle,
-                extensionLoadRevisions: extensionLoadRevisions,
-                installedExtensions: installedExtensions,
-                contextLoadRegistry: contextLoadRegistry,
-                contextRetirement: contextRetirement,
-                isExtensionSupportAvailable: { true },
-                extensionsModuleEnabledForRuntimeBoundary: { true },
-                ensureExtensionController: { _ in },
-                getExtensionContext: { extensionID, profileID in
-                    profileRuntime.contexts(for: profileID)[extensionID]
-                },
-                countLoadedContexts: {
-                    profileRuntime.contextsByProfile.values.reduce(0) {
-                        $0 + $1.count
-                    }
-                },
-                extensionEntity: { _ in nil },
-                loadEnabledExtension: { _, _ in },
-                markRuntimePublicationReady: {
-                    runtimeLoadStatus.markExtensionsLoaded()
-                },
-                trace: { _ in }
-            )
+            runtimeLifecycle: runtimeLifecycle,
+            installedExtensions: installedExtensions,
+            markPublicationReady: {
+                runtimeLoadStatus.markExtensionsLoaded()
+            },
+            diagnostics: ExtensionRuntimeDiagnostics()
         )
         return ResidencySettlementFixture(
             extensionID: extensionID,
@@ -385,7 +351,7 @@ final class ExtensionRuntimeLifecycleBoundaryTests: XCTestCase {
                 loadClaim: claim,
                 mutationLease: nil
             ),
-            residency: residency
+            settlement: settlement
         )
     }
 
@@ -441,7 +407,7 @@ private struct ResidencySettlementFixture {
     let loadStatus: ExtensionRuntimeLoadStatusAuthority
     let controller: WKWebExtensionController
     let loadedContext: ExtensionLoadedContext
-    let residency: ExtensionContextResidencyOwner
+    let settlement: ExtensionContextSettlementOwner
 }
 
 @available(macOS 15.5, *)

@@ -95,12 +95,38 @@ final class SumiExtensionToolbarActionSurface {
     }
 
     func openOptionsPage(extensionID: String, profileID: UUID? = nil) async {
-        guard let manager = managerIfEnabled() else { return }
+        guard let request = await optionsWindowRequest(
+            extensionID: extensionID,
+            profileID: profileID
+        ) else { return }
+
+        await withCheckedContinuation { continuation in
+            request.service.presentOptionsPageWindow(
+                invocation: request.invocation
+            ) { error in
+                if let error {
+                    RuntimeDiagnostics.debug(category: "Extensions") {
+                        "Unable to open extension options for \(extensionID): \(error.localizedDescription)"
+                    }
+                }
+                continuation.resume()
+            }
+        }
+    }
+
+    private func optionsWindowRequest(
+        extensionID: String,
+        profileID: UUID?
+    ) async -> (
+        service: ExtensionOptionsWindowService,
+        invocation: ExtensionOptionsWindowCallbackComposition.Invocation
+    )? {
+        guard let manager = managerIfEnabled() else { return nil }
         let resolvedProfileID =
             profileID
             ?? manager.profileRuntime.currentProfileId
             ?? lifetime.currentProfileID
-        guard let resolvedProfileID else { return }
+        guard let resolvedProfileID else { return nil }
 
         let context: WKWebExtensionContext?
         do {
@@ -112,20 +138,22 @@ final class SumiExtensionToolbarActionSurface {
             RuntimeDiagnostics.debug(category: "Extensions") {
                 "Unable to load extension context for options page \(extensionID): \(error.localizedDescription)"
             }
-            return
+            return nil
         }
-        guard let context else { return }
-
-        await withCheckedContinuation { continuation in
-            manager.optionsWindows.presentOptionsPageWindow(for: context, manager: manager) { error in
-                if let error {
-                    RuntimeDiagnostics.debug(category: "Extensions") {
-                        "Unable to open extension options for \(extensionID): \(error.localizedDescription)"
-                    }
-                }
-                continuation.resume()
-            }
+        guard let context else { return nil }
+        guard let controller = manager.profileRuntime.controller(
+                  for: resolvedProfileID
+              ),
+              let evidence = manager.controllerCallbackAdmission.capture(
+                  context: context,
+                  controller: controller
+              ),
+              let invocation = ExtensionOptionsWindowCallbackComposition
+                .invocation(from: manager, evidence: evidence)
+        else {
+            return nil
         }
+        return (manager.optionsWindows, invocation)
     }
 
     func openActionPopup(

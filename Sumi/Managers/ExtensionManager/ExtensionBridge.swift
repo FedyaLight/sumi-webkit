@@ -175,6 +175,36 @@ protocol ExtensionWindowActivation: AnyObject {
 
 @available(macOS 15.5, *)
 @MainActor
+struct ExtensionAuxiliaryWindowSessionReceipt {
+    let sessionID: UUID
+    let ownerExtensionID: String
+    private let sessionIdentity: ObjectIdentifier
+
+    init(session: AuxiliaryWindowSession, ownerExtensionID: String) {
+        sessionID = session.id
+        self.ownerExtensionID = ownerExtensionID
+        sessionIdentity = ObjectIdentifier(session)
+    }
+
+    init(
+        sessionID: UUID,
+        ownerExtensionID: String,
+        sessionIdentity: ObjectIdentifier
+    ) {
+        self.sessionID = sessionID
+        self.ownerExtensionID = ownerExtensionID
+        self.sessionIdentity = sessionIdentity
+    }
+
+    func represents(_ session: AuxiliaryWindowSession) -> Bool {
+        session.id == sessionID
+            && session.ownerExtensionID == ownerExtensionID
+            && ObjectIdentifier(session) == sessionIdentity
+    }
+}
+
+@available(macOS 15.5, *)
+@MainActor
 protocol ExtensionAuxiliaryWindowControl:
     ExtensionAuxiliaryTabSessionQuery,
     ExtensionAuxiliaryTabClosing {
@@ -186,8 +216,11 @@ protocol ExtensionAuxiliaryWindowControl:
     func focusAuxiliaryWindowSession(_ sessionId: UUID)
     func closeAuxiliaryWindowSession(_ session: AuxiliaryWindowSession)
     func closeAuxiliaryWindowWebView(_ webView: WKWebView)
-    func closeAuxiliaryWindowSessions(
-        forExtensionId extensionId: String,
+    func auxiliaryWindowSessionReceipts(
+        forExtensionID extensionID: String
+    ) -> [ExtensionAuxiliaryWindowSessionReceipt]
+    func closeAuxiliaryWindowSession(
+        _ receipt: ExtensionAuxiliaryWindowSessionReceipt,
         reason: AuxiliaryWindowCloseReason
     )
     func containsAuxiliaryWebView(_ webView: WKWebView) -> Bool
@@ -209,11 +242,11 @@ protocol ExtensionWindowPresentation: AnyObject {
     ) -> WKWebView?
     func presentExtensionPopupWindow(
         configuration: WKWebExtension.WindowConfiguration,
-        controller: WKWebExtensionController,
-        extensionContext: WKWebExtensionContext,
-        extensionManager: ExtensionManager,
+        evidence: ExtensionControllerCallbackEvidence,
+        admission: ExtensionControllerCallbackAdmission,
+        runtime: ExtensionAuxiliaryWindowCallbackRuntime,
         parentWindow: NSWindow?
-    ) async -> ExtensionMiniWindowAdapter?
+    ) async -> ExtensionPopupWindowPresentationReceipt?
     func extensionURLHubFallbackAnchorView(for windowId: UUID) -> NSView?
     /// Space-resolved appearance for the extension action popup anchored in the
     /// given AppKit window. `nil` leaves the popover on the system appearance.
@@ -221,6 +254,44 @@ protocol ExtensionWindowPresentation: AnyObject {
         forAnchorWindow window: NSWindow,
         fallback: NSAppearance?
     ) -> NSAppearance?
+}
+
+@available(macOS 15.5, *)
+@MainActor
+struct ExtensionPopupWindowPresentationReceipt {
+    @MainActor
+    private final class Retirement {
+        private var didRetire = false
+        private let action: @MainActor () -> Void
+
+        init(action: @escaping @MainActor () -> Void) {
+            self.action = action
+        }
+
+        func perform() {
+            guard didRetire == false else { return }
+            didRetire = true
+            action()
+        }
+    }
+
+    let sessionID: UUID
+    let adapter: ExtensionMiniWindowAdapter
+    private let retirement: Retirement
+
+    init(
+        sessionID: UUID,
+        adapter: ExtensionMiniWindowAdapter,
+        retireExactSession: @escaping @MainActor () -> Void
+    ) {
+        self.sessionID = sessionID
+        self.adapter = adapter
+        retirement = Retirement(action: retireExactSession)
+    }
+
+    func retire() {
+        retirement.perform()
+    }
 }
 
 @available(macOS 15.5, *)

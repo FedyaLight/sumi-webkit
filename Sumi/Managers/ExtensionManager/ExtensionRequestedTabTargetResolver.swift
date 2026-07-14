@@ -7,6 +7,16 @@ struct ExtensionRequestedTabTarget {
     let space: Space?
 }
 
+@available(macOS 15.5, *)
+enum ExtensionRequestedTabResidencePolicy {
+    case ordinaryBrowser
+    case extensionPublished
+
+    var requiresExtensionPublication: Bool {
+        self == .extensionPublished
+    }
+}
+
 /// Public requested-Tab target transaction surface. Initial policy, explicit
 /// adapter proof, and post-creation residence validation remain independent.
 @available(macOS 15.5, *)
@@ -45,18 +55,23 @@ struct ExtensionRequestedTabTargetResolver {
 
     func resolve(
         requestedWindow: (any WKWebExtensionWindow)?,
-        extensionContext: WKWebExtensionContext?
+        extensionContext: WKWebExtensionContext?,
+        residencePolicy: ExtensionRequestedTabResidencePolicy =
+            .extensionPublished
     ) throws -> ExtensionRequestedTabTarget {
         try initial.resolve(
             requestedWindow: requestedWindow,
-            extensionContext: extensionContext
+            extensionContext: extensionContext,
+            residencePolicy: residencePolicy
         )
     }
 
-    func publishedResidence(
+    func validatedResidence(
         for tab: Tab,
         target: ExtensionRequestedTabTarget,
-        extensionContext: WKWebExtensionContext?
+        extensionContext: WKWebExtensionContext?,
+        residencePolicy: ExtensionRequestedTabResidencePolicy =
+            .extensionPublished
     ) throws -> BrowserWindowState? {
         guard let browser = browserContext() else {
             throw ExtensionManagerCallbackError
@@ -66,6 +81,7 @@ struct ExtensionRequestedTabTargetResolver {
             tab,
             target: target,
             extensionContext: extensionContext,
+            residencePolicy: residencePolicy,
             browser: browser
         )
     }

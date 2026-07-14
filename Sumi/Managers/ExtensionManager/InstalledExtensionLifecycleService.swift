@@ -74,7 +74,7 @@ final class InstalledExtensionLifecycleService {
                 packagePath: entity.packagePath,
                 sourceBundlePath: entity.sourceBundlePath
             )
-            let manifest = try ExtensionUtils.validateManifest(
+            let manifest = try ExtensionManifestValidation.validate(
                 at: extensionRoot.appendingPathComponent("manifest.json"),
                 policy: WebExtensionManifestValidationPolicy.forSourceKind(sourceKind)
             )
@@ -418,7 +418,7 @@ extension InstalledExtensionLifecycleService.Environment {
             ),
             packageMaintenance: ExtensionPackageMaintenance(
                 layout: ExtensionPackageLayout(
-                    extensionsRoot: ExtensionUtils.extensionsDirectory()
+                    extensionsRoot: ExtensionPathSafety.extensionsDirectory()
                 ),
                 activeGenerations: manager.activePackageGenerations
             ),

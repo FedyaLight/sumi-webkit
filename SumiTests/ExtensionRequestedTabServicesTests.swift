@@ -8,6 +8,219 @@ import XCTest
 @MainActor
 final class ExtensionRequestedTabServicesTests:
     SafariExtensionWebViewControllerWiringTestCase {
+    private final class CountingCallbackPreloader:
+        ExtensionRequestedTabCallbackPreloading {
+        private(set) var callCount = 0
+
+        func prepare(
+            load _: ExtensionRequestedTabLoad,
+            requestedWindow _: (any WKWebExtensionWindow)?,
+            controller _: WKWebExtensionController,
+            extensionContext _: WKWebExtensionContext?
+        ) async throws -> UUID? {
+            callCount += 1
+            return nil
+        }
+    }
+
+    private final class CountingCallbackOpening:
+        ExtensionRequestedTabCallbackOpening {
+        private(set) var callCount = 0
+
+        func open(
+            url: URL?,
+            shouldBeActive _: Bool,
+            shouldBePinned _: Bool,
+            requestedWindow _: (any WKWebExtensionWindow)?,
+            controller _: WKWebExtensionController,
+            extensionContext _: WKWebExtensionContext?,
+            evidence _: ExtensionControllerCallbackEvidence?,
+            callbackAdmission _: ExtensionControllerCallbackAdmission?,
+            reason _: String
+        ) throws -> Tab {
+            callCount += 1
+            return Tab(
+                url: url ?? URL(string: "about:blank")!,
+                name: "Unexpected"
+            )
+        }
+    }
+
+    private final class CountingAdapterResolver: ExtensionTabAdapterResolving {
+        private(set) var callCount = 0
+
+        func stableAdapter(for _: Tab) -> ExtensionTabAdapter? {
+            callCount += 1
+            return nil
+        }
+    }
+
+    func testLoadResolverKeepsUnresolvedExtensionURLFailClosed() {
+        let controller = WKWebExtensionController(configuration: .nonPersistent())
+        let load = ExtensionRequestedTabLoadResolver().resolve(
+            URL(string: "safari-web-extension://unloaded/options.html"),
+            controller: controller
+        )
+
+        XCTAssertTrue(load.hasUnresolvedExtensionOwnership)
+        XCTAssertFalse(load.isOrdinaryBrowserRequest)
+        XCTAssertNil(load.extensionContext)
+    }
+
+    func testLoadResolverClassifiesExternalWebURLAsOrdinaryBrowserRequest() {
+        let controller = WKWebExtensionController(configuration: .nonPersistent())
+        let load = ExtensionRequestedTabLoadResolver().resolve(
+            URL(string: "https://account.example/login"),
+            controller: controller
+        )
+
+        XCTAssertFalse(load.hasUnresolvedExtensionOwnership)
+        XCTAssertTrue(load.isOrdinaryBrowserRequest)
+        XCTAssertNil(load.extensionContext)
+    }
+
+    func testUnresolvedExtensionOwnedRequestFailsBeforeCreatingTab()
+        async throws {
+        let harness = try await makeRequestedPublicationHarness()
+        let spaceID = try XCTUnwrap(harness.sourceTab.spaceId)
+        let originalTabIDs = harness.browserManager.tabManager
+            .regularTabCollectionStateOwner.tabsBySpaceSnapshot()[spaceID]?
+            .map(\.id)
+        var lifecycleEvents: [String] = []
+        harness.manager.testHooks.didOpenTab = { tabID in
+            guard tabID != harness.sourceTab.id else { return }
+            lifecycleEvents.append("didOpen")
+        }
+        harness.manager.testHooks.didCloseTab = { tabID in
+            guard tabID != harness.sourceTab.id else { return }
+            lifecycleEvents.append("didClose")
+        }
+        defer {
+            harness.manager.testHooks.didOpenTab = nil
+            harness.manager.testHooks.didCloseTab = nil
+        }
+
+        XCTAssertThrowsError(
+            try harness.manager.requestedTabOpening.open(
+                url: URL(
+                    string: "safari-web-extension://unloaded/options.html"
+                ),
+                shouldBeActive: true,
+                shouldBePinned: false,
+                requestedWindow: nil,
+                controller: harness.controller,
+                extensionContext: harness.extensionContext,
+                reason: #function
+            )
+        )
+
+        XCTAssertEqual(
+            harness.browserManager.tabManager.regularTabCollectionStateOwner
+                .tabsBySpaceSnapshot()[spaceID]?.map(\.id),
+            originalTabIDs
+        )
+        XCTAssertEqual(harness.window.currentTabId, harness.sourceTab.id)
+        XCTAssertTrue(lifecycleEvents.isEmpty)
+    }
+
+    func testFullCallbackRejectsUnresolvedOwnershipBeforePreloadOrMaterialization()
+        async throws {
+        let harness = try await makeRequestedPublicationHarness()
+        let evidence = try XCTUnwrap(
+            harness.manager.controllerCallbackAdmission.capture(
+                context: harness.extensionContext,
+                controller: harness.controller
+            )
+        )
+        let preloader = CountingCallbackPreloader()
+        let opening = CountingCallbackOpening()
+        let adapters = CountingAdapterResolver()
+        let runtime = ExtensionControllerTabOpeningCallbackRuntime(
+            admission: harness.manager.controllerCallbackAdmission,
+            loadResolver: ExtensionRequestedTabLoadResolver(),
+            contextPreloader: preloader,
+            tabOpening: opening,
+            adapterResolver: adapters
+        )
+        let configuration = RequestedTabConfigurationMock(
+            url: URL(
+                string: "safari-web-extension://unresolved-owner/page.html"
+            )!,
+            shouldBeActive: true,
+            shouldBePinned: false
+        ).tabConfiguration
+        let completed = expectation(description: "callback rejected")
+        var callbackTab: (any WKWebExtensionTab)?
+        var callbackError: (any Error)?
+
+        ExtensionControllerOpeningCallbackHandler().openNewTab(
+            configuration: configuration,
+            evidence: evidence,
+            runtime: runtime
+        ) { tab, error in
+            callbackTab = tab
+            callbackError = error
+            completed.fulfill()
+        }
+        await fulfillment(of: [completed], timeout: 1.0)
+
+        XCTAssertNil(callbackTab)
+        XCTAssertNotNil(callbackError)
+        XCTAssertEqual(preloader.callCount, 0)
+        XCTAssertEqual(opening.callCount, 0)
+        XCTAssertEqual(adapters.callCount, 0)
+    }
+
+    func testSameProfileExtensionCannotOpenAnotherExtensionsOwnedURL()
+        async throws {
+        let harness = try await makeRequestedPublicationHarness()
+        let scratchDirectory = try makeScratchDirectory()
+        let second = try await installUnpackedExtension(
+            manager: harness.manager,
+            scratchDirectory: scratchDirectory,
+            name: "RequestedTabSecondExtension"
+        )
+        _ = try await harness.manager.installedExtensionLifecycle.enable(
+            second.id
+        )
+        let loadedSecondContext = try await harness.manager
+            .ensureExtensionLoaded(
+                extensionId: second.id,
+                profileId: harness.profile.id
+            )
+        let secondContext = try XCTUnwrap(
+            loadedSecondContext
+        )
+        let crossExtensionURL = try XCTUnwrap(
+            URL(
+                string: "options.html",
+                relativeTo: secondContext.baseURL
+            )?.absoluteURL
+        )
+        let spaceID = try XCTUnwrap(harness.sourceTab.spaceId)
+        let originalTabIDs = harness.browserManager.tabManager
+            .regularTabCollectionStateOwner.tabsBySpaceSnapshot()[spaceID]?
+            .map(\.id)
+
+        XCTAssertThrowsError(
+            try harness.manager.requestedTabOpening.open(
+                url: crossExtensionURL,
+                shouldBeActive: true,
+                shouldBePinned: false,
+                requestedWindow: nil,
+                controller: harness.controller,
+                extensionContext: harness.extensionContext,
+                reason: #function
+            )
+        )
+        XCTAssertEqual(
+            harness.browserManager.tabManager.regularTabCollectionStateOwner
+                .tabsBySpaceSnapshot()[spaceID]?.map(\.id),
+            originalTabIDs
+        )
+        XCTAssertEqual(harness.window.currentTabId, harness.sourceTab.id)
+    }
+
     func testRecentOpenRequestTrackerConsumesOnlyRecordedWebURLsOnce() {
         let history = ExtensionRecentTabRequestHistory()
         let url = URL(string: "https://example.com/login")!
@@ -923,5 +1136,34 @@ final class ExtensionRequestedTabServicesTests:
             spaceA: spaceA,
             spaceB: spaceB
         )
+    }
+}
+
+@available(macOS 15.5, *)
+@MainActor
+private final class RequestedTabConfigurationMock: NSObject {
+    @objc let window: NSObject? = nil
+    @objc let index = 0
+    @objc let parentTab: NSObject? = nil
+    @objc let url: URL?
+    @objc let shouldBeActive: Bool
+    @objc let shouldAddToSelection = false
+    @objc let shouldBePinned: Bool
+    @objc let shouldBeMuted = false
+    @objc let shouldReaderModeBeActive = false
+
+    init(url: URL?, shouldBeActive: Bool, shouldBePinned: Bool) {
+        self.url = url
+        self.shouldBeActive = shouldBeActive
+        self.shouldBePinned = shouldBePinned
+    }
+
+    var tabConfiguration: WKWebExtension.TabConfiguration {
+        withUnsafePointer(to: self) {
+            $0.withMemoryRebound(
+                to: WKWebExtension.TabConfiguration.self,
+                capacity: 1
+            ) { $0 }
+        }.pointee
     }
 }

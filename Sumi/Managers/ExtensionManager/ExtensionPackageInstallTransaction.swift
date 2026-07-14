@@ -348,7 +348,7 @@ actor ExtensionPackageInstallTransaction {
             )
             return StagedManifest(
                 data: manifestData,
-                fingerprint: ExtensionUtils.fingerprint(data: manifestData)
+                fingerprint: ExtensionPackageFingerprint.data(manifestData)
             )
         }
         try Task.checkCancellation()
@@ -418,7 +418,7 @@ actor ExtensionPackageInstallTransaction {
                 )
             }
             let manifestData = try Data(contentsOf: manifestURL)
-            guard ExtensionUtils.fingerprint(data: manifestData)
+            guard ExtensionPackageFingerprint.data(manifestData)
                     == expectedManifestFingerprint else {
                 throw ExtensionError.installationFailed(
                     "The staged extension manifest changed during installation"
@@ -506,7 +506,7 @@ actor ExtensionPackageInstallTransaction {
                 as? [String: Any] else {
             throw ExtensionError.invalidManifest("Invalid JSON structure")
         }
-        try ExtensionUtils.validateManifestContents(
+        try ExtensionManifestValidation.validateContents(
             manifest,
             policy: .unpackedDirectory
         )

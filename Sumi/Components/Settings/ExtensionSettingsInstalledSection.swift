@@ -326,7 +326,7 @@ private struct ExtensionCatalogRow: View {
 
     @ViewBuilder
     private var extensionIcon: some View {
-        if let iconPath = ExtensionUtils.iconPath(for: extensionRecord),
+        if let iconPath = ExtensionManifestIconResolver.iconPath(for: extensionRecord),
            let image = NSImage(contentsOfFile: iconPath) {
             Image(nsImage: image)
                 .resizable()

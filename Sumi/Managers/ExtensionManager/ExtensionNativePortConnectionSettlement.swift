@@ -62,8 +62,8 @@ final class ExtensionNativePortConnectionSettlement {
                 )
         }
 
-        let extensionDisplayName = ExtensionUtils.displayName(
-            forExtensionID: extensionId,
+        let extensionDisplayName = ExtensionDisplayNameResolver.displayName(
+            for: extensionId,
             installedExtensions: manager.installedExtensionCollection.records
         )
         manager.runtimeDiagnostics.traceNativeMessagingContextBinding(

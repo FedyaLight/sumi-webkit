@@ -51,7 +51,7 @@ enum ExtensionInstallationIdentityResolver {
         let extensionID = sourceMatches.first?.extensionID
             ?? declaredID
             ?? input.freshExtensionID
-        let validatedID = try ExtensionUtils.validateExtensionIDPathComponent(
+        let validatedID = try ExtensionPathSafety.validatedExtensionID(
             extensionID
         )
         let existingIdentity = input.persistedIdentities.first {

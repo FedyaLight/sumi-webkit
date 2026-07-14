@@ -157,7 +157,7 @@ struct ExtensionCatalogDetailsPopover: View {
     private var header: some View {
         HStack(alignment: .center, spacing: 10) {
             Group {
-                if let iconPath = ExtensionUtils.iconPath(for: extensionRecord),
+                if let iconPath = ExtensionManifestIconResolver.iconPath(for: extensionRecord),
                    let image = NSImage(contentsOfFile: iconPath) {
                     Image(nsImage: image)
                         .resizable()

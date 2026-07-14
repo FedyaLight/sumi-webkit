@@ -102,6 +102,40 @@ class SafariExtensionWebViewControllerWiringTestCase: XCTestCase {
         return window
     }
 
+    @discardableResult
+    func publishNormalExtensionWindow(
+        manager: ExtensionManager,
+        browserManager: BrowserManager,
+        profile: Profile
+    ) -> BrowserWindowState {
+        let sourceTab = makeTab(
+            profileId: profile.id,
+            url: URL(string: "https://source.example.test/")!,
+            browserManager: browserManager
+        )
+        sourceTab.attachBrowserRuntime(
+            TabBrowserRuntimeFactory.make(for: browserManager)
+        )
+        let window = registerWindowDisplaying(
+            sourceTab,
+            profileId: profile.id,
+            browserManager: browserManager
+        )
+        attachUsableExtensionWebView(
+            to: sourceTab,
+            manager: manager,
+            profile: profile
+        )
+        manager.reloadRuntimePublications(
+            reason: "SafariExtensionWebViewControllerWiringTests.sourceWindow",
+            profileID: profile.id
+        )
+        XCTAssertNotNil(
+            manager.adapterStore.existingWindowAdapter(for: window.id)
+        )
+        return window
+    }
+
     func makeLoadedExtensionContext(
         manager: ExtensionManager,
         profile: Profile
@@ -127,6 +161,40 @@ class SafariExtensionWebViewControllerWiringTestCase: XCTestCase {
         )
     }
 
+    func replacingPackageRoot(
+        of record: InstalledExtension,
+        with packageRoot: URL
+    ) -> InstalledExtension {
+        InstalledExtension(
+            id: record.id,
+            name: record.name,
+            version: record.version,
+            manifestVersion: record.manifestVersion,
+            description: record.description,
+            isEnabled: record.isEnabled,
+            installDate: record.installDate,
+            lastUpdateDate: record.lastUpdateDate,
+            packagePath: packageRoot.path,
+            iconPath: record.iconPath,
+            sourceKind: record.sourceKind,
+            backgroundModel: record.backgroundModel,
+            incognitoMode: record.incognitoMode,
+            sourcePathFingerprint: "replacement-\(UUID().uuidString)",
+            manifestRootFingerprint: "replacement-\(UUID().uuidString)",
+            sourceBundlePath: packageRoot.path,
+            safariRuntimeIdentity: record.safariRuntimeIdentity,
+            optionsPagePath: record.optionsPagePath,
+            defaultPopupPath: record.defaultPopupPath,
+            hasBackground: record.hasBackground,
+            hasAction: record.hasAction,
+            hasOptionsPage: record.hasOptionsPage,
+            hasContentScripts: record.hasContentScripts,
+            hasExtensionPages: record.hasExtensionPages,
+            activationSummary: record.activationSummary,
+            manifest: record.manifest
+        )
+    }
+
     func makeScratchDirectory() throws -> URL {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -148,7 +216,7 @@ class SafariExtensionWebViewControllerWiringTestCase: XCTestCase {
         observation = webView.publisher(for: \.url, options: [.initial, .new])
             .combineLatest(webView.publisher(for: \.isLoading, options: [.initial, .new]))
             .filter { url, isLoading in
-                url?.scheme == "safari-web-extension" && !isLoading
+                ExtensionURLIdentity.isOwned(url) && !isLoading
             }
             .prefix(1)
             .sink { _ in
@@ -163,7 +231,7 @@ class SafariExtensionWebViewControllerWiringTestCase: XCTestCase {
               document.querySelectorAll('body *').length,
               document.scripts.length,
               document.body ? (document.body.dataset.sumiRenderMarker || '') : '',
-              location.href.startsWith('safari-web-extension://')
+              ['safari-web-extension:', 'webkit-extension:'].includes(location.protocol)
             ].join('|'))();
             """) as? String
         return try ExtensionRenderMetrics(rawValue: rawValue ?? "")

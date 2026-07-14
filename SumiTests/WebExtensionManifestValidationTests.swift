@@ -12,7 +12,7 @@ final class WebExtensionManifestValidationTests: XCTestCase {
         ])
 
         XCTAssertThrowsError(
-            try ExtensionUtils.validateManifest(
+            try ExtensionManifestValidation.validate(
                 at: manifestURL,
                 policy: .unpackedDirectory
             )
@@ -28,7 +28,7 @@ final class WebExtensionManifestValidationTests: XCTestCase {
             "version": "2024.1.0",
         ])
 
-        let manifest = try ExtensionUtils.validateManifest(
+        let manifest = try ExtensionManifestValidation.validate(
             at: manifestURL,
             policy: .safariWebExtension
         )
@@ -42,7 +42,7 @@ final class WebExtensionManifestValidationTests: XCTestCase {
             "version": "1.0",
         ])
 
-        let manifest = try ExtensionUtils.validateManifest(
+        let manifest = try ExtensionManifestValidation.validate(
             at: manifestURL,
             policy: .safariWebExtension
         )
@@ -57,7 +57,7 @@ final class WebExtensionManifestValidationTests: XCTestCase {
         ])
 
         XCTAssertThrowsError(
-            try ExtensionUtils.validateManifest(
+            try ExtensionManifestValidation.validate(
                 at: manifestURL,
                 policy: .safariWebExtension
             )
@@ -85,7 +85,7 @@ final class WebExtensionManifestValidationTests: XCTestCase {
 
     func testBackgroundModelDetectsManifestVersionTwoPersistentPage() {
         XCTAssertEqual(
-            ExtensionUtils.backgroundModel(from: [
+            ExtensionManifestSemantics.backgroundModel(from: [
                 "background": [
                     "page": "background.html",
                     "persistent": true,
@@ -97,7 +97,7 @@ final class WebExtensionManifestValidationTests: XCTestCase {
 
     func testBackgroundModelDetectsManifestVersionTwoPersistentScripts() {
         XCTAssertEqual(
-            ExtensionUtils.backgroundModel(from: [
+            ExtensionManifestSemantics.backgroundModel(from: [
                 "background": [
                     "scripts": ["background.js"],
                     "persistent": true,
@@ -109,7 +109,7 @@ final class WebExtensionManifestValidationTests: XCTestCase {
 
     func testBackgroundModelDetectsManifestVersionThreeServiceWorker() {
         XCTAssertEqual(
-            ExtensionUtils.backgroundModel(from: [
+            ExtensionManifestSemantics.backgroundModel(from: [
                 "background": [
                     "service_worker": "worker.js",
                 ],
@@ -120,7 +120,7 @@ final class WebExtensionManifestValidationTests: XCTestCase {
 
     func testBackgroundModelReturnsNoneWhenManifestHasNoBackground() {
         XCTAssertEqual(
-            ExtensionUtils.backgroundModel(from: [:]),
+            ExtensionManifestSemantics.backgroundModel(from: [:]),
             .none
         )
     }
@@ -146,7 +146,7 @@ final class WebExtensionManifestValidationTests: XCTestCase {
         ]
 
         XCTAssertEqual(
-            ExtensionUtils.iconPath(in: directory, manifest: manifest),
+            ExtensionManifestIconResolver.iconPath(in: directory, manifest: manifest),
             directory.appendingPathComponent("icons/128.png").path
         )
     }
@@ -168,7 +168,7 @@ final class WebExtensionManifestValidationTests: XCTestCase {
         ]
 
         XCTAssertEqual(
-            ExtensionUtils.iconPath(in: directory, manifest: manifest),
+            ExtensionManifestIconResolver.iconPath(in: directory, manifest: manifest),
             directory.appendingPathComponent("action/32.png").path
         )
     }
@@ -184,7 +184,7 @@ final class WebExtensionManifestValidationTests: XCTestCase {
         ]
 
         XCTAssertEqual(
-            ExtensionUtils.iconPath(in: directory, manifest: manifest),
+            ExtensionManifestIconResolver.iconPath(in: directory, manifest: manifest),
             directory.appendingPathComponent("assets/protonpass-icon-128.png").path
         )
     }
@@ -209,7 +209,7 @@ final class WebExtensionManifestValidationTests: XCTestCase {
         )
 
         XCTAssertEqual(
-            ExtensionUtils.iconPath(for: record),
+            ExtensionManifestIconResolver.iconPath(for: record),
             directory.appendingPathComponent("assets/protonpass-icon-128.png").path
         )
     }
@@ -225,15 +225,15 @@ final class WebExtensionManifestValidationTests: XCTestCase {
         )
 
         XCTAssertEqual(
-            ExtensionUtils.iconPath(
-                forExtensionOwnedURL: URL(string: "safari-web-extension://extension-id/onboarding.html"),
+            ExtensionManifestIconResolver.iconPath(
+                forOwnedURL: URL(string: "safari-web-extension://extension-id/onboarding.html"),
                 installedExtensions: [record]
             ),
             iconPath
         )
         XCTAssertNil(
-            ExtensionUtils.iconPath(
-                forExtensionOwnedURL: URL(string: "safari-web-extension://other-extension/onboarding.html"),
+            ExtensionManifestIconResolver.iconPath(
+                forOwnedURL: URL(string: "safari-web-extension://other-extension/onboarding.html"),
                 installedExtensions: [record]
             )
         )
@@ -254,8 +254,8 @@ final class WebExtensionManifestValidationTests: XCTestCase {
         }.joined()
 
         XCTAssertEqual(
-            ExtensionUtils.iconPath(
-                forExtensionOwnedURL: URL(string: "webkit-extension://\(host)/app/app.html#/page/welcome"),
+            ExtensionManifestIconResolver.iconPath(
+                forOwnedURL: URL(string: "webkit-extension://\(host)/app/app.html#/page/welcome"),
                 installedExtensions: [record]
             ),
             iconPath
@@ -444,7 +444,7 @@ final class WebExtensionManifestValidationTests: XCTestCase {
         let manifestURL = resourcesURL.appendingPathComponent("manifest.json")
 
         XCTAssertNoThrow(
-            try ExtensionUtils.validateManifest(
+            try ExtensionManifestValidation.validate(
                 at: manifestURL,
                 policy: .safariWebExtension
             )

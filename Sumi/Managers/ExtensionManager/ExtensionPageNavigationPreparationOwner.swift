@@ -13,7 +13,7 @@ final class ExtensionPageNavigationPreparationOwner {
         reason: String,
         manager: ExtensionManager
     ) -> TabWebViewReplacementOutcome {
-        if ExtensionUtils.isExtensionOwnedURL(targetURL) {
+        if ExtensionURLIdentity.isOwned(targetURL) {
             return prepareExtensionOwnedNavigation(
                 tab,
                 targetURL: targetURL,

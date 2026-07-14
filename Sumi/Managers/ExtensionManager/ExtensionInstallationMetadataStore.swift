@@ -33,7 +33,7 @@ final class ExtensionInstallationMetadataStore {
     init(
         context: ModelContext,
         activePackageGenerations: ExtensionPackageGenerationRegistry = .init(),
-        extensionsDirectory: URL = ExtensionUtils.extensionsDirectory()
+        extensionsDirectory: URL = ExtensionPathSafety.extensionsDirectory()
     ) {
         let packageLayout = ExtensionPackageLayout(
             extensionsRoot: extensionsDirectory
@@ -370,13 +370,13 @@ final class ExtensionInstallationMetadataStore {
     ) throws -> InstalledExtension {
         let installDate = existingEntity?.installDate ?? Date()
         let lastUpdateDate = Date()
-        let backgroundModel = ExtensionUtils.backgroundModel(from: manifest)
-        let optionsPagePath = ExtensionUtils.storedOptionsPagePath(
+        let backgroundModel = ExtensionManifestSemantics.backgroundModel(from: manifest)
+        let optionsPagePath = ExtensionOptionsPageResolution.storedPath(
             from: manifest,
             in: extensionRoot
         )
-        let defaultPopupPath = ExtensionUtils.defaultPopupPath(from: manifest)
-        let manifestActivationSummary = ExtensionUtils.activationSummary(from: manifest)
+        let defaultPopupPath = ExtensionManifestSemantics.defaultPopupPath(from: manifest)
+        let manifestActivationSummary = ExtensionManifestSemantics.activationSummary(from: manifest)
         let activationSummary = ExtensionActivationSummary(
             matchPatternStrings: manifestActivationSummary.matchPatternStrings,
             broadScope: manifestActivationSummary.broadScope,
@@ -387,11 +387,11 @@ final class ExtensionInstallationMetadataStore {
         )
         let incognitoMode = try IncognitoExtensionMode.fromManifest(manifest)
 
-        let localizedName = ExtensionUtils.localizedString(
+        let localizedName = ExtensionManifestLocalization.resolve(
             manifest["name"] as? String,
             in: extensionRoot
         ) ?? (manifest["name"] as? String) ?? "Unknown Extension"
-        let localizedDescription = ExtensionUtils.localizedString(
+        let localizedDescription = ExtensionManifestLocalization.resolve(
             manifest["description"] as? String,
             in: extensionRoot
         ) ?? (manifest["description"] as? String)
@@ -406,14 +406,14 @@ final class ExtensionInstallationMetadataStore {
             installDate: installDate,
             lastUpdateDate: lastUpdateDate,
             packagePath: extensionRoot.path,
-            iconPath: ExtensionUtils.iconPath(in: extensionRoot, manifest: manifest),
+            iconPath: ExtensionManifestIconResolver.iconPath(in: extensionRoot, manifest: manifest),
             sourceKind: sourceKind,
             backgroundModel: backgroundModel,
             incognitoMode: incognitoMode,
-            sourcePathFingerprint: ExtensionUtils.normalizePathFingerprint(sourceFingerprintURL),
+            sourcePathFingerprint: ExtensionPackageFingerprint.normalizedPath(sourceFingerprintURL),
             manifestRootFingerprint: manifestRootFingerprint
-                ?? ExtensionUtils.fingerprint(
-                    fileAt: extensionRoot.appendingPathComponent("manifest.json")
+                ?? ExtensionPackageFingerprint.file(
+                    at: extensionRoot.appendingPathComponent("manifest.json")
                 ),
             sourceBundlePath: sourceBundlePath,
             safariRuntimeIdentity: existingEntity?.safariRuntimeIdentity
@@ -472,7 +472,7 @@ final class ExtensionInstallationMetadataStore {
         let manifestURL = packageURL.appendingPathComponent("manifest.json")
         let manifest: [String: Any]
         do {
-            manifest = try ExtensionUtils.loadJSONObject(at: manifestURL)
+            manifest = try ExtensionManifestValidation.loadJSONObject(at: manifestURL)
         } catch {
             Self.logger.error(
                 "Failed to read persisted extension manifest for \(entity.id, privacy: .public): \(String(describing: error), privacy: .public)"

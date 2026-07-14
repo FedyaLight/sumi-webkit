@@ -56,16 +56,16 @@ final class BrowserExtensionWindowPresentationAdapter:
 
     func presentExtensionPopupWindow(
         configuration: WKWebExtension.WindowConfiguration,
-        controller: WKWebExtensionController,
-        extensionContext: WKWebExtensionContext,
-        extensionManager: ExtensionManager,
+        evidence: ExtensionControllerCallbackEvidence,
+        admission: ExtensionControllerCallbackAdmission,
+        runtime: ExtensionAuxiliaryWindowCallbackRuntime,
         parentWindow: NSWindow?
-    ) async -> ExtensionMiniWindowAdapter? {
+    ) async -> ExtensionPopupWindowPresentationReceipt? {
         await extensionWindows.present(
             configuration: configuration,
-            controller: controller,
-            extensionContext: extensionContext,
-            extensionManager: extensionManager,
+            evidence: evidence,
+            callbackAdmission: admission,
+            runtime: runtime,
             parentWindow: parentWindow
         )
     }

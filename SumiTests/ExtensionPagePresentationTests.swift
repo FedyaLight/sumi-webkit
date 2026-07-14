@@ -9,8 +9,8 @@ final class ExtensionPagePresentationTests: XCTestCase {
         let url = URL(string: "safari-web-extension://ext-bitwarden/popup.html")!
 
         XCTAssertEqual(
-            ExtensionUtils.displayName(
-                forExtensionOwnedURL: url,
+            ExtensionDisplayNameResolver.displayName(
+                forOwnedURL: url,
                 installedExtensions: [installed]
             ),
             "Bitwarden"
@@ -21,8 +21,8 @@ final class ExtensionPagePresentationTests: XCTestCase {
         let url = URL(string: "webkit-extension://ext-384345433143334442/page.html")!
 
         XCTAssertNil(
-            ExtensionUtils.displayName(
-                forExtensionOwnedURL: url,
+            ExtensionDisplayNameResolver.displayName(
+                forOwnedURL: url,
                 installedExtensions: []
             )
         )

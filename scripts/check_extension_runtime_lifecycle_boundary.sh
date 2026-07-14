@@ -9,6 +9,7 @@ demand='Sumi/Managers/ExtensionManager/ExtensionRuntimeDemandCoordinator.swift'
 transition='Sumi/Managers/ExtensionManager/ExtensionProfileRuntimeTransition.swift'
 attachment='Sumi/Managers/ExtensionManager/ExtensionManager+BrowserRuntimeAttachment.swift'
 residency='Sumi/Managers/ExtensionManager/ExtensionContextResidencyOwner.swift'
+settlement='Sumi/Managers/ExtensionManager/ExtensionContextSettlementOwner.swift'
 installation='Sumi/Managers/ExtensionManager/ExtensionInstallationService.swift'
 tests='SumiTests/ExtensionRuntimeLifecycleBoundaryTests.swift'
 status=0
@@ -17,7 +18,7 @@ if [[ -e "$old" ]]; then
   echo 'error: extension runtime lifecycle god-object returned' >&2
   status=1
 fi
-for file in "$demand" "$transition" "$attachment" "$tests"; do
+for file in "$demand" "$transition" "$attachment" "$settlement" "$tests"; do
   if [[ ! -f "$file" ]]; then
     echo "error: extension runtime lifecycle boundary missing: $file" >&2
     status=1
@@ -83,8 +84,8 @@ for proof in \
   'controller(ifCurrent: receipt)' \
   'loadedContext.context.isLoaded' \
   '$0.id == receipt.key.extensionId && $0.isEnabled' \
-  'dependencies.markRuntimePublicationReady()'; do
-  if ! rg -Fq "$proof" "$residency"; then
+  'markPublicationReady()'; do
+  if ! rg -Fq "$proof" "$settlement"; then
     echo "error: runtime publication settlement lacks exact proof: $proof" >&2
     status=1
   fi

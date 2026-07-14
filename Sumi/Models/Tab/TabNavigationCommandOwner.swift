@@ -104,7 +104,7 @@ final class TabNavigationCommandOwner {
         }
 
         let configurationReplacementOutcome = extensionReplacementOutcome == .notNeeded
-            && ExtensionUtils.isExtensionOwnedURL(newURL) == false
+            && ExtensionURLIdentity.isOwned(newURL) == false
             ? (configurationPolicyRebuilder?(newURL, reason)
                 ?? tab.rebuildNormalWebViewForConfigurationPolicyOutcome(
                     targetURL: newURL,
@@ -149,7 +149,7 @@ final class TabNavigationCommandOwner {
         for tab: Tab,
         reason: String
     ) -> TabWebViewReplacementOutcome {
-        guard ExtensionUtils.isExtensionOwnedURL(newURL)
+        guard ExtensionURLIdentity.isOwned(newURL)
                 || tab.webExtensionContextOverride != nil
         else {
             return .notNeeded

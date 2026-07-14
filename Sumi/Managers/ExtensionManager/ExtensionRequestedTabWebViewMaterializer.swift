@@ -63,7 +63,7 @@ struct ExtensionRequestedTabWebViewMaterializer {
         hasWindowSelection: Bool
     ) {
         guard tab.webExtensionContextOverride != nil,
-              ExtensionUtils.isExtensionOwnedURL(tab.url),
+              ExtensionURLIdentity.isOwned(tab.url),
               tab.isUnloaded
         else {
             return

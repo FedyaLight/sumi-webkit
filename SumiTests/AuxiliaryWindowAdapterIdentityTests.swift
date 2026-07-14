@@ -597,28 +597,13 @@ extension AuxiliaryWindowLifecycleTests {
         let unboundContext = try await makeExtensionContext(
             ownerExtensionID: ownerExtensionID
         )
-        let configuration = AuxiliaryWindowConfigurationMock(
-            windowType: .popup,
-            tabURLs: [
-                URL(
-                    string: "safari-web-extension://\(ownerExtensionID)/unbound.html"
-                )!,
-            ],
-            shouldBePrivate: false
-        ).windowConfiguration
-
-        let adapter = await harness.browserManager.auxiliaryWindows
-            .extensionWindows.present(
-                configuration: configuration,
-                controller: harness.controller,
-                extensionContext: unboundContext,
-                extensionManager: harness.extensionManager,
-                parentWindow: harness.windowRegistry.appKitWindow(
-                    for: harness.windowState
-                )
-            )
-
-        XCTAssertNil(adapter)
+        XCTAssertNil(
+            harness.extensionManager.controllerCallbackAdmission.capture(
+                context: unboundContext,
+                controller: harness.controller
+            ),
+            "An unbound context must fail before auxiliary preload or UI"
+        )
         XCTAssertTrue(
             harness.browserManager.auxiliaryWindows.sessions
                 .sessionsSnapshot().isEmpty

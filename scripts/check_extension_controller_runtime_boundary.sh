@@ -169,13 +169,19 @@ if ! rg -Fq 'guard attachedBrowserManager != nil' <<<"$reload_body" \
   status=1
 fi
 for attached_admission in \
-  'Sumi/Managers/ExtensionManager/ExtensionControllerDelegateBridge.swift' \
   'Sumi/Managers/ExtensionManager/ExtensionWindowRequestRouter.swift'; do
   if ! rg -Fq 'attachedBrowserManager != nil' "$attached_admission"; then
     echo "error: stale browser attachment remains admitted: $attached_admission" >&2
     status=1
   fi
 done
+if ! rg -Fq 'ExtensionControllerCallbackEvidence' \
+    Sumi/Managers/ExtensionManager/ExtensionControllerOpeningCallbackHandler.swift \
+    || rg -n '\bExtensionManager\b' \
+      Sumi/Managers/ExtensionManager/ExtensionControllerOpeningCallbackHandler.swift >/dev/null; then
+  echo 'error: opening callbacks no longer use manager-free exact evidence' >&2
+  status=1
+fi
 strong_runtime_root_hits="$(
   rg -n 'let (ownershipQuery|rebuild|websiteDataCleanup) = browserManager|\[(ownershipQuery|rebuild|websiteDataCleanup)\]' \
     "$browser_runtime_factory" || true
@@ -344,11 +350,11 @@ if ! rg -Fq 'guard attachedBrowserManager != nil' \
   echo 'error: attached-only extension window graph can materialize on a cold manager' >&2
   status=1
 fi
-if ! rg -Fq 'guard manager.attachedBrowserManager != nil' \
-    Sumi/Managers/ExtensionManager/ExtensionControllerDelegateBridge.swift \
-    || ! rg -Fq 'manager.controllerRuntimeComposition != nil' \
-      Sumi/Managers/ExtensionManager/ExtensionControllerDelegateBridge.swift; then
-  echo 'error: cold extension Tab callback can materialize browser publication roles' >&2
+if rg -n '\bExtensionManager\b' \
+    Sumi/Managers/ExtensionManager/ExtensionControllerOpeningCallbackHandler.swift >/dev/null \
+    || ! rg -Fq 'admission.isCurrent' \
+      Sumi/Managers/ExtensionManager/ExtensionControllerOpeningCallbackHandler.swift; then
+  echo 'error: extension opening callback escaped exact manager-free admission' >&2
   status=1
 fi
 

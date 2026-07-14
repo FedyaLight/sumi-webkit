@@ -115,8 +115,8 @@ final class SumiNativeMessagingPortConnectRelayFlow {
             .connect,
             applicationIdentifier,
             extensionId,
-            ExtensionUtils.displayName(
-                forExtensionID: extensionId,
+            ExtensionDisplayNameResolver.displayName(
+                for: extensionId,
                 installedExtensions: installedExtensions
             ),
             profileId,

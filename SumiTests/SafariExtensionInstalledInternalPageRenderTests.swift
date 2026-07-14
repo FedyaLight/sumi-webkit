@@ -341,6 +341,7 @@ final class SafariExtensionInstalledInternalPageRenderTests: XCTestCase {
             shouldBePinned: false,
             requestedWindow: nil,
             controller: controller,
+            extensionContext: extensionContext,
             reason: "SafariExtensionInstalledInternalPageRenderTests"
         )
         XCTAssertIdentical(tab.webExtensionContextOverride, extensionContext)

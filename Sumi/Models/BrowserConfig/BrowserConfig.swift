@@ -161,6 +161,14 @@ class BrowserConfiguration {
 
     // MARK: - Auxiliary Surface Configuration
 
+    @MainActor
+    func applyVisitedLinkStore(
+        to configuration: WKWebViewConfiguration,
+        for profile: Profile
+    ) {
+        visitedLinkStoreProvider.applyStore(to: configuration, for: profile)
+    }
+
     /// Auxiliary WebViews are intentionally separate from primary normal tabs:
     /// popup WebViews come from WebKit, Glance/MiniWindow use lightweight
     /// wrappers, and extension option pages may start from WebKit extension

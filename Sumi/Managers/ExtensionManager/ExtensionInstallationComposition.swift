@@ -28,7 +28,7 @@ extension ExtensionInstallationService {
             activePackageGenerations: manager.activePackageGenerations,
             packageMaintenance: ExtensionPackageMaintenance(
                 layout: ExtensionPackageLayout(
-                    extensionsRoot: ExtensionUtils.extensionsDirectory()
+                    extensionsRoot: ExtensionPathSafety.extensionsDirectory()
                 ),
                 activeGenerations: manager.activePackageGenerations
             ),

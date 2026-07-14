@@ -45,7 +45,7 @@ final class SumiFaviconPayloadIngestion: @unchecked Sendable {
         partition: SumiFaviconPartition,
         context: SumiFaviconDisplayContext
     ) async -> NSImage? {
-        guard ExtensionUtils.isExtensionOwnedURL(documentURL) else {
+        guard ExtensionURLIdentity.isOwned(documentURL) else {
             return nil
         }
 

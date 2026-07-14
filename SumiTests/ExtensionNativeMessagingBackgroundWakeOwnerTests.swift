@@ -150,6 +150,86 @@ final class ExtensionNativeMessagingBackgroundWakeOwnerTests: XCTestCase {
         XCTAssertTrue(didLogFailure)
         XCTAssertEqual(loggedOperation, "wake before sendMessage")
     }
+
+    func testCancelledContentScriptTaskCannotRemoveNewSameProfileTask()
+        async {
+        let profileID = UUID()
+        let installed = InstalledExtensionCollection()
+        installed.connectRecordChanges {}
+        installed.upsert(Self.contentScriptRecord())
+        let firstStarted = expectation(description: "first load started")
+        let secondStarted = expectation(description: "second load started")
+        var loadCount = 0
+        var releaseFirst: CheckedContinuation<Void, Never>?
+        var releaseSecond: CheckedContinuation<Void, Never>?
+        let owner = ExtensionContentScriptContextPreparationOwner(
+            installedExtensions: installed,
+            runtimeIsEnabled: { true },
+            context: { _, _ in nil },
+            load: { _, _ in
+                loadCount += 1
+                if loadCount == 1 {
+                    firstStarted.fulfill()
+                    await withCheckedContinuation { releaseFirst = $0 }
+                } else {
+                    secondStarted.fulfill()
+                    await withCheckedContinuation { releaseSecond = $0 }
+                }
+            },
+            logFailure: { _, _, _, _ in }
+        )
+
+        let first = Task { await owner.ensureLoaded(profileID: profileID) }
+        await fulfillment(of: [firstStarted], timeout: 1.0)
+        owner.cancelAll()
+        let second = Task { await owner.ensureLoaded(profileID: profileID) }
+        await fulfillment(of: [secondStarted], timeout: 1.0)
+
+        releaseFirst?.resume()
+        await first.value
+        XCTAssertEqual(owner.runtimeTasksForDrain().count, 1)
+
+        releaseSecond?.resume()
+        await second.value
+        XCTAssertTrue(owner.runtimeTasksForDrain().isEmpty)
+    }
+
+    private static func contentScriptRecord() -> InstalledExtension {
+        InstalledExtension(
+            id: "content-script",
+            name: "Content Script",
+            version: "1",
+            manifestVersion: 3,
+            description: nil,
+            isEnabled: true,
+            installDate: .distantPast,
+            lastUpdateDate: .distantPast,
+            packagePath: "/tmp/content-script",
+            iconPath: nil,
+            sourceKind: .directory,
+            backgroundModel: .none,
+            incognitoMode: .spanning,
+            sourcePathFingerprint: "source",
+            manifestRootFingerprint: "manifest",
+            sourceBundlePath: "/tmp/content-script",
+            optionsPagePath: nil,
+            defaultPopupPath: nil,
+            hasBackground: false,
+            hasAction: false,
+            hasOptionsPage: false,
+            hasContentScripts: true,
+            hasExtensionPages: false,
+            activationSummary: ExtensionActivationSummary(
+                matchPatternStrings: ["<all_urls>"],
+                broadScope: true,
+                hasContentScripts: true,
+                hasAction: false,
+                hasOptionsPage: false,
+                hasExtensionPages: false
+            ),
+            manifest: [:]
+        )
+    }
 }
 
 @available(macOS 15.5, *)

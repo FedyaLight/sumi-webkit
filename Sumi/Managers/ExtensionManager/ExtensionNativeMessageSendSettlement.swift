@@ -40,8 +40,8 @@ final class ExtensionNativeMessageSendSettlement {
         }
 
         let isPrivateBrowsing = manager.isPrivateExtensionRuntimeProfile(profileId)
-        let extensionDisplayName = ExtensionUtils.displayName(
-            forExtensionID: extensionId,
+        let extensionDisplayName = ExtensionDisplayNameResolver.displayName(
+            for: extensionId,
             installedExtensions: manager.installedExtensionCollection.records
         )
         manager.runtimeDiagnostics.traceNativeMessagingContextBinding(

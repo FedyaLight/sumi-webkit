@@ -151,7 +151,7 @@ final class ExtensionRuntimeLoader {
                     + "packagePath=\(extensionRoot.path)"
             )
             let validationStart = CFAbsoluteTimeGetCurrent()
-            let manifest = try ExtensionUtils.validateManifest(
+            let manifest = try ExtensionManifestValidation.validate(
                 at: manifestURL,
                 policy: WebExtensionManifestValidationPolicy.forSourceKind(
                     sourceKind

@@ -43,7 +43,10 @@ final class AuxiliaryWindowSession {
     let isPrivate: Bool
     let ownerExtensionID: String?
     let miniWindowAdapter: ExtensionMiniWindowAdapter?
-    weak var extensionEvents: (any AuxiliaryWindowExtensionEventHandling)?
+    /// The session owns the lifetime projection; the projection itself keeps
+    /// the extension runtime root weak. This preserves callbacks for the
+    /// session lifetime without making the browser session retain extensions.
+    let extensionEvents: (any AuxiliaryWindowExtensionEventHandling)?
     let uiDelegate: AuxiliaryWindowUIDelegate
     let windowDelegate: AuxiliaryWindowSessionDelegate
 

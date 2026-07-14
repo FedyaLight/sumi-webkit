@@ -28,6 +28,7 @@ final class ExtensionRequestedTabResidenceValidator {
         _ tab: Tab,
         target: ExtensionRequestedTabTarget,
         extensionContext: WKWebExtensionContext?,
+        residencePolicy: ExtensionRequestedTabResidencePolicy,
         browser: any ExtensionTabTargetQuery
     ) throws -> BrowserWindowState? {
         let window = target.window
@@ -52,6 +53,13 @@ final class ExtensionRequestedTabResidenceValidator {
             for: tab,
             runtime: currentRuntime
         )
+        let publicationIsCurrent = profileID.map { profileID in
+            residencePolicy.requiresExtensionPublication == false
+                || publications.publishedWindowAdapter(
+                    for: window,
+                    profileID: profileID
+                ) != nil
+        } ?? false
         guard let profileID,
               browser.extensionWindowState(for: window.id) === window,
               profileRuntime.windowMatchesProfile(
@@ -68,10 +76,7 @@ final class ExtensionRequestedTabResidenceValidator {
                   profileID: profileID,
                   browser: browser
               ), tabSpace === windowSpace,
-              publications.publishedWindowAdapter(
-                  for: window,
-                  profileID: profileID
-              ) != nil
+              publicationIsCurrent
         else {
             throw ExtensionManagerCallbackError
                 .requestedTabUnavailable.nsError()

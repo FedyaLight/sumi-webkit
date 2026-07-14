@@ -81,11 +81,6 @@ final class ExtensionInstallationService {
             Result<InstalledExtension, ExtensionError>
         ) -> Void
     ) {
-        guard ExtensionUtils.isExtensionSupportAvailable else {
-            deliver(.failure(.unsupportedOS), to: completionHandler)
-            return
-        }
-
         Task {
             do {
                 deliver(
@@ -123,7 +118,7 @@ final class ExtensionInstallationService {
 
         let package = try await ExtensionInstallationPackage.prepare(
             source: source,
-            extensionsDirectory: ExtensionUtils.extensionsDirectory(),
+            extensionsDirectory: ExtensionPathSafety.extensionsDirectory(),
             activeGenerations: activePackageGenerations,
             fileExecutor: packageFileExecutor
         )

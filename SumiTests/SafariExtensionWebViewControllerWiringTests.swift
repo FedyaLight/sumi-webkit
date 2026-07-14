@@ -536,6 +536,18 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             activate: false
         )
         tab.profileId = profile.id
+        tab.attachBrowserRuntime(
+            TabBrowserRuntimeFactory.make(for: browserManager)
+        )
+        registerWindowDisplaying(
+            tab,
+            profileId: profile.id,
+            browserManager: browserManager
+        )
+        manager.reloadRuntimePublications(
+            reason: #function,
+            profileID: profile.id
+        )
 
         var didOpenCount = 0
         let didOpenExpectation = expectation(description: "didOpenTab after warmup")
@@ -725,6 +737,17 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         let controller = try XCTUnwrap(
             manager.profileRuntime.controllersByProfile[profile.id]
         )
+        publishNormalExtensionWindow(
+            manager: manager,
+            browserManager: browserManager,
+            profile: profile
+        )
+        let evidence = try XCTUnwrap(
+            manager.controllerCallbackAdmission.capture(
+                context: extensionContext,
+                controller: controller
+            )
+        )
         let extensionURL = extensionContext.baseURL
             .appendingPathComponent("popup.html")
 
@@ -734,6 +757,9 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             shouldBePinned: false,
             requestedWindow: nil,
             controller: controller,
+            extensionContext: extensionContext,
+            evidence: evidence,
+            callbackAdmission: manager.controllerCallbackAdmission,
             reason: "SafariExtensionWebViewControllerWiringTests"
         )
 
@@ -809,6 +835,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             shouldBePinned: false,
             requestedWindow: nil,
             controller: controller,
+            extensionContext: extensionContext,
             reason: "SafariExtensionWebViewControllerWiringTests"
         )
 
@@ -980,6 +1007,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             shouldBePinned: false,
             requestedWindow: nil,
             controller: controller,
+            extensionContext: extensionContext,
             reason: "SafariExtensionWebViewControllerWiringTests.reload"
         )
         let adapter = try XCTUnwrap(
@@ -1063,6 +1091,17 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         let controller = try XCTUnwrap(
             manager.profileRuntime.controllersByProfile[profile.id]
         )
+        publishNormalExtensionWindow(
+            manager: manager,
+            browserManager: browserManager,
+            profile: profile
+        )
+        let evidence = try XCTUnwrap(
+            manager.controllerCallbackAdmission.capture(
+                context: extensionContext,
+                controller: controller
+            )
+        )
         XCTAssertEqual(extensionContext.baseURL.scheme, "safari-web-extension")
         let extensionURL = extensionContext.baseURL
             .appendingPathComponent("popup.html")
@@ -1073,6 +1112,9 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             shouldBePinned: false,
             requestedWindow: nil,
             controller: controller,
+            extensionContext: extensionContext,
+            evidence: evidence,
+            callbackAdmission: manager.controllerCallbackAdmission,
             reason: "SafariExtensionWebViewControllerWiringTests"
         )
 
@@ -1515,6 +1557,17 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         let controller = try XCTUnwrap(
             manager.profileRuntime.controllersByProfile[profile.id]
         )
+        publishNormalExtensionWindow(
+            manager: manager,
+            browserManager: browserManager,
+            profile: profile
+        )
+        let evidence = try XCTUnwrap(
+            manager.controllerCallbackAdmission.capture(
+                context: extensionContext,
+                controller: controller
+            )
+        )
         let extensionURL = extensionContext.baseURL
             .appendingPathComponent("popup.html")
 
@@ -1524,6 +1577,9 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             shouldBePinned: false,
             requestedWindow: nil,
             controller: controller,
+            extensionContext: extensionContext,
+            evidence: evidence,
+            callbackAdmission: manager.controllerCallbackAdmission,
             reason: "SafariExtensionWebViewControllerWiringTests"
         )
         let webView = try XCTUnwrap(
@@ -1591,12 +1647,130 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         let controller = try XCTUnwrap(
             manager.profileRuntime.controllersByProfile[profile.id]
         )
+        let staleEvidence = try XCTUnwrap(
+            manager.controllerCallbackAdmission.capture(
+                context: extensionContext,
+                controller: controller
+            )
+        )
+
+        let attachedRuntime = manager.runtime
+        var mutationIsBlocked = true
+        var mutationWaiter: CheckedContinuation<Bool, Never>?
+        let didSuspend = expectation(description: "options admission suspended")
+        manager.runtime = ExtensionManagerRuntime(
+            currentProfile: attachedRuntime.currentProfile,
+            profile: attachedRuntime.profile,
+            ephemeralProfile: attachedRuntime.ephemeralProfile,
+            windowState: attachedRuntime.windowState,
+            activeWindowState: attachedRuntime.activeWindowState,
+            allTabs: attachedRuntime.allTabs,
+            allWindowStates: attachedRuntime.allWindowStates,
+            windowStateContainingTab: attachedRuntime.windowStateContainingTab,
+            windowOwnedWebView: attachedRuntime.windowOwnedWebView,
+            primaryTrackedWindowId: attachedRuntime.primaryTrackedWindowId,
+            untrackedOwnedWebView: attachedRuntime.untrackedOwnedWebView,
+            trackedWebViews: attachedRuntime.trackedWebViews,
+            rebuildLiveWebViews: attachedRuntime.rebuildLiveWebViews,
+            websiteDataMutationAdmissionIsBlocked: { _ in
+                mutationIsBlocked
+            },
+            waitForWebsiteDataMutationAdmission: { _ in
+                didSuspend.fulfill()
+                return await withCheckedContinuation { mutationWaiter = $0 }
+            },
+            browserRuntimeAvailable: attachedRuntime.browserRuntimeAvailable,
+            extensionsModuleEnabled: attachedRuntime.extensionsModuleEnabled
+        )
+        let staleCompletion = expectation(
+            description: "stale options admission rejected"
+        )
+        var staleCompletionError: Error?
+        let staleInvocation = try XCTUnwrap(
+            ExtensionOptionsWindowCallbackComposition.invocation(
+                from: manager,
+                evidence: staleEvidence
+            )
+        )
+        manager.optionsWindows.presentOptionsPageWindow(
+            invocation: staleInvocation
+        ) { error in
+            staleCompletionError = error
+            staleCompletion.fulfill()
+        }
+        await fulfillment(of: [didSuspend], timeout: 2.0)
+        let replacementRoot = try makeScratchDirectory()
+        manager.installedExtensionCollection.upsert(
+            replacingPackageRoot(
+                of: installed,
+                with: replacementRoot
+            )
+        )
+        mutationIsBlocked = false
+        mutationWaiter?.resume(returning: true)
+        await fulfillment(of: [staleCompletion], timeout: 2.0)
+        XCTAssertTrue(staleCompletionError is CancellationError)
+        XCTAssertNil(manager.optionsWindows.windows[installed.id])
+
+        manager.runtime = attachedRuntime
+        manager.installedExtensionCollection.upsert(installed)
+        let reloadedContext = try await manager.ensureExtensionLoaded(
+            extensionId: installed.id,
+            profileId: profile.id
+        )
+        let restoredContext = try XCTUnwrap(reloadedContext)
+        let restoredController = try XCTUnwrap(
+            manager.profileRuntime.controller(for: profile.id)
+        )
+        let evidence = try XCTUnwrap(
+            manager.controllerCallbackAdmission.capture(
+                context: restoredContext,
+                controller: restoredController
+            )
+        )
+        let otherProfile = Profile(name: "Current Profile B")
+        let profileAReference = browserConfiguration
+            .auxiliaryWebViewConfiguration(
+                for: profile,
+                surface: .extensionOptions
+            )
+        let profileBReference = browserConfiguration
+            .auxiliaryWebViewConfiguration(
+                for: otherProfile,
+                surface: .extensionOptions
+            )
+        manager.profileRuntime.currentProfileId = otherProfile.id
 
         let openedOptions = expectation(description: "options page opened")
         var completionError: Error?
+        let invocation = try XCTUnwrap(
+            ExtensionOptionsWindowCallbackComposition.invocation(
+                from: manager,
+                evidence: evidence
+            )
+        )
+        XCTAssertIdentical(
+            invocation.receipt.configuration.webExtensionController,
+            restoredController
+        )
+        XCTAssertIdentical(
+            invocation.receipt.configuration.websiteDataStore,
+            profile.dataStore
+        )
+        XCTAssertNotIdentical(
+            invocation.receipt.configuration.websiteDataStore,
+            otherProfile.dataStore
+        )
+        XCTAssertIdentical(
+            invocation.receipt.configuration.sumiVisitedLinkStoreObject,
+            profileAReference.sumiVisitedLinkStoreObject
+        )
+        XCTAssertNotIdentical(
+            invocation.receipt.configuration.sumiVisitedLinkStoreObject,
+            profileBReference.sumiVisitedLinkStoreObject
+        )
         manager.optionsWindows.presentOptionsPageWindow(
-            for: extensionContext,
-            manager: manager
+            invocation: invocation
         ) { error in
             completionError = error
             openedOptions.fulfill()
@@ -1609,15 +1783,28 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         let webView = try XCTUnwrap(Self.firstWebView(in: contentView))
 
         let metrics = try await awaitExtensionRenderMetrics(in: webView)
+        XCTAssertEqual(webView.url, invocation.receipt.optionsURL)
+        XCTAssertTrue(ExtensionURLIdentity.isOwned(webView.url))
         XCTAssertTrue(metrics.loadedFromExtensionScheme, metrics.debugSummary)
         XCTAssertEqual(metrics.readyState, "complete", metrics.debugSummary)
         XCTAssertGreaterThan(metrics.elementCount, 0, metrics.debugSummary)
         XCTAssertGreaterThan(metrics.scriptCount, 0, metrics.debugSummary)
         XCTAssertEqual(metrics.marker, "rendered", metrics.debugSummary)
-        XCTAssertIdentical(webView.configuration.webExtensionController, controller)
+        XCTAssertIdentical(
+            webView.configuration.webExtensionController,
+            restoredController
+        )
         XCTAssertIdentical(
             webView.configuration.websiteDataStore,
-            controller.configuration.defaultWebsiteDataStore
+            restoredController.configuration.defaultWebsiteDataStore
+        )
+        XCTAssertIdentical(
+            webView.configuration.sumiVisitedLinkStoreObject,
+            profileAReference.sumiVisitedLinkStoreObject
+        )
+        XCTAssertNotIdentical(
+            webView.configuration.sumiVisitedLinkStoreObject,
+            profileBReference.sumiVisitedLinkStoreObject
         )
     }
 
@@ -1671,6 +1858,17 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         let controller = try XCTUnwrap(
             manager.profileRuntime.controllersByProfile[profile.id]
         )
+        publishNormalExtensionWindow(
+            manager: manager,
+            browserManager: browserManager,
+            profile: profile
+        )
+        let evidence = try XCTUnwrap(
+            manager.controllerCallbackAdmission.capture(
+                context: extensionContext,
+                controller: controller
+            )
+        )
         let extensionURL = extensionContext.baseURL
             .appendingPathComponent("popup.html")
 
@@ -1687,6 +1885,9 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             shouldBePinned: false,
             requestedWindow: nil,
             controller: controller,
+            extensionContext: extensionContext,
+            evidence: evidence,
+            callbackAdmission: manager.controllerCallbackAdmission,
             reason: "SafariExtensionWebViewControllerWiringTests"
         )
 

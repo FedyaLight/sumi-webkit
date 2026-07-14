@@ -105,6 +105,9 @@ final class ExtensionScopedRuntimeRetirement {
         resources: Resources
     ) -> Result {
         let initialProfileIDs = currentProfileIDs(extensionID: extensionID)
+        let optionsWindowReceipt = optionsWindows.receipt(for: extensionID)
+        let auxiliaryWindowReceipts = resources.auxiliaryWindows?
+            .auxiliaryWindowSessionReceipts(forExtensionID: extensionID) ?? []
         guard isAdmitted(extensionID: extensionID, admission: admission) else {
             return Result(
                 completionStatus: .rejected,
@@ -191,10 +194,12 @@ final class ExtensionScopedRuntimeRetirement {
             )
         }
 
-        resources.auxiliaryWindows?.closeAuxiliaryWindowSessions(
-            forExtensionId: extensionID,
-            reason: .extensionDisable
-        )
+        auxiliaryWindowReceipts.forEach { receipt in
+            resources.auxiliaryWindows?.closeAuxiliaryWindowSession(
+                receipt,
+                reason: .extensionDisable
+            )
+        }
         guard isAdmitted(extensionID: extensionID, admission: admission) else {
             return supersededResult(
                 extensionID: extensionID,
@@ -202,7 +207,12 @@ final class ExtensionScopedRuntimeRetirement {
                 outcomes: outcomes
             )
         }
-        optionsWindows.closeWindow(for: extensionID)
+        if let optionsWindowReceipt {
+            optionsWindows.retire(
+                optionsWindowReceipt,
+                shouldOrderOut: true
+            )
+        }
         guard isAdmitted(extensionID: extensionID, admission: admission) else {
             return supersededResult(
                 extensionID: extensionID,
