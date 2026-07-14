@@ -34,8 +34,6 @@ final class WebsiteDataCleanupTransaction {
     private let abortOwnershipTransitions: OwnershipTransitionAborter
     private let restoreCompensation = RestoreCompensation()
 
-    private var transactionSlotIsOwned = false
-    private var transactionSlotWaiters: [CheckedContinuation<Void, Never>] = []
     private var isTerminallyShutDown = false
 
     init(
@@ -89,8 +87,6 @@ final class WebsiteDataCleanupTransaction {
             return true
         }
 
-        await acquireTransactionSlot()
-        defer { releaseTransactionSlot() }
         guard canEnterTransaction else { return false }
 
         guard let mutationLease = await mutationGate.acquire(
@@ -204,10 +200,6 @@ final class WebsiteDataCleanupTransaction {
         mutationGate.resetForTerminalShutdown()
         navigationBarrier.resetForTerminalShutdown()
         restoreCompensation.cancelForTerminalShutdown()
-
-        let slotWaiters = transactionSlotWaiters
-        transactionSlotWaiters.removeAll()
-        slotWaiters.forEach { $0.resume() }
     }
 
     private var canEnterTransaction: Bool {
@@ -241,22 +233,4 @@ final class WebsiteDataCleanupTransaction {
         }
     }
 
-    private func acquireTransactionSlot() async {
-        if transactionSlotIsOwned == false {
-            transactionSlotIsOwned = true
-            return
-        }
-        await withCheckedContinuation { continuation in
-            transactionSlotWaiters.append(continuation)
-        }
-    }
-
-    private func releaseTransactionSlot() {
-        guard transactionSlotIsOwned else { return }
-        if transactionSlotWaiters.isEmpty {
-            transactionSlotIsOwned = false
-        } else {
-            transactionSlotWaiters.removeFirst().resume()
-        }
-    }
 }

@@ -17,79 +17,52 @@ struct WebsiteDataCleanupRestoreCommandReceipt {
     }
 }
 
-/// Owns the exact-navigation state machine for every live WebView touched by a
-/// website-data cleanup. Discovery and restoration can request state changes,
-/// but only this barrier resolves lifecycle callbacks and terminal waits.
+/// Applies app-owned Tab ownership and physical WebKit effects around the
+/// package-owned participant/navigation state machine.
 @MainActor
 final class WebsiteDataCleanupNavigationBarrier {
-    struct NavigationIdentity {
-        let id: ObjectIdentifier
-        let lifetime: AnyObject
-    }
+    typealias NavigationIdentity =
+        WebsiteDataCleanupParticipantLedger.NavigationIdentity
 
     final class Session {
-        let id = UUID()
+        fileprivate let ledgerSession: WebsiteDataCleanupParticipantLedger.Session
         fileprivate(set) var participants: [Participant] = []
-        fileprivate(set) var isInvalidated = false
-    }
 
-    final class Participant {
-        let sessionID: UUID
-        let tab: Tab
-        let webView: WKWebView
-        fileprivate var phase: ParticipantPhase = .discovered
-        fileprivate var terminalWait: TerminalWait?
-        fileprivate var bufferedRestoreStarts: [RestoreStartCandidate] = []
-        fileprivate var wasTouched = false
+        var id: UUID { ledgerSession.id }
 
-        fileprivate init(sessionID: UUID, tab: Tab, webView: WKWebView) {
-            self.sessionID = sessionID
-            self.tab = tab
-            self.webView = webView
+        fileprivate init(
+            ledgerSession: WebsiteDataCleanupParticipantLedger.Session
+        ) {
+            self.ledgerSession = ledgerSession
         }
     }
 
-    /// One exact wait generation. Keeping the result and continuation on the
-    /// token prevents a delayed cancellation/watchdog from completing a later
-    /// blank or restore attempt for the same WebView.
-    fileprivate final class TerminalWait {
-        let id = UUID()
-        let deadline: ContinuousClock.Instant
-        var result: Bool?
-        var continuation: CheckedContinuation<Bool, Never>?
+    final class Participant {
+        fileprivate let ledgerParticipant:
+            WebsiteDataCleanupParticipantLedger.Participant
+        let tab: Tab
 
-        init(deadline: ContinuousClock.Instant) {
-            self.deadline = deadline
+        var sessionID: UUID { ledgerParticipant.sessionID }
+        var webView: WKWebView { ledgerParticipant.webView }
+
+        fileprivate init(
+            ledgerParticipant: WebsiteDataCleanupParticipantLedger.Participant,
+            tab: Tab
+        ) {
+            self.ledgerParticipant = ledgerParticipant
+            self.tab = tab
         }
     }
 
     typealias MutationPermissionWaiter = @MainActor (WKWebView) async -> Bool
     typealias BlankNavigationLoader = @MainActor (WKWebView) -> NavigationIdentity?
 
-    fileprivate enum ParticipantPhase {
-        case discovered
-        case awaitingBlank(NavigationIdentity)
-        case blanked
-        case awaitingRestoreStart(targetURL: URL, semanticRevision: UInt64?)
-        case awaitingRestore(NavigationIdentity)
-        case completed
-        case abandoned
-    }
-
-    fileprivate struct RestoreStartCandidate {
-        let navigation: NavigationIdentity
-        let targetURL: URL
-        let semanticRevision: UInt64?
-        var terminalResult: Bool?
-    }
-
     private let waitForMutationPermission: MutationPermissionWaiter
     private let loadBlankNavigation: BlankNavigationLoader
     private let blankAttemptTimeout: Duration
+    private let participantLedger = WebsiteDataCleanupParticipantLedger()
 
     private var activeSession: Session?
-    private var participantsByWebViewID: [ObjectIdentifier: Participant] = [:]
-    private var isTerminallyShutDown = false
 
     init(
         waitForMutationPermission: @escaping MutationPermissionWaiter,
@@ -102,28 +75,28 @@ final class WebsiteDataCleanupNavigationBarrier {
     }
 
     func beginSession() -> Session? {
-        guard activeSession == nil, isTerminallyShutDown == false else {
+        guard activeSession == nil,
+              let ledgerSession = participantLedger.beginSession() else {
             return nil
         }
-        let session = Session()
+        let session = Session(ledgerSession: ledgerSession)
         activeSession = session
         return session
     }
 
     func invalidate(_ session: Session) {
         guard activeSession === session else { return }
-        session.isInvalidated = true
+        participantLedger.invalidate(session.ledgerSession)
     }
 
     func isValid(_ session: Session) -> Bool {
         activeSession === session
-            && session.isInvalidated == false
-            && isTerminallyShutDown == false
+            && participantLedger.isValid(session.ledgerSession)
     }
 
     func participantCount(in session: Session) -> Int {
         guard activeSession === session else { return 0 }
-        return session.participants.count
+        return participantLedger.participantCount(in: session.ledgerSession)
     }
 
     func register(
@@ -132,40 +105,32 @@ final class WebsiteDataCleanupNavigationBarrier {
         in session: Session,
         touchedAndBlanked: Bool = false
     ) -> Participant? {
-        guard activeSession === session,
-              isTerminallyShutDown == false else {
-            return nil
-        }
-
-        let webViewID = ObjectIdentifier(webView)
-        if let existing = participantsByWebViewID[webViewID] {
-            precondition(
-                existing.webView === webView,
-                "Live WebView identity was reused during destructive cleanup"
-            )
+        guard activeSession === session else { return nil }
+        if let existing = exactParticipant(for: webView) {
             return existing
         }
-
-        let participant = Participant(
-            sessionID: session.id,
-            tab: tab,
-            webView: webView
+        precondition(
+            participantLedger.participant(for: webView) == nil,
+            "App and cleanup-ledger participant indexes diverged"
         )
-        if touchedAndBlanked {
-            participant.wasTouched = true
-            participant.phase = .blanked
+        guard let ledgerParticipant = participantLedger.register(
+            webView,
+            in: session.ledgerSession,
+            touchedAndBlanked: touchedAndBlanked
+        ) else {
+            return nil
         }
+        let participant = Participant(
+            ledgerParticipant: ledgerParticipant,
+            tab: tab
+        )
         session.participants.append(participant)
-        participantsByWebViewID[webViewID] = participant
         return participant
     }
 
     func contains(_ webView: WKWebView, in session: Session) -> Bool {
-        guard activeSession === session,
-              let participant = exactParticipant(for: webView) else {
-            return false
-        }
-        return participant.sessionID == session.id
+        guard activeSession === session else { return false }
+        return participantLedger.contains(webView, in: session.ledgerSession)
     }
 
     func prepare(_ participant: Participant) async -> Bool {
@@ -173,39 +138,39 @@ final class WebsiteDataCleanupNavigationBarrier {
               stillOwns(participant),
               await waitForMutationPermission(participant.webView),
               stillOwns(participant),
-              isTerminallyShutDown == false,
               Task.isCancelled == false,
-              isAbandoned(participant) == false
+              participantLedger.isAbandoned(participant.ledgerParticipant) == false
         else {
             abandon(participant)
             return false
         }
 
-        participant.wasTouched = true
+        participantLedger.markTouched(participant.ledgerParticipant)
         let hadActiveLoad = participant.webView.isLoading
         quiescePhysicalActivity(on: participant.webView)
         if hadActiveLoad == false,
            Self.isBlank(participant.webView.committedURL ?? participant.webView.url) {
-            participant.phase = .blanked
+            participantLedger.markBlanked(participant.ledgerParticipant)
             return true
         }
 
-        beginTerminalWait(
-            for: participant,
+        guard let navigation = loadBlankNavigation(participant.webView) else {
+            participantLedger.abandon(participant.ledgerParticipant)
+            return false
+        }
+        participantLedger.beginBlankWait(
+            for: participant.ledgerParticipant,
+            navigation: navigation,
             deadline: ContinuousClock.now + blankAttemptTimeout
         )
-        guard let navigation = loadBlankNavigation(participant.webView) else {
-            discardTerminalWait(for: participant)
-            participant.phase = .abandoned
-            return false
-        }
-        participant.phase = .awaitingBlank(navigation)
 
-        guard await terminalResult(for: participant) else {
-            participant.phase = .abandoned
+        guard await participantLedger.awaitTerminalResult(
+            for: participant.ledgerParticipant
+        ) else {
+            participantLedger.abandon(participant.ledgerParticipant)
             return false
         }
-        participant.phase = .blanked
+        participantLedger.markBlanked(participant.ledgerParticipant)
         return true
     }
 
@@ -221,7 +186,8 @@ final class WebsiteDataCleanupNavigationBarrier {
     func touchedOwnedParticipants(in session: Session) -> [Participant] {
         guard activeSession === session else { return [] }
         return session.participants.filter { participant in
-            participant.wasTouched && stillOwns(participant)
+            participantLedger.wasTouched(participant.ledgerParticipant)
+                && stillOwns(participant)
         }
     }
 
@@ -230,67 +196,49 @@ final class WebsiteDataCleanupNavigationBarrier {
         targetURL: URL,
         timeout: Duration
     ) {
-        let deadline = ContinuousClock.now + timeout
-        for participant in participants {
-            beginTerminalWait(for: participant, deadline: deadline)
-            participant.bufferedRestoreStarts.removeAll()
-            participant.phase = .awaitingRestoreStart(
-                targetURL: targetURL,
-                semanticRevision: nil
-            )
-        }
+        participantLedger.beginRestoreAttempt(
+            participants.map(\.ledgerParticipant),
+            targetURL: targetURL,
+            deadline: ContinuousClock.now + timeout
+        )
     }
 
     func bindRestoreReceipt(
         _ receipt: WebsiteDataCleanupRestoreCommandReceipt,
         to participant: Participant
     ) {
-        guard case .awaitingRestoreStart(let targetURL, _) = participant.phase,
-              let semanticRevision = receipt.semanticRevision else {
-            return
-        }
-        participant.phase = .awaitingRestoreStart(
-            targetURL: targetURL,
-            semanticRevision: semanticRevision
+        participantLedger.bindRestoreSemanticRevision(
+            receipt.semanticRevision,
+            to: participant.ledgerParticipant
         )
-        guard let candidate = participant.bufferedRestoreStarts.first(where: {
-            $0.semanticRevision == semanticRevision
-                && WebRuntimeNavigationIdentity.matches($0.targetURL, targetURL)
-        }) else {
-            return
-        }
-        participant.bufferedRestoreStarts.removeAll()
-        participant.phase = .awaitingRestore(candidate.navigation)
-        if let terminalResult = candidate.terminalResult {
-            completeTerminalWait(for: participant, result: terminalResult)
-        }
     }
 
     func rejectRestoreAttempt(_ participants: [Participant]) {
-        participants.forEach {
-            completeTerminalWait(for: $0, result: false)
-        }
+        participantLedger.rejectRestoreAttempt(
+            participants.map(\.ledgerParticipant)
+        )
     }
 
-    func awaitRestoreTermination(
-        for participant: Participant
-    ) async -> Bool {
-        await terminalResult(for: participant)
+    func awaitRestoreTermination(for participant: Participant) async -> Bool {
+        await participantLedger.awaitTerminalResult(
+            for: participant.ledgerParticipant
+        )
     }
 
     func finishRestoreAttempt(
         _ participants: [Participant],
         succeeded: Bool
     ) {
-        for participant in participants where stillOwns(participant) {
-            participant.phase = succeeded ? .completed : .blanked
-        }
+        participantLedger.finishRestoreAttempt(
+            participants.filter(stillOwns).map(\.ledgerParticipant),
+            succeeded: succeeded
+        )
     }
 
     func markBlanked(_ participants: [Participant]) {
-        for participant in participants where stillOwns(participant) {
-            participant.phase = .blanked
-        }
+        participantLedger.markBlanked(
+            participants.filter(stillOwns).map(\.ledgerParticipant)
+        )
     }
 
     func currentRestoreParticipants(
@@ -320,38 +268,25 @@ final class WebsiteDataCleanupNavigationBarrier {
     func pendingRestoreParticipants(
         among participants: [Participant]
     ) -> [Participant] {
-        participants.filter { participant in
-            if case .completed = participant.phase { return false }
-            return true
+        let pending = participantLedger.pendingRestoreParticipants(
+            among: participants.map(\.ledgerParticipant)
+        )
+        return participants.filter { participant in
+            pending.contains { $0 === participant.ledgerParticipant }
         }
     }
 
     func abandon(_ participant: Participant) {
-        switch participant.phase {
-        case .awaitingBlank, .awaitingRestore, .awaitingRestoreStart:
-            discardTerminalWait(for: participant)
-        case .discovered, .blanked, .completed, .abandoned:
-            break
-        }
-        participant.phase = .abandoned
-        participant.bufferedRestoreStarts.removeAll()
+        participantLedger.abandon(participant.ledgerParticipant)
     }
 
     func abandon(_ participants: [Participant]) {
-        participants.forEach(abandon)
+        participantLedger.abandon(participants.map(\.ledgerParticipant))
     }
 
     func release(_ session: Session) {
         guard activeSession === session else { return }
-        for participant in session.participants {
-            let webViewID = ObjectIdentifier(participant.webView)
-            if participantsByWebViewID[webViewID] === participant {
-                participantsByWebViewID.removeValue(forKey: webViewID)
-            }
-            if participant.terminalWait != nil {
-                discardTerminalWait(for: participant)
-            }
-        }
+        participantLedger.release(session.ledgerSession)
         activeSession = nil
     }
 
@@ -360,12 +295,11 @@ final class WebsiteDataCleanupNavigationBarrier {
         navigationID: ObjectIdentifier,
         navigationLifetime: AnyObject
     ) -> Bool {
-        guard let participant = exactParticipant(for: webView),
-              case .awaitingBlank(let expected) = participant.phase else {
-            return false
-        }
-        return expected.id == navigationID
-            && expected.lifetime === navigationLifetime
+        participantLedger.isSuppressingNavigation(
+            on: webView,
+            navigationID: navigationID,
+            navigationLifetime: navigationLifetime
+        )
     }
 
     func navigationWillStart(
@@ -375,39 +309,13 @@ final class WebsiteDataCleanupNavigationBarrier {
         targetURL: URL?,
         semanticRevision: UInt64?
     ) {
-        guard let participant = exactParticipant(for: webView) else { return }
-
-        if case .blanked = participant.phase {
-            activeSession?.isInvalidated = true
-            return
-        }
-
-        guard case .awaitingRestoreStart(
-            let expectedTargetURL,
-            let expectedSemanticRevision
-        ) = participant.phase,
-        let targetURL,
-        WebRuntimeNavigationIdentity.matches(targetURL, expectedTargetURL) else {
-            return
-        }
-
-        let candidate = RestoreStartCandidate(
-            navigation: NavigationIdentity(
-                id: navigationID,
-                lifetime: navigationLifetime
-            ),
+        participantLedger.navigationWillStart(
+            on: webView,
+            navigationID: navigationID,
+            navigationLifetime: navigationLifetime,
             targetURL: targetURL,
-            semanticRevision: semanticRevision,
-            terminalResult: nil
+            semanticRevision: semanticRevision
         )
-        guard let expectedSemanticRevision else {
-            participant.bufferedRestoreStarts.append(candidate)
-            return
-        }
-        guard candidate.semanticRevision == expectedSemanticRevision else {
-            return
-        }
-        participant.phase = .awaitingRestore(candidate.navigation)
     }
 
     func navigationDidTerminate(
@@ -416,191 +324,38 @@ final class WebsiteDataCleanupNavigationBarrier {
         navigationLifetime: AnyObject,
         succeeded: Bool
     ) {
-        guard let participant = exactParticipant(for: webView) else { return }
-        let expected: NavigationIdentity
-        switch participant.phase {
-        case .awaitingBlank(let navigation), .awaitingRestore(let navigation):
-            expected = navigation
-        case .awaitingRestoreStart:
-            guard let index = participant.bufferedRestoreStarts.firstIndex(
-                where: {
-                    $0.navigation.id == navigationID
-                        && $0.navigation.lifetime === navigationLifetime
-                }
-            ) else {
-                return
-            }
-            participant.bufferedRestoreStarts[index].terminalResult = succeeded
-            return
-        case .discovered, .blanked, .completed, .abandoned:
-            return
-        }
-        guard expected.id == navigationID,
-              expected.lifetime === navigationLifetime else {
-            return
-        }
-        completeTerminalWait(for: participant, result: succeeded)
+        participantLedger.navigationDidTerminate(
+            on: webView,
+            navigationID: navigationID,
+            navigationLifetime: navigationLifetime,
+            succeeded: succeeded
+        )
     }
 
     func webContentProcessDidTerminate(on webView: WKWebView) -> Bool {
-        guard let participant = exactParticipant(for: webView) else {
-            return false
-        }
-        switch participant.phase {
-        case .awaitingBlank, .awaitingRestore, .awaitingRestoreStart:
-            discardTerminalWait(for: participant)
-        case .discovered, .blanked:
-            break
-        case .completed, .abandoned:
-            return false
-        }
-        participant.phase = .abandoned
-        return true
+        participantLedger.webContentProcessDidTerminate(on: webView)
     }
 
     func webViewDidLeaveRuntime(_ webView: WKWebView) {
-        guard let participant = exactParticipant(for: webView) else { return }
-        abandon(participant)
+        participantLedger.webViewDidLeaveRuntime(webView)
     }
 
     func webViewsDidLeaveRuntime(_ webViewIDs: [ObjectIdentifier]) {
-        for webViewID in webViewIDs {
-            guard let participant = participantsByWebViewID[webViewID] else {
-                continue
-            }
-            abandon(participant)
-        }
+        participantLedger.webViewsDidLeaveRuntime(webViewIDs)
     }
 
     func resetForTerminalShutdown() {
-        isTerminallyShutDown = true
-        if let activeSession {
-            abandon(activeSession.participants)
-        }
-        participantsByWebViewID.removeAll()
-    }
-
-    private func isAbandoned(_ participant: Participant) -> Bool {
-        if case .abandoned = participant.phase { return true }
-        return false
-    }
-
-    private func beginTerminalWait(
-        for participant: Participant,
-        deadline: ContinuousClock.Instant
-    ) {
-        precondition(participant.terminalWait == nil)
-        participant.terminalWait = TerminalWait(deadline: deadline)
-    }
-
-    private func terminalResult(
-        for participant: Participant
-    ) async -> Bool {
-        guard let terminalWait = participant.terminalWait else {
-            return false
-        }
-        if let result = terminalWait.result {
-            participant.terminalWait = nil
-            return result
-        }
-
-        let sessionID = participant.sessionID
-        let webViewID = ObjectIdentifier(participant.webView)
-        let terminalWaitID = terminalWait.id
-        let remaining = ContinuousClock.now.duration(to: terminalWait.deadline)
-        guard remaining > .zero else {
-            participant.terminalWait = nil
-            return false
-        }
-        let watchdog = Task { @MainActor [weak self] in
-            do {
-                try await Task.sleep(for: remaining)
-            } catch {
-                return
-            }
-            guard let self,
-                  self.activeSession?.id == sessionID,
-                  let current = self.participantsByWebViewID[webViewID],
-                  current.sessionID == sessionID,
-                  current.terminalWait?.id == terminalWaitID else {
-                return
-            }
-            self.completeTerminalWait(
-                for: current,
-                expectedID: terminalWaitID,
-                result: false
-            )
-        }
-        defer { watchdog.cancel() }
-
-        let result = await withTaskCancellationHandler {
-            await withCheckedContinuation { continuation in
-                precondition(terminalWait.continuation == nil)
-                if Task.isCancelled {
-                    continuation.resume(returning: false)
-                } else if let result = terminalWait.result {
-                    terminalWait.result = nil
-                    continuation.resume(returning: result)
-                } else {
-                    terminalWait.continuation = continuation
-                }
-            }
-        } onCancel: { [weak self, sessionID, webViewID, terminalWaitID] in
-            Task { @MainActor [weak self, sessionID, webViewID, terminalWaitID] in
-                guard let self,
-                      self.activeSession?.id == sessionID,
-                      let participant = self.participantsByWebViewID[webViewID],
-                      participant.sessionID == sessionID,
-                      participant.terminalWait?.id == terminalWaitID else {
-                    return
-                }
-                self.completeTerminalWait(
-                    for: participant,
-                    expectedID: terminalWaitID,
-                    result: false
-                )
-            }
-        }
-        if participant.terminalWait === terminalWait {
-            participant.terminalWait = nil
-        }
-        terminalWait.result = nil
-        return result
-    }
-
-    private func completeTerminalWait(
-        for participant: Participant,
-        expectedID: UUID? = nil,
-        result: Bool
-    ) {
-        guard let terminalWait = participant.terminalWait,
-              expectedID == nil || terminalWait.id == expectedID else {
-            return
-        }
-        if let continuation = terminalWait.continuation {
-            terminalWait.continuation = nil
-            continuation.resume(returning: result)
-        } else {
-            terminalWait.result = result
-        }
-    }
-
-    /// Ends a wait that no longer has a consumer (abandon, failed submission,
-    /// or physical removal). Clearing the participant slot before resuming the
-    /// old continuation lets rollback arm a new exact wait without the old
-    /// generation later clearing or completing it.
-    private func discardTerminalWait(for participant: Participant) {
-        guard let terminalWait = participant.terminalWait else { return }
-        participant.terminalWait = nil
-        if let continuation = terminalWait.continuation {
-            terminalWait.continuation = nil
-            continuation.resume(returning: false)
-        }
+        participantLedger.resetForTerminalShutdown()
     }
 
     private func exactParticipant(for webView: WKWebView) -> Participant? {
-        let participant = participantsByWebViewID[ObjectIdentifier(webView)]
-        return participant?.webView === webView ? participant : nil
+        guard let ledgerParticipant = participantLedger.participant(for: webView),
+              let activeSession else {
+            return nil
+        }
+        return activeSession.participants.first {
+            $0.ledgerParticipant === ledgerParticipant
+        }
     }
 
     private func quiescePhysicalActivity(on webView: WKWebView) {
@@ -614,9 +369,7 @@ final class WebsiteDataCleanupNavigationBarrier {
         }
     }
 
-    private static func loadBlank(
-        on webView: WKWebView
-    ) -> NavigationIdentity? {
+    private static func loadBlank(on webView: WKWebView) -> NavigationIdentity? {
         guard let navigator = webView.navigator(),
               let navigation = webView.load(
                   URLRequest(url: SumiSurface.emptyTabURL)

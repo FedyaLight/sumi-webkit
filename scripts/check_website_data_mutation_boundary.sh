@@ -17,6 +17,9 @@ extension_cleanup_source="Sumi/Managers/ExtensionManager/WebExtensionControllerD
 profile_mutation_source="Sumi/Services/SumiProfileWebsiteDataMutationService.swift"
 mutation_gate_source="Sumi/Managers/WebViewRuntime/WebsiteDataMutationGate.swift"
 lease_kernel_source="Packages/SumiWebRuntime/Sources/SumiWebRuntime/Transactions/WebsiteDataMutationLeaseLedger.swift"
+participant_kernel_source="Packages/SumiWebRuntime/Sources/SumiWebRuntime/Transactions/WebsiteDataCleanupParticipantLedger.swift"
+terminal_receipt_source="Packages/SumiWebRuntime/Sources/SumiWebRuntime/Transactions/WebsiteDataCleanupTerminalReceipt.swift"
+navigation_barrier_source="Sumi/Managers/WebViewRuntime/WebsiteDataCleanupNavigationBarrier.swift"
 status=0
 
 mutation_hits="$({
@@ -144,6 +147,87 @@ if ! rg -q '^import SumiWebRuntime$' "$mutation_gate_source" || \
   status=1
 fi
 
+# Exact WebView participation, navigation phases, and terminal-event receipt
+# generations form one product-agnostic transaction kernel. Tab ownership,
+# WebKit effects, and product restore commands stay in the app adapter.
+for kernel_source in "$participant_kernel_source" "$terminal_receipt_source"; do
+  if [[ ! -f "$kernel_source" ]]; then
+    printf 'error: website-data participant kernel is missing: %s\n' \
+      "$kernel_source" >&2
+    status=1
+    continue
+  fi
+
+  participant_kernel_code="$(
+    perl -0777 -pe '
+      s{""".*?"""}{""}gs;
+      s{"(?:\\.|[^"\\])*"}{""}g;
+      s{/\*.*?\*/}{}gs;
+      s{//[^\n]*}{}g
+    ' "$kernel_source"
+  )"
+  participant_policy_hits="$(
+    rg -n \
+      '\b(BrowserManager|BrowserWindowState|Tab|Profile|TabMainFrameReloadCommandOutcome|DeferredAdmissionKey|SumiSurface)\b|^import[[:space:]]+(Navigation|SumiDomain|SwiftUI)\b' \
+      <<< "$participant_kernel_code" || true
+  )"
+  if [[ -n "$participant_policy_hits" ]]; then
+    printf 'error: website-data participant kernel contains app/product policy (%s):\n%s\n' \
+      "$kernel_source" "$participant_policy_hits" >&2
+    status=1
+  fi
+done
+
+for declaration in \
+  WebsiteDataCleanupParticipantLedger \
+  WebsiteDataCleanupTerminalReceipt; do
+  declaration_hits="$(
+    rg -n --with-filename --glob '*.swift' \
+      "final[[:space:]]+class[[:space:]]+${declaration}\\b" \
+      "${production_roots[@]}" || true
+  )"
+  expected_source="$participant_kernel_source"
+  if [[ "$declaration" == "WebsiteDataCleanupTerminalReceipt" ]]; then
+    expected_source="$terminal_receipt_source"
+  fi
+  expected_declaration="$(
+    rg -n --with-filename \
+      "final[[:space:]]+class[[:space:]]+${declaration}\\b" \
+      "$expected_source" 2>/dev/null || true
+  )"
+  if [[ -z "$expected_declaration" ]] || \
+     [[ "$declaration_hits" != "$expected_declaration" ]]; then
+    printf 'error: %s must have exactly one production owner in SumiWebRuntime:\n%s\n' \
+      "$declaration" "$declaration_hits" >&2
+    status=1
+  fi
+done
+
+if ! rg -q '^import SumiWebRuntime$' "$navigation_barrier_source" || \
+   ! rg -q 'private let participantLedger = WebsiteDataCleanupParticipantLedger\(\)' \
+     "$navigation_barrier_source"; then
+  printf 'error: app cleanup navigation barrier does not compose the SumiWebRuntime participant kernel\n' >&2
+  status=1
+fi
+
+duplicated_participant_state="$(
+  rg -n \
+    'enum ParticipantPhase\b|class TerminalWait\b|struct RestoreStartCandidate\b|participantsByWebViewID' \
+    "$navigation_barrier_source" || true
+)"
+if [[ -n "$duplicated_participant_state" ]]; then
+  printf 'error: app cleanup navigation barrier duplicates package-owned participant state:\n%s\n' \
+    "$duplicated_participant_state" >&2
+  status=1
+fi
+
+if ! rg -q '\blet tab: Tab\b' "$navigation_barrier_source" || \
+   ! rg -q '\bwaitForMutationPermission\b' "$navigation_barrier_source" || \
+   ! rg -q '\bloadBlankNavigation\b' "$navigation_barrier_source"; then
+  printf 'error: Tab ownership and physical WebKit policy escaped the app cleanup adapter\n' >&2
+  status=1
+fi
+
 duplicated_lease_state="$(
   rg -n \
     'private var (activeLease|leaseWaiters|admissionWaiters|admissionGeneration)\b' \
@@ -152,6 +236,17 @@ duplicated_lease_state="$(
 if [[ -n "$duplicated_lease_state" ]]; then
   printf 'error: app mutation gate duplicates package-owned lease/admission state:\n%s\n' \
     "$duplicated_lease_state" >&2
+  status=1
+fi
+
+duplicate_transaction_admission="$(
+  rg -n \
+    'transactionSlot(IsOwned|Waiters)|acquireTransactionSlot|releaseTransactionSlot' \
+    Sumi/Managers/WebViewRuntime/WebsiteDataCleanupTransaction.swift || true
+)"
+if [[ -n "$duplicate_transaction_admission" ]]; then
+  printf 'error: cleanup transaction duplicates package-owned exclusive admission:\n%s\n' \
+    "$duplicate_transaction_admission" >&2
   status=1
 fi
 
