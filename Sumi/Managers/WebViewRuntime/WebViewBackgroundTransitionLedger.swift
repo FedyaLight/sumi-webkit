@@ -15,7 +15,7 @@ final class WebViewBackgroundTransitionLedger {
     private final class Entry {
         let webViewReference: WebViewIdentityWitness
         let lease: WebViewBackgroundTransitionLease
-        var restoreTask: Task<Void, Never>?
+        var cancelRestore: MainActorDelayedActionScheduler.Cancellation?
 
         init(webView: WKWebView, lease: WebViewBackgroundTransitionLease) {
             webViewReference = WebViewIdentityWitness(webView)
@@ -23,11 +23,16 @@ final class WebViewBackgroundTransitionLedger {
         }
     }
 
+    private let delayedActions: MainActorDelayedActionScheduler
     private var entries: [ObjectIdentifier: Entry] = [:]
+
+    init(delayedActions: MainActorDelayedActionScheduler = .live) {
+        self.delayedActions = delayedActions
+    }
 
     func begin(for webView: WKWebView) -> WebViewBackgroundTransitionLease {
         let webViewID = ObjectIdentifier(webView)
-        entries.removeValue(forKey: webViewID)?.restoreTask?.cancel()
+        entries.removeValue(forKey: webViewID)?.cancelRestore?()
         let lease = WebViewBackgroundTransitionLease(
             id: UUID(),
             webViewID: webViewID
@@ -38,19 +43,13 @@ final class WebViewBackgroundTransitionLedger {
 
     func scheduleRestore(
         matching lease: WebViewBackgroundTransitionLease,
-        delay: Duration = .milliseconds(150),
+        delay: TimeInterval = 0.15,
         isStillValid: @escaping @MainActor () -> Bool
     ) {
         guard let entry = currentEntry(matching: lease) else { return }
-        entry.restoreTask?.cancel()
-        entry.restoreTask = Task { @MainActor [weak self] in
-            do {
-                try await Task.sleep(for: delay)
-            } catch {
-                return
-            }
-            guard Task.isCancelled == false,
-                  let self,
+        entry.cancelRestore?()
+        entry.cancelRestore = delayedActions.schedule(after: delay) { [weak self] in
+            guard let self,
                   isStillValid(),
                   let entry = self.currentEntry(matching: lease),
                   let webView = entry.webViewReference.resolve() else {
@@ -67,7 +66,7 @@ final class WebViewBackgroundTransitionLedger {
               let webView = entry.webViewReference.resolve() else {
             return false
         }
-        entry.restoreTask?.cancel()
+        entry.cancelRestore?()
         entries.removeValue(forKey: lease.webViewID)
         webView.sumiSetDrawsBackground(true)
         return true

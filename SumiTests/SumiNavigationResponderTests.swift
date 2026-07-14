@@ -42,9 +42,9 @@ final class SumiNavigationResponderTests: SumiNavigationResponderTestCase {
         XCTAssertEqual(responder.policyCallCount, 1)
     }
 
-    func testActionDecisionCompletesBeforeSlowLifecycleSideEffect() {
+    func testActionDecisionCompletesBeforeLifecycleSideEffectBegins() {
         let proxy = CountingNavigationDelegateProxy()
-        let responder = SlowLifecycleProbeResponder()
+        let responder = LifecycleOrderingProbeResponder()
         let schemeHandler = FailingSchemeHandler()
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
@@ -60,7 +60,6 @@ final class SumiNavigationResponderTests: SumiNavigationResponderTestCase {
         responder.onWillStart = {
             decisionCountAtWillStart = proxy.actionDecisionCount
             willStartCalled.fulfill()
-            Thread.sleep(forTimeInterval: 0.05)
         }
         proxy.distributedNavigationDelegate.setResponders(.strong(responder))
         webView.navigationDelegate = proxy

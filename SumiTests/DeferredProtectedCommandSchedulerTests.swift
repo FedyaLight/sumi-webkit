@@ -131,7 +131,8 @@ final class DeferredProtectedCommandSchedulerTests: XCTestCase {
     }
 
     func testGuaranteedCommandRetriesUntilEffectSucceeds() async {
-        let fixture = SchedulerFixture()
+        let delayedActions = ManualMainActorDelayedActionScheduler()
+        let fixture = SchedulerFixture(delayedActions: delayedActions.scheduler)
         fixture.effects.succeedContainerRemovalAfterAttempt = 3
         let webView = WKWebView()
         let lease = fixture.mediaProtection.beginVisualHandoffProtection(for: webView)
@@ -143,18 +144,29 @@ final class DeferredProtectedCommandSchedulerTests: XCTestCase {
 
         _ = fixture.mediaProtection.finishVisualHandoffProtection(lease)
         fixture.scheduler.flushCommands(for: ObjectIdentifier(webView))
-        for _ in 0..<100 where fixture.effects.containerRemovalAttempts < 3 {
-            await waitForScheduler(nanoseconds: 10_000_000)
-        }
+        await drainSchedulerTasks()
+
+        XCTAssertEqual(fixture.effects.containerRemovalAttempts, 1)
+        XCTAssertEqual(delayedActions.scheduledDelays, [0.025])
+
+        delayedActions.runNext()
+        await drainSchedulerTasks()
+        XCTAssertEqual(fixture.effects.containerRemovalAttempts, 2)
+        XCTAssertEqual(delayedActions.scheduledDelays, [0.05])
+
+        delayedActions.runNext()
+        await drainSchedulerTasks()
 
         XCTAssertEqual(fixture.effects.containerRemovalAttempts, 3)
+        XCTAssertEqual(delayedActions.pendingActionCount, 0)
         XCTAssertFalse(fixture.mediaProtection.hasDeferredProtectedCommands(
             for: ObjectIdentifier(webView)
         ))
     }
 
     func testTerminalResetCancelsPendingRetryTask() async {
-        let fixture = SchedulerFixture()
+        let delayedActions = ManualMainActorDelayedActionScheduler()
+        let fixture = SchedulerFixture(delayedActions: delayedActions.scheduler)
         fixture.effects.succeedContainerRemovalAfterAttempt = .max
         let webView = WKWebView()
         let lease = fixture.mediaProtection.beginVisualHandoffProtection(for: webView)
@@ -168,9 +180,12 @@ final class DeferredProtectedCommandSchedulerTests: XCTestCase {
         fixture.scheduler.flushCommands(for: ObjectIdentifier(webView))
         await drainSchedulerTasks()
         XCTAssertEqual(fixture.effects.containerRemovalAttempts, 1)
+        XCTAssertEqual(delayedActions.pendingActionCount, 1)
 
         fixture.scheduler.resetForTerminalShutdown()
-        await waitForScheduler(nanoseconds: 80_000_000)
+        XCTAssertEqual(delayedActions.pendingActionCount, 0)
+        delayedActions.runAll()
+        await drainSchedulerTasks()
 
         XCTAssertEqual(fixture.effects.containerRemovalAttempts, 1)
     }
@@ -218,7 +233,7 @@ private final class SchedulerFixture {
     let spaceIntents = SchedulerSpaceIntentValidator()
     let scheduler: DeferredProtectedCommandScheduler
 
-    init() {
+    init(delayedActions: MainActorDelayedActionScheduler = .live) {
         let webViews = WebViewRuntimeWebViewResolver(
             sessions: sessions,
             mediaProtection: mediaProtection
@@ -263,6 +278,7 @@ private final class SchedulerFixture {
                 windowMaintenance: windowMaintenance,
                 configuration: configuration
             ),
+            delayedActions: delayedActions,
             finishCleanupSuppression: { _ in }
         )
     }
@@ -271,12 +287,4 @@ private final class SchedulerFixture {
 private func drainSchedulerTasks() async {
     await Task.yield()
     await Task.yield()
-}
-
-private func waitForScheduler(nanoseconds: UInt64) async {
-    do {
-        try await Task.sleep(nanoseconds: nanoseconds)
-    } catch {
-        // Cancellation is the behavior under test for terminal reset.
-    }
 }

@@ -14,10 +14,13 @@ final class DeferredProtectedCommandScheduler {
     private let webViews: WebViewRuntimeWebViewResolver
     private let authority: DeferredWebViewCommandAuthority
     private let executor: DeferredWebViewCommandExecutor
+    private let delayedActions: MainActorDelayedActionScheduler
     private let finishCleanupSuppression: @MainActor ([ObjectIdentifier]) -> Void
 
     private var retryAttemptsBySourceWebViewID: [ObjectIdentifier: Int] = [:]
-    private var retryTasksBySourceWebViewID: [ObjectIdentifier: Task<Void, Never>] = [:]
+    private var cancelRetryBySourceWebViewID: [
+        ObjectIdentifier: MainActorDelayedActionScheduler.Cancellation
+    ] = [:]
     private var flushTasksBySourceWebViewID: [ObjectIdentifier: Task<Void, Never>] = [:]
 
     init(
@@ -25,17 +28,19 @@ final class DeferredProtectedCommandScheduler {
         webViews: WebViewRuntimeWebViewResolver,
         authority: DeferredWebViewCommandAuthority,
         executor: DeferredWebViewCommandExecutor,
+        delayedActions: MainActorDelayedActionScheduler = .live,
         finishCleanupSuppression: @escaping @MainActor ([ObjectIdentifier]) -> Void
     ) {
         self.mediaProtection = mediaProtection
         self.webViews = webViews
         self.authority = authority
         self.executor = executor
+        self.delayedActions = delayedActions
         self.finishCleanupSuppression = finishCleanupSuppression
     }
 
-    deinit {
-        retryTasksBySourceWebViewID.values.forEach { $0.cancel() }
+    isolated deinit {
+        cancelRetryBySourceWebViewID.values.forEach { $0() }
         flushTasksBySourceWebViewID.values.forEach { $0.cancel() }
     }
 
@@ -132,8 +137,8 @@ final class DeferredProtectedCommandScheduler {
     func resetForTerminalShutdown() {
         flushTasksBySourceWebViewID.values.forEach { $0.cancel() }
         flushTasksBySourceWebViewID.removeAll()
-        retryTasksBySourceWebViewID.values.forEach { $0.cancel() }
-        retryTasksBySourceWebViewID.removeAll()
+        cancelRetryBySourceWebViewID.values.forEach { $0() }
+        cancelRetryBySourceWebViewID.removeAll()
         retryAttemptsBySourceWebViewID.removeAll()
     }
 
@@ -142,7 +147,7 @@ final class DeferredProtectedCommandScheduler {
     }
 
     private func scheduleRetry(for webViewID: ObjectIdentifier) {
-        guard retryTasksBySourceWebViewID[webViewID] == nil else { return }
+        guard cancelRetryBySourceWebViewID[webViewID] == nil else { return }
         let attempt = min((retryAttemptsBySourceWebViewID[webViewID] ?? 0) + 1, 64)
         retryAttemptsBySourceWebViewID[webViewID] = attempt
         let exponent = min(attempt - 1, 6)
@@ -151,14 +156,11 @@ final class DeferredProtectedCommandScheduler {
             Self.maximumRetryDelayNanoseconds
         )
 
-        retryTasksBySourceWebViewID[webViewID] = Task { @MainActor [weak self] in
-            do {
-                try await Task.sleep(nanoseconds: delay)
-            } catch {
-                return
-            }
-            guard Task.isCancelled == false, let self else { return }
-            retryTasksBySourceWebViewID.removeValue(forKey: webViewID)
+        cancelRetryBySourceWebViewID[webViewID] = delayedActions.schedule(
+            after: TimeInterval(delay) / 1_000_000_000
+        ) { [weak self] in
+            guard let self else { return }
+            cancelRetryBySourceWebViewID.removeValue(forKey: webViewID)
             guard mediaProtection.hasDeferredProtectedCommands(for: webViewID) else {
                 clearRetryState(for: webViewID)
                 return
@@ -168,7 +170,7 @@ final class DeferredProtectedCommandScheduler {
     }
 
     private func clearRetryState(for webViewID: ObjectIdentifier) {
-        retryTasksBySourceWebViewID.removeValue(forKey: webViewID)?.cancel()
+        cancelRetryBySourceWebViewID.removeValue(forKey: webViewID)?()
         retryAttemptsBySourceWebViewID.removeValue(forKey: webViewID)
     }
 

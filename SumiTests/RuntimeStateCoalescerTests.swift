@@ -27,12 +27,14 @@ final class RuntimeStateCoalescerTests: XCTestCase {
         XCTAssertEqual(batches.first?.first?.name, "Latest")
     }
 
-    func testMultipleTabsPersistInOneCoalescedFlush() async throws {
+    func testMultipleTabsPersistInOneCoalescedFlush() async {
+        let persisted = expectation(description: "coalesced runtime-state batch persisted")
         let recorder = RuntimeStateBatchRecorder()
         let coalescer = RuntimeStateCoalescer(
             debounceNanoseconds: 10_000_000,
             persistBatch: { states in
                 await recorder.record(states)
+                persisted.fulfill()
             }
         )
         let firstID = UUID()
@@ -41,7 +43,8 @@ final class RuntimeStateCoalescerTests: XCTestCase {
         coalescer.enqueue(makeRuntimeState(id: firstID, urlString: "https://example.com/one", name: "One"))
         coalescer.enqueue(makeRuntimeState(id: secondID, urlString: "https://example.com/two", name: "Two"))
 
-        let batches = try await waitForBatches(count: 1, recorder: recorder)
+        await fulfillment(of: [persisted], timeout: 1)
+        let batches = await recorder.allBatches()
 
         XCTAssertEqual(batches.count, 1)
         XCTAssertEqual(Set(batches[0].map(\.id)), [firstID, secondID])
@@ -83,22 +86,6 @@ final class RuntimeStateCoalescerTests: XCTestCase {
         )
     }
 
-    private func waitForBatches(
-        count expectedCount: Int,
-        recorder: RuntimeStateBatchRecorder
-    ) async throws -> [[TabRuntimeStateUpdate]] {
-        for _ in 0..<50 {
-            let batches = await recorder.allBatches()
-            if batches.count >= expectedCount {
-                return batches
-            }
-            try await Task.sleep(nanoseconds: 20_000_000)
-        }
-
-        let batches = await recorder.allBatches()
-        XCTFail("Timed out waiting for \(expectedCount) runtime-state batch(es); found \(batches.count)")
-        return batches
-    }
 }
 
 private actor RuntimeStateBatchRecorder {

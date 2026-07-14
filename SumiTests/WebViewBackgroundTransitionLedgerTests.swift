@@ -17,26 +17,42 @@ final class WebViewBackgroundTransitionLedgerTests: XCTestCase {
         XCTAssertTrue(ledger.finish(matching: newWindowLease))
     }
 
-    func testOldRestoreDeadlineCannotConsumeNewWindowLease() async {
-        let ledger = WebViewBackgroundTransitionLedger()
+    func testOldRestoreDeadlineCannotConsumeNewWindowLease() {
+        let delayedActions = ManualMainActorDelayedActionScheduler()
+        let ledger = WebViewBackgroundTransitionLedger(
+            delayedActions: delayedActions.scheduler
+        )
         let webView = WKWebView()
         let oldWindowLease = ledger.begin(for: webView)
         ledger.scheduleRestore(
             matching: oldWindowLease,
-            delay: .milliseconds(1),
+            delay: 0.001,
             isStillValid: { true }
         )
 
         let newWindowLease = ledger.begin(for: webView)
-        do {
-            try await Task.sleep(for: .milliseconds(10))
-        } catch {
-            XCTFail("Background transition test wait was cancelled")
-            return
-        }
+        XCTAssertEqual(delayedActions.scheduledDelays, [0.001])
+        XCTAssertEqual(delayedActions.pendingActionCount, 0)
+        delayedActions.runAll()
 
         XCTAssertFalse(ledger.isCurrent(oldWindowLease))
         XCTAssertTrue(ledger.isCurrent(newWindowLease))
         XCTAssertTrue(ledger.finish(matching: newWindowLease))
+    }
+
+    func testScheduledRestoreCompletesCurrentLeaseWhenDriven() {
+        let delayedActions = ManualMainActorDelayedActionScheduler()
+        let ledger = WebViewBackgroundTransitionLedger(
+            delayedActions: delayedActions.scheduler
+        )
+        let webView = WKWebView()
+        let lease = ledger.begin(for: webView)
+
+        ledger.scheduleRestore(matching: lease, isStillValid: { true })
+
+        XCTAssertEqual(delayedActions.scheduledDelays, [0.15])
+        XCTAssertTrue(ledger.isCurrent(lease))
+        delayedActions.runNext()
+        XCTAssertFalse(ledger.isCurrent(lease))
     }
 }

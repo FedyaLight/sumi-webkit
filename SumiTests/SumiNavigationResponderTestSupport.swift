@@ -1005,7 +1005,7 @@ final class ImmediatePolicyResponder: NavigationResponder {
 }
 
 @MainActor
-final class SlowLifecycleProbeResponder: NavigationResponder {
+final class LifecycleOrderingProbeResponder: NavigationResponder {
     var onWillStart: (() -> Void)?
     private(set) var policyCallCount = 0
 

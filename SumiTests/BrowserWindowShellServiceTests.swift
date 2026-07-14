@@ -485,9 +485,13 @@ final class BrowserWindowShellServiceTests: XCTestCase {
         XCTAssertNil(windowState.currentSpaceId)
         XCTAssertNil(windowState.ephemeralProfile)
 
-        await waitForPermissionProfileClose(
-            coordinator: harness.permissionCoordinator,
-            profilePartitionId: ephemeralProfile.id.uuidString
+        let profileCloseCall = await harness.permissionCoordinator.firstProfileCloseCall()
+        XCTAssertEqual(
+            profileCloseCall,
+            ProfileCloseCall(
+                profilePartitionId: ephemeralProfile.id.uuidString,
+                reason: "incognito-profile-close"
+            )
         )
     }
 
@@ -564,29 +568,6 @@ final class BrowserWindowShellServiceTests: XCTestCase {
             sidebarHostRecoveryCoordinator: SidebarHostRecoveryCoordinator()
         )
     }
-
-    private func waitForPermissionProfileClose(
-        coordinator: RecordingPermissionCoordinator,
-        profilePartitionId: String,
-        file: StaticString = #filePath,
-        line: UInt = #line
-    ) async {
-        for _ in 0..<50 {
-            let calls = await coordinator.profileCloseCalls
-            if calls.contains(
-                ProfileCloseCall(
-                    profilePartitionId: profilePartitionId,
-                    reason: "incognito-profile-close"
-                )
-            ) {
-                return
-            }
-            try? await Task.sleep(nanoseconds: 10_000_000)
-        }
-
-        let calls = await coordinator.profileCloseCalls
-        XCTFail("Missing profile close event in \(calls)", file: file, line: line)
-    }
 }
 
 private final class WindowPresentationRecordingWindow: NSWindow {
@@ -604,13 +585,21 @@ private final class WindowPresentationRecordingWindow: NSWindow {
     }
 }
 
-private struct ProfileCloseCall: Equatable {
+private struct ProfileCloseCall: Equatable, Sendable {
     let profilePartitionId: String
     let reason: String
 }
 
 private actor RecordingPermissionCoordinator: SumiPermissionCoordinating {
     private(set) var profileCloseCalls: [ProfileCloseCall] = []
+    private var profileCloseWaiters: [CheckedContinuation<ProfileCloseCall, Never>] = []
+
+    func firstProfileCloseCall() async -> ProfileCloseCall {
+        if let call = profileCloseCalls.first { return call }
+        return await withCheckedContinuation { continuation in
+            profileCloseWaiters.append(continuation)
+        }
+    }
 
     func requestPermission(
         _ context: SumiPermissionSecurityContext
@@ -650,12 +639,18 @@ private actor RecordingPermissionCoordinator: SumiPermissionCoordinating {
         profilePartitionId: String,
         reason: String
     ) async -> SumiPermissionCoordinatorDecision {
-        profileCloseCalls.append(
-            ProfileCloseCall(
-                profilePartitionId: profilePartitionId,
-                reason: reason
-            )
+        let call = ProfileCloseCall(
+            profilePartitionId: profilePartitionId,
+            reason: reason
         )
+        profileCloseCalls.append(call)
+
+        let waiters = profileCloseWaiters
+        profileCloseWaiters.removeAll()
+        for waiter in waiters {
+            waiter.resume(returning: call)
+        }
+
         return SumiPermissionCoordinatorDecision(
             outcome: .ignored,
             state: nil,
