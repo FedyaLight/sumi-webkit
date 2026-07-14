@@ -370,12 +370,20 @@ final class BrowserWindowChromeTests: XCTestCase {
 
         let contentView = ContentView(
             windowLifecycleHandler: lifecycleHandler,
-            browserContext: .make(
+            webContentContext: .make(
                 browserManager: browserManager,
                 updaterService: updaterService,
                 defaultBrowserService: SumiDefaultBrowserService()
             ),
-            updaterService: updaterService,
+            sidebarContext: .make(
+                browserManager: browserManager,
+                updaterService: updaterService
+            ),
+            floatingBarContext: browserManager.urlBarBundle.floatingBar.browserContext.context,
+            nativeModalContext: .make(browserManager: browserManager),
+            findContext: .make(browserManager: browserManager),
+            splitContext: .make(browserManager: browserManager),
+            themeChromeContext: .make(browserManager: browserManager),
             initialWorkspaceTheme: .default
         )
 
@@ -383,6 +391,42 @@ final class BrowserWindowChromeTests: XCTestCase {
             XCTAssertTrue(type(of: contentView) == ContentView.self)
             XCTAssertTrue(handler.persistedWindowIds.isEmpty)
         }
+    }
+
+    func testWindowFeatureContextsReadLiveStateThroughExactRoleServices() {
+        let browserManager = BrowserManager()
+        let themeContext = WindowThemeChromeContext.make(browserManager: browserManager)
+        let nativeModalContext = WindowNativeModalContext.make(browserManager: browserManager)
+
+        XCTAssertFalse(themeContext.hasCurrentSpace)
+        XCTAssertNil(nativeModalContext.presentation)
+
+        let space = Space(name: "Live window context")
+        browserManager.tabManager.spaceStateOwner.replaceSpaces([space])
+        browserManager.tabManager.spaceStateOwner.replaceCurrentSpace(space)
+
+        let presentation = BrowserNativeModalPresentation(
+            windowID: UUID(),
+            window: nil,
+            kind: .browsingData,
+            source: nil,
+            transientSessionToken: nil
+        )
+        browserManager.nativeModalPresentation = presentation
+
+        XCTAssertTrue(themeContext.hasCurrentSpace)
+        XCTAssertEqual(
+            themeContext.workspaceTheme(for: space.id),
+            space.workspaceTheme
+        )
+        XCTAssertIdentical(nativeModalContext.presentation, presentation)
+        XCTAssertTrue(nativeModalContext.isPresented(in: presentation.windowID))
+
+        browserManager.tabManager.spaceStateOwner.replaceCurrentSpace(nil)
+        browserManager.nativeModalPresentation = nil
+
+        XCTAssertFalse(themeContext.hasCurrentSpace)
+        XCTAssertNil(nativeModalContext.presentation)
     }
 
     func testSplitPaneControlsOnlyHitTestWhenVisible() {

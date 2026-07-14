@@ -173,7 +173,7 @@ split_composition_access_hits="$(
     Sumi SidebarChrome UI App Settings FloatingBar \
     -g '*.swift' \
     -g '!BrowserManager.swift' \
-    -g '!BrowserWindowViewRuntimeWiring.swift' \
+    -g '!BrowserWindowViewContextComposition.swift' \
     -g '!BrowserTabManagerRuntimePortsFactory.swift' \
     -g '!BrowserTabRuntimeCompositionService.swift' \
     -g '!BrowserManager+WebViewRuntimeComposition.swift' \

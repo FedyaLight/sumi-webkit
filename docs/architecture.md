@@ -62,6 +62,18 @@ does not start observation, scheduling, timers, tasks, caches, or AppKit work.
 Their separate observation registrars also prevent transient presentation from
 invalidating consumers that read only durable selection, and vice versa.
 
+## Window View Context Boundaries
+
+`WindowView` receives seven stable feature contexts: web content, sidebar,
+floating bar, native modal, find, split, and theme/window chrome. There is no
+all-feature window context and the view layer cannot name `BrowserManager`.
+The app composition root constructs each context once and injects exact
+services such as the window-tab query, split services, native-dialog owner,
+space state, and theme editor. Contexts do not rediscover those services on
+each SwiftUI body evaluation. The sidebar boundary retains its existing
+role-specific projections and commands; it is not a replacement service
+locator for unrelated window features.
+
 ## WebView Session Ownership
 
 `SumiApp` creates exactly one `WebViewSessionRepository` for a browser process.

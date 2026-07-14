@@ -22,7 +22,7 @@ inventory='Sumi/Components/DragDrop/SidebarDragSourceInventory.swift'
 executing='Sumi/Components/DragDrop/SidebarDragOperationExecuting.swift'
 projection='Sumi/Components/DragDrop/SidebarDropProjection.swift'
 port='Sumi/Components/DragDrop/SidebarDragTransactionPort.swift'
-composition='Sumi/Managers/BrowserManager/BrowserWindowViewRuntimeWiring.swift'
+composition='Sumi/Managers/BrowserManager/BrowserWindowViewContextComposition.swift'
 router='Sumi/Managers/TabManager/SidebarDragOperationRouter.swift'
 inventory_tests='SumiTests/SidebarDragSourceInventoryTests.swift'
 coordinator_tests='SumiTests/SidebarDropCoordinatorBoundaryTests.swift'
@@ -108,7 +108,7 @@ require_pattern \
   "window-view composition must resolve sidebarDragRouter once"
 require_pattern \
   "$composition" \
-  'sidebarDragTransactions:[[:space:]]*dragTransactions' \
+  'dragTransactions:[[:space:]]*dragTransactions' \
   "window-view composition must pass the exact transaction port"
 require_pattern \
   "$port" \
@@ -199,7 +199,7 @@ for test_name in "${required_tests[@]}"; do
   fi
 done
 if ! rg -A 45 'func testLiveCoordinatorCompositionExecutesWithoutBrowserManagerReachThrough' \
-  "$coordinator_tests" | rg -q 'WindowViewBrowserContext\.make'; then
+  "$coordinator_tests" | rg -q 'WindowSidebarContext\.make'; then
   printf 'error: live sidebar-drop composition regression uses only stubs\n' >&2
   status=1
 fi

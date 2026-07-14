@@ -293,14 +293,13 @@ final class SidebarDropCoordinatorBoundaryTests: XCTestCase {
         let windowRegistry = WindowRegistry()
         windowRegistry.register(windowState)
         browserManager.windowRegistry = windowRegistry
-        let context = WindowViewBrowserContext.make(
+        let context = WindowSidebarContext.make(
             browserManager: browserManager,
-            updaterService: SumiUpdaterService(backendFactory: { _ in nil }),
-            defaultBrowserService: SumiDefaultBrowserService()
+            updaterService: SumiUpdaterService(backendFactory: { _ in nil })
         )
 
         XCTAssertTrue(
-            context.sidebarDragTransactions.commit(
+            context.dragTransactions.commit(
                 pasteboard: pasteboard,
                 resolution: SidebarDropResolution(
                     slot: .essentials(slot: 0),

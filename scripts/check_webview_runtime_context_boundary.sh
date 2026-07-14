@@ -22,6 +22,10 @@ tab_file="Sumi/Models/Tab/Tab.swift"
 main_frame_transaction_file="Sumi/Models/Tab/TabMainFrameRuntimeTransaction.swift"
 status=0
 
+window_context_file="App/Window/WindowViewContexts.swift"
+window_context_composition_file="Sumi/Managers/BrowserManager/BrowserWindowViewContextComposition.swift"
+floating_bar_context_file="FloatingBar/FloatingBarBrowserContext.swift"
+
 fail_matches() {
   local message="$1"
   local matches="$2"
@@ -47,7 +51,7 @@ is_allowed_web_view_runtime_access() {
     Sumi/Managers/BrowserManager/BrowserTabSelectionOwner+Live.swift|\
     Sumi/Managers/BrowserManager/TabBrowserRuntimeFactory.swift|\
     Sumi/Managers/BrowserManager/BrowserWebViewCloseRouter.swift|\
-    Sumi/Managers/BrowserManager/BrowserWindowViewRuntimeWiring.swift|\
+    Sumi/Managers/BrowserManager/BrowserWindowViewContextComposition.swift|\
     Sumi/Managers/BrowserManager/TabBrowserNavigationRuntimeFactory.swift|\
     Sumi/Managers/BrowserManager/TabBrowserWebViewRuntimeFactory.swift)
       return 0
@@ -79,13 +83,64 @@ retired_paths=(
   "Packages/SumiWebRuntime/Sources/SumiWebRuntime/Context/WebViewCoordinatorWebKitClosePreparation.swift"
   "Packages/SumiWebRuntime/Sources/SumiWebRuntime/Context/WebViewBrowserRuntimeContext.swift"
   "Packages/SumiWebRuntime/Sources/SumiWebRuntime/Context/WebViewRuntimeContextStore.swift"
+  "App/Window/WindowViewBrowserContext.swift"
+  "Sumi/Managers/BrowserManager/BrowserWindowViewRuntimeWiring.swift"
 )
 for retired_path in "${retired_paths[@]}"; do
   if [[ -e "$retired_path" ]]; then
-    printf 'error: retired WebView coordinator path reintroduced: %s\n' "$retired_path" >&2
+    printf 'error: retired WebView/window runtime path reintroduced: %s\n' "$retired_path" >&2
     status=1
   fi
 done
+
+for window_context_path in \
+  "$window_context_file" \
+  "$window_context_composition_file" \
+  "$floating_bar_context_file"; do
+  if [[ ! -f "$window_context_path" ]]; then
+    printf 'error: role-exact window context boundary missing: %s\n' \
+      "$window_context_path" >&2
+    status=1
+  fi
+done
+
+if ! rg -q '^final class FloatingBarBrowserContext\b' \
+    "$floating_bar_context_file"; then
+  printf 'error: stable floating-bar window context missing\n' >&2
+  status=1
+fi
+
+window_context_roles=(
+  WindowWebContentContext
+  WindowSidebarContext
+  WindowNativeModalContext
+  WindowFindContext
+  WindowSplitContext
+  WindowThemeChromeContext
+)
+for window_context_role in "${window_context_roles[@]}"; do
+  if ! rg -q "^final class ${window_context_role}\\b" "$window_context_file"; then
+    printf 'error: exact window context role missing: %s\n' \
+      "$window_context_role" >&2
+    status=1
+  fi
+done
+
+window_context_root_hits="$(
+  rg -n '\b(BrowserManager|WindowViewBrowserContext)\b' \
+    App/Window/WindowView.swift "$window_context_file" || true
+)"
+fail_matches \
+  "window feature contexts reached through the browser root or retired god context" \
+  "$window_context_root_hits"
+
+retired_window_context_hits="$(
+  rg -n '\bWindowViewBrowserContext\b' \
+    "${all_swift_roots[@]}" -g '*.swift' -g '!**/.build/**' || true
+)"
+fail_matches \
+  "retired all-feature window context was reintroduced" \
+  "$retired_window_context_hits"
 
 runtime_role_files=(
   "$visible_runtime_provider_file"

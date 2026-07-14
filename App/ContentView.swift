@@ -11,8 +11,13 @@ struct ContentView: View {
     @Environment(WindowRegistry.self) private var windowRegistry
 
     private let windowLifecycleHandler: any BrowserWindowLifecycleHandling
-    private let browserContext: WindowViewBrowserContext
-    private let updaterService: SumiUpdaterService
+    private let webContentContext: WindowWebContentContext
+    private let sidebarContext: WindowSidebarContext
+    private let floatingBarContext: FloatingBarBrowserContext
+    private let nativeModalContext: WindowNativeModalContext
+    private let findContext: WindowFindContext
+    private let splitContext: WindowSplitContext
+    private let themeChromeContext: WindowThemeChromeContext
     private let providedWindowState: BrowserWindowState?
 
     @State private var defaultWindowState: BrowserWindowState
@@ -20,20 +25,30 @@ struct ContentView: View {
 
     init(
         windowLifecycleHandler: any BrowserWindowLifecycleHandling,
-        browserContext: WindowViewBrowserContext,
-        updaterService: SumiUpdaterService,
+        webContentContext: WindowWebContentContext,
+        sidebarContext: WindowSidebarContext,
+        floatingBarContext: FloatingBarBrowserContext,
+        nativeModalContext: WindowNativeModalContext,
+        findContext: WindowFindContext,
+        splitContext: WindowSplitContext,
+        themeChromeContext: WindowThemeChromeContext,
         windowState: BrowserWindowState? = nil,
         initialWorkspaceTheme: WorkspaceTheme? = nil
     ) {
         self.windowLifecycleHandler = windowLifecycleHandler
-        self.browserContext = browserContext
-        self.updaterService = updaterService
+        self.webContentContext = webContentContext
+        self.sidebarContext = sidebarContext
+        self.floatingBarContext = floatingBarContext
+        self.nativeModalContext = nativeModalContext
+        self.findContext = findContext
+        self.splitContext = splitContext
+        self.themeChromeContext = themeChromeContext
         self.providedWindowState = windowState
         _defaultWindowState = State(
             initialValue: BrowserWindowState(
                 initialWorkspaceTheme: initialWorkspaceTheme,
                 awaitsInitialSessionResolution: true,
-                sidebarRecoveryCoordinator: browserContext.sidebarHostRecoveryCoordinator
+                sidebarRecoveryCoordinator: sidebarContext.hostRecoveryCoordinator
             )
         )
     }
@@ -44,8 +59,13 @@ struct ContentView: View {
 
     var body: some View {
         WindowView(
-            browserContext: browserContext,
-            updaterService: updaterService,
+            webContentContext: webContentContext,
+            sidebarContext: sidebarContext,
+            floatingBarContext: floatingBarContext,
+            nativeModalContext: nativeModalContext,
+            findContext: findContext,
+            splitContext: splitContext,
+            themeChromeContext: themeChromeContext,
             sidebarDragState: sidebarDragState
         )
             .environment(windowState)

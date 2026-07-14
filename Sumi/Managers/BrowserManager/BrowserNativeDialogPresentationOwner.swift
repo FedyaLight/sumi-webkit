@@ -16,6 +16,10 @@ final class BrowserNativeDialogPresentationOwner {
     private let recoverSidebarHost: @MainActor @Sendable (NSWindow?) -> Void
     private let presentSharingServicePickerAction: @MainActor @Sendable ([Any], SidebarTransientPresentationSource) -> Void
 
+    var currentPresentation: BrowserNativeModalPresentation? {
+        nativeModalPresentation()
+    }
+
     init(
         windowRegistry: @escaping @MainActor @Sendable () -> WindowRegistry?,
         nativeModalPresentation: @escaping @MainActor @Sendable () -> BrowserNativeModalPresentation?,

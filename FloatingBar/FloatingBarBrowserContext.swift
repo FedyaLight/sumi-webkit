@@ -8,7 +8,7 @@ struct FloatingBarFaviconContext {
 }
 
 @MainActor
-struct FloatingBarBrowserContext {
+final class FloatingBarBrowserContext {
     let currentProfileId: UUID?
     let favicon: FloatingBarFaviconContext
 

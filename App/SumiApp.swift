@@ -7,10 +7,10 @@
 import AppKit
 import Carbon
 import OSLog
-import SwiftUI
-import WebKit
 import SumiDomain
 import SumiWebRuntime
+import SwiftUI
+import WebKit
 
 private struct SumiAppRootDependencies {
     let browserManager: BrowserManager
@@ -294,12 +294,21 @@ struct SumiApp: App {
     ) -> some View {
         ContentView(
             windowLifecycleHandler: dependencies.windowLifecycleService,
-            browserContext: .make(
+            webContentContext: .make(
                 browserManager: dependencies.browserManager,
                 updaterService: dependencies.updaterService,
                 defaultBrowserService: dependencies.defaultBrowserService
             ),
-            updaterService: dependencies.updaterService,
+            sidebarContext: .make(
+                browserManager: dependencies.browserManager,
+                updaterService: dependencies.updaterService
+            ),
+            floatingBarContext: dependencies.browserManager.urlBarBundle
+                .floatingBar.browserContext.context,
+            nativeModalContext: .make(browserManager: dependencies.browserManager),
+            findContext: .make(browserManager: dependencies.browserManager),
+            splitContext: .make(browserManager: dependencies.browserManager),
+            themeChromeContext: .make(browserManager: dependencies.browserManager),
             windowState: windowState,
             initialWorkspaceTheme: initialWorkspaceTheme
         )

@@ -2,19 +2,60 @@ import Combine
 import Foundation
 
 @MainActor
-extension WindowViewBrowserContext {
+extension WindowWebContentContext {
     static func make(
         browserManager: BrowserManager,
         updaterService: SumiUpdaterService,
         defaultBrowserService: SumiDefaultBrowserService
-    ) -> WindowViewBrowserContext {
+    ) -> WindowWebContentContext {
+        WindowWebContentContext(
+            browserContext: WebsiteViewContextFactory.websiteViewBrowserContext(
+                for: browserManager
+            ),
+            nativeSurfaceRootBuilders: WebsiteViewContextFactory.nativeSurfaceRootBuilders(
+                for: browserManager,
+                updaterService: updaterService,
+                defaultBrowserService: defaultBrowserService
+            ),
+            webViewOwnershipQuery: browserManager.webViewRuntime.ownershipQuery,
+            trackedWebViewAdmission: browserManager.webViewRuntime.trackedWebViewAdmission,
+            webViewCompositorRuntime: browserManager.webViewRuntime.compositorRuntime,
+            webViewProtectionRuntime: browserManager.webViewRuntime.protectionRuntime
+        )
+    }
+}
+
+@MainActor
+extension WindowSplitContext {
+    static func make(browserManager: BrowserManager) -> WindowSplitContext {
+        WindowSplitContext(
+            updates: browserManager.splitComposition.updates,
+            query: browserManager.splitComposition.query,
+            previews: browserManager.splitComposition.previews,
+            layout: browserManager.splitComposition.layout,
+            drops: browserManager.splitComposition.drops,
+            dropTargets: browserManager.splitComposition.dropTargets
+        )
+    }
+}
+
+@MainActor
+extension WindowSidebarContext {
+    static func make(
+        browserManager: BrowserManager,
+        updaterService: SumiUpdaterService
+    ) -> WindowSidebarContext {
         let tabManager = browserManager.tabManager
         let currentProfileAuthority = browserManager.currentProfileAuthority
+        let shellRuntime = browserManager.shellRuntime
+        let sidebarPresentation = browserManager.chromeBundle.sidebarPresentationOwner
+        let windowPersistence = browserManager.windowSessionBundle.persistence
+        let themeEditor = browserManager.chromeBundle.workspaceThemeEditorOwner
         let runtimeIsAlive: @MainActor () -> Bool = { [weak tabManager] in
             tabManager != nil
         }
         let windowIdentity = SidebarWindowIdentityQuery(
-            registry: { [weak browserManager] in browserManager?.windowRegistry }
+            registry: { [weak shellRuntime] in shellRuntime?.windowRegistry }
         )
         let inventory = SidebarInventoryProjection(
             runtimeIsAlive: runtimeIsAlive,
@@ -81,16 +122,15 @@ extension WindowViewBrowserContext {
             ),
             shortcutInsertion: shortcutInsertion
         )
-        let dragInventory = SidebarDragSourceInventory(
-            essentialPins: tabManager.shortcutPinCollectionStateOwner,
-            splitOrdering: tabManager.splitGroupSidebarOrdering,
-            regularTabs: tabManager.regularTabCollectionOwner,
-            folders: tabManager.folderCollectionStateOwner,
-            spacePinned: tabManager.spacePinnedStructureOwner
-        )
         let dragTransactions = SidebarDragTransactionPort(
             windows: windowIdentity,
-            sourceInventory: dragInventory,
+            sourceInventory: SidebarDragSourceInventory(
+                essentialPins: tabManager.shortcutPinCollectionStateOwner,
+                splitOrdering: tabManager.splitGroupSidebarOrdering,
+                regularTabs: tabManager.regularTabCollectionOwner,
+                folders: tabManager.folderCollectionStateOwner,
+                spacePinned: tabManager.spacePinnedStructureOwner
+            ),
             dragOperations: tabManager.sidebarDragRouter,
             urlDropService: urlDrops
         )
@@ -109,150 +149,103 @@ extension WindowViewBrowserContext {
             .eraseToAnyPublisher()
         )
 
-        return WindowViewBrowserContext(
-            splitUpdates: browserManager.splitComposition.updates,
-            splitQuery: browserManager.splitComposition.query,
-            splitPreviews: browserManager.splitComposition.previews,
-            splitLayout: browserManager.splitComposition.layout,
-            splitDrops: browserManager.splitComposition.drops,
-            splitDropTargets: browserManager.splitComposition.dropTargets,
-            webViewOwnershipQuery: browserManager.webViewRuntime.ownershipQuery,
-            trackedWebViewAdmission: browserManager.webViewRuntime
-                .trackedWebViewAdmission,
-            webViewCompositorRuntime: browserManager.webViewRuntime.compositorRuntime,
-            webViewProtectionRuntime: browserManager.webViewRuntime.protectionRuntime,
-            findManager: browserManager.findManager,
-            floatingBarBrowserContext: browserManager.urlBarBundle
-                .floatingBar.browserContext.context,
-            sidebarBrowserContext: SidebarBrowserContext.live(
+        return WindowSidebarContext(
+            browserContext: SidebarBrowserContext.live(
                 browserManager: browserManager,
                 spaceLifecycle: spaceLifecycle
             ),
-            sidebarInventory: inventory,
-            sidebarSelection: selection,
-            sidebarPinProjection: pinProjection,
-            sidebarPinCommands: pinCommands,
-            sidebarSpaceLifecycle: spaceLifecycle,
-            sidebarRegularTabs: SidebarRegularTabsController.live(
+            inventory: inventory,
+            selection: selection,
+            pinProjection: pinProjection,
+            pinCommands: pinCommands,
+            spaceLifecycle: spaceLifecycle,
+            regularTabs: SidebarRegularTabsController.live(
                 tabManager: tabManager,
                 liveFolderManager: browserManager.liveFolderManager
             ),
-            sidebarDragTransactions: dragTransactions,
-            sidebarUpdates: updateStreams,
-            sidebarHostActions: sidebarHostActions(browserManager: browserManager),
-            sidebarHostRecoveryCoordinator: browserManager.sidebarHostRecoveryCoordinator,
-            nativeModalPresentation: { [weak browserManager] in
-                browserManager?.nativeModalPresentation
-            },
-            browsingDataDialogContext: browsingDataDialogContext(browserManager: browserManager),
-            hasCurrentSpace: { [weak browserManager] in
-                browserManager?.tabManager.spaceStateOwner.currentSpace != nil
-            },
-            showGradientEditor: { [weak browserManager] source in
-                browserManager?.chromeBundle.workspaceThemeEditorOwner.showGradientEditor(source: source)
-            },
+            dragTransactions: dragTransactions,
+            updates: updateStreams,
+            hostActions: SidebarHostActions(
+                updateSidebarWidth: { [sidebarPresentation] width, windowState, persist in
+                    sidebarPresentation.updateSidebarWidth(
+                        width,
+                        for: windowState,
+                        persist: persist
+                    )
+                },
+                persistWindowSession: { [windowPersistence] windowState in
+                    windowPersistence.persist(windowState)
+                },
+                dismissThemePickerCommittingIfNeeded: { [themeEditor] in
+                    themeEditor.dismissThemePickerCommittingIfNeeded()
+                }
+            ),
+            hostRecoveryCoordinator: browserManager.sidebarHostRecoveryCoordinator,
+            updaterService: updaterService,
             currentProfileID: { [currentProfileAuthority] in
                 currentProfileAuthority.currentProfile?.id
             },
-            essentialPins: { [weak browserManager] profileId in
-                browserManager?.tabManager.shortcutPinCollectionStateOwner.essentialPins(for: profileId) ?? []
-            },
-            attachHoverSidebarManager: { [weak browserManager] hoverSidebarManager, windowState in
-                guard let browserManager else { return }
-                hoverSidebarManager.attach(
-                    runtime: BrowserHoverSidebarRuntimeFactory.runtime(for: browserManager),
-                    windowState: windowState
-                )
-            },
-            websiteViewBrowserContext: { [browserManager] in
-                WebsiteViewContextFactory.websiteViewBrowserContext(
-                    for: browserManager
-                )
-            },
-            websiteNativeSurfaceRootBuilders: { [browserManager] in
-                WebsiteViewContextFactory.nativeSurfaceRootBuilders(
-                    for: browserManager,
-                    updaterService: updaterService,
-                    defaultBrowserService: defaultBrowserService
-                )
-            },
-            currentTab: { [weak browserManager] windowState in
-                browserManager?.shellRuntime.windowTabs.currentTab(for: windowState)
-            },
-            workspaceTheme: { [weak browserManager] spaceId in
-                guard let spaceId else { return nil }
-                return browserManager?.tabManager.spaceStateOwner.space(with: spaceId)?
-                    .workspaceTheme
-            },
-            isNativeModalPresented: { [weak browserManager] windowId in
-                browserManager?.chromeBundle.nativeDialogPresentationOwner.isNativeModalPresented(in: windowId) ?? false
-            },
-            nativeModalPresentationBindingDismissed: { [weak browserManager] windowId in
-                browserManager?.chromeBundle.nativeDialogPresentationOwner.nativeModalPresentationBindingDismissed(for: windowId)
-            },
-            dismissNativeModalPresentation: { [weak browserManager] in
-                browserManager?.chromeBundle.nativeDialogPresentationOwner.dismissNativeModalPresentation()
-            },
-            findCurrentTabId: { [weak browserManager] in
-                browserManager?.findManager.currentTab?.id
-            }
+            essentialPins: tabManager.shortcutPinCollectionStateOwner,
+            hoverSidebarRuntime: BrowserHoverSidebarRuntimeFactory.runtime(
+                for: browserManager
+            )
         )
     }
+}
 
-    private static func sidebarHostActions(browserManager: BrowserManager) -> SidebarHostActions {
-        SidebarHostActions(
-            updateSidebarWidth: { [weak browserManager] width, windowState, persist in
-                browserManager?.chromeBundle.sidebarPresentationOwner.updateSidebarWidth(width, for: windowState, persist: persist)
-            },
-            persistWindowSession: { [weak browserManager] windowState in
-                browserManager?.windowSessionBundle.persistence.persist(windowState)
-            },
-            dismissThemePickerCommittingIfNeeded: { [weak browserManager] in
-                browserManager?.chromeBundle.workspaceThemeEditorOwner.dismissThemePickerCommittingIfNeeded()
-            }
-        )
-    }
+@MainActor
+extension WindowNativeModalContext {
+    static func make(browserManager: BrowserManager) -> WindowNativeModalContext {
+        let presentationOwner = browserManager.chromeBundle.nativeDialogPresentationOwner
+        let profileManager = browserManager.profileManager
+        let historyManager = browserManager.historyManager
+        let websiteDataCleanupService = browserManager.dataServices
+            .websiteDataCleanupService
+        let currentProfileAuthority = browserManager.currentProfileAuthority
 
-    private static func browsingDataDialogContext(
-        browserManager: BrowserManager
-    ) -> () -> SumiBrowsingDataDialogContext {
-        {
-            [
-                browserManager,
-                cleanupService = browserManager.browsingDataCleanupService,
-                currentProfileAuthority = browserManager.currentProfileAuthority
-            ] in
-            SumiBrowsingDataDialogContext(
-                cleanupService: cleanupService,
-                profileSnapshot: { [weak browserManager] in
-                    browserManager?.profileManager.profiles ?? []
+        return WindowNativeModalContext(
+            presentationOwner: presentationOwner,
+            browsingDataDialogContext: SumiBrowsingDataDialogContext(
+                cleanupService: browserManager.browsingDataCleanupService,
+                profileSnapshot: { [profileManager] in
+                    profileManager.profiles
                 },
                 activeCleanupDependencies: {
-                    activeCleanupDependencies(
-                        browserManager: browserManager,
-                        currentProfileAuthority: currentProfileAuthority
+                    [
+                        currentProfileAuthority,
+                        profileManager,
+                        historyManager,
+                        websiteDataCleanupService
+                    ] in
+                    guard currentProfileAuthority.currentProfile != nil else { return nil }
+                    return BrowsingDataDialogCleanupDependencies(
+                        historyManager: historyManager,
+                        profiles: profileManager.profiles,
+                        websiteDataCleanupService: websiteDataCleanupService
                     )
                 },
-                dismissNativeModalPresentation: { [weak browserManager] in
-                    browserManager?.chromeBundle.nativeDialogPresentationOwner.dismissNativeModalPresentation()
+                dismissNativeModalPresentation: { [presentationOwner] in
+                    presentationOwner.dismissNativeModalPresentation()
                 }
             )
-        }
+        )
     }
+}
 
-    private static func activeCleanupDependencies(
-        browserManager: BrowserManager?,
-        currentProfileAuthority: BrowserCurrentProfileAuthority
-    ) -> BrowsingDataDialogCleanupDependencies? {
-        guard let browserManager,
-              currentProfileAuthority.currentProfile != nil
-        else {
-            return nil
-        }
-        return BrowsingDataDialogCleanupDependencies(
-            historyManager: browserManager.historyManager,
-            profiles: browserManager.profileManager.profiles,
-            websiteDataCleanupService: browserManager.dataServices.websiteDataCleanupService
+@MainActor
+extension WindowFindContext {
+    static func make(browserManager: BrowserManager) -> WindowFindContext {
+        WindowFindContext(manager: browserManager.findManager)
+    }
+}
+
+@MainActor
+extension WindowThemeChromeContext {
+    static func make(browserManager: BrowserManager) -> WindowThemeChromeContext {
+        WindowThemeChromeContext(
+            spaces: browserManager.tabManager.spaceStateOwner,
+            themeEditor: browserManager.chromeBundle.workspaceThemeEditorOwner,
+            windowTabs: browserManager.shellRuntime.windowTabs
         )
     }
 }
