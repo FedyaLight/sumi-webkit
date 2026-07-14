@@ -8,6 +8,15 @@ import AppKit
 import WebKit
 import XCTest
 
+private struct AuxiliaryPublicationIdentityTuple: Equatable {
+    let sessionIdentity: ObjectIdentifier
+    let tabIdentity: ObjectIdentifier
+    let windowIdentity: ObjectIdentifier
+    let webViewIdentity: ObjectIdentifier
+    let miniWindowAdapterIdentity: ObjectIdentifier
+    let tabAdapterIdentity: ObjectIdentifier
+}
+
 @available(macOS 15.5, *)
 @MainActor
 extension AuxiliaryWindowLifecycleTests {
@@ -146,34 +155,51 @@ extension AuxiliaryWindowLifecycleTests {
                 )
             }
         }
-        let originalWindowIdentities = Set(
-            harness.extensionContext.openWindows.map {
-                ObjectIdentifier($0 as AnyObject)
-            }
+        let originalPublication = try auxiliaryPublicationIdentitySnapshot(
+            harness
         )
-        let originalTabIdentities = Set(
-            harness.extensionContext.openTabs.map {
-                ObjectIdentifier($0 as AnyObject)
-            }
-        )
-        let originalSessionIDs = Set(
+        let originalSessionIDs = Set(originalPublication.keys)
+        let originalTabIDs = Set(
             harness.browserManager.auxiliaryWindows.sessions
-                .sessionsSnapshot().map(\.id)
+                .sessionsSnapshot().map(\.tab.id)
         )
-        let originalMiniWindowAdapterIDs = Set(
-            harness.extensionManager.adapterStore
-                .miniWindowAdaptersSnapshot().map(\.sessionId)
+        let originalWindowProjection = harness.extensionContext.openWindows.map {
+            ObjectIdentifier($0 as AnyObject)
+        }
+        let originalTabProjection = harness.extensionContext.openTabs.map {
+            ObjectIdentifier($0 as AnyObject)
+        }
+        let originalMiniAdapterStore = Dictionary(
+            uniqueKeysWithValues: harness.extensionManager.adapterStore
+                .miniWindowAdaptersSnapshot().map {
+                    ($0.sessionId, ObjectIdentifier($0))
+                }
         )
-        XCTAssertEqual(originalWindowIdentities.count, 2)
-        XCTAssertEqual(originalTabIdentities.count, 2)
-        XCTAssertEqual(originalSessionIDs.count, 2)
-        XCTAssertEqual(originalMiniWindowAdapterIDs, originalSessionIDs)
+        let originalTabAdapterStore = harness.extensionManager.adapterStore
+            .tabAdapters.mapValues { ObjectIdentifier($0) }
+        XCTAssertEqual(originalPublication.count, 2)
+        XCTAssertEqual(originalWindowProjection.count, 2)
+        XCTAssertEqual(originalTabProjection.count, 2)
+        XCTAssertEqual(Set(originalMiniAdapterStore.keys), originalSessionIDs)
         var didReplace = false
         var openedTabCount = 0
         var closedTabCount = 0
+        var failedSessionID: UUID?
+        var failedTabID: UUID?
+        var unrelatedEvents: [String] = []
         var hooks = harness.extensionManager.testHooks
-        hooks.didOpenAuxiliaryWindow = { _ in
+        hooks.didOpenAuxiliaryWindow = { sessionID in
+            if originalSessionIDs.contains(sessionID) {
+                unrelatedEvents.append("open-window:\(sessionID)")
+                return
+            }
             guard didReplace == false else { return }
+            guard let failedSession = harness.browserManager.auxiliaryWindows
+                .sessions.session(for: sessionID) else {
+                return XCTFail("Failed publication session was not indexed")
+            }
+            failedSessionID = sessionID
+            failedTabID = failedSession.tab.id
             didReplace = true
             harness.extensionManager.setExtensionContext(
                 replacement,
@@ -182,15 +208,29 @@ extension AuxiliaryWindowLifecycleTests {
             )
         }
         hooks.didOpenTab = { tabID in
-            if harness.browserManager.auxiliaryWindows.sessions
-                .sessionsSnapshot().contains(where: { $0.tab.id == tabID }) {
+            if originalTabIDs.contains(tabID) {
+                unrelatedEvents.append("open-tab:\(tabID)")
+            } else if tabID == failedTabID {
                 openedTabCount += 1
             }
         }
         hooks.didCloseTab = { tabID in
-            if harness.browserManager.auxiliaryWindows.sessions
-                .sessionsSnapshot().contains(where: { $0.tab.id == tabID }) {
+            if originalTabIDs.contains(tabID) {
+                unrelatedEvents.append("close-tab:\(tabID)")
+            } else if tabID == failedTabID {
                 closedTabCount += 1
+            }
+        }
+        hooks.didCloseAuxiliaryWindow = { sessionID in
+            if originalSessionIDs.contains(sessionID) {
+                unrelatedEvents.append("close-window:\(sessionID)")
+            } else {
+                XCTAssertEqual(sessionID, failedSessionID)
+            }
+        }
+        hooks.didFocusAuxiliaryWindow = { sessionID in
+            if originalSessionIDs.contains(sessionID) {
+                unrelatedEvents.append("focus-window:\(sessionID)")
             }
         }
         harness.extensionManager.testHooks = hooks
@@ -200,31 +240,42 @@ extension AuxiliaryWindowLifecycleTests {
             presentOwnerPopup(in: harness, configuration: configuration)
         )
         XCTAssertTrue(didReplace)
+        XCTAssertNotNil(failedSessionID)
+        XCTAssertNotNil(failedTabID)
         XCTAssertEqual(openedTabCount, 0)
         XCTAssertEqual(closedTabCount, 0)
+        XCTAssertTrue(unrelatedEvents.isEmpty, unrelatedEvents.joined(separator: ", "))
         XCTAssertEqual(
-            Set(harness.extensionContext.openWindows.map {
+            harness.extensionContext.openWindows.map {
                 ObjectIdentifier($0 as AnyObject)
-            }),
-            originalWindowIdentities
+            },
+            originalWindowProjection
         )
         XCTAssertEqual(
-            Set(harness.extensionContext.openTabs.map {
+            harness.extensionContext.openTabs.map {
                 ObjectIdentifier($0 as AnyObject)
-            }),
-            originalTabIdentities
+            },
+            originalTabProjection
         )
         XCTAssertTrue(replacement.openWindows.isEmpty)
         XCTAssertTrue(replacement.openTabs.isEmpty)
         XCTAssertEqual(
-            Set(harness.browserManager.auxiliaryWindows.sessions
-                .sessionsSnapshot().map(\.id)),
-            originalSessionIDs
+            try auxiliaryPublicationIdentitySnapshot(harness),
+            originalPublication
         )
         XCTAssertEqual(
-            Set(harness.extensionManager.adapterStore
-                .miniWindowAdaptersSnapshot().map(\.sessionId)),
-            originalMiniWindowAdapterIDs
+            Dictionary(
+                uniqueKeysWithValues: harness.extensionManager.adapterStore
+                    .miniWindowAdaptersSnapshot().map {
+                        ($0.sessionId, ObjectIdentifier($0))
+                    }
+            ),
+            originalMiniAdapterStore
+        )
+        XCTAssertEqual(
+            harness.extensionManager.adapterStore.tabAdapters
+                .mapValues { ObjectIdentifier($0) },
+            originalTabAdapterStore
         )
     }
 
@@ -363,5 +414,57 @@ extension AuxiliaryWindowLifecycleTests {
         )
 
         XCTAssertEqual(closedTabCount, 0)
+    }
+
+    private func auxiliaryPublicationIdentitySnapshot(
+        _ harness: ExtensionHarness
+    ) throws -> [UUID: AuxiliaryPublicationIdentityTuple] {
+        try Dictionary(
+            uniqueKeysWithValues: harness.browserManager.auxiliaryWindows
+                .sessions.sessionsSnapshot().map { session in
+                    let sessions = harness.browserManager.auxiliaryWindows
+                        .sessions
+                    XCTAssertIdentical(
+                        sessions.session(for: session.webView),
+                        session
+                    )
+                    XCTAssertIdentical(
+                        sessions.session(for: session.window),
+                        session
+                    )
+                    XCTAssertIdentical(
+                        sessions.session(for: session.tab),
+                        session
+                    )
+                    let miniWindowAdapter = try XCTUnwrap(
+                        session.miniWindowAdapter
+                    )
+                    let storedMiniWindowAdapter = try XCTUnwrap(
+                        harness.extensionManager.adapterStore
+                            .existingMiniWindowAdapter(for: session.id)
+                    )
+                    let tabAdapter = try XCTUnwrap(
+                        harness.extensionManager.adapterStore
+                            .existingTabAdapter(for: session.tab.id)
+                    )
+                    XCTAssertIdentical(
+                        miniWindowAdapter,
+                        storedMiniWindowAdapter
+                    )
+                    return (
+                        session.id,
+                        AuxiliaryPublicationIdentityTuple(
+                            sessionIdentity: ObjectIdentifier(session),
+                            tabIdentity: ObjectIdentifier(session.tab),
+                            windowIdentity: ObjectIdentifier(session.window),
+                            webViewIdentity: ObjectIdentifier(session.webView),
+                            miniWindowAdapterIdentity: ObjectIdentifier(
+                                miniWindowAdapter
+                            ),
+                            tabAdapterIdentity: ObjectIdentifier(tabAdapter)
+                        )
+                    )
+                }
+        )
     }
 }

@@ -31,6 +31,22 @@ enum AuxiliaryWindowCloseReason: String {
     }
 }
 
+/// Immutable authority for one exact physical auxiliary session. A WebView
+/// can be registered again after teardown, so its identity alone is never a
+/// sufficient retirement capability.
+struct AuxiliaryWindowSessionReceipt: Hashable {
+    let sessionID: UUID
+    let sessionIdentity: ObjectIdentifier
+    let webViewIdentity: ObjectIdentifier
+
+    @MainActor
+    init(session: AuxiliaryWindowSession) {
+        sessionID = session.id
+        sessionIdentity = ObjectIdentifier(session)
+        webViewIdentity = ObjectIdentifier(session.webView)
+    }
+}
+
 @MainActor
 final class AuxiliaryWindowSession {
     let id: UUID
@@ -122,6 +138,20 @@ final class AuxiliaryWindowSessionRegistry {
         sessionIDByTabID[tab.id].flatMap { sessionsByID[$0] }
     }
 
+    func receipt(
+        for session: AuxiliaryWindowSession
+    ) -> AuxiliaryWindowSessionReceipt? {
+        let receipt = AuxiliaryWindowSessionReceipt(session: session)
+        guard isCurrent(receipt) else { return nil }
+        return receipt
+    }
+
+    func receipt(
+        for webView: WKWebView
+    ) -> AuxiliaryWindowSessionReceipt? {
+        session(for: webView).flatMap(receipt(for:))
+    }
+
     func contains(_ webView: WKWebView) -> Bool {
         session(for: webView) != nil
     }
@@ -140,21 +170,47 @@ final class AuxiliaryWindowSessionRegistry {
 
     @discardableResult
     func remove(webView: WKWebView) -> AuxiliaryWindowSession? {
-        let webViewID = ObjectIdentifier(webView)
-        guard let sessionID = sessionIDByWebView.removeValue(forKey: webViewID),
-              let session = sessionsByID.removeValue(forKey: sessionID) else {
-            return nil
-        }
+        guard let receipt = receipt(for: webView) else { return nil }
+        return remove(receipt)
+    }
+
+    @discardableResult
+    func remove(
+        _ receipt: AuxiliaryWindowSessionReceipt
+    ) -> AuxiliaryWindowSession? {
+        guard isCurrent(receipt),
+              let session = sessionsByID.removeValue(
+                  forKey: receipt.sessionID
+              )
+        else { return nil }
+
+        sessionIDByWebView.removeValue(forKey: receipt.webViewIdentity)
 
         let windowID = ObjectIdentifier(session.window)
-        if sessionIDByWindow[windowID] == sessionID {
+        if sessionIDByWindow[windowID] == receipt.sessionID {
             sessionIDByWindow.removeValue(forKey: windowID)
         }
-        if sessionIDByTabID[session.tab.id] == sessionID {
+        if sessionIDByTabID[session.tab.id] == receipt.sessionID {
             sessionIDByTabID.removeValue(forKey: session.tab.id)
         }
-        removeFromFocusHistory(sessionID, extensionID: session.ownerExtensionID)
+        removeFromFocusHistory(
+            receipt.sessionID,
+            extensionID: session.ownerExtensionID
+        )
         return session
+    }
+
+    private func isCurrent(_ receipt: AuxiliaryWindowSessionReceipt) -> Bool {
+        guard let session = sessionsByID[receipt.sessionID] else {
+            return false
+        }
+        return ObjectIdentifier(session) == receipt.sessionIdentity
+            && ObjectIdentifier(session.webView) == receipt.webViewIdentity
+            && sessionIDByWebView[receipt.webViewIdentity]
+                == receipt.sessionID
+            && sessionIDByWindow[ObjectIdentifier(session.window)]
+                == receipt.sessionID
+            && sessionIDByTabID[session.tab.id] == receipt.sessionID
     }
 
     func recordFocus(sessionID: UUID) {

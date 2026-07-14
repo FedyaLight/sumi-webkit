@@ -1,8 +1,7 @@
 import Foundation
 import WebKit
 
-/// Resolves which installed extension owns a page or context, and where that
-/// extension's options page lives.
+/// Resolves which installed extension owns a page or context.
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionPageResolutionOwner {
@@ -40,51 +39,6 @@ final class ExtensionPageResolutionOwner {
 
         return nil
     }
-
-    func computeOptionsPageURL(
-        for extensionContext: WKWebExtensionContext
-    ) -> URL? {
-        guard let manager,
-              let extensionId = manager.extensionID(for: extensionContext),
-              let installedExtension = manager.installedExtensionCollection.records
-              .first(where: { $0.id == extensionId })
-        else {
-            return nil
-        }
-
-        let extensionRoot = URL(
-            fileURLWithPath: installedExtension.packagePath,
-            isDirectory: true
-        ).resolvingSymlinksInPath().standardizedFileURL
-        let manifest = manager.runtimeCatalog.manifest(for: extensionId)
-            ?? installedExtension.manifest
-
-        let pagePath: String?
-        if let persistedPath = installedExtension.optionsPagePath,
-           let normalizedPath = ExtensionOptionsPageResolution.existingValidatedPath(
-               persistedPath,
-               in: extensionRoot
-           ) {
-            pagePath = normalizedPath
-        } else if let declaredPath = ExtensionManifestSemantics.optionsPagePath(from: manifest),
-                  let normalizedPath = ExtensionOptionsPageResolution.existingValidatedPath(
-                      declaredPath,
-                      in: extensionRoot
-                  ) {
-            pagePath = normalizedPath
-        } else {
-            pagePath = ExtensionOptionsPageResolution.storedPath(
-                from: manifest,
-                in: extensionRoot
-            )
-        }
-
-        guard let pagePath else { return nil }
-        return ExtensionPathSafety.manifestRelativeURL(
-            extensionContext.baseURL,
-            path: pagePath
-        )
-    }
 }
 
 // MARK: - ExtensionManager facade
@@ -108,11 +62,5 @@ extension ExtensionManager {
             openerTab: openerTab,
             extensionOwnedSourceURL: extensionOwnedSourceURL
         )
-    }
-
-    func computeOptionsPageURL(
-        for extensionContext: WKWebExtensionContext
-    ) -> URL? {
-        pageResolutionOwner.computeOptionsPageURL(for: extensionContext)
     }
 }

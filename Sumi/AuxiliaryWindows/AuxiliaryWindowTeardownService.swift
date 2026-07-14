@@ -63,13 +63,21 @@ final class AuxiliaryWindowTeardownService {
         for webView: WKWebView,
         reason: AuxiliaryWindowCloseReason = .webViewDidClose
     ) {
-        guard let session = sessions.remove(webView: webView) else { return }
+        guard let receipt = sessions.receipt(for: webView) else { return }
+        teardown(receipt, reason: reason)
+    }
+
+    func teardown(
+        _ receipt: AuxiliaryWindowSessionReceipt,
+        reason: AuxiliaryWindowCloseReason = .webViewDidClose
+    ) {
+        guard let session = sessions.remove(receipt) else { return }
 
         session.window.delegate = nil
-        webView.stopLoading()
-        webView.uiDelegate = nil
-        webView.navigationDelegate = nil
-        webView.removeFromSuperview()
+        session.webView.stopLoading()
+        session.webView.uiDelegate = nil
+        session.webView.navigationDelegate = nil
+        session.webView.removeFromSuperview()
 
         session.extensionEvents?.notifyAuxiliaryWindowClosed(session)
         session.tab.performComprehensiveWebViewCleanup()

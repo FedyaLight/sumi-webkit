@@ -4,8 +4,22 @@ import WebKit
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionOptionsWindowService {
-    private let registry = ExtensionOptionsWindowRegistry()
+    typealias WindowFactory = @MainActor () -> NSWindow
 
+    private let registry = ExtensionOptionsWindowRegistry()
+    private let windowFactory: WindowFactory
+    init(
+        windowFactory: @escaping WindowFactory = {
+            NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
+                styleMask: [.titled, .closable, .resizable, .miniaturizable],
+                backing: .buffered,
+                defer: false
+            )
+        }
+    ) {
+        self.windowFactory = windowFactory
+    }
     var windows: [String: NSWindow] {
         registry.windows
     }
@@ -13,7 +27,6 @@ final class ExtensionOptionsWindowService {
     var extensionIDs: Set<String> {
         registry.extensionIDs
     }
-
     func receipt(
         for extensionID: String
     ) -> ExtensionOptionsWindowReceipt? {
@@ -21,22 +34,24 @@ final class ExtensionOptionsWindowService {
     }
 
     func closeWindow(for extensionId: String) {
-        guard let receipt = receipt(for: extensionId) else { return }
+        guard let receipt = receipt(for: extensionId) else {
+            registry.invalidatePresentationClaim(for: extensionId)
+            return
+        }
         retire(receipt, shouldOrderOut: true)
     }
-
     func closeAllWindows() {
+        registry.invalidateAllPresentationClaims()
         Array(registry.extensionIDs).forEach { extensionID in
             closeWindow(for: extensionID)
         }
     }
-
     func closeWindows(backedBy profileIDs: Set<UUID>) {
+        registry.invalidatePresentationClaims(backedBy: profileIDs)
         registry.receipts(backedBy: profileIDs).forEach {
             retire($0, shouldOrderOut: true)
         }
     }
-
     func retire(
         _ receipt: ExtensionOptionsWindowReceipt,
         window: NSWindow? = nil,
@@ -49,6 +64,14 @@ final class ExtensionOptionsWindowService {
             // registration for the same extension.
             if let webView, registry.owns(webView) == false {
                 SumiAuxiliaryWebViewShutdown.perform(on: webView)
+            }
+            if let window, registry.owns(window) == false {
+                if shouldOrderOut {
+                    window.orderOut(nil)
+                }
+                window.contentViewController = nil
+                window.contentView = nil
+                window.delegate = nil
             }
             return
         }
@@ -66,56 +89,37 @@ final class ExtensionOptionsWindowService {
         resolvedWindow.contentView = nil
         resolvedWindow.delegate = nil
     }
-
     func presentOptionsPageWindow(
         invocation: ExtensionOptionsWindowCallbackComposition.Invocation,
         completionHandler: @escaping (Error?) -> Void
     ) {
-        let receipt = invocation.receipt
-        let runtime = invocation.runtime
-        guard runtime.isCurrent(receipt) else {
-            completionHandler(CancellationError())
-            return
-        }
-        if runtime.websiteDataMutationAdmissionIsBlocked(
-            receipt.evidence.profileID
-        ) {
-            Task { @MainActor [weak self] in
-                guard let self,
-                      runtime.isCurrent(receipt),
-                      await runtime.waitForWebsiteDataMutationAdmission(
-                          receipt.evidence.profileID
-                      ),
-                      runtime.isCurrent(receipt)
-                else {
-                    completionHandler(CancellationError())
-                    return
-                }
-                self.presentResolvedOptionsPageWindow(
-                    receipt: receipt,
-                    runtime: runtime,
-                    completionHandler: completionHandler
-                )
-            }
-            return
-        }
-        presentResolvedOptionsPageWindow(
-            receipt: receipt,
-            runtime: runtime,
+        ExtensionOptionsWindowPresentationCoordinator.present(
+            service: self,
+            invocation: invocation,
             completionHandler: completionHandler
         )
     }
 
-    private func presentResolvedOptionsPageWindow(
+    func issuePresentationClaim(
+        for extensionID: String,
+        profileID: UUID?
+    ) -> ExtensionOptionsWindowPresentationClaim {
+        registry.issuePresentationClaim(
+            for: extensionID,
+            profileID: profileID
+        )
+    }
+
+    func presentationIsCurrent(
+        _ claim: ExtensionOptionsWindowPresentationClaim,
         receipt: ExtensionOptionsWindowPresentationReceipt,
-        runtime: ExtensionOptionsWindowCallbackRuntime,
-        completionHandler: @escaping (Error?) -> Void
-    ) {
-        ExtensionOptionsWindowPresentationTransaction(
-            service: self,
-            receipt: receipt,
-            runtime: runtime
-        ).commit(completionHandler: completionHandler)
+        runtime: ExtensionOptionsWindowCallbackRuntime
+    ) -> Bool {
+        registry.isCurrent(claim) && runtime.isCurrent(receipt)
+    }
+
+    func makePresentationWindow() -> NSWindow {
+        windowFactory()
     }
 
     @discardableResult
@@ -126,34 +130,56 @@ final class ExtensionOptionsWindowService {
         for extensionId: String,
         profileID: UUID? = nil
     ) -> ExtensionOptionsWindowReceipt {
-        let registration = registry.register(
+        let claim = issuePresentationClaim(
+            for: extensionId,
+            profileID: profileID
+        )
+        guard let receipt = trackPresentedWindow(
+            window,
+            webView: webView,
+            delegate: delegate,
+            for: extensionId,
+            profileID: profileID,
+            claim: claim
+        ) else {
+            preconditionFailure("Fresh options presentation claim was rejected")
+        }
+        return receipt
+    }
+
+    @discardableResult
+    func trackPresentedWindow(
+        _ window: NSWindow,
+        webView: WKWebView? = nil,
+        delegate: ExtensionOptionsWindowDelegate?,
+        for extensionId: String,
+        profileID: UUID? = nil,
+        claim: ExtensionOptionsWindowPresentationClaim
+    ) -> ExtensionOptionsWindowReceipt? {
+        guard let registration = registry.register(
             window: window,
             webView: webView,
             delegate: delegate,
             extensionID: extensionId,
-            profileID: profileID
-        )
+            profileID: profileID,
+            claim: claim
+        ) else { return nil }
         if let superseded = registration.superseded {
-            cleanup(
-                superseded,
-                preserving: registry.registration(for: extensionId),
-                shouldOrderOut: true
-            )
+            cleanup(superseded, shouldOrderOut: true)
         }
         return registration.receipt
     }
 
     private func cleanup(
         _ registration: ExtensionOptionsWindowRegistry.Registration,
-        preserving current: ExtensionOptionsWindowRegistry.Registration?,
         shouldOrderOut: Bool
     ) {
         registration.delegate?.isCleaningUp = true
         if let webView = registration.webView,
-           current?.webView !== webView {
+           registry.owns(webView) == false {
             SumiAuxiliaryWebViewShutdown.perform(on: webView)
         }
-        guard current?.window !== registration.window else { return }
+        guard registry.owns(registration.window) == false else { return }
         if shouldOrderOut {
             registration.window.orderOut(nil)
         }

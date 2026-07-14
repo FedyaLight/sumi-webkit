@@ -301,6 +301,108 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
         )
     }
 
+    func testStalePopupReceiptCannotRetireSameWebViewReplacementOrSibling()
+        async throws {
+        let harness = try await makeExtensionHarness(
+            ownerExtensionID: "popup-webview-aba-owner",
+            publishNormalWindow: true
+        )
+        let configuration = AuxiliaryWindowConfigurationMock(
+            windowType: .popup,
+            tabURLs: [],
+            shouldBePrivate: false
+        ).windowConfiguration
+        let callback = try auxiliaryCallback(for: harness)
+        let presented = await harness.browserManager.auxiliaryWindows
+            .extensionWindows.present(
+                configuration: configuration,
+                evidence: callback.evidence,
+                callbackAdmission: harness.extensionManager
+                    .controllerCallbackAdmission,
+                runtime: callback.runtime,
+                parentWindow: harness.appKitWindow
+            )
+        let presentation = try XCTUnwrap(
+            presented
+        )
+        let original = try XCTUnwrap(
+            harness.browserManager.auxiliaryWindows.sessions.session(
+                for: presentation.sessionID
+            )
+        )
+        let siblingWebView = try XCTUnwrap(
+            harness.browserManager.auxiliaryWindows.popups.presentWebPopup(
+                configuration: WKWebViewConfiguration(),
+                request: nil,
+                windowFeatures: WKWindowFeatures(),
+                openerTab: harness.sourceTab
+            )
+        )
+        let sibling = try XCTUnwrap(
+            harness.browserManager.auxiliaryWindows.sessions.session(
+                for: siblingWebView
+            )
+        )
+        XCTAssertEqual(
+            presentation.sessionIdentity,
+            ObjectIdentifier(original)
+        )
+        XCTAssertEqual(
+            presentation.webViewIdentity,
+            ObjectIdentifier(original.webView)
+        )
+
+        harness.browserManager.auxiliaryWindows.teardown.teardown(
+            for: original.webView,
+            reason: .bulkCleanup
+        )
+        let replacement = AuxiliaryWindowSession(
+            id: UUID(),
+            tab: original.tab,
+            window: original.window,
+            webView: original.webView,
+            openerTab: original.openerTab,
+            openerWindow: original.openerWindow,
+            shouldActivateApp: original.shouldActivateApp,
+            isPrivate: original.isPrivate,
+            ownerExtensionID: original.ownerExtensionID,
+            miniWindowAdapter: original.miniWindowAdapter,
+            extensionEvents: original.extensionEvents,
+            uiDelegate: original.uiDelegate,
+            windowDelegate: original.windowDelegate
+        )
+        harness.browserManager.auxiliaryWindows.sessions.register(replacement)
+        defer {
+            let receipt = AuxiliaryWindowSessionReceipt(session: replacement)
+            _ = harness.browserManager.auxiliaryWindows.sessions.remove(receipt)
+            harness.browserManager.auxiliaryWindows.teardown.teardown(
+                for: siblingWebView,
+                reason: .bulkCleanup
+            )
+        }
+
+        presentation.retire()
+        presentation.retire()
+
+        XCTAssertIdentical(
+            harness.browserManager.auxiliaryWindows.sessions.session(
+                for: original.webView
+            ),
+            replacement
+        )
+        XCTAssertIdentical(
+            harness.browserManager.auxiliaryWindows.sessions.session(
+                for: sibling.id
+            ),
+            sibling
+        )
+        XCTAssertEqual(
+            Set(harness.browserManager.auxiliaryWindows.sessions
+                .sessionsSnapshot().map(\.id)),
+            [replacement.id, sibling.id]
+        )
+    }
+
     func testPopupInvalidatedAfterPresentationRetiresExactSessionAndKeepsSibling()
         async throws {
         let harness = try await makeExtensionHarness(

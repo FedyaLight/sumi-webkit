@@ -1686,6 +1686,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             description: "stale options admission rejected"
         )
         var staleCompletionError: Error?
+        var staleCompletionCount = 0
         let staleInvocation = try XCTUnwrap(
             ExtensionOptionsWindowCallbackComposition.invocation(
                 from: manager,
@@ -1695,6 +1696,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         manager.optionsWindows.presentOptionsPageWindow(
             invocation: staleInvocation
         ) { error in
+            staleCompletionCount += 1
             staleCompletionError = error
             staleCompletion.fulfill()
         }
@@ -1709,6 +1711,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         mutationIsBlocked = false
         mutationWaiter?.resume(returning: true)
         await fulfillment(of: [staleCompletion], timeout: 2.0)
+        XCTAssertEqual(staleCompletionCount, 1)
         XCTAssertTrue(staleCompletionError is CancellationError)
         XCTAssertNil(manager.optionsWindows.windows[installed.id])
 
@@ -1769,6 +1772,39 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             invocation.receipt.configuration.sumiVisitedLinkStoreObject,
             profileBReference.sumiVisitedLinkStoreObject
         )
+
+        var supersededWaiter: CheckedContinuation<Bool, Never>?
+        let supersededDidSuspend = expectation(
+            description: "older options presentation suspended"
+        )
+        let supersededCompletion = expectation(
+            description: "older options presentation settled"
+        )
+        var supersededCompletionCount = 0
+        var supersededCompletionError: Error?
+        let supersededRuntime = ExtensionOptionsWindowCallbackRuntime(
+            admission: invocation.runtime.admission,
+            installedExtensions: invocation.runtime.installedExtensions,
+            websiteDataMutationAdmissionIsBlocked: { _ in true },
+            waitForWebsiteDataMutationAdmission: { _ in
+                supersededDidSuspend.fulfill()
+                return await withCheckedContinuation { supersededWaiter = $0 }
+            }
+        )
+        let supersededInvocation = ExtensionOptionsWindowCallbackComposition
+            .Invocation(
+                receipt: invocation.receipt,
+                runtime: supersededRuntime
+            )
+        manager.optionsWindows.presentOptionsPageWindow(
+            invocation: supersededInvocation
+        ) { error in
+            supersededCompletionCount += 1
+            supersededCompletionError = error
+            supersededCompletion.fulfill()
+        }
+        await fulfillment(of: [supersededDidSuspend], timeout: 2.0)
+
         manager.optionsWindows.presentOptionsPageWindow(
             invocation: invocation
         ) { error in
@@ -1779,6 +1815,21 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         XCTAssertNil(completionError)
 
         let window = try XCTUnwrap(manager.optionsWindows.windows[installed.id])
+        let currentReceipt = try XCTUnwrap(
+            manager.optionsWindows.receipt(for: installed.id)
+        )
+        supersededWaiter?.resume(returning: true)
+        await fulfillment(of: [supersededCompletion], timeout: 2.0)
+        XCTAssertEqual(supersededCompletionCount, 1)
+        XCTAssertTrue(supersededCompletionError is CancellationError)
+        XCTAssertEqual(
+            manager.optionsWindows.receipt(for: installed.id),
+            currentReceipt
+        )
+        XCTAssertIdentical(
+            manager.optionsWindows.windows[installed.id],
+            window
+        )
         let contentView = try XCTUnwrap(window.contentView)
         let webView = try XCTUnwrap(Self.firstWebView(in: contentView))
 
@@ -1806,6 +1857,53 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             webView.configuration.sumiVisitedLinkStoreObject,
             profileBReference.sumiVisitedLinkStoreObject
         )
+
+        let orderFrontWindow = ReentrantOptionsWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
+            styleMask: [.titled, .closable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        let replacementWindow = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 320, height: 240),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        let reentrantService = ExtensionOptionsWindowService {
+            orderFrontWindow
+        }
+        var replacementReceipt: ExtensionOptionsWindowReceipt?
+        orderFrontWindow.onFirstOrderFront = {
+            reentrantService.closeWindow(for: installed.id)
+            replacementReceipt = reentrantService.trackPresentedWindow(
+                replacementWindow,
+                delegate: nil,
+                for: installed.id,
+                profileID: profile.id
+            )
+        }
+        var reentrantCompletionCount = 0
+        var reentrantCompletionError: Error?
+        reentrantService.presentOptionsPageWindow(
+            invocation: invocation
+        ) { error in
+            reentrantCompletionCount += 1
+            reentrantCompletionError = error
+        }
+        XCTAssertEqual(reentrantCompletionCount, 1)
+        XCTAssertTrue(reentrantCompletionError is CancellationError)
+        XCTAssertEqual(
+            reentrantService.receipt(for: installed.id),
+            replacementReceipt
+        )
+        XCTAssertIdentical(
+            reentrantService.windows[installed.id],
+            replacementWindow
+        )
+        XCTAssertNil(orderFrontWindow.contentView)
+        XCTAssertFalse(orderFrontWindow.isVisible)
+        reentrantService.closeWindow(for: installed.id)
     }
 
     func testExtensionRequestedInternalTabIsNotRenotifiedOnCommitOrActivation() async throws {
@@ -2115,6 +2213,19 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
                 extensionContext: extensionContext
             )
         )
+    }
+
+    private final class ReentrantOptionsWindow: NSWindow {
+        var onFirstOrderFront: (() -> Void)?
+        private var didInvokeOrderFrontHook = false
+
+        override func orderFront(_ sender: Any?) {
+            if didInvokeOrderFrontHook == false {
+                didInvokeOrderFrontHook = true
+                onFirstOrderFront?()
+            }
+            super.orderFront(sender)
+        }
     }
 
     private final class RequestedWindowPreparedStub:

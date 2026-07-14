@@ -24,6 +24,8 @@ final class ExtensionOptionsWindowRegistry {
     }
 
     private var registrationsByExtensionID: [String: Registration] = [:]
+    private let presentationClaims =
+        ExtensionOptionsWindowPresentationClaimLedger()
 
     var extensionIDs: Set<String> {
         Set(registrationsByExtensionID.keys)
@@ -47,6 +49,32 @@ final class ExtensionOptionsWindowRegistry {
         }
     }
 
+    func owns(_ window: NSWindow) -> Bool {
+        registrationsByExtensionID.values.contains {
+            $0.window === window
+        }
+    }
+
+    func issuePresentationClaim(
+        for extensionID: String,
+        profileID: UUID?
+    ) -> ExtensionOptionsWindowPresentationClaim {
+        presentationClaims.issue(for: extensionID, profileID: profileID)
+    }
+    func isCurrent(
+        _ claim: ExtensionOptionsWindowPresentationClaim
+    ) -> Bool {
+        presentationClaims.isCurrent(claim)
+    }
+    func invalidatePresentationClaim(for extensionID: String) {
+        presentationClaims.invalidate(for: extensionID)
+    }
+    func invalidatePresentationClaims(backedBy profileIDs: Set<UUID>) {
+        presentationClaims.invalidate(backedBy: profileIDs)
+    }
+    func invalidateAllPresentationClaims() {
+        presentationClaims.invalidateAll()
+    }
     func receipts(backedBy profileIDs: Set<UUID>) -> [ExtensionOptionsWindowReceipt] {
         registrationsByExtensionID.values.compactMap { registration in
             guard let profileID = registration.profileID else {
@@ -63,11 +91,17 @@ final class ExtensionOptionsWindowRegistry {
         webView: WKWebView?,
         delegate: ExtensionOptionsWindowDelegate?,
         extensionID: String,
-        profileID: UUID?
+        profileID: UUID?,
+        claim: ExtensionOptionsWindowPresentationClaim
     ) -> (
         receipt: ExtensionOptionsWindowReceipt,
         superseded: Registration?
-    ) {
+    )? {
+        guard claim.extensionID == extensionID,
+              claim.profileID == profileID,
+              isCurrent(claim) else {
+            return nil
+        }
         let receipt = ExtensionOptionsWindowReceipt(extensionID: extensionID)
         let superseded = registrationsByExtensionID.updateValue(
             Registration(
@@ -87,6 +121,7 @@ final class ExtensionOptionsWindowRegistry {
     ) -> Registration? {
         guard registrationsByExtensionID[receipt.extensionID]?.receipt == receipt
         else { return nil }
+        invalidatePresentationClaim(for: receipt.extensionID)
         return registrationsByExtensionID.removeValue(
             forKey: receipt.extensionID
         )

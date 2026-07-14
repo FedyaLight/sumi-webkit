@@ -18,10 +18,15 @@ deferred='Sumi/Managers/ExtensionManager/ExtensionDeferredRuntimeOwnerStore.swif
 
 weak_events='Sumi/AuxiliaryWindows/WeakAuxiliaryWindowExtensionEvents.swift'
 browser_aux='Sumi/AuxiliaryWindows/BrowserAuxiliaryWindowComposition.swift'
+session_registry='Sumi/AuxiliaryWindows/AuxiliaryWindowSessionRegistry.swift'
+teardown='Sumi/AuxiliaryWindows/AuxiliaryWindowTeardownService.swift'
+extension_opening='Sumi/AuxiliaryWindows/ExtensionAuxiliaryWindowOpeningService.swift'
+extension_bridge='Sumi/Managers/ExtensionManager/ExtensionBridge.swift'
 
 for file in "$bridge" "$opening" "$opening_runtime" "$initial" "$content" "$native" \
   "$residency" "$retention" "$loading" "$settlement" "$deferred" \
-  "$weak_events" "$browser_aux"; do
+  "$weak_events" "$browser_aux" "$session_registry" "$teardown" \
+  "$extension_opening" "$extension_bridge"; do
   [[ -f "$file" ]] || { echo "error: missing extension auxiliary role: $file" >&2; exit 1; }
 done
 
@@ -36,8 +41,33 @@ rg -q 'ExtensionControllerCallbackEvidence' "$opening"
 rg -q 'admission\.isCurrent' "$opening"
 rg -q 'hasUnresolvedExtensionOwnership == false' "$opening"
 rg -q 'ExtensionPopupWindowPresentationReceipt' \
-  Sumi/Managers/ExtensionManager/ExtensionBridge.swift
+  "$extension_bridge"
 rg -q 'presentation\?\.retire\(\)' "$opening"
+rg -q 'struct AuxiliaryWindowSessionReceipt: Hashable' "$session_registry"
+rg -q 'let sessionIdentity: ObjectIdentifier' "$session_registry"
+rg -q 'let webViewIdentity: ObjectIdentifier' "$session_registry"
+rg -Fq 'guard isCurrent(receipt),' "$session_registry"
+rg -Fq 'sessions.remove(receipt)' "$teardown"
+rg -q 'let sessionReceipt = AuxiliaryWindowSessionReceipt' "$extension_opening"
+rg -Fq 'teardown.teardown(' "$extension_opening"
+rg -q 'sessionReceipt,' "$extension_opening"
+if rg -n '\[weak session\]|teardown\(\s*for: session\.webView' \
+  "$extension_opening"; then
+  echo 'error: popup retirement regained mutable WebView/session lookup authority' >&2
+  exit 1
+fi
+rg -q 'let sessionIdentity: ObjectIdentifier' "$extension_bridge"
+rg -q 'let webViewIdentity: ObjectIdentifier' "$extension_bridge"
+rg -q 'testStalePopupReceiptCannotRetireSameWebViewReplacementOrSibling' \
+  SumiTests/AuxiliaryWindowLifecycleTests.swift
+rg -q 'AuxiliaryPublicationIdentityTuple' \
+  SumiTests/AuxiliaryWindowPublicationLifecycleTests.swift
+rg -q 'originalPublication.count, 2' \
+  SumiTests/AuxiliaryWindowPublicationLifecycleTests.swift
+rg -q 'unrelatedEvents.isEmpty' \
+  SumiTests/AuxiliaryWindowPublicationLifecycleTests.swift
+rg -q 'replacement.openWindows.isEmpty' \
+  SumiTests/AuxiliaryWindowPublicationLifecycleTests.swift
 rg -q 'private weak var target' "$weak_events"
 rg -q 'events: WeakAuxiliaryWindowExtensionEvents' "$browser_aux"
 rg -Fq 'let extensionEvents: (any AuxiliaryWindowExtensionEventHandling)?' \

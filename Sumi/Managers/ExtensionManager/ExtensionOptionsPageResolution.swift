@@ -33,36 +33,6 @@ enum ExtensionOptionsPageResolution {
         return nil
     }
 
-    static func resolvedURL(
-        sdkURL: URL?,
-        persistedPath: String?,
-        manifest: [String: Any],
-        extensionRoot: URL
-    ) throws -> URL {
-        if let sdkURL {
-            return sdkURL.isFileURL
-                ? try ExtensionPathSafety.validatedPageURL(
-                    sdkURL,
-                    within: extensionRoot
-                )
-                : sdkURL
-        }
-
-        let relativePath = persistedPath
-            ?? ExtensionManifestSemantics.optionsPagePath(from: manifest)
-            ?? storedPath(from: manifest, in: extensionRoot)
-        guard let relativePath,
-              let candidate = ExtensionPathSafety.manifestRelativeURL(
-                  extensionRoot,
-                  path: relativePath
-              )
-        else { throw notFoundError() }
-        return try ExtensionPathSafety.validatedPageURL(
-            candidate,
-            within: extensionRoot
-        )
-    }
-
     static func existingValidatedPath(
         _ relativePath: String,
         in extensionRoot: URL

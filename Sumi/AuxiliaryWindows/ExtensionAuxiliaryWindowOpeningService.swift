@@ -222,14 +222,15 @@ final class ExtensionAuxiliaryWindowOpeningService {
             }
             tab.loadURL(loadURL)
         }
+        let sessionReceipt = AuxiliaryWindowSessionReceipt(session: session)
         return ExtensionPopupWindowPresentationReceipt(
-            sessionID: session.id,
+            sessionReceipt: sessionReceipt,
             adapter: adapter,
             retireExactSession: {
-                [weak teardown = self.teardown, weak session] in
-                guard let teardown, let session else { return }
+                [weak teardown = self.teardown] in
+                guard let teardown else { return }
                 teardown.teardown(
-                    for: session.webView,
+                    sessionReceipt,
                     reason: .presentationFailure
                 )
             }

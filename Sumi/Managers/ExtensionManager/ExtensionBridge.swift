@@ -276,15 +276,19 @@ struct ExtensionPopupWindowPresentationReceipt {
     }
 
     let sessionID: UUID
+    let sessionIdentity: ObjectIdentifier
+    let webViewIdentity: ObjectIdentifier
     let adapter: ExtensionMiniWindowAdapter
     private let retirement: Retirement
 
     init(
-        sessionID: UUID,
+        sessionReceipt: AuxiliaryWindowSessionReceipt,
         adapter: ExtensionMiniWindowAdapter,
         retireExactSession: @escaping @MainActor () -> Void
     ) {
-        self.sessionID = sessionID
+        sessionID = sessionReceipt.sessionID
+        sessionIdentity = sessionReceipt.sessionIdentity
+        webViewIdentity = sessionReceipt.webViewIdentity
         self.adapter = adapter
         retirement = Retirement(action: retireExactSession)
     }

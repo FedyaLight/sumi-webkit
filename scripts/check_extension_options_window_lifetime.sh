@@ -10,22 +10,39 @@ registry='Sumi/Managers/ExtensionManager/ExtensionOptionsWindowRegistry.swift'
 resolver='Sumi/Managers/ExtensionManager/ExtensionOptionsPageResolver.swift'
 composition='Sumi/Managers/ExtensionManager/ExtensionOptionsWindowCallbackComposition.swift'
 transaction='Sumi/Managers/ExtensionManager/ExtensionOptionsWindowPresentationTransaction.swift'
+coordinator='Sumi/Managers/ExtensionManager/ExtensionOptionsWindowPresentationCoordinator.swift'
+claim_ledger='Sumi/Managers/ExtensionManager/ExtensionOptionsWindowPresentationClaimLedger.swift'
+page_resolution='Sumi/Managers/ExtensionManager/ExtensionOptionsPageResolution.swift'
+page_owner='Sumi/Managers/ExtensionManager/ExtensionPageResolutionOwner.swift'
+options_bridge='Sumi/Managers/ExtensionManager/ExtensionControllerDelegateBridge+Options.swift'
+toolbar_options='Sumi/Managers/ExtensionManager/SumiExtensionToolbarActionSurface.swift'
 
 for file in "$service" "$delegate" "$registry" "$resolver" \
-  "$composition" "$transaction"; do
+  "$composition" "$transaction" "$coordinator" "$claim_ledger" \
+  "$page_resolution" "$page_owner" "$options_bridge" "$toolbar_options"; do
   if [[ ! -f "$file" ]]; then
     printf 'error: extension options-window role missing: %s\n' "$file" >&2
     exit 1
   fi
 done
 rg -q 'ExtensionOptionsWindowPresentationReceipt' "$service"
-rg -q 'runtime\.isCurrent\(receipt\)' "$service"
+rg -q 'ExtensionOptionsWindowPresentationCoordinator\.present' "$service"
+rg -q 'let claim = service\.issuePresentationClaim' "$coordinator"
+rg -q 'await runtime\.waitForWebsiteDataMutationAdmission' "$coordinator"
+claim_line="$(rg -n 'let claim = service\.issuePresentationClaim' "$coordinator" | cut -d: -f1)"
+await_line="$(rg -n 'await runtime\.waitForWebsiteDataMutationAdmission' "$coordinator" | cut -d: -f1)"
+if (( claim_line >= await_line )); then
+  echo 'error: options presentation claim must be issued before the first suspension' >&2
+  exit 1
+fi
+rg -q 'service\.presentationIsCurrent' "$coordinator"
+rg -q 'registry\.isCurrent\(claim\) && runtime\.isCurrent\(receipt\)' "$service"
 if rg -n 'fallbackProfileId|profileId\(for: extensionContext\)|currentProfile\(\)' \
-  "$service" "$composition" "$transaction"; then
+  "$service" "$composition" "$transaction" "$coordinator"; then
   echo 'error: options callback admission regained mutable identity fallback' >&2
   exit 1
 fi
-if rg -n '\bExtensionManager\b' "$service" "$transaction"; then
+if rg -n '\bExtensionManager\b' "$service" "$transaction" "$coordinator"; then
   echo 'error: options async presentation regained the ExtensionManager root' >&2
   exit 1
 fi
@@ -46,10 +63,27 @@ rg -q '=== evidence\.controller' "$composition"
 rg -q 'configuration\.sumiVisitedLinkStoreObject' "$composition"
 rg -q 'controller\.extensionContext\(for: sdkURL\) === context' "$resolver"
 rg -q 'FileManager\.default\.fileExists' "$resolver"
-if rg -n 'preferredURL|manifestURL|context\.baseURL|persistedPath' "$resolver" "$service"; then
+runtime_options_sources=(
+  "$resolver"
+  "$service"
+  "$coordinator"
+  "$transaction"
+  "$composition"
+  "$options_bridge"
+  "$toolbar_options"
+)
+if rg -n 'preferredURL|manifestURL|context\.baseURL|persistedPath|runtimeCatalog' \
+  "${runtime_options_sources[@]}"; then
   echo 'error: options URL regained recursive manifest/baseURL fallback' >&2
   exit 1
 fi
+if rg -n 'func computeOptionsPageURL|func resolvedURL\s*\(' \
+  Sumi/Managers/ExtensionManager --glob '*.swift'; then
+  echo 'error: dead legacy options URL resolution surface returned' >&2
+  exit 1
+fi
+rg -q 'ExtensionOptionsPageResolution\.storedPath' \
+  Sumi/Managers/ExtensionManager/ExtensionInstallationMetadataStore.swift
 
 if rg -n 'private(set)? var windows:|delegates: \[String:|profileIDsByExtensionID|cleanupWindow\(\s*for:' "$service"; then
   echo 'error: options-window parallel dictionaries or extension-ID callback retirement returned' >&2
@@ -62,15 +96,28 @@ if rg -n 'extensionI[dD]: String|private let extensionI[Dd]' "$service" | rg 'Ex
 fi
 
 rg -q 'struct ExtensionOptionsWindowReceipt: Hashable, Sendable' "$registry"
+rg -q 'struct ExtensionOptionsWindowPresentationClaim: Hashable, Sendable' "$claim_ledger"
 rg -q 'registrationID: UUID' "$registry"
 rg -q 'registrationsByExtensionID\[receipt.extensionID\]\?\.receipt == receipt' "$registry"
+rg -q 'presentationClaims\.isCurrent\(claim\)' "$registry"
+rg -q 'presentationClaims\.invalidate' "$registry"
+rg -q 'invalidateAllPresentationClaims' "$service"
+rg -q 'invalidatePresentationClaims\(backedBy:' "$service"
 rg -q 'private let registry = ExtensionOptionsWindowRegistry\(\)' "$service"
 rg -q 'func retire\(' "$service"
 rg -q 'delegate.bind\(tracked\)' "$transaction"
+rg -q 'createdWindow\.orderFront' "$transaction"
+if (( $(rg -Fc 'service.receipt(for: receipt.evidence.extensionID)' "$transaction") < 2 )); then
+  echo 'error: options registration must be exact before and after orderFront' >&2
+  exit 1
+fi
+if (( $(rg -c 'guard isCurrent' "$transaction") < 7 )); then
+  echo 'error: options transaction lost a presentation-claim stage gate' >&2
+  exit 1
+fi
 rg -Fq 'registry.owns(webView) == false' "$service"
-rg -Fq 'preserving: registry.registration' "$service"
-rg -Fq 'current?.webView !== webView' "$service"
-rg -Fq 'current?.window !== registration.window' "$service"
+rg -Fq 'registry.owns(window) == false' "$service"
+rg -Fq 'registry.owns(registration.window) == false' "$service"
 rg -q 'let optionsWindowReceipt = optionsWindows.receipt' \
   'Sumi/Managers/ExtensionManager/ExtensionScopedRuntimeRetirement.swift'
 if rg -n 'optionsWindows\.closeWindow\(for: extensionID\)' \
@@ -113,6 +160,10 @@ rg -q 'stale options admission rejected' \
   SumiTests/SafariExtensionWebViewControllerWiringTests.swift
 rg -q 'Current Profile B' SumiTests/SafariExtensionWebViewControllerWiringTests.swift
 rg -q 'replacingPackageRoot' SumiTests/SafariExtensionWebViewControllerWiringTests.swift
+rg -q 'older options presentation suspended' \
+  SumiTests/SafariExtensionWebViewControllerWiringTests.swift
+rg -q 'ReentrantOptionsWindow' \
+  SumiTests/SafariExtensionWebViewControllerWiringTests.swift
 rg -q 'testAuxiliaryCloseReentrancyCannotRetireReplacementOptionsWindow' \
   SumiTests/ExtensionScopedRuntimeRetirementTests.swift
 rg -q 'testCapturedAuxiliaryReceiptCannotCloseReentrantReplacementSession' \
@@ -124,10 +175,12 @@ fi
 
 for limit_and_file in \
   "190:$service" \
-  "120:$registry" \
+  "130:$registry" \
   "100:$resolver" \
   "150:$composition" \
-  "130:$transaction"; do
+  "130:$transaction" \
+  "100:$coordinator" \
+  "70:$claim_ledger"; do
   limit="${limit_and_file%%:*}"
   file="${limit_and_file#*:}"
   lines="$(wc -l < "$file" | tr -d ' ')"

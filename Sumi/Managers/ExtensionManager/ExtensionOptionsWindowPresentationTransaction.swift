@@ -1,30 +1,29 @@
 import AppKit
 import Foundation
 import WebKit
-
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionOptionsWindowPresentationTransaction {
     private unowned let service: ExtensionOptionsWindowService
     private let receipt: ExtensionOptionsWindowPresentationReceipt
     private let runtime: ExtensionOptionsWindowCallbackRuntime
-
+    private let claim: ExtensionOptionsWindowPresentationClaim
     init(
         service: ExtensionOptionsWindowService,
         receipt: ExtensionOptionsWindowPresentationReceipt,
-        runtime: ExtensionOptionsWindowCallbackRuntime
+        runtime: ExtensionOptionsWindowCallbackRuntime,
+        claim: ExtensionOptionsWindowPresentationClaim
     ) {
         self.service = service
         self.receipt = receipt
         self.runtime = runtime
+        self.claim = claim
     }
-
     func commit(completionHandler: @escaping (Error?) -> Void) {
-        guard runtime.isCurrent(receipt) else {
+        guard isCurrent else {
             completionHandler(CancellationError())
             return
         }
-
         let webView = WKWebView(
             frame: .zero,
             configuration: receipt.configuration
@@ -49,27 +48,20 @@ final class ExtensionOptionsWindowPresentationTransaction {
                 }
             }
         }
-
         if RuntimeDiagnostics.isDeveloperInspectionEnabled {
             webView.isInspectable = true
         }
         webView.allowsBackForwardNavigationGestures = true
-        guard runtime.isCurrent(receipt) else {
+        guard isCurrent else {
             completionHandler(CancellationError())
             return
         }
         webView.load(URLRequest(url: receipt.optionsURL))
-        guard runtime.isCurrent(receipt) else {
+        guard isCurrent else {
             completionHandler(CancellationError())
             return
         }
-
-        let createdWindow = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
-            styleMask: [.titled, .closable, .resizable, .miniaturizable],
-            backing: .buffered,
-            defer: false
-        )
+        let createdWindow = service.makePresentationWindow()
         window = createdWindow
         createdWindow.title = "\(receipt.displayName) – Options"
         let container = NSView(frame: createdWindow.contentView?.bounds ?? .zero)
@@ -84,11 +76,10 @@ final class ExtensionOptionsWindowPresentationTransaction {
         ])
         createdWindow.contentView = container
         createdWindow.center()
-        guard runtime.isCurrent(receipt) else {
+        guard isCurrent else {
             completionHandler(CancellationError())
             return
         }
-
         let delegate = ExtensionOptionsWindowDelegate(
             service: service,
             webView: webView,
@@ -96,25 +87,44 @@ final class ExtensionOptionsWindowPresentationTransaction {
         )
         webView.uiDelegate = delegate
         createdWindow.delegate = delegate
-        guard runtime.isCurrent(receipt) else {
+        guard isCurrent else {
             completionHandler(CancellationError())
             return
         }
-        let tracked = service.trackPresentedWindow(
+        guard let tracked = service.trackPresentedWindow(
             createdWindow,
             webView: webView,
             delegate: delegate,
             for: receipt.evidence.extensionID,
-            profileID: receipt.evidence.profileID
-        )
+            profileID: receipt.evidence.profileID,
+            claim: claim
+        ) else {
+            completionHandler(CancellationError())
+            return
+        }
         registration = tracked
+        guard isCurrent,
+              service.receipt(for: receipt.evidence.extensionID) == tracked
+        else {
+            completionHandler(CancellationError())
+            return
+        }
         delegate.bind(tracked)
         createdWindow.orderFront(nil)
-        guard runtime.isCurrent(receipt) else {
+        guard isCurrent,
+              service.receipt(for: receipt.evidence.extensionID) == tracked
+        else {
             completionHandler(CancellationError())
             return
         }
         committed = true
         completionHandler(nil)
+    }
+    private var isCurrent: Bool {
+        service.presentationIsCurrent(
+            claim,
+            receipt: receipt,
+            runtime: runtime
+        )
     }
 }
