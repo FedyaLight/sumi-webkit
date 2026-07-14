@@ -2,7 +2,9 @@ import Foundation
 import WebKit
 
 @MainActor
-final class SumiWebPageContextMenuUserScript: NSObject, SumiPageScript {
+final class SumiWebPageContextMenuUserScript: NSObject, SumiPageScript,
+    WKScriptMessageHandlerWithReply
+{
     private let context: String
 
     let source: String
@@ -105,30 +107,42 @@ final class SumiWebPageContextMenuUserScript: NSObject, SumiPageScript {
             }
 
             document.addEventListener("contextmenu", function(event) {
-                handler.postMessage({
+                const reply = handler.postMessage({
                     kind: classifyTarget(event.target),
                     selectedText: selectionTextForTarget(event.target)
                 });
+                if (reply && typeof reply.catch === "function") {
+                    reply.catch(() => {});
+                }
             }, { capture: true, passive: true });
         })();
         """
     }
 
     func userContentController(
-        _ userContentController: WKUserContentController,
+        _ _: WKUserContentController,
         didReceive message: WKScriptMessage
-    ) {
-        _ = userContentController
+    ) async -> (Any?, String?) {
         guard let dictionary = message.body as? [String: Any],
               let rawKind = dictionary["kind"] as? String,
               let kind = SumiWebPageContextMenuTargetKind(rawValue: rawKind),
               let webView = message.webView as? FocusableWKWebView
-        else { return }
+        else {
+            return (["accepted": false], nil)
+        }
         webView.contextMenu.record(
             SumiWebPageContextMenuTargetSnapshot(
                 kind: kind,
                 selectedText: dictionary["selectedText"] as? String
             )
         )
+        return (["accepted": true], nil)
+    }
+
+    func userContentController(
+        _ _: WKUserContentController,
+        didReceive message: WKScriptMessage
+    ) {
+        _ = message
     }
 }

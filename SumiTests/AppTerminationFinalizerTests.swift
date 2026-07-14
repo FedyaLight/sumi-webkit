@@ -8,19 +8,23 @@ final class AppTerminationFinalizerTests: XCTestCase {
     func testNoConfirmationReturnsTerminateLaterAndRepliesAfterFallbackFinalize() async {
         let finalizer = AppTerminationFinalizer(timeout: .seconds(5))
         let appDelegate = AppDelegate(terminationFinalizer: finalizer)
+        let fallbackSaved = expectation(description: "fallback persistence saved")
+        let terminationReplied = expectation(description: "termination reply delivered")
         var events: [String] = []
         appDelegate.fallbackPersistenceSave = {
             events.append("fallback-save")
+            fallbackSaved.fulfill()
         }
         appDelegate.terminationReply = { _, shouldTerminate in
             events.append("reply:\(shouldTerminate)")
+            terminationReplied.fulfill()
         }
 
         let terminateReply = appDelegate.applicationShouldTerminate(.shared)
 
         XCTAssertEqual(terminateReply, .terminateLater)
         XCTAssertTrue(events.isEmpty)
-        await waitUntil { events.count == 2 }
+        await fulfillment(of: [fallbackSaved, terminationReplied], timeout: 2)
         XCTAssertEqual(events, ["fallback-save", "reply:true"])
     }
 
@@ -28,24 +32,31 @@ final class AppTerminationFinalizerTests: XCTestCase {
         let finalizer = AppTerminationFinalizer(timeout: .seconds(5))
         let appDelegate = AppDelegate(terminationFinalizer: finalizer)
         let cleanupGate = TerminationTestGate()
-        let lease = RecordingTerminationLease(finalizationGate: cleanupGate)
+        let finalizationStarted = expectation(description: "termination finalization started")
+        let terminationReplied = expectation(description: "termination reply delivered")
+        let lease = RecordingTerminationLease(
+            finalizationGate: cleanupGate,
+            onFinalizationStarted: { finalizationStarted.fulfill() }
+        )
         let coordinator = RecordingTerminationCoordinator(lease: lease)
         var replies: [Bool] = []
         appDelegate.terminationCoordinator = coordinator
         appDelegate.fallbackPersistenceSave = {}
         appDelegate.terminationReply = { _, shouldTerminate in
             replies.append(shouldTerminate)
+            terminationReplied.fulfill()
         }
 
         // This is the exact post-confirmation path used by both the sheet and
         // modal fallback once the user chooses Quit.
         appDelegate.beginTerminationFinalization(for: .shared)
         XCTAssertEqual(coordinator.acquireCallCount, 1)
-        await waitUntil { lease.finalizationStarted }
+        await fulfillment(of: [finalizationStarted], timeout: 2)
 
         XCTAssertTrue(replies.isEmpty)
         cleanupGate.open()
-        await waitUntil { replies == [true] }
+        await fulfillment(of: [terminationReplied], timeout: 2)
+        XCTAssertEqual(replies, [true])
         XCTAssertEqual(lease.finalizationCallCount, 1)
     }
 
@@ -53,7 +64,12 @@ final class AppTerminationFinalizerTests: XCTestCase {
         let finalizer = AppTerminationFinalizer(timeout: .seconds(5))
         let appDelegate = AppDelegate(terminationFinalizer: finalizer)
         let cleanupGate = TerminationTestGate()
-        let lease = RecordingTerminationLease(finalizationGate: cleanupGate)
+        let finalizationStarted = expectation(description: "termination finalization started")
+        let terminationReplied = expectation(description: "termination reply delivered")
+        let lease = RecordingTerminationLease(
+            finalizationGate: cleanupGate,
+            onFinalizationStarted: { finalizationStarted.fulfill() }
+        )
         let coordinator = RecordingTerminationCoordinator(lease: lease)
         var fallbackSaveCount = 0
         var replies: [Bool] = []
@@ -61,11 +77,12 @@ final class AppTerminationFinalizerTests: XCTestCase {
         appDelegate.fallbackPersistenceSave = { fallbackSaveCount += 1 }
         appDelegate.terminationReply = { _, shouldTerminate in
             replies.append(shouldTerminate)
+            terminationReplied.fulfill()
         }
 
         let first = appDelegate.applicationShouldTerminate(.shared)
         let duplicate = appDelegate.applicationShouldTerminate(.shared)
-        await waitUntil { lease.finalizationStarted }
+        await fulfillment(of: [finalizationStarted], timeout: 2)
 
         XCTAssertEqual(first, .terminateLater)
         XCTAssertEqual(duplicate, .terminateLater)
@@ -73,8 +90,7 @@ final class AppTerminationFinalizerTests: XCTestCase {
         XCTAssertTrue(replies.isEmpty)
 
         cleanupGate.open()
-        await waitUntil { replies == [true] }
-        await Task.yield()
+        await fulfillment(of: [terminationReplied], timeout: 2)
         XCTAssertEqual(replies, [true])
         XCTAssertEqual(coordinator.prepareCallCount, 1)
         XCTAssertEqual(coordinator.acquireCallCount, 1)
@@ -82,8 +98,14 @@ final class AppTerminationFinalizerTests: XCTestCase {
     }
 
     func testTimeoutRepliesExactlyOnceAndLateFinalizeCannotReplyAgain() async {
-        let timeoutGate = TerminationTestGate()
+        let timeoutWaitStarted = expectation(description: "termination timeout wait started")
+        let timeoutGate = TerminationTestGate(
+            onWaitStarted: { timeoutWaitStarted.fulfill() }
+        )
         let finalizeGate = TerminationTestGate()
+        let finalizationStarted = expectation(description: "termination finalization started")
+        let finalizationCompleted = expectation(description: "late finalization completed")
+        let terminationReplied = expectation(description: "termination reply delivered")
         var replyReasons: [AppTerminationFinalizer.ReplyReason] = []
         var replies: [Bool] = []
         var finalizeStarted = false
@@ -96,52 +118,47 @@ final class AppTerminationFinalizerTests: XCTestCase {
         XCTAssertTrue(finalizer.begin(
             finalize: {
                 finalizeStarted = true
+                finalizationStarted.fulfill()
                 await finalizeGate.wait()
                 finalizeCompleted = true
+                finalizationCompleted.fulfill()
             },
-            reply: { replies.append($0) }
+            reply: {
+                replies.append($0)
+                terminationReplied.fulfill()
+            }
         ))
-        await waitUntil { finalizeStarted && timeoutGate.hasWaiter }
+        await fulfillment(of: [finalizationStarted, timeoutWaitStarted], timeout: 2)
+        XCTAssertTrue(finalizeStarted)
         XCTAssertTrue(replies.isEmpty)
 
         timeoutGate.open()
-        await waitUntil { replies == [true] }
+        await fulfillment(of: [terminationReplied], timeout: 2)
+        XCTAssertEqual(replies, [true])
         XCTAssertEqual(replyReasons, [.timedOut])
         XCTAssertFalse(finalizeCompleted)
 
         finalizeGate.open()
-        await waitUntil { finalizeCompleted }
-        await Task.yield()
+        await fulfillment(of: [finalizationCompleted], timeout: 2)
+        XCTAssertTrue(finalizeCompleted)
         XCTAssertEqual(replies, [true])
         XCTAssertEqual(replyReasons, [.timedOut])
-    }
-
-    private func waitUntil(
-        _ predicate: @escaping @MainActor () -> Bool
-    ) async {
-        let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: .seconds(2))
-        while predicate() == false, clock.now < deadline {
-            do {
-                try await Task.sleep(for: .milliseconds(5))
-            } catch {
-                XCTFail("Termination wait was cancelled")
-                return
-            }
-        }
-        XCTAssertTrue(predicate())
     }
 }
 
 @MainActor
 private final class TerminationTestGate {
     private var continuation: CheckedContinuation<Void, Never>?
+    private let onWaitStarted: @MainActor () -> Void
     private(set) var isOpen = false
 
-    var hasWaiter: Bool { continuation != nil }
+    init(onWaitStarted: @escaping @MainActor () -> Void = {}) {
+        self.onWaitStarted = onWaitStarted
+    }
 
     func wait() async {
         guard isOpen == false else { return }
+        onWaitStarted()
         await withCheckedContinuation { continuation = $0 }
     }
 
@@ -176,16 +193,20 @@ private final class RecordingTerminationCoordinator: BrowserTerminationCoordinat
 @MainActor
 private final class RecordingTerminationLease: BrowserTerminationFinalizing {
     private let finalizationGate: TerminationTestGate
+    private let onFinalizationStarted: @MainActor () -> Void
     private(set) var finalizationCallCount = 0
-    private(set) var finalizationStarted = false
 
-    init(finalizationGate: TerminationTestGate) {
+    init(
+        finalizationGate: TerminationTestGate,
+        onFinalizationStarted: @escaping @MainActor () -> Void = {}
+    ) {
         self.finalizationGate = finalizationGate
+        self.onFinalizationStarted = onFinalizationStarted
     }
 
     func finalizeTermination() async {
         finalizationCallCount += 1
-        finalizationStarted = true
+        onFinalizationStarted()
         await finalizationGate.wait()
     }
 }

@@ -41,9 +41,11 @@ final class SumiProfileRoutingTests: XCTestCase {
     func testAdoptProfileIfNeededSwitchesToWindowProfile() async throws {
         let currentProfile = Profile(name: "Current")
         let targetProfile = Profile(name: "Target")
+        let profileSwitched = expectation(description: "target profile switch requested")
         let support = try FakeSumiProfileRoutingSupport(
             currentProfile: currentProfile,
-            profiles: [currentProfile, targetProfile]
+            profiles: [currentProfile, targetProfile],
+            onSwitch: { profileSwitched.fulfill() }
         )
 
         let windowState = BrowserWindowState()
@@ -55,7 +57,7 @@ final class SumiProfileRoutingTests: XCTestCase {
             support: support
         )
 
-        try? await Task.sleep(nanoseconds: 200_000_000)
+        await fulfillment(of: [profileSwitched], timeout: 2)
         XCTAssertEqual(support.switchedProfileId, targetProfile.id)
         XCTAssertEqual(support.switchedWindowId, windowState.id)
     }
@@ -151,9 +153,15 @@ private final class FakeSumiProfileRoutingSupport: SumiProfileRoutingSupport {
 
     private(set) var switchedProfileId: UUID?
     private(set) var switchedWindowId: UUID?
+    private let onSwitch: @MainActor () -> Void
 
-    init(currentProfile: Profile?, profiles: [Profile]) throws {
+    init(
+        currentProfile: Profile?,
+        profiles: [Profile],
+        onSwitch: @escaping @MainActor () -> Void = {}
+    ) throws {
         self.currentProfile = currentProfile
+        self.onSwitch = onSwitch
         startupContainer = try ModelContainer(
             for: SumiStartupPersistence.schema,
             configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
@@ -169,5 +177,6 @@ private final class FakeSumiProfileRoutingSupport: SumiProfileRoutingSupport {
     ) async {
         switchedProfileId = profile.id
         switchedWindowId = windowState?.id
+        onSwitch()
     }
 }

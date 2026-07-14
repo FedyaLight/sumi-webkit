@@ -73,25 +73,25 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
         let firstWebView = try await makeWebView(with: tab, transaction: transaction)
         let secondWebView = try await makeWebView(with: tab, transaction: transaction)
 
-        try await postContextMenuTarget(
+        let firstAccepted = try await postContextMenuTarget(
             kind: .link,
             selectedText: "first selection",
             context: try contextMenuContext(in: firstWebView),
             in: firstWebView
         )
-        let receivedFirstTarget = try await waitForContextMenuTarget(.link, on: firstWebView)
-        let firstTarget = try XCTUnwrap(receivedFirstTarget)
+        XCTAssertTrue(firstAccepted)
+        let firstTarget = try XCTUnwrap(firstWebView.contextMenu.recentTarget())
         XCTAssertEqual(firstTarget.selectedText, "first selection")
         XCTAssertNil(secondWebView.contextMenu.recentTarget())
 
-        try await postContextMenuTarget(
+        let secondAccepted = try await postContextMenuTarget(
             kind: .editable,
             selectedText: "second selection",
             context: try contextMenuContext(in: secondWebView),
             in: secondWebView
         )
-        let receivedSecondTarget = try await waitForContextMenuTarget(.editable, on: secondWebView)
-        let secondTarget = try XCTUnwrap(receivedSecondTarget)
+        XCTAssertTrue(secondAccepted)
+        let secondTarget = try XCTUnwrap(secondWebView.contextMenu.recentTarget())
         XCTAssertEqual(secondTarget.selectedText, "second selection")
         XCTAssertEqual(firstWebView.contextMenu.recentTarget()?.kind, .link)
     }
@@ -213,21 +213,17 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
         let webView = try await makeWebView(with: tab, transaction: transaction)
         XCTAssertEqual(evidenceChangeCount, 1)
 
-        try await evaluate(
-            "window.__sumiTabSuspension.canBeSuspended(false);",
-            in: webView
-        )
-        try await waitForSuspensionDecision(
-            .vetoed(.pageReportedUnableToSuspend),
-            on: tab
+        let vetoAccepted = try await postTabSuspensionCanBeSuspended(false, in: webView)
+        XCTAssertTrue(vetoAccepted)
+        XCTAssertEqual(
+            tab.committedDocumentRuntime.suspensionDecision,
+            .vetoed(.pageReportedUnableToSuspend)
         )
         XCTAssertEqual(evidenceChangeCount, 2)
 
-        try await evaluate(
-            "window.__sumiTabSuspension.canBeSuspended(true);",
-            in: webView
-        )
-        try await waitForSuspensionDecision(.allowed, on: tab)
+        let allowAccepted = try await postTabSuspensionCanBeSuspended(true, in: webView)
+        XCTAssertTrue(allowAccepted)
+        XCTAssertEqual(tab.committedDocumentRuntime.suspensionDecision, .allowed)
         XCTAssertEqual(evidenceChangeCount, 3)
     }
 
@@ -251,14 +247,14 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
             transaction: secondTransaction
         )
 
-        try await postTabSuspensionCanBeSuspended(
+        let secondAccepted = try await postTabSuspensionCanBeSuspended(
             false,
             in: secondWebView
         )
-
-        try await waitForSuspensionDecision(
-            .vetoed(.pageReportedUnableToSuspend),
-            on: secondTab
+        XCTAssertTrue(secondAccepted)
+        XCTAssertEqual(
+            secondTab.committedDocumentRuntime.suspensionDecision,
+            .vetoed(.pageReportedUnableToSuspend)
         )
         XCTAssertEqual(
             firstTab.committedDocumentRuntime.suspensionDecision,
@@ -275,32 +271,38 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
         )
         let webView = try await makeWebView(with: tab, transaction: transaction)
 
-        try await evaluate(
+        let allMessagesWereRejected = try await webView.callAsyncJavaScript(
             """
             const handler = window.webkit?.messageHandlers?.["\(tabSuspensionContext(for: tab))"];
-            handler.postMessage({
-                context: "\(tabSuspensionContext(for: tab))",
-                featureName: "tabSuspension",
-                method: "canBeSuspended",
-                params: { canBeSuspended: "false" }
-            });
-            handler.postMessage({
-                context: "\(tabSuspensionContext(for: tab))",
-                featureName: "tabSuspension",
-                method: "unknownMethod",
-                params: { canBeSuspended: false }
-            });
-            handler.postMessage({
-                context: "\(tabSuspensionContext(for: tab))",
-                featureName: "unknownFeature",
-                method: "canBeSuspended",
-                params: { canBeSuspended: false }
-            });
+            if (!handler) { throw new Error("tab suspension handler missing"); }
+            const replies = await Promise.all([
+                handler.postMessage({
+                    context: "\(tabSuspensionContext(for: tab))",
+                    featureName: "tabSuspension",
+                    method: "canBeSuspended",
+                    params: { canBeSuspended: "false" }
+                }),
+                handler.postMessage({
+                    context: "\(tabSuspensionContext(for: tab))",
+                    featureName: "tabSuspension",
+                    method: "unknownMethod",
+                    params: { canBeSuspended: false }
+                }),
+                handler.postMessage({
+                    context: "\(tabSuspensionContext(for: tab))",
+                    featureName: "unknownFeature",
+                    method: "canBeSuspended",
+                    params: { canBeSuspended: false }
+                })
+            ]);
+            return replies.every(reply => reply?.accepted === false);
             """,
-            in: webView
-        )
+            arguments: [:],
+            in: nil,
+            contentWorld: .page
+        ) as? Bool
 
-        try await Task.sleep(nanoseconds: 200_000_000)
+        XCTAssertEqual(allMessagesWereRejected, true)
         XCTAssertEqual(tab.committedDocumentRuntime.suspensionDecision, .allowed)
     }
 
@@ -311,21 +313,23 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
             mainFrameRuntimeTransaction: transaction
         )
         let webView = try await makeWebView(with: tab, transaction: transaction)
-        try await evaluate(
-            "window.__sumiTabSuspension.canBeSuspended(true);",
-            in: webView
-        )
-        try await waitForSuspensionDecision(.allowed, on: tab)
+        let canonicalAccepted = try await postTabSuspensionCanBeSuspended(true, in: webView)
+        XCTAssertTrue(canonicalAccepted)
 
         let context = tabSuspensionContext(for: tab)
-        _ = try await webView.callAsyncJavaScript(
+        let reply = try await webView.callAsyncJavaScript(
             """
-            return await new Promise(resolve => {
+            return await new Promise((resolve, reject) => {
                 const frame = document.createElement("iframe");
                 frame.srcdoc = "<!doctype html><body>frame</body>";
-                frame.onload = () => {
-                    frame.contentWindow.webkit?.messageHandlers?.[context]
-                        ?.postMessage({
+                frame.onload = async () => {
+                    const handler = frame.contentWindow.webkit?.messageHandlers?.[context];
+                    if (!handler) {
+                        reject(new Error("subframe tab suspension handler missing"));
+                        return;
+                    }
+                    try {
+                        resolve(await handler.postMessage({
                             context,
                             method: "pageState",
                             params: {
@@ -333,8 +337,10 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
                                 sequence: 1000,
                                 canBeSuspended: false
                             }
-                        });
-                    resolve(true);
+                        }));
+                    } catch (error) {
+                        reject(error);
+                    }
                 };
                 document.body.appendChild(frame);
             });
@@ -343,8 +349,8 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
             in: nil,
             contentWorld: .page
         )
-        try await Task.sleep(nanoseconds: 100_000_000)
 
+        XCTAssertFalse(try acceptedReply(from: reply))
         XCTAssertEqual(tab.committedDocumentRuntime.suspensionDecision, .allowed)
     }
 
@@ -360,17 +366,14 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
             transaction: transaction,
             establishDocument: false
         )
-        try await evaluate(
-            "window.__sumiTabSuspension.canBeSuspended(true);",
-            in: trackedWebView
-        )
-        try await waitForSuspensionDecision(.allowed, on: tab)
+        let trackedAccepted = try await postTabSuspensionCanBeSuspended(true, in: trackedWebView)
+        XCTAssertTrue(trackedAccepted)
 
-        try await evaluate(
-            "window.__sumiTabSuspension.canBeSuspended(false);",
+        let untrackedAccepted = try await postTabSuspensionCanBeSuspended(
+            false,
             in: untrackedWebView
         )
-        try await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertFalse(untrackedAccepted)
 
         XCTAssertEqual(tab.committedDocumentRuntime.suspensionDecision, .allowed)
     }
@@ -382,6 +385,16 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
             mainFrameRuntimeTransaction: transaction
         )
         let webView = try await makeWebView(with: tab, transaction: transaction)
+        let enteredPictureInPicture = expectation(
+            description: "subframe PiP suspension decision published"
+        )
+        tab.navigationRuntime.lifecycleNavigationRuntime
+            .reconcileDocumentSuspensionState = { tab in
+                if tab.committedDocumentRuntime.suspensionDecision
+                    == .vetoed(.pictureInPicture) {
+                    enteredPictureInPicture.fulfill()
+                }
+            }
 
         try await evaluate(
             """
@@ -403,11 +416,21 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
             """,
             in: webView
         )
-        try await waitForSuspensionDecision(
-            .vetoed(.pictureInPicture),
-            on: tab
+        await fulfillment(of: [enteredPictureInPicture], timeout: 5.0)
+        XCTAssertEqual(
+            tab.committedDocumentRuntime.suspensionDecision,
+            .vetoed(.pictureInPicture)
         )
 
+        let leftPictureInPicture = expectation(
+            description: "subframe PiP suspension veto released"
+        )
+        tab.navigationRuntime.lifecycleNavigationRuntime
+            .reconcileDocumentSuspensionState = { tab in
+                if tab.committedDocumentRuntime.suspensionDecision == .allowed {
+                    leftPictureInPicture.fulfill()
+                }
+            }
         try await evaluate(
             """
             const frame = document.getElementById("pip-frame");
@@ -418,7 +441,8 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
             """,
             in: webView
         )
-        try await waitForSuspensionDecision(.allowed, on: tab)
+        await fulfillment(of: [leftPictureInPicture], timeout: 5.0)
+        XCTAssertEqual(tab.committedDocumentRuntime.suspensionDecision, .allowed)
     }
 
     private func linkContext(for tab: Tab) -> String {
@@ -467,7 +491,12 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
                 for: tab,
                 transaction: transaction
             )
-            try await waitForSuspensionDecision(.allowed, on: tab)
+            let initialEvidenceAccepted = try await postTabSuspensionCanBeSuspended(
+                true,
+                in: webView
+            )
+            XCTAssertTrue(initialEvidenceAccepted)
+            XCTAssertEqual(tab.committedDocumentRuntime.suspensionDecision, .allowed)
         }
         return webView
     }
@@ -505,61 +534,53 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
         selectedText: String,
         context: String,
         in webView: WKWebView
-    ) async throws {
-        try await evaluate(
+    ) async throws -> Bool {
+        let reply = try await webView.callAsyncJavaScript(
             """
-            const handler = window.webkit?.messageHandlers?.["\(context)"];
-            if (handler) {
-                handler.postMessage({
-                    kind: "\(kind.rawValue)",
-                    selectedText: "\(selectedText)"
-                });
-            }
+            const handler = window.webkit?.messageHandlers?.[context];
+            if (!handler) { throw new Error("context menu handler missing"); }
+            return await handler.postMessage({ kind, selectedText });
             """,
-            in: webView,
+            arguments: [
+                "context": context,
+                "kind": kind.rawValue,
+                "selectedText": selectedText,
+            ],
+            in: nil,
             contentWorld: .defaultClient
         )
-    }
-
-    private func waitForContextMenuTarget(
-        _ kind: SumiWebPageContextMenuTargetKind,
-        on webView: FocusableWKWebView
-    ) async throws -> SumiWebPageContextMenuTargetSnapshot? {
-        for _ in 0..<100 {
-            if let target = webView.contextMenu.recentTarget(), target.kind == kind {
-                return target
-            }
-            try await Task.sleep(nanoseconds: 20_000_000)
-        }
-        return nil
+        return try acceptedReply(from: reply)
     }
 
     private func postTabSuspensionCanBeSuspended(
         _ canBeSuspended: Bool,
         in webView: WKWebView
-    ) async throws {
-        try await evaluate(
-            "window.__sumiTabSuspension.canBeSuspended(\(canBeSuspended ? "true" : "false"));",
-            in: webView
+    ) async throws -> Bool {
+        let reply = try await webView.callAsyncJavaScript(
+            """
+            const suspension = window.__sumiTabSuspension;
+            if (!suspension) { throw new Error("tab suspension API missing"); }
+            return await suspension.canBeSuspended(canBeSuspended);
+            """,
+            arguments: ["canBeSuspended": canBeSuspended],
+            in: nil,
+            contentWorld: .page
         )
+        return try acceptedReply(from: reply)
     }
 
-    private func waitForSuspensionDecision(
-        _ expected: TabDocumentSuspensionDecision,
-        on tab: Tab,
+    private func acceptedReply(
+        from value: Any?,
         file: StaticString = #filePath,
         line: UInt = #line
-    ) async throws {
-        for _ in 0..<100 {
-            if tab.committedDocumentRuntime.suspensionDecision == expected {
-                return
-            }
-            try await Task.sleep(nanoseconds: 20_000_000)
-        }
-
-        XCTAssertEqual(
-            tab.committedDocumentRuntime.suspensionDecision,
-            expected,
+    ) throws -> Bool {
+        let dictionary = try XCTUnwrap(
+            value as? [String: Any],
+            file: file,
+            line: line
+        )
+        return try XCTUnwrap(
+            dictionary["accepted"] as? Bool,
             file: file,
             line: line
         )
