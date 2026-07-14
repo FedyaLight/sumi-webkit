@@ -15,7 +15,7 @@ final class WebViewLifecycleService {
     private let ownershipQuery: WebViewOwnershipQuery
     private let resolveTab: @MainActor (UUID) -> Tab?
     private let processRecovery: WebContentProcessRecoveryService
-    private let deferredProtectedCommands: DeferredProtectedCommandScheduler
+    private let deferredCommandProcessor: DeferredProtectedCommandProcessor
     private let mediaProtection: WebViewMediaProtectionOwner
     private let websiteDataCleanup: WebsiteDataCleanupService
     private let replacementPipeline: WebViewReplacementPipeline
@@ -23,7 +23,7 @@ final class WebViewLifecycleService {
     private let compositor: WebViewCompositorRuntime
     private let materialization: TabWebViewMaterializationService
     private let visibleRuntime: VisibleWebViewRuntimeOwner
-    private let cleanupScope: WebViewCleanupScopeOwner
+    private let windowCleanup: WebViewWindowCleanupOwner
     private let trackedRegistration: WebViewTrackedRegistrationOwner
     private let physicalCleanup: WebViewPhysicalCleanupService
     private let shutdownRuntime: WebViewShutdownRuntimeProvider
@@ -34,7 +34,7 @@ final class WebViewLifecycleService {
         ownershipQuery: WebViewOwnershipQuery,
         resolveTab: @escaping @MainActor (UUID) -> Tab?,
         processRecovery: WebContentProcessRecoveryService,
-        deferredProtectedCommands: DeferredProtectedCommandScheduler,
+        deferredCommandProcessor: DeferredProtectedCommandProcessor,
         mediaProtection: WebViewMediaProtectionOwner,
         websiteDataCleanup: WebsiteDataCleanupService,
         replacementPipeline: WebViewReplacementPipeline,
@@ -42,7 +42,7 @@ final class WebViewLifecycleService {
         compositor: WebViewCompositorRuntime,
         materialization: TabWebViewMaterializationService,
         visibleRuntime: VisibleWebViewRuntimeOwner,
-        cleanupScope: WebViewCleanupScopeOwner,
+        windowCleanup: WebViewWindowCleanupOwner,
         trackedRegistration: WebViewTrackedRegistrationOwner,
         physicalCleanup: WebViewPhysicalCleanupService,
         shutdownRuntime: WebViewShutdownRuntimeProvider
@@ -52,7 +52,7 @@ final class WebViewLifecycleService {
         self.ownershipQuery = ownershipQuery
         self.resolveTab = resolveTab
         self.processRecovery = processRecovery
-        self.deferredProtectedCommands = deferredProtectedCommands
+        self.deferredCommandProcessor = deferredCommandProcessor
         self.mediaProtection = mediaProtection
         self.websiteDataCleanup = websiteDataCleanup
         self.replacementPipeline = replacementPipeline
@@ -60,7 +60,7 @@ final class WebViewLifecycleService {
         self.compositor = compositor
         self.materialization = materialization
         self.visibleRuntime = visibleRuntime
-        self.cleanupScope = cleanupScope
+        self.windowCleanup = windowCleanup
         self.trackedRegistration = trackedRegistration
         self.physicalCleanup = physicalCleanup
         self.shutdownRuntime = shutdownRuntime
@@ -110,50 +110,6 @@ final class WebViewLifecycleService {
                 owner: owner,
                 expectedWebView: expectedWebView
             )
-        }
-    )
-
-    private lazy var windowCleanup = WebViewWindowCleanupOwner(
-        cleanupScopeOwner: cleanupScope,
-        webViewSessions: webViewSessions,
-        visibleWebViewRuntimeOwner: visibleRuntime,
-        mediaProtectionOwner: mediaProtection,
-        tabForID: { [resolveTab] tabID in
-            resolveTab(tabID)
-        },
-        isWebViewProtectedFromCompositorMutation: { [weak self] webView in
-            self?.protection.isProtected(webView) ?? false
-        },
-        enqueueDeferredProtectedCommand: { [weak self] command, webView, reason in
-            self?.protection.schedule(
-                command,
-                for: webView,
-                reason: reason
-            ).wasScheduled ?? false
-        },
-        cleanupUnprotectedTrackedWebView: { [weak self] webView, owner, tabHandle in
-            guard let self else { return false }
-            return self.cleanupUnprotectedTrackedWebView(
-                webView,
-                owner: owner,
-                tab: self.tabForPackageCallback(tabHandle)
-            )
-        },
-        refreshPrimaryTrackedWebView: { [weak self] tabHandle in
-            guard let self,
-                  let tab = self.tabForPackageCallback(tabHandle) else {
-                return
-            }
-            self.materialization.refreshPrimary(for: tab)
-        },
-        removeCompositorContainerView: { [weak self] windowID in
-            self?.compositor.removeContainer(for: windowID)
-        },
-        flushDeferredProtectedCommands: { [weak self] webViewID in
-            self?.protection.flush(for: webViewID)
-        },
-        finishCleanupSuppression: { [weak self] webViewIDs in
-            self?.protection.finishCleanupSuppression(for: webViewIDs)
         }
     )
 
@@ -250,7 +206,7 @@ final class WebViewLifecycleService {
 
         replacementPipeline.resetForTerminalShutdown()
         processRecovery.resetForTerminalShutdown()
-        deferredProtectedCommands.resetForTerminalShutdown()
+        deferredCommandProcessor.resetForTerminalShutdown()
         mediaProtection.resetForTerminalShutdown()
         websiteDataCleanup.resetForTerminalShutdown()
 

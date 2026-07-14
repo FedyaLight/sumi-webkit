@@ -7,7 +7,8 @@ import WebKit
 @MainActor
 final class WebViewProtectionRuntime {
     private let mediaProtection: WebViewMediaProtectionOwner
-    private let protectedCommands: DeferredProtectedCommandScheduler
+    private let commandAdmission: DeferredProtectedCommandAdmissionService
+    private let commandProcessor: DeferredProtectedCommandProcessor
     private let processRecovery: WebContentProcessRecoveryService
     private let webViewSessions: WebViewSessionRepository
     private let webViews: WebViewRuntimeWebViewResolver
@@ -16,7 +17,8 @@ final class WebViewProtectionRuntime {
 
     init(
         mediaProtection: WebViewMediaProtectionOwner,
-        protectedCommands: DeferredProtectedCommandScheduler,
+        commandAdmission: DeferredProtectedCommandAdmissionService,
+        commandProcessor: DeferredProtectedCommandProcessor,
         processRecovery: WebContentProcessRecoveryService,
         webViewSessions: WebViewSessionRepository,
         webViews: WebViewRuntimeWebViewResolver,
@@ -24,7 +26,8 @@ final class WebViewProtectionRuntime {
         websiteDataCleanup: WebsiteDataCleanupService
     ) {
         self.mediaProtection = mediaProtection
-        self.protectedCommands = protectedCommands
+        self.commandAdmission = commandAdmission
+        self.commandProcessor = commandProcessor
         self.processRecovery = processRecovery
         self.webViewSessions = webViewSessions
         self.webViews = webViews
@@ -129,7 +132,7 @@ final class WebViewProtectionRuntime {
         for webView: WKWebView,
         reason: String
     ) -> DeferredProtectedCommandSchedulingOutcome {
-        protectedCommands.schedule(command, for: webView, reason: reason)
+        commandAdmission.schedule(command, for: webView, reason: reason)
     }
 
     func resolveWebView(with identifier: ObjectIdentifier) -> WKWebView? {
@@ -137,7 +140,7 @@ final class WebViewProtectionRuntime {
     }
 
     func flush(for webViewID: ObjectIdentifier) {
-        protectedCommands.flushCommands(for: webViewID)
+        commandProcessor.flushCommands(for: webViewID)
         processRecovery.retryPendingImmediately(for: webViewID)
     }
 
@@ -146,10 +149,6 @@ final class WebViewProtectionRuntime {
             reason: "\(reason).staleBookkeeping"
         )
         websiteDataCleanup.webViewsDidLeaveRuntime(staleIDs)
-        protectedCommands.pruneInvalidCommands(reason: reason)
-    }
-
-    func finishCleanupSuppression(for webViewIDs: [ObjectIdentifier]) {
-        websiteDataCleanup.webViewsDidLeaveRuntime(webViewIDs)
+        commandAdmission.pruneInvalidCommands(reason: reason)
     }
 }

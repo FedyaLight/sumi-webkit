@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Protected commands are split into pure authority, stateless execution, and
-# stateful scheduling. This guard prevents those responsibilities from merging.
+# Protected commands are split into pure authority, admission, processing, and
+# stateless execution. This guard prevents those responsibilities from merging.
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -9,10 +9,11 @@ cd "$repo_root"
 runtime='Sumi/Managers/WebViewRuntime'
 authority="$runtime/DeferredWebViewCommandAuthority.swift"
 executor="$runtime/DeferredWebViewCommandExecutor.swift"
-scheduler="$runtime/DeferredProtectedCommandScheduler.swift"
+admission="$runtime/DeferredProtectedCommandAdmissionService.swift"
+processor="$runtime/DeferredProtectedCommandProcessor.swift"
 command='Packages/SumiWebRuntime/Sources/SumiWebRuntime/Commands/DeferredWebViewCommand.swift'
 
-for file in "$authority" "$executor" "$scheduler" "$command"; do
+for file in "$authority" "$executor" "$admission" "$processor" "$command"; do
   [[ -f "$file" ]] || {
     printf 'error: protected-command boundary file missing: %s\n' "$file" >&2
     exit 1
@@ -22,6 +23,7 @@ done
 obsolete=(
   "$runtime/WebViewProtectedCommandDispatchOwner.swift"
   "$runtime/WebViewDeferredProtectedCommandExecutionOwner.swift"
+  "$runtime/DeferredProtectedCommandScheduler.swift"
 )
 for file in "${obsolete[@]}"; do
   [[ ! -e "$file" ]] || {
@@ -37,14 +39,20 @@ if rg -n 'WebViewProtectedCommandDispatchOwner|WebViewDeferredProtectedCommandEx
 fi
 
 if rg -n 'struct (Dependencies|Runtime|ValidationContext)' \
-  "$authority" "$executor" "$scheduler"; then
+  "$authority" "$executor" "$admission" "$processor"; then
   printf 'error: protected-command responsibility hidden in a generic bag\n' >&2
   exit 1
 fi
 
+if rg -n '\b(Tab|WebViewSessionRepository|VisibleWebViewRuntimeOwner|WebViewWindowServices|DeferredWebViewCommandExecutor)\b|\bTask\b|switch[[:space:]]+command' \
+  "$admission"; then
+  printf 'error: admission regained execution, task, model, or dispatch ownership\n' >&2
+  exit 1
+fi
+
 if rg -n '\b(Tab|WebViewSessionRepository|VisibleWebViewRuntimeOwner|WebViewWindowServices)\b|switch[[:space:]]+command' \
-  "$scheduler"; then
-  printf 'error: scheduler regained model validation or command dispatch\n' >&2
+  "$processor"; then
+  printf 'error: processor regained model validation or command dispatch\n' >&2
   exit 1
 fi
 
@@ -81,4 +89,4 @@ if (( ${authority_test_count:-0} < 14 )); then
   exit 1
 fi
 
-echo 'protected command authority/executor/scheduler boundary passed'
+echo 'protected command authority/admission/processor/executor boundary passed'

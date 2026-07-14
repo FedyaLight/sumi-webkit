@@ -11,14 +11,14 @@ final class DeferredProtectedCommandSchedulerTests: XCTestCase {
         let webView = WKWebView()
         let lease = fixture.mediaProtection.beginVisualHandoffProtection(for: webView)
 
-        XCTAssertEqual(fixture.scheduler.schedule(
+        XCTAssertEqual(fixture.admission.schedule(
             .removeWebViewFromContainers(webViewID: ObjectIdentifier(webView)),
             for: webView,
             reason: "test.flush"
         ), .scheduled)
 
         _ = fixture.mediaProtection.finishVisualHandoffProtection(lease)
-        fixture.scheduler.flushCommands(for: ObjectIdentifier(webView))
+        fixture.processor.flushCommands(for: ObjectIdentifier(webView))
         await drainSchedulerTasks()
 
         XCTAssertEqual(fixture.effects.containerRemovalAttempts, 1)
@@ -31,15 +31,15 @@ final class DeferredProtectedCommandSchedulerTests: XCTestCase {
         let fixture = SchedulerFixture()
         let webView = WKWebView()
         let lease = fixture.mediaProtection.beginVisualHandoffProtection(for: webView)
-        XCTAssertTrue(fixture.scheduler.schedule(
+        XCTAssertTrue(fixture.admission.schedule(
             .removeWebViewFromContainers(webViewID: ObjectIdentifier(webView)),
             for: webView,
             reason: "test.duplicate-flush"
         ).wasScheduled)
 
         _ = fixture.mediaProtection.finishVisualHandoffProtection(lease)
-        fixture.scheduler.flushCommands(for: ObjectIdentifier(webView))
-        fixture.scheduler.flushCommands(for: ObjectIdentifier(webView))
+        fixture.processor.flushCommands(for: ObjectIdentifier(webView))
+        fixture.processor.flushCommands(for: ObjectIdentifier(webView))
         await drainSchedulerTasks()
 
         XCTAssertEqual(fixture.effects.containerRemovalAttempts, 1)
@@ -57,16 +57,16 @@ final class DeferredProtectedCommandSchedulerTests: XCTestCase {
         )
         fixture.spaceIntents.current = intent
         let lease = fixture.mediaProtection.beginVisualHandoffProtection(for: webView)
-        XCTAssertTrue(fixture.scheduler.schedule(
+        XCTAssertTrue(fixture.admission.schedule(
             .assignSpaceProfile(intent: intent),
             for: webView,
             reason: "test.prune"
         ).wasScheduled)
 
         fixture.spaceIntents.current = nil
-        fixture.scheduler.pruneInvalidCommands(reason: "test.invalidated")
+        fixture.admission.pruneInvalidCommands(reason: "test.invalidated")
         _ = fixture.mediaProtection.finishVisualHandoffProtection(lease)
-        fixture.scheduler.flushCommands(for: ObjectIdentifier(webView))
+        fixture.processor.flushCommands(for: ObjectIdentifier(webView))
         await drainSchedulerTasks()
 
         XCTAssertEqual(fixture.effects.spaceProfileAttempts, 0)
@@ -87,14 +87,14 @@ final class DeferredProtectedCommandSchedulerTests: XCTestCase {
         )
         fixture.spaceIntents.current = intent
         let lease = fixture.mediaProtection.beginVisualHandoffProtection(for: webView)
-        XCTAssertTrue(fixture.scheduler.schedule(
+        XCTAssertTrue(fixture.admission.schedule(
             .assignSpaceProfile(intent: intent),
             for: webView,
             reason: "test.race"
         ).wasScheduled)
 
         _ = fixture.mediaProtection.finishVisualHandoffProtection(lease)
-        fixture.scheduler.flushCommands(for: ObjectIdentifier(webView))
+        fixture.processor.flushCommands(for: ObjectIdentifier(webView))
         fixture.spaceIntents.current = nil
         await drainSchedulerTasks()
 
@@ -108,14 +108,14 @@ final class DeferredProtectedCommandSchedulerTests: XCTestCase {
         let fixture = SchedulerFixture()
         let webView = WKWebView()
         let firstLease = fixture.mediaProtection.beginVisualHandoffProtection(for: webView)
-        XCTAssertTrue(fixture.scheduler.schedule(
+        XCTAssertTrue(fixture.admission.schedule(
             .removeWebViewFromContainers(webViewID: ObjectIdentifier(webView)),
             for: webView,
             reason: "test.reprotected"
         ).wasScheduled)
 
         _ = fixture.mediaProtection.finishVisualHandoffProtection(firstLease)
-        fixture.scheduler.flushCommands(for: ObjectIdentifier(webView))
+        fixture.processor.flushCommands(for: ObjectIdentifier(webView))
         let secondLease = fixture.mediaProtection.beginVisualHandoffProtection(for: webView)
         await drainSchedulerTasks()
 
@@ -125,7 +125,7 @@ final class DeferredProtectedCommandSchedulerTests: XCTestCase {
         ))
 
         _ = fixture.mediaProtection.finishVisualHandoffProtection(secondLease)
-        fixture.scheduler.flushCommands(for: ObjectIdentifier(webView))
+        fixture.processor.flushCommands(for: ObjectIdentifier(webView))
         await drainSchedulerTasks()
         XCTAssertEqual(fixture.effects.containerRemovalAttempts, 1)
     }
@@ -136,14 +136,14 @@ final class DeferredProtectedCommandSchedulerTests: XCTestCase {
         fixture.effects.succeedContainerRemovalAfterAttempt = 3
         let webView = WKWebView()
         let lease = fixture.mediaProtection.beginVisualHandoffProtection(for: webView)
-        XCTAssertTrue(fixture.scheduler.schedule(
+        XCTAssertTrue(fixture.admission.schedule(
             .removeWebViewFromContainers(webViewID: ObjectIdentifier(webView)),
             for: webView,
             reason: "test.retry"
         ).wasScheduled)
 
         _ = fixture.mediaProtection.finishVisualHandoffProtection(lease)
-        fixture.scheduler.flushCommands(for: ObjectIdentifier(webView))
+        fixture.processor.flushCommands(for: ObjectIdentifier(webView))
         await drainSchedulerTasks()
 
         XCTAssertEqual(fixture.effects.containerRemovalAttempts, 1)
@@ -170,19 +170,19 @@ final class DeferredProtectedCommandSchedulerTests: XCTestCase {
         fixture.effects.succeedContainerRemovalAfterAttempt = .max
         let webView = WKWebView()
         let lease = fixture.mediaProtection.beginVisualHandoffProtection(for: webView)
-        XCTAssertTrue(fixture.scheduler.schedule(
+        XCTAssertTrue(fixture.admission.schedule(
             .removeWebViewFromContainers(webViewID: ObjectIdentifier(webView)),
             for: webView,
             reason: "test.reset"
         ).wasScheduled)
 
         _ = fixture.mediaProtection.finishVisualHandoffProtection(lease)
-        fixture.scheduler.flushCommands(for: ObjectIdentifier(webView))
+        fixture.processor.flushCommands(for: ObjectIdentifier(webView))
         await drainSchedulerTasks()
         XCTAssertEqual(fixture.effects.containerRemovalAttempts, 1)
         XCTAssertEqual(delayedActions.pendingActionCount, 1)
 
-        fixture.scheduler.resetForTerminalShutdown()
+        fixture.processor.resetForTerminalShutdown()
         XCTAssertEqual(delayedActions.pendingActionCount, 0)
         delayedActions.runAll()
         await drainSchedulerTasks()
@@ -231,7 +231,8 @@ private final class SchedulerFixture {
     let mediaProtection = WebViewMediaProtectionOwner()
     let effects = SchedulerEffects()
     let spaceIntents = SchedulerSpaceIntentValidator()
-    let scheduler: DeferredProtectedCommandScheduler
+    let admission: DeferredProtectedCommandAdmissionService
+    let processor: DeferredProtectedCommandProcessor
 
     init(delayedActions: MainActorDelayedActionScheduler = .live) {
         let webViews = WebViewRuntimeWebViewResolver(
@@ -269,7 +270,15 @@ private final class SchedulerFixture {
                 return true
             }
         )
-        scheduler = DeferredProtectedCommandScheduler(
+        let retryLedger = DeferredProtectedCommandRetryLedger()
+        admission = DeferredProtectedCommandAdmissionService(
+            mediaProtection: mediaProtection,
+            webViews: webViews,
+            authority: authority,
+            retryLedger: retryLedger,
+            finishCleanupSuppression: { _ in }
+        )
+        processor = DeferredProtectedCommandProcessor(
             mediaProtection: mediaProtection,
             webViews: webViews,
             authority: authority,
@@ -278,6 +287,7 @@ private final class SchedulerFixture {
                 windowMaintenance: windowMaintenance,
                 configuration: configuration
             ),
+            retryLedger: retryLedger,
             delayedActions: delayedActions,
             finishCleanupSuppression: { _ in }
         )

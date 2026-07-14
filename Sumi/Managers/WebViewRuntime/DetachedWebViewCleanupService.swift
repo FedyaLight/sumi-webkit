@@ -10,7 +10,7 @@ final class DetachedWebViewCleanupService {
     private let websiteDataCleanup: WebsiteDataCleanupService
     private let processRecovery: WebContentProcessRecoveryService
     private let mediaProtection: WebViewMediaProtectionOwner
-    private let protectedCommands: DeferredProtectedCommandScheduler
+    private let protectedCommands: DeferredProtectedCommandAdmissionService
 
     init(
         runtimeTabs: WebViewRuntimeTabRegistry,
@@ -18,7 +18,7 @@ final class DetachedWebViewCleanupService {
         websiteDataCleanup: WebsiteDataCleanupService,
         processRecovery: WebContentProcessRecoveryService,
         mediaProtection: WebViewMediaProtectionOwner,
-        protectedCommands: DeferredProtectedCommandScheduler
+        protectedCommands: DeferredProtectedCommandAdmissionService
     ) {
         self.runtimeTabs = runtimeTabs
         self.webViewSessions = webViewSessions

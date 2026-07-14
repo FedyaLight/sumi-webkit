@@ -13,6 +13,10 @@ runtime_lifecycle_file="Sumi/Managers/WebViewRuntime/WebViewLifecycleService.swi
 visible_runtime_provider_file="Sumi/Managers/WebViewRuntime/VisibleWebViewRuntimeProvider.swift"
 hidden_clone_eviction_file="Sumi/Managers/WebViewRuntime/HiddenCloneEvictionService.swift"
 shutdown_runtime_provider_file="Sumi/Managers/WebViewRuntime/WebViewShutdownRuntimeProvider.swift"
+deferred_command_admission_file="Sumi/Managers/WebViewRuntime/DeferredProtectedCommandAdmissionService.swift"
+deferred_command_processor_file="Sumi/Managers/WebViewRuntime/DeferredProtectedCommandProcessor.swift"
+deferred_executor_live_file="Sumi/Managers/WebViewRuntime/DeferredWebViewCommandExecutor+Live.swift"
+window_cleanup_live_file="Sumi/Managers/WebViewRuntime/WebViewWindowCleanupOwner+Live.swift"
 replacement_pipeline_file="Sumi/Managers/WebViewRuntime/WebViewReplacementPipeline.swift"
 tab_file="Sumi/Models/Tab/Tab.swift"
 main_frame_transaction_file="Sumi/Models/Tab/TabMainFrameRuntimeTransaction.swift"
@@ -65,6 +69,7 @@ retired_paths=(
   "Sumi/Managers/WebViewCoordinator"
   "Sumi/Managers/WebViewRuntime/WebViewCoordinator.swift"
   "Sumi/Managers/WebViewRuntime/WebViewRuntimeAssembler.swift"
+  "Sumi/Managers/WebViewRuntime/DeferredProtectedCommandScheduler.swift"
   "Sumi/Managers/BrowserManager/BrowserManagerWebViewCoordinatorRuntimeFactory.swift"
   "Packages/SumiWebRuntime/Sources/SumiWebRuntime/Context/WebViewCoordinatorBrowserRuntimeContext.swift"
   "Packages/SumiWebRuntime/Sources/SumiWebRuntime/Context/WebViewCoordinatorInitialDocumentRuntimeContext.swift"
@@ -85,6 +90,10 @@ runtime_role_files=(
   "$visible_runtime_provider_file"
   "$hidden_clone_eviction_file"
   "$shutdown_runtime_provider_file"
+  "$deferred_command_admission_file"
+  "$deferred_command_processor_file"
+  "$deferred_executor_live_file"
+  "$window_cleanup_live_file"
 )
 for role_file in "${runtime_role_files[@]}"; do
   if [[ ! -f "$role_file" ]]; then
@@ -103,6 +112,10 @@ role_limits=(
   "$visible_runtime_provider_file:55:3"
   "$hidden_clone_eviction_file:55:4"
   "$shutdown_runtime_provider_file:20:1"
+  "$deferred_command_admission_file:90:5"
+  "$deferred_command_processor_file:220:7"
+  "$deferred_executor_live_file:90:0"
+  "$window_cleanup_live_file:80:0"
 )
 for role_limit in "${role_limits[@]}"; do
   IFS=: read -r role_file max_lines max_collaborators <<< "$role_limit"
@@ -116,6 +129,34 @@ for role_limit in "${role_limits[@]}"; do
     status=1
   fi
 done
+
+graph_line_count="$(wc -l < "$graph_file" | tr -d ' ')"
+lifecycle_line_count="$(wc -l < "$runtime_lifecycle_file" | tr -d ' ')"
+lifecycle_collaborator_count="$(
+  rg --count-matches '^    private let ' "$runtime_lifecycle_file" || true
+)"
+if (( graph_line_count > 640 )); then
+  printf 'error: WebViewRuntimeGraph composition root regrew (%s/640 LOC)\n' \
+    "$graph_line_count" >&2
+  status=1
+fi
+if (( lifecycle_line_count > 253 || lifecycle_collaborator_count > 17 )); then
+  printf 'error: WebViewLifecycleService regrew (%s/253 LOC, %s/17 collaborators)\n' \
+    "$lifecycle_line_count" "$lifecycle_collaborator_count" >&2
+  status=1
+fi
+
+if rg -n '\b(WebViewRuntimeGraph|WebViewLifecycleService|DeferredWebViewCommandAssembly)\b' \
+    "$deferred_executor_live_file" "$window_cleanup_live_file"; then
+  printf 'error: deferred-command live composition regained graph/lifecycle reach-through\n' >&2
+  status=1
+fi
+
+if rg -n '\bDeferredWebViewCommandAssembly\b|lifecycleService\.cleanup(UnprotectedTrackedWebView|Window|AllWebViews)' \
+    "$graph_file"; then
+  printf 'error: deferred-command execution regained the lifecycle constructor cycle\n' >&2
+  status=1
+fi
 
 legacy_coordinator_hits="$(
   rg -n '\bWebViewCoordinator\b' \
