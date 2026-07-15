@@ -1,22 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$repo_root"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "$script_dir/.." && pwd)"
+# shellcheck source=scripts/lib/architecture_guard.sh
+source "$script_dir/lib/architecture_guard.sh"
+guard_initialize "$repo_root"
 
 settings_root="Sumi/Components/Settings"
+guard_require_directory "$settings_root"
 
-matches="$(
-  grep -rEn --include='*.swift' \
-    -e '\bBrowserManager\b' \
-    -e '\bbrowserManager\b' \
-    "$settings_root" || [[ $? -eq 1 ]]
-)"
-
-if [[ -n "$matches" ]]; then
-  printf 'disallowed BrowserManager coupling under %s:\n%s\n' "$settings_root" "$matches" >&2
-  echo "Settings UI must consume SettingsBrowserContext from WebsiteViewContextFactory instead." >&2
-  exit 1
-fi
-
-echo "settings BrowserManager boundary audit passed"
+guard_expect_no_matches \
+  'Settings UI BrowserManager coupling' \
+  '\bBrowserManager\b|\bbrowserManager\b' \
+  -g '*.swift' "$settings_root"
+guard_finish 'settings BrowserManager boundary audit'

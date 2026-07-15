@@ -11,8 +11,11 @@
 # Intended dependency direction: SumiDomain → SumiWebRuntime → SumiAppUI.
 set -euo pipefail
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$repo_root"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "$script_dir/.." && pwd)"
+# shellcheck source=scripts/lib/architecture_guard.sh
+source "$script_dir/lib/architecture_guard.sh"
+guard_initialize "$repo_root"
 
 DOMAIN_FILES=(
   # App-target allowlist (Foundation-only). FailClosedMapper stays with
@@ -30,7 +33,6 @@ forbidden_import_pattern='^import (SwiftUI|AppKit|WebKit)\b'
 # TabLoadingState / TabDependencyStateOwner / SumiProfileIcon.
 # KeyCombination / ShortcutPinRole live in SumiDomain (V6); do not treat as runtime edges.
 runtime_type_pattern='\b(Tab|Profile|ExtensionUtils|ShortcutPin|BrowserWindowState)\b'
-failures=0
 
 # Strip // line comments and /* */ block comments so comment prose (e.g.
 # "Profile icons…") does not trip the type-edge check.
@@ -45,30 +47,28 @@ printf '%s\n' '----------------------------------'
 
 for file in "${DOMAIN_FILES[@]}"; do
   if [[ ! -f "$file" ]]; then
-    printf 'error: domain file missing: %s\n' "$file" >&2
-    failures=$((failures + 1))
+    guard_record_failure "domain file missing: $file"
     continue
   fi
 
   file_ok=1
-  if rg -n "$forbidden_import_pattern" "$file" >/dev/null 2>&1; then
-    printf 'error: domain file imports UI/runtime framework: %s\n' "$file" >&2
-    rg -n "$forbidden_import_pattern" "$file" >&2 || true
+  import_hits="$(guard_capture_matches "$forbidden_import_pattern" "$file")"
+  if [[ -n "$import_hits" ]]; then
+    guard_record_failure "domain file imports UI/runtime framework ($file): $import_hits"
     file_ok=0
   fi
 
   type_hits="$(
-    strip_swift_comments "$file" | rg -n "$runtime_type_pattern" || true
+    strip_swift_comments "$file" \
+      | guard_capture_matches "$runtime_type_pattern" -
   )"
   if [[ -n "$type_hits" ]]; then
-    printf 'error: domain file references runtime type (Tab/Profile/ExtensionUtils/ShortcutPin/BrowserWindowState): %s\n' "$file" >&2
-    printf '%s\n' "$type_hits" >&2
+    guard_record_failure \
+      "domain file references runtime type (Tab/Profile/ExtensionUtils/ShortcutPin/BrowserWindowState) ($file): $type_hits"
     file_ok=0
   fi
 
-  if (( file_ok == 0 )); then
-    failures=$((failures + 1))
-  else
+  if (( file_ok != 0 )); then
     printf 'ok  %s\n' "$file"
   fi
 done
@@ -76,45 +76,52 @@ done
 # SumiDomain contains deterministic values, policies, and reducers. Observation,
 # app-actor isolation, scheduling, and logging belong to app/runtime targets.
 sumi_domain_root="Packages/SumiDomain/Sources"
-if [[ ! -d "$sumi_domain_root" ]]; then
-  printf 'error: SumiDomain package sources missing: %s\n' "$sumi_domain_root" >&2
-  failures=$((failures + 1))
+if ! guard_require_directory "$sumi_domain_root"; then
+  guard_record_failure "SumiDomain package sources missing: $sumi_domain_root"
 else
-  if rg -n "$forbidden_import_pattern" -g '*.swift' "$sumi_domain_root" >/dev/null 2>&1; then
-    printf 'error: SumiDomain package imports UI/runtime framework:\n' >&2
-    rg -n "$forbidden_import_pattern" -g '*.swift' "$sumi_domain_root" >&2 || true
-    failures=$((failures + 1))
+  package_import_hits="$(
+    guard_capture_matches \
+      "$forbidden_import_pattern" \
+      -g '*.swift' "$sumi_domain_root"
+  )"
+  if [[ -n "$package_import_hits" ]]; then
+    guard_record_failure "SumiDomain package imports UI/runtime framework: $package_import_hits"
   else
     printf 'ok  Packages/SumiDomain/Sources (no SwiftUI/AppKit/WebKit imports)\n'
   fi
 
   domain_runtime_pattern='^import (Combine|Observation|OSLog|Dispatch)\b|@(Observable|ObservationIgnored|Published|MainActor)\b|\b(ObservableObject|ObservationRegistrar|withObservationTracking|Task|DispatchQueue|Logger|OSLog|os_log)\b'
-  domain_runtime_hits="$({
-    while IFS= read -r -d '' file; do
-      hits="$(strip_swift_comments "$file" | rg -n "$domain_runtime_pattern" || true)"
-      if [[ -n "$hits" ]]; then
-        printf '%s\n%s\n' "$file" "$hits"
-      fi
-    done < <(find "$sumi_domain_root" -type f -name '*.swift' -print0)
-  })"
+  domain_source_files="$(
+    find "$sumi_domain_root" -type f -name '*.swift' -print
+  )"
+  domain_runtime_hits=''
+  while IFS= read -r file; do
+    [[ -n "$file" ]] || continue
+    hits="$(
+      strip_swift_comments "$file" \
+        | guard_capture_matches "$domain_runtime_pattern" -
+    )"
+    if [[ -n "$hits" ]]; then
+      domain_runtime_hits+="$file"$'\n'"$hits"$'\n'
+    fi
+  done <<< "$domain_source_files"
   if [[ -n "$domain_runtime_hits" ]]; then
-    printf 'error: SumiDomain package contains app observation/scheduling/logging runtime:\n' >&2
-    printf '%s\n' "$domain_runtime_hits" >&2
-    failures=$((failures + 1))
+    guard_record_failure \
+      "SumiDomain package contains app observation/scheduling/logging runtime: $domain_runtime_hits"
   else
     printf 'ok  Packages/SumiDomain/Sources (no app observation/scheduling/logging runtime)\n'
   fi
 fi
 
 # Models must not grow new SwiftUI Views (ProfileIconView already moved out).
-if rg -n 'struct\s+\w+:\s*View\b' -g '*.swift' Sumi/Models >/dev/null 2>&1; then
-  printf 'error: SwiftUI View types must not live under Sumi/Models:\n' >&2
-  rg -n 'struct\s+\w+:\s*View\b' -g '*.swift' Sumi/Models >&2 || true
-  failures=$((failures + 1))
+model_view_hits="$(
+  guard_capture_matches \
+    'struct\s+\w+:\s*View\b' \
+    -g '*.swift' Sumi/Models
+)"
+if [[ -n "$model_view_hits" ]]; then
+  guard_record_failure "SwiftUI View types live under Sumi/Models: $model_view_hits"
 fi
 
-if (( failures > 0 )); then
-  exit 1
-fi
-
-printf '\ndomain isolation boundary audit passed (%d app-target domain files + SumiDomain package)\n' "${#DOMAIN_FILES[@]}"
+guard_finish \
+  "domain isolation boundary audit (${#DOMAIN_FILES[@]} app-target domain files + SumiDomain package)"

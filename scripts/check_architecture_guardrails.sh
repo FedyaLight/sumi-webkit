@@ -5,6 +5,8 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
 checks=(
+  "scripts/check_architecture_guard_dsl.sh"
+  "scripts/check_architecture_tombstones.sh"
   "scripts/check_adblock_update_architecture.sh"
   "scripts/check_protection_architecture.sh"
   "scripts/check_protected_command_dispatch_boundary.sh"

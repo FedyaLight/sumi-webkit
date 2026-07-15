@@ -23,7 +23,11 @@ if [[ ! -d "$tests_dir" ]]; then
   exit 1
 fi
 
-while IFS= read -r -d '' file; do
+test_source_files="$(
+  find "$tests_dir" -name '*.swift' -type f -print | sort
+)"
+while IFS= read -r file; do
+  [[ -n "$file" ]] || continue
   loc="$(wc -l < "$file" | tr -d ' ')"
   rel="${file#"$repo_root"/}"
   if (( loc > fail_loc )); then
@@ -34,7 +38,7 @@ while IFS= read -r -d '' file; do
       "$rel" "$loc" "$warn_loc" "$fail_loc"
     warnings=$((warnings + 1))
   fi
-done < <(find "$tests_dir" -name '*.swift' -print0 | sort -z)
+done <<< "$test_source_files"
 
 printf 'checked SumiTests/*.swift (warn > %d, fail > %d; %d warnings)\n' \
   "$warn_loc" "$fail_loc" "$warnings"

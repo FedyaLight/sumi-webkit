@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$repo_root"
-
-status=0
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "$script_dir/.." && pwd)"
+# shellcheck source=scripts/lib/architecture_guard.sh
+source "$script_dir/lib/architecture_guard.sh"
+guard_initialize "$repo_root"
 
 fail_matches() {
   local message="$1"
   local matches="$2"
   [[ -z "$matches" ]] && return
-  printf 'error: %s:\n%s\n' "$message" "$matches" >&2
-  status=1
+  guard_record_failure "$message: $matches"
 }
 
 required_files=(
@@ -38,10 +38,7 @@ required_files=(
 )
 
 for file in "${required_files[@]}"; do
-  if [[ ! -f "$file" ]]; then
-    printf 'error: tab persistence boundary missing: %s\n' "$file" >&2
-    status=1
-  fi
+  guard_require_file "$file"
 done
 
 legacy_files=(
@@ -53,47 +50,49 @@ legacy_files=(
 )
 
 for file in "${legacy_files[@]}"; do
-  if [[ -e "$file" ]]; then
-    printf 'error: legacy persistence surface still exists: %s\n' "$file" >&2
-    status=1
-  fi
+  guard_expect_absent_path 'legacy persistence surface' "$file"
 done
 
 legacy_hits="$(
-  rg -n '\bTabSnapshotRepository\b' Sumi SumiTests -g '*.swift' || true
+  guard_capture_matches '\bTabSnapshotRepository\b' -g '*.swift' Sumi SumiTests
 )"
 fail_matches "legacy tab persistence god-object reintroduced" "$legacy_hits"
 
 legacy_composition_hits="$(
-  rg -n '\b(TabPersistenceOwnerBag|persistenceOwners|TabStructuralPersistenceOwner|TabStoreRestoreOwner)\b' \
-    Sumi SumiTests -g '*.swift' || true
+  guard_capture_matches \
+    '\b(TabPersistenceOwnerBag|persistenceOwners|TabStructuralPersistenceOwner|TabStoreRestoreOwner)\b' \
+    -g '*.swift' Sumi SumiTests
 )"
 fail_matches "legacy persistence composition surface reintroduced" "$legacy_composition_hits"
 
 persistence_service_reachback_hits="$(
-  rg -n '\btabManager\b|\bstruct Dependencies\b' \
+  guard_capture_matches \
+    '\btabManager\b|\bstruct Dependencies\b' \
     Sumi/Managers/TabManager/TabServiceContracts.swift \
     Sumi/Managers/TabManager/TabStructuralPersistenceService.swift \
     Sumi/Managers/TabManager/TabStoreRestoreService.swift \
-    Sumi/Managers/TabManager/TabStartupRestoreLifecycle.swift || true
+    Sumi/Managers/TabManager/TabStartupRestoreLifecycle.swift
 )"
 fail_matches "persistence service reached back through TabManager or a dependency bag" "$persistence_service_reachback_hits"
 
 runtime_store_manager_init_hits="$(
-  rg -n '(convenience )?init\(tabManager: TabManager\)' \
-    Sumi/Managers/TabManager/TabServiceContracts.swift || true
+  guard_capture_matches \
+    '(convenience )?init\(tabManager: TabManager\)' \
+    Sumi/Managers/TabManager/TabServiceContracts.swift
 )"
 fail_matches "runtime tab store recovered a TabManager service-locator initializer" "$runtime_store_manager_init_hits"
 
 persistence_forwarder_hits="$(
-  rg -n 'var (runtimeStore|structuralPersistence|storeRestore):' \
-    Sumi/Managers/TabManager/TabManager+OwnerAccessors.swift || true
+  guard_capture_matches \
+    'var (runtimeStore|structuralPersistence|storeRestore):' \
+    Sumi/Managers/TabManager/TabManager+OwnerAccessors.swift
 )"
 fail_matches "persistence component hidden behind a forwarding accessor" "$persistence_forwarder_hits"
 
 startup_restore_forwarder_hits="$(
-  rg -n '\b(var|func) (hasLoadedInitialData|didStartPersistedStateLoad|markInitialDataLoadStarted|markInitialDataLoadFinished|startPersistedStateLoadIfNeeded|startPersistedStateLoadAfterRuntimeAttachmentIfConfigured)\b' \
-    Sumi/Managers/TabManager/TabManager.swift || true
+  guard_capture_matches \
+    '\b(var|func) (hasLoadedInitialData|didStartPersistedStateLoad|markInitialDataLoadStarted|markInitialDataLoadFinished|startPersistedStateLoadIfNeeded|startPersistedStateLoadAfterRuntimeAttachmentIfConfigured)\b' \
+    Sumi/Managers/TabManager/TabManager.swift
 )"
 fail_matches "startup restore lifecycle leaked back onto TabManager" "$startup_restore_forwarder_hits"
 
@@ -106,56 +105,66 @@ direct_component_patterns=(
 )
 
 for pattern in "${direct_component_patterns[@]}"; do
-  if ! rg -q "$pattern" Sumi/Managers/TabManager/TabManager.swift; then
-    printf 'error: direct TabManager persistence component missing: %s\n' "$pattern" >&2
-    status=1
+  if (( $(
+    guard_count_matches \
+      "$pattern" \
+      Sumi/Managers/TabManager/TabManager.swift
+  ) == 0 )); then
+    guard_record_failure "direct TabManager persistence component missing: $pattern"
   fi
 done
 
 legacy_last_session_hits="$(
-  rg -n '\bTabLastSessionRestoreOwner\b|\blastSessionRestoreOwner\b|resetRegularTabsAndShortcutLiveInstancesForStartup' \
-    Sumi SumiTests -g '*.swift' || true
+  guard_capture_matches \
+    '\bTabLastSessionRestoreOwner\b|\blastSessionRestoreOwner\b|resetRegularTabsAndShortcutLiveInstancesForStartup' \
+    -g '*.swift' Sumi SumiTests
 )"
 fail_matches "legacy last-session restore god-object reintroduced" "$legacy_last_session_hits"
 
 last_session_manager_hits="$(
-  rg -n '\bTabManager\b|\bstruct Dependencies\b' \
+  guard_capture_matches \
+    '\bTabManager\b|\bstruct Dependencies\b' \
     Sumi/Managers/TabManager/TabLastSessionMergePlanner.swift \
     Sumi/Managers/TabManager/TabLastSessionMergeMaterializer.swift \
-    Sumi/Managers/TabManager/TabStartupStateReset.swift || true
+    Sumi/Managers/TabManager/TabStartupStateReset.swift
 )"
 fail_matches "last-session components reached back through TabManager or a dependency bag" "$last_session_manager_hits"
 
 last_session_planner_mechanism_hits="$(
-  rg -n '^import AppKit$|\b(TabStateStore|Space|TabFolder|ShortcutPin|RuntimePortRegistry)\b' \
-    Sumi/Managers/TabManager/TabLastSessionMergePlanner.swift || true
+  guard_capture_matches \
+    '^import AppKit$|\b(TabStateStore|Space|TabFolder|ShortcutPin|RuntimePortRegistry)\b' \
+    Sumi/Managers/TabManager/TabLastSessionMergePlanner.swift
 )"
 fail_matches "pure last-session planning depends on mutable browser mechanisms" "$last_session_planner_mechanism_hits"
 
 loader_mechanism_hits="$(
-  rg -n '\b(ModelContext|FetchDescriptor|TabEntity|FolderEntity|SpaceEntity|TabsStateEntity)\b' \
-    Sumi/Managers/TabManager/TabRestoreLoader.swift || true
+  guard_capture_matches \
+    '\b(ModelContext|FetchDescriptor|TabEntity|FolderEntity|SpaceEntity|TabsStateEntity)\b' \
+    Sumi/Managers/TabManager/TabRestoreLoader.swift
 )"
 fail_matches "restore loader absorbed SwiftData query or entity mapping" "$loader_mechanism_hits"
 
 planner_store_hits="$(
-  rg -n '^import SwiftData$|\b(ModelContainer|ModelContext|FetchDescriptor)\b' \
+  guard_capture_matches \
+    '^import SwiftData$|\b(ModelContainer|ModelContext|FetchDescriptor)\b' \
     Sumi/Managers/TabManager/TabRestorePlanner.swift \
     Sumi/Managers/TabManager/TabRestoreStructurePlanner.swift \
     Sumi/Managers/TabManager/TabRestoreTabPlanner.swift \
-    Sumi/Managers/TabManager/TabRestoreSnapshotBuilder.swift || true
+    Sumi/Managers/TabManager/TabRestoreSnapshotBuilder.swift
 )"
 fail_matches "pure restore planning depends on the persistence mechanism" "$planner_store_hits"
 
 structural_cross_surface_hits="$(
-  rg -n '\b(TabSelectionStore|TabRuntimeStateStore|TabRuntimeStateUpdate)\b' \
-    Sumi/Managers/TabManager/TabStructuralSnapshotStore.swift || true
+  guard_capture_matches \
+    '\b(TabSelectionStore|TabRuntimeStateStore|TabRuntimeStateUpdate)\b' \
+    Sumi/Managers/TabManager/TabStructuralSnapshotStore.swift
 )"
 fail_matches "structural store absorbed selection or runtime-state persistence" "$structural_cross_surface_hits"
 
 new_owner_hits="$(
-  rg -n '\b(class|actor|struct)\s+Tab(Persistence|Restore|Store|StructuralSnapshot)[A-Za-z0-9_]*Owner\b' \
-    "${required_files[@]}" || true
+  guard_capture_matches \
+    '\b(class|actor|struct)\s+Tab(Persistence|Restore|Store|StructuralSnapshot)[A-Za-z0-9_]*Owner\b' \
+    "${required_files[@]}"
 )"
 fail_matches "new tab persistence responsibility hidden behind an Owner type" "$new_owner_hits"
 
@@ -181,17 +190,10 @@ bounded_files=(
 for specification in "${bounded_files[@]}"; do
   file="${specification%%:*}"
   maximum="${specification##*:}"
-  [[ -f "$file" ]] || continue
-  lines="$(wc -l < "$file" | tr -d ' ')"
-  if (( lines > maximum )); then
-    printf 'error: %s grew to %s LOC (maximum %s); split the responsibility instead of rebuilding a monolith\n' \
-      "$file" "$lines" "$maximum" >&2
-    status=1
-  fi
+  guard_max \
+    "$file persistence-role LOC" \
+    "$(guard_count_lines "$file")" \
+    "$maximum"
 done
 
-if [[ $status -ne 0 ]]; then
-  exit "$status"
-fi
-
-echo "tab persistence architecture boundary passed"
+guard_finish 'tab persistence architecture boundary'

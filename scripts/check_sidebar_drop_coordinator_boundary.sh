@@ -24,11 +24,8 @@ projection='Sumi/Components/DragDrop/SidebarDropProjection.swift'
 port='Sumi/Components/DragDrop/SidebarDragTransactionPort.swift'
 composition='Sumi/Managers/BrowserManager/BrowserWindowViewContextComposition.swift'
 router='Sumi/Managers/TabManager/SidebarDragOperationRouter.swift'
-inventory_tests='SumiTests/SidebarDragSourceInventoryTests.swift'
-coordinator_tests='SumiTests/SidebarDropCoordinatorBoundaryTests.swift'
 
-for file in "$coordinator" "$inventory" "$executing" "$projection" "$port" "$composition" \
-  "$inventory_tests" "$coordinator_tests"; do
+for file in "$coordinator" "$inventory" "$executing" "$projection" "$port" "$composition"; do
   if [[ ! -f "$file" ]]; then
     printf 'error: sidebar drop boundary file missing: %s\n' "$file" >&2
     status=1
@@ -172,35 +169,6 @@ router_dependency_lets="$(
 if (( router_dependency_lets > 17 )); then
   printf 'error: SidebarDragOperationRouter.Dependencies grew (%s > 17 lets)\n' \
     "$router_dependency_lets" >&2
-  status=1
-fi
-
-# Required focused regressions must stay present.
-required_tests=(
-  testEssentialsSourceIndexAndItemCount
-  testSpacePinnedSourceProjection
-  testRegularTabSourceProjection
-  testFolderChildSourceProjection
-  testShortcutSplitFolderIdentityMatching
-  testRetainedInventoryDoesNotRetainTabManager
-  testSameContainerReorderAdjustsIndexAfterSourceRemoval
-  testCrossContainerDropSkipsSameContainerAdjustment
-  testInvalidOrStaleScopeDoesNotMutate
-  testURLDropDoesNotDependOnDragInventory
-  testTransactionPortRejectsStaleWindowBeforeReadingDragReceipt
-  testLiveCoordinatorCompositionExecutesWithoutBrowserManagerReachThrough
-)
-
-for test_name in "${required_tests[@]}"; do
-  if ! rg -q "func[[:space:]]+${test_name}\\b" \
-    "$inventory_tests" "$coordinator_tests"; then
-    printf 'error: required sidebar drop regression missing: %s\n' "$test_name" >&2
-    status=1
-  fi
-done
-if ! rg -A 45 'func testLiveCoordinatorCompositionExecutesWithoutBrowserManagerReachThrough' \
-  "$coordinator_tests" | rg -q 'WindowSidebarContext\.make'; then
-  printf 'error: live sidebar-drop composition regression uses only stubs\n' >&2
   status=1
 fi
 

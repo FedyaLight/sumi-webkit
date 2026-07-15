@@ -48,7 +48,10 @@ check_absent \
   Sumi/Managers/ExtensionManager
 
 if [[ -d Sumi/Managers/ExtensionManager/ExtensionRuntimeResources ]]; then
-  remaining_js="$(find Sumi/Managers/ExtensionManager/ExtensionRuntimeResources -name '*.js' 2>/dev/null || true)"
+  remaining_js="$(
+    find Sumi/Managers/ExtensionManager/ExtensionRuntimeResources \
+      -type f -name '*.js' -print
+  )"
   if [[ -n "$remaining_js" ]]; then
     printf 'disallowed ExtensionRuntimeResources JS files remain:\n%s\n' "$remaining_js" >&2
     status=1

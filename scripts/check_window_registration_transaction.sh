@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$repo_root"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "$script_dir/.." && pwd)"
+# shellcheck source=scripts/lib/architecture_guard.sh
+source "$script_dir/lib/architecture_guard.sh"
+guard_initialize "$repo_root"
 
 registry='Sumi/Managers/WindowRegistry/WindowRegistry.swift'
 shell='Sumi/Services/BrowserWindowShellService.swift'
@@ -13,15 +16,18 @@ publication='Sumi/Managers/BrowserManager/WindowExtensionPublicationTransaction.
 publication_live='Sumi/Managers/BrowserManager/WindowExtensionPublicationTransaction+Live.swift'
 runtime_factory='Sumi/Managers/BrowserManager/TabBrowserRuntimeFactory.swift'
 extension_composition='Sumi/Managers/BrowserManager/BrowserExtensionBridgeComposition.swift'
-status=0
-
 require_pattern() {
   local file="$1"
   local pattern="$2"
   local message="$3"
-  if [[ ! -f "$file" ]] || ! rg -q "$pattern" "$file"; then
-    printf 'error: %s\n' "$message" >&2
-    status=1
+  if [[ ! -f "$file" ]]; then
+    guard_record_failure "$message (missing source: $file)"
+    return
+  fi
+  local match_count
+  match_count="$(guard_count_matches "$pattern" "$file")" || return
+  if (( match_count == 0 )); then
+    guard_record_failure "$message"
   fi
 }
 
@@ -40,65 +46,105 @@ require_pattern "$registry" 'func installEventSink\(' \
 require_pattern "$registry" 'struct EventSinkInstallationReceipt:' \
   'WindowRegistry lost typed installation evidence'
 
-if rg -q 'var (prepareWindowRegistration|publishWindowRegistration|onWindowClose|onActiveWindowChange|onWindowVisibilityChange|onAllWindowsClosed):' \
-    "$registry"; then
-  printf 'error: independently overwritable WindowRegistry callback slots resurfaced\n' >&2
-  status=1
+mutable_callback_count="$(
+  guard_count_matches \
+    'var (prepareWindowRegistration|publishWindowRegistration|onWindowClose|onActiveWindowChange|onWindowVisibilityChange|onAllWindowsClosed):' \
+    "$registry"
+)"
+if (( mutable_callback_count > 0 )); then
+  guard_record_failure 'independently overwritable WindowRegistry callback slots resurfaced'
 fi
 
 production_sink_installers="$(
-  rg -n '\.installEventSink\(' App Sumi -g '*.swift' || true
+  guard_capture_matches '\.installEventSink\(' -g '*.swift' App Sumi
 )"
-if [[ "$(wc -l <<< "$production_sink_installers" | tr -d ' ')" != "1" ]] \
+production_sink_installer_count="$(
+  guard_count_matches '\.installEventSink\(' -g '*.swift' App Sumi
+)"
+if [[ "$production_sink_installer_count" != "1" ]] \
     || [[ "$production_sink_installers" != "$bindings:"* ]]; then
-  printf 'error: production must install the WindowRegistry event sink exactly once\n%s\n' \
-    "$production_sink_installers" >&2
-  status=1
+  guard_record_failure \
+    "production must install the WindowRegistry event sink exactly once in $bindings: $production_sink_installers"
 fi
 
-if rg -q 'rollbackRegistration\(' Sumi App -g '*.swift'; then
-  printf 'error: committed-capable window registration rollback resurfaced\n' >&2
-  status=1
+committed_rollback_count="$(
+  guard_count_matches 'rollbackRegistration\(' -g '*.swift' Sumi App
+)"
+if (( committed_rollback_count > 0 )); then
+  guard_record_failure 'committed-capable window registration rollback resurfaced'
 fi
 
 begin_body="$(
   sed -n '/^    func beginRegistration(/,/^    }$/p' "$registry"
 )"
-if rg -q 'windowAwaiters|publishWindowRegistration' <<< "$begin_body"; then
-  printf 'error: provisional window registration became externally observable\n' >&2
-  status=1
+begin_visibility_count="$(
+  guard_count_matches \
+    'windowAwaiters|publishWindowRegistration' \
+    - <<< "$begin_body"
+)"
+if (( begin_visibility_count > 0 )); then
+  guard_record_failure 'provisional window registration became externally observable'
 fi
 
 rollback_body="$(
   sed -n '/^    func rollbackProvisionalRegistration(/,/^    }$/p' "$registry"
 )"
-if rg -q '_windows\.removeValue|onWindowClose|onAllWindowsClosed' \
-    <<< "$rollback_body"; then
-  printf 'error: provisional rollback can mutate committed window lifecycle\n' >&2
-  status=1
+rollback_lifecycle_count="$(
+  guard_count_matches \
+    '_windows\.removeValue|onWindowClose|onAllWindowsClosed' \
+    - <<< "$rollback_body"
+)"
+if (( rollback_lifecycle_count > 0 )); then
+  guard_record_failure 'provisional rollback can mutate committed window lifecycle'
 fi
 
 commit_body="$(
   sed -n '/^    func commitRegistration(/,/^    }$/p' "$registry"
 )"
-publication_line="$(rg -n 'eventSink\?\.publishWindowRegistration\(' <<< "$commit_body" | cut -d: -f1 | head -1)"
-awaiter_line="$(rg -n 'continuation\.resume\(returning: window\)' <<< "$commit_body" | cut -d: -f1 | head -1)"
+publication_line="$(
+  guard_capture_matches \
+    'eventSink\?\.publishWindowRegistration\(' \
+    - <<< "$commit_body" \
+    | cut -d: -f1 \
+    | head -1
+)"
+awaiter_line="$(
+  guard_capture_matches \
+    'continuation\.resume\(returning: window\)' \
+    - <<< "$commit_body" \
+    | cut -d: -f1 \
+    | head -1
+)"
 if [[ -z "$publication_line" || -z "$awaiter_line" ]] \
     || (( publication_line >= awaiter_line )); then
-  printf 'error: committed extension publication must precede window awaiter resumption\n' >&2
-  status=1
+  guard_record_failure 'committed extension publication must precede window awaiter resumption'
 fi
 
 shell_transaction="$(
   sed -n '/^    func createNewWindow(/,/^    @discardableResult$/p' "$shell"
 )"
-begin_line="$(rg -n 'beginRegistration\(windowState\)' <<< "$shell_transaction" | cut -d: -f1 | head -1)"
-validate_line="$(rg -n 'validateRestoredStateBeforePublication\(windowState\)' <<< "$shell_transaction" | cut -d: -f1 | head -1)"
-commit_line="$(rg -n 'context\.windowRegistry\.commitRegistration\(' <<< "$shell_transaction" | cut -d: -f1 | head -1)"
+begin_line="$(
+  guard_capture_matches 'beginRegistration\(windowState\)' - <<< "$shell_transaction" \
+    | cut -d: -f1 \
+    | head -1
+)"
+validate_line="$(
+  guard_capture_matches \
+    'validateRestoredStateBeforePublication\(windowState\)' \
+    - <<< "$shell_transaction" \
+    | cut -d: -f1 \
+    | head -1
+)"
+commit_line="$(
+  guard_capture_matches \
+    'context\.windowRegistry\.commitRegistration\(' \
+    - <<< "$shell_transaction" \
+    | cut -d: -f1 \
+    | head -1
+)"
 if [[ -z "$begin_line" || -z "$validate_line" || -z "$commit_line" ]] \
     || (( begin_line >= validate_line || validate_line >= commit_line )); then
-  printf 'error: browser shell must prepare, validate, then commit window registration\n' >&2
-  status=1
+  guard_record_failure 'browser shell must prepare, validate, then commit window registration'
 fi
 
 require_pattern "$bindings" 'prepareRegistration\(windowState\)' \
@@ -123,36 +169,36 @@ require_pattern "$publication" 'protocol BrowserWindowExtensionPublishing:' \
 require_pattern "$publication" 'protocol BrowserWindowExtensionFocusNotifying:' \
   'window focus notification lost its exact capability'
 
-if rg -q 'BrowserWindowExtensionLifecycleNotifying' "$publication" \
-    || rg -q '^    let extensionPublication:' "$session_bundle"; then
-  printf 'error: extension publication/focus capabilities were recombined or hidden in the session bundle\n' >&2
-  status=1
+combined_publication_capability_count="$(
+  guard_count_matches \
+    'BrowserWindowExtensionLifecycleNotifying' \
+    "$publication"
+)"
+hidden_session_publication_count="$(
+  guard_count_matches \
+    '^    let extensionPublication:' \
+    "$session_bundle"
+)"
+if (( combined_publication_capability_count > 0 \
+    || hidden_session_publication_count > 0 )); then
+  guard_record_failure \
+    'extension publication/focus capabilities were recombined or hidden in the session bundle'
 fi
 
 publication_constructors="$(
-  rg -n 'WindowExtensionPublicationTransaction\(' App Sumi -g '*.swift' || true
+  guard_capture_matches \
+    'WindowExtensionPublicationTransaction\(' \
+    -g '*.swift' App Sumi
 )"
-if [[ "$(wc -l <<< "$publication_constructors" | tr -d ' ')" != "1" ]] \
+publication_constructor_count="$(
+  guard_count_matches \
+    'WindowExtensionPublicationTransaction\(' \
+    -g '*.swift' App Sumi
+)"
+if [[ "$publication_constructor_count" != "1" ]] \
     || [[ "$publication_constructors" != "$publication_live:"* ]]; then
-  printf 'error: production must construct the process-wide window publication transaction exactly once\n%s\n' \
-    "$publication_constructors" >&2
-  status=1
+  guard_record_failure \
+    "production must construct the process-wide window publication transaction exactly once in $publication_live: $publication_constructors"
 fi
 
-for test_name in \
-  testAwaiterCannotObserveRolledBackProvisionalWindow \
-  testProvisionalRollbackRejectsCommittedWindow \
-  testProvisionalRollbackRequiresExactObjectIdentity \
-  testReopenRejectsRegisteredStateWithWrongArchiveIdentity \
-  testPreparedWindowDoesNotPublishExtensionLifecycleBeforeRegistryCommit; do
-  if ! rg -q "func[[:space:]]+${test_name}\\b" SumiTests -g '*.swift'; then
-    printf 'error: window registration regression missing: %s\n' "$test_name" >&2
-    status=1
-  fi
-done
-
-if [[ $status -ne 0 ]]; then
-  exit "$status"
-fi
-
-echo 'window registration transaction boundary passed'
+guard_finish 'window registration transaction boundary'

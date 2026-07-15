@@ -1,13 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$repo_root"
-
-if ! command -v rg >/dev/null 2>&1; then
-  printf 'error: ripgrep (rg) is required for modernization debt guardrail\n' >&2
-  exit 1
-fi
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "$script_dir/.." && pwd)"
+# shellcheck source=scripts/lib/architecture_guard.sh
+source "$script_dir/lib/architecture_guard.sh"
+guard_initialize "$repo_root"
 
 production_roots=(
   "App"
@@ -23,32 +21,12 @@ test_roots=(
   "SumiUITests"
 )
 
-failures=0
-
 count_matches() {
-  local pattern="$1"
-  shift
-
-  local total=0
-  local line
-  while IFS= read -r line; do
-    [[ -n "$line" ]] || continue
-    total=$((total + ${line##*:}))
-  done < <(rg --count-matches "$pattern" -g "*.swift" "$@" || true)
-
-  printf '%s\n' "$total"
+  guard_count_swift_matches "$@"
 }
 
 check_max() {
-  local label="$1"
-  local actual="$2"
-  local max="$3"
-
-  printf '%-46s %4d / %4d\n' "$label" "$actual" "$max"
-  if (( actual > max )); then
-    printf 'error: %s increased above modernization baseline (%d > %d)\n' "$label" "$actual" "$max" >&2
-    failures=$((failures + 1))
-  fi
+  guard_max "$@"
 }
 
 production_shared_definitions="$(
@@ -85,16 +63,15 @@ check_max "theme fixed font-size call sites" "$theme_font_size_literals" 69
 printf '\n%s\n' 'Test monolith guardrail'
 printf '%s\n' '-----------------------'
 
-while IFS= read -r -d '' file; do
-  line_count="$(wc -l < "$file" | tr -d ' ')"
+test_source_files="$(
+  find "${test_roots[@]}" -name '*.swift' -type f -print
+)"
+while IFS= read -r file; do
+  [[ -n "$file" ]] || continue
+  line_count="$(guard_count_lines "$file")"
   if (( line_count > 3000 )); then
-    printf 'error: new test monolith above 3000 lines: %s (%d)\n' "$file" "$line_count" >&2
-    failures=$((failures + 1))
+    guard_record_failure "new test monolith above 3000 lines: $file ($line_count)"
   fi
-done < <(find "${test_roots[@]}" -name "*.swift" -type f -print0)
+done <<< "$test_source_files"
 
-if (( failures > 0 )); then
-  exit 1
-fi
-
-printf '\nmodernization debt guardrail passed\n'
+guard_finish 'modernization debt guardrail'

@@ -1,29 +1,30 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$repo_root"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "$script_dir/.." && pwd)"
+# shellcheck source=scripts/lib/architecture_guard.sh
+source "$script_dir/lib/architecture_guard.sh"
+guard_initialize "$repo_root"
 
 schema_file="Packages/SumiDomain/Sources/SumiDomain/WorkspaceTheme/WorkspaceTheme.swift"
 rendering_file="Sumi/Theme/WorkspaceThemeRendering.swift"
 coding_file="Sumi/Theme/WorkspaceThemeCoding.swift"
 production_roots=(App FloatingBar Settings Sumi SidebarChrome UI Packages/SumiDomain/Sources)
 app_roots=(App FloatingBar Settings Sumi SidebarChrome UI)
-failures=0
 
 strip_swift_comments() {
   perl -0777 -pe 's{/\*.*?\*/}{}gs; s{//[^\n]*}{}g' "$1"
 }
 
 record_error() {
-  printf 'error: %s\n' "$1" >&2
-  failures=$((failures + 1))
+  guard_record_failure "$1"
 }
 
 count_declarations() {
   local pattern="$1"
   local hits
-  hits="$(swift_declaration_hits "$pattern" "${production_roots[@]}")"
+  hits="$(swift_declaration_hits "$pattern" "${production_roots[@]}")" || return
   if [[ -z "$hits" ]]; then
     printf '0\n'
   else
@@ -36,37 +37,55 @@ swift_declaration_hits() {
   shift
   local file
   local hits
+  local candidate_hits
 
+  candidate_hits="$(
+    guard_capture_matches 'WorkspaceTheme' -g '*.swift' "$@"
+  )" || return
   while IFS= read -r file; do
-    hits="$(strip_swift_comments "$file" | rg -n "$pattern" || true)"
+    [[ -n "$file" ]] || continue
+    hits="$(
+      strip_swift_comments "$file" \
+        | guard_capture_matches "$pattern" -
+    )" || return
     if [[ -n "$hits" ]]; then
       printf '%s\n' "$hits" | sed "s#^#$file:#"
     fi
-  done < <(rg -l 'WorkspaceTheme' -g '*.swift' "$@" || true)
+  done < <(
+    printf '%s\n' "$candidate_hits" \
+      | sed '/^$/d' \
+      | cut -d: -f1 \
+      | sort -u
+  )
 }
 
 printf '%s\n' 'Workspace theme architecture guardrail'
 printf '%s\n' '--------------------------------------'
 
 for file in "$schema_file" "$rendering_file" "$coding_file"; do
-  if [[ ! -f "$file" ]]; then
-    record_error "required workspace-theme authority is missing: $file"
-  fi
+  guard_require_file "$file"
 done
 
-if [[ -f "$schema_file" ]]; then
-  unexpected_imports="$(rg -n '^import ' "$schema_file" | rg -v '^1:import Foundation$' || true)"
-  if [[ -n "$unexpected_imports" ]]; then
-    printf '%s\n' "$unexpected_imports" >&2
-    record_error "canonical workspace-theme schema must import only Foundation"
-  fi
+schema_imports="$(guard_capture_matches '^import ' "$schema_file")"
+unexpected_imports=''
+while IFS= read -r import_line; do
+  [[ -n "$import_line" ]] || continue
+  [[ "$import_line" == '1:import Foundation' ]] && continue
+  unexpected_imports+="$import_line"$'\n'
+done <<< "$schema_imports"
+if [[ -n "$unexpected_imports" ]]; then
+  record_error \
+    "canonical workspace-theme schema must import only Foundation: $unexpected_imports"
+fi
 
-  schema_forbidden_pattern='\b(SwiftUI|AppKit|Combine|Observation|OSLog|Dispatch|Color|NSColor|CGColor|NSGradient|WorkspaceResolvedGradient|WorkspaceGradientStop|Angle|Observable|Published|MainActor|Task|Timer|Logger|RuntimeDiagnostics|DispatchQueue|os_log)\b|\b(renderGradient|interpolated|visuallyEquals|accentHex|themePerceivedLightness|customChromeTheme[A-Za-z0-9_]*|customChromeTexture[A-Za-z0-9_]*)\b'
-  schema_forbidden_hits="$(strip_swift_comments "$schema_file" | rg -n "$schema_forbidden_pattern" || true)"
-  if [[ -n "$schema_forbidden_hits" ]]; then
-    printf '%s\n' "$schema_forbidden_hits" >&2
-    record_error "canonical workspace-theme schema contains app rendering/runtime authority"
-  fi
+schema_forbidden_pattern='\b(SwiftUI|AppKit|Combine|Observation|OSLog|Dispatch|Color|NSColor|CGColor|NSGradient|WorkspaceResolvedGradient|WorkspaceGradientStop|Angle|Observable|Published|MainActor|Task|Timer|Logger|RuntimeDiagnostics|DispatchQueue|os_log)\b|\b(renderGradient|interpolated|visuallyEquals|accentHex|themePerceivedLightness|customChromeTheme[A-Za-z0-9_]*|customChromeTexture[A-Za-z0-9_]*)\b'
+schema_forbidden_hits="$(
+  strip_swift_comments "$schema_file" \
+    | guard_capture_matches "$schema_forbidden_pattern" -
+)"
+if [[ -n "$schema_forbidden_hits" ]]; then
+  record_error \
+    "canonical workspace-theme schema contains app rendering/runtime authority: $schema_forbidden_hits"
 fi
 
 canonical_names=(
@@ -122,7 +141,11 @@ authority_patterns=(
 
 for index in "${!authority_names[@]}"; do
   authority="${authority_names[$index]}"
-  hits="$(rg -n "${authority_patterns[$index]}" -g '*.swift' "${app_roots[@]}" || true)"
+  hits="$(
+    guard_capture_matches \
+      "${authority_patterns[$index]}" \
+      -g '*.swift' "${app_roots[@]}"
+  )"
   count="$(printf '%s\n' "$hits" | sed '/^$/d' | wc -l | tr -d ' ')"
   if [[ "$count" != 1 ]] || [[ "$hits" != "$rendering_file:"* ]]; then
     [[ -n "$hits" ]] && printf '%s\n' "$hits" >&2
@@ -138,7 +161,11 @@ coding_patterns=(
 
 for index in "${!coding_names[@]}"; do
   authority="${coding_names[$index]}"
-  hits="$(rg -n "${coding_patterns[$index]}" -g '*.swift' "${app_roots[@]}" || true)"
+  hits="$(
+    guard_capture_matches \
+      "${coding_patterns[$index]}" \
+      -g '*.swift' "${app_roots[@]}"
+  )"
   count="$(printf '%s\n' "$hits" | sed '/^$/d' | wc -l | tr -d ' ')"
   if [[ "$count" != 1 ]] || [[ "$hits" != "$coding_file:"* ]]; then
     [[ -n "$hits" ]] && printf '%s\n' "$hits" >&2
@@ -146,8 +173,5 @@ for index in "${!coding_names[@]}"; do
   fi
 done
 
-if (( failures > 0 )); then
-  exit 1
-fi
-
-printf 'workspace theme architecture guardrail passed (%d canonical schema types, 8 app authorities)\n' "${#canonical_names[@]}"
+guard_finish \
+  "workspace theme architecture guardrail (${#canonical_names[@]} canonical schema types, 8 app authorities)"

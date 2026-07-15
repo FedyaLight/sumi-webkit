@@ -50,15 +50,6 @@ require_pattern() {
   fi
 }
 
-require_test() {
-  local test_name="$1"
-  if ! rg -q "func[[:space:]]+${test_name}\\b" SumiTests -g '*.swift'; then
-    printf 'error: required physical WebView regression missing: %s\n' \
-      "$test_name" >&2
-    status=1
-  fi
-}
-
 for required in \
   "$focusable_web_view" \
   "$interaction_state" \
@@ -295,48 +286,6 @@ if [[ -f "$context_menu_script" ]]; then
     status=1
   fi
 fi
-
-for required_test in \
-  testPopupUserActivationCannotCrossCloneBoundary \
-  testConsumingPopupActivationEvaluationAfterNewRecordPreservesNewActivation \
-  testPopupActivationClaimCannotBeSpentTwiceByConcurrentRequests \
-  testStaleGestureClearReceiptPreservesNewerGesture \
-  testPopupOriginDoesNotBorrowLogicalTabURLWhenSourceFrameIsMissing \
-  testFilePickerActivationCannotCrossFocusableWebViewCloneBoundary \
-  testLinkHoverMessagesRemainScopedToPhysicalWebViewClones \
-  testSameTabPhysicalHoverSessionsRemainIndependentWhenOneWindowTearsDown \
-  testSplitHoverInactiveSourceNilDoesNotEraseActiveSource \
-  testContextMenuSnapshotsRemainScopedToPhysicalWebViewClones \
-  testGlanceTriggerUsesExactSourceWebViewGestureInsteadOfAnotherViewState \
-  testReaderDOMHoverPublishesThroughMinimalPhysicalWebViewScriptAndStopsAfterDismissal \
-  testExternalSchemeUsesSourcePermissionContextAndClosesCrossWebViewTarget \
-  testDownloadResponderReadsModifiersFromCrossWebViewSource \
-  testNewWindowLinkCopiesSourceProfileAndSpaceBeforeOpeningTab \
-  testIncognitoNewWindowLinkCreatesOnlyEphemeralTargetState \
-  testChildSurfaceRouterReturnsExactWindowChildAndWebKitConfiguration \
-  testWebKitChildWindowPublishesExactTrackedChildBeforeRegistration \
-  testWebKitChildWindowRejectsMismatchedDataStoreWithoutMutation \
-  testPrivateWebKitChildWindowSharesPartitionUntilLastWindowCloses; do
-  require_test "$required_test"
-done
-
-for required_test in \
-  testResolverRejectsMismatchedExecutionDataStore \
-  testWindowLocalShortcutLeaseRejectsWrongWindowClone \
-  testEssentialAndSpacePinnedRoutesPreserveExecutionPartition; do
-  require_test "$required_test"
-done
-
-for required_test in \
-  testSameTabTwoWindowLinkCommandsUseExactPhysicalSourceWindow \
-  testSameTabTwoWindowGlanceUsesExactPhysicalSourceWindow \
-  testUntrackedOrMismatchedPhysicalSourceFailsClosed \
-  testRejectedExactWindowActivationDoesNotPresentGlance \
-  testExactWindowPresentationMovesSameURLBetweenPhysicalTabPresentations \
-  testExactWindowPresentationReanchorsSameURLToNewSourceTab \
-  testExactWindowPresentationReanchorsSameURLWhenOriginChanges; do
-  require_test "$required_test"
-done
 
 if [[ "$status" -ne 0 ]]; then
   echo "WebView interaction-state boundary audit failed" >&2

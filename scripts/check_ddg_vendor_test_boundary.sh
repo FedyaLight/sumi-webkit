@@ -84,7 +84,11 @@ fi
 scheme_count=0
 tested_scheme_count=0
 
+scheme_files="$(
+  find "$scheme_dir" -type f -name '*.xcscheme' -print | sort
+)"
 while IFS= read -r scheme; do
+  [[ -n "$scheme" ]] || continue
   scheme_count=$((scheme_count + 1))
 
   testable_names="$(
@@ -107,7 +111,7 @@ while IFS= read -r scheme; do
   if sed -n '/<Testables>/,/<\/Testables>/p' "$scheme" | grep -Eq 'Vendor/DDG|BrowserServicesKit|URLPredictorTests'; then
     fail "$scheme references DDG vendor tests from its TestAction"
   fi
-done < <(find "$scheme_dir" -type f -name "*.xcscheme" | sort)
+done <<< "$scheme_files"
 
 if [[ "$scheme_count" -eq 0 ]]; then
   fail "no shared Xcode schemes found under $scheme_dir"

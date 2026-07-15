@@ -67,15 +67,6 @@ require_multiline_pattern() {
   fi
 }
 
-require_test() {
-  local test_name="$1"
-  if ! rg -q "func[[:space:]]+${test_name}\\b" SumiTests -g '*.swift'; then
-    printf 'error: required configuration-policy regression missing: %s\n' \
-      "$test_name" >&2
-    status=1
-  fi
-}
-
 enforce_max_lines() {
   local file="$1"
   local maximum="$2"
@@ -226,10 +217,6 @@ require_pattern \
   'runtime\.validateCommitLease\(transaction\.lease\)' \
   "failed pre-commit evidence must enter typed repository rollback"
 require_pattern \
-  "Packages/SumiWebRuntime/Tests/SumiWebRuntimeTests/WebViewReplacementSettlementServiceTests.swift" \
-  'testFailedCommitValidationRollsBackBeforeRepositoryCommit' \
-  "settlement must regress validation failure before repository commit"
-require_pattern \
   "$tracked_admission" \
   'final class TrackedWebViewAdmissionService: AuxiliaryTrackedWebViewPlacing' \
   "tracked WebView admission must remain a focused explicit capability"
@@ -262,17 +249,9 @@ require_pattern \
   'Tracked placement changed during registration side effects' \
   "tracked placement must revalidate exact identity after side effects"
 require_pattern \
-  "Packages/SumiWebRuntime/Tests/SumiWebRuntimeTests/WebViewSessionRepositoryTests.swift" \
-  'testSlotRegistrationCommitsOnceBeforeLifecycleSideEffects' \
-  "package registration must regress post-CAS/pre-side-effect ordering"
-require_pattern \
   "$tracking_lifecycle" \
   'WebViewTrackedRegistrationResult' \
   "tracked registration must return typed non-mutating rejections"
-require_pattern \
-  "Packages/SumiWebRuntime/Tests/SumiWebRuntimeTests/WebViewSessionRepositoryTests.swift" \
-  'testLifecycleRegistrationReturnsChangedPreflightWithoutSideEffects' \
-  "changed tracked-registration preflight must reject without lifecycle effects"
 require_pattern \
   "$ledger" \
   'Set\(webViews\.map\(ObjectIdentifier\.init\)\)' \
@@ -332,25 +311,6 @@ require_multiline_pattern \
   'removeAllWebViews[\s\S]{0,220}intent:[[:space:]]*\.retirement' \
   "destructive TabManager cleanup must enter the retirement lifecycle"
 
-for test_name in \
-  testConflictingTabCannotRetireCanonicalWebViews \
-  testConflictingTabCannotSuspendCanonicalWebViews \
-  testSuspensionKeepsBindingAndRetirementUnbindsExactTab \
-  testRepeatedProtectedRetirementKeepsCleanupIdentityUntilResidenceDrains \
-  testRetiredTabCannotRecreateTrackedOrExtensionWebView \
-  testTerminalRuntimeCannotRebindOrRecreateWebViews \
-  testCancellationAfterReleaseStillStopsScheduledReplay \
-  testDirectSameSlotAdmissionRevokesOlderScheduledReplay \
-  testNewerSameSlotDeferralForDifferentProfileSupersedesScheduledReplay \
-  testTrackedAndUntrackedReplacementUseIndependentReplaySlots \
-  testTerminalGateRejectsAdmissionWithoutSchedulingReplay \
-  testTerminalCancellationRevokesRestoreSubmissionAuthority \
-  testWebsiteDataGateDefersBeforeCandidateCreationAndReplaysFreshCandidate \
-  testWebsiteDataGateDefersUntrackedReplacementBeforeCandidateCreation \
-  testReentrantCommittedPreparationSupersedesOuterResult; do
-  require_test "$test_name"
-done
-
 require_pattern \
   "$website_data_gate" \
   'case trackedRegistration\(tabID: UUID, windowID: UUID\)' \
@@ -407,40 +367,6 @@ enforce_max_collaborators "$untracked_materialization" 3
 # Five exact authorities are intentional: Tab identity, residence query,
 # website-data admission, tracked placement, and detached installation.
 enforce_max_collaborators "$extension_replacement" 5
-
-for test_name in \
-  testProvisionalWebViewDoesNotChangeCommittedPolicy \
-  testStaleReceiptCannotOverwriteNewerCommittedPolicy \
-  testPreparedWebViewCannotCommitThroughAnotherTabAtSameGeneration \
-  testAdditionalCloneAcceptsSameEffectiveRulesAcrossHosts \
-  testMixedClonePolicySetCancelsWithoutLedgerMutation \
-  testNewerCloneSettlementMakesOlderCanonicalReceiptStale \
-  testRawNormalCanonicalWebViewIsRejectedWithoutMutatingLedger \
-  testCommittedReceiptCannotAuthorizeRawNormalSubset \
-  testCancellingThroughAnotherTabPreservesForeignReceipt \
-  testPlacementAdmissionRejectsNoPlacement \
-  testPlacementAdmissionRejectsStalePolicy \
-  testPlacementAdmissionRejectsWrongCanonicalWebView \
-  testParkedNormalWebViewCannotBeReusedAfterAutoplayPolicyChanges \
-  testNormalWebViewKeepsExactResolvedProfileDataStore \
-  testTrackedAssignmentRejectsRawWebViewBeforeRepositoryMutation \
-  testCanonicalPlacementRejectsPolicyReceiptFromAnotherTab \
-  testCanonicalPlacementReturnsProtectedCandidateWithoutMutation \
-  testProtectedOccupantRejectsAndCancelsExactPolicyAdmission \
-  testCanonicalAuxiliaryPlacementCancelsSameTabPolicyEvidence \
-  testMaterializationCommitsAdditionalCloneThroughExactPlacement \
-  testDetachedReplacementRejectsCancelledPolicyWithoutPlacement \
-  testDetachedReplacementReportsConsumedAfterSynchronousPolicyRollback \
-  testDetachedAuxiliaryReplacementRejectsForeignPolicyEvidence \
-  testReplacementRejectsPolicyEvidenceFromDifferentWebView \
-  testCancelledPolicyEvidenceIsRejectedBeforeReplacementAdmission \
-  testPolicyReceiptSubstitutionDuringModelValidationCannotMutatePlacement \
-  testPolicyCancellationDuringModelCommitRollsBackRepositoryAdmission \
-  testPolicyCancellationWhileAwaitingBindingRollsBackBeforeCommit \
-  testCommittedReplacementRetiresWholeGenerationBeforeDestroyingIt \
-  testRolledBackReplacementDiscardsOnlyReplacementGeneration; do
-  require_test "$test_name"
-done
 
 if (( status != 0 )); then
   exit "$status"

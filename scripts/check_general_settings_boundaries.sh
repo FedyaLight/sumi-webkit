@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$repo_root"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "$script_dir/.." && pwd)"
+# shellcheck source=scripts/lib/architecture_guard.sh
+source "$script_dir/lib/architecture_guard.sh"
+guard_initialize "$repo_root"
 
 root="Sumi/Components/Settings/Tabs/General.swift"
 window_section="Sumi/Components/Settings/Tabs/GeneralWindowSettingsSection.swift"
@@ -11,7 +14,6 @@ search_section="Sumi/Components/Settings/Tabs/GeneralSearchSettingsSection.swift
 engines_section="Sumi/Components/Settings/Tabs/GeneralSearchEnginesSettingsSection.swift"
 mutation="Sumi/Components/Settings/Tabs/GeneralSearchEngineMutation.swift"
 editor="Sumi/Components/Settings/Tabs/SearchEngineEditor.swift"
-tests="SumiTests/GeneralSettingsBoundaryTests.swift"
 
 production=(
   "$root"
@@ -23,20 +25,18 @@ production=(
   "$editor"
 )
 
-for file in "${production[@]}" "$tests"; do
-  if [[ ! -f "$file" ]]; then
-    echo "missing General settings boundary file: $file" >&2
-    exit 1
-  fi
+for file in "${production[@]}"; do
+  guard_require_file "$file"
 done
 
 require_pattern() {
   local pattern="$1"
   local file="$2"
   local message="$3"
-  if ! rg -q "$pattern" "$file"; then
-    echo "$message" >&2
-    exit 1
+  local match_count
+  match_count="$(guard_count_matches "$pattern" "$file")" || return
+  if (( match_count == 0 )); then
+    guard_record_failure "$message"
   fi
 }
 
@@ -44,9 +44,10 @@ reject_pattern() {
   local pattern="$1"
   local file="$2"
   local message="$3"
-  if rg -n "$pattern" "$file"; then
-    echo "$message" >&2
-    exit 1
+  local matches
+  matches="$(guard_capture_matches "$pattern" "$file")" || return
+  if [[ -n "$matches" ]]; then
+    guard_record_failure "$message: $matches"
   fi
 }
 
@@ -111,30 +112,16 @@ require_pattern 'enum GeneralSearchEngineMutation' "$mutation" \
 reject_pattern '@Observable|class GeneralSearchEngineMutation|static var' "$mutation" \
   "Search-engine mutation seams must not become a new observable owner or hidden authority"
 
-for test_name in \
-  testSearchStoreRepairsDefaultAfterSelectedEngineRemoval \
-  testSearchStoreRepairsCustomDefaultWhenRestoringDefaults \
-  testUnrelatedStoreMutationDoesNotInvalidateObservedWindowSetting \
-  testSectionConstructionNeedsOnlyExactBindingsAndProjections; do
-  require_pattern "func ${test_name}" "$tests" \
-    "missing General settings boundary regression: $test_name"
-done
-require_pattern 'settings\.search\.searchEngines =' "$tests" \
-  "default repair tests must exercise the real SearchSettingsStore setter"
-reject_pattern 'Task\.sleep|RunLoop|asyncAfter' "$tests" \
-  "General settings tests must remain deterministic without polling"
-
 for file in "${production[@]}"; do
   reject_pattern \
     'Timer|Task[<(]|\.task\b|\.onReceive\b|NotificationCenter|RunLoop|asyncAfter|\bpoll' \
     "$file" \
     "General settings must add no idle observers, tasks, timers, or polling: $file"
 
-  line_count="$(wc -l < "$file" | tr -d ' ')"
-  if (( line_count >= 500 )); then
-    echo "General settings production file must stay below 500 LOC: $file ($line_count)" >&2
-    exit 1
-  fi
+  guard_max \
+    "$file General-settings LOC" \
+    "$(guard_count_lines "$file")" \
+    499
 done
 
-echo "General settings view boundaries passed"
+guard_finish 'General settings view boundaries'

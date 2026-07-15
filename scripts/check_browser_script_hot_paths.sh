@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cd "$(dirname "$0")/.."
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "$script_dir/.." && pwd)"
+# shellcheck source=scripts/lib/architecture_guard.sh
+source "$script_dir/lib/architecture_guard.sh"
+guard_initialize "$repo_root"
 
 scan_paths=(
   "Sumi/Managers"
@@ -29,7 +33,7 @@ check_pattern() {
   local pattern="$2"
   local matches
 
-  matches="$(grep -rEn --include='*.swift' --include='*.js' "$pattern" "${scan_paths[@]}" || [[ $? -eq 1 ]])"
+  matches="$(guard_capture_matches "$pattern" -g '*.swift' -g '*.js' "${scan_paths[@]}")" || return
   [[ -z "$matches" ]] && return
 
   while IFS= read -r line; do

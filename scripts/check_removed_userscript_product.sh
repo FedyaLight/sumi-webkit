@@ -1,15 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cd "$(dirname "$0")/.."
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "$script_dir/.." && pwd)"
+# shellcheck source=scripts/lib/architecture_guard.sh
+source "$script_dir/lib/architecture_guard.sh"
+guard_initialize "$repo_root"
 
 removed_path="Sumi/Managers/SumiScripts"
-remaining_files="$(rg --files "$removed_path" 2>/dev/null || true)"
-if [[ -n "$remaining_files" ]]; then
-  printf 'Removed userscript product path must not exist: %s\n' "$removed_path" >&2
-  printf '%s\n' "$remaining_files" >&2
-  exit 1
-fi
+guard_expect_absent_path 'removed userscript product path' "$removed_path"
 
 production_roots=(
   App
@@ -32,19 +31,16 @@ removed_symbols=(
   BrowserUserscriptRuntimeFactory
 )
 
-failed=0
 for symbol in "${removed_symbols[@]}"; do
-  matches="$(rg -n -w --glob '*.swift' --glob '*.h' --glob '*.m' --glob '*.mm' \
-    "$symbol" "${production_roots[@]}" || [[ $? -eq 1 ]])"
+  matches="$(
+    guard_capture_matches \
+      "\\b${symbol}\\b" \
+      --glob '*.swift' --glob '*.h' --glob '*.m' --glob '*.mm' \
+      "${production_roots[@]}"
+  )"
   if [[ -n "$matches" ]]; then
-    printf 'Removed userscript product symbol returned (%s):\n%s\n' \
-      "$symbol" "$matches" >&2
-    failed=1
+    guard_record_failure "removed userscript product symbol returned ($symbol): $matches"
   fi
 done
 
-if [[ "$failed" -ne 0 ]]; then
-  exit 1
-fi
-
-echo "removed userscript product audit passed"
+guard_finish 'removed userscript product audit'

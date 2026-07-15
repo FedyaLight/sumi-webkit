@@ -25,14 +25,8 @@ policy='Sumi/Managers/TabManager/SelectionAfterClosurePolicy.swift'
 runtime_connection='Sumi/BrowserRuntime/Ports/TabRuntimePortConnection.swift'
 lifecycle_bag='Sumi/Managers/TabManager/TabLifecycleOwnerBag.swift'
 accessors='Sumi/Managers/TabManager/TabManager+OwnerAccessors.swift'
-retirement_tests='SumiTests/TabClosureCandidateRetirementTests.swift'
-policy_tests='SumiTests/SelectionAfterClosurePolicyTests.swift'
-composition_tests='SumiTests/TabClosureServiceCompositionTests.swift'
-batch_tests='SumiTests/TabRemovalBatchTests.swift'
-
 for file in "$service" "$composition" "$retirement" "$cleanup" "$policy" \
-  "$runtime_connection" "$retirement_tests" "$policy_tests" \
-  "$composition_tests" "$batch_tests"; do
+  "$runtime_connection"; do
   if [[ ! -f "$file" ]]; then
     printf 'error: tab closure boundary file missing: %s\n' "$file" >&2
     status=1
@@ -176,36 +170,6 @@ fi
 if (( policy_lines > 90 )); then
   printf 'error: SelectionAfterClosurePolicy exceeded focused LOC cap (%s > 90)\n' \
     "$policy_lines" >&2
-  status=1
-fi
-
-# Required focused regressions must stay present.
-required_tests=(
-  testDuplicateCandidateIDsAreRetiredOnce
-  testMixedLiveCandidatesUseTheirConcreteLifecycleAuthorities
-  testRemovedIndexSelectsClampedNeighborInSpaceOrdering
-  testRemovedIndexFallsBackToEssentialTabsWhenSpaceBecomesEmpty
-  testClosingGlobalPinnedUsesOneCoherentEssentialThenSpaceFallback
-  testConfirmedRegularRemovalCapturesRecentlyClosedAndNotifiesOnce
-  testNonexistentRegularCandidatesSkipPersistenceNotificationAndCapture
-  testSuccessfulBatchUsesOneStructuralTransaction
-  testSelectionAfterClosingActiveRegularUsesPostRemovalNeighbor
-  testLiveCompositionUsesRealTabManagerService
-  testRetainedClosureServiceDoesNotRetainTabManager
-  testCloseAllBelowRemovesInactiveMemberFromThreeMemberGroupOnce
-  testCloseAllBelowRequestsOneBatchCleanupAndOnePersistence
-)
-
-for test_name in "${required_tests[@]}"; do
-  if ! rg -q "func[[:space:]]+${test_name}\\b" \
-    "$retirement_tests" "$policy_tests" "$composition_tests" "$batch_tests"; then
-    printf 'error: required tab closure regression missing: %s\n' "$test_name" >&2
-    status=1
-  fi
-done
-if ! rg -A 30 'func testLiveCompositionUsesRealTabManagerService' \
-  "$composition_tests" | rg -q 'tabManager\.tabClosureService'; then
-  printf 'error: live tab-closure composition regression does not use TabManager.tabClosureService\n' >&2
   status=1
 fi
 

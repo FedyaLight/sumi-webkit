@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$repo_root"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "$script_dir/.." && pwd)"
+# shellcheck source=scripts/lib/architecture_guard.sh
+source "$script_dir/lib/architecture_guard.sh"
+guard_initialize "$repo_root"
 
 compositor="Sumi/Components/WebsiteView/WebsiteCompositorView.swift"
 composition_root="Sumi/Components/WebsiteView/TabCompositorWrapper.swift"
@@ -11,69 +14,93 @@ browser_context="Sumi/Components/WebsiteView/WindowWebContentBrowserContext.swif
 presentation="Sumi/Models/Window/WindowSplitPresentation.swift"
 projection="Sumi/Managers/SplitRuntime/WindowSplitProjection.swift"
 obsolete_split_repair="Sumi/Components/WebsiteView/WindowWebContentSplitRepairScheduler.swift"
-status=0
+for source in \
+  "$compositor" \
+  "$composition_root" \
+  "$display_state" \
+  "$browser_context" \
+  "$presentation" \
+  "$projection"; do
+  guard_require_file "$source"
+done
 
-if grep -q 'struct TabCompositorWrapper' "$compositor"; then
-  echo "TabCompositorWrapper must remain a separate SwiftUI composition root." >&2
-  status=1
+embedded_wrapper_count="$(
+  guard_count_matches 'struct TabCompositorWrapper' "$compositor"
+)"
+if (( embedded_wrapper_count > 0 )); then
+  guard_record_failure 'TabCompositorWrapper returned to WebsiteCompositorView'
 fi
 
-if ! grep -q 'struct TabCompositorWrapper: NSViewControllerRepresentable' "$composition_root"; then
-  echo "TabCompositorWrapper composition root is missing." >&2
-  status=1
+composition_root_count="$(
+  guard_count_matches \
+    'struct TabCompositorWrapper: NSViewControllerRepresentable' \
+    "$composition_root"
+)"
+if (( composition_root_count == 0 )); then
+  guard_record_failure 'TabCompositorWrapper composition root is missing'
 fi
 
-raw_split_dependencies="$(grep -nE '^[[:space:]]+(resolveDragTab|splitPreviews|splitLayout|splitDrops|splitDropTargets|sidebarDragState):' "$compositor" || [[ $? -eq 1 ]])"
+raw_split_dependencies="$(
+  guard_capture_matches \
+    '^[[:space:]]+(resolveDragTab|splitPreviews|splitLayout|splitDrops|splitDropTargets|sidebarDragState):' \
+    "$compositor"
+)"
 if [[ -n "$raw_split_dependencies" ]]; then
-  printf 'WindowWebContentController must receive a composed split-host view, not its raw construction dependencies:\n%s\n' "$raw_split_dependencies" >&2
-  status=1
+  guard_record_failure "raw split-host construction dependencies returned: $raw_split_dependencies"
 fi
 
-if ! grep -q 'containerView: WindowWebContentSplitHostLayoutView' "$compositor"; then
-  echo "WindowWebContentController must own an explicitly composed split-host view." >&2
-  status=1
+split_host_count="$(
+  guard_count_matches \
+    'containerView: WindowWebContentSplitHostLayoutView' \
+    "$compositor"
+)"
+if (( split_host_count == 0 )); then
+  guard_record_failure 'WindowWebContentController lost its composed split-host view'
 fi
 
-dependency_bags="$(grep -nE '(WindowWebContentControllerDependencies|WindowWebContentControllerGraph)' "$compositor" "$composition_root" || [[ $? -eq 1 ]])"
+dependency_bags="$(
+  guard_capture_matches \
+    '(WindowWebContentControllerDependencies|WindowWebContentControllerGraph)' \
+    "$compositor" "$composition_root"
+)"
 if [[ -n "$dependency_bags" ]]; then
-  printf 'Do not hide compositor dependencies in a broad bag or graph:\n%s\n' "$dependency_bags" >&2
-  status=1
+  guard_record_failure "broad compositor dependency bag/graph returned: $dependency_bags"
 fi
 
-role_declarations="$(grep -nE '^(struct WebsiteDisplayState|protocol WindowWebContentBrowserContext|final class BrowserManagerWindowWebContentContext|private func hostedWebViewCount|enum WindowWebContentPresentationDecision|final class WindowWebContentVisualHandoffFlowOwner)' "$compositor" || [[ $? -eq 1 ]])"
+role_declarations="$(
+  guard_capture_matches \
+    '^(struct WebsiteDisplayState|protocol WindowWebContentBrowserContext|final class BrowserManagerWindowWebContentContext|private func hostedWebViewCount|enum WindowWebContentPresentationDecision|final class WindowWebContentVisualHandoffFlowOwner)' \
+    "$compositor"
+)"
 if [[ -n "$role_declarations" ]]; then
-  printf 'Display state, browser context, and visual handoff flow roles must stay out of WebsiteCompositorView:\n%s\n' "$role_declarations" >&2
-  status=1
+  guard_record_failure "separate compositor roles returned to WebsiteCompositorView: $role_declarations"
 fi
 
-legacy_split_contracts="$(grep -nE 'splitGroup: SplitGroup|activeSplitGroup|func removeSplitGroup' "$compositor" "$display_state" "$browser_context" || [[ $? -eq 1 ]])"
+legacy_split_contracts="$(
+  guard_capture_matches \
+    'splitGroup: SplitGroup|activeSplitGroup|func removeSplitGroup' \
+    "$compositor" "$display_state" "$browser_context"
+)"
 if [[ -n "$legacy_split_contracts" ]]; then
-  printf 'Website compositor must consume window-local split presentations and cannot repair durable groups:\n%s\n' "$legacy_split_contracts" >&2
-  status=1
+  guard_record_failure "durable split repair contract returned to compositor: $legacy_split_contracts"
 fi
 
-if [[ -e "$obsolete_split_repair" ]]; then
-  echo "WindowWebContentSplitRepairScheduler must stay deleted; compositor rendering cannot mutate durable split structure." >&2
-  status=1
-fi
+guard_expect_absent_path 'obsolete compositor split-repair scheduler' "$obsolete_split_repair"
 
-retained_runtime_objects="$(grep -nE '^[[:space:]]*(let|var)[[:space:]].*(:[[:space:]]*|\[[[:space:]]*)(Tab|WKWebView|TrackedWebViewOwner)([?[:space:]\]]|$)' "$presentation" || [[ $? -eq 1 ]])"
+retained_runtime_objects="$(
+  guard_capture_matches \
+    '^[[:space:]]*(let|var)[[:space:]].*(:[[:space:]]*|\[[[:space:]]*)(Tab|WKWebView|TrackedWebViewOwner)([?[:space:]\]]|$)' \
+    "$presentation"
+)"
 if [[ -n "$retained_runtime_objects" ]]; then
-  printf 'WindowSplitPresentation must contain identities only, not runtime objects:\n%s\n' "$retained_runtime_objects" >&2
-  status=1
+  guard_record_failure "WindowSplitPresentation retained runtime objects: $retained_runtime_objects"
 fi
 
 for bounded_file in "$presentation" "$projection"; do
-  line_count="$(wc -l < "$bounded_file" | tr -d ' ')"
-  if (( line_count > 150 )); then
-    echo "$bounded_file exceeds the 150-line window-split projection boundary ($line_count)." >&2
-    status=1
-  fi
+  guard_max \
+    "$bounded_file window-split projection LOC" \
+    "$(guard_count_lines "$bounded_file")" \
+    150
 done
 
-if [[ "$status" -ne 0 ]]; then
-  echo "website compositor boundary audit failed" >&2
-  exit "$status"
-fi
-
-echo "website compositor boundary audit passed"
+guard_finish 'website compositor boundary audit'

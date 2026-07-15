@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$repo_root"
-matches="$(rg -n '@_exported import Sumi(Domain|WebRuntime)' -g '*.swift' . || true)"
-if [[ -n "$matches" ]]; then
-  printf 'error: @_exported import SumiDomain/SumiWebRuntime is forbidden:\n%s\n' "$matches" >&2
-  exit 1
-fi
-echo "no @_exported Domain/WebRuntime re-exports"
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "$script_dir/.." && pwd)"
+# shellcheck source=scripts/lib/architecture_guard.sh
+source "$script_dir/lib/architecture_guard.sh"
+guard_initialize "$repo_root"
+
+guard_expect_no_matches \
+  '@_exported Domain/WebRuntime re-exports' \
+  '@_exported import Sumi(Domain|WebRuntime)' \
+  -g '*.swift' .
+guard_finish 'Domain/WebRuntime re-export boundary'

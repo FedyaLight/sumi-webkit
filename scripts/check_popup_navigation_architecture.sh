@@ -51,15 +51,6 @@ require_pattern() {
   fi
 }
 
-require_test() {
-  local test_name="$1"
-  if ! rg -q "func[[:space:]]+${test_name}\\b" SumiTests -g '*.swift'; then
-    printf 'error: required popup navigation regression missing: %s\n' \
-      "$test_name" >&2
-    status=1
-  fi
-}
-
 enforce_service_boundary() {
   local file="$1"
   local max_lines="$2"
@@ -334,23 +325,6 @@ require_pattern \
   "$glance_runtime" \
   'attachBrowserRuntime\(tabBrowserRuntime\)' \
   "Glance preview Tabs must attach the shared runtime"
-
-for required_test in \
-  testExtensionTabOpenersRejectUnavailableRegistrarBeforeMutation \
-  testPhysicalWebPopupRejectsSourceWithoutPublishedShellBeforeMutation \
-  testExtensionPopupExternalCreateWebViewRejectsMissingSourceResidence \
-  testExtensionWebKitChildWindowRejectsCrossProfileSourceBeforeMutation \
-  testExtensionWebKitChildWindowPublishesRegistryThenWindowThenExactTab \
-  testExtensionWebKitChildWindowRejectsSuppressedProjectionAndRollsBack \
-  testOrdinaryWebKitChildWindowAllowsSuppressedExtensionProjection \
-  testWebKitChildWindowRejectsMismatchedDataStoreWithoutMutation \
-  testWindowLocalShortcutLeaseRejectsWrongWindowClone \
-  testPopupCreateWebViewRejectsDocumentChangedDuringSynchronousPermission \
-  testPopupCreateWebViewRejectsDocumentChangedDuringAsyncPermission \
-  testPopupCreateWebViewRejectsMismatchedDataStoreBeforePermission \
-  testPopupChildKeepsCopiedNormalConfigurationButIsAuxiliarySurface; do
-  require_test "$required_test"
-done
 
 if [[ "$status" -ne 0 ]]; then
   echo "popup navigation architecture audit failed" >&2

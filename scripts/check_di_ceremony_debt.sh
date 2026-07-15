@@ -7,13 +7,11 @@
 # - scripts/check_webruntime_isolation_boundary.sh
 set -euo pipefail
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$repo_root"
-
-if ! command -v rg >/dev/null 2>&1; then
-  printf 'error: ripgrep (rg) is required for DI ceremony debt guardrail\n' >&2
-  exit 1
-fi
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "$script_dir/.." && pwd)"
+# shellcheck source=scripts/lib/architecture_guard.sh
+source "$script_dir/lib/architecture_guard.sh"
+guard_initialize "$repo_root"
 
 production_roots=(
   "App"
@@ -24,32 +22,12 @@ production_roots=(
   "UI"
 )
 
-failures=0
-
 count_matches() {
-  local pattern="$1"
-  shift
-
-  local total=0
-  local line
-  while IFS= read -r line; do
-    [[ -n "$line" ]] || continue
-    total=$((total + ${line##*:}))
-  done < <(rg --count-matches "$pattern" -g "*.swift" "$@" || true)
-
-  printf '%s\n' "$total"
+  guard_count_swift_matches "$@"
 }
 
 check_max() {
-  local label="$1"
-  local actual="$2"
-  local max="$3"
-
-  printf '%-46s %4d / %4d\n' "$label" "$actual" "$max"
-  if (( actual > max )); then
-    printf 'error: %s increased above DI ceremony baseline (%d > %d)\n' "$label" "$actual" "$max" >&2
-    failures=$((failures + 1))
-  fi
+  guard_max "$@"
 }
 
 dependencies_structs="$(
@@ -59,10 +37,10 @@ live_factories="$(
   count_matches 'static\s+func\s+live\b' "${production_roots[@]}"
 )"
 browser_manager_lazy_owners="$(
-  rg --count-matches 'lazy var \w+Owner\b' \
-    Sumi/Managers/BrowserManager/BrowserManager.swift 2>/dev/null || true
+  guard_count_matches \
+    'lazy var \w+Owner\b' \
+    Sumi/Managers/BrowserManager/BrowserManager.swift
 )"
-browser_manager_lazy_owners="${browser_manager_lazy_owners:-0}"
 
 printf '%s\n' 'DI ceremony debt baseline guardrail'
 printf '%s\n' '-----------------------------------'
@@ -70,8 +48,4 @@ check_max "production struct Dependencies" "$dependencies_structs" 40
 check_max "production static func live" "$live_factories" 44
 check_max "BrowserManager lazy var *Owner" "$browser_manager_lazy_owners" 3
 
-if (( failures > 0 )); then
-  exit 1
-fi
-
-printf '\nDI ceremony debt guardrail passed\n'
+guard_finish 'DI ceremony debt guardrail'

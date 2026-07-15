@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$repo_root"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "$script_dir/.." && pwd)"
+# shellcheck source=scripts/lib/architecture_guard.sh
+source "$script_dir/lib/architecture_guard.sh"
+guard_initialize "$repo_root"
 
 runtime_paths=(App Sumi Settings SidebarChrome UI FloatingBar)
 content_blocking_paths=(Sumi/ContentBlocking)
-status=0
 
 check_absent() {
   local label="$1"
@@ -14,10 +16,9 @@ check_absent() {
   shift 2
   local matches
 
-  matches="$(grep -rEn --include='*.swift' -e "$pattern" "$@" || [[ $? -eq 1 ]])"
+  matches="$(guard_capture_matches "$pattern" -g '*.swift' "$@")" || return
   if [[ -n "$matches" ]]; then
-    printf 'disallowed %s:\n%s\n' "$label" "$matches" >&2
-    status=1
+    guard_record_failure "$label: $matches"
   fi
 }
 
@@ -31,7 +32,11 @@ check_absent \
   'SumiTrackingProtection|SumiTrackingRuleListProvider|SumiTrackingRuleListPipeline|updateTrackerDataManually|runtimeGenerated|raw-list|raw list|tracking data set|tracker data|EasyList|EasyPrivacy|adblock-rust|adblock_rust|AdblockRustCompiler|sumi-adblock-rust-adapter' \
   "${runtime_paths[@]}"
 
-tds_matches="$(grep -rEn --include='*.swift' -e 'trackerblocking/v6/current|macos-tds\.json' "${runtime_paths[@]}" || [[ $? -eq 1 ]])"
+tds_matches="$(
+  guard_capture_matches \
+    'trackerblocking/v6/current|macos-tds\.json' \
+    -g '*.swift' "${runtime_paths[@]}"
+)"
 tds_violations=""
 while IFS= read -r match; do
   [[ -z "$match" ]] && continue
@@ -41,8 +46,7 @@ while IFS= read -r match; do
   tds_violations+="$match"$'\n'
 done <<< "$tds_matches"
 if [[ -n "$tds_violations" ]]; then
-  printf 'disallowed DDG/TDS runtime list URL use:\n%s' "$tds_violations" >&2
-  status=1
+  guard_record_failure "DDG/TDS runtime list URL use: $tds_violations"
 fi
 
 check_absent \
@@ -60,9 +64,4 @@ check_absent \
   'Timer|scheduledTimer|automatic update|background update|stale tracker|stale ad' \
   "${content_blocking_paths[@]}"
 
-if [[ "$status" -ne 0 ]]; then
-  echo "prepared-bundle runtime boundary audit failed" >&2
-  exit "$status"
-fi
-
-echo "prepared-bundle runtime boundary audit passed"
+guard_finish 'prepared-bundle runtime boundary audit'

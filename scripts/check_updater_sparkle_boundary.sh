@@ -1,31 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$repo_root"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "$script_dir/.." && pwd)"
+# shellcheck source=scripts/lib/architecture_guard.sh
+source "$script_dir/lib/architecture_guard.sh"
+guard_initialize "$repo_root"
 
-status=0
-
-service_imports="$(
-  grep -nE 'import (Sparkle|Combine)' Sumi/Updates/SumiUpdaterService.swift || [[ $? -eq 1 ]]
-)"
-if [[ -n "$service_imports" ]]; then
-  printf 'SumiUpdaterService must not import Sparkle or Combine directly:\n%s\n' "$service_imports" >&2
-  status=1
-fi
-
-disallowed_sparkle_imports="$(
-  find Sumi/Updates -name '*.swift' -type f ! -name 'SumiSparkle*.swift' \
-    -exec grep -nE 'import Sparkle' {} + || [[ $? -eq 1 ]]
-)"
-if [[ -n "$disallowed_sparkle_imports" ]]; then
-  printf 'Sparkle imports must stay in SumiSparkle role files:\n%s\n' "$disallowed_sparkle_imports" >&2
-  status=1
-fi
-
-if [[ "$status" -ne 0 ]]; then
-  echo "updater Sparkle boundary audit failed" >&2
-  exit "$status"
-fi
-
-echo "updater Sparkle boundary audit passed"
+guard_require_file Sumi/Updates/SumiUpdaterService.swift
+guard_expect_no_matches \
+  'Sparkle/Combine import in updater policy service' \
+  '^[[:space:]]*(@preconcurrency[[:space:]]+)?import[[:space:]]+(Sparkle|Combine)([[:space:]]|$)' \
+  Sumi/Updates/SumiUpdaterService.swift
+guard_expect_no_matches \
+  'Sparkle import outside SumiSparkle adapters' \
+  '^[[:space:]]*(@preconcurrency[[:space:]]+)?import[[:space:]]+Sparkle([[:space:]]|$)' \
+  -g '*.swift' -g '!SumiSparkle*.swift' Sumi/Updates
+guard_finish 'updater Sparkle boundary audit'

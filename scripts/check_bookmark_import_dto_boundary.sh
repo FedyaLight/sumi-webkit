@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$repo_root"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "$script_dir/.." && pwd)"
+# shellcheck source=scripts/lib/architecture_guard.sh
+source "$script_dir/lib/architecture_guard.sh"
+guard_initialize "$repo_root"
 
-status=0
 legacy_files=(
   "Sumi/Bookmarks/Store/BookmarkImportSource.swift"
   "Sumi/Bookmarks/Store/BookmarkOrFolder.swift"
@@ -13,17 +15,18 @@ legacy_files=(
 )
 
 for file in "${legacy_files[@]}"; do
-  if [[ -e "$file" ]]; then
-    printf 'Retired bookmark import model/adapter file was restored: %s\n' "$file" >&2
-    status=1
-  fi
+  guard_expect_absent_path 'retired bookmark import model/adapter' "$file"
 done
 
 legacy_symbols='(^|[^[:alnum:]_])(BookmarkImportSource|BookmarkImportReaderKind|BookmarkOrFolder|BookmarksImportSummary)([^[:alnum:]_]|$)'
-legacy_references="$(grep -RInE --include='*.swift' "$legacy_symbols" Sumi/Bookmarks SumiTests || true)"
+legacy_references="$(
+  guard_capture_matches \
+    "$legacy_symbols" \
+    -g '*.swift' Sumi/Bookmarks SumiTests
+)"
 if [[ -n "$legacy_references" ]]; then
-  printf 'Bookmark import must use the single SumiBookmarkImport value model:\n%s\n' "$legacy_references" >&2
-  status=1
+  guard_record_failure \
+    "bookmark import must use the canonical SumiBookmarkImport value model: $legacy_references"
 fi
 
 canonical_types=(
@@ -33,26 +36,30 @@ canonical_types=(
   SumiBookmarksImportSummary
 )
 for type in "${canonical_types[@]}"; do
-  count="$(grep -RhcE "^(enum|struct) ${type}\\b" Sumi/Bookmarks --include='*.swift' | awk '{ total += $1 } END { print total + 0 }')"
-  if [[ "$count" -ne 1 ]]; then
-    printf 'Expected exactly one %s declaration, found %s.\n' "$type" "$count" >&2
-    status=1
-  fi
+  guard_exact \
+    "$type canonical declaration" \
+    "$(
+      guard_count_swift_matches \
+        "^(enum|struct) ${type}\\b" \
+        Sumi/Bookmarks
+    )" \
+    1
 done
 
-if grep -RInE --include='*.swift' '(storeBookmarkOrFolder|storeImportSummary|storeImportSource|storeReaderKind)' Sumi/Bookmarks; then
-  echo 'Bookmark import adapter conversion seams must not be restored.' >&2
-  status=1
+guard_expect_no_matches \
+  'retired bookmark import adapter conversion seams' \
+  '(storeBookmarkOrFolder|storeImportSummary|storeImportSource|storeReaderKind)' \
+  -g '*.swift' Sumi/Bookmarks
+
+canonical_source='Sumi/Bookmarks/Store/SumiBookmarkImportSource.swift'
+guard_require_file "$canonical_source"
+if (( $(
+  guard_count_matches \
+    '^extension SumiBookmarkImportSource \{' \
+    "$canonical_source"
+) == 0 )); then
+  guard_record_failure \
+    'bookmark parsers do not consume canonical SumiBookmarkImportSource directly'
 fi
 
-if ! grep -q '^extension SumiBookmarkImportSource {' Sumi/Bookmarks/Store/SumiBookmarkImportSource.swift; then
-  echo 'Bookmark parsers must consume the canonical SumiBookmarkImportSource directly.' >&2
-  status=1
-fi
-
-if [[ "$status" -ne 0 ]]; then
-  echo 'bookmark import DTO boundary failed' >&2
-  exit "$status"
-fi
-
-echo 'bookmark import DTO boundary passed'
+guard_finish 'bookmark import DTO boundary'

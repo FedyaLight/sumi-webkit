@@ -1,16 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$repo_root"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "$script_dir/.." && pwd)"
+# shellcheck source=scripts/lib/architecture_guard.sh
+source "$script_dir/lib/architecture_guard.sh"
+guard_initialize "$repo_root"
 
 # Browser-profile website data may only be mutated by the canonical cleanup
 # service. Callers must enter through the destructive-cleanup preparer so live
 # WebViews and extension participants are quiesced before the WebKit mutation.
-#
-# WKWebExtensionController owns a separate extension metadata store. Its data
-# cleanup remains in the extension residency boundary and is deliberately not
-# treated as a browser-profile WKWebsiteDataStore mutation.
+# WKWebExtensionController owns a separate extension metadata store and remains
+# in the extension residency boundary.
 production_roots=(App Sumi SidebarChrome FloatingBar Settings UI Packages)
 canonical_cleanup_source="Sumi/Services/SumiWebsiteDataCleanupService.swift"
 extension_cleanup_source="Sumi/Managers/ExtensionManager/WebExtensionControllerDataCleanupOwner.swift"
@@ -20,41 +21,81 @@ lease_kernel_source="Packages/SumiWebRuntime/Sources/SumiWebRuntime/Transactions
 participant_kernel_source="Packages/SumiWebRuntime/Sources/SumiWebRuntime/Transactions/WebsiteDataCleanupParticipantLedger.swift"
 terminal_receipt_source="Packages/SumiWebRuntime/Sources/SumiWebRuntime/Transactions/WebsiteDataCleanupTerminalReceipt.swift"
 navigation_barrier_source="Sumi/Managers/WebViewRuntime/WebsiteDataCleanupNavigationBarrier.swift"
-status=0
+cleanup_transaction_source="Sumi/Managers/WebViewRuntime/WebsiteDataCleanupTransaction.swift"
 
-mutation_hits="$({
-  rg -n --glob '*.swift' '\.removeData[[:space:]]*\(' "${production_roots[@]}" || true
-  rg -n --glob '*.swift' '\.deleteCookie[[:space:]]*\(' "${production_roots[@]}" || true
-  rg -n --glob '*.swift' 'WKWebsiteDataStore[[:space:]]*\.[[:space:]]*remove[[:space:]]*\(' \
-    "${production_roots[@]}" || true
-} | sort -u)"
+for source in \
+  "$canonical_cleanup_source" \
+  "$extension_cleanup_source" \
+  "$profile_mutation_source" \
+  "$mutation_gate_source" \
+  "$lease_kernel_source" \
+  "$participant_kernel_source" \
+  "$terminal_receipt_source" \
+  "$navigation_barrier_source" \
+  "$cleanup_transaction_source"; do
+  guard_require_file "$source"
+done
+
+require_source_pattern() {
+  local file="$1"
+  local pattern="$2"
+  local failure="$3"
+  local count
+  count="$(guard_count_matches "$pattern" "$file")" || return
+  if (( count == 0 )); then
+    guard_record_failure "$failure"
+  fi
+}
+
+printf '%s\n' 'Website-data mutation boundary audit'
+printf '%s\n' '------------------------------------'
+
+remove_data_hits="$(
+  guard_capture_matches \
+    '\.removeData[[:space:]]*\(' \
+    --glob '*.swift' "${production_roots[@]}"
+)"
+delete_cookie_hits="$(
+  guard_capture_matches \
+    '\.deleteCookie[[:space:]]*\(' \
+    --glob '*.swift' "${production_roots[@]}"
+)"
+static_store_remove_hits="$(
+  guard_capture_matches \
+    'WKWebsiteDataStore[[:space:]]*\.[[:space:]]*remove[[:space:]]*\(' \
+    --glob '*.swift' "${production_roots[@]}"
+)"
+mutation_hits="$(
+  printf '%s\n%s\n%s\n' \
+    "$remove_data_hits" \
+    "$delete_cookie_hits" \
+    "$static_store_remove_hits" \
+    | sed '/^$/d' \
+    | sort -u
+)"
 
 while IFS= read -r match; do
-  [[ -z "$match" ]] && continue
+  [[ -n "$match" ]] || continue
   file="${match%%:*}"
   case "$file" in
     "$canonical_cleanup_source"|"$extension_cleanup_source")
       ;;
     *)
-      printf 'error: raw website-data mutation bypasses the canonical cleanup service: %s\n' \
-        "$match" >&2
-      status=1
+      guard_record_failure \
+        "raw website-data mutation bypasses the canonical cleanup service: $match"
       ;;
   esac
 done <<< "$mutation_hits"
 
-# High-level cleanup methods are destructive too: calling the protocol instead
-# of WKWebsiteDataStore directly still bypasses quiesce unless the caller owns a
-# preparer-backed transaction. Keep the allowlist role-based and intentionally
-# exclude UI/view-model/settings repositories.
+# High-level cleanup protocols are destructive too. Calling one directly still
+# bypasses quiesce unless the role owns a preparer-backed transaction.
 high_level_hits="$(
-  rg -n --glob '*.swift' \
+  guard_capture_matches \
     '\.(removeCookies|removeWebsiteData|removeWebsiteDataForDomain|removeWebsiteDataForDomains|removeWebsiteDataForExactHost|clearAllProfileWebsiteData|prunePersistentDataStores)[[:space:]]*\(' \
-    "${production_roots[@]}" || true
+    --glob '*.swift' "${production_roots[@]}"
 )"
-
 while IFS= read -r match; do
-  [[ -z "$match" ]] && continue
+  [[ -n "$match" ]] || continue
   file="${match%%:*}"
   case "$file" in
     "$canonical_cleanup_source"|\
@@ -66,98 +107,79 @@ while IFS= read -r match; do
     Sumi/Services/BrowserPrivacyService.swift)
       ;;
     *)
-      printf 'error: destructive cleanup call bypasses a preparer-backed mutation boundary: %s\n' \
-        "$match" >&2
-      status=1
+      guard_record_failure \
+        "destructive cleanup call bypasses a preparer-backed mutation boundary: $match"
       ;;
   esac
 done <<< "$high_level_hits"
 
 # Persistent-store removal is legal only behind Profile's terminal deletion
-# method after reference migration and website-data quiescence have completed.
+# method after reference migration and website-data quiescence complete.
 persistent_store_hits="$(
-  rg -n --glob '*.swift' \
+  guard_capture_matches \
     '\b(cleanupService|websiteDataCleanupService)\.removePersistentDataStore[[:space:]]*\(' \
-    "${production_roots[@]}" || true
+    --glob '*.swift' "${production_roots[@]}"
 )"
 while IFS= read -r match; do
-  [[ -z "$match" ]] && continue
+  [[ -n "$match" ]] || continue
   file="${match%%:*}"
   case "$file" in
     "$canonical_cleanup_source"|Sumi/Models/Profile/Profile.swift)
       ;;
     *)
-      printf 'error: persistent website-data store removal bypasses Profile terminal deletion: %s\n' \
-        "$match" >&2
-      status=1
+      guard_record_failure \
+        "persistent website-data store removal bypasses Profile terminal deletion: $match"
       ;;
   esac
 done <<< "$persistent_store_hits"
 
 # The package owns only the profile-agnostic lease/admission state machine.
-# Product replay keys, restore authority, and all concrete browser/WebKit types
-# stay in the app composition layer. This prevents the extraction from becoming
-# either a second state owner or an app-specific package in disguise.
-if [[ ! -f "$lease_kernel_source" ]]; then
-  printf 'error: website-data lease kernel is missing: %s\n' \
-    "$lease_kernel_source" >&2
-  status=1
-else
-  kernel_code="$(
-    perl -0777 -pe '
-      s{""".*?"""}{""}gs;
-      s{"(?:\\.|[^"\\])*"}{""}g;
-      s{/\*.*?\*/}{}gs;
-      s{//[^\n]*}{}g
-    ' "$lease_kernel_source"
-  )"
-  kernel_policy_hits="$(
-    rg -n \
-      '\b(BrowserManager|BrowserWindowState|Tab|Profile|WKWebView|WKWebsiteDataStore|DeferredAdmissionKey|semanticRevision|replay)\b|^import[[:space:]]+(AppKit|WebKit|SwiftUI)\b' \
-      <<< "$kernel_code" || true
-  )"
-  if [[ -n "$kernel_policy_hits" ]]; then
-    printf 'error: website-data lease kernel contains app/WebKit policy:\n%s\n' \
-      "$kernel_policy_hits" >&2
-    status=1
-  fi
-fi
-
-kernel_declarations="$(
-  rg -n --glob '*.swift' \
-    'final[[:space:]]+class[[:space:]]+WebsiteDataMutationLeaseLedger\b' \
-    "${production_roots[@]}" || true
+# Product replay keys, restore authority and concrete browser/WebKit types stay
+# in the app composition layer.
+kernel_code="$(
+  perl -0777 -pe '
+    s{""".*?"""}{""}gs;
+    s{"(?:\\.|[^"\\])*"}{""}g;
+    s{/\*.*?\*/}{}gs;
+    s{//[^\n]*}{}g
+  ' "$lease_kernel_source"
 )"
-expected_kernel_declaration="$(
-  rg -n --with-filename \
-    'final[[:space:]]+class[[:space:]]+WebsiteDataMutationLeaseLedger\b' \
-    "$lease_kernel_source" 2>/dev/null || true
+kernel_policy_hits="$(
+  guard_capture_matches \
+    '\b(BrowserManager|BrowserWindowState|Tab|Profile|WKWebView|WKWebsiteDataStore|DeferredAdmissionKey|semanticRevision|replay)\b|^import[[:space:]]+(AppKit|WebKit|SwiftUI)\b' \
+    - <<< "$kernel_code"
 )"
-if [[ -z "$expected_kernel_declaration" ]] || \
-   [[ "$kernel_declarations" != "$expected_kernel_declaration" ]]; then
-  printf 'error: WebsiteDataMutationLeaseLedger must have exactly one production owner in SumiWebRuntime:\n%s\n' \
-    "$kernel_declarations" >&2
-  status=1
+if [[ -n "$kernel_policy_hits" ]]; then
+  guard_record_failure \
+    "website-data lease kernel contains app/WebKit policy: $kernel_policy_hits"
 fi
 
-if ! rg -q '^import SumiWebRuntime$' "$mutation_gate_source" || \
-   ! rg -q 'private let leaseLedger = WebsiteDataMutationLeaseLedger\(\)' \
-     "$mutation_gate_source"; then
-  printf 'error: app website-data mutation gate does not compose the SumiWebRuntime lease kernel\n' >&2
-  status=1
+lease_owner_hits="$(
+  guard_capture_matches \
+    'final[[:space:]]+class[[:space:]]+WebsiteDataMutationLeaseLedger\b' \
+    --glob '*.swift' "${production_roots[@]}"
+)"
+lease_owner_count="$(
+  printf '%s\n' "$lease_owner_hits" | sed '/^$/d' | wc -l | tr -d '[:space:]'
+)"
+if [[ "$lease_owner_count" != 1 || "$lease_owner_hits" != "$lease_kernel_source:"* ]]; then
+  guard_record_failure \
+    "WebsiteDataMutationLeaseLedger must have exactly one production owner in SumiWebRuntime: $lease_owner_hits"
 fi
 
-# Exact WebView participation, navigation phases, and terminal-event receipt
+require_source_pattern \
+  "$mutation_gate_source" \
+  '^import SumiWebRuntime$' \
+  'app website-data mutation gate does not import the SumiWebRuntime lease kernel'
+require_source_pattern \
+  "$mutation_gate_source" \
+  'private let leaseLedger = WebsiteDataMutationLeaseLedger\(\)' \
+  'app website-data mutation gate does not compose the SumiWebRuntime lease kernel'
+
+# Exact WebView participation, navigation phases and terminal-event receipt
 # generations form one product-agnostic transaction kernel. Tab ownership,
-# WebKit effects, and product restore commands stay in the app adapter.
+# WebKit effects and restore commands stay in the app adapter.
 for kernel_source in "$participant_kernel_source" "$terminal_receipt_source"; do
-  if [[ ! -f "$kernel_source" ]]; then
-    printf 'error: website-data participant kernel is missing: %s\n' \
-      "$kernel_source" >&2
-    status=1
-    continue
-  fi
-
   participant_kernel_code="$(
     perl -0777 -pe '
       s{""".*?"""}{""}gs;
@@ -167,14 +189,13 @@ for kernel_source in "$participant_kernel_source" "$terminal_receipt_source"; do
     ' "$kernel_source"
   )"
   participant_policy_hits="$(
-    rg -n \
+    guard_capture_matches \
       '\b(BrowserManager|BrowserWindowState|Tab|Profile|TabMainFrameReloadCommandOutcome|DeferredAdmissionKey|SumiSurface)\b|^import[[:space:]]+(Navigation|SumiDomain|SwiftUI)\b' \
-      <<< "$participant_kernel_code" || true
+      - <<< "$participant_kernel_code"
   )"
   if [[ -n "$participant_policy_hits" ]]; then
-    printf 'error: website-data participant kernel contains app/product policy (%s):\n%s\n' \
-      "$kernel_source" "$participant_policy_hits" >&2
-    status=1
+    guard_record_failure \
+      "website-data participant kernel contains app/product policy ($kernel_source): $participant_policy_hits"
   fi
 done
 
@@ -182,89 +203,94 @@ for declaration in \
   WebsiteDataCleanupParticipantLedger \
   WebsiteDataCleanupTerminalReceipt; do
   declaration_hits="$(
-    rg -n --with-filename --glob '*.swift' \
+    guard_capture_matches \
       "final[[:space:]]+class[[:space:]]+${declaration}\\b" \
-      "${production_roots[@]}" || true
+      --glob '*.swift' "${production_roots[@]}"
   )"
   expected_source="$participant_kernel_source"
-  if [[ "$declaration" == "WebsiteDataCleanupTerminalReceipt" ]]; then
+  if [[ "$declaration" == WebsiteDataCleanupTerminalReceipt ]]; then
     expected_source="$terminal_receipt_source"
   fi
-  expected_declaration="$(
-    rg -n --with-filename \
-      "final[[:space:]]+class[[:space:]]+${declaration}\\b" \
-      "$expected_source" 2>/dev/null || true
+  declaration_count="$(
+    printf '%s\n' "$declaration_hits" \
+      | sed '/^$/d' \
+      | wc -l \
+      | tr -d '[:space:]'
   )"
-  if [[ -z "$expected_declaration" ]] || \
-     [[ "$declaration_hits" != "$expected_declaration" ]]; then
-    printf 'error: %s must have exactly one production owner in SumiWebRuntime:\n%s\n' \
-      "$declaration" "$declaration_hits" >&2
-    status=1
+  if [[ "$declaration_count" != 1 || "$declaration_hits" != "$expected_source:"* ]]; then
+    guard_record_failure \
+      "$declaration must have exactly one production owner in SumiWebRuntime: $declaration_hits"
   fi
 done
 
-if ! rg -q '^import SumiWebRuntime$' "$navigation_barrier_source" || \
-   ! rg -q 'private let participantLedger = WebsiteDataCleanupParticipantLedger\(\)' \
-     "$navigation_barrier_source"; then
-  printf 'error: app cleanup navigation barrier does not compose the SumiWebRuntime participant kernel\n' >&2
-  status=1
-fi
+require_source_pattern \
+  "$navigation_barrier_source" \
+  '^import SumiWebRuntime$' \
+  'app cleanup navigation barrier does not import the participant kernel'
+require_source_pattern \
+  "$navigation_barrier_source" \
+  'private let participantLedger = WebsiteDataCleanupParticipantLedger\(\)' \
+  'app cleanup navigation barrier does not compose the participant kernel'
 
 duplicated_participant_state="$(
-  rg -n \
+  guard_capture_matches \
     'enum ParticipantPhase\b|class TerminalWait\b|struct RestoreStartCandidate\b|participantsByWebViewID' \
-    "$navigation_barrier_source" || true
+    "$navigation_barrier_source"
 )"
 if [[ -n "$duplicated_participant_state" ]]; then
-  printf 'error: app cleanup navigation barrier duplicates package-owned participant state:\n%s\n' \
-    "$duplicated_participant_state" >&2
-  status=1
+  guard_record_failure \
+    "app cleanup navigation barrier duplicates package-owned participant state: $duplicated_participant_state"
 fi
 
-if ! rg -q '\blet tab: Tab\b' "$navigation_barrier_source" || \
-   ! rg -q '\bwaitForMutationPermission\b' "$navigation_barrier_source" || \
-   ! rg -q '\bloadBlankNavigation\b' "$navigation_barrier_source"; then
-  printf 'error: Tab ownership and physical WebKit policy escaped the app cleanup adapter\n' >&2
-  status=1
-fi
+require_source_pattern \
+  "$navigation_barrier_source" \
+  '\blet tab: Tab\b' \
+  'Tab ownership escaped the app cleanup adapter'
+require_source_pattern \
+  "$navigation_barrier_source" \
+  '\bwaitForMutationPermission\b' \
+  'mutation permission escaped the app cleanup adapter'
+require_source_pattern \
+  "$navigation_barrier_source" \
+  '\bloadBlankNavigation\b' \
+  'physical WebKit policy escaped the app cleanup adapter'
 
 duplicated_lease_state="$(
-  rg -n \
+  guard_capture_matches \
     'private var (activeLease|leaseWaiters|admissionWaiters|admissionGeneration)\b' \
-    "$mutation_gate_source" || true
+    "$mutation_gate_source"
 )"
 if [[ -n "$duplicated_lease_state" ]]; then
-  printf 'error: app mutation gate duplicates package-owned lease/admission state:\n%s\n' \
-    "$duplicated_lease_state" >&2
-  status=1
+  guard_record_failure \
+    "app mutation gate duplicates package-owned lease/admission state: $duplicated_lease_state"
 fi
 
 duplicate_transaction_admission="$(
-  rg -n \
+  guard_capture_matches \
     'transactionSlot(IsOwned|Waiters)|acquireTransactionSlot|releaseTransactionSlot' \
-    Sumi/Managers/WebViewRuntime/WebsiteDataCleanupTransaction.swift || true
+    "$cleanup_transaction_source"
 )"
 if [[ -n "$duplicate_transaction_admission" ]]; then
-  printf 'error: cleanup transaction duplicates package-owned exclusive admission:\n%s\n' \
-    "$duplicate_transaction_admission" >&2
-  status=1
+  guard_record_failure \
+    "cleanup transaction duplicates package-owned exclusive admission: $duplicate_transaction_admission"
 fi
 
-if ! rg -q 'enum DeferredAdmissionKey:' "$mutation_gate_source" || \
-   ! rg -q 'private var deferredAdmissions:' "$mutation_gate_source" || \
-   ! rg -q 'private var restoreRevisionByTabID:' "$mutation_gate_source"; then
-  printf 'error: product replay/restore policy escaped the app mutation gate\n' >&2
-  status=1
-fi
+require_source_pattern \
+  "$mutation_gate_source" \
+  'enum DeferredAdmissionKey:' \
+  'product replay keys escaped the app mutation gate'
+require_source_pattern \
+  "$mutation_gate_source" \
+  'private var deferredAdmissions:' \
+  'product deferred-admission policy escaped the app mutation gate'
+require_source_pattern \
+  "$mutation_gate_source" \
+  'private var restoreRevisionByTabID:' \
+  'product restore-revision policy escaped the app mutation gate'
 
-if [[ "$status" -ne 0 ]]; then
-  cat >&2 <<'EOF'
-Website-data mutation boundary audit failed.
-Route browser-profile mutations through SumiWebsiteDataCleanupServicing and
-attach the owning caller to the destructive-cleanup preparer. Keep the generic
-lease/admission kernel in SumiWebRuntime and product replay policy in the app.
-EOF
-  exit "$status"
+if (( guard_failures > 0 )); then
+  printf '%s\n' \
+    'Route browser-profile mutations through SumiWebsiteDataCleanupServicing and attach the owning caller to the destructive-cleanup preparer. Keep the generic lease/admission kernel in SumiWebRuntime and product replay policy in the app.' \
+    >&2
 fi
-
-echo "website-data mutation boundary audit passed"
+guard_finish 'website-data mutation boundary audit'
