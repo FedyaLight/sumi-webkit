@@ -10,8 +10,11 @@ extension ExtensionManager {
         guard runtimePublicationGate.acceptsBrowserEvents else { return }
         if let keyWindow = NSApp.keyWindow,
            let auxiliaryWindows = extensionAuxiliaryWindows,
-           let session = auxiliaryWindows.auxiliaryWindowSession(for: keyWindow) {
-            auxiliaryWindows.focusAuxiliaryWindowSession(session.id)
+           let session = auxiliaryWindows.auxiliaryWindowSession(for: keyWindow),
+           let receipt = auxiliaryWindows.auxiliaryWindowSessionReceipt(
+                for: session
+           ) {
+            auxiliaryWindows.focusAuxiliaryWindowSession(receipt)
             return
         }
 

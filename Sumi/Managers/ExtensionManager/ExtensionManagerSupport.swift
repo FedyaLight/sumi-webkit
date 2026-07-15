@@ -116,6 +116,8 @@ enum ExtensionBridgeAdapterCallbackError: LocalizedError, Equatable, Sendable {
 
     case windowUnavailable(operation: WindowOperation)
     case miniWindowUnavailable(operation: MiniWindowOperation)
+    case miniWindowStateTransitionSuperseded
+    case miniWindowStateTransitionInvalidated
     case tabUnavailable
     case tabWebViewUnavailable
     case tabUnavailableUntilReload
@@ -126,7 +128,9 @@ enum ExtensionBridgeAdapterCallbackError: LocalizedError, Equatable, Sendable {
         switch self {
         case .windowUnavailable:
             return "ExtensionWindowAdapter"
-        case .miniWindowUnavailable:
+        case .miniWindowUnavailable,
+             .miniWindowStateTransitionSuperseded,
+             .miniWindowStateTransitionInvalidated:
             return "ExtensionMiniWindowAdapter"
         case .tabUnavailable,
              .tabWebViewUnavailable,
@@ -143,6 +147,10 @@ enum ExtensionBridgeAdapterCallbackError: LocalizedError, Equatable, Sendable {
             return operation.rawValue
         case .miniWindowUnavailable(let operation):
             return operation.rawValue
+        case .miniWindowStateTransitionSuperseded:
+            return 5
+        case .miniWindowStateTransitionInvalidated:
+            return 6
         case .tabUnavailable:
             return 1
         case .tabWebViewUnavailable:
@@ -162,6 +170,10 @@ enum ExtensionBridgeAdapterCallbackError: LocalizedError, Equatable, Sendable {
             return "Window is no longer available"
         case .miniWindowUnavailable:
             return "Mini-window is no longer available"
+        case .miniWindowStateTransitionSuperseded:
+            return "Mini-window state transition was superseded"
+        case .miniWindowStateTransitionInvalidated:
+            return "Mini-window state transition lost its exact session authority"
         case .tabUnavailable:
             return "Tab is no longer available"
         case .tabWebViewUnavailable:

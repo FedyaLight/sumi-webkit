@@ -128,7 +128,17 @@ final class ExtensionAuxiliaryWindowOpeningTransaction {
         }
 
         if shouldFocus {
-            control?.recordAuxiliaryWindowSessionFocus(session.id)
+            guard let focusReceipt = control?
+                .auxiliaryWindowSessionReceipt(for: session) else {
+                reject(
+                    publication,
+                    session: session,
+                    runtime: runtime,
+                    control: control
+                )
+                return false
+            }
+            control?.recordAuxiliaryWindowSessionFocus(focusReceipt)
             guard isExactCurrent(
                 publication,
                 session: session,
@@ -206,8 +216,9 @@ final class ExtensionAuxiliaryWindowOpeningTransaction {
                 control: control,
                 mode: .terminal(restoreNormalFocus: false)
             )
-            if control?.auxiliaryWindowSession(for: session.id) === session {
-                control?.closeAuxiliaryWindowSession(session)
+            if let receipt = control?
+                .auxiliaryWindowSessionReceipt(for: session) {
+                control?.closeAuxiliaryWindowSession(receipt)
             }
             return
         }

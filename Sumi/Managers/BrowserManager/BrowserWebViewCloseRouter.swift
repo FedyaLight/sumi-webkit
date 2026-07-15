@@ -1,14 +1,13 @@
 import WebKit
 
-/// Routes WebKit `webViewDidClose` events to the surface that owns the WebView
-/// (glance preview, auxiliary window, or a normal tracked tab) and tears down
-/// auxiliary mini-window tabs.
+/// Routes generic WebKit `webViewDidClose` events to glance or normal tracked
+/// Tabs. Auxiliary WebViews close exclusively through their receipt-bound
+/// `AuxiliaryWindowUIDelegate`.
 @MainActor
 final class BrowserWebViewCloseRouter {
     private let glanceHandleWebViewDidClose: @MainActor (WKWebView) -> Bool
-    private let auxiliaryContains: @MainActor (WKWebView) -> Bool
-    private let auxiliaryTeardown: @MainActor (WKWebView, AuxiliaryWindowCloseReason) -> Void
-    private let auxiliarySessionWebView: @MainActor (Tab) -> WKWebView?
+    private let teardownAuxiliarySessionForTab:
+        @MainActor (Tab, AuxiliaryWindowCloseReason) -> Bool
     private let isAuxiliaryMiniWindowTab: @MainActor (Tab) -> Bool
     private let removeAuxiliaryMiniWindowTab: @MainActor (Tab) -> Void
     private let notifyExtensionTabClosedAction: @MainActor (Tab) -> Void
@@ -16,18 +15,18 @@ final class BrowserWebViewCloseRouter {
 
     init(
         glanceHandleWebViewDidClose: @escaping @MainActor (WKWebView) -> Bool,
-        auxiliaryContains: @escaping @MainActor (WKWebView) -> Bool,
-        auxiliaryTeardown: @escaping @MainActor (WKWebView, AuxiliaryWindowCloseReason) -> Void,
-        auxiliarySessionWebView: @escaping @MainActor (Tab) -> WKWebView?,
+        teardownAuxiliarySessionForTab: @escaping @MainActor (
+            Tab,
+            AuxiliaryWindowCloseReason
+        ) -> Bool,
         isAuxiliaryMiniWindowTab: @escaping @MainActor (Tab) -> Bool,
         removeAuxiliaryMiniWindowTab: @escaping @MainActor (Tab) -> Void,
         notifyExtensionTabClosed: @escaping @MainActor (Tab) -> Void,
         closeNormalWebView: @escaping @MainActor (WKWebView) -> Bool
     ) {
         self.glanceHandleWebViewDidClose = glanceHandleWebViewDidClose
-        self.auxiliaryContains = auxiliaryContains
-        self.auxiliaryTeardown = auxiliaryTeardown
-        self.auxiliarySessionWebView = auxiliarySessionWebView
+        self.teardownAuxiliarySessionForTab =
+            teardownAuxiliarySessionForTab
         self.isAuxiliaryMiniWindowTab = isAuxiliaryMiniWindowTab
         self.removeAuxiliaryMiniWindowTab = removeAuxiliaryMiniWindowTab
         self.notifyExtensionTabClosedAction = notifyExtensionTabClosed
@@ -71,19 +70,18 @@ final class BrowserWebViewCloseRouter {
             glanceHandleWebViewDidClose: { [weak browserManager] webView in
                 browserManager?.glanceManager.handleWebViewDidClose(webView) ?? false
             },
-            auxiliaryContains: { [weak browserManager] webView in
-                browserManager?.auxiliaryWindows.sessions.contains(webView)
-                    ?? false
-            },
-            auxiliaryTeardown: { [weak browserManager] webView, reason in
-                browserManager?.auxiliaryWindows.teardown.teardown(
-                    for: webView,
-                    reason: reason
-                )
-            },
-            auxiliarySessionWebView: { [weak browserManager] tab in
-                browserManager?.auxiliaryWindows.sessions.session(for: tab)?
-                    .webView
+            teardownAuxiliarySessionForTab: {
+                [weak browserManager] tab, reason in
+                guard let auxiliaryWindows = browserManager?.auxiliaryWindows,
+                      let session = auxiliaryWindows.sessions.session(
+                          for: tab
+                      ),
+                      session.tab === tab,
+                      let receipt = auxiliaryWindows.sessions.receipt(
+                          for: session
+                      ) else { return false }
+                auxiliaryWindows.teardown.teardown(receipt, reason: reason)
+                return true
             },
             isAuxiliaryMiniWindowTab: { [weak browserManager] tab in
                 browserManager?.tabManager.transientWebKitTabLifecycleOwner.isAuxiliaryMiniWindowTab(tab) ?? false
@@ -106,11 +104,6 @@ final class BrowserWebViewCloseRouter {
             return true
         }
 
-        if auxiliaryContains(webView) {
-            auxiliaryTeardown(webView, .webViewDidClose)
-            return true
-        }
-
         return handleNormalWebViewDidClose(webView)
     }
 
@@ -125,8 +118,7 @@ final class BrowserWebViewCloseRouter {
     ) {
         guard isAuxiliaryMiniWindowTab(tab) else { return }
 
-        if let webView = auxiliarySessionWebView(tab) {
-            auxiliaryTeardown(webView, reason)
+        if teardownAuxiliarySessionForTab(tab, reason) {
             return
         }
 

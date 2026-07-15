@@ -191,7 +191,8 @@ final class ExtensionWindowRequestRouter {
         }
 
         let load = loadResolver.resolve(url, controller: controller)
-        guard await prepare(
+        guard load.hasUnresolvedExtensionOwnership == false,
+              await prepare(
             load,
             targetWindow: window,
             targetSpace: space,
@@ -267,7 +268,8 @@ final class ExtensionWindowRequestRouter {
             return
         }
         let load = loadResolver.resolve(url, controller: controller)
-        guard await prepare(
+        guard load.hasUnresolvedExtensionOwnership == false,
+              await prepare(
             load,
             targetWindow: nil,
             targetSpace: space,
@@ -391,7 +393,8 @@ final class ExtensionWindowRequestRouter {
         space: Space,
         authority: CallbackAuthority?
     ) -> Bool {
-        guard authority?.isCurrent() ?? true,
+        guard load.hasUnresolvedExtensionOwnership == false,
+              authority?.isCurrent() ?? true,
               space.profileId == profileID,
               profileRuntime.profileId(for: controller) == profileID,
               profileRuntime.controllersByProfile[profileID] === controller

@@ -106,7 +106,7 @@ final class AuxiliaryPopupOpeningService {
             )
             return nil
         }
-        _ = presentation.present(
+        let presented = presentation.present(
             AuxiliaryWindowPresentationRequest(
                 tab: tab,
                 webView: webView,
@@ -122,7 +122,14 @@ final class AuxiliaryPopupOpeningService {
             ),
             nestedPopups: self
         )
-        return webView
+        guard presentation.isCurrent(presented.receipt) else {
+            teardown.teardown(
+                presented.receipt,
+                reason: .presentationFailure
+            )
+            return nil
+        }
+        return presented.session.webView
     }
 
     @discardableResult
@@ -155,6 +162,9 @@ final class AuxiliaryPopupOpeningService {
             extensionOwnedSourceURL: extensionOwnedSourceURL,
             explicitExtensionID: ownerExtensionID
         )
+        guard extensionIntegration == nil || extensionID != nil else {
+            return nil
+        }
         let parentWindow = explicitOpenerWindow
             ?? context.parentWindow(for: openerTab)
         let hasExplicitGeometry = windowFeatures.width != nil
@@ -202,7 +212,7 @@ final class AuxiliaryPopupOpeningService {
             return nil
         }
 
-        let session = presentation.present(
+        let presented = presentation.present(
             AuxiliaryWindowPresentationRequest(
                 tab: tab,
                 webView: webView,
@@ -218,17 +228,28 @@ final class AuxiliaryPopupOpeningService {
             ),
             nestedPopups: self
         )
+        let session = presented.session
+        let receipt = presented.receipt
+        guard presentation.isCurrent(receipt) else {
+            teardown.teardown(receipt, reason: .presentationFailure)
+            return nil
+        }
         if session.miniWindowAdapter != nil || session.extensionEvents != nil {
             guard session.extensionEvents?
-                .notifyAuxiliaryWindowOpened(session) == true else {
+                .notifyAuxiliaryWindowOpened(session) == true,
+                presentation.isCurrent(receipt) else {
                 teardown.teardown(
-                    for: session.webView,
+                    receipt,
                     reason: .presentationFailure
                 )
                 return nil
             }
         }
-        return webView
+        guard presentation.isCurrent(receipt) else {
+            teardown.teardown(receipt, reason: .presentationFailure)
+            return nil
+        }
+        return session.webView
     }
 
     private func admissionIsOpen(

@@ -33,8 +33,8 @@ extension AuxiliaryWindowLifecycleTests {
         defer {
             if harness.browserManager.auxiliaryWindows.sessions
                 .contains(webView) {
-                harness.browserManager.auxiliaryWindows.teardown.teardown(
-                    for: webView,
+                harness.browserManager.auxiliaryWindows.teardownAuxiliaryWindowForTesting(
+                    webView,
                     reason: .bulkCleanup
                 )
             }
@@ -165,8 +165,8 @@ extension AuxiliaryWindowLifecycleTests {
         )
 
         harness.extensionManager.extensionAuxiliaryWindows = control
-        harness.browserManager.auxiliaryWindows.teardown.teardown(
-            for: webView,
+        harness.browserManager.auxiliaryWindows.teardownAuxiliaryWindowForTesting(
+            webView,
             reason: .bulkCleanup
         )
     }
@@ -200,8 +200,8 @@ extension AuxiliaryWindowLifecycleTests {
         XCTAssertEqual(closedTabCount, 1)
         XCTAssertEqual(closedWindowCount, 1)
 
-        harness.browserManager.auxiliaryWindows.teardown.teardown(
-            for: webView,
+        harness.browserManager.auxiliaryWindows.teardownAuxiliaryWindowForTesting(
+            webView,
             reason: .bulkCleanup
         )
         XCTAssertEqual(closedTabCount, 1)
@@ -331,8 +331,8 @@ extension AuxiliaryWindowLifecycleTests {
                 .acceptsBrowserEvents
         )
 
-        harness.browserManager.auxiliaryWindows.teardown.teardown(
-            for: webView,
+        harness.browserManager.auxiliaryWindows.teardownAuxiliaryWindowForTesting(
+            webView,
             reason: .bulkCleanup
         )
     }
@@ -378,8 +378,8 @@ extension AuxiliaryWindowLifecycleTests {
             ($0 as AnyObject) === session.miniWindowAdapter
         })
 
-        harness.browserManager.auxiliaryWindows.teardown.teardown(
-            for: webView,
+        harness.browserManager.auxiliaryWindows.teardownAuxiliaryWindowForTesting(
+            webView,
             reason: .bulkCleanup
         )
         XCTAssertEqual(closedTabCount, 2)
@@ -396,8 +396,8 @@ extension AuxiliaryWindowLifecycleTests {
                 .session(for: webView)
         )
         defer {
-            harness.browserManager.auxiliaryWindows.teardown.teardown(
-                for: webView,
+            harness.browserManager.auxiliaryWindows.teardownAuxiliaryWindowForTesting(
+                webView,
                 reason: .bulkCleanup
             )
         }
@@ -437,8 +437,8 @@ extension AuxiliaryWindowLifecycleTests {
         )
         let reusedID = session.tab.id
 
-        harness.browserManager.auxiliaryWindows.teardown.teardown(
-            for: webView,
+        harness.browserManager.auxiliaryWindows.teardownAuxiliaryWindowForTesting(
+            webView,
             reason: .bulkCleanup
         )
         XCTAssertNil(
@@ -493,9 +493,8 @@ extension AuxiliaryWindowLifecycleTests {
         let harness = try await makeExtensionHarness(
             ownerExtensionID: ownerExtensionID
         )
-        let extensionURL = URL(
-            string: "safari-web-extension://\(ownerExtensionID)/popup.html"
-        )!
+        let extensionURL = harness.extensionContext.baseURL
+            .appendingPathComponent("popup.html")
         let popupWebView = try XCTUnwrap(
             harness.browserManager.auxiliaryWindows.popups
                 .presentExtensionExternalWebPopup(
@@ -641,8 +640,8 @@ extension AuxiliaryWindowLifecycleTests {
         )
         let publishedAdapter = try XCTUnwrap(session.miniWindowAdapter)
         defer {
-            harness.browserManager.auxiliaryWindows.teardown.teardown(
-                for: popupWebView,
+            harness.browserManager.auxiliaryWindows.teardownAuxiliaryWindowForTesting(
+                popupWebView,
                 reason: .bulkCleanup
             )
         }
@@ -694,9 +693,8 @@ extension AuxiliaryWindowLifecycleTests {
                     request: nil,
                     windowFeatures: WKWindowFeatures(),
                     openerTab: harness.sourceTab,
-                    extensionOwnedSourceURL: URL(
-                        string: "safari-web-extension://\(ownerExtensionID)/popup.html"
-                    )
+                    extensionOwnedSourceURL: harness.extensionContext.baseURL
+                        .appendingPathComponent("popup.html")
                 )
         )
         let session = try XCTUnwrap(
@@ -706,8 +704,8 @@ extension AuxiliaryWindowLifecycleTests {
         )
         let retiredAdapter = try XCTUnwrap(session.miniWindowAdapter)
 
-        harness.browserManager.auxiliaryWindows.teardown.teardown(
-            for: popupWebView,
+        harness.browserManager.auxiliaryWindows.teardownAuxiliaryWindowForTesting(
+            popupWebView,
             reason: .bulkCleanup
         )
 

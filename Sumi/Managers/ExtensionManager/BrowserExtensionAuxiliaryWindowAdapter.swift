@@ -5,8 +5,7 @@ import WebKit
 @available(macOS 15.5, *)
 @MainActor
 final class BrowserExtensionAuxiliaryWindowAdapter:
-    ExtensionAuxiliaryWindowControl
-{
+    ExtensionAuxiliaryWindowControl {
     private let sessions: AuxiliaryWindowSessionRegistry
     private let focus: AuxiliaryWindowFocusService
     private let teardown: AuxiliaryWindowTeardownService
@@ -37,32 +36,40 @@ final class BrowserExtensionAuxiliaryWindowAdapter:
         sessions.session(for: window)
     }
 
+    func auxiliaryWindowSession(
+        for receipt: AuxiliaryWindowSessionReceipt
+    ) -> AuxiliaryWindowSession? {
+        sessions.session(for: receipt)
+    }
+
+    func auxiliaryWindowSessionReceipt(
+        for session: AuxiliaryWindowSession
+    ) -> AuxiliaryWindowSessionReceipt? {
+        sessions.receipt(for: session)
+    }
+
     func focusedExtensionMiniWindowAdapter(
         forOwnerExtensionID ownerExtensionID: String
     ) -> ExtensionMiniWindowAdapter? {
         focus.focusedMiniWindowAdapter(forExtensionID: ownerExtensionID)
     }
 
-    func recordAuxiliaryWindowSessionFocus(_ sessionId: UUID) {
-        focus.record(sessionID: sessionId)
+    func recordAuxiliaryWindowSessionFocus(
+        _ receipt: AuxiliaryWindowSessionReceipt
+    ) {
+        focus.record(receipt)
     }
 
-    func focusAuxiliaryWindowSession(_ sessionId: UUID) {
-        focus.focus(sessionID: sessionId)
+    func focusAuxiliaryWindowSession(
+        _ receipt: AuxiliaryWindowSessionReceipt
+    ) -> Bool {
+        focus.focus(receipt)
     }
 
-    func closeAuxiliaryWindowSession(_ session: AuxiliaryWindowSession) {
-        teardown.teardown(
-            for: session.webView,
-            reason: .extensionRequestedClose
-        )
-    }
-
-    func closeAuxiliaryWindowWebView(_ webView: WKWebView) {
-        teardown.teardown(
-            for: webView,
-            reason: .extensionRequestedClose
-        )
+    func closeAuxiliaryWindowSession(
+        _ receipt: AuxiliaryWindowSessionReceipt
+    ) {
+        teardown.teardown(receipt, reason: .extensionRequestedClose)
     }
 
     func auxiliaryWindowSessionReceipts(
@@ -86,13 +93,7 @@ final class BrowserExtensionAuxiliaryWindowAdapter:
         else {
             return
         }
-        teardown.teardown(
-            for: session.webView,
-            reason: reason
-        )
-    }
-
-    func containsAuxiliaryWebView(_ webView: WKWebView) -> Bool {
-        sessions.contains(webView)
+        guard let sessionReceipt = sessions.receipt(for: session) else { return }
+        teardown.teardown(sessionReceipt, reason: reason)
     }
 }

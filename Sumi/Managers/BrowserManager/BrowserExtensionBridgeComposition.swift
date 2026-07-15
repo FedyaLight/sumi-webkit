@@ -244,7 +244,6 @@ final class BrowserExtensionBridgeComposition {
                 browserManager?.windowRegistry
             },
             windowQuery: windows,
-            popups: browserManager.auxiliaryWindows.popups,
             extensionWindows: browserManager.auxiliaryWindows.extensionWindows,
             urlHubAnchorView: { [weak browserManager] windowID in
                 browserManager?.chromeBundle.commands

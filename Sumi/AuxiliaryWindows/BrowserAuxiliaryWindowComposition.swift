@@ -183,11 +183,13 @@ extension ExtensionManager: AuxiliaryWindowExtensionEventHandling {
         AuxiliaryWindowExtensionIntegration(
             installedExtensions: installedExtensionCollection.records,
             events: WeakAuxiliaryWindowExtensionEvents(target: self),
-            resolveExtensionID: { [weak self] context, openerTab, sourceURL in
+            resolveExtensionID: {
+                [weak self] context, openerTab, sourceURL, explicitExtensionID in
                 self?.ownerExtensionID(
                     extensionContext: context,
                     openerTab: openerTab,
-                    extensionOwnedSourceURL: sourceURL
+                    extensionOwnedSourceURL: sourceURL,
+                    explicitExtensionID: explicitExtensionID
                 )
             },
             makeMiniWindowAdapter: {

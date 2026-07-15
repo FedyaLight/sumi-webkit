@@ -40,7 +40,7 @@ struct AuxiliaryWindowSessionReceipt: Hashable {
     let webViewIdentity: ObjectIdentifier
 
     @MainActor
-    init(session: AuxiliaryWindowSession) {
+    fileprivate init(session: AuxiliaryWindowSession) {
         sessionID = session.id
         sessionIdentity = ObjectIdentifier(session)
         webViewIdentity = ObjectIdentifier(session.webView)
@@ -107,7 +107,10 @@ final class AuxiliaryWindowSessionRegistry {
     private var sessionIDByTabID: [UUID: UUID] = [:]
     private var focusOrderByExtensionID: [String: [UUID]] = [:]
 
-    func register(_ session: AuxiliaryWindowSession) {
+    @discardableResult
+    func register(
+        _ session: AuxiliaryWindowSession
+    ) -> AuxiliaryWindowSessionReceipt {
         let webViewID = ObjectIdentifier(session.webView)
         let windowID = ObjectIdentifier(session.window)
 
@@ -120,6 +123,7 @@ final class AuxiliaryWindowSessionRegistry {
         sessionIDByWebView[webViewID] = session.id
         sessionIDByWindow[windowID] = session.id
         sessionIDByTabID[session.tab.id] = session.id
+        return AuxiliaryWindowSessionReceipt(session: session)
     }
 
     func session(for id: UUID) -> AuxiliaryWindowSession? {
@@ -146,10 +150,11 @@ final class AuxiliaryWindowSessionRegistry {
         return receipt
     }
 
-    func receipt(
-        for webView: WKWebView
-    ) -> AuxiliaryWindowSessionReceipt? {
-        session(for: webView).flatMap(receipt(for:))
+    func session(
+        for receipt: AuxiliaryWindowSessionReceipt
+    ) -> AuxiliaryWindowSession? {
+        guard isCurrent(receipt) else { return nil }
+        return sessionsByID[receipt.sessionID]
     }
 
     func contains(_ webView: WKWebView) -> Bool {
@@ -166,12 +171,6 @@ final class AuxiliaryWindowSessionRegistry {
 
     func sessions(forExtensionID extensionID: String) -> [AuxiliaryWindowSession] {
         sessionsByID.values.filter { $0.ownerExtensionID == extensionID }
-    }
-
-    @discardableResult
-    func remove(webView: WKWebView) -> AuxiliaryWindowSession? {
-        guard let receipt = receipt(for: webView) else { return nil }
-        return remove(receipt)
     }
 
     @discardableResult
@@ -213,10 +212,12 @@ final class AuxiliaryWindowSessionRegistry {
             && sessionIDByTabID[session.tab.id] == receipt.sessionID
     }
 
-    func recordFocus(sessionID: UUID) {
-        guard let extensionID = sessionsByID[sessionID]?.ownerExtensionID else {
+    func recordFocus(_ receipt: AuxiliaryWindowSessionReceipt) {
+        guard let session = session(for: receipt),
+              let extensionID = session.ownerExtensionID else {
             return
         }
+        let sessionID = session.id
         var order = focusOrderByExtensionID[extensionID] ?? []
         order.removeAll { $0 == sessionID }
         order.append(sessionID)

@@ -22,7 +22,8 @@ private struct AuxiliaryPublicationIdentityTuple: Equatable {
 extension AuxiliaryWindowLifecycleTests {
     func testExtensionAuxiliaryMiniWindowNotifiesOwnerContextWindowLifecycle() async throws {
         let harness = try await makeExtensionHarness(ownerExtensionID: "adapter-owner")
-        let extensionURL = URL(string: "safari-web-extension://adapter-owner/popup.html")!
+        let extensionURL = harness.extensionContext.baseURL
+            .appendingPathComponent("popup.html")
 
         XCTAssertTrue(harness.extensionContext.openWindows.isEmpty)
         XCTAssertNil(harness.extensionContext.focusedWindow)
@@ -123,8 +124,8 @@ extension AuxiliaryWindowLifecycleTests {
             presentOwnerPopup(in: harness, configuration: configuration)
         )
         defer {
-            harness.browserManager.auxiliaryWindows.teardown.teardown(
-                for: webView,
+            harness.browserManager.auxiliaryWindows.teardownAuxiliaryWindowForTesting(
+                webView,
                 reason: .bulkCleanup
             )
         }
@@ -149,8 +150,8 @@ extension AuxiliaryWindowLifecycleTests {
         )
         defer {
             for webView in [preexistingWebView, siblingWebView] {
-                harness.browserManager.auxiliaryWindows.teardown.teardown(
-                    for: webView,
+                harness.browserManager.auxiliaryWindows.teardownAuxiliaryWindowForTesting(
+                    webView,
                     reason: .bulkCleanup
                 )
             }
@@ -163,12 +164,22 @@ extension AuxiliaryWindowLifecycleTests {
             harness.browserManager.auxiliaryWindows.sessions
                 .sessionsSnapshot().map(\.tab.id)
         )
-        let originalWindowProjection = harness.extensionContext.openWindows.map {
-            ObjectIdentifier($0 as AnyObject)
-        }
-        let originalTabProjection = harness.extensionContext.openTabs.map {
-            ObjectIdentifier($0 as AnyObject)
-        }
+        let originalWindowProjection = Set(
+            harness.extensionContext.openWindows.map {
+                ObjectIdentifier($0 as AnyObject)
+            }
+        )
+        let originalTabProjection = Set(
+            harness.extensionContext.openTabs.map {
+                ObjectIdentifier($0 as AnyObject)
+            }
+        )
+        let originalFocusedAdapter = try XCTUnwrap(
+            harness.browserManager.auxiliaryWindows.focus
+                .focusedMiniWindowAdapter(
+                    forExtensionID: ownerExtensionID
+                )
+        )
         let originalMiniAdapterStore = Dictionary(
             uniqueKeysWithValues: harness.extensionManager.adapterStore
                 .miniWindowAdaptersSnapshot().map {
@@ -245,20 +256,32 @@ extension AuxiliaryWindowLifecycleTests {
         XCTAssertEqual(openedTabCount, 0)
         XCTAssertEqual(closedTabCount, 0)
         XCTAssertTrue(unrelatedEvents.isEmpty, unrelatedEvents.joined(separator: ", "))
+        XCTAssertIdentical(
+            harness.browserManager.auxiliaryWindows.focus
+                .focusedMiniWindowAdapter(
+                    forExtensionID: ownerExtensionID
+                ),
+            originalFocusedAdapter
+        )
+        // A balanced WebKit didOpen/didClose can re-enumerate the stale
+        // context's cached projections (`openTabs` is an NSSet). This rollback
+        // oracle therefore freezes identity; focused-first delegate ordering
+        // and Sumi's deterministic publication order are covered separately.
         XCTAssertEqual(
-            harness.extensionContext.openWindows.map {
+            Set(harness.extensionContext.openWindows.map {
                 ObjectIdentifier($0 as AnyObject)
-            },
+            }),
             originalWindowProjection
         )
         XCTAssertEqual(
-            harness.extensionContext.openTabs.map {
+            Set(harness.extensionContext.openTabs.map {
                 ObjectIdentifier($0 as AnyObject)
-            },
+            }),
             originalTabProjection
         )
         XCTAssertTrue(replacement.openWindows.isEmpty)
         XCTAssertTrue(replacement.openTabs.isEmpty)
+        XCTAssertNil(replacement.focusedWindow)
         XCTAssertEqual(
             try auxiliaryPublicationIdentitySnapshot(harness),
             originalPublication
@@ -279,6 +302,92 @@ extension AuxiliaryWindowLifecycleTests {
         )
     }
 
+    func testReentrantExternalPopupRejectionPreservesSameWebViewReplacement()
+        async throws {
+        let harness = try await makeExtensionHarness(
+            ownerExtensionID: "adapter-owner"
+        )
+        let siblingWebView = try XCTUnwrap(
+            harness.browserManager.auxiliaryWindows.popups.presentWebPopup(
+                configuration: WKWebViewConfiguration(),
+                request: nil,
+                windowFeatures: WKWindowFeatures(),
+                openerTab: harness.sourceTab
+            )
+        )
+        let sibling = try XCTUnwrap(
+            harness.browserManager.auxiliaryWindows.sessions.session(
+                for: siblingWebView
+            )
+        )
+        var replacement: AuxiliaryWindowSession?
+        var replacementReceipt: AuxiliaryWindowSessionReceipt?
+        var hooks = harness.extensionManager.testHooks
+        hooks.didOpenAuxiliaryWindow = { sessionID in
+            guard replacement == nil,
+                  let failed = harness.browserManager.auxiliaryWindows
+                    .sessions.session(for: sessionID) else {
+                return
+            }
+            harness.browserManager.auxiliaryWindows.teardownAuxiliaryWindowForTesting(
+                failed.webView,
+                reason: .bulkCleanup
+            )
+            let candidate = AuxiliaryWindowSession(
+                id: UUID(),
+                tab: failed.tab,
+                window: failed.window,
+                webView: failed.webView,
+                openerTab: failed.openerTab,
+                openerWindow: failed.openerWindow,
+                shouldActivateApp: failed.shouldActivateApp,
+                isPrivate: failed.isPrivate,
+                ownerExtensionID: nil,
+                miniWindowAdapter: nil,
+                extensionEvents: nil,
+                uiDelegate: failed.uiDelegate,
+                windowDelegate: failed.windowDelegate
+            )
+            replacementReceipt = harness.browserManager.auxiliaryWindows
+                .sessions.register(candidate)
+            replacement = candidate
+        }
+        harness.extensionManager.testHooks = hooks
+        defer {
+            harness.extensionManager.clearDebugState()
+            if let replacementReceipt {
+                _ = harness.browserManager.auxiliaryWindows.sessions.remove(
+                    replacementReceipt
+                )
+            }
+            harness.browserManager.auxiliaryWindows.teardownAuxiliaryWindowForTesting(
+                siblingWebView,
+                reason: .bulkCleanup
+            )
+        }
+
+        XCTAssertNil(presentOwnerPopup(in: harness))
+
+        let unwrappedReplacement = try XCTUnwrap(replacement)
+        XCTAssertIdentical(
+            harness.browserManager.auxiliaryWindows.sessions.session(
+                for: unwrappedReplacement.webView
+            ),
+            unwrappedReplacement
+        )
+        XCTAssertIdentical(
+            harness.browserManager.auxiliaryWindows.sessions.session(
+                for: sibling.id
+            ),
+            sibling
+        )
+        XCTAssertEqual(
+            Set(harness.browserManager.auxiliaryWindows.sessions
+                .sessionsSnapshot().map(\.id)),
+            [unwrappedReplacement.id, sibling.id]
+        )
+    }
+
     func testAuxiliaryPublicationBalancesReentrantTeardownDuringDidOpenTab()
         async throws {
         let harness = try await makeExtensionHarness(
@@ -296,8 +405,8 @@ extension AuxiliaryWindowLifecycleTests {
                 return
             }
             openedTabID = tabID
-            harness.browserManager.auxiliaryWindows.teardown.teardown(
-                for: session.webView,
+            harness.browserManager.auxiliaryWindows.teardownAuxiliaryWindowForTesting(
+                session.webView,
                 reason: .bulkCleanup
             )
         }
@@ -336,8 +445,8 @@ extension AuxiliaryWindowLifecycleTests {
                 return
             }
             focusedSessionID = sessionID
-            harness.browserManager.auxiliaryWindows.teardown.teardown(
-                for: session.webView,
+            harness.browserManager.auxiliaryWindows.teardownAuxiliaryWindowForTesting(
+                session.webView,
                 reason: .bulkCleanup
             )
         }
@@ -408,8 +517,8 @@ extension AuxiliaryWindowLifecycleTests {
                 openerTab: harness.sourceTab
             )
         )
-        harness.browserManager.auxiliaryWindows.teardown.teardown(
-            for: webView,
+        harness.browserManager.auxiliaryWindows.teardownAuxiliaryWindowForTesting(
+            webView,
             reason: .bulkCleanup
         )
 

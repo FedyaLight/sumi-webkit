@@ -72,15 +72,23 @@ final class ExtensionWindowVisibilityResolver {
            let miniWindowAdapter = session.miniWindowAdapter,
            let publishedAdapter = ownerMiniWindowAdapters.first(
                where: { $0 === miniWindowAdapter }
+           ),
+           let receipt = auxiliaryWindows.auxiliaryWindowSessionReceipt(
+                for: session
            ) {
-            auxiliaryWindows.recordAuxiliaryWindowSessionFocus(session.id)
+            auxiliaryWindows.recordAuxiliaryWindowSessionFocus(receipt)
             return publishedAdapter
         }
 
-        if let miniWindowAdapter = ownerMiniWindowAdapters.first {
-            auxiliaryWindows.recordAuxiliaryWindowSessionFocus(
-                miniWindowAdapter.sessionId
-            )
+        if let miniWindowAdapter = ownerMiniWindowAdapters.first,
+           let session = auxiliaryWindows.auxiliaryWindowSession(
+                for: miniWindowAdapter.sessionId
+           ),
+           session.miniWindowAdapter === miniWindowAdapter,
+           let receipt = auxiliaryWindows.auxiliaryWindowSessionReceipt(
+                for: session
+           ) {
+            auxiliaryWindows.recordAuxiliaryWindowSessionFocus(receipt)
             return miniWindowAdapter
         }
 

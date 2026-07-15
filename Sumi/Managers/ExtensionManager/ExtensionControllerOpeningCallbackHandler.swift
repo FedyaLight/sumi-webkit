@@ -77,7 +77,7 @@ struct ExtensionControllerOpeningCallbackHandler {
     }
 
     func openNewWindow(
-        configuration: WKWebExtension.WindowConfiguration,
+        request: ExtensionWindowOpeningRequest,
         evidence: ExtensionControllerCallbackEvidence,
         runtime: ExtensionControllerOpeningCallbackRuntime,
         completionHandler: @escaping (
@@ -89,7 +89,7 @@ struct ExtensionControllerOpeningCallbackHandler {
             completionHandler(nil, CancellationError())
             return
         }
-        guard configuration.shouldBePrivate == false else {
+        guard request.shouldBePrivate == false else {
             completionHandler(
                 nil,
                 ExtensionManagerCallbackError.privateWindowsUnsupported.nsError()
@@ -97,9 +97,9 @@ struct ExtensionControllerOpeningCallbackHandler {
             return
         }
 
-        guard configuration.windowType == .popup else {
+        guard request.windowType == .popup else {
             runtime.windowRouter.open(
-                tabURLs: configuration.tabURLs,
+                tabURLs: request.tabURLs,
                 evidence: evidence,
                 admission: runtime.admission,
                 completion: completionHandler
@@ -121,7 +121,7 @@ struct ExtensionControllerOpeningCallbackHandler {
             }
             let presentation = await runtime.windowPresentation
                 .presentExtensionPopupWindow(
-                configuration: configuration,
+                request: request,
                 evidence: evidence,
                 admission: runtime.admission,
                 runtime: runtime.auxiliaryRuntime,

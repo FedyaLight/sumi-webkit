@@ -12,14 +12,6 @@ protocol ExtensionTabWindowLocationQuery: AnyObject {
 
 @available(macOS 15.5, *)
 @MainActor
-protocol ExtensionAuxiliaryTabClosing: AnyObject {
-    func auxiliaryWindowSession(for tab: Tab) -> AuxiliaryWindowSession?
-    func containsAuxiliaryWebView(_ webView: WKWebView) -> Bool
-    func closeAuxiliaryWindowWebView(_ webView: WKWebView)
-}
-
-@available(macOS 15.5, *)
-@MainActor
 final class ExtensionTabCommandMutation {
     private let evidence: ExtensionTabCurrentPublicationEvidence
     private let projection: ExtensionTabReadProjection
@@ -105,17 +97,23 @@ final class ExtensionTabCommandMutation {
             complete(completion, error: tabUnavailableUntilReloadError)
             return
         }
-        if publication.isAuxiliary,
-           let auxiliaryWindows,
-           let session = auxiliaryWindows.auxiliaryWindowSession(
-                for: publication.tab
-           ),
-           session.tab === publication.tab,
-           auxiliaryWindows.containsAuxiliaryWebView(session.webView) {
-            auxiliaryWindows.closeAuxiliaryWindowWebView(session.webView)
-        } else {
-            publication.tab.closeTab()
+        if publication.isAuxiliary {
+            guard let auxiliaryWindows,
+                  let session = auxiliaryWindows.auxiliaryWindowSession(
+                    for: publication.tab
+                  ),
+                  session.tab === publication.tab,
+                  let receipt = auxiliaryWindows
+                    .auxiliaryWindowSessionReceipt(for: session)
+            else {
+                complete(completion, error: tabUnavailableUntilReloadError)
+                return
+            }
+            auxiliaryWindows.closeAuxiliaryWindowSession(receipt)
+            complete(completion, error: nil)
+            return
         }
+        publication.tab.closeTab()
         complete(completion, error: nil)
     }
 

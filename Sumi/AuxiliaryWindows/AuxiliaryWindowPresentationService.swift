@@ -11,16 +11,17 @@ enum AuxiliaryWindowExtensionIdentityResolver {
         extensionOwnedSourceURL: URL?,
         explicitExtensionID: String?
     ) -> String? {
-        if let explicitExtensionID {
-            return explicitExtensionID
-        }
-
         if let extensionIntegration {
             return extensionIntegration.resolveExtensionID(
                 extensionContext,
                 openerTab,
-                extensionOwnedSourceURL
+                extensionOwnedSourceURL,
+                explicitExtensionID
             )
+        }
+
+        if let explicitExtensionID {
+            return explicitExtensionID
         }
 
         for candidate in [extensionOwnedSourceURL, openerTab?.url] {
@@ -41,7 +42,8 @@ struct AuxiliaryWindowExtensionIntegration {
     typealias ExtensionIDResolver = @MainActor (
         WKWebExtensionContext?,
         Tab?,
-        URL?
+        URL?,
+        String?
     ) -> String?
     typealias MiniWindowAdapterFactory = @MainActor (
         UUID,
@@ -96,6 +98,12 @@ struct AuxiliaryWindowPresentationRequest {
 }
 
 @MainActor
+struct AuxiliaryWindowPresentation {
+    let session: AuxiliaryWindowSession
+    let receipt: AuxiliaryWindowSessionReceipt
+}
+
+@MainActor
 final class AuxiliaryWindowPresentationService {
     private let sessions: AuxiliaryWindowSessionRegistry
     private let context: any AuxiliaryWindowContextResolving
@@ -123,7 +131,7 @@ final class AuxiliaryWindowPresentationService {
     func present(
         _ request: AuxiliaryWindowPresentationRequest,
         nestedPopups: AuxiliaryPopupOpeningService
-    ) -> AuxiliaryWindowSession {
+    ) -> AuxiliaryWindowPresentation {
         let sessionID = UUID()
         let openerWindow = request.explicitOpenerWindow
             ?? request.openerTab.flatMap(context.parentWindow(for:))
@@ -156,16 +164,13 @@ final class AuxiliaryWindowPresentationService {
             teardown: teardown,
             permissions: permissions,
             nestingPolicy: nestingPolicy,
-            openerTab: request.openerTab ?? request.tab,
             nestedDepth: request.nestedDepth
         )
         request.webView.uiDelegate = uiDelegate
 
         let windowDelegate = AuxiliaryWindowSessionDelegate(
-            sessions: sessions,
             teardown: teardown,
-            focus: focus,
-            sessionID: sessionID
+            focus: focus
         )
         window.delegate = windowDelegate
 
@@ -198,11 +203,21 @@ final class AuxiliaryWindowPresentationService {
             windowDelegate: windowDelegate
         )
 
-        sessions.register(session)
+        let receipt = sessions.register(session)
+        uiDelegate.bind(receipt)
+        windowDelegate.bind(receipt)
+        miniWindowAdapter?.bind(receipt)
         window.present(shouldActivateApp: request.shouldActivateApp)
         if request.extensionID != nil, request.shouldActivateApp {
-            focus.record(sessionID: sessionID)
+            focus.record(receipt)
         }
-        return session
+        return AuxiliaryWindowPresentation(
+            session: session,
+            receipt: receipt
+        )
+    }
+
+    func isCurrent(_ receipt: AuxiliaryWindowSessionReceipt) -> Bool {
+        sessions.session(for: receipt) != nil
     }
 }

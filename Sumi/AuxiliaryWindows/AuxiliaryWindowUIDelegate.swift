@@ -4,8 +4,8 @@
 //
 
 import AppKit
-import WebKit
 import SumiDomain
+import WebKit
 
 @MainActor
 final class AuxiliaryWindowUIDelegate: NSObject, WKUIDelegate {
@@ -14,8 +14,8 @@ final class AuxiliaryWindowUIDelegate: NSObject, WKUIDelegate {
     private weak var teardown: AuxiliaryWindowTeardownService?
     private weak var permissions: (any AuxiliaryWindowPermissionHandling)?
     private let nestingPolicy: AuxiliaryWindowNestingPolicy
-    private weak var openerTab: Tab?
     private let nestedDepth: Int
+    private var sessionReceipt: AuxiliaryWindowSessionReceipt?
 
     init(
         sessions: AuxiliaryWindowSessionRegistry,
@@ -23,7 +23,6 @@ final class AuxiliaryWindowUIDelegate: NSObject, WKUIDelegate {
         teardown: AuxiliaryWindowTeardownService,
         permissions: any AuxiliaryWindowPermissionHandling,
         nestingPolicy: AuxiliaryWindowNestingPolicy,
-        openerTab: Tab?,
         nestedDepth: Int
     ) {
         self.sessions = sessions
@@ -31,12 +30,19 @@ final class AuxiliaryWindowUIDelegate: NSObject, WKUIDelegate {
         self.teardown = teardown
         self.permissions = permissions
         self.nestingPolicy = nestingPolicy
-        self.openerTab = openerTab
         self.nestedDepth = nestedDepth
     }
 
+    func bind(_ receipt: AuxiliaryWindowSessionReceipt) {
+        precondition(sessionReceipt == nil)
+        sessionReceipt = receipt
+    }
+
     func webViewDidClose(_ webView: WKWebView) {
-        teardown?.teardown(for: webView, reason: .webViewDidClose)
+        guard currentSession(for: webView) != nil,
+              let sessionReceipt
+        else { return }
+        teardown?.teardown(sessionReceipt, reason: .webViewDidClose)
     }
 
     func webView(
@@ -45,7 +51,9 @@ final class AuxiliaryWindowUIDelegate: NSObject, WKUIDelegate {
         for navigationAction: WKNavigationAction,
         windowFeatures: WKWindowFeatures
     ) -> WKWebView? {
-        guard navigationAction.targetFrame == nil else { return nil }
+        guard navigationAction.targetFrame == nil,
+              let session = currentSession(for: webView)
+        else { return nil }
 
         let isSizedPopup = windowFeatures.width != nil
             || windowFeatures.height != nil
@@ -53,10 +61,9 @@ final class AuxiliaryWindowUIDelegate: NSObject, WKUIDelegate {
 
         if isSizedPopup {
             guard let sourceWebView = webView as? FocusableWKWebView,
-                  let popups,
-                  let sourceTab = sessions?.session(for: webView)?.tab
-                    ?? openerTab
+                  let popups
             else { return nil }
+            let sourceTab = session.tab
             guard let childDepth = nestingPolicy.childDepth(
                 after: nestedDepth
             ) else {
@@ -66,8 +73,7 @@ final class AuxiliaryWindowUIDelegate: NSObject, WKUIDelegate {
                 return nil
             }
 
-            let parentSession = sessions?.session(for: webView)
-            let ownerExtensionID = parentSession?.ownerExtensionID
+            let ownerExtensionID = session.ownerExtensionID
             let sourceDocumentURL = navigationAction.sumiWebKitSourceURL
                 ?? sourceWebView.committedURL
                 ?? sourceWebView.url
@@ -94,13 +100,15 @@ final class AuxiliaryWindowUIDelegate: NSObject, WKUIDelegate {
             ) else {
                 return nil
             }
-            guard permissionResult.isAllowed else { return nil }
+            guard permissionResult.isAllowed,
+                  currentSession(for: webView) === session
+            else { return nil }
             return popups.presentWebPopup(
                 configuration: configuration,
                 request: navigationAction.request,
                 windowFeatures: windowFeatures,
                 openerTab: sourceTab,
-                explicitOpenerWindow: webView.window,
+                explicitOpenerWindow: session.window,
                 explicitOpenerProfileID: sourceTab.profileId
                     ?? sourceTab.resolveProfile()?.id,
                 isExtensionOriginated: isExtensionOriginated,
@@ -123,8 +131,10 @@ final class AuxiliaryWindowUIDelegate: NSObject, WKUIDelegate {
         completionHandler: @escaping @MainActor @Sendable ([URL]?) -> Void
     ) {
         guard let sourceWebView = webView as? FocusableWKWebView,
-              let tab = sessions?.session(for: webView)?.tab,
-              let tabContext = tab.filePickerPermissionTabContext(for: webView)
+              let session = currentSession(for: webView),
+              let tabContext = session.tab.filePickerPermissionTabContext(
+                  for: webView
+              )
         else {
             RuntimeDiagnostics.emit("📁 [AuxiliaryWindowUIDelegate] Denying file picker because browser/profile context is unavailable.")
             completionHandler(nil)
@@ -139,12 +149,29 @@ final class AuxiliaryWindowUIDelegate: NSObject, WKUIDelegate {
             frame: frame,
             userActivation: activationState
         )
+        let currentPageID: @MainActor () -> String? = {
+            [weak self, weak webView, weak session] in
+            guard let self, let webView, let session,
+                  self.currentSession(for: webView) === session
+            else { return nil }
+            return session.tab.currentPermissionPageId()
+        }
+        let exactSessionCompletion: @MainActor @Sendable ([URL]?) -> Void = {
+            [weak self, weak webView, weak session] urls in
+            guard let self, let webView, let session,
+                  self.currentSession(for: webView) === session
+            else {
+                completionHandler(nil)
+                return
+            }
+            completionHandler(urls)
+        }
         let didHandleOpenPanel = permissions?.handleFilePickerOpenPanel(
             request,
             tabContext: tabContext,
             webView: webView,
-            currentPageID: { [weak tab] in tab?.currentPermissionPageId() },
-            completionHandler: completionHandler
+            currentPageID: currentPageID,
+            completionHandler: exactSessionCompletion
         ) ?? false
         guard didHandleOpenPanel else {
             RuntimeDiagnostics.emit("📁 [AuxiliaryWindowUIDelegate] Denying file picker because permission runtime is unavailable.")
@@ -159,15 +186,14 @@ final class AuxiliaryWindowUIDelegate: NSObject, WKUIDelegate {
         initiatedByFrame frame: WKFrameInfo,
         completionHandler: @escaping @MainActor @Sendable () -> Void
     ) {
+        guard let session = currentSession(for: webView) else {
+            completionHandler()
+            return
+        }
         let alert = NSAlert()
         alert.messageText = message
         alert.addButton(withTitle: "OK")
-        if let window = webView.window {
-            alert.beginSheetModal(for: window) { _ in completionHandler() }
-        } else {
-            alert.runModal()
-            completionHandler()
-        }
+        alert.beginSheetModal(for: session.window) { _ in completionHandler() }
     }
 
     func webView(
@@ -176,16 +202,16 @@ final class AuxiliaryWindowUIDelegate: NSObject, WKUIDelegate {
         initiatedByFrame frame: WKFrameInfo,
         completionHandler: @escaping @MainActor @Sendable (Bool) -> Void
     ) {
+        guard let session = currentSession(for: webView) else {
+            completionHandler(false)
+            return
+        }
         let alert = NSAlert()
         alert.messageText = message
         alert.addButton(withTitle: "OK")
         alert.addButton(withTitle: "Cancel")
-        if let window = webView.window {
-            alert.beginSheetModal(for: window) { response in
-                completionHandler(response == .alertFirstButtonReturn)
-            }
-        } else {
-            completionHandler(alert.runModal() == .alertFirstButtonReturn)
+        alert.beginSheetModal(for: session.window) { response in
+            completionHandler(response == .alertFirstButtonReturn)
         }
     }
 
@@ -196,6 +222,10 @@ final class AuxiliaryWindowUIDelegate: NSObject, WKUIDelegate {
         initiatedByFrame frame: WKFrameInfo,
         completionHandler: @escaping @MainActor @Sendable (String?) -> Void
     ) {
+        guard let session = currentSession(for: webView) else {
+            completionHandler(nil)
+            return
+        }
         let alert = NSAlert()
         alert.messageText = prompt
         alert.addButton(withTitle: "OK")
@@ -203,12 +233,22 @@ final class AuxiliaryWindowUIDelegate: NSObject, WKUIDelegate {
         let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
         input.stringValue = defaultText ?? ""
         alert.accessoryView = input
-        if let window = webView.window {
-            alert.beginSheetModal(for: window) { response in
-                completionHandler(response == .alertFirstButtonReturn ? input.stringValue : nil)
-            }
-        } else {
-            completionHandler(alert.runModal() == .alertFirstButtonReturn ? input.stringValue : nil)
+        alert.beginSheetModal(for: session.window) { response in
+            completionHandler(
+                response == .alertFirstButtonReturn ? input.stringValue : nil
+            )
         }
+    }
+
+    private func currentSession(
+        for webView: WKWebView
+    ) -> AuxiliaryWindowSession? {
+        guard let sessions,
+              let sessionReceipt,
+              sessionReceipt.webViewIdentity == ObjectIdentifier(webView),
+              let session = sessions.session(for: sessionReceipt),
+              session.webView === webView
+        else { return nil }
+        return session
     }
 }

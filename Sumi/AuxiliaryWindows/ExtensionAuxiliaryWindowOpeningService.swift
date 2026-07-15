@@ -40,21 +40,21 @@ final class ExtensionAuxiliaryWindowOpeningService {
     }
 
     func present(
-        configuration: WKWebExtension.WindowConfiguration,
+        request: ExtensionWindowOpeningRequest,
         evidence: ExtensionControllerCallbackEvidence,
         callbackAdmission: ExtensionControllerCallbackAdmission,
         runtime: ExtensionAuxiliaryWindowCallbackRuntime,
         parentWindow: NSWindow?
     ) async -> ExtensionPopupWindowPresentationReceipt? {
         guard callbackAdmission.isCurrent(evidence) else { return nil }
-        let isPrivate = configuration.shouldBePrivate
+        let isPrivate = request.shouldBePrivate
             || context.activeWindow?.isIncognito == true
         guard isPrivate == false else {
             return nil
         }
 
         let geometry = AuxiliaryWindowGeometryResolver.resolve(
-            extensionFrame: configuration.frame,
+            extensionFrame: request.frame,
             parentWindow: parentWindow
         )
         let activeWindow = context.activeWindow
@@ -64,7 +64,16 @@ final class ExtensionAuxiliaryWindowOpeningService {
             return nil
         }
 
-        let firstURL = configuration.tabURLs.first
+        let firstURL = request.tabURLs.first
+        let extensionID = evidence.extensionID
+        guard runtime.integration.resolveExtensionID(
+            evidence.context,
+            openerTab,
+            firstURL,
+            extensionID
+        ) == extensionID else {
+            return nil
+        }
         let resolvedLoad = runtime.loadResolver.resolve(
             firstURL,
             controller: evidence.controller
@@ -105,12 +114,17 @@ final class ExtensionAuxiliaryWindowOpeningService {
                 controller: evidence.controller
             )
             guard callbackAdmission.isCurrent(evidence) else { return nil }
-            runtime.recentRequests.record(loadURL)
         }
 
         guard callbackAdmission.isCurrent(evidence),
               await admission.waitForAdmission(profileID: profileID),
-              callbackAdmission.isCurrent(evidence)
+              callbackAdmission.isCurrent(evidence),
+              runtime.integration.resolveExtensionID(
+                  evidence.context,
+                  openerTab,
+                  firstURL,
+                  extensionID
+              ) == extensionID
         else {
             return nil
         }
@@ -171,14 +185,7 @@ final class ExtensionAuxiliaryWindowOpeningService {
             return nil
         }
 
-        let extensionID = AuxiliaryWindowExtensionIdentityResolver.resolve(
-            extensionIntegration: runtime.integration,
-            extensionContext: evidence.context,
-            openerTab: openerTab,
-            extensionOwnedSourceURL: firstURL,
-            explicitExtensionID: nil
-        )
-        let session = presentation.present(
+        let presented = presentation.present(
             AuxiliaryWindowPresentationRequest(
                 tab: tab,
                 webView: webView,
@@ -186,7 +193,7 @@ final class ExtensionAuxiliaryWindowOpeningService {
                 openerTab: openerTab,
                 explicitOpenerWindow: parentWindow,
                 titleURL: firstURL,
-                shouldActivateApp: configuration.shouldBeFocused,
+                shouldActivateApp: request.shouldBeFocused,
                 isPrivate: false,
                 nestedDepth: 0,
                 extensionIntegration: runtime.integration,
@@ -194,35 +201,57 @@ final class ExtensionAuxiliaryWindowOpeningService {
             ),
             nestedPopups: popups
         )
+        let session = presented.session
+        let sessionReceipt = presented.receipt
 
-        guard let adapter = session.miniWindowAdapter else {
+        guard presentation.isCurrent(sessionReceipt),
+              let adapter = session.miniWindowAdapter else {
             teardown.teardown(
-                for: session.webView,
+                sessionReceipt,
                 reason: .presentationFailure
             )
             return nil
         }
 
         guard callbackAdmission.isCurrent(evidence),
+              presentation.isCurrent(sessionReceipt),
               session.extensionEvents?
-            .notifyAuxiliaryWindowOpened(session) == true else {
+              .notifyAuxiliaryWindowOpened(session) == true,
+              presentation.isCurrent(sessionReceipt) else {
             teardown.teardown(
-                for: session.webView,
+                sessionReceipt,
                 reason: .presentationFailure
             )
             return nil
         }
         if let loadURL {
-            guard callbackAdmission.isCurrent(evidence) else {
+            guard callbackAdmission.isCurrent(evidence),
+                  presentation.isCurrent(sessionReceipt) else {
                 teardown.teardown(
-                    for: session.webView,
+                    sessionReceipt,
                     reason: .presentationFailure
                 )
                 return nil
             }
             tab.loadURL(loadURL)
+            guard callbackAdmission.isCurrent(evidence),
+                  presentation.isCurrent(sessionReceipt) else {
+                teardown.teardown(
+                    sessionReceipt,
+                    reason: .presentationFailure
+                )
+                return nil
+            }
         }
-        let sessionReceipt = AuxiliaryWindowSessionReceipt(session: session)
+        guard callbackAdmission.isCurrent(evidence),
+              presentation.isCurrent(sessionReceipt) else {
+            teardown.teardown(
+                sessionReceipt,
+                reason: .presentationFailure
+            )
+            return nil
+        }
+        runtime.recentRequests.record(loadURL)
         return ExtensionPopupWindowPresentationReceipt(
             sessionReceipt: sessionReceipt,
             adapter: adapter,

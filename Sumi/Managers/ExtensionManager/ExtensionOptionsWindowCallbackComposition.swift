@@ -33,7 +33,7 @@ struct ExtensionOptionsWindowCallbackRuntime {
             && installedExtensions.recordRevision(for: evidence.extensionID)
                 == receipt.installedRecordRevision
             && installedExtensions.records.contains {
-                $0.id == evidence.extensionID
+                $0.id == evidence.extensionID && $0.isEnabled
             }
             && receipt.profile.id == evidence.profileID
             && evidence.controller.configuration.defaultWebsiteDataStore
@@ -72,7 +72,9 @@ enum ExtensionOptionsWindowCallbackComposition {
               evidence.controller.configuration.defaultWebsiteDataStore
                 === profile.dataStore,
               let installedExtension = manager.installedExtensionCollection
-                .records.first(where: { $0.id == evidence.extensionID }),
+                .records.first(where: {
+                    $0.id == evidence.extensionID && $0.isEnabled
+                }),
               let resolution = ExtensionOptionsPageResolver.resolve(
                   context: evidence.context,
                   controller: evidence.controller,

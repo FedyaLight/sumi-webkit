@@ -179,8 +179,10 @@ final class ExtensionAuxiliaryWindowLifecycle {
             )
             guard shouldContinue() else { return }
             if reopened == false,
-               control.auxiliaryWindowSession(for: session.id) === session {
-                control.closeAuxiliaryWindowSession(session)
+               let receipt = control.auxiliaryWindowSessionReceipt(
+                for: session
+               ) {
+                control.closeAuxiliaryWindowSession(receipt)
             }
         }
     }

@@ -10,14 +10,17 @@ final class AuxiliaryWindowFocusService {
         self.sessions = sessions
     }
 
-    func record(sessionID: UUID) {
-        sessions.recordFocus(sessionID: sessionID)
+    func record(_ receipt: AuxiliaryWindowSessionReceipt) {
+        sessions.recordFocus(receipt)
     }
 
-    func focus(sessionID: UUID) {
-        guard let session = sessions.session(for: sessionID) else { return }
-        sessions.recordFocus(sessionID: sessionID)
+    @discardableResult
+    func focus(_ receipt: AuxiliaryWindowSessionReceipt) -> Bool {
+        guard let session = sessions.session(for: receipt) else { return false }
+        sessions.recordFocus(receipt)
+        guard sessions.session(for: receipt) === session else { return false }
         session.extensionEvents?.notifyAuxiliaryWindowFocused(session)
+        return sessions.session(for: receipt) === session
     }
 
     func focusedMiniWindowAdapter(
@@ -31,15 +34,22 @@ final class AuxiliaryWindowFocusService {
     func restoreMostRecentWindow(forExtensionID extensionID: String) -> Bool {
         guard let session = sessions.mostRecentlyFocusedSession(
             forExtensionID: extensionID
-        ) else {
+        ), let receipt = sessions.receipt(for: session) else {
             return false
         }
         if session.shouldActivateApp {
             NSApp.activate(ignoringOtherApps: true)
+            guard sessions.session(for: receipt) === session else {
+                return false
+            }
         }
         session.window.makeKeyAndOrderFront(nil)
-        focus(sessionID: session.id)
-        return true
+        guard sessions.session(for: receipt) === session,
+              focus(receipt)
+        else {
+            return false
+        }
+        return sessions.session(for: receipt) === session
     }
 }
 
@@ -60,31 +70,27 @@ final class AuxiliaryWindowTeardownService {
     }
 
     func teardown(
-        for webView: WKWebView,
-        reason: AuxiliaryWindowCloseReason = .webViewDidClose
-    ) {
-        guard let receipt = sessions.receipt(for: webView) else { return }
-        teardown(receipt, reason: reason)
-    }
-
-    func teardown(
         _ receipt: AuxiliaryWindowSessionReceipt,
         reason: AuxiliaryWindowCloseReason = .webViewDidClose
     ) {
         guard let session = sessions.remove(receipt) else { return }
 
         session.window.delegate = nil
-        session.webView.stopLoading()
         session.webView.uiDelegate = nil
         session.webView.navigationDelegate = nil
+        session.webView.stopLoading()
         session.webView.removeFromSuperview()
 
-        session.extensionEvents?.notifyAuxiliaryWindowClosed(session)
         session.tab.performComprehensiveWebViewCleanup()
         tabs.removeMiniWindowTab(session.tab)
 
         if reason.shouldCloseNativeWindow, session.window.isVisible {
             session.window.close()
+        }
+
+        session.extensionEvents?.notifyAuxiliaryWindowClosed(session)
+        guard physicalIdentityWasNotReused(afterRetiring: session) else {
+            return
         }
 
         let restoredExtensionWindow: Bool
@@ -107,24 +113,36 @@ final class AuxiliaryWindowTeardownService {
         }
     }
 
+    private func physicalIdentityWasNotReused(
+        afterRetiring session: AuxiliaryWindowSession
+    ) -> Bool {
+        sessions.session(for: session.webView) == nil
+            && sessions.session(for: session.window) == nil
+            && sessions.session(for: session.tab) == nil
+    }
+
     func closeAll(
         reason: AuxiliaryWindowCloseReason = .bulkCleanup
     ) {
-        let webViews = sessions.sessionsSnapshot().map(\.webView)
-        webViews.forEach { teardown(for: $0, reason: reason) }
+        let receipts = sessions.sessionsSnapshot().compactMap {
+            sessions.receipt(for: $0)
+        }
+        receipts.forEach { teardown($0, reason: reason) }
     }
 
     /// Live-session tab ports are no longer callable on this terminal path.
     /// Canonical WebViews are released by WebViewLifecycleService first; this
     /// method only drops auxiliary session/UI ownership and native windows.
     func closeAllAfterBrowserRuntimeDeallocation() {
-        let sessionsSnapshot = sessions.sessionsSnapshot()
-        for session in sessionsSnapshot {
-            guard sessions.remove(webView: session.webView) != nil else { continue }
+        let receipts = sessions.sessionsSnapshot().compactMap {
+            sessions.receipt(for: $0)
+        }
+        for receipt in receipts {
+            guard let session = sessions.remove(receipt) else { continue }
             session.window.delegate = nil
-            session.webView.stopLoading()
             session.webView.uiDelegate = nil
             session.webView.navigationDelegate = nil
+            session.webView.stopLoading()
             session.webView.removeFromSuperview()
             if session.window.isVisible {
                 session.window.close()
@@ -136,39 +154,38 @@ final class AuxiliaryWindowTeardownService {
         forExtensionID extensionID: String,
         reason: AuxiliaryWindowCloseReason = .extensionDisable
     ) {
-        let webViews = sessions.sessions(forExtensionID: extensionID)
-            .map(\.webView)
-        webViews.forEach { teardown(for: $0, reason: reason) }
+        let receipts = sessions.sessions(forExtensionID: extensionID)
+            .compactMap { sessions.receipt(for: $0) }
+        receipts.forEach { teardown($0, reason: reason) }
     }
 }
 
 @MainActor
 final class AuxiliaryWindowSessionDelegate: NSObject, NSWindowDelegate {
-    private weak var sessions: AuxiliaryWindowSessionRegistry?
     private weak var teardown: AuxiliaryWindowTeardownService?
     private weak var focus: AuxiliaryWindowFocusService?
-    private let sessionID: UUID
+    private var sessionReceipt: AuxiliaryWindowSessionReceipt?
 
     init(
-        sessions: AuxiliaryWindowSessionRegistry,
         teardown: AuxiliaryWindowTeardownService,
-        focus: AuxiliaryWindowFocusService,
-        sessionID: UUID
+        focus: AuxiliaryWindowFocusService
     ) {
-        self.sessions = sessions
         self.teardown = teardown
         self.focus = focus
-        self.sessionID = sessionID
+    }
+
+    func bind(_ receipt: AuxiliaryWindowSessionReceipt) {
+        precondition(sessionReceipt == nil)
+        sessionReceipt = receipt
     }
 
     func windowWillClose(_ notification: Notification) {
-        guard let webView = sessions?.session(for: sessionID)?.webView else {
-            return
-        }
-        teardown?.teardown(for: webView, reason: .nativeClose)
+        guard let sessionReceipt else { return }
+        teardown?.teardown(sessionReceipt, reason: .nativeClose)
     }
 
     func windowDidBecomeKey(_ notification: Notification) {
-        focus?.focus(sessionID: sessionID)
+        guard let sessionReceipt else { return }
+        focus?.focus(sessionReceipt)
     }
 }

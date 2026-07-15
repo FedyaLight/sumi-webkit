@@ -427,7 +427,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
             return false
         }
         let session = browserManager.auxiliaryWindows.sessions.session(for: webView)
-        browserManager.auxiliaryWindows.teardown.teardown(for: webView, reason: .bulkCleanup)
+        browserManager.auxiliaryWindows.teardownAuxiliaryWindowForTesting(webView, reason: .bulkCleanup)
         return session?.openerTab === sourceTab
             && session?.tab.isAuxiliaryMiniWindow == true
     }

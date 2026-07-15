@@ -1,6 +1,6 @@
 import Foundation
-import WebKit
 import SumiDomain
+import WebKit
 
 @MainActor
 enum TabBrowserHostServicesRuntimeFactory {
@@ -89,50 +89,71 @@ enum TabBrowserHostServicesRuntimeFactory {
                 )
             },
             profile: { [weak browserManager] tabId, webView in
-                guard let browserManager,
-                      let tracked = ownershipQuery.trackedOwner(
-                          containing: webView
-                      ),
+                guard let browserManager else { return nil }
+                if let tracked = ownershipQuery.trackedOwner(
+                    containing: webView
+                ) {
+                    guard
                       tracked.tabID == tabId,
                       let sourceWindow = browserManager.windowRegistry?
                           .windows[tracked.windowID],
                       let sourceTab = (webView as? FocusableWKWebView)?.owningTab,
                       sourceTab.id == tabId
-                else {
-                    return nil
-                }
-                if sourceWindow.isIncognito {
-                    guard let profile = sourceWindow.ephemeralProfile,
-                          sourceTab.profileId == nil
-                            || sourceTab.profileId == profile.id
+                    else { return nil }
+                    if sourceWindow.isIncognito {
+                        guard let profile = sourceWindow.ephemeralProfile,
+                              sourceTab.profileId == nil
+                                || sourceTab.profileId == profile.id
+                        else {
+                            return nil
+                        }
+                        return profile
+                    }
+
+                    let sourceSpaceID = sourceTab.spaceId
+                        ?? sourceWindow.currentSpaceId
+                    let spaceProfileID = sourceSpaceID.flatMap {
+                        browserManager.tabManager.spaceStateOwner.profileId(for: $0)
+                    }
+                    let candidates = [
+                        sourceTab.profileId,
+                        spaceProfileID,
+                        sourceWindow.currentProfileId,
+                    ].compactMap(\.self)
+                    guard Set(candidates).count == 1,
+                          let profileID = candidates.first
                     else {
                         return nil
                     }
-                    return profile
+                    return browserManager.profileManager.profiles.first {
+                        $0.id == profileID
+                    }
                 }
 
-                let sourceSpaceID = sourceTab.spaceId
-                    ?? sourceWindow.currentSpaceId
-                let spaceProfileID = sourceSpaceID.flatMap {
-                    browserManager.tabManager.spaceStateOwner.profileId(for: $0)
-                }
-                let candidates = [
-                    sourceTab.profileId,
-                    spaceProfileID,
-                    sourceWindow.currentProfileId,
-                ].compactMap(\.self)
-                guard Set(candidates).count == 1,
-                      let profileID = candidates.first
+                guard let sourceTab = (webView as? FocusableWKWebView)?
+                    .owningTab,
+                      sourceTab.id == tabId,
+                      browserManager.tabManager
+                      .transientWebKitTabLifecycleOwner
+                      .isAuxiliaryMiniWindowTab(sourceTab),
+                      browserManager.webViewRoutingService.ownsLiveWebView(
+                          webView,
+                          for: sourceTab
+                      ),
+                      let profileID = sourceTab.profileId,
+                      let profile = sourceTab.resolveProfile(),
+                      profile.id == profileID,
+                      webView.configuration
+                      .sumiIsNormalTabWebViewConfiguration == false,
+                      webView.configuration.websiteDataStore
+                      === profile.dataStore
                 else {
                     return nil
                 }
-                return browserManager.profileManager.profiles.first {
-                    $0.id == profileID
-                }
+                return profile
             }
         )
     }
-
 }
 
 @MainActor

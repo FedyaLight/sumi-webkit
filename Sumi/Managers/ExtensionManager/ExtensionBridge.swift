@@ -205,17 +205,33 @@ struct ExtensionAuxiliaryWindowSessionReceipt {
 
 @available(macOS 15.5, *)
 @MainActor
+protocol ExtensionAuxiliaryTabClosing: ExtensionAuxiliaryTabSessionQuery {
+    func auxiliaryWindowSessionReceipt(
+        for session: AuxiliaryWindowSession
+    ) -> AuxiliaryWindowSessionReceipt?
+    func closeAuxiliaryWindowSession(
+        _ receipt: AuxiliaryWindowSessionReceipt
+    )
+}
+
+@available(macOS 15.5, *)
+@MainActor
 protocol ExtensionAuxiliaryWindowControl:
     ExtensionAuxiliaryTabSessionQuery,
     ExtensionAuxiliaryTabClosing {
-    func auxiliaryWindowSession(for tab: Tab) -> AuxiliaryWindowSession?
     func auxiliaryWindowSession(for sessionId: UUID) -> AuxiliaryWindowSession?
     func auxiliaryWindowSession(for window: NSWindow) -> AuxiliaryWindowSession?
+    func auxiliaryWindowSession(
+        for receipt: AuxiliaryWindowSessionReceipt
+    ) -> AuxiliaryWindowSession?
     func focusedExtensionMiniWindowAdapter(forOwnerExtensionID ownerExtensionID: String) -> ExtensionMiniWindowAdapter?
-    func recordAuxiliaryWindowSessionFocus(_ sessionId: UUID)
-    func focusAuxiliaryWindowSession(_ sessionId: UUID)
-    func closeAuxiliaryWindowSession(_ session: AuxiliaryWindowSession)
-    func closeAuxiliaryWindowWebView(_ webView: WKWebView)
+    func recordAuxiliaryWindowSessionFocus(
+        _ receipt: AuxiliaryWindowSessionReceipt
+    )
+    @discardableResult
+    func focusAuxiliaryWindowSession(
+        _ receipt: AuxiliaryWindowSessionReceipt
+    ) -> Bool
     func auxiliaryWindowSessionReceipts(
         forExtensionID extensionID: String
     ) -> [ExtensionAuxiliaryWindowSessionReceipt]
@@ -223,25 +239,13 @@ protocol ExtensionAuxiliaryWindowControl:
         _ receipt: ExtensionAuxiliaryWindowSessionReceipt,
         reason: AuxiliaryWindowCloseReason
     )
-    func containsAuxiliaryWebView(_ webView: WKWebView) -> Bool
 }
 
 @available(macOS 15.5, *)
 @MainActor
 protocol ExtensionWindowPresentation: AnyObject {
-    func presentExtensionExternalWebPopup(
-        configuration: WKWebViewConfiguration,
-        request: URLRequest?,
-        windowFeatures: WKWindowFeatures,
-        openerTab: Tab,
-        openerWindow: NSWindow,
-        openerProfileID: UUID,
-        shouldActivateApp: Bool,
-        extensionOwnedSourceURL: URL?,
-        ownerExtensionID: String?
-    ) -> WKWebView?
     func presentExtensionPopupWindow(
-        configuration: WKWebExtension.WindowConfiguration,
+        request: ExtensionWindowOpeningRequest,
         evidence: ExtensionControllerCallbackEvidence,
         admission: ExtensionControllerCallbackAdmission,
         runtime: ExtensionAuxiliaryWindowCallbackRuntime,
@@ -627,8 +631,22 @@ final class ExtensionMiniWindowAdapter: NSObject, WKWebExtensionWindow {
     private weak var auxiliaryWindows: (any ExtensionAuxiliaryWindowControl)?
     private weak var windowPublications: ExtensionWindowPublicationQuery?
     private weak var window: NSWindow?
+    private var sessionReceipt: AuxiliaryWindowSessionReceipt?
+    private var isRetired = false
     private let isPrivateWindow: Bool
     private let shouldActivateApp: Bool
+    private let stateTransitions = ExtensionWindowStateTransitionCoordinator(
+        supersededError: {
+            ExtensionBridgeAdapterCallbackError
+                .miniWindowStateTransitionSuperseded
+                .nsError()
+        },
+        invalidatedError: {
+            ExtensionBridgeAdapterCallbackError
+                .miniWindowStateTransitionInvalidated
+                .nsError()
+        }
+    )
 
     init(
         sessionId: UUID,
@@ -649,13 +667,44 @@ final class ExtensionMiniWindowAdapter: NSObject, WKWebExtensionWindow {
         super.init()
     }
 
-    private func isAvailable(
+    func bind(_ receipt: AuxiliaryWindowSessionReceipt) {
+        precondition(sessionReceipt == nil)
+        precondition(receipt.sessionID == sessionId)
+        sessionReceipt = receipt
+    }
+
+    private func currentSession(
         to extensionContext: WKWebExtensionContext
-    ) -> Bool {
-        windowPublications?.isCurrentAuxiliaryWindowAdapter(
-            self,
-            visibleTo: extensionContext
-        ) == true
+    ) -> AuxiliaryWindowSession? {
+        guard isRetired == false,
+              let sessionReceipt,
+              let session = auxiliaryWindows?.auxiliaryWindowSession(
+                for: sessionReceipt
+              ),
+              session.id == sessionId,
+              session.miniWindowAdapter === self,
+              session.window === window,
+              windowPublications?.isCurrentAuxiliaryWindowAdapter(
+                self,
+                visibleTo: extensionContext
+              ) == true
+        else {
+            return nil
+        }
+        return session
+    }
+
+    private func completeUnavailable(
+        _ operation: ExtensionBridgeAdapterCallbackError.MiniWindowOperation,
+        completionHandler: @escaping (Error?) -> Void
+    ) {
+        ExtensionBridgeCallbackSupport.complete(
+            completionHandler,
+            api: .windowAdapterCompletion,
+            error: ExtensionBridgeAdapterCallbackError
+                .miniWindowUnavailable(operation: operation)
+                .nsError()
+        )
     }
 
     override func isEqual(_ object: Any?) -> Bool {
@@ -670,7 +719,8 @@ final class ExtensionMiniWindowAdapter: NSObject, WKWebExtensionWindow {
     func tabs(
         for extensionContext: WKWebExtensionContext
     ) -> [any WKWebExtensionTab] {
-        guard let adapter = windowPublications?
+        guard currentSession(to: extensionContext) != nil,
+              let adapter = windowPublications?
             .publishedAuxiliaryTabAdapter(
                 for: self,
                 visibleTo: extensionContext
@@ -685,33 +735,34 @@ final class ExtensionMiniWindowAdapter: NSObject, WKWebExtensionWindow {
     func windowType(
         for extensionContext: WKWebExtensionContext
     ) -> WKWebExtension.WindowType {
-        isAvailable(to: extensionContext) ? .popup : .normal
+        currentSession(to: extensionContext) != nil ? .popup : .normal
     }
 
     func windowState(
         for extensionContext: WKWebExtensionContext
     ) -> WKWebExtension.WindowState {
-        guard isAvailable(to: extensionContext), let window else {
+        guard currentSession(to: extensionContext) != nil, let window else {
             return .normal
         }
         if window.isMiniaturized { return .minimized }
         if window.styleMask.contains(.fullScreen) { return .fullscreen }
+        if window.isZoomed { return .maximized }
         return .normal
     }
 
     func isPrivate(for extensionContext: WKWebExtensionContext) -> Bool {
-        isAvailable(to: extensionContext) && isPrivateWindow
+        currentSession(to: extensionContext) != nil && isPrivateWindow
     }
 
     func screenFrame(for extensionContext: WKWebExtensionContext) -> CGRect {
-        guard isAvailable(to: extensionContext) else { return .zero }
+        guard currentSession(to: extensionContext) != nil else { return .zero }
         return window?.screen?.visibleFrame
             ?? NSScreen.main?.visibleFrame
             ?? .zero
     }
 
     func frame(for extensionContext: WKWebExtensionContext) -> CGRect {
-        guard isAvailable(to: extensionContext) else { return .zero }
+        guard currentSession(to: extensionContext) != nil else { return .zero }
         return window?.frame ?? .zero
     }
 
@@ -720,40 +771,40 @@ final class ExtensionMiniWindowAdapter: NSObject, WKWebExtensionWindow {
         for extensionContext: WKWebExtensionContext,
         completionHandler: @escaping (Error?) -> Void
     ) {
-        guard isAvailable(to: extensionContext), let window else {
-            ExtensionBridgeCallbackSupport.complete(
-                completionHandler,
-                api: .windowAdapterCompletion,
-                error: ExtensionBridgeAdapterCallbackError
-                    .miniWindowUnavailable(operation: .setWindowState)
-                    .nsError()
+        guard let session = currentSession(to: extensionContext),
+              let window,
+              let expectedReceipt = sessionReceipt else {
+            completeUnavailable(
+                .setWindowState,
+                completionHandler: completionHandler
             )
             return
         }
-
-        switch windowState {
-        case .minimized:
-            window.miniaturize(nil)
-        case .maximized:
-            if window.isMiniaturized {
-                window.deminiaturize(nil)
+        let sessionIdentity = ObjectIdentifier(session)
+        let windowIdentity = ObjectIdentifier(window)
+        stateTransitions.transition(
+            window: window,
+            to: windowState,
+            isCurrent: { [weak self, weak window] in
+                guard let self,
+                      let window,
+                      ObjectIdentifier(window) == windowIdentity,
+                      self.sessionReceipt == expectedReceipt,
+                      let current = self.currentSession(to: extensionContext),
+                      ObjectIdentifier(current) == sessionIdentity,
+                      current.window === window else {
+                    return false
+                }
+                return true
+            },
+            completion: { error in
+                ExtensionBridgeCallbackSupport.complete(
+                    completionHandler,
+                    api: .windowAdapterCompletion,
+                    error: error
+                )
             }
-            window.zoom(nil)
-        case .fullscreen:
-            if !window.styleMask.contains(.fullScreen) {
-                window.toggleFullScreen(nil)
-            }
-        case .normal:
-            if window.isMiniaturized {
-                window.deminiaturize(nil)
-            } else if window.styleMask.contains(.fullScreen) {
-                window.toggleFullScreen(nil)
-            }
-        @unknown default:
-            break
-        }
-
-        ExtensionBridgeCallbackSupport.complete(completionHandler, api: .windowAdapterCompletion, error: nil)
+        )
     }
 
     func setFrame(
@@ -761,18 +812,17 @@ final class ExtensionMiniWindowAdapter: NSObject, WKWebExtensionWindow {
         for extensionContext: WKWebExtensionContext,
         completionHandler: @escaping (Error?) -> Void
     ) {
-        guard isAvailable(to: extensionContext), let window else {
-            ExtensionBridgeCallbackSupport.complete(
-                completionHandler,
-                api: .windowAdapterCompletion,
-                error: ExtensionBridgeAdapterCallbackError
-                    .miniWindowUnavailable(operation: .setFrame)
-                    .nsError()
-            )
+        guard let session = currentSession(to: extensionContext),
+              let window else {
+            completeUnavailable(.setFrame, completionHandler: completionHandler)
             return
         }
 
         window.setFrame(frame, display: true)
+        guard currentSession(to: extensionContext) === session else {
+            completeUnavailable(.setFrame, completionHandler: completionHandler)
+            return
+        }
         ExtensionBridgeCallbackSupport.complete(completionHandler, api: .windowAdapterCompletion, error: nil)
     }
 
@@ -780,21 +830,27 @@ final class ExtensionMiniWindowAdapter: NSObject, WKWebExtensionWindow {
         for extensionContext: WKWebExtensionContext,
         completionHandler: @escaping (Error?) -> Void
     ) {
-        guard isAvailable(to: extensionContext), window != nil else {
-            ExtensionBridgeCallbackSupport.complete(
-                completionHandler,
-                api: .windowAdapterCompletion,
-                error: ExtensionBridgeAdapterCallbackError
-                    .miniWindowUnavailable(operation: .focus)
-                    .nsError()
-            )
+        guard let session = currentSession(to: extensionContext),
+              let window,
+              let sessionReceipt else {
+            completeUnavailable(.focus, completionHandler: completionHandler)
             return
         }
         if shouldActivateApp {
             NSApp.activate(ignoringOtherApps: true)
+            guard currentSession(to: extensionContext) === session else {
+                completeUnavailable(.focus, completionHandler: completionHandler)
+                return
+            }
         }
-        window?.makeKeyAndOrderFront(nil)
-        auxiliaryWindows?.focusAuxiliaryWindowSession(sessionId)
+        window.makeKeyAndOrderFront(nil)
+        guard currentSession(to: extensionContext) === session,
+              auxiliaryWindows?.focusAuxiliaryWindowSession(sessionReceipt)
+                == true,
+              currentSession(to: extensionContext) === session else {
+            completeUnavailable(.focus, completionHandler: completionHandler)
+            return
+        }
         ExtensionBridgeCallbackSupport.complete(completionHandler, api: .windowAdapterCompletion, error: nil)
     }
 
@@ -802,21 +858,17 @@ final class ExtensionMiniWindowAdapter: NSObject, WKWebExtensionWindow {
         for extensionContext: WKWebExtensionContext,
         completionHandler: @escaping (Error?) -> Void
     ) {
-        guard isAvailable(to: extensionContext),
+        guard currentSession(to: extensionContext) != nil,
               let auxiliaryWindows,
-              let session = auxiliaryWindows.auxiliaryWindowSession(for: sessionId)
+              let sessionReceipt
         else {
-            ExtensionBridgeCallbackSupport.complete(
-                completionHandler,
-                api: .windowAdapterCompletion,
-                error: ExtensionBridgeAdapterCallbackError
-                    .miniWindowUnavailable(operation: .close)
-                    .nsError()
-            )
+            completeUnavailable(.close, completionHandler: completionHandler)
             return
         }
 
-        auxiliaryWindows.closeAuxiliaryWindowSession(session)
+        isRetired = true
+        stateTransitions.invalidateActiveTransition()
+        auxiliaryWindows.closeAuxiliaryWindowSession(sessionReceipt)
         ExtensionBridgeCallbackSupport.complete(completionHandler, api: .windowAdapterCompletion, error: nil)
     }
 }

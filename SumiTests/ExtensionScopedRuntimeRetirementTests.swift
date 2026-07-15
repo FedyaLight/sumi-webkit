@@ -1366,19 +1366,37 @@ private final class ScopedRetirementAuxiliaryWindowSpy:
         nil
     }
 
+    func auxiliaryWindowSession(
+        for receipt: AuxiliaryWindowSessionReceipt
+    ) -> AuxiliaryWindowSession? {
+        nil
+    }
+
+    func auxiliaryWindowSessionReceipt(
+        for session: AuxiliaryWindowSession
+    ) -> AuxiliaryWindowSessionReceipt? {
+        nil
+    }
+
     func focusedExtensionMiniWindowAdapter(
         forOwnerExtensionID ownerExtensionID: String
     ) -> ExtensionMiniWindowAdapter? {
         nil
     }
 
-    func recordAuxiliaryWindowSessionFocus(_ sessionId: UUID) {}
+    func recordAuxiliaryWindowSessionFocus(
+        _ receipt: AuxiliaryWindowSessionReceipt
+    ) {}
 
-    func focusAuxiliaryWindowSession(_ sessionId: UUID) {}
+    func focusAuxiliaryWindowSession(
+        _ receipt: AuxiliaryWindowSessionReceipt
+    ) -> Bool {
+        false
+    }
 
-    func closeAuxiliaryWindowSession(_ session: AuxiliaryWindowSession) {}
-
-    func closeAuxiliaryWindowWebView(_ webView: WKWebView) {}
+    func closeAuxiliaryWindowSession(
+        _ receipt: AuxiliaryWindowSessionReceipt
+    ) {}
 
     func auxiliaryWindowSessionReceipts(
         forExtensionID extensionID: String
@@ -1420,10 +1438,6 @@ private final class ScopedRetirementAuxiliaryWindowSpy:
 
     func hasSession(for extensionID: String) -> Bool {
         currentSessionIDs[extensionID] != nil
-    }
-
-    func containsAuxiliaryWebView(_ webView: WKWebView) -> Bool {
-        false
     }
 }
 

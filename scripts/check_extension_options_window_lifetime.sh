@@ -16,6 +16,7 @@ page_resolution='Sumi/Managers/ExtensionManager/ExtensionOptionsPageResolution.s
 page_owner='Sumi/Managers/ExtensionManager/ExtensionPageResolutionOwner.swift'
 options_bridge='Sumi/Managers/ExtensionManager/ExtensionControllerDelegateBridge+Options.swift'
 toolbar_options='Sumi/Managers/ExtensionManager/SumiExtensionToolbarActionSurface.swift'
+options_tests='SumiTests/SafariExtensionWindowAndOptionsAdmissionTests.swift'
 
 for file in "$service" "$delegate" "$registry" "$resolver" \
   "$composition" "$transaction" "$coordinator" "$claim_ledger" \
@@ -53,6 +54,10 @@ if rg -n 'auxiliaryWebViewConfiguration' "$composition"; then
   exit 1
 fi
 rg -q 'installedRecordRevision: UInt64' "$composition"
+if (( $(rg -c '\$0\.id == evidence\.extensionID && \$0\.isEnabled' "$composition") < 2 )); then
+  echo 'error: options capture and revalidation must require an enabled record' >&2
+  exit 1
+fi
 rg -q 'configuration\.websiteDataStore === profile\.dataStore' "$composition"
 rg -q 'configuration\.webExtensionController === evidence\.controller' \
   "$composition"
@@ -157,13 +162,15 @@ rg -q 'XCTAssertTrue\(lifecycleEvents\.isEmpty\)' \
 rg -q 'testSupersededReceiptCannotRetireReregisteredSameWindowIdentity' \
   SumiTests/ExtensionOptionsWindowServiceTests.swift
 rg -q 'stale options admission rejected' \
-  SumiTests/SafariExtensionWebViewControllerWiringTests.swift
-rg -q 'Current Profile B' SumiTests/SafariExtensionWebViewControllerWiringTests.swift
-rg -q 'replacingPackageRoot' SumiTests/SafariExtensionWebViewControllerWiringTests.swift
+  "$options_tests"
+rg -q 'Current Profile B' "$options_tests"
+rg -q 'replacingPackageRoot' "$options_tests"
+rg -q 'disabled options record rejected' \
+  "$options_tests"
 rg -q 'older options presentation suspended' \
-  SumiTests/SafariExtensionWebViewControllerWiringTests.swift
+  "$options_tests"
 rg -q 'ReentrantOptionsWindow' \
-  SumiTests/SafariExtensionWebViewControllerWiringTests.swift
+  "$options_tests"
 rg -q 'testAuxiliaryCloseReentrancyCannotRetireReplacementOptionsWindow' \
   SumiTests/ExtensionScopedRuntimeRetirementTests.swift
 rg -q 'testCapturedAuxiliaryReceiptCannotCloseReentrantReplacementSession' \

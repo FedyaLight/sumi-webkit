@@ -205,6 +205,9 @@ final class ExtensionControllerDelegateBridge: NSObject, WKWebExtensionControlle
         for extensionContext: WKWebExtensionContext,
         completionHandler: @escaping ((any WKWebExtensionWindow)?, (any Error)?) -> Void
     ) {
+        let request = ExtensionWindowOpeningRequest(
+            configuration: configuration
+        )
         guard let manager,
               let invocation = ExtensionControllerOpeningCallbackComposition
                   .invocation(
@@ -220,7 +223,7 @@ final class ExtensionControllerDelegateBridge: NSObject, WKWebExtensionControlle
             return
         }
         openingCallbacks.openNewWindow(
-            configuration: configuration,
+            request: request,
             evidence: invocation.evidence,
             runtime: invocation.runtime,
             completionHandler: completionHandler
@@ -292,5 +295,4 @@ final class ExtensionControllerDelegateBridge: NSObject, WKWebExtensionControlle
             completionHandler: completionHandler
         )
     }
-
 }
