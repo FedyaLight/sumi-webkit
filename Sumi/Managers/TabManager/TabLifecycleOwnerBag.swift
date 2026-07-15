@@ -47,9 +47,15 @@ final class TabLifecycleOwnerBag {
         persistence: tm.structuralPersistence,
         spaceSelection: activeSpaceSelectionUpdater
     )
-    lazy var profileAssignments = ProfileAssignmentServices(
+    lazy var profileAssignments = ProfileAssignmentServices.live(
         tabManager: tm,
         selectionContext: selectionContextProjection
+    )
+    lazy var spaceProfileReconciliation = SpaceProfileReconciliationService(
+        spaces: tm.spaceStateOwner,
+        runtimeConnection: tm.runtimePortConnection,
+        spaceTransitions: profileAssignments.spaces,
+        persistence: tm.structuralPersistence
     )
     lazy var transientWebKitTabLifecycleOwner = TabTransientWebKitTabLifecycleOwner(
         dependencies: .live(tabManager: tm)

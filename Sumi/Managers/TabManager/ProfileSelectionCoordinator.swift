@@ -1,44 +1,35 @@
 import Foundation
 
-/// Reconciles visible selection and nil Space profile references. It owns no
-/// WebView replacement or profile-assignment transaction state.
+/// Reconciles visible selection after a profile change. It owns no WebView
+/// replacement or profile-assignment transaction state.
 @MainActor
 final class ProfileSelectionCoordinator {
-    private unowned let tabManager: TabManager
-    private let spaceActivation: SpaceActivationService
-    private let spaceTransitions: SpaceProfileTransitionService
     private let selectionContext: TabSelectionContextProjection
+    private let selection: TabSelectionStateOwner
+    private let pins: ShortcutPinCollectionStateOwner
+    private let runtimeConnection: TabRuntimePortConnection
+    private let persistence: TabStructuralPersistenceService
 
     init(
-        tabManager: TabManager,
-        spaceActivation: SpaceActivationService,
-        spaceTransitions: SpaceProfileTransitionService,
-        selectionContext: TabSelectionContextProjection
+        selectionContext: TabSelectionContextProjection,
+        selection: TabSelectionStateOwner,
+        pins: ShortcutPinCollectionStateOwner,
+        runtimeConnection: TabRuntimePortConnection,
+        persistence: TabStructuralPersistenceService
     ) {
-        self.tabManager = tabManager
-        self.spaceActivation = spaceActivation
-        self.spaceTransitions = spaceTransitions
         self.selectionContext = selectionContext
+        self.selection = selection
+        self.pins = pins
+        self.runtimeConnection = runtimeConnection
+        self.persistence = persistence
     }
 
     func handleProfileSwitch(contextWindowID: UUID? = nil) {
-        if let pendingSpaceID = tabManager.pendingSpaceActivation {
-            tabManager.pendingSpaceActivation = nil
-            if let target = tabManager.spaceStateOwner.space(
-                with: pendingSpaceID
-            ) {
-                spaceActivation.setActiveSpace(
-                    target,
-                    contextWindowId: contextWindowID
-                )
-            }
-        }
-
         let visible = selectionContext.tabs(in: contextWindowID)
-        let current = tabManager.selectionStateOwner.currentTab
+        let current = selection.currentTab
         if contextWindowID == nil,
            shouldPreserveContextlessShortcutLiveTab(current) {
-            tabManager.runtimePorts?.updateTabVisibility()
+            runtimeConnection.current?.updateTabVisibility()
             return
         }
 
@@ -46,34 +37,10 @@ final class ProfileSelectionCoordinator {
             visible.contains(where: { $0.id == current.id })
         } ?? false
         if !currentIsVisible {
-            tabManager.selectionStateOwner.replaceCurrentTab(visible.first)
-            tabManager.runtimePorts?.updateTabVisibility()
-            tabManager.structuralPersistence.persistSelection()
-        } else {
-            tabManager.runtimePorts?.updateTabVisibility()
+            selection.replaceCurrentTab(visible.first)
+            persistence.persistSelection()
         }
-    }
-
-    func reconcileSpaceProfilesIfNeeded() {
-        guard let profileID = tabManager.runtimePorts?.defaultProfileId else {
-            RuntimeDiagnostics.debug(
-                "No profiles available for space reconciliation yet.",
-                category: "TabManager"
-            )
-            return
-        }
-
-        var didAssign = false
-        for space in tabManager.spaceStateOwner.spaces
-            where space.profileId == nil {
-            didAssign = spaceTransitions.assign(
-                spaceID: space.id,
-                toProfile: profileID
-            ).wasAccepted || didAssign
-        }
-        guard didAssign else { return }
-        tabManager.structuralPersistence.markAllSpacesStructurallyDirty()
-        tabManager.structuralPersistence.scheduleStructuralPersistence()
+        runtimeConnection.current?.updateTabVisibility()
     }
 
     private func shouldPreserveContextlessShortcutLiveTab(
@@ -83,9 +50,7 @@ final class ProfileSelectionCoordinator {
               tab.isShortcutLiveInstance,
               tab.shortcutPinRole != .essential,
               let shortcutPinID = tab.shortcutPinId,
-              tabManager.shortcutPinCollectionStateOwner.shortcutPin(
-                  by: shortcutPinID
-              ) != nil else {
+              pins.shortcutPin(by: shortcutPinID) != nil else {
             return false
         }
         return true

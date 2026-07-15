@@ -111,7 +111,6 @@ class TabManager: ObservableObject {
         persistence: structuralPersistence,
         announceStateChange: { [objectWillChange] in objectWillChange.send() }
     )
-    var pendingSpaceActivation: UUID?
     init(
         runtimePorts: RuntimePortRegistry? = nil,
         context: ModelContext,

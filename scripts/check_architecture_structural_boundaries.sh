@@ -68,6 +68,14 @@ tab_selection_services=(
   Sumi/Managers/TabManager/TabActiveSpaceSelectionUpdater.swift
   Sumi/Managers/TabManager/TabSelectionContextProjection.swift
 )
+profile_selection_services=(
+  Sumi/Managers/TabManager/ProfileSelectionCoordinator.swift
+  Sumi/Managers/TabManager/SpaceProfileReconciliationService.swift
+)
+profile_selection_core=(
+  "${profile_selection_services[@]}"
+  Sumi/Managers/TabManager/ProfileAssignmentServices.swift
+)
 
 guard_require_discovered_sources() {
   local label="$1"
@@ -85,6 +93,7 @@ guard_require_discovered_sources 'window history' "${window_history_services[@]}
 guard_require_discovered_sources 'floating bar' "${floating_bar_services[@]}"
 guard_require_discovered_sources 'active page' "${active_page_services[@]}"
 guard_require_discovered_sources 'Tab selection' "${tab_selection_services[@]}"
+guard_require_discovered_sources 'profile selection' "${profile_selection_core[@]}"
 
 # Main-frame mutation must stay behind the exact owners/composition root. This
 # protects authority placement without freezing method counts or test names.
@@ -188,6 +197,41 @@ for selection_service in "${tab_selection_services[@]}"; do
     "$selection_collaborators" \
     5
 done
+guard_expect_no_matches \
+  'profile selection generic dependency bags' \
+  '\bstruct[[:space:]]+(Dependencies|Actions|Context|Environment|Capabilities)\b' \
+  "${profile_selection_core[@]}"
+guard_expect_no_matches \
+  'profile selection manager reachback' \
+  '\bTabManager\b|\btabManager\b' \
+  "${profile_selection_core[@]}"
+guard_expect_no_matches \
+  'profile selection stored callback dependencies' \
+  '^[[:space:]]*private[[:space:]]+let[[:space:]]+[A-Za-z_][A-Za-z0-9_]*:.*->' \
+  "${profile_selection_core[@]}"
+for profile_selection_service in "${profile_selection_services[@]}"; do
+  profile_selection_collaborators="$(
+    guard_count_matches \
+      '^[[:space:]]*private[[:space:]]+(let|weak[[:space:]]+var)\b' \
+      "$profile_selection_service"
+  )"
+  guard_max \
+    "$(basename "$profile_selection_service" .swift) stored collaborators" \
+    "$profile_selection_collaborators" \
+    5
+done
+guard_expect_no_matches \
+  'dead pending Space activation state' \
+  '\bpendingSpaceActivation\b' \
+  Sumi
+guard_expect_no_matches \
+  'lazy profile selection composition' \
+  '^[[:space:]]*lazy[[:space:]]+var[[:space:]]+(selection|deletion)\b' \
+  Sumi/Managers/TabManager/ProfileAssignmentServices.swift
+guard_expect_no_matches \
+  'behavior in ProfileAssignmentServices capability group' \
+  '\bfunc[[:space:]]+' \
+  Sumi/Managers/TabManager/ProfileAssignmentServices.swift
 guard_expect_no_matches \
   'BrowserManager TabManager reassignment' \
   '\bbrowserManager\.tabManager\s*=' \

@@ -28,6 +28,7 @@ func makeInMemoryTabManager(
     unloadTab: @escaping (Tab) -> Void = { _ in /* No-op. */ },
     requireRemoveAllWebViews: @escaping (Tab, Bool) -> Void = { _, _ in /* No-op. */ },
     notifyTabClosedIfLoaded: @escaping (Tab) -> Void = { _ in /* No-op. */ },
+    updateTabVisibility: @escaping () -> Void = { /* No-op. */ },
     persistWindowSession: @escaping (BrowserWindowState) -> Void = { _ in /* No-op. */ },
     executeProfileAssignment: @escaping (
         Tab,
@@ -50,6 +51,7 @@ func makeInMemoryTabManager(
             windowState: windowState,
             windows: windows,
             windowStates: { windows().map(\.1) },
+            updateTabVisibility: updateTabVisibility,
             webViewLifecycle: webViewLifecycle
                 ?? TestRuntimePorts.webViewLifecycle(
                     retirement: .rejecting,

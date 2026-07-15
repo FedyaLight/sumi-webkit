@@ -95,8 +95,8 @@ extension TabRuntimePortsAttachmentOwner.Dependencies {
                 tabManager?.spaceStateOwner.currentSpace
             },
             reconcileSpaceProfilesIfNeeded: { [weak tabManager] in
-                tabManager?.profileAssignments.selection
-                    .reconcileSpaceProfilesIfNeeded()
+                tabManager?.lifecycleOwners.spaceProfileReconciliation
+                    .reconcileIfNeeded()
             },
             startPersistedStateLoadAfterRuntimeAttachmentIfConfigured: { [weak tabManager] in
                 guard let tabManager else { return }
