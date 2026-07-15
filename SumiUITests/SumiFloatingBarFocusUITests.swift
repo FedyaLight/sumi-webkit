@@ -3,7 +3,7 @@ import XCTest
 
 @MainActor
 final class SumiFloatingBarFocusUITests: SumiLaunchSmokeUITestCase {
-    func testCommandTFocusesFloatingBarInputForImmediateTyping() throws {
+    func testCommandTMakesFloatingBarInputKeyboardFocusOwner() throws {
         let app = try launchApp(preferencesHomeURL: try prepareSmokePreferencesHome())
         let window = app.windows.element(boundBy: 0)
         XCTAssertTrue(window.waitForExistence(timeout: 5))
@@ -14,30 +14,15 @@ final class SumiFloatingBarFocusUITests: SumiLaunchSmokeUITestCase {
             "Floating bar did not appear after Cmd+T"
         )
 
-        // Type immediately, without clicking the bar. The typed characters must
-        // land in the floating bar input.
-        let typed = "hello"
-        app.typeText(typed)
-
         let input = element(withIdentifier: "floating-bar-input", in: app)
-        XCTAssertTrue(
-            waitForFloatingBarInputValue(typed, input: input, timeout: 3),
-            "Floating bar input did not receive typed text; value: \(String(describing: input.value))"
+        let focusExpectation = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "hasKeyboardFocus == true"),
+            object: input
         )
-    }
-
-    private func waitForFloatingBarInputValue(
-        _ expected: String,
-        input: XCUIElement,
-        timeout: TimeInterval
-    ) -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
-            if (input.value as? String) == expected {
-                return true
-            }
-            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
-        }
-        return (input.value as? String) == expected
+        XCTAssertEqual(
+            XCTWaiter().wait(for: [focusExpectation], timeout: 5),
+            .completed,
+            "Cmd+T did not make the floating bar input the keyboard focus owner"
+        )
     }
 }

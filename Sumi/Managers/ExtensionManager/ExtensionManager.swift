@@ -26,8 +26,7 @@ final class ExtensionManager: NSObject, ObservableObject {
         ExtensionActionPresentationChange,
         Never
     >()
-    @Published private(set) var isExtensionSupportAvailable =
-        ExtensionUtils.isExtensionSupportAvailable
+    @Published private(set) var isExtensionSupportAvailable = true
     var extensionsLoaded: Bool {
         runtimeLoadStatus.extensionsLoaded
     }

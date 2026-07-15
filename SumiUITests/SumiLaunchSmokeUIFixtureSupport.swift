@@ -157,14 +157,65 @@ extension SumiLaunchSmokeUITestCase {
         return try preparePreferencesHome(windowSessionSnapshotData: snapshotData)
     }
 
-    func prepareSmokePreferencesHome(isSidebarVisible: Bool = true) throws -> URL {
+    func prepareSmokePreferencesHome(
+        isSidebarVisible: Bool = true,
+        additionalPreferences: [String: Any] = [:]
+    ) throws -> URL {
         let storeURL = try requiredSmokeStoreURL()
         let spaceID = try preferredSmokeStartupSpaceID(in: storeURL)
         let snapshotData = try startupSmokeWindowSessionData(
             spaceID: spaceID,
             isSidebarVisible: isSidebarVisible
         )
-        return try preparePreferencesHome(windowSessionSnapshotData: snapshotData)
+        return try preparePreferencesHome(
+            windowSessionSnapshotData: snapshotData,
+            additionalPreferences: additionalPreferences
+        )
+    }
+
+    func prepareSelectedRegularTabPreferencesHome(
+        tabURLString: String,
+        tabName: String,
+        additionalPreferences: [String: Any] = [:]
+    ) throws -> URL {
+        let storeURL = try requiredSmokeStoreURL()
+        let sidebar = try loadPersonalSidebarFixture()
+        try executeSQLite(
+            sql: """
+            UPDATE ZTABENTITY
+            SET ZNAME = \(sqlString(tabName)),
+                ZURLSTRING = \(sqlString(tabURLString)),
+                ZCURRENTURLSTRING = \(sqlString(tabURLString))
+            WHERE lower(hex(ZID)) = \(sqlString(SumiSmokeFixtureIDs.regularTab));
+            """,
+            storeURL: storeURL
+        )
+
+        let profileID = try accessibilityUUIDString(fromHex: sidebar.profileID)
+        let snapshot: [String: Any] = [
+            "currentTabId": sidebar.regularTabID,
+            "currentSpaceId": sidebar.personalSpaceID,
+            "currentProfileId": profileID,
+            "isShowingEmptyState": false,
+            "activeTabsBySpace": [[
+                "spaceId": sidebar.personalSpaceID,
+                "tabId": sidebar.regularTabID,
+            ]],
+            "activeShortcutsBySpace": [],
+            "sidebarWidth": 250.0,
+            "savedSidebarWidth": 250.0,
+            "sidebarContentWidth": 234.0,
+            "isSidebarVisible": true,
+            "floatingBarDraft": [
+                "text": "",
+                "navigateCurrentTab": false,
+            ],
+        ]
+        let snapshotData = try JSONSerialization.data(withJSONObject: snapshot, options: [])
+        return try preparePreferencesHome(
+            windowSessionSnapshotData: snapshotData,
+            additionalPreferences: additionalPreferences
+        )
     }
 
     func preferredSmokeStartupSpaceID(in storeURL: URL) throws -> String {
@@ -257,7 +308,10 @@ extension SumiLaunchSmokeUITestCase {
         return try JSONSerialization.data(withJSONObject: snapshot, options: [])
     }
 
-    func preparePreferencesHome(windowSessionSnapshotData: Data) throws -> URL {
+    func preparePreferencesHome(
+        windowSessionSnapshotData: Data,
+        additionalPreferences: [String: Any] = [:]
+    ) throws -> URL {
         let directory = try makeSmokeScratchDirectory(prefix: "SumiSmokePrefs")
         let preferencesDirectory = directory
             .appendingPathComponent("Library", isDirectory: true)
@@ -266,9 +320,10 @@ extension SumiLaunchSmokeUITestCase {
 
         let preferencesURL = preferencesDirectory
             .appendingPathComponent("com.sumi.browser.plist", isDirectory: false)
-        let plist: [String: Any] = [
-            "sumi.windowSession.last.v3": windowSessionSnapshotData,
-        ]
+        var plist = additionalPreferences
+        // The explicit window snapshot is the fixture authority and cannot be
+        // replaced through supplemental preference seeding.
+        plist["sumi.windowSession.last.v3"] = windowSessionSnapshotData
         let plistData = try PropertyListSerialization.data(
             fromPropertyList: plist,
             format: .binary,
@@ -708,7 +763,7 @@ extension SumiLaunchSmokeUITestCase {
     }
 
     func smokeScratchBaseURL() throws -> URL {
-        return FileManager.default.temporaryDirectory
+        FileManager.default.temporaryDirectory
     }
 
     func openSQLiteDatabase(
@@ -860,5 +915,4 @@ extension SumiLaunchSmokeUITestCase {
             rawBuffer.map { String(format: "%02x", $0) }.joined()
         }
     }
-
 }

@@ -526,6 +526,7 @@
         "SumiTests/SpaceCatalogCommandsTests",
         "SumiTests/SpaceCreationSessionTests",
         "SumiTests/SpacePinnedListProjectionTests",
+        "SumiTests/SpaceProfileRetirementTransactionTests",
         "SumiTests/SpaceProfileRuntimeStateServiceTests",
         "SumiTests/SpaceSidebarTransitionStateTests",
         "SumiTests/SpaceStripGeometryTests",
@@ -807,6 +808,9 @@
       "configuration": "Debug",
       "role": "ui-test",
       "selectors": [
+        "SumiUITests/SumiExtensionPopupOptionsUITests/testExtensionActionPopupRendersManagedPackagePage",
+        "SumiUITests/SumiExtensionPopupOptionsUITests/testExtensionOptionsOpensExactManagedPackagePage",
+        "SumiUITests/SumiFloatingBarFocusUITests/testCommandTMakesFloatingBarInputKeyboardFocusOwner",
         "SumiUITests/SumiLaunchSmokeUIFixtureTests/testBundledFixtureResolvesWithExactFamilyAndHashes",
         "SumiUITests/SumiLaunchSmokeUIFixtureTests/testFixtureResolutionRejectsPartialAndTamperedFamilies",
         "SumiUITests/SumiLaunchSmokeUIFixtureTests/testPreparationIgnoresAmbientDeveloperStore",
@@ -814,6 +818,10 @@
         "SumiUITests/SumiLaunchSmokeUIFixtureTests/testScratchSeedUsesDeterministicSmokeIdentifiers",
         "SumiUITests/SumiLaunchSmokeUIFixtureTests/testScratchSeedingLeavesBundledSourceImmutable",
         "SumiUITests/SumiLaunchSmokeUITests/testLaunchesMainWindow",
+        "SumiUITests/SumiPermissionPromptUITests/testExternalSchemePermissionPromptCanDenyWithoutLeavingPage",
+        "SumiUITests/SumiSessionRestoreUITests/testRestoresExactWindowSpaceTabAndLocalDocument",
+        "SumiUITests/SumiSidebarContextMenuOracleUITests/testVisibleSidebarContextMenuCanBeDismissedAndReopened",
+        "SumiUITests/SumiSidebarDragReorderOracleUITests/testRegularTabDragReordersVisibleSidebarRows",
         "SumiUITests/SumiURLHubCommitUITests/testURLHubCommitNavigatesActiveTabToLocalFixturePage"
       ]
     }

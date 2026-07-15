@@ -67,10 +67,8 @@ extension URLBarView {
         if SumiSurface.isBookmarksSurfaceURL(url) {
             return String(localized: "Bookmarks")
         }
-        if ExtensionUtils.isExtensionOwnedURL(url) {
-            let extensionID = ExtensionUtils.extensionID(
-                fromExtensionOwnedURL: url
-            )
+        if ExtensionURLIdentity.isOwned(url) {
+            let extensionID = ExtensionURLIdentity.extensionID(from: url)
             return extensionDisplayModel.snapshot.extensions
                 .first(where: { $0.id == extensionID })?.name
                 ?? String(localized: "Extension")
