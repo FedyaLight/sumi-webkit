@@ -63,6 +63,11 @@ active_page_services=(
   Sumi/Components/DragDrop/SidebarURL*.swift
   Sumi/Components/DragDrop/ShortcutURL*.swift
 )
+tab_selection_services=(
+  Sumi/Managers/TabManager/TabActiveSelectionOwner.swift
+  Sumi/Managers/TabManager/TabActiveSpaceSelectionUpdater.swift
+  Sumi/Managers/TabManager/TabSelectionContextProjection.swift
+)
 
 guard_require_discovered_sources() {
   local label="$1"
@@ -79,6 +84,7 @@ guard_require_discovered_sources 'split shortcut' "${split_shortcut_services[@]}
 guard_require_discovered_sources 'window history' "${window_history_services[@]}"
 guard_require_discovered_sources 'floating bar' "${floating_bar_services[@]}"
 guard_require_discovered_sources 'active page' "${active_page_services[@]}"
+guard_require_discovered_sources 'Tab selection' "${tab_selection_services[@]}"
 
 # Main-frame mutation must stay behind the exact owners/composition root. This
 # protects authority placement without freezing method counts or test names.
@@ -159,6 +165,29 @@ guard_expect_no_matches \
   'mutable BrowserManager TabManager' \
   '^    var tabManager: TabManager' \
   Sumi/Managers/BrowserManager/BrowserManager.swift
+guard_expect_no_matches \
+  'Tab selection generic dependency bags' \
+  '\bstruct[[:space:]]+(Dependencies|Actions|Context|Environment|Capabilities)\b' \
+  "${tab_selection_services[@]}"
+guard_expect_no_matches \
+  'Tab selection manager reachback' \
+  '\bTabManager\b|\btabManager\b' \
+  "${tab_selection_services[@]}"
+guard_expect_no_matches \
+  'Tab selection stored callback dependencies' \
+  '^[[:space:]]*private[[:space:]]+let[[:space:]]+[A-Za-z_][A-Za-z0-9_]*:.*->' \
+  "${tab_selection_services[@]}"
+for selection_service in "${tab_selection_services[@]}"; do
+  selection_collaborators="$(
+    guard_count_matches \
+      '^[[:space:]]*private[[:space:]]+(let|weak[[:space:]]+var)\b' \
+      "$selection_service"
+  )"
+  guard_max \
+    "$(basename "$selection_service" .swift) stored collaborators" \
+    "$selection_collaborators" \
+    5
+done
 guard_expect_no_matches \
   'BrowserManager TabManager reassignment' \
   '\bbrowserManager\.tabManager\s*=' \

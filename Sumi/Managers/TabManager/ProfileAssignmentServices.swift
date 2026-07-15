@@ -10,10 +10,12 @@ final class ProfileAssignmentServices {
     let tabs: TabProfileTransitionService
     let spaces: SpaceProfileTransitionService
     let shortcuts: ShortcutExecutionProfileAssignmentService
+    private let selectionContext: TabSelectionContextProjection
     lazy var selection = ProfileSelectionCoordinator(
         tabManager: tabManager,
         spaceActivation: tabManager.spaceServices.activation,
-        spaceTransitions: spaces
+        spaceTransitions: spaces,
+        selectionContext: selectionContext
     )
     lazy var deletion = ProfileDeletionMigration(
         tabManager: tabManager,
@@ -23,8 +25,12 @@ final class ProfileAssignmentServices {
         selection: selection
     )
 
-    init(tabManager: TabManager) {
+    init(
+        tabManager: TabManager,
+        selectionContext: TabSelectionContextProjection
+    ) {
         self.tabManager = tabManager
+        self.selectionContext = selectionContext
         let policy = ProfileAssignmentPolicy(tabManager: tabManager)
         let pendingInheritance = PendingTabProfileInheritance()
         let tabs = TabProfileTransitionService(

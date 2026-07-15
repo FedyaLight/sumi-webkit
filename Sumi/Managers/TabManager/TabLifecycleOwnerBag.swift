@@ -30,10 +30,27 @@ final class TabLifecycleOwnerBag {
         dependencies: .live(tabManager: tm)
     )
     lazy var tabClosureService = TabClosureService.live(tabManager: tm)
-    lazy var activeSelectionOwner = TabActiveSelectionOwner(
-        dependencies: .live(tabManager: tm)
+    lazy var activeSpaceSelectionUpdater = TabActiveSpaceSelectionUpdater(
+        spaces: tm.spaceStateOwner,
+        persistence: tm.structuralPersistence
     )
-    lazy var profileAssignments = ProfileAssignmentServices(tabManager: tm)
+    lazy var selectionContextProjection = TabSelectionContextProjection(
+        runtimeConnection: tm.runtimePortConnection,
+        spaces: tm.spaceStateOwner,
+        regularTabs: tm.regularTabCollectionOwner,
+        shortcutPresentation: tm.shortcutPresentationOwner
+    )
+    lazy var activeSelectionOwner = TabActiveSelectionOwner(
+        membership: tm.tabCollectionMembershipOwner,
+        selection: tm.selectionStateOwner,
+        runtimeConnection: tm.runtimePortConnection,
+        persistence: tm.structuralPersistence,
+        spaceSelection: activeSpaceSelectionUpdater
+    )
+    lazy var profileAssignments = ProfileAssignmentServices(
+        tabManager: tm,
+        selectionContext: selectionContextProjection
+    )
     lazy var transientWebKitTabLifecycleOwner = TabTransientWebKitTabLifecycleOwner(
         dependencies: .live(tabManager: tm)
     )

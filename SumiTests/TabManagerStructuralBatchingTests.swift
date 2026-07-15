@@ -627,7 +627,12 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
         )!
         windowState.currentShortcutPinId = windowSpacePin.id
 
-        let selection = tabManager.activeSelectionOwner.selectionTabsForCurrentContext(in: windowState.id)
+        let selection = TabSelectionContextProjection(
+            runtimeConnection: tabManager.runtimePortConnection,
+            spaces: tabManager.spaceStateOwner,
+            regularTabs: tabManager.regularTabCollectionOwner,
+            shortcutPresentation: tabManager.shortcutPresentationOwner
+        ).tabs(in: windowState.id)
         let selectionIds = selection.map(\.id)
 
         XCTAssertTrue(selectionIds.contains(windowEssential.id))

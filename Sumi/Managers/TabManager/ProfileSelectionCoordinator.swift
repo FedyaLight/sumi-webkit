@@ -7,15 +7,18 @@ final class ProfileSelectionCoordinator {
     private unowned let tabManager: TabManager
     private let spaceActivation: SpaceActivationService
     private let spaceTransitions: SpaceProfileTransitionService
+    private let selectionContext: TabSelectionContextProjection
 
     init(
         tabManager: TabManager,
         spaceActivation: SpaceActivationService,
-        spaceTransitions: SpaceProfileTransitionService
+        spaceTransitions: SpaceProfileTransitionService,
+        selectionContext: TabSelectionContextProjection
     ) {
         self.tabManager = tabManager
         self.spaceActivation = spaceActivation
         self.spaceTransitions = spaceTransitions
+        self.selectionContext = selectionContext
     }
 
     func handleProfileSwitch(contextWindowID: UUID? = nil) {
@@ -31,8 +34,7 @@ final class ProfileSelectionCoordinator {
             }
         }
 
-        let visible = tabManager.activeSelectionOwner
-            .selectionTabsForCurrentContext(in: contextWindowID)
+        let visible = selectionContext.tabs(in: contextWindowID)
         let current = tabManager.selectionStateOwner.currentTab
         if contextWindowID == nil,
            shouldPreserveContextlessShortcutLiveTab(current) {
