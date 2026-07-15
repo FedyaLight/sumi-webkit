@@ -12,7 +12,8 @@ final class ProfileAssignmentServices {
     let shortcuts: ShortcutExecutionProfileAssignmentService
     lazy var selection = ProfileSelectionCoordinator(
         tabManager: tabManager,
-        spaceActivation: tabManager.spaceServices.activation
+        spaceActivation: tabManager.spaceServices.activation,
+        spaceTransitions: spaces
     )
     lazy var deletion = ProfileDeletionMigration(
         tabManager: tabManager,
@@ -31,10 +32,22 @@ final class ProfileAssignmentServices {
             policy: policy,
             pendingInheritance: pendingInheritance
         )
+        let spaceMutations = SpaceProfileMutationService(tabManager: tabManager)
+        let spaceAdmission = SpaceProfileTransitionAdmission(
+            policy: policy,
+            profileMutations: spaceMutations,
+            tabCandidates: SpaceProfileTabCandidatePlanner(
+                membership: tabManager.tabCollectionMembershipOwner,
+                registry: tabManager.liveShortcutTabs,
+                pins: tabManager.shortcutPinCollectionStateOwner
+            ),
+            membership: tabManager.tabCollectionMembershipOwner,
+            structuralLookup: tabManager.structuralLookupCoordinator
+        )
         let spaces = SpaceProfileTransitionService(
             tabManager: tabManager,
-            policy: policy,
-            pendingInheritance: pendingInheritance
+            pendingInheritance: pendingInheritance,
+            admission: spaceAdmission
         )
 
         self.policy = policy

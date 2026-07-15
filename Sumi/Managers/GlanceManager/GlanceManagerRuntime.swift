@@ -9,7 +9,6 @@ extension GlanceManager {
         let hasLoadedInitialTabData: @MainActor () -> Bool
         let tab: @MainActor (UUID) -> Tab?
         let shortcutPin: @MainActor (UUID) -> ShortcutPin?
-        let shortcutLiveTab: @MainActor (UUID, UUID) -> Tab?
         let activateShortcutPin: @MainActor (ShortcutPin, UUID, UUID?) -> Tab?
         let currentTab: @MainActor (BrowserWindowState) -> Tab?
         let restoreSourceSelection: @MainActor (Tab, BrowserWindowState) -> Void

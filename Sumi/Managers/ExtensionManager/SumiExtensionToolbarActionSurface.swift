@@ -50,9 +50,20 @@ final class SumiExtensionToolbarActionSurface {
     ) -> BrowserExtensionToolbarPresentationSnapshot {
         guard lifetime.isEnabled else { return .empty }
         _ = ensureActionMetadataLoadedIfNeeded()
+        let display = surfaceStore.toolbarDisplaySnapshot
+        let pinnedExtensionIDs = siteAccess.pinnedToolbarExtensionIDs(
+            profileId: profileID
+        )
+        let pinnedIDs = Set(pinnedExtensionIDs)
+        let unpinnedCandidates = display.enabledExtensions
+            .filter(\.hasAction)
+            .map(\.id)
+            .filter { pinnedIDs.contains($0) == false }
         return BrowserExtensionToolbarPresentationSnapshot(
-            display: surfaceStore.toolbarDisplaySnapshot,
-            pinnedExtensionIDs: siteAccess.pinnedToolbarExtensionIDs(
+            display: display,
+            pinnedExtensionIDs: pinnedExtensionIDs,
+            unpinnedExtensionIDs: siteAccess.orderedUnpinnedExtensionIDs(
+                candidateIDs: unpinnedCandidates,
                 profileId: profileID
             )
         )
@@ -73,21 +84,28 @@ final class SumiExtensionToolbarActionSurface {
         .eraseToAnyPublisher()
     }
 
-    func isPinnedToToolbar(_ extensionID: String) -> Bool {
-        siteAccess.isPinnedToToolbar(extensionID)
-    }
-
-    func pinToToolbar(_ extensionID: String) {
-        publishToolbarLayoutIfChanged(siteAccess.pinToToolbar(extensionID))
-    }
-
-    func unpinFromToolbar(_ extensionID: String) {
-        publishToolbarLayoutIfChanged(siteAccess.unpinFromToolbar(extensionID))
-    }
-
-    func movePinnedToolbarSlot(id: String, to index: Int) {
+    func pinToToolbar(_ extensionID: String, profileID: UUID?) {
         publishToolbarLayoutIfChanged(
-            siteAccess.movePinnedToolbarSlot(id: id, to: index)
+            siteAccess.pinToToolbar(extensionID, profileId: profileID),
+            profileID: profileID
+        )
+    }
+
+    func unpinFromToolbar(_ extensionID: String, profileID: UUID?) {
+        publishToolbarLayoutIfChanged(
+            siteAccess.unpinFromToolbar(extensionID, profileId: profileID),
+            profileID: profileID
+        )
+    }
+
+    func movePinnedToolbarSlot(id: String, to index: Int, profileID: UUID?) {
+        publishToolbarLayoutIfChanged(
+            siteAccess.movePinnedToolbarSlot(
+                id: id,
+                to: index,
+                profileId: profileID
+            ),
+            profileID: profileID
         )
     }
 
@@ -95,15 +113,29 @@ final class SumiExtensionToolbarActionSurface {
         siteAccess.orderedUnpinnedExtensionIDs(candidateIDs: candidateIDs, profileId: profileID)
     }
 
-    func moveUnpinnedExtension(id: String, to index: Int, within order: [String]) {
-        siteAccess.moveUnpinnedExtension(id: id, to: index, within: order)
+    func moveUnpinnedExtension(
+        id: String,
+        to index: Int,
+        within order: [String],
+        profileID: UUID?
+    ) {
+        publishToolbarLayoutIfChanged(
+            siteAccess.moveUnpinnedExtension(
+                id: id,
+                to: index,
+                within: order,
+                profileId: profileID
+            ),
+            profileID: profileID
+        )
     }
 
-    private func publishToolbarLayoutIfChanged(_ didChange: Bool) {
+    private func publishToolbarLayoutIfChanged(
+        _ didChange: Bool,
+        profileID: UUID?
+    ) {
         guard didChange else { return }
-        surfaceStore.publishToolbarLayoutChanged(
-            for: siteAccess.currentProfileID()
-        )
+        surfaceStore.publishToolbarLayoutChanged(for: profileID)
     }
 
     func siteAccessPolicy(extensionID: String, profileID: UUID? = nil) -> SafariExtensionSiteAccessPolicy? {
@@ -336,20 +368,24 @@ extension SumiExtensionsModule {
         )
     }
 
-    func isPinnedToToolbar(_ extensionId: String) -> Bool {
-        toolbarActions.isPinnedToToolbar(extensionId)
+    func pinToToolbar(_ extensionId: String, profileId: UUID?) {
+        toolbarActions.pinToToolbar(extensionId, profileID: profileId)
     }
 
-    func pinToToolbar(_ extensionId: String) {
-        toolbarActions.pinToToolbar(extensionId)
+    func unpinFromToolbar(_ extensionId: String, profileId: UUID?) {
+        toolbarActions.unpinFromToolbar(extensionId, profileID: profileId)
     }
 
-    func unpinFromToolbar(_ extensionId: String) {
-        toolbarActions.unpinFromToolbar(extensionId)
-    }
-
-    func movePinnedToolbarSlot(id: String, to targetIndex: Int) {
-        toolbarActions.movePinnedToolbarSlot(id: id, to: targetIndex)
+    func movePinnedToolbarSlot(
+        id: String,
+        to targetIndex: Int,
+        profileId: UUID?
+    ) {
+        toolbarActions.movePinnedToolbarSlot(
+            id: id,
+            to: targetIndex,
+            profileID: profileId
+        )
     }
 
     func orderedUnpinnedExtensionIDs(
@@ -365,12 +401,14 @@ extension SumiExtensionsModule {
     func moveUnpinnedExtension(
         id: String,
         to targetIndex: Int,
-        within currentOrder: [String]
+        within currentOrder: [String],
+        profileId: UUID?
     ) {
         toolbarActions.moveUnpinnedExtension(
             id: id,
             to: targetIndex,
-            within: currentOrder
+            within: currentOrder,
+            profileID: profileId
         )
     }
 

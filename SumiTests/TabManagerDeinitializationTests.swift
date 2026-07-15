@@ -81,6 +81,28 @@ final class TabManagerDeinitializationTests: XCTestCase {
         XCTAssertNil(releasedPromotion)
     }
 
+    func testShortcutFolderCompositionMaterializesWithoutDependencyCycle()
+        throws {
+        let container = try makeContainer()
+        let tabManager = TabManager(
+            context: container.mainContext,
+            loadPersistedState: false
+        )
+
+        let folderMutations = tabManager.folderMutationOwner
+        let pinStore = tabManager.shortcutPinStoreOwner
+        let pinCommands = tabManager.shortcutPinCommandOwner
+        let regularConversion = tabManager.regularTabShortcutConversion
+
+        XCTAssertIdentical(tabManager.folderMutationOwner, folderMutations)
+        XCTAssertIdentical(tabManager.shortcutPinStoreOwner, pinStore)
+        XCTAssertIdentical(tabManager.shortcutPinCommandOwner, pinCommands)
+        XCTAssertIdentical(
+            tabManager.regularTabShortcutConversion,
+            regularConversion
+        )
+    }
+
     private func makeContainer() throws -> ModelContainer {
         try ModelContainer(
             for: SumiStartupPersistence.schema,

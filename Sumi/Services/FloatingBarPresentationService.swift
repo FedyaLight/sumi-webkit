@@ -3,7 +3,7 @@ import Foundation
 @MainActor
 protocol FloatingBarSplitPlaceholderHandling: AnyObject {
     func cancel(in windowState: BrowserWindowState) -> Bool
-    func commit(tabID: UUID, in windowID: UUID)
+    func commit(_ placeholder: Tab, in windowID: UUID)
     func replace(with tab: Tab, in windowState: BrowserWindowState) -> Bool
 }
 

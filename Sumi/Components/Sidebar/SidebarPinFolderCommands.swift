@@ -13,6 +13,7 @@ final class SidebarPinFolderCommands {
     private let structure: SpacePinnedStructureOwner
     private let shortcutCommands: ShortcutPinCommandOwner
     private let folderCommands: TabFolderMutationOwner
+    private let folderOpenState: TabFolderOpenStateService
     private let materializer: ShortcutTabMaterializer
     private let profileAssignments: ShortcutExecutionProfileAssignmentService
 
@@ -24,6 +25,7 @@ final class SidebarPinFolderCommands {
         structure: SpacePinnedStructureOwner,
         shortcutCommands: ShortcutPinCommandOwner,
         folderCommands: TabFolderMutationOwner,
+        folderOpenState: TabFolderOpenStateService,
         materializer: ShortcutTabMaterializer,
         profileAssignments: ShortcutExecutionProfileAssignmentService
     ) {
@@ -34,6 +36,7 @@ final class SidebarPinFolderCommands {
         self.structure = structure
         self.shortcutCommands = shortcutCommands
         self.folderCommands = folderCommands
+        self.folderOpenState = folderOpenState
         self.materializer = materializer
         self.profileAssignments = profileAssignments
     }
@@ -146,7 +149,7 @@ final class SidebarPinFolderCommands {
         guard runtimeIsAlive(), folders.folder(by: folderID) != nil else {
             return false
         }
-        folderCommands.toggleFolderOpenState(folderID)
+        folderOpenState.toggleFolderOpenState(folderID)
         return true
     }
 

@@ -1,74 +1,63 @@
 import Foundation
 
-/// Keeps materialized tabs aligned with their launcher role and execution context.
+/// Coordinates shortcut-presentation admission with concrete target and
+/// residence/window transaction participants.
 @MainActor
 final class ShortcutTabBindingSynchronizer {
-    private let registry: LiveShortcutTabRegistry
-    private let resolution: ShortcutPinRuntimeResolutionOwner
-    private let profiles: TabProfileTransitionService
-    private let structuralLookup: TabStructuralLookupCoordinator
-    private let runtimePorts: () -> RuntimePortRegistry?
+    private let presentationRefreshes: LiveShortcutPresentationRefreshService
+    private let runtimeMutations: ShortcutTabBindingRuntimeMutation
+    private let targets: ShortcutTabBindingTargetMutationService
 
     init(
-        registry: LiveShortcutTabRegistry,
-        resolution: ShortcutPinRuntimeResolutionOwner,
-        profiles: TabProfileTransitionService,
-        structuralLookup: TabStructuralLookupCoordinator,
-        runtimePorts: @escaping () -> RuntimePortRegistry?
+        presentationRefreshes: LiveShortcutPresentationRefreshService,
+        runtimeMutations: ShortcutTabBindingRuntimeMutation,
+        targets: ShortcutTabBindingTargetMutationService
     ) {
-        self.registry = registry
-        self.resolution = resolution
-        self.profiles = profiles
-        self.structuralLookup = structuralLookup
-        self.runtimePorts = runtimePorts
+        self.presentationRefreshes = presentationRefreshes
+        self.runtimeMutations = runtimeMutations
+        self.targets = targets
     }
 
     convenience init(tabManager: TabManager) {
-        self.init(
-            registry: tabManager.liveShortcutTabs,
+        let targets = ShortcutTabBindingTargetMutationService(
             resolution: tabManager.shortcutPinRuntimeResolutionOwner,
-            profiles: tabManager.profileAssignments.tabs,
-            structuralLookup: tabManager.structuralLookupCoordinator,
-            runtimePorts: { [weak tabManager] in tabManager?.runtimePorts }
+            profiles: tabManager.profileAssignments.tabs
+        )
+        self.init(
+            presentationRefreshes: tabManager.liveShortcutPresentationRefreshes,
+            runtimeMutations: ShortcutTabBindingRuntimeMutation(
+                registry: tabManager.liveShortcutTabs,
+                targets: targets,
+                runtimeConnection: tabManager.runtimePortConnection,
+                windowMutations: tabManager.shortcutWindowMutationOwner,
+                structuralLookup: tabManager.structuralLookupCoordinator
+            ),
+            targets: targets
         )
     }
-    func refreshInstances(for pin: ShortcutPin) {
-        let runtime = runtimePorts()
-        var changedWindowStates: [UUID: BrowserWindowState] = [:]
-        structuralLookup.withTransaction {
-            for entry in registry.entries(for: pin.id) {
-                let windowState = runtime?.windowState(for: entry.windowId)
-                let sourceIdentity = ShortcutBindingIdentity(tab: entry.tab)
-                let isSelected = windowState.map {
-                    ShortcutSelectionIdentity.isSelected(
-                        tabId: entry.tab.id,
-                        pinId: sourceIdentity?.pinId,
-                        in: $0
-                    )
-                } ?? false
-                _ = applyExisting(
-                    pin,
-                    to: entry.tab,
-                    currentSpaceId: windowState?.currentSpaceId
-                )
-                if let windowState,
-                   ShortcutSelectionTransition.apply(
-                       tab: entry.tab,
-                       source: sourceIdentity,
-                       targetPin: pin,
-                       isSelected: isSelected,
-                       in: windowState
-                   ) {
-                    changedWindowStates[windowState.id] = windowState
-                }
-            }
-        }
-        persist(changedWindowStates, using: runtime)
+
+    func refreshAdmission(
+        for pin: ShortcutPin
+    ) -> LiveShortcutPresentationRefreshAdmission? {
+        presentationRefreshes.admission(for: pin)
     }
 
     @discardableResult
+    func refreshInstances(
+        for pin: ShortcutPin,
+        admission: LiveShortcutPresentationRefreshAdmission? = nil
+    ) -> Bool {
+        guard let admission = admission
+            ?? presentationRefreshes.admission(for: pin),
+              let residences = presentationRefreshes
+                .stageResidenceTransaction(admission, for: pin) else {
+            return false
+        }
+        return runtimeMutations.refresh(pin, residences: residences)
+    }
+
     func canRebind(_ tab: Tab, from sourcePin: ShortcutPin) -> Bool {
-        registry.entry(containing: tab)?.pinId == sourcePin.id
+        runtimeMutations.canRebind(tab, from: sourcePin)
     }
 
     @discardableResult
@@ -77,123 +66,42 @@ final class ShortcutTabBindingSynchronizer {
         from sourcePin: ShortcutPin,
         to targetPin: ShortcutPin
     ) -> Bool {
-        guard let entry = registry.entry(containing: tab),
-              entry.pinId == sourcePin.id else { return false }
-
-        let runtime = runtimePorts()
-        var changedWindowStates: [UUID: BrowserWindowState] = [:]
-        let didRebind = structuralLookup.withTransaction {
-            let windowState = runtime?.windowState(for: entry.windowId)
-            let wasSelected = windowState.map {
-                ShortcutSelectionIdentity.isSelected(
-                    tabId: tab.id,
-                    pinId: sourcePin.id,
-                    in: $0
-                )
-            } ?? false
-            let sourceIdentity = ShortcutBindingIdentity(tab: tab)
-            _ = registry.rekey(
-                tab,
-                from: sourcePin.id,
-                to: targetPin.id,
-                in: entry.windowId
-            )
-            _ = applyExisting(
-                targetPin,
-                to: tab,
-                currentSpaceId: windowState?.currentSpaceId
-            )
-            if let windowState,
-               ShortcutSelectionTransition.apply(
-                   tab: tab,
-                   source: sourceIdentity,
-                   targetPin: targetPin,
-                   isSelected: wasSelected,
-                   in: windowState
-               ) {
-                changedWindowStates[windowState.id] = windowState
-            }
-            return true
-        }
-        persist(changedWindowStates, using: runtime)
-        return didRebind
+        runtimeMutations.rebind(tab, from: sourcePin, to: targetPin)
     }
 
-    @discardableResult
     func initializeFresh(
         _ tab: Tab,
         for pin: ShortcutPin,
         currentSpaceId: UUID?
-    ) -> Bool {
-        tab.isPinned = false
-        tab.isSpacePinned = false
-        tab.bindToShortcutPin(pin)
-        tab.spaceId = resolution.resolvedLiveSpaceId(
+    ) {
+        targets.initializeFresh(
+            tab,
             for: pin,
-            currentSpaceId: currentSpaceId
+            currentSpaceID: currentSpaceId
         )
-        tab.profileId = resolution.resolvedExecutionProfileId(
-            for: pin,
-            currentSpaceId: currentSpaceId
-        )
-        tab.folderId = pin.role == .essential ? nil : pin.folderId
-        return true
     }
 
-    @discardableResult
     func applyExisting(
         _ pin: ShortcutPin,
         to tab: Tab,
         currentSpaceId: UUID?
-    ) -> Bool {
-        let previousPageScope = registry.entry(containing: tab)?.pageScope
-        let targetSpaceId = resolution.resolvedLiveSpaceId(
-            for: pin,
-            currentSpaceId: currentSpaceId
+    ) {
+        targets.applyExisting(
+            pin,
+            to: tab,
+            currentSpaceID: currentSpaceId
         )
-        let targetProfileId = resolution.resolvedExecutionProfileId(
-            for: pin,
-            currentSpaceId: currentSpaceId
-        )
-        let targetFolderId = pin.role == .essential ? nil : pin.folderId
-        let changed = tab.shortcutPinId != pin.id
-            || tab.shortcutPinRole != pin.role
-            || tab.spaceId != targetSpaceId
-            || tab.profileId != targetProfileId
-            || tab.folderId != targetFolderId
-            || tab.isPinned
-            || tab.isSpacePinned
-
-        tab.isPinned = false
-        tab.isSpacePinned = false
-        tab.bindToShortcutPin(pin)
-        _ = profiles.prepareForSpaceTransition(
-            tab: tab,
-            targetSpaceID: targetSpaceId,
-            desiredProfileID: targetProfileId
-        )
-        tab.spaceId = targetSpaceId
-        tab.folderId = targetFolderId
-        profiles.assignProfile(targetProfileId, to: tab)
-        if changed, let entry = registry.entry(containing: tab) {
-            structuralLookup.publishTransientShortcutPageChange(
-                entry,
-                previousScope: previousPageScope
-            )
-        }
-        return changed
     }
 
-    private func persist(
-        _ windowStates: [UUID: BrowserWindowState],
-        using runtime: RuntimePortRegistry?
-    ) {
-        guard let runtime, windowStates.isEmpty == false else { return }
-        let orderedStates = windowStates.values.sorted {
-            $0.id.uuidString < $1.id.uuidString
-        }
-        structuralLookup.runAfterCurrentBatch {
-            orderedStates.forEach(runtime.persistWindowSession(for:))
-        }
+    func prepareExisting(
+        _ pin: ShortcutPin,
+        to tab: Tab,
+        currentSpaceId: UUID?
+    ) -> ShortcutTabBindingExecutionReceipt {
+        targets.prepareExisting(
+            pin,
+            to: tab,
+            currentSpaceID: currentSpaceId
+        )
     }
 }

@@ -1,6 +1,6 @@
 import AppKit
-import SumiDomain
 @testable import Sumi
+import SumiDomain
 import XCTest
 
 @MainActor
@@ -888,7 +888,7 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
             essential,
             in: windowState.id,
             currentSpaceId: source.id
-        )
+        )!
         windowState.currentShortcutPinId = essential.id
 
         let snapshot = makeTransitionSnapshot(
@@ -1199,7 +1199,7 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
             secondPin,
             in: windowState.id,
             currentSpaceId: source.id
-        )
+        )!
 
         let snapshot = makeTransitionSnapshot(
             sourceSpace: source,

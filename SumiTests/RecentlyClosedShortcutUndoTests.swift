@@ -29,7 +29,7 @@ final class RecentlyClosedShortcutUndoTests: XCTestCase {
             pin,
             in: harness.windowState.id,
             currentSpaceId: harness.space.id
-        )
+        )!
         let driftedURL = try XCTUnwrap(URL(string: "https://pinned.example/current"))
         liveTab.url = driftedURL
         liveTab.name = "Current pinned page"
@@ -62,7 +62,7 @@ final class RecentlyClosedShortcutUndoTests: XCTestCase {
             pin,
             in: harness.windowState.id,
             currentSpaceId: harness.space.id
-        )
+        )!
         harness.windowState.currentTabId = liveTab.id
         harness.windowState.currentShortcutPinId = pin.id
         harness.windowState.currentShortcutPinRole = pin.role
@@ -110,7 +110,7 @@ final class RecentlyClosedShortcutUndoTests: XCTestCase {
             pin,
             in: harness.windowState.id,
             currentSpaceId: harness.space.id
-        )
+        )!
 
         harness.browserManager.selectTab(essentialLiveTab, in: harness.windowState)
 
@@ -149,7 +149,7 @@ final class RecentlyClosedShortcutUndoTests: XCTestCase {
             pin,
             in: harness.windowState.id,
             currentSpaceId: harness.space.id
-        )
+        )!
         harness.browserManager.selectTab(essentialLiveTab, in: harness.windowState)
 
         let currentRegularTab = harness.browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
@@ -237,7 +237,7 @@ final class RecentlyClosedShortcutUndoTests: XCTestCase {
             essentialPin,
             in: harness.windowState.id,
             currentSpaceId: harness.space.id
-        )
+        )!
         harness.browserManager.selectTab(essentialLiveTab, in: harness.windowState)
 
         let spacePinnedPin = try insertSpacePinnedLauncher(in: harness)
@@ -245,7 +245,7 @@ final class RecentlyClosedShortcutUndoTests: XCTestCase {
             spacePinnedPin,
             in: harness.windowState.id,
             currentSpaceId: harness.space.id
-        )
+        )!
         harness.browserManager.selectTab(spacePinnedLiveTab, in: harness.windowState)
 
         harness.browserManager.tabLifecycleService.closeOrchestration.closeTab(spacePinnedLiveTab, in: harness.windowState)

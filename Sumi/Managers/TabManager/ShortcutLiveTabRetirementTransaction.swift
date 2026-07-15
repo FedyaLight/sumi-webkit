@@ -6,17 +6,21 @@ import Foundation
 final class ShortcutLiveTabRetirementTransaction {
     private let registry: LiveShortcutTabRegistry
     private let planner: ShortcutLiveTabRetirementPlanner
-    private let runtimePorts: () -> RuntimePortRegistry?
+    private let runtimeConnection: TabRuntimePortConnection
     private let runtimeTeardown: TabRuntimeTeardownService
 
     init(
         registry: LiveShortcutTabRegistry,
-        runtimePorts: @escaping () -> RuntimePortRegistry?,
+        batchRetirement: LiveShortcutTabBatchRetirement,
+        runtimeConnection: TabRuntimePortConnection,
         runtimeTeardown: TabRuntimeTeardownService
     ) {
         self.registry = registry
-        planner = ShortcutLiveTabRetirementPlanner(registry: registry)
-        self.runtimePorts = runtimePorts
+        planner = ShortcutLiveTabRetirementPlanner(
+            registry: registry,
+            batchRetirement: batchRetirement
+        )
+        self.runtimeConnection = runtimeConnection
         self.runtimeTeardown = runtimeTeardown
     }
 
@@ -32,6 +36,23 @@ final class ShortcutLiveTabRetirementTransaction {
         ) { runtime in
             planner.prepare(pinId: pinId, in: windowId, using: runtime)
         }
+    }
+
+    /// Stages an exact residence removal behind a reversible WebView lease.
+    /// This variant is reserved for structural aggregates that still have a
+    /// fallible sibling participant after retirement admission.
+    func prepareReversibleRetirement(
+        pinId: UUID,
+        in windowId: UUID
+    ) -> ReversibleShortcutLiveTabRetirement? {
+        guard let receipt = ReversibleShortcutLiveTabRetirement(
+            pinID: pinId,
+            windowID: windowId,
+            registry: registry,
+            runtimeConnection: runtimeConnection,
+            runtimeTeardown: runtimeTeardown
+        ), receipt.begin() else { return nil }
+        return receipt
     }
 
     func prepareRetirements(
@@ -63,8 +84,9 @@ final class ShortcutLiveTabRetirementTransaction {
         commit: (RuntimePortRegistry?) -> PreparedShortcutLiveTabRetirement?
     ) -> PreparedShortcutLiveTabRetirement? {
         guard sameIdentity(tabs, currentTabs()) else { return nil }
-        guard tabs.isEmpty == false else { return commit(runtimePorts()) }
-        guard let runtime = runtimePorts(),
+        let runtime = runtimeConnection.captureLease().registry
+        guard tabs.isEmpty == false else { return commit(runtime) }
+        guard let runtime,
               let teardown = runtimeTeardown.preparation.prepare(
                   tabs,
                   using: runtime

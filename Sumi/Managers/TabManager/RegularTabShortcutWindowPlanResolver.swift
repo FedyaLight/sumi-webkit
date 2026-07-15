@@ -5,15 +5,15 @@ import Foundation
 @MainActor
 final class RegularTabShortcutWindowPlanResolver {
     private let windows: ShortcutTabWindowQuery
-    private let runtimePorts: () -> RuntimePortRegistry?
+    private let runtimeConnection: TabRuntimePortConnection
     private let snapshots = ShortcutConversionWindowSnapshotResolver()
 
     init(
         windows: ShortcutTabWindowQuery,
-        runtimePorts: @escaping () -> RuntimePortRegistry?
+        runtimeConnection: TabRuntimePortConnection
     ) {
         self.windows = windows
-        self.runtimePorts = runtimePorts
+        self.runtimeConnection = runtimeConnection
     }
 
     func resolve(
@@ -21,7 +21,7 @@ final class RegularTabShortcutWindowPlanResolver {
         structure: RegularTabShortcutStructurePlan,
         preferredWindowID: UUID?
     ) -> TabShortcutConversionPreparation {
-        guard let runtime = runtimePorts() else {
+        guard let runtime = runtimeConnection.captureLease().registry else {
             return tab.hasBrowserRuntime ? .rejected : .detached(
                 DetachedTabShortcutConversionPlan(
                     sourceTabId: tab.id,

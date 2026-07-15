@@ -17,7 +17,7 @@ final class LiveShortcutTabRegistryTests: XCTestCase {
 
         withExtendedLifetime(cancellable) {
             XCTAssertTrue(
-                harness.registry.register(tab, for: pinId, in: windowId)
+                harness.register(tab, for: pinId, in: windowId)
             )
             XCTAssertIdentical(
                 harness.registry.tab(for: pinId, in: windowId),
@@ -27,7 +27,7 @@ final class LiveShortcutTabRegistryTests: XCTestCase {
             XCTAssertEqual(eventCount, 1)
 
             XCTAssertFalse(
-                harness.registry.register(tab, for: pinId, in: windowId)
+                harness.register(tab, for: pinId, in: windowId)
             )
             XCTAssertEqual(eventCount, 1)
         }
@@ -39,12 +39,23 @@ final class LiveShortcutTabRegistryTests: XCTestCase {
         let sourcePinId = UUID()
         let targetPinId = UUID()
         let tab = makeTab()
-        var eventCount = 0
-        let cancellable = harness.eventBus.structureChangedPublisher.sink {
-            eventCount += 1
+        let profileID = UUID()
+        let presentationPage = harness.page(
+            in: windowId,
+            spaceID: UUID(),
+            profileID: profileID
+        )
+        var scopes: [TabStructureChangeScope] = []
+        let cancellable = harness.eventBus.scopedStructureChangesPublisher.sink {
+            scopes.append($0)
         }
-        _ = harness.registry.register(tab, for: sourcePinId, in: windowId)
-        eventCount = 0
+        _ = harness.registry.register(
+            tab,
+            for: sourcePinId,
+            in: windowId,
+            presentationPage: presentationPage
+        )
+        scopes = []
 
         withExtendedLifetime(cancellable) {
             XCTAssertTrue(
@@ -63,7 +74,11 @@ final class LiveShortcutTabRegistryTests: XCTestCase {
                 tab
             )
             XCTAssertIdentical(harness.structuralTab(for: tab.id), tab)
-            XCTAssertEqual(eventCount, 1)
+            XCTAssertEqual(
+                harness.registry.entry(containing: tab)?.presentationPage,
+                presentationPage
+            )
+            XCTAssertEqual(scopes, [.page(presentationPage.page)])
 
             XCTAssertFalse(
                 harness.registry.rekey(
@@ -73,8 +88,163 @@ final class LiveShortcutTabRegistryTests: XCTestCase {
                     in: windowId
                 )
             )
-            XCTAssertEqual(eventCount, 1)
+            XCTAssertEqual(scopes, [.page(presentationPage.page)])
         }
+    }
+
+    func testRekeyRejectsOccupiedTargetWithoutMutationOrPublication() {
+        let harness = LiveShortcutRegistryHarness()
+        let windowID = UUID()
+        let sourcePinID = UUID()
+        let targetPinID = UUID()
+        let sourceTab = makeTab()
+        let targetTab = makeTab()
+        var eventCount = 0
+        let cancellable = harness.eventBus.structureChangedPublisher.sink {
+            eventCount += 1
+        }
+        _ = harness.register(sourceTab, for: sourcePinID, in: windowID)
+        _ = harness.register(targetTab, for: targetPinID, in: windowID)
+        eventCount = 0
+
+        XCTAssertFalse(harness.registry.rekey(
+            sourceTab,
+            from: sourcePinID,
+            to: targetPinID,
+            in: windowID
+        ))
+        XCTAssertIdentical(
+            harness.registry.tab(for: sourcePinID, in: windowID),
+            sourceTab
+        )
+        XCTAssertIdentical(
+            harness.registry.tab(for: targetPinID, in: windowID),
+            targetTab
+        )
+        XCTAssertEqual(eventCount, 0)
+        withExtendedLifetime(cancellable) {}
+    }
+
+    func testRelocationPublishesExactSourceAndTargetAndRetirementRetainsTarget() {
+        let harness = LiveShortcutRegistryHarness()
+        let windowID = UUID()
+        let pinID = UUID()
+        let profileID = UUID()
+        let sourcePage = harness.page(
+            in: windowID,
+            spaceID: UUID(),
+            profileID: profileID
+        )
+        let targetPage = harness.page(
+            in: windowID,
+            spaceID: UUID(),
+            profileID: profileID
+        )
+        let unrelatedPage = TabStructurePageScope(
+            windowID: windowID,
+            spaceID: UUID(),
+            profileID: profileID
+        )
+        let tab = makeTab()
+        var scopes: [TabStructureChangeScope] = []
+        let cancellable = harness.eventBus.scopedStructureChangesPublisher.sink {
+            scopes.append($0)
+        }
+        _ = harness.registry.register(
+            tab,
+            for: pinID,
+            in: windowID,
+            presentationPage: sourcePage
+        )
+        scopes = []
+
+        XCTAssertTrue(
+            harness.registry.relocate(
+                tab,
+                from: pinID,
+                to: pinID,
+                in: windowID,
+                presentationPage: targetPage
+            )
+        )
+        XCTAssertEqual(scopes.count, 1)
+        XCTAssertEqual(
+            scopes[0].affectedPages,
+            Set([sourcePage.page, targetPage.page])
+        )
+        XCTAssertFalse(
+            scopes[0].affectsPage(
+                windowID: unrelatedPage.windowID,
+                spaceID: unrelatedPage.spaceID,
+                profileID: unrelatedPage.profileID
+            )
+        )
+        XCTAssertEqual(
+            harness.registry.entry(containing: tab)?.presentationPage,
+            targetPage
+        )
+
+        scopes = []
+        XCTAssertIdentical(
+            harness.registry.remove(pinId: pinID, in: windowID)?.tab,
+            tab
+        )
+        XCTAssertEqual(scopes, [.page(targetPage.page)])
+        withExtendedLifetime(cancellable) {}
+    }
+
+    func testRelocationRejectsOccupiedTargetWithoutMutationOrPublication() {
+        let harness = LiveShortcutRegistryHarness()
+        let windowID = UUID()
+        let sourcePinID = UUID()
+        let targetPinID = UUID()
+        let sourceTab = makeTab()
+        let targetTab = makeTab()
+        let sourcePage = harness.page(
+            in: windowID,
+            spaceID: UUID(),
+            profileID: UUID()
+        )
+        let targetPage = harness.page(
+            in: windowID,
+            spaceID: UUID(),
+            profileID: UUID()
+        )
+        var eventCount = 0
+        let cancellable = harness.eventBus.structureChangedPublisher.sink {
+            eventCount += 1
+        }
+        _ = harness.registry.register(
+            sourceTab,
+            for: sourcePinID,
+            in: windowID,
+            presentationPage: sourcePage
+        )
+        _ = harness.registry.register(
+            targetTab,
+            for: targetPinID,
+            in: windowID,
+            presentationPage: targetPage
+        )
+        eventCount = 0
+
+        XCTAssertFalse(harness.registry.relocate(
+            sourceTab,
+            from: sourcePinID,
+            to: targetPinID,
+            in: windowID,
+            presentationPage: targetPage
+        ))
+        XCTAssertEqual(
+            harness.registry.entry(containing: sourceTab)?.presentationPage,
+            sourcePage
+        )
+        XCTAssertIdentical(
+            harness.registry.tab(for: targetPinID, in: windowID),
+            targetTab
+        )
+        XCTAssertEqual(eventCount, 0)
+        withExtendedLifetime(cancellable) {}
     }
 
     func testRemoveAllIsDeterministicPrunesLookupAndCoalescesPublication() {
@@ -90,29 +260,27 @@ final class LiveShortcutTabRegistryTests: XCTestCase {
         let cancellable = harness.eventBus.structureChangedPublisher.sink {
             eventCount += 1
         }
-        _ = harness.registry.register(thirdTab, for: pinId, in: thirdWindowId)
-        _ = harness.registry.register(firstTab, for: pinId, in: firstWindowId)
-        _ = harness.registry.register(secondTab, for: pinId, in: secondWindowId)
+        _ = harness.register(thirdTab, for: pinId, in: thirdWindowId)
+        _ = harness.register(firstTab, for: pinId, in: firstWindowId)
+        _ = harness.register(secondTab, for: pinId, in: secondWindowId)
         eventCount = 0
 
         let removed = withExtendedLifetime(cancellable) {
-            harness.registry.removeAll(
-                pinId: pinId,
-                excluding: secondWindowId
-            )
+            harness.batchRetirement.remove(pinIDs: [pinId])
         }
 
-        XCTAssertEqual(removed.map(\.windowId), [firstWindowId, thirdWindowId])
-        XCTAssertIdentical(removed[0].tab, firstTab)
-        XCTAssertIdentical(removed[1].tab, thirdTab)
-        XCTAssertNil(harness.registry.snapshot[firstWindowId])
-        XCTAssertNil(harness.registry.snapshot[thirdWindowId])
-        XCTAssertIdentical(
-            harness.registry.tab(for: pinId, in: secondWindowId),
-            secondTab
+        XCTAssertEqual(
+            removed.map(\.windowId),
+            [firstWindowId, secondWindowId, thirdWindowId]
         )
+        XCTAssertIdentical(removed[0].tab, firstTab)
+        XCTAssertIdentical(removed[1].tab, secondTab)
+        XCTAssertIdentical(removed[2].tab, thirdTab)
+        XCTAssertNil(harness.registry.snapshot[firstWindowId])
+        XCTAssertNil(harness.registry.snapshot[secondWindowId])
+        XCTAssertNil(harness.registry.snapshot[thirdWindowId])
         XCTAssertNil(harness.structuralTab(for: firstTab.id))
-        XCTAssertIdentical(harness.structuralTab(for: secondTab.id), secondTab)
+        XCTAssertNil(harness.structuralTab(for: secondTab.id))
         XCTAssertNil(harness.structuralTab(for: thirdTab.id))
         XCTAssertEqual(eventCount, 1)
     }
@@ -136,6 +304,8 @@ private final class LiveShortcutRegistryHarness {
     let eventBus: TabStructureEventBus
     let coordinator: TabStructuralLookupCoordinator
     let registry: LiveShortcutTabRegistry
+    let batchRetirement: LiveShortcutTabBatchRetirement
+    private var pageSpaceByWindow: [UUID: UUID] = [:]
 
     init() {
         let storage = TabTransientTabRegistryOwner()
@@ -160,6 +330,10 @@ private final class LiveShortcutRegistryHarness {
             storage: storage,
             structuralLookup: coordinator
         )
+        self.batchRetirement = LiveShortcutTabBatchRetirement(
+            storage: storage,
+            structuralLookup: coordinator
+        )
     }
 
     func structuralTab(for tabId: UUID) -> Tab? {
@@ -173,6 +347,37 @@ private final class LiveShortcutRegistryHarness {
                 auxiliaryMiniWindowTabsByID: storage
                     .auxiliaryMiniWindowTabsByID
             )
+        )
+    }
+
+    func register(_ tab: Tab, for pinId: UUID, in windowId: UUID) -> Bool {
+        registry.register(
+            tab,
+            for: pinId,
+            in: windowId,
+            presentationPage: page(in: windowId)
+        )
+    }
+
+    func page(in windowId: UUID) -> LiveShortcutPresentationPageReceipt {
+        let spaceID = pageSpaceByWindow[windowId] ?? UUID()
+        pageSpaceByWindow[windowId] = spaceID
+        return page(
+            in: windowId,
+            spaceID: spaceID,
+            profileID: nil
+        )
+    }
+
+    func page(
+        in windowId: UUID,
+        spaceID: UUID,
+        profileID: UUID?
+    ) -> LiveShortcutPresentationPageReceipt {
+        LiveShortcutPresentationPageReceipt(
+            windowID: windowId,
+            spaceID: spaceID,
+            profileID: profileID
         )
     }
 }

@@ -1,5 +1,6 @@
-@testable import Sumi
 import Foundation
+
+@testable import Sumi
 
 @MainActor
 struct SidebarConsumerTestRoles {
@@ -72,6 +73,7 @@ enum SidebarConsumerTestSupport {
                 structure: tabManager.spacePinnedStructureOwner,
                 shortcutCommands: tabManager.shortcutPinCommandOwner,
                 folderCommands: tabManager.folderMutationOwner,
+                folderOpenState: tabManager.folderOpenState,
                 materializer: tabManager.shortcutTabMaterializer,
                 profileAssignments: tabManager.profileAssignments.shortcuts
             ),

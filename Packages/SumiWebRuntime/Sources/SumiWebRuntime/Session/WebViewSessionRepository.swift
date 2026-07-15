@@ -311,12 +311,14 @@ public final class WebViewSessionRepository {
     public func beginReplacementBatch(
         _ replacementEntries: [WebViewReplacementBatchEntry],
         validateModel: @MainActor () -> Bool = { true },
-        modelCommit: @MainActor () throws -> Void = { () }
+        modelCommit: @MainActor () throws -> Void = { () },
+        modelRollback: @MainActor () throws -> Void = { () }
     ) -> WebViewReplacementBatchBeginResult {
         transitionCoordinator.begin(
             replacementEntries,
             validateModel: validateModel,
-            modelCommit: modelCommit
+            modelCommit: modelCommit,
+            modelRollback: modelRollback
         )
     }
 
@@ -390,6 +392,15 @@ public final class WebViewSessionRepository {
         _ lease: WebViewRetirementBatchLease
     ) -> WebViewRetirementBatchCommitResult {
         transitionCoordinator.commitRetirement(lease)
+    }
+
+    /// Read-only final-settlement proof for an exact retirement lease. This
+    /// repeats the repository CAS immediately before a surrounding transaction
+    /// commits, so physical retirement never relies on admission-time evidence.
+    public func canCommitRetirementBatch(
+        _ lease: WebViewRetirementBatchLease
+    ) -> Bool {
+        transitionCoordinator.canCommitRetirement(lease)
     }
 
     @preconcurrency

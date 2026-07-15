@@ -67,6 +67,12 @@ final class TabStructuralLookupCoordinator {
         publishOwner.runAfterCurrentBatch(action)
     }
 
+    func runBeforeCurrentBatchPublication(
+        _ action: @escaping @MainActor () -> Void
+    ) {
+        publishOwner.runBeforeCurrentBatchPublication(action)
+    }
+
     func notifyTransientShortcutStateChanged(
         entries: [LiveShortcutTabEntry]
     ) {
@@ -74,11 +80,9 @@ final class TabStructuralLookupCoordinator {
         entries.forEach { publishTransientShortcutPageChange($0) }
     }
 
-    func publishTransientShortcutPageChange(
-        _ entry: LiveShortcutTabEntry,
-        previousScope: TabStructureChangeScope? = nil
+    private func publishTransientShortcutPageChange(
+        _ entry: LiveShortcutTabEntry
     ) {
-        if let previousScope { requestPublish(scope: previousScope) }
         requestPublish(scope: entry.pageScope)
     }
 

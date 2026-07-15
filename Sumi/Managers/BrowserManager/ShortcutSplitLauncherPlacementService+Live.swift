@@ -1,23 +1,33 @@
-import Foundation
-
 @MainActor
 extension ShortcutSplitLauncherPlacementService {
     convenience init(
-        tabManager: @escaping @MainActor () -> TabManager?
+        tabManager: TabManager
     ) {
-        let catalog = ShortcutSplitLauncherCatalogAdapter(
-            tabManager: tabManager
+        let pins = tabManager.shortcutPinCollectionStateOwner
+        let folders = tabManager.folderCollectionStateOwner
+        let spacePinnedStructure = tabManager.spacePinnedStructureOwner
+        let residenceMoves = ShortcutSplitLauncherMoveBatchStaging(
+            catalog: ShortcutSplitLauncherCatalogTransaction(
+                pinStore: tabManager.shortcutPinStoreOwner,
+                pins: pins
+            ),
+            bindingStaging: ShortcutSplitLauncherBindingStaging(
+                tabManager: tabManager
+            ),
+            residenceMutations: tabManager.liveShortcutTabs.staging,
+            folderOpenState: tabManager.folderOpenState
         )
         self.init(
-            shortcutPin: catalog.shortcutPin,
+            shortcutPin: pins.shortcutPin,
             destinationResolver: ShortcutSplitLauncherDestinationResolver(
-                folderSpaceID: catalog.folderSpaceID,
-                topLevelItemCount: catalog.topLevelItemCount
+                folderSpaceID: folders.spaceId,
+                topLevelItemCount: {
+                    spacePinnedStructure.topLevelSpacePinnedItems(for: $0).count
+                }
             ),
             moves: ShortcutSplitLauncherMoveTransaction(
-                shortcutPin: catalog.shortcutPin,
-                canMove: catalog.canMove,
-                move: catalog.move
+                batches: residenceMoves,
+                windowMutations: tabManager.shortcutWindowMutationOwner
             )
         )
     }

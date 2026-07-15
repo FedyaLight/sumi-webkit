@@ -98,7 +98,7 @@ final class ProfileDeletionMigration {
                         return spaceTransitions.start(
                             spaceID: space.id,
                             profileID: fallbackProfileID,
-                            intentPrepared: { state.intent = $0 },
+                            capturingIntent: { state.intent = $0 },
                             settlementObserver: callback
                         )
                     },
@@ -128,7 +128,7 @@ final class ProfileDeletionMigration {
                             desiredProfileID: desiredProfileID,
                             tab: tab,
                             requiresStructuralPersistence: true,
-                            intentPrepared: { state.intent = $0 },
+                            capturingIntent: { state.intent = $0 },
                             settlementObserver: callback
                         )
                     },

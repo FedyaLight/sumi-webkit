@@ -12,7 +12,7 @@ final class ShortcutPinStoreOwner {
         let insertTopLevelSpacePinnedShortcut: @MainActor (ShortcutPin, UUID, Int) -> ShortcutPin?
         let withSpacePinnedShortcutGroup: @MainActor (UUID, UUID?, (inout [ShortcutPin]) -> Void) -> Void
         let spacePinnedPins: @MainActor (UUID) -> [ShortcutPin]
-        let openFolderIfNeeded: @MainActor (UUID) -> Void
+        let folderOpenState: TabFolderOpenStateService
         let adjustedSameContainerInsertionIndex: @MainActor (Int, Int) -> Int
     }
 
@@ -84,7 +84,7 @@ final class ShortcutPinStoreOwner {
                 insertedPin = localInsertedPin
             }
             if openTargetFolder, let folderId = pin.folderId {
-                dependencies.openFolderIfNeeded(folderId)
+                dependencies.folderOpenState.openFolderIfNeeded(folderId)
             }
             return insertedPin.flatMap { inserted in
                 dependencies.spacePinnedPins(spaceId).first(where: { $0.id == inserted.id })
@@ -102,40 +102,111 @@ final class ShortcutPinStoreOwner {
         index: Int,
         openTargetFolder: Bool = true
     ) -> ShortcutPin? {
-        guard let sourcePin = canonicalSource(matching: pin) else { return nil }
-        guard acceptsMove(
-            sourcePin,
+        moveResolved(
+            pin,
             to: role,
             profileId: profileId,
             spaceId: spaceId,
-            folderId: folderId
-        ) else { return nil }
-        let adjustedIndex = adjustedMoveIndex(
+            folderId: folderId,
+            index: index,
+            openTargetFolder: openTargetFolder,
+            applying: nil
+        )
+    }
+
+    @discardableResult
+    func move(
+        _ pin: ShortcutPin,
+        to role: ShortcutPinRole,
+        profileId: UUID?,
+        spaceId: UUID?,
+        folderId: UUID?,
+        index: Int,
+        openTargetFolder: Bool = true,
+        applying: @escaping (ShortcutPin) -> Bool
+    ) -> ShortcutPin? {
+        moveResolved(
+            pin,
+            to: role,
+            profileId: profileId,
+            spaceId: spaceId,
+            folderId: folderId,
+            index: index,
+            openTargetFolder: openTargetFolder,
+            applying: applying
+        )
+    }
+
+    private func moveResolved(
+        _ pin: ShortcutPin,
+        to role: ShortcutPinRole,
+        profileId: UUID?,
+        spaceId: UUID?,
+        folderId: UUID?,
+        index: Int,
+        openTargetFolder: Bool,
+        applying: ((ShortcutPin) -> Bool)?
+    ) -> ShortcutPin? {
+        guard let sourcePin = canonicalSource(matching: pin) else { return nil }
+        guard let movedPin = previewMove(
             sourcePin,
             to: role,
             profileId: profileId,
             spaceId: spaceId,
             folderId: folderId,
             proposedIndex: index
-        )
+        ) else { return nil }
         removeFromContainers(sourcePin)
-        let movedPin = clone(
+        guard let inserted = insert(
+            movedPin,
+            at: movedPin.index,
+            openTargetFolder: false
+        ) else {
+            restoreToSource(sourcePin)
+            return nil
+        }
+        if let applying, applying(inserted) == false {
+            removeFromContainers(inserted)
+            restoreToSource(sourcePin)
+            return nil
+        }
+        if openTargetFolder, let folderId = inserted.folderId {
+            dependencies.folderOpenState.openFolderIfNeeded(folderId)
+        }
+        return inserted
+    }
+
+    func previewMove(
+        _ pin: ShortcutPin,
+        to role: ShortcutPinRole,
+        profileId: UUID?,
+        spaceId: UUID?,
+        folderId: UUID?,
+        proposedIndex: Int
+    ) -> ShortcutPin? {
+        guard let sourcePin = canonicalSource(matching: pin),
+              acceptsMove(
+                  sourcePin,
+                  to: role,
+                  profileId: profileId,
+                  spaceId: spaceId,
+                  folderId: folderId
+              ) else { return nil }
+        return clone(
             sourcePin,
             role: role,
             profileId: profileId,
             spaceId: spaceId,
             folderId: folderId,
-            index: adjustedIndex
+            index: adjustedMoveIndex(
+                sourcePin,
+                to: role,
+                profileId: profileId,
+                spaceId: spaceId,
+                folderId: folderId,
+                proposedIndex: proposedIndex
+            )
         )
-        guard let inserted = insert(
-            movedPin,
-            at: adjustedIndex,
-            openTargetFolder: openTargetFolder
-        ) else {
-            restoreToSource(sourcePin)
-            return nil
-        }
-        return inserted
     }
 
     /// Exact preflight used by compound split/pin transactions. This performs
@@ -148,16 +219,14 @@ final class ShortcutPinStoreOwner {
         spaceId: UUID?,
         folderId: UUID?
     ) -> Bool {
-        guard let sourcePin = canonicalSource(matching: pin) else {
-            return false
-        }
-        return acceptsMove(
-            sourcePin,
+        previewMove(
+            pin,
             to: role,
             profileId: profileId,
             spaceId: spaceId,
-            folderId: folderId
-        )
+            folderId: folderId,
+            proposedIndex: pin.index
+        ) != nil
     }
 
     func removeFromContainers(_ pin: ShortcutPin) {
@@ -360,9 +429,7 @@ extension ShortcutPinStoreOwner.Dependencies {
             spacePinnedPins: { [weak tabManager] spaceId in
                 tabManager?.shortcutPinCollectionStateOwner.spacePinnedPins(for: spaceId) ?? []
             },
-            openFolderIfNeeded: { [weak tabManager] folderId in
-                tabManager?.folderMutationOwner.openFolderIfNeeded(folderId)
-            },
+            folderOpenState: tabManager.folderOpenState,
             adjustedSameContainerInsertionIndex: { [weak tabManager] currentIndex, proposedIndex in
                 guard let tabManager else { return proposedIndex }
                 return tabManager.spacePinnedStructureOwner.adjustedSameContainerInsertionIndex(

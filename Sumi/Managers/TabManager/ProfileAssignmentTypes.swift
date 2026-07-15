@@ -9,6 +9,19 @@ enum TabProfileAssignmentExecutionOutcome: Equatable {
     var wasAccepted: Bool {
         self == .committed || self == .deferred
     }
+
+    var immediateSettlement: ProfileTransitionSettlement? {
+        switch self {
+        case .committed:
+            return .committed
+        case .stale:
+            return .rejected(.stale)
+        case .failed:
+            return .rejected(.failed)
+        case .deferred:
+            return nil
+        }
+    }
 }
 
 struct TabSpaceProfileTransitionPreparation: Equatable {

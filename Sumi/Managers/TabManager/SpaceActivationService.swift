@@ -5,44 +5,41 @@ import Foundation
 /// own services; this service only performs selection handoff and persistence.
 @MainActor
 final class SpaceActivationService {
-    typealias ProfileIds = (current: UUID?, default: UUID?)
-
     private let state: TabStateStore
     private let projection: SpaceLauncherProjectionService
     private let persistence: TabStructuralPersistenceService
-    private let profileIds: @MainActor () -> ProfileIds
-    private let assignSpaceProfile: @MainActor (
-        UUID,
-        UUID
-    ) -> TabProfileAssignmentExecutionOutcome
+    private let profileAdmission: SpaceActivationProfileAdmission
     private let activeEssentialTabs: @MainActor (UUID?) -> [Tab]
 
     init(
         state: TabStateStore,
         projection: SpaceLauncherProjectionService,
         persistence: TabStructuralPersistenceService,
-        profileIds: @escaping @MainActor () -> ProfileIds,
-        assignSpaceProfile: @escaping @MainActor (
-            UUID,
-            UUID
-        ) -> TabProfileAssignmentExecutionOutcome,
+        profileAdmission: SpaceActivationProfileAdmission,
         activeEssentialTabs: @escaping @MainActor (UUID?) -> [Tab]
     ) {
         self.state = state
         self.projection = projection
         self.persistence = persistence
-        self.profileIds = profileIds
-        self.assignSpaceProfile = assignSpaceProfile
+        self.profileAdmission = profileAdmission
         self.activeEssentialTabs = activeEssentialTabs
     }
 
+    @discardableResult
     func setActiveSpace(
         _ space: Space,
         preferredTab: Tab? = nil,
         contextWindowId: UUID? = nil
-    ) {
-        guard state.spaces.contains(spaceId: space.id) else { return }
-        backfillProfileIfNeeded(for: space)
+    ) -> Bool {
+        guard state.spaces.contains(spaceId: space.id),
+              admitProfileIfNeeded(for: space, retry: { [weak self, weak space] in
+                  guard let self, let space else { return }
+                  self.setActiveSpace(
+                      space,
+                      preferredTab: preferredTab,
+                      contextWindowId: contextWindowId
+                  )
+              }) else { return false }
 
         let previousTab = state.selection.currentTab
         if let previousSpace = state.spaces.currentSpace,
@@ -74,18 +71,14 @@ final class SpaceActivationService {
             persistence.markSpacesSnapshotDirty()
         }
         persistence.persistSelection()
+        return true
     }
 
-    private func backfillProfileIfNeeded(for space: Space) {
-        guard space.profileId == nil else { return }
-        guard let profileId = profileIds().default else {
-            RuntimeDiagnostics.debug(
-                "No profiles available to assign to a space switch target; reconciliation deferred.",
-                category: "SpaceActivation"
-            )
-            return
-        }
-        _ = assignSpaceProfile(space.id, profileId)
+    func admitProfileIfNeeded(
+        for space: Space,
+        retry: @escaping @MainActor () -> Void
+    ) -> Bool {
+        profileAdmission.admit(space, retry: retry)
     }
 
     private func orderedLiveSpacePins(
@@ -117,7 +110,9 @@ final class SpaceActivationService {
         var didResolveEssentialTabs = false
         func essentialTabs() -> [Tab] {
             if !didResolveEssentialTabs {
-                cachedEssentialTabs = activeEssentialTabs(profileIds().current)
+                cachedEssentialTabs = activeEssentialTabs(
+                    profileAdmission.currentProfileID
+                )
                 didResolveEssentialTabs = true
             }
             return cachedEssentialTabs

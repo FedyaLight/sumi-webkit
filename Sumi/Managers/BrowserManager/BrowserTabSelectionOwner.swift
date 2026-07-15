@@ -1,6 +1,17 @@
 import Foundation
 import SumiDomain
 
+enum BrowserTabSelectionOutcome: Equatable {
+    case committed
+    case unchanged
+    case deferred
+    case rejected
+
+    var wasCommitted: Bool {
+        self == .committed || self == .unchanged
+    }
+}
+
 @MainActor
 final class BrowserTabSelectionOwner {
     struct RuntimeNotifications {
@@ -38,13 +49,19 @@ final class BrowserTabSelectionOwner {
     }
 
     private let userActivationBatcher = WindowTabActivationBatcher()
+    private let shortcutActivation: ShortcutPresentationActivationService?
 
+    init(shortcutActivation: ShortcutPresentationActivationService? = nil) {
+        self.shortcutActivation = shortcutActivation
+    }
+
+    @discardableResult
     func selectTab(
         _ tab: Tab,
         in windowState: BrowserWindowState,
         loadPolicy: TabSelectionLoadPolicy,
         actions: Actions
-    ) {
+    ) -> BrowserTabSelectionOutcome {
         applyTabSelection(
             tab,
             in: windowState,
@@ -57,12 +74,13 @@ final class BrowserTabSelectionOwner {
         )
     }
 
+    @discardableResult
     func requestUserTabActivation(
         _ tab: Tab,
         in windowState: BrowserWindowState,
         loadPolicy: TabSelectionLoadPolicy,
         actions: Actions
-    ) {
+    ) -> BrowserTabSelectionOutcome {
         userActivationBatcher.requestActivation(
             tabId: tab.id,
             in: windowState.id,
@@ -90,8 +108,10 @@ final class BrowserTabSelectionOwner {
                 actions: actions
             )
         }
+        return .deferred
     }
 
+    @discardableResult
     func applyTabSelection(
         _ tab: Tab,
         in windowState: BrowserWindowState,
@@ -101,7 +121,51 @@ final class BrowserTabSelectionOwner {
         persistSelection: Bool,
         loadPolicy: TabSelectionLoadPolicy,
         actions: Actions
-    ) {
+    ) -> BrowserTabSelectionOutcome {
+        let presentationSpaceID = tab.spaceId ?? windowState.currentSpaceId
+        guard tab.isShortcutLiveInstance else {
+            return applyAdmittedTabSelection(
+                tab,
+                in: windowState,
+                updateSpaceFromTab: updateSpaceFromTab,
+                updateTheme: updateTheme,
+                rememberSelection: rememberSelection,
+                persistSelection: persistSelection,
+                loadPolicy: loadPolicy,
+                actions: actions
+            )
+        }
+        guard let shortcutActivation else { return .rejected }
+        var outcome = BrowserTabSelectionOutcome.rejected
+        let accepted = shortcutActivation.commitActivation(
+            tab,
+            in: windowState.id,
+            presentationSpaceID: presentationSpaceID
+        ) { [self] admittedTab in
+            outcome = applyAdmittedTabSelection(
+                admittedTab,
+                in: windowState,
+                updateSpaceFromTab: updateSpaceFromTab,
+                updateTheme: updateTheme,
+                rememberSelection: rememberSelection,
+                persistSelection: persistSelection,
+                loadPolicy: loadPolicy,
+                actions: actions
+            )
+        }
+        return accepted ? outcome : .rejected
+    }
+
+    private func applyAdmittedTabSelection(
+        _ tab: Tab,
+        in windowState: BrowserWindowState,
+        updateSpaceFromTab: Bool,
+        updateTheme: Bool,
+        rememberSelection: Bool,
+        persistSelection: Bool,
+        loadPolicy: TabSelectionLoadPolicy,
+        actions: Actions
+    ) -> BrowserTabSelectionOutcome {
         let selectionApplication = WindowTabSelectionStateApplicator.apply(
             tab,
             to: windowState,
@@ -112,13 +176,76 @@ final class BrowserTabSelectionOwner {
         let selectedTabChanged = selectionApplication.previousTabId != tab.id
         let requiresMaterialization = tab.isUnloaded && tab.requiresPrimaryWebView
         guard selectionApplication.stateDidChange || selectedTabChanged || requiresMaterialization else {
-            return
+            return .unchanged
         }
 
+        return publishAdmittedSelectionEffects(
+            tab,
+            in: windowState,
+            selectionApplication: selectionApplication,
+            updateTheme: updateTheme,
+            persistSelection: persistSelection,
+            reconcileSplitSelection: true,
+            loadPolicy: loadPolicy,
+            actions: actions
+        )
+    }
+
+    /// Runs the non-model half of a selection whose complete window value was
+    /// installed by a wider aggregate. This must not write split selection a
+    /// second time; the prepared topology receipt already owns that value.
+    @discardableResult
+    func publishPreparedSelectionEffects(
+        _ tab: Tab,
+        in windowState: BrowserWindowState,
+        previousTabID: UUID?,
+        previousSpaceID: UUID?,
+        actions: Actions
+    ) -> BrowserTabSelectionOutcome {
+        guard windowState.currentTabId == tab.id,
+              Self.resolvedTab(tab.id, in: windowState, actions: actions) === tab
+        else {
+            return .rejected
+        }
+        let selectedTabChanged = previousTabID != tab.id
+        let selectedSpaceChanged = previousSpaceID != windowState.currentSpaceId
+        let requiresMaterialization = tab.isUnloaded
+            && tab.requiresPrimaryWebView
+        guard selectedTabChanged || selectedSpaceChanged || requiresMaterialization else {
+            return .unchanged
+        }
+        return publishAdmittedSelectionEffects(
+            tab,
+            in: windowState,
+            selectionApplication: WindowTabSelectionApplicationResult(
+                previousTabId: previousTabID,
+                previousSpaceId: previousSpaceID,
+                stateDidChange: true
+            ),
+            updateTheme: true,
+            persistSelection: false,
+            reconcileSplitSelection: false,
+            loadPolicy: .immediate,
+            actions: actions
+        )
+    }
+
+    private func publishAdmittedSelectionEffects(
+        _ tab: Tab,
+        in windowState: BrowserWindowState,
+        selectionApplication: WindowTabSelectionApplicationResult,
+        updateTheme: Bool,
+        persistSelection: Bool,
+        reconcileSplitSelection: Bool,
+        loadPolicy: TabSelectionLoadPolicy,
+        actions: Actions
+    ) -> BrowserTabSelectionOutcome {
         actions.handleNativeNowPlayingTabActivated(tab.id)
         tab.noteAccess()
         actions.dismissFloatingBarAfterSelection(windowState)
-        actions.reconcileSplitSelection(tab, windowState)
+        if reconcileSplitSelection {
+            actions.reconcileSplitSelection(tab, windowState)
+        }
 
         actions.syncWindowSpaceContext(windowState)
 
@@ -162,6 +289,7 @@ final class BrowserTabSelectionOwner {
         if persistSelection {
             actions.persistWindowSession(windowState)
         }
+        return .committed
     }
 
     private static func resolvedTab(
@@ -215,7 +343,7 @@ final class BrowserTabSelectionOwner {
     ) {
         if let currentSpace = actions.space(windowState.currentSpaceId),
            let selectableTab = actions.selectionTargetForSpaceActivation(currentSpace, windowState) {
-            applyTabSelection(
+            _ = applyTabSelection(
                 selectableTab,
                 in: windowState,
                 updateSpaceFromTab: false,

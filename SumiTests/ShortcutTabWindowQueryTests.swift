@@ -89,10 +89,10 @@ final class ShortcutTabWindowQueryTests: XCTestCase {
             [primaryWindow.id, selectedWindow.id, preferredWindow.id]
         )
         XCTAssertEqual(
-            query.windowIdDisplaying(
+            query.windowIdsDisplaying(
                 tabId: tabId,
                 preferredWindowId: splitOnlyWindow.id
-            ),
+            ).first,
             splitOnlyWindow.id
         )
     }
@@ -126,6 +126,7 @@ final class ShortcutTabWindowQueryTests: XCTestCase {
             windowState: { statesById[$0] },
             windows: { windows.map { ($0.id, $0) } },
             webViewLifecycle: TestRuntimePorts.webViewLifecycle(
+                retirement: .rejecting,
                 primaryTrackedWindowId: { _ in primaryWindowId }
             ),
             visibleSplitTabIds: { windowId in
@@ -133,7 +134,9 @@ final class ShortcutTabWindowQueryTests: XCTestCase {
                 return [splitTabId]
             }
         )
-        return ShortcutTabWindowQuery(runtimePorts: { runtime })
+        return ShortcutTabWindowQuery(
+            runtimeConnection: TabRuntimePortConnection(runtime)
+        )
     }
 
     private func makeWindow(id: UUID, selectedTabId: UUID) -> BrowserWindowState {

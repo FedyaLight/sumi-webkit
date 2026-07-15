@@ -137,4 +137,13 @@ struct WindowThemeState: Equatable {
         }
         return currentIdentity == identity
     }
+
+    func acceptsInteractiveCompletion(
+        identity: SpaceTransitionIdentity?,
+        destinationSpaceID: UUID
+    ) -> Bool {
+        guard let identity else { return true }
+        return identity.destinationSpaceId == destinationSpaceID
+            && matchesInteractiveSpaceTransition(identity)
+    }
 }

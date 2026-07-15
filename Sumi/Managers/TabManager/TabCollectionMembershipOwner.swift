@@ -89,6 +89,17 @@ final class TabCollectionMembershipOwner {
             + normals
     }
 
+    /// Returns every physical Tab residence that participates in the shared
+    /// UUID namespace. Auxiliary mini-window Tabs are intentionally excluded
+    /// from normal browser membership, but must be included when a transaction
+    /// proves that one UUID still names one exact object.
+    func allIdentityWitnesses() -> [Tab] {
+        allTabs()
+            + Array(
+                transientTabRegistryOwner.auxiliaryMiniWindowTabsByID.values
+            )
+    }
+
     func allTabsForCurrentProfile() -> [Tab] {
         guard let profileId = currentProfileId() else {
             return allTabs()

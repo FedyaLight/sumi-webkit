@@ -71,7 +71,7 @@ final class TabClosureCandidateRetirementTests: XCTestCase {
             pin,
             in: window.id,
             currentSpaceId: space.id
-        )
+        )!
         let missing = UUID()
         let persistence = TabClosurePersistenceSpy()
         let retirement = makeRetirement(

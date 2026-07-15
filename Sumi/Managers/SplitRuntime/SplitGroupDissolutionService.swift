@@ -29,10 +29,10 @@ final class SplitGroupDissolutionService {
               tabManager.splitGroupStore.group(id: group.id) == group,
               let restorations = launcherPlacement.prepareRestorations(
                   for: group.members
-              ), tabManager.splitGroupMutations.removeAtomically(
+                  ), tabManager.splitGroupMutations.removeAtomically(
                   group,
                   applying: { [launcherPlacement] in
-                      launcherPlacement.apply(restorations)
+                      launcherPlacement.applyAndCommit(restorations)
                   }
               ) else {
             return false

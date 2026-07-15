@@ -37,7 +37,7 @@ final class ShortcutTabPromotionServiceTests: XCTestCase {
                         index: 0
                     )
                 ),
-                .regularTab(companion.id)
+                .regularTab(companion.id),
             ],
             layoutKind: .vertical,
             container: .regularTabs(spaceId: space.id)
@@ -48,7 +48,7 @@ final class ShortcutTabPromotionServiceTests: XCTestCase {
                 pin,
                 in: windowState.id,
                 currentSpaceId: space.id
-            )
+            )!
             windowState.currentSpaceId = space.id
             windowState.currentTabId = live.id
             windowState.currentShortcutPinId = pin.id
@@ -111,19 +111,19 @@ final class ShortcutTabPromotionServiceTests: XCTestCase {
             pin,
             in: first.id,
             currentSpaceId: space.id
-        )
+        )!
         let preferredLive = tabManager.shortcutTabMaterializer.materialize(
             pin,
             in: preferred.id,
             currentSpaceId: space.id
-        )
+        )!
         first.currentTabId = firstLive.id
         first.currentShortcutPinId = pin.id
         first.currentShortcutPinRole = pin.role
         preferred.currentTabId = preferredLive.id
         preferred.currentShortcutPinId = pin.id
         preferred.currentShortcutPinRole = pin.role
-        var cancellable: AnyCancellable? = tabManager.tabStructureEventBus
+        let cancellable: AnyCancellable? = tabManager.tabStructureEventBus
             .structureChangedPublisher.sink { probe.structuralEvents += 1 }
         probe.structuralEvents = 0
 
@@ -184,12 +184,12 @@ final class ShortcutTabPromotionServiceTests: XCTestCase {
             pin,
             in: lower.id,
             currentSpaceId: space.id
-        )
+        )!
         let higherLive = tabManager.shortcutTabMaterializer.materialize(
             pin,
             in: higher.id,
             currentSpaceId: space.id
-        )
+        )!
 
         let result = try XCTUnwrap(
             tabManager.shortcutTabPromotion.promote(pin, into: space.id)
@@ -211,7 +211,7 @@ final class ShortcutTabPromotionServiceTests: XCTestCase {
             pin,
             in: window.id,
             currentSpaceId: space.id
-        )
+        )!
 
         XCTAssertNil(
             tabManager.shortcutTabPromotion.promote(pin, into: UUID())
@@ -248,7 +248,7 @@ final class ShortcutTabPromotionServiceTests: XCTestCase {
             pin,
             in: windowId,
             currentSpaceId: space.id
-        )
+        )!
 
         XCTAssertNil(
             tabManager.shortcutTabPromotion.promote(pin, into: space.id)
@@ -274,7 +274,7 @@ final class ShortcutTabPromotionServiceTests: XCTestCase {
             pin,
             in: window.id,
             currentSpaceId: sourceSpace.id
-        )
+        )!
         let selectedTabId = UUID()
         window.currentSpaceId = visibleSpace.id
         window.currentTabId = selectedTabId
@@ -305,6 +305,7 @@ final class ShortcutTabPromotionServiceTests: XCTestCase {
             windows: { windows.map { ($0.id, $0) } },
             windowStates: { windows },
             webViewLifecycle: TestRuntimePorts.webViewLifecycle(
+                retirement: .rejecting,
                 unloadTab: {
                     probe.eventsSeenAtUnload.append(probe.structuralEvents)
                     probe.unloadedTabIds.append($0.id)

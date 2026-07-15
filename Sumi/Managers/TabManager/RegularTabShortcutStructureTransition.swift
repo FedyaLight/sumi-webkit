@@ -9,16 +9,16 @@ import SumiDomain
 final class RegularTabShortcutStructureTransition {
     private let regularTabs: RegularTabCollectionOwner
     private let splitGroupStore: SplitGroupStore
-    private let structuralRevision: () -> UInt64
+    private let structuralLookup: TabStructuralLookupCoordinator
 
     init(
         regularTabs: RegularTabCollectionOwner,
         splitGroupStore: SplitGroupStore,
-        structuralRevision: @escaping () -> UInt64
+        structuralLookup: TabStructuralLookupCoordinator
     ) {
         self.regularTabs = regularTabs
         self.splitGroupStore = splitGroupStore
-        self.structuralRevision = structuralRevision
+        self.structuralLookup = structuralLookup
     }
 
     func prepare(_ tab: Tab) -> RegularTabShortcutStructurePlan? {
@@ -33,7 +33,7 @@ final class RegularTabShortcutStructureTransition {
             sourceSplitGroup: splitGroupStore.group(
                 containing: sourceMemberID
             ),
-            structuralRevision: structuralRevision()
+            structuralRevision: structuralLookup.mutationRevision
         )
     }
 
@@ -44,7 +44,7 @@ final class RegularTabShortcutStructureTransition {
         guard plan.sourceTabID == tab.id,
               regularTabs.contains(tab),
               tab.isShortcutLiveInstance == false,
-              structuralRevision() == plan.structuralRevision,
+              structuralLookup.mutationRevision == plan.structuralRevision,
               splitGroupStore.groups == plan.expectedSplitGroups else {
             return false
         }
@@ -53,5 +53,4 @@ final class RegularTabShortcutStructureTransition {
             containing: plan.sourceMemberID
         ) == plan.sourceSplitGroup
     }
-
 }

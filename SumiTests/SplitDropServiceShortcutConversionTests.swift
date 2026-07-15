@@ -1,3 +1,5 @@
+import Combine
+import Observation
 import SumiDomain
 import XCTest
 
@@ -129,10 +131,206 @@ final class SplitDropServiceShortcutConversionTests: XCTestCase {
         XCTAssertTrue(fixture.probe.effects.isEmpty)
         XCTAssertEqual(fixture.probe.limitCount, 1)
     }
+
+    func testDisplayedCenterDropPublishesTerminalReleasedLauncherAggregateAndPreservesReentrantLayout() throws {
+        let fixture = try makeFixture(sourceMemberCount: 3)
+        let restorationSpace = fixture.manager.spaceServices.catalog.createSpace(
+            name: "Restoration",
+            profileId: fixture.restorationProfile.id
+        )
+        let displacedPin = fixture.targetPins[0]
+        let retainedPin = fixture.targetPins[1]
+        let targetGroup = try XCTUnwrap(SplitGroup.make(
+            members: [
+                .shortcutPin(
+                    displacedPin.id,
+                    returnPlacement: .spacePinned(
+                        spaceId: restorationSpace.id,
+                        folderId: nil,
+                        index: 0
+                    )
+                ),
+                try XCTUnwrap(
+                    fixture.targetGroup.member(
+                        for: .shortcutPin(retainedPin.id)
+                    )
+                ),
+            ],
+            layoutKind: fixture.targetGroup.layoutKind,
+            container: fixture.targetGroup.container
+        ))
+        XCTAssertTrue(fixture.manager.splitGroupMutations.replace(
+            fixture.targetGroup,
+            with: targetGroup,
+            persist: false
+        ))
+        let displacedTab = try XCTUnwrap(
+            fixture.manager.shortcutTabMaterializer.materialize(
+                displacedPin,
+                in: fixture.window.id,
+                currentSpaceId: fixture.space.id
+            )
+        )
+        fixture.window.selectedShortcutPinForSpace[fixture.space.id] =
+            displacedPin.id
+        fixture.window.selectionHistory.recordSelection(
+            .shortcutPin(displacedPin.id),
+            in: fixture.space.id
+        )
+
+        let observation = DisplayedCenterDropWindowObservationOracle()
+        var structuralEvents = 0
+        let structureCancellable = fixture.manager.tabStructureEventBus
+            .structureChangedPublisher.sink { structuralEvents += 1 }
+        withObservationTracking {
+            _ = fixture.window.currentTabId
+            _ = fixture.window.currentShortcutPinId
+            _ = fixture.window.splitSelection
+            _ = fixture.window.selectedShortcutPinForSpace
+            _ = fixture.window.selectionHistory
+        } onChange: {
+            MainActor.assumeIsolated {
+                guard observation.didInspectFirstPublication == false else {
+                    return
+                }
+                observation.didInspectFirstPublication = true
+                guard let terminalTarget = fixture.manager.splitGroupStore.group(
+                    id: targetGroup.id
+                ), let terminalSource = fixture.manager.splitGroupStore.group(
+                    id: fixture.sourceGroup.id
+                ), let generatedPinID = terminalTarget.memberIDs.compactMap({ memberID in
+                    guard case .shortcutPin(let pinID) = memberID,
+                          pinID != retainedPin.id else { return nil }
+                    return pinID
+                }).first(where: { $0 != displacedPin.id }),
+                    let generatedPin = fixture.manager
+                    .shortcutPinCollectionStateOwner.shortcutPin(
+                        by: generatedPinID
+                    ) else {
+                    return XCTFail(
+                        "First window publication must expose the terminal launcher aggregate"
+                    )
+                }
+                XCTAssertFalse(
+                    terminalTarget.contains(.regularTab(fixture.source.id))
+                )
+                XCTAssertFalse(
+                    terminalSource.contains(.regularTab(fixture.source.id))
+                )
+                XCTAssertEqual(
+                    Set(terminalSource.memberIDs),
+                    Set(fixture.sourceCompanions.map { .regularTab($0.id) })
+                )
+                XCTAssertFalse(
+                    terminalTarget.contains(.shortcutPin(displacedPin.id))
+                )
+                XCTAssertTrue(
+                    terminalTarget.contains(.shortcutPin(generatedPin.id))
+                )
+                XCTAssertFalse(
+                    fixture.manager.regularTabCollectionOwner.contains(
+                        fixture.source
+                    )
+                )
+                XCTAssertIdentical(
+                    fixture.manager.liveShortcutTabs.tab(
+                        for: generatedPin.id,
+                        in: fixture.window.id
+                    ),
+                    fixture.source
+                )
+                let displacedResidence = fixture.manager.liveShortcutTabs
+                    .entry(containing: displacedTab)
+                XCTAssertEqual(
+                    displacedResidence?.presentationPage.page.spaceID,
+                    restorationSpace.id
+                )
+                XCTAssertEqual(displacedTab.spaceId, restorationSpace.id)
+                XCTAssertEqual(
+                    displacedTab.profileId,
+                    fixture.restorationProfile.id
+                )
+                XCTAssertEqual(
+                    fixture.manager.shortcutPinCollectionStateOwner
+                        .shortcutPin(by: displacedPin.id)?.spaceId,
+                    restorationSpace.id
+                )
+                XCTAssertEqual(
+                    fixture.window.splitSelection,
+                    WindowSplitSelection(
+                        groupID: targetGroup.id,
+                        activeMemberID: .shortcutPin(generatedPin.id)
+                    )
+                )
+                XCTAssertEqual(
+                    fixture.window.currentShortcutPinId,
+                    generatedPin.id
+                )
+                XCTAssertEqual(
+                    fixture.probe.profileAssignmentTabIDs.filter {
+                        $0 == displacedTab.id
+                    }.count,
+                    0
+                )
+                XCTAssertEqual(fixture.probe.sessionWriteCount, 0)
+
+                guard let horizontal = terminalTarget.changingLayout(
+                    to: .horizontal
+                ) else {
+                    return XCTFail(
+                        "Expected a valid reentrant target layout"
+                    )
+                }
+                let expected = fixture.manager.splitGroupStore.groups
+                observation.didCommitReentrantMutation = fixture.manager
+                    .splitGroupMutations.replaceAll(
+                        expected: expected,
+                        with: expected.map {
+                            $0.id == horizontal.id ? horizontal : $0
+                        },
+                        persist: false
+                    )
+                observation.reentrantTarget = horizontal
+            }
+        }
+        structuralEvents = 0
+
+        XCTAssertTrue(fixture.service.drop(
+            fixture.source,
+            on: SplitDropTarget(
+                targetMemberID: .shortcutPin(displacedPin.id),
+                side: .center,
+                targetRect: .zero,
+                previewStyle: .center
+            ),
+            in: fixture.window
+        ))
+
+        XCTAssertTrue(observation.didInspectFirstPublication)
+        XCTAssertTrue(observation.didCommitReentrantMutation)
+        XCTAssertEqual(
+            fixture.manager.splitGroupStore.group(id: targetGroup.id),
+            observation.reentrantTarget
+        )
+        XCTAssertEqual(
+            fixture.probe.effects.first?.releasedMembers.map(\.memberID),
+            [.shortcutPin(displacedPin.id)]
+        )
+        XCTAssertEqual(
+            fixture.probe.profileAssignmentTabIDs.filter {
+                $0 == displacedTab.id
+            }.count,
+            1
+        )
+        XCTAssertGreaterThan(fixture.probe.sessionWriteCount, 0)
+        XCTAssertEqual(structuralEvents, 1)
+        _ = structureCancellable
+    }
 }
 
 @MainActor
 private extension SplitDropServiceShortcutConversionTests {
+    @MainActor
     struct Fixture {
         let manager: TabManager
         let window: BrowserWindowState
@@ -144,11 +342,33 @@ private extension SplitDropServiceShortcutConversionTests {
         let targetGroup: SplitGroup
         let service: SplitDropService
         let probe: Probe
+        let restorationProfile: Profile
     }
 
     final class Probe {
         var effects: [SplitDropCommitEffect] = []
         var limitCount = 0
+        var profileAssignmentTabIDs: [UUID] = []
+        var sessionWriteCount = 0
+    }
+
+    final class RecordingSplitDropPresentations:
+        SplitDropPresentationReconciling {
+        private let presentations: WindowSplitPresentationSynchronizer
+        private let probe: Probe
+
+        init(
+            presentations: WindowSplitPresentationSynchronizer,
+            probe: Probe
+        ) {
+            self.presentations = presentations
+            self.probe = probe
+        }
+
+        func reconcile(_ effect: SplitDropCommitEffect) {
+            probe.effects.append(effect)
+            presentations.reconcile(effect)
+        }
     }
 
     func makeFixture(
@@ -156,13 +376,35 @@ private extension SplitDropServiceShortcutConversionTests {
         targetMemberCount: Int = 2
     ) throws -> Fixture {
         let window = BrowserWindowState()
+        let sourceProfile = Profile(name: "Source")
+        let restorationProfile = Profile(name: "Restoration")
+        let profiles = [
+            sourceProfile.id: sourceProfile,
+            restorationProfile.id: restorationProfile,
+        ]
+        let probe = Probe()
         let manager = try makeInMemoryTabManager(
+            currentProfileId: { sourceProfile.id },
+            defaultProfileId: { sourceProfile.id },
+            profile: { profiles[$0] },
             windowState: { $0 == window.id ? window : nil },
             windows: { [(window.id, window)] },
-            primaryTrackedWindowId: { _ in window.id }
+            primaryTrackedWindowId: { _ in window.id },
+            persistWindowSession: { _ in
+                probe.sessionWriteCount += 1
+            },
+            executeProfileAssignment: { tab, _, intent in
+                probe.profileAssignmentTabIDs.append(tab.id)
+                return tab.profileAssignment.commit(intent)
+                    ? .committed
+                    : .stale
+            }
         )
         window.tabManager = manager
-        let space = manager.spaceServices.catalog.createSpace(name: "Space")
+        let space = manager.spaceServices.catalog.createSpace(
+            name: "Space",
+            profileId: sourceProfile.id
+        )
         let source = manager.regularTabLifecycleOwner.createNewTab(
             url: "https://drop-source.example",
             in: space,
@@ -226,10 +468,10 @@ private extension SplitDropServiceShortcutConversionTests {
             groupID: sourceGroup.id,
             activeMemberID: .regularTab(source.id)
         )
-        let probe = Probe()
         let launcherPlacement = ShortcutSplitLauncherPlacementService(
-            tabManager: { manager }
+            tabManager: manager
         )
+        let members = SplitRuntimeMemberResolver(tabManager: { manager })
         let presentations = WindowSplitPresentationSynchronizer(
             tabManager: { manager },
             windows: { [window] },
@@ -241,29 +483,51 @@ private extension SplitDropServiceShortcutConversionTests {
                     rememberSelection: true
                 )
             },
+            publishPreparedSelectionEffects: { _, _, _, _ in
+                /* The drop fixture records selection through its model probe. */
+            },
+            publishWindowChange: { _ in
+                /* No window-update subscriber is installed by this fixture. */
+            },
             refreshCompositor: { _ in },
             scheduleWindowSession: { _ in },
             persistWindowSession: { _ in }
         )
+        let placeholderReplacements = SplitPlaceholderReplacementPlanner(
+            query: SplitPlaceholderReplacementQuery(
+                regularTabs: manager.regularTabCollectionOwner,
+                splitGroups: manager.splitGroupStore,
+                membership: manager.splitGroupMembership,
+                liveShortcuts: manager.liveShortcutTabs,
+                members: members
+            ),
+            launcher: launcherPlacement,
+            splitMutations: manager.splitGroupMutations,
+            retirement: EmptySplitPlaceholderRetirementService(
+                regularTabs: manager.regularTabCollectionOwner,
+                selection: manager.selectionStateOwner,
+                structuralLookup: manager.structuralLookupCoordinator,
+                persistence: manager.structuralPersistence,
+                runtimeConnection: manager.runtimePortConnection,
+                runtimeCleanup: RegularTabClosureRuntimeCleanup(
+                    membership: manager.tabCollectionMembershipOwner
+                )
+            ),
+            presentations: RecordingSplitDropPresentations(
+                presentations: presentations,
+                probe: probe
+            )
+        )
+        let recordingPresentations = RecordingSplitDropPresentations(
+            presentations: presentations,
+            probe: probe
+        )
         let service = SplitDropService(
             tabManager: { manager },
-            memberResolver: SplitRuntimeMemberResolver(
-                tabManager: { manager }
-            ),
+            memberResolver: members,
             launcherPlacement: launcherPlacement,
-            reconcileAfterCommit: { effect in
-                probe.effects.append(effect)
-                presentations.synchronize(
-                    previousGroups: effect.previousGroups,
-                    affectedGroupIDs: effect.affectedGroupIDs,
-                    preferredSelections: [
-                        effect.callerWindowID: WindowSplitSelection(
-                            groupID: effect.targetGroupID,
-                            activeMemberID: effect.preferredActiveMemberID
-                        )
-                    ]
-                )
-            },
+            placeholderReplacements: placeholderReplacements,
+            presentations: recordingPresentations,
             notifyLimit: { _ in probe.limitCount += 1 }
         )
         return Fixture(
@@ -276,9 +540,17 @@ private extension SplitDropServiceShortcutConversionTests {
             targetPins: pins,
             targetGroup: targetGroup,
             service: service,
-            probe: probe
+            probe: probe,
+            restorationProfile: restorationProfile
         )
     }
+}
+
+@MainActor
+private final class DisplayedCenterDropWindowObservationOracle {
+    var didInspectFirstPublication = false
+    var didCommitReentrantMutation = false
+    var reentrantTarget: SplitGroup?
 }
 
 private extension SplitMemberID {

@@ -7,18 +7,21 @@ extension TabSpaceServices {
             state: tabManager.stateStore,
             projection: tabManager.spaceLauncherProjection,
             persistence: tabManager.structuralPersistence,
-            profileIds: { [weak tabManager] in
-                (
-                    current: tabManager?.runtimePorts?.currentProfileId,
-                    default: tabManager?.runtimePorts?.defaultProfileId
-                )
-            },
-            assignSpaceProfile: { [weak tabManager] spaceId, profileId in
-                tabManager?.profileAssignments.spaces.assign(
-                    spaceID: spaceId,
-                    toProfile: profileId
-                ) ?? .failed
-            },
+            profileAdmission: SpaceActivationProfileAdmission(
+                profileIDs: { [weak tabManager] in
+                    (
+                        current: tabManager?.runtimePorts?.currentProfileId,
+                        default: tabManager?.runtimePorts?.defaultProfileId
+                    )
+                },
+                assignSpaceProfile: { [weak tabManager] spaceId, profileId, settlement in
+                    tabManager?.profileAssignments.spaces.start(
+                        spaceID: spaceId,
+                        profileID: profileId,
+                        settlementObserver: settlement
+                    ) ?? .failed
+                }
+            ),
             activeEssentialTabs: { [weak tabManager] profileId in
                 tabManager?.shortcutPresentationOwner
                     .activeEssentialTabs(for: profileId) ?? []
@@ -57,7 +60,7 @@ extension TabSpaceServices {
                     store: tabManager.splitGroupStore,
                     mutations: tabManager.splitGroupMutations
                 ),
-                liveShortcutTabs: tabManager.liveShortcutTabs,
+                liveShortcutRetirement: tabManager.liveShortcutTabBatchRetirement,
                 runtimeTeardown: tabManager.runtimeTeardown
             ),
             windowStates: DeletedSpaceWindowStateReconciler(

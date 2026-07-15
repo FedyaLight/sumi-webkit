@@ -27,8 +27,8 @@ final class ExtensionToolbarPinningOwnerTests: XCTestCase {
         }
 
         let owner = makeOwner()
-        owner.pinToToolbar("extension-a")
-        owner.pinToToolbar("extension-a")
+        owner.pinToToolbar("extension-a", profileId: firstProfileId)
+        owner.pinToToolbar("extension-a", profileId: firstProfileId)
 
         XCTAssertEqual(publishedPinnedIDs, ["extension-a"])
         XCTAssertEqual(
@@ -42,7 +42,7 @@ final class ExtensionToolbarPinningOwnerTests: XCTestCase {
         owner.reloadPinnedToolbarExtensionsForCurrentProfile()
         XCTAssertTrue(publishedPinnedIDs.isEmpty)
 
-        owner.pinToToolbar("extension-b")
+        owner.pinToToolbar("extension-b", profileId: secondProfileId)
         XCTAssertEqual(publishedPinnedIDs, ["extension-b"])
 
         publishedPinnedIDs = []

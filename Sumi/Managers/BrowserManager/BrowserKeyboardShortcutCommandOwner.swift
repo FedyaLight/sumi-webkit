@@ -113,7 +113,8 @@ final class BrowserKeyboardShortcutCommandOwner {
                     )
                 },
                 setAllFoldersOpen: { [weak browserManager] isOpen, spaceId in
-                    browserManager?.tabManager.folderMutationOwner.setAllFolders(open: isOpen, in: spaceId)
+                    browserManager?.tabManager.folderOpenState
+                        .setAllFolders(open: isOpen, in: spaceId)
                 },
                 persistWindowSession: { [weak browserManager] windowState in
                     browserManager?.windowSessionBundle.persistence.persist(windowState)

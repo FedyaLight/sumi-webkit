@@ -187,6 +187,29 @@ final class FloatingBarServicesTests: XCTestCase {
         XCTAssertFalse(windowState.presentationState.isFloatingBarVisible)
     }
 
+    func testRejectedExistingTabSelectionKeepsFloatingBarOpen() {
+        let windowState = BrowserWindowState()
+        windowState.presentationState.isFloatingBarVisible = true
+        windowState.floatingBarDraftText = "keep me"
+        let presentation = makePresentation()
+        let tab = Tab(loadsCachedFaviconOnInit: false)
+        let commit = makeCommit(
+            presentation: presentation,
+            selectTab: { _, _ in .rejected }
+        )
+
+        commit.commitSuggestion(
+            SearchManager.SearchSuggestion(
+                text: tab.name,
+                type: .tab(tab)
+            ),
+            in: windowState
+        )
+
+        XCTAssertTrue(windowState.presentationState.isFloatingBarVisible)
+        XCTAssertEqual(windowState.floatingBarDraftText, "keep me")
+    }
+
     private func makePresentation(
         registry: WindowRegistry? = nil,
         split: FloatingBarSplitPlaceholderSpy = .init(),
@@ -208,14 +231,20 @@ final class FloatingBarServicesTests: XCTestCase {
         split: FloatingBarSplitPlaceholderSpy = .init(),
         activePageTab: @escaping @MainActor (BrowserWindowState) -> Tab? = { _ in nil },
         settings: SumiSettingsService? = nil,
+        selectTab: @escaping @MainActor (
+            Tab,
+            BrowserWindowState
+        ) -> BrowserTabSelectionOutcome = { _, _ in .committed },
         loadPage: @escaping @MainActor (URL, Tab, BrowserWindowState) -> Void = { _, _, _ in /* no-op */ }
     ) -> FloatingBarCommitService {
         FloatingBarCommitService(
             presentation: presentation,
             tabOpening: { opening },
-            splitPlaceholders: { split },
+            tabTargets: FloatingBarTabTargetCommitter(
+                splitPlaceholders: { split },
+                selectTab: selectTab
+            ),
             activePageTab: activePageTab,
-            selectTab: { _, _ in /* no-op */ },
             pageNavigation: FloatingBarPageNavigationService(
                 settings: { settings },
                 loadPage: loadPage
@@ -262,8 +291,8 @@ private final class FloatingBarSplitPlaceholderSpy:
         return true
     }
 
-    func commit(tabID: UUID, in windowID: UUID) {
-        committed.append(.init(tabID: tabID, windowID: windowID))
+    func commit(_ placeholder: Tab, in windowID: UUID) {
+        committed.append(.init(tabID: placeholder.id, windowID: windowID))
     }
 
     func replace(with _: Tab, in _: BrowserWindowState) -> Bool {

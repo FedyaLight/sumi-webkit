@@ -20,12 +20,13 @@ struct TabLastSessionMergePlanner {
         let finalSpaceIds = Set(orderedSpaceIds)
         let profileBySpace = Dictionary(
             uniqueKeysWithValues: orderedSpaceIds.compactMap { spaceId in
+                if let liveSpace = live.spaces.first(where: { $0.id == spaceId }) {
+                    return (spaceId, liveSpace.profileId)
+                }
                 if let snapshotSpace = snapshotSpacesById[spaceId] {
                     return (spaceId, snapshotSpace.profileId)
                 }
-                return live.spaces.first(where: { $0.id == spaceId }).map {
-                    (spaceId, $0.profileId)
-                }
+                return nil
             }
         )
 

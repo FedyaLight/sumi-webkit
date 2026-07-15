@@ -1,6 +1,6 @@
 import Foundation
-import WebKit
 import SumiWebRuntime
+import WebKit
 
 enum TabWebViewRebuildResult: Equatable {
     case committed
@@ -30,7 +30,6 @@ final class TabWebViewRebuildService {
         let primaryCandidate: (UUID) -> TrackedWebViewOwner?
     }
 
-    private enum ModelError: Error { case stale }
     private let runtime: Runtime
 
     init(runtime: Runtime) {
@@ -96,19 +95,12 @@ final class TabWebViewRebuildService {
         let start = runtime.pipeline.begin(
             [prepared],
             profileIDs: Set([tab.resolveProfile()?.id ?? tab.profileId].compactMap { $0 }),
-            validateModel: {
-                tab.webViewRebuildEpoch.isCurrent(intentRevision)
-            },
-            modelCommit: {
-                guard tab.webViewRebuildEpoch.isCurrent(intentRevision) else {
-                    throw ModelError.stale
-                }
-                tab.cancelPendingMainFrameNavigation()
-                tab.url = targetURL
-            },
-            modelRollback: {
-                tab.url = previousURL
-            },
+            model: .transaction(TabWebViewRebuildModelTransaction(
+                tab: tab,
+                intentRevision: intentRevision,
+                sourceURL: previousURL,
+                targetURL: targetURL
+            )),
             completion: { [weak self] outcome in
                 guard let self, outcome == .committed else { return }
                 self.runtime.activation.finishCommitted(
@@ -143,13 +135,13 @@ final class TabWebViewRebuildService {
                 rebuildKind: rebuildKind
             )
             return .deferred
-        case .stale, .modelCommitFailed:
+        case .stale, .modelValidationFailed:
             discard(prepared)
             return .failed
         case .invalid:
             discard(prepared)
             return .failed
-        case .rolledBack, .settlementConflict, .leaseLost:
+        case .modelCommitFailed, .rolledBack, .settlementConflict, .leaseLost:
             return .failed
         }
     }

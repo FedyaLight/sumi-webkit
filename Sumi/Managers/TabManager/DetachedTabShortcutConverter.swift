@@ -1,5 +1,6 @@
 import Foundation
 import SumiDomain
+import SumiWebRuntime
 
 /// Replaces a regular tab that is not displayed by any browser window with a
 /// durable shortcut definition. It deliberately creates no live shortcut tab;
@@ -20,7 +21,8 @@ final class DetachedTabShortcutConverter {
         membership: TabCollectionMembershipOwner,
         selection: TabSelectionStateOwner,
         structuralLookup: TabStructuralLookupCoordinator,
-        runtimeTeardown: TabRuntimeTeardownService
+        runtimeTeardown: TabRuntimeTeardownService,
+        windowMutations: BrowserWindowShortcutMutationOwner
     ) {
         self.regularTabs = regularTabs
         self.containerRemoval = containerRemoval
@@ -29,7 +31,8 @@ final class DetachedTabShortcutConverter {
         self.structuralLookup = structuralLookup
         self.runtimeTeardown = runtimeTeardown
         windowReconciler = RegularTabShortcutWindowReconciler(
-            regularTabs: regularTabs
+            regularTabs: regularTabs,
+            windowMutations: windowMutations
         )
     }
 
@@ -40,50 +43,27 @@ final class DetachedTabShortcutConverter {
             membership: tabManager.tabCollectionMembershipOwner,
             selection: tabManager.selectionStateOwner,
             structuralLookup: tabManager.structuralLookupCoordinator,
-            runtimeTeardown: tabManager.runtimeTeardown
+            runtimeTeardown: tabManager.runtimeTeardown,
+            windowMutations: tabManager.shortcutWindowMutationOwner
         )
     }
 
-    func apply(
-        to pin: ShortcutPin,
+    func prepare(
         transition: RegularTabShortcutWindowTransitionPlan,
-        using authorization: AuthorizedDetachedTabShortcutConversion
-    ) -> Bool {
-        let tab = authorization.tab
-        let runtime = authorization.runtime
-        let preparedTeardown: PreparedTabRuntimeTeardown?
-        if let runtime {
-            guard let prepared = runtimeTeardown.preparation.prepare(
-                [tab],
-                using: runtime
-            ) else { return false }
-            preparedTeardown = prepared
-        } else {
-            guard tab.performComprehensiveWebViewCleanup() else { return false }
-            preparedTeardown = nil
-        }
-
-        containerRemoval.removeFromCurrentContainer(tab)
-        if runtime == nil {
-            membership.detach(tab)
-        }
-        if selection.currentTab === tab {
-            selection.replaceCurrentTab(nil)
-        }
-        if let runtime, let preparedTeardown {
-            let changedWindows = windowReconciler.reconcile(
-                originalTabId: tab.id,
-                splitTransition: transition,
-                sourceSpaceId: tab.spaceId,
-                liveTabsByWindowId: [:],
-                selectedWindowIds: [],
-                using: runtime
-            )
-            structuralLookup.runAfterCurrentBatch { [runtimeTeardown] in
-                runtimeTeardown.finish(preparedTeardown)
-                changedWindows.forEach(runtime.persistWindowSession(for:))
-            }
-        }
-        return true
+        using authorization: AuthorizedDetachedTabShortcutConversion,
+        participants: RegularTabShortcutCommitParticipants
+    ) -> DetachedTabShortcutConversionReceipt? {
+        DetachedTabShortcutConversionReceipt(
+            transition: transition,
+            authorization: authorization,
+            participants: participants,
+            regularTabs: regularTabs,
+            containerRemoval: containerRemoval,
+            membership: membership,
+            selection: selection,
+            structuralLookup: structuralLookup,
+            runtimeTeardown: runtimeTeardown,
+            windowReconciler: windowReconciler
+        )
     }
 }

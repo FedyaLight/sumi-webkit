@@ -158,7 +158,6 @@ private extension TabLastSessionMergeMaterializer {
                 space.name = restored.name
                 space.icon = SumiPersistentGlyph.normalizedSpaceIconValue(restored.icon)
                 space.workspaceTheme = theme
-                space.profileId = restored.profileId
                 return space
             }
             let space = Space(

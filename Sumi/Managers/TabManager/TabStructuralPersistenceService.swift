@@ -22,6 +22,10 @@ final class TabStructuralPersistenceService {
     private(set) var selectionPersistTask: Task<Void, Never>?
     private var persistRequestID: UInt64 = 0
 
+    /// Monotonic scheduling/cancellation boundary used by exact transaction
+    /// oracles. A rejected structural operation must not advance it.
+    var schedulingRevision: UInt64 { persistRequestID }
+
     init(
         structuralStore: TabStructuralSnapshotStore,
         selectionStore: TabSelectionStore,

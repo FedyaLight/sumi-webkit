@@ -22,4 +22,14 @@ struct ShortcutConversionWindowSessionState: Equatable {
         activeTabForSpace = windowState.activeTabForSpace
         selectedShortcutPinForSpace = windowState.selectedShortcutPinForSpace
     }
+
+    init(_ state: BrowserWindowShortcutMutationState) {
+        currentTabId = state.currentTabId
+        currentSpaceId = state.currentSpaceId
+        currentShortcutPinId = state.currentShortcutPinId
+        currentShortcutPinRole = state.currentShortcutPinRole
+        isShowingEmptyState = state.isShowingEmptyState
+        activeTabForSpace = state.activeTabForSpace
+        selectedShortcutPinForSpace = state.selectedShortcutPinForSpace
+    }
 }

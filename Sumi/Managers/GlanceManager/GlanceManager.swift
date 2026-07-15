@@ -180,23 +180,17 @@ final class GlanceManager: ObservableObject {
         in windowState: BrowserWindowState,
         runtime: Runtime
     ) -> Tab? {
-        if let sourceTabId = snapshot.sourceTabId,
-           let sourceTab = runtime.tab(sourceTabId) {
-            return sourceTab
-        }
-
-        guard let pinId = snapshot.sourceShortcutPinId,
-              let pin = runtime.shortcutPin(pinId)
-        else {
-            return nil
-        }
-
-        return runtime.shortcutLiveTab(pinId, windowState.id)
-            ?? runtime.activateShortcutPin(
+        if let pinId = snapshot.sourceShortcutPinId,
+           let pin = runtime.shortcutPin(pinId) {
+            return runtime.activateShortcutPin(
                 pin,
                 windowState.id,
                 pin.spaceId ?? windowState.currentSpaceId
             )
+        }
+
+        guard let sourceTabId = snapshot.sourceTabId else { return nil }
+        return runtime.tab(sourceTabId)
     }
 
     var canEnterSplitView: Bool {

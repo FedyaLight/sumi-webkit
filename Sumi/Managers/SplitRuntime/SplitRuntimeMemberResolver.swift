@@ -62,32 +62,32 @@ final class SplitRuntimeMemberResolver {
         guard let tabManager = tabManager() else { return nil }
         switch memberID {
         case .regularTab(let tabID):
-            return tabManager.regularTabCollectionOwner.tab(for: tabID)
+            guard let canonical = tabManager.regularTabCollectionOwner.tab(
+                for: tabID
+            ), candidate == nil || candidate === canonical else {
+                return nil
+            }
+            return canonical
 
         case .shortcutPin(let pinID):
-            if let candidate,
-               candidate.shortcutPinId == pinID,
-               candidate.isShortcutLiveInstance,
-               tabManager.tabCollectionMembershipOwner.tab(
-                   for: candidate.id
-               ) != nil {
-                return candidate
-            }
-            if let liveTab = tabManager.liveShortcutTabs.tab(
-                for: pinID,
-                in: windowState.id
-            ) {
-                return liveTab
-            }
             guard let pin = tabManager.shortcutPinCollectionStateOwner
                 .shortcutPin(by: pinID) else {
                 return nil
             }
-            return tabManager.shortcutTabMaterializer.materialize(
+            var activated: Tab?
+            let accepted = tabManager.shortcutPresentationActivation
+                .withActivation(
                 pin,
                 in: windowState.id,
-                currentSpaceId: pin.spaceId ?? windowState.currentSpaceId
-            )
+                presentationSpaceID: pin.spaceId ?? windowState.currentSpaceId
+            ) { liveTab in
+                guard candidate == nil || candidate === liveTab else {
+                    return false
+                }
+                activated = liveTab
+                return true
+            }
+            return accepted ? activated : nil
         }
     }
 

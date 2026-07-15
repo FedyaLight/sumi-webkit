@@ -46,7 +46,6 @@ final class TabSpaceCollectionStateOwnerTests: XCTestCase {
         let sharedId = UUID()
         let stored = Space(id: sharedId, name: "Stored")
         let selected = Space(id: sharedId, name: "Selected")
-        let profileId = UUID()
         let normalizedIcon = SumiPersistentGlyph.normalizedSpaceIconValue("house")
         let owner = TabSpaceCollectionStateOwner()
         owner.replaceSpaces([stored])
@@ -54,14 +53,11 @@ final class TabSpaceCollectionStateOwnerTests: XCTestCase {
 
         owner.renameSpace(spaceId: sharedId, to: "Renamed")
         owner.updateIcon(spaceId: sharedId, to: "house")
-        owner.assignProfile(spaceId: sharedId, profileId: profileId)
 
         XCTAssertEqual(stored.name, "Renamed")
         XCTAssertEqual(selected.name, "Renamed")
         XCTAssertEqual(stored.icon, normalizedIcon)
         XCTAssertEqual(selected.icon, normalizedIcon)
-        XCTAssertEqual(stored.profileId, profileId)
-        XCTAssertEqual(selected.profileId, profileId)
     }
 
     func testRemoveAllClearsSpacesAndSelection() {

@@ -2,13 +2,17 @@ import Foundation
 
 @MainActor
 final class BrowserTabLifecycleService {
-    let selection = BrowserTabSelectionOwner()
+    let selection: BrowserTabSelectionOwner
     let closeFallbackPlanner: BrowserTabCloseFallbackPlanner
     let shortcutLiveTabClose: ShortcutLiveTabCloseService
     let closeOrchestration: BrowserTabCloseOrchestrationOwner
     let opening: BrowserTabOpeningOwner
 
     init(browserManager: BrowserManager) {
+        selection = BrowserTabSelectionOwner(
+            shortcutActivation: browserManager.tabManager
+                .shortcutPresentationActivation
+        )
         let closeFallbackPlanner = BrowserTabCloseFallbackPlanner(
             selectionService: browserManager.shellRuntime.windowSelection
         )

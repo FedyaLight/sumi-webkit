@@ -108,7 +108,7 @@ private extension ShortcutLiveTabClosePersistenceTests {
             pin,
             in: windowState.id,
             currentSpaceId: space.id
-        )
+        )!
         if liveTabIsSelected {
             windowState.currentTabId = liveTab.id
             windowState.currentShortcutPinId = pin.id

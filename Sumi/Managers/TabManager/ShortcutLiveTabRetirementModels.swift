@@ -51,6 +51,8 @@ struct PreparedShortcutLiveTabRetirement {
     let tabs: [Tab]
     let runtime: RuntimePortRegistry?
     let runtimeTeardown: PreparedTabRuntimeTeardown?
+    let committedRuntimeRetirement: CommittedTabRuntimeRetirement?
+    let terminallyDrainedTabIDs: Set<UUID>
     let windowCommitPolicy: ShortcutRetirementWindowCommitPolicy
     var result: ShortcutLiveTabRetirementResult
 
@@ -58,14 +60,35 @@ struct PreparedShortcutLiveTabRetirement {
         tabs: [Tab],
         runtime: RuntimePortRegistry?,
         runtimeTeardown: PreparedTabRuntimeTeardown? = nil,
+        committedRuntimeRetirement: CommittedTabRuntimeRetirement? = nil,
+        terminallyDrainedTabIDs: Set<UUID> = [],
         windowCommitPolicy: ShortcutRetirementWindowCommitPolicy = .callerOwned,
         result: ShortcutLiveTabRetirementResult
     ) {
         precondition(tabs.isEmpty || runtime != nil)
+        precondition(
+            runtimeTeardown == nil || committedRuntimeRetirement == nil,
+            "Shortcut retirement cannot own two terminal runtime effects"
+        )
         self.tabs = tabs
         self.runtime = runtime
         self.runtimeTeardown = runtimeTeardown
+        self.committedRuntimeRetirement = committedRuntimeRetirement
+        self.terminallyDrainedTabIDs = terminallyDrainedTabIDs
         self.windowCommitPolicy = windowCommitPolicy
         self.result = result
     }
+}
+
+/// A typed participant that installs window-local shortcut state inside the
+/// same observation aggregate as launcher placement. Admission and reversible
+/// repository work happen before this point; settlement is infallible once all
+/// participants report that their exact evidence remains current.
+@MainActor
+protocol BrowserWindowShortcutAggregateParticipant: AnyObject {
+    func isCurrentForWindowSettlement() -> Bool
+    func settleAdmittedWindowModel(
+        using owner: BrowserWindowShortcutMutationOwner
+    )
+    func publishAdmittedModel()
 }

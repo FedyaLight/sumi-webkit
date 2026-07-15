@@ -194,6 +194,98 @@ public enum WebViewReplacementSettlementEvent: Equatable {
 
 public typealias WebViewReplacementModelRollback = @MainActor () throws -> Void
 
+/// Result of the exact model/runtime claim made after the repository accepts
+/// a replacement commit but before any retired WebView is physically torn
+/// down. A terminal drain owns the replacement generation; the settlement
+/// service still destroys the already-returned predecessor generation before
+/// reporting lease loss.
+public enum WebViewReplacementTerminalModelClaimOutcome: Equatable {
+    case sealed
+    case terminallyDrained
+}
+
+public typealias WebViewReplacementTerminalModelClaim = @MainActor () ->
+    WebViewReplacementTerminalModelClaimOutcome
+
+/// Exact app-model participant for one repository replacement. The explicit
+/// `noExternalModel` enum case below is the only intentional no-op path.
+@MainActor
+public protocol WebViewReplacementModelTransaction: AnyObject {
+    func validateForStaging() -> Bool
+    func stage() throws
+    func stagedModelIsExact() -> Bool
+    func canClaimTerminalModel() -> Bool
+    func claimTerminalModel() -> WebViewReplacementTerminalModelClaimOutcome
+    func publishCommit()
+    func rollback() throws
+    func publishRollback()
+    /// Terminal repository ownership makes rollback impossible. The exact
+    /// retained app-model witnesses must still leave pending/staged state.
+    func settleTerminalDrain()
+}
+
+@MainActor
+public enum WebViewReplacementModelParticipant {
+    case noExternalModel
+    case transaction(any WebViewReplacementModelTransaction)
+
+    public func validateForStaging() -> Bool {
+        switch self {
+        case .noExternalModel: true
+        case .transaction(let transaction): transaction.validateForStaging()
+        }
+    }
+
+    public func stage() throws {
+        guard case .transaction(let transaction) = self else { return }
+        try transaction.stage()
+    }
+
+    public func stagedModelIsExact() -> Bool {
+        switch self {
+        case .noExternalModel: true
+        case .transaction(let transaction): transaction.stagedModelIsExact()
+        }
+    }
+
+    public func canClaimTerminalModel() -> Bool {
+        switch self {
+        case .noExternalModel: true
+        case .transaction(let transaction):
+            transaction.canClaimTerminalModel()
+        }
+    }
+
+    public func claimTerminalModel()
+        -> WebViewReplacementTerminalModelClaimOutcome {
+        switch self {
+        case .noExternalModel: .sealed
+        case .transaction(let transaction):
+            transaction.claimTerminalModel()
+        }
+    }
+
+    public func publishCommit() {
+        guard case .transaction(let transaction) = self else { return }
+        transaction.publishCommit()
+    }
+
+    public func rollback() throws {
+        guard case .transaction(let transaction) = self else { return }
+        try transaction.rollback()
+    }
+
+    public func publishRollback() {
+        guard case .transaction(let transaction) = self else { return }
+        transaction.publishRollback()
+    }
+
+    public func settleTerminalDrain() {
+        guard case .transaction(let transaction) = self else { return }
+        transaction.settleTerminalDrain()
+    }
+}
+
 /// Narrow port between settlement policy and app-owned repository/physical
 /// effects. The service neither provisions WebViews nor submits navigation.
 public struct WebViewReplacementSettlementRuntime {
@@ -246,7 +338,7 @@ public struct WebViewReplacementSettlementRuntime {
         ) -> Void,
         observeSettlement: @escaping @MainActor (
             WebViewReplacementSettlementEvent
-        ) -> Void = { _ in }
+        ) -> Void
     ) {
         self.validateCommitLease = validateCommitLease
         self.commitLease = commitLease

@@ -87,6 +87,7 @@ extension WindowSidebarContext {
             structure: tabManager.spacePinnedStructureOwner,
             shortcutCommands: tabManager.shortcutPinCommandOwner,
             folderCommands: tabManager.folderMutationOwner,
+            folderOpenState: tabManager.folderOpenState,
             materializer: tabManager.shortcutTabMaterializer,
             profileAssignments: tabManager.profileAssignments.shortcuts
         )
@@ -97,9 +98,12 @@ extension WindowSidebarContext {
             removal: tabManager.spaceServices.removal
         )
         let shortcutInsertion = ShortcutURLInsertionService(
-            store: tabManager.shortcutPinStoreOwner,
-            materializer: tabManager.shortcutTabMaterializer,
-            structuralLookup: tabManager.structuralLookupCoordinator,
+            transaction: ShortcutURLInsertionTransaction(
+                store: tabManager.shortcutPinStoreOwner,
+                activation: tabManager.shortcutPresentationActivation,
+                structuralMutations: tabManager.structuralCollectionMutationOwner,
+                structuralLookup: tabManager.structuralLookupCoordinator
+            ),
             prepareActivation: { [weak browserManager] windowState in
                 guard let browserManager,
                       browserManager.windowRegistry?.windows[windowState.id] === windowState

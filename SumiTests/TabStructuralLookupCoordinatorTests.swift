@@ -89,7 +89,12 @@ final class TabStructuralLookupCoordinatorTests: XCTestCase {
                     LiveShortcutTabEntry(
                         windowId: windowID,
                         pinId: pinID,
-                        tab: tab
+                        tab: tab,
+                        presentationPage: LiveShortcutPresentationPageReceipt(
+                            windowID: windowID,
+                            spaceID: spaceID,
+                            profileID: profileID
+                        )
                     ),
                 ]
             )
@@ -98,11 +103,11 @@ final class TabStructuralLookupCoordinatorTests: XCTestCase {
         XCTAssertEqual(
             scopes,
             [
-                TabStructureChangeScope.liveShortcut(
+                .page(TabStructurePageScope(
                     windowID: windowID,
                     spaceID: spaceID,
                     profileID: profileID
-                ),
+                )),
             ]
         )
     }

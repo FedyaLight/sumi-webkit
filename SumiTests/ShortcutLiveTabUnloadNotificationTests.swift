@@ -60,7 +60,7 @@ final class ShortcutLiveTabUnloadNotificationTests: XCTestCase {
             pin,
             in: windowState.id,
             currentSpaceId: space.id
-        )
+        )!
         windowState.currentTabId = liveTab.id
         windowState.currentShortcutPinId = pin.id
         windowState.currentShortcutPinRole = pin.role

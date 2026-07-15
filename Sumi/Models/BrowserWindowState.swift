@@ -86,6 +86,12 @@ class BrowserWindowState {
     /// Unique identifier for this window instance
     let id: UUID
 
+    /// Shortcut conversion composes these tightly coupled durable fields as one
+    /// value. Ordinary setters retain field-scoped Observation; aggregate
+    /// transactions can install the complete value before publishing any key.
+    @ObservationIgnored
+    private var shortcutMutationState = BrowserWindowShortcutMutationState()
+
     /// Runtime-only presentation, restoration and split-focus authorities.
     /// Durable selection/sidebar/split values remain the session state below.
     let presentationState = WindowPresentationState()
@@ -105,22 +111,83 @@ class BrowserWindowState {
     }
 
     /// Currently active tab in this window
-    var currentTabId: UUID?
+    var currentTabId: UUID? {
+        get {
+            access(keyPath: \.currentTabId)
+            return shortcutMutationState.currentTabId
+        }
+        set {
+            guard shortcutMutationState.currentTabId != newValue else { return }
+            withMutation(keyPath: \.currentTabId) {
+                shortcutMutationState.currentTabId = newValue
+            }
+        }
+    }
 
     /// Currently active space in this window
-    var currentSpaceId: UUID?
+    var currentSpaceId: UUID? {
+        get {
+            access(keyPath: \.currentSpaceId)
+            return shortcutMutationState.currentSpaceId
+        }
+        set {
+            guard shortcutMutationState.currentSpaceId != newValue else { return }
+            withMutation(keyPath: \.currentSpaceId) {
+                shortcutMutationState.currentSpaceId = newValue
+            }
+        }
+    }
 
     /// Currently active profile in this window
     var currentProfileId: UUID?
 
     /// Currently active shortcut pin in this window, if the current tab is a transient pin-backed page
-    var currentShortcutPinId: UUID?
+    var currentShortcutPinId: UUID? {
+        get {
+            access(keyPath: \.currentShortcutPinId)
+            return shortcutMutationState.currentShortcutPinId
+        }
+        set {
+            guard shortcutMutationState.currentShortcutPinId != newValue else {
+                return
+            }
+            withMutation(keyPath: \.currentShortcutPinId) {
+                shortcutMutationState.currentShortcutPinId = newValue
+            }
+        }
+    }
 
     /// Role of the currently active shortcut pin
-    var currentShortcutPinRole: ShortcutPinRole?
+    var currentShortcutPinRole: ShortcutPinRole? {
+        get {
+            access(keyPath: \.currentShortcutPinRole)
+            return shortcutMutationState.currentShortcutPinRole
+        }
+        set {
+            guard shortcutMutationState.currentShortcutPinRole != newValue else {
+                return
+            }
+            withMutation(keyPath: \.currentShortcutPinRole) {
+                shortcutMutationState.currentShortcutPinRole = newValue
+            }
+        }
+    }
 
     /// Whether this window is intentionally showing an empty page state instead of a live tab
-    var isShowingEmptyState: Bool = false
+    var isShowingEmptyState: Bool {
+        get {
+            access(keyPath: \.isShowingEmptyState)
+            return shortcutMutationState.isShowingEmptyState
+        }
+        set {
+            guard shortcutMutationState.isShowingEmptyState != newValue else {
+                return
+            }
+            withMutation(keyPath: \.isShowingEmptyState) {
+                shortcutMutationState.isShowingEmptyState = newValue
+            }
+        }
+    }
 
     /// Durable restoration intent for the floating bar. Physical visibility
     /// remains runtime-only in `presentationState`.
@@ -146,20 +213,68 @@ class BrowserWindowState {
 
     /// Split group and pane selected in this window. Runtime presentation maps
     /// the durable member identity to this window's exact live tab.
-    var splitSelection: WindowSplitSelection?
+    var splitSelection: WindowSplitSelection? {
+        get {
+            access(keyPath: \.splitSelection)
+            return shortcutMutationState.splitSelection
+        }
+        set {
+            guard shortcutMutationState.splitSelection != newValue else { return }
+            withMutation(keyPath: \.splitSelection) {
+                shortcutMutationState.splitSelection = newValue
+            }
+        }
+    }
 
     /// Window-scoped AppKit coordinator for sidebar context menus.
     @ObservationIgnored
     let sidebarContextMenuController: SidebarContextMenuController
 
     /// Active tab for each space in this window (spaceId -> tabId)
-    var activeTabForSpace: [UUID: UUID] = [:]
+    var activeTabForSpace: [UUID: UUID] {
+        get {
+            access(keyPath: \.activeTabForSpace)
+            return shortcutMutationState.activeTabForSpace
+        }
+        set {
+            guard shortcutMutationState.activeTabForSpace != newValue else {
+                return
+            }
+            withMutation(keyPath: \.activeTabForSpace) {
+                shortcutMutationState.activeTabForSpace = newValue
+            }
+        }
+    }
 
     /// Most recently selected non-essential live shortcut for each space in this window.
-    var selectedShortcutPinForSpace: [UUID: UUID] = [:]
+    var selectedShortcutPinForSpace: [UUID: UUID] {
+        get {
+            access(keyPath: \.selectedShortcutPinForSpace)
+            return shortcutMutationState.selectedShortcutPinForSpace
+        }
+        set {
+            guard shortcutMutationState.selectedShortcutPinForSpace != newValue else {
+                return
+            }
+            withMutation(keyPath: \.selectedShortcutPinForSpace) {
+                shortcutMutationState.selectedShortcutPinForSpace = newValue
+            }
+        }
+    }
 
     /// Window-scoped regular-tab and shortcut selection history.
-    var selectionHistory = WindowSelectionHistory()
+    var selectionHistory: WindowSelectionHistory {
+        get {
+            access(keyPath: \.selectionHistory)
+            return shortcutMutationState.selectionHistory
+        }
+        set {
+            guard shortcutMutationState.selectionHistory != newValue else { return }
+            withMutation(keyPath: \.selectionHistory) {
+                shortcutMutationState.selectionHistory = newValue
+            }
+        }
+    }
 
     /// Sidebar width for this window
     var sidebarWidth: CGFloat = BrowserWindowState.sidebarDefaultWidth
@@ -193,6 +308,64 @@ class BrowserWindowState {
     /// Reference to TabManager for computed properties
     /// Set by BrowserManager during window registration
     weak var tabManager: TabManager?
+
+    var unpublishedShortcutMutationState: BrowserWindowShortcutMutationState {
+        var state = shortcutMutationState
+        state.webKitChildWindowIdentity = webKitChildWindowIdentity
+        return state
+    }
+
+    @discardableResult
+    func commitShortcutMutationState(
+        _ target: BrowserWindowShortcutMutationState
+    ) -> Bool {
+        let previous = unpublishedShortcutMutationState
+        guard previous != target else { return false }
+        installUnpublishedShortcutMutationState(target)
+        publishShortcutMutation(from: previous, to: target)
+        return true
+    }
+
+    func installUnpublishedShortcutMutationState(
+        _ state: BrowserWindowShortcutMutationState
+    ) {
+        shortcutMutationState = state
+        webKitChildWindowIdentity = state.webKitChildWindowIdentity
+    }
+
+    func publishShortcutMutation(
+        from previous: BrowserWindowShortcutMutationState,
+        to target: BrowserWindowShortcutMutationState
+    ) {
+        if previous.currentTabId != target.currentTabId {
+            withMutation(keyPath: \.currentTabId) {}
+        }
+        if previous.currentSpaceId != target.currentSpaceId {
+            withMutation(keyPath: \.currentSpaceId) {}
+        }
+        if previous.currentShortcutPinId != target.currentShortcutPinId {
+            withMutation(keyPath: \.currentShortcutPinId) {}
+        }
+        if previous.currentShortcutPinRole != target.currentShortcutPinRole {
+            withMutation(keyPath: \.currentShortcutPinRole) {}
+        }
+        if previous.isShowingEmptyState != target.isShowingEmptyState {
+            withMutation(keyPath: \.isShowingEmptyState) {}
+        }
+        if previous.splitSelection != target.splitSelection {
+            withMutation(keyPath: \.splitSelection) {}
+        }
+        if previous.activeTabForSpace != target.activeTabForSpace {
+            withMutation(keyPath: \.activeTabForSpace) {}
+        }
+        if previous.selectedShortcutPinForSpace
+            != target.selectedShortcutPinForSpace {
+            withMutation(keyPath: \.selectedShortcutPinForSpace) {}
+        }
+        if previous.selectionHistory != target.selectionHistory {
+            withMutation(keyPath: \.selectionHistory) {}
+        }
+    }
 
     // MARK: - Incognito/Ephemeral State
 

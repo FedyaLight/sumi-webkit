@@ -2,6 +2,8 @@ import Foundation
 
 @MainActor
 final class TabFaviconPresentationRefreshOwner {
+    static let defaultDebounceNanoseconds: UInt64 = 250_000_000
+
     private let notificationCenter: NotificationCenter
     private let debounceNanoseconds: UInt64
     private let tabsNeedingRefresh: () -> [Tab]
@@ -11,7 +13,8 @@ final class TabFaviconPresentationRefreshOwner {
 
     init(
         notificationCenter: NotificationCenter,
-        debounceNanoseconds: UInt64,
+        debounceNanoseconds: UInt64 = TabFaviconPresentationRefreshOwner
+            .defaultDebounceNanoseconds,
         tabsNeedingRefresh: @escaping () -> [Tab]
     ) {
         self.notificationCenter = notificationCenter

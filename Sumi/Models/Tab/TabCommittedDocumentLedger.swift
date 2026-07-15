@@ -418,7 +418,7 @@ final class TabCommittedDocumentLedger {
         var pageVeto = false
         var pictureInPictureVeto = false
 
-        for (webViewID, replica) in replicasByWebViewID {
+        for replica in replicasByWebViewID.values {
             guard replica.webViewReference.resolve() != nil else { continue }
             guard isCanonicalReplica(replica.document) else { continue }
             hasCanonicalReplica = true

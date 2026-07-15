@@ -211,7 +211,16 @@ public enum WebViewReplacementBatchBeginResult {
     case stale(tabID: UUID, currentGeneration: UInt64)
     case conflict(tabID: UUID)
     case invalid(tabID: UUID?)
-    case modelCommitFailed
+    /// Model admission rejected before repository apply. The caller retains
+    /// ownership of every prepared replacement.
+    case modelValidationFailed
+    /// Model commit was compensated and repository ownership was restored.
+    /// The caller now owns physical cleanup of the discarded generation.
+    case modelCommitFailed(discarded: [UUID: WebViewSessionSnapshot])
+    /// Model compensation failed while the repository still owned both
+    /// generations. The lease remains quarantined until terminal drain.
+    case modelRollbackFailed(WebViewReplacementBatchLease)
+    case noLongerActive
 }
 
 public enum WebViewReplacementBatchCommitResult {
@@ -222,6 +231,11 @@ public enum WebViewReplacementBatchCommitResult {
 
 public enum WebViewReplacementBatchRollbackResult {
     case rolledBack(discarded: [UUID: WebViewSessionSnapshot])
+    /// Terminal repository ownership already consumed both generations.
+    case terminallyDrained
+    /// Model compensation failed before repository restoration. Both
+    /// generations remain quarantined under the claimed rollback lease.
+    case modelRollbackFailed
     case noLongerActive
     case conflict(tabID: UUID, currentGeneration: UInt64)
 }

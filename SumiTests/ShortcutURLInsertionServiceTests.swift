@@ -87,16 +87,127 @@ final class ShortcutURLInsertionServiceTests: XCTestCase {
         withExtendedLifetime(cancellable) {}
     }
 
+    func testLatePresentationRejectionRollsBackInsertedPinWithoutEffects() throws {
+        let tabManager = try makeInMemoryTabManager()
+        let spaceProfileID = UUID()
+        let mismatchedProfileID = UUID()
+        let space = tabManager.spaceServices.catalog.createSpace(
+            name: "Drop",
+            profileId: spaceProfileID
+        )
+        let window = BrowserWindowState()
+        window.currentSpaceId = space.id
+        var publishCount = 0
+        let cancellable = tabManager.tabStructureEventBus
+            .structureChangedPublisher.sink { publishCount += 1 }
+        let service = makeService(tabManager: tabManager) { _ in
+            { _ in /* no-op */ }
+        }
+        publishCount = 0
+        let revision = tabManager.structuralLookupCoordinator.mutationRevision
+        let dirtyBefore = tabManager.structuralPersistence.dirtySet
+
+        let inserted = service.insert(
+            URL(string: "https://late-rejection.example")!,
+            placement: ShortcutURLPlacement(
+                role: .essential,
+                profileID: mismatchedProfileID,
+                executionProfileID: nil,
+                spaceID: nil,
+                folderID: nil,
+                index: 0,
+                openTargetFolder: false
+            ),
+            in: window
+        )
+
+        XCTAssertFalse(inserted)
+        XCTAssertTrue(
+            tabManager.shortcutPinCollectionStateOwner
+                .essentialPins(for: mismatchedProfileID).isEmpty
+        )
+        XCTAssertTrue(tabManager.liveShortcutTabs.snapshot[window.id]?.isEmpty ?? true)
+        XCTAssertNil(window.currentTabId)
+        XCTAssertNil(window.currentShortcutPinId)
+        XCTAssertEqual(publishCount, 0)
+        XCTAssertEqual(
+            tabManager.structuralLookupCoordinator.mutationRevision,
+            revision
+        )
+        XCTAssertEqual(
+            tabManager.structuralPersistence.dirtySet.dirtyTabIds,
+            dirtyBefore.dirtyTabIds
+        )
+        XCTAssertEqual(
+            tabManager.structuralPersistence.dirtySet.dirtySpaceIds,
+            dirtyBefore.dirtySpaceIds
+        )
+        withExtendedLifetime(cancellable) {}
+    }
+
+    func testLateActivationSettlementRejectionDoesNotSelectOrQueueActivation() throws {
+        let tabManager = try makeInMemoryTabManager()
+        let profileID = UUID()
+        let space = tabManager.spaceServices.catalog.createSpace(
+            name: "Drop",
+            profileId: profileID
+        )
+        let window = BrowserWindowState()
+        window.currentSpaceId = space.id
+        let stagedTab = Tab(loadsCachedFaviconOnInit: false)
+        var activationCount = 0
+        let service = makeService(
+            tabManager: tabManager,
+            activation: LateRejectingShortcutActivation(tab: stagedTab)
+        ) { _ in
+            { _ in activationCount += 1 }
+        }
+        let revision = tabManager.structuralLookupCoordinator.mutationRevision
+        let dirtyBefore = tabManager.structuralPersistence.dirtySet
+
+        let inserted = service.insert(
+            URL(string: "https://late-settlement.example")!,
+            placement: placement(space: space, profileID: profileID),
+            in: window
+        )
+
+        XCTAssertFalse(inserted)
+        XCTAssertNil(window.currentTabId)
+        XCTAssertNil(window.currentShortcutPinId)
+        XCTAssertEqual(activationCount, 0)
+        XCTAssertTrue(
+            tabManager.shortcutPinCollectionStateOwner
+                .spacePinnedPins(for: space.id).isEmpty
+        )
+        XCTAssertEqual(
+            tabManager.structuralLookupCoordinator.mutationRevision,
+            revision
+        )
+        XCTAssertEqual(
+            tabManager.structuralPersistence.dirtySet.dirtyTabIds,
+            dirtyBefore.dirtyTabIds
+        )
+        XCTAssertEqual(
+            tabManager.structuralPersistence.dirtySet.dirtySpaceIds,
+            dirtyBefore.dirtySpaceIds
+        )
+    }
+
     private func makeService(
         tabManager: TabManager,
+        activation: (any ShortcutPresentationActivating)? = nil,
         prepareActivation: @escaping @MainActor @Sendable (
             BrowserWindowState
         ) -> (@MainActor @Sendable (Tab) -> Void)?
     ) -> ShortcutURLInsertionService {
         ShortcutURLInsertionService(
-            store: tabManager.shortcutPinStoreOwner,
-            materializer: tabManager.shortcutTabMaterializer,
-            structuralLookup: tabManager.structuralLookupCoordinator,
+            transaction: ShortcutURLInsertionTransaction(
+                store: tabManager.shortcutPinStoreOwner,
+                activation: activation
+                    ?? tabManager.shortcutPresentationActivation,
+                structuralMutations: tabManager.structuralCollectionMutationOwner,
+                structuralLookup: tabManager.structuralLookupCoordinator
+            ),
             prepareActivation: prepareActivation,
             schedulePersistence: {}
         )
@@ -115,6 +226,26 @@ final class ShortcutURLInsertionServiceTests: XCTestCase {
             index: 0,
             openTargetFolder: true
         )
+    }
+}
+
+@MainActor
+private final class LateRejectingShortcutActivation:
+    ShortcutPresentationActivating {
+    private let tab: Tab
+
+    init(tab: Tab) {
+        self.tab = tab
+    }
+
+    func withActivation(
+        _: ShortcutPin,
+        in _: UUID,
+        presentationSpaceID _: UUID?,
+        applying downstream: (Tab) -> Bool
+    ) -> Bool {
+        _ = downstream(tab)
+        return false
     }
 }
 

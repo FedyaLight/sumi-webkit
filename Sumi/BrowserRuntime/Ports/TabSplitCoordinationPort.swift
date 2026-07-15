@@ -1,19 +1,27 @@
 import Foundation
 
+/// Terminal presentation half of an already-committed split closure. Runtime
+/// cleanup owns this receipt and publishes only after the retired Tab can no
+/// longer affect a same-UUID replacement.
+@MainActor
+protocol TabSplitClosureSettlement: AnyObject {
+    func publish()
+}
+
 @MainActor
 protocol TabSplitCoordinationPort {
     func handleTabClosure(_ tabId: UUID)
-    func handleTabClosures(_ tabIds: Set<UUID>)
+    func stageTabClosures(
+        _ tabIds: Set<UUID>
+    ) -> (any TabSplitClosureSettlement)?
     func visibleSplitTabIds(for windowId: UUID) -> [UUID]
     func isTabVisibleInSplit(_ tabId: UUID, in windowId: UUID) -> Bool
     func isTabActiveInSplit(_ tabId: UUID, in windowId: UUID) -> Bool
 }
 
 extension TabSplitCoordinationPort {
-    func handleTabClosures(_ tabIds: Set<UUID>) {
-        for tabId in tabIds {
-            handleTabClosure(tabId)
-        }
+    func handleTabClosure(_ tabId: UUID) {
+        stageTabClosures([tabId])?.publish()
     }
 }
 
@@ -30,12 +38,10 @@ struct LiveTabSplitCoordinationPort: TabSplitCoordinationPort {
         self.query = query
     }
 
-    func handleTabClosure(_ tabId: UUID) {
-        tabClosures.handle(tabId)
-    }
-
-    func handleTabClosures(_ tabIds: Set<UUID>) {
-        tabClosures.handle(tabIds)
+    func stageTabClosures(
+        _ tabIds: Set<UUID>
+    ) -> (any TabSplitClosureSettlement)? {
+        tabClosures.stage(tabIds)
     }
 
     func visibleSplitTabIds(for windowId: UUID) -> [UUID] {

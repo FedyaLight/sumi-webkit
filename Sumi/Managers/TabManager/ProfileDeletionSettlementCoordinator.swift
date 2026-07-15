@@ -114,7 +114,7 @@ final class ProfileDeletionSettlementCoordinator {
                         runID: run.id
                     )
                 }
-                if let settlement = immediateSettlement(for: outcome) {
+        if let settlement = outcome.immediateSettlement {
                     record(
                         settlement,
                         operationID: operation.id,
@@ -162,21 +162,6 @@ final class ProfileDeletionSettlementCoordinator {
             run.operationsByID[operationID]?.cancelPending()
         }
         run.continuation.resume(returning: .timedOut)
-    }
-
-    private func immediateSettlement(
-        for outcome: TabProfileAssignmentExecutionOutcome
-    ) -> ProfileTransitionSettlement? {
-        switch outcome {
-        case .committed:
-            return .committed
-        case .stale:
-            return .rejected(.stale)
-        case .failed:
-            return .rejected(.failed)
-        case .deferred:
-            return nil
-        }
     }
 
     private func operationOrder(

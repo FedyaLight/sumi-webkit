@@ -83,28 +83,16 @@ final class DetachedWebViewReplacementService {
         let start = pipeline.begin(
             [prepared],
             profileIDs: Set([prepared.profileID].compactMap { $0 }),
-            validateModel: {
-                let current = self.webViewSessions.snapshot(for: tab.id)
-                return current.generation == snapshot.generation
-                    && current.windowWebViews.isEmpty
-                    && (
-                        residence == .untracked
-                            ? current.untrackedWebView === previous
-                            : current.parkedWebView === previous
-                                && current.untrackedWebView == nil
-                    )
-            },
-            modelCommit: {},
-            modelRollback: {},
+            model: .noExternalModel,
             completion: { _ in }
         )
 
         switch start {
         case .committed:
             return .committed
-        case .stale, .conflict, .invalid, .modelCommitFailed:
+        case .stale, .conflict, .invalid, .modelValidationFailed:
             return .rejected
-        case .rolledBack, .settlementConflict, .leaseLost:
+        case .modelCommitFailed, .rolledBack, .settlementConflict, .leaseLost:
             return .consumedByFailedTransaction
         case .started:
             preconditionFailure(

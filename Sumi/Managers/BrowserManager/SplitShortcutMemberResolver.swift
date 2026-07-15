@@ -3,7 +3,6 @@ import SumiDomain
 
 struct SplitShortcutMemberResolution {
     let member: SplitMember
-    let restoredLiveTab: Tab?
 }
 
 /// Resolves an exact durable shortcut member without accepting live-tab IDs.
@@ -21,10 +20,6 @@ enum SplitShortcutMemberResolver {
                 .shortcutPin(by: pinID) != nil else {
             return nil
         }
-        return SplitShortcutMemberResolution(
-            member: member,
-            restoredLiveTab: tabManager.shortcutPresentationOwner
-                .shortcutLiveTab(for: pinID, in: windowState.id)
-        )
+        return SplitShortcutMemberResolution(member: member)
     }
 }

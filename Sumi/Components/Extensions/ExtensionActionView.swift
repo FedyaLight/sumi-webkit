@@ -163,7 +163,8 @@ private struct HubExtensionTilesGrid: View {
                 browserContext.extensionsModule.moveUnpinnedExtension(
                     id: move.id,
                     to: move.targetIndex,
-                    within: base.map(\.id)
+                    within: base.map(\.id),
+                    profileId: profileId
                 )
             },
             content: { surface in
@@ -218,21 +219,8 @@ private struct HubExtensionTilesGrid: View {
         )
     }
 
-    /// Unpinned, enabled, action-bearing extensions in their persisted hub
-    /// order (falling back to the incoming order for any not yet ordered).
     private var hubExtensions: [BrowserExtensionToolbarDisplayRecord] {
-        let candidates = extensions
-            .filter { $0.isEnabled && $0.hasAction }
-
-        let orderedIDs = browserContext.extensionsModule.orderedUnpinnedExtensionIDs(
-            candidateIDs: candidates.map(\.id),
-            profileId: profileId
-        )
-        let candidatesByID = Dictionary(
-            candidates.map { ($0.id, $0) },
-            uniquingKeysWith: { first, _ in first }
-        )
-        return orderedIDs.compactMap { candidatesByID[$0] }
+        extensions.filter { $0.isEnabled && $0.hasAction }
     }
 }
 
@@ -253,7 +241,8 @@ private struct SidebarExtensionActionGrid: View {
             onCommit: { move in
                 browserContext.extensionsModule.movePinnedToolbarSlot(
                     id: move.id,
-                    to: move.targetIndex
+                    to: move.targetIndex,
+                    profileId: profileId
                 )
             },
             content: { surface in
@@ -365,7 +354,8 @@ private struct CompactExtensionActionStrip: View {
             onCommit: { move in
                 browserContext.extensionsModule.movePinnedToolbarSlot(
                     id: move.id,
-                    to: move.targetIndex
+                    to: move.targetIndex,
+                    profileId: profileId
                 )
             },
             content: { surface in

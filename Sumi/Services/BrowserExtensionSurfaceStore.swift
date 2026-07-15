@@ -193,11 +193,23 @@ struct BrowserExtensionToolbarDisplaySnapshot: Equatable {
 struct BrowserExtensionToolbarPresentationSnapshot: Equatable {
     let display: BrowserExtensionToolbarDisplaySnapshot
     let pinnedExtensionIDs: [String]
+    let unpinnedExtensionIDs: [String]
 
     static let empty = Self(
         display: .empty,
-        pinnedExtensionIDs: []
+        pinnedExtensionIDs: [],
+        unpinnedExtensionIDs: []
     )
+
+    init(
+        display: BrowserExtensionToolbarDisplaySnapshot,
+        pinnedExtensionIDs: [String],
+        unpinnedExtensionIDs: [String]
+    ) {
+        self.display = display
+        self.pinnedExtensionIDs = pinnedExtensionIDs
+        self.unpinnedExtensionIDs = unpinnedExtensionIDs
+    }
 
     var extensions: [BrowserExtensionToolbarDisplayRecord] {
         display.extensions
@@ -210,9 +222,15 @@ struct BrowserExtensionToolbarPresentationSnapshot: Equatable {
     var unpinnedEnabledActionExtensions:
         [BrowserExtensionToolbarDisplayRecord] {
         let pinnedIDs = Set(pinnedExtensionIDs)
-        return enabledExtensions
+        let candidates = enabledExtensions
             .filter(\.hasAction)
             .filter { pinnedIDs.contains($0.id) == false }
+        let candidatesByID = Dictionary(
+            uniqueKeysWithValues: candidates.map { ($0.id, $0) }
+        )
+        let ordered = unpinnedExtensionIDs.compactMap { candidatesByID[$0] }
+        let orderedIDs = Set(ordered.map(\.id))
+        return ordered + candidates.filter { orderedIDs.contains($0.id) == false }
     }
 }
 

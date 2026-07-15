@@ -4,8 +4,8 @@ import XCTest
 
 @MainActor
 final class TabTransientTabRegistryOwnerTests: XCTestCase {
-    func testTransientShortcutTabsCanBePrunedBySpaceAndRemovedByTabId() {
-        let owner = TabTransientTabRegistryOwner()
+    func testLiveShortcutResidenceStoreRetainsReceiptsThroughRemoval() {
+        let store = LiveShortcutTabResidenceStore()
         let firstWindowId = UUID()
         let secondWindowId = UUID()
         let firstPinId = UUID()
@@ -15,25 +15,47 @@ final class TabTransientTabRegistryOwnerTests: XCTestCase {
         let keptTab = makeTab(spaceId: keptSpaceId)
         let removedTab = makeTab(spaceId: removedSpaceId)
 
-        owner.updateTransientShortcutTabsByWindow { tabsByWindow in
-            tabsByWindow[firstWindowId] = [firstPinId: keptTab]
-            tabsByWindow[secondWindowId] = [secondPinId: removedTab]
+        let keptPage = LiveShortcutPresentationPageReceipt(
+            windowID: firstWindowId,
+            spaceID: keptSpaceId,
+            profileID: nil
+        )
+        let removedPage = LiveShortcutPresentationPageReceipt(
+            windowID: secondWindowId,
+            spaceID: removedSpaceId,
+            profileID: nil
+        )
+        XCTAssertNotNil(store.register(
+            keptTab,
+            for: firstPinId,
+            in: firstWindowId,
+            presentationPage: keptPage
+        ))
+        XCTAssertNotNil(store.register(
+            removedTab,
+            for: secondPinId,
+            in: secondWindowId,
+            presentationPage: removedPage
+        ))
+
+        let removed = store.removeAll {
+            $0.presentationPage.page.spaceID == removedSpaceId
         }
 
-        owner.removeTransientShortcutTabs(inSpace: removedSpaceId)
-
         XCTAssertIdentical(
-            owner.transientShortcutTabsByWindow[firstWindowId]?[firstPinId],
+            store.tabsByWindow[firstWindowId]?[firstPinId],
             keptTab
         )
-        XCTAssertNil(owner.transientShortcutTabsByWindow[secondWindowId])
+        XCTAssertEqual(removed.map(\.presentationPage), [removedPage])
+        XCTAssertNil(store.tabsByWindow[secondWindowId])
 
-        let removal = owner.removeTransientShortcutTab(tabId: keptTab.id)
+        let removal = store.remove(tabId: keptTab.id)
 
         XCTAssertEqual(removal?.windowId, firstWindowId)
         XCTAssertEqual(removal?.pinId, firstPinId)
         XCTAssertIdentical(removal?.tab, keptTab)
-        XCTAssertTrue(owner.transientShortcutTabsByWindow.isEmpty)
+        XCTAssertEqual(removal?.presentationPage, keptPage)
+        XCTAssertTrue(store.tabsByWindow.isEmpty)
     }
 
     func testTransientExtensionTabsRegisterRemoveAndPromote() {

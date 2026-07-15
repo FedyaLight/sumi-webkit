@@ -11,27 +11,14 @@ enum WindowSplitSessionWriteUrgency {
 /// called; it never chooses or mutates shared split topology.
 @MainActor
 final class WindowSplitPresentationSynchronizer {
-    private struct PersistedSelectionState: Equatable {
-        let tabState: ShortcutConversionWindowSessionState
-        let splitSelection: WindowSplitSelection?
-
-        @MainActor
-        init(_ windowState: BrowserWindowState) {
-            tabState = ShortcutConversionWindowSessionState(windowState)
-            splitSelection = windowState.splitSelection
-        }
-    }
-
     private let tabManager: @MainActor () -> TabManager?
     private let windows: @MainActor () -> [BrowserWindowState]
     private let selectTabWithoutPersistence: @MainActor (
         Tab,
         BrowserWindowState
     ) -> Void
-    private let publishWindowChange: @MainActor (UUID) -> Void
-    private let refreshCompositor: @MainActor (BrowserWindowState) -> Void
-    private let scheduleWindowSession: @MainActor (BrowserWindowState) -> Void
-    private let persistWindowSession: @MainActor (BrowserWindowState) -> Void
+    private let terminalEffects:
+        WindowSplitPresentationEffectExecutor
 
     init(
         tabManager: @escaping @MainActor () -> TabManager?,
@@ -40,7 +27,13 @@ final class WindowSplitPresentationSynchronizer {
             Tab,
             BrowserWindowState
         ) -> Void,
-        publishWindowChange: @escaping @MainActor (UUID) -> Void = { _ in },
+        publishPreparedSelectionEffects: @escaping @MainActor (
+            Tab,
+            BrowserWindowState,
+            UUID?,
+            UUID?
+        ) -> Void,
+        publishWindowChange: @escaping @MainActor (UUID) -> Void,
         refreshCompositor: @escaping @MainActor (BrowserWindowState) -> Void,
         scheduleWindowSession: @escaping @MainActor (BrowserWindowState) -> Void,
         persistWindowSession: @escaping @MainActor (BrowserWindowState) -> Void
@@ -48,10 +41,71 @@ final class WindowSplitPresentationSynchronizer {
         self.tabManager = tabManager
         self.windows = windows
         self.selectTabWithoutPersistence = selectTabWithoutPersistence
-        self.publishWindowChange = publishWindowChange
-        self.refreshCompositor = refreshCompositor
-        self.scheduleWindowSession = scheduleWindowSession
-        self.persistWindowSession = persistWindowSession
+        terminalEffects = WindowSplitPresentationEffectExecutor(
+            publishPreparedSelectionEffects: publishPreparedSelectionEffects,
+            publishWindowChange: publishWindowChange,
+            refreshCompositor: refreshCompositor,
+            scheduleWindowSession: scheduleWindowSession,
+            persistWindowSession: persistWindowSession
+        )
+    }
+
+    /// Prepares the complete window-local half of a split topology aggregate.
+    /// The caller must already have installed `replacementGroups` in the raw
+    /// split store. Shortcut materialization, final window selection and all
+    /// outward effects remain owned by the returned receipt.
+    func prepareSettlement(
+        previousGroups: [SumiDomain.SplitGroup],
+        replacementGroups: [SumiDomain.SplitGroup],
+        affectedGroupIDs: Set<UUID>,
+        standaloneMembers: [UUID: SplitMemberID] = [:],
+        unavailableMembers: [UUID: Set<SplitMemberID>] = [:],
+        requiredWindows: [UUID: BrowserWindowState] = [:],
+        terminalParticipants: WindowSplitPresentationTerminalParticipants,
+        sessionWriteUrgency: WindowSplitSessionWriteUrgency = .scheduled
+    ) -> PreparedWindowSplitPresentationSettlement? {
+        guard let tabManager = tabManager(),
+              tabManager.splitGroupStore.groups == replacementGroups else {
+            return nil
+        }
+        guard let draft = WindowSplitPresentationDraftPlanner().prepare(
+            .init(
+                previousGroups: previousGroups,
+                replacementGroups: replacementGroups,
+                affectedGroupIDs: affectedGroupIDs,
+                standaloneMembers: standaloneMembers,
+                unavailableMembers: unavailableMembers,
+                requiredWindows: requiredWindows,
+                sessionWriteUrgency: sessionWriteUrgency
+            ),
+            tabManager: tabManager,
+            windows: windows()
+        ), let activation = tabManager.shortcutPresentationActivation
+            .prepareActivation(draft.activationRequests),
+            let plan = WindowSplitPresentationSettlementPlanner().prepare(
+                draft,
+                activationTabs: activation.tabs,
+                regularTabs: tabManager.regularTabCollectionOwner
+            ) else { return nil }
+        let participantIDs = terminalParticipants.map(ObjectIdentifier.init)
+        guard Set(participantIDs).count == participantIDs.count,
+              terminalParticipants.allSatisfy({ participant in
+                  plan.windows.contains {
+                      $0.window === participant.targetWindow
+                  }
+              }) else { return nil }
+        return PreparedWindowSplitPresentationSettlement(
+            plan: plan,
+            activation: activation,
+            validator: WindowSplitPresentationSettlementValidator(
+                splitGroups: tabManager.splitGroupStore,
+                regularTabs: tabManager.regularTabCollectionOwner,
+                liveShortcuts: tabManager.liveShortcutTabs,
+                currentWindows: windows
+            ),
+            terminalEffects: terminalEffects,
+            terminalParticipants: terminalParticipants
+        )
     }
 
     /// Synchronizes exactly the windows presenting an affected group. Previous
@@ -84,7 +138,7 @@ final class WindowSplitPresentationSynchronizer {
                 continue
             }
 
-            let before = PersistedSelectionState(windowState)
+            let before = WindowSplitPresentationPersistedState(windowState)
             if let standaloneMember = standaloneMembers[windowState.id] {
                 windowState.splitSelection = nil
                 if let tab = liveTab(
@@ -106,16 +160,11 @@ final class WindowSplitPresentationSynchronizer {
                     tabManager: tabManager
                 )
             }
-            publishWindowChange(windowState.id)
-            refreshCompositor(windowState)
-            if before != PersistedSelectionState(windowState) {
-                switch sessionWriteUrgency {
-                case .scheduled:
-                    scheduleWindowSession(windowState)
-                case .immediate:
-                    persistWindowSession(windowState)
-                }
-            }
+            terminalEffects.publishSynchronizedWindow(
+                windowState,
+                previousState: before,
+                urgency: sessionWriteUrgency
+            )
         }
     }
 
@@ -127,8 +176,7 @@ final class WindowSplitPresentationSynchronizer {
             where windowState.splitSelection.map({
                 groupIDs.contains($0.groupID)
             }) == true {
-            publishWindowChange(windowState.id)
-            refreshCompositor(windowState)
+            terminalEffects.refreshPresentation(windowState)
         }
     }
 
@@ -169,18 +217,22 @@ final class WindowSplitPresentationSynchronizer {
             groupID: currentGroup.id,
             activeMemberID: activeMemberID
         )
-        guard let materialized = WindowSplitMaterializationService().materialize(
+        guard WindowSplitMaterializationService().withMaterialization(
             currentGroup,
             selection: selection,
             in: windowState,
-            tabManager: tabManager
+            tabManager: tabManager,
+            finalizing: { [selectTabWithoutPersistence] materialized in
+                selectTabWithoutPersistence(
+                    materialized.activeTab,
+                    windowState
+                )
+                windowState.splitSelection = materialized.presentation.selection
+            }
         ) else {
             windowState.splitSelection = nil
             return
         }
-
-        selectTabWithoutPersistence(materialized.activeTab, windowState)
-        windowState.splitSelection = materialized.presentation.selection
     }
 
     private func leaveDissolvedGroup(
@@ -219,20 +271,10 @@ final class WindowSplitPresentationSynchronizer {
             return tabManager.regularTabCollectionOwner.tab(for: tabID)
 
         case .shortcutPin(let pinID):
-            if let liveTab = tabManager.liveShortcutTabs.tab(
-                for: pinID,
-                in: windowState.id
-            ) {
-                return liveTab
-            }
-            guard let pin = tabManager.shortcutPinCollectionStateOwner
-                .shortcutPin(by: pinID) else {
-                return nil
-            }
-            return tabManager.shortcutTabMaterializer.materialize(
-                pin,
+            return tabManager.shortcutPresentationActivation.activate(
+                pinID: pinID,
                 in: windowState.id,
-                currentSpaceId: pin.spaceId ?? windowState.currentSpaceId
+                presentationSpaceID: windowState.currentSpaceId
             )
         }
     }

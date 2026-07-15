@@ -2,174 +2,192 @@ import Foundation
 import SumiWebRuntime
 import WebKit
 
+/// Creates and prepares the WebView generation that a Tab can present.
+@MainActor
+protocol TabWebViewAvailabilityParticipant: AnyObject {
+    func materializeVisibleWebViewIfNeeded(
+        for tab: Tab,
+        in windowState: BrowserWindowState
+    )
+    func load(_ tab: Tab)
+    func unload(_ tab: Tab)
+    func prepare(_ tab: Tab)
+}
+
+/// Owns queries and mutations for an already-created WebView generation.
+@MainActor
+protocol TabWebViewOwnershipParticipant: AnyObject {
+    func removeAllWebViews(
+        for tab: Tab,
+        closeActiveFullscreenMedia: Bool
+    )
+    func trackingWindowIDs(for tabID: UUID) -> [UUID]
+    func primaryTrackedWindowID(for tabID: UUID) -> UUID?
+    func rebuildLiveWebViews(
+        for tab: Tab,
+        preferredPrimaryWindowID: UUID?,
+        load url: URL?
+    )
+    func anyLiveWebView(for tab: Tab) -> WKWebView?
+    func hasUntrackedOwnedWebView(for tab: Tab) -> Bool
+}
+
+/// Exact identity and physical-generation participant for committed Tab
+/// retirement. The four operations share one retirement authority.
+@MainActor
+protocol TabWebViewRetirementParticipant: AnyObject {
+    func canRetire(_ tabs: [Tab]) -> Bool
+    func beginCommittedRetirement(_ tabs: [Tab]) -> Bool
+    func destroyRetiredGenerations(
+        _ generations: [RetiredTabWebViewGeneration],
+        completing tabs: [Tab]
+    )
+    func destroyTerminallyDrainedGenerations(
+        _ generations: [RetiredTabWebViewGeneration],
+        belongingTo tabs: [Tab]
+    )
+}
+
+/// Typed profile transition boundary. Model staging and WebView replacement
+/// are one transaction behind this participant, not independently ordered
+/// callback slots on the TabManager facade.
+@MainActor
+protocol TabWebViewProfileTransitionParticipant: AnyObject {
+    func abortProfileTransitions(profileIDs: Set<UUID>) -> Int
+    func executeProfileAssignment(
+        for tab: Tab,
+        targetProfile: Profile,
+        intent: DeferredWebViewProfileAssignmentIntent,
+        settlement: @escaping ProfileTransitionService.Settlement
+    ) -> TabProfileAssignmentExecutionOutcome
+    func executeSpaceProfileAssignment(
+        space: Space,
+        targetProfile: Profile,
+        intent: DeferredWebViewSpaceProfileAssignmentIntent,
+        model: any SpaceProfileWebViewReplacementTransaction,
+        settlement: @escaping ProfileTransitionService.Settlement
+    ) -> TabProfileAssignmentExecutionOutcome
+}
+
+/// Space/profile replacement boundary that carries its physical Tab witnesses
+/// with the model transaction. This prevents the WebView runtime from joining
+/// a later same-ID Tab through a structural lookup.
+@MainActor
+protocol SpaceProfileWebViewReplacementTransaction:
+    WebViewReplacementModelTransaction {
+    func exactTabsForRuntime() -> [Tab]?
+}
+
+/// Stable TabManager-facing facade over four cohesive WebView runtime roles.
+/// It deliberately contains no independently injectable effect callbacks.
 @MainActor
 struct TabManagerWebViewLifecycleService {
-    private let materializeVisibleWebViewIfNeeded: (Tab, BrowserWindowState) -> Void
-    private let loadTabHandler: (Tab) -> Void
-    private let unloadTabHandler: (Tab) -> Void
-    private let requireRemoveAllWebViewsHandler: (Tab, Bool) -> Void
-    private let windowIDsTrackingWebViewsProvider: (UUID) -> [UUID]
-    private let primaryTrackedWindowIdProvider: (UUID) -> UUID?
-    private let rebuildLiveWebViewsHandler: (Tab, UUID?, URL?) -> Void
-    private let prepareTabHandler: (Tab) -> Void
-    private let anyLiveWebViewProvider: (Tab) -> WKWebView?
-    private let hasUntrackedOwnedWebViewProvider: (Tab) -> Bool
-    private let abortProfileTransitionsHandler: (Set<UUID>) -> Int
-    private let profileAssignmentExecutor: (
-        Tab,
-        Profile,
-        DeferredWebViewProfileAssignmentIntent,
-        @escaping ProfileTransitionService.Settlement
-    ) -> TabProfileAssignmentExecutionOutcome
-    private let spaceProfileAssignmentExecutor: (
-        Space,
-        Profile,
-        DeferredWebViewSpaceProfileAssignmentIntent,
-        @escaping @MainActor @Sendable () -> Bool,
-        @escaping @MainActor @Sendable () -> Bool,
-        @escaping () -> Void,
-        @escaping () -> Void,
-        @escaping ProfileTransitionService.Settlement
-    ) -> TabProfileAssignmentExecutionOutcome
+    private let availability: any TabWebViewAvailabilityParticipant
+    private let ownership: any TabWebViewOwnershipParticipant
+    private let retirement: any TabWebViewRetirementParticipant
+    private let profileTransitions: any TabWebViewProfileTransitionParticipant
 
     init(
-        materializeVisibleTabWebViewIfNeeded: @escaping (Tab, BrowserWindowState) -> Void,
-        loadTab: @escaping (Tab) -> Void,
-        unloadTab: @escaping (Tab) -> Void,
-        requireRemoveAllWebViews: @escaping (Tab, Bool) -> Void,
-        windowIDsTrackingWebViews: @escaping (UUID) -> [UUID],
-        primaryTrackedWindowId: @escaping (UUID) -> UUID?,
-        rebuildLiveWebViews: @escaping (Tab, UUID?, URL?) -> Void,
-        prepareTab: @escaping (Tab) -> Void,
-        anyLiveWebView: @escaping (Tab) -> WKWebView?,
-        hasUntrackedOwnedWebView: @escaping (Tab) -> Bool,
-        abortProfileTransitions: @escaping (Set<UUID>) -> Int = { _ in 0 },
-        executeProfileAssignment: @escaping (
-            Tab,
-            Profile,
-            DeferredWebViewProfileAssignmentIntent
-        ) -> TabProfileAssignmentExecutionOutcome = { _, _, _ in .failed },
-        executeProfileTransition: ((
-            Tab,
-            Profile,
-            DeferredWebViewProfileAssignmentIntent,
-            @escaping ProfileTransitionService.Settlement
-        ) -> TabProfileAssignmentExecutionOutcome)? = nil,
-        executeSpaceProfileAssignment: @escaping (
-            Space,
-            Profile,
-            DeferredWebViewSpaceProfileAssignmentIntent,
-            @escaping @MainActor @Sendable () -> Bool,
-            @escaping @MainActor @Sendable () -> Bool,
-            @escaping () -> Void
-        ) -> TabProfileAssignmentExecutionOutcome = {
-            _, _, _, validateModel, modelCommit, _ in
-            guard validateModel(), modelCommit() else { return .stale }
-            return .committed
-        },
-        executeSpaceProfileTransition: ((
-            Space,
-            Profile,
-            DeferredWebViewSpaceProfileAssignmentIntent,
-            @escaping @MainActor @Sendable () -> Bool,
-            @escaping @MainActor @Sendable () -> Bool,
-            @escaping () -> Void,
-            @escaping () -> Void,
-            @escaping ProfileTransitionService.Settlement
-        ) -> TabProfileAssignmentExecutionOutcome)? = nil
+        availability: any TabWebViewAvailabilityParticipant,
+        ownership: any TabWebViewOwnershipParticipant,
+        retirement: any TabWebViewRetirementParticipant,
+        profileTransitions: any TabWebViewProfileTransitionParticipant
     ) {
-        self.materializeVisibleWebViewIfNeeded = materializeVisibleTabWebViewIfNeeded
-        self.loadTabHandler = loadTab
-        self.unloadTabHandler = unloadTab
-        self.requireRemoveAllWebViewsHandler = requireRemoveAllWebViews
-        self.windowIDsTrackingWebViewsProvider = windowIDsTrackingWebViews
-        self.primaryTrackedWindowIdProvider = primaryTrackedWindowId
-        self.rebuildLiveWebViewsHandler = rebuildLiveWebViews
-        self.prepareTabHandler = prepareTab
-        self.anyLiveWebViewProvider = anyLiveWebView
-        self.hasUntrackedOwnedWebViewProvider = hasUntrackedOwnedWebView
-        abortProfileTransitionsHandler = abortProfileTransitions
-        profileAssignmentExecutor = executeProfileTransition ?? {
-            tab, profile, intent, settlement in
-            let outcome = executeProfileAssignment(tab, profile, intent)
-            if outcome != .deferred {
-                settlement(
-                    outcome == .committed ? .committed : .rejected(outcome)
-                )
-            }
-            return outcome
-        }
-        spaceProfileAssignmentExecutor = executeSpaceProfileTransition ?? {
-            space,
-            profile,
-            intent,
-            validate,
-            stage,
-            finish,
-            rollback,
-            settlement in
-            let outcome = executeSpaceProfileAssignment(
-                space,
-                profile,
-                intent,
-                validate,
-                stage,
-                rollback
-            )
-            if outcome == .committed { finish() }
-            if outcome != .deferred {
-                settlement(
-                    outcome == .committed ? .committed : .rejected(outcome)
-                )
-            }
-            return outcome
-        }
+        self.availability = availability
+        self.ownership = ownership
+        self.retirement = retirement
+        self.profileTransitions = profileTransitions
     }
 
-    func materializeVisibleTabWebViewIfNeeded(_ tab: Tab, in windowState: BrowserWindowState) {
-        materializeVisibleWebViewIfNeeded(tab, windowState)
+    func materializeVisibleTabWebViewIfNeeded(
+        _ tab: Tab,
+        in windowState: BrowserWindowState
+    ) {
+        availability.materializeVisibleWebViewIfNeeded(
+            for: tab,
+            in: windowState
+        )
     }
 
     func loadTab(_ tab: Tab) {
-        loadTabHandler(tab)
+        availability.load(tab)
     }
 
     func unloadTab(_ tab: Tab) {
-        unloadTabHandler(tab)
+        availability.unload(tab)
     }
 
-    func requireRemoveAllWebViews(for tab: Tab, closeActiveFullscreenMedia: Bool) {
-        requireRemoveAllWebViewsHandler(tab, closeActiveFullscreenMedia)
+    func requireRemoveAllWebViews(
+        for tab: Tab,
+        closeActiveFullscreenMedia: Bool
+    ) {
+        ownership.removeAllWebViews(
+            for: tab,
+            closeActiveFullscreenMedia: closeActiveFullscreenMedia
+        )
     }
 
     func windowIDsTrackingWebViews(for tabId: UUID) -> [UUID] {
-        windowIDsTrackingWebViewsProvider(tabId)
+        ownership.trackingWindowIDs(for: tabId)
     }
 
     func primaryTrackedWindowId(for tabId: UUID) -> UUID? {
-        primaryTrackedWindowIdProvider(tabId)
+        ownership.primaryTrackedWindowID(for: tabId)
     }
 
     @available(macOS 15.5, *)
-    func rebuildLiveWebViews(for tab: Tab, preferredPrimaryWindowId: UUID?, load url: URL?) {
-        rebuildLiveWebViewsHandler(tab, preferredPrimaryWindowId, url)
+    func rebuildLiveWebViews(
+        for tab: Tab,
+        preferredPrimaryWindowId: UUID?,
+        load url: URL?
+    ) {
+        ownership.rebuildLiveWebViews(
+            for: tab,
+            preferredPrimaryWindowID: preferredPrimaryWindowId,
+            load: url
+        )
     }
 
     func prepareTab(_ tab: Tab) {
-        prepareTabHandler(tab)
+        availability.prepare(tab)
     }
 
     func anyLiveWebView(for tab: Tab) -> WKWebView? {
-        anyLiveWebViewProvider(tab)
+        ownership.anyLiveWebView(for: tab)
     }
 
     func hasUntrackedOwnedWebView(for tab: Tab) -> Bool {
-        hasUntrackedOwnedWebViewProvider(tab)
+        ownership.hasUntrackedOwnedWebView(for: tab)
+    }
+
+    func canRetireTabWebViews(_ tabs: [Tab]) -> Bool {
+        retirement.canRetire(tabs)
+    }
+
+    func beginCommittedTabRetirement(_ tabs: [Tab]) -> Bool {
+        retirement.beginCommittedRetirement(tabs)
+    }
+
+    func destroyRetiredWebViews(
+        _ generations: [RetiredTabWebViewGeneration],
+        completingRetirementOf tabs: [Tab]
+    ) {
+        retirement.destroyRetiredGenerations(generations, completing: tabs)
+    }
+
+    func destroyTerminallyDrainedRetiredWebViews(
+        _ generations: [RetiredTabWebViewGeneration],
+        belongingTo tabs: [Tab]
+    ) {
+        retirement.destroyTerminallyDrainedGenerations(
+            generations,
+            belongingTo: tabs
+        )
     }
 
     @discardableResult
     func abortProfileTransitions(profileIDs: Set<UUID>) -> Int {
-        abortProfileTransitionsHandler(profileIDs)
+        profileTransitions.abortProfileTransitions(profileIDs: profileIDs)
     }
 
     func executeProfileAssignment(
@@ -178,28 +196,27 @@ struct TabManagerWebViewLifecycleService {
         intent: DeferredWebViewProfileAssignmentIntent,
         settlement: @escaping ProfileTransitionService.Settlement
     ) -> TabProfileAssignmentExecutionOutcome {
-        profileAssignmentExecutor(tab, targetProfile, intent, settlement)
+        profileTransitions.executeProfileAssignment(
+            for: tab,
+            targetProfile: targetProfile,
+            intent: intent,
+            settlement: settlement
+        )
     }
 
     func executeSpaceProfileAssignment(
         space: Space,
         targetProfile: Profile,
         intent: DeferredWebViewSpaceProfileAssignmentIntent,
-        validateModel: @escaping @MainActor @Sendable () -> Bool,
-        modelCommit: @escaping @MainActor @Sendable () -> Bool,
-        modelFinish: @escaping () -> Void,
-        modelRollback: @escaping () -> Void,
+        model: any SpaceProfileWebViewReplacementTransaction,
         settlement: @escaping ProfileTransitionService.Settlement
     ) -> TabProfileAssignmentExecutionOutcome {
-        spaceProfileAssignmentExecutor(
-            space,
-            targetProfile,
-            intent,
-            validateModel,
-            modelCommit,
-            modelFinish,
-            modelRollback,
-            settlement
+        profileTransitions.executeSpaceProfileAssignment(
+            space: space,
+            targetProfile: targetProfile,
+            intent: intent,
+            model: model,
+            settlement: settlement
         )
     }
 }

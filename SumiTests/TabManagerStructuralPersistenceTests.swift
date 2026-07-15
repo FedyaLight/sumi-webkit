@@ -47,30 +47,55 @@ private actor SuspendedTabRestorePayloadLoader: TabRestorePayloadLoading {
 }
 
 @MainActor
-private final class DeferredPersistenceSpaceTransition {
+private final class DeferredPersistenceSpaceTransition:
+    TabWebViewProfileTransitionParticipant {
     private(set) var stageModel: (@MainActor @Sendable () -> Bool)?
     private(set) var finishModel: (() -> Void)?
     private(set) var settlement: ProfileTransitionService.Settlement?
 
     func makeLifecycle() -> TabManagerWebViewLifecycleService {
-        TabManagerWebViewLifecycleService(
-            materializeVisibleTabWebViewIfNeeded: { _, _ in /* No-op. */ },
-            loadTab: { _ in /* No-op. */ },
-            unloadTab: { _ in /* No-op. */ },
-            requireRemoveAllWebViews: { _, _ in /* No-op. */ },
-            windowIDsTrackingWebViews: { _ in [] },
-            primaryTrackedWindowId: { _ in nil },
-            rebuildLiveWebViews: { _, _, _ in /* No-op. */ },
-            prepareTab: { _ in /* No-op. */ },
+        TestRuntimePorts.webViewLifecycle(
+            retirement: .rejecting,
             anyLiveWebView: { $0.resolvedCurrentWebView() },
-            hasUntrackedOwnedWebView: { _ in false },
-            executeSpaceProfileTransition: { [weak self] _, _, _, _, stage, finish, _, settlement in
-                self?.stageModel = stage
-                self?.finishModel = finish
-                self?.settlement = settlement
-                return .deferred
-            }
+            profileTransitions: self
         )
+    }
+
+    func abortProfileTransitions(profileIDs: Set<UUID>) -> Int { 0 }
+
+    func executeProfileAssignment(
+        for tab: Tab,
+        targetProfile: Profile,
+        intent: DeferredWebViewProfileAssignmentIntent,
+        settlement: @escaping ProfileTransitionService.Settlement
+    ) -> TabProfileAssignmentExecutionOutcome {
+        settlement(.rejected(.failed))
+        return .failed
+    }
+
+    func executeSpaceProfileAssignment(
+        space: Space,
+        targetProfile: Profile,
+        intent: DeferredWebViewSpaceProfileAssignmentIntent,
+        model: any SpaceProfileWebViewReplacementTransaction,
+        settlement: @escaping ProfileTransitionService.Settlement
+    ) -> TabProfileAssignmentExecutionOutcome {
+        stageModel = {
+            do {
+                try model.stage()
+                return true
+            } catch {
+                return false
+            }
+        }
+        finishModel = {
+            precondition(model.stagedModelIsExact())
+            precondition(model.canClaimTerminalModel())
+            precondition(model.claimTerminalModel() == .sealed)
+            model.publishCommit()
+        }
+        self.settlement = settlement
+        return .deferred
     }
 }
 
@@ -436,7 +461,11 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
 
     func testIncrementalFolderRelationshipPersistence() async throws {
         let container = try makeInMemoryContainer()
-        let tabManager = makeTabManager(context: container.mainContext)
+        let retirement = DeferredSpaceProfileTransition()
+        let tabManager = makeTabManager(
+            context: container.mainContext,
+            webViewLifecycle: retirement.makeLifecycle()
+        )
         let space = tabManager.spaceServices.catalog.createSpace(name: "Pinned", profileId: UUID())
         let folder = tabManager.folderMutationOwner.createFolder(for: space.id, name: "Docs")
         let tab = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/docs", in: space, activate: true)
@@ -480,7 +509,11 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
 
     func testDeleteFolderRemovesFolderChildrenPersistence() async throws {
         let container = try makeInMemoryContainer()
-        let tabManager = makeTabManager(context: container.mainContext)
+        let retirement = DeferredSpaceProfileTransition()
+        let tabManager = makeTabManager(
+            context: container.mainContext,
+            webViewLifecycle: retirement.makeLifecycle()
+        )
         let space = tabManager.spaceServices.catalog.createSpace(name: "Pinned", profileId: UUID())
         let folder = tabManager.folderMutationOwner.createFolder(for: space.id, name: "Docs")
         let nested = try XCTUnwrap(tabManager.folderMutationOwner.createFolder(for: space.id, parentFolderId: folder.id, name: "Nested"))
@@ -522,12 +555,12 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
         let space = tabManager.spaceServices.catalog.createSpace(name: "Pinned", profileId: UUID())
         let folder = tabManager.folderMutationOwner.createFolder(for: space.id, name: "Docs")
 
-        tabManager.folderMutationOwner.setFolder(folder.id, open: true)
+        tabManager.folderOpenState.setFolder(folder.id, open: true)
         try await waitForStore(in: container, after: tabManager.structuralPersistence) { context in
             try fetchFolder(folder.id, in: context)?.isOpen == true
         }
 
-        tabManager.folderMutationOwner.setFolder(folder.id, open: false)
+        tabManager.folderOpenState.setFolder(folder.id, open: false)
         try await waitForStore(in: container, after: tabManager.structuralPersistence) { context in
             try fetchFolder(folder.id, in: context)?.isOpen == false
         }
@@ -535,7 +568,11 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
 
     func testTopLevelFolderPositionPersistsAfterSpacePinnedShortcuts() async throws {
         let container = try makeInMemoryContainer()
-        let tabManager = makeTabManager(context: container.mainContext)
+        let retirement = DeferredSpaceProfileTransition()
+        let tabManager = makeTabManager(
+            context: container.mainContext,
+            webViewLifecycle: retirement.makeLifecycle()
+        )
         let space = tabManager.spaceServices.catalog.createSpace(name: "Pinned", profileId: UUID())
         let firstTab = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/first", in: space, activate: true)
         let secondTab = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/second", in: space, activate: false)
@@ -835,7 +872,11 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
 
     func testShortcutBackedSplitGroupPersistsThroughStoreReload() async throws {
         let container = try makeInMemoryContainer()
-        let tabManager = makeTabManager(context: container.mainContext)
+        let retirement = DeferredSpaceProfileTransition()
+        let tabManager = makeTabManager(
+            context: container.mainContext,
+            webViewLifecycle: retirement.makeLifecycle()
+        )
         let space = tabManager.spaceServices.catalog.createSpace(name: "Split", profileId: UUID())
         let regular = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/regular", in: space, activate: true)
         let pinnedSource = tabManager.regularTabLifecycleOwner.createNewTab(
@@ -854,7 +895,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
             )
         )
         let windowId = UUID()
-        let livePinnedTab = tabManager.shortcutTabMaterializer.materialize(pin, in: windowId, currentSpaceId: space.id)
+        let livePinnedTab = tabManager.shortcutTabMaterializer.materialize(pin, in: windowId, currentSpaceId: space.id)!
         let group = try XCTUnwrap(
             SplitGroup.make(
                 members: [
@@ -1340,9 +1381,15 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
         XCTAssertEqual(try fetchTab(second.id, in: ModelContext(container))?.index, 2)
     }
 
-    private func makeTabManager(context: ModelContext) -> TabManager {
+    private func makeTabManager(
+        context: ModelContext,
+        webViewLifecycle: TabManagerWebViewLifecycleService? = nil
+    ) -> TabManager {
         let tabManager = TabManager(context: context, loadPersistedState: false)
-        tabManager.runtimePortsAttachmentOwner.attach(TestRuntimePorts.inactive)
+        let runtime = webViewLifecycle.map {
+            TestRuntimePorts.make(webViewLifecycle: $0)
+        } ?? TestRuntimePorts.inactive
+        tabManager.runtimePortsAttachmentOwner.attach(runtime)
         return tabManager
     }
 

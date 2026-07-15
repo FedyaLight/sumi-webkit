@@ -1,13 +1,11 @@
 import AppKit
 import Combine
 import Observation
-import SwiftData
 import SumiWebRuntime
+import SwiftData
 
 @MainActor
 class TabManager: ObservableObject {
-    private static let faviconPresentationRefreshDebounceNanoseconds: UInt64 = 250_000_000
-
     let runtimePortConnection: TabRuntimePortConnection
     var runtimePorts: RuntimePortRegistry? { runtimePortConnection.current }
     weak var sumiSettings: SumiSettingsService?
@@ -36,15 +34,20 @@ class TabManager: ObservableObject {
 
     lazy var structureOwners = TabStructureOwnerBag(tabManager: self)
     lazy var shortcutOwners = TabShortcutOwnerBag(tabManager: self)
-    lazy var lifecycleOwners = TabLifecycleOwnerBag(
-        tabManager: self,
-        faviconPresentationRefreshDebounceNanoseconds: Self.faviconPresentationRefreshDebounceNanoseconds
-    )
+    lazy var lifecycleOwners = TabLifecycleOwnerBag(tabManager: self)
     lazy var spaceServices = TabSpaceServices.live(tabManager: self)
     lazy var liveShortcutTabs = LiveShortcutTabRegistry(tabManager: self)
-    lazy var shortcutTabWindowQuery = ShortcutTabWindowQuery(tabManager: self)
+    lazy var liveShortcutTabBatchRetirement = LiveShortcutTabBatchRetirement(tabManager: self)
+    lazy var liveShortcutPresentationRefreshes = LiveShortcutPresentationRefreshService(
+        registry: liveShortcutTabs,
+        resolution: shortcutPinRuntimeResolutionOwner
+    )
+    lazy var shortcutTabWindowQuery = ShortcutTabWindowQuery(runtimeConnection: runtimePortConnection)
     lazy var shortcutTabBindings = ShortcutTabBindingSynchronizer(tabManager: self)
     lazy var shortcutTabMaterializer = ShortcutTabMaterializer(tabManager: self)
+    lazy var shortcutPresentationActivation = ShortcutPresentationActivationService(
+        tabManager: self
+    )
     lazy var splitGroupMutations = SplitGroupMutationService(tabManager: self)
     lazy var splitGroupSidebarOrdering = SplitGroupSidebarOrderingService(
         tabManager: self
@@ -60,7 +63,8 @@ class TabManager: ObservableObject {
     lazy var shortcutTabPromotion = ShortcutTabPromotionService(tabManager: self)
     lazy var runtimeTeardown = TabRuntimeTeardownService(
         persistence: structuralPersistence,
-        membership: tabCollectionMembershipOwner
+        membership: tabCollectionMembershipOwner,
+        webViewSessions: tabFactory.webViewSessions
     )
     lazy var runtimeStore = DefaultTabRuntimeStore(
         state: stateStore,
@@ -89,6 +93,7 @@ class TabManager: ObservableObject {
         splitGroupStore: splitGroupStore,
         splitGroupMutations: splitGroupMutations,
         liveShortcutTabs: liveShortcutTabs,
+        liveShortcutRetirement: liveShortcutTabBatchRetirement,
         runtimePorts: { [weak self] in self?.runtimePorts },
         runtimeTeardown: runtimeTeardown
     )
@@ -106,9 +111,7 @@ class TabManager: ObservableObject {
         persistence: structuralPersistence,
         announceStateChange: { [objectWillChange] in objectWillChange.send() }
     )
-
     var pendingSpaceActivation: UUID?
-
     init(
         runtimePorts: RuntimePortRegistry? = nil,
         context: ModelContext,
@@ -148,7 +151,6 @@ class TabManager: ObservableObject {
         self.selectionStore = selectionStore
         self.runtimeStateStore = runtimeStateStore
         let runtimeStateCoalescer = RuntimeStateCoalescer(
-            debounceNanoseconds: Self.defaultRuntimeStatePersistDebounceNanoseconds,
             persistBatch: { runtimeStates in
                 await runtimeStateStore.persist(runtimeStates)
             }
@@ -186,9 +188,6 @@ class TabManager: ObservableObject {
         }
         RuntimeDiagnostics.debug("Cleaned up all tab resources.", category: "TabManager")
     }
-
-    static let defaultRuntimeStatePersistDebounceNanoseconds: UInt64 = 250_000_000
-
 }
 
 extension TabManager {

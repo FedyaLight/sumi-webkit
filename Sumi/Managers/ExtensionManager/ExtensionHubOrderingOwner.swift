@@ -20,15 +20,10 @@ final class ExtensionHubOrderingOwner {
     private static let logger = Logger.sumi(category: "Extensions")
 
     private let preferences: UserDefaults
-    private let currentProfileId: @MainActor () -> UUID?
     private var idsByProfile: [String: [String]]
 
-    init(
-        preferences: UserDefaults,
-        currentProfileId: @escaping @MainActor () -> UUID?
-    ) {
+    init(preferences: UserDefaults) {
         self.preferences = preferences
-        self.currentProfileId = currentProfileId
         self.idsByProfile = Self.loadUnpinnedOrderByProfile(from: preferences)
     }
 
@@ -50,23 +45,28 @@ final class ExtensionHubOrderingOwner {
     }
 
     /// Move an unpinned tile to a new index within the given displayed order,
-    /// then persist the resulting order for the current profile. `targetIndex`
+    /// then persist the resulting order for the rendered profile. `targetIndex`
     /// is interpreted against the list with the moved tile removed.
+    @discardableResult
     func moveUnpinnedExtension(
         id: String,
         to targetIndex: Int,
-        within currentOrder: [String]
-    ) {
+        within currentOrder: [String],
+        profileId: UUID?
+    ) -> Bool {
         var order = Self.normalized(currentOrder)
-        guard let from = order.firstIndex(of: id) else { return }
+        let previous = order
+        guard let from = order.firstIndex(of: id) else { return false }
 
         let item = order.remove(at: from)
         let clamped = min(max(targetIndex, 0), order.count)
         order.insert(item, at: clamped)
+        guard order != previous else { return false }
 
-        let profileKey = Self.profileKey(for: currentProfileId())
+        let profileKey = Self.profileKey(for: profileId)
         idsByProfile[profileKey] = order
         persist()
+        return true
     }
 
     private func persist() {
@@ -127,19 +127,22 @@ extension ExtensionManager {
     ) -> [String] {
         hubOrderingOwner.orderedUnpinnedExtensionIDs(
             candidateIDs: candidateIDs,
-            profileId: profileId ?? profileRuntime.currentProfileId
+            profileId: profileId
         )
     }
 
+    @discardableResult
     func moveUnpinnedExtension(
         id: String,
         to targetIndex: Int,
-        within currentOrder: [String]
-    ) {
+        within currentOrder: [String],
+        profileId: UUID?
+    ) -> Bool {
         hubOrderingOwner.moveUnpinnedExtension(
             id: id,
             to: targetIndex,
-            within: currentOrder
+            within: currentOrder,
+            profileId: profileId
         )
     }
 }

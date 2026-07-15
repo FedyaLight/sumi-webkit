@@ -77,8 +77,10 @@ struct RuntimePortRegistry {
         splitCoordination.handleTabClosure(tabId)
     }
 
-    func handleTabClosures(_ tabIds: Set<UUID>) {
-        splitCoordination.handleTabClosures(tabIds)
+    func stageTabClosures(
+        _ tabIds: Set<UUID>
+    ) -> (any TabSplitClosureSettlement)? {
+        splitCoordination.stageTabClosures(tabIds)
     }
 
     func visibleSplitTabIds(for windowId: UUID) -> [UUID] {

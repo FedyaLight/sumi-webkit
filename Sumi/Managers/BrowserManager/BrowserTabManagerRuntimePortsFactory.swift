@@ -32,6 +32,11 @@ enum BrowserTabManagerRuntimePortsFactory {
             ),
             webViewLifecycle: BrowserTabManagerWebViewLifecycleFactory.service(
                 webViewLifecycle: webViewRuntime.lifecycleService,
+                webViewProtection: webViewRuntime.protectionRuntime,
+                committedRetirement: WebViewCommittedTabRetirementService(
+                    runtimeTabs: webViewRuntime.runtimeTabs,
+                    generations: webViewRuntime.retiredGenerationDestroyer
+                ),
                 ownershipQuery: webViewRuntime.ownershipQuery,
                 trackedAdmission: webViewRuntime.trackedWebViewAdmission,
                 rebuild: webViewRuntime.rebuildService,

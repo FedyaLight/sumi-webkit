@@ -175,6 +175,7 @@ final class TabClosureServiceCompositionTests: XCTestCase {
         let container = try makeInMemoryStartupModelContainer()
         let runtime = TestRuntimePorts.make(
             webViewLifecycle: TestRuntimePorts.webViewLifecycle(
+                retirement: .rejecting,
                 unloadTab: { _ in events.append("unload") },
                 requireRemoveAllWebViews: { _, _ in events.append("remove") }
             ),

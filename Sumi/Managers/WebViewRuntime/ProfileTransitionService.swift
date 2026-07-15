@@ -1,6 +1,6 @@
 import Foundation
-import WebKit
 import SumiWebRuntime
+import WebKit
 
 enum ProfileTransitionSettlement: Equatable {
     case committed
@@ -37,19 +37,53 @@ final class ProfileTransitionService {
 
     typealias Settlement = @MainActor (ProfileTransitionSettlement) -> Void
 
+    private enum RequestKind {
+        case tab(UUID, DeferredWebViewProfileAssignmentIntent)
+        case space(DeferredWebViewSpaceProfileAssignmentIntent)
+
+        var admissionKey: WebsiteDataMutationGate.DeferredAdmissionKey {
+            switch self {
+            case .tab(let tabID, _): .profileAssignment(tabID: tabID)
+            case .space(let intent):
+                .spaceProfileAssignment(spaceID: intent.spaceID)
+            }
+        }
+
+        var reason: String {
+            switch self {
+            case .tab: "profile-assignment"
+            case .space: "space-profile-assignment"
+            }
+        }
+
+        func deferredCommand(
+            _ snapshot: WebViewSessionSnapshot
+        ) -> DeferredWebViewCommand {
+            switch self {
+            case .tab(let tabID, let intent):
+                .assignProfile(
+                    tabID: tabID,
+                    preferredPrimaryWindowID: snapshot.primaryWindowID,
+                    intent: intent
+                )
+            case .space(let intent):
+                .assignSpaceProfile(intent: intent)
+            }
+        }
+    }
+
     private struct Request {
         let targetProfile: Profile
         let tabs: [Tab]
-        let validateModel: @MainActor @Sendable () -> Bool
-        let stageModel: @MainActor @Sendable () throws -> Void
-        let finishModel: () -> Void
-        let rollbackModel: () throws -> Void
-        let deferredCommand: (WebViewSessionSnapshot) -> DeferredWebViewCommand
-        let admissionKey: WebsiteDataMutationGate.DeferredAdmissionKey
-        let reason: String
-    }
+        let model: WebViewReplacementModelParticipant
+        let kind: RequestKind
 
-    private enum ModelError: Error { case rejected }
+        var admissionKey: WebsiteDataMutationGate.DeferredAdmissionKey {
+            kind.admissionKey
+        }
+
+        var reason: String { kind.reason }
+    }
 
     private let runtime: Runtime
 
@@ -61,41 +95,21 @@ final class ProfileTransitionService {
         tab: Tab,
         to targetProfile: Profile,
         intent: DeferredWebViewProfileAssignmentIntent,
-        settlement: @escaping Settlement = { _ in }
+        settlement: @escaping Settlement
     ) -> TabProfileAssignmentExecutionOutcome {
         execute(
             Request(
                 targetProfile: targetProfile,
                 tabs: [tab],
-                validateModel: {
-                    intent.resolvedProfileID == targetProfile.id
-                        && tab.profileAssignment.isCurrent(intent)
-                },
-                stageModel: {
-                    guard tab.profileAssignment.stage(intent) else {
-                        throw ModelError.rejected
-                    }
-                },
-                finishModel: {
-                    precondition(
-                        tab.profileAssignment.finish(intent),
-                        "Profile transition lost its staged Tab intent"
-                    )
-                },
-                rollbackModel: {
-                    guard tab.profileAssignment.rollback(intent) else {
-                        throw ModelError.rejected
-                    }
-                },
-                deferredCommand: { snapshot in
-                    .assignProfile(
-                        tabID: tab.id,
-                        preferredPrimaryWindowID: snapshot.primaryWindowID,
+                model: .transaction(ProfileTransitionModelParticipant(
+                    model: TabProfileAssignmentModelTransaction(
+                        tab: tab,
+                        targetProfileID: targetProfile.id,
                         intent: intent
-                    )
-                },
-                admissionKey: .profileAssignment(tabID: tab.id),
-                reason: "profile-assignment"
+                    ),
+                    tabs: [tab]
+                )),
+                kind: .tab(tab.id, intent)
             ),
             settlement: settlement
         )
@@ -106,11 +120,8 @@ final class ProfileTransitionService {
         to targetProfile: Profile,
         intent: DeferredWebViewSpaceProfileAssignmentIntent,
         tabsByID: [UUID: Tab],
-        validateModel: @escaping @MainActor @Sendable () -> Bool,
-        stageModel: @escaping @MainActor @Sendable () -> Bool,
-        finishModel: @escaping () -> Void,
-        rollbackModel: @escaping () -> Void,
-        settlement: @escaping Settlement = { _ in }
+        model: any WebViewReplacementModelTransaction,
+        settlement: @escaping Settlement
     ) -> TabProfileAssignmentExecutionOutcome {
         let tabs = intent.tabIntents.compactMap { tabsByID[$0.tabID] }
         guard tabs.count == intent.tabIntents.count,
@@ -123,15 +134,11 @@ final class ProfileTransitionService {
             Request(
                 targetProfile: targetProfile,
                 tabs: tabs,
-                validateModel: validateModel,
-                stageModel: {
-                    guard stageModel() else { throw ModelError.rejected }
-                },
-                finishModel: finishModel,
-                rollbackModel: rollbackModel,
-                deferredCommand: { _ in .assignSpaceProfile(intent: intent) },
-                admissionKey: .spaceProfileAssignment(spaceID: spaceID),
-                reason: "space-profile-assignment"
+                model: .transaction(ProfileTransitionModelParticipant(
+                    model: model,
+                    tabs: tabs
+                )),
+                kind: .space(intent)
             ),
             settlement: settlement
         )
@@ -141,7 +148,7 @@ final class ProfileTransitionService {
         _ request: Request,
         settlement: @escaping Settlement
     ) -> TabProfileAssignmentExecutionOutcome {
-        guard request.validateModel() else {
+        guard request.model.validateForStaging() else {
             settlement(.rejected(.stale))
             return .stale
         }
@@ -161,9 +168,24 @@ final class ProfileTransitionService {
         let live = snapshots.filter { $0.value.allKnownWebViews.isEmpty == false }
         guard live.isEmpty == false else {
             do {
-                try request.stageModel()
-                request.tabs.forEach { _ = $0.webViewRebuildEpoch.advance() }
-                request.finishModel()
+                try request.model.stage()
+                guard request.model.stagedModelIsExact() else {
+                    settlement(.conflicted)
+                    return .failed
+                }
+                guard request.model.canClaimTerminalModel() else {
+                    settlement(
+                        rollbackStagedModel(request.model)
+                            ? .rolledBack(.commitValidationFailed)
+                            : .conflicted
+                    )
+                    return .failed
+                }
+                guard request.model.claimTerminalModel() == .sealed else {
+                    settlement(.leaseLost)
+                    return .failed
+                }
+                request.model.publishCommit()
                 settlement(.committed)
                 return .committed
             } catch {
@@ -178,7 +200,7 @@ final class ProfileTransitionService {
                $0.allKnownWebViews.contains { $0 === barrier }
            }) {
             switch runtime.deferProtectedCommand(
-                request.deferredCommand(snapshot), barrier, request.reason
+                request.kind.deferredCommand(snapshot), barrier, request.reason
             ) {
             case .scheduled:
                 return .deferred
@@ -203,14 +225,7 @@ final class ProfileTransitionService {
         let start = runtime.pipeline.begin(
             prepared,
             profileIDs: profileIDs,
-            validateModel: request.validateModel,
-            modelCommit: {
-                try request.stageModel()
-                request.tabs.forEach { _ = $0.webViewRebuildEpoch.advance() }
-            },
-            modelRollback: {
-                try request.rollbackModel()
-            },
+            model: request.model,
             completion: { outcome in
                 self.complete(
                     outcome,
@@ -238,7 +253,7 @@ final class ProfileTransitionService {
             runtime.provisioning.discard(prepared)
             retryAfterOwnershipBarrier(request, settlement: settlement)
             return .deferred
-        case .stale, .modelCommitFailed:
+        case .stale, .modelValidationFailed:
             runtime.provisioning.discard(prepared)
             settlement(.rejected(.stale))
             return .stale
@@ -246,6 +261,9 @@ final class ProfileTransitionService {
             runtime.provisioning.discard(prepared)
             settlement(.rejected(.failed))
             return .failed
+        case .modelCommitFailed:
+            settlement(.rejected(.stale))
+            return .stale
         case .rolledBack:
             // Synchronous settlement already restored the model/repository and
             // delivered its typed rollback through `completion`.
@@ -259,6 +277,18 @@ final class ProfileTransitionService {
         }
     }
 
+    private func rollbackStagedModel(
+        _ model: WebViewReplacementModelParticipant
+    ) -> Bool {
+        do {
+            try model.rollback()
+            model.publishRollback()
+            return true
+        } catch {
+            return false
+        }
+    }
+
     private func complete(
         _ outcome: WebViewReplacementTransactionOutcome,
         request: Request,
@@ -267,7 +297,6 @@ final class ProfileTransitionService {
     ) {
         switch outcome {
         case .committed:
-            request.finishModel()
             runtime.activation.finishCommitted(prepared, reason: request.reason)
             settlement(.committed)
         case .rolledBack(let reason):

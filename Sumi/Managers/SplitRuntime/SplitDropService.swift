@@ -10,25 +10,28 @@ final class SplitDropService {
     private let tabManager: @MainActor () -> TabManager?
     private let memberResolver: SplitRuntimeMemberResolver
     private let launcherPlacement: ShortcutSplitLauncherPlacementService
+    private let placeholderReplacements: SplitPlaceholderReplacementPlanner
     private let regularShortcutSidebarDrop: RegularTabShortcutSidebarDropTransaction
-    private let reconcileAfterCommit: @MainActor (SplitDropCommitEffect) -> Void
+    private let presentations: any SplitDropPresentationReconciling
     private let notifyLimit: @MainActor (BrowserWindowState) -> Void
 
     init(
         tabManager: @escaping @MainActor () -> TabManager?,
         memberResolver: SplitRuntimeMemberResolver,
         launcherPlacement: ShortcutSplitLauncherPlacementService,
-        reconcileAfterCommit: @escaping @MainActor (SplitDropCommitEffect) -> Void,
+        placeholderReplacements: SplitPlaceholderReplacementPlanner,
+        presentations: any SplitDropPresentationReconciling,
         notifyLimit: @escaping @MainActor (BrowserWindowState) -> Void
     ) {
         self.tabManager = tabManager
         self.memberResolver = memberResolver
         self.launcherPlacement = launcherPlacement
+        self.placeholderReplacements = placeholderReplacements
         regularShortcutSidebarDrop = RegularTabShortcutSidebarDropTransaction(
             tabManager: tabManager,
             launcherPlacement: launcherPlacement
         )
-        self.reconcileAfterCommit = reconcileAfterCommit
+        self.presentations = presentations
         self.notifyLimit = notifyLimit
     }
 
@@ -97,34 +100,16 @@ final class SplitDropService {
         )
     }
 
-    @discardableResult
-    func replacePlaceholder(
+    func preparePlaceholderReplacement(
         with tab: Tab,
-        placeholderTabID: UUID,
+        placeholder: Tab,
         in windowState: BrowserWindowState
-    ) -> Bool {
-        let placeholderID = SplitMemberID.regularTab(placeholderTabID)
-        guard let tabManager = tabManager(),
-              let group = tabManager.splitGroupStore.group(
-                  containing: placeholderID
-              ) else {
-            return false
-        }
-        guard drop(
-            tab,
-            on: SplitDropTarget(
-                targetMemberID: placeholderID,
-                side: .center,
-                targetRect: .zero,
-                previewStyle: .center,
-                intent: .paneCenter
-            ),
-            in: windowState
-        ) else {
-            return false
-        }
-        return tabManager.splitGroupStore.group(id: group.id)?
-            .contains(placeholderID) != true
+    ) -> (any SplitPlaceholderReplacementMutation)? {
+        placeholderReplacements.prepare(
+            tab: tab,
+            placeholder: placeholder,
+            window: windowState
+        )
     }
 
     private func rearrange(
@@ -167,7 +152,7 @@ final class SplitDropService {
             effect: effect,
             tabManager: tabManager
         ) else { return false }
-        reconcileAfterCommit(effect)
+        presentations.reconcile(effect)
         return true
     }
 
@@ -232,7 +217,7 @@ final class SplitDropService {
             effect: effect,
             tabManager: tabManager
         ) else { return false }
-        reconcileAfterCommit(effect)
+        presentations.reconcile(effect)
         return true
     }
 
@@ -309,7 +294,7 @@ final class SplitDropService {
             effect: effect,
             tabManager: tabManager
         ) else { return false }
-        reconcileAfterCommit(effect)
+        presentations.reconcile(effect)
         return true
     }
 
@@ -332,7 +317,7 @@ final class SplitDropService {
             target: target,
             windowState: windowState
         ) else { return false }
-        reconcileAfterCommit(committed.effect)
+        presentations.reconcile(committed.effect)
         return true
     }
 
@@ -351,7 +336,7 @@ final class SplitDropService {
             expected: expected,
             with: replacement,
             applying: { [launcherPlacement] in
-                launcherPlacement.apply(restorations)
+                launcherPlacement.applyAndCommit(restorations)
             }
         )
     }

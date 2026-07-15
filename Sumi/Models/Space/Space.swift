@@ -5,6 +5,7 @@
 //
 
 import AppKit
+import Observation
 import SumiDomain
 import SwiftUI
 
@@ -23,7 +24,18 @@ public class Space: NSObject, Identifiable {
     var color: NSColor
     var workspaceTheme: WorkspaceTheme
     var activeTabId: UUID?
-    var profileId: UUID?
+    @ObservationIgnored private var profileIdStorage: UUID?
+    private(set) var profileId: UUID? {
+        get {
+            access(keyPath: \.profileId)
+            return profileIdStorage
+        }
+        set {
+            withMutation(keyPath: \.profileId) {
+                profileIdStorage = newValue
+            }
+        }
+    }
     var profileRuntimeState: SumiProfileRuntimeState = .dormant
 
     /// Whether this space belongs to an ephemeral/incognito profile
@@ -43,7 +55,15 @@ public class Space: NSObject, Identifiable {
         self.color = color
         self.workspaceTheme = workspaceTheme
         self.activeTabId = nil
-        self.profileId = profileId
+        profileIdStorage = profileId
         super.init()
+    }
+
+    func replaceProfileIDWithoutObservation(_ profileID: UUID?) {
+        profileIdStorage = profileID
+    }
+
+    func publishCurrentProfileID() {
+        withMutation(keyPath: \.profileId) {}
     }
 }

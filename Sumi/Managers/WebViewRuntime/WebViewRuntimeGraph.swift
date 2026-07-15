@@ -205,29 +205,15 @@ final class WebViewRuntimeGraph {
             shutdownRuntime: shutdownRuntime
         )
 
-    private let webViewCreationPlanner = WebViewCreationPlanner()
-
-    private let replacementTransitionRegistry =
-        WebViewReplacementTransitionRegistry()
-
-    private lazy var replacementPipeline: WebViewReplacementPipeline = {
-        let pipeline = WebViewReplacementPipeline(runtime: .init(
+    private(set) lazy var retiredGenerationDestroyer =
+        WebViewRetiredGenerationDestroyer(runtime: .init(
             webViewSessions: webViewSessions,
-            quiesce: { [weak self] webView in
-                self?.processRecoveryService.cancel(webView)
-                self?.compositorRuntime.removeWebViewFromContainers(webView)
-            },
-            retireNavigationGeneration: {
-                [weak self] tabID,
-                webViews,
-                preferredWebView in
+            retireNavigationGeneration: { [weak self] tabID, webViews, preferredWebView in
                 guard let self,
-                      let tab = self.runtimeTabs.resolve(
+                      let tab = self.runtimeTabs.tabForCleanup(
                           tabID,
                           resolveRuntimeTab: self.resolveRuntimeTab
-                      ) else {
-                    return
-                }
+                      ) else { return }
                 tab.webViewsDidLeaveNavigationRuntime(
                     webViews,
                     preferredAuthorityWebView: preferredWebView
@@ -238,6 +224,24 @@ final class WebViewRuntimeGraph {
                 self.websiteDataCleanupService.webViewDidLeaveRuntime(webView)
                 self.physicalCleanupService.clean(webView, tabID: tabID)
             },
+            uninstallObservationsIfUntracked: { [weak self] webView in
+                self?.trackedRegistrationOwner
+                    .uninstallMediaProtectionObservationsIfUntracked(webView)
+            }
+        ))
+
+    private let webViewCreationPlanner = WebViewCreationPlanner()
+
+    private let replacementTransitionRegistry = WebViewReplacementTransitionRegistry()
+
+    private lazy var replacementPipeline: WebViewReplacementPipeline = {
+        let pipeline = WebViewReplacementPipeline(runtime: .init(
+            webViewSessions: webViewSessions,
+            quiesce: { [weak self] webView in
+                self?.processRecoveryService.cancel(webView)
+                self?.compositorRuntime.removeWebViewFromContainers(webView)
+            },
+            retiredGenerationDestroyer: retiredGenerationDestroyer,
             restore: { [weak self] tabID, snapshot in
                 guard let self else { return }
                 if let tab = self.runtimeTabs.resolve(
@@ -250,10 +254,6 @@ final class WebViewRuntimeGraph {
                     where self.windowServices.containsWindow(windowID) {
                     self.windowServices.refreshCompositor(windowID)
                 }
-            },
-            uninstallObservationsIfUntracked: { [weak self] webView in
-                self?.trackedRegistrationOwner
-                    .uninstallMediaProtectionObservationsIfUntracked(webView)
             }
         ))
         replacementTransitionRegistry.install { [weak pipeline]

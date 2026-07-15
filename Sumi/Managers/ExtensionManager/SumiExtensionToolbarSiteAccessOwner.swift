@@ -27,12 +27,8 @@ final class SumiExtensionToolbarSiteAccessOwner {
         guard let manager = managerIfLoadedAndEnabled() else { return [] }
         return manager.orderedPinnedToolbarSlots(
             enabledExtensions: enabledExtensions,
-            profileId: profileId ?? manager.profileRuntime.currentProfileId
+            profileId: profileId
         )
-    }
-
-    func isPinnedToToolbar(_ extensionId: String) -> Bool {
-        managerIfLoadedAndEnabled()?.isPinnedToToolbar(extensionId) ?? false
     }
 
     func pinnedToolbarExtensionIDs(profileId: UUID?) -> [String] {
@@ -41,24 +37,33 @@ final class SumiExtensionToolbarSiteAccessOwner {
         ) ?? []
     }
 
-    func currentProfileID() -> UUID? {
-        managerIfLoadedAndEnabled()?.profileRuntime.currentProfileId
-            ?? fallbackProfileId()
+    @discardableResult
+    func pinToToolbar(_ extensionId: String, profileId: UUID?) -> Bool {
+        managerIfEnabled()?.pinToToolbar(
+            extensionId,
+            profileId: profileId
+        ) ?? false
     }
 
     @discardableResult
-    func pinToToolbar(_ extensionId: String) -> Bool {
-        managerIfEnabled()?.pinToToolbar(extensionId) ?? false
+    func unpinFromToolbar(_ extensionId: String, profileId: UUID?) -> Bool {
+        managerIfEnabled()?.unpinFromToolbar(
+            extensionId,
+            profileId: profileId
+        ) ?? false
     }
 
     @discardableResult
-    func unpinFromToolbar(_ extensionId: String) -> Bool {
-        managerIfEnabled()?.unpinFromToolbar(extensionId) ?? false
-    }
-
-    @discardableResult
-    func movePinnedToolbarSlot(id: String, to targetIndex: Int) -> Bool {
-        managerIfEnabled()?.movePinnedToolbarSlot(id: id, to: targetIndex) ?? false
+    func movePinnedToolbarSlot(
+        id: String,
+        to targetIndex: Int,
+        profileId: UUID?
+    ) -> Bool {
+        managerIfEnabled()?.movePinnedToolbarSlot(
+            id: id,
+            to: targetIndex,
+            profileId: profileId
+        ) ?? false
     }
 
     func orderedUnpinnedExtensionIDs(
@@ -72,16 +77,19 @@ final class SumiExtensionToolbarSiteAccessOwner {
         )
     }
 
+    @discardableResult
     func moveUnpinnedExtension(
         id: String,
         to targetIndex: Int,
-        within currentOrder: [String]
-    ) {
+        within currentOrder: [String],
+        profileId: UUID?
+    ) -> Bool {
         managerIfEnabled()?.moveUnpinnedExtension(
             id: id,
             to: targetIndex,
-            within: currentOrder
-        )
+            within: currentOrder,
+            profileId: profileId
+        ) ?? false
     }
 
     func siteAccessPolicy(

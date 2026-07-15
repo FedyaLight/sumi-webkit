@@ -74,9 +74,9 @@ final class RegularTabShortcutSidebarDropTransaction {
             .commitShortcutSidebarDrop(
                 prepared,
                 replacingSplitGroupsWith: replacement,
-                applyingSplitSideEffect: { [launcherPlacement] in
-                    launcherPlacement.apply(restorations)
-                }
+                sidebarMutation: launcherPlacement.mutationPreparation(
+                    restorations
+                )
             ) != nil else {
             return nil
         }

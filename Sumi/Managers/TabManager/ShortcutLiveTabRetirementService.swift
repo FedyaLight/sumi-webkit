@@ -11,14 +11,16 @@ final class ShortcutLiveTabRetirementService {
 
     init(
         registry: LiveShortcutTabRegistry,
+        batchRetirement: LiveShortcutTabBatchRetirement,
         structuralLookup: TabStructuralLookupCoordinator,
-        runtimePorts: @escaping () -> RuntimePortRegistry?,
+        runtimeConnection: TabRuntimePortConnection,
         runtimeTeardown: TabRuntimeTeardownService
     ) {
         self.registry = registry
         transaction = ShortcutLiveTabRetirementTransaction(
             registry: registry,
-            runtimePorts: runtimePorts,
+            batchRetirement: batchRetirement,
+            runtimeConnection: runtimeConnection,
             runtimeTeardown: runtimeTeardown
         )
         self.structuralLookup = structuralLookup
@@ -38,6 +40,8 @@ final class ShortcutLiveTabRetirementService {
             tabs: prepared.tabs,
             runtime: prepared.runtime,
             runtimeTeardown: prepared.runtimeTeardown,
+            committedRuntimeRetirement: prepared.committedRuntimeRetirement,
+            terminallyDrainedTabIDs: prepared.terminallyDrainedTabIDs,
             windowCommitPolicy: .retirementService,
             result: prepared.result
         )
@@ -81,6 +85,16 @@ final class ShortcutLiveTabRetirementService {
         transaction.prepareRetirement(pinId: pinId, in: windowId)
     }
 
+    func prepareReversibleRetirement(
+        pinId: UUID,
+        in windowId: UUID
+    ) -> ReversibleShortcutLiveTabRetirement? {
+        transaction.prepareReversibleRetirement(
+            pinId: pinId,
+            in: windowId
+        )
+    }
+
     func prepareRetirements(
         pinIds: Set<UUID>,
         in windowId: UUID
@@ -103,7 +117,13 @@ final class ShortcutLiveTabRetirementService {
     func finish(
         _ prepared: PreparedShortcutLiveTabRetirement
     ) -> ShortcutLiveTabRetirementResult {
-        let retiredIds = prepared.runtimeTeardown.map(runtimeTeardown.finish) ?? []
+        let retiredIds: Set<UUID>
+        if let committed = prepared.committedRuntimeRetirement {
+            retiredIds = runtimeTeardown.retirement.publish(committed)
+        } else {
+            retiredIds = (prepared.runtimeTeardown.map(runtimeTeardown.finish) ?? [])
+                .union(prepared.terminallyDrainedTabIDs)
+        }
         assert(retiredIds == Set(prepared.result.retiredTabIds))
         guard prepared.windowCommitPolicy == .retirementService else {
             return prepared.result
@@ -133,8 +153,9 @@ extension ShortcutLiveTabRetirementService {
     convenience init(tabManager: TabManager) {
         self.init(
             registry: tabManager.liveShortcutTabs,
+            batchRetirement: tabManager.liveShortcutTabBatchRetirement,
             structuralLookup: tabManager.structuralLookupCoordinator,
-            runtimePorts: { [weak tabManager] in tabManager?.runtimePorts },
+            runtimeConnection: tabManager.runtimePortConnection,
             runtimeTeardown: tabManager.runtimeTeardown
         )
     }

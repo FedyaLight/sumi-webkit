@@ -22,7 +22,7 @@ final class SumiStartupSessionCoordinatorTests: XCTestCase {
             pin,
             in: harness.windowState.id,
             currentSpaceId: harness.space.id
-        )
+        )!
         harness.windowState.currentTabId = liveTab.id
         harness.windowState.currentShortcutPinId = pin.id
         harness.windowState.currentShortcutPinRole = .spacePinned
@@ -203,7 +203,7 @@ final class SumiStartupSessionCoordinatorTests: XCTestCase {
             pin,
             in: harness.windowState.id,
             currentSpaceId: harness.space.id
-        )
+        )!
         harness.windowState.currentTabId = liveTab.id
         harness.windowState.currentShortcutPinId = pin.id
         harness.windowState.currentShortcutPinRole = .spacePinned

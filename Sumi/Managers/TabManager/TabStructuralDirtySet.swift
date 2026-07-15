@@ -1,6 +1,6 @@
 import Foundation
 
-struct TabStructuralDirtySet: Sendable {
+struct TabStructuralDirtySet: Equatable, Sendable {
     var dirtyTabIds: Set<UUID> = []
     var dirtyFolderIds: Set<UUID> = []
     var dirtySpaceIds: Set<UUID> = []

@@ -26,26 +26,21 @@ final class FloatingBarCommitService {
 
     private let presentation: FloatingBarPresentationService
     private let tabOpening: @MainActor () -> (any FloatingBarTabOpening)?
-    private let splitPlaceholders:
-        @MainActor () -> (any FloatingBarSplitPlaceholderHandling)?
+    private let tabTargets: FloatingBarTabTargetCommitter
     private let activePageTab: @MainActor (BrowserWindowState) -> Tab?
-    private let selectTab: @MainActor (Tab, BrowserWindowState) -> Void
     private let pageNavigation: FloatingBarPageNavigationService
 
     init(
         presentation: FloatingBarPresentationService,
         tabOpening: @escaping @MainActor () -> (any FloatingBarTabOpening)?,
-        splitPlaceholders: @escaping @MainActor
-            () -> (any FloatingBarSplitPlaceholderHandling)?,
+        tabTargets: FloatingBarTabTargetCommitter,
         activePageTab: @escaping @MainActor (BrowserWindowState) -> Tab?,
-        selectTab: @escaping @MainActor (Tab, BrowserWindowState) -> Void,
         pageNavigation: FloatingBarPageNavigationService
     ) {
         self.presentation = presentation
         self.tabOpening = tabOpening
-        self.splitPlaceholders = splitPlaceholders
+        self.tabTargets = tabTargets
         self.activePageTab = activePageTab
-        self.selectTab = selectTab
         self.pageNavigation = pageNavigation
     }
 
@@ -69,12 +64,25 @@ final class FloatingBarCommitService {
         in windowState: BrowserWindowState
     ) {
         let target = resolveTarget(in: windowState)
+        if case .tab = suggestion.type {
+            guard openSuggestion(
+                suggestion,
+                in: windowState,
+                target: target
+            ) else { return }
+            presentation.dismiss(
+                in: windowState,
+                preserveDraft: false,
+                cancelEmptySplitPlaceholder: false
+            )
+            return
+        }
         presentation.dismiss(
             in: windowState,
             preserveDraft: false,
             cancelEmptySplitPlaceholder: false
         )
-        openSuggestion(suggestion, in: windowState, target: target)
+        _ = openSuggestion(suggestion, in: windowState, target: target)
     }
 
     func commitNavigation(to urlString: String, in windowState: BrowserWindowState) {
@@ -87,10 +95,7 @@ final class FloatingBarCommitService {
 
         switch target {
         case .currentPage(let tab):
-            splitPlaceholders()?.commit(
-                tabID: tab.id,
-                in: windowState.id
-            )
+            tabTargets.commitPlaceholder(for: tab, in: windowState.id)
             pageNavigation.loadLiteralURL(
                 urlString,
                 in: tab,
@@ -109,25 +114,23 @@ final class FloatingBarCommitService {
         _ suggestion: SearchManager.SearchSuggestion,
         in windowState: BrowserWindowState
     ) {
-        openSuggestion(
+        _ = openSuggestion(
             suggestion,
             in: windowState,
             target: resolveTarget(in: windowState)
         )
     }
 
+    @discardableResult
     private func openSuggestion(
         _ suggestion: SearchManager.SearchSuggestion,
         in windowState: BrowserWindowState,
         target: Target
-    ) {
+    ) -> Bool {
         switch suggestion.type {
         case .tab(let existingTab):
-            if splitPlaceholders()?.replace(
-                with: existingTab,
-                in: windowState
-            ) != true {
-                selectTab(existingTab, windowState)
+            guard tabTargets.select(existingTab, in: windowState) else {
+                return false
             }
             RuntimeDiagnostics.debug(
                 "Switched to existing tab: \(existingTab.name)",
@@ -154,6 +157,7 @@ final class FloatingBarCommitService {
                 windowState: windowState
             )
         }
+        return true
     }
 
     private func openURL(
@@ -164,10 +168,7 @@ final class FloatingBarCommitService {
     ) {
         switch target {
         case .currentPage(let tab):
-            splitPlaceholders()?.commit(
-                tabID: tab.id,
-                in: windowState.id
-            )
+            tabTargets.commitPlaceholder(for: tab, in: windowState.id)
             pageNavigation.loadLiteralURL(
                 urlString,
                 in: tab,
@@ -197,10 +198,7 @@ final class FloatingBarCommitService {
     ) {
         switch target {
         case .currentPage(let tab):
-            splitPlaceholders()?.commit(
-                tabID: tab.id,
-                in: windowState.id
-            )
+            tabTargets.commitPlaceholder(for: tab, in: windowState.id)
             pageNavigation.navigate(to: input, in: tab, windowState: windowState)
             pageNavigation.applySettingsSurfaceNavigation(from: input)
             RuntimeDiagnostics.debug(

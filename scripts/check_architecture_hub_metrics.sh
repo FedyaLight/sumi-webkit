@@ -468,7 +468,10 @@ shortcut_registry_file="Sumi/Managers/TabManager/LiveShortcutTabRegistry.swift"
 shortcut_registry_snapshot="Sumi/Managers/TabManager/LiveShortcutTabSnapshot.swift"
 shortcut_window_query_file="Sumi/Managers/TabManager/ShortcutTabWindowQuery.swift"
 shortcut_binding_file="Sumi/Managers/TabManager/ShortcutTabBindingSynchronizer.swift"
+shortcut_binding_runtime_file="Sumi/Managers/TabManager/ShortcutTabBindingRuntimeMutation.swift"
+shortcut_binding_target_file="Sumi/Managers/TabManager/ShortcutTabBindingTargetMutationService.swift"
 shortcut_materializer_file="Sumi/Managers/TabManager/ShortcutTabMaterializer.swift"
+shortcut_materialization_committer_file="Sumi/Managers/TabManager/ShortcutTabMaterializationCommitter.swift"
 regular_shortcut_conversion_file="Sumi/Managers/TabManager/RegularTabShortcutConversionService.swift"
 regular_shortcut_conversion_live="Sumi/Managers/TabManager/RegularTabShortcutConversionService+Live.swift"
 shortcut_pin_promotion_file="Sumi/Managers/TabManager/ShortcutPinToRegularTabService.swift"
@@ -485,7 +488,10 @@ shortcut_runtime_files=(
   "$shortcut_registry_snapshot"
   "$shortcut_window_query_file"
   "$shortcut_binding_file"
+  "$shortcut_binding_runtime_file"
+  "$shortcut_binding_target_file"
   "$shortcut_materializer_file"
+  "$shortcut_materialization_committer_file"
   "$regular_shortcut_conversion_file"
   "$regular_shortcut_conversion_live"
   "$shortcut_pin_promotion_file"
@@ -562,7 +568,15 @@ split_shortcut_restore="Sumi/Managers/BrowserManager/SplitShortcutMemberRestoreS
 split_shortcut_launcher="Sumi/Managers/BrowserManager/ShortcutSplitLauncherPlacementService.swift"
 split_shortcut_launcher_resolver="Sumi/Managers/BrowserManager/ShortcutSplitLauncherDestinationResolver.swift"
 split_shortcut_launcher_transaction="Sumi/Managers/BrowserManager/ShortcutSplitLauncherMoveTransaction.swift"
-split_shortcut_launcher_catalog="Sumi/Managers/BrowserManager/ShortcutSplitLauncherCatalogAdapter.swift"
+split_shortcut_launcher_batch="Sumi/Managers/BrowserManager/ShortcutSplitLauncherMoveBatchStaging.swift"
+split_shortcut_launcher_checkpoint="Sumi/Managers/BrowserManager/ShortcutSplitLauncherMoveBatchCheckpoint.swift"
+split_shortcut_launcher_checkpoint_staging="Sumi/Managers/BrowserManager/ShortcutSplitLauncherMoveBatchCheckpointStaging.swift"
+split_shortcut_launcher_settlement="Sumi/Managers/BrowserManager/ShortcutSplitLauncherStagedMoveSettlement.swift"
+split_shortcut_launcher_batch_protocol="Sumi/Managers/BrowserManager/ShortcutSplitLauncherMoveBatchPreparing.swift"
+split_shortcut_launcher_receipt="Sumi/Managers/BrowserManager/ShortcutSplitLauncherMoveBatchReceipt.swift"
+split_shortcut_launcher_catalog="Sumi/Managers/BrowserManager/ShortcutSplitLauncherCatalogTransaction.swift"
+split_shortcut_launcher_catalog_snapshot="Sumi/Managers/BrowserManager/ShortcutSplitLauncherCatalogSnapshot.swift"
+split_shortcut_launcher_pin_receipt="Sumi/Managers/BrowserManager/ShortcutSplitLauncherCatalogPinReceipt.swift"
 split_shortcut_launcher_composition="Sumi/Managers/BrowserManager/ShortcutSplitLauncherPlacementService+Live.swift"
 split_shortcut_unload="Sumi/Managers/BrowserManager/ShortcutHostedSplitUnloadService.swift"
 split_shortcut_composition="Sumi/Managers/BrowserManager/SplitShortcutServices+Live.swift"
@@ -576,7 +590,15 @@ split_shortcut_files=(
   "$split_shortcut_launcher"
   "$split_shortcut_launcher_resolver"
   "$split_shortcut_launcher_transaction"
+  "$split_shortcut_launcher_batch"
+  "$split_shortcut_launcher_checkpoint"
+  "$split_shortcut_launcher_checkpoint_staging"
+  "$split_shortcut_launcher_settlement"
+  "$split_shortcut_launcher_batch_protocol"
+  "$split_shortcut_launcher_receipt"
   "$split_shortcut_launcher_catalog"
+  "$split_shortcut_launcher_catalog_snapshot"
+  "$split_shortcut_launcher_pin_receipt"
   "$split_shortcut_unload"
 )
 for service_file in \
@@ -594,6 +616,8 @@ for service_file in \
 done
 for retired_file in \
   Sumi/Managers/BrowserManager/BrowserSidebarSplitShortcutRoutingOwner.swift \
+  Sumi/Managers/BrowserManager/ShortcutSplitLauncherCatalogAdapter.swift \
+  Sumi/Managers/BrowserManager/ShortcutSplitLauncherResidenceTransaction.swift \
   SumiTests/BrowserSidebarSplitShortcutRoutingOwnerTests.swift; do
   if [[ -e "$retired_file" ]]; then
     printf 'error: tombstone violated: retired split routing hub returned: %s\n' "$retired_file" >&2
@@ -602,7 +626,7 @@ for retired_file in \
 done
 retired_split_shortcut_hub="$(
   count_matches \
-    'BrowserSidebarSplitShortcutRoutingOwner|BrowserSidebarSplitShortcutRouting|splitShortcutRouting' \
+    'BrowserSidebarSplitShortcutRoutingOwner|BrowserSidebarSplitShortcutRouting|splitShortcutRouting|ShortcutSplitLauncherCatalogAdapter' \
     App FloatingBar SidebarChrome Settings Sumi UI SumiTests
 )"
 split_shortcut_group_capabilities="$(
@@ -1270,8 +1294,21 @@ check_max "ShortcutSplitLauncherDestinationResolver LOC" "$(count_lines "$split_
 check_max "Shortcut launcher destination collaborators" "$(count_stored_collaborators "$split_shortcut_launcher_resolver")" 2
 check_max "ShortcutSplitLauncherMoveTransaction LOC" "$(count_lines "$split_shortcut_launcher_transaction")" 85
 check_max "Shortcut launcher move collaborators" "$(count_stored_collaborators "$split_shortcut_launcher_transaction")" 3
-check_max "ShortcutSplitLauncherCatalogAdapter LOC" "$(count_lines "$split_shortcut_launcher_catalog")" 65
-check_max "Shortcut launcher catalog collaborators" "$(count_stored_collaborators "$split_shortcut_launcher_catalog")" 1
+check_max "ShortcutSplitLauncherMoveBatchStaging LOC" "$(count_lines "$split_shortcut_launcher_batch")" 145
+check_max "Shortcut launcher batch collaborators" "$(count_stored_collaborators "$split_shortcut_launcher_batch")" 3
+check_max "Shortcut launcher batch checkpoint LOC" "$(count_lines "$split_shortcut_launcher_checkpoint")" 65
+check_max "Shortcut launcher batch checkpoint collaborators" "$(count_stored_collaborators "$split_shortcut_launcher_checkpoint")" 3
+check_max "Shortcut launcher checkpoint staging LOC" "$(count_lines "$split_shortcut_launcher_checkpoint_staging")" 40
+check_max "Shortcut launcher checkpoint staging collaborators" "$(count_stored_collaborators "$split_shortcut_launcher_checkpoint_staging")" 2
+check_max "Shortcut launcher staged settlement LOC" "$(count_lines "$split_shortcut_launcher_settlement")" 45
+check_max "Shortcut launcher staged settlement collaborators" "$(count_stored_collaborators "$split_shortcut_launcher_settlement")" 2
+check_max "ShortcutSplitLauncherMoveBatchPreparing LOC" "$(count_lines "$split_shortcut_launcher_batch_protocol")" 20
+check_max "ShortcutSplitLauncherMoveBatchReceipt LOC" "$(count_lines "$split_shortcut_launcher_receipt")" 60
+check_max "Shortcut launcher batch receipt collaborators" "$(count_stored_collaborators "$split_shortcut_launcher_receipt")" 4
+check_max "ShortcutSplitLauncherCatalogTransaction LOC" "$(count_lines "$split_shortcut_launcher_catalog")" 110
+check_max "Shortcut launcher catalog collaborators" "$(count_stored_collaborators "$split_shortcut_launcher_catalog")" 2
+check_max "ShortcutSplitLauncherCatalogSnapshot LOC" "$(count_lines "$split_shortcut_launcher_catalog_snapshot")" 90
+check_max "ShortcutSplitLauncherCatalogPinReceipt LOC" "$(count_lines "$split_shortcut_launcher_pin_receipt")" 55
 check_max "ShortcutSplitLauncherPlacement live composition LOC" "$(count_lines "$split_shortcut_launcher_composition")" 40
 check_max "ShortcutSplitLauncherPlacement live stored state" "$(count_stored_collaborators "$split_shortcut_launcher_composition")" 0
 check_max "ShortcutHostedSplitUnloadService.swift LOC" "$(count_lines "$split_shortcut_unload")" 105
@@ -1290,8 +1327,14 @@ check_max "ShortcutTabWindowQuery.swift LOC" "$(count_lines "$shortcut_window_qu
 check_max "ShortcutTabWindowQuery collaborators" "$(count_stored_collaborators "$shortcut_window_query_file")" 1
 check_max "ShortcutTabBindingSynchronizer.swift LOC" "$(count_lines "$shortcut_binding_file")" 200
 check_max "ShortcutTabBindingSynchronizer collaborators" "$(count_stored_collaborators "$shortcut_binding_file")" 5
+check_max "Shortcut binding runtime mutation LOC" "$(count_lines "$shortcut_binding_runtime_file")" 195
+check_max "Shortcut binding runtime mutation collaborators" "$(count_stored_collaborators "$shortcut_binding_runtime_file")" 5
+check_max "Shortcut binding target mutation LOC" "$(count_lines "$shortcut_binding_target_file")" 95
+check_max "Shortcut binding target mutation collaborators" "$(count_stored_collaborators "$shortcut_binding_target_file")" 2
 check_max "ShortcutTabMaterializer.swift LOC" "$(count_lines "$shortcut_materializer_file")" 100
 check_max "ShortcutTabMaterializer collaborators" "$(count_stored_collaborators "$shortcut_materializer_file")" 5
+check_max "Shortcut materialization committer LOC" "$(count_lines "$shortcut_materialization_committer_file")" 75
+check_max "Shortcut materialization committer collaborators" "$(count_stored_collaborators "$shortcut_materialization_committer_file")" 5
 check_exact "Unsafe shortcut conversion phase API" "$unsafe_shortcut_conversion_phase_api" 0
 check_exact "Retired shortcut conversion hubs" "$retired_shortcut_conversion_hubs" 0
 check_max "RegularTabShortcutConversionService.swift LOC" "$(count_lines "$regular_shortcut_conversion_file")" 125

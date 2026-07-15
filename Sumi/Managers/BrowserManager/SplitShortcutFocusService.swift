@@ -93,18 +93,21 @@ final class SplitShortcutFocusService {
             groupID: group.id,
             activeMemberID: activeMemberID
         )
-        guard let materialized = WindowSplitMaterializationService()
-            .materialize(
+        guard WindowSplitMaterializationService()
+            .withMaterialization(
                 group,
                 selection: selection,
                 in: windowState,
-                tabManager: tabManager
-            ) else {
+                tabManager: tabManager,
+                finalizing: { materialized in
+                selectTabWithoutPersistence(
+                    materialized.activeTab,
+                    windowState
+                )
+                windowState.splitSelection = materialized.presentation.selection
+            }) else {
             return false
         }
-
-        selectTabWithoutPersistence(materialized.activeTab, windowState)
-        windowState.splitSelection = materialized.presentation.selection
         refreshCompositor(windowState)
         return true
     }

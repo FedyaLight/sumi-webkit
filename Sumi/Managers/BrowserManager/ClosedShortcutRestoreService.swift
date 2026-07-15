@@ -41,14 +41,14 @@ final class ClosedShortcutRestoreService {
             return restoreLauncher(from: shortcutState.pin, fallbackWindow: targetWindow) != nil
         }
 
-        let restoredTab = tabManager.shortcutTabMaterializer.materialize(
+        return tabManager.shortcutPresentationActivation.commitActivation(
             pin,
             in: targetWindow.id,
-            currentSpaceId: targetWindow.currentSpaceId
-        )
-        applyLiveState(shortcutState, to: restoredTab)
-        selectRestoredTab(restoredTab, targetWindow)
-        return true
+            presentationSpaceID: pin.spaceId ?? targetWindow.currentSpaceId
+        ) { [self] restoredTab in
+            applyLiveState(shortcutState, to: restoredTab)
+            selectRestoredTab(restoredTab, targetWindow)
+        }
     }
 
     /// Returns `false` when the launcher's profile or space cannot be

@@ -8,19 +8,23 @@ struct PreparedTabRuntimeTeardown {
     var tabIds: Set<UUID> { Set(tabs.map(\.id)) }
 }
 
-/// Performs only the fallible physical phase of tab retirement. Structural
-/// owners remain untouched until every unique tab has released its WebViews.
+/// Prepares terminal teardown outside reversible repository quarantine.
 @MainActor
 struct TabRuntimeTeardownPreparationService {
     func prepare(
         _ tabs: [Tab],
         using runtime: RuntimePortRegistry
     ) -> PreparedTabRuntimeTeardown? {
-        var seen = Set<UUID>()
-        let uniqueTabs = tabs.filter { seen.insert($0.id).inserted }
-        guard uniqueTabs.allSatisfy({
+        let tabs = Self.orderedUnique(tabs)
+        guard tabs.allSatisfy({
             $0.performComprehensiveWebViewCleanup()
         }) else { return nil }
-        return PreparedTabRuntimeTeardown(tabs: uniqueTabs, runtime: runtime)
+        return PreparedTabRuntimeTeardown(tabs: tabs, runtime: runtime)
+    }
+
+    static func orderedUnique(_ tabs: [Tab]) -> [Tab] {
+        var seen = Set<UUID>()
+        return tabs.filter { seen.insert($0.id).inserted }
+            .sorted { $0.id.uuidString < $1.id.uuidString }
     }
 }

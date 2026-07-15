@@ -161,7 +161,8 @@ final class WebViewSessionArchitectureTests: XCTestCase {
                 ),
             ],
             validateModel: { true },
-            modelCommit: { () }
+            modelCommit: { () },
+            modelRollback: { () }
         )
         guard case .began(let lease) = begin else {
             return XCTFail("Expected replacement batch")

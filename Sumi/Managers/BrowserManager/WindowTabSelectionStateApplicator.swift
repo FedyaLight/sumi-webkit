@@ -98,37 +98,82 @@ enum WindowTabSelectionStateApplicator {
         updateSpaceFromTab: Bool,
         rememberSelection: Bool
     ) -> WindowTabSelectionApplicationResult {
-        let previousTabId = windowState.currentTabId
-        let previousSpaceId = windowState.currentSpaceId
+        var state = windowState.unpublishedShortcutMutationState
+        let result = apply(
+            tab,
+            to: &state,
+            updateSpaceFromTab: updateSpaceFromTab,
+            rememberSelection: rememberSelection
+        )
+        if result.stateDidChange {
+            precondition(windowState.commitShortcutMutationState(state))
+        }
+        return result
+    }
+
+    static func apply(
+        _ tab: Tab,
+        to state: inout BrowserWindowShortcutMutationState,
+        updateSpaceFromTab: Bool,
+        rememberSelection: Bool
+    ) -> WindowTabSelectionApplicationResult {
+        let previousTabId = state.currentTabId
+        let previousSpaceId = state.currentSpaceId
         let targetState = WindowTabSelectionPolicy.targetState(
             tabId: tab.id,
             tabSpaceId: tab.spaceId,
             isShortcutLiveInstance: tab.isShortcutLiveInstance,
             shortcutPinId: tab.shortcutPinId,
             shortcutPinRole: tab.shortcutPinRole,
-            currentSpaceId: windowState.currentSpaceId,
+            currentSpaceId: state.currentSpaceId,
             updateSpaceFromTab: updateSpaceFromTab,
             rememberSelection: rememberSelection
         )
 
         var stateDidChange = false
-        if windowState.webKitChildWindowIdentity != nil,
-           windowState.webKitChildWindowIdentity?.initialTabID != tab.id {
-            windowState.markWebKitChildWindowAdopted(by: tab.id)
+        if state.webKitChildWindowIdentity != nil,
+           state.webKitChildWindowIdentity?.initialTabID != tab.id {
+            state.webKitChildWindowIdentity = nil
             stateDidChange = true
         }
-        stateDidChange = assignIfChanged(\.currentTabId, targetState.currentTabId, in: windowState) || stateDidChange
-        stateDidChange = assignIfChanged(\.isShowingEmptyState, targetState.isShowingEmptyState, in: windowState) || stateDidChange
-        stateDidChange = assignIfChanged(\.currentSpaceId, targetState.currentSpaceId, in: windowState) || stateDidChange
-        stateDidChange = assignIfChanged(\.currentShortcutPinId, targetState.currentShortcutPinId, in: windowState) || stateDidChange
-        stateDidChange = assignIfChanged(\.currentShortcutPinRole, targetState.currentShortcutPinRole, in: windowState) || stateDidChange
-        stateDidChange = applyShortcutMemoryUpdate(targetState.shortcutMemoryUpdate, to: windowState) || stateDidChange
-        stateDidChange = applyRegularTabMemoryUpdate(targetState.regularTabMemoryUpdate, to: windowState) || stateDidChange
+        stateDidChange = assignIfChanged(
+            \.currentTabId,
+            targetState.currentTabId,
+            in: &state
+        ) || stateDidChange
+        stateDidChange = assignIfChanged(
+            \.isShowingEmptyState,
+            targetState.isShowingEmptyState,
+            in: &state
+        ) || stateDidChange
+        stateDidChange = assignIfChanged(
+            \.currentSpaceId,
+            targetState.currentSpaceId,
+            in: &state
+        ) || stateDidChange
+        stateDidChange = assignIfChanged(
+            \.currentShortcutPinId,
+            targetState.currentShortcutPinId,
+            in: &state
+        ) || stateDidChange
+        stateDidChange = assignIfChanged(
+            \.currentShortcutPinRole,
+            targetState.currentShortcutPinRole,
+            in: &state
+        ) || stateDidChange
+        stateDidChange = applyShortcutMemoryUpdate(
+            targetState.shortcutMemoryUpdate,
+            to: &state
+        ) || stateDidChange
+        stateDidChange = applyRegularTabMemoryUpdate(
+            targetState.regularTabMemoryUpdate,
+            to: &state
+        ) || stateDidChange
         stateDidChange = recordSelectionHistoryIfNeeded(
             tab,
             targetState: targetState,
             rememberSelection: rememberSelection,
-            in: windowState
+            in: &state
         ) || stateDidChange
 
         return WindowTabSelectionApplicationResult(
@@ -140,30 +185,34 @@ enum WindowTabSelectionStateApplicator {
 
     @discardableResult
     private static func assignIfChanged<Value: Equatable>(
-        _ keyPath: ReferenceWritableKeyPath<BrowserWindowState, Value>,
+        _ keyPath: WritableKeyPath<BrowserWindowShortcutMutationState, Value>,
         _ value: Value,
-        in windowState: BrowserWindowState
+        in state: inout BrowserWindowShortcutMutationState
     ) -> Bool {
-        guard windowState[keyPath: keyPath] != value else { return false }
-        windowState[keyPath: keyPath] = value
+        guard state[keyPath: keyPath] != value else { return false }
+        state[keyPath: keyPath] = value
         return true
     }
 
     @discardableResult
     private static func applyShortcutMemoryUpdate(
         _ update: WindowTabSelectionTargetState.ShortcutMemoryUpdate,
-        to windowState: BrowserWindowState
+        to state: inout BrowserWindowShortcutMutationState
     ) -> Bool {
         switch update {
         case .none:
             return false
         case let .set(spaceId, pinId):
-            guard windowState.selectedShortcutPinForSpace[spaceId] != pinId else { return false }
-            windowState.selectedShortcutPinForSpace[spaceId] = pinId
+            guard state.selectedShortcutPinForSpace[spaceId] != pinId else {
+                return false
+            }
+            state.selectedShortcutPinForSpace[spaceId] = pinId
             return true
         case let .clear(spaceId):
-            guard windowState.selectedShortcutPinForSpace[spaceId] != nil else { return false }
-            windowState.selectedShortcutPinForSpace[spaceId] = nil
+            guard state.selectedShortcutPinForSpace[spaceId] != nil else {
+                return false
+            }
+            state.selectedShortcutPinForSpace[spaceId] = nil
             return true
         }
     }
@@ -171,19 +220,23 @@ enum WindowTabSelectionStateApplicator {
     @discardableResult
     private static func applyRegularTabMemoryUpdate(
         _ update: WindowTabSelectionTargetState.RegularTabMemoryUpdate,
-        to windowState: BrowserWindowState
+        to state: inout BrowserWindowShortcutMutationState
     ) -> Bool {
         switch update {
         case .none:
             return false
         case let .set(spaceId, tabId):
             var didChange = false
-            if windowState.activeTabForSpace[spaceId] != tabId {
-                windowState.activeTabForSpace[spaceId] = tabId
+            if state.activeTabForSpace[spaceId] != tabId {
+                state.activeTabForSpace[spaceId] = tabId
                 didChange = true
             }
-            if windowState.selectionHistory.recentRegularTabIdsBySpace[spaceId]?.first != tabId {
-                windowState.selectionHistory.recordRegularTabSelection(tabId, in: spaceId)
+            if state.selectionHistory.recentRegularTabIdsBySpace[spaceId]?.first
+                != tabId {
+                state.selectionHistory.recordRegularTabSelection(
+                    tabId,
+                    in: spaceId
+                )
                 didChange = true
             }
             return didChange
@@ -195,7 +248,7 @@ enum WindowTabSelectionStateApplicator {
         _ tab: Tab,
         targetState: WindowTabSelectionTargetState,
         rememberSelection: Bool,
-        in windowState: BrowserWindowState
+        in state: inout BrowserWindowShortcutMutationState
     ) -> Bool {
         guard rememberSelection,
               let spaceId = targetState.currentSpaceId
@@ -211,6 +264,6 @@ enum WindowTabSelectionStateApplicator {
             item = .regularTab(tab.id)
         }
 
-        return windowState.selectionHistory.recordSelection(item, in: spaceId)
+        return state.selectionHistory.recordSelection(item, in: spaceId)
     }
 }

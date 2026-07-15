@@ -12,14 +12,9 @@ import Foundation
 @MainActor
 final class TabLifecycleOwnerBag {
     private unowned let tabManager: TabManager
-    private let faviconPresentationRefreshDebounceNanoseconds: UInt64
 
-    init(
-        tabManager: TabManager,
-        faviconPresentationRefreshDebounceNanoseconds: UInt64
-    ) {
+    init(tabManager: TabManager) {
         self.tabManager = tabManager
-        self.faviconPresentationRefreshDebounceNanoseconds = faviconPresentationRefreshDebounceNanoseconds
     }
 
     private var tm: TabManager { tabManager }
@@ -50,7 +45,7 @@ final class TabLifecycleOwnerBag {
     )
     lazy var faviconPresentationRefreshOwner = TabFaviconPresentationRefreshOwner(
         notificationCenter: .default,
-        debounceNanoseconds: faviconPresentationRefreshDebounceNanoseconds,
+        debounceNanoseconds: TabFaviconPresentationRefreshOwner.defaultDebounceNanoseconds,
         tabsNeedingRefresh: { [weak self] in
             guard let self else { return [] }
             return self.tm.regularTabCollectionStateOwner.allTabs()

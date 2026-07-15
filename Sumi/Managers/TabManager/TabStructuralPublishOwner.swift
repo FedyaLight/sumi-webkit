@@ -6,6 +6,7 @@ final class TabStructuralPublishOwner {
     private let eventBus: TabStructureEventBus
     private var structuralUpdateDepth = 0
     private var pendingStructuralScope: TabStructureChangeScope?
+    private var actionsBeforeStructuralPublication: [@MainActor () -> Void] = []
     private var actionsAfterStructuralBatch: [@MainActor () -> Void] = []
     private var structuralTransactionSignpostState: OSSignpostIntervalState?
     private(set) var mutationRevision: UInt64 = 0
@@ -49,13 +50,26 @@ final class TabStructuralPublishOwner {
         actionsAfterStructuralBatch.append(action)
     }
 
+    /// Runs terminal ownership work after the raw structural batch and lookup
+    /// flush, but before any external structural event. Actions remain inside
+    /// the batching sentinel so reentrant structural requests are coalesced
+    /// into the same publication instead of escaping as an immediate event.
+    func runBeforeCurrentBatchPublication(
+        _ action: @escaping @MainActor () -> Void
+    ) {
+        guard structuralUpdateDepth > 0 else {
+            action()
+            return
+        }
+        actionsBeforeStructuralPublication.append(action)
+    }
+
     private func emitStructureChanged(scope: TabStructureChangeScope) {
         eventBus.publishStructureChanged(scope: scope)
     }
 
     private func begin() {
         if structuralUpdateDepth == 0 {
-            mutationRevision += 1
             structuralTransactionSignpostState = PerformanceTrace.beginInterval("TabManager.structuralTransaction")
         }
         structuralUpdateDepth += 1
@@ -63,10 +77,19 @@ final class TabStructuralPublishOwner {
 
     private func end(flushPendingLookupBatch: () -> Void) {
         guard structuralUpdateDepth > 0 else { return }
-        structuralUpdateDepth -= 1
-        guard structuralUpdateDepth == 0 else { return }
+        guard structuralUpdateDepth == 1 else {
+            structuralUpdateDepth -= 1
+            return
+        }
 
         flushPendingLookupBatch()
+        while actionsBeforeStructuralPublication.isEmpty == false {
+            let actions = actionsBeforeStructuralPublication
+            actionsBeforeStructuralPublication.removeAll(keepingCapacity: true)
+            actions.forEach { $0() }
+            flushPendingLookupBatch()
+        }
+        structuralUpdateDepth = 0
         let scope = pendingStructuralScope
         pendingStructuralScope = nil
         if let state = structuralTransactionSignpostState {
@@ -74,6 +97,7 @@ final class TabStructuralPublishOwner {
             structuralTransactionSignpostState = nil
         }
         if let scope {
+            mutationRevision += 1
             PerformanceTrace.emitEvent("TabManager.structuralPublish.coalesced")
             emitStructureChanged(scope: scope)
         }

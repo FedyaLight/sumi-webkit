@@ -26,14 +26,14 @@ final class SpaceContentRetirementService {
         state: TabStateStore,
         structuralMutations: TabStructuralCollectionMutationOwner,
         splitGroups: SpaceSplitGroupRetirementService,
-        liveShortcutTabs: LiveShortcutTabRegistry,
+        liveShortcutRetirement: LiveShortcutTabBatchRetirement,
         runtimeTeardown: TabRuntimeTeardownService
     ) {
         transaction = SpaceContentRetirementTransaction(
             state: state,
             structuralMutations: structuralMutations,
             splitGroups: splitGroups,
-            liveShortcutTabs: liveShortcutTabs
+            liveShortcutRetirement: liveShortcutRetirement
         )
         self.runtimeTeardown = runtimeTeardown
     }

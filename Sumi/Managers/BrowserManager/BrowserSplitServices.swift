@@ -72,6 +72,19 @@ extension BrowserSplitServices {
                     persistSelection: false
                 )
             },
+            publishPreparedSelectionEffects: {
+                [weak browserManager]
+                tab,
+                windowState,
+                previousTabID,
+                previousSpaceID in
+                browserManager?.publishPreparedTabSelectionEffects(
+                    tab,
+                    in: windowState,
+                    previousTabID: previousTabID,
+                    previousSpaceID: previousSpaceID
+                )
+            },
             publishWindowChange: { [emitter = updateChannel.emitter] windowID in
                 emitter.publish(windowID: windowID)
             },
@@ -89,7 +102,7 @@ extension BrowserSplitServices {
             }
         )
         let launcherPlacement = ShortcutSplitLauncherPlacementService(
-            tabManager: tabManager
+            tabManager: browserManager.tabManager
         )
         let memberResolver = SplitRuntimeMemberResolver(
             tabManager: tabManager
@@ -111,26 +124,47 @@ extension BrowserSplitServices {
             query: query,
             memberResolver: memberResolver
         )
+        let placeholderRetirement = EmptySplitPlaceholderRetirementService(
+            regularTabs: browserManager.tabManager.regularTabCollectionOwner,
+            selection: browserManager.tabManager.selectionStateOwner,
+            structuralLookup: browserManager.tabManager.structuralLookupCoordinator,
+            persistence: browserManager.tabManager.structuralPersistence,
+            runtimeConnection: browserManager.tabManager.runtimePortConnection,
+            runtimeCleanup: RegularTabClosureRuntimeCleanup(
+                membership: browserManager.tabManager.tabCollectionMembershipOwner
+            )
+        )
+        let placeholderReplacements = SplitPlaceholderReplacementPlanner(
+            query: SplitPlaceholderReplacementQuery(
+                regularTabs: browserManager.tabManager.regularTabCollectionOwner,
+                splitGroups: browserManager.tabManager.splitGroupStore,
+                membership: browserManager.tabManager.splitGroupMembership,
+                liveShortcuts: browserManager.tabManager.liveShortcutTabs,
+                members: memberResolver
+            ),
+            launcher: launcherPlacement,
+            splitMutations: browserManager.tabManager.splitGroupMutations,
+            retirement: placeholderRetirement,
+            presentations: presentations
+        )
         let drops = SplitDropService(
             tabManager: tabManager,
             memberResolver: memberResolver,
             launcherPlacement: launcherPlacement,
-            reconcileAfterCommit: { [presentations] effect in
-                presentations.synchronize(
-                    previousGroups: effect.previousGroups,
-                    affectedGroupIDs: effect.affectedGroupIDs,
-                    preferredSelections: [
-                        effect.callerWindowID: WindowSplitSelection(
-                            groupID: effect.targetGroupID,
-                            activeMemberID: effect.preferredActiveMemberID
-                        )
-                    ]
-                )
-            },
+            placeholderReplacements: placeholderReplacements,
+            presentations: presentations,
             notifyLimit: { [weak browserManager] windowState in
                 browserManager?.notificationPresenter
                     .presentSplitViewLimitNotification(in: windowState)
             }
+        )
+        let insertion = SplitInsertionService(
+            currentTab: currentTab,
+            memberIsGrouped: {
+                tabManager()?.splitGroupStore.group(containing: $0) != nil
+            },
+            members: memberResolver,
+            drops: drops
         )
         let layout = SplitLayoutService(
             tabManager: tabManager,
@@ -153,10 +187,26 @@ extension BrowserSplitServices {
             }
         )
         let emptyPlaceholders = EmptySplitService(
-            tabManager: tabManager,
-            currentTab: currentTab,
-            memberResolver: memberResolver,
-            dropService: drops
+            placeholders: EmptySplitPlaceholderFactory(
+                spaces: browserManager.tabManager.spaceStateOwner,
+                regularTabs: browserManager.tabManager.regularTabLifecycleOwner,
+                retirement: placeholderRetirement,
+                structuralTransactions: browserManager.tabManager
+                    .structuralLookupCoordinator,
+                terminalMutations: browserManager.tabManager
+                    .structuralCollectionMutationOwner
+            ),
+            insertion: insertion,
+            activations: browserManager.tabManager
+                .shortcutPresentationActivation,
+            session: EmptySplitSession(
+                replacements: drops,
+                structuralTransactions: browserManager.tabManager
+                    .structuralLookupCoordinator,
+                terminalMutations: browserManager.tabManager
+                    .structuralCollectionMutationOwner,
+                placeholderRetirement: placeholderRetirement
+            )
         )
         let emptyCreation = EmptySplitCreationWorkflow(
             placeholders: emptyPlaceholders,
@@ -168,14 +218,6 @@ extension BrowserSplitServices {
                     reason: reason
                 )
             }
-        )
-        let insertion = SplitInsertionService(
-            currentTab: currentTab,
-            memberIsGrouped: {
-                tabManager()?.splitGroupStore.group(containing: $0) != nil
-            },
-            members: memberResolver,
-            drops: drops
         )
         let tabClosures = SplitTabClosureService(
             dropTargets: dropTargets,

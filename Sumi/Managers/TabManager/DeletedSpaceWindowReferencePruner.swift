@@ -7,21 +7,7 @@ struct DeletedSpaceWindowReferencePruner {
         to removal: SpaceRemovalFootprint,
         from windowState: BrowserWindowState
     ) -> Bool {
-        var changed = false
-        if windowState.currentSpaceId == removal.spaceId {
-            windowState.currentSpaceId = nil
-            changed = true
-        }
-        if windowState.currentTabId.map(removal.tabIds.contains) == true {
-            windowState.currentTabId = nil
-            changed = true
-        }
-        if windowState.currentShortcutPinId
-            .map(removal.shortcutPinIds.contains) == true {
-            windowState.currentShortcutPinId = nil
-            windowState.currentShortcutPinRole = nil
-            changed = true
-        }
+        var changed = pruneCurrentSelection(removal, in: windowState)
 
         let activeTabs = windowState.activeTabForSpace.filter {
             $0.key != removal.spaceId && !removal.tabIds.contains($0.value)
@@ -58,6 +44,33 @@ struct DeletedSpaceWindowReferencePruner {
         }
         if legacySplitReferencesRemoval(windowState, removal: removal) {
             windowState.restorationState.pendingLegacySplitGroup = nil
+            changed = true
+        }
+        return changed
+    }
+
+    private func pruneCurrentSelection(
+        _ removal: SpaceRemovalFootprint,
+        in windowState: BrowserWindowState
+    ) -> Bool {
+        var changed = false
+        if windowState.currentSpaceId == removal.spaceId {
+            windowState.currentSpaceId = nil
+            changed = true
+        }
+        if windowState.currentTabId.map(removal.tabIds.contains) == true {
+            windowState.currentTabId = nil
+            changed = true
+        }
+        let retiredWindowPinIDs = removal.retiredShortcutPinIDsByWindow[
+            windowState.id
+        ] ?? []
+        if windowState.currentShortcutPinId.map({
+            removal.shortcutPinIds.contains($0)
+                || retiredWindowPinIDs.contains($0)
+        }) == true {
+            windowState.currentShortcutPinId = nil
+            windowState.currentShortcutPinRole = nil
             changed = true
         }
         return changed

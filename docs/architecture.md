@@ -86,7 +86,18 @@ mutations publish exact folder IDs instead of remapping global dictionaries,
 and toolbar layout changes use a dedicated leaf publisher rather than
 `objectWillChange`. URL-bar and AppKit-hosted Hub extension projections
 subscribe only while their surface is mounted and the extension module is
-enabled; pinning invalidation is scoped to the rendered profile. Updater and
+enabled. Pin, unpin, toolbar reorder, and Hub reorder commands carry that
+rendered profile through persistence and publish the same exact profile key;
+they never fall back to the manager's concurrently current profile. A live
+shortcut registry entry likewise retains an immutable presentation-page
+receipt captured from its launcher container. Essential execution keeps its
+nil Space, and account-fork execution may use another profile, without either
+mutable execution value changing register, identity-rekey, or retirement
+invalidation. A caller without an exact mounted container cannot create the
+live residence. Moving an existing residence to another presented page is a
+separate transaction: it carries an explicit target receipt and atomically
+invalidates both the retained source and target pages.
+Updater and
 now-playing models are likewise observed only by mounted leaf chrome. A hidden
 prewarmed sidebar installs none of these subscriptions. There is no
 BrowserManager structural revision, sidebar-wide relay, or discard-read

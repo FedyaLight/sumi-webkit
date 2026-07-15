@@ -28,7 +28,7 @@ final class SplitLayoutService {
             SplitMemberID,
             SumiDomain.SplitGroup,
             BrowserWindowState
-        ) -> Bool,
+        ) -> Bool
     ) {
         self.tabManager = tabManager
         self.query = query
@@ -72,8 +72,10 @@ final class SplitLayoutService {
         )
     }
 
-    func handleClosedRegularTabs(_ tabIDs: Set<UUID>) {
-        guard !tabIDs.isEmpty, let tabManager = tabManager() else { return }
+    func stageClosedRegularTabs(
+        _ tabIDs: Set<UUID>
+    ) -> PreparedSplitTabClosureSettlement? {
+        guard !tabIDs.isEmpty, let tabManager = tabManager() else { return nil }
         let memberIDs = Set(tabIDs.map(SplitMemberID.regularTab))
         let expected = tabManager.splitGroupStore.groups
         let replacement = expected.compactMap { group in
@@ -94,18 +96,19 @@ final class SplitLayoutService {
         }
         guard let restorations = launcherPlacement.prepareRestorations(
             for: releasedShortcuts
-        ) else { return }
+        ) else { return nil }
         guard replacement != expected,
               tabManager.splitGroupMutations.replaceAllAtomically(
                   expected: expected,
                   with: replacement,
                   applying: { [launcherPlacement] in
-                      launcherPlacement.apply(restorations)
+                      launcherPlacement.applyAndCommit(restorations)
                   }
               ) else {
-            return
+            return nil
         }
-        presentations.synchronize(
+        return PreparedSplitTabClosureSettlement(
+            presentations: presentations,
             previousGroups: changedGroups,
             affectedGroupIDs: Set(changedGroups.map(\.id))
         )

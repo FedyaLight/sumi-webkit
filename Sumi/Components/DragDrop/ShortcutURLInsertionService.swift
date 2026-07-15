@@ -22,25 +22,19 @@ protocol ShortcutURLInserting: AnyObject {
 
 @MainActor
 final class ShortcutURLInsertionService: ShortcutURLInserting {
-    private let store: ShortcutPinStoreOwner
-    private let materializer: ShortcutTabMaterializer
-    private let structuralLookup: TabStructuralLookupCoordinator
+    private let transaction: ShortcutURLInsertionTransaction
     private let prepareActivation:
         @MainActor (BrowserWindowState) -> (@MainActor (Tab) -> Void)?
     private let schedulePersistence: @MainActor () -> Void
 
     init(
-        store: ShortcutPinStoreOwner,
-        materializer: ShortcutTabMaterializer,
-        structuralLookup: TabStructuralLookupCoordinator,
+        transaction: ShortcutURLInsertionTransaction,
         prepareActivation: @escaping @MainActor (
             BrowserWindowState
         ) -> (@MainActor (Tab) -> Void)?,
         schedulePersistence: @escaping @MainActor () -> Void
     ) {
-        self.store = store
-        self.materializer = materializer
-        self.structuralLookup = structuralLookup
+        self.transaction = transaction
         self.prepareActivation = prepareActivation
         self.schedulePersistence = schedulePersistence
     }
@@ -63,30 +57,12 @@ final class ShortcutURLInsertionService: ShortcutURLInserting {
             title: url.host ?? url.absoluteString
         )
 
-        let insertedPin: ShortcutPin? = structuralLookup.withTransaction {
-            guard let insertedPin = store.insert(
-                proposedPin,
-                at: placement.index,
-                openTargetFolder: placement.openTargetFolder
-            ) else { return nil }
-            let liveTab = materializer.materialize(
-                insertedPin,
-                in: windowState.id,
-                currentSpaceId: windowState.currentSpaceId
-            )
-            _ = WindowTabSelectionStateApplicator.apply(
-                liveTab,
-                to: windowState,
-                updateSpaceFromTab: true,
-                rememberSelection: true
-            )
-            structuralLookup.runAfterCurrentBatch {
-                activate(liveTab)
-            }
-            return insertedPin
-        }
-
-        guard insertedPin != nil else { return false }
+        guard transaction.insert(
+            proposedPin,
+            placement: placement,
+            in: windowState,
+            activate: activate
+        ) else { return false }
         schedulePersistence()
         return true
     }

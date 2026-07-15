@@ -1807,7 +1807,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
             profileId: profileId,
             url: "https://example.com/live-\(source.pathComponent)"
         )
-        let liveTab = tabManager.shortcutTabMaterializer.materialize(pin, in: harness.windowState.id, currentSpaceId: space.id)
+        let liveTab = tabManager.shortcutTabMaterializer.materialize(pin, in: harness.windowState.id, currentSpaceId: space.id)!
         harness.windowState.currentSpaceId = space.id
         harness.windowState.currentProfileId = profileId
         harness.windowState.currentTabId = liveTab.id
@@ -1912,7 +1912,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
             profileId: profileId,
             url: "https://example.com/move-\(source.pathComponent)-\(destination.pathComponent)"
         )
-        let liveTab = tabManager.shortcutTabMaterializer.materialize(pin, in: harness.windowState.id, currentSpaceId: space.id)
+        let liveTab = tabManager.shortcutTabMaterializer.materialize(pin, in: harness.windowState.id, currentSpaceId: space.id)!
         harness.windowState.currentSpaceId = space.id
         harness.windowState.currentProfileId = profileId
         harness.windowState.currentTabId = liveTab.id

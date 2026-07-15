@@ -238,6 +238,9 @@ final class WebViewRetirementBatchTests: XCTestCase {
             return XCTFail("Expected foreign retirement batch")
         }
 
+        XCTAssertTrue(repository.canCommitRetirementBatch(lease))
+        XCTAssertFalse(repository.canCommitRetirementBatch(foreignLease))
+
         guard case .noLongerActive = repository.commitRetirementBatch(
             foreignLease
         ) else {
@@ -253,6 +256,7 @@ final class WebViewRetirementBatchTests: XCTestCase {
         XCTAssertTrue(repository.snapshot(for: tabID).allKnownWebViews.isEmpty)
         XCTAssertNil(repository.residence(of: webView))
         XCTAssertFalse(repository.runtimeOwnedTabIDs.contains(tabID))
+        XCTAssertFalse(repository.canCommitRetirementBatch(lease))
         guard case .noLongerActive = repository.commitRetirementBatch(lease)
         else {
             return XCTFail("A retirement lease must commit exactly once")
@@ -524,6 +528,160 @@ final class WebViewRetirementBatchTests: XCTestCase {
         ) else {
             return XCTFail("Exact model transaction must roll back")
         }
+    }
+
+    func testDisjointOuterCommitLeavesExactInnerRetirementLeaseActive() {
+        let repository = WebViewSessionRepository()
+        let outerTabID = UUID()
+        let innerTabID = UUID()
+        let outerPrevious = WKWebView()
+        let outerReplacement = WKWebView()
+        let innerPrevious = WKWebView()
+        repository.noteUntrackedWebView(outerPrevious, for: outerTabID)
+        repository.noteUntrackedWebView(innerPrevious, for: innerTabID)
+        var innerLease: WebViewRetirementBatchLease?
+        var modelIsStaged = false
+        let modelTransaction = receipt(
+            commit: { modelIsStaged = true },
+            rollback: { modelIsStaged = false }
+        )
+
+        let outerBegin = repository.beginReplacementBatch(
+            [
+                .init(
+                    tabID: outerTabID,
+                    expectedGeneration: repository.snapshot(
+                        for: outerTabID
+                    ).generation,
+                    placement: .detached(
+                        webView: outerReplacement,
+                        residence: .untracked
+                    )
+                ),
+            ],
+            modelCommit: {
+                guard case .began(let lease) = repository
+                    .beginRetirementBatch(
+                        [self.entry(innerTabID, in: repository)],
+                        modelTransaction: modelTransaction
+                    ) else {
+                    return XCTFail("Expected disjoint inner retirement")
+                }
+                innerLease = lease
+            }
+        )
+        guard case .began(let outerLease) = outerBegin,
+              let innerLease else {
+            return XCTFail("Expected both exact leases")
+        }
+
+        guard case .committed = repository.commitReplacementBatch(
+            outerLease
+        ) else {
+            return XCTFail("Expected outer replacement commit")
+        }
+        XCTAssertTrue(modelIsStaged)
+        XCTAssertIdentical(
+            repository.untrackedWebView(for: outerTabID),
+            outerReplacement
+        )
+        guard case .retiring = repository.residence(of: innerPrevious) else {
+            return XCTFail("Outer commit must retain the inner quarantine")
+        }
+        guard case .committed(let retired) = repository
+            .commitRetirementBatch(innerLease) else {
+            return XCTFail("Expected exact inner retirement commit")
+        }
+        XCTAssertIdentical(retired[innerTabID]?.untrackedWebView, innerPrevious)
+    }
+
+    func testOuterRollbackKeepsQuarantineDuringExactInnerModelRollback() {
+        let repository = WebViewSessionRepository()
+        let outerTabID = UUID()
+        let innerTabID = UUID()
+        let outerPrevious = WKWebView()
+        let outerReplacement = WKWebView()
+        let innerPrevious = WKWebView()
+        repository.noteUntrackedWebView(outerPrevious, for: outerTabID)
+        repository.noteUntrackedWebView(innerPrevious, for: innerTabID)
+        var innerLease: WebViewRetirementBatchLease?
+        var modelIsStaged = false
+        var modelRollbackSawOuterQuarantine = false
+        let modelTransaction = receipt(
+            commit: { modelIsStaged = true },
+            rollback: {
+                modelRollbackSawOuterQuarantine = repository.untrackedWebView(
+                    for: outerTabID
+                ) === outerReplacement && {
+                    if case .retiring = repository.residence(
+                        of: outerPrevious
+                    ) {
+                        return true
+                    }
+                    return false
+                }()
+                modelIsStaged = false
+            }
+        )
+
+        let outerBegin = repository.beginReplacementBatch(
+            [
+                .init(
+                    tabID: outerTabID,
+                    expectedGeneration: repository.snapshot(
+                        for: outerTabID
+                    ).generation,
+                    placement: .detached(
+                        webView: outerReplacement,
+                        residence: .untracked
+                    )
+                ),
+            ],
+            modelCommit: {
+                guard case .began(let lease) = repository
+                    .beginRetirementBatch(
+                        [self.entry(innerTabID, in: repository)],
+                        modelTransaction: modelTransaction
+                    ) else {
+                    return XCTFail("Expected disjoint inner retirement")
+                }
+                innerLease = lease
+            }
+        )
+        guard case .began(let outerLease) = outerBegin else {
+            return XCTFail("Expected outer replacement lease")
+        }
+
+        let rollback = repository.rollbackReplacementBatch(
+            outerLease,
+            modelRollback: {
+                guard let innerLease,
+                      case .rolledBack = repository.rollbackRetirementBatch(
+                          innerLease,
+                          modelTransaction: modelTransaction
+                      ) else {
+                    return XCTFail("Expected exact inner model rollback")
+                }
+            }
+        )
+
+        guard case .rolledBack(let discarded) = rollback else {
+            return XCTFail("Expected outer rollback")
+        }
+        XCTAssertFalse(modelIsStaged)
+        XCTAssertTrue(modelRollbackSawOuterQuarantine)
+        XCTAssertIdentical(
+            repository.untrackedWebView(for: outerTabID),
+            outerPrevious
+        )
+        XCTAssertIdentical(
+            repository.untrackedWebView(for: innerTabID),
+            innerPrevious
+        )
+        XCTAssertIdentical(
+            discarded[outerTabID]?.untrackedWebView,
+            outerReplacement
+        )
     }
 
     func testEmptyDuplicateAndMissingActiveInputsAreInvalid() {

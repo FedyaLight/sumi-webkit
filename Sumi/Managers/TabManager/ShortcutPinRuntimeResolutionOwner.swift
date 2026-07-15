@@ -4,16 +4,16 @@ import SumiDomain
 @MainActor
 final class ShortcutPinRuntimeResolutionOwner {
     private let spaces: @MainActor () -> [Space]
-    private let runtimePorts: @MainActor () -> RuntimePortRegistry?
+    private let runtimeConnection: TabRuntimePortConnection
     private let faviconService: @MainActor () -> any BrowserFaviconServicing
 
     init(
         spaces: @escaping @MainActor () -> [Space],
-        runtimePorts: @escaping @MainActor () -> RuntimePortRegistry?,
+        runtimeConnection: TabRuntimePortConnection,
         faviconService: @escaping @MainActor () -> any BrowserFaviconServicing
     ) {
         self.spaces = spaces
-        self.runtimePorts = runtimePorts
+        self.runtimeConnection = runtimeConnection
         self.faviconService = faviconService
     }
 
@@ -67,10 +67,41 @@ final class ShortcutPinRuntimeResolutionOwner {
         }
     }
 
+    func presentationPageReceipt(
+        for pin: ShortcutPin,
+        windowID: UUID,
+        presentationSpaceID: UUID?
+    ) -> LiveShortcutPresentationPageReceipt? {
+        guard let presentationSpaceID,
+              let presentationSpace = spaces().first(where: {
+                  $0.id == presentationSpaceID
+              }) else {
+            return nil
+        }
+        switch pin.role {
+        case .essential:
+            guard let profileID = pin.profileId,
+                  presentationSpace.profileId == profileID else {
+                return nil
+            }
+        case .spacePinned:
+            guard let spaceID = pin.spaceId,
+                  spaceID == presentationSpace.id else {
+                return nil
+            }
+        }
+        return LiveShortcutPresentationPageReceipt(
+            windowID: windowID,
+            spaceID: presentationSpace.id,
+            profileID: presentationSpace.profileId
+        )
+    }
+
     func resolvedFaviconPartition(for pin: ShortcutPin, currentSpaceId: UUID? = nil) -> SumiFaviconPartition {
         let profileId = resolvedExecutionProfileId(for: pin, currentSpaceId: currentSpaceId)
         guard let profileId,
-              let profile = runtimePorts()?.profile(with: profileId)
+              let profile = runtimeConnection.captureLease().registry?
+                .profile(with: profileId)
         else {
             return .regular(profileId)
         }

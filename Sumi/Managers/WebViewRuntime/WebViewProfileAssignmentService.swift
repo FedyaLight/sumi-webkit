@@ -5,7 +5,8 @@ import SumiWebRuntime
 /// transaction. It resolves the exact live tab set, rejects stale intents, and
 /// keeps model commit/rollback coupled to runtime settlement.
 @MainActor
-final class WebViewProfileAssignmentService {
+final class WebViewProfileAssignmentService:
+    TabWebViewProfileTransitionParticipant {
     private let runtimeTabs: WebViewRuntimeTabRegistry
     private let resolveRuntimeTab: @MainActor (UUID) -> Tab?
     private let transitions: ProfileTransitionService
@@ -27,19 +28,16 @@ final class WebViewProfileAssignmentService {
         space: Space,
         targetProfile: Profile,
         intent: DeferredWebViewSpaceProfileAssignmentIntent,
-        validateModel: @escaping @MainActor @Sendable () -> Bool,
-        modelCommit: @escaping @MainActor @Sendable () -> Bool,
-        modelFinish: @escaping () -> Void = {},
-        modelRollback: @escaping () -> Void,
-        settlement: @escaping ProfileTransitionService.Settlement = { _ in }
+        model: any SpaceProfileWebViewReplacementTransaction,
+        settlement: @escaping ProfileTransitionService.Settlement
     ) -> TabProfileAssignmentExecutionOutcome {
-        let tabs = intent.tabIntents.compactMap { tabIntent in
-            runtimeTabs.resolve(
-                tabIntent.tabID,
-                resolveRuntimeTab: resolveRuntimeTab
-            )
-        }
-        guard tabs.count == intent.tabIntents.count else {
+        guard let tabs = model.exactTabsForRuntime(),
+              tabs.count == intent.tabIntents.count,
+              zip(tabs, intent.tabIntents).allSatisfy({ tab, tabIntent in
+                  tab.id == tabIntent.tabID
+              }),
+              tabs.allSatisfy({ resolveRuntimeTab($0.id) === $0 }),
+              runtimeTabs.bindAtomically(tabs) else {
             settlement(.rejected(.stale))
             return .stale
         }
@@ -51,10 +49,7 @@ final class WebViewProfileAssignmentService {
             tabsByID: Dictionary(
                 uniqueKeysWithValues: tabs.map { ($0.id, $0) }
             ),
-            validateModel: validateModel,
-            stageModel: modelCommit,
-            finishModel: modelFinish,
-            rollbackModel: modelRollback,
+            model: model,
             settlement: settlement
         )
     }
@@ -63,7 +58,7 @@ final class WebViewProfileAssignmentService {
         for tab: Tab,
         targetProfile: Profile,
         intent: DeferredWebViewProfileAssignmentIntent,
-        settlement: @escaping ProfileTransitionService.Settlement = { _ in }
+        settlement: @escaping ProfileTransitionService.Settlement
     ) -> TabProfileAssignmentExecutionOutcome {
         guard runtimeTabs.bind(tab).isAccepted else {
             settlement(.rejected(.stale))

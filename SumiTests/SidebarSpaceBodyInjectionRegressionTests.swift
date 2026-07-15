@@ -114,12 +114,13 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
         unrelatedWindow.currentSpaceId = space.id
         unrelatedWindow.currentProfileId = space.profileId
         XCTAssertEqual(registry.register(unrelatedWindow), .registered)
-        let unrelatedLiveTab = browserManager.tabManager.shortcutTabMaterializer
-            .materialize(
+        let unrelatedLiveTab = try XCTUnwrap(
+            browserManager.tabManager.shortcutTabMaterializer.materialize(
                 sourcePin,
                 in: unrelatedWindow.id,
                 currentSpaceId: space.id
             )
+        )
         await drainMainActorTurns()
         XCTAssertEqual(model.snapshot, [])
         browserManager.tabManager.tabClosureService.removeTab(
@@ -131,7 +132,7 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
             sourcePin,
             in: window.id,
             currentSpaceId: space.id
-        )
+        )!
         await drainMainActorTurns()
         XCTAssertEqual(model.snapshot, [sourcePin.id])
         XCTAssertEqual(window.currentTabId, unchangedSelection)
@@ -153,6 +154,172 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
         XCTAssertEqual(window.currentTabId, unchangedSelection)
     }
 
+    func testLiveShortcutEventsRetainAndRelocateExactPresentationPage()
+        async {
+        let browserManager = BrowserManager()
+        let tabManager = browserManager.tabManager
+        let presentationProfileID = UUID()
+        let executionProfileID = UUID()
+        let firstSameProfileSpace = tabManager.spaceServices.catalog.createSpace(
+            name: "Same Profile A",
+            profileId: presentationProfileID
+        )
+        let presentationSpace = tabManager.spaceServices.catalog.createSpace(
+            name: "Presentation B",
+            profileId: presentationProfileID
+        )
+        let executionSpace = tabManager.spaceServices.catalog.createSpace(
+            name: "Execution C",
+            profileId: executionProfileID
+        )
+        tabManager.spaceStateOwner.replaceCurrentSpace(presentationSpace)
+        let window = BrowserWindowState()
+        window.tabManager = tabManager
+        window.currentSpaceId = presentationSpace.id
+        window.currentProfileId = presentationProfileID
+        let selectedTab = tabManager.regularTabLifecycleOwner.createNewTab(
+            url: "about:blank",
+            in: presentationSpace,
+            activate: false
+        )
+        window.currentTabId = selectedTab.id
+        let unrelatedWindowID = UUID()
+        var firstSameProfileChanges = 0
+        var presentationChanges = 0
+        var executionChanges = 0
+        var unrelatedChanges = 0
+        let context = WindowSidebarContext.make(
+            browserManager: browserManager,
+            updaterService: SumiUpdaterService(backendFactory: { _ in nil })
+        )
+        let firstSameProfile = context.inventoryUpdates.pageChanges(
+            windowID: window.id,
+            spaceID: firstSameProfileSpace.id,
+            profileID: presentationProfileID
+        ).sink { _ in firstSameProfileChanges += 1 }
+        let presentation = context.inventoryUpdates.pageChanges(
+            windowID: window.id,
+            spaceID: presentationSpace.id,
+            profileID: presentationProfileID
+        ).sink { _ in presentationChanges += 1 }
+        let execution = context.inventoryUpdates.pageChanges(
+            windowID: window.id,
+            spaceID: executionSpace.id,
+            profileID: executionProfileID
+        ).sink { _ in executionChanges += 1 }
+        let unrelated = context.inventoryUpdates.pageChanges(
+            windowID: unrelatedWindowID,
+            spaceID: presentationSpace.id,
+            profileID: presentationProfileID
+        ).sink { _ in unrelatedChanges += 1 }
+        let sourceEssential = ShortcutPin(
+            id: UUID(),
+            role: .essential,
+            profileId: presentationProfileID,
+            executionProfileId: executionProfileID,
+            spaceId: nil,
+            index: 0,
+            launchURL: URL(string: "https://essential-source.example")!,
+            title: "Essential Source"
+        )
+        let targetEssential = ShortcutPin(
+            id: UUID(),
+            role: .essential,
+            profileId: presentationProfileID,
+            executionProfileId: executionProfileID,
+            spaceId: nil,
+            index: 0,
+            launchURL: URL(string: "https://essential-target.example")!,
+            title: "Essential Target"
+        )
+        let accountFork = ShortcutPin(
+            id: UUID(),
+            role: .spacePinned,
+            executionProfileId: executionProfileID,
+            spaceId: presentationSpace.id,
+            index: 0,
+            launchURL: URL(string: "https://account-fork.example")!,
+            title: "Account Fork"
+        )
+
+        let essentialTab = tabManager.shortcutTabMaterializer.materialize(
+            sourceEssential,
+            in: window.id,
+            currentSpaceId: presentationSpace.id
+        )!
+        XCTAssertNil(essentialTab.spaceId)
+        XCTAssertEqual(essentialTab.profileId, executionProfileID)
+        XCTAssertEqual(firstSameProfileChanges, 0)
+        XCTAssertEqual(presentationChanges, 1)
+        XCTAssertTrue(tabManager.shortcutTabBindings.rebind(
+            essentialTab,
+            from: sourceEssential,
+            to: targetEssential
+        ))
+        XCTAssertEqual(firstSameProfileChanges, 0)
+        XCTAssertEqual(presentationChanges, 2)
+
+        XCTAssertIdentical(
+            tabManager.shortcutTabMaterializer.materialize(
+                targetEssential,
+                in: window.id,
+                currentSpaceId: firstSameProfileSpace.id
+            ),
+            essentialTab
+        )
+        XCTAssertEqual(firstSameProfileChanges, 1)
+        XCTAssertEqual(presentationChanges, 3)
+        tabManager.tabClosureService.removeTab(essentialTab.id)
+        XCTAssertEqual(firstSameProfileChanges, 2)
+        XCTAssertEqual(presentationChanges, 3)
+
+        let accountForkTab = tabManager.shortcutTabMaterializer.materialize(
+            accountFork,
+            in: window.id,
+            currentSpaceId: presentationSpace.id
+        )!
+        XCTAssertEqual(accountForkTab.spaceId, presentationSpace.id)
+        XCTAssertEqual(accountForkTab.profileId, executionProfileID)
+        XCTAssertEqual(presentationChanges, 4)
+        tabManager.tabClosureService.removeTab(accountForkTab.id)
+        XCTAssertEqual(presentationChanges, 5)
+        XCTAssertEqual(firstSameProfileChanges, 2)
+
+        let unpresentedPin = ShortcutPin(
+            id: UUID(),
+            role: .essential,
+            profileId: presentationProfileID,
+            index: 0,
+            launchURL: URL(string: "https://no-presentation.example")!,
+            title: "No Presentation"
+        )
+        XCTAssertNil(
+            tabManager.shortcutTabMaterializer.materialize(
+                unpresentedPin,
+                in: window.id,
+                currentSpaceId: nil
+            )
+        )
+        XCTAssertNil(
+            tabManager.liveShortcutTabs.tab(
+                for: unpresentedPin.id,
+                in: window.id
+            )
+        )
+        XCTAssertEqual(presentationChanges, 5)
+        XCTAssertEqual(firstSameProfileChanges, 2)
+        XCTAssertEqual(executionChanges, 0)
+        XCTAssertEqual(unrelatedChanges, 0)
+        XCTAssertEqual(window.currentTabId, selectedTab.id)
+        await drainMainActorTurns()
+        withExtendedLifetime((
+            firstSameProfile,
+            presentation,
+            execution,
+            unrelated
+        )) {}
+    }
+
     func testToolbarCommandsDoNotPublishWithoutManagerOrForUnpinnedOrder() {
         let surfaceStore = BrowserExtensionSurfaceStore(extensionManager: nil)
         var exactChanges = 0
@@ -167,13 +334,14 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
             surfaceStore: surfaceStore
         )
 
-        module.pinToToolbar("extension-a")
-        module.unpinFromToolbar("extension-a")
-        module.movePinnedToolbarSlot(id: "extension-a", to: 0)
+        module.pinToToolbar("extension-a", profileId: nil)
+        module.unpinFromToolbar("extension-a", profileId: nil)
+        module.movePinnedToolbarSlot(id: "extension-a", to: 0, profileId: nil)
         module.moveUnpinnedExtension(
             id: "extension-a",
             to: 0,
-            within: ["extension-a"]
+            within: ["extension-a"],
+            profileId: nil
         )
 
         XCTAssertEqual(exactChanges, 0)
@@ -205,30 +373,116 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
             broadChanges += 1
         }
 
-        module.pinToToolbar("extension-a")
+        module.pinToToolbar("extension-a", profileId: nil)
         XCTAssertEqual(exactChanges, 1)
 
-        module.pinToToolbar("extension-a")
-        module.unpinFromToolbar("not-pinned")
-        module.movePinnedToolbarSlot(id: "not-pinned", to: 0)
+        module.pinToToolbar("extension-a", profileId: nil)
+        module.unpinFromToolbar("not-pinned", profileId: nil)
+        module.movePinnedToolbarSlot(id: "not-pinned", to: 0, profileId: nil)
         module.moveUnpinnedExtension(
             id: "extension-a",
             to: 0,
-            within: ["extension-a"]
+            within: ["extension-a"],
+            profileId: nil
         )
         XCTAssertEqual(exactChanges, 1)
 
-        module.pinToToolbar("extension-b")
-        module.movePinnedToolbarSlot(id: "extension-a", to: 1)
+        module.pinToToolbar("extension-b", profileId: nil)
+        module.movePinnedToolbarSlot(id: "extension-a", to: 1, profileId: nil)
         XCTAssertEqual(exactChanges, 3)
 
-        module.movePinnedToolbarSlot(id: "extension-a", to: 1)
+        module.movePinnedToolbarSlot(id: "extension-a", to: 1, profileId: nil)
         XCTAssertEqual(exactChanges, 3)
 
-        module.unpinFromToolbar("extension-a")
+        module.unpinFromToolbar("extension-a", profileId: nil)
         XCTAssertEqual(exactChanges, 4)
         XCTAssertEqual(broadChanges, 0)
         withExtendedLifetime((exact, broad)) {}
+    }
+
+    func testToolbarMutationsPersistAndPublishForRenderedProfile() throws {
+        let suiteName = "SumiTests.RenderedToolbarProfile.\(UUID().uuidString)"
+        let preferences = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { preferences.removePersistentDomain(forName: suiteName) }
+        let moduleDefaults = try XCTUnwrap(
+            UserDefaults(suiteName: "\(suiteName).module")
+        )
+        defer { moduleDefaults.removePersistentDomain(forName: "\(suiteName).module") }
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: moduleDefaults)
+        )
+        registry.enable(.extensions)
+        let profileA = Profile(name: "Current A")
+        let profileB = Profile(name: "Rendered B")
+        let container = try makeInMemoryStartupModelContainer()
+        let surfaceStore = BrowserExtensionSurfaceStore(extensionManager: nil)
+        let module = SumiExtensionsModule(
+            moduleRegistry: registry,
+            context: container.mainContext,
+            initialProfileProvider: { profileA },
+            managerFactory: { context, profile, configuration, registry in
+                ExtensionManager(
+                    context: context,
+                    initialProfile: profile,
+                    browserConfiguration: configuration,
+                    moduleRegistry: registry,
+                    extensionPreferences: preferences
+                )
+            },
+            surfaceStore: surfaceStore
+        )
+        let manager = try XCTUnwrap(module.managerForTesting())
+        XCTAssertEqual(manager.profileRuntime.currentProfileId, profileA.id)
+        var currentChanges = 0
+        var renderedChanges = 0
+        let current = surfaceStore.toolbarLayoutChanges(for: profileA.id).sink {
+            currentChanges += 1
+        }
+        let rendered = surfaceStore.toolbarLayoutChanges(for: profileB.id).sink {
+            renderedChanges += 1
+        }
+
+        module.pinToToolbar("one", profileId: profileB.id)
+        module.pinToToolbar("two", profileId: profileB.id)
+        module.movePinnedToolbarSlot(id: "one", to: 1, profileId: profileB.id)
+        module.unpinFromToolbar("two", profileId: profileB.id)
+        module.moveUnpinnedExtension(
+            id: "hub-one",
+            to: 1,
+            within: ["hub-one", "hub-two"],
+            profileId: profileB.id
+        )
+
+        XCTAssertEqual(currentChanges, 0)
+        XCTAssertEqual(renderedChanges, 5)
+        XCTAssertEqual(manager.pinnedToolbarExtensionIDs, [])
+        XCTAssertEqual(manager.pinnedToolbarExtensionIDs(profileId: profileA.id), [])
+        XCTAssertEqual(manager.pinnedToolbarExtensionIDs(profileId: profileB.id), ["one"])
+        let reopenedPins = ExtensionToolbarPinningOwner(
+            preferences: preferences,
+            currentProfileId: { profileA.id },
+            installedExtensionIDs: { [] },
+            publishedPinnedIDs: { [] },
+            setPublishedPinnedIDs: { _ in }
+        )
+        XCTAssertEqual(reopenedPins.pinnedToolbarExtensionIDs(profileId: profileA.id), [])
+        XCTAssertEqual(reopenedPins.pinnedToolbarExtensionIDs(profileId: profileB.id), ["one"])
+        let reopenedHub = ExtensionHubOrderingOwner(preferences: preferences)
+        XCTAssertEqual(
+            reopenedHub.orderedUnpinnedExtensionIDs(
+                candidateIDs: ["hub-one", "hub-two"],
+                profileId: profileA.id
+            ),
+            ["hub-one", "hub-two"]
+        )
+        XCTAssertEqual(
+            reopenedHub.orderedUnpinnedExtensionIDs(
+                candidateIDs: ["hub-one", "hub-two"],
+                profileId: profileB.id
+            ),
+            ["hub-two", "hub-one"]
+        )
+        withExtendedLifetime((current, rendered)) {}
     }
 
     func testToolbarLayoutChangesOnlyReachAffectedProfile() {
@@ -348,13 +602,13 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
             model.snapshot.extensions.first?.name,
             "Renamed Action"
         )
-        module.pinToToolbar("toolbar-extension")
+        module.pinToToolbar("toolbar-extension", profileId: nil)
         await drainMainActorTurns()
         XCTAssertEqual(
             model.snapshot.pinnedExtensionIDs,
             ["toolbar-extension"]
         )
-        module.unpinFromToolbar("toolbar-extension")
+        module.unpinFromToolbar("toolbar-extension", profileId: nil)
         await drainMainActorTurns()
         XCTAssertEqual(model.snapshot.pinnedExtensionIDs, [])
 
@@ -421,7 +675,8 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
         presentationChanges.send(
             BrowserExtensionToolbarPresentationSnapshot(
                 display: .empty,
-                pinnedExtensionIDs: ["mounted"]
+                pinnedExtensionIDs: ["mounted"],
+                unpinnedExtensionIDs: []
             )
         )
         await drainMainActorTurns()
@@ -562,7 +817,7 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
         )
         let iconA = NSImage(size: NSSize(width: 1, height: 1))
         let iconB = NSImage(size: NSSize(width: 2, height: 2))
-        var snapshots = [
+        let snapshotState = ExtensionActionSnapshotQueryOracle([
             targetA: BrowserExtensionActionButtonSnapshot(
                 label: "Profile A",
                 badgeText: "A",
@@ -577,14 +832,14 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
                 isEnabled: false,
                 icon: iconB
             ),
-        ]
+        ])
         let changes = PassthroughSubject<
             ExtensionActionPresentationChange,
             Never
         >()
         let model = BrowserExtensionActionButtonModel(
             changes: changes.eraseToAnyPublisher(),
-            query: { snapshots[$0] }
+            query: { snapshotState.snapshots[$0] }
         )
         var publications = 0
         let cancellable = model.$snapshot.dropFirst().sink { _ in
@@ -615,7 +870,7 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
         XCTAssertEqual(model.snapshot.isEnabled, false)
         XCTAssertTrue(model.snapshot.icon === iconB)
 
-        snapshots[targetA] = BrowserExtensionActionButtonSnapshot(
+        snapshotState.snapshots[targetA] = BrowserExtensionActionButtonSnapshot(
             label: "Stale Profile A",
             badgeText: "STALE",
             hasUnreadBadgeText: false,
@@ -825,5 +1080,18 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
             window: window,
             tab: tab
         )
+    }
+}
+
+@MainActor
+private final class ExtensionActionSnapshotQueryOracle {
+    typealias Snapshots = [
+        ExtensionActionPresentationTarget: BrowserExtensionActionButtonSnapshot
+    ]
+
+    var snapshots: Snapshots
+
+    init(_ snapshots: Snapshots) {
+        self.snapshots = snapshots
     }
 }

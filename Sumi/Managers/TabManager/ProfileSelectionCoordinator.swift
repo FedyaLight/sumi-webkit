@@ -6,13 +6,16 @@ import Foundation
 final class ProfileSelectionCoordinator {
     private unowned let tabManager: TabManager
     private let spaceActivation: SpaceActivationService
+    private let spaceTransitions: SpaceProfileTransitionService
 
     init(
         tabManager: TabManager,
-        spaceActivation: SpaceActivationService
+        spaceActivation: SpaceActivationService,
+        spaceTransitions: SpaceProfileTransitionService
     ) {
         self.tabManager = tabManager
         self.spaceActivation = spaceActivation
+        self.spaceTransitions = spaceTransitions
     }
 
     func handleProfileSwitch(contextWindowID: UUID? = nil) {
@@ -61,12 +64,10 @@ final class ProfileSelectionCoordinator {
         var didAssign = false
         for space in tabManager.spaceStateOwner.spaces
             where space.profileId == nil {
-            tabManager.objectWillChange.send()
-            _ = tabManager.spaceStateOwner.assignProfile(
-                spaceId: space.id,
-                profileId: profileID
-            )
-            didAssign = true
+            didAssign = spaceTransitions.assign(
+                spaceID: space.id,
+                toProfile: profileID
+            ).wasAccepted || didAssign
         }
         guard didAssign else { return }
         tabManager.structuralPersistence.markAllSpacesStructurallyDirty()

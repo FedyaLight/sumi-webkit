@@ -7,18 +7,18 @@ final class SpaceContentRetirementTransaction {
     private let state: TabStateStore
     private let structuralMutations: TabStructuralCollectionMutationOwner
     private let splitGroups: SpaceSplitGroupRetirementService
-    private let liveShortcutTabs: LiveShortcutTabRegistry
+    private let liveShortcutRetirement: LiveShortcutTabBatchRetirement
 
     init(
         state: TabStateStore,
         structuralMutations: TabStructuralCollectionMutationOwner,
         splitGroups: SpaceSplitGroupRetirementService,
-        liveShortcutTabs: LiveShortcutTabRegistry
+        liveShortcutRetirement: LiveShortcutTabBatchRetirement
     ) {
         self.state = state
         self.structuralMutations = structuralMutations
         self.splitGroups = splitGroups
-        self.liveShortcutTabs = liveShortcutTabs
+        self.liveShortcutRetirement = liveShortcutRetirement
     }
 
     func inventory(spaceId: UUID) -> SpaceTabInventory {
@@ -35,7 +35,6 @@ final class SpaceContentRetirementTransaction {
         }
         let shortcutPinIds = Set(
             state.shortcutPins.spacePinnedPins(for: plan.spaceId).map(\.id)
-                + inventory.all.compactMap(\.shortcutPinId)
         )
         let affectedGroupIDs = splitGroups.retireGroups(
             in: plan.spaceId,
@@ -50,11 +49,12 @@ final class SpaceContentRetirementTransaction {
         structuralMutations.setTabs([], for: plan.spaceId)
         structuralMutations.setFolders([], for: plan.spaceId)
         structuralMutations.setSpacePinnedShortcuts([], for: plan.spaceId)
-        liveShortcutTabs.removeAll(inSpace: plan.spaceId)
+        _ = liveShortcutRetirement.remove(presentedInSpace: plan.spaceId)
         return SpaceRemovalFootprint(
             spaceId: plan.spaceId,
             tabIds: inventory.tabIds,
             shortcutPinIds: shortcutPinIds,
+            retiredShortcutPinIDsByWindow: inventory.retiredShortcutPinIDsByWindow,
             splitGroupIds: affectedGroupIDs
         )
     }

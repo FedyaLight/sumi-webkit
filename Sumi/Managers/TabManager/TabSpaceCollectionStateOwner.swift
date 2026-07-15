@@ -97,6 +97,26 @@ final class TabSpaceCollectionStateOwner {
         space(with: spaceId)?.profileId
     }
 
+    /// Proves that a profile transaction still owns the one physical catalog
+    /// Space it admitted. A detached current-Space mirror is optional, but a
+    /// newly installed same-ID mirror is not allowed to join an in-flight
+    /// mutation by UUID aliasing.
+    func profileMutationResidenceIsExact(
+        space: Space,
+        selectedSpace: Space?
+    ) -> Bool {
+        let catalogMatches = spaces.filter { $0.id == space.id }
+        guard catalogMatches.count == 1,
+              catalogMatches.first === space,
+              selectedSpace == nil || selectedSpace?.id == space.id else {
+            return false
+        }
+        guard let currentSpace, currentSpace.id == space.id else {
+            return true
+        }
+        return currentSpace === space || currentSpace === selectedSpace
+    }
+
     @discardableResult
     func renameSpace(spaceId: UUID, to newName: String) -> Bool {
         guard let space = space(with: spaceId) else { return false }
@@ -119,11 +139,61 @@ final class TabSpaceCollectionStateOwner {
     }
 
     @discardableResult
-    func assignProfile(spaceId: UUID, profileId: UUID?) -> Bool {
+    func assignProfileWithoutObservation(
+        spaceId: UUID,
+        profileId: UUID?
+    ) -> Bool {
         guard let space = space(with: spaceId) else { return false }
-        space.profileId = profileId
-        if let currentSpace, currentSpace.id == spaceId, currentSpace !== space {
-            currentSpace.profileId = profileId
+        space.replaceProfileIDWithoutObservation(profileId)
+        if let currentSpace, currentSpace.id == spaceId,
+           currentSpace !== space {
+            currentSpace.replaceProfileIDWithoutObservation(profileId)
+        }
+        return true
+    }
+
+    /// Mutates only the physical witnesses retained by a staged transaction.
+    /// This deliberately does not resolve either witness again by UUID, so it
+    /// is also safe for rollback after catalog removal or same-ID replacement.
+    @discardableResult
+    func assignProfileWithoutObservation(
+        space: Space,
+        selectedSpace: Space?,
+        profileId: UUID?
+    ) -> Bool {
+        guard selectedSpace == nil || selectedSpace?.id == space.id else {
+            return false
+        }
+        space.replaceProfileIDWithoutObservation(profileId)
+        if let selectedSpace, selectedSpace !== space {
+            selectedSpace.replaceProfileIDWithoutObservation(profileId)
+        }
+        return true
+    }
+
+    func publishProfileMutation(spaceId: UUID) {
+        guard let space = space(with: spaceId) else { return }
+        space.publishCurrentProfileID()
+        if let currentSpace, currentSpace.id == spaceId,
+           currentSpace !== space {
+            currentSpace.publishCurrentProfileID()
+        }
+    }
+
+    /// Publishes only the witnesses mutated by the exact transaction. A
+    /// replacement currently occupying the same UUID is never announced as if
+    /// it had participated in the staged mutation.
+    @discardableResult
+    func publishProfileMutation(
+        space: Space,
+        selectedSpace: Space?
+    ) -> Bool {
+        guard selectedSpace == nil || selectedSpace?.id == space.id else {
+            return false
+        }
+        space.publishCurrentProfileID()
+        if let selectedSpace, selectedSpace !== space {
+            selectedSpace.publishCurrentProfileID()
         }
         return true
     }

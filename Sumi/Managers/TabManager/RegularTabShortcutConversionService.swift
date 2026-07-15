@@ -54,7 +54,7 @@ final class RegularTabShortcutConversionService {
     func commitShortcutSidebarDrop(
         _ prepared: PreparedRegularTabShortcutSidebarDrop,
         replacingSplitGroupsWith replacement: [SumiDomain.SplitGroup],
-        applyingSplitSideEffect: @escaping @MainActor () -> Bool = { true }
+        sidebarMutation: RegularTabShortcutSidebarMutationPreparation
     ) -> ShortcutPin? {
         guard replacementValidator.accepts(replacement, for: prepared),
               let authorization = candidates.authorization(
@@ -64,7 +64,7 @@ final class RegularTabShortcutConversionService {
             prepared,
             replacement: replacement,
             authorization: authorization,
-            applyingSplitSideEffect: applyingSplitSideEffect
+            sidebarMutation: sidebarMutation
         )
     }
 

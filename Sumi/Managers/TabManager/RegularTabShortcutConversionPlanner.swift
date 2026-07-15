@@ -9,12 +9,12 @@ final class RegularTabShortcutConversionPlanner {
     init(
         windows: ShortcutTabWindowQuery,
         structureTransition: RegularTabShortcutStructureTransition,
-        runtimePorts: @escaping () -> RuntimePortRegistry?
+        runtimeConnection: TabRuntimePortConnection
     ) {
         structure = structureTransition
         self.windows = RegularTabShortcutWindowPlanResolver(
             windows: windows,
-            runtimePorts: runtimePorts
+            runtimeConnection: runtimeConnection
         )
     }
 

@@ -20,7 +20,7 @@ final class ShortcutLiveTabRetirementServiceTests: XCTestCase {
             pin,
             in: windowId,
             currentSpaceId: space.id
-        )
+        )!
 
         tabManager.tabClosureService.removeTab(liveTab.id)
 
@@ -43,7 +43,7 @@ final class ShortcutLiveTabRetirementServiceTests: XCTestCase {
             pin,
             in: windowState.id,
             currentSpaceId: space.id
-        )
+        )!
         windowState.currentTabId = liveTab.id
         windowState.currentShortcutPinId = pin.id
         var cleanupRuntime = TabWebViewCleanupRuntime.inactive
@@ -92,7 +92,7 @@ final class ShortcutLiveTabRetirementServiceTests: XCTestCase {
             pin,
             in: windowState.id,
             currentSpaceId: space.id
-        )
+        )!
 
         tabManager.tabClosureService.removeTab(liveTab.id)
 
@@ -115,7 +115,7 @@ final class ShortcutLiveTabRetirementServiceTests: XCTestCase {
             pin,
             in: windowState.id,
             currentSpaceId: space.id
-        )
+        )!
         windowState.currentSpaceId = space.id
         windowState.currentTabId = liveTab.id
         windowState.currentShortcutPinId = pin.id
@@ -141,7 +141,7 @@ final class ShortcutLiveTabRetirementServiceTests: XCTestCase {
             pin,
             in: windowState.id,
             currentSpaceId: space.id
-        )
+        )!
         let cancellable = tabManager.tabStructureEventBus
             .structureChangedPublisher.sink { [weak tabManager] _ in
                 tabManager?.detachBrowserRuntime()
@@ -173,7 +173,7 @@ final class ShortcutLiveTabRetirementServiceTests: XCTestCase {
             pin,
             in: windowState.id,
             currentSpaceId: space.id
-        )
+        )!
         installCompletedCleanupRuntime(on: liveTab, probe: probe)
         let unrelatedSelection = UUID()
         windowState.currentTabId = unrelatedSelection
@@ -243,12 +243,12 @@ final class ShortcutLiveTabRetirementServiceTests: XCTestCase {
             pin,
             in: firstWindow.id,
             currentSpaceId: space.id
-        )
+        )!
         let secondLiveTab = tabManager.shortcutTabMaterializer.materialize(
             pin,
             in: secondWindow.id,
             currentSpaceId: space.id
-        )
+        )!
 
         firstWindow.currentTabId = firstLiveTab.id
         firstWindow.currentShortcutPinId = pin.id
@@ -371,7 +371,7 @@ final class ShortcutLiveTabRetirementServiceTests: XCTestCase {
             pin,
             in: selectedWindow.id,
             currentSpaceId: space.id
-        )
+        )!
         selectedWindow.currentTabId = liveTab.id
         selectedWindow.currentShortcutPinId = pin.id
         selectedWindow.currentShortcutPinRole = pin.role
@@ -401,6 +401,7 @@ final class ShortcutLiveTabRetirementServiceTests: XCTestCase {
             windows: { windows.map { ($0.id, $0) } },
             windowStates: { windows },
             webViewLifecycle: TestRuntimePorts.webViewLifecycle(
+                retirement: .rejecting,
                 unloadTab: { probe.unloadedTabIds.append($0.id) },
                 requireRemoveAllWebViews: { tab, closeFullscreen in
                     probe.removeAllWebViewsCalls.append(

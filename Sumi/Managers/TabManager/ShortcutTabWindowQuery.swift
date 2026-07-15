@@ -3,22 +3,16 @@ import Foundation
 /// Deterministic read-only projection of windows selecting or displaying a tab.
 @MainActor
 final class ShortcutTabWindowQuery {
-    private let runtimePorts: () -> RuntimePortRegistry?
+    private let runtimeConnection: TabRuntimePortConnection
 
-    init(runtimePorts: @escaping () -> RuntimePortRegistry?) {
-        self.runtimePorts = runtimePorts
-    }
-
-    convenience init(tabManager: TabManager) {
-        self.init(runtimePorts: { [weak tabManager] in tabManager?.runtimePorts })
-    }
-
-    func windowIdDisplaying(tabId: UUID, preferredWindowId: UUID? = nil) -> UUID? {
-        windowIdsDisplaying(tabId: tabId, preferredWindowId: preferredWindowId).first
+    init(runtimeConnection: TabRuntimePortConnection) {
+        self.runtimeConnection = runtimeConnection
     }
 
     func windowIdsSelecting(tabId: UUID, preferredWindowId: UUID? = nil) -> [UUID] {
-        guard let runtime = runtimePorts() else { return [] }
+        guard let runtime = runtimeConnection.captureLease().registry else {
+            return []
+        }
         return windowIdsSelecting(
             tabId: tabId,
             preferredWindowId: preferredWindowId,
@@ -42,7 +36,9 @@ final class ShortcutTabWindowQuery {
     }
 
     func windowIdsDisplaying(tabId: UUID, preferredWindowId: UUID? = nil) -> [UUID] {
-        guard let runtime = runtimePorts() else { return [] }
+        guard let runtime = runtimeConnection.captureLease().registry else {
+            return []
+        }
         return windowIdsDisplaying(
             tabId: tabId,
             preferredWindowId: preferredWindowId,
@@ -67,8 +63,14 @@ final class ShortcutTabWindowQuery {
     }
 
     func windowStateDisplaying(tabId: UUID) -> BrowserWindowState? {
-        guard let windowId = windowIdDisplaying(tabId: tabId) else { return nil }
-        return runtimePorts()?.windowState(for: windowId)
+        let lease = runtimeConnection.captureLease()
+        guard let runtime = lease.registry,
+              let windowId = windowIdsDisplaying(
+                  tabId: tabId,
+                  preferredWindowId: nil,
+                  using: runtime
+              ).first else { return nil }
+        return runtime.windowState(for: windowId)
     }
 
     private func orderedWindowIds(

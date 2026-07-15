@@ -65,6 +65,35 @@ final class WebViewRuntimeTabRegistry {
         return .bound
     }
 
+    /// Admits a transaction's complete physical Tab set without leaving a
+    /// partially bound prefix when any later identity conflicts. Binding is a
+    /// cache mutation, but it is still part of runtime identity authority and
+    /// therefore follows the same all-or-nothing rule as model staging.
+    func bindAtomically(_ tabs: [Tab]) -> Bool {
+        guard isTerminallyShutDown == false,
+              Set(tabs.map(\.id)).count == tabs.count else { return false }
+        pruneReleasedRetiredTabs()
+        guard tabs.allSatisfy({ tab in
+            if retiredTabsByIdentity[ObjectIdentifier(tab)]?.value === tab {
+                return false
+            }
+            if retiringTabIDs.contains(tab.id) {
+                return false
+            }
+            guard let current = tabsByID[tab.id]?.value else { return true }
+            return current === tab
+        }), tabs.allSatisfy({
+            $0.webViewSession.isBacked(by: webViewSessions)
+        }) else { return false }
+
+        for tab in tabs {
+            if tabsByID[tab.id]?.value == nil {
+                tabsByID[tab.id] = WeakTab(tab)
+            }
+        }
+        return true
+    }
+
     func boundTab(_ tabID: UUID) -> Tab? {
         guard isTerminallyShutDown == false else { return nil }
         return tabsByID[tabID]?.value

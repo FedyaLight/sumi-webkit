@@ -32,12 +32,13 @@ final class TabShortcutOwnerBag {
     )
     lazy var shortcutPinRuntimeResolutionOwner = ShortcutPinRuntimeResolutionOwner(
         spaces: { [weak self] in self?.tm.spaceStateOwner.spaces ?? [] },
-        runtimePorts: { [weak self] in self?.tm.runtimePorts },
+        runtimeConnection: tm.runtimePortConnection,
         faviconService: { [weak self] in
             guard let self else { preconditionFailure("TabManager dependency used after deallocation") }
             return self.tm.faviconService
         }
     )
+    lazy var shortcutWindowMutationOwner = BrowserWindowShortcutMutationOwner()
     lazy var shortcutDragOperationOwner = ShortcutDragOperationOwner(tabManager: tm)
     lazy var shortcutPresentationOwner = TabShortcutPresentationOwner(tabManager: tm)
     lazy var shortcutContainerRemovalOwner = ShortcutContainerRemovalOwner(

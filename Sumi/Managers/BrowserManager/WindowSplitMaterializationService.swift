@@ -6,68 +6,54 @@ struct MaterializedWindowSplit {
     let activeTab: Tab
 }
 
-/// Resolves one durable group into a complete window-local presentation,
-/// materializing only shortcut members missing from that window.
+/// Resolves one durable group into a complete window-local presentation after
+/// every shortcut member has crossed exact window/Space admission.
 @MainActor
 struct WindowSplitMaterializationService {
-    func materialize(
+    func withMaterialization(
         _ group: SumiDomain.SplitGroup,
         selection: WindowSplitSelection,
         in windowState: BrowserWindowState,
-        tabManager: TabManager
-    ) -> MaterializedWindowSplit? {
+        tabManager: TabManager,
+        finalizing: (MaterializedWindowSplit) -> Void
+    ) -> Bool {
         guard tabManager.splitGroupStore.group(id: group.id) == group else {
-            return nil
+            return false
         }
-        let projection = makeProjection(tabManager: tabManager)
-        let initialResolution = projection.resolve(
-            selection: selection,
-            in: windowState.id
-        )
-        switch initialResolution {
-        case .needsMaterialization(
-            let resolvedGroup,
-            let resolvedSelection,
-            let shortcutPinIDs
-        ):
-            guard resolvedGroup == group, resolvedSelection == selection else {
-                return nil
-            }
-            for pinID in shortcutPinIDs {
-                guard let pin = tabManager.shortcutPinCollectionStateOwner
-                    .shortcutPin(by: pinID) else {
-                    return nil
-                }
-                _ = tabManager.shortcutTabMaterializer.materialize(
-                    pin,
-                    in: windowState.id,
-                    currentSpaceId: group.container.spaceId
-                        ?? pin.spaceId
-                        ?? windowState.currentSpaceId
+        let shortcutRequests = group.memberIDs.compactMap {
+            memberID -> ShortcutPresentationActivationService.Request? in
+            guard case .shortcutPin(let pinID) = memberID else { return nil }
+            return .init(
+                pinID: pinID,
+                windowID: windowState.id,
+                presentationSpaceID: group.container.spaceId
+                    ?? windowState.currentSpaceId
+            )
+        }
+        return tabManager.structuralLookupCoordinator.withTransaction {
+            var result: MaterializedWindowSplit?
+            guard tabManager.shortcutPresentationActivation
+                .withActivation(shortcutRequests, applying: { _ in
+                let projection = makeProjection(tabManager: tabManager)
+                guard tabManager.splitGroupStore.group(id: group.id) == group,
+                      case .ready(let presentation) = projection.resolve(
+                          selection: selection,
+                          in: windowState.id
+                      ),
+                      let activeTab = activeTab(
+                          for: presentation.activeMemberID,
+                          in: windowState.id,
+                          tabManager: tabManager
+                      ) else { return false }
+                result = MaterializedWindowSplit(
+                    presentation: presentation,
+                    activeTab: activeTab
                 )
-            }
-        case .ready:
-            break
-        case .inactive, .invalid:
-            return nil
+                return true
+            }), let result else { return false }
+            finalizing(result)
+            return true
         }
-
-        guard tabManager.splitGroupStore.group(id: group.id) == group,
-              case .ready(let presentation) = projection.resolve(
-                  selection: selection,
-                  in: windowState.id
-              ),
-              let activeTab = activeTab(
-                  for: presentation.activeMemberID,
-                  in: windowState.id,
-                  tabManager: tabManager
-              ) else {
-            return nil
-        }
-        return MaterializedWindowSplit(
-            presentation: presentation,
-            activeTab: activeTab
-        )
     }
 
     private func makeProjection(

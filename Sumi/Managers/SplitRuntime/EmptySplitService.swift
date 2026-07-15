@@ -1,38 +1,80 @@
 import Foundation
 import SumiDomain
 
+/// Creates and compensates the regular Tab used as an empty split placeholder.
+/// Space selection and regular-Tab lifecycle stay behind one exact capability.
+@MainActor
+final class EmptySplitPlaceholderFactory {
+    private let spaces: TabSpaceCollectionStateOwner
+    private let regularTabs: TabRegularLifecycleOwner
+    private let retirement: any EmptySplitPlaceholderRetirementPreparing
+    private let structuralTransactions:
+        any EmptySplitStructuralTransactionAuthority
+    private let terminalMutations: any EmptySplitTerminalMutationAuthority
+
+    init(
+        spaces: TabSpaceCollectionStateOwner,
+        regularTabs: TabRegularLifecycleOwner,
+        retirement: any EmptySplitPlaceholderRetirementPreparing,
+        structuralTransactions:
+            any EmptySplitStructuralTransactionAuthority,
+        terminalMutations: any EmptySplitTerminalMutationAuthority
+    ) {
+        self.spaces = spaces
+        self.regularTabs = regularTabs
+        self.retirement = retirement
+        self.structuralTransactions = structuralTransactions
+        self.terminalMutations = terminalMutations
+    }
+
+    func create(in windowState: BrowserWindowState) -> Tab {
+        let targetSpace = windowState.currentSpaceId.flatMap(spaces.space(with:))
+            ?? spaces.currentSpace
+        return regularTabs.createNewTab(
+            url: SumiSurface.emptyTabURL.absoluteString,
+            in: targetSpace,
+            activate: false
+        )
+    }
+
+    @discardableResult
+    func discard(_ placeholder: Tab) -> Bool {
+        structuralTransactions.withTransaction {
+            guard let receipt = retirement.prepareRetirement(placeholder)
+            else { return false }
+            let committed = terminalMutations.withReversibleSideEffects {
+                receipt.isCurrent() && receipt.commitModel()
+            }
+            guard committed else {
+                receipt.rollback()
+                return false
+            }
+            receipt.publish()
+            return true
+        }
+    }
+}
+
 /// Creates and resolves the temporary blank member used by the “add split”
-/// command. The session stores only one placeholder ID per window.
+/// command. It composes exact creation, insertion, activation, and session
+/// participants and retains no TabManager locator.
 @MainActor
 final class EmptySplitService {
-    private let tabManager: () -> TabManager?
-    private let currentTab: (BrowserWindowState) -> Tab?
-    private let memberResolver: SplitRuntimeMemberResolver
-    private let dropService: SplitDropService
+    private let placeholders: EmptySplitPlaceholderFactory
+    private let insertion: SplitInsertionService
+    private let activations: ShortcutPresentationActivationService
     private let session: EmptySplitSession
 
     init(
-        tabManager: @escaping () -> TabManager?,
-        currentTab: @escaping (BrowserWindowState) -> Tab?,
-        memberResolver: SplitRuntimeMemberResolver,
-        dropService: SplitDropService
+        placeholders: EmptySplitPlaceholderFactory,
+        insertion: SplitInsertionService,
+        activations: ShortcutPresentationActivationService,
+        session: EmptySplitSession
     ) {
-        self.tabManager = tabManager
-        self.currentTab = currentTab
-        self.memberResolver = memberResolver
-        self.dropService = dropService
-        session = EmptySplitSession(
-            replacePlaceholder: { tab, placeholderTabID, windowState in
-                dropService.replacePlaceholder(
-                    with: tab,
-                    placeholderTabID: placeholderTabID,
-                    in: windowState
-                )
-            },
-            removeTab: { tabID in
-                tabManager()?.tabClosureService.removeTab(tabID)
-            }
-        )
+        self.placeholders = placeholders
+        self.insertion = insertion
+        self.activations = activations
+        self.session = session
     }
 
     @discardableResult
@@ -40,44 +82,42 @@ final class EmptySplitService {
         side: SplitDropSide,
         in windowState: BrowserWindowState
     ) -> Bool {
-        guard let tabManager = tabManager(),
-              let current = currentTab(windowState),
-              current.representsSumiNativeSurface == false,
-              let targetMemberID = memberResolver.memberID(for: current) else {
-            return false
-        }
-        let targetSpace = windowState.currentSpaceId.flatMap {
-            tabManager.spaceStateOwner.space(with: $0)
-        } ?? tabManager.spaceStateOwner.currentSpace
-        let placeholder = tabManager.regularTabLifecycleOwner.createNewTab(
-            url: SumiSurface.emptyTabURL.absoluteString,
-            in: targetSpace,
-            activate: false
-        )
-        guard dropService.drop(
-            placeholder,
-            on: SplitInsertionTargetResolver.target(
-                memberID: targetMemberID,
-                side: side,
-                memberIsGrouped: tabManager.splitGroupStore.group(
-                    containing: targetMemberID
-                ) != nil
-            ),
+        guard let admission = insertion.admission(
+            side: side,
+            in: windowState
+        ) else { return false }
+        let placeholder = placeholders.create(in: windowState)
+        guard insertion.enterSplit(
+            with: placeholder,
+            admission: admission,
             in: windowState
         ) else {
-            tabManager.tabClosureService.removeTab(placeholder.id)
+            _ = placeholders.discard(placeholder)
             return false
         }
-        session.register(tabID: placeholder.id, in: windowState.id)
+        session.register(placeholder, in: windowState.id)
         return true
     }
 
-    func commit(tabID: UUID, in windowID: UUID) {
-        session.commit(tabID: tabID, in: windowID)
+    func commit(_ placeholder: Tab, in windowID: UUID) {
+        session.commit(placeholder, in: windowID)
     }
 
     func replace(with tab: Tab, in windowState: BrowserWindowState) -> Bool {
-        session.replace(with: tab, in: windowState)
+        activations.commitActivation(
+            tab,
+            in: windowState.id,
+            presentationSpaceID: tab.spaceId ?? windowState.currentSpaceId
+        ) { [self] admitted in
+            prepareReplacementCommit(with: admitted, in: windowState)
+        }
+    }
+
+    func prepareReplacementCommit(
+        with tab: Tab,
+        in windowState: BrowserWindowState
+    ) -> EmptySplitReplacementReceipt? {
+        session.prepareReplacement(with: tab, in: windowState)
     }
 
     func cancel(in windowState: BrowserWindowState) -> Bool {

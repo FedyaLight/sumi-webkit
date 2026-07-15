@@ -85,30 +85,11 @@ struct TabStructureChangeScope: Equatable, Sendable {
         )
     }
 
-    static func liveShortcut(
-        windowID: UUID,
-        spaceID: UUID?,
-        profileID: UUID?
-    ) -> Self {
-        guard let spaceID else {
-            return Self(
-                affectedSpaceIDs: [],
-                affectedProfileIDs: [],
-                affectedPages: [],
-                affectsSpaceCatalog: false,
-                affectsAllPages: false
-            )
-        }
-        return Self(
+    static func page(_ page: TabStructurePageScope) -> Self {
+        Self(
             affectedSpaceIDs: [],
             affectedProfileIDs: [],
-            affectedPages: [
-                TabStructurePageScope(
-                    windowID: windowID,
-                    spaceID: spaceID,
-                    profileID: profileID
-                ),
-            ],
+            affectedPages: [page],
             affectsSpaceCatalog: false,
             affectsAllPages: false
         )

@@ -21,7 +21,7 @@ final class ShortcutPinAtomicityTests: XCTestCase {
             pin,
             in: windowId,
             currentSpaceId: space.id
-        )
+        )!
         tabManager.detachBrowserRuntime()
 
         tabManager.shortcutPinCommandOwner.removeShortcutPin(pin)
@@ -431,7 +431,10 @@ final class ShortcutPinAtomicityTests: XCTestCase {
     }
 
     func testHeadlessConversionReplacesPersistedSplitMemberAtomically() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let retirement = DeferredSpaceProfileTransition()
+        let tabManager = try makeInMemoryTabManager(
+            webViewLifecycle: retirement.makeLifecycle()
+        )
         let space = tabManager.spaceServices.catalog.createSpace(name: "Space")
         let tab = tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://hidden-split.example",
@@ -466,6 +469,7 @@ final class ShortcutPinAtomicityTests: XCTestCase {
             )
 
         let pin = try XCTUnwrap(converted)
+        XCTAssertTrue(tab.webViewSession.allKnownWebViews.isEmpty)
         XCTAssertFalse(tabManager.regularTabCollectionOwner.contains(tab))
         XCTAssertNotNil(
             tabManager.shortcutPinCollectionStateOwner

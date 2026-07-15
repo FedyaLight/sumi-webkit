@@ -64,10 +64,16 @@ final class SpaceRemovalServiceTests: XCTestCase {
         ])
         tabManager.shortcutPinCollectionStateOwner
             .replaceSpacePinnedShortcuts([removedSpace.id: [pin]])
-        tabManager.transientTabRegistryOwner
-            .replaceTransientShortcutTabsByWindow([
-                windowId: [pin.id: transientTab],
-            ])
+        XCTAssertTrue(tabManager.liveShortcutTabs.register(
+            transientTab,
+            for: pin.id,
+            in: windowId,
+            presentationPage: LiveShortcutPresentationPageReceipt(
+                windowID: windowId,
+                spaceID: removedSpace.id,
+                profileID: removedSpace.profileId
+            )
+        ))
         tabManager.selectionStateOwner.replaceCurrentTab(transientTab)
         var validationCount = 0
         var announcementCount = 0
@@ -124,7 +130,9 @@ final class SpaceRemovalServiceTests: XCTestCase {
         )
         XCTAssertTrue(
             tabManager.transientTabRegistryOwner
-                .transientShortcutTabs(inSpace: fixture.removedSpace.id).isEmpty
+                .liveShortcutEntries(
+                    presentedInSpace: fixture.removedSpace.id
+                ).isEmpty
         )
         let membership = tabManager.tabCollectionMembershipOwner
         for tab in fixture.removedTabs {
@@ -249,10 +257,9 @@ final class SpaceRemovalServiceTests: XCTestCase {
                 .spacePinnedPins(for: removedSpace.id),
             []
         )
-        XCTAssertEqual(
+        XCTAssertTrue(
             tabManager.transientTabRegistryOwner
-                .transientShortcutTabs(inSpace: removedSpace.id),
-            []
+                .liveShortcutEntries(presentedInSpace: removedSpace.id).isEmpty
         )
         XCTAssertTrue(
             tabManager.structuralPersistence.dirtySet.deletedSpaceIds
@@ -290,10 +297,11 @@ final class SpaceRemovalServiceTests: XCTestCase {
                     store: tabManager.splitGroupStore,
                     mutations: tabManager.splitGroupMutations
                 ),
-                liveShortcutTabs: tabManager.liveShortcutTabs,
+                liveShortcutRetirement: tabManager.liveShortcutTabBatchRetirement,
                 runtimeTeardown: TabRuntimeTeardownService(
                     persistence: tabManager.structuralPersistence,
-                    membership: tabManager.tabCollectionMembershipOwner
+                    membership: tabManager.tabCollectionMembershipOwner,
+                    webViewSessions: tabManager.tabFactory.webViewSessions
                 )
             ),
             windowStates: DeletedSpaceWindowStateReconciler(
@@ -349,8 +357,17 @@ final class SpaceRemovalServiceTests: XCTestCase {
         tabManager.structuralCollectionMutationOwner.setTabs([regular], for: removedSpace.id)
         tabManager.structuralCollectionMutationOwner.setTabs([survivingTab], for: survivingSpace.id)
         tabManager.structuralCollectionMutationOwner.setSpacePinnedShortcuts([pin], for: removedSpace.id)
-        tabManager.transientTabRegistryOwner
-            .replaceTransientShortcutTabsByWindow([UUID(): [pin.id: shortcut]])
+        let shortcutWindowID = UUID()
+        XCTAssertTrue(tabManager.liveShortcutTabs.register(
+            shortcut,
+            for: pin.id,
+            in: shortcutWindowID,
+            presentationPage: LiveShortcutPresentationPageReceipt(
+                windowID: shortcutWindowID,
+                spaceID: removedSpace.id,
+                profileID: removedSpace.profileId
+            )
+        ))
         membership.registerTransientExtensionTab(transientExtension)
         membership.registerAuxiliaryMiniWindowTab(auxiliary)
         tabManager.selectionStateOwner.replaceCurrentTab(auxiliary)
@@ -498,6 +515,7 @@ private final class SpaceRemovalRuntimeProbe {
         TestRuntimePorts.make(
             windowStates: { [windowState] in [windowState] },
             webViewLifecycle: TestRuntimePorts.webViewLifecycle(
+                retirement: .rejecting,
                 unloadTab: { [weak self] in self?.unloadedTabIds.insert($0.id) },
                 requireRemoveAllWebViews: { [weak self] tab, closeFullscreen in
                     self?.fullscreenCloseRequests.append(closeFullscreen)

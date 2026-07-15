@@ -7,9 +7,14 @@ import SumiDomain
 @MainActor
 final class RegularTabShortcutWindowReconciler {
     private let regularTabs: RegularTabCollectionOwner
+    private let windowMutations: BrowserWindowShortcutMutationOwner
 
-    init(regularTabs: RegularTabCollectionOwner) {
+    init(
+        regularTabs: RegularTabCollectionOwner,
+        windowMutations: BrowserWindowShortcutMutationOwner
+    ) {
         self.regularTabs = regularTabs
+        self.windowMutations = windowMutations
     }
 
     func reconcile(
@@ -22,15 +27,19 @@ final class RegularTabShortcutWindowReconciler {
     ) -> [BrowserWindowState] {
         var changedStates: [UUID: BrowserWindowState] = [:]
         runtime.forEachWindow { windowId, windowState in
-            if DisplayedTabShortcutWindowTransition.apply(
-                to: windowState,
-                originalTabId: originalTabId,
-                splitTransition: splitTransition,
-                liveTab: liveTabsByWindowId[windowId],
-                sourceSpaceId: sourceSpaceId,
-                isSelected: selectedWindowIds.contains(windowId),
-                regularTabs: regularTabs
-            ) {
+            var requiresPersistence = false
+            windowMutations.stage(windowState) { state in
+                requiresPersistence = DisplayedTabShortcutWindowTransition.apply(
+                    to: &state,
+                    originalTabId: originalTabId,
+                    splitTransition: splitTransition,
+                    liveTab: liveTabsByWindowId[windowId],
+                    sourceSpaceId: sourceSpaceId,
+                    isSelected: selectedWindowIds.contains(windowId),
+                    regularTabs: regularTabs
+                )
+            }
+            if requiresPersistence {
                 changedStates[windowId] = windowState
             }
         }

@@ -5,9 +5,14 @@ import Foundation
 @MainActor
 final class ShortcutLiveTabRetirementPlanner {
     private let registry: LiveShortcutTabRegistry
+    private let batchRetirement: LiveShortcutTabBatchRetirement
 
-    init(registry: LiveShortcutTabRegistry) {
+    init(
+        registry: LiveShortcutTabRegistry,
+        batchRetirement: LiveShortcutTabBatchRetirement
+    ) {
         self.registry = registry
+        self.batchRetirement = batchRetirement
     }
 
     func prepare(
@@ -62,7 +67,7 @@ final class ShortcutLiveTabRetirementPlanner {
         }
         guard let runtime else { return nil }
 
-        let entries = registry.removeAll(pinIds: pinIds, in: windowId)
+        let entries = batchRetirement.remove(pinIDs: pinIds, in: windowId)
         var result = ShortcutLiveTabRetirementResult(
             retiredTabIds: entries.map(\.tab.id)
         )
@@ -92,7 +97,7 @@ final class ShortcutLiveTabRetirementPlanner {
         let existingEntries = orderedPinIds.flatMap(registry.entries(for:))
         guard existingEntries.isEmpty || runtime != nil else { return nil }
 
-        let entries = registry.removeAll(pinIds: pinIds)
+        let entries = batchRetirement.remove(pinIDs: pinIds)
         var result = ShortcutLiveTabRetirementResult(
             retiredTabIds: entries.map(\.tab.id)
         )

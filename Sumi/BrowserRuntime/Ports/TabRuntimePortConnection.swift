@@ -6,6 +6,7 @@ import Foundation
 @MainActor
 final class TabRuntimePortConnection {
     private var registry: RuntimePortRegistry?
+    private var attachmentRevision: UInt64 = 0
 
     init(_ registry: RuntimePortRegistry? = nil) {
         self.registry = registry
@@ -17,10 +18,26 @@ final class TabRuntimePortConnection {
 
     func attach(_ registry: RuntimePortRegistry) {
         self.registry = registry
+        attachmentRevision &+= 1
     }
 
     func detach() {
         registry = nil
+        attachmentRevision &+= 1
+    }
+
+    /// Captures one exact attachment generation. Transactions retain the
+    /// captured ports instead of repeatedly resolving mutable composition-root
+    /// state through weak manager callbacks.
+    func captureLease() -> TabRuntimePortLease {
+        TabRuntimePortLease(
+            registry: registry,
+            attachmentRevision: attachmentRevision
+        )
+    }
+
+    func accepts(_ lease: TabRuntimePortLease) -> Bool {
+        lease.attachmentRevision == attachmentRevision
     }
 
     func requireLease() -> RuntimePortRegistry {
@@ -30,5 +47,19 @@ final class TabRuntimePortConnection {
             )
         }
         return registry
+    }
+}
+
+@MainActor
+struct TabRuntimePortLease {
+    let registry: RuntimePortRegistry?
+    fileprivate let attachmentRevision: UInt64
+
+    func windowState(for windowID: UUID) -> BrowserWindowState? {
+        registry?.windowState(for: windowID)
+    }
+
+    func persistWindowSession(for state: BrowserWindowState) {
+        registry?.persistWindowSession(for: state)
     }
 }

@@ -19,7 +19,17 @@ final class TabStructureOwnerBag {
 
     private var tm: TabManager { tabManager }
 
-    lazy var folderMutationOwner = TabFolderMutationOwner(dependencies: .live(tabManager: tm))
+    lazy var folderOpenState = TabFolderOpenStateService(
+        folders: tm.folderCollectionStateOwner,
+        structuralLookup: structuralLookupCoordinator,
+        persistence: tm.structuralPersistence
+    )
+    lazy var folderMutationOwner = TabFolderMutationOwner(
+        dependencies: .live(
+            tabManager: tm,
+            folderOpenState: folderOpenState
+        )
+    )
     lazy var regularTabCollectionOwner = RegularTabCollectionOwner(
         tabManager: tm,
         stateOwner: tm.regularTabCollectionStateOwner

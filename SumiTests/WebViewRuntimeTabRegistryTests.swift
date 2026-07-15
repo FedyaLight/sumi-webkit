@@ -37,6 +37,49 @@ final class WebViewRuntimeTabRegistryTests: XCTestCase {
         XCTAssertIdentical(registry.boundTab(tabID), original)
     }
 
+    func testAtomicBindingConflictDoesNotBindAcceptedPrefix() {
+        let repository = WebViewSessionRepository()
+        let registry = WebViewRuntimeTabRegistry(webViewSessions: repository)
+        let conflictID = UUID()
+        let canonical = makeTab(id: conflictID, webViewSessions: repository)
+        let acceptedPrefix = makeTab(webViewSessions: repository)
+        let conflicting = makeTab(
+            id: conflictID,
+            webViewSessions: repository
+        )
+        XCTAssertEqual(registry.bind(canonical), .bound)
+
+        XCTAssertFalse(registry.bindAtomically([acceptedPrefix, conflicting]))
+
+        XCTAssertNil(registry.boundTab(acceptedPrefix.id))
+        XCTAssertIdentical(registry.boundTab(conflictID), canonical)
+    }
+
+    func testAtomicBindingRejectsDuplicateInputWithoutMutation() {
+        let repository = WebViewSessionRepository()
+        let registry = WebViewRuntimeTabRegistry(webViewSessions: repository)
+        let tab = makeTab(webViewSessions: repository)
+
+        XCTAssertFalse(registry.bindAtomically([tab, tab]))
+        XCTAssertNil(registry.boundTab(tab.id))
+    }
+
+    func testAtomicBindingRejectsWrongRepositoryWithoutBindingPrefix() {
+        let repository = WebViewSessionRepository()
+        let otherRepository = WebViewSessionRepository()
+        let registry = WebViewRuntimeTabRegistry(webViewSessions: repository)
+        let acceptedPrefix = makeTab(webViewSessions: repository)
+        let wrongRepositoryTab = makeTab(webViewSessions: otherRepository)
+
+        XCTAssertFalse(registry.bindAtomically([
+            acceptedPrefix,
+            wrongRepositoryTab,
+        ]))
+
+        XCTAssertNil(registry.boundTab(acceptedPrefix.id))
+        XCTAssertNil(registry.boundTab(wrongRepositoryTab.id))
+    }
+
     func testResolveFailsClosedWhenAuthoritativeResolverReturnsDifferentSameIDTab() {
         let repository = WebViewSessionRepository()
         let registry = WebViewRuntimeTabRegistry(webViewSessions: repository)
@@ -204,6 +247,64 @@ final class WebViewRuntimeTabRegistryTests: XCTestCase {
         )
         XCTAssertNil(graph.runtimeTabs.boundTab(tab.id))
         XCTAssertEqual(graph.runtimeTabs.bind(tab), .retiredIdentity)
+    }
+
+    func testCommittedBatchRetirementTombstonesRuntimeIdentityBeforeDestroy()
+        throws {
+        let repository = WebViewSessionRepository()
+        let tab = makeTab(webViewSessions: repository)
+        let graph = makeTestWebViewRuntimeGraph(
+            webViewSessions: repository,
+            resolveRuntimeTab: { id in id == tab.id ? tab : nil }
+        )
+        let webView = FocusableWKWebView()
+        webView.owningTab = tab
+        repository.noteParkedWebView(webView, for: tab.id)
+        let retirement = WebViewCommittedTabRetirementService(
+            runtimeTabs: graph.runtimeTabs,
+            generations: graph.retiredGenerationDestroyer
+        )
+        XCTAssertTrue(retirement.canAdmit([tab]))
+        let modelReceipt = WebViewRetirementModelTransactionReceipt(
+            isCurrent: { true },
+            commit: {},
+            rollback: {}
+        )
+        guard case .began(let lease) = repository.beginRetirementBatch(
+            [WebViewRetirementBatchEntry(
+                tabID: tab.id,
+                expectedGeneration: tab.webViewSession.generation
+            )],
+            modelTransaction: modelReceipt
+        ) else { return XCTFail("Expected exact retirement lease") }
+        guard case .committed(let retired) = repository
+            .commitRetirementBatch(lease) else {
+            return XCTFail("Expected committed retirement generation")
+        }
+        let generation = RetiredTabWebViewGeneration(
+            tabID: tab.id,
+            snapshot: try XCTUnwrap(retired[tab.id])
+        )
+
+        XCTAssertTrue(retirement.beginCommitted([tab]))
+        XCTAssertNil(graph.runtimeTabs.boundTab(tab.id))
+        XCTAssertTrue(graph.runtimeTabs.isRetiring(tab))
+        XCTAssertEqual(graph.runtimeTabs.bind(tab), .retiredIdentity)
+        let replacement = makeTab(
+            id: tab.id,
+            webViewSessions: repository
+        )
+        XCTAssertEqual(
+            graph.runtimeTabs.bind(replacement),
+            .identityConflict
+        )
+
+        retirement.destroy([generation], completing: [tab])
+
+        XCTAssertFalse(graph.runtimeTabs.isRetiring(tab))
+        XCTAssertEqual(graph.runtimeTabs.bind(tab), .retiredIdentity)
+        XCTAssertEqual(graph.runtimeTabs.bind(replacement), .bound)
+        XCTAssertNil(repository.residence(of: webView))
     }
 
     func testRetirementReportsBlockedRepositoryReplacementWithoutDestroyingIt() {

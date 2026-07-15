@@ -34,8 +34,24 @@ final class SplitGroupMutationService {
     @discardableResult
     func insert(
         _ group: SumiDomain.SplitGroup,
+        persist: Bool = true
+    ) -> Bool {
+        insertResolved(group, persist: persist, alongside: nil)
+    }
+
+    @discardableResult
+    func insert(
+        _ group: SumiDomain.SplitGroup,
         persist: Bool = true,
-        alongside: @escaping @MainActor () -> Void = {}
+        alongside: @escaping @MainActor () -> Void
+    ) -> Bool {
+        insertResolved(group, persist: persist, alongside: alongside)
+    }
+
+    private func insertResolved(
+        _ group: SumiDomain.SplitGroup,
+        persist: Bool,
+        alongside: (@MainActor () -> Void)?
     ) -> Bool {
         guard store.group(id: group.id) == nil,
               group.memberIDs.allSatisfy({ store.groupID(containing: $0) == nil })
@@ -54,8 +70,36 @@ final class SplitGroupMutationService {
     func replace(
         _ expectedGroup: SumiDomain.SplitGroup,
         with replacement: SumiDomain.SplitGroup,
+        persist: Bool = true
+    ) -> Bool {
+        replaceResolved(
+            expectedGroup,
+            with: replacement,
+            persist: persist,
+            alongside: nil
+        )
+    }
+
+    @discardableResult
+    func replace(
+        _ expectedGroup: SumiDomain.SplitGroup,
+        with replacement: SumiDomain.SplitGroup,
         persist: Bool = true,
-        alongside: @escaping @MainActor () -> Void = {}
+        alongside: @escaping @MainActor () -> Void
+    ) -> Bool {
+        replaceResolved(
+            expectedGroup,
+            with: replacement,
+            persist: persist,
+            alongside: alongside
+        )
+    }
+
+    private func replaceResolved(
+        _ expectedGroup: SumiDomain.SplitGroup,
+        with replacement: SumiDomain.SplitGroup,
+        persist: Bool,
+        alongside: (@MainActor () -> Void)?
     ) -> Bool {
         guard replacement.id == expectedGroup.id,
               let index = store.index(of: expectedGroup.id),
@@ -86,8 +130,28 @@ final class SplitGroupMutationService {
     @discardableResult
     func remove(
         _ expectedGroup: SumiDomain.SplitGroup,
+        persist: Bool = true
+    ) -> Bool {
+        removeResolved(expectedGroup, persist: persist, alongside: nil)
+    }
+
+    @discardableResult
+    func remove(
+        _ expectedGroup: SumiDomain.SplitGroup,
         persist: Bool = true,
-        alongside: @escaping @MainActor () -> Void = {}
+        alongside: @escaping @MainActor () -> Void
+    ) -> Bool {
+        removeResolved(
+            expectedGroup,
+            persist: persist,
+            alongside: alongside
+        )
+    }
+
+    private func removeResolved(
+        _ expectedGroup: SumiDomain.SplitGroup,
+        persist: Bool,
+        alongside: (@MainActor () -> Void)?
     ) -> Bool {
         guard let index = store.index(of: expectedGroup.id),
               store.groups[index] == expectedGroup
@@ -164,8 +228,36 @@ final class SplitGroupMutationService {
     func replaceAll(
         expected: [SumiDomain.SplitGroup],
         with replacement: [SumiDomain.SplitGroup],
+        persist: Bool = true
+    ) -> Bool {
+        replaceAllResolved(
+            expected: expected,
+            with: replacement,
+            persist: persist,
+            alongside: nil
+        )
+    }
+
+    @discardableResult
+    func replaceAll(
+        expected: [SumiDomain.SplitGroup],
+        with replacement: [SumiDomain.SplitGroup],
         persist: Bool = true,
-        alongside: @escaping @MainActor () -> Void = {}
+        alongside: @escaping @MainActor () -> Void
+    ) -> Bool {
+        replaceAllResolved(
+            expected: expected,
+            with: replacement,
+            persist: persist,
+            alongside: alongside
+        )
+    }
+
+    private func replaceAllResolved(
+        expected: [SumiDomain.SplitGroup],
+        with replacement: [SumiDomain.SplitGroup],
+        persist: Bool,
+        alongside: (@MainActor () -> Void)?
     ) -> Bool {
         guard SumiDomain.SplitGroup.sanitized(replacement) == replacement else {
             return false
@@ -196,6 +288,29 @@ final class SplitGroupMutationService {
         )
     }
 
+    /// Prepares an exact multi-group replacement whose terminal publication
+    /// cannot reject. Callers compose this receipt with other prepared model
+    /// receipts and publish only after every participant remains current.
+    func prepareReplaceAll(
+        expected: [SumiDomain.SplitGroup],
+        with replacement: [SumiDomain.SplitGroup],
+        persist: Bool = true
+    ) -> SplitGroupReplacementReceipt? {
+        guard store.groups == expected,
+              replacement != expected,
+              SumiDomain.SplitGroup.sanitized(replacement) == replacement
+        else { return nil }
+        return SplitGroupReplacementReceipt(
+            store: store,
+            publisher: self,
+            plan: SplitGroupReplacementPlan(
+                expected: expected,
+                replacement: replacement,
+                persist: persist
+            )
+        )
+    }
+
     /// Startup installation has no competing runtime mutation, but still
     /// rejects corrupt or overlapping input instead of silently changing it.
     @discardableResult
@@ -214,7 +329,7 @@ final class SplitGroupMutationService {
         expected: [SumiDomain.SplitGroup],
         replacement: [SumiDomain.SplitGroup],
         persist: Bool,
-        alongside: @escaping @MainActor () -> Void
+        alongside: (@MainActor () -> Void)?
     ) -> Bool {
         guard store.groups == expected,
               replacement != expected,
@@ -228,7 +343,7 @@ final class SplitGroupMutationService {
             // this mutation indivisible with respect to other split commits.
             announceChange()
             store.replaceAll(with: replacement)
-            alongside()
+            alongside?()
             markStructurallyDirty()
             requestStructuralPublish(scope(for: expected + replacement))
         }
@@ -236,6 +351,17 @@ final class SplitGroupMutationService {
             schedulePersistence()
         }
         return true
+    }
+
+    func publishPreparedReplacement(_ plan: SplitGroupReplacementPlan) {
+        withStructuralTransaction {
+            announceChange()
+            markStructurallyDirty()
+            requestStructuralPublish(scope(for: plan.expected + plan.replacement))
+        }
+        if plan.persist {
+            schedulePersistence()
+        }
     }
 
     private func commitAtomically(
@@ -252,9 +378,23 @@ final class SplitGroupMutationService {
 
         var committed = false
         withStructuralTransaction {
-            guard sideEffect() else { return }
-            announceChange()
+            // Install the canonical topology without observation before any
+            // sibling participant can publish. A synchronous window or
+            // residence observer must resolve the terminal split graph, not
+            // the source graph. Failed admission has no outward boundary and
+            // therefore restores this exact raw snapshot. Once the side
+            // effect succeeds, a reentrant topology mutation is authoritative
+            // and must never be overwritten by this outer transaction.
             store.replaceAll(with: replacement)
+            guard sideEffect() else {
+                precondition(
+                    store.groups == replacement,
+                    "Rejected split aggregate published a reentrant topology"
+                )
+                store.replaceAll(with: expected)
+                return
+            }
+            announceChange()
             markStructurallyDirty()
             requestStructuralPublish(scope(for: expected + replacement))
             committed = true

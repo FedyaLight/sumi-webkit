@@ -78,7 +78,7 @@ final class ExtensionRequestedTabDiscardService {
             }
 
             let runtime = runtimePorts()
-            runtime.handleTabClosures([tab.id])
+            let splitSettlement = runtime.stageTabClosures([tab.id])
             if needsExtensionClose {
                 runtime.notifyTabClosedIfLoaded(tab)
             }
@@ -100,6 +100,7 @@ final class ExtensionRequestedTabDiscardService {
                 name: .sumiTabLifecycleDidChange,
                 object: tab
             )
+            splitSettlement?.publish()
             persistence.scheduleStructuralPersistence()
             _ = runtime.validateWindowStates()
             return true

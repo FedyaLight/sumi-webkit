@@ -2,7 +2,7 @@ import Foundation
 @MainActor
 enum DisplayedTabShortcutWindowTransition {
     static func apply(
-        to windowState: BrowserWindowState,
+        to state: inout BrowserWindowShortcutMutationState,
         originalTabId: UUID,
         splitTransition: RegularTabShortcutWindowTransitionPlan,
         liveTab: Tab?,
@@ -10,17 +10,17 @@ enum DisplayedTabShortcutWindowTransition {
         isSelected: Bool,
         regularTabs: RegularTabCollectionOwner
     ) -> Bool {
-        let previousSessionState = ShortcutConversionWindowSessionState(windowState)
+        let previousSessionState = ShortcutConversionWindowSessionState(state)
         let selectedSourceGroupID = splitTransition.sourceGroupID.flatMap { groupId in
-            windowState.splitSelection?.groupID == groupId
-                && windowState.splitSelection?.activeMemberID == .regularTab(originalTabId)
+            state.splitSelection?.groupID == groupId
+                && state.splitSelection?.activeMemberID == .regularTab(originalTabId)
                 ? groupId
                 : nil
         }
-        if (isSelected || selectedSourceGroupID != nil), let liveTab {
+        if isSelected || selectedSourceGroupID != nil, let liveTab {
             _ = WindowTabSelectionStateApplicator.apply(
                 liveTab,
-                to: windowState,
+                to: &state,
                 updateSpaceFromTab: true,
                 rememberSelection: true
             )
@@ -29,17 +29,17 @@ enum DisplayedTabShortcutWindowTransition {
             isSelected: isSelected,
             selectedSourceGroupID: selectedSourceGroupID
         ) {
-            windowState.splitSelection = WindowSplitSelection(
+            state.splitSelection = WindowSplitSelection(
                 groupID: groupID,
                 activeMemberID: splitTransition.replacementMemberID
             )
         }
         if let sourceSpaceId,
-           windowState.activeTabForSpace[sourceSpaceId] == originalTabId {
-            windowState.activeTabForSpace[sourceSpaceId] = regularTabs
+           state.activeTabForSpace[sourceSpaceId] == originalTabId {
+            state.activeTabForSpace[sourceSpaceId] = regularTabs
                 .tabs(in: sourceSpaceId).first?.id
         }
-        windowState.selectionHistory.removeFromRegularTabHistory(originalTabId)
-        return previousSessionState != ShortcutConversionWindowSessionState(windowState)
+        state.selectionHistory.removeFromRegularTabHistory(originalTabId)
+        return previousSessionState != ShortcutConversionWindowSessionState(state)
     }
 }

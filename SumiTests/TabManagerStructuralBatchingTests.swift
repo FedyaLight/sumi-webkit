@@ -37,6 +37,32 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
         XCTAssertEqual(flushCountsAtPublish, [1])
     }
 
+    func testPrepublicationActionsDrainFIFOInsideBatchingSentinel() {
+        let eventBus = TabStructureEventBus()
+        let owner = TabStructuralPublishOwner(eventBus: eventBus)
+        var events: [String] = []
+        let cancellable = eventBus.structureChangedPublisher.sink {
+            events.append("publish")
+        }
+
+        owner.withTransaction(flushPendingLookupBatch: {}) {
+            owner.requestPublish()
+            owner.runAfterCurrentBatch { events.append("after") }
+            owner.runBeforeCurrentBatchPublication {
+                XCTAssertTrue(owner.isBatching)
+                events.append("before-1")
+                owner.requestPublish()
+                owner.runBeforeCurrentBatchPublication {
+                    XCTAssertTrue(owner.isBatching)
+                    events.append("before-2")
+                }
+            }
+        }
+        withExtendedLifetime(cancellable) {}
+
+        XCTAssertEqual(events, ["before-1", "before-2", "publish", "after"])
+    }
+
     func testNestedRegularMutationsPublishOnceAndPreserveFinalOrder() throws {
         let tabManager = try makeInMemoryTabManager()
         let recorder = StructuralEventRecorder(tabManager: tabManager)
@@ -106,7 +132,10 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
     }
 
     func testTransientShortcutLookupRefreshFlushesImmediatelyInsideTransaction() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let retirement = DeferredSpaceProfileTransition()
+        let tabManager = try makeInMemoryTabManager(
+            webViewLifecycle: retirement.makeLifecycle()
+        )
         let recorder = StructuralEventRecorder(tabManager: tabManager)
         let space = tabManager.spaceServices.catalog.createSpace(name: "Workspace")
         let folder = tabManager.folderMutationOwner.createFolder(for: space.id, name: "Folder")
@@ -119,7 +148,7 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
         recorder.reset()
 
         tabManager.structuralLookupCoordinator.withTransaction {
-            let liveTab = tabManager.shortcutTabMaterializer.materialize(pin, in: windowId, currentSpaceId: space.id)
+            let liveTab = tabManager.shortcutTabMaterializer.materialize(pin, in: windowId, currentSpaceId: space.id)!
 
             XCTAssertEqual(recorder.count, 0)
             XCTAssertEqual(tabManager.tabCollectionMembershipOwner.tab(for: liveTab.id)?.id, liveTab.id)
@@ -152,7 +181,7 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
             pin,
             in: windowState.id,
             currentSpaceId: space.id
-        )
+        )!
         let regularHistoryId = UUID()
         windowState.currentTabId = liveTab.id
         windowState.currentShortcutPinId = pin.id
@@ -189,7 +218,7 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
             pin,
             in: windowState.id,
             currentSpaceId: space.id
-        )
+        )!
         windowState.currentTabId = liveTab.id
         windowState.currentShortcutPinId = pin.id
         windowState.currentShortcutPinRole = pin.role
@@ -262,7 +291,7 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
             pin,
             in: windowState.id,
             currentSpaceId: space.id
-        )
+        )!
 
         tabManager.shortcutPinCommandOwner.removeShortcutPin(pin)
 
@@ -292,7 +321,7 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
             pin,
             in: windowState.id,
             currentSpaceId: space.id
-        )
+        )!
         windowState.currentTabId = liveTab.id
         windowState.currentShortcutPinId = pin.id
         windowState.currentShortcutPinRole = pin.role
@@ -538,17 +567,17 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
             windowEssentialPin,
             in: windowState.id,
             currentSpaceId: windowSpace.id
-        )
+        )!
         let globalEssential = tabManager.shortcutTabMaterializer.materialize(
             globalEssentialPin,
             in: UUID(),
             currentSpaceId: globalSpace.id
-        )
+        )!
         let windowLauncher = tabManager.shortcutTabMaterializer.materialize(
             windowSpacePin,
             in: windowState.id,
             currentSpaceId: windowSpace.id
-        )
+        )!
         windowState.currentShortcutPinId = windowSpacePin.id
 
         let selection = tabManager.activeSelectionOwner.selectionTabsForCurrentContext(in: windowState.id)
@@ -929,7 +958,10 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
     }
 
     func testConvertingLiveFolderLauncherBackToRegularPublishesOnceAndClearsLiveBinding() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let retirement = DeferredSpaceProfileTransition()
+        let tabManager = try makeInMemoryTabManager(
+            webViewLifecycle: retirement.makeLifecycle()
+        )
         let recorder = StructuralEventRecorder(tabManager: tabManager)
         let space = tabManager.spaceServices.catalog.createSpace(name: "Workspace")
         let folder = tabManager.folderMutationOwner.createFolder(for: space.id, name: "Folder")
@@ -938,7 +970,7 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
         tabManager.folderMutationOwner.moveTabToFolder(tab: tab, folderId: folder.id)
         let pin = try XCTUnwrap(tabManager.shortcutPinCollectionStateOwner.folderPinnedPins(for: folder.id, in: space.id).first)
         let windowId = UUID()
-        let liveTab = tabManager.shortcutTabMaterializer.materialize(pin, in: windowId, currentSpaceId: space.id)
+        let liveTab = tabManager.shortcutTabMaterializer.materialize(pin, in: windowId, currentSpaceId: space.id)!
         XCTAssertEqual(liveTab.shortcutPinId, pin.id)
         recorder.reset()
 
@@ -961,7 +993,7 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
         let folder = tabManager.folderMutationOwner.createFolder(for: space.id, name: "Folder")
         recorder.reset()
 
-        tabManager.folderMutationOwner.toggleFolderOpenState(folder.id)
+        tabManager.folderOpenState.toggleFolderOpenState(folder.id)
 
         XCTAssertTrue(folder.isOpen)
         XCTAssertEqual(recorder.count, 1)

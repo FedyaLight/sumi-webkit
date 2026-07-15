@@ -4,6 +4,7 @@ struct SpaceRemovalFootprint {
     let spaceId: UUID
     let tabIds: Set<UUID>
     let shortcutPinIds: Set<UUID>
+    let retiredShortcutPinIDsByWindow: [UUID: Set<UUID>]
     let splitGroupIds: Set<UUID>
 }
 
@@ -46,5 +47,4 @@ final class DeletedSpaceWindowStateReconciler {
             .filter { persistedWindowIds.contains($0.id) == false }
             .forEach(runtime.persistWindowSession(for:))
     }
-
 }

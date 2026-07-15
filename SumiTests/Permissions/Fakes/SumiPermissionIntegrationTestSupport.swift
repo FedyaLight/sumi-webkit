@@ -187,7 +187,7 @@ actor SumiPermissionIntegrationStore: SumiPermissionStore {
         profilePartitionId: String
     ) async throws -> [SumiPermissionStoreRecord] {
         let domain = SumiPermissionStoreRecord.normalizedDisplayDomain(displayDomain)
-        return try await listDecisions(profilePartitionId: profilePartitionId)
+        return await listDecisions(profilePartitionId: profilePartitionId)
             .filter { $0.displayDomain == domain }
     }
 

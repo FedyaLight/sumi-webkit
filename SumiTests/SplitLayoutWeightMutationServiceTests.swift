@@ -145,6 +145,9 @@ final class SplitLayoutWeightMutationServiceTests: XCTestCase {
             selectTabWithoutPersistence: { _, _ in
                 probe.selectionWrites += 1
             },
+            publishPreparedSelectionEffects: { _, _, _, _ in
+                /* This layout fixture does not publish prepared selection. */
+            },
             publishWindowChange: {
                 probe.publishedWindowIDs.append($0)
             },
@@ -159,7 +162,7 @@ final class SplitLayoutWeightMutationServiceTests: XCTestCase {
             }
         )
         let launcherPlacement = ShortcutSplitLauncherPlacementService(
-            tabManager: { tabManager }
+            tabManager: tabManager
         )
         return SplitLayoutService(
             tabManager: { tabManager },

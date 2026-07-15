@@ -1,82 +1,45 @@
-import Foundation
-
-/// Applies a preflighted launcher move batch and rolls back already moved pins
-/// if catalog state drifts before the batch completes.
+/// Adapts one exact launcher catalog/residence batch into the sidebar split
+/// transaction. Window fields are installed as one observation-silent model
+/// aggregate before terminal key publication.
 @MainActor
 final class ShortcutSplitLauncherMoveTransaction {
-    private let shortcutPin: (UUID) -> ShortcutPin?
-    private let canMove: (
-        ShortcutPin,
-        ShortcutSplitLauncherDestination
-    ) -> Bool
-    private let move: (
-        ShortcutPin,
-        ShortcutSplitLauncherDestination
-    ) -> ShortcutPin?
+    private let batches: any ShortcutSplitLauncherMoveBatchPreparing
+    private let windowMutations: BrowserWindowShortcutMutationOwner
 
     init(
-        shortcutPin: @escaping (UUID) -> ShortcutPin?,
-        canMove: @escaping (
-            ShortcutPin,
-            ShortcutSplitLauncherDestination
-        ) -> Bool,
-        move: @escaping (
-            ShortcutPin,
-            ShortcutSplitLauncherDestination
-        ) -> ShortcutPin?
+        batches: any ShortcutSplitLauncherMoveBatchPreparing,
+        windowMutations: BrowserWindowShortcutMutationOwner
     ) {
-        self.shortcutPin = shortcutPin
-        self.canMove = canMove
-        self.move = move
+        self.batches = batches
+        self.windowMutations = windowMutations
     }
 
     func accepts(
         _ pin: ShortcutPin,
         destination: ShortcutSplitLauncherDestination
     ) -> Bool {
-        canMove(pin, destination)
+        batches.accepts(pin, destination: destination)
     }
 
-    func apply(
+    func stage(
         _ restorations: [PreparedShortcutSplitLauncherRestoration]
-    ) -> Bool {
-        guard restorations.allSatisfy({ restoration in
-            guard let current = shortcutPin(restoration.pin.id) else {
-                return false
-            }
-            return canMove(current, restoration.destination)
-        }) else { return false }
-
-        var applied: [PreparedShortcutSplitLauncherRestoration] = []
-        for restoration in restorations {
-            guard let current = shortcutPin(restoration.pin.id),
-                  move(current, restoration.destination)?.id
-                    == restoration.pin.id else {
-                rollback(applied)
-                return false
-            }
-            applied.append(restoration)
-        }
-        return true
+    ) -> RegularTabShortcutSidebarMutation? {
+        guard let batch = batches.prepare(restorations) else { return nil }
+        return RegularTabShortcutSidebarMutation(
+            batch: batch,
+            windowMutations: windowMutations
+        )
     }
 
-    private func rollback(
+    func stageForComposedResidenceAggregate(
         _ restorations: [PreparedShortcutSplitLauncherRestoration]
-    ) {
-        for restoration in restorations.reversed() {
-            guard let current = shortcutPin(restoration.pin.id) else {
-                continue
-            }
-            _ = move(
-                current,
-                ShortcutSplitLauncherDestination(
-                    role: restoration.pin.role,
-                    profileId: restoration.pin.profileId,
-                    spaceId: restoration.pin.spaceId,
-                    folderId: restoration.pin.folderId,
-                    index: restoration.pin.index
-                )
-            )
-        }
+    ) -> RegularTabShortcutSidebarMutation? {
+        guard let batch = batches.prepareForComposedResidenceAggregate(
+            restorations
+        ) else { return nil }
+        return RegularTabShortcutSidebarMutation(
+            batch: batch,
+            windowMutations: windowMutations
+        )
     }
 }

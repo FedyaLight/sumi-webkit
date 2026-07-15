@@ -38,9 +38,24 @@ final class BrowserWindowSpaceTransitionService {
         in windowState: BrowserWindowState,
         completingTransition identity: SpaceTransitionIdentity? = nil
     ) {
-        guard isValidTransition(identity, to: space, in: windowState) else {
+        guard windowState.windowThemeState.acceptsInteractiveCompletion(
+            identity: identity,
+            destinationSpaceID: space.id
+        ) else {
             return
         }
+
+        guard spaceActivation.admitProfileIfNeeded(
+            for: space,
+            retry: { [weak self, weak space, weak windowState] in
+                guard let self, let space, let windowState else { return }
+                self.setActiveSpace(
+                    space,
+                    in: windowState,
+                    completingTransition: identity
+                )
+            }
+        ) else { return }
 
         let operatesOnActiveWindow = isActiveWindow(windowState)
         if identity == nil,
@@ -58,11 +73,11 @@ final class BrowserWindowSpaceTransitionService {
 
         let target = selectionHandoff.resolveTarget(for: space, in: windowState)
         if operatesOnActiveWindow {
-            spaceActivation.setActiveSpace(
+            guard spaceActivation.setActiveSpace(
                 space,
                 preferredTab: target.preferredTab,
                 contextWindowId: windowState.id
-            )
+            ) else { return }
         }
 
         contextTransition.commitContext(space, to: windowState)
@@ -81,16 +96,5 @@ final class BrowserWindowSpaceTransitionService {
         }
         persistWindowSession(windowState)
         completePendingSplitGroupFocus(windowState, space.id)
-    }
-
-    private func isValidTransition(
-        _ identity: SpaceTransitionIdentity?,
-        to space: Space,
-        in windowState: BrowserWindowState
-    ) -> Bool {
-        guard let identity else { return true }
-        return identity.destinationSpaceId == space.id
-            && windowState.windowThemeState
-                .matchesInteractiveSpaceTransition(identity)
     }
 }

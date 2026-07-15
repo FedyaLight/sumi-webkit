@@ -11,20 +11,20 @@ final class SpaceProfileTransitionService {
     }
 
     private unowned let tabManager: TabManager
-    private let policy: ProfileAssignmentPolicy
     private let pendingInheritance: PendingTabProfileInheritance
+    private let admission: SpaceProfileTransitionAdmission
     private var revisionBySpaceID: [UUID: UInt64] = [:]
     private var transactionsBySpaceID: [UUID: SpaceProfileTransaction] = [:]
     private var observersBySpaceID: [UUID: SettlementObserver] = [:]
 
     init(
         tabManager: TabManager,
-        policy: ProfileAssignmentPolicy,
-        pendingInheritance: PendingTabProfileInheritance
+        pendingInheritance: PendingTabProfileInheritance,
+        admission: SpaceProfileTransitionAdmission
     ) {
         self.tabManager = tabManager
-        self.policy = policy
         self.pendingInheritance = pendingInheritance
+        self.admission = admission
     }
 
     @discardableResult
@@ -39,16 +39,40 @@ final class SpaceProfileTransitionService {
     func start(
         spaceID: UUID,
         profileID: UUID,
-        intentPrepared: (DeferredWebViewSpaceProfileAssignmentIntent) -> Void = { _ in /* No-op. */ },
         settlementObserver: ProfileTransitionService.Settlement? = nil
     ) -> TabProfileAssignmentExecutionOutcome {
+        start(
+            spaceID: spaceID,
+            profileID: profileID,
+            intentObserver: nil,
+            settlementObserver: settlementObserver
+        )
+    }
+
+    @discardableResult
+    func start(
+        spaceID: UUID,
+        profileID: UUID,
+        capturingIntent: @escaping (
+            DeferredWebViewSpaceProfileAssignmentIntent
+        ) -> Void,
+        settlementObserver: ProfileTransitionService.Settlement? = nil
+    ) -> TabProfileAssignmentExecutionOutcome {
+        start(
+            spaceID: spaceID,
+            profileID: profileID,
+            intentObserver: capturingIntent,
+            settlementObserver: settlementObserver
+        )
+    }
+
+    private func start(
+        spaceID: UUID,
+        profileID: UUID,
+        intentObserver: ((DeferredWebViewSpaceProfileAssignmentIntent) -> Void)?,
+        settlementObserver: ProfileTransitionService.Settlement?
+    ) -> TabProfileAssignmentExecutionOutcome {
         guard let space = tabManager.spaceStateOwner.space(with: spaceID) else {
-            return .failed
-        }
-        guard policy.profileExists(profileID) else {
-            RuntimeDiagnostics.emit(
-                "⚠️ [TabManager] Attempted to assign space to unknown profile: \(profileID)"
-            )
             return .failed
         }
         if let transaction = transactionsBySpaceID[spaceID] {
@@ -58,23 +82,19 @@ final class SpaceProfileTransitionService {
             return .failed
         }
         guard space.profileId != profileID else { return .committed }
-        guard let profile = policy.resolvedPlacementProfile(
-            profileID: profileID
-        ) else { return .failed }
-
-        let tabs = tabsInSpace(spaceID).filter { $0.profileId == nil }
-        guard tabs.allSatisfy({
-            !$0.profileAssignment.hasUnsettledAssignment
-        }) else {
+        guard let admitted = admission.admit(
+            space: space,
+            targetProfileID: profileID
+        ) else {
             return .failed
         }
-        let tabIntents = tabs.map { tab in
+        let tabIntents = admitted.tabCandidates.map { candidate in
             DeferredWebViewSpaceProfileTabIntent(
-                tabID: tab.id,
-                intent: tab.profileAssignment.begin(
-                    desiredProfileID: nil,
-                    resolvedProfileID: profile.id,
-                    targetURL: policy.liveDocumentURL(for: tab) ?? tab.url,
+                tabID: candidate.tab.id,
+                intent: candidate.tab.profileAssignment.begin(
+                    desiredProfileID: candidate.desiredProfileID,
+                    resolvedProfileID: admitted.profile.id,
+                    targetURL: admission.targetURL(for: candidate.tab),
                     requiresStructuralPersistence: false
                 )
             )
@@ -88,8 +108,21 @@ final class SpaceProfileTransitionService {
             desiredProfileID: profileID,
             tabIntents: tabIntents
         )
-        transactionsBySpaceID[spaceID] = makeTransaction(intent)
-        intentPrepared(intent)
+        guard let transaction = admission.transaction(
+            intent: intent,
+            tabs: admitted.tabCandidates.map(\.tab),
+            profileMutation: admitted.mutation
+        ) else {
+            for (candidate, tabIntent) in zip(
+                admitted.tabCandidates,
+                tabIntents
+            ) {
+                candidate.tab.profileAssignment.abort(tabIntent.intent)
+            }
+            return .failed
+        }
+        transactionsBySpaceID[spaceID] = transaction
+        intentObserver?(intent)
         if let settlementObserver {
             observersBySpaceID[spaceID] = SettlementObserver(
                 revision: revision,
@@ -97,8 +130,12 @@ final class SpaceProfileTransitionService {
             )
         }
 
-        let outcome = execute(space: space, profile: profile, intent: intent)
-        if let settlement = immediateSettlement(for: outcome),
+        let outcome = execute(
+            space: space,
+            profile: admitted.profile,
+            intent: intent
+        )
+        if let settlement = outcome.immediateSettlement,
            observersBySpaceID[spaceID]?.revision == revision {
             receive(settlement, intent: intent)
         }
@@ -113,9 +150,8 @@ final class SpaceProfileTransitionService {
               let space = tabManager.spaceStateOwner.space(
                   with: intent.spaceID
               ),
-              let profile = policy.resolvedPlacementProfile(
-                  profileID: intent.desiredProfileID
-              ), profile.id == intent.desiredProfileID else {
+              let profile = admission.resolvedProfile(intent.desiredProfileID),
+              profile.id == intent.desiredProfileID else {
             receive(.rejected(.stale), intent: intent)
             return false
         }
@@ -146,7 +182,7 @@ final class SpaceProfileTransitionService {
               transaction.state != .terminal,
               transaction.desiredProfileID == profileID,
               tab.profileId == profileID,
-              tabIsMember(tab.id, of: spaceID)
+              tabIsMember(tab, of: spaceID)
         else { return false }
 
         pendingInheritance.record(
@@ -177,14 +213,21 @@ final class SpaceProfileTransitionService {
             receive(.rejected(.failed), intent: intent)
             return .failed
         }
+        guard let transaction = transaction(for: intent) else {
+            receive(.rejected(.stale), intent: intent)
+            return .stale
+        }
+        let model = SpaceProfileReplacementModelParticipant(
+            transaction: transaction,
+            owner: self,
+            intent: intent,
+            revision: revisionBySpaceID[intent.spaceID] ?? 0
+        )
         return lifecycle.executeSpaceProfileAssignment(
             space: space,
             targetProfile: profile,
             intent: intent,
-            validateModel: { [weak self] in self?.isCurrent(intent) == true },
-            modelCommit: { [weak self] in self?.stage(intent) == true },
-            modelFinish: { [weak self] in self?.finish(intent) },
-            modelRollback: { [weak self] in self?.rollback(intent) },
+            model: model,
             settlement: { [weak self] settlement in
                 self?.receive(settlement, intent: intent)
             }
@@ -198,34 +241,6 @@ final class SpaceProfileTransitionService {
         return transaction.isCurrentPending(
             revision: revisionBySpaceID[intent.spaceID] ?? 0
         )
-    }
-
-    private func stage(
-        _ intent: DeferredWebViewSpaceProfileAssignmentIntent
-    ) -> Bool {
-        guard let transaction = transaction(for: intent) else { return false }
-        return transaction.stage(
-            revision: revisionBySpaceID[intent.spaceID] ?? 0
-        )
-    }
-
-    private func finish(_ intent: DeferredWebViewSpaceProfileAssignmentIntent) {
-        guard let transaction = transaction(for: intent) else {
-            preconditionFailure("Space profile transaction lost its exact state")
-        }
-        transaction.finish()
-        transactionsBySpaceID.removeValue(forKey: intent.spaceID)
-    }
-
-    private func rollback(
-        _ intent: DeferredWebViewSpaceProfileAssignmentIntent
-    ) {
-        guard let transaction = transaction(for: intent) else {
-            preconditionFailure("Space profile rollback lost its exact state")
-        }
-        transaction.rollback()
-        transactionsBySpaceID.removeValue(forKey: intent.spaceID)
-        publishStructuralMutation(spaceID: intent.spaceID)
     }
 
     private func receive(
@@ -251,7 +266,14 @@ final class SpaceProfileTransitionService {
             pendingInheritance.discard(spaceIntent: intent)
         case .rolledBack:
             pendingInheritance.discard(spaceIntent: intent)
-        case .conflicted, .leaseLost, .terminalShutdown:
+        case .leaseLost, .terminalShutdown:
+            if let transaction = transaction(for: intent) {
+                if transaction.settleTerminalDrain() {
+                    transactionsBySpaceID.removeValue(forKey: intent.spaceID)
+                }
+            }
+            pendingInheritance.discard(spaceIntent: intent)
+        case .conflicted:
             break
         }
 
@@ -264,10 +286,16 @@ final class SpaceProfileTransitionService {
     private func abortPending(
         _ intent: DeferredWebViewSpaceProfileAssignmentIntent
     ) {
-        guard let transaction = transaction(for: intent),
-              transaction.state == .pending else { return }
-        transaction.abortPending()
-        transactionsBySpaceID.removeValue(forKey: intent.spaceID)
+        guard let transaction = transaction(for: intent) else { return }
+        switch transaction.state {
+        case .pending:
+            transaction.abortPending()
+            transactionsBySpaceID.removeValue(forKey: intent.spaceID)
+        case .terminal:
+            transactionsBySpaceID.removeValue(forKey: intent.spaceID)
+        case .staged:
+            return
+        }
     }
 
     private func cancelPending(spaceID: UUID) {
@@ -285,47 +313,43 @@ final class SpaceProfileTransitionService {
         return transaction
     }
 
-    private func makeTransaction(
-        _ intent: DeferredWebViewSpaceProfileAssignmentIntent
-    ) -> SpaceProfileTransaction {
-        SpaceProfileTransaction(
-            intent: intent,
-            runtime: .init(
-                profileID: { [weak tabManager] spaceID in
-                    tabManager?.spaceStateOwner.profileId(for: spaceID)
-                },
-                assignProfile: { [weak tabManager] spaceID, profileID in
-                    tabManager?.spaceStateOwner.assignProfile(
-                        spaceId: spaceID,
-                        profileId: profileID
-                    ) ?? false
-                },
-                tab: { [weak tabManager] tabID in
-                    tabManager?.tabCollectionMembershipOwner.tab(for: tabID)
-                },
-                isTabInSpace: { [weak tabManager] tabID, spaceID in
-                    tabManager?.tabCollectionMembershipOwner.allTabs()
-                        .contains { tab in
-                            tab.id == tabID && tab.spaceId == spaceID
-                        } == true
-                },
-                sendObjectWillChange: { [weak tabManager] in
-                    tabManager?.objectWillChange.send()
-                }
-            )
-        )
+    func ownsReplacementModel(
+        _ candidate: SpaceProfileTransaction,
+        intent: DeferredWebViewSpaceProfileAssignmentIntent
+    ) -> Bool {
+        transaction(for: intent) === candidate
     }
 
-    private func tabsInSpace(_ spaceID: UUID) -> [Tab] {
-        var seen: Set<UUID> = []
-        return tabManager.tabCollectionMembershipOwner.allTabs()
-            .filter { $0.spaceId == spaceID && seen.insert($0.id).inserted }
-            .sorted { $0.id.uuidString < $1.id.uuidString }
+    func replacementModelDidPublishCommit(
+        _ candidate: SpaceProfileTransaction,
+        intent: DeferredWebViewSpaceProfileAssignmentIntent
+    ) {
+        guard ownsReplacementModel(candidate, intent: intent) else { return }
+        transactionsBySpaceID.removeValue(forKey: intent.spaceID)
     }
 
-    private func tabIsMember(_ tabID: UUID, of spaceID: UUID) -> Bool {
+    func replacementModelDidPublishRollback(
+        _ candidate: SpaceProfileTransaction,
+        intent: DeferredWebViewSpaceProfileAssignmentIntent
+    ) {
+        guard ownsReplacementModel(candidate, intent: intent) else { return }
+        transactionsBySpaceID.removeValue(forKey: intent.spaceID)
+        publishStructuralMutation(spaceID: intent.spaceID)
+    }
+
+    func replacementModelDidSettleTerminalDrain(
+        _ candidate: SpaceProfileTransaction,
+        intent: DeferredWebViewSpaceProfileAssignmentIntent
+    ) {
+        if ownsReplacementModel(candidate, intent: intent) {
+            transactionsBySpaceID.removeValue(forKey: intent.spaceID)
+        }
+        pendingInheritance.discard(spaceIntent: intent)
+    }
+
+    private func tabIsMember(_ candidate: Tab, of spaceID: UUID) -> Bool {
         tabManager.tabCollectionMembershipOwner.allTabs().contains { tab in
-            tab.id == tabID && tab.spaceId == spaceID
+            tab === candidate && tab.spaceId == spaceID
         }
     }
 
@@ -336,20 +360,5 @@ final class SpaceProfileTransitionService {
         )
         tabManager.structuralPersistence.scheduleStructuralPersistence()
         tabManager.structuralLookupCoordinator.requestPublish(scope: .space(spaceID, catalog: true))
-    }
-
-    private func immediateSettlement(
-        for outcome: TabProfileAssignmentExecutionOutcome
-    ) -> ProfileTransitionSettlement? {
-        switch outcome {
-        case .committed:
-            return .committed
-        case .stale:
-            return .rejected(.stale)
-        case .failed:
-            return .rejected(.failed)
-        case .deferred:
-            return nil
-        }
     }
 }

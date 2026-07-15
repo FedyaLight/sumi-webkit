@@ -50,6 +50,15 @@ final class ShortcutPinCommandOwner {
                dependencies.runtimePorts()?.isLiveFolder(folderId) == true {
                 return nil
             }
+            guard let preview = dependencies.shortcutPinStoreOwner.previewMove(
+                pin,
+                to: role,
+                profileId: profileId,
+                spaceId: spaceId,
+                folderId: folderId,
+                proposedIndex: index
+            ), let admission = dependencies.shortcutTabBindings
+                .refreshAdmission(for: preview) else { return nil }
             let inserted = dependencies.shortcutPinStoreOwner.move(
                 pin,
                 to: role,
@@ -57,10 +66,15 @@ final class ShortcutPinCommandOwner {
                 spaceId: spaceId,
                 folderId: folderId,
                 index: index,
-                openTargetFolder: openTargetFolder
+                openTargetFolder: openTargetFolder,
+                applying: {
+                    self.dependencies.shortcutTabBindings.refreshInstances(
+                        for: $0,
+                        admission: admission
+                    )
+                }
             )
-            if let inserted {
-                dependencies.shortcutTabBindings.refreshInstances(for: inserted)
+            if inserted != nil {
                 dependencies.scheduleStructuralPersistence()
             }
             return inserted

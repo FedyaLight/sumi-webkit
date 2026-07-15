@@ -1,6 +1,6 @@
 import Foundation
-import WebKit
 import SumiWebRuntime
+import WebKit
 
 @MainActor
 struct PreparedWebViewReplacement {
@@ -126,6 +126,10 @@ enum WebViewReplacementPipelineStart {
     case stale
     case conflict
     case invalid
+    /// Admission failed before repository apply; the caller owns cleanup.
+    case modelValidationFailed
+    /// Repository apply was compensated and the pipeline consumed cleanup of
+    /// the discarded replacement generation.
     case modelCommitFailed
     case rolledBack(WebViewReplacementRollbackReason)
     case settlementConflict
@@ -138,18 +142,13 @@ enum WebViewReplacementPipelineStart {
 @MainActor
 final class WebViewReplacementPipeline {
     private struct ConfigurationPolicyEvidenceInvalidated: Error {}
+    private struct ModelRollbackEvidenceInvalidated: Error {}
 
     struct Runtime {
         let webViewSessions: WebViewSessionRepository
         let quiesce: (WKWebView) -> Void
-        let retireNavigationGeneration: (
-            UUID,
-            [WKWebView],
-            WKWebView?
-        ) -> Void
-        let destroy: (UUID, WKWebView) -> Void
+        let retiredGenerationDestroyer: WebViewRetiredGenerationDestroyer
         let restore: (UUID, WebViewSessionSnapshot) -> Void
-        let uninstallObservationsIfUntracked: (WKWebView) -> Void
     }
 
     private let runtime: Runtime
@@ -186,19 +185,17 @@ final class WebViewReplacementPipeline {
                     .forEach(runtime.quiesce)
             },
             retireCommitted: { [runtime] snapshots in
-                Self.destroy(
-                    snapshots,
-                    runtime: runtime
-                )
+                runtime.retiredGenerationDestroyer.destroy(snapshots)
             },
             restoreAfterRollback: { [runtime] discarded, retired, _ in
-                Self.destroy(
-                    discarded,
-                    runtime: runtime
-                )
+                runtime.retiredGenerationDestroyer.destroy(discarded)
                 for (tabID, snapshot) in retired {
                     runtime.restore(tabID, snapshot)
                 }
+            },
+            observeSettlement: { _ in
+                // The app pipeline exposes typed completion receipts instead
+                // of duplicating package settlement events as telemetry.
             }
         )
     )
@@ -210,9 +207,7 @@ final class WebViewReplacementPipeline {
     func begin(
         _ replacements: [PreparedWebViewReplacement],
         profileIDs: Set<UUID>,
-        validateModel: @escaping @MainActor () -> Bool,
-        modelCommit: @escaping @MainActor () throws -> Void,
-        modelRollback: @escaping WebViewReplacementModelRollback,
+        model: WebViewReplacementModelParticipant,
         completion: @escaping @MainActor (
             WebViewReplacementTransactionOutcome
         ) -> Void
@@ -225,9 +220,9 @@ final class WebViewReplacementPipeline {
         }
 
         var policyEvidenceWasInvalidated = false
-        var modelCommittedBeforePolicyInvalidation = false
+        var modelWasStaged = false
         let validateTransaction = {
-            let modelIsValid = validateModel()
+            let modelIsValid = model.validateForStaging()
             let policyIsValid = Self.configurationPolicyChangesCanCommit(
                 in: replacements
             )
@@ -242,7 +237,8 @@ final class WebViewReplacementPipeline {
                 throw ConfigurationPolicyEvidenceInvalidated()
             }
             do {
-                try modelCommit()
+                try model.stage()
+                modelWasStaged = true
             } catch {
                 policyEvidenceWasInvalidated =
                     Self.configurationPolicyChangesCanCommit(
@@ -254,10 +250,21 @@ final class WebViewReplacementPipeline {
                 in: replacements
             ) else {
                 policyEvidenceWasInvalidated = true
-                modelCommittedBeforePolicyInvalidation = true
                 throw ConfigurationPolicyEvidenceInvalidated()
             }
         }
+        let rollbackModelAfterFailedCommit = {
+            guard modelWasStaged else { return }
+            guard model.stagedModelIsExact() else {
+                throw ModelRollbackEvidenceInvalidated()
+            }
+            try model.rollback()
+        }
+        let retired = Dictionary(
+            uniqueKeysWithValues: replacements.map {
+                ($0.tab.id, $0.snapshot)
+            }
+        )
 
         let begin = runtime.webViewSessions.beginReplacementBatch(
             replacements.map {
@@ -268,18 +275,10 @@ final class WebViewReplacementPipeline {
                 )
             },
             validateModel: validateTransaction,
-            modelCommit: commitModel
+            modelCommit: commitModel,
+            modelRollback: rollbackModelAfterFailedCommit
         )
         guard case .began(let lease) = begin else {
-            if modelCommittedBeforePolicyInvalidation {
-                do {
-                    try modelRollback()
-                } catch {
-                    preconditionFailure(
-                        "Model rollback failed after policy evidence invalidation: \(error)"
-                    )
-                }
-            }
             cancelConfigurationPolicyChanges(in: replacements)
             switch begin {
             case .stale:
@@ -288,20 +287,35 @@ final class WebViewReplacementPipeline {
                 return .conflict
             case .invalid:
                 return .invalid
-            case .modelCommitFailed:
+            case .modelValidationFailed:
                 return policyEvidenceWasInvalidated
                     ? .invalid
-                    : .modelCommitFailed
+                    : .modelValidationFailed
+            case .modelCommitFailed(let discarded):
+                runtime.retiredGenerationDestroyer.destroy(discarded)
+                if modelWasStaged {
+                    model.publishRollback()
+                }
+                return .modelCommitFailed
+            case .modelRollbackFailed(let lease):
+                settlementService.retainConflictedAdmission(
+                    lease: lease,
+                    tabIDs: Set(retired.keys),
+                    profileIDs: profileIDs,
+                    retired: retired,
+                    model: model
+                )
+                return .settlementConflict
+            case .noLongerActive:
+                if modelWasStaged {
+                    model.settleTerminalDrain()
+                }
+                return .leaseLost
             case .began:
                 preconditionFailure("Handled replacement batch admission")
             }
         }
 
-        let retired = Dictionary(
-            uniqueKeysWithValues: replacements.map {
-                ($0.tab.id, $0.snapshot)
-            }
-        )
         let requiredBindings = replacements.flatMap { replacement in
             replacement.bindingReplacements.map {
                 WebViewReplacementBindingRequirement(
@@ -319,13 +333,21 @@ final class WebViewReplacementPipeline {
             profileIDs: profileIDs,
             retired: retired,
             requiredBindings: requiredBindings,
-            modelRollback: modelRollback,
+            model: model,
             completion: { outcome in
                 if outcome != .committed {
                     self.cancelConfigurationPolicyChanges(for: lease)
                 }
                 self.configurationPolicyChangesByLease
                     .removeValue(forKey: lease)
+                switch outcome {
+                case .committed:
+                    model.publishCommit()
+                case .rolledBack:
+                    model.publishRollback()
+                case .conflicted, .leaseLost, .abandonedForTerminalShutdown:
+                    break
+                }
                 completion(outcome)
             }
         ) {
@@ -379,36 +401,6 @@ final class WebViewReplacementPipeline {
     /// repository.
     func resetForTerminalShutdown() {
         settlementService.resetForTerminalShutdown()
-    }
-
-    private static func destroy(
-        _ snapshots: [UUID: WebViewSessionSnapshot],
-        runtime: Runtime
-    ) {
-        for (tabID, snapshot) in snapshots {
-            let departingWebViews = snapshot.allKnownWebViews
-            let survivingSnapshot = runtime.webViewSessions.snapshot(
-                for: tabID
-            )
-            runtime.retireNavigationGeneration(
-                tabID,
-                departingWebViews,
-                preferredWebView(in: survivingSnapshot)
-            )
-            for webView in departingWebViews {
-                runtime.uninstallObservationsIfUntracked(webView)
-                runtime.destroy(tabID, webView)
-            }
-        }
-    }
-
-    private static func preferredWebView(
-        in snapshot: WebViewSessionSnapshot
-    ) -> WKWebView? {
-        if let primaryWindowID = snapshot.primaryWindowID {
-            return snapshot.windowWebViews[primaryWindowID]
-        }
-        return snapshot.untrackedWebView ?? snapshot.parkedWebView
     }
 
     private static func configurationPolicyChangesCanCommit(

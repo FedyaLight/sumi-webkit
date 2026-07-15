@@ -18,22 +18,20 @@ enum SidebarUITestShortcutDriftOverride {
             return
         }
 
-        let liveTab = tabManager.shortcutPresentationOwner.shortcutLiveTab(
-            for: pin.id,
-            in: windowState.id
-        ) ?? tabManager.shortcutTabMaterializer.materialize(
+        _ = tabManager.shortcutPresentationActivation.commitActivation(
             pin,
             in: windowState.id,
-            currentSpaceId: pin.spaceId ?? windowState.currentSpaceId
-        )
-        liveTab.url = driftURL
+            presentationSpaceID: pin.spaceId ?? windowState.currentSpaceId
+        ) { liveTab in
+            liveTab.url = driftURL
 
-        if let spaceId = pin.spaceId {
-            windowState.currentSpaceId = spaceId
-            windowState.selectedShortcutPinForSpace[spaceId] = pin.id
+            if let spaceId = pin.spaceId {
+                windowState.currentSpaceId = spaceId
+                windowState.selectedShortcutPinForSpace[spaceId] = pin.id
+            }
+            windowState.currentTabId = liveTab.id
+            windowState.currentShortcutPinId = pin.id
+            windowState.currentShortcutPinRole = pin.role
         }
-        windowState.currentTabId = liveTab.id
-        windowState.currentShortcutPinId = pin.id
-        windowState.currentShortcutPinRole = pin.role
     }
 }

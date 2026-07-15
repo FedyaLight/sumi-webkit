@@ -10,8 +10,17 @@ final class RegularTabCollectionStateOwner {
         tabsBySpaceSubject.eraseToAnyPublisher()
     }
 
-    func replaceTabsBySpace(_ tabsBySpace: [UUID: [Tab]]) {
+    func replaceTabsBySpace(
+        _ tabsBySpace: [UUID: [Tab]],
+        publish: Bool = true
+    ) {
         self.tabsBySpace = tabsBySpace
+        if publish {
+            publishTabsBySpaceSnapshot()
+        }
+    }
+
+    func publishTabsBySpaceSnapshot() {
         tabsBySpaceSubject.send(tabsBySpace)
     }
 

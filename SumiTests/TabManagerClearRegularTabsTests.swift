@@ -87,8 +87,10 @@ final class TabManagerClearRegularTabsTests: XCTestCase {
         let tabManager = try makeInMemoryTabManager(profile: { profiles[$0] })
 
         let deletedSpace = tabManager.spaceServices.catalog.createSpace(name: "Deleted", profileId: deletedProfileId)
-        let reassignedSpace = tabManager.spaceServices.catalog.createSpace(name: "Reassigned", profileId: deletedProfileId)
-        reassignedSpace.profileId = reassignedProfileId
+        let reassignedSpace = tabManager.spaceServices.catalog.createSpace(
+            name: "Reassigned",
+            profileId: reassignedProfileId
+        )
 
         let staleTab = tabManager.regularTabLifecycleOwner.createNewTab(in: reassignedSpace, activate: true)
         staleTab.profileId = deletedProfileId
@@ -317,7 +319,7 @@ final class TabManagerClearRegularTabsTests: XCTestCase {
                 at: 0
             )
         )
-        let liveTab = tabManager.shortcutTabMaterializer.materialize(pin, in: UUID(), currentSpaceId: space.id)
+        let liveTab = tabManager.shortcutTabMaterializer.materialize(pin, in: UUID(), currentSpaceId: space.id)!
 
         let updatedPin = try XCTUnwrap(
             tabManager.profileAssignments.shortcuts.assign(
@@ -455,7 +457,7 @@ final class TabManagerClearRegularTabsTests: XCTestCase {
             launchURL: URL(string: "https://example.com")!,
             title: "Example"
         ), at: 0))
-        let liveTab = tabManager.shortcutTabMaterializer.materialize(pin, in: UUID(), currentSpaceId: space.id)
+        let liveTab = tabManager.shortcutTabMaterializer.materialize(pin, in: UUID(), currentSpaceId: space.id)!
         tabManager.selectionStateOwner.replaceCurrentTab(liveTab)
 
         tabManager.profileAssignments.selection.handleProfileSwitch()
@@ -471,6 +473,10 @@ final class TabManagerClearRegularTabsTests: XCTestCase {
             fallbackProfileId: Profile(id: fallbackProfileId, name: "Fallback"),
         ]
         let tabManager = try makeInMemoryTabManager(profile: { profiles[$0] })
+        let deletedSpace = tabManager.spaceServices.catalog.createSpace(
+            name: "Deleted Work",
+            profileId: deletedProfileId
+        )
         _ = tabManager.spaceServices.catalog.createSpace(name: "Work", profileId: fallbackProfileId)
         let pin = try XCTUnwrap(tabManager.shortcutPinStoreOwner.insert(ShortcutPin(
             id: UUID(),
@@ -480,7 +486,11 @@ final class TabManagerClearRegularTabsTests: XCTestCase {
             launchURL: URL(string: "https://example.com")!,
             title: "Example"
         ), at: 0))
-        let liveTab = tabManager.shortcutTabMaterializer.materialize(pin, in: UUID(), currentSpaceId: nil)
+        let liveTab = tabManager.shortcutTabMaterializer.materialize(
+            pin,
+            in: UUID(),
+            currentSpaceId: deletedSpace.id
+        )!
         tabManager.selectionStateOwner.replaceCurrentTab(liveTab)
 
         let outcome = await tabManager.profileAssignments.deletion.migrate(

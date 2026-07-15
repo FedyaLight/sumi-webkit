@@ -127,6 +127,26 @@ final class TabProfileAssignmentStateMachine {
         pendingIntent = nil
     }
 
+    /// Terminal repository ownership makes compensation impossible. Tombstone
+    /// only the exact retained intent; a newer pending/staged assignment is
+    /// never cleared through revision aliasing.
+    @discardableResult
+    func settleTerminalDrain(
+        _ intent: DeferredWebViewProfileAssignmentIntent
+    ) -> Bool {
+        guard canSettleTerminalDrain(intent) else { return false }
+        if pendingIntent == intent { pendingIntent = nil }
+        if settlingIntent == intent { settlingIntent = nil }
+        return true
+    }
+
+    func canSettleTerminalDrain(
+        _ intent: DeferredWebViewProfileAssignmentIntent
+    ) -> Bool {
+        (pendingIntent == nil || pendingIntent == intent)
+            && (settlingIntent == nil || settlingIntent == intent)
+    }
+
     private func advanceRevision() {
         precondition(revision < UInt64.max, "Tab profile-assignment revision exhausted")
         revision += 1

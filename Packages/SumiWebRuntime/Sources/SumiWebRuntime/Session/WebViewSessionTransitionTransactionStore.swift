@@ -53,7 +53,8 @@ final class WebViewSessionTransitionTransactionStore {
 
     func batch(for lease: WebViewReplacementBatchLease) -> Batch? {
         guard let batch = batchesByID[lease.id],
-              batch.lease == .replacement(lease) else {
+              batch.lease == .replacement(lease),
+              batch.settlementPhase == .open else {
             return nil
         }
         return batch
@@ -74,6 +75,26 @@ final class WebViewSessionTransitionTransactionStore {
         guard var batch = batch(for: lease) else { return nil }
         batch.settlementPhase = .rollingBack
         batchesByID[lease.id] = batch
+        return batch
+    }
+
+    func claimReplacementRollback(
+        for lease: WebViewReplacementBatchLease
+    ) -> Batch? {
+        guard var batch = batch(for: lease) else { return nil }
+        batch.settlementPhase = .rollingBack
+        batchesByID[lease.id] = batch
+        return batch
+    }
+
+    func rollingBackBatch(
+        for lease: WebViewReplacementBatchLease
+    ) -> Batch? {
+        guard let batch = batchesByID[lease.id],
+              batch.lease == .replacement(lease),
+              batch.settlementPhase == .rollingBack else {
+            return nil
+        }
         return batch
     }
 
@@ -127,7 +148,6 @@ final class WebViewSessionTransitionTransactionStore {
                 switch batch.lease {
                 case .replacement:
                     assert(batch.modelTransactionID == nil)
-                    assert(batch.settlementPhase == .open)
                 case .retirement:
                     assert(batch.modelTransactionID != nil)
                 }

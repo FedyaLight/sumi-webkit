@@ -18,6 +18,8 @@ deferred_command_processor_file="Sumi/Managers/WebViewRuntime/DeferredProtectedC
 deferred_executor_live_file="Sumi/Managers/WebViewRuntime/DeferredWebViewCommandExecutor+Live.swift"
 window_cleanup_live_file="Sumi/Managers/WebViewRuntime/WebViewWindowCleanupOwner+Live.swift"
 replacement_pipeline_file="Sumi/Managers/WebViewRuntime/WebViewReplacementPipeline.swift"
+retired_generation_destroyer_file="Sumi/Managers/WebViewRuntime/WebViewRetiredGenerationDestroyer.swift"
+committed_tab_retirement_file="Sumi/Managers/WebViewRuntime/WebViewCommittedTabRetirementService.swift"
 tab_file="Sumi/Models/Tab/Tab.swift"
 main_frame_transaction_file="Sumi/Models/Tab/TabMainFrameRuntimeTransaction.swift"
 status=0
@@ -32,6 +34,44 @@ fail_matches() {
   [[ -z "$matches" ]] && return
   printf 'error: %s:\n%s\n' "$message" "$matches" >&2
   status=1
+}
+
+optional_rg() {
+  local output
+  local scan_status
+  if output="$(rg "$@")"; then
+    printf '%s\n' "$output"
+    return 0
+  else
+    scan_status=$?
+  fi
+  if [[ "$scan_status" -eq 1 ]]; then
+    return 0
+  fi
+  printf 'error: rg scan failed with status %s: rg' "$scan_status" >&2
+  printf ' %q' "$@" >&2
+  printf '\n' >&2
+  return "$scan_status"
+}
+
+rg_match_count() {
+  local output
+  local scan_status
+  if output="$(rg --count-matches "$@")"; then
+    printf '%s\n' "$output"
+    return 0
+  else
+    scan_status=$?
+  fi
+  if [[ "$scan_status" -eq 1 ]]; then
+    printf '0\n'
+    return 0
+  fi
+  printf 'error: rg count failed with status %s: rg --count-matches' \
+    "$scan_status" >&2
+  printf ' %q' "$@" >&2
+  printf '\n' >&2
+  return "$scan_status"
 }
 
 is_allowed_web_view_runtime_access() {
@@ -151,6 +191,8 @@ runtime_role_files=(
   "$deferred_command_processor_file"
   "$deferred_executor_live_file"
   "$window_cleanup_live_file"
+  "$retired_generation_destroyer_file"
+  "$committed_tab_retirement_file"
 )
 for role_file in "${runtime_role_files[@]}"; do
   if [[ ! -f "$role_file" ]]; then
@@ -173,11 +215,19 @@ role_limits=(
   "$deferred_command_processor_file:220:7"
   "$deferred_executor_live_file:90:0"
   "$window_cleanup_live_file:80:0"
+  "$retired_generation_destroyer_file:110:1"
+  "$committed_tab_retirement_file:90:2"
 )
 for role_limit in "${role_limits[@]}"; do
   IFS=: read -r role_file max_lines max_collaborators <<< "$role_limit"
   line_count="$(wc -l < "$role_file" | tr -d ' ')"
-  collaborator_count="$(rg --count-matches '^    private let ' "$role_file" || true)"
+  if collaborator_count="$(
+    rg_match_count '^    private let ' "$role_file"
+  )"; then
+    :
+  else
+    exit $?
+  fi
   collaborator_count="${collaborator_count:-0}"
   if (( line_count > max_lines || collaborator_count > max_collaborators )); then
     printf 'error: WebView runtime role grew beyond freeze: %s (%s/%s LOC, %s/%s collaborators)\n' \
@@ -189,9 +239,13 @@ done
 
 graph_line_count="$(wc -l < "$graph_file" | tr -d ' ')"
 lifecycle_line_count="$(wc -l < "$runtime_lifecycle_file" | tr -d ' ')"
-lifecycle_collaborator_count="$(
-  rg --count-matches '^    private let ' "$runtime_lifecycle_file" || true
-)"
+if lifecycle_collaborator_count="$(
+  rg_match_count '^    private let ' "$runtime_lifecycle_file"
+)"; then
+  :
+else
+  exit $?
+fi
 if (( graph_line_count > 640 )); then
   printf 'error: WebViewRuntimeGraph composition root regrew (%s/640 LOC)\n' \
     "$graph_line_count" >&2
@@ -358,20 +412,29 @@ if [[ -z "$replacement_reset_body" ]] \
   status=1
 fi
 
-replacement_destroy_body="$(
-  if [[ -f "$replacement_pipeline_file" ]]; then
-    sed -n '/^    private static func destroy(/,/^    private static func preferredWebView(/p' \
-      "$replacement_pipeline_file"
+retired_generation_destroy_body="$(
+  if [[ -f "$retired_generation_destroyer_file" ]]; then
+    sed -n '/^    func destroy($/,/^    private func orderedWebViews(/p' \
+      "$retired_generation_destroyer_file"
   fi
 )"
-if [[ -z "$replacement_destroy_body" ]] \
-    || ! rg -q 'runtime\.retireNavigationGeneration\(' \
-      <<< "$replacement_destroy_body"; then
-  printf 'error: replacement generations must leave Tab navigation runtime before physical destruction\n' >&2
+if ! rg -q 'retiredGenerationDestroyer\.destroy\(' \
+    "$replacement_pipeline_file"; then
+  printf 'error: replacement pipeline must use the shared retired-generation destroyer\n' >&2
   status=1
-elif [[ "$(rg -n 'runtime\.retireNavigationGeneration\(' <<< "$replacement_destroy_body" | cut -d: -f1 | head -1)" -ge \
-        "$(rg -n 'runtime\.destroy\(' <<< "$replacement_destroy_body" | cut -d: -f1 | head -1)" ]]; then
-  printf 'error: replacement generation departure must precede every physical destroy\n' >&2
+elif [[ -z "$retired_generation_destroy_body" ]] \
+    || ! rg -q 'runtime\.retireNavigationGeneration\(' \
+      <<< "$retired_generation_destroy_body"; then
+  printf 'error: retired generations must leave Tab navigation runtime before physical destruction\n' >&2
+  status=1
+elif [[ "$(rg -n 'runtime\.retireNavigationGeneration\(' <<< "$retired_generation_destroy_body" | cut -d: -f1 | head -1)" -ge \
+        "$(rg -n 'runtime\.destroy\(' <<< "$retired_generation_destroy_body" | cut -d: -f1 | head -1)" ]]; then
+  printf 'error: retired generation departure must precede every physical destroy\n' >&2
+  status=1
+fi
+
+if ! rg -q 'navigationTabsByID:' "$committed_tab_retirement_file"; then
+  printf 'error: committed Tab retirement must retire the exact model navigation identity\n' >&2
   status=1
 fi
 
@@ -437,6 +500,100 @@ swiftui_environment_hits="$(
     "${all_swift_roots[@]}" -g '*.swift' -g '!**/.build/**' || true
 )"
 fail_matches "WebView runtime graph injected through SwiftUI Environment" "$swiftui_environment_hits"
+
+# Irreversible retirement is one mandatory typed role. Production supplies a
+# concrete authority and tests must choose an explicit participant or the
+# fail-closed rejecting fake; independent callback slots and defaults are
+# forbidden.
+tab_manager_lifecycle_file="Sumi/Managers/TabManager/TabManagerWebViewLifecycleService.swift"
+lifecycle_factory_file="Sumi/Managers/BrowserManager/BrowserTabManagerWebViewLifecycleFactory.swift"
+test_runtime_ports_file="SumiTests/Support/TestRuntimePorts.swift"
+for lifecycle_role in \
+  TabWebViewAvailabilityParticipant \
+  TabWebViewOwnershipParticipant \
+  TabWebViewRetirementParticipant \
+  TabWebViewProfileTransitionParticipant; do
+  if ! rg -q -e "any ${lifecycle_role}" "$tab_manager_lifecycle_file"; then
+    printf 'error: Tab lifecycle lost mandatory typed role %s\n' \
+      "$lifecycle_role" >&2
+    status=1
+  fi
+done
+if rg -q -e 'private let [[:alnum:]_]+: \(' "$tab_manager_lifecycle_file"; then
+  printf 'error: Tab lifecycle regained independently injectable callbacks\n' >&2
+  status=1
+fi
+if ! rg -q -e 'retirement: BrowserTabWebViewRetirementParticipant\(' \
+  "$lifecycle_factory_file"; then
+  printf 'error: production lifecycle lost concrete retirement authority\n' >&2
+  status=1
+fi
+for retirement_operation in \
+  canRetire \
+  beginCommittedRetirement \
+  destroyRetiredGenerations \
+  destroyTerminallyDrainedGenerations; do
+  for retirement_file in \
+    "$tab_manager_lifecycle_file" \
+    "$lifecycle_factory_file" \
+    "$test_runtime_ports_file"; do
+    if ! rg -q -e "func ${retirement_operation}" "$retirement_file"; then
+      printf 'error: %s lost typed retirement operation %s\n' \
+        "$retirement_file" "$retirement_operation" >&2
+      status=1
+    fi
+  done
+done
+if rg -U -q -e 'retirement: RetirementCapabilities[[:space:]]*=' \
+  "$test_runtime_ports_file"; then
+  printf 'error: test lifecycle regained a permissive retirement default\n' >&2
+  status=1
+fi
+if ! rg -q -e 'static let rejecting = Self\(' "$test_runtime_ports_file" \
+  || ! rg -q -e 'ClosureTabWebViewRetirementParticipant\(retirement\)' \
+    "$test_runtime_ports_file"; then
+  printf 'error: tests lost explicit fail-closed retirement composition\n' >&2
+  status=1
+fi
+
+# Space profile mutation is one staged transaction: no observation-emitting
+# convenience setter and no sibling production access to its raw/publish pair.
+if rg -q '^[[:space:]]*func assignProfile\(' \
+    Sumi/Managers/TabManager/TabSpaceCollectionStateOwner.swift; then
+  printf 'error: direct observation-emitting Space profile mutation returned\n' >&2
+  status=1
+fi
+if ! rg -q '^[[:space:]]*private\(set\) var profileId: UUID\?' \
+    Sumi/Models/Space/Space.swift; then
+  printf 'error: Space.profileId setter escaped its model boundary\n' >&2
+  status=1
+fi
+if space_profile_raw_hits="$(
+  optional_rg -n \
+    '\.(assignProfileWithoutObservation|publishProfileMutation)\(' \
+    Sumi -g '*.swift' \
+    -g '!**/SpaceProfileMutationService.swift'
+)"; then
+  :
+else
+  exit $?
+fi
+fail_matches \
+  "Space profile raw/publish owner escaped SpaceProfileMutationTransaction" \
+  "$space_profile_raw_hits"
+if space_model_raw_hits="$(
+  optional_rg -n \
+    '\.(replaceProfileIDWithoutObservation|publishCurrentProfileID)\(' \
+    Sumi -g '*.swift' \
+    -g '!**/Space.swift' \
+    -g '!**/TabSpaceCollectionStateOwner.swift'
+)"; then
+  :
+else
+  exit $?
+fi
+fail_matches "Space model raw profile mutation escaped its collection owner" \
+  "$space_model_raw_hits"
 
 if [[ "$status" -ne 0 ]]; then
   echo "WebView runtime context boundary audit failed" >&2

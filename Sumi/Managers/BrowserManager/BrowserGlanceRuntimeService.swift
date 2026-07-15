@@ -19,9 +19,12 @@ enum BrowserGlanceRuntimeService {
             hasLoadedInitialTabData: { [weak browserManager] in browserManager?.tabManager.startupRestoreLifecycle.hasLoadedInitialData ?? false },
             tab: { [weak browserManager] in browserManager?.tabManager.tabCollectionMembershipOwner.tab(for: $0) },
             shortcutPin: { [weak browserManager] in browserManager?.tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: $0) },
-            shortcutLiveTab: { [weak browserManager] in browserManager?.tabManager.shortcutPresentationOwner.shortcutLiveTab(for: $0, in: $1) },
             activateShortcutPin: { [weak browserManager] in
-                browserManager?.tabManager.shortcutTabMaterializer.materialize($0, in: $1, currentSpaceId: $2)
+                browserManager?.tabManager.shortcutPresentationActivation.activate(
+                    $0,
+                    in: $1,
+                    presentationSpaceID: $2
+                )
             },
             currentTab: { [weak browserManager] in browserManager?.shellRuntime.windowTabs.currentTab(for: $0) },
             restoreSourceSelection: { [weak browserManager] tab, windowState in

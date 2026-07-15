@@ -1,6 +1,6 @@
 import AppKit
-import SwiftData
 import SumiDomain
+import SwiftData
 import WebKit
 import XCTest
 
@@ -232,7 +232,7 @@ final class ShortcutPhysicalSourceRoutingTests: XCTestCase {
             canonicalPin,
             in: sourceWindow.id,
             currentSpaceId: space.id
-        )
+        )!
         sourceWindow.currentTabId = sourceTab.id
 
         let configuration = WKWebViewConfiguration()

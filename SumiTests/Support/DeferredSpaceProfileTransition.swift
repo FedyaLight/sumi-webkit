@@ -3,44 +3,131 @@ import Foundation
 import SumiWebRuntime
 
 @MainActor
-final class DeferredSpaceProfileTransition {
+final class DeferredSpaceProfileTransition:
+    TabWebViewRetirementParticipant,
+    TabWebViewProfileTransitionParticipant {
+    private let canRetireTabWebViews: ([Tab]) -> Bool
+    private let beginCommittedTabRetirement: ([Tab]) -> Bool
+    private let destroyRetiredWebViews: ([RetiredTabWebViewGeneration]) -> Void
+    private let destroyAfterTerminalDrain: (
+        [RetiredTabWebViewGeneration],
+        [Tab]
+    ) -> Void
+    private let unloadTab: (Tab) -> Void
     private(set) var assignmentCount = 0
     private(set) var intent: DeferredWebViewSpaceProfileAssignmentIntent?
+    private(set) var exactTabs: [Tab]?
     private(set) var validateModel: (@MainActor @Sendable () -> Bool)?
     private(set) var stageModel: (@MainActor @Sendable () -> Bool)?
     private(set) var finishModel: (() -> Void)?
+    private(set) var stagedModelIsExact: (() -> Bool)?
+    private(set) var canSealModel: (() -> Bool)?
+    private(set) var sealModel: WebViewReplacementTerminalModelClaim?
+    private(set) var publishCommit: (() -> Void)?
     private(set) var rollbackModel: (() -> Void)?
+    private(set) var rollbackModelPublication: (() -> Void)?
+    private(set) var settleTerminalModel: (() -> Void)?
     private(set) var settlement: ProfileTransitionService.Settlement?
     private(set) var tabIntent: DeferredWebViewProfileAssignmentIntent?
     private(set) var tabSettlement: ProfileTransitionService.Settlement?
 
+    init(
+        canRetireTabWebViews: @escaping ([Tab]) -> Bool = { _ in true },
+        beginCommittedTabRetirement: @escaping ([Tab]) -> Bool = { _ in true },
+        destroyRetiredWebViews: @escaping (
+            [RetiredTabWebViewGeneration]
+        ) -> Void = { _ in },
+        destroyAfterTerminalDrain: @escaping (
+            [RetiredTabWebViewGeneration],
+            [Tab]
+        ) -> Void = { _, _ in },
+        unloadTab: @escaping (Tab) -> Void = { _ in }
+    ) {
+        self.canRetireTabWebViews = canRetireTabWebViews
+        self.beginCommittedTabRetirement = beginCommittedTabRetirement
+        self.destroyRetiredWebViews = destroyRetiredWebViews
+        self.destroyAfterTerminalDrain = destroyAfterTerminalDrain
+        self.unloadTab = unloadTab
+    }
+
     func makeLifecycle() -> TabManagerWebViewLifecycleService {
-        TabManagerWebViewLifecycleService(
-            materializeVisibleTabWebViewIfNeeded: { _, _ in /* No-op. */ },
-            loadTab: { _ in /* No-op. */ },
-            unloadTab: { _ in /* No-op. */ },
-            requireRemoveAllWebViews: { _, _ in /* No-op. */ },
-            windowIDsTrackingWebViews: { _ in [] },
-            primaryTrackedWindowId: { _ in nil },
-            rebuildLiveWebViews: { _, _, _ in /* No-op. */ },
-            prepareTab: { _ in /* No-op. */ },
+        TestRuntimePorts.webViewLifecycle(
+            retirement: .rejecting,
+            unloadTab: unloadTab,
             anyLiveWebView: { $0.resolvedCurrentWebView() },
-            hasUntrackedOwnedWebView: { _ in false },
-            executeProfileTransition: { [weak self] _, _, intent, settlement in
-                self?.tabIntent = intent
-                self?.tabSettlement = settlement
-                return .deferred
-            },
-            executeSpaceProfileTransition: { [weak self] _, _, intent, validate, stage, finish, rollback, settle in
-                self?.assignmentCount += 1
-                self?.intent = intent
-                self?.validateModel = validate
-                self?.stageModel = stage
-                self?.finishModel = finish
-                self?.rollbackModel = rollback
-                self?.settlement = settle
-                return .deferred
-            }
+            retirementParticipant: self,
+            profileTransitions: self
         )
+    }
+
+    func canRetire(_ tabs: [Tab]) -> Bool {
+        canRetireTabWebViews(tabs)
+    }
+
+    func beginCommittedRetirement(_ tabs: [Tab]) -> Bool {
+        beginCommittedTabRetirement(tabs)
+    }
+
+    func destroyRetiredGenerations(
+        _ generations: [RetiredTabWebViewGeneration],
+        completing tabs: [Tab]
+    ) {
+        destroyRetiredWebViews(generations)
+    }
+
+    func destroyTerminallyDrainedGenerations(
+        _ generations: [RetiredTabWebViewGeneration],
+        belongingTo tabs: [Tab]
+    ) {
+        destroyAfterTerminalDrain(generations, tabs)
+    }
+
+    func abortProfileTransitions(profileIDs: Set<UUID>) -> Int { 0 }
+
+    func executeProfileAssignment(
+        for tab: Tab,
+        targetProfile: Profile,
+        intent: DeferredWebViewProfileAssignmentIntent,
+        settlement: @escaping ProfileTransitionService.Settlement
+    ) -> TabProfileAssignmentExecutionOutcome {
+        tabIntent = intent
+        tabSettlement = settlement
+        return .deferred
+    }
+
+    func executeSpaceProfileAssignment(
+        space: Space,
+        targetProfile: Profile,
+        intent: DeferredWebViewSpaceProfileAssignmentIntent,
+        model: any SpaceProfileWebViewReplacementTransaction,
+        settlement: @escaping ProfileTransitionService.Settlement
+    ) -> TabProfileAssignmentExecutionOutcome {
+        assignmentCount += 1
+        self.intent = intent
+        exactTabs = model.exactTabsForRuntime()
+        validateModel = model.validateForStaging
+        stageModel = {
+            do {
+                try model.stage()
+                return true
+            } catch {
+                return false
+            }
+        }
+        stagedModelIsExact = model.stagedModelIsExact
+        canSealModel = model.canClaimTerminalModel
+        sealModel = model.claimTerminalModel
+        publishCommit = model.publishCommit
+        finishModel = {
+            precondition(model.stagedModelIsExact())
+            precondition(model.canClaimTerminalModel())
+            precondition(model.claimTerminalModel() == .sealed)
+            model.publishCommit()
+        }
+        rollbackModel = { try? model.rollback() }
+        rollbackModelPublication = model.publishRollback
+        settleTerminalModel = model.settleTerminalDrain
+        self.settlement = settlement
+        return .deferred
     }
 }

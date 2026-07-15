@@ -44,11 +44,26 @@ final class SpaceActivationServiceTests: XCTestCase {
             .replaceSpacePinnedShortcuts([
                 targetSpace.id: [firstPin, secondPin],
             ])
-        tabManager.transientTabRegistryOwner
-            .replaceTransientShortcutTabsByWindow([
-                firstWindowId: [firstPin.id: firstLiveTab],
-                secondWindowId: [secondPin.id: secondLiveTab],
-            ])
+        XCTAssertTrue(tabManager.liveShortcutTabs.register(
+            firstLiveTab,
+            for: firstPin.id,
+            in: firstWindowId,
+            presentationPage: LiveShortcutPresentationPageReceipt(
+                windowID: firstWindowId,
+                spaceID: targetSpace.id,
+                profileID: targetSpace.profileId
+            )
+        ))
+        XCTAssertTrue(tabManager.liveShortcutTabs.register(
+            secondLiveTab,
+            for: secondPin.id,
+            in: secondWindowId,
+            presentationPage: LiveShortcutPresentationPageReceipt(
+                windowID: secondWindowId,
+                spaceID: targetSpace.id,
+                profileID: targetSpace.profileId
+            )
+        ))
         targetSpace.activeTabId = secondLiveTab.id
         let service = makeService(tabManager)
 
@@ -80,10 +95,16 @@ final class SpaceActivationServiceTests: XCTestCase {
         ])
         tabManager.shortcutPinCollectionStateOwner
             .replaceSpacePinnedShortcuts([targetSpace.id: [pin]])
-        tabManager.transientTabRegistryOwner
-            .replaceTransientShortcutTabsByWindow([
-                windowId: [pin.id: livePin],
-            ])
+        XCTAssertTrue(tabManager.liveShortcutTabs.register(
+            livePin,
+            for: pin.id,
+            in: windowId,
+            presentationPage: LiveShortcutPresentationPageReceipt(
+                windowID: windowId,
+                spaceID: targetSpace.id,
+                profileID: targetSpace.profileId
+            )
+        ))
         var essentialReadCount = 0
         let service = makeService(
             tabManager,
@@ -104,8 +125,10 @@ final class SpaceActivationServiceTests: XCTestCase {
         XCTAssertEqual(essentialReadCount, 0)
 
         tabManager.selectionStateOwner.replaceCurrentTab(nil)
-        tabManager.transientTabRegistryOwner
-            .replaceTransientShortcutTabsByWindow([:])
+        XCTAssertIdentical(
+            tabManager.liveShortcutTabs.remove(pinId: pin.id, in: windowId)?.tab,
+            livePin
+        )
         service.setActiveSpace(targetSpace, contextWindowId: windowId)
         XCTAssertIdentical(tabManager.selectionStateOwner.currentTab, essential)
         XCTAssertEqual(essentialReadCount, 1)
@@ -145,8 +168,17 @@ final class SpaceActivationServiceTests: XCTestCase {
         let service = makeService(
             tabManager,
             defaultProfileId: { defaultProfileId },
-            assignSpaceProfile: { spaceId, profileId in
+            assignSpaceProfile: { spaceId, profileId, settlement in
                 assignments.append((spaceId, profileId))
+                XCTAssertTrue(tabManager.spaceStateOwner
+                    .assignProfileWithoutObservation(
+                        spaceId: spaceId,
+                        profileId: profileId
+                    ))
+                tabManager.spaceStateOwner.publishProfileMutation(
+                    spaceId: spaceId
+                )
+                settlement(.committed)
                 return .committed
             }
         )
@@ -156,6 +188,44 @@ final class SpaceActivationServiceTests: XCTestCase {
         XCTAssertEqual(assignments.count, 1)
         XCTAssertEqual(assignments.first?.0, targetSpace.id)
         XCTAssertEqual(assignments.first?.1, defaultProfileId)
+        XCTAssertEqual(targetSpace.profileId, defaultProfileId)
+    }
+
+    func testDeferredProfileBackfillDoesNotActivateUntilCommit() throws {
+        let tabManager = try makeInMemoryTabManager()
+        let previousSpace = Space(name: "Previous", profileId: UUID())
+        let targetSpace = Space(name: "Target")
+        let previousTab = makeTab(in: previousSpace)
+        tabManager.spaceStateOwner.replaceSpaces([previousSpace, targetSpace])
+        tabManager.spaceStateOwner.replaceCurrentSpace(previousSpace)
+        tabManager.selectionStateOwner.replaceCurrentTab(previousTab)
+        let profileID = UUID()
+        var settlement: ProfileTransitionService.Settlement?
+        let service = makeService(
+            tabManager,
+            defaultProfileId: { profileID },
+            assignSpaceProfile: { _, _, callback in
+                settlement = callback
+                return .deferred
+            }
+        )
+
+        XCTAssertFalse(service.setActiveSpace(targetSpace))
+        XCTAssertIdentical(tabManager.spaceStateOwner.currentSpace, previousSpace)
+        XCTAssertIdentical(tabManager.selectionStateOwner.currentTab, previousTab)
+
+        XCTAssertTrue(tabManager.spaceStateOwner
+            .assignProfileWithoutObservation(
+                spaceId: targetSpace.id,
+                profileId: profileID
+            ))
+        tabManager.spaceStateOwner.publishProfileMutation(
+            spaceId: targetSpace.id
+        )
+        settlement?(.committed)
+
+        XCTAssertIdentical(tabManager.spaceStateOwner.currentSpace, targetSpace)
+        XCTAssertEqual(targetSpace.profileId, profileID)
     }
 
     private func makeService(
@@ -164,18 +234,21 @@ final class SpaceActivationServiceTests: XCTestCase {
         currentProfileId: @escaping @MainActor () -> UUID? = { nil },
         assignSpaceProfile: @escaping @MainActor (
             UUID,
-            UUID
-        ) -> TabProfileAssignmentExecutionOutcome = { _, _ in .failed },
+            UUID,
+            @escaping ProfileTransitionService.Settlement
+        ) -> TabProfileAssignmentExecutionOutcome = { _, _, _ in .failed },
         activeEssentialTabs: @escaping @MainActor (UUID?) -> [Tab] = { _ in [] }
     ) -> SpaceActivationService {
         SpaceActivationService(
             state: tabManager.stateStore,
             projection: tabManager.spaceLauncherProjection,
             persistence: tabManager.structuralPersistence,
-            profileIds: {
-                (current: currentProfileId(), default: defaultProfileId())
-            },
-            assignSpaceProfile: assignSpaceProfile,
+            profileAdmission: SpaceActivationProfileAdmission(
+                profileIDs: {
+                    (current: currentProfileId(), default: defaultProfileId())
+                },
+                assignSpaceProfile: assignSpaceProfile
+            ),
             activeEssentialTabs: activeEssentialTabs
         )
     }

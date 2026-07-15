@@ -18,6 +18,7 @@ final class TabFolderMutationOwner {
         let shortcutLiveTabRetirement: ShortcutLiveTabRetirementService
         let tabClosureService: TabClosureService
         let shortcutPinCommandOwner: ShortcutPinCommandOwner
+        let folderOpenState: TabFolderOpenStateService
         let runtimePorts: @MainActor () -> RuntimePortRegistry?
         let markFoldersStructurallyDirty: @MainActor (UUID) -> Void
         let markRegularTabsStructurallyDirty: @MainActor (UUID) -> Void
@@ -96,25 +97,6 @@ final class TabFolderMutationOwner {
         dependencies.markFoldersStructurallyDirty(folder.spaceId)
         dependencies.requestStructuralPublish(.space(folder.spaceId))
         dependencies.scheduleStructuralPersistence()
-    }
-
-    func setFolder(_ folderId: UUID, open isOpen: Bool) {
-        dependencies.withStructuralUpdateTransactionVoid {
-            guard let folder = dependencies.folderCollectionStateOwner.folder(by: folderId),
-                  folder.isOpen != isOpen else {
-                return
-            }
-
-            folder.isOpen = isOpen
-            dependencies.markFoldersStructurallyDirty(folder.spaceId)
-            dependencies.requestStructuralPublish(.space(folder.spaceId))
-            dependencies.scheduleStructuralPersistence()
-        }
-    }
-
-    func toggleFolderOpenState(_ folderId: UUID) {
-        guard let folder = dependencies.folderCollectionStateOwner.folder(by: folderId) else { return }
-        setFolder(folderId, open: !folder.isOpen)
     }
 
     func deleteFolder(_ folderId: UUID) {
@@ -219,29 +201,6 @@ final class TabFolderMutationOwner {
             dependencies.runtimePorts()?.deleteLiveFolderState(forFolderIds: [folderId])
             dependencies.scheduleStructuralPersistence()
         }
-    }
-
-    func setAllFolders(open isOpen: Bool, in spaceId: UUID) {
-        dependencies.withStructuralUpdateTransactionVoid {
-            let folders = dependencies.folderCollectionStateOwner.folders(for: spaceId)
-            guard folders.isEmpty == false else { return }
-
-            var didChange = false
-            for folder in folders where folder.isOpen != isOpen {
-                folder.isOpen = isOpen
-                didChange = true
-            }
-
-            if didChange {
-                dependencies.markFoldersStructurallyDirty(spaceId)
-                dependencies.requestStructuralPublish(.space(spaceId))
-                dependencies.scheduleStructuralPersistence()
-            }
-        }
-    }
-
-    func openFolderIfNeeded(_ folderId: UUID) {
-        setFolder(folderId, open: true)
     }
 
     func moveTabToFolder(tab: Tab, folderId: UUID) {
@@ -369,7 +328,7 @@ final class TabFolderMutationOwner {
             applyChildItems(targetItems, in: parentFolderId, spaceId: spaceId)
 
             if let parentFolderId {
-                openFolderIfNeeded(parentFolderId)
+                dependencies.folderOpenState.openFolderIfNeeded(parentFolderId)
             }
             dependencies.scheduleStructuralPersistence()
             return true
@@ -481,7 +440,10 @@ final class TabFolderMutationOwner {
 
 extension TabFolderMutationOwner.Dependencies {
     @MainActor
-    static func live(tabManager: TabManager) -> Self {
+    static func live(
+        tabManager: TabManager,
+        folderOpenState: TabFolderOpenStateService
+    ) -> Self {
         Self(
             withStructuralUpdateTransactionFolder: { [weak tabManager] operation in
                 guard let tabManager else { return operation() }
@@ -512,6 +474,7 @@ extension TabFolderMutationOwner.Dependencies {
             shortcutLiveTabRetirement: tabManager.shortcutLiveTabRetirement,
             tabClosureService: tabManager.tabClosureService,
             shortcutPinCommandOwner: tabManager.shortcutPinCommandOwner,
+            folderOpenState: folderOpenState,
             runtimePorts: { [weak tabManager] in
                 tabManager?.runtimePorts
             },

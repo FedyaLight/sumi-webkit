@@ -1,6 +1,8 @@
 import Combine
+import Observation
 import SumiDomain
 import SumiWebRuntime
+import WebKit
 import XCTest
 
 @testable import Sumi
@@ -79,6 +81,148 @@ final class RegularTabShortcutConversionServiceTests: XCTestCase {
         XCTAssertNotNil(
             tabManager.liveShortcutTabs.tab(for: pin.id, in: second.id)
         )
+    }
+
+    func testDisplayedConversionPublicationSeesTerminalModelAndPreservesReentrantSplitMutation() throws {
+        let primary = BrowserWindowState()
+        let secondary = BrowserWindowState()
+        let states = [primary.id: primary, secondary.id: secondary]
+        let tabManager = try makeInMemoryTabManager(
+            windowState: { states[$0] },
+            windows: { states.map { ($0.key, $0.value) } },
+            primaryTrackedWindowId: { _ in primary.id }
+        )
+        primary.tabManager = tabManager
+        secondary.tabManager = tabManager
+        let space = tabManager.spaceServices.catalog.createSpace(name: "Space")
+        let source = tabManager.regularTabLifecycleOwner.createNewTab(
+            url: "https://conversion-publication.example/source",
+            in: space,
+            activate: false
+        )
+        let companion = tabManager.regularTabLifecycleOwner.createNewTab(
+            url: "https://conversion-publication.example/companion",
+            in: space,
+            activate: false
+        )
+        let group = try XCTUnwrap(SplitGroup.make(
+            members: [.regularTab(source.id), .regularTab(companion.id)],
+            layoutKind: .vertical,
+            container: .regularTabs(spaceId: space.id)
+        ))
+        XCTAssertTrue(tabManager.splitGroupMutations.insert(group, persist: false))
+        for state in [primary, secondary] {
+            state.currentSpaceId = space.id
+            state.currentTabId = source.id
+            state.splitSelection = WindowSplitSelection(
+                groupID: group.id,
+                activeMemberID: .regularTab(source.id)
+            )
+        }
+
+        let observation = DisplayedConversionWindowObservationOracle()
+        var structuralEvents = 0
+        let structureCancellable = tabManager.tabStructureEventBus
+            .structureChangedPublisher.sink { structuralEvents += 1 }
+        withObservationTracking {
+            for state in [primary, secondary] {
+                _ = state.currentTabId
+                _ = state.currentShortcutPinId
+                _ = state.splitSelection
+                _ = state.activeTabForSpace
+                _ = state.selectedShortcutPinForSpace
+                _ = state.selectionHistory
+            }
+        } onChange: {
+            MainActor.assumeIsolated {
+                guard observation.didInspectFirstPublication == false else {
+                    return
+                }
+                observation.didInspectFirstPublication = true
+                let pins = tabManager.shortcutPinCollectionStateOwner
+                    .spacePinnedPins(for: space.id)
+                guard let pin = pins.first,
+                      pins.count == 1,
+                      let terminalGroup = tabManager.splitGroupStore.group(
+                          id: group.id
+                      ) else {
+                    return XCTFail(
+                        "First window publication must expose terminal catalog and topology"
+                    )
+                }
+                observation.observedPinID = pin.id
+                XCTAssertTrue(terminalGroup.contains(.shortcutPin(pin.id)))
+                XCTAssertFalse(
+                    terminalGroup.contains(.regularTab(source.id))
+                )
+                XCTAssertFalse(
+                    tabManager.regularTabCollectionOwner.contains(source)
+                )
+                XCTAssertIdentical(
+                    tabManager.liveShortcutTabs.tab(
+                        for: pin.id,
+                        in: primary.id
+                    ),
+                    source
+                )
+                for state in [primary, secondary] {
+                    let liveTab = tabManager.liveShortcutTabs.tab(
+                        for: pin.id,
+                        in: state.id
+                    )
+                    XCTAssertEqual(state.currentTabId, liveTab?.id)
+                    XCTAssertEqual(state.currentShortcutPinId, pin.id)
+                    XCTAssertEqual(
+                        state.splitSelection,
+                        WindowSplitSelection(
+                            groupID: group.id,
+                            activeMemberID: .shortcutPin(pin.id)
+                        )
+                    )
+                }
+                guard let horizontal = terminalGroup.changingLayout(
+                    to: .horizontal
+                ) else {
+                    return XCTFail(
+                        "Expected a valid reentrant layout mutation"
+                    )
+                }
+                let expected = tabManager.splitGroupStore.groups
+                let replacement = expected.map {
+                    $0.id == horizontal.id ? horizontal : $0
+                }
+                observation.didCommitReentrantMutation = tabManager
+                    .splitGroupMutations.replaceAll(
+                        expected: expected,
+                        with: replacement,
+                        persist: false
+                    )
+                observation.reentrantReplacement = horizontal
+            }
+        }
+        structuralEvents = 0
+
+        let pin = try XCTUnwrap(
+            tabManager.shortcutPinCommandOwner.convertTabToShortcutPin(
+                source,
+                role: .spacePinned,
+                profileId: nil,
+                spaceId: space.id,
+                folderId: nil,
+                at: 0,
+                preferredWindowId: secondary.id
+            )
+        )
+
+        XCTAssertTrue(observation.didInspectFirstPublication)
+        XCTAssertEqual(observation.observedPinID, pin.id)
+        XCTAssertTrue(observation.didCommitReentrantMutation)
+        XCTAssertEqual(
+            tabManager.splitGroupStore.group(id: group.id),
+            observation.reentrantReplacement
+        )
+        XCTAssertEqual(structuralEvents, 1)
+        _ = structureCancellable
     }
 
     func testPrimarySelectedWindowKeepsOriginalAndSecondaryMaterializesAfterCommit() throws {
@@ -412,6 +556,13 @@ final class RegularTabShortcutConversionServiceTests: XCTestCase {
             )
         }
         tab.navigationRuntime.webViewCleanupRuntime = cleanupRuntime
+        var structuralEvents = 0
+        let cancellable = tabManager.tabStructureEventBus
+            .structureChangedPublisher.sink { structuralEvents += 1 }
+        structuralEvents = 0
+        let revisionBefore = tabManager.structuralLookupCoordinator
+            .mutationRevision
+        let dirtyBefore = tabManager.structuralPersistence.dirtySet
 
         let converted = tabManager.shortcutPinCommandOwner
             .convertTabToShortcutPin(
@@ -433,6 +584,147 @@ final class RegularTabShortcutConversionServiceTests: XCTestCase {
             tabManager.shortcutPinCollectionStateOwner
                 .spacePinnedPins(for: space.id).isEmpty
         )
+        XCTAssertEqual(structuralEvents, 0)
+        XCTAssertEqual(
+            tabManager.structuralLookupCoordinator.mutationRevision,
+            revisionBefore
+        )
+        XCTAssertEqual(
+            tabManager.structuralPersistence.dirtySet.dirtyTabIds,
+            dirtyBefore.dirtyTabIds
+        )
+        XCTAssertEqual(
+            tabManager.structuralPersistence.dirtySet.dirtySpaceIds,
+            dirtyBefore.dirtySpaceIds
+        )
+        XCTAssertEqual(
+            tabManager.structuralPersistence.dirtySet.deletedTabIds,
+            dirtyBefore.deletedTabIds
+        )
+        _ = cancellable
+    }
+
+    func testDetachedPostStagingDriftRestoresRuntimeWithoutCleanupOrPersistence()
+        throws {
+        let repository = WebViewSessionRepository()
+        var canRetireCalls = 0
+        var beginCommittedCalls = 0
+        var destroyCalls = 0
+        var terminalDestroyCalls = 0
+        var cleanupCalls = 0
+        var persistedWindowIDs: [UUID] = []
+        var injectTopologyDrift: (() -> Void)?
+        let lifecycle = TestRuntimePorts.webViewLifecycle(
+            retirement: .init(
+                canRetire: { _ in
+                    canRetireCalls += 1
+                    if canRetireCalls == 2 { injectTopologyDrift?() }
+                    return true
+                },
+                beginCommitted: { _ in
+                    beginCommittedCalls += 1
+                    return true
+                },
+                destroy: { _ in destroyCalls += 1 },
+                destroyAfterTerminalDrain: { _ in
+                    terminalDestroyCalls += 1
+                }
+            ),
+            requireRemoveAllWebViews: { _, _ in cleanupCalls += 1 }
+        )
+        let container = try makeInMemoryStartupModelContainer()
+        let tabManager = TabManager(
+            runtimePorts: TestRuntimePorts.make(
+                webViewLifecycle: lifecycle,
+                persistWindowSession: {
+                    persistedWindowIDs.append($0.id)
+                }
+            ),
+            context: container.mainContext,
+            webViewSessions: repository,
+            loadPersistedState: false
+        )
+        let space = tabManager.spaceServices.catalog.createSpace(name: "Space")
+        let webView = WKWebView()
+        let source = tabManager.tabFactory.makeTab(
+            spaceId: space.id,
+            existingWebView: webView,
+            loadsCachedFaviconOnInit: false
+        )
+        tabManager.regularTabCollectionOwner.insert(
+            source,
+            in: space.id,
+            at: 0
+        )
+        let companion = tabManager.regularTabLifecycleOwner.createNewTab(
+            url: "https://detached-stage.example/companion",
+            in: space,
+            activate: false
+        )
+        let group = try XCTUnwrap(SplitGroup.make(
+            members: [.regularTab(source.id), .regularTab(companion.id)],
+            layoutKind: .vertical,
+            container: .regularTabs(spaceId: space.id)
+        ))
+        XCTAssertTrue(tabManager.splitGroupMutations.insert(group, persist: false))
+        let drifted = try XCTUnwrap(group.changingLayout(to: .horizontal))
+        injectTopologyDrift = {
+            tabManager.splitGroupStore.replaceAll(with: [drifted])
+        }
+        let sourceGeneration = source.webViewSession.generation
+        let dirtyBefore = tabManager.structuralPersistence.dirtySet
+        var structuralEvents = 0
+        let cancellable = tabManager.tabStructureEventBus
+            .structureChangedPublisher.sink { structuralEvents += 1 }
+        structuralEvents = 0
+
+        let converted = tabManager.shortcutPinCommandOwner
+            .convertTabToShortcutPin(
+                source,
+                role: .spacePinned,
+                profileId: nil,
+                spaceId: space.id,
+                folderId: nil,
+                at: 0
+            )
+
+        XCTAssertNil(converted)
+        XCTAssertEqual(canRetireCalls, 2)
+        XCTAssertEqual(beginCommittedCalls, 0)
+        XCTAssertEqual(destroyCalls, 0)
+        XCTAssertEqual(terminalDestroyCalls, 0)
+        XCTAssertEqual(cleanupCalls, 0)
+        XCTAssertTrue(persistedWindowIDs.isEmpty)
+        XCTAssertEqual(structuralEvents, 0)
+        XCTAssertEqual(repository.residence(of: webView), .parked(tabID: source.id))
+        XCTAssertIdentical(source.webViewSession.parkedWebView, webView)
+        XCTAssertEqual(source.webViewSession.generation, sourceGeneration)
+        XCTAssertTrue(tabManager.regularTabCollectionOwner.containsIdentical(
+            source,
+            in: space.id
+        ))
+        XCTAssertIdentical(
+            tabManager.tabCollectionMembershipOwner.tab(for: source.id),
+            source
+        )
+        XCTAssertTrue(
+            tabManager.shortcutPinCollectionStateOwner
+                .spacePinnedPins(for: space.id).isEmpty
+        )
+        XCTAssertEqual(tabManager.splitGroupStore.groups, [drifted])
+        XCTAssertEqual(
+            tabManager.structuralPersistence.dirtySet.dirtyTabIds,
+            dirtyBefore.dirtyTabIds
+        )
+        XCTAssertEqual(
+            tabManager.structuralPersistence.dirtySet.dirtySpaceIds,
+            dirtyBefore.dirtySpaceIds
+        )
+        XCTAssertEqual(
+            tabManager.structuralPersistence.dirtySet.deletedTabIds,
+            dirtyBefore.deletedTabIds
+        )
+        _ = cancellable
     }
 
     func testShortcutSidebarDropMovesStableMemberAndEveryWindowToTargetGroup() throws {
@@ -532,7 +824,8 @@ final class RegularTabShortcutConversionServiceTests: XCTestCase {
             tabManager.regularTabShortcutConversion
                 .commitShortcutSidebarDrop(
                     prepared,
-                    replacingSplitGroupsWith: replacement
+                    replacingSplitGroupsWith: replacement,
+                    sidebarMutation: .noChange
                 )
         )
 
@@ -629,7 +922,8 @@ final class RegularTabShortcutConversionServiceTests: XCTestCase {
             tabManager.regularTabShortcutConversion
                 .commitShortcutSidebarDrop(
                     prepared,
-                    replacingSplitGroupsWith: replacement
+                    replacingSplitGroupsWith: replacement,
+                    sidebarMutation: .noChange
                 )
         )
         XCTAssertNil(
@@ -651,4 +945,12 @@ final class RegularTabShortcutConversionServiceTests: XCTestCase {
             title: "Pin \(index)"
         )
     }
+}
+
+@MainActor
+private final class DisplayedConversionWindowObservationOracle {
+    var didInspectFirstPublication = false
+    var observedPinID: UUID?
+    var reentrantReplacement: SplitGroup?
+    var didCommitReentrantMutation = false
 }

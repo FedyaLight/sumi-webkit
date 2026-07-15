@@ -12,6 +12,7 @@ final class TabRuntimePreparationOwnerTests: XCTestCase {
                 TestRuntimePorts.make(
                     settings: { settings },
                     webViewLifecycle: TestRuntimePorts.webViewLifecycle(
+                        retirement: .rejecting,
                         prepareTab: { tab in
                             preparedTabIds.append(tab.id)
                         }

@@ -18,7 +18,7 @@ final class ExtensionManager: NSObject, ObservableObject {
     static let logger = Logger.sumi(category: "Extensions")
     static let safariWebExtensionURLScheme =
         ExtensionContextPreparation.webExtensionURLScheme
-    static let registerSafariWebExtensionURLScheme =
+    static let registerSafariWebExtensionURLScheme: Void =
         ExtensionContextPreparation.registerWebExtensionURLScheme
     @Published var actionStatesByExtensionID:
         [String: BrowserExtensionActionSurfaceState] = [:]
@@ -306,8 +306,7 @@ final class ExtensionManager: NSObject, ObservableObject {
         manager: self
     )
     lazy var hubOrderingOwner = ExtensionHubOrderingOwner(
-        preferences: extensionPreferences,
-        currentProfileId: { [weak self] in self?.profileRuntime.currentProfileId }
+        preferences: extensionPreferences
     )
     lazy var permissionDecisionStore = ExtensionPermissionDecisionStore(
         preferences: extensionPreferences,

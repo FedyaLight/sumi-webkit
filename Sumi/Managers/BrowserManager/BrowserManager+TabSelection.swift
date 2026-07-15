@@ -6,22 +6,24 @@ extension BrowserManager {
     }
 
     /// Select a tab in the active window (convenience method for sidebar clicks)
-    func selectTab(_ tab: Tab) {
+    @discardableResult
+    func selectTab(_ tab: Tab) -> BrowserTabSelectionOutcome {
         guard let activeWindow = windowRegistry?.activeWindow else {
             RuntimeDiagnostics.emit {
                 "⚠️ [BrowserManager] No active window for tab selection"
             }
-            return
+            return .rejected
         }
-        selectTab(tab, in: activeWindow)
+        return selectTab(tab, in: activeWindow)
     }
 
     /// Select a tab in a specific window
+    @discardableResult
     func selectTab(
         _ tab: Tab,
         in windowState: BrowserWindowState,
         loadPolicy: TabSelectionLoadPolicy = .immediate
-    ) {
+    ) -> BrowserTabSelectionOutcome {
         tabLifecycleService.selection.selectTab(
             tab,
             in: windowState,
@@ -35,7 +37,7 @@ extension BrowserManager {
         in windowState: BrowserWindowState,
         loadPolicy: TabSelectionLoadPolicy = .immediate
     ) {
-        tabLifecycleService.selection.requestUserTabActivation(
+        _ = tabLifecycleService.selection.requestUserTabActivation(
             tab,
             in: windowState,
             loadPolicy: loadPolicy,
@@ -71,7 +73,7 @@ extension BrowserManager {
         persistSelection: Bool = true,
         loadPolicy: TabSelectionLoadPolicy
     ) {
-        tabLifecycleService.selection.applyTabSelection(
+        _ = tabLifecycleService.selection.applyTabSelection(
             tab,
             in: windowState,
             updateSpaceFromTab: updateSpaceFromTab,
@@ -90,6 +92,21 @@ extension BrowserManager {
         tabLifecycleService.selection.materializeVisibleTabWebViewIfNeeded(
             tab,
             in: windowState,
+            actions: tabSelectionActions
+        )
+    }
+
+    func publishPreparedTabSelectionEffects(
+        _ tab: Tab,
+        in windowState: BrowserWindowState,
+        previousTabID: UUID?,
+        previousSpaceID: UUID?
+    ) {
+        _ = tabLifecycleService.selection.publishPreparedSelectionEffects(
+            tab,
+            in: windowState,
+            previousTabID: previousTabID,
+            previousSpaceID: previousSpaceID,
             actions: tabSelectionActions
         )
     }

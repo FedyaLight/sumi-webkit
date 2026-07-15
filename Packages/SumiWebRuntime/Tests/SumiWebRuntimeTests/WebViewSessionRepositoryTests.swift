@@ -1284,6 +1284,7 @@ final class WebViewSessionRepositoryTests: XCTestCase {
         let oldWebView = WKWebView()
         let replacement = WKWebView()
         register(oldWebView, tabID: tabID, windowID: windowID, in: repository)
+        var modelRollbackSawRepositoryQuarantine = false
 
         let result = repository.beginReplacementBatch(
             [
@@ -1296,12 +1297,28 @@ final class WebViewSessionRepositoryTests: XCTestCase {
                     )
                 ),
             ],
-            modelCommit: { throw ExpectedFailure.failed }
+            modelCommit: { throw ExpectedFailure.failed },
+            modelRollback: {
+                modelRollbackSawRepositoryQuarantine = repository.queries
+                    .webView(for: tabID, in: windowID) === replacement
+                    && {
+                        if case .retiring = repository.residence(
+                            of: oldWebView
+                        ) {
+                            return true
+                        }
+                        return false
+                    }()
+            }
         )
 
-        guard case .modelCommitFailed = result else {
+        guard case .modelCommitFailed(let discarded) = result else {
             return XCTFail("Expected model failure to reject the batch")
         }
+        XCTAssertIdentical(
+            discarded[tabID]?.windowWebViews[windowID],
+            replacement
+        )
         XCTAssertIdentical(repository.queries.webView(for: tabID, in: windowID), oldWebView)
         XCTAssertEqual(
             repository.residence(of: oldWebView),
@@ -1309,6 +1326,304 @@ final class WebViewSessionRepositoryTests: XCTestCase {
         )
         XCTAssertNil(repository.residence(of: replacement))
         XCTAssertTrue(repository.queries.ownershipTransitionSnapshot().isEmpty)
+        XCTAssertTrue(modelRollbackSawRepositoryQuarantine)
+    }
+
+    func testModelValidationFailureLeavesPreparedReplacementCallerOwned() {
+        let repository = WebViewSessionRepository()
+        let tabID = UUID()
+        let windowID = UUID()
+        let oldWebView = WKWebView()
+        let replacement = WKWebView()
+        register(oldWebView, tabID: tabID, windowID: windowID, in: repository)
+        var modelCommitCount = 0
+        var modelRollbackCount = 0
+
+        let result = repository.beginReplacementBatch(
+            [
+                .init(
+                    tabID: tabID,
+                    expectedGeneration: repository.queries.generation(
+                        for: tabID
+                    ),
+                    placement: .windowSet(
+                        webViewsByWindowID: [windowID: replacement],
+                        primaryWindowID: windowID
+                    )
+                ),
+            ],
+            validateModel: { false },
+            modelCommit: { modelCommitCount += 1 },
+            modelRollback: { modelRollbackCount += 1 }
+        )
+
+        guard case .modelValidationFailed = result else {
+            return XCTFail("Expected pre-apply model rejection")
+        }
+        XCTAssertEqual(modelCommitCount, 0)
+        XCTAssertEqual(modelRollbackCount, 0)
+        XCTAssertIdentical(
+            repository.queries.webView(for: tabID, in: windowID),
+            oldWebView
+        )
+        XCTAssertNil(repository.residence(of: replacement))
+        XCTAssertTrue(repository.queries.ownershipTransitionSnapshot().isEmpty)
+    }
+
+    func testThrowingFailedCommitCompensationQuarantinesBothGenerations() {
+        enum ExpectedFailure: Error { case failed }
+
+        let repository = WebViewSessionRepository()
+        let tabID = UUID()
+        let windowID = UUID()
+        let oldWebView = WKWebView()
+        let replacement = WKWebView()
+        register(oldWebView, tabID: tabID, windowID: windowID, in: repository)
+
+        let result = repository.beginReplacementBatch(
+            [
+                .init(
+                    tabID: tabID,
+                    expectedGeneration: repository.queries.generation(
+                        for: tabID
+                    ),
+                    placement: .windowSet(
+                        webViewsByWindowID: [windowID: replacement],
+                        primaryWindowID: windowID
+                    )
+                ),
+            ],
+            modelCommit: { throw ExpectedFailure.failed },
+            modelRollback: { throw ExpectedFailure.failed }
+        )
+
+        guard case .modelRollbackFailed(let lease) = result else {
+            return XCTFail("Expected typed failed-compensation quarantine")
+        }
+        XCTAssertIdentical(
+            repository.queries.webView(for: tabID, in: windowID),
+            replacement
+        )
+        guard case .retiring = repository.residence(of: oldWebView) else {
+            return XCTFail("Predecessor must remain retirement-owned")
+        }
+        XCTAssertEqual(
+            repository.residence(of: replacement),
+            .window(.init(tabID: tabID, windowID: windowID))
+        )
+        guard case .noLongerActive = repository.rollbackReplacementBatch(
+            lease
+        ) else {
+            return XCTFail("Claimed rollback must reject a second settlement")
+        }
+
+        let drained = repository.takeAllWebViewsForTerminalShutdown()
+        XCTAssertEqual(
+            Set(drained.map { ObjectIdentifier($0.webView) }),
+            Set([oldWebView, replacement].map(ObjectIdentifier.init))
+        )
+        XCTAssertTrue(repository.queries.ownershipTransitionSnapshot().isEmpty)
+    }
+
+    func testTerminalDrainDuringModelCommitReturnsNoActiveReplacementLease() {
+        let repository = WebViewSessionRepository()
+        let tabID = UUID()
+        let windowID = UUID()
+        let oldWebView = WKWebView()
+        let replacement = WKWebView()
+        register(oldWebView, tabID: tabID, windowID: windowID, in: repository)
+        var drained: [WebViewTerminalCleanupEntry] = []
+        var drainedBatchID: UUID?
+
+        let result = repository.beginReplacementBatch(
+            [
+                .init(
+                    tabID: tabID,
+                    expectedGeneration: repository.queries.generation(
+                        for: tabID
+                    ),
+                    placement: .windowSet(
+                        webViewsByWindowID: [windowID: replacement],
+                        primaryWindowID: windowID
+                    )
+                ),
+            ],
+            modelCommit: {
+                guard case .retiring(let lease) = repository.residence(
+                    of: oldWebView
+                ) else {
+                    return XCTFail("Model commit must see quarantined predecessor")
+                }
+                drainedBatchID = lease.batchID
+                drained = repository.takeAllWebViewsForTerminalShutdown()
+            }
+        )
+
+        guard case .noLongerActive = result else {
+            return XCTFail("Terminal drain must reject the vanished batch")
+        }
+        XCTAssertEqual(
+            Set(drained.map { ObjectIdentifier($0.webView) }),
+            Set([oldWebView, replacement].map(ObjectIdentifier.init))
+        )
+        XCTAssertTrue(repository.snapshot(for: tabID).allKnownWebViews.isEmpty)
+        XCTAssertTrue(repository.queries.ownershipTransitionSnapshot().isEmpty)
+        guard let drainedBatchID else {
+            return XCTFail("Drain must preserve the exact batch identity")
+        }
+        let staleLease = WebViewReplacementBatchLease(id: drainedBatchID)
+        guard case .noLongerActive = repository.commitReplacementBatch(
+            staleLease
+        ) else {
+            return XCTFail("Drained replacement lease must stay inactive")
+        }
+        guard case .noLongerActive = repository.rollbackReplacementBatch(
+            staleLease
+        ) else {
+            return XCTFail("Drained replacement lease must not restore runtime")
+        }
+    }
+
+    func testTerminalDrainThenThrowDuringModelCommitIsTypedLeaseLoss() {
+        enum ExpectedFailure: Error { case failed }
+
+        let repository = WebViewSessionRepository()
+        let tabID = UUID()
+        let windowID = UUID()
+        let oldWebView = WKWebView()
+        let replacement = WKWebView()
+        register(oldWebView, tabID: tabID, windowID: windowID, in: repository)
+
+        let result = repository.beginReplacementBatch(
+            [
+                .init(
+                    tabID: tabID,
+                    expectedGeneration: repository.queries.generation(
+                        for: tabID
+                    ),
+                    placement: .windowSet(
+                        webViewsByWindowID: [windowID: replacement],
+                        primaryWindowID: windowID
+                    )
+                ),
+            ],
+            modelCommit: {
+                _ = repository.takeAllWebViewsForTerminalShutdown()
+                throw ExpectedFailure.failed
+            }
+        )
+
+        guard case .noLongerActive = result else {
+            return XCTFail("Terminal drain must dominate model rejection")
+        }
+        XCTAssertTrue(repository.snapshot(for: tabID).allKnownWebViews.isEmpty)
+        XCTAssertTrue(repository.queries.ownershipTransitionSnapshot().isEmpty)
+    }
+
+    func testTerminalDrainDuringModelRollbackOwnsBothGenerations() {
+        let repository = WebViewSessionRepository()
+        let tabID = UUID()
+        let oldWebView = WKWebView()
+        let replacement = WKWebView()
+        repository.noteUntrackedWebView(oldWebView, for: tabID)
+        guard case .began(let lease) = repository.beginReplacementBatch(
+            [
+                .init(
+                    tabID: tabID,
+                    expectedGeneration: repository.snapshot(
+                        for: tabID
+                    ).generation,
+                    placement: .detached(
+                        webView: replacement,
+                        residence: .untracked
+                    )
+                ),
+            ]
+        ) else {
+            return XCTFail("Expected replacement lease")
+        }
+        var drained: [WebViewTerminalCleanupEntry] = []
+
+        let result = repository.rollbackReplacementBatch(
+            lease,
+            modelRollback: {
+                guard case .retiring = repository.residence(of: oldWebView)
+                else {
+                    return XCTFail(
+                        "Predecessor must stay quarantined during model rollback"
+                    )
+                }
+                XCTAssertEqual(
+                    repository.residence(of: replacement),
+                    .untracked(tabID: tabID)
+                )
+                drained = repository.takeAllWebViewsForTerminalShutdown()
+            }
+        )
+
+        guard case .terminallyDrained = result else {
+            return XCTFail("Expected typed rollback drain")
+        }
+        XCTAssertEqual(
+            Set(drained.map { ObjectIdentifier($0.webView) }),
+            Set([oldWebView, replacement].map(ObjectIdentifier.init))
+        )
+        XCTAssertTrue(repository.snapshot(for: tabID).allKnownWebViews.isEmpty)
+        XCTAssertTrue(repository.queries.ownershipTransitionSnapshot().isEmpty)
+    }
+
+    func testThrowingModelRollbackStaysQuarantinedWithoutCrashing() {
+        enum ExpectedFailure: Error { case failed }
+
+        let repository = WebViewSessionRepository()
+        let tabID = UUID()
+        let oldWebView = WKWebView()
+        let replacement = WKWebView()
+        repository.noteUntrackedWebView(oldWebView, for: tabID)
+        guard case .began(let lease) = repository.beginReplacementBatch(
+            [
+                .init(
+                    tabID: tabID,
+                    expectedGeneration: repository.snapshot(
+                        for: tabID
+                    ).generation,
+                    placement: .detached(
+                        webView: replacement,
+                        residence: .untracked
+                    )
+                ),
+            ]
+        ) else {
+            return XCTFail("Expected replacement lease")
+        }
+
+        let result = repository.rollbackReplacementBatch(
+            lease,
+            modelRollback: {
+                guard case .retiring = repository.residence(of: oldWebView)
+                else {
+                    return XCTFail("Rollback must run inside repository lease")
+                }
+                XCTAssertEqual(
+                    repository.residence(of: replacement),
+                    .untracked(tabID: tabID)
+                )
+                throw ExpectedFailure.failed
+            }
+        )
+
+        guard case .modelRollbackFailed = result else {
+            return XCTFail("Expected typed model rollback failure")
+        }
+        XCTAssertIdentical(repository.untrackedWebView(for: tabID), replacement)
+        guard case .retiring = repository.residence(of: oldWebView) else {
+            return XCTFail("Failed rollback must retain predecessor quarantine")
+        }
+        let drained = repository.takeAllWebViewsForTerminalShutdown()
+        XCTAssertEqual(
+            Set(drained.map { ObjectIdentifier($0.webView) }),
+            Set([oldWebView, replacement].map(ObjectIdentifier.init))
+        )
     }
 
     func testUnifiedBarrierWaitsForCleanupAndRetirementSettlement() async throws {

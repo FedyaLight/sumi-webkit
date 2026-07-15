@@ -132,8 +132,42 @@ final class TabProfileTransitionService {
         desiredProfileID: UUID?,
         tab: Tab,
         requiresStructuralPersistence: Bool,
-        intentPrepared: (DeferredWebViewProfileAssignmentIntent) -> Void = { _ in /* No-op. */ },
         settlementObserver: ProfileTransitionService.Settlement? = nil
+    ) -> TabProfileAssignmentExecutionOutcome {
+        start(
+            desiredProfileID: desiredProfileID,
+            tab: tab,
+            requiresStructuralPersistence: requiresStructuralPersistence,
+            intentObserver: nil,
+            settlementObserver: settlementObserver
+        )
+    }
+
+    @discardableResult
+    func start(
+        desiredProfileID: UUID?,
+        tab: Tab,
+        requiresStructuralPersistence: Bool,
+        capturingIntent: @escaping (
+            DeferredWebViewProfileAssignmentIntent
+        ) -> Void,
+        settlementObserver: ProfileTransitionService.Settlement? = nil
+    ) -> TabProfileAssignmentExecutionOutcome {
+        start(
+            desiredProfileID: desiredProfileID,
+            tab: tab,
+            requiresStructuralPersistence: requiresStructuralPersistence,
+            intentObserver: capturingIntent,
+            settlementObserver: settlementObserver
+        )
+    }
+
+    private func start(
+        desiredProfileID: UUID?,
+        tab: Tab,
+        requiresStructuralPersistence: Bool,
+        intentObserver: ((DeferredWebViewProfileAssignmentIntent) -> Void)?,
+        settlementObserver: ProfileTransitionService.Settlement?
     ) -> TabProfileAssignmentExecutionOutcome {
         guard let profile = policy.resolvedAssignmentProfile(
             for: tab,
@@ -147,7 +181,7 @@ final class TabProfileTransitionService {
             targetURL: policy.liveDocumentURL(for: tab) ?? tab.url,
             requiresStructuralPersistence: requiresStructuralPersistence
         )
-        intentPrepared(intent)
+        intentObserver?(intent)
         if let settlementObserver {
             observersByTabID[tab.id] = SettlementObserver(
                 revision: intent.revision,
@@ -156,7 +190,7 @@ final class TabProfileTransitionService {
         }
 
         let outcome = execute(tab: tab, profile: profile, intent: intent)
-        if let settlement = immediateSettlement(for: outcome),
+        if let settlement = outcome.immediateSettlement,
            observersByTabID[tab.id]?.revision == intent.revision {
             receive(settlement, tab: tab, intent: intent)
         }
@@ -252,20 +286,5 @@ final class TabProfileTransitionService {
             isTabStillInSpace: tabManager.tabCollectionMembershipOwner
                 .allTabs().contains { $0 === tab && $0.spaceId == tab.spaceId }
         )
-    }
-
-    private func immediateSettlement(
-        for outcome: TabProfileAssignmentExecutionOutcome
-    ) -> ProfileTransitionSettlement? {
-        switch outcome {
-        case .committed:
-            return .committed
-        case .stale:
-            return .rejected(.stale)
-        case .failed:
-            return .rejected(.failed)
-        case .deferred:
-            return nil
-        }
     }
 }

@@ -9,6 +9,9 @@
 import Foundation
 
 extension TabManager {
+    var folderOpenState: TabFolderOpenStateService {
+        structureOwners.folderOpenState
+    }
     var folderMutationOwner: TabFolderMutationOwner { structureOwners.folderMutationOwner }
     var runtimePreparationOwner: TabRuntimePreparationOwner { lifecycleOwners.runtimePreparationOwner }
     var runtimePortsAttachmentOwner: TabRuntimePortsAttachmentOwner {
@@ -32,6 +35,9 @@ extension TabManager {
     var shortcutPinStoreOwner: ShortcutPinStoreOwner { shortcutOwners.shortcutPinStoreOwner }
     var shortcutPinRuntimeResolutionOwner: ShortcutPinRuntimeResolutionOwner {
         shortcutOwners.shortcutPinRuntimeResolutionOwner
+    }
+    var shortcutWindowMutationOwner: BrowserWindowShortcutMutationOwner {
+        shortcutOwners.shortcutWindowMutationOwner
     }
     var shortcutDragOperationOwner: ShortcutDragOperationOwner { shortcutOwners.shortcutDragOperationOwner }
     var shortcutPresentationOwner: TabShortcutPresentationOwner { shortcutOwners.shortcutPresentationOwner }

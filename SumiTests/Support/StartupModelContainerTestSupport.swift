@@ -35,6 +35,7 @@ func makeInMemoryTabManager(
     ) -> TabProfileAssignmentExecutionOutcome = { tab, _, intent in
         tab.profileAssignment.commit(intent) ? .committed : .stale
     },
+    webViewLifecycle: TabManagerWebViewLifecycleService? = nil,
     webViewSessions: WebViewSessionRepository = WebViewSessionRepository(),
     loadPersistedState: Bool = false
 ) throws -> TabManager {
@@ -47,13 +48,15 @@ func makeInMemoryTabManager(
             profile: profile,
             windowState: windowState,
             windows: windows,
-            webViewLifecycle: TestRuntimePorts.webViewLifecycle(
-                materializeVisibleTabWebViewIfNeeded: materializeVisibleTabWebViewIfNeeded,
-                unloadTab: unloadTab,
-                requireRemoveAllWebViews: requireRemoveAllWebViews,
-                primaryTrackedWindowId: primaryTrackedWindowId,
-                executeProfileAssignment: executeProfileAssignment
-            ),
+            webViewLifecycle: webViewLifecycle
+                ?? TestRuntimePorts.webViewLifecycle(
+                    retirement: .rejecting,
+                    materializeVisibleTabWebViewIfNeeded: materializeVisibleTabWebViewIfNeeded,
+                    unloadTab: unloadTab,
+                    requireRemoveAllWebViews: requireRemoveAllWebViews,
+                    primaryTrackedWindowId: primaryTrackedWindowId,
+                    executeProfileAssignment: executeProfileAssignment
+                ),
             visibleSplitTabIds: visibleSplitTabIds,
             persistWindowSession: persistWindowSession
         ),

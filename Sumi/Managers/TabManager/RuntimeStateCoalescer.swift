@@ -1,6 +1,8 @@
 import Foundation
 
 actor RuntimeStateCoalescer {
+    static let defaultDebounceNanoseconds: UInt64 = 250_000_000
+
     typealias RuntimeTabState = TabRuntimeStateUpdate
     typealias PersistBatch = @Sendable ([RuntimeTabState]) async -> Void
 
@@ -19,7 +21,8 @@ actor RuntimeStateCoalescer {
     private var pendingByTabID: [UUID: RuntimeTabState] = [:]
 
     init(
-        debounceNanoseconds: UInt64,
+        debounceNanoseconds: UInt64 = RuntimeStateCoalescer
+            .defaultDebounceNanoseconds,
         persistBatch: @escaping PersistBatch
     ) {
         let streamPair = AsyncStream<Command>.makeStream(

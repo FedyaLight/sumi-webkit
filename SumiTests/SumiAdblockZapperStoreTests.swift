@@ -5,9 +5,11 @@ import XCTest
 
 @MainActor
 final class SumiAdblockZapperStoreTests: XCTestCase {
-    override func tearDown() {
-        SumiAdblockZapperInjector.resetForTesting()
-        super.tearDown()
+    override func tearDown() async throws {
+        await MainActor.run {
+            SumiAdblockZapperInjector.resetForTesting()
+        }
+        try await super.tearDown()
     }
 
     func testInjectorSkipsJavaScriptWhenHostHasNoRules() {

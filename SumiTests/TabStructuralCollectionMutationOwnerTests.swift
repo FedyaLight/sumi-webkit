@@ -85,6 +85,52 @@ final class TabStructuralCollectionMutationOwnerTests: XCTestCase {
         XCTAssertEqual(harness.publishCount, 1)
     }
 
+    func testRejectedReversibleBatchRestoresCollectionsWithoutEffects() {
+        let spaceID = UUID()
+        let profileID = UUID()
+        let originalTab = Self.makeTab(index: 0)
+        let originalPin = Self.makePin(
+            role: .essential,
+            profileId: profileID,
+            index: 0
+        )
+        let originalSpacePin = Self.makePin(
+            role: .spacePinned,
+            spaceId: spaceID,
+            index: 0
+        )
+        let harness = Harness()
+        harness.tabsBySpace[spaceID] = [originalTab]
+        harness.pinnedByProfile[profileID] = [originalPin]
+        harness.spacePinnedShortcuts[spaceID] = [originalSpacePin]
+        let owner = harness.makeOwner()
+
+        let committed = owner.withReversibleSideEffects {
+            owner.setTabs([Self.makeTab(index: 1)], for: spaceID)
+            owner.setPinnedTabs([], for: profileID)
+            owner.setSpacePinnedShortcuts([], for: spaceID)
+            return false
+        }
+
+        XCTAssertFalse(committed)
+        XCTAssertIdentical(harness.tabsBySpace[spaceID]?.first, originalTab)
+        XCTAssertIdentical(harness.pinnedByProfile[profileID]?.first, originalPin)
+        XCTAssertIdentical(
+            harness.spacePinnedShortcuts[spaceID]?.first,
+            originalSpacePin
+        )
+        XCTAssertTrue(harness.syncedShortcutPinIds.isEmpty)
+        XCTAssertTrue(harness.regularDirtySpaceIds.isEmpty)
+        XCTAssertTrue(harness.pinnedDirtyProfileIds.isEmpty)
+        XCTAssertTrue(harness.spacePinnedDirtySpaceIds.isEmpty)
+        XCTAssertTrue(harness.regularChangeRecords.isEmpty)
+        XCTAssertTrue(harness.shortcutPinChangeRecords.isEmpty)
+        XCTAssertTrue(harness.queuedLookupChanges.isEmpty)
+        XCTAssertEqual(harness.publishCount, 0)
+        XCTAssertEqual(harness.announceCount, 0)
+        XCTAssertEqual(harness.tabsSnapshotPublishCount, 0)
+    }
+
     private static func makeTab(index: Int) -> Tab {
         Tab(
             url: URL(string: "https://example.com/\(index)")!,
@@ -131,6 +177,8 @@ final class TabStructuralCollectionMutationOwnerTests: XCTestCase {
         var shortcutPinChangeRecords: [(previous: [ShortcutPin], current: [ShortcutPin])] = []
         var queuedLookupChanges: [(previous: [Tab], current: [Tab])] = []
         var publishCount = 0
+        var announceCount = 0
+        var tabsSnapshotPublishCount = 0
 
         func makeOwner() -> TabStructuralCollectionMutationOwner {
             TabStructuralCollectionMutationOwner(
@@ -162,6 +210,12 @@ final class TabStructuralCollectionMutationOwnerTests: XCTestCase {
                     },
                     requestStructuralPublish: { _ in
                         self.publishCount += 1
+                    },
+                    announceStateChange: {
+                        self.announceCount += 1
+                    },
+                    publishTabsBySpaceSnapshot: {
+                        self.tabsSnapshotPublishCount += 1
                     }
                 )
             )

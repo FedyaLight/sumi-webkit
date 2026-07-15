@@ -1,3 +1,4 @@
+import Combine
 import SumiDomain
 import XCTest
 
@@ -186,6 +187,529 @@ final class SplitInsertionServiceTests: XCTestCase {
             ]
         )
     }
+
+    func testEmptySplitCreationDoesNotAdoptOrDiscardSameIDReplacement() throws {
+        let fixture = try makeFixture()
+        var didReplace = false
+        var replacement: Tab?
+        let cancellable = fixture.manager.tabStructureEventBus
+            .structureChangedPublisher.sink { _ in
+                guard !didReplace,
+                      let placeholder = fixture.manager
+                      .regularTabCollectionOwner.tabs(in: fixture.space.id)
+                      .first(where: {
+                          $0 !== fixture.currentTab
+                              && $0 !== fixture.incomingTab
+                      }) else { return }
+                didReplace = true
+                let sameIDReplacement = Tab(
+                    id: placeholder.id,
+                    url: placeholder.url,
+                    name: placeholder.name,
+                    spaceId: placeholder.spaceId,
+                    index: placeholder.index,
+                    loadsCachedFaviconOnInit: false
+                )
+                replacement = sameIDReplacement
+                let tabs = fixture.manager.regularTabCollectionOwner
+                    .tabs(in: fixture.space.id).map {
+                        $0 === placeholder ? sameIDReplacement : $0
+                    }
+                fixture.manager.structuralCollectionMutationOwner.setTabs(
+                    tabs,
+                    for: fixture.space.id
+                )
+            }
+
+        XCTAssertFalse(fixture.emptyPlaceholders.create(
+            side: .right,
+            in: fixture.window
+        ))
+
+        let exactReplacement = try XCTUnwrap(replacement)
+        XCTAssertTrue(
+            fixture.manager.regularTabCollectionOwner.tab(
+                for: exactReplacement.id
+            ) === exactReplacement
+        )
+        XCTAssertNil(fixture.manager.splitGroupStore.group(
+            containing: .regularTab(fixture.currentTab.id)
+        ))
+        XCTAssertFalse(fixture.emptyPlaceholders.cancel(in: fixture.window))
+        _ = cancellable
+    }
+
+    func testFailedEmptySplitRetiresBeforeSameIDRemovalObserverRuns() throws {
+        let fixture = try makeFixture()
+        var placeholder: Tab?
+        var replacement: Tab?
+        let cancellable = fixture.manager.tabStructureEventBus
+            .structureChangedPublisher.sink { _ in
+                if placeholder == nil {
+                    placeholder = fixture.manager.regularTabCollectionOwner
+                        .tabs(in: fixture.space.id).first(where: {
+                            $0 !== fixture.currentTab
+                                && $0 !== fixture.incomingTab
+                        })
+                    if placeholder != nil {
+                        fixture.window.currentTabId = fixture.incomingTab.id
+                    }
+                    return
+                }
+                guard replacement == nil, let placeholder,
+                      fixture.manager.regularTabCollectionOwner.tab(
+                          for: placeholder.id
+                      ) == nil else { return }
+                let sameIDReplacement = Tab(
+                    id: placeholder.id,
+                    url: URL(string: "https://replacement.example")!,
+                    spaceId: fixture.space.id,
+                    index: placeholder.index,
+                    loadsCachedFaviconOnInit: false
+                )
+                replacement = sameIDReplacement
+                fixture.manager.structuralCollectionMutationOwner.setTabs(
+                    fixture.manager.regularTabCollectionOwner
+                        .tabs(in: fixture.space.id) + [sameIDReplacement],
+                    for: fixture.space.id
+                )
+            }
+
+        XCTAssertFalse(fixture.emptyPlaceholders.create(
+            side: .right,
+            in: fixture.window
+        ))
+
+        let exactReplacement = try XCTUnwrap(replacement)
+        XCTAssertTrue(
+            fixture.manager.regularTabCollectionOwner.tab(
+                for: exactReplacement.id
+            ) === exactReplacement
+        )
+        XCTAssertTrue(
+            fixture.manager.tabCollectionMembershipOwner.tab(
+                for: exactReplacement.id
+            ) === exactReplacement
+        )
+        _ = cancellable
+    }
+
+    func testEmptySplitCancelRetiresBeforeSameIDRemovalObserverRuns() throws {
+        let fixture = try makeFixture()
+        XCTAssertTrue(fixture.emptyPlaceholders.create(
+            side: .right,
+            in: fixture.window
+        ))
+        let placeholder = try XCTUnwrap(
+            fixture.manager.regularTabCollectionOwner
+                .tabs(in: fixture.space.id).first(where: {
+                    $0 !== fixture.currentTab && $0 !== fixture.incomingTab
+                })
+        )
+        var replacement: Tab?
+        let cancellable = fixture.splitUpdates
+            .updates(for: fixture.window.id).sink {
+                guard replacement == nil,
+                      fixture.manager.regularTabCollectionOwner.tab(
+                          for: placeholder.id
+                      ) == nil else { return }
+                let sameIDReplacement = Tab(
+                    id: placeholder.id,
+                    url: URL(string: "https://replacement.example")!,
+                    spaceId: fixture.space.id,
+                    index: placeholder.index,
+                    loadsCachedFaviconOnInit: false
+                )
+                replacement = sameIDReplacement
+                fixture.manager.structuralCollectionMutationOwner.setTabs(
+                    fixture.manager.regularTabCollectionOwner
+                        .tabs(in: fixture.space.id) + [sameIDReplacement],
+                    for: fixture.space.id
+                )
+                fixture.window.currentSpaceId = fixture.space.id
+                fixture.window.currentTabId = sameIDReplacement.id
+                fixture.window.selectionHistory
+                    .recentRegularTabIdsBySpace[fixture.space.id] = [
+                        sameIDReplacement.id,
+                    ]
+            }
+
+        XCTAssertTrue(fixture.emptyPlaceholders.cancel(in: fixture.window))
+
+        let exactReplacement = try XCTUnwrap(replacement)
+        XCTAssertTrue(
+            fixture.manager.regularTabCollectionOwner.tab(
+                for: exactReplacement.id
+            ) === exactReplacement
+        )
+        XCTAssertTrue(
+            fixture.manager.tabCollectionMembershipOwner.tab(
+                for: exactReplacement.id
+            ) === exactReplacement
+        )
+        XCTAssertEqual(
+            fixture.window.selectionHistory
+                .recentRegularTabIdsBySpace[fixture.space.id],
+            [exactReplacement.id]
+        )
+        XCTAssertEqual(fixture.window.currentTabId, exactReplacement.id)
+        XCTAssertFalse(fixture.emptyPlaceholders.cancel(in: fixture.window))
+        _ = cancellable
+    }
+
+    func testEmptySplitReplacementRelocatesShortcutBeforeSettlingPlaceholder() throws {
+        let scenario = try makeShortcutPlaceholderFixture()
+        let fixture = scenario.fixture
+
+        XCTAssertTrue(fixture.emptyPlaceholders.replace(
+            with: scenario.liveTab,
+            in: fixture.window
+        ))
+
+        let groupAfter = try XCTUnwrap(
+            fixture.manager.splitGroupStore.group(id: scenario.group.id)
+        )
+        XCTAssertTrue(groupAfter.contains(.shortcutPin(scenario.pin.id)))
+        XCTAssertFalse(groupAfter.contains(
+            .regularTab(scenario.placeholderTabID)
+        ))
+        XCTAssertNil(
+            fixture.manager.tabCollectionMembershipOwner.tab(
+                for: scenario.placeholderTabID
+            )
+        )
+        XCTAssertEqual(
+            fixture.manager.liveShortcutTabs.entry(containing: scenario.liveTab)?
+                .presentationPage,
+            LiveShortcutPresentationPageReceipt(
+                windowID: fixture.window.id,
+                spaceID: scenario.targetSpace.id,
+                profileID: scenario.profileID
+            )
+        )
+        XCTAssertFalse(fixture.emptyPlaceholders.replace(
+            with: scenario.liveTab,
+            in: fixture.window
+        ))
+    }
+
+    func testEmptySplitWindowUpdateSeesTerminalModelAndPreservesReentrantMutation()
+        throws {
+        let scenario = try makeShortcutPlaceholderFixture()
+        let fixture = scenario.fixture
+        let targetPage = LiveShortcutPresentationPageReceipt(
+            windowID: fixture.window.id,
+            spaceID: scenario.targetSpace.id,
+            profileID: scenario.profileID
+        )
+        let placeholder = try XCTUnwrap(
+            fixture.manager.tabCollectionMembershipOwner.tab(
+                for: scenario.placeholderTabID
+            )
+        )
+        let lifecycle = EmptySplitLifecycleNotificationRecorder(
+            tab: placeholder
+        )
+        var observerInvocationCount = 0
+        var firstObservedResidence: LiveShortcutPresentationPageReceipt?
+        var firstObservedGroup: SplitGroup?
+        var firstObservedPlaceholder: Tab?
+        var firstObservedSelection: WindowSplitSelection?
+        var reentrantRetryAccepted: Bool?
+        var observerMutationAccepted = false
+        var structuralEvents = 0
+        let structureCancellable = fixture.manager.tabStructureEventBus
+            .structureChangedPublisher.sink { structuralEvents += 1 }
+        structuralEvents = 0
+        var didReenter = false
+        let updateCancellable = fixture.splitUpdates
+            .updates(for: fixture.window.id).sink {
+                observerInvocationCount += 1
+                guard didReenter == false else { return }
+                didReenter = true
+                firstObservedResidence = fixture.manager.liveShortcutTabs
+                    .entry(containing: scenario.liveTab)?.presentationPage
+                firstObservedGroup = fixture.manager.splitGroupStore.group(
+                    id: scenario.group.id
+                )
+                firstObservedPlaceholder = fixture.manager
+                    .tabCollectionMembershipOwner.tab(
+                        for: scenario.placeholderTabID
+                    )
+                firstObservedSelection = fixture.window.splitSelection
+
+                reentrantRetryAccepted = fixture.emptyPlaceholders.replace(
+                    with: scenario.liveTab,
+                    in: fixture.window
+                )
+                let committedGroups = fixture.manager.splitGroupStore.groups
+                observerMutationAccepted = fixture.manager.splitGroupMutations
+                    .replaceAll(
+                        expected: committedGroups,
+                        with: [],
+                        persist: false
+                    )
+            }
+
+        XCTAssertTrue(fixture.emptyPlaceholders.replace(
+            with: scenario.liveTab,
+            in: fixture.window
+        ))
+
+        XCTAssertEqual(observerInvocationCount, 1)
+        XCTAssertEqual(firstObservedResidence, targetPage)
+        XCTAssertTrue(firstObservedGroup?.contains(
+            .shortcutPin(scenario.pin.id)
+        ) == true)
+        XCTAssertFalse(firstObservedGroup?.contains(
+            .regularTab(scenario.placeholderTabID)
+        ) == true)
+        XCTAssertNil(firstObservedPlaceholder)
+        XCTAssertEqual(
+            firstObservedSelection,
+            WindowSplitSelection(
+                groupID: scenario.group.id,
+                activeMemberID: .shortcutPin(scenario.pin.id)
+            )
+        )
+        XCTAssertEqual(reentrantRetryAccepted, false)
+        XCTAssertTrue(observerMutationAccepted)
+        XCTAssertTrue(fixture.manager.splitGroupStore.groups.isEmpty)
+        XCTAssertNil(fixture.manager.tabCollectionMembershipOwner.tab(
+            for: scenario.placeholderTabID
+        ))
+        XCTAssertFalse(fixture.emptyPlaceholders.replace(
+            with: scenario.liveTab,
+            in: fixture.window
+        ))
+        XCTAssertEqual(structuralEvents, 1)
+        XCTAssertEqual(lifecycle.count, 1)
+        withExtendedLifetime((updateCancellable, structureCancellable)) {}
+    }
+
+    func testEmptySplitReplacementReleasesExactCompanionLauncherWithoutRebinding() throws {
+        let scenario = try makeShortcutPlaceholderFixture()
+        let fixture = scenario.fixture
+        let companion = ShortcutPin(
+            id: UUID(),
+            role: .essential,
+            profileId: scenario.profileID,
+            index: 1,
+            launchURL: URL(string: "https://companion.example")!,
+            title: "Companion"
+        )
+        fixture.manager.shortcutPinCollectionStateOwner
+            .replacePinnedByProfile([
+                scenario.profileID: [scenario.pin, companion],
+            ])
+        let companionTab = Tab(loadsCachedFaviconOnInit: false)
+        companionTab.bindToShortcutPin(companion)
+        companionTab.profileId = scenario.profileID
+        XCTAssertTrue(fixture.manager.liveShortcutTabs.register(
+            companionTab,
+            for: companion.id,
+            in: fixture.window.id,
+            presentationPage: scenario.sourcePage
+        ))
+        let sourceGroup = try XCTUnwrap(SplitGroup.make(
+            members: [
+                .shortcutPin(
+                    scenario.pin.id,
+                    returnPlacement: .essential(
+                        profileId: scenario.profileID,
+                        index: 0
+                    )
+                ),
+                .shortcutPin(
+                    companion.id,
+                    returnPlacement: .essential(
+                        profileId: scenario.profileID,
+                        index: 1
+                    )
+                ),
+            ],
+            layoutKind: .vertical,
+            container: .regularTabs(spaceId: scenario.sourceSpace.id)
+        ))
+        XCTAssertTrue(fixture.manager.splitGroupMutations.replaceAll(
+            expected: [scenario.group],
+            with: [scenario.group, sourceGroup],
+            persist: false
+        ))
+
+        var runtimeWindowPersistenceCount = 0
+        var profileExecutionCount = 0
+        let profile = Profile(id: scenario.profileID, name: "Profile")
+        fixture.manager.runtimePortsAttachmentOwner.attach(
+            TestRuntimePorts.make(
+                currentProfileId: { scenario.profileID },
+                defaultProfileId: { scenario.profileID },
+                profileExists: { $0 == scenario.profileID },
+                profile: { $0 == profile.id ? profile : nil },
+                windowState: {
+                    $0 == fixture.window.id ? fixture.window : nil
+                },
+                windows: { [(fixture.window.id, fixture.window)] },
+                windowStates: { [fixture.window] },
+                webViewLifecycle: TestRuntimePorts.webViewLifecycle(
+                    retirement: .rejecting,
+                    executeProfileAssignment: { tab, _, intent in
+                        profileExecutionCount += 1
+                        return tab.profileAssignment.commit(intent)
+                            ? .committed
+                            : .stale
+                    }
+                ),
+                persistWindowSession: { _ in
+                    runtimeWindowPersistenceCount += 1
+                }
+            )
+        )
+        let companionEntry = try XCTUnwrap(
+            fixture.manager.liveShortcutTabs.entry(containing: companionTab)
+        )
+        let profileRevision = companionTab.profileAssignment.changeRevision
+        var structuralEvents = 0
+        let cancellable = fixture.manager.tabStructureEventBus
+            .structureChangedPublisher.sink { structuralEvents += 1 }
+        structuralEvents = 0
+
+        XCTAssertTrue(fixture.emptyPlaceholders.replace(
+            with: scenario.liveTab,
+            in: fixture.window
+        ))
+
+        XCTAssertNil(fixture.manager.splitGroupStore.group(id: sourceGroup.id))
+        XCTAssertNil(fixture.manager.splitGroupStore.group(
+            containing: .shortcutPin(companion.id)
+        ))
+        XCTAssertIdentical(
+            fixture.manager.shortcutPinCollectionStateOwner
+                .shortcutPin(by: companion.id),
+            companion
+        )
+        XCTAssertTrue(
+            fixture.manager.liveShortcutTabs.entry(containing: companionTab)?
+                .isIdentical(to: companionEntry) == true
+        )
+        XCTAssertEqual(
+            companionTab.profileAssignment.changeRevision,
+            profileRevision
+        )
+        XCTAssertFalse(companionTab.profileAssignment.hasUnsettledAssignment)
+        XCTAssertEqual(profileExecutionCount, 0)
+        XCTAssertEqual(runtimeWindowPersistenceCount, 0)
+        XCTAssertEqual(structuralEvents, 1)
+        _ = cancellable
+    }
+
+    func testLateShortcutDriftRollsBackStagedPlaceholderWithoutEffects() throws {
+        let scenario = try makeShortcutPlaceholderFixture()
+        let fixture = scenario.fixture
+        var events = 0
+        let cancellable = fixture.manager.tabStructureEventBus
+            .structureChangedPublisher.sink { events += 1 }
+        events = 0
+        let revision = fixture.manager.structuralLookupCoordinator
+            .mutationRevision
+        let dirtySet = fixture.manager.structuralPersistence.dirtySet
+        let persistenceSchedulingRevision = fixture.manager
+            .structuralPersistence.schedulingRevision
+        let currentTabID = fixture.window.currentTabId
+        let currentSpaceID = fixture.window.currentSpaceId
+        let currentShortcutPinID = fixture.window.currentShortcutPinId
+        let currentShortcutPinRole = fixture.window.currentShortcutPinRole
+        let splitSelection = fixture.window.splitSelection
+
+        let accepted = fixture.manager.shortcutPresentationActivation
+            .commitActivation(
+                scenario.liveTab,
+                in: fixture.window.id,
+                presentationSpaceID: scenario.targetSpace.id
+            ) { admitted in
+                guard let terminal = fixture.emptyPlaceholders
+                    .prepareReplacementCommit(
+                        with: admitted,
+                        in: fixture.window
+                    ) else { return nil }
+                scenario.pin.title = "Drifted"
+                return terminal
+            }
+
+        XCTAssertFalse(accepted)
+        XCTAssertEqual(fixture.manager.splitGroupStore.groups, [scenario.group])
+        XCTAssertNotNil(
+            fixture.manager.tabCollectionMembershipOwner.tab(
+                for: scenario.placeholderTabID
+            )
+        )
+        XCTAssertEqual(
+            fixture.manager.liveShortcutTabs.entry(containing: scenario.liveTab)?
+                .presentationPage,
+            scenario.sourcePage
+        )
+        XCTAssertEqual(events, 0)
+        XCTAssertEqual(
+            fixture.manager.structuralLookupCoordinator.mutationRevision,
+            revision
+        )
+        XCTAssertEqual(
+            fixture.manager.structuralPersistence.dirtySet,
+            dirtySet
+        )
+        XCTAssertEqual(
+            fixture.manager.structuralPersistence.schedulingRevision,
+            persistenceSchedulingRevision
+        )
+        XCTAssertEqual(fixture.window.currentTabId, currentTabID)
+        XCTAssertEqual(fixture.window.currentSpaceId, currentSpaceID)
+        XCTAssertEqual(
+            fixture.window.currentShortcutPinId,
+            currentShortcutPinID
+        )
+        XCTAssertEqual(
+            fixture.window.currentShortcutPinRole,
+            currentShortcutPinRole
+        )
+        XCTAssertEqual(fixture.window.splitSelection, splitSelection)
+
+        scenario.pin.title = "Essential"
+        XCTAssertTrue(fixture.emptyPlaceholders.replace(
+            with: scenario.liveTab,
+            in: fixture.window
+        ))
+        _ = cancellable
+    }
+}
+
+private final class EmptySplitLifecycleNotificationRecorder:
+    @unchecked Sendable {
+    private let lock = NSLock()
+    private var notificationCount = 0
+    private var observer: NSObjectProtocol?
+
+    @MainActor
+    init(tab: Tab) {
+        observer = NotificationCenter.default.addObserver(
+            forName: .sumiTabLifecycleDidChange,
+            object: tab,
+            queue: nil
+        ) { [weak self] _ in
+            self?.lock.withLock {
+                self?.notificationCount += 1
+            }
+        }
+    }
+
+    deinit {
+        if let observer {
+            NotificationCenter.default.removeObserver(observer)
+        }
+    }
+
+    var count: Int {
+        lock.withLock { notificationCount }
+    }
 }
 
 @MainActor
@@ -198,6 +722,19 @@ private extension SplitInsertionServiceTests {
         let incomingTab: Tab
         let insertion: SplitInsertionService
         let emptyPlaceholders: EmptySplitService
+        let splitUpdates: SplitWindowUpdateStream
+    }
+
+    struct ShortcutPlaceholderFixture {
+        let fixture: Fixture
+        let profileID: UUID
+        let sourceSpace: Space
+        let targetSpace: Space
+        let group: SplitGroup
+        let placeholderTabID: UUID
+        let pin: ShortcutPin
+        let liveTab: Tab
+        let sourcePage: LiveShortcutPresentationPageReceipt
     }
 
     func makeFixture() throws -> Fixture {
@@ -231,8 +768,9 @@ private extension SplitInsertionServiceTests {
         }
         let members = SplitRuntimeMemberResolver(tabManager: tabManager)
         let launcherPlacement = ShortcutSplitLauncherPlacementService(
-            tabManager: tabManager
+            tabManager: manager
         )
+        let updateChannel = SplitWindowUpdateStream.makeChannel()
         let presentations = WindowSplitPresentationSynchronizer(
             tabManager: tabManager,
             windows: { [window] },
@@ -244,26 +782,45 @@ private extension SplitInsertionServiceTests {
                     rememberSelection: true
                 )
             },
+            publishPreparedSelectionEffects: { _, _, _, _ in
+                /* The fixture observes its structural update channel. */
+            },
+            publishWindowChange: { [emitter = updateChannel.emitter] windowID in
+                emitter.publish(windowID: windowID)
+            },
             refreshCompositor: { _ in },
             scheduleWindowSession: { _ in },
             persistWindowSession: { _ in }
+        )
+        let placeholderRetirement = EmptySplitPlaceholderRetirementService(
+            regularTabs: manager.regularTabCollectionOwner,
+            selection: manager.selectionStateOwner,
+            structuralLookup: manager.structuralLookupCoordinator,
+            persistence: manager.structuralPersistence,
+            runtimeConnection: manager.runtimePortConnection,
+            runtimeCleanup: RegularTabClosureRuntimeCleanup(
+                membership: manager.tabCollectionMembershipOwner
+            )
+        )
+        let placeholderReplacements = SplitPlaceholderReplacementPlanner(
+            query: SplitPlaceholderReplacementQuery(
+                regularTabs: manager.regularTabCollectionOwner,
+                splitGroups: manager.splitGroupStore,
+                membership: manager.splitGroupMembership,
+                liveShortcuts: manager.liveShortcutTabs,
+                members: members
+            ),
+            launcher: launcherPlacement,
+            splitMutations: manager.splitGroupMutations,
+            retirement: placeholderRetirement,
+            presentations: presentations
         )
         let drops = SplitDropService(
             tabManager: tabManager,
             memberResolver: members,
             launcherPlacement: launcherPlacement,
-            reconcileAfterCommit: { effect in
-                presentations.synchronize(
-                    previousGroups: effect.previousGroups,
-                    affectedGroupIDs: effect.affectedGroupIDs,
-                    preferredSelections: [
-                        effect.callerWindowID: WindowSplitSelection(
-                            groupID: effect.targetGroupID,
-                            activeMemberID: effect.preferredActiveMemberID
-                        )
-                    ]
-                )
-            },
+            placeholderReplacements: placeholderReplacements,
+            presentations: presentations,
             notifyLimit: { _ in }
         )
         let insertion = SplitInsertionService(
@@ -275,10 +832,21 @@ private extension SplitInsertionServiceTests {
             drops: drops
         )
         let emptyPlaceholders = EmptySplitService(
-            tabManager: tabManager,
-            currentTab: currentTabInWindow,
-            memberResolver: members,
-            dropService: drops
+            placeholders: EmptySplitPlaceholderFactory(
+                spaces: manager.spaceStateOwner,
+                regularTabs: manager.regularTabLifecycleOwner,
+                retirement: placeholderRetirement,
+                structuralTransactions: manager.structuralLookupCoordinator,
+                terminalMutations: manager.structuralCollectionMutationOwner
+            ),
+            insertion: insertion,
+            activations: manager.shortcutPresentationActivation,
+            session: EmptySplitSession(
+                replacements: drops,
+                structuralTransactions: manager.structuralLookupCoordinator,
+                terminalMutations: manager.structuralCollectionMutationOwner,
+                placeholderRetirement: placeholderRetirement
+            )
         )
         return Fixture(
             manager: manager,
@@ -287,7 +855,81 @@ private extension SplitInsertionServiceTests {
             currentTab: currentTab,
             incomingTab: incomingTab,
             insertion: insertion,
-            emptyPlaceholders: emptyPlaceholders
+            emptyPlaceholders: emptyPlaceholders,
+            splitUpdates: updateChannel.stream
+        )
+    }
+
+    func makeShortcutPlaceholderFixture() throws
+        -> ShortcutPlaceholderFixture {
+        let fixture = try makeFixture()
+        let profileID = UUID()
+        let sourceSpace = fixture.manager.spaceServices.catalog.createSpace(
+            name: "Source",
+            profileId: profileID
+        )
+        let targetSpace = fixture.manager.spaceServices.catalog.createSpace(
+            name: "Target",
+            profileId: profileID
+        )
+        let targetRegularTab = fixture.manager.regularTabLifecycleOwner
+            .createNewTab(
+                url: "https://target.example",
+                in: targetSpace,
+                activate: false
+            )
+        fixture.window.currentSpaceId = targetSpace.id
+        fixture.window.currentTabId = targetRegularTab.id
+        XCTAssertTrue(fixture.emptyPlaceholders.create(
+            side: .right,
+            in: fixture.window
+        ))
+        let group = try XCTUnwrap(
+            fixture.manager.splitGroupStore.group(
+                containing: .regularTab(targetRegularTab.id)
+            )
+        )
+        let placeholderTabID = try XCTUnwrap(
+            group.memberIDs.compactMap { memberID -> UUID? in
+                guard case .regularTab(let tabID) = memberID,
+                      tabID != targetRegularTab.id else { return nil }
+                return tabID
+            }.first
+        )
+        let pin = ShortcutPin(
+            id: UUID(),
+            role: .essential,
+            profileId: profileID,
+            index: 0,
+            launchURL: URL(string: "https://essential.example")!,
+            title: "Essential"
+        )
+        fixture.manager.shortcutPinCollectionStateOwner
+            .replacePinnedByProfile([profileID: [pin]])
+        let liveTab = Tab(loadsCachedFaviconOnInit: false)
+        liveTab.bindToShortcutPin(pin)
+        liveTab.profileId = profileID
+        let sourcePage = LiveShortcutPresentationPageReceipt(
+            windowID: fixture.window.id,
+            spaceID: sourceSpace.id,
+            profileID: profileID
+        )
+        XCTAssertTrue(fixture.manager.liveShortcutTabs.register(
+            liveTab,
+            for: pin.id,
+            in: fixture.window.id,
+            presentationPage: sourcePage
+        ))
+        return ShortcutPlaceholderFixture(
+            fixture: fixture,
+            profileID: profileID,
+            sourceSpace: sourceSpace,
+            targetSpace: targetSpace,
+            group: group,
+            placeholderTabID: placeholderTabID,
+            pin: pin,
+            liveTab: liveTab,
+            sourcePage: sourcePage
         )
     }
 }

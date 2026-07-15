@@ -104,11 +104,17 @@ struct ExtensionActionPresentationContext {
     }
 
     func pinToToolbar(extensionId: String) {
-        browserContext.extensionsModule.pinToToolbar(extensionId)
+        browserContext.extensionsModule.pinToToolbar(
+            extensionId,
+            profileId: profileId
+        )
     }
 
     func unpinFromToolbar(extensionId: String) {
-        browserContext.extensionsModule.unpinFromToolbar(extensionId)
+        browserContext.extensionsModule.unpinFromToolbar(
+            extensionId,
+            profileId: profileId
+        )
     }
 
     func openOptionsPage(

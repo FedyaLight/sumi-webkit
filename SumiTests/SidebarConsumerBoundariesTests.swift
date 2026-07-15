@@ -119,10 +119,10 @@ final class SidebarConsumerBoundariesTests: XCTestCase {
         tabManager.shortcutPinCollectionStateOwner.replaceSpacePinnedShortcuts([
             space.id: [moving, existing],
         ])
-        var runtimeIsAlive = true
+        let runtime = SidebarRuntimeAvailabilityOracle()
         let roles = SidebarConsumerTestSupport.roles(
             tabManager: tabManager,
-            runtimeIsAlive: { runtimeIsAlive }
+            runtimeIsAlive: { runtime.isAlive }
         )
 
         XCTAssertTrue(roles.pinCommands.move(moving, toFolder: folder.id))
@@ -132,7 +132,7 @@ final class SidebarConsumerBoundariesTests: XCTestCase {
         XCTAssertEqual(moved.folderId, folder.id)
         XCTAssertEqual(moved.index, 1)
 
-        runtimeIsAlive = false
+        runtime.isAlive = false
         XCTAssertFalse(roles.pinCommands.remove(moved))
         XCTAssertNotNil(
             tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: moved.id)
@@ -145,10 +145,10 @@ final class SidebarConsumerBoundariesTests: XCTestCase {
         let second = Space(name: "Second")
         tabManager.spaceStateOwner.replaceSpaces([first, second])
         tabManager.spaceStateOwner.replaceCurrentSpace(first)
-        var runtimeIsAlive = true
+        let runtime = SidebarRuntimeAvailabilityOracle()
         let lifecycle = SidebarConsumerTestSupport.roles(
             tabManager: tabManager,
-            runtimeIsAlive: { runtimeIsAlive }
+            runtimeIsAlive: { runtime.isAlive }
         ).lifecycle
         var catalogChanges = 0
         let catalogCancellable = tabManager.tabStructureEventBus
@@ -162,7 +162,7 @@ final class SidebarConsumerBoundariesTests: XCTestCase {
         XCTAssertEqual(tabManager.spaceStateOwner.spaces.map(\.id), [second.id, first.id])
         XCTAssertEqual(catalogChanges, 2)
 
-        runtimeIsAlive = false
+        runtime.isAlive = false
         XCTAssertNil(lifecycle.createSpace(name: "Rejected", icon: "", profileID: nil))
         XCTAssertFalse(lifecycle.reorderSpace(first.id, to: 0))
         XCTAssertThrowsError(try lifecycle.renameSpace(first.id, to: "Rejected"))
@@ -212,9 +212,9 @@ final class SidebarConsumerBoundariesTests: XCTestCase {
         XCTAssertEqual(model?.snapshot, 8)
         XCTAssertEqual(probe.subscriptions, 2)
 
-        weak var releasedModel = model
+        let releasedModel = WeakTestReference(model)
         model = nil
-        XCTAssertNil(releasedModel)
+        XCTAssertNil(releasedModel.value)
         XCTAssertEqual(probe.cancellations, 2)
     }
 
@@ -546,6 +546,11 @@ final class SidebarConsumerBoundariesTests: XCTestCase {
             canGoForward: false
         )
     }
+}
+
+@MainActor
+private final class SidebarRuntimeAvailabilityOracle {
+    var isAlive = true
 }
 
 @MainActor

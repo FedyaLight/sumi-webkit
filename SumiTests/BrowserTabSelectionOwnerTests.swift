@@ -177,6 +177,68 @@ final class BrowserTabSelectionOwnerTests: XCTestCase {
         XCTAssertTrue(probe.events.contains("workspaceTheme:true"))
     }
 
+    func testPreparedSelectionPublishesOnlyTerminalEffects() {
+        let owner = BrowserTabSelectionOwner()
+        let previousSpaceID = UUID()
+        let space = Space(id: UUID(), name: "Prepared")
+        let previousTab = makeTab(spaceId: previousSpaceID)
+        let selectedTab = makeTab(spaceId: space.id)
+        let windowState = BrowserWindowState()
+        windowState.currentTabId = selectedTab.id
+        windowState.currentSpaceId = space.id
+        let probe = ActionProbe(activeWindowId: windowState.id)
+
+        let outcome = owner.publishPreparedSelectionEffects(
+            selectedTab,
+            in: windowState,
+            previousTabID: previousTab.id,
+            previousSpaceID: previousSpaceID,
+            actions: makeActions(
+                probe: probe,
+                space: space,
+                tabsById: [
+                    previousTab.id: previousTab,
+                    selectedTab.id: selectedTab,
+                ]
+            )
+        )
+
+        XCTAssertEqual(outcome, .committed)
+        XCTAssertFalse(probe.events.contains("splitSelection"))
+        XCTAssertFalse(probe.events.contains("persistWindowSession"))
+        XCTAssertTrue(probe.events.contains("workspaceTheme:true"))
+        XCTAssertTrue(probe.events.contains("refreshCompositor"))
+        XCTAssertTrue(
+            probe.events.contains(
+                "notifyActivated:\(previousTab.id.uuidString)"
+            )
+        )
+    }
+
+    func testPreparedSelectionRejectsStalePhysicalTabWitness() {
+        let owner = BrowserTabSelectionOwner()
+        let tabID = UUID()
+        let staleTab = makeTab(id: tabID, spaceId: nil)
+        let currentTab = makeTab(id: tabID, spaceId: nil)
+        let windowState = BrowserWindowState()
+        windowState.currentTabId = tabID
+        let probe = ActionProbe(activeWindowId: windowState.id)
+
+        let outcome = owner.publishPreparedSelectionEffects(
+            staleTab,
+            in: windowState,
+            previousTabID: nil,
+            previousSpaceID: nil,
+            actions: makeActions(
+                probe: probe,
+                tabsById: [tabID: currentTab]
+            )
+        )
+
+        XCTAssertEqual(outcome, .rejected)
+        XCTAssertTrue(probe.events.isEmpty)
+    }
+
     func testShortcutSyncTracksCurrentLiveShortcutTab() {
         let owner = BrowserTabSelectionOwner()
         let spaceId = UUID()

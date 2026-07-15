@@ -13,6 +13,7 @@ final class TabStartupStateReset {
     private let splitGroupStore: SplitGroupStore
     private let splitGroupMutations: SplitGroupMutationService
     private let liveShortcutTabs: LiveShortcutTabRegistry
+    private let liveShortcutRetirement: LiveShortcutTabBatchRetirement
     private let runtimePorts: () -> RuntimePortRegistry?
     private let runtimeTeardown: TabRuntimeTeardownService
 
@@ -25,6 +26,7 @@ final class TabStartupStateReset {
         splitGroupStore: SplitGroupStore,
         splitGroupMutations: SplitGroupMutationService,
         liveShortcutTabs: LiveShortcutTabRegistry,
+        liveShortcutRetirement: LiveShortcutTabBatchRetirement,
         runtimePorts: @escaping () -> RuntimePortRegistry?,
         runtimeTeardown: TabRuntimeTeardownService
     ) {
@@ -36,6 +38,7 @@ final class TabStartupStateReset {
         self.splitGroupStore = splitGroupStore
         self.splitGroupMutations = splitGroupMutations
         self.liveShortcutTabs = liveShortcutTabs
+        self.liveShortcutRetirement = liveShortcutRetirement
         self.runtimePorts = runtimePorts
         self.runtimeTeardown = runtimeTeardown
     }
@@ -84,7 +87,7 @@ final class TabStartupStateReset {
                     "Startup reset lost its exact split-group snapshot"
                 )
             }
-            liveShortcutTabs.removeAll()
+            _ = liveShortcutRetirement.removeAll()
 
             for space in state.spaces.spaces {
                 structuralMutations.setTabs([], for: space.id)

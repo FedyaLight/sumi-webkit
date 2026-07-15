@@ -5,6 +5,268 @@ import XCTest
 
 @MainActor
 final class WebViewReplacementSettlementServiceTests: XCTestCase {
+    func testTerminalModelClaimPrecedesPhysicalRetirementAndCompletion() async {
+        let fixture = makeOneWindowFixture()
+        let recorder = RetirementRuntimeRecorder(repository: fixture.repository)
+        var events: [String] = []
+        recorder.willRetireCommitted = { events.append("physical") }
+        let owner = recorder.makeOwner()
+        let receipt = start(
+            owner,
+            lease: fixture.lease,
+            tabIDs: [fixture.tabID],
+            retired: [fixture.tabID: fixture.retired],
+            requirements: [
+                .init(webView: fixture.replacement, semanticRevision: 1),
+            ],
+            stagedModelIsExact: {
+                events.append("model-exact")
+                return true
+            },
+            canClaimTerminalModel: {
+                events.append("claim-valid")
+                return true
+            },
+            claimTerminalModel: {
+                XCTAssertNil(fixture.repository.residence(of: fixture.oldWebView))
+                XCTAssertIdentical(
+                    fixture.repository.webView(
+                        for: fixture.tabID,
+                        in: fixture.windowID
+                    ),
+                    fixture.replacement
+                )
+                events.append("model-sealed")
+                return .sealed
+            },
+            completion: { _ in events.append("completion") }
+        )
+        let token = try! XCTUnwrap(
+            receipt.bindingToken(for: fixture.replacement)
+        )
+
+        XCTAssertEqual(
+            owner.markBound(
+                token,
+                binding: binding(for: fixture.replacement, revision: 1)
+            ),
+            .committed
+        )
+        XCTAssertEqual(
+            events,
+            [
+                "model-exact",
+                "claim-valid",
+                "model-sealed",
+                "physical",
+                "completion",
+            ]
+        )
+        let outcome = await receipt.waitForSettlement()
+        XCTAssertEqual(outcome, .committed)
+    }
+
+    func testTerminalDrainDuringModelClaimUsesLeaseLossOwnershipPath() async {
+        let fixture = makeOneWindowFixture()
+        let recorder = RetirementRuntimeRecorder(repository: fixture.repository)
+        let owner = recorder.makeOwner()
+        var completions: [WebViewReplacementTransactionOutcome] = []
+        let receipt = start(
+            owner,
+            lease: fixture.lease,
+            tabIDs: [fixture.tabID],
+            retired: [fixture.tabID: fixture.retired],
+            requirements: [
+                .init(webView: fixture.replacement, semanticRevision: 2),
+            ],
+            claimTerminalModel: { .terminallyDrained },
+            completion: { completions.append($0) }
+        )
+        let token = try! XCTUnwrap(
+            receipt.bindingToken(for: fixture.replacement)
+        )
+
+        XCTAssertEqual(
+            owner.markBound(
+                token,
+                binding: binding(for: fixture.replacement, revision: 2)
+            ),
+            .leaseLost
+        )
+        XCTAssertEqual(recorder.commitCallCount, 1)
+        XCTAssertEqual(recorder.retiredCommits.count, 1)
+        XCTAssertEqual(completions, [.leaseLost])
+        let outcome = await receipt.waitForSettlement()
+        XCTAssertEqual(outcome, .leaseLost)
+    }
+
+    func testTerminalResetDuringCommittedRetirementAbandonsButDestroysOnce()
+        async {
+        let fixture = makeOneWindowFixture()
+        let recorder = RetirementRuntimeRecorder(repository: fixture.repository)
+        var owner: WebViewReplacementSettlementService!
+        owner = recorder.makeOwner()
+        recorder.willRetireCommitted = { owner.resetForTerminalShutdown() }
+        var completions: [WebViewReplacementTransactionOutcome] = []
+        let receipt = start(
+            owner,
+            lease: fixture.lease,
+            tabIDs: [fixture.tabID],
+            retired: [fixture.tabID: fixture.retired],
+            requirements: [
+                .init(webView: fixture.replacement, semanticRevision: 23),
+            ],
+            completion: { completions.append($0) }
+        )
+        let token = try! XCTUnwrap(
+            receipt.bindingToken(for: fixture.replacement)
+        )
+
+        XCTAssertEqual(
+            owner.markBound(
+                token,
+                binding: binding(for: fixture.replacement, revision: 23)
+            ),
+            .leaseLost
+        )
+        XCTAssertEqual(owner.activeTransactionCount, 0)
+        XCTAssertEqual(recorder.commitCallCount, 1)
+        XCTAssertEqual(recorder.retiredCommits.count, 1)
+        XCTAssertEqual(completions, [.abandonedForTerminalShutdown])
+        XCTAssertEqual(
+            recorder.settlements,
+            [.abandonedForTerminalShutdown(receipt.transactionID)]
+        )
+        let outcome = await receipt.waitForSettlement()
+        XCTAssertEqual(outcome, .abandonedForTerminalShutdown)
+    }
+
+    func testTerminalResetDuringQuiesceCannotReturnStartedReceipt() {
+        let fixture = makeOneWindowFixture()
+        let recorder = RetirementRuntimeRecorder(repository: fixture.repository)
+        var owner: WebViewReplacementSettlementService!
+        owner = recorder.makeOwner()
+        var drained: [WebViewTerminalCleanupEntry] = []
+        recorder.willQuiesce = {
+            drained = fixture.repository.takeAllWebViewsForTerminalShutdown()
+            owner.resetForTerminalShutdown()
+        }
+        var completionOutcomes: [WebViewReplacementTransactionOutcome] = []
+        var terminalDrainCount = 0
+        let model = WebViewReplacementModelParticipant.transaction(
+            TestWebViewReplacementModelTransaction(
+                stagedModelIsExact: { true },
+                canClaimTerminalModel: { true },
+                claimTerminalModel: { .sealed },
+                rollback: {},
+                settleTerminalDrain: { terminalDrainCount += 1 }
+            )
+        )
+
+        let result = owner.start(
+            lease: fixture.lease,
+            tabIDs: [fixture.tabID],
+            profileIDs: [],
+            retired: [fixture.tabID: fixture.retired],
+            requiredBindings: [
+                .init(webView: fixture.replacement, semanticRevision: 24),
+            ],
+            model: model,
+            completion: { completionOutcomes.append($0) }
+        )
+
+        guard case .leaseLost(let transactionID) = result else {
+            return XCTFail("Reentrant terminal reset cannot return started")
+        }
+        XCTAssertEqual(owner.activeTransactionCount, 0)
+        XCTAssertEqual(terminalDrainCount, 1)
+        XCTAssertEqual(completionOutcomes, [.abandonedForTerminalShutdown])
+        XCTAssertEqual(
+            Set(drained.map { ObjectIdentifier($0.webView) }),
+            Set(
+                [fixture.oldWebView, fixture.replacement]
+                    .map(ObjectIdentifier.init)
+            )
+        )
+        XCTAssertEqual(
+            recorder.settlements,
+            [.abandonedForTerminalShutdown(transactionID)]
+        )
+    }
+
+    func testStagedModelDriftConflictsWithoutRepositoryOrModelRollback() async {
+        let fixture = makeOneWindowFixture()
+        let recorder = RetirementRuntimeRecorder(repository: fixture.repository)
+        let owner = recorder.makeOwner()
+        let receipt = start(
+            owner,
+            lease: fixture.lease,
+            tabIDs: [fixture.tabID],
+            retired: [fixture.tabID: fixture.retired],
+            requirements: [
+                .init(webView: fixture.replacement, semanticRevision: 3),
+            ],
+            stagedModelIsExact: { false }
+        )
+        let token = try! XCTUnwrap(
+            receipt.bindingToken(for: fixture.replacement)
+        )
+
+        XCTAssertEqual(
+            owner.markBound(
+                token,
+                binding: binding(for: fixture.replacement, revision: 3)
+            ),
+            .conflicted
+        )
+        XCTAssertEqual(recorder.commitCallCount, 0)
+        XCTAssertEqual(recorder.rollbackCallCount, 0)
+        XCTAssertEqual(owner.activeTransactionCount, 1)
+        guard case .retiring = fixture.repository.residence(
+            of: fixture.oldWebView
+        ) else { return XCTFail("Conflicted predecessor must stay quarantined") }
+        let outcome = await receipt.waitForSettlement()
+        XCTAssertEqual(outcome, .conflicted)
+    }
+
+    func testRuntimeClaimRejectionRollsBackBeforeRepositoryCommit() async {
+        let fixture = makeOneWindowFixture()
+        let recorder = RetirementRuntimeRecorder(repository: fixture.repository)
+        let owner = recorder.makeOwner()
+        let receipt = start(
+            owner,
+            lease: fixture.lease,
+            tabIDs: [fixture.tabID],
+            retired: [fixture.tabID: fixture.retired],
+            requirements: [
+                .init(webView: fixture.replacement, semanticRevision: 4),
+            ],
+            canClaimTerminalModel: { false }
+        )
+        let token = try! XCTUnwrap(
+            receipt.bindingToken(for: fixture.replacement)
+        )
+
+        XCTAssertEqual(
+            owner.markBound(
+                token,
+                binding: binding(for: fixture.replacement, revision: 4)
+            ),
+            .rolledBack(.commitValidationFailed)
+        )
+        XCTAssertEqual(recorder.commitCallCount, 0)
+        XCTAssertEqual(recorder.rollbackCallCount, 1)
+        XCTAssertIdentical(
+            fixture.repository.webView(
+                for: fixture.tabID,
+                in: fixture.windowID
+            ),
+            fixture.oldWebView
+        )
+        let outcome = await receipt.waitForSettlement()
+        XCTAssertEqual(outcome, .rolledBack(.commitValidationFailed))
+    }
+
     func testPartialBindingDoesNotCommitUntilEveryExactReplacementIsSubmitted() async {
         let fixture = makeTwoWindowFixture()
         let recorder = RetirementRuntimeRecorder(repository: fixture.repository)
@@ -173,6 +435,75 @@ final class WebViewReplacementSettlementServiceTests: XCTestCase {
         XCTAssertEqual(recorder.restorations.count, 1)
     }
 
+    func testTimeoutWithModelDriftQuarantinesWithoutRollback() async {
+        let fixture = makeOneWindowFixture()
+        let timeoutGate = RetirementTestGate()
+        let recorder = RetirementRuntimeRecorder(repository: fixture.repository)
+        let owner = recorder.makeOwner(waitForTimeout: {
+            await timeoutGate.wait()
+        })
+        var modelRollbackCount = 0
+        let receipt = start(
+            owner,
+            lease: fixture.lease,
+            tabIDs: [fixture.tabID],
+            retired: [fixture.tabID: fixture.retired],
+            requirements: [
+                .init(webView: fixture.replacement, semanticRevision: 51),
+            ],
+            stagedModelIsExact: { false },
+            modelRollback: { modelRollbackCount += 1 }
+        )
+        await waitUntil { timeoutGate.hasWaiter }
+
+        timeoutGate.open()
+        let outcome = await receipt.waitForSettlement()
+        XCTAssertEqual(outcome, .conflicted)
+        XCTAssertEqual(modelRollbackCount, 0)
+        XCTAssertEqual(recorder.rollbackCallCount, 0)
+        XCTAssertEqual(recorder.restorations.count, 0)
+        XCTAssertEqual(owner.activeTransactionCount, 1)
+        guard case .retiring = fixture.repository.residence(
+            of: fixture.oldWebView
+        ) else { return XCTFail("Drifted predecessor must stay quarantined") }
+        XCTAssertIdentical(
+            fixture.repository.webView(
+                for: fixture.tabID,
+                in: fixture.windowID
+            ),
+            fixture.replacement
+        )
+    }
+
+    func testAbortWithModelDriftQuarantinesWithoutRollback() async {
+        let fixture = makeOneWindowFixture()
+        let recorder = RetirementRuntimeRecorder(repository: fixture.repository)
+        let owner = recorder.makeOwner()
+        var modelRollbackCount = 0
+        let receipt = start(
+            owner,
+            lease: fixture.lease,
+            tabIDs: [fixture.tabID],
+            retired: [fixture.tabID: fixture.retired],
+            requirements: [
+                .init(webView: fixture.replacement, semanticRevision: 52),
+            ],
+            stagedModelIsExact: { false },
+            modelRollback: { modelRollbackCount += 1 }
+        )
+
+        XCTAssertEqual(
+            owner.abortForTabs([fixture.tabID], reason: .explicit),
+            0
+        )
+        let outcome = await receipt.waitForSettlement()
+        XCTAssertEqual(outcome, .conflicted)
+        XCTAssertEqual(modelRollbackCount, 0)
+        XCTAssertEqual(recorder.rollbackCallCount, 0)
+        XCTAssertEqual(recorder.restorations.count, 0)
+        XCTAssertEqual(owner.activeTransactionCount, 1)
+    }
+
     func testFailedCommitValidationRollsBackBeforeRepositoryCommit() async {
         let fixture = makeOneWindowFixture()
         let recorder = RetirementRuntimeRecorder(repository: fixture.repository)
@@ -219,6 +550,36 @@ final class WebViewReplacementSettlementServiceTests: XCTestCase {
         XCTAssertNil(fixture.repository.residence(of: fixture.replacement))
         let outcome = await receipt.waitForSettlement()
         XCTAssertEqual(outcome, .rolledBack(.commitValidationFailed))
+    }
+
+    func testTerminalDrainDuringRollbackReportsLeaseLossWithoutCleanup()
+        async {
+        let fixture = makeOneWindowFixture()
+        let recorder = RetirementRuntimeRecorder(repository: fixture.repository)
+        recorder.rollbackOverride = .terminallyDrained
+        let owner = recorder.makeOwner()
+        let receipt = start(
+            owner,
+            lease: fixture.lease,
+            tabIDs: [fixture.tabID],
+            retired: [fixture.tabID: fixture.retired],
+            requirements: [
+                .init(webView: fixture.replacement, semanticRevision: 19),
+            ]
+        )
+        let token = try! XCTUnwrap(
+            receipt.bindingToken(for: fixture.replacement)
+        )
+
+        XCTAssertEqual(
+            owner.fail(token, reason: .submissionFailed),
+            .leaseLost
+        )
+        XCTAssertEqual(recorder.rollbackCallCount, 1)
+        XCTAssertTrue(recorder.restorations.isEmpty)
+        XCTAssertTrue(recorder.retiredCommits.isEmpty)
+        let outcome = await receipt.waitForSettlement()
+        XCTAssertEqual(outcome, .leaseLost)
     }
 
     func testProfileAbortRollsBackOnlyIntersectingTransaction() async {
@@ -353,6 +714,7 @@ final class WebViewReplacementSettlementServiceTests: XCTestCase {
         )
         let owner = recorder.makeOwner()
         var completionOutcomes: [WebViewReplacementTransactionOutcome] = []
+        var terminalDrainCount = 0
         let receipt = start(
             owner,
             lease: fixture.lease,
@@ -361,6 +723,7 @@ final class WebViewReplacementSettlementServiceTests: XCTestCase {
             requirements: [
                 .init(webView: fixture.replacement, semanticRevision: 9),
             ],
+            settleTerminalDrain: { terminalDrainCount += 1 },
             completion: { completionOutcomes.append($0) }
         )
         let token = try! XCTUnwrap(receipt.bindingToken(for: fixture.replacement))
@@ -384,8 +747,66 @@ final class WebViewReplacementSettlementServiceTests: XCTestCase {
         owner.resetForTerminalShutdown()
         XCTAssertEqual(owner.activeTransactionCount, 0)
         XCTAssertEqual(completionOutcomes, [.conflicted])
+        XCTAssertEqual(terminalDrainCount, 1)
         XCTAssertTrue(recorder.restorations.isEmpty)
         XCTAssertTrue(recorder.retiredCommits.isEmpty)
+    }
+
+    func testFailedAdmissionCompensationRetainsModelUntilTerminalDrain() {
+        enum ExpectedFailure: Error { case failed }
+
+        let fixture = makeOneWindowFixture()
+        let recorder = RetirementRuntimeRecorder(repository: fixture.repository)
+        let owner = recorder.makeOwner()
+        var terminalDrainCount = 0
+        let model = WebViewReplacementModelParticipant.transaction(
+            TestWebViewReplacementModelTransaction(
+                stagedModelIsExact: { true },
+                canClaimTerminalModel: { false },
+                claimTerminalModel: { .terminallyDrained },
+                rollback: {},
+                settleTerminalDrain: { terminalDrainCount += 1 }
+            )
+        )
+        guard case .modelRollbackFailed = fixture.repository
+            .rollbackReplacementBatch(
+                fixture.lease,
+                modelRollback: { throw ExpectedFailure.failed }
+            ) else {
+            return XCTFail("Expected claimed failed-compensation lease")
+        }
+
+        owner.retainConflictedAdmission(
+            lease: fixture.lease,
+            tabIDs: [fixture.tabID],
+            profileIDs: [],
+            retired: [fixture.tabID: fixture.retired],
+            model: model
+        )
+
+        XCTAssertEqual(owner.activeTransactionCount, 1)
+        XCTAssertEqual(recorder.quiesced.count, 1)
+        XCTAssertEqual(terminalDrainCount, 0)
+        XCTAssertEqual(recorder.settlements.count, 1)
+        if case .conflicted = recorder.settlements[0] {
+            // Expected retained quarantine event.
+        } else {
+            XCTFail("Expected conflicted quarantine event")
+        }
+        let drained = fixture.repository.takeAllWebViewsForTerminalShutdown()
+        XCTAssertEqual(
+            Set(drained.map { ObjectIdentifier($0.webView) }),
+            Set(
+                [fixture.oldWebView, fixture.replacement]
+                    .map(ObjectIdentifier.init)
+            )
+        )
+
+        owner.resetForTerminalShutdown()
+        XCTAssertEqual(owner.activeTransactionCount, 0)
+        XCTAssertEqual(terminalDrainCount, 1)
+        owner.resetForTerminalShutdown()
+        XCTAssertEqual(terminalDrainCount, 1)
     }
 
     func testCancelledSettlementWaitDoesNotAbandonTransaction() async {
@@ -475,7 +896,13 @@ final class WebViewReplacementSettlementServiceTests: XCTestCase {
         profileIDs: Set<UUID> = [],
         retired: [UUID: WebViewSessionSnapshot],
         requirements: [WebViewReplacementBindingRequirement],
+        stagedModelIsExact: @escaping @MainActor () -> Bool = { true },
+        canClaimTerminalModel: @escaping @MainActor () -> Bool = { true },
+        claimTerminalModel: @escaping WebViewReplacementTerminalModelClaim = {
+            .sealed
+        },
         modelRollback: @escaping WebViewReplacementModelRollback = {},
+        settleTerminalDrain: @escaping @MainActor () -> Void = {},
         completion: @escaping @MainActor (
             WebViewReplacementTransactionOutcome
         ) -> Void = { _ in }
@@ -486,7 +913,13 @@ final class WebViewReplacementSettlementServiceTests: XCTestCase {
             profileIDs: profileIDs,
             retired: retired,
             requiredBindings: requirements,
-            modelRollback: modelRollback,
+            model: .transaction(TestWebViewReplacementModelTransaction(
+                stagedModelIsExact: stagedModelIsExact,
+                canClaimTerminalModel: canClaimTerminalModel,
+                claimTerminalModel: claimTerminalModel,
+                rollback: modelRollback,
+                settleTerminalDrain: settleTerminalDrain
+            )),
             completion: completion
         )
         guard case .started(let receipt) = result else {
@@ -624,6 +1057,42 @@ final class WebViewReplacementSettlementServiceTests: XCTestCase {
 }
 
 @MainActor
+private final class TestWebViewReplacementModelTransaction:
+    WebViewReplacementModelTransaction {
+    private let exact: @MainActor () -> Bool
+    private let canClaim: @MainActor () -> Bool
+    private let claim: WebViewReplacementTerminalModelClaim
+    private let rollbackAction: WebViewReplacementModelRollback
+    private let terminalDrainAction: @MainActor () -> Void
+
+    init(
+        stagedModelIsExact: @escaping @MainActor () -> Bool,
+        canClaimTerminalModel: @escaping @MainActor () -> Bool,
+        claimTerminalModel: @escaping WebViewReplacementTerminalModelClaim,
+        rollback: @escaping WebViewReplacementModelRollback,
+        settleTerminalDrain: @escaping @MainActor () -> Void
+    ) {
+        exact = stagedModelIsExact
+        canClaim = canClaimTerminalModel
+        claim = claimTerminalModel
+        rollbackAction = rollback
+        terminalDrainAction = settleTerminalDrain
+    }
+
+    func validateForStaging() -> Bool { true }
+    func stage() throws {}
+    func stagedModelIsExact() -> Bool { exact() }
+    func canClaimTerminalModel() -> Bool { canClaim() }
+    func claimTerminalModel() -> WebViewReplacementTerminalModelClaimOutcome {
+        claim()
+    }
+    func publishCommit() {}
+    func rollback() throws { try rollbackAction() }
+    func publishRollback() {}
+    func settleTerminalDrain() { terminalDrainAction() }
+}
+
+@MainActor
 private final class RetirementRuntimeRecorder {
     struct Restoration {
         let discarded: [UUID: WebViewSessionSnapshot]
@@ -641,6 +1110,8 @@ private final class RetirementRuntimeRecorder {
     var commitOverride: WebViewReplacementBatchCommitResult?
     var rollbackOverride: WebViewReplacementBatchRollbackResult?
     var commitIsValid = true
+    var willQuiesce: (() -> Void)?
+    var willRetireCommitted: (() -> Void)?
 
     init(repository: WebViewSessionRepository) {
         self.repository = repository
@@ -671,8 +1142,14 @@ private final class RetirementRuntimeRecorder {
                             modelRollback: modelRollback
                         )
                 },
-                quiesceRetired: { [weak self] in self?.quiesced.append($0) },
-                retireCommitted: { [weak self] in self?.retiredCommits.append($0) },
+                quiesceRetired: { [weak self] retired in
+                    self?.quiesced.append(retired)
+                    self?.willQuiesce?()
+                },
+                retireCommitted: { [weak self] retired in
+                    self?.willRetireCommitted?()
+                    self?.retiredCommits.append(retired)
+                },
                 restoreAfterRollback: { [weak self] discarded, retired, reason in
                     self?.restorations.append(.init(
                         discarded: discarded,

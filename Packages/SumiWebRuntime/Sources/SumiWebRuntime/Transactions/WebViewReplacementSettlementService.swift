@@ -23,6 +23,8 @@ public final class WebViewReplacementSettlementService {
 
     private enum TransactionState {
         case awaitingBindings
+        case claimingTerminalModel
+        case retiringCommitted
         case conflicted
     }
 
@@ -33,7 +35,7 @@ public final class WebViewReplacementSettlementService {
         let profileIDs: Set<UUID>
         let retiredBeforeBegin: [UUID: WebViewSessionSnapshot]
         let requirementsByWebViewID: [ObjectIdentifier: Requirement]
-        let modelRollback: WebViewReplacementModelRollback
+        let model: WebViewReplacementModelParticipant
         let receipt: WebViewReplacementSettlementReceipt
         let completion: @MainActor (
             WebViewReplacementTransactionOutcome
@@ -49,7 +51,7 @@ public final class WebViewReplacementSettlementService {
             profileIDs: Set<UUID>,
             retiredBeforeBegin: [UUID: WebViewSessionSnapshot],
             requirementsByWebViewID: [ObjectIdentifier: Requirement],
-            modelRollback: @escaping WebViewReplacementModelRollback,
+            model: WebViewReplacementModelParticipant,
             receipt: WebViewReplacementSettlementReceipt,
             completion: @escaping @MainActor (
                 WebViewReplacementTransactionOutcome
@@ -61,7 +63,7 @@ public final class WebViewReplacementSettlementService {
             self.profileIDs = profileIDs
             self.retiredBeforeBegin = retiredBeforeBegin
             self.requirementsByWebViewID = requirementsByWebViewID
-            self.modelRollback = modelRollback
+            self.model = model
             self.receipt = receipt
             self.completion = completion
         }
@@ -102,10 +104,10 @@ public final class WebViewReplacementSettlementService {
         profileIDs: Set<UUID>,
         retired: [UUID: WebViewSessionSnapshot],
         requiredBindings: [WebViewReplacementBindingRequirement],
-        modelRollback: @escaping WebViewReplacementModelRollback,
+        model: WebViewReplacementModelParticipant,
         completion: @escaping @MainActor (
             WebViewReplacementTransactionOutcome
-        ) -> Void = { _ in }
+        ) -> Void
     ) -> WebViewReplacementSettlementStartResult {
         precondition(tabIDs.isEmpty == false)
         precondition(Set(retired.keys) == tabIDs)
@@ -152,7 +154,7 @@ public final class WebViewReplacementSettlementService {
             profileIDs: profileIDs,
             retiredBeforeBegin: retired,
             requirementsByWebViewID: requirementsByWebViewID,
-            modelRollback: modelRollback,
+            model: model,
             receipt: receipt,
             completion: completion
         )
@@ -162,6 +164,10 @@ public final class WebViewReplacementSettlementService {
         }
 
         runtime.quiesceRetired(retired)
+        guard transactionsByID[transactionID] === transaction,
+              case .awaitingBindings = transaction.state else {
+            return .leaseLost(transactionID)
+        }
         if requirementsByWebViewID.isEmpty {
             return commit(transaction)
         }
@@ -173,6 +179,57 @@ public final class WebViewReplacementSettlementService {
             _ = fail(transactionID, reason: .timedOut)
         }
         return .started(receipt)
+    }
+
+    /// Retains a failed admission whose model compensation could not complete.
+    /// The repository keeps both generations under the claimed rollback lease;
+    /// this service keeps the exact model participant until terminal drain can
+    /// settle both ownership domains together.
+    public func retainConflictedAdmission(
+        lease: WebViewReplacementBatchLease,
+        tabIDs: Set<UUID>,
+        profileIDs: Set<UUID>,
+        retired: [UUID: WebViewSessionSnapshot],
+        model: WebViewReplacementModelParticipant
+    ) {
+        precondition(tabIDs.isEmpty == false)
+        precondition(Set(retired.keys) == tabIDs)
+        precondition(
+            transactionsByID.values.contains(where: { $0.lease == lease })
+                == false,
+            "A repository replacement lease can have only one settlement owner"
+        )
+        precondition(
+            tabIDs.allSatisfy { transactionIDByTabID[$0] == nil },
+            "Overlapping replacement admissions cannot share quarantine"
+        )
+
+        let transactionID = WebViewReplacementTransactionID(rawValue: UUID())
+        let receipt = WebViewReplacementSettlementReceipt(
+            transactionID: transactionID,
+            bindingTokens: []
+        )
+        let transaction = Transaction(
+            id: transactionID,
+            lease: lease,
+            tabIDs: tabIDs,
+            profileIDs: profileIDs,
+            retiredBeforeBegin: retired,
+            requirementsByWebViewID: [:],
+            model: model,
+            receipt: receipt,
+            completion: { _ in }
+        )
+        transaction.state = .conflicted
+        transactionsByID[transactionID] = transaction
+        for tabID in tabIDs {
+            transactionIDByTabID[tabID] = transactionID
+        }
+
+        runtime.quiesceRetired(retired)
+        guard transactionsByID[transactionID] === transaction else { return }
+        complete(transaction, outcome: .conflicted)
+        runtime.observeSettlement(.conflicted(transactionID))
     }
 
     /// Accepts only the transaction nonce, exact live WebView, semantic
@@ -310,6 +367,7 @@ public final class WebViewReplacementSettlementService {
         for transaction in transactions {
             transaction.timeoutTask?.cancel()
             transaction.timeoutTask = nil
+            transaction.model.settleTerminalDrain()
             complete(transaction, outcome: .abandonedForTerminalShutdown)
             runtime.observeSettlement(
                 .abandonedForTerminalShutdown(transaction.id)
@@ -336,13 +394,51 @@ public final class WebViewReplacementSettlementService {
                 return .leaseLost(transaction.id)
             }
         }
+        guard transaction.model.stagedModelIsExact() else {
+            markConflicted(transaction)
+            return .conflicted(transaction.id)
+        }
+        guard transaction.model.canClaimTerminalModel() else {
+            let reason = WebViewReplacementRollbackReason
+                .commitValidationFailed
+            switch rollback(transaction, reason: reason) {
+            case .rolledBack:
+                return .rolledBack(transaction.id, reason)
+            case .conflicted:
+                return .conflicted(transaction.id)
+            case .leaseLost, .ignored:
+                return .leaseLost(transaction.id)
+            }
+        }
         switch runtime.commitLease(transaction.lease) {
         case .committed(let retired):
-            remove(transaction)
+            transaction.state = .claimingTerminalModel
+            let claimOutcome = transaction.model.claimTerminalModel()
+            guard transactionsByID[transaction.id] === transaction else {
+                // A reentrant terminal reset cannot own the predecessor after
+                // repository commit returned it to this settlement service.
+                runtime.retireCommitted(retired)
+                return .leaseLost(transaction.id)
+            }
+            transaction.state = .retiringCommitted
             runtime.retireCommitted(retired)
-            complete(transaction, outcome: .committed)
-            runtime.observeSettlement(.committed(transaction.id))
-            return .committed(transaction.id)
+            guard transactionsByID[transaction.id] === transaction else {
+                // Terminal reset completed the abandoned transaction while
+                // this frame still owned destruction of the committed
+                // predecessor returned by the repository.
+                return .leaseLost(transaction.id)
+            }
+            remove(transaction)
+            switch claimOutcome {
+            case .sealed:
+                complete(transaction, outcome: .committed)
+                runtime.observeSettlement(.committed(transaction.id))
+                return .committed(transaction.id)
+            case .terminallyDrained:
+                complete(transaction, outcome: .leaseLost)
+                runtime.observeSettlement(.leaseLost(transaction.id))
+                return .leaseLost(transaction.id)
+            }
         case .conflict:
             markConflicted(transaction)
             return .conflicted(transaction.id)
@@ -362,9 +458,17 @@ public final class WebViewReplacementSettlementService {
               case .awaitingBindings = transaction.state else {
             return .ignored
         }
+        // Rollback is a model write, not a harmless cleanup. If app-owned
+        // staged evidence drifted while bindings were pending, neither the
+        // repository nor the model may compensate against an alias/newer
+        // value. Keep both generations quarantined for terminal ownership.
+        guard transaction.model.stagedModelIsExact() else {
+            markConflicted(transaction)
+            return .conflicted
+        }
         switch runtime.rollbackLease(
             transaction.lease,
-            transaction.modelRollback
+            transaction.model.rollback
         ) {
         case .rolledBack(let discarded):
             remove(transaction)
@@ -376,6 +480,14 @@ public final class WebViewReplacementSettlementService {
             complete(transaction, outcome: .rolledBack(reason))
             runtime.observeSettlement(.rolledBack(transaction.id, reason))
             return .rolledBack
+        case .terminallyDrained:
+            remove(transaction)
+            complete(transaction, outcome: .leaseLost)
+            runtime.observeSettlement(.leaseLost(transaction.id))
+            return .leaseLost
+        case .modelRollbackFailed:
+            markConflicted(transaction)
+            return .conflicted
         case .conflict:
             markConflicted(transaction)
             return .conflicted

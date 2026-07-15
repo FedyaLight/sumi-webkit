@@ -697,6 +697,73 @@ final class GlanceManagerTests: XCTestCase {
         XCTAssertIdentical(browserManager.glanceManager.presentedSession(for: windowState), session)
     }
 
+    func testGlanceRestoreRelocatesCurrentShortcutSourceToCurrentPage() throws {
+        let browserManager = makeBrowserManager()
+        let profileID = UUID()
+        let sourceSpace = browserManager.tabManager.spaceServices.catalog
+            .createSpace(name: "Source", profileId: profileID)
+        let targetSpace = browserManager.tabManager.spaceServices.catalog
+            .createSpace(name: "Target", profileId: profileID)
+        let pin = ShortcutPin(
+            id: UUID(),
+            role: .essential,
+            profileId: profileID,
+            index: 0,
+            launchURL: URL(string: "https://source.example")!,
+            title: "Source"
+        )
+        browserManager.tabManager.shortcutPinCollectionStateOwner
+            .replacePinnedByProfile([profileID: [pin]])
+        let sourceTab = Tab(loadsCachedFaviconOnInit: false)
+        sourceTab.bindToShortcutPin(pin)
+        sourceTab.profileId = profileID
+        let (registry, windowState) = makeRegisteredWindow(
+            in: browserManager,
+            selecting: sourceTab
+        )
+        windowState.currentSpaceId = targetSpace.id
+        XCTAssertTrue(browserManager.tabManager.liveShortcutTabs.register(
+            sourceTab,
+            for: pin.id,
+            in: windowState.id,
+            presentationPage: LiveShortcutPresentationPageReceipt(
+                windowID: windowState.id,
+                spaceID: sourceSpace.id,
+                profileID: profileID
+            )
+        ))
+        let targetURL = URL(string: "https://destination.example")!
+
+        browserManager.glanceManager.restoreSession(
+            GlanceSessionSnapshot(
+                targetURL: targetURL,
+                currentURL: targetURL,
+                title: "Destination",
+                sourceTabId: sourceTab.id,
+                sourceShortcutPinId: pin.id,
+                sourceShortcutPinRole: pin.role,
+                originRectInWindow: nil
+            ),
+            in: windowState
+        )
+
+        XCTAssertIdentical(
+            browserManager.glanceManager.currentSession?.sourceTab,
+            sourceTab
+        )
+        XCTAssertEqual(windowState.currentTabId, sourceTab.id)
+        XCTAssertEqual(
+            browserManager.tabManager.liveShortcutTabs
+                .entry(containing: sourceTab)?.presentationPage,
+            LiveShortcutPresentationPageReceipt(
+                windowID: windowState.id,
+                spaceID: targetSpace.id,
+                profileID: profileID
+            )
+        )
+        withExtendedLifetime(registry) {}
+    }
+
     func testGlanceSessionRestoreDoesNotPresentWhenSourceTabIsMissing() {
         let browserManager = makeBrowserManager()
         browserManager.tabManager.startupRestoreLifecycle.markLoadFinished()
@@ -843,7 +910,6 @@ final class GlanceManagerTests: XCTestCase {
             hasLoadedInitialTabData: { true },
             tab: tab,
             shortcutPin: { _ in nil },
-            shortcutLiveTab: { _, _ in nil },
             activateShortcutPin: { pin, _, _ in
                 Tab(url: pin.launchURL, name: pin.title)
             },

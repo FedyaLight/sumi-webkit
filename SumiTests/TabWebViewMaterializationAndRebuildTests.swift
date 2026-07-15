@@ -1,7 +1,7 @@
 import Combine
+import SumiWebRuntime
 import WebKit
 import XCTest
-import SumiWebRuntime
 
 @testable import Sumi
 
@@ -508,25 +508,31 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
             tab.preparedConfigurationPolicyChangeSet(for: [replacement])
         )
         var destroyed: [ObjectIdentifier] = []
+        let retiredGenerationDestroyer = WebViewRetiredGenerationDestroyer(
+            runtime: .init(
+                webViewSessions: repository,
+                retireNavigationGeneration: { tabID, webViews, _ in
+                    XCTAssertEqual(tabID, tab.id)
+                    XCTAssertEqual(
+                        webViews.map(ObjectIdentifier.init),
+                        [ObjectIdentifier(replacement)]
+                    )
+                },
+                destroy: { tabID, webView in
+                    XCTAssertEqual(tabID, tab.id)
+                    destroyed.append(ObjectIdentifier(webView))
+                },
+                uninstallObservationsIfUntracked: { _ in }
+            )
+        )
         let pipeline = WebViewReplacementPipeline(runtime: .init(
             webViewSessions: repository,
             quiesce: { webView in
                 XCTAssertIdentical(webView, previous)
                 changeSet.cancel()
             },
-            retireNavigationGeneration: { tabID, webViews, _ in
-                XCTAssertEqual(tabID, tab.id)
-                XCTAssertEqual(
-                    webViews.map(ObjectIdentifier.init),
-                    [ObjectIdentifier(replacement)]
-                )
-            },
-            destroy: { tabID, webView in
-                XCTAssertEqual(tabID, tab.id)
-                destroyed.append(ObjectIdentifier(webView))
-            },
-            restore: { _, _ in },
-            uninstallObservationsIfUntracked: { _ in }
+            retiredGenerationDestroyer: retiredGenerationDestroyer,
+            restore: { _, _ in }
         ))
         let service = DetachedWebViewReplacementService(
             runtimeTabs: WebViewRuntimeTabRegistry(
@@ -769,7 +775,8 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
             .executeProfileAssignment(
             for: tab,
             targetProfile: targetProfile,
-            intent: intent
+            intent: intent,
+            settlement: { _ in }
         )
 
         XCTAssertEqual(outcome, .failed)
@@ -842,7 +849,8 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
             .executeProfileAssignment(
             for: tab,
             targetProfile: targetProfile,
-            intent: intent
+            intent: intent,
+            settlement: { _ in }
         )
 
         XCTAssertEqual(outcome, .failed)
@@ -992,9 +1000,7 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
         guard case .committed = pipeline.begin(
             [prepared],
             profileIDs: [],
-            validateModel: { true },
-            modelCommit: {},
-            modelRollback: {},
+            model: .noExternalModel,
             completion: { _ in }
         ) else {
             return XCTFail("Expected synchronous replacement commit")
@@ -1189,9 +1195,7 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
         guard case .invalid = pipeline.begin(
             [prepared],
             profileIDs: [],
-            validateModel: { true },
-            modelCommit: {},
-            modelRollback: {},
+            model: .noExternalModel,
             completion: { _ in
                 XCTFail("Invalid evidence cannot start settlement")
             }
@@ -1241,15 +1245,16 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
         guard case .invalid = pipeline.begin(
             [fixture.prepared],
             profileIDs: [],
-            validateModel: {
-                fixture.replacement.sumiPreparedConfigurationPolicyChange =
-                    newerReceipt
-                return true
-            },
-            modelCommit: {
-                modelCommitWasCalled = true
-            },
-            modelRollback: {},
+            model: .transaction(TestWebViewReplacementModelTransaction(
+                validate: {
+                    fixture.replacement.sumiPreparedConfigurationPolicyChange =
+                        newerReceipt
+                    return true
+                },
+                stage: {
+                    modelCommitWasCalled = true
+                }
+            )),
             completion: { _ in
                 XCTFail("Invalid evidence cannot start settlement")
             }
@@ -1274,38 +1279,76 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
         )
         var modelValue = "before"
         var modelRollbackCount = 0
+        var rollbackPublicationCount = 0
+        var departed: [ObjectIdentifier] = []
+        var destroyed: [ObjectIdentifier] = []
         let pipeline = replacementPipeline(
             repository: fixture.repository,
             tab: fixture.tab,
-            departureBatches: { _ in
-                XCTFail("Invalid evidence cannot retire a generation")
+            departureBatches: { webViews in
+                departed.append(contentsOf: webViews.map(ObjectIdentifier.init))
             },
-            destroy: { _ in
-                XCTFail("Invalid evidence cannot destroy a WebView")
+            destroy: { webView in
+                destroyed.append(ObjectIdentifier(webView))
             }
         )
 
-        guard case .invalid = pipeline.begin(
+        guard case .modelCommitFailed = pipeline.begin(
             [fixture.prepared],
             profileIDs: [],
-            validateModel: { true },
-            modelCommit: {
-                modelValue = "committed"
-                fixture.changeSet.cancel()
-            },
-            modelRollback: {
-                XCTAssertEqual(modelValue, "committed")
-                modelValue = "before"
-                modelRollbackCount += 1
-            },
+            model: .transaction(TestWebViewReplacementModelTransaction(
+                stage: {
+                    modelValue = "committed"
+                    fixture.changeSet.cancel()
+                },
+                rollback: {
+                    XCTAssertEqual(modelValue, "committed")
+                    XCTAssertIdentical(
+                        fixture.repository.webView(
+                            for: fixture.tab.id,
+                            in: fixture.windowID
+                        ),
+                        fixture.replacement
+                    )
+                    guard case .retiring = fixture.repository.residence(
+                        of: fixture.previous
+                    ) else {
+                        return XCTFail(
+                            "Model rollback must run inside repository lease"
+                        )
+                    }
+                    modelValue = "before"
+                    modelRollbackCount += 1
+                },
+                publishRollback: {
+                    rollbackPublicationCount += 1
+                    XCTAssertEqual(
+                        destroyed,
+                        [ObjectIdentifier(fixture.replacement)]
+                    )
+                    XCTAssertIdentical(
+                        fixture.repository.webView(
+                            for: fixture.tab.id,
+                            in: fixture.windowID
+                        ),
+                        fixture.previous
+                    )
+                    XCTAssertNil(
+                        fixture.repository.residence(of: fixture.replacement)
+                    )
+                }
+            )),
             completion: { _ in
                 XCTFail("Invalid evidence cannot start settlement")
             }
         ) else {
-            return XCTFail("Expected post-model-commit policy rejection")
+            return XCTFail("Expected compensated model-commit rejection")
         }
 
         XCTAssertEqual(modelRollbackCount, 1)
+        XCTAssertEqual(rollbackPublicationCount, 1)
+        XCTAssertEqual(departed, [ObjectIdentifier(fixture.replacement)])
+        XCTAssertEqual(destroyed, [ObjectIdentifier(fixture.replacement)])
         XCTAssertEqual(modelValue, "before")
         XCTAssertEqual(fixture.originalReceipt.phase, .cancelled)
         XCTAssertNil(
@@ -1317,6 +1360,97 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
         )
     }
 
+    func testPolicyCancellationRollbackFailureRetainsTerminalOwner()
+        throws {
+        enum ExpectedFailure: Error { case failed }
+
+        let fixture = try makePreparedPolicyReplacementFixture(
+            path: "commit-receipt-rollback-failure"
+        )
+        var modelValue = "before"
+        var modelRollbackCount = 0
+        var terminalDrainCount = 0
+        let pipeline = replacementPipeline(
+            repository: fixture.repository,
+            tab: fixture.tab,
+            departureBatches: { _ in
+                XCTFail("Quarantined generation cannot leave navigation yet")
+            },
+            destroy: { _ in
+                XCTFail("Terminal runtime owns physical shutdown")
+            }
+        )
+
+        guard case .settlementConflict = pipeline.begin(
+            [fixture.prepared],
+            profileIDs: [],
+            model: .transaction(TestWebViewReplacementModelTransaction(
+                stage: {
+                    modelValue = "staged"
+                    fixture.changeSet.cancel()
+                },
+                stagedModelIsExact: { modelValue == "staged" },
+                rollback: {
+                    modelRollbackCount += 1
+                    XCTAssertIdentical(
+                        fixture.repository.webView(
+                            for: fixture.tab.id,
+                            in: fixture.windowID
+                        ),
+                        fixture.replacement
+                    )
+                    guard case .retiring = fixture.repository.residence(
+                        of: fixture.previous
+                    ) else {
+                        return XCTFail(
+                            "Failed rollback must still own the predecessor"
+                        )
+                    }
+                    throw ExpectedFailure.failed
+                },
+                settleTerminalDrain: {
+                    modelValue = "terminal"
+                    terminalDrainCount += 1
+                }
+            )),
+            completion: { _ in
+                XCTFail("Failed admission has no public settlement receipt")
+            }
+        ) else {
+            return XCTFail("Expected retained admission quarantine")
+        }
+
+        XCTAssertEqual(modelRollbackCount, 1)
+        XCTAssertEqual(modelValue, "staged")
+        XCTAssertIdentical(
+            fixture.repository.webView(
+                for: fixture.tab.id,
+                in: fixture.windowID
+            ),
+            fixture.replacement
+        )
+        guard case .retiring = fixture.repository.residence(
+            of: fixture.previous
+        ) else {
+            return XCTFail("Predecessor must remain repository-owned")
+        }
+        XCTAssertEqual(fixture.originalReceipt.phase, .cancelled)
+
+        let drained = fixture.repository.takeAllWebViewsForTerminalShutdown()
+        XCTAssertEqual(
+            Set(drained.map { ObjectIdentifier($0.webView) }),
+            Set(
+                [fixture.previous, fixture.replacement]
+                    .map(ObjectIdentifier.init)
+            )
+        )
+        pipeline.resetForTerminalShutdown()
+        XCTAssertEqual(terminalDrainCount, 1)
+        XCTAssertEqual(modelValue, "terminal")
+        pipeline.resetForTerminalShutdown()
+        XCTAssertEqual(terminalDrainCount, 1)
+    }
+
     func testPolicyCancellationWhileAwaitingBindingRollsBackBeforeCommit()
         throws {
         let fixture = try makePreparedPolicyReplacementFixture(
@@ -1325,8 +1459,25 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
         )
         var modelValue = "before"
         var modelRollbackCount = 0
+        var rollbackPublicationCount = 0
+        let rollbackPublication = PassthroughSubject<Void, Never>()
+        var reentrantObserverCount = 0
+        var publicationObservedRestoredRepository = false
         var settlementOutcome: WebViewReplacementTransactionOutcome?
         var destroyed: [ObjectIdentifier] = []
+        let rollbackObserver = rollbackPublication.sink {
+            reentrantObserverCount += 1
+            XCTAssertEqual(modelValue, "before")
+            let restored = fixture.repository.snapshot(for: fixture.tab.id)
+            XCTAssertIdentical(
+                restored.windowWebViews[fixture.windowID],
+                fixture.previous
+            )
+            XCTAssertNil(
+                fixture.repository.residence(of: fixture.replacement)
+            )
+            publicationObservedRestoredRepository = true
+        }
         let pipeline = replacementPipeline(
             repository: fixture.repository,
             tab: fixture.tab,
@@ -1342,13 +1493,18 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
         guard case .started(let settlement) = pipeline.begin(
             [fixture.prepared],
             profileIDs: [],
-            validateModel: { true },
-            modelCommit: { modelValue = "committed" },
-            modelRollback: {
-                XCTAssertEqual(modelValue, "committed")
-                modelValue = "before"
-                modelRollbackCount += 1
-            },
+            model: .transaction(TestWebViewReplacementModelTransaction(
+                stage: { modelValue = "committed" },
+                rollback: {
+                    XCTAssertEqual(modelValue, "committed")
+                    modelValue = "before"
+                    modelRollbackCount += 1
+                },
+                publishRollback: {
+                    rollbackPublicationCount += 1
+                    rollbackPublication.send()
+                }
+            )),
             completion: { settlementOutcome = $0 }
         ), let token = settlement.bindingToken(for: fixture.replacement) else {
             return XCTFail("Expected asynchronous replacement settlement")
@@ -1374,6 +1530,9 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
             .rolledBack(.commitValidationFailed)
         )
         XCTAssertEqual(modelRollbackCount, 1)
+        XCTAssertEqual(rollbackPublicationCount, 1)
+        XCTAssertEqual(reentrantObserverCount, 1)
+        XCTAssertTrue(publicationObservedRestoredRepository)
         XCTAssertEqual(modelValue, "before")
         XCTAssertEqual(fixture.originalReceipt.phase, .cancelled)
         XCTAssertEqual(
@@ -1384,6 +1543,7 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
             fixture,
             expectsUnchangedGeneration: false
         )
+        withExtendedLifetime(rollbackObserver) {}
     }
 
     func testRolledBackReplacementDiscardsOnlyReplacementGeneration()
@@ -1504,9 +1664,7 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
         guard case .started(let receipt) = pipeline.begin(
             [prepared],
             profileIDs: [],
-            validateModel: { true },
-            modelCommit: {},
-            modelRollback: {},
+            model: .noExternalModel,
             completion: { settlementOutcome = $0 }
         ), let token = receipt.bindingToken(for: discardedReplacement) else {
             return XCTFail("Expected replacement settlement receipt")
@@ -1647,23 +1805,32 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
         departureBatches: @escaping ([WKWebView]) -> Void,
         destroy: @escaping (WKWebView) -> Void
     ) -> WebViewReplacementPipeline {
-        WebViewReplacementPipeline(runtime: .init(
+        let retiredGenerationDestroyer = WebViewRetiredGenerationDestroyer(
+            runtime: .init(
+                webViewSessions: repository,
+                retireNavigationGeneration: {
+                    tabID,
+                    webViews,
+                    preferredWebView in
+                    XCTAssertEqual(tabID, tab.id)
+                    departureBatches(webViews)
+                    tab.webViewsDidLeaveNavigationRuntime(
+                        webViews,
+                        preferredAuthorityWebView: preferredWebView
+                    )
+                },
+                destroy: { tabID, webView in
+                    XCTAssertEqual(tabID, tab.id)
+                    destroy(webView)
+                },
+                uninstallObservationsIfUntracked: { _ in }
+            )
+        )
+        return WebViewReplacementPipeline(runtime: .init(
             webViewSessions: repository,
             quiesce: { _ in },
-            retireNavigationGeneration: { tabID, webViews, preferredWebView in
-                XCTAssertEqual(tabID, tab.id)
-                departureBatches(webViews)
-                tab.webViewsDidLeaveNavigationRuntime(
-                    webViews,
-                    preferredAuthorityWebView: preferredWebView
-                )
-            },
-            destroy: { tabID, webView in
-                XCTAssertEqual(tabID, tab.id)
-                destroy(webView)
-            },
-            restore: { _, _ in },
-            uninstallObservationsIfUntracked: { _ in }
+            retiredGenerationDestroyer: retiredGenerationDestroyer,
+            restore: { _, _ in }
         ))
     }
 

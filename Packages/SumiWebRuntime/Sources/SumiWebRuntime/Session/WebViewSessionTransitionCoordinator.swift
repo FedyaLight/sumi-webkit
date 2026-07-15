@@ -48,14 +48,17 @@ final class WebViewSessionTransitionCoordinator {
     func begin(
         _ replacementEntries: [WebViewReplacementBatchEntry],
         validateModel: @MainActor () -> Bool,
-        modelCommit: @MainActor () throws -> Void
+        modelCommit: @MainActor () throws -> Void,
+        modelRollback: @MainActor () throws -> Void
     ) -> WebViewReplacementBatchBeginResult {
         let firstPreparation = prepare(replacementEntries)
         guard case .prepared = firstPreparation else {
             if case .rejected(let result) = firstPreparation { return result }
             preconditionFailure("Unreachable replacement preparation state")
         }
-        guard validateModel() else { return .modelCommitFailed }
+        guard validateModel() else {
+            return .modelValidationFailed
+        }
 
         let secondPreparation = prepare(replacementEntries)
         guard case .prepared(let prepared) = secondPreparation else {
@@ -72,15 +75,58 @@ final class WebViewSessionTransitionCoordinator {
         do {
             try modelCommit()
         } catch {
-            guard conflict(in: batch) == nil else {
-                preconditionFailure(
-                    "Model commit mutated placement during replacement"
-                )
+            guard transactions.batch(for: lease) != nil else {
+                validator.assertConsistency("replacement.modelCommitDrained")
+                return .noLongerActive
             }
-            _ = restore(batch)
-            finish(batch)
+            guard transactions.claimReplacementRollback(for: lease) != nil
+            else {
+                validator.assertConsistency(
+                    "replacement.modelCommitRollbackDrained"
+                )
+                return .noLongerActive
+            }
+            guard conflict(in: batch) == nil else {
+                validator.assertConsistency(
+                    "replacement.modelCommitRollbackConflict"
+                )
+                return .modelRollbackFailed(lease)
+            }
+            do {
+                try modelRollback()
+            } catch {
+                guard transactions.rollingBackBatch(for: lease) != nil else {
+                    validator.assertConsistency(
+                        "replacement.modelCommitRollbackDrained"
+                    )
+                    return .noLongerActive
+                }
+                validator.assertConsistency(
+                    "replacement.modelCommitRollbackFailed"
+                )
+                return .modelRollbackFailed(lease)
+            }
+            guard let current = transactions.rollingBackBatch(for: lease)
+            else {
+                validator.assertConsistency(
+                    "replacement.modelCommitRollbackDrained"
+                )
+                return .noLongerActive
+            }
+            guard conflict(in: current) == nil else {
+                validator.assertConsistency(
+                    "replacement.modelCommitRollbackConflict"
+                )
+                return .modelRollbackFailed(lease)
+            }
+            let discarded = restore(current)
+            finish(current)
             validator.assertConsistency("replacement.modelCommitFailed")
-            return .modelCommitFailed
+            return .modelCommitFailed(discarded: discarded)
+        }
+        guard transactions.batch(for: lease) != nil else {
+            validator.assertConsistency("replacement.modelCommitDrained")
+            return .noLongerActive
         }
 
         validator.assertConsistency("replacement.begin")
@@ -164,15 +210,31 @@ final class WebViewSessionTransitionCoordinator {
             )
         }
 
-        let discarded = restore(batch)
+        guard transactions.claimReplacementRollback(for: lease) != nil else {
+            return .noLongerActive
+        }
         do {
             try modelRollback()
         } catch {
-            preconditionFailure(
-                "Model rollback failed after placement restoration: \(error)"
+            guard transactions.rollingBackBatch(for: lease) != nil else {
+                validator.assertConsistency("replacement.rollbackDrained")
+                return .terminallyDrained
+            }
+            validator.assertConsistency("replacement.modelRollbackFailed")
+            return .modelRollbackFailed
+        }
+        guard let current = transactions.rollingBackBatch(for: lease) else {
+            validator.assertConsistency("replacement.rollbackDrained")
+            return .terminallyDrained
+        }
+        if let conflict = conflict(in: current) {
+            return .conflict(
+                tabID: conflict.tabID,
+                currentGeneration: conflict.currentGeneration
             )
         }
-        finish(batch)
+        let discarded = restore(current)
+        finish(current)
         validator.assertConsistency("replacement.rollback")
         return .rolledBack(discarded: discarded)
     }
@@ -213,6 +275,13 @@ final class WebViewSessionTransitionCoordinator {
         finish(batch)
         validator.assertConsistency("retirement.commit")
         return .committed(retired: retired)
+    }
+
+    func canCommitRetirement(
+        _ lease: WebViewRetirementBatchLease
+    ) -> Bool {
+        guard let batch = transactions.batch(for: lease) else { return false }
+        return conflict(in: batch) == nil
     }
 
     func rollbackRetirement(

@@ -19,7 +19,7 @@ final class RegularTabClosureRuntimeCleanup {
         guard !removals.isEmpty else { return }
 
         let removedTabIDs = Set(removals.map(\.tab.id))
-        runtime.handleTabClosures(removedTabIDs)
+        let splitSettlement = runtime.stageTabClosures(removedTabIDs)
 
         for removal in removals {
             let tab = removal.tab
@@ -42,5 +42,6 @@ final class RegularTabClosureRuntimeCleanup {
                 object: tab
             )
         }
+        splitSettlement?.publish()
     }
 }

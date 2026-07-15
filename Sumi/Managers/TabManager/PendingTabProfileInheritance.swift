@@ -130,7 +130,7 @@ final class PendingTabProfileInheritance {
                 provenanceByTabID[tabID] = provenance
             } else {
                 provenanceByTabID.removeValue(forKey: tabID)
-                normalizeIfCanonical(
+                _ = normalizeIfCanonical(
                     tab,
                     provenance: provenance,
                     canonicalProfileID: canonicalProfileID,

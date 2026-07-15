@@ -44,14 +44,16 @@ extension BrowserURLBarBundle {
             tabOpening: { [weak tabOpening = browserManager.tabLifecycleService.opening] in
                 tabOpening
             },
-            splitPlaceholders: {
-                [weak emptySplitPlaceholders] in emptySplitPlaceholders
-            },
+            tabTargets: FloatingBarTabTargetCommitter(
+                splitPlaceholders: {
+                    [weak emptySplitPlaceholders] in emptySplitPlaceholders
+                },
+                selectTab: { [weak browserManager] tab, windowState in
+                    browserManager?.selectTab(tab, in: windowState) ?? .rejected
+                }
+            ),
             activePageTab: { [activePageResolver] windowState in
                 activePageResolver.resolve(in: windowState)?.tab
-            },
-            selectTab: { [weak browserManager] tab, windowState in
-                browserManager?.selectTab(tab, in: windowState)
             },
             pageNavigation: pageNavigation
         )

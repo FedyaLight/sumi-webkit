@@ -7,30 +7,16 @@ import SumiDomain
 final class RegularTabShortcutCandidatePreparer {
     private let planner: RegularTabShortcutConversionPlanner
     private let authorizer: TabShortcutConversionAuthorizer
-    private let makeShortcutPin: (
-        Tab,
-        ShortcutPinRole,
-        UUID?,
-        UUID?,
-        UUID?,
-        Int
-    ) -> ShortcutPin
+    private let pinFactory: ShortcutPinRuntimeResolutionOwner
 
     init(
         planner: RegularTabShortcutConversionPlanner,
         authorizer: TabShortcutConversionAuthorizer,
-        makeShortcutPin: @escaping (
-            Tab,
-            ShortcutPinRole,
-            UUID?,
-            UUID?,
-            UUID?,
-            Int
-        ) -> ShortcutPin
+        pinFactory: ShortcutPinRuntimeResolutionOwner
     ) {
         self.planner = planner
         self.authorizer = authorizer
-        self.makeShortcutPin = makeShortcutPin
+        self.pinFactory = pinFactory
     }
 
     func prepare(
@@ -46,13 +32,13 @@ final class RegularTabShortcutCandidatePreparer {
         destination: TabShortcutPinDestination
     ) -> PreparedRegularTabShortcutConversion? {
         guard let structure = preparation.structurePlan else { return nil }
-        let pin = makeShortcutPin(
-            tab,
-            destination.role,
-            destination.profileId,
-            destination.spaceId,
-            destination.folderId,
-            destination.index
+        let pin = pinFactory.makeShortcutPin(
+            from: tab,
+            role: destination.role,
+            profileId: destination.profileId,
+            spaceId: destination.spaceId,
+            folderId: destination.folderId,
+            index: destination.index
         )
         let candidate = PreparedRegularTabShortcutConversion(
             sourceTab: tab,

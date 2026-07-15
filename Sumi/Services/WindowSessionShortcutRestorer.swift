@@ -12,8 +12,7 @@ struct WindowSessionShortcutRestorer {
            let pin = tabManager.shortcutPinCollectionStateOwner
             .shortcutPin(by: shortcutPinId),
            pin.role == .essential || pin.spaceId == windowState.currentSpaceId {
-            materialize(pin, in: windowState)
-            return true
+            return materialize(pin, in: windowState)
         }
 
         if windowState.currentShortcutPinId != nil
@@ -42,31 +41,27 @@ struct WindowSessionShortcutRestorer {
             return false
         }
 
-        materialize(pin, in: windowState)
-        return true
+        return materialize(pin, in: windowState)
     }
 
     func materialize(
         _ pin: ShortcutPin,
         in windowState: BrowserWindowState
-    ) {
-        let liveTab = tabManager.shortcutPresentationOwner.shortcutLiveTab(
-            for: pin.id,
-            in: windowState.id
-        ) ?? tabManager.shortcutTabMaterializer.materialize(
+    ) -> Bool {
+        tabManager.shortcutPresentationActivation.commitActivation(
             pin,
             in: windowState.id,
-            currentSpaceId: windowState.currentSpaceId
-        )
+            presentationSpaceID: pin.spaceId ?? windowState.currentSpaceId
+        ) { liveTab in
+            windowState.currentTabId = liveTab.id
+            windowState.currentShortcutPinId = pin.id
+            windowState.currentShortcutPinRole = pin.role
+            windowState.isShowingEmptyState = false
 
-        windowState.currentTabId = liveTab.id
-        windowState.currentShortcutPinId = pin.id
-        windowState.currentShortcutPinRole = pin.role
-        windowState.isShowingEmptyState = false
-
-        if let spaceId = pin.spaceId {
-            windowState.currentSpaceId = spaceId
-            windowState.selectedShortcutPinForSpace[spaceId] = pin.id
+            if let spaceId = pin.spaceId {
+                windowState.currentSpaceId = spaceId
+                windowState.selectedShortcutPinForSpace[spaceId] = pin.id
+            }
         }
     }
 }

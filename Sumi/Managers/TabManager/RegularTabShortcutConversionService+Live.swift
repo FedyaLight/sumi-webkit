@@ -6,58 +6,37 @@ extension RegularTabShortcutConversionService {
         let structure = RegularTabShortcutStructureTransition(
             regularTabs: tabManager.regularTabCollectionOwner,
             splitGroupStore: tabManager.splitGroupStore,
-            structuralRevision: { [weak tabManager] in
-                tabManager?.structuralLookupCoordinator.mutationRevision ?? 0
-            }
+            structuralLookup: tabManager.structuralLookupCoordinator
         )
         let planner = RegularTabShortcutConversionPlanner(
             windows: windows,
             structureTransition: structure,
-            runtimePorts: { [weak tabManager] in tabManager?.runtimePorts }
+            runtimeConnection: tabManager.runtimePortConnection
         )
         let candidates = RegularTabShortcutCandidatePreparer(
             planner: planner,
             authorizer: TabShortcutConversionAuthorizer(windows: windows),
-            makeShortcutPin: { [weak tabManager] tab, role, profile, space, folder, index in
-                guard let tabManager else {
-                    preconditionFailure("TabManager deallocated during conversion")
-                }
-                return tabManager.shortcutPinRuntimeResolutionOwner
-                    .makeShortcutPin(
-                        from: tab,
-                        role: role,
-                        profileId: profile,
-                        spaceId: space,
-                        folderId: folder,
-                        index: index
-                    )
-            }
+            pinFactory: tabManager.shortcutPinRuntimeResolutionOwner
         )
         let transaction = RegularTabShortcutCommitTransaction(
-            schedulePersistence: { [weak tabManager] in
-                tabManager?.structuralPersistence.scheduleStructuralPersistence()
-            },
-            insertPin: { [weak tabManager] pin, index, opensFolder in
-                tabManager?.shortcutPinStoreOwner.insert(
-                    pin,
-                    at: index,
-                    openTargetFolder: opensFolder
-                )
-            },
-            removePin: { [weak tabManager] in
-                tabManager?.shortcutPinStoreOwner.removeFromContainers($0)
-            },
+            persistence: tabManager.structuralPersistence,
+            pins: tabManager.shortcutPinStoreOwner,
+            folderOpenState: tabManager.folderOpenState,
             splitMutations: tabManager.splitGroupMutations,
+            structuralMutations: tabManager.structuralCollectionMutationOwner,
             structuralLookup: tabManager.structuralLookupCoordinator,
+            liveShortcuts: tabManager.liveShortcutTabs,
+            presentationResolution: tabManager.shortcutPinRuntimeResolutionOwner,
+            windowMutations: tabManager.shortcutWindowMutationOwner,
             displayedTransition: DisplayedTabShortcutConversionCommitter(
                 materializer: tabManager.shortcutTabMaterializer,
                 containerRemoval: tabManager.shortcutContainerRemovalOwner,
+                adopter: ShortcutTabAdopter(tabManager: tabManager),
                 regularTabs: tabManager.regularTabCollectionOwner,
+                windowMutations: tabManager.shortcutWindowMutationOwner,
                 structuralLookup: tabManager.structuralLookupCoordinator
             ),
-            detachedTransition: DetachedTabShortcutConverter(
-                tabManager: tabManager
-            )
+            detachedTransition: DetachedTabShortcutConverter(tabManager: tabManager)
         )
         self.init(
             candidates: candidates,

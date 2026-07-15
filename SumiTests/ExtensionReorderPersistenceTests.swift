@@ -26,15 +26,15 @@ final class ExtensionReorderPersistenceTests: XCTestCase {
             setPublishedPinnedIDs: { published.ids = $0 }
         )
 
-        owner.pinToToolbar("a")
-        owner.pinToToolbar("b")
-        owner.pinToToolbar("c")
+        owner.pinToToolbar("a", profileId: nil)
+        owner.pinToToolbar("b", profileId: nil)
+        owner.pinToToolbar("c", profileId: nil)
         XCTAssertEqual(published.ids, ["a", "b", "c"])
 
-        owner.movePinnedToolbarSlot(id: "a", to: 2)
+        owner.movePinnedToolbarSlot(id: "a", to: 2, profileId: nil)
         XCTAssertEqual(published.ids, ["b", "c", "a"])
 
-        owner.movePinnedToolbarSlot(id: "a", to: 0)
+        owner.movePinnedToolbarSlot(id: "a", to: 0, profileId: nil)
         XCTAssertEqual(published.ids, ["a", "b", "c"])
     }
 
@@ -54,10 +54,10 @@ final class ExtensionReorderPersistenceTests: XCTestCase {
         }
 
         let owner = makeOwner()
-        owner.pinToToolbar("a")
-        owner.pinToToolbar("b")
-        owner.pinToToolbar("c")
-        owner.movePinnedToolbarSlot(id: "c", to: 0)
+        owner.pinToToolbar("a", profileId: nil)
+        owner.pinToToolbar("b", profileId: nil)
+        owner.pinToToolbar("c", profileId: nil)
+        owner.movePinnedToolbarSlot(id: "c", to: 0, profileId: nil)
         XCTAssertEqual(published.ids, ["c", "a", "b"])
 
         // A fresh owner reading the same preferences reloads the moved order.
@@ -72,10 +72,7 @@ final class ExtensionReorderPersistenceTests: XCTestCase {
         let defaults = makeDefaults()
 
         func makeOwner() -> ExtensionHubOrderingOwner {
-            ExtensionHubOrderingOwner(
-                preferences: defaults,
-                currentProfileId: { nil }
-            )
+            ExtensionHubOrderingOwner(preferences: defaults)
         }
 
         let owner = makeOwner()
@@ -84,7 +81,12 @@ final class ExtensionReorderPersistenceTests: XCTestCase {
             ["a", "b", "c"]
         )
 
-        owner.moveUnpinnedExtension(id: "a", to: 2, within: ["a", "b", "c"])
+        owner.moveUnpinnedExtension(
+            id: "a",
+            to: 2,
+            within: ["a", "b", "c"],
+            profileId: nil
+        )
         XCTAssertEqual(
             owner.orderedUnpinnedExtensionIDs(candidateIDs: ["a", "b", "c"], profileId: nil),
             ["b", "c", "a"]
