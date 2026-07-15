@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$repo_root"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "$script_dir/.." && pwd)"
+# shellcheck source=scripts/lib/architecture_guard.sh
+source "$script_dir/lib/architecture_guard.sh"
+guard_initialize "$repo_root"
 
 status=0
 
-fail_matches() {
+record_scan_matches() {
   local message="$1"
   local matches="$2"
   [[ -z "$matches" ]] && return
@@ -52,29 +55,31 @@ if [[ -d Sumi/Managers/AuxiliaryWindowManager ]]; then
 fi
 
 legacy_hits="$(
-  rg -n '\b(AuxiliaryWindowManager|AuxiliaryWindowRuntime|BrowserAuxiliaryWindowRuntimeService|BrowserAuxiliaryWindowServices|auxiliaryWindowManager)\b' \
-    App Sumi SumiTests -g '*.swift' || true
+  guard_capture_matches \
+    '\b(AuxiliaryWindowManager|AuxiliaryWindowRuntime|BrowserAuxiliaryWindowRuntimeService|BrowserAuxiliaryWindowServices|auxiliaryWindowManager)\b' \
+    App Sumi SumiTests -g '*.swift'
 )"
-fail_matches "retired auxiliary-window facade/runtime symbol returned" "$legacy_hits"
+record_scan_matches "retired auxiliary-window facade/runtime symbol returned" "$legacy_hits"
 
 owner_declarations="$(
-  rg -n '^(private )?(final )?(class|struct|enum|protocol) [A-Za-z0-9_]*Auxiliary[A-Za-z0-9_]*Owner\b' \
+  guard_capture_matches \
+    '^(private )?(final )?(class|struct|enum|protocol) [A-Za-z0-9_]*Auxiliary[A-Za-z0-9_]*Owner\b' \
     Sumi/AuxiliaryWindows \
     Sumi/AuxiliaryWindows/BrowserAuxiliaryWindowComposition.swift \
-    -g '*.swift' || true
+    -g '*.swift'
 )"
-fail_matches "auxiliary-window responsibility hidden behind an Owner type" "$owner_declarations"
+record_scan_matches "auxiliary-window responsibility hidden behind an Owner type" "$owner_declarations"
 
 browser_manager_hits="$(
-  rg -n '\bBrowserManager\b|\bbrowserManager\b' \
+  guard_capture_matches '\bBrowserManager\b|\bbrowserManager\b' \
     Sumi/AuxiliaryWindows \
     Sumi/AuxiliaryWindows/BrowserAuxiliaryWindowComposition.swift \
-    -g '*.swift' || true
+    -g '*.swift'
 )"
-fail_matches "auxiliary-window boundary reaches back into BrowserManager" "$browser_manager_hits"
+record_scan_matches "auxiliary-window boundary reaches back into BrowserManager" "$browser_manager_hits"
 
 extension_manager_hits="$(
-  rg -l '\bExtensionManager\b' Sumi/AuxiliaryWindows -g '*.swift' \
+  guard_capture_files '\bExtensionManager\b' Sumi/AuxiliaryWindows -g '*.swift' \
     | while IFS= read -r file; do
         if [[ "$file" != Sumi/AuxiliaryWindows/BrowserAuxiliaryWindowComposition.swift \
               && "$file" != Sumi/AuxiliaryWindows/ExtensionAuxiliaryWindowOpeningService.swift ]]; then
@@ -82,17 +87,18 @@ extension_manager_hits="$(
         fi
       done
 )"
-fail_matches "long-lived auxiliary runtime depends on the ExtensionManager god surface" "$extension_manager_hits"
+record_scan_matches "long-lived auxiliary runtime depends on the ExtensionManager god surface" "$extension_manager_hits"
 
 registry_file='Sumi/AuxiliaryWindows/AuxiliaryWindowSessionRegistry.swift'
 registry_hits="$(
-  rg -l '\b(sessionsByID|sessionIDByWebView|sessionIDByWindow|sessionIDByTabID|focusOrderByExtensionID)\b' \
+  guard_capture_files \
+    '\b(sessionsByID|sessionIDByWebView|sessionIDByWindow|sessionIDByTabID|focusOrderByExtensionID)\b' \
     Sumi -g '*.swift' \
     | while IFS= read -r file; do
         [[ "$file" == "$registry_file" ]] || printf '%s\n' "$file"
       done
 )"
-fail_matches "auxiliary session indexes escaped the canonical registry" "$registry_hits"
+record_scan_matches "auxiliary session indexes escaped the canonical registry" "$registry_hits"
 
 if [[ -f Sumi/AuxiliaryWindows/BrowserAuxiliaryWindowComposition.swift ]]; then
   composition_forwarders="$(
@@ -101,7 +107,7 @@ if [[ -f Sumi/AuxiliaryWindows/BrowserAuxiliaryWindowComposition.swift ]]; then
       in_composition && /^[[:space:]]+func[[:space:]]/ { print NR ":" $0 }
     ' Sumi/AuxiliaryWindows/BrowserAuxiliaryWindowComposition.swift
   )"
-  fail_matches "auxiliary composition root grew forwarding methods" "$composition_forwarders"
+  record_scan_matches "auxiliary composition root grew forwarding methods" "$composition_forwarders"
 
   composition_lines="$(
     wc -l < Sumi/AuxiliaryWindows/BrowserAuxiliaryWindowComposition.swift \

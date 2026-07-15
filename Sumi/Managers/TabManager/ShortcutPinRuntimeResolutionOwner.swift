@@ -67,6 +67,15 @@ final class ShortcutPinRuntimeResolutionOwner {
         }
     }
 
+    func desiredLiveTabProfileId(for pin: ShortcutPin) -> UUID? {
+        switch pin.role {
+        case .essential:
+            return pin.executionProfileId ?? pin.profileId
+        case .spacePinned:
+            return pin.executionProfileId
+        }
+    }
+
     func presentationPageReceipt(
         for pin: ShortcutPin,
         windowID: UUID,

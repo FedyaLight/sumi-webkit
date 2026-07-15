@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo_root="$(cd "$(dirname "$0")/.." && pwd)"
-cd "$repo_root"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "$script_dir/.." && pwd)"
+# shellcheck source=scripts/lib/architecture_guard.sh
+source "$script_dir/lib/architecture_guard.sh"
+guard_initialize "$repo_root"
 
 space_root="Sumi/Components/Sidebar/SpaceSection"
 section_files=(
@@ -20,8 +23,14 @@ section_files=(
   "$space_root/TabFolderBodyEntryViews.swift"
   "$space_root/TabFolderBodyListView.swift"
 )
+guard_require_directory "$space_root"
+for file in "${section_files[@]}" "$space_root/SpaceView.swift"; do
+  guard_require_file "$file"
+done
 
-if rg -n '^extension SpaceView\b' "$space_root" -g '*.swift'; then
+space_extension_hits="$(guard_capture_matches '^extension SpaceView\b' "$space_root" -g '*.swift')"
+if [[ -n "$space_extension_hits" ]]; then
+  printf '%s\n' "$space_extension_hits"
   echo "SpaceView decomposition guard: feature-section extensions may not regrow" >&2
   exit 1
 fi
@@ -47,18 +56,28 @@ for declaration in \
   'struct SpacePinnedListProjection' \
   'struct SpaceRegularTabsListProjection' \
   'struct SpaceShortcutRestoreInteractionSession'; do
-  if ! rg -q -F "$declaration" "$space_root"; then
+  declaration_count="$(guard_count_matches "$declaration" -F "$space_root")"
+  if (( declaration_count == 0 )); then
     echo "SpaceView decomposition guard: missing semantic boundary: $declaration" >&2
     exit 1
   fi
 done
 
-if rg -n '\bSpaceView(Context|Dependencies|Actions|Model)\b' "$space_root" -g '*.swift'; then
+broad_bag_hits="$(
+  guard_capture_matches '\bSpaceView(Context|Dependencies|Actions|Model)\b' "$space_root" -g '*.swift'
+)"
+if [[ -n "$broad_bag_hits" ]]; then
+  printf '%s\n' "$broad_bag_hits"
   echo "SpaceView decomposition guard: broad SpaceView bags are forbidden" >&2
   exit 1
 fi
 
-if rg -n '\b(ObservableObject|@Published)\b' "${section_files[@]}" "$space_root/SpaceView.swift"; then
+relay_hits="$(
+  guard_capture_matches '\b(ObservableObject|@Published)\b' \
+    "${section_files[@]}" "$space_root/SpaceView.swift"
+)"
+if [[ -n "$relay_hits" ]]; then
+  printf '%s\n' "$relay_hits"
   echo "SpaceView decomposition guard: blanket observable relays are forbidden" >&2
   exit 1
 fi

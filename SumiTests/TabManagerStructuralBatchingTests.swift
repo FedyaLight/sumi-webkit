@@ -131,6 +131,53 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
         XCTAssertEqual(tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[space.id]?.map(\.id), [second.id, first.id])
     }
 
+    func testTabsSnapshotObserverReadsTerminalLookupOnFirstCallback() throws {
+        let tabManager = try makeInMemoryTabManager()
+        let space = tabManager.spaceServices.catalog.createSpace(
+            name: "Workspace"
+        )
+        let tab = tabManager.regularTabLifecycleOwner.createNewTab(
+            url: "https://example.com/removed",
+            in: space
+        )
+        var observedTabIDs: [[UUID]] = []
+        var lookupWasTerminal: [Bool] = []
+        var lookupFlushCounts: [(batch: Int, immediate: Int)] = []
+        let batchFlushesBefore =
+            tabManager.structuralLookupCoordinator.batchFlushCount
+        let immediateFlushesBefore =
+            tabManager.structuralLookupCoordinator.immediateFlushCount
+        let cancellable = tabManager.regularTabCollectionStateOwner
+            .tabsBySpacePublisher.sink { tabsBySpace in
+                observedTabIDs.append(tabsBySpace[space.id]?.map(\.id) ?? [])
+                lookupWasTerminal.append(
+                    tabManager.tabCollectionMembershipOwner.tab(for: tab.id)
+                        == nil
+                )
+                lookupFlushCounts.append((
+                    tabManager.structuralLookupCoordinator.batchFlushCount,
+                    tabManager.structuralLookupCoordinator.immediateFlushCount
+                ))
+            }
+
+        tabManager.structuralLookupCoordinator.withTransaction {
+            tabManager.structuralCollectionMutationOwner.setTabs(
+                [],
+                for: space.id
+            )
+            XCTAssertTrue(observedTabIDs.isEmpty)
+        }
+        withExtendedLifetime(cancellable) {}
+
+        XCTAssertEqual(observedTabIDs, [[]])
+        XCTAssertEqual(lookupWasTerminal, [true])
+        XCTAssertEqual(lookupFlushCounts.map(\.batch), [batchFlushesBefore + 1])
+        XCTAssertEqual(
+            lookupFlushCounts.map(\.immediate),
+            [immediateFlushesBefore]
+        )
+    }
+
     func testTransientShortcutLookupRefreshFlushesImmediatelyInsideTransaction() throws {
         let retirement = DeferredSpaceProfileTransition()
         let tabManager = try makeInMemoryTabManager(

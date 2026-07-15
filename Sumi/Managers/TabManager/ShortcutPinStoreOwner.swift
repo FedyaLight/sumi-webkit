@@ -92,6 +92,39 @@ final class ShortcutPinStoreOwner {
         }
     }
 
+    func previewInsert(
+        _ pin: ShortcutPin,
+        at targetIndex: Int
+    ) -> ShortcutPin? {
+        guard dependencies.destinationValidator.accepts(
+            role: pin.role,
+            spaceId: pin.spaceId,
+            folderId: pin.folderId
+        ) else { return nil }
+        let destinationCount: Int
+        switch pin.role {
+        case .essential:
+            guard let profileID = pin.profileId else { return nil }
+            let destination = dependencies.pinnedByProfile()[profileID] ?? []
+            destinationCount = destination.filter { $0.id != pin.id }.count
+            guard destinationCount
+                    < EssentialsShortcutPlacementOwner.CapacityPolicy.maxItems
+            else { return nil }
+        case .spacePinned:
+            guard let spaceID = pin.spaceId else { return nil }
+            if let folderID = pin.folderId {
+                destinationCount = dependencies.spacePinnedPins(spaceID)
+                    .filter { $0.folderId == folderID && $0.id != pin.id }
+                    .count
+            } else {
+                destinationCount = dependencies.topLevelSpacePinnedItems(
+                    spaceID
+                ).count
+            }
+        }
+        return pin.refreshed(index: max(0, min(targetIndex, destinationCount)))
+    }
+
     @discardableResult
     func move(
         _ pin: ShortcutPin,

@@ -5,7 +5,7 @@ import Foundation
 @MainActor
 final class ShortcutTabBindingTargetMutationService {
     private let resolution: ShortcutPinRuntimeResolutionOwner
-    private let profiles: TabProfileTransitionService
+    let profiles: TabProfileTransitionService
 
     init(
         resolution: ShortcutPinRuntimeResolutionOwner,
@@ -39,52 +39,47 @@ final class ShortcutTabBindingTargetMutationService {
             for: pin,
             currentSpaceId: currentSpaceID
         )
-        tab.profileId = resolution.resolvedExecutionProfileId(
-            for: pin,
-            currentSpaceId: currentSpaceID
-        )
+        tab.profileId = resolution.desiredLiveTabProfileId(for: pin)
         tab.folderId = pin.role == .essential ? nil : pin.folderId
-    }
-
-    func applyExisting(
-        _ pin: ShortcutPin,
-        to tab: Tab,
-        currentSpaceID: UUID?
-    ) {
-        prepareExisting(
-            pin,
-            to: tab,
-            currentSpaceID: currentSpaceID
-        ).execute()
     }
 
     func prepareExisting(
         _ pin: ShortcutPin,
         to tab: Tab,
-        currentSpaceID: UUID?
-    ) -> ShortcutTabBindingExecutionReceipt {
-        let targetSpaceID = resolution.resolvedLiveSpaceId(
+        currentSpaceID: UUID?,
+        using lease: TabRuntimePortLease
+    ) -> PreparedShortcutTabBinding? {
+        let candidateProfileID = resolution.resolvedExecutionProfileId(
             for: pin,
             currentSpaceId: currentSpaceID
         )
-        let targetProfileID = resolution.resolvedExecutionProfileId(
-            for: pin,
-            currentSpaceId: currentSpaceID
+        let runtimeFallback = candidateProfileID == nil
+            ? lease.captureFallbackProfileWitness()
+            : nil
+        guard let resolvedProfileID = candidateProfileID
+            ?? runtimeFallback?.profileID else { return nil }
+        let target = ShortcutSplitLauncherBindingTarget(
+            spaceID: resolution.resolvedLiveSpaceId(
+                for: pin,
+                currentSpaceId: currentSpaceID
+            ),
+            desiredProfileID: resolution.desiredLiveTabProfileId(for: pin),
+            resolvedProfileID: resolvedProfileID,
+            runtimeFallback: runtimeFallback,
+            folderID: pin.role == .essential ? nil : pin.folderId
         )
-        tab.isPinned = false
-        tab.isSpacePinned = false
-        tab.bindToShortcutPin(pin)
-        _ = profiles.prepareForSpaceTransition(
+        guard let profile = profiles.prepareShortcutAssignment(
             tab: tab,
-            targetSpaceID: targetSpaceID,
-            desiredProfileID: targetProfileID
-        )
-        tab.spaceId = targetSpaceID
-        tab.folderId = pin.role == .essential ? nil : pin.folderId
-        return ShortcutTabBindingExecutionReceipt(
-            profiles: profiles,
-            tab: tab,
-            targetProfileID: targetProfileID
+            desiredProfileID: target.desiredProfileID,
+            resolvedProfileID: target.resolvedProfileID,
+            runtimeFallback: target.runtimeFallback,
+            using: lease
+        ) else { return nil }
+        return PreparedShortcutTabBinding(
+            receipt: ShortcutSplitLauncherTabReceipt(tab),
+            target: target,
+            profile: profile
         )
     }
+
 }

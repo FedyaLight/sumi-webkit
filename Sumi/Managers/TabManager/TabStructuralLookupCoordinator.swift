@@ -1,12 +1,6 @@
 import Foundation
 
-/// Coordinates the structural-lookup index and structural-publish batching that used to
-/// live directly on `TabManager`. It owns the `TabStructuralLookupOwner` (the id→tab index)
-/// and the `TabStructuralPublishOwner` (transaction depth + coalesced event-bus
-/// emission), and rebuilds the lookup snapshot from the live tab collections supplied via
-/// the initializer closures. `TabManager` keeps thin facades (`withStructuralUpdateTransaction`,
-/// `requestStructuralPublish`, `rebuildTabLookup`, `notifyTransientShortcutStateChanged`,
-/// `queueTabLookupEntries`) that delegate here so existing callers are unchanged.
+/// Owns the exact tab lookup index and coalesced structural publication batch.
 @MainActor
 final class TabStructuralLookupCoordinator {
     private let tabsBySpace: @MainActor () -> [UUID: [Tab]]
@@ -61,6 +55,16 @@ final class TabStructuralLookupCoordinator {
 
     func requestPublish(scope: TabStructureChangeScope = .all) {
         publishOwner.requestPublish(scope: scope)
+    }
+
+    /// Makes writes queued by the current structural transaction available to
+    /// an internal reader without opening external structural publication.
+    func flushPendingWritesForRead() {
+        precondition(
+            publishOwner.isBatching,
+            "Lookup read checkpoint requires a structural transaction"
+        )
+        flushPendingBatchIfNeeded()
     }
 
     func runAfterCurrentBatch(_ action: @escaping @MainActor () -> Void) {

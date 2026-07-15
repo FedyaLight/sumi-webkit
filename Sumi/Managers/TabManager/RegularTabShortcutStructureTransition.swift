@@ -23,7 +23,8 @@ final class RegularTabShortcutStructureTransition {
 
     func prepare(_ tab: Tab) -> RegularTabShortcutStructurePlan? {
         guard regularTabs.contains(tab),
-              tab.isShortcutLiveInstance == false else {
+              tab.isShortcutLiveInstance == false,
+              tab.profileAssignment.hasUnsettledAssignment == false else {
             return nil
         }
         let sourceMemberID = SplitMemberID.regularTab(tab.id)
@@ -33,7 +34,8 @@ final class RegularTabShortcutStructureTransition {
             sourceSplitGroup: splitGroupStore.group(
                 containing: sourceMemberID
             ),
-            structuralRevision: structuralLookup.mutationRevision
+            structuralRevision: structuralLookup.mutationRevision,
+            profileRevision: tab.profileAssignment.changeRevision
         )
     }
 
@@ -44,6 +46,8 @@ final class RegularTabShortcutStructureTransition {
         guard plan.sourceTabID == tab.id,
               regularTabs.contains(tab),
               tab.isShortcutLiveInstance == false,
+              tab.profileAssignment.hasUnsettledAssignment == false,
+              tab.profileAssignment.changeRevision == plan.profileRevision,
               structuralLookup.mutationRevision == plan.structuralRevision,
               splitGroupStore.groups == plan.expectedSplitGroups else {
             return false

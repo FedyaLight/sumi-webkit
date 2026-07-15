@@ -27,6 +27,7 @@ func makeInMemoryTabManager(
     materializeVisibleTabWebViewIfNeeded: @escaping (Tab, BrowserWindowState) -> Void = { _, _ in /* No-op. */ },
     unloadTab: @escaping (Tab) -> Void = { _ in /* No-op. */ },
     requireRemoveAllWebViews: @escaping (Tab, Bool) -> Void = { _, _ in /* No-op. */ },
+    notifyTabClosedIfLoaded: @escaping (Tab) -> Void = { _ in /* No-op. */ },
     persistWindowSession: @escaping (BrowserWindowState) -> Void = { _ in /* No-op. */ },
     executeProfileAssignment: @escaping (
         Tab,
@@ -48,6 +49,7 @@ func makeInMemoryTabManager(
             profile: profile,
             windowState: windowState,
             windows: windows,
+            windowStates: { windows().map(\.1) },
             webViewLifecycle: webViewLifecycle
                 ?? TestRuntimePorts.webViewLifecycle(
                     retirement: .rejecting,
@@ -58,6 +60,7 @@ func makeInMemoryTabManager(
                     executeProfileAssignment: executeProfileAssignment
                 ),
             visibleSplitTabIds: visibleSplitTabIds,
+            notifyTabClosedIfLoaded: notifyTabClosedIfLoaded,
             persistWindowSession: persistWindowSession
         ),
         context: container.mainContext,

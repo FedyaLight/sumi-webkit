@@ -2,13 +2,11 @@
 # Fail if legacy TabManagerRuntimeContext / makeLegacyRuntimeContext resurfaces (W1).
 set -euo pipefail
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$repo_root"
-
-if ! command -v rg >/dev/null 2>&1; then
-  printf 'error: ripgrep (rg) is required\n' >&2
-  exit 1
-fi
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "$script_dir/.." && pwd)"
+# shellcheck source=scripts/lib/architecture_guard.sh
+source "$script_dir/lib/architecture_guard.sh"
+guard_initialize "$repo_root"
 
 # Source trees only (docs/plan intentionally excluded; build artifacts ignored).
 search_roots=(
@@ -21,22 +19,13 @@ search_roots=(
   UI
 )
 
-existing_roots=()
 for root in "${search_roots[@]}"; do
-  if [[ -d "$root" ]]; then
-    existing_roots+=("$root")
-  fi
+  guard_require_directory "$root"
 done
 
-if [[ ${#existing_roots[@]} -eq 0 ]]; then
-  printf 'error: no source roots found to scan\n' >&2
-  exit 1
-fi
-
 matches="$(
-  rg -n 'TabManagerRuntimeContext|makeLegacyRuntimeContext' \
-    -g '*.swift' \
-    "${existing_roots[@]}" 2>/dev/null || true
+  guard_capture_matches 'TabManagerRuntimeContext|makeLegacyRuntimeContext' \
+    -g '*.swift' "${search_roots[@]}"
 )"
 
 if [[ -n "$matches" ]]; then
@@ -45,8 +34,8 @@ if [[ -n "$matches" ]]; then
 fi
 
 fail_open_port_hits="$(
-  rg -n 'weak\s+var\s+browserManager|weak\s+let\s+browserManager|guard\s+let\s+browserManager\s+else\s*\{\s*return' \
-    Sumi/BrowserRuntime/Ports -g 'Tab*Port.swift' 2>/dev/null || true
+  guard_capture_matches 'weak\s+var\s+browserManager|weak\s+let\s+browserManager|guard\s+let\s+browserManager\s+else\s*\{\s*return' \
+    Sumi/BrowserRuntime/Ports -g 'Tab*Port.swift'
 )"
 if [[ -n "$fail_open_port_hits" ]]; then
   printf 'error: Tab runtime ports must not fail open after their browser feature graph is released:\n%s\n' \
@@ -55,8 +44,8 @@ if [[ -n "$fail_open_port_hits" ]]; then
 fi
 
 profile_root_lookup_hits="$(
-  rg -n 'BrowserManager(RuntimeReference)?|runtime\.require\(\)' \
-    Sumi/BrowserRuntime/Ports/TabProfileQueryPort.swift 2>/dev/null || true
+  guard_capture_matches 'BrowserManager(RuntimeReference)?|runtime\.require\(\)' \
+    Sumi/BrowserRuntime/Ports/TabProfileQueryPort.swift
 )"
 if [[ -n "$profile_root_lookup_hits" ]]; then
   printf 'error: the profile query port must retain exact profile/settings authorities, not re-enter BrowserManager:\n%s\n' \
@@ -65,8 +54,8 @@ if [[ -n "$profile_root_lookup_hits" ]]; then
 fi
 
 session_side_effect_root_lookup_hits="$(
-  rg -n 'BrowserManager(RuntimeReference)?|runtime\.require\(\)' \
-    Sumi/BrowserRuntime/Ports/TabSessionSideEffectsPort.swift 2>/dev/null || true
+  guard_capture_matches 'BrowserManager(RuntimeReference)?|runtime\.require\(\)' \
+    Sumi/BrowserRuntime/Ports/TabSessionSideEffectsPort.swift
 )"
 if [[ -n "$session_side_effect_root_lookup_hits" ]]; then
   printf 'error: the session side-effects port must retain exact services, not re-enter BrowserManager:\n%s\n' \
@@ -75,8 +64,8 @@ if [[ -n "$session_side_effect_root_lookup_hits" ]]; then
 fi
 
 retired_runtime_reference_hits="$(
-  rg -n 'BrowserManagerRuntimeReference|runtime\.require\(\)' \
-    Sumi -g '*.swift' 2>/dev/null || true
+  guard_capture_matches 'BrowserManagerRuntimeReference|runtime\.require\(\)' \
+    Sumi -g '*.swift'
 )"
 if [[ -n "$retired_runtime_reference_hits" ]]; then
   printf 'error: Tab runtime feature ports must retain exact services, not a late BrowserManager reference:\n%s\n' \
@@ -88,8 +77,9 @@ for exact_port in \
   Sumi/BrowserRuntime/Ports/TabWindowQueryPort.swift \
   Sumi/BrowserRuntime/Ports/TabExtensionLifecyclePort.swift \
   Sumi/Managers/BrowserManager/BrowserTabManagerWebViewLifecycleFactory.swift; do
+  guard_require_file "$exact_port"
   root_lookup_hits="$(
-    rg -n 'BrowserManager|OptionalModuleHost' "$exact_port" 2>/dev/null || true
+    guard_capture_matches 'BrowserManager|OptionalModuleHost' "$exact_port"
   )"
   if [[ -n "$root_lookup_hits" ]]; then
     printf 'error: %s must retain its exact feature authorities, not the browser/module root:\n%s\n' \
@@ -104,8 +94,8 @@ if [[ -e Sumi/BrowserRuntime/Ports/BrowserManagerRuntimeReference.swift ]]; then
 fi
 
 inactive_registry_hits="$(
-  rg -n 'RuntimePortRegistry\.inactive|TabManagerWebViewLifecycleService\.inactive|static\s+(let|var)\s+inactive\s*(:\s*RuntimePortRegistry|=\s*RuntimePortRegistry)' \
-    Sumi -g '*.swift' 2>/dev/null || true
+  guard_capture_matches 'RuntimePortRegistry\.inactive|TabManagerWebViewLifecycleService\.inactive|static\s+(let|var)\s+inactive\s*(:\s*RuntimePortRegistry|=\s*RuntimePortRegistry)' \
+    Sumi -g '*.swift'
 )"
 if [[ -n "$inactive_registry_hits" ]]; then
   printf 'error: no-op runtime registries belong in test support, not the production graph:\n%s\n' \

@@ -1,48 +1,51 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$repo_root"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "$script_dir/.." && pwd)"
+# shellcheck source=scripts/lib/architecture_guard.sh
+source "$script_dir/lib/architecture_guard.sh"
+guard_initialize "$repo_root"
 
 extension_manager_paths=(
   Sumi/Managers/ExtensionManager
 )
 status=0
 
-check_absent() {
+record_absent_scan() {
   local label="$1"
   local pattern="$2"
   shift 2
   local matches
 
-  matches="$(grep -rEn --include='*.swift' -e "$pattern" "$@" || [[ $? -eq 1 ]])"
+  matches="$(guard_capture_matches "$pattern" -g '*.swift' "$@")"
   if [[ -n "$matches" ]]; then
     printf 'disallowed %s:\n%s\n' "$label" "$matches" >&2
     status=1
   fi
 }
 
-check_absent \
+record_absent_scan \
   "manifest patching API" \
   'patchManifestForWebKit|manifestPatchCache|shouldSkipManifestPatch' \
   "${extension_manager_paths[@]}"
 
-check_absent \
+record_absent_scan \
   "compat JS bundle loader" \
   'ExtensionRuntimeBundledScript|ExtensionRuntimeResources/' \
   "${extension_manager_paths[@]}"
 
-check_absent \
+record_absent_scan \
   "compat JS artifact filenames" \
   'sumi_webkit_runtime_compat|webkit_runtime_compat|sumi_bridge\.js|sumi_external_runtime|sumi_content_guard_' \
   "${extension_manager_paths[@]}"
 
-check_absent \
+record_absent_scan \
   "compat JS template assembly" \
   'ExtensionManager\+ExternallyConnectableScripts|pageWorldExternallyConnectableBridgeScript|webKitRuntimeCompatibilityPreludeScript|selectiveContentScriptGuardScript' \
   "${extension_manager_paths[@]}"
 
-check_absent \
+record_absent_scan \
   "Safari app-extension copied-resource runtime fallback" \
   'SafariAppExtensionResources\.copyResources|falling back to copied package' \
   Sumi/Managers/ExtensionManager
@@ -58,7 +61,7 @@ if [[ -d Sumi/Managers/ExtensionManager/ExtensionRuntimeResources ]]; then
   fi
 fi
 
-check_absent \
+record_absent_scan \
   "extension-specific native messaging branches" \
   'if extensionId ==|switch extensionId' \
   Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingRelayLoopGuard.swift \
@@ -88,12 +91,12 @@ if [[ -e Sumi/Managers/ExtensionManager/ExtensionRequestedTabLifecycleOwner.swif
   status=1
 fi
 
-check_absent \
+record_absent_scan \
   "requested-tab ExtensionManager dependency" \
   'manager:[[:space:]]*ExtensionManager' \
   "${requested_tab_sources[@]}"
 
-check_absent \
+record_absent_scan \
   "requested-tab manager facade" \
   'func (prepareExtensionRequestedTabForInitialLoad|prepareContentScriptContextsForExtensionRequestedInitialLoad|openExtensionRequestedTab|materializeExtensionRequestedNormalTabIfNeeded|registerExtensionCreatedTabWithExtensionRuntime)[[:space:]]*\(' \
   Sumi/Managers/ExtensionManager

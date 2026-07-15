@@ -141,6 +141,7 @@ final class SplitDropServiceShortcutConversionTests: XCTestCase {
         let displacedPin = fixture.targetPins[0]
         let retainedPin = fixture.targetPins[1]
         let targetGroup = try XCTUnwrap(SplitGroup.make(
+            id: fixture.targetGroup.id,
             members: [
                 .shortcutPin(
                     displacedPin.id,
@@ -180,8 +181,25 @@ final class SplitDropServiceShortcutConversionTests: XCTestCase {
 
         let observation = DisplayedCenterDropWindowObservationOracle()
         var structuralEvents = 0
+        var tabsBySpacePublications = 0
         let structureCancellable = fixture.manager.tabStructureEventBus
             .structureChangedPublisher.sink { structuralEvents += 1 }
+        let tabsCancellable = fixture.manager.regularTabCollectionStateOwner
+            .tabsBySpacePublisher.sink { tabsBySpace in
+                tabsBySpacePublications += 1
+                guard tabsBySpacePublications == 1 else { return }
+                XCTAssertFalse(
+                    tabsBySpace.values.flatMap { $0 }.contains {
+                        $0 === fixture.source
+                    }
+                )
+                XCTAssertIdentical(
+                    fixture.manager.tabCollectionMembershipOwner.tab(
+                        for: fixture.source.id
+                    ),
+                    fixture.source
+                )
+            }
         withObservationTracking {
             _ = fixture.window.currentTabId
             _ = fixture.window.currentShortcutPinId
@@ -190,6 +208,7 @@ final class SplitDropServiceShortcutConversionTests: XCTestCase {
             _ = fixture.window.selectionHistory
         } onChange: {
             MainActor.assumeIsolated {
+                observation.publicationCount += 1
                 guard observation.didInspectFirstPublication == false else {
                     return
                 }
@@ -236,6 +255,12 @@ final class SplitDropServiceShortcutConversionTests: XCTestCase {
                     fixture.manager.liveShortcutTabs.tab(
                         for: generatedPin.id,
                         in: fixture.window.id
+                    ),
+                    fixture.source
+                )
+                XCTAssertIdentical(
+                    fixture.manager.tabCollectionMembershipOwner.tab(
+                        for: fixture.source.id
                     ),
                     fixture.source
                 )
@@ -324,7 +349,10 @@ final class SplitDropServiceShortcutConversionTests: XCTestCase {
         )
         XCTAssertGreaterThan(fixture.probe.sessionWriteCount, 0)
         XCTAssertEqual(structuralEvents, 1)
+        XCTAssertEqual(observation.publicationCount, 1)
+        XCTAssertEqual(tabsBySpacePublications, 1)
         _ = structureCancellable
+        _ = tabsCancellable
     }
 }
 
@@ -368,6 +396,25 @@ private extension SplitDropServiceShortcutConversionTests {
         func reconcile(_ effect: SplitDropCommitEffect) {
             probe.effects.append(effect)
             presentations.reconcile(effect)
+        }
+
+        func prepare(
+            _ effect: SplitDropCommitEffect,
+            sourceGroups: [SplitGroup],
+            replacementGroups: [SplitGroup],
+            requiredWindow: BrowserWindowState,
+            insertionPreview: ShortcutPresentationCatalogInsertionPreview,
+            residenceContribution: DisplayedShortcutResidenceContribution
+        ) -> PreparedWindowSplitPresentationSettlement? {
+            probe.effects.append(effect)
+            return presentations.prepare(
+                effect,
+                sourceGroups: sourceGroups,
+                replacementGroups: replacementGroups,
+                requiredWindow: requiredWindow,
+                insertionPreview: insertionPreview,
+                residenceContribution: residenceContribution
+            )
         }
     }
 
@@ -501,7 +548,9 @@ private extension SplitDropServiceShortcutConversionTests {
                 liveShortcuts: manager.liveShortcutTabs,
                 members: members
             ),
-            launcher: launcherPlacement,
+            launcherRelease: ShortcutSplitLauncherReleasePlanner(
+                tabManager: manager
+            ),
             splitMutations: manager.splitGroupMutations,
             retirement: EmptySplitPlaceholderRetirementService(
                 regularTabs: manager.regularTabCollectionOwner,
@@ -548,6 +597,7 @@ private extension SplitDropServiceShortcutConversionTests {
 
 @MainActor
 private final class DisplayedCenterDropWindowObservationOracle {
+    var publicationCount = 0
     var didInspectFirstPublication = false
     var didCommitReentrantMutation = false
     var reentrantTarget: SplitGroup?

@@ -174,7 +174,11 @@ final class DeferredWebViewCommandAuthority {
 
         case .assignProfile(let tabID, let preferredPrimaryWindowID, let intent):
             guard let tab = tabs.resolveCollectionTab(with: tabID),
-                  tab.profileAssignment.isCurrent(intent) else { return nil }
+                  tab.profileAssignment.isCurrent(intent),
+                  tab.mainFrameLoads.isCurrent(
+                      revision: intent.navigationRevision,
+                      targetURL: intent.targetURL
+                  ) else { return nil }
             return .assignProfile(
                 tab: tab,
                 preferredPrimaryWindowID: preferredPrimaryWindowID,

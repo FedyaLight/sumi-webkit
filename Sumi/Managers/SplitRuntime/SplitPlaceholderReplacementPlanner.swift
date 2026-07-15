@@ -148,20 +148,20 @@ final class SplitPlaceholderReplacementQuery {
 @MainActor
 final class SplitPlaceholderReplacementPlanner {
     private let query: SplitPlaceholderReplacementQuery
-    private let launcher: ShortcutSplitLauncherPlacementService
+    private let launcherRelease: ShortcutSplitLauncherReleasePlanner
     private let splitMutations: SplitGroupMutationService
     private let retirement: EmptySplitPlaceholderRetirementService
     private let presentations: any SplitDropPresentationReconciling
 
     init(
         query: SplitPlaceholderReplacementQuery,
-        launcher: ShortcutSplitLauncherPlacementService,
+        launcherRelease: ShortcutSplitLauncherReleasePlanner,
         splitMutations: SplitGroupMutationService,
         retirement: EmptySplitPlaceholderRetirementService,
         presentations: any SplitDropPresentationReconciling
     ) {
         self.query = query
-        self.launcher = launcher
+        self.launcherRelease = launcherRelease
         self.splitMutations = splitMutations
         self.retirement = retirement
         self.presentations = presentations
@@ -176,7 +176,7 @@ final class SplitPlaceholderReplacementPlanner {
             tab: tab,
             placeholder: placeholder,
             window: window
-        ), let launcherRelease = launcher.prepareNoMoveRelease(
+        ), let launcherRelease = launcherRelease.prepareNoMoveRelease(
             for: plan.effect.releasedMembers
         ), let placeholderRetirement = retirement.prepare(plan.placeholder),
            let topology = splitMutations.prepareReplaceAll(

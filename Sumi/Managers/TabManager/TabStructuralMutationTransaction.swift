@@ -8,34 +8,39 @@ final class TabStructuralMutationTransaction {
     struct FolderReceipt {
         let folder: TabFolder
         let name: String
-        let spaceID: UUID
-        let parentFolderID: UUID?
+        let placement: TabFolderPlacement
         let isOpen: Bool
         let icon: String
-        let index: Int
         let color: NSColor
 
         @MainActor
         init(_ folder: TabFolder) {
             self.folder = folder
             name = folder.name
-            spaceID = folder.spaceId
-            parentFolderID = folder.parentFolderId
+            placement = folder.placementSnapshot
             isOpen = folder.isOpen
             icon = folder.icon
-            index = folder.index
             color = folder.color
         }
 
         @MainActor
         func restore() {
-            folder.name = name
-            folder.spaceId = spaceID
-            folder.parentFolderId = parentFolderID
-            folder.isOpen = isOpen
-            folder.icon = icon
-            folder.index = index
-            folder.color = color
+            if folder.name != name { folder.name = name }
+            if folder.placementSnapshot != placement {
+                folder.installPlacement(placement)
+            }
+            if folder.isOpen != isOpen { folder.isOpen = isOpen }
+            if folder.icon != icon { folder.icon = icon }
+            if folder.color != color { folder.color = color }
+        }
+
+        @MainActor
+        func acceptsCurrent() -> Bool {
+            folder.name == name
+                && folder.placementSnapshot == placement
+                && folder.isOpen == isOpen
+                && folder.icon == icon
+                && folder.color == color
         }
     }
 
@@ -79,6 +84,8 @@ final class TabStructuralMutationTransaction {
     private var didReplaceTabs = false
     private var isFinished = false
 
+    var hasRecordedMutations: Bool { didMutate || didReplaceTabs }
+
     init(snapshot: Snapshot) {
         self.snapshot = snapshot
     }
@@ -105,5 +112,10 @@ final class TabStructuralMutationTransaction {
             )
         }
         return .rolledBack(snapshot)
+    }
+
+    func discardUnmodified() {
+        precondition(isFinished == false && hasRecordedMutations == false)
+        isFinished = true
     }
 }

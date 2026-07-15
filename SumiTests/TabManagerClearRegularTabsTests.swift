@@ -169,6 +169,7 @@ final class TabManagerClearRegularTabsTests: XCTestCase {
             desiredProfileID: deferredProfile.id,
             resolvedProfileID: deferredProfile.id,
             targetURL: tab.url,
+            navigationRevision: tab.mainFrameLoads.currentIntent.revision,
             requiresStructuralPersistence: true
         )
 
@@ -213,6 +214,7 @@ final class TabManagerClearRegularTabsTests: XCTestCase {
             desiredProfileID: deletedProfile.id,
             resolvedProfileID: deletedProfile.id,
             targetURL: tab.url,
+            navigationRevision: tab.mainFrameLoads.currentIntent.revision,
             requiresStructuralPersistence: true
         )
         profiles.removeValue(forKey: deletedProfile.id)
@@ -226,6 +228,78 @@ final class TabManagerClearRegularTabsTests: XCTestCase {
 
         XCTAssertEqual(tab.profileId, committedProfile.id)
         XCTAssertFalse(tab.profileAssignment.isCurrent(deferredIntent))
+    }
+
+    func testDeferredRegularProfileReplayRejectsNavigationDriftBeforeRuntimeExecution()
+        throws {
+        let sourceProfile = Profile(name: "Source")
+        let targetProfile = Profile(name: "Target")
+        let profiles = [
+            sourceProfile.id: sourceProfile,
+            targetProfile.id: targetProfile,
+        ]
+        var executionCount = 0
+        var executedIntent: DeferredWebViewProfileAssignmentIntent?
+        let tabManager = try makeInMemoryTabManager(
+            currentProfileId: { sourceProfile.id },
+            defaultProfileId: { sourceProfile.id },
+            profile: { profiles[$0] },
+            executeProfileAssignment: { _, _, intent in
+                executionCount += 1
+                executedIntent = intent
+                return .deferred
+            }
+        )
+        let space = tabManager.spaceServices.catalog.createSpace(
+            name: "Work",
+            profileId: sourceProfile.id
+        )
+        let capturedURL = try XCTUnwrap(
+            URL(string: "https://example.com/captured-profile-document")
+        )
+        let tab = tabManager.regularTabLifecycleOwner.createNewTab(
+            url: capturedURL.absoluteString,
+            in: space,
+            activate: false
+        )
+        let sourceProfileID = tab.profileId
+        let capturedNavigation = tab.beginMainFrameNavigationIntent(
+            to: capturedURL
+        )
+        var observedIntent: DeferredWebViewProfileAssignmentIntent?
+
+        let outcome = tabManager.profileAssignments.tabs.start(
+            desiredProfileID: targetProfile.id,
+            tab: tab,
+            requiresStructuralPersistence: true,
+            capturingIntent: { observedIntent = $0 }
+        )
+
+        let deferredIntent = try XCTUnwrap(observedIntent)
+        XCTAssertEqual(outcome, .deferred)
+        XCTAssertEqual(executionCount, 1)
+        XCTAssertEqual(executedIntent, deferredIntent)
+        XCTAssertEqual(deferredIntent.targetURL, capturedNavigation.targetURL)
+        XCTAssertEqual(
+            deferredIntent.navigationRevision,
+            capturedNavigation.revision
+        )
+        XCTAssertTrue(tab.profileAssignment.isCurrent(deferredIntent))
+
+        _ = tab.beginMainFrameNavigationIntent(
+            to: URL(string: "https://example.com/newer-document")!
+        )
+
+        XCTAssertFalse(
+            tabManager.profileAssignments.tabs.executeDeferred(
+                tab: tab,
+                intent: deferredIntent
+            )
+        )
+        XCTAssertEqual(executionCount, 1)
+        XCTAssertEqual(tab.profileId, sourceProfileID)
+        XCTAssertFalse(tab.profileAssignment.isCurrent(deferredIntent))
+        XCTAssertFalse(tab.profileAssignment.hasUnsettledAssignment)
     }
 
     func testCrossProfileSpaceMovePinsOldProfileUntilReplacementCommits() throws {

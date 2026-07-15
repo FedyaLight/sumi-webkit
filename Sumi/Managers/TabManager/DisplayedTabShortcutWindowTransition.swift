@@ -1,14 +1,15 @@
 import Foundation
+
 @MainActor
 enum DisplayedTabShortcutWindowTransition {
     static func apply(
         to state: inout BrowserWindowShortcutMutationState,
         originalTabId: UUID,
         splitTransition: RegularTabShortcutWindowTransitionPlan,
-        liveTab: Tab?,
+        terminalSelection: DisplayedTabShortcutTerminalSelectionPlan?,
         sourceSpaceId: UUID?,
         isSelected: Bool,
-        regularTabs: RegularTabCollectionOwner
+        fallbackRegularTabID: UUID?
     ) -> Bool {
         let previousSessionState = ShortcutConversionWindowSessionState(state)
         let selectedSourceGroupID = splitTransition.sourceGroupID.flatMap { groupId in
@@ -17,13 +18,9 @@ enum DisplayedTabShortcutWindowTransition {
                 ? groupId
                 : nil
         }
-        if isSelected || selectedSourceGroupID != nil, let liveTab {
-            _ = WindowTabSelectionStateApplicator.apply(
-                liveTab,
-                to: &state,
-                updateSpaceFromTab: true,
-                rememberSelection: true
-            )
+        if isSelected || selectedSourceGroupID != nil,
+           let terminalSelection {
+            terminalSelection.apply(to: &state)
         }
         if let groupID = splitTransition.selectedTargetGroupID(
             isSelected: isSelected,
@@ -36,8 +33,7 @@ enum DisplayedTabShortcutWindowTransition {
         }
         if let sourceSpaceId,
            state.activeTabForSpace[sourceSpaceId] == originalTabId {
-            state.activeTabForSpace[sourceSpaceId] = regularTabs
-                .tabs(in: sourceSpaceId).first?.id
+            state.activeTabForSpace[sourceSpaceId] = fallbackRegularTabID
         }
         state.selectionHistory.removeFromRegularTabHistory(originalTabId)
         return previousSessionState != ShortcutConversionWindowSessionState(state)

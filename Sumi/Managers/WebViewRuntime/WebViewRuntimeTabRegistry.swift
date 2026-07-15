@@ -18,6 +18,14 @@ enum WebViewRuntimeTabBindingOutcome: Equatable {
     }
 }
 
+enum WebViewRuntimeTabRetirementCompletionOutcome: Equatable {
+    case finished
+    case alreadyFinished
+    case runtimeTerminated
+    case residenceRetained
+    case foreignIdentityPreserved
+}
+
 /// The only weak index from repository-owned Tab IDs back to app Tab models.
 /// It validates canonical repository backing at bind time and never owns Tabs.
 @MainActor
@@ -126,6 +134,32 @@ final class WebViewRuntimeTabRegistry {
         retiringTabIDs.remove(tabID)
         retiringTabsByID.removeValue(forKey: tabID)
         return true
+    }
+
+    /// Completes only the exact retiring Tab identity. Reentrant lifecycle
+    /// callbacks may terminate the runtime or finish this retirement before
+    /// physical destruction returns; neither case authorizes changing a later
+    /// same-ID identity.
+    func completeCommittedRetirement(
+        _ tab: Tab
+    ) -> WebViewRuntimeTabRetirementCompletionOutcome {
+        guard isTerminallyShutDown == false else {
+            return .runtimeTerminated
+        }
+        pruneReleasedRetiredTabs()
+        if isRetiring(tab) {
+            guard webViewSessions.snapshot(for: tab.id)
+                .allKnownWebViews.isEmpty else {
+                return .residenceRetained
+            }
+            retiringTabIDs.remove(tab.id)
+            retiringTabsByID.removeValue(forKey: tab.id)
+            return .finished
+        }
+        if retiredTabsByIdentity[ObjectIdentifier(tab)]?.value === tab {
+            return .alreadyFinished
+        }
+        return .foreignIdentityPreserved
     }
 
     /// Retiring Tabs are visible only to destructive deferred cleanup. Normal

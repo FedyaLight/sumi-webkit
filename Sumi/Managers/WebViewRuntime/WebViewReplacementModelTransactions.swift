@@ -45,6 +45,8 @@ final class TabWebViewRebuildModelTransaction:
         state = .staged
     }
 
+    func retainsModelAfterFailedStage() -> Bool { false }
+
     func stagedModelIsExact() -> Bool {
         guard case .staged = state else { return false }
         return tab.webViewRebuildEpoch.isCurrent(intentRevision)
@@ -59,6 +61,12 @@ final class TabWebViewRebuildModelTransaction:
         return .sealed
     }
 
+    func claimedModelIsExact() -> Bool {
+        guard case .committed = state else { return false }
+        return tab.webViewRebuildEpoch.isCurrent(intentRevision)
+            && tab.url == targetURL
+    }
+
     func publishCommit() {}
 
     func rollback() throws {
@@ -71,7 +79,9 @@ final class TabWebViewRebuildModelTransaction:
 
     func publishRollback() {}
 
-    func settleTerminalDrain() {
+    func canSettleTerminalDrain() -> Bool { true }
+
+    func settleTerminalDrain() -> Bool {
         switch state {
         case .staged:
             state = .committed
@@ -80,5 +90,6 @@ final class TabWebViewRebuildModelTransaction:
         case .committed, .rolledBack:
             break
         }
+        return true
     }
 }

@@ -79,7 +79,4 @@ final class SpaceProfileTransitionAdmission {
         policy.resolvedPlacementProfile(profileID: profileID)
     }
 
-    func targetURL(for tab: Tab) -> URL {
-        policy.liveDocumentURL(for: tab) ?? tab.url
-    }
 }

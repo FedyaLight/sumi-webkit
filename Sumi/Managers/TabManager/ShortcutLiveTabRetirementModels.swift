@@ -51,8 +51,10 @@ struct PreparedShortcutLiveTabRetirement {
     let tabs: [Tab]
     let runtime: RuntimePortRegistry?
     let runtimeTeardown: PreparedTabRuntimeTeardown?
-    let committedRuntimeRetirement: CommittedTabRuntimeRetirement?
+    let committedRuntimeRetirement: CommittedTabRuntimeRetirementCleanupOwnership?
     let terminallyDrainedTabIDs: Set<UUID>
+    let runtimeAttachment: TabRuntimeAttachmentWitness?
+    let terminalEffect: PreparedShortcutLiveTabRetirementTerminalEffect?
     let windowCommitPolicy: ShortcutRetirementWindowCommitPolicy
     var result: ShortcutLiveTabRetirementResult
 
@@ -60,8 +62,10 @@ struct PreparedShortcutLiveTabRetirement {
         tabs: [Tab],
         runtime: RuntimePortRegistry?,
         runtimeTeardown: PreparedTabRuntimeTeardown? = nil,
-        committedRuntimeRetirement: CommittedTabRuntimeRetirement? = nil,
+        committedRuntimeRetirement: CommittedTabRuntimeRetirementCleanupOwnership? = nil,
         terminallyDrainedTabIDs: Set<UUID> = [],
+        runtimeAttachment: TabRuntimeAttachmentWitness? = nil,
+        terminalEffect: PreparedShortcutLiveTabRetirementTerminalEffect? = nil,
         windowCommitPolicy: ShortcutRetirementWindowCommitPolicy = .callerOwned,
         result: ShortcutLiveTabRetirementResult
     ) {
@@ -75,6 +79,8 @@ struct PreparedShortcutLiveTabRetirement {
         self.runtimeTeardown = runtimeTeardown
         self.committedRuntimeRetirement = committedRuntimeRetirement
         self.terminallyDrainedTabIDs = terminallyDrainedTabIDs
+        self.runtimeAttachment = runtimeAttachment
+        self.terminalEffect = terminalEffect
         self.windowCommitPolicy = windowCommitPolicy
         self.result = result
     }

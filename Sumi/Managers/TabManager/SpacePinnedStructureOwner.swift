@@ -93,9 +93,11 @@ final class SpacePinnedStructureOwner {
                 spacePinnedShortcuts: dependencies.spacePinnedShortcutsSnapshot()
             )
             for placement in plan.folderPlacements {
-                placement.folder.index = placement.index
-                placement.folder.spaceId = placement.spaceId
-                placement.folder.parentFolderId = placement.parentFolderId
+                placement.folder.installPlacement(TabFolderPlacement(
+                    spaceID: placement.spaceId,
+                    parentFolderID: placement.parentFolderId,
+                    index: placement.index
+                ))
             }
             let finalFolders = (plan.orderedFolders + plan.remainingFolders).sorted { lhs, rhs in
                 if lhs.index != rhs.index { return lhs.index < rhs.index }

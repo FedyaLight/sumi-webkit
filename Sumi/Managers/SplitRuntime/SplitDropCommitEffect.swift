@@ -7,6 +7,7 @@ struct SplitDropCommitEffect {
     let callerWindowID: UUID
     let sourceGroupID: UUID?
     let targetGroupID: UUID
+    let movingMemberID: SplitMemberID
     let previousGroups: [SumiDomain.SplitGroup]
     let affectedGroupIDs: Set<UUID>
     let preferredActiveMemberID: SplitMemberID
@@ -46,6 +47,7 @@ struct SplitDropCommitEffect {
             callerWindowID: callerWindowID,
             sourceGroupID: sourceGroup?.id,
             targetGroupID: committedTargetGroupID,
+            movingMemberID: movingMemberID,
             previousGroups: previousGroups,
             affectedGroupIDs: Set(
                 previousGroups.map(\.id) + [committedTargetGroupID]

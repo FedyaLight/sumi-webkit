@@ -120,6 +120,11 @@ struct PreparedWebViewReplacement {
     }
 }
 
+enum WebViewReplacementPipelineSettlementDelivery: Equatable {
+    case callerOwned
+    case delivered
+}
+
 enum WebViewReplacementPipelineStart {
     case started(WebViewReplacementSettlementReceipt)
     case committed
@@ -132,8 +137,8 @@ enum WebViewReplacementPipelineStart {
     /// the discarded replacement generation.
     case modelCommitFailed
     case rolledBack(WebViewReplacementRollbackReason)
-    case settlementConflict
-    case leaseLost
+    case settlementConflict(WebViewReplacementPipelineSettlementDelivery)
+    case leaseLost(WebViewReplacementPipelineSettlementDelivery)
 }
 
 /// App-level transaction boundary shared by every whole-session replacement.
@@ -214,6 +219,11 @@ final class WebViewReplacementPipeline {
     ) -> WebViewReplacementPipelineStart {
         precondition(replacements.isEmpty == false)
 
+        let replacementTabIDs = replacements.map { $0.tab.id }
+        guard Set(replacementTabIDs).count == replacementTabIDs.count else {
+            cancelConfigurationPolicyChanges(in: replacements)
+            return .invalid
+        }
         guard Self.configurationPolicyChangesCanCommit(in: replacements) else {
             cancelConfigurationPolicyChanges(in: replacements)
             return .invalid
@@ -221,6 +231,7 @@ final class WebViewReplacementPipeline {
 
         var policyEvidenceWasInvalidated = false
         var modelWasStaged = false
+        var modelRetainedFailedStage = false
         let validateTransaction = {
             let modelIsValid = model.validateForStaging()
             let policyIsValid = Self.configurationPolicyChangesCanCommit(
@@ -240,6 +251,8 @@ final class WebViewReplacementPipeline {
                 try model.stage()
                 modelWasStaged = true
             } catch {
+                modelRetainedFailedStage =
+                    model.retainsModelAfterFailedStage()
                 policyEvidenceWasInvalidated =
                     Self.configurationPolicyChangesCanCommit(
                         in: replacements
@@ -254,7 +267,10 @@ final class WebViewReplacementPipeline {
             }
         }
         let rollbackModelAfterFailedCommit = {
-            guard modelWasStaged else { return }
+            guard modelWasStaged || modelRetainedFailedStage else { return }
+            guard modelRetainedFailedStage == false else {
+                throw ModelRollbackEvidenceInvalidated()
+            }
             guard model.stagedModelIsExact() else {
                 throw ModelRollbackEvidenceInvalidated()
             }
@@ -305,12 +321,14 @@ final class WebViewReplacementPipeline {
                     retired: retired,
                     model: model
                 )
-                return .settlementConflict
+                return .settlementConflict(.callerOwned)
             case .noLongerActive:
-                if modelWasStaged {
-                    model.settleTerminalDrain()
+                if (modelWasStaged || modelRetainedFailedStage),
+                   (model.canSettleTerminalDrain() == false
+                    || model.settleTerminalDrain() == false) {
+                    return .settlementConflict(.callerOwned)
                 }
-                return .leaseLost
+                return .leaseLost(.callerOwned)
             case .began:
                 preconditionFailure("Handled replacement batch admission")
             }
@@ -358,9 +376,9 @@ final class WebViewReplacementPipeline {
         case .rolledBack(_, let reason):
             return .rolledBack(reason)
         case .conflicted:
-            return .settlementConflict
+            return .settlementConflict(.delivered)
         case .leaseLost:
-            return .leaseLost
+            return .leaseLost(.delivered)
         }
     }
 

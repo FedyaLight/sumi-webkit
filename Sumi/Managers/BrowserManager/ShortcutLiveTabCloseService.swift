@@ -6,10 +6,7 @@ final class ShortcutLiveTabCloseService {
     private let tabManager: () -> TabManager?
     private let recentlyClosedManager: () -> RecentlyClosedManager
     private let fallbackPlanner: () -> BrowserTabCloseFallbackPlanner
-    private let selectTabWithoutPersistence: (Tab, BrowserWindowState) -> Void
     private let performImmediateVisualHandoffIfPossible: (BrowserWindowState) -> Void
-    private let persistWindowSession: (BrowserWindowState) -> Void
-    private let showEmptyStateWithoutPersistence: (BrowserWindowState) -> Void
     private let splitShortcuts: () -> SplitShortcutServices?
     private let notifications: @MainActor () -> (any BrowserNotificationPresenting)?
 
@@ -17,20 +14,14 @@ final class ShortcutLiveTabCloseService {
         tabManager: @escaping () -> TabManager?,
         recentlyClosedManager: @escaping () -> RecentlyClosedManager,
         fallbackPlanner: @escaping () -> BrowserTabCloseFallbackPlanner,
-        selectTabWithoutPersistence: @escaping (Tab, BrowserWindowState) -> Void,
         performImmediateVisualHandoffIfPossible: @escaping (BrowserWindowState) -> Void,
-        persistWindowSession: @escaping (BrowserWindowState) -> Void,
-        showEmptyStateWithoutPersistence: @escaping (BrowserWindowState) -> Void,
         splitShortcuts: @escaping () -> SplitShortcutServices?,
         notifications: @escaping @MainActor () -> (any BrowserNotificationPresenting)?
     ) {
         self.tabManager = tabManager
         self.recentlyClosedManager = recentlyClosedManager
         self.fallbackPlanner = fallbackPlanner
-        self.selectTabWithoutPersistence = selectTabWithoutPersistence
         self.performImmediateVisualHandoffIfPossible = performImmediateVisualHandoffIfPossible
-        self.persistWindowSession = persistWindowSession
-        self.showEmptyStateWithoutPersistence = showEmptyStateWithoutPersistence
         self.splitShortcuts = splitShortcuts
         self.notifications = notifications
     }
@@ -92,11 +83,26 @@ final class ShortcutLiveTabCloseService {
             )
             : nil
 
+        var target = windowState.unpublishedShortcutMutationState
+        if wasCurrent, let fallback {
+            _ = WindowTabSelectionStateApplicator.apply(
+                fallback,
+                to: &target,
+                updateSpaceFromTab: true,
+                rememberSelection: true
+            )
+        } else if wasCurrent {
+            target.currentTabId = nil
+            target.currentShortcutPinId = nil
+            target.currentShortcutPinRole = nil
+            target.isShowingEmptyState = true
+        }
         let preparedRetirement = tabManager.structuralLookupCoordinator
             .withTransaction {
                 tabManager.shortcutLiveTabRetirement.prepareRetirement(
                     pinId: pinId,
-                    in: windowState.id
+                    in: windowState.id,
+                    targetWindowState: target
                 )
             }
         guard let preparedRetirement else { return false }
@@ -105,11 +111,7 @@ final class ShortcutLiveTabCloseService {
 
         captureClosedShortcutLiveInstance(tab, in: windowState, tabManager: tabManager)
 
-        if let fallback {
-            selectTabWithoutPersistence(fallback, windowState)
-            performImmediateVisualHandoffIfPossible(windowState)
-        } else if wasCurrent {
-            showEmptyStateWithoutPersistence(windowState)
+        if wasCurrent {
             performImmediateVisualHandoffIfPossible(windowState)
         }
         _ = tabManager.shortcutLiveTabRetirement.finish(preparedRetirement)
@@ -118,9 +120,6 @@ final class ShortcutLiveTabCloseService {
             notifications()?.presentTabUnloadedNotification(count: 1, in: windowState)
         }
 
-        guard wasCurrent else { return retirement.didRetire }
-
-        persistWindowSession(windowState)
         return retirement.didRetire
     }
 

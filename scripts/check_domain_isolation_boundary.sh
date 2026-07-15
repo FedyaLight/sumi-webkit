@@ -8,7 +8,7 @@
 # this script also guards that package against observation, scheduling, logging,
 # and UI/runtime framework imports.
 #
-# Intended dependency direction: SumiDomain → SumiWebRuntime → SumiAppUI.
+# SumiDomain and SumiWebRuntime are sibling packages consumed by the app.
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

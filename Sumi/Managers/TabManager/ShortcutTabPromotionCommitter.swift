@@ -29,6 +29,7 @@ final class ShortcutTabPromotionCommitter {
         split: ShortcutTabPromotionSplitTransition
     ) -> PreparedShortcutTabPromotion {
         let tab = plan.tab
+        let targetWindows = windows.project(plan: plan, split: split)
         if let chosen = plan.chosenEntry {
             guard registry.remove(
                 pinId: plan.pinID,
@@ -41,24 +42,20 @@ final class ShortcutTabPromotionCommitter {
             tab.isPinned = false
             tab.isSpacePinned = false
         }
-        guard var preparedRetirement = retirement
-            .prepareDeletedPinRetirement(plan.pinID) else {
+        guard let preparedRetirement = retirement
+            .prepareDeletedPinRetirement(
+                plan.pinID,
+                targetWindowStates: targetWindows
+            ) else {
             preconditionFailure("Preflighted shortcut runtime disappeared")
         }
         membership.attach(tab)
         regularTabs.insert(tab, in: plan.targetSpaceID, at: plan.targetIndex)
 
-        preparedRetirement.result.merge(
-            ShortcutLiveTabRetirementResult(
-                windowStatesNeedingPersistence: windows.apply(
-                    plan: plan,
-                    split: split
-                )
-            )
-        )
         return PreparedShortcutTabPromotion(
             tab: tab,
-            retirement: preparedRetirement
+            retirement: preparedRetirement,
+            result: preparedRetirement.result
         )
     }
 
@@ -68,7 +65,7 @@ final class ShortcutTabPromotionCommitter {
         retirement.finishAfterCurrentBatch(prepared.retirement)
         return ShortcutTabPromotionResult(
             tab: prepared.tab,
-            retirement: prepared.retirement.result
+            retirement: prepared.result
         )
     }
 }

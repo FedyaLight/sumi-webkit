@@ -21,7 +21,8 @@ struct ShortcutTabPromotionPlan {
 @MainActor
 struct PreparedShortcutTabPromotion {
     let tab: Tab
-    let retirement: PreparedShortcutLiveTabRetirement
+    let retirement: PreparedShortcutLiveRetirementBatch
+    let result: ShortcutLiveTabRetirementResult
 }
 
 @MainActor

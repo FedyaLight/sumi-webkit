@@ -213,10 +213,12 @@ private extension TabLastSessionMergeMaterializer {
         folder.name = restored.name
         folder.icon = SumiZenFolderIconCatalog.normalizedFolderIconValue(restored.icon)
         folder.color = NSColor(hex: restored.color) ?? .controlAccentColor
-        folder.spaceId = restored.spaceId
-        folder.parentFolderId = restored.parentFolderId
+        folder.installPlacement(TabFolderPlacement(
+            spaceID: restored.spaceId,
+            parentFolderID: restored.parentFolderId,
+            index: restored.index
+        ))
         folder.isOpen = restored.isOpen
-        folder.index = restored.index
     }
 
     func materializeShortcuts(_ plan: TabLastSessionMergePlan) {

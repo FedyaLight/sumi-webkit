@@ -8,17 +8,25 @@ import AppKit
 import Foundation
 import Observation
 
+struct TabFolderPlacement: Equatable {
+    let spaceID: UUID
+    let parentFolderID: UUID?
+    let index: Int
+}
+
 @MainActor
 @Observable
 public class TabFolder: NSObject, Identifiable {
     public let id: UUID
     var name: String
-    var spaceId: UUID
-    var parentFolderId: UUID?
+    @ObservationIgnored private var placement: TabFolderPlacement
     var isOpen: Bool = false
     var icon: String = ""
-    var index: Int
     var color: NSColor
+
+    var spaceId: UUID { placement.spaceID }
+    var parentFolderId: UUID? { placement.parentFolderID }
+    var index: Int { placement.index }
 
     init(
         id: UUID = UUID(),
@@ -31,11 +39,19 @@ public class TabFolder: NSObject, Identifiable {
     ) {
         self.id = id
         self.name = name
-        self.spaceId = spaceId
-        self.parentFolderId = parentFolderId
+        placement = TabFolderPlacement(
+            spaceID: spaceId,
+            parentFolderID: parentFolderId,
+            index: index
+        )
         self.icon = SumiZenFolderIconCatalog.normalizedFolderIconValue(icon)
         self.color = color
-        self.index = index
         super.init()
     }
+
+    func installPlacement(_ value: TabFolderPlacement) {
+        placement = value
+    }
+
+    var placementSnapshot: TabFolderPlacement { placement }
 }

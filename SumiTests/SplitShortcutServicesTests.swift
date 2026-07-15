@@ -2,12 +2,177 @@ import Combine
 import Observation
 import SumiDomain
 import SwiftData
+import WebKit
 import XCTest
 
 @testable import Sumi
 
 @MainActor
 final class SplitShortcutServicesTests: XCTestCase {
+    func testInsertionPreviewRejectsStaleSameIDCanonicalFallback() throws {
+        let fixture = try makeFixture()
+        let candidate = try makePin(
+            url: "https://insertion-preview.example",
+            spaceId: fixture.space.id,
+            index: fixture.pins.count
+        )
+        let catalog = ShortcutSplitLauncherCatalogTransaction(
+            pinStore: fixture.tabManager.shortcutPinStoreOwner,
+            pins: fixture.tabManager.shortcutPinCollectionStateOwner
+        )
+        let insertion = try XCTUnwrap(
+            catalog.prepareInsertion(candidate, at: fixture.pins.count)
+        )
+        fixture.tabManager.structuralCollectionMutationOwner
+            .setSpacePinnedShortcuts(
+                fixture.pins + [candidate.refreshed()],
+                for: fixture.space.id
+            )
+
+        XCTAssertNil(
+            insertion.presentationPreview.resolvePin(
+                withID: candidate.id,
+                canonical: {
+                    fixture.tabManager.shortcutPinCollectionStateOwner
+                        .shortcutPin(by: candidate.id)
+                }
+            )
+        )
+    }
+
+    func testCanonicalActivationRejectsEquivalentSameIDPinReplacement() throws {
+        let fixture = try makeFixture()
+        let pin = fixture.firstPin
+        let receipt = try XCTUnwrap(
+            fixture.tabManager.shortcutPresentationActivation.prepareActivation([
+                .init(
+                    pinID: pin.id,
+                    windowID: fixture.windowState.id,
+                    presentationSpaceID: fixture.space.id
+                ),
+            ])
+        )
+        var pins = try XCTUnwrap(
+            fixture.tabManager.shortcutPinCollectionStateOwner
+                .spacePinnedShortcutsSnapshot()[fixture.space.id]
+        )
+        let index = try XCTUnwrap(pins.firstIndex { $0.id == pin.id })
+        pins[index] = pin.refreshed()
+        fixture.tabManager.shortcutPinCollectionStateOwner
+            .replaceSpacePinnedShortcuts([fixture.space.id: pins])
+
+        XCTAssertFalse(receipt.stage())
+    }
+
+    func testRestoreDrainsCommittedRuntimeOnceWithoutOverwritingTopologyDrift()
+        throws {
+        var fixture: SplitServiceFixture!
+        var service: SplitShortcutMemberRestoreService!
+        var normalDestroyCount = 0
+        var drainDestroyCount = 0
+        var reentrantResults: [Bool] = []
+        var foreignGroup: SplitGroup!
+        let retirement = TestRuntimePorts.RetirementCapabilities(
+            canRetire: { _ in true },
+            beginCommitted: { _ in
+                guard let changed = fixture.group.changingLayout(
+                    to: .horizontal
+                ) else { return false }
+                foreignGroup = changed
+                fixture.tabManager.splitGroupStore.replaceAll(
+                    with: [changed]
+                )
+                return true
+            },
+            committedRetirementIsExact: { _ in true },
+            destroy: { _ in normalDestroyCount += 1 },
+            destroyAfterTerminalDrain: { _ in
+                drainDestroyCount += 1
+                reentrantResults.append(service.restoreShortcutSplitMember(
+                    .shortcutPin(fixture.firstPin.id),
+                    from: fixture.group,
+                    in: fixture.windowState,
+                    preserveLiveInstance: false
+                ))
+            }
+        )
+        fixture = try makeFixture(
+            materializeMembers: true,
+            memberCount: 3,
+            retirement: retirement
+        )
+        let retired = try XCTUnwrap(
+            fixture.tabManager.liveShortcutTabs.tab(
+                for: fixture.firstPin.id,
+                in: fixture.windowState.id
+            )
+        )
+        retired.replaceUntrackedWebView(WKWebView())
+        service = makeMemberRestoreService(fixture)
+
+        XCTAssertFalse(service.restoreShortcutSplitMember(
+            .shortcutPin(fixture.firstPin.id),
+            from: fixture.group,
+            in: fixture.windowState,
+            preserveLiveInstance: false
+        ))
+
+        XCTAssertEqual(
+            fixture.tabManager.splitGroupStore.groups,
+            [foreignGroup]
+        )
+        XCTAssertTrue(retired.webViewSession.allKnownWebViews.isEmpty)
+        XCTAssertEqual(normalDestroyCount, 0)
+        XCTAssertEqual(drainDestroyCount, 1)
+        XCTAssertEqual(reentrantResults, [false])
+        XCTAssertEqual(fixture.probe.sessionWrites, 0)
+    }
+
+    func testRestoreAttachmentABADrainsCommittedRuntimeWithoutScopedEffects()
+        throws {
+        var fixture: SplitServiceFixture!
+        var runtime: RuntimePortRegistry!
+        var normalDestroyCount = 0
+        var drainDestroyCount = 0
+        let retirement = TestRuntimePorts.RetirementCapabilities(
+            canRetire: { _ in true },
+            beginCommitted: { _ in
+                fixture.tabManager.detachBrowserRuntime()
+                fixture.tabManager.runtimePortsAttachmentOwner.attach(runtime)
+                return true
+            },
+            committedRetirementIsExact: { _ in true },
+            destroy: { _ in normalDestroyCount += 1 },
+            destroyAfterTerminalDrain: { _ in drainDestroyCount += 1 }
+        )
+        fixture = try makeFixture(
+            materializeMembers: true,
+            memberCount: 3,
+            retirement: retirement
+        )
+        runtime = fixture.tabManager.requireRuntimePorts()
+        let retired = try XCTUnwrap(
+            fixture.tabManager.liveShortcutTabs.tab(
+                for: fixture.firstPin.id,
+                in: fixture.windowState.id
+            )
+        )
+        retired.replaceUntrackedWebView(WKWebView())
+
+        XCTAssertFalse(makeMemberRestoreService(fixture)
+            .restoreShortcutSplitMember(
+                .shortcutPin(fixture.firstPin.id),
+                from: fixture.group,
+                in: fixture.windowState,
+                preserveLiveInstance: false
+            ))
+
+        XCTAssertTrue(retired.webViewSession.allKnownWebViews.isEmpty)
+        XCTAssertEqual(normalDestroyCount, 0)
+        XCTAssertEqual(drainDestroyCount, 1)
+        XCTAssertEqual(fixture.probe.sessionWrites, 0)
+    }
+
     func testStaleWindowSpaceDoesNotSelectGlobalFirstTab() throws {
         let fixture = try makeFixture()
         let unrelatedSpace = fixture.tabManager.spaceServices.catalog
@@ -69,26 +234,54 @@ final class SplitShortcutServicesTests: XCTestCase {
     func testRestoreClosingMemberPublishesBeforeTeardown() throws {
         let fixture = try makeFixture(
             materializeMembers: true,
-            windowCount: 2
+            windowCount: 2,
+            retirement: .accepting
         )
         let secondWindow = fixture.windowStates[1]
         secondWindow.splitSelection = WindowSplitSelection(
             groupID: fixture.group.id,
             activeMemberID: .shortcutPin(fixture.secondPin.id)
         )
-        let cancellable = observeStructure(in: fixture)
+        let service = makeMemberRestoreService(fixture)
+        var terminalSnapshots: [Bool] = []
+        var reentrantResults: [Bool] = []
+        let cancellable = fixture.tabManager.tabStructureEventBus
+            .structureChangedPublisher.sink {
+                fixture.probe.structuralEvents += 1
+                terminalSnapshots.append(
+                    fixture.tabManager.splitGroupStore.group(
+                        id: fixture.group.id
+                    ) == nil
+                        && fixture.tabManager.liveShortcutTabs.entries(
+                            for: fixture.firstPin.id
+                        ).isEmpty
+                        && fixture.tabManager.liveShortcutTabs.entries(
+                            for: fixture.secondPin.id
+                        ).count == 2
+                        && fixture.windowStates.allSatisfy {
+                            $0.splitSelection == nil
+                        }
+                )
+                reentrantResults.append(service.restoreShortcutSplitMember(
+                    .shortcutPin(fixture.firstPin.id),
+                    from: fixture.group,
+                    in: fixture.windowState,
+                    preserveLiveInstance: false
+                ))
+            }
+        fixture.probe.structuralEvents = 0
 
-        XCTAssertTrue(makeMemberRestoreService(fixture).restoreShortcutSplitMember(
+        XCTAssertTrue(service.restoreShortcutSplitMember(
             .shortcutPin(fixture.firstPin.id),
             from: fixture.group,
             in: fixture.windowState,
             preserveLiveInstance: false
         ))
 
-        // One durable-group commit plus the second window's required runtime
-        // materialization must both publish before the retiring tab unloads.
-        XCTAssertEqual(fixture.probe.structuralEvents, 2)
-        XCTAssertEqual(fixture.probe.eventsSeenAtUnload, [2])
+        XCTAssertEqual(fixture.probe.structuralEvents, 1)
+        XCTAssertEqual(terminalSnapshots, [true])
+        XCTAssertEqual(reentrantResults, [false])
+        XCTAssertEqual(fixture.probe.eventsSeenAtUnload, [1])
         XCTAssertEqual(
             fixture.windowState.currentTabId,
             fixture.tabManager.liveShortcutTabs.tab(
@@ -127,7 +320,8 @@ final class SplitShortcutServicesTests: XCTestCase {
         let fixture = try makeFixture(
             materializeMembers: true,
             memberCount: 3,
-            windowCount: 2
+            windowCount: 2,
+            retirement: .accepting
         )
         let secondWindow = fixture.windowStates[1]
         secondWindow.splitSelection = WindowSplitSelection(
@@ -174,11 +368,40 @@ final class SplitShortcutServicesTests: XCTestCase {
         XCTAssertEqual(fixture.probe.sessionWrites, 2)
     }
 
+    func testRestoreProxyMemberWithoutLiveInstanceCommitsWithoutRetirement()
+        throws {
+        let fixture = try makeFixture(
+            materializeMembers: false,
+            retirement: .rejecting
+        )
+        let cancellable = observeStructure(in: fixture)
+
+        XCTAssertTrue(makeMemberRestoreService(fixture)
+            .restoreShortcutSplitMember(
+                .shortcutPin(fixture.firstPin.id),
+                from: fixture.group,
+                in: fixture.windowState,
+                preserveLiveInstance: false
+            ))
+
+        XCTAssertNil(
+            fixture.tabManager.splitGroupStore.group(id: fixture.group.id)
+        )
+        XCTAssertTrue(
+            fixture.tabManager.liveShortcutTabs
+                .entries(for: fixture.firstPin.id).isEmpty
+        )
+        XCTAssertEqual(fixture.probe.structuralEvents, 1)
+        XCTAssertTrue(fixture.probe.eventsSeenAtUnload.isEmpty)
+        _ = cancellable
+    }
+
     func testRestoreFirstWindowCallbackSeesTerminalAggregateAndPreservesReentry()
         throws {
         let fixture = try makeFixture(
             materializeMembers: true,
-            memberCount: 3
+            memberCount: 3,
+            retirement: .accepting
         )
         let removedMemberID = SplitMemberID.shortcutPin(fixture.firstPin.id)
         let remaining = try XCTUnwrap(
@@ -233,7 +456,8 @@ final class SplitShortcutServicesTests: XCTestCase {
         throws {
         let fixture = try makeFixture(
             materializeMembers: true,
-            memberCount: 3
+            memberCount: 3,
+            retirement: .accepting
         )
         let folder = fixture.tabManager.folderMutationOwner.createFolder(
             for: fixture.space.id,
@@ -464,7 +688,8 @@ final class SplitShortcutServicesTests: XCTestCase {
         let fixture = try makeFixture(
             materializeMembers: true,
             memberCount: 3,
-            windowCount: 2
+            windowCount: 2,
+            retirement: .accepting
         )
         let originalLiveTab = try XCTUnwrap(
             fixture.tabManager.liveShortcutTabs.tab(
@@ -482,6 +707,7 @@ final class SplitShortcutServicesTests: XCTestCase {
             fixture.tabManager.shortcutPinCollectionStateOwner
                 .shortcutPin(by: pinID)
         }
+        var didRequestLauncherMove = false
         let failingPlacement = ShortcutSplitLauncherPlacementService(
             shortcutPin: shortcutPin,
             destinationResolver: ShortcutSplitLauncherDestinationResolver(
@@ -491,13 +717,29 @@ final class SplitShortcutServicesTests: XCTestCase {
             moves: ShortcutSplitLauncherMoveTransaction(
                 batches: TestShortcutSplitLauncherMoveBatchPreparer(
                     accepts: { _, _ in true },
-                    prepare: { _ in nil },
-                    prepareForComposedResidenceAggregate: { _ in
-                        XCTFail("Unexpected composed-residence preparation")
+                    prepare: { _ in
+                        XCTFail("Unexpected standalone launcher preparation")
+                        return nil
+                    },
+                    prepareForComposedResidenceAggregate: { _, _ in
+                        didRequestLauncherMove = true
+                        return nil
+                    },
+                    prepareBindingContributionForComposedResidenceAggregate: { _ in
+                        XCTFail("Unexpected composed binding contribution")
+                        return nil
+                    },
+                    preflightBindingContribution: { _ in
+                        XCTFail("Unexpected binding preflight")
+                        return nil
+                    },
+                    prepareBindingContributionPlan: { _, _ in
+                        XCTFail("Unexpected insertion-plan contribution")
                         return nil
                     }
                 ),
-                windowMutations: BrowserWindowShortcutMutationOwner()
+                windowMutations: BrowserWindowShortcutMutationOwner(),
+                folderOpenState: fixture.tabManager.folderOpenState
             )
         )
         let cancellable = observeStructure(in: fixture)
@@ -523,6 +765,7 @@ final class SplitShortcutServicesTests: XCTestCase {
         XCTAssertEqual(fixture.probe.structuralEvents, 0)
         XCTAssertTrue(fixture.probe.eventsSeenAtUnload.isEmpty)
         XCTAssertEqual(fixture.probe.sessionWrites, 0)
+        XCTAssertTrue(didRequestLauncherMove)
         XCTAssertIdentical(
             fixture.tabManager.liveShortcutTabs.tab(
                 for: fixture.firstPin.id,
@@ -536,7 +779,8 @@ final class SplitShortcutServicesTests: XCTestCase {
     func testMemberRestoreHandsOffStandaloneMemberBeforeTeardown() throws {
         let fixture = try makeFixture(
             materializeMembers: true,
-            createsFallback: false
+            createsFallback: false,
+            retirement: .accepting
         )
 
         makeMemberRestoreService(fixture).restoreShortcutSplitMember(
@@ -626,12 +870,25 @@ final class SplitShortcutServicesTests: XCTestCase {
                             publish: {}
                         )
                     },
-                    prepareForComposedResidenceAggregate: { _ in
+                    prepareForComposedResidenceAggregate: { _, _ in
                         XCTFail("Unexpected composed-residence preparation")
+                        return nil
+                    },
+                    prepareBindingContributionForComposedResidenceAggregate: { _ in
+                        XCTFail("Unexpected composed binding contribution")
+                        return nil
+                    },
+                    preflightBindingContribution: { _ in
+                        XCTFail("Unexpected binding preflight")
+                        return nil
+                    },
+                    prepareBindingContributionPlan: { _, _ in
+                        XCTFail("Unexpected insertion-plan contribution")
                         return nil
                     }
                 ),
-                windowMutations: BrowserWindowShortcutMutationOwner()
+                windowMutations: BrowserWindowShortcutMutationOwner(),
+                folderOpenState: try makeInMemoryTabManager().folderOpenState
             )
         )
         let member = SplitMember.shortcutPin(
@@ -643,10 +900,10 @@ final class SplitShortcutServicesTests: XCTestCase {
             )
         )
 
-        let restoration = try XCTUnwrap(
-            service.prepareRestoration(for: member)
+        let restorations = try XCTUnwrap(
+            service.prepareRestorations(for: [member])
         )
-        service.applyAndCommit([restoration])
+        restorations.applyAndCommit()
 
         XCTAssertEqual(movedPin?.id, pin.id)
         XCTAssertEqual(movedDestination?.role, .spacePinned)
@@ -821,7 +1078,8 @@ private extension SplitShortcutServicesTests {
         materializeMembers: Bool = false,
         createsFallback: Bool = true,
         memberCount: Int = 2,
-        windowCount: Int = 1
+        windowCount: Int = 1,
+        retirement: TestRuntimePorts.RetirementCapabilities = .rejecting
     ) throws -> SplitServiceFixture {
         precondition((2...4).contains(memberCount))
         precondition(windowCount > 0)
@@ -831,7 +1089,11 @@ private extension SplitShortcutServicesTests {
             )
         )
         let tabManager = browserManager.tabManager
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Space")
+        let profile = Profile(name: "Split service fixture")
+        let space = tabManager.spaceServices.catalog.createSpace(
+            name: "Space",
+            profileId: profile.id
+        )
         let fallback = createsFallback
             ? tabManager.regularTabLifecycleOwner.createNewTab(
                 url: "https://fallback.example",
@@ -858,7 +1120,9 @@ private extension SplitShortcutServicesTests {
         attachRuntime(
             to: tabManager,
             windowStates: windowStates,
-            probe: probe
+            probe: probe,
+            retirement: retirement,
+            profile: profile
         )
         let group = materializeMembers
             ? try materializedGroup(
@@ -903,18 +1167,22 @@ private extension SplitShortcutServicesTests {
     func attachRuntime(
         to tabManager: TabManager,
         windowStates: [BrowserWindowState],
-        probe: SplitServiceProbe
+        probe: SplitServiceProbe,
+        retirement: TestRuntimePorts.RetirementCapabilities,
+        profile: Profile
     ) {
         let windowsByID = Dictionary(
             uniqueKeysWithValues: windowStates.map { ($0.id, $0) }
         )
         tabManager.runtimePortsAttachmentOwner.attach(
             TestRuntimePorts.make(
+                defaultProfileId: { profile.id },
+                profile: { $0 == profile.id ? profile : nil },
                 windowState: { windowsByID[$0] },
                 windows: { windowStates.map { ($0.id, $0) } },
                 windowStates: { windowStates },
                 webViewLifecycle: TestRuntimePorts.webViewLifecycle(
-                    retirement: .rejecting,
+                    retirement: retirement,
                     unloadTab: { _ in
                         probe.visualTeardownOrder.append("unload")
                         probe.eventsSeenAtUnload.append(
@@ -1060,15 +1328,10 @@ private extension SplitShortcutServicesTests {
     ) -> ShortcutHostedSplitUnloadService {
         ShortcutHostedSplitUnloadService(
             runtimeLease: runtimeLease ?? makeRuntimeLease(fixture),
-            selectTabWithoutPersistence: { tab, windowState in
-                Self.applySelection(tab, to: windowState)
-            },
-            showEmptyStateWithoutPersistence: showEmptyState,
             performImmediateVisualHandoff: { _ in
                 fixture.probe.visualTeardownOrder.append("handoff")
             },
-            refreshCompositor: { _ in /* No-op. */ },
-            persistWindowSession: { _ in fixture.probe.sessionWrites += 1 }
+            refreshCompositor: { _ in /* No-op. */ }
         )
     }
 

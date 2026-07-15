@@ -10,6 +10,7 @@ final class SpaceProfileReplacementModelParticipant:
     private weak var owner: SpaceProfileTransitionService?
     private let intent: DeferredWebViewSpaceProfileAssignmentIntent
     private let revision: UInt64
+    private var didClaim = false
 
     init(
         transaction: SpaceProfileTransaction,
@@ -40,6 +41,10 @@ final class SpaceProfileReplacementModelParticipant:
         }
     }
 
+    func retainsModelAfterFailedStage() -> Bool {
+        transaction?.state == .retainedCleanupConflict
+    }
+
     func stagedModelIsExact() -> Bool {
         guard let transaction, owns(transaction) else { return false }
         return transaction.stagedModelIsExact()
@@ -54,7 +59,14 @@ final class SpaceProfileReplacementModelParticipant:
         guard let transaction, owns(transaction) else {
             return .terminallyDrained
         }
-        return transaction.sealCommit()
+        let outcome = transaction.sealCommit()
+        if outcome == .sealed { didClaim = true }
+        return outcome
+    }
+
+    func claimedModelIsExact() -> Bool {
+        guard didClaim, let transaction, owns(transaction) else { return false }
+        return transaction.claimedModelIsExact()
     }
 
     func publishCommit() {
@@ -81,13 +93,19 @@ final class SpaceProfileReplacementModelParticipant:
         owner?.replacementModelDidPublishRollback(transaction, intent: intent)
     }
 
-    func settleTerminalDrain() {
-        guard let transaction, owns(transaction) else { return }
-        guard transaction.settleTerminalDrain() else { return }
+    func canSettleTerminalDrain() -> Bool {
+        guard let transaction, owns(transaction) else { return false }
+        return transaction.canSettleTerminalDrain()
+    }
+
+    func settleTerminalDrain() -> Bool {
+        guard let transaction, owns(transaction),
+              transaction.settleTerminalDrain() else { return false }
         owner?.replacementModelDidSettleTerminalDrain(
             transaction,
             intent: intent
         )
+        return true
     }
 
     private func owns(_ transaction: SpaceProfileTransaction) -> Bool {

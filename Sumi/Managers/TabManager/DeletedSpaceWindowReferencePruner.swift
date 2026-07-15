@@ -25,7 +25,15 @@ struct DeletedSpaceWindowReferencePruner {
             changed = true
         }
 
-        changed = pruneSelectionHistory(removal, in: windowState) || changed
+        var history = windowState.selectionHistory
+        if history.removeReferences(
+            toSpaceID: removal.spaceId,
+            tabIDs: removal.tabIds,
+            shortcutPinIDs: removal.shortcutPinIds
+        ) {
+            windowState.selectionHistory = history
+            changed = true
+        }
         if let request = windowState.presentationState.pendingSplitGroupFocusRequest,
            request.targetSpaceID == removal.spaceId
             || removal.splitGroupIds.contains(request.groupID) {
@@ -92,41 +100,5 @@ struct DeletedSpaceWindowReferencePruner {
                     return removal.shortcutPinIds.contains(pinID)
                 }
             }
-    }
-
-    private func pruneSelectionHistory(
-        _ removal: SpaceRemovalFootprint,
-        in windowState: BrowserWindowState
-    ) -> Bool {
-        var history = windowState.selectionHistory
-        let previousRegularTabs = history.recentRegularTabIdsBySpace
-        let previousSelections = history.recentSelectionItemsBySpace
-        history.recentRegularTabIdsBySpace = history.recentRegularTabIdsBySpace
-            .reduce(into: [:]) { result, entry in
-                guard entry.key != removal.spaceId else { return }
-                let remaining = entry.value.filter {
-                    !removal.tabIds.contains($0)
-                }
-                if !remaining.isEmpty { result[entry.key] = remaining }
-            }
-        history.recentSelectionItemsBySpace = history
-            .recentSelectionItemsBySpace.reduce(into: [:]) { result, entry in
-                guard entry.key != removal.spaceId else { return }
-                let remaining = entry.value.filter { item in
-                    switch item {
-                    case .regularTab(let tabID):
-                        return !removal.tabIds.contains(tabID)
-                    case .shortcutPin(let pinID):
-                        return !removal.shortcutPinIds.contains(pinID)
-                    }
-                }
-                if !remaining.isEmpty { result[entry.key] = remaining }
-            }
-        let didChange = history.recentRegularTabIdsBySpace != previousRegularTabs
-            || history.recentSelectionItemsBySpace != previousSelections
-        if didChange {
-            windowState.selectionHistory = history
-        }
-        return didChange
     }
 }

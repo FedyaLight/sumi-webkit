@@ -41,15 +41,9 @@ struct BrowserWindowShortcutMutationState: Equatable {
     }
 }
 
-/// Stages every affected window as values, installs every terminal value, then
-/// opens Observation only after the complete multi-window aggregate exists.
-/// Clearing the active batch before publication lets a synchronous observer
-/// commit through a different model owner (for example topology) without a
-/// later window install overwriting that reentrant terminal mutation. The
-/// Observation registrar itself forbids same-registrar writes from `onChange`.
 @MainActor
 final class BrowserWindowShortcutMutationOwner {
-    private struct Entry {
+    fileprivate struct Entry {
         let window: BrowserWindowState
         let expected: BrowserWindowShortcutMutationState
         var target: BrowserWindowShortcutMutationState
@@ -63,14 +57,119 @@ final class BrowserWindowShortcutMutationOwner {
 
     private var batch: Batch?
 
+    @MainActor
+    final class PreparedAggregate {
+        private enum State { case prepared, staged, terminal }
+
+        private let entries: [Entry]
+        private var state = State.prepared
+
+        fileprivate init(entries: [Entry]) {
+            self.entries = entries
+        }
+
+        func isCurrent() -> Bool {
+            switch state {
+            case .prepared:
+                return entries.allSatisfy {
+                    $0.window.unpublishedShortcutMutationState == $0.expected
+                }
+            case .staged:
+                return entries.allSatisfy {
+                    $0.window.unpublishedShortcutMutationState == $0.target
+                }
+            case .terminal:
+                return false
+            }
+        }
+
+        func stage() -> Bool {
+            guard case .prepared = state, isCurrent() else { return false }
+            entries.forEach {
+                $0.window.installUnpublishedShortcutMutationState($0.target)
+            }
+            state = .staged
+            return isCurrent()
+        }
+
+        func publish() {
+            publish(beforePublication: {})
+        }
+
+        func publish(beforePublication: () -> Void) {
+            guard case .staged = state, isCurrent() else {
+                preconditionFailure("Shortcut window aggregate lost exact state")
+            }
+            state = .terminal
+            beforePublication()
+            entries.forEach {
+                $0.window.publishShortcutMutation(
+                    from: $0.expected,
+                    to: $0.target
+                )
+            }
+        }
+
+        func rollback() -> Bool {
+            switch state {
+            case .prepared where isCurrent():
+                state = .terminal
+                return true
+            case .staged where isCurrent():
+                entries.forEach {
+                    $0.window.installUnpublishedShortcutMutationState($0.expected)
+                }
+                state = .terminal
+                return entries.allSatisfy {
+                    $0.window.unpublishedShortcutMutationState == $0.expected
+                }
+            case .prepared, .staged, .terminal:
+                return false
+            }
+        }
+
+        func discardPrepared() -> Bool {
+            guard case .prepared = state else { return false }
+            state = .terminal
+            return true
+        }
+
+        func canAbandonForTerminalDrain() -> Bool {
+            guard case .staged = state else { return false }
+            return isCurrent()
+        }
+
+        func abandonForTerminalDrain() {
+            precondition(canAbandonForTerminalDrain())
+            state = .terminal
+        }
+    }
+
+    func prepareAggregate(_ operation: () -> Bool) -> PreparedAggregate? {
+        guard batch == nil else {
+            preconditionFailure("Prepared window aggregate cannot be nested")
+        }
+        let batch = Batch()
+        self.batch = batch
+        batch.depth = 1
+        let accepted = operation()
+        batch.depth = 0
+        self.batch = nil
+        guard accepted, batch.rejected == false else { return nil }
+        let entries = batch.entries.values.sorted {
+            $0.window.id.uuidString < $1.window.id.uuidString
+        }
+        guard entries.allSatisfy({
+            $0.window.unpublishedShortcutMutationState == $0.expected
+        }) else { return nil }
+        return PreparedAggregate(entries: entries)
+    }
+
     func withAggregate(_ operation: () -> Bool) -> Bool {
         withAggregate(operation, beforePublication: {})
     }
 
-    /// Installs every raw window value first, then publishes already-admitted
-    /// sibling model receipts before opening window Observation. The terminal
-    /// callback is intentionally infallible: all validation and rollback must
-    /// complete while the aggregate is still staged.
+    /// Publishes an already-admitted synchronous window aggregate.
     func withAggregate(
         _ operation: () -> Bool,
         beforePublication: () -> Void

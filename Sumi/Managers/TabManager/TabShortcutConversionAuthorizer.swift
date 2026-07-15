@@ -31,7 +31,9 @@ final class TabShortcutConversionAuthorizer {
         _ plan: DisplayedTabShortcutConversionPlan,
         for tab: Tab
     ) -> AuthorizedDisplayedTabShortcutConversion? {
-        guard plan.sourceTabId == tab.id else { return nil }
+        guard plan.sourceTabId == tab.id,
+              plan.runtimeAttachment.isCurrent()
+        else { return nil }
         let selectedWindowIds = windows.windowIdsSelecting(
             tabId: tab.id,
             preferredWindowId: plan.firstWindowId,
@@ -83,7 +85,9 @@ final class TabShortcutConversionAuthorizer {
         _ plan: DetachedTabShortcutConversionPlan,
         for tab: Tab
     ) -> AuthorizedDetachedTabShortcutConversion? {
-        guard plan.sourceTabId == tab.id else { return nil }
+        guard plan.sourceTabId == tab.id,
+              plan.runtimeAttachment.isCurrent()
+        else { return nil }
         if let runtime = plan.runtime {
             guard windows.windowIdsDisplaying(
                 tabId: tab.id,
@@ -95,7 +99,7 @@ final class TabShortcutConversionAuthorizer {
         }
         return AuthorizedDetachedTabShortcutConversion(
             tab: tab,
-            runtime: plan.runtime,
+            runtimeAttachment: plan.runtimeAttachment,
             structure: plan.structure
         )
     }

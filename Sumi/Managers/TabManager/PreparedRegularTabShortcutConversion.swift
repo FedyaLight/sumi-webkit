@@ -32,13 +32,15 @@ final class RegularTabShortcutSidebarMutation {
         case noChange
         case launcher(
             any ShortcutSplitLauncherMoveBatchParticipant,
-            BrowserWindowShortcutMutationOwner
+            BrowserWindowShortcutMutationOwner,
+            TabFolderOpenStateService
         )
     }
 
     private enum State {
         case staged
         case modelSettled
+        case modelPublished
         case committed
         case rolledBack
     }
@@ -48,9 +50,10 @@ final class RegularTabShortcutSidebarMutation {
 
     init(
         batch: any ShortcutSplitLauncherMoveBatchParticipant,
-        windowMutations: BrowserWindowShortcutMutationOwner
+        windowMutations: BrowserWindowShortcutMutationOwner,
+        folderOpenState: TabFolderOpenStateService
     ) {
-        payload = .launcher(batch, windowMutations)
+        payload = .launcher(batch, windowMutations, folderOpenState)
     }
 
     private init(payload: Payload) {
@@ -62,7 +65,7 @@ final class RegularTabShortcutSidebarMutation {
         switch payload {
         case .noChange:
             return true
-        case .launcher(let batch, _):
+        case .launcher(let batch, _, _):
             return batch.isCurrent()
         }
     }
@@ -80,17 +83,21 @@ final class RegularTabShortcutSidebarMutation {
         switch payload {
         case .noChange:
             guard participant == nil else { return false }
-            state = .modelSettled
+            state = .modelPublished
             return true
-        case .launcher(let batch, let windowMutations):
-            return windowMutations.withAggregate {
-                batch.settleAdmittedModel()
+        case .launcher(let batch, let windowMutations, _):
+            return windowMutations.withAggregate({
+                guard batch.settleAdmittedModel() else { return false }
                 participant?.settleAdmittedWindowModel(
                     using: windowMutations
                 )
                 state = .modelSettled
                 return true
-            }
+            }, beforePublication: {
+                participant?.publishAdmittedModel()
+                batch.publishAdmittedModel()
+                self.state = .modelPublished
+            })
         }
     }
 
@@ -107,11 +114,15 @@ final class RegularTabShortcutSidebarMutation {
               participants.allSatisfy({
                   $0.isCurrentForWindowSettlement()
               }) else { return false }
-        guard case .launcher(let batch, let windowMutations) = payload else {
+        guard case .launcher(
+            let batch,
+            let windowMutations,
+            let folderOpenState
+        ) = payload else {
             return false
         }
         let settled = windowMutations.withAggregate({
-            batch.settleAdmittedModel()
+            guard batch.settleAdmittedModel() else { return false }
             participants.forEach {
                 $0.settleAdmittedWindowModel(using: windowMutations)
             }
@@ -122,38 +133,61 @@ final class RegularTabShortcutSidebarMutation {
                 preconditionFailure("Sidebar aggregate lost terminal model")
             }
             participants.forEach { $0.publishAdmittedModel() }
+            batch.publishAdmittedModel()
+            self.state = .modelPublished
         })
         guard settled else { return false }
-        state = .committed
-        batch.publishAndExecute()
+        commit(batch, openingFoldersWith: folderOpenState)
         return true
     }
 
     /// The enclosing aggregate has already revalidated every participant.
-    func settleAdmittedModel() {
+    func settleAdmittedModel() -> Bool {
         guard case .staged = state else {
             preconditionFailure("Sidebar mutation was not staged")
         }
-        if case .launcher(let batch, _) = payload {
-            batch.settleAdmittedModel()
+        if case .launcher(let batch, _, _) = payload {
+            guard batch.settleAdmittedModel() else { return false }
         }
         state = .modelSettled
+        return true
     }
 
     func rollback() -> Bool {
         guard case .staged = state else { return false }
-        if case .launcher(let batch, _) = payload,
+        if case .launcher(let batch, _, _) = payload,
            batch.rollback() == false { return false }
         state = .rolledBack
         return true
     }
 
-    func commit() {
-        guard case .modelSettled = state else { return }
-        state = .committed
-        if case .launcher(let batch, _) = payload {
-            batch.publishAndExecute()
+    func publishAdmittedModel() {
+        guard case .modelSettled = state else {
+            preconditionFailure("Sidebar model was not settled")
         }
+        if case .launcher(let batch, _, _) = payload {
+            batch.publishAdmittedModel()
+        }
+        state = .modelPublished
+    }
+
+    func commit() {
+        guard case .modelPublished = state else {
+            preconditionFailure("Sidebar model was not published")
+        }
+        if case .launcher(let batch, _, let folderOpenState) = payload {
+            commit(batch, openingFoldersWith: folderOpenState)
+        } else {
+            state = .committed
+        }
+    }
+
+    private func commit(
+        _ batch: any ShortcutSplitLauncherMoveBatchParticipant,
+        openingFoldersWith folderOpenState: TabFolderOpenStateService
+    ) {
+        state = .committed
+        batch.commitTerminalEffects(openingFoldersWith: folderOpenState)
     }
 
     static var noChange: RegularTabShortcutSidebarMutation {
@@ -167,10 +201,7 @@ final class RegularTabShortcutSidebarMutation {
 final class RegularTabShortcutSidebarMutationPreparation {
     private enum Payload {
         case noChange
-        case launcher(
-            ShortcutSplitLauncherMoveTransaction,
-            [PreparedShortcutSplitLauncherRestoration]
-        )
+        case launcher(PreparedShortcutSplitLauncherRestorationBatch)
     }
 
     private let payload: Payload
@@ -179,12 +210,15 @@ final class RegularTabShortcutSidebarMutationPreparation {
         self.payload = payload
     }
 
-    func stage() -> RegularTabShortcutSidebarMutation? {
+    func preflightBindingContribution()
+        -> RegularTabShortcutSidebarBindingPreflight? {
         switch payload {
         case .noChange:
             return .noChange
-        case .launcher(let transaction, let restorations):
-            return transaction.stage(restorations)
+        case .launcher(let restorations):
+            return restorations.preflightBindingContribution().map {
+                .launcher(restorations, $0)
+            }
         }
     }
 
@@ -193,9 +227,8 @@ final class RegularTabShortcutSidebarMutationPreparation {
     }
 
     static func launcher(
-        transaction: ShortcutSplitLauncherMoveTransaction,
-        restorations: [PreparedShortcutSplitLauncherRestoration]
+        _ restorations: PreparedShortcutSplitLauncherRestorationBatch
     ) -> RegularTabShortcutSidebarMutationPreparation {
-        Self(payload: .launcher(transaction, restorations))
+        Self(payload: .launcher(restorations))
     }
 }

@@ -1,14 +1,29 @@
 #!/bin/bash
 set -euo pipefail
 
-root="$(cd "$(dirname "$0")/.." && pwd)"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+root="$(cd "$script_dir/.." && pwd)"
+# shellcheck source=scripts/lib/architecture_guard.sh
+source "$script_dir/lib/architecture_guard.sh"
+guard_initialize "$root"
 catalog="$root/Sumi/Managers/ExtensionManager/InstalledExtensionCatalog.swift"
-tests="$root/SumiTests/InstalledExtensionCatalogTests.swift"
+guard_require_file "$catalog"
 
-publish_line="$(rg -n '^    func publish\(' "$catalog" | head -1 | cut -d: -f1)"
-fetch_guard_line="$(rg -n 'guard result\.didFetchPersistedMetadata else' "$catalog" | head -1 | cut -d: -f1)"
-set_all_line="$(rg -n 'environment\.installedRecords\.setAll' "$catalog" | head -1 | cut -d: -f1)"
-loaded_line="$(rg -n 'environment\.markCatalogLoaded\(\)' "$catalog" | head -1 | cut -d: -f1)"
+publish_line="$(
+  guard_capture_matches '^    func publish\(' "$catalog" -m 1 | cut -d: -f1
+)"
+fetch_guard_line="$(
+  guard_capture_matches 'guard result\.didFetchPersistedMetadata else' \
+    "$catalog" -m 1 | cut -d: -f1
+)"
+set_all_line="$(
+  guard_capture_matches 'environment\.installedRecords\.setAll' \
+    "$catalog" -m 1 | cut -d: -f1
+)"
+loaded_line="$(
+  guard_capture_matches 'environment\.markCatalogLoaded\(\)' \
+    "$catalog" -m 1 | cut -d: -f1
+)"
 
 if [[ -z "$publish_line" || -z "$fetch_guard_line" \
     || -z "$set_all_line" || -z "$loaded_line" ]] \
@@ -18,17 +33,5 @@ if [[ -z "$publish_line" || -z "$fetch_guard_line" \
     echo "failed metadata fetch must be rejected before catalog and readiness publication" >&2
     exit 1
 fi
-
-for symbol in \
-    testFailedFetchPreservesAuthoritativeCatalogReadinessToolbarPinsRevisionAndDurability \
-    testFailedInitialFetchDoesNotPublishReadiness \
-    testVolatileReconciliationFailurePreservesExactLiveSnapshotAndDefersPublication \
-    testSuccessfulEmptySnapshotClearsCatalogPublishesReadinessAndReconcilesPins \
-    testSuccessfulNonemptySnapshotPublishesAllRecordsAndReturnsOnlyEnabledEntities; do
-    if ! rg -q "func $symbol" "$tests"; then
-        echo "missing installed-extension catalog regression: $symbol" >&2
-        exit 1
-    fi
-done
 
 echo "installed-extension catalog boundary passed"

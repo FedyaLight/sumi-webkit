@@ -11,15 +11,12 @@ guard_initialize "$repo_root"
 # them here prevents accidental resurrection without pretending that a deleted
 # file has a meaningful zero-line architecture budget.
 retired_paths=(
-  "Sumi/Models/Tab/TabCommittedDocumentOwner.swift"
-  "Sumi/Models/Tab/TabDocumentSuspensionOwner.swift"
   "Sumi/Managers/BrowserManager/BrowserRecentlyClosedRestoreOwner.swift"
   "Sumi/Managers/BrowserManager/BrowserStartupPolicyOwner.swift"
   "Sumi/Managers/BrowserManager/BrowserWindowSpaceStateOwner.swift"
   "Sumi/Managers/TabManager/TabProfileRuntimeStateOwner.swift"
   "SumiTests/TabProfileRuntimeStateOwnerTests.swift"
   "Sumi/Managers/TabManager/TabSpaceLifecycleOwner.swift"
-  "Sumi/Managers/TabManager/TabTargetSpaceResolver.swift"
   "Sumi/Managers/BrowserManager/BrowserSidebarSplitShortcutRoutingOwner.swift"
   "SumiTests/BrowserSidebarSplitShortcutRoutingOwnerTests.swift"
   "Sumi/Managers/BrowserManager/BrowserShortcutLiveTabCloseOwner.swift"
@@ -32,11 +29,32 @@ retired_paths=(
   "Sumi/Managers/BrowserManager/BrowserActivePageRoutingOwner.swift"
   "SumiTests/BrowserActivePageRoutingOwnerTests.swift"
   "Sumi/Managers/BrowserManager/BrowserURLBarCommands.swift"
+  "Sumi/Managers/TabManager/ShortcutLiveTabRetirementPlanner.swift"
+  "Sumi/Managers/TabManager/ShortcutLiveTabRetirementTransaction.swift"
+  "Sumi/Managers/BrowserManager/ShortcutSplitLauncherCatalogAdapter.swift"
+  "Packages/SumiWebRuntime/Sources/SumiWebRuntime/Session/WebViewReplacementCoordinator.swift"
+  "Packages/SumiWebRuntime/Sources/SumiWebRuntime/Session/WebViewReplacementTransactionStore.swift"
 )
 
 for retired_path in "${retired_paths[@]}"; do
   guard_expect_absent_path "retired architecture surface $retired_path" "$retired_path"
 done
+
+guard_expect_no_matches \
+  'retired item-15 role symbols' \
+  '\b(ShortcutSplitLauncherCatalogAdapter|ShortcutSplitLauncherStagedMove)\b' \
+  -g '*.swift' App FloatingBar SidebarChrome Settings Sumi UI SumiTests
+
+guard_expect_no_matches \
+  'retired structural collection closure bag' \
+  'TabStructuralCollectionMutationOwner\.Dependencies|extension TabStructuralCollectionMutationOwner\.Dependencies|struct Dependencies' \
+  Sumi/Managers/TabManager/TabStructuralCollectionMutationOwner.swift \
+  SumiTests/TabStructuralCollectionMutationOwnerTests.swift
+
+guard_expect_no_matches \
+  'retired SumiWebRuntime replacement role symbols' \
+  '\b(WebViewReplacementCoordinator|WebViewReplacementTransactionStore)\b' \
+  -g '*.swift' Packages/SumiWebRuntime Sumi SumiTests
 
 product_roots=(App FloatingBar SidebarChrome Settings Sumi UI SumiTests)
 
@@ -92,7 +110,7 @@ guard_expect_no_matches \
 
 guard_expect_no_matches \
   'retired tab-creation resolver API' \
-  'TabTargetSpaceResolver|\bprofileIdForNewTab\b|\brequestTargetSpaceProfileBackfill\b|\binitialExplicitProfileId\b|\bprofileIdForUnassignedSpace\b|\bcreateNewTabWithWebView\b|\bduplicateAsRegularForSplit\b' \
+  '\bprofileIdForNewTab\b|\brequestTargetSpaceProfileBackfill\b|\binitialExplicitProfileId\b|\bprofileIdForUnassignedSpace\b|\bcreateNewTabWithWebView\b|\bduplicateAsRegularForSplit\b' \
   -g '*.swift' "${product_roots[@]}"
 
 guard_expect_no_matches \
@@ -112,7 +130,17 @@ guard_expect_no_matches \
 
 guard_expect_no_matches \
   'retired shortcut retirement owners' \
-  'ShortcutLiveTabRetirementOwner|ShortcutSelectionReconciliationOwner|ShortcutLiveTabServices' \
+  'ShortcutLiveTabRetirementOwner|ShortcutLiveTabRetirementAdmission|ShortcutSelectionReconciliationOwner|ShortcutLiveTabServices' \
+  -g '*.swift' "${product_roots[@]}"
+
+guard_expect_no_matches \
+  'retired direct shortcut retirement pipeline' \
+  'ShortcutLiveTabRetirementPlanner|ShortcutLiveTabRetirementTransaction' \
+  -g '*.swift' "${product_roots[@]}"
+
+guard_expect_no_matches \
+  'retired deleted-Space selection-history wrapper' \
+  'DeletedSpaceWindowSelectionHistoryPruner' \
   -g '*.swift' "${product_roots[@]}"
 
 guard_expect_no_matches \

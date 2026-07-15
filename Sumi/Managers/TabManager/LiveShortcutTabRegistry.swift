@@ -73,14 +73,19 @@ final class LiveShortcutTabRegistry {
         in windowId: UUID,
         presentationPage: LiveShortcutPresentationPageReceipt
     ) -> Bool {
-        guard let change = staging.register(
+        guard let plan = staging.prepareRegistration(
             tab,
             for: pinId,
             in: windowId,
             presentationPage: presentationPage
         ) else { return false }
-        staging.publish([change])
-        return true
+        return structuralLookup.withTransaction {
+            guard let change = staging.stage([plan])?.first else {
+                return false
+            }
+            staging.publish([change])
+            return true
+        }
     }
 
     @discardableResult
@@ -118,7 +123,7 @@ final class LiveShortcutTabRegistry {
         in windowId: UUID,
         presentationPage: LiveShortcutPresentationPageReceipt
     ) -> Bool {
-        guard staging.canRelocate(
+        guard let plan = staging.prepareRelocation(
             tab,
             from: sourcePinId,
             to: targetPinId,
@@ -126,13 +131,7 @@ final class LiveShortcutTabRegistry {
             presentationPage: presentationPage
         ) else { return false }
         return structuralLookup.withTransaction {
-            guard let change = staging.relocate(
-                tab,
-                from: sourcePinId,
-                to: targetPinId,
-                in: windowId,
-                presentationPage: presentationPage
-            ) else { return false }
+            guard let change = staging.stage([plan])?.first else { return false }
             staging.publish([change])
             return true
         }

@@ -73,6 +73,26 @@ private final class DeferredPersistenceSpaceTransition:
         return .failed
     }
 
+    func executePreparedProfileAssignments(
+        _ assignments: [PreparedTabProfileAssignment],
+        bindingModel: any ShortcutTabBindingAggregateTransaction,
+        settlement: @escaping ProfileTransitionService.Settlement
+    ) -> PreparedProfileAssignmentBatchTransitionOutcome {
+        let model = PreparedProfileAssignmentBatchModelTransaction(
+            assignments: assignments,
+            binding: bindingModel
+        )
+        guard model.validateForStaging() else {
+            settlement(.rejected(.stale))
+            return .rejectedUnstaged(.stale)
+        }
+        let outcome = ProfileTransitionModelOnlySettlement.execute(
+            .transaction(model)
+        )
+        settlement(outcome.settlement)
+        return outcome.batchExecution
+    }
+
     func executeSpaceProfileAssignment(
         space: Space,
         targetProfile: Profile,

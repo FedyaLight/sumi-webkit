@@ -7,99 +7,78 @@ repo_root="$(cd "$script_dir/.." && pwd)"
 source "$script_dir/lib/architecture_guard.sh"
 guard_initialize "$repo_root"
 
+shopt -s nullglob
 session_recovery_services=(
-  "Sumi/Managers/BrowserManager/ClosedTabRestoreService.swift"
-  "Sumi/Managers/BrowserManager/ClosedShortcutRestoreService.swift"
-  "Sumi/Managers/BrowserManager/WindowSessionReopenService.swift"
-  "Sumi/Managers/BrowserManager/LastSessionWindowsRestoreService.swift"
-  "Sumi/Managers/BrowserManager/RecentlyClosedItemReopenService.swift"
-  "Sumi/Managers/BrowserManager/BrowserSessionRecoveryCommands.swift"
+  Sumi/Managers/BrowserManager/*Restore*.swift
+  Sumi/Managers/BrowserManager/*Reopen*.swift
+  Sumi/Managers/BrowserManager/*RecentlyClosed*.swift
+  Sumi/Managers/BrowserManager/*SessionRecovery*.swift
 )
+filtered_session_recovery_services=()
+for source in "${session_recovery_services[@]}"; do
+  [[ "$source" == *+Live.swift ]] || filtered_session_recovery_services+=("$source")
+done
+session_recovery_services=("${filtered_session_recovery_services[@]}")
 tab_space_services=(
-  "Sumi/Managers/TabManager/SpaceCatalogCommands.swift"
-  "Sumi/Managers/TabManager/SpaceRemovalService.swift"
-  "Sumi/Managers/TabManager/SpaceActivationService.swift"
-  "Sumi/Managers/TabManager/TabCreationPlacementService.swift"
-  "Sumi/Managers/TabManager/SpaceContentRetirementService.swift"
-  "Sumi/Managers/TabManager/SpaceContentRetirementTransaction.swift"
-  "Sumi/Managers/TabManager/SpaceSplitGroupRetirementService.swift"
-  "Sumi/Managers/TabManager/SpaceTabInventory.swift"
-  "Sumi/Managers/TabManager/DeletedSpaceWindowStateReconciler.swift"
-  "Sumi/Managers/TabManager/DeletedSpaceWindowReferencePruner.swift"
-  "Sumi/Managers/TabManager/TabRuntimeTeardownService.swift"
-  "Sumi/Managers/TabManager/TabRuntimeTeardownPreparationService.swift"
+  Sumi/Managers/TabManager/SpaceCatalog*.swift
+  Sumi/Managers/TabManager/SpaceRemoval*.swift
+  Sumi/Managers/TabManager/SpaceActivation*.swift
+  Sumi/Managers/TabManager/SpaceContentRetirement*.swift
+  Sumi/Managers/TabManager/SpaceSplitGroupRetirement*.swift
+  Sumi/Managers/TabManager/SpaceTabInventory.swift
+  Sumi/Managers/TabManager/DeletedSpace*.swift
+  Sumi/Managers/TabManager/TabCreationPlacement*.swift
+  Sumi/Managers/TabManager/TabRuntimeTeardown*.swift
+  Packages/SumiDomain/Sources/SumiDomain/Window/WindowSelectionHistory.swift
 )
 shortcut_runtime_services=(
-  "Sumi/Managers/TabManager/LiveShortcutTabRegistry.swift"
-  "Sumi/Managers/TabManager/LiveShortcutTabSnapshot.swift"
-  "Sumi/Managers/TabManager/ShortcutTabWindowQuery.swift"
-  "Sumi/Managers/TabManager/ShortcutTabBindingSynchronizer.swift"
-  "Sumi/Managers/TabManager/ShortcutTabMaterializer.swift"
-  "Sumi/Managers/TabManager/RegularTabShortcutConversionService.swift"
-  "Sumi/Managers/TabManager/RegularTabShortcutConversionService+Live.swift"
-  "Sumi/Managers/TabManager/ShortcutPinToRegularTabService.swift"
-  "Sumi/Managers/TabManager/RegularTabShortcutConversionPlanner.swift"
-  "Sumi/Managers/TabManager/DisplayedTabShortcutConversionCommitter.swift"
-  "Sumi/Managers/TabManager/TabShortcutConversionAuthorizer.swift"
-  "Sumi/Managers/TabManager/RegularTabShortcutStructureTransition.swift"
-  "Sumi/Managers/TabManager/RegularTabShortcutStructurePlan.swift"
-  "Sumi/Managers/TabManager/ShortcutTabPromotionService.swift"
-  "Sumi/Managers/TabManager/ShortcutLiveTabRetirementService.swift"
-  "Sumi/Managers/TabManager/ShortcutLiveTabRetirementTransaction.swift"
-  "Sumi/Managers/TabManager/ShortcutSelectionReconciler.swift"
+  Sumi/Managers/TabManager/*Shortcut*.swift
 )
+filtered_shortcut_runtime_services=()
+for source in "${shortcut_runtime_services[@]}"; do
+  [[ "$source" == *Owner.swift ]] || filtered_shortcut_runtime_services+=("$source")
+done
+shortcut_runtime_services=("${filtered_shortcut_runtime_services[@]}")
 split_shortcut_services=(
-  "Sumi/Managers/BrowserManager/SplitShortcutFocusService.swift"
-  "Sumi/Managers/BrowserManager/WindowSplitMaterializationService.swift"
-  "Sumi/Managers/BrowserManager/SplitShortcutMemberResolver.swift"
-  "Sumi/Managers/BrowserManager/SplitShortcutMemberRestoreService.swift"
-  "Sumi/Managers/BrowserManager/ShortcutSplitLauncherPlacementService.swift"
-  "Sumi/Managers/BrowserManager/ShortcutSplitLauncherDestinationResolver.swift"
-  "Sumi/Managers/BrowserManager/ShortcutSplitLauncherMoveTransaction.swift"
-  "Sumi/Managers/BrowserManager/ShortcutSplitLauncherCatalogAdapter.swift"
-  "Sumi/Managers/BrowserManager/ShortcutHostedSplitUnloadService.swift"
+  Sumi/Managers/BrowserManager/*SplitShortcut*.swift
+  Sumi/Managers/BrowserManager/*ShortcutSplit*.swift
+  Sumi/Managers/BrowserManager/WindowSplitMaterialization*.swift
+  Sumi/Managers/BrowserManager/ShortcutHostedSplit*.swift
 )
+filtered_split_shortcut_services=()
+for source in "${split_shortcut_services[@]}"; do
+  [[ "$source" == *+Live.swift ]] || filtered_split_shortcut_services+=("$source")
+done
+split_shortcut_services=("${filtered_split_shortcut_services[@]}")
 window_history_services=(
-  "Sumi/Managers/BrowserManager/OpenWindowSessionCatalog.swift"
-  "Sumi/Managers/BrowserManager/LastSessionWindowArchive.swift"
-  "Sumi/Managers/BrowserManager/ClosedWindowHistoryRecorder.swift"
-  "Sumi/Managers/BrowserManager/WindowSessionHistoryServices.swift"
+  Sumi/Managers/BrowserManager/OpenWindowSessionCatalog.swift
+  Sumi/Managers/BrowserManager/LastSessionWindowArchive.swift
+  Sumi/Managers/BrowserManager/ClosedWindowHistoryRecorder.swift
+  Sumi/Managers/BrowserManager/WindowSessionHistoryServices.swift
 )
-floating_bar_services=(
-  "Sumi/Services/FloatingBarPresentationService.swift"
-  "Sumi/Services/FloatingBarCommitService.swift"
-  "Sumi/Services/FloatingBarPageNavigationService.swift"
-  "Sumi/Services/FloatingBarServices.swift"
-)
+floating_bar_services=(Sumi/Services/FloatingBar*.swift)
 active_page_services=(
-  "Sumi/Managers/BrowserManager/ActivePageResolver.swift"
-  "Sumi/Managers/BrowserManager/ActivePageCommandService.swift"
-  "Sumi/Services/ExternalURLTabOpeningService.swift"
-  "Sumi/Components/DragDrop/SidebarURLDropService.swift"
-  "Sumi/Components/DragDrop/ShortcutURLInsertionService.swift"
+  Sumi/Managers/BrowserManager/*ActivePage*.swift
+  Sumi/Services/ExternalURL*.swift
+  Sumi/Components/DragDrop/SidebarURL*.swift
+  Sumi/Components/DragDrop/ShortcutURL*.swift
 )
 
-required_sources=(
-  "${session_recovery_services[@]}"
-  "${tab_space_services[@]}"
-  "${shortcut_runtime_services[@]}"
-  "${split_shortcut_services[@]}"
-  "${window_history_services[@]}"
-  "${floating_bar_services[@]}"
-  "${active_page_services[@]}"
-  "Sumi/Managers/BrowserManager/BrowserSessionRecoveryCommands+Live.swift"
-  "Sumi/Managers/BrowserManager/SplitShortcutServices.swift"
-  "Sumi/Managers/BrowserManager/SplitShortcutServices+Live.swift"
-  "Sumi/Managers/BrowserManager/WindowSessionHistoryServices+Live.swift"
-  "Sumi/Managers/BrowserManager/BrowserShellRuntime+ActivePage.swift"
-  "Sumi/Managers/TabManager/TabSpaceServices.swift"
-  "Sumi/Managers/TabManager/TabStructuralPersistenceService.swift"
-  "Sumi/Managers/TabManager/SpaceProfileRuntimeStateService.swift"
-  "Sumi/Managers/BrowserManager/BrowserWindowSpaceContextReconciler.swift"
-)
-for source in "${required_sources[@]}"; do
-  guard_require_file "$source"
-done
+guard_require_discovered_sources() {
+  local label="$1"
+  shift
+  if (( $# == 0 )); then
+    guard_fatal "no living sources discovered for $label"
+  fi
+}
+
+guard_require_discovered_sources 'session recovery' "${session_recovery_services[@]}"
+guard_require_discovered_sources 'Tab Space' "${tab_space_services[@]}"
+guard_require_discovered_sources 'shortcut runtime' "${shortcut_runtime_services[@]}"
+guard_require_discovered_sources 'split shortcut' "${split_shortcut_services[@]}"
+guard_require_discovered_sources 'window history' "${window_history_services[@]}"
+guard_require_discovered_sources 'floating bar' "${floating_bar_services[@]}"
+guard_require_discovered_sources 'active page' "${active_page_services[@]}"
 
 # Main-frame mutation must stay behind the exact owners/composition root. This
 # protects authority placement without freezing method counts or test names.
@@ -146,6 +125,7 @@ guard_expect_no_matches \
   -g '!SpaceProfileTransaction.swift' \
   -g '!SpaceProfileTransitionService.swift' \
   -g '!TabProfileTransitionService.swift' \
+  -g '!Sumi/Managers/WebViewRuntime/ProfileTransitionModelParticipant.swift' \
   Sumi
 
 guard_expect_no_matches \
@@ -198,18 +178,71 @@ guard_expect_no_matches \
   Sumi/Managers/TabManager/TabShortcutOwnerBag.swift \
   Sumi/Managers/TabManager/TabManager+OwnerAccessors.swift
 guard_expect_no_matches \
+  'TabFolder placement writes outside structural authorities' \
+  '\binstallPlacement\s*\(' \
+  -g '*.swift' \
+  -g '!TabFolder.swift' \
+  -g '!SpacePinnedStructureOwner.swift' \
+  -g '!TabFolderMutationOwner.swift' \
+  -g '!SplitGroupSidebarOrderingService.swift' \
+  -g '!TabStructuralMutationTransaction.swift' \
+  -g '!TabStoreRecordMutation.swift' \
+  -g '!TabLastSessionMergeMaterializer.swift' \
+  App FloatingBar SidebarChrome Settings Sumi UI
+guard_expect_no_matches \
   'shortcut closure dependency bags' \
   'struct Dependencies\b' \
   "${shortcut_runtime_services[@]}"
 guard_expect_no_matches \
   'shortcut retirement physical-cleanup duplication' \
   'performComprehensiveWebViewCleanup|webViewLifecycle\.(unloadTab|requireRemoveAllWebViews)|\.detach\s*\(' \
-  "${shortcut_runtime_services[@]}"
+  Sumi/Managers/TabManager/ShortcutLiveRetirement*.swift \
+  Sumi/Managers/TabManager/ShortcutLiveTabRetirementService*.swift
 guard_expect_no_matches \
   'shortcut retirement browser/notification policy' \
   '\bBrowserManager\b|BrowserNotificationPresenting|\bnotifications\b' \
   Sumi/Managers/TabManager/ShortcutLiveTabRetirementService.swift \
   Sumi/Managers/TabManager/ShortcutSelectionReconciler.swift
+guard_expect_no_matches \
+  'shortcut retirement Bool-mode phase API' \
+  '(requiringAttachment|modelClaimed|publishesTabClosure)\s*:' \
+  "${shortcut_runtime_services[@]}"
+
+guard_expect_no_matches \
+  'raw shortcut-presentation preview mode API' \
+  '\bpreviewPins\b|\bpreviewPin\s*:' \
+  Sumi/Managers/TabManager/ShortcutPresentationActivationAdmission.swift \
+  Sumi/Managers/TabManager/ShortcutPresentationActivationService.swift \
+  Sumi/Managers/SplitRuntime/WindowSplitPresentationSynchronizer.swift \
+  Sumi/Managers/SplitRuntime/SplitDropPresentationReconciling.swift
+guard_expect_no_matches \
+  'raw catalog-insertion activation without contributed residence' \
+  'case\s+catalogInsertion\(ShortcutPresentationCatalogInsertionPreview\)|prepareActivation\(\s*draft\.activationRequests,\s*preview:' \
+  -U \
+  Sumi/Managers/TabManager/ShortcutPresentationActivationService.swift \
+  Sumi/Managers/SplitRuntime/WindowSplitPresentationSynchronizer.swift \
+  Sumi/Managers/SplitRuntime/WindowSplitPresentationResidencePreparer.swift
+guard_expect_no_matches \
+  'raw insertion-preview activation overload' \
+  'func\s+prepareActivation\(\s*_\s+requests:\s*\[Request\],\s*preview:' \
+  -U \
+  Sumi/Managers/TabManager/ShortcutPresentationActivationService.swift
+guard_expect_no_matches \
+  'launcher catalog transaction exposed raw stores' \
+  '^    let (pinStore|pins):' \
+  Sumi/Managers/BrowserManager/ShortcutSplitLauncherCatalogTransaction.swift
+guard_expect_no_matches \
+  'prepared structural aggregate retaining its mutation owner unowned' \
+  'unowned let owner: TabStructuralCollectionMutationOwner' \
+  Sumi/Managers/TabManager/TabStructuralCollectionPreparedAggregate.swift
+guard_expect_no_matches \
+  'optional shortcut profile admission' \
+  'PreparedTabProfileAssignment\?|compactMap\(\\\.assignment\)' \
+  -g '*.swift' Sumi
+guard_expect_no_matches \
+  'imperative live-shortcut residence staging bypass' \
+  '^    func (register|relocate|remove)\(' \
+  Sumi/Managers/TabManager/LiveShortcutResidenceMutationStaging.swift
 
 guard_expect_no_matches \
   'split-shortcut Actions/Dependencies bags' \

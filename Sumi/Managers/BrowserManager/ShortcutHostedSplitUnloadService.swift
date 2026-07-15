@@ -6,26 +6,17 @@ import SumiDomain
 @MainActor
 final class ShortcutHostedSplitUnloadService {
     private let runtimeLease: () -> SplitShortcutRuntimeLease?
-    private let selectTabWithoutPersistence: (Tab, BrowserWindowState) -> Void
-    private let showEmptyStateWithoutPersistence: (BrowserWindowState) -> Void
     private let performImmediateVisualHandoff: (BrowserWindowState) -> Void
     private let refreshCompositor: (BrowserWindowState) -> Void
-    private let persistWindowSession: (BrowserWindowState) -> Void
 
     init(
         runtimeLease: @escaping () -> SplitShortcutRuntimeLease?,
-        selectTabWithoutPersistence: @escaping (Tab, BrowserWindowState) -> Void,
-        showEmptyStateWithoutPersistence: @escaping (BrowserWindowState) -> Void,
         performImmediateVisualHandoff: @escaping (BrowserWindowState) -> Void,
-        refreshCompositor: @escaping (BrowserWindowState) -> Void,
-        persistWindowSession: @escaping (BrowserWindowState) -> Void
+        refreshCompositor: @escaping (BrowserWindowState) -> Void
     ) {
         self.runtimeLease = runtimeLease
-        self.selectTabWithoutPersistence = selectTabWithoutPersistence
-        self.showEmptyStateWithoutPersistence = showEmptyStateWithoutPersistence
         self.performImmediateVisualHandoff = performImmediateVisualHandoff
         self.refreshCompositor = refreshCompositor
-        self.persistWindowSession = persistWindowSession
     }
 
     @discardableResult
@@ -44,26 +35,40 @@ final class ShortcutHostedSplitUnloadService {
             guard case .shortcutPin(let pinID) = memberID else { return nil }
             return pinID
         })
-        guard pinIDs.count == group.memberIDs.count,
-              let retirement = runtime.tabManager.shortcutLiveTabRetirement
-                .prepareRetirements(pinIds: pinIDs, in: windowState.id) else {
+        guard pinIDs.count == group.memberIDs.count else {
             return false
         }
-
-        windowState.splitSelection = nil
+        var target = windowState.unpublishedShortcutMutationState
+        target.splitSelection = nil
         if let fallback = fallbackVisibleRegularTab(
             in: windowState,
             tabManager: runtime.tabManager
         ) {
-            selectTabWithoutPersistence(fallback, windowState)
+            _ = WindowTabSelectionStateApplicator.apply(
+                fallback,
+                to: &target,
+                updateSpaceFromTab: true,
+                rememberSelection: true
+            )
         } else {
-            showEmptyStateWithoutPersistence(windowState)
+            target.currentTabId = nil
+            target.currentShortcutPinId = nil
+            target.currentShortcutPinRole = nil
+            target.isShowingEmptyState = true
         }
+        guard let retirement = runtime.tabManager.structuralLookupCoordinator
+            .withTransaction({
+                runtime.tabManager.shortcutLiveTabRetirement
+                    .prepareRetirements(
+                        pinIds: pinIDs,
+                        in: windowState.id,
+                        targetWindowState: target
+                    )
+            }), retirement.result.didRetire else { return false }
         performImmediateVisualHandoff(windowState)
 
         _ = runtime.tabManager.shortcutLiveTabRetirement.finish(retirement)
         refreshCompositor(windowState)
-        persistWindowSession(windowState)
         return true
     }
 

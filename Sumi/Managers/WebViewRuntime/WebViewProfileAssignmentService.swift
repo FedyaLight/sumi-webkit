@@ -10,17 +10,21 @@ final class WebViewProfileAssignmentService:
     private let runtimeTabs: WebViewRuntimeTabRegistry
     private let resolveRuntimeTab: @MainActor (UUID) -> Tab?
     private let transitions: ProfileTransitionService
+    private let preparedTransitions:
+        PreparedProfileAssignmentBatchTransitionService
     private let replacementPipeline: WebViewReplacementPipeline
 
     init(
         runtimeTabs: WebViewRuntimeTabRegistry,
         resolveRuntimeTab: @escaping @MainActor (UUID) -> Tab?,
         transitions: ProfileTransitionService,
+        preparedTransitions: PreparedProfileAssignmentBatchTransitionService,
         replacementPipeline: WebViewReplacementPipeline
     ) {
         self.runtimeTabs = runtimeTabs
         self.resolveRuntimeTab = resolveRuntimeTab
         self.transitions = transitions
+        self.preparedTransitions = preparedTransitions
         self.replacementPipeline = replacementPipeline
     }
 
@@ -68,6 +72,24 @@ final class WebViewProfileAssignmentService:
             tab: tab,
             to: targetProfile,
             intent: intent,
+            settlement: settlement
+        )
+    }
+
+    func executePreparedProfileAssignments(
+        _ assignments: [PreparedTabProfileAssignment],
+        bindingModel: any ShortcutTabBindingAggregateTransaction,
+        settlement: @escaping ProfileTransitionService.Settlement
+    ) -> PreparedProfileAssignmentBatchTransitionOutcome {
+        let tabs = assignments.map(\.tab)
+        guard Set(tabs.map(\.id)).count == tabs.count,
+              tabs.allSatisfy({ resolveRuntimeTab($0.id) === $0 }),
+              runtimeTabs.bindAtomically(tabs) else {
+            return .rejectedUnstaged(.stale)
+        }
+        return preparedTransitions.transition(
+            assignments: assignments,
+            bindingModel: bindingModel,
             settlement: settlement
         )
     }

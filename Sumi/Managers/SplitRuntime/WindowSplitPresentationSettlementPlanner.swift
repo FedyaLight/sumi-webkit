@@ -12,23 +12,28 @@ struct WindowSplitPresentationSettlementPlanner {
 
     func prepare(
         _ draftPlan: WindowSplitPresentationDraftPlan,
-        activationTabs: [Tab],
+        shortcutWitnesses: [WindowSplitPresentationShortcutWitness],
         regularTabs: RegularTabCollectionOwner
     ) -> WindowSplitPresentationSettlementPlan? {
-        guard activationTabs.count == draftPlan.activationRequests.count else {
+        guard shortcutWitnesses.count == draftPlan.activationRequests.count,
+              zip(draftPlan.activationRequests, shortcutWitnesses).allSatisfy({
+                  request, witness in
+                  request.windowID == witness.windowID
+                    && request.pinID == witness.pinID
+              }) else {
             return nil
         }
         let shortcutTabs = Dictionary(
             uniqueKeysWithValues: zip(
                 draftPlan.activationRequests,
-                activationTabs
-            ).map { request, tab in
+                shortcutWitnesses
+            ).map { request, witness in
                 (
                     ShortcutSlot(
                         windowID: request.windowID,
                         pinID: request.pinID
                     ),
-                    tab
+                    witness
                 )
             }
         )
@@ -47,7 +52,7 @@ struct WindowSplitPresentationSettlementPlanner {
 
     private func makeWindowPlans(
         _ drafts: [WindowSplitPresentationDraft],
-        shortcutTabs: [ShortcutSlot: Tab],
+        shortcutTabs: [ShortcutSlot: WindowSplitPresentationShortcutWitness],
         regularTabs: RegularTabCollectionOwner
     ) -> [WindowSplitPresentationWindowPlan]? {
         var plans: [WindowSplitPresentationWindowPlan] = []
@@ -61,52 +66,29 @@ struct WindowSplitPresentationSettlementPlanner {
                 )
             }
             guard materialized.count == draft.materializedMembers.count,
-                  Set(materialized.map(\.id)).count == materialized.count else {
+                  Set(materialized.map { $0.tab.id }).count
+                    == materialized.count else {
                 return nil
             }
-            let activeTab = draft.activeMemberID.flatMap {
-                resolvedTab(
-                    for: $0,
-                    windowID: draft.window.id,
-                    shortcutTabs: shortcutTabs,
-                    regularTabs: regularTabs
-                )
+            let activeWitness = draft.activeMemberID.flatMap { activeID in
+                materialized.first { $0.memberID == activeID }
             }
-            guard draft.activeMemberID == nil || activeTab != nil else {
+            guard draft.activeMemberID == nil || activeWitness != nil else {
                 return nil
             }
-            let memberWitnesses = zip(
-                draft.materializedMembers,
-                materialized
-            ).map {
-                WindowSplitPresentationMemberWitness(
-                    memberID: $0,
-                    tab: $1,
-                    windowID: draft.window.id
-                )
-            }
-            guard memberWitnesses.allSatisfy(witnessHasExpectedIdentity)
-            else { return nil }
+            let memberWitnesses = materialized
 
             let expectedWindowState = draft.window
                 .unpublishedShortcutMutationState
             var targetWindowState = expectedWindowState
-            if let activeTab {
-                _ = WindowTabSelectionStateApplicator.apply(
-                    activeTab,
-                    to: &targetWindowState,
-                    updateSpaceFromTab: true,
-                    rememberSelection: true
-                )
-            }
+            activeWitness?.applySelection(to: &targetWindowState)
             targetWindowState.splitSelection = draft.splitSelection
             plans.append(WindowSplitPresentationWindowPlan(
                 window: draft.window,
                 expectedWindowState: expectedWindowState,
                 targetWindowState: targetWindowState,
                 memberWitnesses: memberWitnesses,
-                activeMemberID: draft.activeMemberID,
-                activeTab: activeTab,
+                activeWitness: activeWitness,
                 before: WindowSplitPresentationPersistedState(draft.window)
             ))
         }
@@ -116,28 +98,19 @@ struct WindowSplitPresentationSettlementPlanner {
     private func resolvedTab(
         for memberID: SplitMemberID,
         windowID: UUID,
-        shortcutTabs: [ShortcutSlot: Tab],
+        shortcutTabs: [ShortcutSlot: WindowSplitPresentationShortcutWitness],
         regularTabs: RegularTabCollectionOwner
-    ) -> Tab? {
+    ) -> WindowSplitPresentationMemberWitness? {
         switch memberID {
         case .regularTab(let tabID):
-            return regularTabs.tab(for: tabID)
+            return regularTabs.tab(for: tabID).map {
+                .regular(tabID: tabID, tab: $0, windowID: windowID)
+            }
         case .shortcutPin(let pinID):
             return shortcutTabs[ShortcutSlot(
                 windowID: windowID,
                 pinID: pinID
-            )]
-        }
-    }
-
-    private func witnessHasExpectedIdentity(
-        _ witness: WindowSplitPresentationMemberWitness
-    ) -> Bool {
-        switch witness.memberID {
-        case .regularTab(let tabID):
-            witness.tab.id == tabID
-        case .shortcutPin(let pinID):
-            witness.tab.shortcutPinId == pinID
+            )].map(WindowSplitPresentationMemberWitness.shortcut)
         }
     }
 }

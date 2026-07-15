@@ -1,162 +1,143 @@
 import Foundation
 
-/// Commits planned shortcut retirement and performs physical runtime release
-/// only after the outermost structural transaction publishes its final model.
 @MainActor
 final class ShortcutLiveTabRetirementService {
     private let registry: LiveShortcutTabRegistry
-    private let transaction: ShortcutLiveTabRetirementTransaction
     private let structuralLookup: TabStructuralLookupCoordinator
-    private let runtimeTeardown: TabRuntimeTeardownService
+    private let batch: ShortcutLiveRetirementBatchTransaction
+    private let reversible: ShortcutLiveReversibleRetirementFactory
 
     init(
         registry: LiveShortcutTabRegistry,
-        batchRetirement: LiveShortcutTabBatchRetirement,
         structuralLookup: TabStructuralLookupCoordinator,
         runtimeConnection: TabRuntimePortConnection,
-        runtimeTeardown: TabRuntimeTeardownService
+        runtimeTeardown: TabRuntimeTeardownService,
+        windowMutations: BrowserWindowShortcutMutationOwner,
+        splitGroups: SplitGroupStore,
+        splitMutations: SplitGroupMutationService
     ) {
         self.registry = registry
-        transaction = ShortcutLiveTabRetirementTransaction(
+        self.structuralLookup = structuralLookup
+        reversible = ShortcutLiveReversibleRetirementFactory(
             registry: registry,
-            batchRetirement: batchRetirement,
             runtimeConnection: runtimeConnection,
             runtimeTeardown: runtimeTeardown
         )
-        self.structuralLookup = structuralLookup
-        self.runtimeTeardown = runtimeTeardown
+        batch = ShortcutLiveRetirementBatchTransaction(
+            registry: registry,
+            structuralLookup: structuralLookup,
+            runtimeConnection: runtimeConnection,
+            windowMutations: windowMutations,
+            splitGroups: splitGroups,
+            splitMutations: splitMutations,
+            teardown: runtimeTeardown
+        )
     }
 
-    /// Returns `nil` only when the identifier is not a live shortcut instance.
-    /// A non-nil empty result means the shortcut was recognized but retirement
-    /// could not acquire its runtime lease, so generic tab removal must not run.
     func retire(tabId: UUID) -> ShortcutLiveTabRetirementResult? {
         guard let entry = registry.entry(tabId: tabId) else { return nil }
-        guard var prepared = prepare(
-            pinId: entry.pinId,
-            in: entry.windowId
-        ) else { return ShortcutLiveTabRetirementResult() }
-        prepared = PreparedShortcutLiveTabRetirement(
-            tabs: prepared.tabs,
-            runtime: prepared.runtime,
-            runtimeTeardown: prepared.runtimeTeardown,
-            committedRuntimeRetirement: prepared.committedRuntimeRetirement,
-            terminallyDrainedTabIDs: prepared.terminallyDrainedTabIDs,
-            windowCommitPolicy: .retirementService,
-            result: prepared.result
-        )
-        finishAfterCurrentBatch(prepared)
-        return prepared.result
+        return retire(pinId: entry.pinId, in: entry.windowId)
     }
 
     func retire(
         pinId: UUID,
         in windowId: UUID
     ) -> ShortcutLiveTabRetirementResult {
-        guard let prepared = prepare(
-            pinId: pinId,
-            in: windowId
-        ) else { return ShortcutLiveTabRetirementResult() }
-        finishAfterCurrentBatch(prepared)
-        return prepared.result
-    }
-
-    private func prepare(
-        pinId: UUID,
-        in windowId: UUID
-    ) -> PreparedShortcutLiveTabRetirement? {
+        var prepared: PreparedShortcutLiveRetirementBatch?
         structuralLookup.withTransaction {
-            prepareRetirement(pinId: pinId, in: windowId)
+            prepared = self.prepared(from: batch.prepareWindowRetirement(
+                pinIDs: [pinId], in: windowId
+            ))
+            if let prepared { finishAfterCurrentBatch(prepared) }
         }
-    }
-
-    func retireDeletedPin(_ pinId: UUID) -> ShortcutLiveTabRetirementResult {
-        guard let prepared = structuralLookup.withTransaction({
-            prepareDeletedPinRetirement(pinId)
-        }) else { return ShortcutLiveTabRetirementResult() }
-        finishAfterCurrentBatch(prepared)
-        return prepared.result
+        return prepared?.result ?? .init()
     }
 
     func prepareRetirement(
         pinId: UUID,
-        in windowId: UUID
-    ) -> PreparedShortcutLiveTabRetirement? {
-        transaction.prepareRetirement(pinId: pinId, in: windowId)
+        in windowId: UUID,
+        targetWindowState: BrowserWindowShortcutMutationState? = nil
+    ) -> PreparedShortcutLiveRetirementBatch? {
+        structuralLookup.withTransaction {
+            prepared(from: batch.prepareWindowRetirement(
+                pinIDs: [pinId],
+                in: windowId,
+                targetWindowState: targetWindowState
+            ))
+        }
+    }
+
+    func prepareRetirements(
+        pinIds: Set<UUID>,
+        in windowId: UUID,
+        targetWindowState: BrowserWindowShortcutMutationState? = nil
+    ) -> PreparedShortcutLiveRetirementBatch? {
+        structuralLookup.withTransaction {
+            prepared(from: batch.prepareWindowRetirement(
+                pinIDs: pinIds,
+                in: windowId,
+                targetWindowState: targetWindowState
+            ))
+        }
+    }
+
+    func prepareDeletedPinRetirement(
+        _ pinId: UUID,
+        targetWindowStates: [UUID: BrowserWindowShortcutMutationState] = [:]
+    ) -> PreparedShortcutLiveRetirementBatch? {
+        structuralLookup.withTransaction {
+            prepared(from: batch.prepareDeletedPins(
+                [pinId], targetWindowStates: targetWindowStates
+            ))
+        }
+    }
+
+    func prepareDeletedPinRetirements(
+        _ pinIds: Set<UUID>,
+        targetWindowStates: [UUID: BrowserWindowShortcutMutationState] = [:]
+    ) -> PreparedShortcutLiveRetirementBatch? {
+        structuralLookup.withTransaction {
+            prepared(from: batch.prepareDeletedPins(
+                pinIds, targetWindowStates: targetWindowStates
+            ))
+        }
     }
 
     func prepareReversibleRetirement(
         pinId: UUID,
         in windowId: UUID
     ) -> ReversibleShortcutLiveTabRetirement? {
-        transaction.prepareReversibleRetirement(
-            pinId: pinId,
-            in: windowId
-        )
+        reversible.prepare(pinID: pinId, windowID: windowId)
     }
 
-    func prepareRetirements(
-        pinIds: Set<UUID>,
-        in windowId: UUID
-    ) -> PreparedShortcutLiveTabRetirement? {
-        transaction.prepareRetirements(pinIds: pinIds, in: windowId)
-    }
-
-    func prepareDeletedPinRetirement(
-        _ pinId: UUID
-    ) -> PreparedShortcutLiveTabRetirement? {
-        transaction.prepareDeletedPinRetirements([pinId])
-    }
-
-    func prepareDeletedPinRetirements(
-        _ pinIds: Set<UUID>
-    ) -> PreparedShortcutLiveTabRetirement? {
-        transaction.prepareDeletedPinRetirements(pinIds)
+    func prepareTerminalEffect(
+        _ prepared: PreparedShortcutLiveTabRetirement
+    ) -> PreparedShortcutLiveTabRetirementTerminalEffect? {
+        prepared.terminalEffect
     }
 
     func finish(
-        _ prepared: PreparedShortcutLiveTabRetirement
+        _ prepared: PreparedShortcutLiveRetirementBatch
     ) -> ShortcutLiveTabRetirementResult {
-        let retiredIds: Set<UUID>
-        if let committed = prepared.committedRuntimeRetirement {
-            retiredIds = runtimeTeardown.retirement.publish(committed)
-        } else {
-            retiredIds = (prepared.runtimeTeardown.map(runtimeTeardown.finish) ?? [])
-                .union(prepared.terminallyDrainedTabIDs)
-        }
-        assert(retiredIds == Set(prepared.result.retiredTabIds))
-        guard prepared.windowCommitPolicy == .retirementService else {
-            return prepared.result
-        }
-        var persistedWindowIds = Set<UUID>()
-        if prepared.result.didClearCurrentSelection,
-           let runtime = prepared.runtime {
-            persistedWindowIds = runtime.validateWindowStates()
-        }
-        for windowState in prepared.result.windowStatesNeedingPersistence
-            where persistedWindowIds.contains(windowState.id) == false {
-            prepared.runtime?.persistWindowSession(for: windowState)
-        }
+        finishAfterCurrentBatch(prepared)
         return prepared.result
     }
 
     func finishAfterCurrentBatch(
-        _ prepared: PreparedShortcutLiveTabRetirement
+        _ prepared: PreparedShortcutLiveRetirementBatch
     ) {
-        structuralLookup.runAfterCurrentBatch { [self] in
-            _ = finish(prepared)
+        structuralLookup.runAfterCurrentBatch {
+            prepared.publishTerminalEffects()
         }
     }
-}
 
-extension ShortcutLiveTabRetirementService {
-    convenience init(tabManager: TabManager) {
-        self.init(
-            registry: tabManager.liveShortcutTabs,
-            batchRetirement: tabManager.liveShortcutTabBatchRetirement,
-            structuralLookup: tabManager.structuralLookupCoordinator,
-            runtimeConnection: tabManager.runtimePortConnection,
-            runtimeTeardown: tabManager.runtimeTeardown
-        )
+    private func prepared(
+        from outcome: ShortcutLiveRetirementBatchPreparation
+    ) -> PreparedShortcutLiveRetirementBatch? {
+        switch outcome {
+        case .prepared(let prepared): return prepared
+        case .noEffect: return PreparedShortcutLiveRetirementBatch()
+        case .rejected: return nil
+        }
     }
 }

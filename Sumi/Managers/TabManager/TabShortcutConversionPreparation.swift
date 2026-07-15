@@ -3,7 +3,7 @@ import Foundation
 @MainActor
 struct DisplayedTabShortcutConversionPlan {
     let sourceTabId: UUID
-    let runtime: RuntimePortRegistry
+    let runtimeAttachment: TabRuntimeAttachmentWitness
     let structure: RegularTabShortcutStructurePlan
     let selectedWindowIds: [UUID]
     let displayingWindowIds: [UUID]
@@ -11,13 +11,17 @@ struct DisplayedTabShortcutConversionPlan {
     let primaryWindowId: UUID?
     let firstWindowId: UUID
     let firstWindow: BrowserWindowState
+
+    var runtime: RuntimePortRegistry { runtimeAttachment.lease.registry! }
 }
 
 @MainActor
 struct DetachedTabShortcutConversionPlan {
     let sourceTabId: UUID
-    let runtime: RuntimePortRegistry?
+    let runtimeAttachment: TabRuntimeAttachmentWitness
     let structure: RegularTabShortcutStructurePlan
+
+    var runtime: RuntimePortRegistry? { runtimeAttachment.lease.registry }
 }
 
 @MainActor
@@ -31,8 +35,10 @@ struct AuthorizedDisplayedTabShortcutConversion {
 @MainActor
 struct AuthorizedDetachedTabShortcutConversion {
     let tab: Tab
-    let runtime: RuntimePortRegistry?
+    let runtimeAttachment: TabRuntimeAttachmentWitness
     let structure: RegularTabShortcutStructurePlan
+
+    var runtime: RuntimePortRegistry? { runtimeAttachment.lease.registry }
 }
 
 @MainActor

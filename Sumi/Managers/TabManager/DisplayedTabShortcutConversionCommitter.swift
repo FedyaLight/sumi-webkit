@@ -1,91 +1,65 @@
 import Foundation
 import SumiDomain
 
-/// Applies the admitted runtime half of an authorized displayed conversion.
+/// Prepares the displayed binding contribution and its rich window aggregate.
+/// Terminal publication belongs to the enclosing profile-owned transaction.
 @MainActor
 final class DisplayedTabShortcutConversionCommitter {
-    private let materializer: ShortcutTabMaterializer
-    private let containerRemoval: ShortcutContainerRemovalOwner
-    private let adopter: ShortcutTabAdopter
-    private let windowReconciler: RegularTabShortcutWindowReconciler
-    private let structuralLookup: TabStructuralLookupCoordinator
+    private let bindings: DisplayedTabShortcutBindingPreparer
+    private let batches: ShortcutTabBindingBatchFactory
+    private let runtime: DisplayedTabShortcutRuntimePreparer
 
     init(
-        materializer: ShortcutTabMaterializer,
-        containerRemoval: ShortcutContainerRemovalOwner,
-        adopter: ShortcutTabAdopter,
-        regularTabs: RegularTabCollectionOwner,
-        windowMutations: BrowserWindowShortcutMutationOwner,
-        structuralLookup: TabStructuralLookupCoordinator
+        bindings: DisplayedTabShortcutBindingPreparer,
+        batches: ShortcutTabBindingBatchFactory,
+        runtime: DisplayedTabShortcutRuntimePreparer
     ) {
-        self.materializer = materializer
-        self.containerRemoval = containerRemoval
-        self.adopter = adopter
-        self.structuralLookup = structuralLookup
-        windowReconciler = RegularTabShortcutWindowReconciler(
-            regularTabs: regularTabs,
-            windowMutations: windowMutations
+        self.bindings = bindings
+        self.batches = batches
+        self.runtime = runtime
+    }
+
+    func beginBindingBatch(
+        using attachment: TabRuntimeAttachmentWitness
+    ) -> ShortcutTabBindingBatchBuilder {
+        batches.make(using: attachment)
+    }
+
+    func preflightBinding(
+        to pin: ShortcutPin,
+        using authorization: AuthorizedDisplayedTabShortcutConversion,
+        builder: ShortcutTabBindingBatchBuilder
+    ) -> DisplayedTabShortcutBindingPreflight? {
+        bindings.preflight(
+            pin: pin,
+            authorization: authorization,
+            builder: builder
         )
     }
 
-    /// Applies a presentation plan whose exact residences were revalidated by
-    /// the aggregate transaction. No fallible work remains once model commit
-    /// starts, so publication can safely follow the terminal runtime state.
-    func applyAdmitted(
+    func preflightBinding(
         to pin: ShortcutPin,
-        transition: RegularTabShortcutWindowTransitionPlan,
         using authorization: AuthorizedDisplayedTabShortcutConversion,
-        presentations: DisplayedShortcutPresentationResidencePlan
-    ) {
-        let tab = authorization.tab
-        let plan = authorization.plan
-        let sourceSpaceId = tab.spaceId
-
-        var materializations: [(tab: Tab, window: BrowserWindowState)] = []
-        var liveTabsByWindowId: [UUID: Tab] = [:]
-        var changedWindows: [BrowserWindowState] = []
-
-        containerRemoval.removeFromCurrentContainer(tab)
-        let sourceBindingExecution = adopter.adopt(
-            tab,
-            for: pin,
-            in: presentations.source.window.id,
-            currentSpaceID: presentations.source.spaceID,
-            presentationPage: presentations.source.page
+        presentations: DisplayedShortcutPresentationResidencePlan,
+        builder: ShortcutTabBindingBatchBuilder
+    ) -> DisplayedTabShortcutBindingPreflight? {
+        bindings.preflight(
+            pin: pin,
+            authorization: authorization,
+            presentations: presentations,
+            builder: builder
         )
-        liveTabsByWindowId[plan.firstWindowId] = tab
+    }
 
-        for presentation in presentations.replicas {
-            let windowState = presentation.window
-            let liveTab = materializer.materialize(
-                pin,
-                in: windowState.id,
-                currentSpaceId: presentation.spaceID,
-                presentationPage: presentation.page
-            )
-            liveTabsByWindowId[windowState.id] = liveTab
-            materializations.append((liveTab, windowState))
-        }
-
-        changedWindows = windowReconciler.reconcile(
-            originalTabId: tab.id,
-            splitTransition: transition,
-            sourceSpaceId: sourceSpaceId,
-            liveTabsByWindowId: liveTabsByWindowId,
-            selectedWindowIds: Set(plan.selectedWindowIds),
-            using: plan.runtime
+    func prepareRuntime(
+        _ binding: PreparedDisplayedTabShortcutBinding,
+        transition: RegularTabShortcutWindowTransitionPlan,
+        using authorization: AuthorizedDisplayedTabShortcutConversion
+    ) -> DisplayedTabShortcutRuntimeTransaction? {
+        runtime.prepare(
+            binding,
+            transition: transition,
+            using: authorization
         )
-
-        structuralLookup.runAfterCurrentBatch {
-            sourceBindingExecution.execute()
-            for work in materializations {
-                plan.runtime.webViewLifecycle
-                    .materializeVisibleTabWebViewIfNeeded(
-                        work.tab,
-                        in: work.window
-                    )
-            }
-            changedWindows.forEach(plan.runtime.persistWindowSession(for:))
-        }
     }
 }

@@ -15,7 +15,8 @@ extension ShortcutSplitLauncherPlacementService {
                 tabManager: tabManager
             ),
             residenceMutations: tabManager.liveShortcutTabs.staging,
-            folderOpenState: tabManager.folderOpenState
+            structuralMutations: tabManager.structuralCollectionMutationOwner,
+            structuralLookup: tabManager.structuralLookupCoordinator
         )
         self.init(
             shortcutPin: pins.shortcutPin,
@@ -27,7 +28,8 @@ extension ShortcutSplitLauncherPlacementService {
             ),
             moves: ShortcutSplitLauncherMoveTransaction(
                 batches: residenceMoves,
-                windowMutations: tabManager.shortcutWindowMutationOwner
+                windowMutations: tabManager.shortcutWindowMutationOwner,
+                folderOpenState: tabManager.folderOpenState
             )
         )
     }

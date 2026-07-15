@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$repo_root"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "$script_dir/.." && pwd)"
+# shellcheck source=scripts/lib/architecture_guard.sh
+source "$script_dir/lib/architecture_guard.sh"
+guard_initialize "$repo_root"
 
 old='Sumi/Managers/ExtensionManager/ExtensionControllerAttachmentOwner.swift'
 old_runtime_bundle='Sumi/Managers/ExtensionManager/ExtensionRuntimeBundle.swift'
@@ -27,23 +30,27 @@ runtime_publication='Sumi/Managers/ExtensionManager/ExtensionManager+RuntimePubl
 
 status=0
 
-if [[ -e "$old" ]]; then
+if [[ -e "$old" || -L "$old" ]]; then
   echo 'error: extension controller attachment god-object returned' >&2
   status=1
 fi
 for retired_surface in "$old_runtime_bundle" "$old_window_owner"; do
-  if [[ -e "$retired_surface" ]]; then
+  if [[ -e "$retired_surface" || -L "$retired_surface" ]]; then
     echo "error: eager extension runtime aggregate returned: $retired_surface" >&2
     status=1
   fi
 done
-if rg -n '\bExtensionRuntimeBundle\b|\bExtensionWindowFocusResolutionOwner\b|\bruntimeBundle\b' \
-    Sumi/Managers/ExtensionManager SumiTests >/dev/null; then
+retired_runtime_hits="$(
+  guard_capture_matches \
+    '\bExtensionRuntimeBundle\b|\bExtensionWindowFocusResolutionOwner\b|\bruntimeBundle\b' \
+    Sumi/Managers/ExtensionManager SumiTests
+)"
+if [[ -n "$retired_runtime_hits" ]]; then
   echo 'error: eager extension runtime aggregate or Owner surface returned' >&2
   status=1
 fi
 old_symbol_hits="$(
-  rg -n '\bExtensionControllerAttachmentOwner\b' Sumi || true
+  guard_capture_matches '\bExtensionControllerAttachmentOwner\b' Sumi
 )"
 if [[ -n "$old_symbol_hits" ]]; then
   printf 'error: production still references the deleted controller god-object:\n%s\n' \
@@ -64,8 +71,9 @@ if (( status != 0 )); then
 fi
 
 role_reachthrough="$(
-  rg -n '\bExtensionManager(Runtime)?\b|\bBrowserManager\b|\bstruct (Dependencies|Actions)\b|\bclass [A-Za-z0-9_]*Owner\b' \
-    "${roles[@]}" || true
+  guard_capture_matches \
+    '\bExtensionManager(Runtime)?\b|\bBrowserManager\b|\bstruct (Dependencies|Actions)\b|\bclass [A-Za-z0-9_]*Owner\b' \
+    "${roles[@]}"
 )"
 if [[ -n "$role_reachthrough" ]]; then
   printf 'error: extension controller role reached through a manager/bag/Owner:\n%s\n' \
@@ -74,8 +82,9 @@ if [[ -n "$role_reachthrough" ]]; then
 fi
 
 owner_storage_hits="$(
-  rg -n -P '^\s*(private\s+)?(weak\s+)?(var|let)\s+\w+\s*:\s*(any\s+)?[A-Za-z0-9_]+Owner\??\s*$|^\s+\w+\s*:\s*(any\s+)?[A-Za-z0-9_]+Owner[?,]?\s*$' \
-    "${roles[@]}" || true
+  guard_capture_matches \
+    '^\s*(private\s+)?(weak\s+)?(var|let)\s+\w+\s*:\s*(any\s+)?[A-Za-z0-9_]+Owner\??\s*$|^\s+\w+\s*:\s*(any\s+)?[A-Za-z0-9_]+Owner[?,]?\s*$' \
+    "${roles[@]}" -P
 )"
 if [[ -n "$owner_storage_hits" ]]; then
   printf 'error: controller runtime role stores or accepts a concrete Owner:\n%s\n' \
@@ -93,47 +102,78 @@ for preparation_class in \
   preparation_body="$(
     sed -n "/final class $preparation_class:/,/^}/p" "$preparation_file"
   )"
-  if rg -n '\bExtensionManager(Runtime)?\b|\bBrowserManager\b|\bstruct (Dependencies|Actions)\b|\bclass [A-Za-z0-9_]*Owner\b' \
-      <<<"$preparation_body" >/dev/null; then
+  preparation_reachthrough_hits="$(
+    guard_capture_matches \
+      '\bExtensionManager(Runtime)?\b|\bBrowserManager\b|\bstruct (Dependencies|Actions)\b|\bclass [A-Za-z0-9_]*Owner\b' \
+      - <<<"$preparation_body"
+  )"
+  if [[ -n "$preparation_reachthrough_hits" ]]; then
     echo "error: WebView preparation role reached through a root/bag/Owner: $preparation_class" >&2
     status=1
   fi
 done
 
 query_body="$(sed -n '/final class ExtensionExistingExactTabControllerQuery:/,/^}/p' "$query")"
-if rg -n 'ensure|provision|setController|makeExtensionController' \
-    <<<"$query_body" >/dev/null; then
+query_mutation_hits="$(
+  guard_capture_matches \
+    'ensure|provision|setController|makeExtensionController' - <<<"$query_body"
+)"
+if [[ -n "$query_mutation_hits" ]]; then
   echo 'error: existing-controller query can provision or mutate controllers' >&2
   status=1
 fi
-if ! rg -Fq 'extensionTab(for: tab.id) === tab' <<<"$query_body"; then
+query_identity_count="$(
+  guard_count_matches 'extensionTab(for: tab.id) === tab' - -F <<<"$query_body"
+)"
+if (( query_identity_count == 0 )); then
   echo 'error: existing-controller query lacks exact canonical Tab proof' >&2
   status=1
 fi
 
-if ! rg -Fq 'extensionTab(for: tab.id) === tab' "$residence"; then
+residence_identity_count="$(
+  guard_count_matches 'extensionTab(for: tab.id) === tab' "$residence" -F
+)"
+if (( residence_identity_count == 0 )); then
   echo 'error: WebView residence query lacks exact canonical Tab proof' >&2
   status=1
 fi
-if ! rg -Fq 'owningTab === tab' "$residence"; then
+residence_ownership_count="$(
+  guard_count_matches 'owningTab === tab' "$residence" -F
+)"
+if (( residence_ownership_count == 0 )); then
   echo 'error: WebView residence query lacks exact physical WebView ownership proof' >&2
   status=1
 fi
 
-if ! rg -Fq 'extensionTab(for: tab.id) === tab' "$admission" \
-    || ! rg -Fq 'owningTab === tab' "$admission" \
-    || ! rg -Fq 'webViews?.contains(webView, for: tab) == true' "$admission"; then
+admission_identity_count="$(
+  guard_count_matches 'extensionTab(for: tab.id) === tab' "$admission" -F
+)"
+admission_ownership_count="$(
+  guard_count_matches 'owningTab === tab' "$admission" -F
+)"
+admission_residence_count="$(
+  guard_count_matches \
+    'webViews?.contains(webView, for: tab) == true' "$admission" -F
+)"
+if (( admission_identity_count == 0 \
+    || admission_ownership_count == 0 \
+    || admission_residence_count == 0 )); then
   echo 'error: controller admission can accept a stale Tab or foreign WebView' >&2
   status=1
 fi
-if rg -Fq 'ExtensionPermissionsOriginsCompatibilityPreludeInstallationOwner' \
-    "$admission"; then
+concrete_prelude_hits="$(
+  guard_capture_matches \
+    'ExtensionPermissionsOriginsCompatibilityPreludeInstallationOwner' \
+    "$admission" -F
+)"
+if [[ -n "$concrete_prelude_hits" ]]; then
   echo 'error: controller admission stores the concrete compatibility prelude owner' >&2
   status=1
 fi
 late_bind_hits="$(
-  rg -n -P 'canLateBindController|webView\.configuration\.webExtensionController\s*=(?!=)' \
-    Sumi/Managers/ExtensionManager || true
+  guard_capture_matches \
+    'canLateBindController|webView\.configuration\.webExtensionController\s*=(?!=)' \
+    Sumi/Managers/ExtensionManager -P
 )"
 if [[ -n "$late_bind_hits" ]]; then
   printf 'error: impossible post-construction WebKit controller mutation returned:\n%s\n' \
@@ -142,8 +182,9 @@ if [[ -n "$late_bind_hits" ]]; then
 fi
 
 aggregate_protocol_hits="$(
-  rg -n 'protocol ExtensionControllerBinding(Query)?\b|\bExtensionControllerBinding(Query)?\b' \
-    Sumi/Managers/ExtensionManager || true
+  guard_capture_matches \
+    'protocol ExtensionControllerBinding(Query)?\b|\bExtensionControllerBinding(Query)?\b' \
+    Sumi/Managers/ExtensionManager
 )"
 if [[ -n "$aggregate_protocol_hits" ]]; then
   printf 'error: deleted aggregate controller binding capability returned:\n%s\n' \
@@ -151,11 +192,18 @@ if [[ -n "$aggregate_protocol_hits" ]]; then
   status=1
 fi
 
-if rg -n 'updateWebViewsForProfile|reconcile(Profile|WebViews)' "$provisioning" >/dev/null; then
+provisioning_reentry_hits="$(
+  guard_capture_matches \
+    'updateWebViewsForProfile|reconcile(Profile|WebViews)' "$provisioning"
+)"
+if [[ -n "$provisioning_reentry_hits" ]]; then
   echo 'error: controller provisioning can synchronously re-enter profile reconciliation' >&2
   status=1
 fi
-if rg -n 'reconcile(Profile)?|runtimeReconciler' "$runtime_demand" >/dev/null; then
+runtime_demand_reentry_hits="$(
+  guard_capture_matches 'reconcile(Profile)?|runtimeReconciler' "$runtime_demand"
+)"
+if [[ -n "$runtime_demand_reentry_hits" ]]; then
   echo 'error: extension runtime demand can synchronously re-enter reconciliation' >&2
   status=1
 fi
@@ -163,28 +211,41 @@ reload_body="$(
   sed -n '/func reloadRuntimePublications(/,/^    }/p' \
     "$runtime_publication"
 )"
-if ! rg -Fq 'guard attachedBrowserManager != nil' <<<"$reload_body" \
-    || ! rg -Fq 'controllerRuntimeComposition != nil' <<<"$reload_body"; then
+reload_attachment_count="$(
+  guard_count_matches 'guard attachedBrowserManager != nil' - -F <<<"$reload_body"
+)"
+reload_composition_count="$(
+  guard_count_matches 'controllerRuntimeComposition != nil' - -F <<<"$reload_body"
+)"
+if (( reload_attachment_count == 0 || reload_composition_count == 0 )); then
   echo 'error: cold install/enable can materialize browser runtime publication' >&2
   status=1
 fi
 for attached_admission in \
   'Sumi/Managers/ExtensionManager/ExtensionWindowRequestRouter.swift'; do
-  if ! rg -Fq 'attachedBrowserManager != nil' "$attached_admission"; then
+  attached_admission_count="$(
+    guard_count_matches 'attachedBrowserManager != nil' "$attached_admission" -F
+  )"
+  if (( attached_admission_count == 0 )); then
     echo "error: stale browser attachment remains admitted: $attached_admission" >&2
     status=1
   fi
 done
-if ! rg -Fq 'ExtensionControllerCallbackEvidence' \
-    Sumi/Managers/ExtensionManager/ExtensionControllerOpeningCallbackHandler.swift \
-    || rg -n '\bExtensionManager\b' \
-      Sumi/Managers/ExtensionManager/ExtensionControllerOpeningCallbackHandler.swift >/dev/null; then
+callback_handler='Sumi/Managers/ExtensionManager/ExtensionControllerOpeningCallbackHandler.swift'
+callback_evidence_count="$(
+  guard_count_matches 'ExtensionControllerCallbackEvidence' "$callback_handler" -F
+)"
+callback_manager_hits="$(
+  guard_capture_matches '\bExtensionManager\b' "$callback_handler"
+)"
+if (( callback_evidence_count == 0 )) || [[ -n "$callback_manager_hits" ]]; then
   echo 'error: opening callbacks no longer use manager-free exact evidence' >&2
   status=1
 fi
 strong_runtime_root_hits="$(
-  rg -n 'let (ownershipQuery|rebuild|websiteDataCleanup) = browserManager|\[(ownershipQuery|rebuild|websiteDataCleanup)\]' \
-    "$browser_runtime_factory" || true
+  guard_capture_matches \
+    'let (ownershipQuery|rebuild|websiteDataCleanup) = browserManager|\[(ownershipQuery|rebuild|websiteDataCleanup)\]' \
+    "$browser_runtime_factory"
 )"
 if [[ -n "$strong_runtime_root_hits" ]]; then
   printf 'error: extension runtime retains browser WebView services:\n%s\n' \
@@ -195,14 +256,22 @@ attach_body="$(
   sed -n '/func attach(browserManager: BrowserManager)/,/^    }/p' \
     "$runtime_attachment"
 )"
-if ! rg -Fq 'controllerRuntimeComposition == nil' <<<"$attach_body" \
-    || ! rg -Fq 'attachedBrowserManager === browserManager' \
-      <<<"$attach_body"; then
+attach_new_graph_count="$(
+  guard_count_matches 'controllerRuntimeComposition == nil' - -F <<<"$attach_body"
+)"
+attach_same_browser_count="$(
+  guard_count_matches \
+    'attachedBrowserManager === browserManager' - -F <<<"$attach_body"
+)"
+if (( attach_new_graph_count == 0 || attach_same_browser_count == 0 )); then
   echo 'error: controller runtime attachment can silently replace live role graphs' >&2
   status=1
 fi
-if rg -Fq 'traceNativeMessagingContextBinding' \
-    "$cold_preparation" "$live_preparation"; then
+dead_tracing_hits="$(
+  guard_capture_matches 'traceNativeMessagingContextBinding' \
+    "$cold_preparation" "$live_preparation" -F
+)"
+if [[ -n "$dead_tracing_hits" ]]; then
   echo 'error: split WebView preparation contains dead manager-less tracing' >&2
   status=1
 fi
@@ -215,7 +284,9 @@ for old_surface in \
   'func attachExtensionControllerIfNeeded(' \
   'func ensureExtensionControllerAttachedForTab(' \
   'updateWebViewsForProfile'; do
-  hits="$(rg -n -F "$old_surface" Sumi/Managers/ExtensionManager || true)"
+  hits="$(
+    guard_capture_matches "$old_surface" Sumi/Managers/ExtensionManager -F
+  )"
   if [[ -n "$hits" ]]; then
     printf 'error: deleted controller capability returned (%s):\n%s\n' \
       "$old_surface" "$hits" >&2
@@ -232,7 +303,10 @@ for old_facade in \
   'func ensureExtensionControllerAttachedForTab(' \
   'func webViewNeedsExtensionRuntimeRebuild(' \
   'func updateWebViewsForProfile('; do
-  hits="$(rg -n -F "$old_facade" Sumi/Managers/ExtensionManager/ExtensionManager*.swift || true)"
+  hits="$(
+    guard_capture_matches \
+      "$old_facade" Sumi/Managers/ExtensionManager/ExtensionManager*.swift -F
+  )"
   if [[ -n "$hits" ]]; then
     printf 'error: deleted controller manager facade returned (%s):\n%s\n' \
       "$old_facade" "$hits" >&2
@@ -240,16 +314,25 @@ for old_facade in \
   fi
 done
 
-if (( $(rg -Fc 'tabs?.extensionTab(for: tab.id) === tab' "$repair") < 2 )); then
+repair_identity_count="$(
+  guard_count_matches 'tabs?.extensionTab(for: tab.id) === tab' "$repair" -F
+)"
+if (( repair_identity_count < 2 )); then
   echo 'error: repair/reconcile roles lack exact physical Tab proofs' >&2
   status=1
 fi
-if ! rg -Fq 'rebuildExtensionLiveWebViews(' "$repair"; then
+rebuild_port_count="$(
+  guard_count_matches 'rebuildExtensionLiveWebViews(' "$repair" -F
+)"
+if (( rebuild_port_count == 0 )); then
   echo 'error: runtime repair lost its explicit browser rebuild port' >&2
   status=1
 fi
-if rg -n '\.didCommit' \
-    "$bridge" "$repair" "$browser_composition" >/dev/null; then
+flattened_submission_hits="$(
+  guard_capture_matches '\.didCommit' \
+    "$bridge" "$repair" "$browser_composition"
+)"
+if [[ -n "$flattened_submission_hits" ]]; then
   echo 'error: extension rebuild boundary flattened typed submission state to Bool' >&2
   status=1
 fi
@@ -261,43 +344,66 @@ rebuild_adapter_body="$(
     Sumi/Managers/ExtensionManager/BrowserExtensionWebViewAdapter.swift
 )"
 for rebuild_body in "$rebuild_protocol_body" "$rebuild_adapter_body"; do
-  if ! rg -Fq ') -> ExtensionTabWebViewRebuildSubmissionOutcome' \
-      <<<"$rebuild_body"; then
+  typed_outcome_count="$(
+    guard_count_matches \
+      ') -> ExtensionTabWebViewRebuildSubmissionOutcome' - -F <<<"$rebuild_body"
+  )"
+  if (( typed_outcome_count == 0 )); then
     echo 'error: extension rebuild boundary lost its typed submission outcome' >&2
     status=1
   fi
 done
 for rebuild_case in committed deferred noLiveWindows failed; do
-  if ! rg -Fq "case .$rebuild_case" "$browser_composition"; then
+  rebuild_case_count="$(
+    guard_count_matches "case .$rebuild_case" "$browser_composition" -F
+  )"
+  if (( rebuild_case_count == 0 )); then
     echo "error: browser bridge does not map rebuild result: $rebuild_case" >&2
     status=1
   fi
 done
 
-if ! rg -Fq 'resolveProfileID: @MainActor (UUID?) -> UUID?' \
-    "$cold_preparation"; then
+profile_resolver_count="$(
+  guard_count_matches \
+    'resolveProfileID: @MainActor (UUID?) -> UUID?' "$cold_preparation" -F
+)"
+if (( profile_resolver_count == 0 )); then
   echo 'error: cold configuration preparation lacks narrow profile resolver' >&2
   status=1
 fi
-if ! rg -Fq 'requestRuntime: @MainActor (UUID) -> Void' \
-    "$cold_preparation"; then
+runtime_request_count="$(
+  guard_count_matches \
+    'requestRuntime: @MainActor (UUID) -> Void' "$cold_preparation" -F
+)"
+if (( runtime_request_count == 0 )); then
   echo 'error: cold configuration demand does not preserve its resolved profile' >&2
   status=1
 fi
-if rg -n '\(\) -> ExtensionManagerRuntime|ExtensionControllerProvisioningOwner' \
-    "$cold_preparation" >/dev/null; then
+cold_root_hits="$(
+  guard_capture_matches \
+    '\(\) -> ExtensionManagerRuntime|ExtensionControllerProvisioningOwner' \
+    "$cold_preparation"
+)"
+if [[ -n "$cold_root_hits" ]]; then
   echo 'error: cold configuration preparation stores a broad runtime/concrete owner' >&2
   status=1
 fi
-if rg -n '\bstruct (Dependencies|Actions)\b|installPreludes\(' \
-    "$live_preparation" >/dev/null; then
+live_bag_hits="$(
+  guard_capture_matches \
+    '\bstruct (Dependencies|Actions)\b|installPreludes\(' "$live_preparation"
+)"
+if [[ -n "$live_bag_hits" ]]; then
   echo 'error: live WebView preparation regained a closure bag or foreign prelude mutation' >&2
   status=1
 fi
-if rg -n '\bfunc bind\b|\brepair\?*\.repair\(' \
-    "$live_preparation" >/dev/null \
-    || ! rg -Fq 'tabRegistration: ExtensionNormalTabRegistration' \
-      "$live_preparation"; then
+live_late_binding_hits="$(
+  guard_capture_matches '\bfunc bind\b|\brepair\?*\.repair\(' "$live_preparation"
+)"
+live_registration_count="$(
+  guard_count_matches \
+    'tabRegistration: ExtensionNormalTabRegistration' "$live_preparation" -F
+)"
+if [[ -n "$live_late_binding_hits" ]] || (( live_registration_count == 0 )); then
   echo 'error: live WebView preparation regained two-phase or fallback repair wiring' >&2
   status=1
 fi
@@ -306,178 +412,115 @@ prepared_candidate_body="$(
   sed -n '/private func preparedNormalTabWebViewIsUsable(/,/^    }/p' \
     "$requested_materializer"
 )"
+prepared_canonical_count="$(
+  guard_count_matches 'webViews.isCanonical(tab)' - -F <<<"$prepared_candidate_body"
+)"
+prepared_ownership_count="$(
+  guard_count_matches 'owningTab === tab' - -F <<<"$prepared_candidate_body"
+)"
+prepared_controller_count="$(
+  guard_count_matches \
+    'webView.configuration.webExtensionController === controller' \
+    - -F <<<"$prepared_candidate_body"
+)"
 if [[ -z "$prepared_candidate_body" ]] \
-    || ! rg -Fq 'webViews.isCanonical(tab)' <<<"$prepared_candidate_body" \
-    || ! rg -Fq 'owningTab === tab' <<<"$prepared_candidate_body" \
-    || ! rg -Fq 'webView.configuration.webExtensionController === controller' \
-      <<<"$prepared_candidate_body"; then
+    || (( prepared_canonical_count == 0 \
+      || prepared_ownership_count == 0 \
+      || prepared_controller_count == 0 )); then
   echo 'error: requested replacement lacks exact pre-commit construction proof' >&2
   status=1
 fi
-if rg -n 'controllerAdmission\.admit|webViews\.contains' \
-    <<<"$prepared_candidate_body" >/dev/null; then
+committed_residence_hits="$(
+  guard_capture_matches \
+    'controllerAdmission\.admit|webViews\.contains' - <<<"$prepared_candidate_body"
+)"
+if [[ -n "$committed_residence_hits" ]]; then
   echo 'error: pre-commit candidate validation incorrectly requires committed residence' >&2
   status=1
 fi
 
 composition_fields="$(
   sed -n '/struct ExtensionControllerRuntimeComposition {/,/^}/p' "$assembler" \
-    | rg -c '^    let ' || true
+    | guard_count_matches '^    let ' -
 )"
 composition_fields="${composition_fields:-0}"
 if (( composition_fields > 9 )); then
   echo "error: controller lifetime composition grew beyond 9 leaves ($composition_fields)" >&2
   status=1
 fi
-if ! rg -Fq 'let tabWebViewResolver: ExtensionTabWebViewResolver' "$assembler" \
-    || rg -n 'tabWebViewResolver.*!' \
-      Sumi/Managers/ExtensionManager/ExtensionManager.swift >/dev/null; then
+resolver_leaf_count="$(
+  guard_count_matches \
+    'let tabWebViewResolver: ExtensionTabWebViewResolver' "$assembler" -F
+)"
+forced_resolver_hits="$(
+  guard_capture_matches 'tabWebViewResolver.*!' \
+    Sumi/Managers/ExtensionManager/ExtensionManager.swift
+)"
+if (( resolver_leaf_count == 0 )) || [[ -n "$forced_resolver_hits" ]]; then
   echo 'error: unattached Tab WebView projection is no longer a safe read-only capability' >&2
   status=1
 fi
-if ! rg -Fq 'manager?.attachedBrowserManager != nil' "$action_surface" \
-    || ! rg -Fq 'manager?.controllerRuntimeComposition != nil' \
-      "$action_surface"; then
+action_attachment_count="$(
+  guard_count_matches 'manager?.attachedBrowserManager != nil' "$action_surface" -F
+)"
+action_composition_count="$(
+  guard_count_matches \
+    'manager?.controllerRuntimeComposition != nil' "$action_surface" -F
+)"
+if (( action_attachment_count == 0 || action_composition_count == 0 )); then
   echo 'error: cold extension load can materialize browser publication roles before attachment' >&2
   status=1
 fi
-if ! rg -Fq 'guard attachedBrowserManager != nil' \
-    Sumi/Managers/ExtensionManager/ExtensionWindowRequestRouter.swift \
-    || ! rg -Fq 'controllerRuntimeComposition != nil' \
-      Sumi/Managers/ExtensionManager/ExtensionWindowRequestRouter.swift \
-    || ! rg -Fq 'ExtensionWindowVisibilityResolver(manager: self)' \
-      Sumi/Managers/ExtensionManager/ExtensionManager.swift; then
+window_router='Sumi/Managers/ExtensionManager/ExtensionWindowRequestRouter.swift'
+window_attachment_count="$(
+  guard_count_matches 'guard attachedBrowserManager != nil' "$window_router" -F
+)"
+window_composition_count="$(
+  guard_count_matches 'controllerRuntimeComposition != nil' "$window_router" -F
+)"
+window_resolver_count="$(
+  guard_count_matches 'ExtensionWindowVisibilityResolver(manager: self)' \
+    Sumi/Managers/ExtensionManager/ExtensionManager.swift -F
+)"
+if (( window_attachment_count == 0 \
+    || window_composition_count == 0 \
+    || window_resolver_count == 0 )); then
   echo 'error: attached-only extension window graph can materialize on a cold manager' >&2
   status=1
 fi
-if rg -n '\bExtensionManager\b' \
-    Sumi/Managers/ExtensionManager/ExtensionControllerOpeningCallbackHandler.swift >/dev/null \
-    || ! rg -Fq 'admission.isCurrent' \
-      Sumi/Managers/ExtensionManager/ExtensionControllerOpeningCallbackHandler.swift; then
+opening_manager_hits="$(
+  guard_capture_matches '\bExtensionManager\b' "$callback_handler"
+)"
+opening_admission_count="$(
+  guard_count_matches 'admission.isCurrent' "$callback_handler" -F
+)"
+if [[ -n "$opening_manager_hits" ]] || (( opening_admission_count == 0 )); then
   echo 'error: extension opening callback escaped exact manager-free admission' >&2
   status=1
 fi
 
 composition_refs="$(
-  rg -l 'ExtensionControllerRuntimeComposition' Sumi | wc -l | tr -d ' '
+  guard_capture_files 'ExtensionControllerRuntimeComposition' Sumi \
+    | wc -l | tr -d ' '
 )"
 if (( composition_refs > 2 )); then
   echo "error: controller lifetime composition escaped assembler/store boundary ($composition_refs files)" >&2
   status=1
 fi
-if rg -n '\brequiredControllerRuntime\b' Sumi >/dev/null; then
+aggregate_runtime_hits="$(
+  guard_capture_matches '\brequiredControllerRuntime\b' Sumi
+)"
+if [[ -n "$aggregate_runtime_hits" ]]; then
   echo 'error: aggregate controller runtime capability escaped composition' >&2
   status=1
 fi
 
-if ! sed -n '/final class ExtensionPreparedNormalTabQuery/,/^}/p' "$query" \
-    | rg -Fq 'tab.isEphemeral == false'; then
+prepared_normal_query_count="$(
+  sed -n '/final class ExtensionPreparedNormalTabQuery/,/^}/p' "$query" \
+    | guard_count_matches 'tab.isEphemeral == false' - -F
+)"
+if (( prepared_normal_query_count == 0 )); then
   echo 'error: normal prepared-Tab query no longer rejects ephemeral Tabs' >&2
-  status=1
-fi
-
-for required_test in \
-  testExistingExactControllerQueryAllowsCanonicalEphemeralAuxiliaryTab \
-  testExistingExactControllerQueryRejectsStaleSameIDEphemeralTab \
-  testRuntimeRepairPreservesCommittedSubmissionOutcome \
-  testRuntimeRepairPreservesDeferredSubmissionOutcome \
-  testRuntimeRepairPreservesNoLiveWindowsSubmissionOutcome \
-  testRuntimeRepairPreservesFailedSubmissionOutcome \
-  testRuntimeRepairDoesNotClearSameIDReplacementAfterSubmission \
-  testRuntimeRepairPreservesReentrantNewerOpenOnSameTab \
-  testRuntimeRepairPreservesReentrantWindowPrepublicationOnSameTab \
-  testLivePreparationSubmitsOneRepairThroughBoundRegistration \
-  testReadyConfigurationDemandDoesNotReenterWebViewReconciliation \
-  testRepeatedAttachmentToSameBrowserKeepsControllerRuntimeIdentity \
-  testColdExtensionRequestedWindowFailsWithoutMaterializingBrowserRuntime \
-  testExtensionWebViewReturnsNilWithoutControllerOnLoadedPage \
-  testExtensionWebViewRejectsCrossProfileContext; do
-  if ! rg -Fq "func $required_test" SumiTests; then
-    echo "error: controller runtime regression missing: $required_test" >&2
-    status=1
-  fi
-done
-
-for rebuild_case in committed deferred noLiveWindows failed; do
-  case "$rebuild_case" in
-    committed) test_suffix='Committed' ;;
-    deferred) test_suffix='Deferred' ;;
-    noLiveWindows) test_suffix='NoLiveWindows' ;;
-    failed) test_suffix='Failed' ;;
-  esac
-  test_body="$(
-    sed -n "/func testRuntimeRepairPreserves${test_suffix}SubmissionOutcome()/,/^    }/p" \
-      SumiTests/ExtensionControllerRuntimeBoundaryTests.swift
-  )"
-  if ! rg -Fq "assertRepairInvalidatesPublication(for: .$rebuild_case)" \
-      <<<"$test_body"; then
-    echo "error: typed rebuild test does not exercise .$rebuild_case" >&2
-    status=1
-  fi
-done
-
-repair_fixture_body="$(
-  sed -n '/private func assertRepairInvalidatesPublication(/,/^    }/p' \
-    SumiTests/ExtensionControllerRuntimeBoundaryTests.swift
-)"
-for proof in \
-  'let tabPublicationRevisions =' \
-  'let runtimeLoadStatus = ExtensionRuntimeLoadStatusAuthority()' \
-  'runtimeLoadStatus.markExtensionsLoaded()' \
-  'establishSettledOpen(' \
-  'repair.repair('; do
-  if ! rg -Fq "$proof" <<<"$repair_fixture_body"; then
-    echo "error: rebuild outcome fixture lacks coherent runtime proof: $proof" >&2
-    status=1
-  fi
-done
-if rg -Fq 'allowWhenExtensionsNotLoaded: true' <<<"$repair_fixture_body"; then
-  echo 'error: rebuild outcome fixture bypasses live-runtime admission' >&2
-  status=1
-fi
-
-cold_test_body="$(
-  sed -n \
-    '/func testPrepareWebViewConfigurationAlignsWebsiteDataStoreWithProfile()/,/^    }/p' \
-    SumiTests/SafariExtensionRuntimeDataStoreTests.swift
-)"
-if (( $(rg -Fc 'XCTAssertNil(manager.controllerRuntimeComposition)' \
-    <<<"$cold_test_body") < 2 )); then
-  echo 'error: cold configuration preparation regression lacks no-attach proof' >&2
-  status=1
-fi
-
-cold_context_test_body="$(
-  sed -n \
-    '/func testExtensionWebViewReturnsNilWithoutControllerOnLoadedPage()/,/^    }/p' \
-    SumiTests/SafariExtensionWebViewControllerWiringTests.swift
-)"
-for proof in \
-  'XCTAssertTrue(extensionContext.isLoaded)' \
-  'XCTAssertNil(manager.controllerRuntimeComposition)' \
-  'XCTAssertNil(manager.runtimePublicationComposition)' \
-  'XCTAssertNil(manager.normalTabRuntimeComposition)'; do
-  if ! rg -Fq "$proof" <<<"$cold_context_test_body"; then
-    echo "error: cold context-load regression lacks zero-cost proof: $proof" >&2
-    status=1
-  fi
-done
-if rg -Fq 'requestExtensionRuntime(' <<<"$cold_test_body" \
-    || ! rg -Fq 'XCTAssertNil(manager.extensionController)' \
-      <<<"$cold_test_body" \
-    || ! rg -Fq 'XCTAssertNotNil(manager.extensionController)' \
-      <<<"$cold_test_body"; then
-  echo 'error: cold configuration regression pre-provisions runtime or lacks provision proof' >&2
-  status=1
-fi
-
-repeated_attach_body="$(
-  sed -n \
-    '/func testRepeatedAttachmentToSameBrowserKeepsControllerRuntimeIdentity()/,/^    }/p' \
-    SumiTests/SafariExtensionRuntimeDataStoreTests.swift
-)"
-if (( $(rg -Fc 'XCTAssertIdentical(' <<<"$repeated_attach_body") < 9 )); then
-  echo 'error: repeated attachment regression does not freeze every controller leaf identity' >&2
   status=1
 fi
 
@@ -486,34 +529,33 @@ materializer_body="$(
     "$requested_materializer"
 )"
 retired_runtime_session='ExtensionRuntime''Session'
-if rg -n "$retired_runtime_session|runtimeSession|ExtensionRuntime[A-Za-z]+Authority" \
-    <<<"$materializer_body" \
-    || rg -Fq 'preconditionFailure(' <<<"$materializer_body"; then
+materializer_authority_hits="$(
+  guard_capture_matches \
+    "$retired_runtime_session|runtimeSession|ExtensionRuntime[A-Za-z]+Authority" \
+    - <<<"$materializer_body"
+)"
+materializer_trap_hits="$(
+  guard_capture_matches 'preconditionFailure(' - -F <<<"$materializer_body"
+)"
+if [[ -n "$materializer_authority_hits" || -n "$materializer_trap_hits" ]]; then
   echo 'error: retained requested-Tab materializer regained aggregate runtime authority' >&2
   status=1
 fi
 
-retained_materializer_test="$(
-  sed -n \
-    '/func testRetainedNormalTabLeafCollaboratorsDoNotRetainManager()/,/^    }/p' \
-    SumiTests/ExtensionNormalTabRuntimeAdversarialTests.swift
+repair_witness_count="$(
+  guard_count_matches 'openPublicationInvalidationWitness()' "$repair" -F
 )"
-for proof in \
-  'let materializer = composition.requestedTabWebViewMaterializer' \
-  'manager = nil' \
-  'materializer.materializeNormalTabIfNeeded(' \
-  'XCTAssertNil(materializerProbe.resolvedCurrentWebView())'; do
-  if ! rg -Fq "$proof" <<<"$retained_materializer_test"; then
-    echo "error: retained materializer behavior regression lacks proof: $proof" >&2
-    status=1
-  fi
-done
-
-if ! rg -Fq 'openPublicationInvalidationWitness()' "$repair" \
-    || ! rg -Fq 'preparedTokenIdentity' \
-      Sumi/Models/Tab/TabExtensionPageRuntimeOwner.swift \
-    || ! rg -Fq 'preparedTokenPhase' \
-      Sumi/Models/Tab/TabExtensionPageRuntimeOwner.swift; then
+prepared_token_identity_count="$(
+  guard_count_matches 'preparedTokenIdentity' \
+    Sumi/Models/Tab/TabExtensionPageRuntimeOwner.swift -F
+)"
+prepared_token_phase_count="$(
+  guard_count_matches 'preparedTokenPhase' \
+    Sumi/Models/Tab/TabExtensionPageRuntimeOwner.swift -F
+)"
+if (( repair_witness_count == 0 \
+    || prepared_token_identity_count == 0 \
+    || prepared_token_phase_count == 0 )); then
   echo 'error: runtime repair lacks exact open/prepublication invalidation authority' >&2
   status=1
 fi

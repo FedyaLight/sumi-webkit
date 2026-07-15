@@ -158,7 +158,14 @@ final class WebViewSessionTransitionCoordinator {
             lease: .retirement(lease),
             modelTransactionID: modelTransaction.id
         )
-        modelTransaction.commit()
+        guard modelTransaction.commit() else {
+            guard transactions.batch(for: lease) != nil else {
+                validator.assertConsistency("retirement.modelCommitDrained")
+                return .noLongerActive
+            }
+            validator.assertConsistency("retirement.modelConflict")
+            return .modelConflict(lease)
+        }
         guard transactions.batch(for: lease) != nil else {
             validator.assertConsistency("retirement.commitDrained")
             return .noLongerActive
@@ -304,7 +311,14 @@ final class WebViewSessionTransitionCoordinator {
             return .noLongerActive
         }
 
-        modelTransaction.rollback()
+        guard modelTransaction.rollback() else {
+            guard transactions.releaseRetirementRollbackClaim(for: lease) != nil else {
+                validator.assertConsistency("retirement.rollbackDrained")
+                return .noLongerActive
+            }
+            validator.assertConsistency("retirement.modelConflict")
+            return .modelConflict
+        }
         guard let currentBatch = transactions.rollingBackBatch(
             for: lease
         ) else {
@@ -324,6 +338,52 @@ final class WebViewSessionTransitionCoordinator {
         finish(currentBatch)
         validator.assertConsistency("retirement.rollback")
         return .rolledBack
+    }
+
+    func restoreRetirementAfterModelCompensation(
+        _ lease: WebViewRetirementBatchLease
+    ) -> WebViewRetirementModelConflictRestoreResult {
+        guard let batch = transactions.batch(for: lease) else {
+            return .noLongerActive
+        }
+        if let conflict = conflict(in: batch) {
+            return .conflict(
+                tabID: conflict.tabID,
+                currentGeneration: conflict.currentGeneration
+            )
+        }
+        restoreRetirement(batch)
+        finish(batch)
+        validator.assertConsistency("retirement.modelConflictRestored")
+        return .restored
+    }
+
+    func claimRetirementCleanup(
+        _ lease: WebViewRetirementBatchLease
+    ) -> WebViewRetirementCleanupClaimResult {
+        guard let batch = transactions.batch(for: lease) else {
+            return .noLongerActive
+        }
+        let orderedTabIDs = orderedTabIDs(in: batch)
+        guard orderedTabIDs.allSatisfy({ tabID in
+            guard let entry = batch.entriesByTabID[tabID] else { return false }
+            return transitions.retirementIsIntact(entry.retirementLease)
+        }) else { return .noLongerActive }
+
+        var retired: [UUID: WebViewSessionSnapshot] = [:]
+        for tabID in orderedTabIDs {
+            guard let entry = batch.entriesByTabID[tabID],
+                  let snapshot = transitions.takeRetirement(entry.retirementLease)
+            else { preconditionFailure("Preflighted retirement cleanup was lost") }
+            retired[tabID] = snapshot
+            let current = placements.snapshot(for: tabID)
+            if entry.installed.matches(current) {
+                placements.removeRetirementReservation(for: tabID)
+            }
+        }
+        finish(batch)
+        validator.assertConsistency("retirement.cleanupClaimed")
+        return .claimed(retired: retired)
     }
 
     private func prepare(

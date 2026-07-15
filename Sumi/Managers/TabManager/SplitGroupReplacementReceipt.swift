@@ -16,6 +16,7 @@ final class SplitGroupReplacementReceipt {
         case committed
         case published
         case cancelled
+        case abandoned
     }
 
     private let store: SplitGroupStore
@@ -53,10 +54,42 @@ final class SplitGroupReplacementReceipt {
         store.replaceAll(with: plan.replacement)
     }
 
-    func rollbackModel() {
-        guard case .committed = state else { return }
+    @discardableResult
+    func rollbackModel() -> Bool {
+        guard committedModelIsExact() else { return false }
         store.replaceAll(with: plan.expected)
+        guard store.groups == plan.expected else { return false }
         state = .prepared
+        return true
+    }
+
+    func committedModelIsExact() -> Bool {
+        guard case .committed = state else { return false }
+        return store.groups == plan.replacement
+    }
+
+    func abandonForTerminalDrain() {
+        precondition(canAbandonForTerminalDrain())
+        state = .abandoned
+    }
+
+    func forfeitToForeignMutation() -> Bool {
+        guard case .committed = state,
+              store.groups != plan.replacement else { return false }
+        state = .abandoned
+        return true
+    }
+
+    func canAbandonForTerminalDrain() -> Bool { committedModelIsExact() }
+
+    func canForfeitPreservingCurrent() -> Bool {
+        if case .committed = state { return true }
+        return false
+    }
+
+    func forfeitPreservingCurrent() {
+        precondition(canForfeitPreservingCurrent())
+        state = .abandoned
     }
 
     func publish() {

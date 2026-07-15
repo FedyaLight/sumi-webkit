@@ -55,6 +55,12 @@ final class TabShortcutOwnerBag {
                 currentSpaceId: currentSpaceId
             )
         },
+        containsRegularTab: { [weak self] tab, spaceID in
+            self?.tm.regularTabCollectionOwner.containsIdentical(
+                tab,
+                in: spaceID
+            ) ?? false
+        },
         currentSpaceId: { [weak self] in
             self?.tm.spaceStateOwner.currentSpace?.id
         }

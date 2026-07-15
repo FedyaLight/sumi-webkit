@@ -1,23 +1,22 @@
 import Foundation
 import SumiDomain
 
-struct CommittedRegularTabShortcutSidebarDrop {
-    let effect: SplitDropCommitEffect
-}
-
 /// Executes the special identity-changing split drop. All layout values are
 /// derived from the candidate's exact snapshot before pin insertion.
 @MainActor
 final class RegularTabShortcutSidebarDropTransaction {
     private let tabManager: @MainActor () -> TabManager?
     private let launcherPlacement: ShortcutSplitLauncherPlacementService
+    private let presentations: any SplitDropPresentationReconciling
 
     init(
         tabManager: @escaping @MainActor () -> TabManager?,
-        launcherPlacement: ShortcutSplitLauncherPlacementService
+        launcherPlacement: ShortcutSplitLauncherPlacementService,
+        presentations: any SplitDropPresentationReconciling
     ) {
         self.tabManager = tabManager
         self.launcherPlacement = launcherPlacement
+        self.presentations = presentations
     }
 
     func commit(
@@ -26,7 +25,7 @@ final class RegularTabShortcutSidebarDropTransaction {
         targetGroup: SumiDomain.SplitGroup,
         target: SplitDropTarget,
         windowState: BrowserWindowState
-    ) -> CommittedRegularTabShortcutSidebarDrop? {
+    ) -> Bool {
         guard let tabManager = tabManager(),
               let prepared = tabManager.regularTabShortcutConversion
                 .prepareShortcutSidebarDrop(
@@ -45,7 +44,7 @@ final class RegularTabShortcutSidebarDropTransaction {
               let replacementTarget = preparedTarget.replacingLayoutTree(
                   with: updatedTree
               ) else {
-            return nil
+            return false
         }
 
         let sourceGroup = prepared.expectedSplitGroups.first {
@@ -67,21 +66,25 @@ final class RegularTabShortcutSidebarDropTransaction {
             activatedMemberID: prepared.member.memberID,
             replacementGroups: replacement
         )
-        guard let restorations = launcherPlacement.prepareRestorations(
+        guard let sidebarMutation = launcherPlacement.prepareSidebarMutation(
             for: effect.releasedMembers
-        ) else { return nil }
+        ) else { return false }
+        let presentation = RegularTabShortcutSplitPresentationPreparation(
+            presentations: presentations,
+            effect: effect,
+            sourceGroups: prepared.expectedSplitGroups,
+            replacementGroups: replacement,
+            requiredWindow: windowState
+        )
         guard tabManager.regularTabShortcutConversion
             .commitShortcutSidebarDrop(
                 prepared,
                 replacingSplitGroupsWith: replacement,
-                sidebarMutation: launcherPlacement.mutationPreparation(
-                    restorations
-                )
+                sidebarMutation: sidebarMutation,
+                presentation: presentation
             ) != nil else {
-            return nil
+            return false
         }
-        return CommittedRegularTabShortcutSidebarDrop(
-            effect: effect
-        )
+        return true
     }
 }

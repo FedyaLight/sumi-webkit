@@ -4,6 +4,8 @@ import Foundation
 /// supplied as a staged callback and remains owned by the caller.
 @MainActor
 final class ShortcutSplitLauncherCatalogTransaction {
+    struct PreviewIssuance { fileprivate init() {} }
+
     private let pinStore: ShortcutPinStoreOwner
     private let pins: ShortcutPinCollectionStateOwner
 
@@ -37,6 +39,38 @@ final class ShortcutSplitLauncherCatalogTransaction {
         ShortcutSplitLauncherCatalogSnapshot(pins)
     }
 
+    func prepareInsertion(
+        _ pin: ShortcutPin,
+        at index: Int
+    ) -> ShortcutSplitLauncherCatalogInsertionPlan? {
+        let source = snapshot()
+        guard let inserted = pinStore.previewInsert(pin, at: index) else {
+            return nil
+        }
+        let target = ShortcutSplitLauncherBindingPinTarget(inserted)
+        return ShortcutSplitLauncherCatalogInsertionPlan(
+            insertedPin: inserted,
+            sourceCatalog: source,
+            insertion: .init(pin: pin, index: index, target: target),
+            presentationPreview: .init(
+                pin: inserted,
+                source: source,
+                pins: pins,
+                issuance: PreviewIssuance()
+            )
+        )
+    }
+
+    func stageInsertion(
+        _ insertion: ShortcutSplitLauncherCatalogMovePlan.Insertion
+    ) -> ShortcutPin? {
+        pinStore.insert(
+            insertion.pin,
+            at: insertion.index,
+            openTargetFolder: false
+        )
+    }
+
     func matches(_ expected: ShortcutSplitLauncherCatalogSnapshot) -> Bool {
         expected.isCurrent(in: pins)
     }
@@ -66,41 +100,6 @@ final class ShortcutSplitLauncherCatalogTransaction {
         guard let current = pins.shortcutPin(by: expected.id) else {
             return false
         }
-        return matches(current, expected)
-    }
-
-    func rollback(
-        sourcePin: ShortcutPin,
-        movedPinID: UUID,
-        applying: @escaping (ShortcutPin) -> Bool
-    ) -> Bool {
-        guard let current = pins.shortcutPin(by: movedPinID) else {
-            return false
-        }
-        return pinStore.move(
-            current,
-            to: sourcePin.role,
-            profileId: sourcePin.profileId,
-            spaceId: sourcePin.spaceId,
-            folderId: sourcePin.folderId,
-            index: sourcePin.index,
-            openTargetFolder: false,
-            applying: {
-                self.matches($0, sourcePin) && applying($0)
-            }
-        )?.id == sourcePin.id
-    }
-
-    private func matches(_ lhs: ShortcutPin, _ rhs: ShortcutPin) -> Bool {
-        lhs.id == rhs.id
-            && lhs.role == rhs.role
-            && lhs.profileId == rhs.profileId
-            && lhs.executionProfileId == rhs.executionProfileId
-            && lhs.spaceId == rhs.spaceId
-            && lhs.folderId == rhs.folderId
-            && lhs.index == rhs.index
-            && lhs.launchURL == rhs.launchURL
-            && lhs.title == rhs.title
-            && lhs.iconAsset == rhs.iconAsset
+        return ShortcutSplitLauncherCatalogPinReceipt(expected).accepts(current)
     }
 }

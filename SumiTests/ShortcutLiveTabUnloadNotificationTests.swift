@@ -74,10 +74,7 @@ final class ShortcutLiveTabUnloadNotificationTests: XCTestCase {
                     selectionService: ShellSelectionService { _ in [] }
                 )
             },
-            selectTabWithoutPersistence: { _, _ in /* No-op. */ },
             performImmediateVisualHandoffIfPossible: { _ in /* No-op. */ },
-            persistWindowSession: { _ in /* No-op. */ },
-            showEmptyStateWithoutPersistence: { _ in /* No-op. */ },
             splitShortcuts: { nil },
             notifications: { spy }
         )

@@ -48,12 +48,14 @@ final class ShortcutTabBindingSynchronizer {
         admission: LiveShortcutPresentationRefreshAdmission? = nil
     ) -> Bool {
         guard let admission = admission
-            ?? presentationRefreshes.admission(for: pin),
-              let residences = presentationRefreshes
-                .stageResidenceTransaction(admission, for: pin) else {
+            ?? presentationRefreshes.admission(for: pin) else {
             return false
         }
-        return runtimeMutations.refresh(pin, residences: residences)
+        return runtimeMutations.refresh(
+            pin,
+            admission: admission,
+            refreshes: presentationRefreshes
+        )
     }
 
     func canRebind(_ tab: Tab, from sourcePin: ShortcutPin) -> Bool {
@@ -81,27 +83,4 @@ final class ShortcutTabBindingSynchronizer {
         )
     }
 
-    func applyExisting(
-        _ pin: ShortcutPin,
-        to tab: Tab,
-        currentSpaceId: UUID?
-    ) {
-        targets.applyExisting(
-            pin,
-            to: tab,
-            currentSpaceID: currentSpaceId
-        )
-    }
-
-    func prepareExisting(
-        _ pin: ShortcutPin,
-        to tab: Tab,
-        currentSpaceId: UUID?
-    ) -> ShortcutTabBindingExecutionReceipt {
-        targets.prepareExisting(
-            pin,
-            to: tab,
-            currentSpaceID: currentSpaceId
-        )
-    }
 }

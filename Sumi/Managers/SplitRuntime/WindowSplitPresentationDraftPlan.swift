@@ -8,6 +8,7 @@ struct WindowSplitPresentationSettlementInput {
     let affectedGroupIDs: Set<UUID>
     let standaloneMembers: [UUID: SplitMemberID]
     let unavailableMembers: [UUID: Set<SplitMemberID>]
+    let preferredSelections: [UUID: WindowSplitSelection]
     let requiredWindows: [UUID: BrowserWindowState]
     let sessionWriteUrgency: WindowSplitSessionWriteUrgency
 }

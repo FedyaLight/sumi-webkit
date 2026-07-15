@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$repo_root"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "$script_dir/.." && pwd)"
+# shellcheck source=scripts/lib/architecture_guard.sh
+source "$script_dir/lib/architecture_guard.sh"
+guard_initialize "$repo_root"
 
 legacy='Sumi/Managers/ExtensionManager/ExtensionUtils.swift'
 roles=(
@@ -29,7 +32,12 @@ for role in "${roles[@]}"; do
   }
 done
 
-if rg -n '\bExtensionUtils\b' Sumi SumiTests --glob '*.swift'; then
+legacy_symbol_hits="$(
+  guard_capture_matches '\bExtensionUtils\b' \
+    Sumi SumiTests --glob '*.swift'
+)"
+if [[ -n "$legacy_symbol_hits" ]]; then
+  printf '%s\n' "$legacy_symbol_hits" >&2
   echo 'error: compatibility facade or legacy ExtensionUtils consumer returned' >&2
   exit 1
 fi
@@ -45,30 +53,64 @@ icons="${roles[7]}"
 semantics="${roles[8]}"
 options="${roles[9]}"
 
-rg -q 'SumiExtensionOwnedURL\.isExtensionOwnedURL' "$url_identity"
-rg -q 'ExtensionURLIdentity\.extensionID' "$display_name"
-rg -q 'resolvingSymlinksInPath' "$path_safety"
-rg -q 'validateContents' "$validation"
-rg -q 'WKWebExtension\.MatchPattern' "$host_matcher"
-rg -q 'messages\.json' "$localization"
-rg -q 'SHA256\.hash' "$fingerprint"
-rg -q 'iconCandidates' "$icons"
-rg -q 'activationSummary' "$semantics"
-rg -q 'existingValidatedPath' "$options"
+required_role_boundaries=(
+  "$url_identity|SumiExtensionOwnedURL\\.isExtensionOwnedURL"
+  "$display_name|ExtensionURLIdentity\\.extensionID"
+  "$path_safety|resolvingSymlinksInPath"
+  "$validation|validateContents"
+  "$host_matcher|WKWebExtension\\.MatchPattern"
+  "$localization|messages\\.json"
+  "$fingerprint|SHA256\\.hash"
+  "$icons|iconCandidates"
+  "$semantics|activationSummary"
+  "$options|existingValidatedPath"
+)
+for role_boundary in "${required_role_boundaries[@]}"; do
+  role_file="${role_boundary%%|*}"
+  role_pattern="${role_boundary#*|}"
+  role_boundary_count="$(
+    guard_count_matches "$role_pattern" "$role_file"
+  )"
+  if (( role_boundary_count == 0 )); then
+    printf 'error: extension utility role lost required boundary: %s\n' \
+      "$role_pattern" >&2
+    exit 1
+  fi
+done
 
-if rg -n 'import (WebKit|CryptoKit|OSLog)|InstalledExtension' "$url_identity"; then
+url_policy_hits="$(
+  guard_capture_matches \
+    'import (WebKit|CryptoKit|OSLog)|InstalledExtension' "$url_identity"
+)"
+if [[ -n "$url_policy_hits" ]]; then
+  printf '%s\n' "$url_policy_hits" >&2
   echo 'error: extension URL identity absorbed runtime, logging, or catalog policy' >&2
   exit 1
 fi
-if rg -n 'import (WebKit|CryptoKit|OSLog)' "$display_name" "$icons" "$semantics"; then
+manifest_dependency_hits="$(
+  guard_capture_matches 'import (WebKit|CryptoKit|OSLog)' \
+    "$display_name" "$icons" "$semantics"
+)"
+if [[ -n "$manifest_dependency_hits" ]]; then
+  printf '%s\n' "$manifest_dependency_hits" >&2
   echo 'error: pure extension identity/manifest roles gained runtime or logging dependencies' >&2
   exit 1
 fi
-if rg -n 'WKWebExtension|InstalledExtension|SHA256|messages\.json' "$path_safety"; then
+path_policy_hits="$(
+  guard_capture_matches \
+    'WKWebExtension|InstalledExtension|SHA256|messages\.json' "$path_safety"
+)"
+if [[ -n "$path_policy_hits" ]]; then
+  printf '%s\n' "$path_policy_hits" >&2
   echo 'error: path-safety role absorbed unrelated extension semantics' >&2
   exit 1
 fi
-if rg -n 'resolvingSymlinksInPath|WKWebExtension|InstalledExtension' "$fingerprint"; then
+fingerprint_policy_hits="$(
+  guard_capture_matches \
+    'resolvingSymlinksInPath|WKWebExtension|InstalledExtension' "$fingerprint"
+)"
+if [[ -n "$fingerprint_policy_hits" ]]; then
+  printf '%s\n' "$fingerprint_policy_hits" >&2
   echo 'error: fingerprint role absorbed path/runtime/catalog policy' >&2
   exit 1
 fi

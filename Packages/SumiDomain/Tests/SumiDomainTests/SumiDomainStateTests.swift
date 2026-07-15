@@ -1,5 +1,5 @@
-import XCTest
 import SumiDomain
+import XCTest
 
 final class SumiDomainStateTests: XCTestCase {
     func testTabPlacementStateHasValueSemantics() {
@@ -72,6 +72,50 @@ final class SumiDomainStateTests: XCTestCase {
 
         history.removeFromShortcutLiveSelectionHistory(pinID)
         XCTAssertNil(history.recentSelectionItemsBySpace[spaceID])
+    }
+
+    func testWindowSelectionHistoryRemovesOneSpaceFootprintExactly() {
+        let removedSpaceID = UUID()
+        let retainedSpaceID = UUID()
+        let removedTabID = UUID()
+        let retainedTabID = UUID()
+        let removedPinID = UUID()
+        let retainedPinID = UUID()
+        var history = WindowSelectionHistory()
+        history.recentRegularTabIdsBySpace = [
+            removedSpaceID: [retainedTabID],
+            retainedSpaceID: [removedTabID, retainedTabID],
+        ]
+        history.recentSelectionItemsBySpace = [
+            removedSpaceID: [.shortcutPin(retainedPinID)],
+            retainedSpaceID: [
+                .regularTab(removedTabID),
+                .shortcutPin(removedPinID),
+                .regularTab(retainedTabID),
+                .shortcutPin(retainedPinID),
+            ],
+        ]
+
+        XCTAssertTrue(history.removeReferences(
+            toSpaceID: removedSpaceID,
+            tabIDs: [removedTabID],
+            shortcutPinIDs: [removedPinID]
+        ))
+        XCTAssertNil(history.recentRegularTabIdsBySpace[removedSpaceID])
+        XCTAssertEqual(
+            history.recentRegularTabIdsBySpace[retainedSpaceID],
+            [retainedTabID]
+        )
+        XCTAssertNil(history.recentSelectionItemsBySpace[removedSpaceID])
+        XCTAssertEqual(
+            history.recentSelectionItemsBySpace[retainedSpaceID],
+            [.regularTab(retainedTabID), .shortcutPin(retainedPinID)]
+        )
+        XCTAssertFalse(history.removeReferences(
+            toSpaceID: removedSpaceID,
+            tabIDs: [removedTabID],
+            shortcutPinIDs: [removedPinID]
+        ))
     }
 
     func testSidebarFolderProjectionStoreSetsAndRemovesPureValues() {

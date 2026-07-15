@@ -6,18 +6,22 @@ import SumiWebRuntime
 final class TabRuntimeTeardownService {
     let preparation = TabRuntimeTeardownPreparationService()
     let retirement: TabRuntimeRetirementService
-    private let publisher: TabRuntimeTeardownPublisher
+    let terminalRetirement: TabRuntimeTeardownPublisher
 
     init(
         persistence: TabStructuralPersistenceService,
         membership: TabCollectionMembershipOwner,
         webViewSessions: WebViewSessionRepository
     ) {
-        let publisher = TabRuntimeTeardownPublisher(
+        let terminalModel = TabTerminalModelPublisher(
             persistence: persistence,
             membership: membership
         )
-        self.publisher = publisher
+        let publisher = TabRuntimeTeardownPublisher(
+            membership: membership,
+            terminalModel: terminalModel
+        )
+        terminalRetirement = publisher
         retirement = TabRuntimeRetirementService(
             webViewSessions: webViewSessions,
             publisher: publisher
@@ -37,6 +41,14 @@ final class TabRuntimeTeardownService {
 
     @discardableResult
     func finish(_ prepared: PreparedTabRuntimeTeardown) -> Set<UUID> {
-        publisher.publish(prepared.tabs, runtime: prepared.runtime)
+        terminalRetirement.publish(prepared.tabs, runtime: prepared.runtime)
     }
+
+    @discardableResult
+    func finishRuntime(_ prepared: PreparedTabRuntimeTeardown) -> Set<UUID> {
+        terminalRetirement.publishRuntime(
+            prepared.tabs, runtime: prepared.runtime
+        )
+    }
+
 }

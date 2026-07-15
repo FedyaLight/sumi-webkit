@@ -141,6 +141,7 @@ private final class MutationHarness {
             self?.transactionCount += 1
             operation()
         },
+        beforeStructuralPublication: { action in action() },
         announceChange: { [weak self] in self?.announceCount += 1 },
         requestStructuralPublish: { [weak self] _ in self?.publishCount += 1 },
         markStructurallyDirty: { [weak self] in self?.dirtyCount += 1 },

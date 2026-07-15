@@ -135,7 +135,7 @@ final class ShortcutPinCommandOwner {
             if dependencies.shortcutPinCollectionStateOwner.essentialPins(for: insertion.profileId)
                 .contains(where: { $0.launchURL == tab.url }) { return }
 
-            guard dependencies.regularTabShortcutConversion.convert(
+            guard dependencies.regularTabShortcutConversion.accept(
                 tab,
                 destination: TabShortcutPinDestination(
                     role: .essential,
@@ -146,7 +146,7 @@ final class ShortcutPinCommandOwner {
                     opensFolder: true
                 ),
                 preferredWindowId: context?.windowState?.id
-            ) != nil else { return }
+            ) else { return }
             dependencies.essentialsShortcutPlacementOwner.logTargetMismatchIfNeeded(
                 resolution: insertion.resolution,
                 context: context

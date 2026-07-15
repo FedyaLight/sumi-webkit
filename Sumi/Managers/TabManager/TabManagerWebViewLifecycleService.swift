@@ -38,6 +38,7 @@ protocol TabWebViewOwnershipParticipant: AnyObject {
 protocol TabWebViewRetirementParticipant: AnyObject {
     func canRetire(_ tabs: [Tab]) -> Bool
     func beginCommittedRetirement(_ tabs: [Tab]) -> Bool
+    func committedRetirementIsExact(_ tabs: [Tab]) -> Bool
     func destroyRetiredGenerations(
         _ generations: [RetiredTabWebViewGeneration],
         completing tabs: [Tab]
@@ -60,6 +61,11 @@ protocol TabWebViewProfileTransitionParticipant: AnyObject {
         intent: DeferredWebViewProfileAssignmentIntent,
         settlement: @escaping ProfileTransitionService.Settlement
     ) -> TabProfileAssignmentExecutionOutcome
+    func executePreparedProfileAssignments(
+        _ assignments: [PreparedTabProfileAssignment],
+        bindingModel: any ShortcutTabBindingAggregateTransaction,
+        settlement: @escaping ProfileTransitionService.Settlement
+    ) -> PreparedProfileAssignmentBatchTransitionOutcome
     func executeSpaceProfileAssignment(
         space: Space,
         targetProfile: Profile,
@@ -168,6 +174,10 @@ struct TabManagerWebViewLifecycleService {
         retirement.beginCommittedRetirement(tabs)
     }
 
+    func committedTabRetirementIsExact(_ tabs: [Tab]) -> Bool {
+        retirement.committedRetirementIsExact(tabs)
+    }
+
     func destroyRetiredWebViews(
         _ generations: [RetiredTabWebViewGeneration],
         completingRetirementOf tabs: [Tab]
@@ -200,6 +210,18 @@ struct TabManagerWebViewLifecycleService {
             for: tab,
             targetProfile: targetProfile,
             intent: intent,
+            settlement: settlement
+        )
+    }
+
+    func executePreparedProfileAssignments(
+        _ assignments: [PreparedTabProfileAssignment],
+        bindingModel: any ShortcutTabBindingAggregateTransaction,
+        settlement: @escaping ProfileTransitionService.Settlement
+    ) -> PreparedProfileAssignmentBatchTransitionOutcome {
+        profileTransitions.executePreparedProfileAssignments(
+            assignments,
+            bindingModel: bindingModel,
             settlement: settlement
         )
     }

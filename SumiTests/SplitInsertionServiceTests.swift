@@ -792,6 +792,37 @@ private extension SplitInsertionServiceTests {
             scheduleWindowSession: { _ in },
             persistWindowSession: { _ in }
         )
+        let query = WindowSplitQuery(
+            tabManager: tabManager,
+            windowState: { $0 == window.id ? window : nil },
+            previewIsActive: { _ in false }
+        )
+        let dropTargets = SplitDropTargetService(
+            tabManager: tabManager,
+            windowState: { $0 == window.id ? window : nil },
+            currentTab: currentTabInWindow,
+            query: query,
+            memberResolver: members
+        )
+        let layout = SplitLayoutService(
+            tabManager: tabManager,
+            query: query,
+            weightMutations: SplitLayoutWeightMutationService(
+                tabManager: tabManager
+            ),
+            presentations: presentations,
+            dissolution: SplitGroupDissolutionService(
+                tabManager: tabManager,
+                launcherPlacement: launcherPlacement,
+                presentations: presentations
+            ),
+            launcherPlacement: launcherPlacement,
+            restoreShortcutMember: { _, _, _ in false }
+        )
+        let tabClosures = SplitTabClosureService(
+            dropTargets: dropTargets,
+            layout: layout
+        )
         let placeholderRetirement = EmptySplitPlaceholderRetirementService(
             regularTabs: manager.regularTabCollectionOwner,
             selection: manager.selectionStateOwner,
@@ -810,7 +841,9 @@ private extension SplitInsertionServiceTests {
                 liveShortcuts: manager.liveShortcutTabs,
                 members: members
             ),
-            launcher: launcherPlacement,
+            launcherRelease: ShortcutSplitLauncherReleasePlanner(
+                tabManager: manager
+            ),
             splitMutations: manager.splitGroupMutations,
             retirement: placeholderRetirement,
             presentations: presentations
@@ -848,6 +881,18 @@ private extension SplitInsertionServiceTests {
                 placeholderRetirement: placeholderRetirement
             )
         )
+        manager.runtimePortsAttachmentOwner.attach(TestRuntimePorts.make(
+            windowState: { $0 == window.id ? window : nil },
+            windows: { [(window.id, window)] },
+            webViewLifecycle: TestRuntimePorts.webViewLifecycle(
+                retirement: .rejecting,
+                primaryTrackedWindowId: { _ in window.id }
+            ),
+            splitCoordination: LiveTabSplitCoordinationPort(
+                tabClosures: tabClosures,
+                query: query
+            )
+        ))
         return Fixture(
             manager: manager,
             window: window,

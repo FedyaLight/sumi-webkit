@@ -29,7 +29,8 @@ final class SplitDropService {
         self.placeholderReplacements = placeholderReplacements
         regularShortcutSidebarDrop = RegularTabShortcutSidebarDropTransaction(
             tabManager: tabManager,
-            launcherPlacement: launcherPlacement
+            launcherPlacement: launcherPlacement,
+            presentations: presentations
         )
         self.presentations = presentations
         self.notifyLimit = notifyLimit
@@ -45,6 +46,17 @@ final class SplitDropService {
               let tabManager = tabManager() else {
             return false
         }
+        return tabManager.structuralLookupCoordinator.withTransaction {
+            commitDrop(tab, on: target, in: windowState, tabManager: tabManager)
+        }
+    }
+
+    private func commitDrop(
+        _ tab: Tab,
+        on target: SplitDropTarget,
+        in windowState: BrowserWindowState,
+        tabManager: TabManager
+    ) -> Bool {
         let incomingID = tabManager.splitGroupMembership.memberID(for: tab)
 
         let sourceGroup = tabManager.splitGroupStore.group(
@@ -61,7 +73,8 @@ final class SplitDropService {
                 sourceMemberID: incomingID,
                 into: targetGroup,
                 target: target,
-                windowState: windowState
+                windowState: windowState,
+                tabManager: tabManager
             )
         }
         guard let incoming = memberResolver.resolveExisting(
@@ -303,21 +316,22 @@ final class SplitDropService {
         sourceMemberID: SplitMemberID,
         into targetGroup: SumiDomain.SplitGroup,
         target: SplitDropTarget,
-        windowState: BrowserWindowState
+        windowState: BrowserWindowState,
+        tabManager: TabManager
     ) -> Bool {
         if target.side != .center,
            targetGroup.memberIDs.count >= SumiDomain.SplitGroup.maximumMembers {
             notifyLimit(windowState)
             return false
         }
-        guard let committed = regularShortcutSidebarDrop.commit(
+        guard regularShortcutSidebarDrop.commit(
             tab: tab,
             sourceMemberID: sourceMemberID,
             targetGroup: targetGroup,
             target: target,
             windowState: windowState
         ) else { return false }
-        presentations.reconcile(committed.effect)
+        tabManager.structuralLookupCoordinator.flushPendingWritesForRead()
         return true
     }
 
@@ -335,8 +349,8 @@ final class SplitDropService {
         return tabManager.splitGroupMutations.replaceAllAtomically(
             expected: expected,
             with: replacement,
-            applying: { [launcherPlacement] in
-                launcherPlacement.applyAndCommit(restorations)
+            applying: {
+                restorations.applyAndCommit()
             }
         )
     }

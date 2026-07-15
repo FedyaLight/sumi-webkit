@@ -38,9 +38,10 @@ final class TabFolderMutationOwner {
             let folder = TabFolder(
                 name: name,
                 spaceId: spaceId,
-                color: dependencies.spaceStateOwner.spaces.first(where: { $0.id == spaceId })?.color ?? .controlAccentColor
+                color: dependencies.spaceStateOwner.spaces.first(where: { $0.id == spaceId })?.color ?? .controlAccentColor,
+                index: dependencies.spacePinnedStructureOwner
+                    .topLevelSpacePinnedItems(for: spaceId).count
             )
-            folder.index = dependencies.spacePinnedStructureOwner.topLevelSpacePinnedItems(for: spaceId).count
             RuntimeDiagnostics.emit("   Created folder: \(folder.name) (id: \(folder.id.uuidString.prefix(8))...)")
 
             var folders = dependencies.folderCollectionStateOwner.folders(for: spaceId)
@@ -379,9 +380,11 @@ final class TabFolderMutationOwner {
             switch item {
             case .folder(let folderId):
                 guard let folder = folderMap[folderId] else { continue }
-                folder.spaceId = spaceId
-                folder.parentFolderId = parentFolderId
-                folder.index = index
+                folder.installPlacement(TabFolderPlacement(
+                    spaceID: spaceId,
+                    parentFolderID: parentFolderId,
+                    index: index
+                ))
 
             case .shortcut(let pinId):
                 guard let pin = pinMap[pinId] else { continue }

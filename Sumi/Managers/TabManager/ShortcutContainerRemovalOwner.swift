@@ -7,17 +7,20 @@ final class ShortcutContainerRemovalOwner {
     private let pinnedByProfile: @MainActor () -> [UUID: [ShortcutPin]]
     private let setPinnedTabs: @MainActor ([ShortcutPin], UUID) -> Void
     private let removeRegularTab: @MainActor (UUID, UUID, UUID?) -> Void
+    private let containsRegularTab: @MainActor (Tab, UUID) -> Bool
     private let currentSpaceId: @MainActor () -> UUID?
 
     init(
         pinnedByProfile: @escaping @MainActor () -> [UUID: [ShortcutPin]],
         setPinnedTabs: @escaping @MainActor ([ShortcutPin], UUID) -> Void,
         removeRegularTab: @escaping @MainActor (UUID, UUID, UUID?) -> Void,
+        containsRegularTab: @escaping @MainActor (Tab, UUID) -> Bool,
         currentSpaceId: @escaping @MainActor () -> UUID?
     ) {
         self.pinnedByProfile = pinnedByProfile
         self.setPinnedTabs = setPinnedTabs
         self.removeRegularTab = removeRegularTab
+        self.containsRegularTab = containsRegularTab
         self.currentSpaceId = currentSpaceId
     }
 
@@ -38,5 +41,9 @@ final class ShortcutContainerRemovalOwner {
                 currentSpaceId()
             )
         }
+    }
+
+    func containsIdenticalRegularTab(_ tab: Tab, in spaceID: UUID) -> Bool {
+        containsRegularTab(tab, spaceID)
     }
 }

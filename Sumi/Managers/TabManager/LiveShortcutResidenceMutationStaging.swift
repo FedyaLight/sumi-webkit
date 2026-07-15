@@ -1,10 +1,22 @@
 import Foundation
 
-/// Raw, rollback-capable residence mutations. No structure event is emitted
-/// until `publish`, so an aggregate consumer can reject without observable
-/// intermediate registry state.
+/// Prepares exact residence plans and applies them only during model staging.
+/// Publication remains a separate terminal operation.
 @MainActor
 final class LiveShortcutResidenceMutationStaging {
+    struct Plan {
+        fileprivate enum Operation {
+            case registration(LiveShortcutTabEntry)
+            case removal(LiveShortcutTabEntry)
+            case relocation(
+                previous: LiveShortcutTabEntry,
+                current: LiveShortcutTabEntry
+            )
+        }
+
+        fileprivate let operation: Operation
+    }
+
     enum Change {
         case registration(LiveShortcutTabEntry)
         case removal(LiveShortcutTabEntry)
@@ -19,17 +31,6 @@ final class LiveShortcutResidenceMutationStaging {
                 return [entry]
             case .relocation(let previous, let current):
                 return [previous, current]
-            }
-        }
-
-        var currentEntry: LiveShortcutTabEntry? {
-            switch self {
-            case .registration(let entry):
-                return entry
-            case .removal:
-                return nil
-            case .relocation(_, let current):
-                return current
             }
         }
     }
@@ -52,66 +53,132 @@ final class LiveShortcutResidenceMutationStaging {
         in windowID: UUID,
         presentationPage: LiveShortcutPresentationPageReceipt
     ) -> Bool {
-        storage.canRelocate(
+        prepareRelocation(
             tab,
             from: sourcePinID,
             to: targetPinID,
             in: windowID,
             presentationPage: presentationPage
-        )
+        ) != nil
     }
 
-    func register(
+    func prepareRegistration(
         _ tab: Tab,
         for pinID: UUID,
         in windowID: UUID,
         presentationPage: LiveShortcutPresentationPageReceipt
-    ) -> Change? {
-        storage.register(
-            tab,
-            for: pinID,
-            in: windowID,
-            presentationPage: presentationPage
-        ).map(Change.registration)
+    ) -> Plan? {
+        let plan = Plan(operation: .registration(
+            LiveShortcutTabEntry(
+                windowId: windowID,
+                pinId: pinID,
+                tab: tab,
+                presentationPage: presentationPage
+            )
+        ))
+        return projectedSnapshot(for: [plan]) == nil ? nil : plan
     }
 
-    func relocate(
+    func prepareRelocation(
         _ tab: Tab,
         from sourcePinID: UUID,
         to targetPinID: UUID,
         in windowID: UUID,
         presentationPage: LiveShortcutPresentationPageReceipt
-    ) -> Change? {
-        storage.relocate(
-            tab,
-            from: sourcePinID,
-            to: targetPinID,
-            in: windowID,
-            presentationPage: presentationPage
-        ).map {
-            .relocation(previous: $0.previous, current: $0.current)
+    ) -> Plan? {
+        guard let previous = storage.snapshot.entry(containing: tab) else {
+            return nil
         }
+        let plan = Plan(operation: .relocation(
+            previous: previous,
+            current: LiveShortcutTabEntry(
+                windowId: windowID,
+                pinId: targetPinID,
+                tab: tab,
+                presentationPage: presentationPage
+            )
+        ))
+        guard previous.pinId == sourcePinID,
+              previous.windowId == windowID else { return nil }
+        return projectedSnapshot(for: [plan]) == nil ? nil : plan
     }
 
-    func remove(_ expected: LiveShortcutTabEntry) -> Change? {
-        storage.remove(ifMatching: expected) ? .removal(expected) : nil
+    func prepareRemoval(_ expected: LiveShortcutTabEntry) -> Plan? {
+        let plan = Plan(operation: .removal(expected))
+        return projectedSnapshot(for: [plan]) == nil ? nil : plan
+    }
+
+    func canStage(_ plans: [Plan]) -> Bool {
+        projectedSnapshot(for: plans) != nil
+    }
+
+    func stage(_ plans: [Plan]) -> [Change]? {
+        guard let target = projectedSnapshot(for: plans) else { return nil }
+        let changes = plans.map { plan -> Change in
+            switch plan.operation {
+            case .registration(let expected):
+                let entry = storage.register(
+                    expected.tab,
+                    for: expected.pinId,
+                    in: expected.windowId,
+                    presentationPage: expected.presentationPage
+                )
+                precondition(entry?.isIdentical(to: expected) == true)
+                return .registration(expected)
+            case .removal(let expected):
+                precondition(storage.remove(ifMatching: expected))
+                return .removal(expected)
+            case .relocation(let previous, let current):
+                let result = storage.relocate(
+                    current.tab,
+                    from: previous.pinId,
+                    to: current.pinId,
+                    in: current.windowId,
+                    presentationPage: current.presentationPage
+                )
+                precondition(
+                    result?.previous.isIdentical(to: previous) == true
+                        && result?.current.isIdentical(to: current) == true
+                )
+                return .relocation(previous: previous, current: current)
+            }
+        }
+        precondition(storage.snapshot.isIdentical(to: target))
+        return changes
     }
 
     func canPublish(_ changes: [Change]) -> Bool {
-        changes.allSatisfy { change in
+        reversedSnapshot(for: changes) != nil
+    }
+
+    private func reversedSnapshot(
+        for changes: [Change]
+    ) -> LiveShortcutTabSnapshot? {
+        var entries = storage.snapshot.entriesByWindow
+        for change in changes.reversed() {
             switch change {
-            case .removal(let entry):
-                return storage.snapshot.entry(containing: entry.tab) == nil
-                    && storage.snapshot.entries(in: entry.windowId)
-                        .contains { $0.pinId == entry.pinId } == false
-            case .registration, .relocation:
-                guard let expected = change.currentEntry,
-                      let current = storage.snapshot.entry(
-                          containing: expected.tab
-                      ) else { return false }
-                return current.isIdentical(to: expected)
+            case .registration(let current):
+                guard entry(containing: current.tab, in: entries)?
+                    .isIdentical(to: current) == true else { return nil }
+                removeProjected(current, from: &entries)
+            case .removal(let previous):
+                guard entry(containing: previous.tab, in: entries) == nil,
+                      entries[previous.windowId]?[previous.pinId] == nil
+                else { return nil }
+                entries[previous.windowId, default: [:]][previous.pinId]
+                    = previous
+            case .relocation(let previous, let current):
+                guard entry(containing: current.tab, in: entries)?
+                    .isIdentical(to: current) == true else { return nil }
+                removeProjected(current, from: &entries)
+                guard entry(containing: previous.tab, in: entries) == nil,
+                      entries[previous.windowId]?[previous.pinId] == nil
+                else { return nil }
+                entries[previous.windowId, default: [:]][previous.pinId]
+                    = previous
             }
         }
+        return LiveShortcutTabSnapshot(entriesByWindow: entries)
     }
 
     @discardableResult
@@ -149,54 +216,58 @@ final class LiveShortcutResidenceMutationStaging {
         )
     }
 
-    func beginBatchCheckpoint() -> LiveShortcutResidenceBatchCheckpoint {
-        LiveShortcutResidenceBatchCheckpoint(storage: storage)
-    }
-}
-
-/// Exact raw residence checkpoint reserved for a transaction that has emitted
-/// no observation yet. Once sealed, compensation is admitted only while the
-/// complete staged snapshot is still current.
-@MainActor
-final class LiveShortcutResidenceBatchCheckpoint {
-    private enum State {
-        case open
-        case sealed(LiveShortcutTabSnapshot)
-        case restored
-    }
-
-    private let storage: LiveShortcutTabResidenceStore
-    private let source: LiveShortcutTabSnapshot
-    private var state: State = .open
-
-    fileprivate init(storage: LiveShortcutTabResidenceStore) {
-        self.storage = storage
-        source = storage.snapshot
-    }
-
-    func seal() {
-        guard case .open = state else {
-            preconditionFailure("Residence batch checkpoint was already sealed")
+    private func projectedSnapshot(
+        for plans: [Plan]
+    ) -> LiveShortcutTabSnapshot? {
+        var entries = storage.snapshot.entriesByWindow
+        for plan in plans {
+            switch plan.operation {
+            case .registration(let target):
+                guard target.presentationPage.page.windowID == target.windowId,
+                      entry(containing: target.tab, in: entries) == nil,
+                      entries[target.windowId]?[target.pinId] == nil else {
+                    return nil
+                }
+                entries[target.windowId, default: [:]][target.pinId] = target
+            case .removal(let source):
+                guard entry(containing: source.tab, in: entries)?
+                    .isIdentical(to: source) == true else { return nil }
+                removeProjected(source, from: &entries)
+            case .relocation(let source, let target):
+                guard source.tab === target.tab,
+                      source.windowId == target.windowId,
+                      source.pinId != target.pinId
+                        || source.presentationPage != target.presentationPage,
+                      target.presentationPage.page.windowID == target.windowId,
+                      entry(containing: source.tab, in: entries)?
+                        .isIdentical(to: source) == true else { return nil }
+                let occupant = entries[target.windowId]?[target.pinId]
+                guard occupant == nil || occupant?.tab === source.tab else {
+                    return nil
+                }
+                removeProjected(source, from: &entries)
+                entries[target.windowId, default: [:]][target.pinId] = target
+            }
         }
-        state = .sealed(storage.snapshot)
+        return LiveShortcutTabSnapshot(entriesByWindow: entries)
     }
 
-    func isCurrent() -> Bool {
-        guard case .sealed(let expected) = state else { return false }
-        return storage.snapshot.isIdentical(to: expected)
+    private func entry(
+        containing tab: Tab,
+        in entries: [UUID: [UUID: LiveShortcutTabEntry]]
+    ) -> LiveShortcutTabEntry? {
+        entries.values.lazy.compactMap { slots in
+            slots.values.first { $0.tab === tab }
+        }.first
     }
 
-    func restore() -> Bool {
-        switch state {
-        case .open:
-            break
-        case .sealed where isCurrent():
-            break
-        case .sealed, .restored:
-            return false
+    private func removeProjected(
+        _ entry: LiveShortcutTabEntry,
+        from entries: inout [UUID: [UUID: LiveShortcutTabEntry]]
+    ) {
+        entries[entry.windowId]?.removeValue(forKey: entry.pinId)
+        if entries[entry.windowId]?.isEmpty == true {
+            entries.removeValue(forKey: entry.windowId)
         }
-        storage.restore(source)
-        state = .restored
-        return storage.snapshot.isIdentical(to: source)
     }
 }

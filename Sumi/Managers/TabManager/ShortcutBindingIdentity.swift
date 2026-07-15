@@ -6,6 +6,12 @@ struct ShortcutBindingIdentity: Equatable {
     let role: ShortcutPinRole
     let spaceId: UUID?
 
+    init(pinId: UUID, role: ShortcutPinRole, spaceId: UUID?) {
+        self.pinId = pinId
+        self.role = role
+        self.spaceId = spaceId
+    }
+
     @MainActor
     init?(tab: Tab) {
         guard let pinId = tab.shortcutPinId,

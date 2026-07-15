@@ -718,6 +718,90 @@ final class WebViewRetirementBatchTests: XCTestCase {
         XCTAssertTrue(repository.queries.ownershipTransitionSnapshot().isEmpty)
     }
 
+    func testModelCommitConflictCanRestoreRepositoryAfterModelCompensation() {
+        let repository = WebViewSessionRepository()
+        let tabID = UUID()
+        let webView = WKWebView()
+        repository.noteUntrackedWebView(webView, for: tabID)
+        let modelTransaction = WebViewRetirementModelTransactionReceipt(
+            isCurrent: { true },
+            commit: { false },
+            rollback: { XCTFail("Unstaged model must not roll back"); return false }
+        )
+
+        guard case .modelConflict(let lease) = repository.beginRetirementBatch(
+            [entry(tabID, in: repository)],
+            modelTransaction: modelTransaction
+        ) else { return XCTFail("Expected retained model conflict") }
+        XCTAssertEqual(modelTransaction.state, .conflicted)
+        guard case .retiring = repository.residence(of: webView) else {
+            return XCTFail("Repository must retain the exact old generation")
+        }
+
+        guard case .restored = repository
+            .restoreRetirementAfterModelCompensation(lease) else {
+            return XCTFail("Exact external model compensation must restore runtime")
+        }
+        XCTAssertIdentical(repository.untrackedWebView(for: tabID), webView)
+        XCTAssertTrue(repository.queries.ownershipTransitionSnapshot().isEmpty)
+    }
+
+    func testModelCommitConflictCanClaimCleanupExactlyOnce() {
+        let repository = WebViewSessionRepository()
+        let tabID = UUID()
+        let webView = WKWebView()
+        repository.noteUntrackedWebView(webView, for: tabID)
+        let modelTransaction = WebViewRetirementModelTransactionReceipt(
+            isCurrent: { true },
+            commit: { false },
+            rollback: { false }
+        )
+
+        guard case .modelConflict(let lease) = repository.beginRetirementBatch(
+            [entry(tabID, in: repository)],
+            modelTransaction: modelTransaction
+        ) else { return XCTFail("Expected retained model conflict") }
+        guard case .claimed(let retired) = repository
+            .claimRetirementCleanup(lease) else {
+            return XCTFail("Expected exact cleanup ownership")
+        }
+        XCTAssertEqual(Set(retired.keys), [tabID])
+        XCTAssertIdentical(retired[tabID]?.untrackedWebView, webView)
+        XCTAssertNil(repository.residence(of: webView))
+        XCTAssertTrue(repository.snapshot(for: tabID).allKnownWebViews.isEmpty)
+        XCTAssertTrue(repository.queries.ownershipTransitionSnapshot().isEmpty)
+        guard case .noLongerActive = repository.claimRetirementCleanup(lease)
+        else { return XCTFail("Cleanup claim must be single-use") }
+    }
+
+    func testModelRollbackConflictReopensLeaseForCleanupClaim() {
+        let repository = WebViewSessionRepository()
+        let tabID = UUID()
+        let webView = WKWebView()
+        repository.noteUntrackedWebView(webView, for: tabID)
+        let modelTransaction = WebViewRetirementModelTransactionReceipt(
+            isCurrent: { true },
+            commit: { true },
+            rollback: { false }
+        )
+        guard case .began(let lease) = repository.beginRetirementBatch(
+            [entry(tabID, in: repository)],
+            modelTransaction: modelTransaction
+        ) else { return XCTFail("Expected retirement batch") }
+
+        guard case .modelConflict = repository.rollbackRetirementBatch(
+            lease,
+            modelTransaction: modelTransaction
+        ) else { return XCTFail("Expected retained rollback conflict") }
+        guard case .claimed(let retired) = repository
+            .claimRetirementCleanup(lease) else {
+            return XCTFail("Rollback conflict must retain cleanup authority")
+        }
+        XCTAssertIdentical(retired[tabID]?.untrackedWebView, webView)
+        XCTAssertNil(repository.residence(of: webView))
+        XCTAssertTrue(repository.queries.ownershipTransitionSnapshot().isEmpty)
+    }
+
     private func entry(
         _ tabID: UUID,
         in repository: WebViewSessionRepository
@@ -735,8 +819,14 @@ final class WebViewRetirementBatchTests: XCTestCase {
     ) -> WebViewRetirementModelTransactionReceipt {
         .init(
             isCurrent: isCurrent,
-            commit: commit,
-            rollback: rollback
+            commit: {
+                commit()
+                return true
+            },
+            rollback: {
+                rollback()
+                return true
+            }
         )
     }
 }

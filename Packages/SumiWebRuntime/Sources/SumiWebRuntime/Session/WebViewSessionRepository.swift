@@ -414,6 +414,18 @@ public final class WebViewSessionRepository {
         )
     }
 
+    public func restoreRetirementAfterModelCompensation(
+        _ lease: WebViewRetirementBatchLease
+    ) -> WebViewRetirementModelConflictRestoreResult {
+        transitionCoordinator.restoreRetirementAfterModelCompensation(lease)
+    }
+
+    public func claimRetirementCleanup(
+        _ lease: WebViewRetirementBatchLease
+    ) -> WebViewRetirementCleanupClaimResult {
+        transitionCoordinator.claimRetirementCleanup(lease)
+    }
+
     // MARK: - Invariants
 
     public func assertConsistency(_ context: StaticString) {

@@ -31,8 +31,8 @@ final class SplitGroupDissolutionService {
                   for: group.members
                   ), tabManager.splitGroupMutations.removeAtomically(
                   group,
-                  applying: { [launcherPlacement] in
-                      launcherPlacement.applyAndCommit(restorations)
+                  applying: {
+                      restorations.applyAndCommit()
                   }
               ) else {
             return false

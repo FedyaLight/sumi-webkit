@@ -101,8 +101,8 @@ final class SplitLayoutService {
               tabManager.splitGroupMutations.replaceAllAtomically(
                   expected: expected,
                   with: replacement,
-                  applying: { [launcherPlacement] in
-                      launcherPlacement.applyAndCommit(restorations)
+                  applying: {
+                      restorations.applyAndCommit()
                   }
               ) else {
             return nil

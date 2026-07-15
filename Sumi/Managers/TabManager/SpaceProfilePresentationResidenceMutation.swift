@@ -9,6 +9,7 @@ final class SpaceProfilePresentationResidenceMutation {
     private let relocations: [SpaceProfilePresentationTransition.Relocation]
     private let retirements: [LiveShortcutTabEntry]
     private let registry: LiveShortcutTabRegistry
+    private let plans: [LiveShortcutResidenceMutationStaging.Plan]?
     private var changes: [LiveShortcutResidenceMutationStaging.Change] = []
     private var state: State = .pending
 
@@ -20,21 +21,37 @@ final class SpaceProfilePresentationResidenceMutation {
         self.relocations = relocations
         self.retirements = retirements
         self.registry = registry
+        let relocationPlans: [LiveShortcutResidenceMutationStaging.Plan] =
+            relocations.compactMap { relocation in
+            guard relocation.entry.presentationPage != relocation.targetPage
+            else { return nil }
+            return registry.staging.prepareRelocation(
+                relocation.entry.tab,
+                from: relocation.entry.pinId,
+                to: relocation.entry.pinId,
+                in: relocation.entry.windowId,
+                presentationPage: relocation.targetPage
+            )
+        }
+        let retirementPlans = retirements.compactMap(
+            registry.staging.prepareRemoval
+        )
+        if relocationPlans.count == relocations.filter({
+            $0.entry.presentationPage != $0.targetPage
+        }).count, retirementPlans.count == retirements.count {
+            plans = relocationPlans + retirementPlans
+        } else {
+            plans = nil
+        }
     }
 
     func canStage() -> Bool {
         guard state == .pending else { return false }
+        guard let plans, registry.staging.canStage(plans) else { return false }
         return relocations.allSatisfy { relocation in
             guard registry.entry(containing: relocation.entry.tab)?
                 .isIdentical(to: relocation.entry) == true else { return false }
-            return relocation.entry.presentationPage == relocation.targetPage
-                || registry.staging.canRelocate(
-                    relocation.entry.tab,
-                    from: relocation.entry.pinId,
-                    to: relocation.entry.pinId,
-                    in: relocation.entry.windowId,
-                    presentationPage: relocation.targetPage
-                )
+            return true
         } && retirements.allSatisfy { entry in
             registry.entry(containing: entry.tab)?
                 .isIdentical(to: entry) == true
@@ -43,28 +60,8 @@ final class SpaceProfilePresentationResidenceMutation {
 
     func commit() -> Bool {
         guard canStage() else { return false }
-        let checkpoint = registry.staging.beginBatchCheckpoint()
-        var staged: [LiveShortcutResidenceMutationStaging.Change] = []
-        for relocation in relocations
-            where relocation.entry.presentationPage != relocation.targetPage {
-            guard let change = registry.staging.relocate(
-                relocation.entry.tab,
-                from: relocation.entry.pinId,
-                to: relocation.entry.pinId,
-                in: relocation.entry.windowId,
-                presentationPage: relocation.targetPage
-            ) else {
-                _ = checkpoint.restore()
-                return false
-            }
-            staged.append(change)
-        }
-        for entry in retirements {
-            guard let change = registry.staging.remove(entry) else {
-                _ = checkpoint.restore()
-                return false
-            }
-            staged.append(change)
+        guard let plans, let staged = registry.staging.stage(plans) else {
+            return false
         }
         changes = staged
         state = .staged

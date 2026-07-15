@@ -35,19 +35,39 @@ enum ShortcutSelectionTransition {
         isSelected: Bool,
         to state: inout BrowserWindowShortcutMutationState
     ) -> Bool {
+        apply(
+            tabID: tab.id,
+            source: source,
+            target: ShortcutBindingIdentity(
+                pinId: targetPin.id,
+                role: targetPin.role,
+                spaceId: tab.spaceId
+            ),
+            isSelected: isSelected,
+            to: &state
+        )
+    }
+
+    static func apply(
+        tabID: UUID,
+        source: ShortcutBindingIdentity?,
+        target: ShortcutBindingIdentity,
+        isSelected: Bool,
+        to state: inout BrowserWindowShortcutMutationState
+    ) -> Bool {
         let previous = Snapshot(state)
-        let target = ShortcutBindingIdentity(tab: tab)
         guard source != target else {
-            applyCurrentSelection(
-                tab: tab,
-                pin: targetPin,
-                isSelected: isSelected,
-                to: &state
-            )
+            if isSelected {
+                ShortcutCurrentSelectionProjection.apply(
+                    tabID: tabID,
+                    target: target,
+                    to: &state
+                )
+            }
             return previous != Snapshot(state)
         }
 
-        let pinIds = Set([source?.pinId, targetPin.id].compactMap(\.self))
+        let pinIds = Set([source?.pinId, target.pinId].compactMap(\.self))
         let hadActiveMemory = state.selectedShortcutPinForSpace.values
             .contains(where: pinIds.contains)
         let historySpaces = spacesRemembering(
@@ -58,10 +78,10 @@ enum ShortcutSelectionTransition {
         state.selectedShortcutPinForSpace = state
             .selectedShortcutPinForSpace
             .filter { pinIds.contains($0.value) == false }
-        if targetPin.role == .essential {
+        if target.role == .essential {
             replaceHistory(
                 pinIds: pinIds,
-                with: targetPin.id,
+                with: target.pinId,
                 in: &state
             )
         } else {
@@ -69,31 +89,32 @@ enum ShortcutSelectionTransition {
                 state.selectionHistory
                     .removeFromShortcutLiveSelectionHistory($0)
             }
-            if let targetSpaceId = tab.spaceId,
+            if let targetSpaceId = target.spaceId,
                isSelected || hadActiveMemory || historySpaces.isEmpty == false {
                 state.selectionHistory.recordSelection(
-                    .shortcutPin(targetPin.id),
+                    .shortcutPin(target.pinId),
                     in: targetSpaceId
                 )
             }
         }
 
-        if targetPin.role == .spacePinned,
-           let targetSpaceId = tab.spaceId,
+        if target.role == .spacePinned,
+           let targetSpaceId = target.spaceId,
            isSelected || hadActiveMemory {
-            state.selectedShortcutPinForSpace[targetSpaceId] = targetPin.id
+            state.selectedShortcutPinForSpace[targetSpaceId] = target.pinId
         }
-        applyCurrentSelection(
-            tab: tab,
-            pin: targetPin,
-            isSelected: isSelected,
-            to: &state
-        )
+        if isSelected {
+            ShortcutCurrentSelectionProjection.apply(
+                tabID: tabID,
+                target: target,
+                to: &state
+            )
+        }
         if isSelected,
-           targetPin.role == .essential,
+           target.role == .essential,
            let currentSpaceId = state.currentSpaceId {
             state.selectionHistory.recordSelection(
-                .shortcutPin(targetPin.id),
+                .shortcutPin(target.pinId),
                 in: currentSpaceId
             )
         }
@@ -103,22 +124,6 @@ enum ShortcutSelectionTransition {
             state.currentShortcutPinRole = nil
         }
         return previous != Snapshot(state)
-    }
-
-    private static func applyCurrentSelection(
-        tab: Tab,
-        pin: ShortcutPin,
-        isSelected: Bool,
-        to state: inout BrowserWindowShortcutMutationState
-    ) {
-        guard isSelected else { return }
-        state.currentTabId = tab.id
-        state.currentShortcutPinId = pin.id
-        state.currentShortcutPinRole = pin.role
-        state.isShowingEmptyState = false
-        if pin.role == .spacePinned, let targetSpaceId = tab.spaceId {
-            state.currentSpaceId = targetSpaceId
-        }
     }
 
     private static func spacesRemembering(

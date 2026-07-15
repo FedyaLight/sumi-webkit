@@ -150,6 +150,7 @@ final class DeferredWebViewCommandAuthorityTests: XCTestCase {
             desiredProfileID: desiredProfileID,
             resolvedProfileID: desiredProfileID,
             targetURL: tab.url,
+            navigationRevision: tab.mainFrameLoads.currentIntent.revision,
             requiresStructuralPersistence: false
         )
         let preferredWindowID = UUID()
@@ -174,6 +175,46 @@ final class DeferredWebViewCommandAuthorityTests: XCTestCase {
         XCTAssertNil(fixture.authority.prepare(command))
     }
 
+    func testAssignProfileRejectsNavigationABADriftEvenWhenTargetURLMatches() {
+        let fixture = Fixture()
+        let targetURL = URL(string: "https://example.com/profile-target")!
+        let tab = fixture.makeTab(url: targetURL)
+        let capturedNavigation = tab.beginMainFrameNavigationIntent(
+            to: targetURL
+        )
+        let profileID = UUID()
+        let intent = tab.profileAssignment.begin(
+            desiredProfileID: profileID,
+            resolvedProfileID: profileID,
+            targetURL: capturedNavigation.targetURL,
+            navigationRevision: capturedNavigation.revision,
+            requiresStructuralPersistence: false
+        )
+        let command = DeferredWebViewCommand.assignProfile(
+            tabID: tab.id,
+            preferredPrimaryWindowID: nil,
+            intent: intent
+        )
+
+        XCTAssertNotNil(fixture.authority.prepare(command))
+
+        _ = tab.beginMainFrameNavigationIntent(
+            to: URL(string: "https://example.com/intervening")!
+        )
+        let returnedNavigation = tab.beginMainFrameNavigationIntent(
+            to: targetURL
+        )
+
+        XCTAssertGreaterThan(
+            returnedNavigation.revision,
+            capturedNavigation.revision
+        )
+        XCTAssertEqual(returnedNavigation.targetURL, intent.targetURL)
+        XCTAssertTrue(tab.profileAssignment.isCurrent(intent))
+        XCTAssertNil(fixture.authority.prepare(command))
+        tab.profileAssignment.abort(intent)
+    }
+
     func testAssignProfileRejectsTabThatRemainsRuntimeBoundAfterCollectionRemoval() {
         let fixture = Fixture()
         let tab = fixture.makeTab()
@@ -182,6 +223,7 @@ final class DeferredWebViewCommandAuthorityTests: XCTestCase {
             desiredProfileID: profileID,
             resolvedProfileID: profileID,
             targetURL: tab.url,
+            navigationRevision: tab.mainFrameLoads.currentIntent.revision,
             requiresStructuralPersistence: false
         )
         let command = DeferredWebViewCommand.assignProfile(

@@ -60,10 +60,6 @@ final class ProfileAssignmentPolicy {
         )
     }
 
-    func liveDocumentURL(for tab: Tab) -> URL? {
-        tabManager.runtimePorts?.webViewLifecycle.anyLiveWebView(for: tab)?.url
-    }
-
     func profileIDsForSpaceTransition(
         tab: Tab,
         targetSpaceID: UUID?,

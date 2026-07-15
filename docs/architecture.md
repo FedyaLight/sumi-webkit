@@ -32,7 +32,10 @@ package is not used merely to split a handful of source files: source folders
 and narrow app-internal types carry those responsibilities without adding a
 manifest, product, dependency edge, or duplicate test lane.
 
-Hub façade sizes are frozen by `scripts/check_architecture_hub_metrics.sh`.
+Living hub-risk metrics and semantic boundaries are checked independently by
+`scripts/check_architecture_structural_metrics.sh` and
+`scripts/check_architecture_structural_boundaries.sh`. Historical surfaces are
+kept separately in `scripts/check_architecture_tombstones.sh`.
 Generic `*Owner` names in existing code are legacy architecture debt, not the
 preferred decomposition model. New extraction names the concrete role or
 transaction it owns; touched god objects are split by cohesive responsibility

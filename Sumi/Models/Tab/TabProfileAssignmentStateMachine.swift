@@ -35,6 +35,7 @@ final class TabProfileAssignmentStateMachine {
         desiredProfileID: UUID?,
         resolvedProfileID: UUID,
         targetURL: URL,
+        navigationRevision: UInt64,
         requiresStructuralPersistence: Bool
     ) -> DeferredWebViewProfileAssignmentIntent {
         precondition(
@@ -48,6 +49,7 @@ final class TabProfileAssignmentStateMachine {
             desiredProfileID: desiredProfileID,
             resolvedProfileID: resolvedProfileID,
             targetURL: targetURL,
+            navigationRevision: navigationRevision,
             requiresStructuralPersistence: requiresStructuralPersistence
         )
         pendingIntent = intent
@@ -112,6 +114,15 @@ final class TabProfileAssignmentStateMachine {
         guard isCurrentStaged(intent) else { return false }
         settlingIntent = nil
         return true
+    }
+
+    func isCurrentFinished(
+        _ intent: DeferredWebViewProfileAssignmentIntent
+    ) -> Bool {
+        revision == intent.revision
+            && currentProfileID == intent.desiredProfileID
+            && pendingIntent == nil
+            && settlingIntent == nil
     }
 
     @discardableResult

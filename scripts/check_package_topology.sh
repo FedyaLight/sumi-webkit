@@ -1,36 +1,59 @@
 #!/usr/bin/env bash
-# Keep Swift packages reserved for boundaries with real independent value.
-# A genuinely independent, tested boundary may be added by deliberately
-# updating this allowlist together with its project and CI integration.
+# Every local package is an independently tested boundary. The authoritative
+# CI manifest owns that inventory; this guard derives package topology from it
+# instead of keeping a second allowlist.
 set -euo pipefail
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$repo_root"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "$script_dir/.." && pwd)"
+# shellcheck source=scripts/lib/architecture_guard.sh
+source "$script_dir/lib/architecture_guard.sh"
+guard_initialize "$repo_root"
 
-expected_manifests="$(
-  printf '%s\n' \
-    'Packages/SumiDomain/Package.swift' \
-    'Packages/SumiWebRuntime/Package.swift'
-)"
-actual_manifests="$(
-  find Packages -mindepth 2 -maxdepth 2 -name Package.swift -print | sort
-)"
+guard_require_directory Packages
+guard_require_command python3
+guard_require_file scripts/ci/ci_manifest.py
+guard_require_file scripts/ci/test-manifest.json
+
+package_suites="$(
+  python3 scripts/ci/ci_manifest.py list nightly swift-package
+)" || exit
+expected_manifests=''
+while IFS= read -r suite; do
+  [[ -n "$suite" ]] || continue
+  package_path="$(
+    python3 scripts/ci/ci_manifest.py suite-field "$suite" path
+  )" || exit
+  expected_manifests="${expected_manifests}${package_path}/Package.swift"$'\n'
+done <<< "$package_suites"
+expected_manifests="$(printf '%s' "$expected_manifests" | sort)"
+
+manifest_inventory="$(mktemp "${TMPDIR:-/tmp}/sumi-package-manifests.XXXXXX")"
+trap 'rm -f "$manifest_inventory"' EXIT
+if ! find Packages -mindepth 2 -maxdepth 2 -name Package.swift -print \
+    > "$manifest_inventory"; then
+  guard_fatal 'failed to enumerate local Swift packages'
+fi
+actual_manifests="$(sort "$manifest_inventory")"
 
 if [[ "$actual_manifests" != "$expected_manifests" ]]; then
-  printf '%s\n' 'error: package topology drifted from the two intentional module boundaries' >&2
+  printf '%s\n' 'error: local packages and authoritative CI suites differ' >&2
   printf 'expected:\n%s\n' "$expected_manifests" >&2
   printf 'actual:\n%s\n' "$actual_manifests" >&2
   exit 1
 fi
 
-# SumiTests imports both package modules directly while being hosted by Sumi.app.
-# They must be dynamic so dyld shares one image across host and test bundle.
-for manifest in Packages/SumiDomain/Package.swift Packages/SumiWebRuntime/Package.swift; do
-  if ! grep -q 'type: \.dynamic' "$manifest"; then
+# SumiTests imports local package modules while being hosted by Sumi.app. They
+# stay dynamic so dyld shares one image across host and test bundle.
+while IFS= read -r manifest; do
+  [[ -n "$manifest" ]] || continue
+  guard_require_file "$manifest"
+  dynamic_product_count="$(guard_count_matches 'type: \.dynamic' "$manifest")"
+  if (( dynamic_product_count == 0 )); then
     printf 'error: hosted-test package product must stay dynamic: %s\n' \
       "$manifest" >&2
     exit 1
   fi
-done
+done <<< "$actual_manifests"
 
 echo "package topology passed"

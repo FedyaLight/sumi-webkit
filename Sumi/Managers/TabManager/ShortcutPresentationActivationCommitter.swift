@@ -58,41 +58,36 @@ final class ShortcutPresentationActivationCommitter {
     func stage(
         _ admissions: [ShortcutPresentationActivationAdmission]
     ) -> ShortcutPresentationActivationStagedMutation? {
-        var changes: [LiveShortcutResidenceMutationStaging.Change] = []
-        var attachedTabs: [Tab] = []
-
-        for admission in admissions {
+        let plans = admissions.compactMap { admission ->
+            LiveShortcutResidenceMutationStaging.Plan? in
             if let existing = admission.existing {
                 guard existing.presentationPage != admission.page else {
-                    continue
+                    return nil
                 }
-                guard let change = registry.staging.relocate(
+                return registry.staging.prepareRelocation(
                     admission.tab,
                     from: admission.pin.id,
                     to: admission.pin.id,
                     in: admission.request.windowID,
                     presentationPage: admission.page
-                ) else {
-                    rollback(changes: changes, attachedTabs: attachedTabs)
-                    return nil
-                }
-                changes.append(change)
-                continue
+                )
             }
-
-            membership.attach(admission.tab)
-            attachedTabs.append(admission.tab)
-            guard let change = registry.staging.register(
+            return registry.staging.prepareRegistration(
                 admission.tab,
                 for: admission.pin.id,
                 in: admission.request.windowID,
                 presentationPage: admission.page
-            ) else {
-                rollback(changes: changes, attachedTabs: attachedTabs)
-                return nil
-            }
-            changes.append(change)
+            )
         }
+        let expectedPlanCount = admissions.count {
+            $0.existing == nil || $0.existing?.presentationPage != $0.page
+        }
+        guard plans.count == expectedPlanCount,
+              let changes = registry.staging.stage(plans) else { return nil }
+        let attachedTabs = admissions.compactMap { admission in
+            admission.existing == nil ? admission.tab : nil
+        }
+        attachedTabs.forEach(membership.attach)
 
         return ShortcutPresentationActivationStagedMutation(
             registry: registry,
@@ -102,15 +97,4 @@ final class ShortcutPresentationActivationCommitter {
         )
     }
 
-    private func rollback(
-        changes: [LiveShortcutResidenceMutationStaging.Change],
-        attachedTabs: [Tab]
-    ) {
-        precondition(registry.staging.rollback(changes))
-        for tab in attachedTabs.reversed()
-            where registry.entry(containing: tab) == nil
-                && membership.tab(for: tab.id) === tab {
-            membership.detach(tab)
-        }
-    }
 }

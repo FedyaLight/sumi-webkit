@@ -29,23 +29,10 @@ final class BrowserTabLifecycleService {
                 browserManager?.recentlyClosedManager ?? recentlyClosedManager
             },
             fallbackPlanner: { closeFallbackPlanner },
-            selectTabWithoutPersistence: { [weak browserManager] tab, windowState in
-                Self.selectTabWithoutPersistence(
-                    tab,
-                    in: windowState,
-                    browserManager: browserManager
-                )
-            },
             performImmediateVisualHandoffIfPossible: { [weak browserManager] windowState in
                 _ = browserManager?.shellRuntime.windowVisuals.performImmediateVisualHandoffIfPossible(
                     in: windowState
                 )
-            },
-            persistWindowSession: { [weak browserManager] windowState in
-                browserManager?.windowSessionBundle.persistence.persist(windowState)
-            },
-            showEmptyStateWithoutPersistence: { [weak browserManager] windowState in
-                browserManager?.showEmptyStateWithoutPersistence(in: windowState)
             },
             splitShortcuts: { [weak browserManager] in
                 browserManager?.sidebarCommandService.splitShortcuts
@@ -87,18 +74,4 @@ final class BrowserTabLifecycleService {
         )
     }
 
-    private static func selectTabWithoutPersistence(
-        _ tab: Tab,
-        in windowState: BrowserWindowState,
-        browserManager: BrowserManager?
-    ) {
-        browserManager?.applyTabSelection(
-            tab,
-            in: windowState,
-            updateSpaceFromTab: true,
-            updateTheme: true,
-            rememberSelection: true,
-            persistSelection: false
-        )
-    }
 }

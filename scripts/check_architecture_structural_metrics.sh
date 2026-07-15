@@ -16,8 +16,8 @@ role_budgets=(
   "BrowserManager|Sumi/Managers/BrowserManager/BrowserManager.swift|200|-"
   "TabManager|Sumi/Managers/TabManager/TabManager.swift|220|-"
   "Tab model|Sumi/Models/Tab/Tab.swift|704|-"
-  "ExtensionManager (item 6/7 transition ceiling)|Sumi/Managers/ExtensionManager/ExtensionManager.swift|1050|-"
-  "Tab extension page runtime (item 17 transition ceiling)|Sumi/Models/Tab/TabExtensionPageRuntimeOwner.swift|1000|-"
+  "ExtensionManager transition debt|Sumi/Managers/ExtensionManager/ExtensionManager.swift|1050|-"
+  "Tab extension runtime transition debt|Sumi/Models/Tab/TabExtensionPageRuntimeOwner.swift|1000|-"
 
   "Normal WebView setup|Sumi/Models/Tab/TabNormalWebViewSetupService.swift|300|-"
   "Main-frame transaction|Sumi/Models/Tab/TabMainFrameRuntimeTransaction.swift|702|-"
@@ -122,7 +122,6 @@ role_budgets=(
   "Displayed shortcut window transition|Sumi/Managers/TabManager/DisplayedTabShortcutWindowTransition.swift|45|0"
   "Shortcut promotion|Sumi/Managers/TabManager/ShortcutTabPromotionService.swift|170|8"
   "Shortcut retirement|Sumi/Managers/TabManager/ShortcutLiveTabRetirementService.swift|150|4"
-  "Shortcut retirement transaction|Sumi/Managers/TabManager/ShortcutLiveTabRetirementTransaction.swift|105|4"
   "Shortcut selection reconciler|Sumi/Managers/TabManager/ShortcutSelectionReconciler.swift|90|0"
   "Shortcut selection transition|Sumi/Managers/TabManager/ShortcutSelectionTransition.swift|185|0"
   "Live shortcut close|Sumi/Managers/BrowserManager/ShortcutLiveTabCloseService.swift|145|9"
@@ -135,12 +134,12 @@ role_budgets=(
   "Shortcut launcher placement|Sumi/Managers/BrowserManager/ShortcutSplitLauncherPlacementService.swift|90|4"
   "Shortcut launcher destination resolver|Sumi/Managers/BrowserManager/ShortcutSplitLauncherDestinationResolver.swift|60|2"
   "Shortcut launcher move transaction|Sumi/Managers/BrowserManager/ShortcutSplitLauncherMoveTransaction.swift|85|3"
-  "Shortcut launcher catalog adapter|Sumi/Managers/BrowserManager/ShortcutSplitLauncherCatalogAdapter.swift|65|1"
   "Shortcut launcher live composition|Sumi/Managers/BrowserManager/ShortcutSplitLauncherPlacementService+Live.swift|40|-"
   "Hosted split unload|Sumi/Managers/BrowserManager/ShortcutHostedSplitUnloadService.swift|105|6"
   "Sidebar split commands|Sumi/Managers/BrowserManager/SidebarSplitCommands.swift|30|-"
   "Sidebar split commands live composition|Sumi/Managers/BrowserManager/SidebarSplitCommands+Live.swift|60|-"
   "Split-shortcut live composition|Sumi/Managers/BrowserManager/SplitShortcutServices+Live.swift|138|-"
+  "Window split presentation synchronizer|Sumi/Managers/SplitRuntime/WindowSplitPresentationSynchronizer.swift|390|4"
 )
 
 stored_state_budgets=(
@@ -154,32 +153,23 @@ stored_state_budgets=(
   "Shortcut launcher live composition|Sumi/Managers/BrowserManager/ShortcutSplitLauncherPlacementService+Live.swift|0"
 )
 
+production_source_exclusions=(
+  -g '!Vendor/**'
+  -g '!SumiTests/**'
+  -g '!SumiUITests/**'
+  -g '!**/Tests/**'
+)
+
+shopt -s nullglob
 main_frame_settlement_files=(
-  "Sumi/Models/Tab/TabMainFrameActiveNavigationSettlement.swift"
-  "Sumi/Models/Tab/TabMainFrameTerminalSettlement.swift"
-  "Sumi/Models/Tab/TabMainFrameSameDocumentSettlement.swift"
-  "Sumi/Models/Tab/TabMainFramePromotionReplaySettlement.swift"
-  "Sumi/Models/Tab/TabMainFrameCompletedAuthorityProof.swift"
+  Sumi/Models/Tab/TabMainFrame*Settlement.swift
+  Sumi/Models/Tab/TabMainFrameCompletedAuthorityProof.swift
 )
 main_frame_effect_ledger_files=(
-  "Sumi/Models/Tab/TabMainFrameAuthorityEffectLedger.swift"
-  "Sumi/Models/Tab/TabMainFrameParticipantEffectLedger.swift"
+  Sumi/Models/Tab/TabMainFrame*EffectLedger.swift
 )
-main_frame_complete_topology_files=(
-  "Sumi/Models/Tab/TabMainFrameAuthorityReducer.swift"
-  "Sumi/Models/Tab/TabMainFrameAuthorityState.swift"
-  "Sumi/Models/Tab/TabMainFrameParticipantRegistry.swift"
-  "Sumi/Models/Tab/TabMainFrameLifecycleMachine.swift"
-  "${main_frame_settlement_files[@]}"
-  "${main_frame_effect_ledger_files[@]}"
-  "Sumi/Models/Tab/TabMainFrameParticipantTransitionApplier.swift"
-  "Sumi/Models/Tab/TabMainFrameContinuationTransitionApplier.swift"
-  "Sumi/Models/Tab/TabMainFrameAuthorityTransitionApplier.swift"
-  "Sumi/Models/Tab/TabMainFrameTransitionCommitter.swift"
-  "Sumi/Models/Tab/TabMainFrameTargetTransitionCommitter.swift"
-  "Sumi/Models/Tab/TabMainFramePreparedTransition.swift"
-  "Sumi/Models/Tab/TabMainFrameRuntimeTypes.swift"
-  "Sumi/Models/Tab/TabMainFrameTransitionOutput.swift"
+main_frame_topology_candidates=(
+  Sumi/Models/Tab/TabMainFrame*.swift
 )
 
 guard_sum_lines() {
@@ -187,6 +177,22 @@ guard_sum_lines() {
   local file
   local line_count
   for file in "$@"; do
+    line_count="$(guard_count_lines "$file")" || return
+    total=$((total + line_count))
+  done
+  printf '%d\n' "$total"
+}
+
+guard_sum_transition_topology() {
+  local total=0
+  local file
+  local line_count
+  for file in "$@"; do
+    case "${file##*/}" in
+      *IntentLedger.swift|*LoadRuntime.swift|*RuntimeCapabilities.swift|*RuntimeTransaction.swift)
+        continue
+        ;;
+    esac
     line_count="$(guard_count_lines "$file")" || return
     total=$((total + line_count))
   done
@@ -205,7 +211,10 @@ for budget in "${role_budgets[@]}"; do
         '^    private (let|weak var) [A-Za-z_][A-Za-z0-9_]*' \
         "$file"
     )"
-    guard_max "$label stored dependencies" "$dependency_count" "$maximum_dependencies"
+    guard_max \
+      "$label stored dependencies" \
+      "$dependency_count" \
+      "$maximum_dependencies"
   fi
 done
 
@@ -219,10 +228,73 @@ for budget in "${stored_state_budgets[@]}"; do
   guard_max "$label stored state" "$state_count" "$maximum_state"
 done
 
+production_file_count=0
+maximum_file_lines=0
+files_over_600_lines=0
+files_over_800_lines=0
+files_over_8_dependencies=0
+files_over_12_dependencies=0
+production_file_list="$(mktemp "${TMPDIR:-/tmp}/sumi-production-swift-files.XXXXXX")"
+trap 'rm -f "$production_file_list"' EXIT
+if ! find . \( \
+      -path './.git' -o \
+      -path './Vendor' -o \
+      -path './SumiTests' -o \
+      -path './SumiUITests' -o \
+      -path '*/Tests' -o \
+      -path '*/.build' -o \
+      -path '*/.swiftpm' \
+    \) -prune -o -type f -name '*.swift' -print0 \
+    > "$production_file_list"; then
+  guard_fatal 'failed to enumerate production Swift sources'
+fi
+while IFS= read -r -d '' file; do
+  production_file_count=$((production_file_count + 1))
+  line_count="$(guard_count_lines "$file")"
+  dependency_count="$(
+    guard_count_matches \
+      '^    private (let|weak var) [A-Za-z_][A-Za-z0-9_]*' \
+      "$file"
+  )"
+  (( line_count > maximum_file_lines )) && maximum_file_lines="$line_count"
+  (( line_count > 600 )) && files_over_600_lines=$((files_over_600_lines + 1))
+  (( line_count > 800 )) && files_over_800_lines=$((files_over_800_lines + 1))
+  (( dependency_count > 8 )) && files_over_8_dependencies=$((files_over_8_dependencies + 1))
+  (( dependency_count > 12 )) && files_over_12_dependencies=$((files_over_12_dependencies + 1))
+done < "$production_file_list"
+
+if (( production_file_count == 0 )); then
+  guard_fatal 'tracked production Swift source inventory is empty'
+fi
+
+guard_max 'Maximum production Swift file LOC' "$maximum_file_lines" 1050
+guard_max 'Production Swift files over 600 LOC' "$files_over_600_lines" 43
+guard_max 'Production Swift files over 800 LOC' "$files_over_800_lines" 6
+guard_max \
+  'Production Swift files over 8 stored dependencies' \
+  "$files_over_8_dependencies" \
+  76
+guard_max \
+  'Production Swift files over 12 stored dependencies' \
+  "$files_over_12_dependencies" \
+  25
+guard_exact \
+  'State stored in +Live composition files' \
+  "$(
+    guard_count_matches \
+      '^    (private )?(let|var|lazy var) ' \
+      -g '*+Live.swift' \
+      "${production_source_exclusions[@]}" \
+      .
+  )" \
+  0
+
 settlement_lines="$(guard_sum_lines "${main_frame_settlement_files[@]}")"
 lifecycle_lines="$(guard_count_lines Sumi/Models/Tab/TabMainFrameLifecycleMachine.swift)"
 effect_ledger_lines="$(guard_sum_lines "${main_frame_effect_ledger_files[@]}")"
-complete_topology_lines="$(guard_sum_lines "${main_frame_complete_topology_files[@]}")"
+complete_topology_lines="$(
+  guard_sum_transition_topology "${main_frame_topology_candidates[@]}"
+)"
 
 guard_max 'Main-frame settlement aggregate LOC' "$settlement_lines" 725
 guard_max \
@@ -242,11 +314,23 @@ guard_max \
   0
 guard_max \
   'static func live(browserManager:)' \
-  "$(guard_count_swift_matches 'static\s+func\s+live\s*\(\s*browserManager' App FloatingBar SidebarChrome Settings Sumi UI)" \
+  "$(
+    guard_count_matches \
+      'static\s+func\s+live\s*\(\s*browserManager' \
+      -g '*.swift' \
+      "${production_source_exclusions[@]}" \
+      .
+  )" \
   40
 guard_max \
   'static func live(tabManager:)' \
-  "$(guard_count_swift_matches 'static\s+func\s+live\s*\(\s*tabManager' App FloatingBar SidebarChrome Settings Sumi UI)" \
+  "$(
+    guard_count_matches \
+      'static\s+func\s+live\s*\(\s*tabManager' \
+      -g '*.swift' \
+      "${production_source_exclusions[@]}" \
+      .
+  )" \
   40
 
 if [[ -d Navigation && ! -L Navigation ]]; then

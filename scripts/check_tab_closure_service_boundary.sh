@@ -4,18 +4,13 @@
 # no TabRemovalOwner / Dependencies bag / TabManager retention returns.
 set -euo pipefail
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$repo_root"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "$script_dir/.." && pwd)"
+# shellcheck source=scripts/lib/architecture_guard.sh
+source "$script_dir/lib/architecture_guard.sh"
+guard_initialize "$repo_root"
 
 status=0
-
-fail_matches() {
-  local message="$1"
-  local matches="$2"
-  [[ -z "$matches" ]] && return
-  printf 'error: %s:\n%s\n' "$message" "$matches" >&2
-  status=1
-}
 
 service='Sumi/Managers/TabManager/TabClosureService.swift'
 composition='Sumi/Managers/TabManager/TabClosureService+Live.swift'
@@ -27,14 +22,8 @@ lifecycle_bag='Sumi/Managers/TabManager/TabLifecycleOwnerBag.swift'
 accessors='Sumi/Managers/TabManager/TabManager+OwnerAccessors.swift'
 for file in "$service" "$composition" "$retirement" "$cleanup" "$policy" \
   "$runtime_connection"; do
-  if [[ ! -f "$file" ]]; then
-    printf 'error: tab closure boundary file missing: %s\n' "$file" >&2
-    status=1
-  fi
+  guard_require_file "$file"
 done
-if (( status != 0 )); then
-  exit "$status"
-fi
 
 # Retired god surface must stay deleted.
 if [[ -e Sumi/Managers/TabManager/TabRemovalOwner.swift ]]; then
@@ -43,65 +32,69 @@ if [[ -e Sumi/Managers/TabManager/TabRemovalOwner.swift ]]; then
 fi
 
 retired_hits="$(
-  rg -n '\bTabRemovalOwner\b|\btabRemovalOwner\b' \
+  guard_capture_matches '\bTabRemovalOwner\b|\btabRemovalOwner\b' \
     App FloatingBar SidebarChrome Settings Sumi UI SumiTests \
     scripts/check_architecture_guardrails.sh \
     scripts/check_extension_browser_bridge_architecture.sh \
     scripts/check_di_ceremony_debt.sh \
-    scripts/check_modernization_debt.sh \
-    scripts/check_architecture_hub_metrics.sh \
-    || true
+    scripts/check_modernization_debt.sh
 )"
-# Ignore this guard's own tombstone/alias checks.
-retired_hits="$(
-  printf '%s\n' "$retired_hits" \
-    | rg -v 'scripts/check_tab_closure_service_boundary\.sh:' \
-    || true
-)"
-fail_matches \
-  "TabRemovalOwner / tabRemovalOwner reintroduced" \
-  "$retired_hits"
+# Ignore this guard's own tombstone/alias checks when the first scan found any.
+if [[ -n "$retired_hits" ]]; then
+  retired_hits="$(
+    printf '%s\n' "$retired_hits" \
+      | guard_capture_matches 'scripts/check_tab_closure_service_boundary\.sh:' -v --no-line-number -
+  )"
+fi
+if [[ -n "$retired_hits" ]]; then
+  guard_record_failure "TabRemovalOwner / tabRemovalOwner reintroduced:
+$retired_hits"
+fi
 
 # No Dependencies/Actions bags or generic capability bags in the slice.
 closure_bag_hits="$(
-  rg -n '\bstruct[[:space:]]+Dependencies\b|\bstruct[[:space:]]+Actions\b|\bstruct[[:space:]]+Context\b|\bstruct[[:space:]]+Environment\b|\bstruct[[:space:]]+Capabilities\b' \
-    "$service" "$retirement" "$cleanup" "$policy" || true
+  guard_capture_matches '\bstruct[[:space:]]+Dependencies\b|\bstruct[[:space:]]+Actions\b|\bstruct[[:space:]]+Context\b|\bstruct[[:space:]]+Environment\b|\bstruct[[:space:]]+Capabilities\b' \
+    "$service" "$retirement" "$cleanup" "$policy"
 )"
-fail_matches \
-  "tab closure slice grew a Dependencies/Actions/Context/Environment/Capabilities bag" \
-  "$closure_bag_hits"
+if [[ -n "$closure_bag_hits" ]]; then
+  guard_record_failure "tab closure slice grew a Dependencies/Actions/Context/Environment/Capabilities bag:
+$closure_bag_hits"
+fi
 
 # Services must not store or look up TabManager at runtime. Mentions are
 # allowed only inside TabClosureService.live composition.
 manager_storage_hits="$(
-  rg -n '\bTabManager\b' "$service" "$retirement" "$cleanup" "$policy" \
-    "$runtime_connection" || true
+  guard_capture_matches '\bTabManager\b' "$service" "$retirement" "$cleanup" "$policy" \
+    "$runtime_connection"
 )"
-fail_matches \
-  "tab closure collaborators mention TabManager" \
-  "$manager_storage_hits"
+if [[ -n "$manager_storage_hits" ]]; then
+  guard_record_failure "tab closure collaborators mention TabManager:
+$manager_storage_hits"
+fi
 
 stored_manager_hits="$(
-  rg -n 'private[[:space:]].*\bTabManager\b|unowned[[:space:]].*\bTabManager\b|weak[[:space:]].*\bTabManager\b' \
-    "$service" "$retirement" "$cleanup" "$policy" || true
+  guard_capture_matches 'private[[:space:]].*\bTabManager\b|unowned[[:space:]].*\bTabManager\b|weak[[:space:]].*\bTabManager\b' \
+    "$service" "$retirement" "$cleanup" "$policy"
 )"
-fail_matches \
-  "tab closure services retain TabManager storage" \
-  "$stored_manager_hits"
+if [[ -n "$stored_manager_hits" ]]; then
+  guard_record_failure "tab closure services retain TabManager storage:
+$stored_manager_hits"
+fi
 
 runtime_reachthrough_hits="$(
-  rg -n '\[weak[[:space:]]+tabManager\]|requireRuntimePorts|->[[:space:]]*RuntimePortRegistry' \
-    "$service" "$composition" "$retirement" "$cleanup" "$policy" || true
+  guard_capture_matches '\[weak[[:space:]]+tabManager\]|requireRuntimePorts|->[[:space:]]*RuntimePortRegistry' \
+    "$service" "$composition" "$retirement" "$cleanup" "$policy"
 )"
-fail_matches \
-  "tab closure slice regained runtime TabManager reach-through/provider closure" \
-  "$runtime_reachthrough_hits"
+if [[ -n "$runtime_reachthrough_hits" ]]; then
+  guard_record_failure "tab closure slice regained runtime TabManager reach-through/provider closure:
+$runtime_reachthrough_hits"
+fi
 
-if ! rg -q 'let runtime = runtimePorts\.requireLease\(\)' "$service"; then
+runtime_lease_count="$(guard_count_matches 'runtimePorts\.requireLease\(\)' "$service")"
+if (( runtime_lease_count == 0 )); then
   printf 'error: TabClosureService must acquire one explicit runtime lease\n' >&2
   status=1
 fi
-runtime_lease_count="$(rg -c 'runtimePorts\.requireLease\(\)' "$service" || true)"
 if (( ${runtime_lease_count:-0} != 1 )); then
   printf 'error: TabClosureService must acquire exactly one runtime lease (%s != 1)\n' \
     "${runtime_lease_count:-0}" >&2
@@ -109,43 +102,36 @@ if (( ${runtime_lease_count:-0} != 1 )); then
 fi
 
 # Composition must resolve collaborators once; no forwarding alias.
-require_pattern() {
-  local file="$1"
-  local pattern="$2"
-  local message="$3"
-  if ! rg -q "$pattern" "$file"; then
-    printf 'error: %s\n' "$message" >&2
-    status=1
+guard_require_file "$lifecycle_bag"
+guard_require_file "$accessors"
+required_contracts=(
+  "$lifecycle_bag|lazy var[[:space:]]+tabClosureService[[:space:]]*=[[:space:]]*TabClosureService\\.live\\(tabManager:[[:space:]]*tm\\)|TabLifecycleOwnerBag must compose TabClosureService.live at bag construction"
+  "$accessors|var[[:space:]]+tabClosureService:[[:space:]]*TabClosureService|TabManager must expose tabClosureService"
+)
+for contract in "${required_contracts[@]}"; do
+  file="${contract%%|*}"
+  remainder="${contract#*|}"
+  pattern="${remainder%%|*}"
+  message="${remainder#*|}"
+  contract_count="$(guard_count_matches "$pattern" "$file")"
+  if (( contract_count == 0 )); then
+    guard_record_failure "$message"
   fi
-}
-
-require_pattern \
-  "$lifecycle_bag" \
-  'lazy var[[:space:]]+tabClosureService[[:space:]]*=[[:space:]]*TabClosureService\.live\(tabManager:[[:space:]]*tm\)' \
-  "TabLifecycleOwnerBag must compose TabClosureService.live at bag construction"
-require_pattern \
-  "$accessors" \
-  'var[[:space:]]+tabClosureService:[[:space:]]*TabClosureService' \
-  "TabManager must expose tabClosureService"
-if rg -q 'tabRemovalOwner' "$accessors" "$lifecycle_bag"; then
+done
+alias_count="$(guard_count_matches 'tabRemovalOwner' "$accessors" "$lifecycle_bag")"
+if (( alias_count > 0 )); then
   printf 'error: forwarding compatibility alias tabRemovalOwner remains\n' >&2
   status=1
 fi
 
 # Focused surface size caps keep the orchestrator from becoming another god.
-line_count() {
-  wc -l < "$1" | tr -d ' '
-}
-
-collaborator_count() {
-  rg -c '^[[:space:]]*private[[:space:]]+(let|weak[[:space:]]+var)\b' "$1" || true
-}
-
-service_lines="$(line_count "$service")"
-service_collaborators="$(collaborator_count "$service")"
-retirement_lines="$(line_count "$retirement")"
-cleanup_lines="$(line_count "$cleanup")"
-policy_lines="$(line_count "$policy")"
+service_lines="$(guard_count_lines "$service")"
+service_collaborators="$(
+  guard_count_matches '^[[:space:]]*private[[:space:]]+(let|weak[[:space:]]+var)\b' "$service"
+)"
+retirement_lines="$(guard_count_lines "$retirement")"
+cleanup_lines="$(guard_count_lines "$cleanup")"
+policy_lines="$(guard_count_lines "$policy")"
 
 if (( service_lines > 220 )); then
   printf 'error: TabClosureService exceeded focused LOC cap (%s > 220)\n' \
@@ -173,8 +159,8 @@ if (( policy_lines > 90 )); then
   status=1
 fi
 
-if (( status != 0 )); then
-  exit "$status"
+if (( status != 0 || guard_failures != 0 )); then
+  exit 1
 fi
 
 echo "tab closure service boundary passed"

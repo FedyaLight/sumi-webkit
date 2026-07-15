@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$repo_root"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "$script_dir/.." && pwd)"
+# shellcheck source=scripts/lib/architecture_guard.sh
+source "$script_dir/lib/architecture_guard.sh"
+guard_initialize "$repo_root"
 
 production_roots=(App Sumi Settings SidebarChrome FloatingBar UI)
 all_swift_roots=("${production_roots[@]}" SumiTests SumiUITests Packages/SumiWebRuntime)
 graph_file="Sumi/Managers/WebViewRuntime/WebViewRuntimeGraph.swift"
+profile_runtime_composition_file="Sumi/Managers/WebViewRuntime/WebViewProfileRuntimeComposition.swift"
 browser_manager_file="Sumi/Managers/BrowserManager/BrowserManager.swift"
 runtime_composition_file="Sumi/Managers/BrowserManager/BrowserManager+WebViewRuntimeComposition.swift"
 runtime_lifecycle_file="Sumi/Managers/WebViewRuntime/WebViewLifecycleService.swift"
@@ -20,58 +24,42 @@ window_cleanup_live_file="Sumi/Managers/WebViewRuntime/WebViewWindowCleanupOwner
 replacement_pipeline_file="Sumi/Managers/WebViewRuntime/WebViewReplacementPipeline.swift"
 retired_generation_destroyer_file="Sumi/Managers/WebViewRuntime/WebViewRetiredGenerationDestroyer.swift"
 committed_tab_retirement_file="Sumi/Managers/WebViewRuntime/WebViewCommittedTabRetirementService.swift"
+runtime_tab_registry_file="Sumi/Managers/WebViewRuntime/WebViewRuntimeTabRegistry.swift"
 tab_file="Sumi/Models/Tab/Tab.swift"
 main_frame_transaction_file="Sumi/Models/Tab/TabMainFrameRuntimeTransaction.swift"
-status=0
 
 window_context_file="App/Window/WindowViewContexts.swift"
 window_context_composition_file="Sumi/Managers/BrowserManager/BrowserWindowViewContextComposition.swift"
 floating_bar_context_file="FloatingBar/FloatingBarBrowserContext.swift"
+
+for required_file in \
+  "$browser_manager_file" \
+  "$runtime_composition_file" \
+  "$runtime_lifecycle_file" \
+  "$profile_runtime_composition_file" \
+  "$replacement_pipeline_file" \
+  "$tab_file" \
+  "$main_frame_transaction_file"; do
+  guard_require_file "$required_file"
+done
 
 fail_matches() {
   local message="$1"
   local matches="$2"
   [[ -z "$matches" ]] && return
   printf 'error: %s:\n%s\n' "$message" "$matches" >&2
-  status=1
+  guard_record_failure "$message"
 }
 
-optional_rg() {
-  local output
-  local scan_status
-  if output="$(rg "$@")"; then
-    printf '%s\n' "$output"
-    return 0
-  else
-    scan_status=$?
+require_pattern() {
+  local file="$1"
+  local pattern="$2"
+  local message="$3"
+  local count
+  count="$(guard_count_matches "$pattern" "$file")" || return
+  if (( count == 0 )); then
+    guard_record_failure "$message"
   fi
-  if [[ "$scan_status" -eq 1 ]]; then
-    return 0
-  fi
-  printf 'error: rg scan failed with status %s: rg' "$scan_status" >&2
-  printf ' %q' "$@" >&2
-  printf '\n' >&2
-  return "$scan_status"
-}
-
-rg_match_count() {
-  local output
-  local scan_status
-  if output="$(rg --count-matches "$@")"; then
-    printf '%s\n' "$output"
-    return 0
-  else
-    scan_status=$?
-  fi
-  if [[ "$scan_status" -eq 1 ]]; then
-    printf '0\n'
-    return 0
-  fi
-  printf 'error: rg count failed with status %s: rg --count-matches' \
-    "$scan_status" >&2
-  printf ' %q' "$@" >&2
-  printf '\n' >&2
-  return "$scan_status"
 }
 
 is_allowed_web_view_runtime_access() {
@@ -103,10 +91,7 @@ is_allowed_web_view_runtime_access() {
   esac
 }
 
-if [[ ! -f "$graph_file" ]]; then
-  printf 'error: canonical WebView runtime graph missing: %s\n' "$graph_file" >&2
-  status=1
-fi
+guard_require_file "$graph_file"
 
 # Physical and symbolic tombstones keep the retired coordinator architecture
 # from returning under a stale path or through one of its old context types.
@@ -128,28 +113,20 @@ retired_paths=(
   "Sumi/Managers/BrowserManager/BrowserWindowViewRuntimeWiring.swift"
 )
 for retired_path in "${retired_paths[@]}"; do
-  if [[ -e "$retired_path" ]]; then
-    printf 'error: retired WebView/window runtime path reintroduced: %s\n' "$retired_path" >&2
-    status=1
-  fi
+  guard_expect_absent_path 'retired WebView/window runtime path' "$retired_path"
 done
 
 for window_context_path in \
   "$window_context_file" \
   "$window_context_composition_file" \
   "$floating_bar_context_file"; do
-  if [[ ! -f "$window_context_path" ]]; then
-    printf 'error: role-exact window context boundary missing: %s\n' \
-      "$window_context_path" >&2
-    status=1
-  fi
+  guard_require_file "$window_context_path"
 done
 
-if ! rg -q '^final class FloatingBarBrowserContext\b' \
-    "$floating_bar_context_file"; then
-  printf 'error: stable floating-bar window context missing\n' >&2
-  status=1
-fi
+require_pattern \
+  "$floating_bar_context_file" \
+  '^final class FloatingBarBrowserContext\b' \
+  'stable floating-bar window context missing'
 
 window_context_roles=(
   WindowWebContentContext
@@ -160,24 +137,24 @@ window_context_roles=(
   WindowThemeChromeContext
 )
 for window_context_role in "${window_context_roles[@]}"; do
-  if ! rg -q "^final class ${window_context_role}\\b" "$window_context_file"; then
-    printf 'error: exact window context role missing: %s\n' \
-      "$window_context_role" >&2
-    status=1
-  fi
+  require_pattern \
+    "$window_context_file" \
+    "^final class ${window_context_role}\\b" \
+    "exact window context role missing: $window_context_role"
 done
 
 window_context_root_hits="$(
-  rg -n '\b(BrowserManager|WindowViewBrowserContext)\b' \
-    App/Window/WindowView.swift "$window_context_file" || true
+  guard_capture_matches \
+    '\b(BrowserManager|WindowViewBrowserContext)\b' \
+    App/Window/WindowView.swift "$window_context_file"
 )"
 fail_matches \
   "window feature contexts reached through the browser root or retired god context" \
   "$window_context_root_hits"
 
 retired_window_context_hits="$(
-  rg -n '\bWindowViewBrowserContext\b' \
-    "${all_swift_roots[@]}" -g '*.swift' -g '!**/.build/**' || true
+  guard_capture_matches '\bWindowViewBrowserContext\b' \
+    "${all_swift_roots[@]}" -g '*.swift' -g '!**/.build/**'
 )"
 fail_matches \
   "retired all-feature window context was reintroduced" \
@@ -193,19 +170,16 @@ runtime_role_files=(
   "$window_cleanup_live_file"
   "$retired_generation_destroyer_file"
   "$committed_tab_retirement_file"
+  "$runtime_tab_registry_file"
 )
 for role_file in "${runtime_role_files[@]}"; do
-  if [[ ! -f "$role_file" ]]; then
-    printf 'error: role-exact WebView runtime layer missing: %s\n' "$role_file" >&2
-    status=1
-  fi
+  guard_require_file "$role_file"
 done
 
-if rg -q '\bWebViewRuntimeAssembler\b|\bruntimeAssembler\b' \
-    "${all_swift_roots[@]}" -g '*.swift' -g '!**/.build/**'; then
-  printf 'error: retired multi-role WebViewRuntimeAssembler reintroduced\n' >&2
-  status=1
-fi
+guard_expect_no_matches \
+  'retired multi-role WebViewRuntimeAssembler reintroduced' \
+  '\bWebViewRuntimeAssembler\b|\bruntimeAssembler\b' \
+  -g '*.swift' -g '!**/.build/**' "${all_swift_roots[@]}"
 
 role_limits=(
   "$visible_runtime_provider_file:55:3"
@@ -217,139 +191,163 @@ role_limits=(
   "$window_cleanup_live_file:80:0"
   "$retired_generation_destroyer_file:110:1"
   "$committed_tab_retirement_file:90:2"
+  "$runtime_tab_registry_file:260:1"
 )
 for role_limit in "${role_limits[@]}"; do
   IFS=: read -r role_file max_lines max_collaborators <<< "$role_limit"
-  line_count="$(wc -l < "$role_file" | tr -d ' ')"
-  if collaborator_count="$(
-    rg_match_count '^    private let ' "$role_file"
-  )"; then
-    :
-  else
-    exit $?
-  fi
-  collaborator_count="${collaborator_count:-0}"
-  if (( line_count > max_lines || collaborator_count > max_collaborators )); then
-    printf 'error: WebView runtime role grew beyond freeze: %s (%s/%s LOC, %s/%s collaborators)\n' \
-      "$role_file" "$line_count" "$max_lines" \
-      "$collaborator_count" "$max_collaborators" >&2
-    status=1
-  fi
+  line_count="$(guard_count_lines "$role_file")"
+  collaborator_count="$(
+    guard_count_matches '^    private let ' "$role_file"
+  )"
+  guard_max "$role_file LOC" "$line_count" "$max_lines"
+  guard_max \
+    "$role_file stored collaborators" \
+    "$collaborator_count" \
+    "$max_collaborators"
 done
 
-graph_line_count="$(wc -l < "$graph_file" | tr -d ' ')"
-lifecycle_line_count="$(wc -l < "$runtime_lifecycle_file" | tr -d ' ')"
-if lifecycle_collaborator_count="$(
-  rg_match_count '^    private let ' "$runtime_lifecycle_file"
-)"; then
-  :
-else
-  exit $?
-fi
-if (( graph_line_count > 640 )); then
-  printf 'error: WebViewRuntimeGraph composition root regrew (%s/640 LOC)\n' \
-    "$graph_line_count" >&2
-  status=1
-fi
-if (( lifecycle_line_count > 253 || lifecycle_collaborator_count > 17 )); then
-  printf 'error: WebViewLifecycleService regrew (%s/253 LOC, %s/17 collaborators)\n' \
-    "$lifecycle_line_count" "$lifecycle_collaborator_count" >&2
-  status=1
-fi
+graph_line_count="$(guard_count_lines "$graph_file")"
+profile_runtime_composition_line_count="$(
+  guard_count_lines "$profile_runtime_composition_file"
+)"
+lifecycle_line_count="$(guard_count_lines "$runtime_lifecycle_file")"
+lifecycle_collaborator_count="$(
+  guard_count_matches '^    private let ' "$runtime_lifecycle_file"
+)"
+guard_max 'WebViewRuntimeGraph composition root LOC' "$graph_line_count" 640
+guard_max \
+  'WebView profile runtime composition LOC' \
+  "$profile_runtime_composition_line_count" \
+  55
+profile_runtime_factory_count="$(
+  guard_count_matches '^    static func make\(' \
+    "$profile_runtime_composition_file"
+)"
+guard_exact \
+  'WebView profile runtime composition factory count' \
+  "$profile_runtime_factory_count" \
+  1
+guard_expect_no_matches \
+  'WebView profile runtime composition gained stored state' \
+  '^    ((private|fileprivate|internal|public)[[:space:]]+)?(static[[:space:]]+)?(lazy[[:space:]]+)?(let|var)\b' \
+  "$profile_runtime_composition_file"
+guard_max 'WebViewLifecycleService LOC' "$lifecycle_line_count" 253
+guard_max \
+  'WebViewLifecycleService stored collaborators' \
+  "$lifecycle_collaborator_count" \
+  17
 
-if rg -n '\b(WebViewRuntimeGraph|WebViewLifecycleService|DeferredWebViewCommandAssembly)\b' \
-    "$deferred_executor_live_file" "$window_cleanup_live_file"; then
-  printf 'error: deferred-command live composition regained graph/lifecycle reach-through\n' >&2
-  status=1
-fi
+guard_expect_no_matches \
+  'deferred-command live composition regained graph/lifecycle reach-through' \
+  '\b(WebViewRuntimeGraph|WebViewLifecycleService|DeferredWebViewCommandAssembly)\b' \
+  "$deferred_executor_live_file" "$window_cleanup_live_file"
 
-if rg -n '\bDeferredWebViewCommandAssembly\b|lifecycleService\.cleanup(UnprotectedTrackedWebView|Window|AllWebViews)' \
-    "$graph_file"; then
-  printf 'error: deferred-command execution regained the lifecycle constructor cycle\n' >&2
-  status=1
-fi
+guard_expect_no_matches \
+  'deferred-command execution regained the lifecycle constructor cycle' \
+  '\bDeferredWebViewCommandAssembly\b|lifecycleService\.cleanup(UnprotectedTrackedWebView|Window|AllWebViews)' \
+  "$graph_file"
 
 legacy_coordinator_hits="$(
-  rg -n '\bWebViewCoordinator\b' \
-    "${all_swift_roots[@]}" -g '*.swift' -g '!**/.build/**' || true
+  guard_capture_matches '\bWebViewCoordinator\b' \
+    "${all_swift_roots[@]}" -g '*.swift' -g '!**/.build/**'
 )"
 fail_matches "retired WebViewCoordinator type reintroduced" "$legacy_coordinator_hits"
 
 legacy_context_hits="$(
-  rg -n '\bWebViewCoordinator[A-Za-z0-9_]*RuntimeContext\b|\bWebViewCoordinatorWebKitClosePreparation\b' \
-    "${all_swift_roots[@]}" -g '*.swift' -g '!**/.build/**' || true
+  guard_capture_matches \
+    '\bWebViewCoordinator[A-Za-z0-9_]*RuntimeContext\b|\bWebViewCoordinatorWebKitClosePreparation\b' \
+    "${all_swift_roots[@]}" -g '*.swift' -g '!**/.build/**'
 )"
 fail_matches "coordinator-prefixed WebView runtime context reintroduced" "$legacy_context_hits"
 
 retired_god_context_hits="$(
-  rg -n '\b(WebViewBrowserRuntimeContext|WebViewRuntimeContextStore|WebViewRuntimeEnvironment|runtimeContextStore)\b' \
-    "${all_swift_roots[@]}" -g '*.swift' -g '!**/.build/**' || true
+  guard_capture_matches \
+    '\b(WebViewBrowserRuntimeContext|WebViewRuntimeContextStore|WebViewRuntimeEnvironment|runtimeContextStore)\b' \
+    "${all_swift_roots[@]}" -g '*.swift' -g '!**/.build/**'
 )"
 fail_matches "retired WebView runtime god context/store reintroduced" "$retired_god_context_hits"
 
-if [[ ! -f "$runtime_composition_file" ]]; then
-  printf 'error: BrowserManager WebView runtime composition missing: %s\n' \
-    "$runtime_composition_file" >&2
-  status=1
-else
-  runtime_composition_body="$(
-    sed -n '/^    func composeWebViewRuntime()/,/^    }$/p' \
-      "$runtime_composition_file"
-  )"
-  if ! rg -q '^    func composeWebViewRuntime\(\) -> WebViewRuntimeGraph \{' \
-      <<< "$runtime_composition_body" \
-      || ! rg -q '^[[:space:]]*WebViewRuntimeGraph\(' \
-      <<< "$runtime_composition_body"; then
-    printf 'error: BrowserManager root must construct the exact WebViewRuntimeGraph\n' >&2
-    status=1
+runtime_composition_body="$(
+  sed -n '/^    func composeWebViewRuntime()/,/^    }$/p' \
+    "$runtime_composition_file"
+)"
+runtime_composition_signature_count="$(
+  guard_count_matches \
+    '^    func composeWebViewRuntime\(\) -> WebViewRuntimeGraph \{' \
+    - <<< "$runtime_composition_body"
+)" || exit
+runtime_graph_body_count="$(
+  guard_count_matches \
+    '^[[:space:]]*WebViewRuntimeGraph\(' \
+    - <<< "$runtime_composition_body"
+)" || exit
+if (( runtime_composition_signature_count == 0 || runtime_graph_body_count == 0 )); then
+  printf 'error: BrowserManager root must construct the exact WebViewRuntimeGraph\n' >&2
+  guard_failures=$((guard_failures + 1))
+fi
+exact_composition_inputs=(
+  webViewSessions
+  resolveRuntimeTab
+  resolveCollectionTab
+  windowServices
+  deferredServices
+  visibleContext
+  initialDocumentContext
+)
+for exact_composition_input in "${exact_composition_inputs[@]}"; do
+  input_count="$(
+    guard_count_matches \
+      "^[[:space:]]*${exact_composition_input}:" \
+      - <<< "$runtime_composition_body"
+  )" || exit
+  if (( input_count == 0 )); then
+    printf 'error: WebView runtime composition lost exact input: %s\n' \
+      "$exact_composition_input" >&2
+    guard_failures=$((guard_failures + 1))
   fi
-  exact_composition_inputs=(
-    webViewSessions
-    resolveRuntimeTab
-    resolveCollectionTab
-    windowServices
-    deferredServices
-    visibleContext
-    initialDocumentContext
-  )
-  for exact_composition_input in "${exact_composition_inputs[@]}"; do
-    if ! rg -q "^[[:space:]]*${exact_composition_input}:" \
-        <<< "$runtime_composition_body"; then
-      printf 'error: WebView runtime composition lost exact input: %s\n' \
-        "$exact_composition_input" >&2
-      status=1
-    fi
-  done
-  if rg -q '\bBrowserWebViewRuntimeFactory\b|^[[:space:]]*for:' \
-      <<< "$runtime_composition_body"; then
-    printf 'error: WebView runtime composition regained a manager-taking factory\n' >&2
-    status=1
-  fi
+done
+runtime_composition_forbidden="$(
+  guard_capture_matches \
+    '\bBrowserWebViewRuntimeFactory\b|^[[:space:]]*for:' \
+    - <<< "$runtime_composition_body"
+)" || exit
+if [[ -n "$runtime_composition_forbidden" ]]; then
+  printf 'error: WebView runtime composition regained a manager-taking factory\n' >&2
+  guard_failures=$((guard_failures + 1))
 fi
 
-if ! rg -q 'webViewRuntime = composeWebViewRuntime\(\)' "$browser_manager_file" \
-    || [[ "$(rg -c '^[[:space:]]*WebViewRuntimeGraph\(' "$runtime_composition_file")" != 1 ]]; then
-  printf 'error: BrowserManager root must compose one exact WebView runtime\n' >&2
-  status=1
-fi
-runtime_composition_line_count="$(wc -l < "$runtime_composition_file" | tr -d ' ')"
-runtime_composition_call_count="$(
-  rg --count-matches '\bcomposeWebViewRuntime\(' "${production_roots[@]}" \
-    -g '*.swift' | awk -F: '{ total += $2 } END { print total + 0 }'
+runtime_graph_construction_count="$(
+  guard_count_matches '^[[:space:]]*WebViewRuntimeGraph\(' \
+    "$runtime_composition_file"
 )"
-if (( runtime_composition_line_count > 265 || runtime_composition_call_count != 2 )); then
-  printf 'error: WebView root composition regrew or escaped (%s/265 LOC, %s/2 declaration+call)\n' \
-    "$runtime_composition_line_count" "$runtime_composition_call_count" >&2
-  status=1
+runtime_composition_install_count="$(
+  guard_count_matches \
+    'webViewRuntime = composeWebViewRuntime\(\)' \
+    "$browser_manager_file"
+)" || exit
+if (( runtime_composition_install_count == 0 \
+      || runtime_graph_construction_count != 1 )); then
+  printf 'error: BrowserManager root must compose one exact WebView runtime\n' >&2
+  guard_failures=$((guard_failures + 1))
 fi
+runtime_composition_line_count="$(guard_count_lines "$runtime_composition_file")"
+runtime_composition_call_count="$(
+  guard_count_matches '\bcomposeWebViewRuntime\(' \
+    -g '*.swift' "${production_roots[@]}"
+)"
+guard_max 'WebView root composition LOC' "$runtime_composition_line_count" 265
+guard_exact \
+  'WebView root composition declaration + call' \
+  "$runtime_composition_call_count" \
+  2
 
 # The graph is composition storage, not a feature dependency. Production code
 # can name its concrete type only where it is declared and where BrowserManager
 # creates it. Tests may construct the graph explicitly.
 graph_reference_hits="$(
-  rg -n '\bWebViewRuntimeGraph\b' \
+  guard_capture_matches '\bWebViewRuntimeGraph\b' \
     "${production_roots[@]}" Packages/SumiWebRuntime/Sources \
-    -g '*.swift' -g '!**/.build/**' || true
+    -g '*.swift' -g '!**/.build/**'
 )"
 while IFS= read -r match; do
   [[ -z "$match" ]] && continue
@@ -359,7 +357,7 @@ while IFS= read -r match; do
       ;;
     *)
       printf 'error: WebViewRuntimeGraph escaped composition storage: %s\n' "$match" >&2
-      status=1
+      guard_failures=$((guard_failures + 1))
       ;;
   esac
 done <<< "$graph_reference_hits"
@@ -367,8 +365,8 @@ done <<< "$graph_reference_hits"
 # Concrete graph access is limited to explicit composition edges that extract
 # one or more narrow services for downstream feature code.
 graph_access_hits="$(
-  rg -n '\.webViewRuntime\b' \
-    "${production_roots[@]}" -g '*.swift' || true
+  guard_capture_matches '\.webViewRuntime\b' \
+    "${production_roots[@]}" -g '*.swift'
 )"
 while IFS= read -r match; do
   [[ -z "$match" ]] && continue
@@ -376,13 +374,14 @@ while IFS= read -r match; do
   if ! is_allowed_web_view_runtime_access "$file"; then
     printf 'error: WebView runtime graph accessed outside an approved composition edge: %s\n' \
       "$match" >&2
-    status=1
+    guard_failures=$((guard_failures + 1))
   fi
 done <<< "$graph_access_hits"
 
 legacy_partial_context_hits="$(
-  rg -n '\b(attach|detach)(BrowserRuntimeContext|InitialDocumentRuntimeContext|ShutdownRuntimeContext|VisiblePreparationRuntimeContext)\s*\(' \
-    "${all_swift_roots[@]}" -g '*.swift' -g '!**/.build/**' || true
+  guard_capture_matches \
+    '\b(attach|detach)(BrowserRuntimeContext|InitialDocumentRuntimeContext|ShutdownRuntimeContext|VisiblePreparationRuntimeContext)\s*\(' \
+    "${all_swift_roots[@]}" -g '*.swift' -g '!**/.build/**'
 )"
 fail_matches "partial WebView runtime context attachment reintroduced" "$legacy_partial_context_hits"
 
@@ -392,11 +391,15 @@ lifecycle_shutdown_body="$(
       "$runtime_lifecycle_file"
   fi
 )"
+lifecycle_shutdown_reset_count="$(
+  guard_count_matches \
+    'replacementPipeline\.resetForTerminalShutdown\(\)' \
+    - <<< "$lifecycle_shutdown_body"
+)" || exit
 if [[ -z "$lifecycle_shutdown_body" ]] \
-    || ! rg -q 'replacementPipeline\.resetForTerminalShutdown\(\)' \
-      <<< "$lifecycle_shutdown_body"; then
+    || (( lifecycle_shutdown_reset_count == 0 )); then
   printf 'error: WebViewLifecycleService terminal cleanup must reset the replacement pipeline\n' >&2
-  status=1
+  guard_failures=$((guard_failures + 1))
 fi
 
 replacement_reset_body="$(
@@ -405,11 +408,15 @@ replacement_reset_body="$(
       "$replacement_pipeline_file"
   fi
 )"
+replacement_settlement_reset_count="$(
+  guard_count_matches \
+    'settlementService\.resetForTerminalShutdown\(\)' \
+    - <<< "$replacement_reset_body"
+)" || exit
 if [[ -z "$replacement_reset_body" ]] \
-    || ! rg -q 'settlementService\.resetForTerminalShutdown\(\)' \
-      <<< "$replacement_reset_body"; then
+    || (( replacement_settlement_reset_count == 0 )); then
   printf 'error: WebViewReplacementPipeline terminal reset must reach settlement service\n' >&2
-  status=1
+  guard_failures=$((guard_failures + 1))
 fi
 
 retired_generation_destroy_body="$(
@@ -418,43 +425,64 @@ retired_generation_destroy_body="$(
       "$retired_generation_destroyer_file"
   fi
 )"
-if ! rg -q 'retiredGenerationDestroyer\.destroy\(' \
-    "$replacement_pipeline_file"; then
+retire_navigation_line="$(
+  guard_capture_matches \
+    'runtime\.retireNavigationGeneration\(' \
+    - <<< "$retired_generation_destroy_body" \
+    | sed -n '1{s/:.*//;p;}'
+)" || exit
+physical_destroy_line="$(
+  guard_capture_matches \
+    'runtime\.destroy\(' \
+    - <<< "$retired_generation_destroy_body" \
+    | sed -n '1{s/:.*//;p;}'
+)" || exit
+retired_destroy_call_count="$(
+  guard_count_matches \
+    'retiredGenerationDestroyer\.destroy\(' \
+    "$replacement_pipeline_file"
+)" || exit
+if (( retired_destroy_call_count == 0 )); then
   printf 'error: replacement pipeline must use the shared retired-generation destroyer\n' >&2
-  status=1
-elif [[ -z "$retired_generation_destroy_body" ]] \
-    || ! rg -q 'runtime\.retireNavigationGeneration\(' \
-      <<< "$retired_generation_destroy_body"; then
+  guard_failures=$((guard_failures + 1))
+elif [[ -z "$retired_generation_destroy_body" \
+        || -z "$retire_navigation_line" ]]; then
   printf 'error: retired generations must leave Tab navigation runtime before physical destruction\n' >&2
-  status=1
-elif [[ "$(rg -n 'runtime\.retireNavigationGeneration\(' <<< "$retired_generation_destroy_body" | cut -d: -f1 | head -1)" -ge \
-        "$(rg -n 'runtime\.destroy\(' <<< "$retired_generation_destroy_body" | cut -d: -f1 | head -1)" ]]; then
+  guard_failures=$((guard_failures + 1))
+elif (( retire_navigation_line >= physical_destroy_line )); then
   printf 'error: retired generation departure must precede every physical destroy\n' >&2
-  status=1
+  guard_failures=$((guard_failures + 1))
 fi
 
-if ! rg -q 'navigationTabsByID:' "$committed_tab_retirement_file"; then
-  printf 'error: committed Tab retirement must retire the exact model navigation identity\n' >&2
-  status=1
-fi
+require_pattern \
+  "$committed_tab_retirement_file" \
+  'navigationTabsByID:' \
+  'committed Tab retirement must retire the exact model navigation identity'
 
-if ! rg -q 'tab\.webViewsDidLeaveNavigationRuntime\(' "$graph_file"; then
-  printf 'error: replacement pipeline generation departure must reach the exact Tab runtime\n' >&2
-  status=1
-fi
+require_pattern \
+  "$graph_file" \
+  'tab\.webViewsDidLeaveNavigationRuntime\(' \
+  'replacement pipeline generation departure must reach the exact Tab runtime'
 
 tab_batch_departure_body="$(
   if [[ -f "$tab_file" ]]; then
     sed -n '/^    func webViewsDidLeaveNavigationRuntime(/,/^    }$/p' "$tab_file"
   fi
 )"
+tab_runtime_departure_count="$(
+  guard_count_matches \
+    'mainFrameRuntimeTransaction\.webViewsDidLeaveRuntime\(' \
+    - <<< "$tab_batch_departure_body"
+)" || exit
+tab_replay_count="$(
+  guard_count_matches \
+    'TabMainFrameLifecycleReducer\.replayIfNeeded\(' \
+    - <<< "$tab_batch_departure_body"
+)" || exit
 if [[ -z "$tab_batch_departure_body" ]] \
-    || ! rg -q 'mainFrameRuntimeTransaction\.webViewsDidLeaveRuntime\(' \
-      <<< "$tab_batch_departure_body" \
-    || ! rg -q 'TabMainFrameLifecycleReducer\.replayIfNeeded\(' \
-      <<< "$tab_batch_departure_body"; then
+    || (( tab_runtime_departure_count == 0 || tab_replay_count == 0 )); then
   printf 'error: Tab replacement departure must reduce a whole generation and replay once\n' >&2
-  status=1
+  guard_failures=$((guard_failures + 1))
 fi
 
 transaction_batch_departure_body="$(
@@ -463,41 +491,59 @@ transaction_batch_departure_body="$(
       "$main_frame_transaction_file"
   fi
 )"
+committed_transition_count="$(
+  guard_count_matches \
+    'committedDocumentRuntime\.performTransition\(' \
+    - <<< "$transaction_batch_departure_body"
+)" || exit
+committed_removal_count="$(
+  guard_count_matches \
+    'committedDocumentRuntime\.removeWebViews\(' \
+    - <<< "$transaction_batch_departure_body"
+)" || exit
+load_departure_count="$(
+  guard_count_matches \
+    'mainFrameLoads\.departure\(of: departingWebViews\)' \
+    - <<< "$transaction_batch_departure_body"
+)" || exit
+lifecycle_departure_count="$(
+  guard_count_matches \
+    'lifecycle\.departure\(' \
+    - <<< "$transaction_batch_departure_body"
+)" || exit
 if [[ -z "$transaction_batch_departure_body" ]] \
-    || ! rg -q 'committedDocumentRuntime\.performTransition\(' \
-      <<< "$transaction_batch_departure_body" \
-    || ! rg -q 'committedDocumentRuntime\.removeWebViews\(' \
-      <<< "$transaction_batch_departure_body" \
-    || ! rg -q 'mainFrameLoads\.departure\(of: departingWebViews\)' \
-      <<< "$transaction_batch_departure_body" \
-    || ! rg -q 'lifecycle\.departure\(' \
-      <<< "$transaction_batch_departure_body"; then
+    || (( committed_transition_count == 0 \
+      || committed_removal_count == 0 \
+      || load_departure_count == 0 \
+      || lifecycle_departure_count == 0 )); then
   printf 'error: main-frame replacement departure must batch every authority store\n' >&2
-  status=1
+  guard_failures=$((guard_failures + 1))
 fi
 
 # The graph may store and lazily construct dependencies, but behavior belongs
 # to the concrete services. Static, file-private assembly helpers are allowed.
 graph_instance_behavior_hits="$(
   if [[ -f "$graph_file" ]]; then
-    rg -n '^    ((private|fileprivate|internal|public)[[:space:]]+)?(mutating[[:space:]]+)?func\b' \
-      "$graph_file" || true
+    guard_capture_matches \
+      '^    ((private|fileprivate|internal|public)[[:space:]]+)?(mutating[[:space:]]+)?func\b' \
+      "$graph_file"
   fi
 )"
 fail_matches "WebView runtime graph gained instance behavior" "$graph_instance_behavior_hits"
 
 graph_observation_hits="$(
   if [[ -f "$graph_file" ]]; then
-    rg -n '^import Observation$|@(Observable|ObservationIgnored)\b|:\s*ObservableObject\b' \
-      "$graph_file" || true
+    guard_capture_matches \
+      '^import Observation$|@(Observable|ObservationIgnored)\b|:\s*ObservableObject\b' \
+      "$graph_file"
   fi
 )"
 fail_matches "WebView runtime graph became observable UI state" "$graph_observation_hits"
 
 swiftui_environment_hits="$(
-  rg -n -U \
+  guard_capture_matches \
     '@(Environment|EnvironmentObject)\b[^\n]*\bWebViewRuntimeGraph\b|\.environment(Object)?\s*\([^)]*\bwebViewRuntime\b' \
-    "${all_swift_roots[@]}" -g '*.swift' -g '!**/.build/**' || true
+    -U "${all_swift_roots[@]}" -g '*.swift' -g '!**/.build/**'
 )"
 fail_matches "WebView runtime graph injected through SwiftUI Environment" "$swiftui_environment_hits"
 
@@ -508,26 +554,30 @@ fail_matches "WebView runtime graph injected through SwiftUI Environment" "$swif
 tab_manager_lifecycle_file="Sumi/Managers/TabManager/TabManagerWebViewLifecycleService.swift"
 lifecycle_factory_file="Sumi/Managers/BrowserManager/BrowserTabManagerWebViewLifecycleFactory.swift"
 test_runtime_ports_file="SumiTests/Support/TestRuntimePorts.swift"
+for lifecycle_file in \
+  "$tab_manager_lifecycle_file" \
+  "$lifecycle_factory_file" \
+  "$test_runtime_ports_file"; do
+  guard_require_file "$lifecycle_file"
+done
 for lifecycle_role in \
   TabWebViewAvailabilityParticipant \
   TabWebViewOwnershipParticipant \
   TabWebViewRetirementParticipant \
   TabWebViewProfileTransitionParticipant; do
-  if ! rg -q -e "any ${lifecycle_role}" "$tab_manager_lifecycle_file"; then
-    printf 'error: Tab lifecycle lost mandatory typed role %s\n' \
-      "$lifecycle_role" >&2
-    status=1
-  fi
+  require_pattern \
+    "$tab_manager_lifecycle_file" \
+    "any ${lifecycle_role}" \
+    "Tab lifecycle lost mandatory typed role $lifecycle_role"
 done
-if rg -q -e 'private let [[:alnum:]_]+: \(' "$tab_manager_lifecycle_file"; then
-  printf 'error: Tab lifecycle regained independently injectable callbacks\n' >&2
-  status=1
-fi
-if ! rg -q -e 'retirement: BrowserTabWebViewRetirementParticipant\(' \
-  "$lifecycle_factory_file"; then
-  printf 'error: production lifecycle lost concrete retirement authority\n' >&2
-  status=1
-fi
+guard_expect_no_matches \
+  'Tab lifecycle regained independently injectable callbacks' \
+  'private let [[:alnum:]_]+: \(' \
+  "$tab_manager_lifecycle_file"
+require_pattern \
+  "$lifecycle_factory_file" \
+  'retirement: BrowserTabWebViewRetirementParticipant\(' \
+  'production lifecycle lost concrete retirement authority'
 for retirement_operation in \
   canRetire \
   beginCommittedRetirement \
@@ -537,67 +587,52 @@ for retirement_operation in \
     "$tab_manager_lifecycle_file" \
     "$lifecycle_factory_file" \
     "$test_runtime_ports_file"; do
-    if ! rg -q -e "func ${retirement_operation}" "$retirement_file"; then
-      printf 'error: %s lost typed retirement operation %s\n' \
-        "$retirement_file" "$retirement_operation" >&2
-      status=1
-    fi
+    require_pattern \
+      "$retirement_file" \
+      "func ${retirement_operation}" \
+      "$retirement_file lost typed retirement operation $retirement_operation"
   done
 done
-if rg -U -q -e 'retirement: RetirementCapabilities[[:space:]]*=' \
-  "$test_runtime_ports_file"; then
-  printf 'error: test lifecycle regained a permissive retirement default\n' >&2
-  status=1
-fi
-if ! rg -q -e 'static let rejecting = Self\(' "$test_runtime_ports_file" \
-  || ! rg -q -e 'ClosureTabWebViewRetirementParticipant\(retirement\)' \
-    "$test_runtime_ports_file"; then
-  printf 'error: tests lost explicit fail-closed retirement composition\n' >&2
-  status=1
-fi
+guard_expect_no_matches \
+  'test lifecycle regained a permissive retirement default' \
+  'retirement: RetirementCapabilities[[:space:]]*=' \
+  -U "$test_runtime_ports_file"
+require_pattern \
+  "$test_runtime_ports_file" \
+  'static let rejecting = Self\(' \
+  'tests lost explicit fail-closed retirement composition'
+require_pattern \
+  "$test_runtime_ports_file" \
+  'ClosureTabWebViewRetirementParticipant\(retirement\)' \
+  'tests lost explicit fail-closed retirement participant'
 
 # Space profile mutation is one staged transaction: no observation-emitting
 # convenience setter and no sibling production access to its raw/publish pair.
-if rg -q '^[[:space:]]*func assignProfile\(' \
-    Sumi/Managers/TabManager/TabSpaceCollectionStateOwner.swift; then
-  printf 'error: direct observation-emitting Space profile mutation returned\n' >&2
-  status=1
-fi
-if ! rg -q '^[[:space:]]*private\(set\) var profileId: UUID\?' \
-    Sumi/Models/Space/Space.swift; then
-  printf 'error: Space.profileId setter escaped its model boundary\n' >&2
-  status=1
-fi
-if space_profile_raw_hits="$(
-  optional_rg -n \
+guard_expect_no_matches \
+  'direct observation-emitting Space profile mutation returned' \
+  '^[[:space:]]*func assignProfile\(' \
+  Sumi/Managers/TabManager/TabSpaceCollectionStateOwner.swift
+require_pattern \
+  Sumi/Models/Space/Space.swift \
+  '^[[:space:]]*private\(set\) var profileId: UUID\?' \
+  'Space.profileId setter escaped its model boundary'
+space_profile_raw_hits="$(
+  guard_capture_matches \
     '\.(assignProfileWithoutObservation|publishProfileMutation)\(' \
     Sumi -g '*.swift' \
     -g '!**/SpaceProfileMutationService.swift'
-)"; then
-  :
-else
-  exit $?
-fi
+)"
 fail_matches \
   "Space profile raw/publish owner escaped SpaceProfileMutationTransaction" \
   "$space_profile_raw_hits"
-if space_model_raw_hits="$(
-  optional_rg -n \
+space_model_raw_hits="$(
+  guard_capture_matches \
     '\.(replaceProfileIDWithoutObservation|publishCurrentProfileID)\(' \
     Sumi -g '*.swift' \
     -g '!**/Space.swift' \
     -g '!**/TabSpaceCollectionStateOwner.swift'
-)"; then
-  :
-else
-  exit $?
-fi
+)"
 fail_matches "Space model raw profile mutation escaped its collection owner" \
   "$space_model_raw_hits"
 
-if [[ "$status" -ne 0 ]]; then
-  echo "WebView runtime context boundary audit failed" >&2
-  exit "$status"
-fi
-
-echo "WebView runtime context boundary audit passed"
+guard_finish 'WebView runtime context boundary audit'

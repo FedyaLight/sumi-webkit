@@ -21,11 +21,15 @@ final class RegularTabShortcutWindowPlanResolver {
         structure: RegularTabShortcutStructurePlan,
         preferredWindowID: UUID?
     ) -> TabShortcutConversionPreparation {
-        guard let runtime = runtimeConnection.captureLease().registry else {
+        let runtimeAttachment = TabRuntimeAttachmentWitness(
+            connection: runtimeConnection,
+            lease: runtimeConnection.captureLease()
+        )
+        guard let runtime = runtimeAttachment.lease.registry else {
             return tab.hasBrowserRuntime ? .rejected : .detached(
                 DetachedTabShortcutConversionPlan(
                     sourceTabId: tab.id,
-                    runtime: nil,
+                    runtimeAttachment: runtimeAttachment,
                     structure: structure
                 )
             )
@@ -51,7 +55,7 @@ final class RegularTabShortcutWindowPlanResolver {
                 ?? presentation.first else {
             return .detached(DetachedTabShortcutConversionPlan(
                 sourceTabId: tab.id,
-                runtime: runtime,
+                runtimeAttachment: runtimeAttachment,
                 structure: structure
             ))
         }
@@ -66,7 +70,7 @@ final class RegularTabShortcutWindowPlanResolver {
 
         return .displayed(DisplayedTabShortcutConversionPlan(
             sourceTabId: tab.id,
-            runtime: runtime,
+            runtimeAttachment: runtimeAttachment,
             structure: structure,
             selectedWindowIds: selected,
             displayingWindowIds: displaying,

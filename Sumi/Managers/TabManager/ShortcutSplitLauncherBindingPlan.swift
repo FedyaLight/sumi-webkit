@@ -3,7 +3,9 @@ import SumiDomain
 
 struct ShortcutSplitLauncherBindingTarget {
     let spaceID: UUID?
-    let profileID: UUID?
+    let desiredProfileID: UUID?
+    let resolvedProfileID: UUID
+    let runtimeFallback: TabRuntimeFallbackProfileWitness?
     let folderID: UUID?
 }
 
@@ -13,20 +15,18 @@ struct ShortcutSplitLauncherTabReceipt {
     let isSpacePinned: Bool
     let shortcutPinID: UUID?
     let shortcutPinRole: ShortcutPinRole?
+    let isShortcutLiveInstance: Bool
     let spaceID: UUID?
-    let profileID: UUID?
     let folderID: UUID?
-    let profileRevision: UInt64
 
     init(_ tab: Tab) {
         isPinned = tab.isPinned
         isSpacePinned = tab.isSpacePinned
         shortcutPinID = tab.shortcutPinId
         shortcutPinRole = tab.shortcutPinRole
+        isShortcutLiveInstance = tab.isShortcutLiveInstance
         spaceID = tab.spaceId
-        profileID = tab.profileId
         folderID = tab.folderId
-        profileRevision = tab.profileAssignment.changeRevision
     }
 
     func accepts(_ tab: Tab) -> Bool {
@@ -34,11 +34,19 @@ struct ShortcutSplitLauncherTabReceipt {
             && tab.isSpacePinned == isSpacePinned
             && tab.shortcutPinId == shortcutPinID
             && tab.shortcutPinRole == shortcutPinRole
+            && tab.isShortcutLiveInstance == isShortcutLiveInstance
             && tab.spaceId == spaceID
-            && tab.profileId == profileID
             && tab.folderId == folderID
-            && tab.profileAssignment.changeRevision == profileRevision
-            && tab.profileAssignment.hasUnsettledAssignment == false
+    }
+
+    func restoreBindingModel(to tab: Tab) {
+        tab.isPinned = isPinned
+        tab.isSpacePinned = isSpacePinned
+        tab.shortcutPinId = shortcutPinID
+        tab.shortcutPinRole = shortcutPinRole
+        tab.isShortcutLiveInstance = isShortcutLiveInstance
+        tab.spaceId = spaceID
+        tab.folderId = folderID
     }
 }
 

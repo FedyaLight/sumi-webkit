@@ -89,34 +89,30 @@ final class LiveShortcutPresentationRefreshService {
         }
     }
 
-    func stageResidenceTransaction(
+    func prepareResidenceTransaction(
         _ admission: LiveShortcutPresentationRefreshAdmission,
         for pin: ShortcutPin
     ) -> LiveShortcutPresentationResidenceTransaction? {
         guard acceptsCurrent(admission, for: pin) else { return nil }
-        var changes: [LiveShortcutResidenceMutationStaging.Change] = []
+        var plans: [LiveShortcutResidenceMutationStaging.Plan] = []
         for change in admission.changes
             where change.sourcePage != change.targetPage {
-            guard let staged = registry.staging.relocate(
+            guard let plan = registry.staging.prepareRelocation(
                 change.tab,
                 from: pin.id,
                 to: pin.id,
                 in: change.windowID,
                 presentationPage: change.targetPage
             ) else {
-                precondition(
-                    registry.staging.rollback(changes),
-                    "Presentation residence staging lost exact compensation"
-                )
                 return nil
             }
-            changes.append(staged)
+            plans.append(plan)
         }
         return LiveShortcutPresentationResidenceTransaction(
             pin: pin,
             admission: admission,
             staging: registry.staging,
-            changes: changes
+            plans: plans
         )
     }
 
@@ -128,10 +124,11 @@ final class LiveShortcutPresentationRefreshService {
         _ admission: LiveShortcutPresentationRefreshAdmission,
         to pin: ShortcutPin
     ) -> Bool {
-        guard let transaction = stageResidenceTransaction(
+        guard let transaction = prepareResidenceTransaction(
             admission,
             for: pin
         ) else { return false }
+        guard transaction.stage() else { return false }
         guard transaction.publish() else {
             precondition(
                 transaction.rollback(),

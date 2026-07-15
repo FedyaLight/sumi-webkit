@@ -18,25 +18,8 @@ extension RegularTabShortcutConversionService {
             authorizer: TabShortcutConversionAuthorizer(windows: windows),
             pinFactory: tabManager.shortcutPinRuntimeResolutionOwner
         )
-        let transaction = RegularTabShortcutCommitTransaction(
-            persistence: tabManager.structuralPersistence,
-            pins: tabManager.shortcutPinStoreOwner,
-            folderOpenState: tabManager.folderOpenState,
-            splitMutations: tabManager.splitGroupMutations,
-            structuralMutations: tabManager.structuralCollectionMutationOwner,
-            structuralLookup: tabManager.structuralLookupCoordinator,
-            liveShortcuts: tabManager.liveShortcutTabs,
-            presentationResolution: tabManager.shortcutPinRuntimeResolutionOwner,
-            windowMutations: tabManager.shortcutWindowMutationOwner,
-            displayedTransition: DisplayedTabShortcutConversionCommitter(
-                materializer: tabManager.shortcutTabMaterializer,
-                containerRemoval: tabManager.shortcutContainerRemovalOwner,
-                adopter: ShortcutTabAdopter(tabManager: tabManager),
-                regularTabs: tabManager.regularTabCollectionOwner,
-                windowMutations: tabManager.shortcutWindowMutationOwner,
-                structuralLookup: tabManager.structuralLookupCoordinator
-            ),
-            detachedTransition: DetachedTabShortcutConverter(tabManager: tabManager)
+        let transaction = RegularTabShortcutCommitTransaction.live(
+            tabManager: tabManager
         )
         self.init(
             candidates: candidates,

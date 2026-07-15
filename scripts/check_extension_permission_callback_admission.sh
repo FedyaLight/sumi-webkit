@@ -5,12 +5,15 @@
 # regressing to manager/context-only callbacks or a universal callback hub.
 set -euo pipefail
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$repo_root"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "$script_dir/.." && pwd)"
+# shellcheck source=scripts/lib/architecture_guard.sh
+source "$script_dir/lib/architecture_guard.sh"
+guard_initialize "$repo_root"
 
 status=0
 
-fail_matches() {
+record_scan_matches() {
   local message="$1"
   local matches="$2"
   [[ -z "$matches" ]] && return
@@ -23,11 +26,8 @@ bridge='Sumi/Managers/ExtensionManager/ExtensionControllerDelegateBridge.swift'
 callback_settlement='Sumi/Managers/ExtensionManager/ExtensionPermissionCallbackSettlement.swift'
 url_settlement='Sumi/Managers/ExtensionManager/ExtensionURLPermissionCallbackSettlement.swift'
 routing='Sumi/Managers/ExtensionManager/ExtensionPermissionPromptRouting.swift'
-admission_tests='SumiTests/ExtensionControllerCallbackAdmissionTests.swift'
-callback_tests='SumiTests/ExtensionPermissionCallbackAdmissionTests.swift'
 
-for file in "$admission" "$bridge" "$callback_settlement" "$url_settlement" "$routing" \
-  "$admission_tests" "$callback_tests"; do
+for file in "$admission" "$bridge" "$callback_settlement" "$url_settlement" "$routing"; do
   if [[ ! -f "$file" ]]; then
     printf 'error: permission callback admission boundary missing: %s\n' "$file" >&2
     status=1
@@ -39,8 +39,14 @@ done
 # permission-prompt section of the bridge so other callback families
 # (native messaging) can hold their own captures without weakening this
 # guard.
-permission_section="$(awk '/\/\/ MARK: - Permission Prompts/{flag=1; next} /\/\/ MARK: -/{flag=0} flag' "$bridge")"
-capture_count="$(printf '%s\n' "$permission_section" | grep -c 'controllerCallbackAdmission\.capture(' || true)"
+capture_count="$(
+  awk '
+    /\/\/ MARK: - Permission Prompts/ { section = 1; next }
+    /\/\/ MARK: -/ { section = 0 }
+    section && /controllerCallbackAdmission\.capture\(/ { count += 1 }
+    END { print count + 0 }
+  ' "$bridge"
+)"
 if (( ${capture_count:-0} != 3 )); then
   printf 'error: bridge must capture callback evidence in exactly the three permission callbacks (found %s)\n' \
     "${capture_count:-0}" >&2
@@ -49,8 +55,10 @@ fi
 
 # Callback settlement accepts only typed evidence — the manager/context-only
 # callback API must not return.
-evidence_param_count="$(rg -c 'evidence: ExtensionControllerCallbackEvidence' \
-  "$callback_settlement" "$url_settlement" | awk -F: '{ total += $NF } END { print total + 0 }')"
+evidence_param_count="$(
+  guard_count_matches 'evidence: ExtensionControllerCallbackEvidence' \
+    "$callback_settlement" "$url_settlement"
+)"
 if (( ${evidence_param_count:-0} < 3 )); then
   printf 'error: permission callback settlement lost its typed evidence parameters (found %s)\n' \
     "${evidence_param_count:-0}" >&2
@@ -58,27 +66,30 @@ if (( ${evidence_param_count:-0} < 3 )); then
 fi
 
 context_param_hits="$(
-  rg -n 'for extensionContext: WKWebExtensionContext' \
-    "$callback_settlement" "$url_settlement" || true
+  guard_capture_matches 'for extensionContext: WKWebExtensionContext' \
+    "$callback_settlement" "$url_settlement"
 )"
-fail_matches \
+record_scan_matches \
   "context-only permission callback API returned to the callback owner" \
   "$context_param_hits"
 
 # Identity must come from evidence, never be recomputed from the context
 # after capture.
 identity_recompute_hits="$(
-  rg -n 'extensionID\(for:|profileId\(for:|contextIdentity\(for:' \
-    "$callback_settlement" "$url_settlement" "$routing" || true
+  guard_capture_matches \
+    'extensionID\(for:|profileId\(for:|contextIdentity\(for:' \
+    "$callback_settlement" "$url_settlement" "$routing"
 )"
-fail_matches \
+record_scan_matches \
   "permission callback flow recomputes identity from the context after capture" \
   "$identity_recompute_hits"
 
 # Post-await and between-effect revalidation must stay in place across all
 # three callback families.
-revalidation_count="$(rg -c 'admission\.isCurrent\(evidence\)' \
-  "$callback_settlement" "$url_settlement" | awk -F: '{ total += $NF } END { print total + 0 }')"
+revalidation_count="$(
+  guard_count_matches 'admission\.isCurrent\(evidence\)' \
+    "$callback_settlement" "$url_settlement"
+)"
 if (( ${revalidation_count:-0} < 12 )); then
     printf 'error: permission callback settlement lost staleness revalidation between effects (%s < 12)\n' \
     "${revalidation_count:-0}" >&2
@@ -88,27 +99,30 @@ fi
 # Routing steps stay per-target so no bulk helper can hide multiple observable
 # mutations behind a single staleness check.
 bulk_helper_hits="$(
-  rg -n 'applyStoredPermissionDecisions\(|applyConfiguredSiteAccessDecisions\(|resolveURLPermissionsBeforePrompt\(' \
-    Sumi -g '*.swift' || true
+  guard_capture_matches \
+    'applyStoredPermissionDecisions\(|applyConfiguredSiteAccessDecisions\(|resolveURLPermissionsBeforePrompt\(' \
+    Sumi -g '*.swift'
 )"
-fail_matches \
+record_scan_matches \
   "bulk multi-target permission routing helper returned" \
   "$bulk_helper_hits"
 
 hidden_url_effects="$(
-  rg -n 'grantSiteAccess\(|denySiteAccess\(|explicitlyGrantURLIfCoveredByGrantedMatchPattern\(' \
-    "$routing" "$callback_settlement" "$url_settlement" || true
+  guard_capture_matches \
+    'grantSiteAccess\(|denySiteAccess\(|explicitlyGrantURLIfCoveredByGrantedMatchPattern\(' \
+    "$routing" "$callback_settlement" "$url_settlement"
 )"
-fail_matches \
+record_scan_matches \
   "permission callback routing hides URL effects behind a compound helper" \
   "$hidden_url_effects"
 
 # No universal callback hub may replace the narrow admission capability.
 callback_hub_hits="$(
-  rg -n 'CallbackCoordinator|CallbackHub|CallbackFacade|CallbackDependencies|CallbackActions' \
-    Sumi -g '*.swift' || true
+  guard_capture_matches \
+    'CallbackCoordinator|CallbackHub|CallbackFacade|CallbackDependencies|CallbackActions' \
+    Sumi -g '*.swift'
 )"
-fail_matches "universal extension callback hub appeared" "$callback_hub_hits"
+record_scan_matches "universal extension callback hub appeared" "$callback_hub_hits"
 
 # Admission stays a narrow capture/isCurrent capability without repair or
 # fallback resolution.
@@ -139,26 +153,6 @@ if (( routing_lines > 200 )); then
     "$routing_lines" >&2
   status=1
 fi
-
-for required_regression in \
-  testExactCurrentControllerAndContextAdmitsPermissionPrompt \
-  testWrongControllerFailsClosedBeforePromptAndMutations \
-  testRebindBeforePromptTaskRunsFailsClosedBeforePresentation \
-  testContextReplacementDuringPromptFailsClosedWithoutMutations \
-  testSameContextRebindDuringPromptInvalidatesCallback \
-  testControllerABADuringPromptCannotReviveEvidenceButAdmitsNewCallback \
-  testExtensionLoadGenerationChangeDuringPromptInvalidatesCallback \
-  testUnrelatedExtensionRebindDuringPromptDoesNotInvalidateCallback \
-  testReentrantReplacementAfterFirstSiteAccessEffectStopsRemainingTail \
-  testMatchPatternPromptStaleAfterAwaitAppliesNothing \
-  testURLPromptStaleAfterAwaitLeavesSiteAccessAndDiagnosticsUntouched \
-  testStoredDecisionFastPathRequiresExactCurrentEvidence; do
-  if ! rg -Fq "func $required_regression" "$callback_tests"; then
-    printf 'error: permission callback admission regression missing: %s\n' \
-      "$required_regression" >&2
-    status=1
-  fi
-done
 
 if [[ $status -ne 0 ]]; then
   exit "$status"

@@ -58,6 +58,37 @@ public struct WindowSelectionHistory: Equatable, Sendable {
         }
     }
 
+    @discardableResult
+    public mutating func removeReferences(
+        toSpaceID spaceID: UUID,
+        tabIDs: Set<UUID>,
+        shortcutPinIDs: Set<UUID>
+    ) -> Bool {
+        let previous = self
+        recentRegularTabIdsBySpace = recentRegularTabIdsBySpace.reduce(
+            into: [:]
+        ) { result, entry in
+            guard entry.key != spaceID else { return }
+            let remaining = entry.value.filter { !tabIDs.contains($0) }
+            if !remaining.isEmpty { result[entry.key] = remaining }
+        }
+        recentSelectionItemsBySpace = recentSelectionItemsBySpace.reduce(
+            into: [:]
+        ) { result, entry in
+            guard entry.key != spaceID else { return }
+            let remaining = entry.value.filter { item in
+                switch item {
+                case .regularTab(let tabID):
+                    return !tabIDs.contains(tabID)
+                case .shortcutPin(let pinID):
+                    return !shortcutPinIDs.contains(pinID)
+                }
+            }
+            if !remaining.isEmpty { result[entry.key] = remaining }
+        }
+        return self != previous
+    }
+
     private mutating func removeFromSelectionHistory(
         _ shouldRemove: (BrowserWindowSelectionHistoryItem) -> Bool
     ) {

@@ -1,73 +1,60 @@
 @MainActor
-struct ShortcutSplitLauncherStagedMove {
-    let bindings: ShortcutTabBindingRefreshTransaction
-    let destination: ShortcutSplitLauncherDestination
-}
-
-/// Concrete ownership of a fully staged launcher catalog/residence batch.
-@MainActor
 final class ShortcutSplitLauncherMoveBatchReceipt:
     ShortcutSplitLauncherMoveBatchParticipant {
-    private enum State {
-        case staged
-        case modelSettled
-        case terminal
-    }
+    private enum State { case staged, accepted, terminal }
 
-    private let checkpoint: ShortcutSplitLauncherMoveBatchCheckpoint
-    private let moves: [ShortcutSplitLauncherStagedMove]
-    private let folderOpenState: TabFolderOpenStateService
+    private let bindingModel: ShortcutSplitLauncherBindingAggregateTransaction
+    private let profiles: ShortcutTabProfileAssignmentBatch
+    private let folders: ShortcutSplitLauncherFolderPublicationGate
     private var state = State.staged
 
     init(
-        checkpoint: ShortcutSplitLauncherMoveBatchCheckpoint,
-        moves: [ShortcutSplitLauncherStagedMove],
-        folderOpenState: TabFolderOpenStateService
+        bindingModel: ShortcutSplitLauncherBindingAggregateTransaction,
+        profiles: ShortcutTabProfileAssignmentBatch,
+        folders: ShortcutSplitLauncherFolderPublicationGate
     ) {
-        self.checkpoint = checkpoint
-        self.moves = moves
-        self.folderOpenState = folderOpenState
+        self.bindingModel = bindingModel
+        self.profiles = profiles
+        self.folders = folders
     }
 
     func isCurrent() -> Bool {
         guard case .staged = state else { return false }
-        return checkpoint.isCurrent()
-            && moves.allSatisfy { $0.bindings.isCurrent() }
+        return bindingModel.validateForStaging()
+            && profiles.isCurrent(for: bindingModel)
     }
 
-    func canRollback() -> Bool { isCurrent() }
-
     func rollback() -> Bool {
-        guard isCurrent() else { return false }
-        if checkpoint.ownsResidenceSnapshot {
-            guard checkpoint.restore() else { return false }
-            moves.forEach { $0.bindings.discardAfterAggregateRollback() }
-        } else {
-            for move in moves.reversed() {
-                guard move.bindings.rollback() else { return false }
-            }
-            guard checkpoint.restoreCatalog() else { return false }
-        }
+        guard case .staged = state,
+              bindingModel.cancelPrepared() else { return false }
         state = .terminal
         return true
     }
 
-    func settleAdmittedModel() {
-        guard case .staged = state else {
-            preconditionFailure("Launcher move batch was not staged")
+    func settleAdmittedModel() -> Bool {
+        guard case .staged = state, isCurrent() else { return false }
+        let outcome = profiles.execute(bindingModel: bindingModel)
+        guard outcome.wasAccepted else {
+            state = .terminal
+            return false
         }
-        for move in moves {
-            move.bindings.settleAdmittedModel()
-        }
-        state = .modelSettled
+        state = .accepted
+        return true
     }
 
-    func publishAndExecute() {
-        guard case .modelSettled = state else { return }
+    func publishAdmittedModel() {
+        guard case .accepted = state else {
+            preconditionFailure("Launcher binding batch was not accepted")
+        }
+    }
+
+    func commitTerminalEffects(
+        openingFoldersWith folderOpenState: TabFolderOpenStateService
+    ) {
+        guard case .accepted = state else {
+            preconditionFailure("Launcher binding batch was not accepted")
+        }
         state = .terminal
-        moves.forEach { $0.bindings.publishAndExecute() }
-        let folderIDs = Set(moves.compactMap(\.destination.folderId))
-            .sorted { $0.uuidString < $1.uuidString }
-        folderIDs.forEach(folderOpenState.openFolderIfNeeded)
+        folders.requestCommit(openingFoldersWith: folderOpenState)
     }
 }

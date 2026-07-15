@@ -1,9 +1,6 @@
 import Foundation
 import SumiDomain
 
-/// Restores one durable shortcut member to its launcher placement. The exact
-/// group snapshot and launcher destination are validated before the shared
-/// structural transaction starts.
 @MainActor
 final class SplitShortcutMemberRestoreService {
     private let runtimeLease: () -> SplitShortcutRuntimeLease?
@@ -32,183 +29,117 @@ final class SplitShortcutMemberRestoreService {
     ) -> Bool {
         guard let runtime = runtimeLease() else { return false }
         let tabManager = runtime.tabManager
-        guard tabManager.splitGroupStore.group(id: group.id) == group,
-              let resolution = SplitShortcutMemberResolver.resolve(
-                memberID: memberID,
-                in: group,
-                windowState: windowState,
-                tabManager: tabManager
-              ),
-              let launcherRestoration = launcherPlacement
-                .prepareRestoration(for: resolution.member) else {
+        guard tabManager.splitGroupStore.group(id: group.id) == group else {
             return false
         }
+        guard let resolution = SplitShortcutMemberResolver.resolve(
+                  memberID: memberID,
+                  in: group,
+                  windowState: windowState,
+                  tabManager: tabManager
+              ) else { return false }
+        guard let launcher = launcherPlacement.prepareRestorations(
+                  for: [resolution.member]
+              ) else { return false }
 
-        let remainingGroup = group.removingMember(memberID)
-        let expectedGroups = tabManager.splitGroupStore.groups
-        guard let groupIndex = expectedGroups.firstIndex(where: {
-            $0.id == group.id && $0 == group
-        }) else { return false }
-        var replacementGroups = expectedGroups
-        if let remainingGroup {
-            replacementGroups[groupIndex] = remainingGroup
+        let sourceGroups = tabManager.splitGroupStore.groups
+        guard let index = sourceGroups.firstIndex(of: group) else { return false }
+        var replacementGroups = sourceGroups
+        if let remaining = group.removingMember(memberID) {
+            replacementGroups[index] = remaining
         } else {
-            replacementGroups.remove(at: groupIndex)
+            replacementGroups.remove(at: index)
         }
         let retiringPinID: UUID?
         if preserveLiveInstance {
             retiringPinID = nil
         } else {
-            guard case .shortcutPin(let pinID) = memberID,
-                  tabManager.liveShortcutTabs.tab(
-                    for: pinID,
+            guard case .shortcutPin(let pinID) = memberID else { return false }
+            let liveTab = tabManager.liveShortcutTabs.tab(
+                for: pinID, in: windowState.id
+            )
+            guard liveTab == nil || tabManager.runtimePorts != nil
+            else { return false }
+            retiringPinID = liveTab == nil ? nil : pinID
+        }
+
+        let targetPresentsGroup = windowState.splitSelection?.groupID == group.id
+        let settlesTargetWindow = preserveLiveInstance || targetPresentsGroup
+        let terminalParticipants: WindowSplitPresentationTerminalParticipants =
+            settlesTargetWindow
+                ? [SplitShortcutMemberRestoreHandoffReceipt(
+                    window: windowState,
+                    publish: performImmediateVisualHandoff
+                )]
+                : []
+        guard let presentation = presentations.prepareSettlementAgainstSource(
+            previousGroups: [group],
+            sourceGroups: sourceGroups,
+            replacementGroups: replacementGroups,
+            affectedGroupIDs: [group.id],
+            standaloneMembers: preserveLiveInstance
+                ? [windowState.id: memberID] : [:],
+            unavailableMembers: preserveLiveInstance || !targetPresentsGroup
+                ? [:] : [windowState.id: [memberID]],
+            requiredWindows: settlesTargetWindow
+                ? [windowState.id: windowState] : [:],
+            terminalParticipants: terminalParticipants,
+            sessionWriteUrgency: .immediate
+        ) else { return false }
+        guard let topology = tabManager.splitGroupMutations.prepareReplaceAll(
+            expected: sourceGroups,
+            with: replacementGroups
+        ) else { return false }
+
+        let retirement: ReversibleShortcutLiveTabRetirement?
+        if let retiringPinID {
+            guard let prepared = tabManager.shortcutLiveTabRetirement
+                .prepareReversibleRetirement(
+                    pinId: retiringPinID,
                     in: windowState.id
-                  ) == nil || tabManager.runtimePorts != nil else {
+                ) else {
+                _ = presentation.cancelPrepared()
+                topology.rollback()
                 return false
             }
-            retiringPinID = pinID
-        }
-
-        let retirementSlot = ShortcutRetirementCommitSlot()
-        let presentationSlot = SplitPresentationCommitSlot()
-        let terminalHandoff = SplitShortcutMemberRestoreHandoffReceipt(
-            window: windowState,
-            publish: performImmediateVisualHandoff
-        )
-        let commitSideEffects: @MainActor @Sendable () -> Bool = {
-            [
-                launcherPlacement,
-                presentationSlot,
-                presentations,
-                retirementSlot,
-                terminalHandoff
-            ] in
-            let retirement: ReversibleShortcutLiveTabRetirement?
-            if let retiringPinID {
-                guard let prepared = tabManager.shortcutLiveTabRetirement
-                    .prepareReversibleRetirement(
-                        pinId: retiringPinID,
-                        in: windowState.id
-                    ) else { return false }
-                retirement = prepared
-            } else {
-                retirement = nil
-            }
-            guard let launcherReceipt = launcherPlacement
-                .applyForComposedResidenceAggregate([launcherRestoration]) else {
-                precondition(retirement?.rollback() ?? true)
-                return false
-            }
-            guard let presentation = presentations.prepareSettlement(
-                previousGroups: [group],
-                replacementGroups: replacementGroups,
-                affectedGroupIDs: [group.id],
-                standaloneMembers: preserveLiveInstance
-                    ? [windowState.id: memberID]
-                    : [:],
-                unavailableMembers: preserveLiveInstance
-                    ? [:]
-                    : [windowState.id: [memberID]],
-                requiredWindows: [windowState.id: windowState],
-                terminalParticipants: [terminalHandoff],
-                sessionWriteUrgency: .immediate
-            ), presentation.stage() else {
-                precondition(launcherReceipt.rollback())
-                precondition(retirement?.rollback() ?? true)
-                return false
-            }
-            var participants: [
-                any BrowserWindowShortcutAggregateParticipant
-            ] = [presentation]
-            if let retirement {
-                guard launcherReceipt.isCurrent(), retirement.isCurrent(),
-                      retirement.sealRuntime() else {
-                    presentation.rollback()
-                    precondition(launcherReceipt.rollback())
-                    precondition(retirement.rollback())
-                    return false
-                }
-                participants.insert(retirement, at: 0)
-                precondition(
-                    launcherReceipt.settleAndPublishModel(
-                        alongside: participants
-                    ),
-                    "Sealed shortcut retirement lost its admitted aggregate"
-                )
-                retirementSlot.prepared = retirement.takePreparedResult()
-            } else if launcherReceipt.settleAndPublishModel(
-                alongside: participants
-            ) == false {
-                presentation.rollback()
-                precondition(launcherReceipt.rollback())
-                return false
-            }
-            presentationSlot.prepared = presentation
-            return true
-        }
-        let didCommit: Bool
-        if let remainingGroup {
-            didCommit = tabManager.splitGroupMutations.replaceAtomically(
-                group,
-                with: remainingGroup,
-                applying: commitSideEffects
-            )
+            retirement = prepared
         } else {
-            didCommit = tabManager.splitGroupMutations.removeAtomically(
-                group,
-                applying: commitSideEffects
-            )
+            retirement = nil
         }
-        guard didCommit else { return false }
-
-        guard let presentation = presentationSlot.prepared else {
-            preconditionFailure("Split restore lost its terminal presentation")
+        let bindingMode: ShortcutSplitLauncherComposedBindingMode
+        if let retirement {
+            guard let exclusion = retirement.bindingExclusion else {
+                _ = presentation.cancelPrepared()
+                _ = retirement.cancelPrepared()
+                topology.rollback()
+                return false
+            }
+            bindingMode = .consumingExactRetirement(exclusion)
+        } else {
+            bindingMode = .preservingLiveBindings
         }
-        presentation.publishTerminalEffects()
-        if let retirement = retirementSlot.prepared {
-            _ = tabManager.shortcutLiveTabRetirement.finish(retirement)
+        guard let move = launcher.applyForComposedResidenceAggregate(
+            bindingMode: bindingMode
+        ) else {
+            _ = presentation.cancelPrepared()
+            _ = retirement?.cancelPrepared()
+            topology.rollback()
+            return false
         }
-        return true
-    }
-}
-
-@MainActor
-private final class ShortcutRetirementCommitSlot {
-    var prepared: PreparedShortcutLiveTabRetirement?
-}
-
-@MainActor
-private final class SplitPresentationCommitSlot {
-    var prepared: PreparedWindowSplitPresentationSettlement?
-}
-
-/// Prepared exact-window participant for the restore-only visual handoff. It
-/// consumes one terminal presentation receipt and cannot publish twice or for
-/// a same-ID replacement window.
-@MainActor
-private final class SplitShortcutMemberRestoreHandoffReceipt:
-    WindowSplitPresentationTerminalParticipant {
-    private enum State {
-        case prepared
-        case settled
-    }
-
-    let targetWindow: BrowserWindowState
-    private let publish: (BrowserWindowState) -> Void
-    private var state = State.prepared
-
-    init(
-        window: BrowserWindowState,
-        publish: @escaping (BrowserWindowState) -> Void
-    ) {
-        targetWindow = window
-        self.publish = publish
-    }
-
-    func publish(after receipt: WindowSplitPresentationTerminalWindowReceipt) {
-        guard case .prepared = state,
-              receipt.matches(targetWindow) else { return }
-        state = .settled
-        publish(targetWindow)
+        guard move.admitPresentationIdentity(to: presentation) else {
+            _ = move.cancelPrepared()
+            _ = presentation.cancelPrepared()
+            _ = retirement?.cancelPrepared()
+            topology.rollback()
+            return false
+        }
+        guard let outcome = move.executeRestore(
+            presentation: presentation,
+            retirement: retirement,
+            topology: topology,
+            retirementService: tabManager.shortcutLiveTabRetirement,
+            folderOpenState: tabManager.folderOpenState
+        ) else { return false }
+        return outcome.wasAccepted
     }
 }

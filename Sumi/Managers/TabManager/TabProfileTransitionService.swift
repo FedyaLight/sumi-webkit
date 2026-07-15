@@ -68,6 +68,25 @@ final class TabProfileTransitionService {
         )
     }
 
+    /// Executes the physical half of an assignment whose stable model was
+    /// already published by an enclosing aggregate transaction.
+    func reconcilePublishedProfile(
+        _ profileID: UUID?,
+        for tab: Tab,
+        expectedRevision: UInt64
+    ) -> TabProfileAssignmentExecutionOutcome {
+        guard tab.profileId == profileID,
+              tab.profileAssignment.changeRevision == expectedRevision,
+              tab.profileAssignment.hasUnsettledAssignment == false else {
+            return .stale
+        }
+        return start(
+            desiredProfileID: profileID,
+            tab: tab,
+            requiresStructuralPersistence: false
+        )
+    }
+
     func prepareForSpaceTransition(
         tab: Tab,
         targetSpaceID: UUID?,
@@ -94,6 +113,53 @@ final class TabProfileTransitionService {
         return preparation
     }
 
+    func prepareShortcutAssignment(
+        tab: Tab,
+        desiredProfileID: UUID?,
+        resolvedProfileID: UUID,
+        runtimeFallback: TabRuntimeFallbackProfileWitness?,
+        using lease: TabRuntimePortLease
+    ) -> ShortcutTabProfileAssignmentAdmission? {
+        guard tab.profileAssignment.hasUnsettledAssignment == false else {
+            return nil
+        }
+        let sourceProfileID = tab.profileId
+        let sourceRevision = tab.profileAssignment.changeRevision
+        guard let sourceProfile = policy.resolvedAssignmentProfile(
+            for: tab,
+            desiredProfileID: sourceProfileID
+        ), lease.profile(with: sourceProfile.id) === sourceProfile,
+           let targetProfile = lease.profile(with: resolvedProfileID),
+           let profileWitness = lease.captureProfileAssignmentWitness(
+               sourceProfile: sourceProfile,
+               targetProfile: targetProfile
+           ) else {
+            return nil
+        }
+        let navigationIntent = tab.mainFrameLoads.currentIntent
+        let sourceWebView = lease.liveDocumentWebView(for: tab)
+        let assignment = PreparedTabProfileAssignment(
+            tab: tab,
+            sourceProfileID: sourceProfileID,
+            profileWitness: profileWitness,
+            sourceRevision: sourceRevision,
+            desiredProfileID: desiredProfileID,
+            runtimeFallback: runtimeFallback,
+            navigationIntent: navigationIntent,
+            sourceWebView: sourceWebView,
+            sourceSessionGeneration: tab.webViewSession.generation,
+            sourceSessionWebViews: tab.webViewSession.allKnownWebViews,
+            targetURL: sourceWebView?.url ?? tab.url
+        )
+        return ShortcutTabProfileAssignmentAdmission(
+            assignment: assignment
+        )
+    }
+
+    func didCommitShortcutSpaceDeparture(_ tab: Tab) {
+        pendingInheritance.tabLeftSourceSpace(tab)
+    }
+
     @discardableResult
     func finishSpaceTransition(
         _ preparation: TabSpaceProfileTransitionPreparation,
@@ -117,6 +183,10 @@ final class TabProfileTransitionService {
         intent: DeferredWebViewProfileAssignmentIntent
     ) -> Bool {
         guard tab.profileAssignment.isCurrent(intent),
+              tab.mainFrameLoads.isCurrent(
+                  revision: intent.navigationRevision,
+                  targetURL: intent.targetURL
+              ),
               let profile = policy.resolvedAssignmentProfile(
                   for: tab,
                   desiredProfileID: intent.desiredProfileID
@@ -175,10 +245,12 @@ final class TabProfileTransitionService {
         ) else {
             return .failed
         }
+        let navigationIntent = tab.mainFrameLoads.currentIntent
         let intent = tab.profileAssignment.begin(
             desiredProfileID: desiredProfileID,
             resolvedProfileID: profile.id,
-            targetURL: policy.liveDocumentURL(for: tab) ?? tab.url,
+            targetURL: navigationIntent.targetURL,
+            navigationRevision: navigationIntent.revision,
             requiresStructuralPersistence: requiresStructuralPersistence
         )
         intentObserver?(intent)

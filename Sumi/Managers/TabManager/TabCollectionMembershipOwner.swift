@@ -77,8 +77,53 @@ final class TabCollectionMembershipOwner {
         structuralLookupOwner.attach(tab)
     }
 
+    func prepareForRuntime(_ tabs: [Tab]) {
+        tabs.forEach(prepareTabForRuntime)
+    }
+
+    func attachPreparedIfAbsent(
+        _ tabs: [Tab],
+        retainingExact source: Tab
+    ) -> Bool {
+        structuralLookupOwner.attachIfAbsent(
+            tabs,
+            retainingExact: source
+        )
+    }
+
+    func lookupContainsExact(_ tab: Tab) -> Bool {
+        structuralLookupOwner.containsExact(tab)
+    }
+
+    func lookupContainsNone(of tabIDs: Set<UUID>) -> Bool {
+        structuralLookupOwner.containsNone(of: tabIDs)
+    }
+
+    func hasExactIdentityResidences(
+        _ expected: [Tab],
+        scopedTo tabIDs: Set<UUID>
+    ) -> Bool {
+        let actual = allIdentityWitnesses().filter {
+            tabIDs.contains($0.id)
+        }
+        guard actual.count == expected.count else { return false }
+        return expected.allSatisfy { expectedTab in
+            actual.filter { $0.id == expectedTab.id }.count == 1
+                && actual.contains { $0 === expectedTab }
+        }
+    }
+
     func detach(_ tab: Tab) {
         structuralLookupOwner.detach(tab)
+    }
+
+    func canDetachExact(_ tabs: [Tab]) -> Bool {
+        tabs.allSatisfy(structuralLookupOwner.containsExact)
+    }
+
+    func detachExact(_ tabs: [Tab]) -> Bool {
+        guard canDetachExact(tabs) else { return false }
+        return tabs.allSatisfy(structuralLookupOwner.detachExact)
     }
 
     func allTabs() -> [Tab] {
@@ -94,7 +139,8 @@ final class TabCollectionMembershipOwner {
     /// from normal browser membership, but must be included when a transaction
     /// proves that one UUID still names one exact object.
     func allIdentityWitnesses() -> [Tab] {
-        allTabs()
+        transientTabRegistryOwner.allTransientTabs
+            + allRegularTabs()
             + Array(
                 transientTabRegistryOwner.auxiliaryMiniWindowTabsByID.values
             )

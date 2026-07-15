@@ -4,7 +4,9 @@ set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "$script_dir/.." && pwd)"
-cd "$repo_root"
+# shellcheck source=scripts/lib/architecture_guard.sh
+source "$script_dir/lib/architecture_guard.sh"
+guard_initialize "$repo_root"
 
 # Upstream DDG test trees must NOT be vendored: Sumi's only test gates are the
 # shared schemes running SumiTests/SumiUITests, and dead upstream test code is
@@ -22,11 +24,6 @@ ddg_library_products=(
   "Navigation"
 )
 
-fail() {
-  echo "error: $*" >&2
-  exit 1
-}
-
 contains_active_testable() {
   local candidate="$1"
   local allowed
@@ -43,11 +40,14 @@ contains_active_testable() {
 project_file="Sumi.xcodeproj/project.pbxproj"
 scheme_dir="Sumi.xcodeproj/xcshareddata/xcschemes"
 
-[[ -f "$project_file" ]] || fail "missing Sumi project file: $project_file"
-[[ -d "$scheme_dir" ]] || fail "missing Sumi shared schemes directory: $scheme_dir"
+guard_require_file "$project_file"
+guard_require_directory "$scheme_dir"
 
 for root in "${forbidden_test_roots[@]}"; do
-  [[ ! -e "$root" ]] || fail "upstream DDG test root must not be vendored: $root"
+  if [[ -e "$root" || -L "$root" ]]; then
+    guard_record_failure "upstream DDG test root must not be vendored: $root"
+    exit 1
+  fi
 done
 
 expected_ddg_products="$(printf "%s\n" "${ddg_library_products[@]}" | sort)"
@@ -78,7 +78,8 @@ actual_ddg_products="$(
 )"
 
 if [[ "$actual_ddg_products" != "$expected_ddg_products" ]]; then
-  fail "unexpected DDG package products linked by $project_file. Expected: ${ddg_library_products[*]}; actual: ${actual_ddg_products//$'\n'/ }"
+  guard_record_failure "unexpected DDG package products linked by $project_file. Expected: ${ddg_library_products[*]}; actual: ${actual_ddg_products//$'\n'/ }"
+  exit 1
 fi
 
 scheme_count=0
@@ -104,21 +105,30 @@ while IFS= read -r scheme; do
 
   while IFS= read -r testable_name; do
     [[ -n "$testable_name" ]] || continue
-    contains_active_testable "$testable_name" ||
-      fail "$scheme references non-Sumi testable: $testable_name"
+    if ! contains_active_testable "$testable_name"; then
+      guard_record_failure "$scheme references non-Sumi testable: $testable_name"
+      exit 1
+    fi
   done <<< "$testable_names"
 
-  if sed -n '/<Testables>/,/<\/Testables>/p' "$scheme" | grep -Eq 'Vendor/DDG|BrowserServicesKit|URLPredictorTests'; then
-    fail "$scheme references DDG vendor tests from its TestAction"
+  testables_xml="$(sed -n '/<Testables>/,/<\/Testables>/p' "$scheme")"
+  vendor_test_reference_count="$(
+    guard_count_matches 'Vendor/DDG|BrowserServicesKit|URLPredictorTests' - <<< "$testables_xml"
+  )"
+  if (( vendor_test_reference_count > 0 )); then
+    guard_record_failure "$scheme references DDG vendor tests from its TestAction"
+    exit 1
   fi
 done <<< "$scheme_files"
 
 if [[ "$scheme_count" -eq 0 ]]; then
-  fail "no shared Xcode schemes found under $scheme_dir"
+  guard_record_failure "no shared Xcode schemes found under $scheme_dir"
+  exit 1
 fi
 
 if [[ "$tested_scheme_count" -eq 0 ]]; then
-  fail "no shared Xcode schemes declare testables"
+  guard_record_failure "no shared Xcode schemes declare testables"
+  exit 1
 fi
 
 echo "OK: no upstream DDG test trees are vendored."

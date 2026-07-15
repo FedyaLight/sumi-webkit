@@ -5,46 +5,77 @@ import Foundation
 /// launcher move and an ordinary binding refresh cannot drift semantically.
 @MainActor
 final class LiveShortcutPresentationResidenceTransaction {
-    private enum State { case staged, published, rolledBack, discarded }
+    private enum State {
+        case prepared
+        case staged([LiveShortcutResidenceMutationStaging.Change])
+        case published
+        case rolledBack
+        case discarded
+    }
 
     private let pin: ShortcutPin
     private let admission: LiveShortcutPresentationRefreshAdmission
     private let staging: LiveShortcutResidenceMutationStaging
-    private let changes: [LiveShortcutResidenceMutationStaging.Change]
-    private var state = State.staged
+    private let plans: [LiveShortcutResidenceMutationStaging.Plan]
+    private var state = State.prepared
 
     init(
         pin: ShortcutPin,
         admission: LiveShortcutPresentationRefreshAdmission,
         staging: LiveShortcutResidenceMutationStaging,
-        changes: [LiveShortcutResidenceMutationStaging.Change]
+        plans: [LiveShortcutResidenceMutationStaging.Plan]
     ) {
         self.pin = pin
         self.admission = admission
         self.staging = staging
-        self.changes = changes
+        self.plans = plans
     }
 
-    func isCurrent() -> Bool {
-        guard case .staged = state else { return false }
+    func validateForStaging() -> Bool {
+        guard case .prepared = state else { return false }
+        return admission.accepts(pin) && staging.canStage(plans)
+    }
+
+    func stage() -> Bool {
+        guard validateForStaging(), let changes = staging.stage(plans) else {
+            return false
+        }
+        state = .staged(changes)
+        guard stagedModelIsExact() else {
+            precondition(rollback())
+            return false
+        }
+        return true
+    }
+
+    func stagedModelIsExact() -> Bool {
+        guard case .staged(let changes) = state else { return false }
         return admission.accepts(pin) && staging.canPublish(changes)
     }
 
+    func cancelPrepared() -> Bool {
+        guard case .prepared = state else { return false }
+        state = .rolledBack
+        return true
+    }
+
     func canRollback() -> Bool {
-        guard case .staged = state else { return false }
+        guard case .staged(let changes) = state else { return false }
         return staging.canPublish(changes)
     }
 
     @discardableResult
     func rollback() -> Bool {
-        guard canRollback(), staging.rollback(changes) else { return false }
+        guard case .staged(let changes) = state,
+              canRollback(), staging.rollback(changes) else { return false }
         state = .rolledBack
         return true
     }
 
     @discardableResult
     func publish() -> Bool {
-        guard isCurrent() else { return false }
+        guard case .staged(let changes) = state,
+              stagedModelIsExact() else { return false }
         state = .published
         if changes.isEmpty == false {
             staging.publish(changes)
@@ -58,6 +89,13 @@ final class LiveShortcutPresentationResidenceTransaction {
         guard case .staged = state else {
             preconditionFailure("Residence transaction was already settled")
         }
+        state = .discarded
+    }
+
+    func canAbandonForTerminalDrain() -> Bool { stagedModelIsExact() }
+
+    func abandonForTerminalDrain() {
+        precondition(canAbandonForTerminalDrain())
         state = .discarded
     }
 }

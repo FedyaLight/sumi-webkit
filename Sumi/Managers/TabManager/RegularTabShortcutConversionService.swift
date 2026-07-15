@@ -54,8 +54,9 @@ final class RegularTabShortcutConversionService {
     func commitShortcutSidebarDrop(
         _ prepared: PreparedRegularTabShortcutSidebarDrop,
         replacingSplitGroupsWith replacement: [SumiDomain.SplitGroup],
-        sidebarMutation: RegularTabShortcutSidebarMutationPreparation
-    ) -> ShortcutPin? {
+        sidebarMutation: RegularTabShortcutSidebarMutationPreparation,
+        presentation: RegularTabShortcutSplitPresentationPreparation
+    ) -> RegularTabShortcutConversionAcceptance? {
         guard replacementValidator.accepts(replacement, for: prepared),
               let authorization = candidates.authorization(
                   for: prepared.conversion
@@ -64,7 +65,8 @@ final class RegularTabShortcutConversionService {
             prepared,
             replacement: replacement,
             authorization: authorization,
-            sidebarMutation: sidebarMutation
+            sidebarMutation: sidebarMutation,
+            presentation: presentation
         )
     }
 
@@ -78,7 +80,20 @@ final class RegularTabShortcutConversionService {
             tab,
             preparation: prepare(tab, preferredWindowId: preferredWindowId),
             destination: destination
-        )
+        )?.canonicalPin
+    }
+
+    @discardableResult
+    func accept(
+        _ tab: Tab,
+        destination: TabShortcutPinDestination,
+        preferredWindowId: UUID? = nil
+    ) -> Bool {
+        commit(
+            tab,
+            preparation: prepare(tab, preferredWindowId: preferredWindowId),
+            destination: destination
+        ) != nil
     }
 
     @discardableResult
@@ -86,7 +101,7 @@ final class RegularTabShortcutConversionService {
         _ tab: Tab,
         preparation: TabShortcutConversionPreparation,
         destination: TabShortcutPinDestination
-    ) -> ShortcutPin? {
+    ) -> RegularTabShortcutConversionAcceptance? {
         guard let candidate = candidates.candidate(
             for: tab,
             preparation: preparation,

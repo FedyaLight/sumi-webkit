@@ -47,8 +47,27 @@ final class TabStructureOwnerBag {
     lazy var spacePinnedStructureOwner = SpacePinnedStructureOwner(dependencies: .live(tabManager: tm))
     lazy var sidebarDragRouter = SidebarDragOperationRouter(dependencies: .live(tabManager: tm))
     lazy var spaceLauncherProjection = SpaceLauncherProjectionService(tabManager: tm)
+    lazy var structuralCollectionStore = TabStructuralCollectionStore(
+        regularTabs: tm.regularTabCollectionStateOwner,
+        folders: tm.folderCollectionStateOwner,
+        shortcutPins: tm.shortcutPinCollectionStateOwner
+    )
+    lazy var structuralCollectionSnapshots = TabStructuralCollectionSnapshotStore(
+        regularTabs: tm.regularTabCollectionStateOwner,
+        folders: tm.folderCollectionStateOwner,
+        shortcutPins: tm.shortcutPinCollectionStateOwner
+    )
+    lazy var structuralMutationPublisher = TabStructuralMutationPublisher(
+        persistence: tm.structuralPersistence,
+        faviconService: tm.faviconService,
+        lookup: structuralLookupCoordinator,
+        changes: tm.objectWillChange,
+        regularTabs: tm.regularTabCollectionStateOwner
+    )
     lazy var structuralCollectionMutationOwner = TabStructuralCollectionMutationOwner(
-        dependencies: .live(tabManager: tm)
+        store: structuralCollectionStore,
+        snapshots: structuralCollectionSnapshots,
+        publisher: structuralMutationPublisher
     )
     lazy var structuralInstallOwner = TabStructuralInstallOwner(
         dependencies: .live(tabManager: tm)

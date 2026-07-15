@@ -97,6 +97,7 @@ private final class ClosureTabWebViewOwnershipParticipant:
 private final class ClosureTabWebViewRetirementParticipant:
     TabWebViewRetirementParticipant {
     private let capabilities: TestRuntimePorts.RetirementCapabilities
+    private var committedTabs: [UUID: Tab] = [:]
 
     init(_ capabilities: TestRuntimePorts.RetirementCapabilities) {
         self.capabilities = capabilities
@@ -105,7 +106,15 @@ private final class ClosureTabWebViewRetirementParticipant:
     func canRetire(_ tabs: [Tab]) -> Bool { capabilities.canRetire(tabs) }
 
     func beginCommittedRetirement(_ tabs: [Tab]) -> Bool {
-        capabilities.beginCommitted(tabs)
+        guard capabilities.beginCommitted(tabs) else { return false }
+        committedTabs = Dictionary(uniqueKeysWithValues: tabs.map { ($0.id, $0) })
+        return true
+    }
+
+    func committedRetirementIsExact(_ tabs: [Tab]) -> Bool {
+        capabilities.committedRetirementIsExact(tabs)
+            && committedTabs.count == tabs.count
+            && tabs.allSatisfy { committedTabs[$0.id] === $0 }
     }
 
     func destroyRetiredGenerations(
@@ -113,6 +122,7 @@ private final class ClosureTabWebViewRetirementParticipant:
         completing tabs: [Tab]
     ) {
         capabilities.destroy(generations)
+        committedTabs.removeAll()
     }
 
     func destroyTerminallyDrainedGenerations(
@@ -120,6 +130,7 @@ private final class ClosureTabWebViewRetirementParticipant:
         belongingTo tabs: [Tab]
     ) {
         capabilities.destroyAfterTerminalDrain(generations)
+        committedTabs.removeAll()
     }
 }
 
@@ -140,6 +151,11 @@ final class TestTabWebViewProfileTransitionParticipant:
         any SpaceProfileWebViewReplacementTransaction,
         @escaping ProfileTransitionService.Settlement
     ) -> TabProfileAssignmentExecutionOutcome
+    private let preparedAction: (
+        [PreparedTabProfileAssignment],
+        any ShortcutTabBindingAggregateTransaction,
+        @escaping ProfileTransitionService.Settlement
+    ) -> PreparedProfileAssignmentBatchTransitionOutcome
 
     init(
         abort: @escaping (Set<UUID>) -> Int = { _ in 0 },
@@ -155,11 +171,17 @@ final class TestTabWebViewProfileTransitionParticipant:
             DeferredWebViewSpaceProfileAssignmentIntent,
             any SpaceProfileWebViewReplacementTransaction,
             @escaping ProfileTransitionService.Settlement
-        ) -> TabProfileAssignmentExecutionOutcome
+        ) -> TabProfileAssignmentExecutionOutcome,
+        executePrepared: @escaping (
+            [PreparedTabProfileAssignment],
+            any ShortcutTabBindingAggregateTransaction,
+            @escaping ProfileTransitionService.Settlement
+        ) -> PreparedProfileAssignmentBatchTransitionOutcome
     ) {
         abortAction = abort
         tabAction = executeTab
         spaceAction = executeSpace
+        preparedAction = executePrepared
     }
 
     func abortProfileTransitions(profileIDs: Set<UUID>) -> Int {
@@ -184,6 +206,14 @@ final class TestTabWebViewProfileTransitionParticipant:
     ) -> TabProfileAssignmentExecutionOutcome {
         spaceAction(space, targetProfile, intent, model, settlement)
     }
+
+    func executePreparedProfileAssignments(
+        _ assignments: [PreparedTabProfileAssignment],
+        bindingModel: any ShortcutTabBindingAggregateTransaction,
+        settlement: @escaping ProfileTransitionService.Settlement
+    ) -> PreparedProfileAssignmentBatchTransitionOutcome {
+        preparedAction(assignments, bindingModel, settlement)
+    }
 }
 
 @MainActor
@@ -191,18 +221,28 @@ enum TestRuntimePorts {
     struct RetirementCapabilities {
         let canRetire: ([Tab]) -> Bool
         let beginCommitted: ([Tab]) -> Bool
+        let committedRetirementIsExact: ([Tab]) -> Bool
         let destroy: ([RetiredTabWebViewGeneration]) -> Void
         let destroyAfterTerminalDrain: ([RetiredTabWebViewGeneration]) -> Void
 
         @MainActor static let rejecting = Self(
             canRetire: { _ in false },
             beginCommitted: { _ in false },
+            committedRetirementIsExact: { _ in false },
             destroy: { _ in
                 preconditionFailure("Rejecting retirement fake cannot destroy")
             },
             destroyAfterTerminalDrain: { _ in
                 preconditionFailure("Rejecting retirement fake cannot destroy")
             }
+        )
+
+        @MainActor static let accepting = Self(
+            canRetire: { _ in true },
+            beginCommitted: { _ in true },
+            committedRetirementIsExact: { _ in true },
+            destroy: { _ in },
+            destroyAfterTerminalDrain: { _ in }
         )
     }
 
@@ -226,18 +266,19 @@ enum TestRuntimePorts {
             DeferredWebViewProfileAssignmentIntent
         ) -> TabProfileAssignmentExecutionOutcome = { tab, _, intent in
             tab.profileAssignment.commit(intent) ? .committed : .stale
-        }
+        },
+        executePreparedProfileAssignments: ((
+            [PreparedTabProfileAssignment],
+            any ShortcutTabBindingAggregateTransaction,
+            @escaping ProfileTransitionService.Settlement
+        ) -> PreparedProfileAssignmentBatchTransitionOutcome)? = nil
     ) -> TabManagerWebViewLifecycleService {
         let defaultProfileTransitions =
             TestTabWebViewProfileTransitionParticipant(
                 executeTab: { tab, profile, intent, settlement in
                     let outcome = executeProfileAssignment(tab, profile, intent)
-                    if outcome != .deferred {
-                        settlement(
-                            outcome == .committed
-                                ? .committed
-                                : .rejected(outcome)
-                        )
+                    if let immediate = outcome.immediateSettlement {
+                        settlement(immediate)
                     }
                     return outcome
                 },
@@ -246,30 +287,25 @@ enum TestRuntimePorts {
                         settlement(.rejected(.stale))
                         return .stale
                     }
-                    do {
-                        try model.stage()
-                    } catch {
-                        settlement(.rejected(.stale))
-                        return .stale
+                    let outcome = ProfileTransitionModelOnlySettlement
+                        .execute(.transaction(model))
+                    settlement(outcome.settlement)
+                    return outcome.tabExecution
+                },
+                executePrepared: executePreparedProfileAssignments
+                    ?? { assignments, binding, settlement in
+                        let model = PreparedProfileAssignmentBatchModelTransaction(
+                            assignments: assignments,
+                            binding: binding
+                        )
+                        guard model.validateForStaging() else {
+                            return .rejectedUnstaged(.stale)
+                        }
+                        let outcome = ProfileTransitionModelOnlySettlement
+                            .execute(.transaction(model))
+                        settlement(outcome.settlement)
+                        return outcome.batchExecution
                     }
-                    guard model.stagedModelIsExact() else {
-                        settlement(.conflicted)
-                        return .failed
-                    }
-                    guard model.canClaimTerminalModel() else {
-                        try? model.rollback()
-                        model.publishRollback()
-                        settlement(.rolledBack(.commitValidationFailed))
-                        return .failed
-                    }
-                    guard model.claimTerminalModel() == .sealed else {
-                        settlement(.leaseLost)
-                        return .failed
-                    }
-                    model.publishCommit()
-                    settlement(.committed)
-                    return .committed
-                }
             )
         return TabManagerWebViewLifecycleService(
             availability: ClosureTabWebViewAvailabilityParticipant(
@@ -303,6 +339,7 @@ enum TestRuntimePorts {
         windowStates: @escaping () -> [BrowserWindowState] = { [] },
         updateTabVisibility: @escaping () -> Void = { /* No-op. */ },
         webViewLifecycle: TabManagerWebViewLifecycleService? = nil,
+        splitCoordination: (any TabSplitCoordinationPort)? = nil,
         handleTabClosure: @escaping (UUID) -> Void = { _ in /* No-op. */ },
         handleTabClosures: ((Set<UUID>) -> Void)? = nil,
         visibleSplitTabIds: @escaping (UUID) -> [UUID] = { _ in [] },
@@ -337,13 +374,14 @@ enum TestRuntimePorts {
                 persistWindowSession: persistWindowSession,
                 syncWorkspaceThemeAcrossWindows: syncWorkspaceThemeAcrossWindows
             ),
-            splitCoordination: ClosureTabSplitCoordinationPort(
-                handleTabClosure: handleTabClosure,
-                handleTabClosures: handleTabClosures,
-                visibleSplitTabIds: visibleSplitTabIds,
-                isTabVisibleInSplit: isTabVisibleInSplit,
-                isTabActiveInSplit: isTabActiveInSplit
-            ),
+            splitCoordination: splitCoordination
+                ?? ClosureTabSplitCoordinationPort(
+                    handleTabClosure: handleTabClosure,
+                    handleTabClosures: handleTabClosures,
+                    visibleSplitTabIds: visibleSplitTabIds,
+                    isTabVisibleInSplit: isTabVisibleInSplit,
+                    isTabActiveInSplit: isTabActiveInSplit
+                ),
             extensionLifecycle: ClosureTabExtensionLifecyclePort(
                 notifyTabClosedIfLoaded: notifyTabClosedIfLoaded,
                 notifyTabActivatedIfLoaded: notifyTabActivatedIfLoaded

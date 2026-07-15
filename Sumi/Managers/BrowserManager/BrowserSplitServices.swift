@@ -104,6 +104,9 @@ extension BrowserSplitServices {
         let launcherPlacement = ShortcutSplitLauncherPlacementService(
             tabManager: browserManager.tabManager
         )
+        let launcherRelease = ShortcutSplitLauncherReleasePlanner(
+            tabManager: browserManager.tabManager
+        )
         let memberResolver = SplitRuntimeMemberResolver(
             tabManager: tabManager
         )
@@ -142,7 +145,7 @@ extension BrowserSplitServices {
                 liveShortcuts: browserManager.tabManager.liveShortcutTabs,
                 members: memberResolver
             ),
-            launcher: launcherPlacement,
+            launcherRelease: launcherRelease,
             splitMutations: browserManager.tabManager.splitGroupMutations,
             retirement: placeholderRetirement,
             presentations: presentations

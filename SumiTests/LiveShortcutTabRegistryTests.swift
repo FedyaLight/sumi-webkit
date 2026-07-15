@@ -247,6 +247,155 @@ final class LiveShortcutTabRegistryTests: XCTestCase {
         withExtendedLifetime(cancellable) {}
     }
 
+    func testResidencePlanIsMutationFreeUntilStageAndRollbackRestoresSource() {
+        let harness = LiveShortcutRegistryHarness()
+        let windowID = UUID()
+        let pinID = UUID()
+        let profileID = UUID()
+        let sourcePage = harness.page(
+            in: windowID,
+            spaceID: UUID(),
+            profileID: profileID
+        )
+        let targetPage = harness.page(
+            in: windowID,
+            spaceID: UUID(),
+            profileID: profileID
+        )
+        let tab = makeTab()
+        var eventCount = 0
+        let cancellable = harness.eventBus.structureChangedPublisher.sink {
+            eventCount += 1
+        }
+        XCTAssertTrue(harness.registry.register(
+            tab,
+            for: pinID,
+            in: windowID,
+            presentationPage: sourcePage
+        ))
+        eventCount = 0
+
+        let plan = harness.registry.staging.prepareRelocation(
+            tab,
+            from: pinID,
+            to: pinID,
+            in: windowID,
+            presentationPage: targetPage
+        )
+
+        XCTAssertNotNil(plan)
+        XCTAssertEqual(
+            harness.registry.entry(containing: tab)?.presentationPage,
+            sourcePage
+        )
+        XCTAssertEqual(eventCount, 0)
+        guard let plan,
+              let changes = harness.registry.staging.stage([plan]) else {
+            return XCTFail("Prepared residence plan did not stage")
+        }
+        XCTAssertEqual(
+            harness.registry.entry(containing: tab)?.presentationPage,
+            targetPage
+        )
+        XCTAssertEqual(eventCount, 0)
+        XCTAssertTrue(harness.registry.staging.rollback(changes))
+        XCTAssertEqual(
+            harness.registry.entry(containing: tab)?.presentationPage,
+            sourcePage
+        )
+        XCTAssertEqual(eventCount, 0)
+        withExtendedLifetime(cancellable) {}
+    }
+
+    func testResidencePlanRejectsAChangedSourceWithoutFurtherMutation() {
+        let harness = LiveShortcutRegistryHarness()
+        let windowID = UUID()
+        let pinID = UUID()
+        let sourcePage = harness.page(
+            in: windowID,
+            spaceID: UUID(),
+            profileID: UUID()
+        )
+        let plannedPage = harness.page(
+            in: windowID,
+            spaceID: UUID(),
+            profileID: UUID()
+        )
+        let interveningPage = harness.page(
+            in: windowID,
+            spaceID: UUID(),
+            profileID: UUID()
+        )
+        let tab = makeTab()
+        XCTAssertTrue(harness.registry.register(
+            tab,
+            for: pinID,
+            in: windowID,
+            presentationPage: sourcePage
+        ))
+        let plan = harness.registry.staging.prepareRelocation(
+            tab,
+            from: pinID,
+            to: pinID,
+            in: windowID,
+            presentationPage: plannedPage
+        )
+        XCTAssertNotNil(plan)
+        XCTAssertTrue(harness.registry.relocate(
+            tab,
+            from: pinID,
+            to: pinID,
+            in: windowID,
+            presentationPage: interveningPage
+        ))
+
+        XCTAssertNil(plan.flatMap { harness.registry.staging.stage([$0]) })
+        XCTAssertEqual(
+            harness.registry.entry(containing: tab)?.presentationPage,
+            interveningPage
+        )
+    }
+
+    func testResidencePlanRejectsWrongSourceWindowWithoutMutation() {
+        let harness = LiveShortcutRegistryHarness()
+        let sourceWindowID = UUID()
+        let wrongWindowID = UUID()
+        let pinID = UUID()
+        let sourcePage = harness.page(
+            in: sourceWindowID,
+            spaceID: UUID(),
+            profileID: UUID()
+        )
+        let wrongWindowPage = harness.page(
+            in: wrongWindowID,
+            spaceID: UUID(),
+            profileID: UUID()
+        )
+        let tab = makeTab()
+        XCTAssertTrue(harness.registry.register(
+            tab,
+            for: pinID,
+            in: sourceWindowID,
+            presentationPage: sourcePage
+        ))
+        guard let sourceEntry = harness.registry.entry(containing: tab) else {
+            return XCTFail("Registered residence was not retained")
+        }
+
+        XCTAssertNil(harness.registry.staging.prepareRelocation(
+            tab,
+            from: pinID,
+            to: pinID,
+            in: wrongWindowID,
+            presentationPage: wrongWindowPage
+        ))
+        XCTAssertTrue(
+            harness.registry.entry(containing: tab)?
+                .isIdentical(to: sourceEntry) == true
+        )
+        XCTAssertNil(harness.registry.snapshot[wrongWindowID])
+    }
+
     func testRemoveAllIsDeterministicPrunesLookupAndCoalescesPublication() {
         let harness = LiveShortcutRegistryHarness()
         let firstWindowId = fixedUUID("00000000-0000-0000-0000-000000000001")

@@ -213,15 +213,18 @@ public typealias WebViewReplacementTerminalModelClaim = @MainActor () ->
 public protocol WebViewReplacementModelTransaction: AnyObject {
     func validateForStaging() -> Bool
     func stage() throws
+    func retainsModelAfterFailedStage() -> Bool
     func stagedModelIsExact() -> Bool
     func canClaimTerminalModel() -> Bool
     func claimTerminalModel() -> WebViewReplacementTerminalModelClaimOutcome
+    func claimedModelIsExact() -> Bool
     func publishCommit()
     func rollback() throws
     func publishRollback()
+    func canSettleTerminalDrain() -> Bool
     /// Terminal repository ownership makes rollback impossible. The exact
     /// retained app-model witnesses must still leave pending/staged state.
-    func settleTerminalDrain()
+    func settleTerminalDrain() -> Bool
 }
 
 @MainActor
@@ -239,6 +242,14 @@ public enum WebViewReplacementModelParticipant {
     public func stage() throws {
         guard case .transaction(let transaction) = self else { return }
         try transaction.stage()
+    }
+
+    public func retainsModelAfterFailedStage() -> Bool {
+        switch self {
+        case .noExternalModel: false
+        case .transaction(let transaction):
+            transaction.retainsModelAfterFailedStage()
+        }
     }
 
     public func stagedModelIsExact() -> Bool {
@@ -265,6 +276,13 @@ public enum WebViewReplacementModelParticipant {
         }
     }
 
+    public func claimedModelIsExact() -> Bool {
+        switch self {
+        case .noExternalModel: true
+        case .transaction(let transaction): transaction.claimedModelIsExact()
+        }
+    }
+
     public func publishCommit() {
         guard case .transaction(let transaction) = self else { return }
         transaction.publishCommit()
@@ -280,9 +298,14 @@ public enum WebViewReplacementModelParticipant {
         transaction.publishRollback()
     }
 
-    public func settleTerminalDrain() {
-        guard case .transaction(let transaction) = self else { return }
-        transaction.settleTerminalDrain()
+    public func canSettleTerminalDrain() -> Bool {
+        guard case .transaction(let transaction) = self else { return true }
+        return transaction.canSettleTerminalDrain()
+    }
+
+    public func settleTerminalDrain() -> Bool {
+        guard case .transaction(let transaction) = self else { return true }
+        return transaction.settleTerminalDrain()
     }
 }
 

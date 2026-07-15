@@ -1,67 +1,94 @@
-import Foundation
-
-/// Owns the exact catalog and residence snapshots for one unpublished move
-/// batch. Both halves are sealed and restored as one atomic checkpoint.
 @MainActor
 final class ShortcutSplitLauncherMoveBatchCheckpoint {
+    private enum State {
+        case prepared, awaitingStructuralRollback, terminal
+        case staged(ShortcutSplitLauncherCatalogSnapshot)
+        case published(ShortcutSplitLauncherCatalogSnapshot)
+    }
+
     private let catalog: ShortcutSplitLauncherCatalogTransaction
-    private let sourceCatalog: ShortcutSplitLauncherCatalogSnapshot
-    private let residences: LiveShortcutResidenceBatchCheckpoint?
-    private var finalCatalog: ShortcutSplitLauncherCatalogSnapshot?
+    let source: ShortcutSplitLauncherCatalogSnapshot
+    let plan: ShortcutSplitLauncherCatalogMovePlan
+    private var state = State.prepared
 
     init(
         catalog: ShortcutSplitLauncherCatalogTransaction,
-        sourceCatalog: ShortcutSplitLauncherCatalogSnapshot,
-        residences: LiveShortcutResidenceBatchCheckpoint?
+        source: ShortcutSplitLauncherCatalogSnapshot,
+        plan: ShortcutSplitLauncherCatalogMovePlan
     ) {
         self.catalog = catalog
-        self.sourceCatalog = sourceCatalog
-        self.residences = residences
+        self.source = source
+        self.plan = plan
     }
 
-    func currentPin(withID id: UUID) -> ShortcutPin? {
-        guard finalCatalog == nil else { return nil }
-        return catalog.currentPin(withID: id)
+    func validateForStaging() -> Bool {
+        if case .prepared = state { return catalog.matches(source) }
+        return false
     }
 
-    func preview(
-        _ pin: ShortcutPin,
-        destination: ShortcutSplitLauncherDestination
-    ) -> ShortcutPin? {
-        guard finalCatalog == nil else { return nil }
-        return catalog.preview(pin, destination: destination)
-    }
-
-    func move(
-        _ pin: ShortcutPin,
-        destination: ShortcutSplitLauncherDestination,
-        applying: @escaping (ShortcutPin) -> Bool
-    ) -> ShortcutPin? {
-        guard finalCatalog == nil else { return nil }
-        return catalog.move(pin, destination: destination, applying: applying)
-    }
-
-    func seal() {
-        precondition(finalCatalog == nil)
-        finalCatalog = catalog.snapshot()
-        residences?.seal()
+    func stage() -> ShortcutSplitLauncherCatalogStageOutcome {
+        guard validateForStaging() else {
+            state = .awaitingStructuralRollback
+            return .requiresStructuralRollback
+        }
+        if let insertion = plan.insertion {
+            guard let inserted = catalog.stageInsertion(insertion),
+                  insertion.target.accepts(inserted) else {
+                state = .awaitingStructuralRollback
+                return .requiresStructuralRollback
+            }
+        }
+        for entry in plan.entries {
+            guard let pin = catalog.currentPin(withID: entry.pinID),
+                  catalog.move(
+                      pin,
+                      destination: entry.destination,
+                      applying: entry.target.accepts
+                  ) != nil else {
+                state = .awaitingStructuralRollback
+                return .requiresStructuralRollback
+            }
+        }
+        state = .staged(catalog.snapshot())
+        return .staged
     }
 
     func isCurrent() -> Bool {
-        guard let finalCatalog else { return false }
-        return catalog.matches(finalCatalog)
-            && (residences?.isCurrent() ?? true)
+        switch state {
+        case .staged(let expected), .published(let expected):
+            return catalog.matches(expected)
+        case .prepared, .awaitingStructuralRollback, .terminal:
+            return false
+        }
     }
 
-    func restore() -> Bool {
-        guard residences?.restore() ?? true else { return false }
-        return restoreCatalog()
+    func confirmStructuralRollback() -> Bool {
+        switch state {
+        case .awaitingStructuralRollback, .staged:
+            guard catalog.matches(source) else { return false }
+            state = .terminal
+            return true
+        case .prepared, .published, .terminal:
+            return false
+        }
     }
 
-    func restoreCatalog() -> Bool {
-        catalog.restore(sourceCatalog)
-        return catalog.matches(sourceCatalog)
+    func requireCurrentForPublication() {
+        guard case .staged(let expected) = state,
+              catalog.matches(expected) else {
+            preconditionFailure("Launcher catalog changed before publication")
+        }
+        state = .published(expected)
     }
 
-    var ownsResidenceSnapshot: Bool { residences != nil }
+    func cancelPrepared() -> Bool {
+        guard case .prepared = state else { return false }
+        state = .terminal
+        return true
+    }
+
+    func abandonForTerminalDrain() {
+        precondition(isCurrent())
+        state = .terminal
+    }
 }

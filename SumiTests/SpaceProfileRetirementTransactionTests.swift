@@ -73,11 +73,11 @@ final class SpaceProfileRetirementTransactionTests: XCTestCase {
         }
         XCTAssertEqual(
             Array(events.prefix(orderedIDs.count)),
-            orderedIDs.map { "destroy:\($0.uuidString)" }
+            orderedIDs.map { "teardown:\($0.uuidString)" }
         )
         XCTAssertEqual(
             Array(events.dropFirst(orderedIDs.count)),
-            orderedIDs.map { "teardown:\($0.uuidString)" }
+            orderedIDs.map { "destroy:\($0.uuidString)" }
         )
         XCTAssertTrue(fixture.retiredTabs.allSatisfy {
             $0.webViewSession.allKnownWebViews.isEmpty
@@ -130,6 +130,124 @@ final class SpaceProfileRetirementTransactionTests: XCTestCase {
             )
         )
         XCTAssertFalse(fixture.regularTab.profileAssignment.hasStagedSettlement)
+    }
+
+    func testLifecycleCommitRejectionRetainsCleanupUntilTerminalDrain()
+        throws {
+        var normalDestroyCount = 0
+        var terminalDestroyCount = 0
+        var unloadCount = 0
+        let transition = DeferredSpaceProfileTransition(
+            beginCommittedTabRetirement: { _ in false },
+            destroyRetiredWebViews: { generations in
+                normalDestroyCount += generations.count
+            },
+            destroyAfterTerminalDrain: { generations, _ in
+                terminalDestroyCount += generations.count
+            },
+            unloadTab: { _ in unloadCount += 1 }
+        )
+        let fixture = try makeFixture(
+            transition: transition,
+            retirementCount: 1
+        )
+
+        XCTAssertEqual(
+            fixture.tabManager.profileAssignments.spaces.assign(
+                spaceID: fixture.space.id,
+                toProfile: fixture.targetProfile.id
+            ),
+            .deferred
+        )
+        XCTAssertTrue(try XCTUnwrap(transition.stageModel)())
+        XCTAssertEqual(
+            try XCTUnwrap(transition.sealModel)(),
+            .terminallyDrained
+        )
+        XCTAssertEqual(normalDestroyCount, 0)
+        XCTAssertEqual(terminalDestroyCount, 0)
+        XCTAssertEqual(unloadCount, 0)
+
+        try XCTUnwrap(transition.settleTerminalModel)()
+
+        XCTAssertEqual(normalDestroyCount, 0)
+        XCTAssertEqual(terminalDestroyCount, 1)
+        XCTAssertEqual(unloadCount, 0)
+        XCTAssertNil(
+            fixture.tabManager.profileAssignments.spaces.inFlightProfileID(
+                for: fixture.space.id
+            )
+        )
+    }
+
+    func testLifecycleRuntimeRevocationUsesTerminalCleanupExactlyOnce()
+        throws {
+        var expectedWebView: WKWebView?
+        var normalDestroyCount = 0
+        var terminalDestroyCount = 0
+        var normalTeardownCount = 0
+        var lifecycleCount = 0
+        let transition = DeferredSpaceProfileTransition(
+            destroyRetiredWebViews: { generations in
+                normalDestroyCount += generations.count
+            },
+            destroyAfterTerminalDrain: { generations, tabs in
+                terminalDestroyCount += generations.count
+                XCTAssertEqual(generations.count, 1)
+                XCTAssertEqual(tabs.count, 1)
+                XCTAssertEqual(generations.first?.tabID, tabs.first?.id)
+                XCTAssertIdentical(
+                    generations.first?.snapshot.parkedWebView,
+                    expectedWebView
+                )
+            },
+            unloadTab: { _ in normalTeardownCount += 1 }
+        )
+        let fixture = try makeFixture(
+            transition: transition,
+            retirementCount: 1
+        )
+        let retiredTab = try XCTUnwrap(fixture.retiredTabs.first)
+        expectedWebView = try XCTUnwrap(retiredTab.webViewSession.parkedWebView)
+        let lifecycle = NotificationCenter.default.addObserver(
+            forName: .sumiTabLifecycleDidChange,
+            object: retiredTab,
+            queue: nil
+        ) { _ in
+            MainActor.assumeIsolated {
+                lifecycleCount += 1
+                fixture.tabManager.detachBrowserRuntime()
+                transition.settlement?(.terminalShutdown)
+                transition.settlement?(.terminalShutdown)
+            }
+        }
+        defer { NotificationCenter.default.removeObserver(lifecycle) }
+
+        XCTAssertEqual(
+            fixture.tabManager.profileAssignments.spaces.assign(
+                spaceID: fixture.space.id,
+                toProfile: fixture.targetProfile.id
+            ),
+            .deferred
+        )
+        XCTAssertTrue(try XCTUnwrap(transition.stageModel)())
+        XCTAssertTrue(try XCTUnwrap(transition.stagedModelIsExact)())
+        XCTAssertTrue(try XCTUnwrap(transition.canSealModel)())
+        XCTAssertEqual(try XCTUnwrap(transition.sealModel)(), .sealed)
+
+        try XCTUnwrap(transition.publishCommit)()
+        transition.publishCommit?()
+
+        XCTAssertEqual(lifecycleCount, 1)
+        XCTAssertEqual(normalDestroyCount, 0)
+        XCTAssertEqual(terminalDestroyCount, 1)
+        XCTAssertEqual(normalTeardownCount, 0)
+        XCTAssertTrue(retiredTab.webViewSession.allKnownWebViews.isEmpty)
+        XCTAssertNil(
+            fixture.tabManager.profileAssignments.spaces.inFlightProfileID(
+                for: fixture.space.id
+            )
+        )
     }
 
     func testRollbackPublishesRestoredModelOnlyAfterWebViewsLeaveQuarantine()
@@ -661,8 +779,11 @@ final class SpaceProfileRetirementTransactionTests: XCTestCase {
         var invalidCommitCount = 0
         let invalidReceipt = WebViewRetirementModelTransactionReceipt(
             isCurrent: { false },
-            commit: { invalidCommitCount += 1 },
-            rollback: {}
+            commit: {
+                invalidCommitCount += 1
+                return true
+            },
+            rollback: { true }
         )
 
         guard case .modelValidationFailed = tabManager.runtimeTeardown
@@ -676,8 +797,8 @@ final class SpaceProfileRetirementTransactionTests: XCTestCase {
 
         let exactReceipt = WebViewRetirementModelTransactionReceipt(
             isCurrent: { true },
-            commit: {},
-            rollback: {}
+            commit: { true },
+            rollback: { true }
         )
         guard case .began(let exactBatch) = tabManager.runtimeTeardown
             .retirement.begin(
@@ -687,8 +808,8 @@ final class SpaceProfileRetirementTransactionTests: XCTestCase {
             ) else { return XCTFail("Expected exact retirement batch") }
         let wrongReceipt = WebViewRetirementModelTransactionReceipt(
             isCurrent: { true },
-            commit: {},
-            rollback: {}
+            commit: { true },
+            rollback: { true }
         )
         let wrongBatch = TabRuntimeRetirementBatch(
             tabs: exactBatch.tabs,
@@ -1072,8 +1193,14 @@ final class SpaceProfileRetirementTransactionTests: XCTestCase {
                     modelCalls += 1
                     return true
                 },
-                commit: { modelCalls += 1 },
-                rollback: { modelCalls += 1 }
+                commit: {
+                    modelCalls += 1
+                    return true
+                },
+                rollback: {
+                    modelCalls += 1
+                    return true
+                }
             )
             guard case .rejected(let reason) = tabManager.runtimeTeardown
                 .retirement.begin(

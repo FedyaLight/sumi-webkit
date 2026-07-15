@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$repo_root"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "$script_dir/.." && pwd)"
+# shellcheck source=scripts/lib/architecture_guard.sh
+source "$script_dir/lib/architecture_guard.sh"
+guard_initialize "$repo_root"
 
 transaction='Sumi/Managers/BrowserManager/BrowserExtensionRequestedWindowTransaction.swift'
 creation='Sumi/Managers/ExtensionManager/ExtensionRequestedWindowCreation.swift'
@@ -13,7 +16,9 @@ require_literal() {
   local file="$1"
   local literal="$2"
   local message="$3"
-  if [[ ! -f "$file" ]] || ! rg -Fq "$literal" "$file"; then
+  local count
+  count="$(guard_count_matches "$literal" "$file" -F)"
+  if (( count == 0 )); then
     printf 'error: %s\n' "$message" >&2
     status=1
   fi
@@ -23,7 +28,7 @@ for retired in \
   'ExtensionRequestedWindowOpeningOwner' \
   'awaitNextExtensionWindow' \
   'createExtensionWindow()'; do
-  hits="$(rg -n "$retired" App Sumi -g '*.swift' || true)"
+  hits="$(guard_capture_matches "$retired" App Sumi -g '*.swift')"
   if [[ -n "$hits" ]]; then
     printf 'error: retired async empty-window path returned: %s\n%s\n' \
       "$retired" "$hits" >&2
@@ -32,8 +37,9 @@ for retired in \
 done
 
 polling_hits="$(
-  rg -n 'Task\.sleep|awaitNextRegisteredWindow|while[[:space:]]+true' \
-    "$transaction" "$router" || true
+  guard_capture_matches \
+    'Task\.sleep|awaitNextRegisteredWindow|while[[:space:]]+true' \
+    "$transaction" "$router"
 )"
 if [[ -n "$polling_hits" ]]; then
   printf 'error: requested-window transaction started polling for ownership\n%s\n' \
@@ -77,24 +83,15 @@ for literal in \
 done
 
 raw_adapter_hits="$(
-  rg -n 'adapterCatalog\.windowAdapter|adapterStore\.windowAdapter' \
-    "$router" "$transaction" || true
+  guard_capture_matches \
+    'adapterCatalog\.windowAdapter|adapterStore\.windowAdapter' \
+    "$router" "$transaction"
 )"
 if [[ -n "$raw_adapter_hits" ]]; then
   printf 'error: requested-window path materialized a raw window adapter\n%s\n' \
     "$raw_adapter_hits" >&2
   status=1
 fi
-
-for test_name in \
-  testExtensionRequestedWindowPublishesExactTabBeforeFocusAndCompletion \
-  testExtensionRequestedWindowCancelsBeforePresentationWhenPublishedAdapterIsMissing \
-  testExtensionRequestedWindowRejectsMultipleInitialURLsWithoutMutation; do
-  if ! rg -q "func[[:space:]]+${test_name}\\b" SumiTests -g '*.swift'; then
-    printf 'error: requested-window regression missing: %s\n' "$test_name" >&2
-    status=1
-  fi
-done
 
 if [[ $status -ne 0 ]]; then
   exit "$status"

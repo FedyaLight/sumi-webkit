@@ -138,6 +138,10 @@ private final class BrowserTabWebViewRetirementParticipant:
         committed.beginCommitted(tabs)
     }
 
+    func committedRetirementIsExact(_ tabs: [Tab]) -> Bool {
+        committed.containsExactRetirement(tabs)
+    }
+
     func destroyRetiredGenerations(
         _ generations: [RetiredTabWebViewGeneration],
         completing tabs: [Tab]

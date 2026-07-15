@@ -1,16 +1,13 @@
 import Foundation
 import SumiDomain
 
-/// Exact durable facts captured before a regular tab becomes a shortcut.
-///
-/// The plan deliberately contains no mutation callbacks. Its full split-store
-/// snapshot is both the stale-write token and the input for a typed replacement
-/// value computed before commit.
+/// Exact durable and profile facts captured before shortcut conversion.
 struct RegularTabShortcutStructurePlan {
     let sourceTabID: UUID
     let expectedSplitGroups: [SumiDomain.SplitGroup]
     let sourceSplitGroup: SumiDomain.SplitGroup?
     let structuralRevision: UInt64
+    let profileRevision: UInt64
 
     var sourceMemberID: SplitMemberID {
         .regularTab(sourceTabID)

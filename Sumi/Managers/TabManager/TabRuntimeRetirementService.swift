@@ -11,12 +11,14 @@ enum TabRuntimeRetirementRejection: Equatable {
 enum TabRuntimeRetirementBeginOutcome {
     case began(TabRuntimeRetirementBatch)
     case modelValidationFailed
+    case modelConflict(TabRuntimeRetirementBatch)
     case terminallyDrained
     case rejected(TabRuntimeRetirementRejection)
 }
 
 enum TabRuntimeRetirementCommitOutcome {
-    case committed(CommittedTabRuntimeRetirement)
+    case committed(CommittedTabRuntimeRetirementCleanupOwnership)
+    case cleanupOnly(CommittedTabRuntimeRetirementCleanupOwnership)
     case noLongerActive
     case conflict(tabID: UUID, currentGeneration: UInt64)
 }
@@ -25,7 +27,13 @@ enum TabRuntimeRetirementRollbackOutcome: Equatable {
     case rolledBack
     case noLongerActive
     case modelTransactionMismatch
+    case modelConflict
     case conflict(tabID: UUID, currentGeneration: UInt64)
+}
+
+enum TabRuntimeRetirementCleanupClaimOutcome {
+    case claimed(CommittedTabRuntimeRetirementCleanupOwnership)
+    case noLongerActive
 }
 
 @MainActor
@@ -35,13 +43,6 @@ struct TabRuntimeRetirementBatch {
     let runtime: RuntimePortRegistry
     let lease: WebViewRetirementBatchLease
     let modelTransaction: WebViewRetirementModelTransactionReceipt
-}
-
-@MainActor
-struct CommittedTabRuntimeRetirement {
-    let tabs: [Tab]
-    let runtime: RuntimePortRegistry
-    let generations: [RetiredTabWebViewGeneration]
 }
 
 /// Owns the exact repository lease and model receipt for reversible pure
@@ -114,19 +115,28 @@ final class TabRuntimeRetirementService {
                 Set(retired.keys) == batch.runtimeTabIDs,
                 "Retirement commit returned a different Tab generation set"
             )
-            precondition(
-                batch.runtime.webViewLifecycle
-                    .beginCommittedTabRetirement(batch.tabs),
-                "Committed repository retirement lost exact Tab identity"
-            )
             let generations = retired.keys.sorted(by: Self.uuidOrder).map {
                 RetiredTabWebViewGeneration(tabID: $0, snapshot: retired[$0]!)
             }
-            return .committed(CommittedTabRuntimeRetirement(
-                tabs: batch.tabs,
-                runtime: batch.runtime,
-                generations: generations
-            ))
+            guard batch.runtime.webViewLifecycle
+                .beginCommittedTabRetirement(batch.tabs) else {
+                return .cleanupOnly(
+                    CommittedTabRuntimeRetirementCleanupOwnership(
+                        tabs: batch.tabs,
+                        runtime: batch.runtime,
+                        generations: generations,
+                        completionPolicy: .drainOnly
+                    )
+                )
+            }
+            return .committed(
+                CommittedTabRuntimeRetirementCleanupOwnership(
+                    tabs: batch.tabs,
+                    runtime: batch.runtime,
+                    generations: generations,
+                    completionPolicy: .normalOrDrain
+                )
+            )
         case .noLongerActive:
             return .noLongerActive
         case .conflict(let tabID, let generation):
@@ -135,28 +145,81 @@ final class TabRuntimeRetirementService {
     }
 
     func canCommit(_ batch: TabRuntimeRetirementBatch) -> Bool {
-        webViewSessions.canCommitRetirementBatch(batch.lease)
-            && batch.runtime.webViewLifecycle
-                .canRetireTabWebViews(batch.tabs)
+        batch.runtime.webViewLifecycle.canRetireTabWebViews(batch.tabs)
+            && webViewSessions.canCommitRetirementBatch(batch.lease)
+    }
+
+    func claimNormalRuntimePublication(
+        _ committed: CommittedTabRuntimeRetirementCleanupOwnership
+    ) -> ClaimedCommittedTabRuntimeRetirementCleanup? {
+        committed.claimNormalCompletion()
     }
 
     @discardableResult
-    func publish(_ committed: CommittedTabRuntimeRetirement) -> Set<UUID> {
-        committed.runtime.webViewLifecycle.destroyRetiredWebViews(
-            committed.generations,
-            completingRetirementOf: committed.tabs
+    func publishClaimedRuntime(
+        _ claimed: ClaimedCommittedTabRuntimeRetirementCleanup,
+        beforeDestruction: (RuntimePortRegistry) -> Void
+    ) -> Set<UUID> {
+        guard let effect = claimed.takeNormalEffect() else { return [] }
+        let published = publisher.publishRuntime(
+            effect.tabs,
+            runtime: effect.runtime
         )
-        return publisher.publish(committed.tabs, runtime: committed.runtime)
+        beforeDestruction(effect.runtime)
+        effect.runtime.webViewLifecycle.destroyRetiredWebViews(
+            effect.generations,
+            completingRetirementOf: effect.tabs
+        )
+        return published
+    }
+
+    func destroyCommittedRuntime(
+        _ committed: CommittedTabRuntimeRetirementCleanupOwnership
+    ) {
+        guard let claimed = committed.claimNormalCompletion() else { return }
+        destroyClaimedRuntime(claimed)
+    }
+
+    func destroyClaimedRuntime(
+        _ claimed: ClaimedCommittedTabRuntimeRetirementCleanup
+    ) {
+        guard let effect = claimed.takeNormalEffect() else { return }
+        effect.runtime.webViewLifecycle.destroyRetiredWebViews(
+            effect.generations,
+            completingRetirementOf: effect.tabs
+        )
+    }
+
+    func committedRetirementIsExact(
+        _ committed: CommittedTabRuntimeRetirementCleanupOwnership
+    ) -> Bool {
+        let tabs = committed.tabs
+        return committed.isOwned
+            && Set(tabs.map(\.id)) == Set(committed.generations.map(\.tabID))
+            && tabs.allSatisfy {
+                $0.webViewSession.allKnownWebViews.isEmpty
+            }
+            && committed.runtime.webViewLifecycle
+                .committedTabRetirementIsExact(tabs)
     }
 
     func destroyAfterTerminalDrain(
-        _ committed: CommittedTabRuntimeRetirement
+        _ committed: CommittedTabRuntimeRetirementCleanupOwnership
     ) {
-        committed.runtime.webViewLifecycle
-            .destroyTerminallyDrainedRetiredWebViews(
-                committed.generations,
-                belongingTo: committed.tabs
-            )
+        guard let claimed = committed.claimAggregateDrainCompletion() else {
+            return
+        }
+        destroyClaimedAfterTerminalDrain(claimed)
+    }
+
+    func destroyClaimedAfterTerminalDrain(
+        _ claimed: ClaimedCommittedTabRuntimeRetirementCleanup
+    ) {
+        guard let effect = claimed.takeTerminalDrainEffect() else { return }
+        effect.runtime.webViewLifecycle.destroyTerminallyDrainedRetiredWebViews(
+            effect.generations,
+            belongingTo: effect.tabs
+        )
     }
 
     func rollback(
@@ -172,8 +235,45 @@ final class TabRuntimeRetirementService {
             return .noLongerActive
         case .modelTransactionMismatch:
             return .modelTransactionMismatch
+        case .modelConflict:
+            return .modelConflict
         case .conflict(let tabID, let generation):
             return .conflict(tabID: tabID, currentGeneration: generation)
+        }
+    }
+
+    func restoreAfterModelCompensation(
+        _ batch: TabRuntimeRetirementBatch
+    ) -> TabRuntimeRetirementRollbackOutcome {
+        switch webViewSessions.restoreRetirementAfterModelCompensation(
+            batch.lease
+        ) {
+        case .restored:
+            return .rolledBack
+        case .noLongerActive:
+            return .noLongerActive
+        case .conflict(let tabID, let generation):
+            return .conflict(tabID: tabID, currentGeneration: generation)
+        }
+    }
+
+    func claimCleanupAfterModelConflict(
+        _ batch: TabRuntimeRetirementBatch
+    ) -> TabRuntimeRetirementCleanupClaimOutcome {
+        switch webViewSessions.claimRetirementCleanup(batch.lease) {
+        case .claimed(let retired):
+            let generations = retired.keys.sorted(by: Self.uuidOrder).map {
+                RetiredTabWebViewGeneration(tabID: $0, snapshot: retired[$0]!)
+            }
+            let ownership = CommittedTabRuntimeRetirementCleanupOwnership(
+                tabs: batch.tabs,
+                runtime: batch.runtime,
+                generations: generations,
+                completionPolicy: .drainOnly
+            )
+            return .claimed(ownership)
+        case .noLongerActive:
+            return .noLongerActive
         }
     }
 
@@ -215,6 +315,14 @@ final class TabRuntimeRetirementService {
             return .rejected(.invalid(tabID: tabID))
         case .modelValidationFailed:
             return .modelValidationFailed
+        case .modelConflict(let lease):
+            return .modelConflict(TabRuntimeRetirementBatch(
+                tabs: tabs,
+                runtimeTabIDs: Set(liveTabs.map(\.id)),
+                runtime: runtime,
+                lease: lease,
+                modelTransaction: modelTransaction
+            ))
         case .noLongerActive:
             return .terminallyDrained
         }

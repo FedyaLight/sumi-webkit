@@ -8,12 +8,14 @@ final class DeferredSpaceProfileTransition:
     TabWebViewProfileTransitionParticipant {
     private let canRetireTabWebViews: ([Tab]) -> Bool
     private let beginCommittedTabRetirement: ([Tab]) -> Bool
+    private let committedRetirementIsExactAction: ([Tab]) -> Bool
     private let destroyRetiredWebViews: ([RetiredTabWebViewGeneration]) -> Void
     private let destroyAfterTerminalDrain: (
         [RetiredTabWebViewGeneration],
         [Tab]
     ) -> Void
     private let unloadTab: (Tab) -> Void
+    private var committedRetirementTabs: [UUID: Tab] = [:]
     private(set) var assignmentCount = 0
     private(set) var intent: DeferredWebViewSpaceProfileAssignmentIntent?
     private(set) var exactTabs: [Tab]?
@@ -34,6 +36,7 @@ final class DeferredSpaceProfileTransition:
     init(
         canRetireTabWebViews: @escaping ([Tab]) -> Bool = { _ in true },
         beginCommittedTabRetirement: @escaping ([Tab]) -> Bool = { _ in true },
+        committedRetirementIsExact: @escaping ([Tab]) -> Bool = { _ in true },
         destroyRetiredWebViews: @escaping (
             [RetiredTabWebViewGeneration]
         ) -> Void = { _ in },
@@ -45,6 +48,7 @@ final class DeferredSpaceProfileTransition:
     ) {
         self.canRetireTabWebViews = canRetireTabWebViews
         self.beginCommittedTabRetirement = beginCommittedTabRetirement
+        committedRetirementIsExactAction = committedRetirementIsExact
         self.destroyRetiredWebViews = destroyRetiredWebViews
         self.destroyAfterTerminalDrain = destroyAfterTerminalDrain
         self.unloadTab = unloadTab
@@ -65,7 +69,17 @@ final class DeferredSpaceProfileTransition:
     }
 
     func beginCommittedRetirement(_ tabs: [Tab]) -> Bool {
-        beginCommittedTabRetirement(tabs)
+        guard beginCommittedTabRetirement(tabs) else { return false }
+        committedRetirementTabs = Dictionary(
+            uniqueKeysWithValues: tabs.map { ($0.id, $0) }
+        )
+        return true
+    }
+
+    func committedRetirementIsExact(_ tabs: [Tab]) -> Bool {
+        committedRetirementIsExactAction(tabs)
+            && committedRetirementTabs.count == tabs.count
+            && tabs.allSatisfy { committedRetirementTabs[$0.id] === $0 }
     }
 
     func destroyRetiredGenerations(
@@ -73,6 +87,7 @@ final class DeferredSpaceProfileTransition:
         completing tabs: [Tab]
     ) {
         destroyRetiredWebViews(generations)
+        committedRetirementTabs.removeAll()
     }
 
     func destroyTerminallyDrainedGenerations(
@@ -80,9 +95,29 @@ final class DeferredSpaceProfileTransition:
         belongingTo tabs: [Tab]
     ) {
         destroyAfterTerminalDrain(generations, tabs)
+        committedRetirementTabs.removeAll()
     }
 
     func abortProfileTransitions(profileIDs: Set<UUID>) -> Int { 0 }
+
+    func executePreparedProfileAssignments(
+        _ assignments: [PreparedTabProfileAssignment],
+        bindingModel: any ShortcutTabBindingAggregateTransaction,
+        settlement: @escaping ProfileTransitionService.Settlement
+    ) -> PreparedProfileAssignmentBatchTransitionOutcome {
+        let model = PreparedProfileAssignmentBatchModelTransaction(
+            assignments: assignments,
+            binding: bindingModel
+        )
+        guard model.validateForStaging() else {
+            return .rejectedUnstaged(.stale)
+        }
+        let outcome = ProfileTransitionModelOnlySettlement.execute(
+            .transaction(model)
+        )
+        settlement(outcome.settlement)
+        return outcome.batchExecution
+    }
 
     func executeProfileAssignment(
         for tab: Tab,
@@ -126,7 +161,7 @@ final class DeferredSpaceProfileTransition:
         }
         rollbackModel = { try? model.rollback() }
         rollbackModelPublication = model.publishRollback
-        settleTerminalModel = model.settleTerminalDrain
+        settleTerminalModel = { _ = model.settleTerminalDrain() }
         self.settlement = settlement
         return .deferred
     }

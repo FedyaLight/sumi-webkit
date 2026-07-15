@@ -36,24 +36,31 @@ final class WebViewCommittedTabRetirementService {
         return true
     }
 
+    func containsExactRetirement(_ tabs: [Tab]) -> Bool {
+        guard let tabs = orderedUnique(tabs) else { return false }
+        return tabs.allSatisfy(runtimeTabs.isRetiring)
+    }
+
     func destroy(
         _ retired: [RetiredTabWebViewGeneration],
         completing tabs: [Tab]
     ) {
-        destroy(retired, belongingTo: tabs, finishesRuntimeIdentity: true)
+        destroyExactGenerations(retired, belongingTo: tabs)
+        for tab in tabs {
+            _ = runtimeTabs.completeCommittedRetirement(tab)
+        }
     }
 
     func destroyAfterRuntimeTermination(
         _ retired: [RetiredTabWebViewGeneration],
         belongingTo tabs: [Tab]
     ) {
-        destroy(retired, belongingTo: tabs, finishesRuntimeIdentity: false)
+        destroyExactGenerations(retired, belongingTo: tabs)
     }
 
-    private func destroy(
+    private func destroyExactGenerations(
         _ retired: [RetiredTabWebViewGeneration],
-        belongingTo tabs: [Tab],
-        finishesRuntimeIdentity: Bool
+        belongingTo tabs: [Tab]
     ) {
         guard let tabs = orderedUnique(tabs) else {
             preconditionFailure("Committed retirement contains duplicate Tabs")
@@ -66,16 +73,6 @@ final class WebViewCommittedTabRetirementService {
             retired,
             navigationTabsByID: Dictionary(uniqueKeysWithValues: tabs.map { ($0.id, $0) })
         )
-        guard finishesRuntimeIdentity else { return }
-        for tab in tabs {
-            if runtimeTabs.isRetiring(tab) {
-                precondition(runtimeTabs.finishRetirementIfDrained(tab.id),
-                             "Retirement retained a WebView residence")
-            } else {
-                precondition(runtimeTabs.bind(tab) == .retiredIdentity,
-                             "Retirement lost its runtime tombstone")
-            }
-        }
     }
 
     private func orderedUnique(_ tabs: [Tab]) -> [Tab]? {

@@ -51,7 +51,7 @@ final class ShortcutTabMaterializer {
         in windowID: UUID,
         currentSpaceId: UUID?,
         presentationPage: LiveShortcutPresentationPageReceipt
-    ) -> Tab {
+    ) -> Tab? {
         committer.commit(
             pin,
             in: windowID,
@@ -59,4 +59,5 @@ final class ShortcutTabMaterializer {
             presentationPage: presentationPage
         )
     }
+
 }

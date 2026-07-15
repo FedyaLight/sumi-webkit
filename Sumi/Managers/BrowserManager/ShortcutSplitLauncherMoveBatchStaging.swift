@@ -1,26 +1,26 @@
 import Foundation
 
-/// Stages every launcher move against one catalog and residence snapshot.
-/// Failed preparation restores those complete raw snapshots, avoiding stale
-/// per-move compensation after sibling moves reindex shared containers.
 @MainActor
 final class ShortcutSplitLauncherMoveBatchStaging:
     ShortcutSplitLauncherMoveBatchPreparing {
-    private let catalog: ShortcutSplitLauncherCatalogTransaction
-    private let bindingStaging: ShortcutSplitLauncherBindingStaging
-    private let residenceMutations: LiveShortcutResidenceMutationStaging
-    private let folderOpenState: TabFolderOpenStateService
+    let catalog: ShortcutSplitLauncherCatalogTransaction
+    let bindingStaging: ShortcutSplitLauncherBindingStaging
+    let residenceMutations: LiveShortcutResidenceMutationStaging
+    let structuralMutations: TabStructuralCollectionMutationOwner
+    let structuralLookup: TabStructuralLookupCoordinator
 
     init(
         catalog: ShortcutSplitLauncherCatalogTransaction,
         bindingStaging: ShortcutSplitLauncherBindingStaging,
         residenceMutations: LiveShortcutResidenceMutationStaging,
-        folderOpenState: TabFolderOpenStateService
+        structuralMutations: TabStructuralCollectionMutationOwner,
+        structuralLookup: TabStructuralLookupCoordinator
     ) {
         self.catalog = catalog
         self.bindingStaging = bindingStaging
         self.residenceMutations = residenceMutations
-        self.folderOpenState = folderOpenState
+        self.structuralMutations = structuralMutations
+        self.structuralLookup = structuralLookup
     }
 
     func accepts(
@@ -36,93 +36,70 @@ final class ShortcutSplitLauncherMoveBatchStaging:
     func prepare(
         _ restorations: [PreparedShortcutSplitLauncherRestoration]
     ) -> (any ShortcutSplitLauncherMoveBatchParticipant)? {
-        prepare(restorations, ownsResidenceSnapshot: true)
+        guard let preflight = preflightBindingContribution(restorations),
+              let contribution = prepareContribution(
+                  preflight,
+                  terminalRestorations: restorations
+              ) else { return nil }
+        return makeParticipant(from: contribution)
     }
 
     func prepareForComposedResidenceAggregate(
-        _ restorations: [PreparedShortcutSplitLauncherRestoration]
-    ) -> (any ShortcutSplitLauncherMoveBatchParticipant)? {
-        prepare(restorations, ownsResidenceSnapshot: false)
-    }
-
-    private func prepare(
         _ restorations: [PreparedShortcutSplitLauncherRestoration],
-        ownsResidenceSnapshot: Bool
-    ) -> (any ShortcutSplitLauncherMoveBatchParticipant)? {
-        guard Set(restorations.map { $0.pin.id }).count == restorations.count,
-              restorations.allSatisfy({ restoration in
-                  catalog.isCurrent(restoration.pin)
-                      && accepts(
-                          restoration.pin,
-                          destination: restoration.destination
-                      )
-              }) else { return nil }
-
-        let checkpoint = ShortcutSplitLauncherMoveBatchCheckpoint(
-            catalog: catalog,
-            sourceCatalog: catalog.snapshot(),
-            residences: ownsResidenceSnapshot
-                ? residenceMutations.beginBatchCheckpoint()
-                : nil
-        )
-        var moves: [ShortcutSplitLauncherStagedMove] = []
-        for restoration in restorations {
-            guard let pin = checkpoint.currentPin(withID: restoration.pin.id),
-                  let move = stage(
-                      pin,
-                      destination: restoration.destination,
-                      checkpoint: checkpoint
-                  )
-            else {
-                if checkpoint.ownsResidenceSnapshot {
-                    precondition(checkpoint.restore(),
-                                 "Launcher batch compensation was not exact")
-                    moves.forEach {
-                        $0.bindings.discardAfterAggregateRollback()
-                    }
-                } else {
-                    for move in moves.reversed() {
-                        precondition(move.bindings.rollback())
-                    }
-                    precondition(checkpoint.restoreCatalog())
-                }
-                return nil
-            }
-            moves.append(move)
-        }
-
-        checkpoint.seal()
-        return ShortcutSplitLauncherMoveBatchReceipt(
-            checkpoint: checkpoint,
-            moves: moves,
-            folderOpenState: folderOpenState
+        bindingMode: ShortcutSplitLauncherComposedBindingMode
+    ) -> (any ShortcutSplitLauncherComposedMoveBatchParticipant)? {
+        guard let contribution =
+            prepareBindingContributionForComposedResidenceAggregate(
+                restorations,
+                bindingMode: bindingMode
+            ) else { return nil }
+        return ShortcutSplitLauncherComposedMoveBatchReceipt(
+            contribution: contribution,
+            structuralMutations: structuralMutations,
+            structuralLookup: structuralLookup
         )
     }
 
-    private func stage(
-        _ pin: ShortcutPin,
-        destination: ShortcutSplitLauncherDestination,
-        checkpoint: ShortcutSplitLauncherMoveBatchCheckpoint
-    ) -> ShortcutSplitLauncherStagedMove? {
-        guard let preview = checkpoint.preview(pin, destination: destination),
-              let admission = bindingStaging.admission(for: preview) else {
+    func prepareBindingContributionForComposedResidenceAggregate(
+        _ restorations: [PreparedShortcutSplitLauncherRestoration]
+    ) -> ShortcutSplitLauncherBindingContribution? {
+        prepareBindingContributionForComposedResidenceAggregate(
+            restorations,
+            bindingMode: .preservingLiveBindings
+        )
+    }
+
+    private func prepareBindingContributionForComposedResidenceAggregate(
+        _ restorations: [PreparedShortcutSplitLauncherRestoration],
+        bindingMode: ShortcutSplitLauncherComposedBindingMode
+    ) -> ShortcutSplitLauncherBindingContribution? {
+        guard let preflight = preflightBindingContribution(
+            restorations,
+            bindingMode: bindingMode
+        ) else {
             return nil
         }
-        var bindings: ShortcutTabBindingRefreshTransaction?
-        guard checkpoint.move(
-            pin,
-            destination: destination,
-            applying: {
-                bindings = self.bindingStaging.stage(
-                    pin: $0,
-                    admission: admission
-                )
-                return bindings != nil
-            }
-        ) != nil, let bindings else { return nil }
-        return ShortcutSplitLauncherStagedMove(
-            bindings: bindings,
-            destination: destination
+        let contribution = prepareContribution(
+            preflight,
+            terminalRestorations: restorations
+        )
+        return contribution
+    }
+
+    private func makeParticipant(
+        from contribution: ShortcutSplitLauncherBindingContribution
+    ) -> (any ShortcutSplitLauncherMoveBatchParticipant)? {
+        guard case .prepared(let model, let profiles, _) = contribution
+            .prepareComposedTransaction(windows: [.empty]) else { return nil }
+        let bindingModel = ShortcutSplitLauncherBindingAggregateTransaction(
+            model: model,
+            structuralMutations: structuralMutations,
+            structuralLookup: structuralLookup
+        )
+        return ShortcutSplitLauncherMoveBatchReceipt(
+            bindingModel: bindingModel,
+            profiles: profiles,
+            folders: contribution.folders
         )
     }
 }

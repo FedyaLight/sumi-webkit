@@ -29,31 +29,68 @@ final class WindowSplitPresentationSettlementValidator {
             }
     }
 
-    func isCurrentForWindowSettlement(
+    func preparedModelIsCurrent(
         _ plan: WindowSplitPresentationSettlementPlan
+    ) -> Bool {
+        modelIsCurrent(
+            plan,
+            expectedWindowStates: Dictionary(uniqueKeysWithValues:
+                plan.windows.map { ($0.window.id, $0.expectedWindowState) }
+            ),
+            validating: witnessPreparedIdentityIsCurrent
+        )
+    }
+
+    func modelIsCurrent(
+        _ plan: WindowSplitPresentationSettlementPlan,
+        expectedWindowStates: [UUID: BrowserWindowShortcutMutationState]
+    ) -> Bool {
+        modelIsCurrent(
+            plan,
+            expectedWindowStates: expectedWindowStates,
+            validating: witnessBoundIdentityIsCurrent
+        )
+    }
+
+    private func modelIsCurrent(
+        _ plan: WindowSplitPresentationSettlementPlan,
+        expectedWindowStates: [UUID: BrowserWindowShortcutMutationState],
+        validating witnessIsCurrent: (WindowSplitPresentationMemberWitness)
+            -> Bool
     ) -> Bool {
         guard splitGroups.groups == plan.expectedGroups,
               let windowsByID = exactWindowsByID() else { return false }
         return plan.windows.allSatisfy { windowPlan in
             guard windowsByID[windowPlan.window.id] === windowPlan.window,
                   windowPlan.window.unpublishedShortcutMutationState
-                    == windowPlan.expectedWindowState,
+                    == expectedWindowStates[windowPlan.window.id],
                   windowPlan.memberWitnesses.allSatisfy(witnessIsCurrent)
             else { return false }
-            return activeMemberIsCurrent(windowPlan)
+            return activeMemberIsCurrent(
+                windowPlan,
+                validating: witnessIsCurrent
+            )
         }
     }
 
     func terminalWindowIsCurrent(
-        _ windowPlan: WindowSplitPresentationWindowPlan
+        _ plan: WindowSplitPresentationSettlementPlan,
+        _ windowPlan: WindowSplitPresentationWindowPlan,
+        expectedWindowState: BrowserWindowShortcutMutationState? = nil
     ) -> Bool {
-        guard let windowsByID = exactWindowsByID(),
+        guard splitGroups.groups == plan.expectedGroups,
+              let windowsByID = exactWindowsByID(),
               windowsByID[windowPlan.window.id] === windowPlan.window,
               windowPlan.window.unpublishedShortcutMutationState
-                == windowPlan.targetWindowState,
-              windowPlan.memberWitnesses.allSatisfy(witnessIsCurrent)
+                == (expectedWindowState ?? windowPlan.targetWindowState),
+              windowPlan.memberWitnesses.allSatisfy(
+                  witnessBoundIdentityIsCurrent
+              )
         else { return false }
-        return activeMemberIsCurrent(windowPlan)
+        return activeMemberIsCurrent(
+            windowPlan,
+            validating: witnessBoundIdentityIsCurrent
+        )
     }
 
     private func exactWindowsByID() -> [UUID: BrowserWindowState]? {
@@ -65,30 +102,39 @@ final class WindowSplitPresentationSettlementValidator {
     }
 
     private func activeMemberIsCurrent(
-        _ windowPlan: WindowSplitPresentationWindowPlan
+        _ windowPlan: WindowSplitPresentationWindowPlan,
+        validating witnessIsCurrent: (WindowSplitPresentationMemberWitness)
+            -> Bool
     ) -> Bool {
         guard let activeMemberID = windowPlan.activeMemberID,
               let activeTab = windowPlan.activeTab else { return true }
-        return witnessIsCurrent(WindowSplitPresentationMemberWitness(
-            memberID: activeMemberID,
-            tab: activeTab,
-            windowID: windowPlan.window.id
-        ))
+        return windowPlan.memberWitnesses.contains {
+            $0.memberID == activeMemberID
+                && $0.tab === activeTab
+                && $0.windowID == windowPlan.window.id
+                && witnessIsCurrent($0)
+        }
     }
 
-    private func witnessIsCurrent(
+    private func witnessPreparedIdentityIsCurrent(
         _ witness: WindowSplitPresentationMemberWitness
     ) -> Bool {
-        switch witness.memberID {
-        case .regularTab(let tabID):
-            return witness.tab.id == tabID
-                && regularTabs.tab(for: tabID) === witness.tab
-        case .shortcutPin(let pinID):
-            guard let entry = liveShortcuts.entry(containing: witness.tab)
-            else { return false }
-            return entry.windowId == witness.windowID
-                && entry.pinId == pinID
-                && entry.tab === witness.tab
+        switch witness {
+        case .regular(let tabID, let tab, _):
+            return tab.id == tabID && regularTabs.tab(for: tabID) === tab
+        case .shortcut(let shortcut):
+            return shortcut.preparedIdentityIsExact(in: liveShortcuts)
+        }
+    }
+
+    private func witnessBoundIdentityIsCurrent(
+        _ witness: WindowSplitPresentationMemberWitness
+    ) -> Bool {
+        switch witness {
+        case .regular(let tabID, let tab, _):
+            return tab.id == tabID && regularTabs.tab(for: tabID) === tab
+        case .shortcut(let shortcut):
+            return shortcut.boundIdentityIsExact(in: liveShortcuts)
         }
     }
 }

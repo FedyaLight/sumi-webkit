@@ -143,6 +143,43 @@ final class WebViewRuntimeTabRegistryTests: XCTestCase {
         XCTAssertIdentical(registry.boundTab(tabID), replacement)
     }
 
+    func testCommittedCompletionPreservesLaterSameIDRuntimeIdentity() {
+        let repository = WebViewSessionRepository()
+        let registry = WebViewRuntimeTabRegistry(webViewSessions: repository)
+        let tabID = UUID()
+        let retired = makeTab(id: tabID, webViewSessions: repository)
+        let replacement = makeTab(id: tabID, webViewSessions: repository)
+
+        XCTAssertTrue(registry.beginRetirement(retired))
+        XCTAssertEqual(
+            registry.completeCommittedRetirement(retired),
+            .finished
+        )
+        XCTAssertEqual(registry.bind(replacement), .bound)
+
+        XCTAssertEqual(
+            registry.completeCommittedRetirement(retired),
+            .alreadyFinished
+        )
+        XCTAssertIdentical(registry.boundTab(tabID), replacement)
+    }
+
+    func testCommittedCompletionAcceptsTerminalRuntimeWithoutReopeningIt() {
+        let repository = WebViewSessionRepository()
+        let registry = WebViewRuntimeTabRegistry(webViewSessions: repository)
+        let retired = makeTab(webViewSessions: repository)
+
+        XCTAssertTrue(registry.beginRetirement(retired))
+        registry.resetForTerminalShutdown()
+
+        XCTAssertEqual(
+            registry.completeCommittedRetirement(retired),
+            .runtimeTerminated
+        )
+        XCTAssertEqual(registry.bind(retired), .runtimeTerminated)
+        XCTAssertNil(registry.boundTab(retired.id))
+    }
+
     func testTrackedAdmissionRejectsIdentityConflictBeforeRepositoryMutation() {
         let repository = WebViewSessionRepository()
         let graph = makeTestWebViewRuntimeGraph(webViewSessions: repository)
@@ -267,8 +304,8 @@ final class WebViewRuntimeTabRegistryTests: XCTestCase {
         XCTAssertTrue(retirement.canAdmit([tab]))
         let modelReceipt = WebViewRetirementModelTransactionReceipt(
             isCurrent: { true },
-            commit: {},
-            rollback: {}
+            commit: { true },
+            rollback: { true }
         )
         guard case .began(let lease) = repository.beginRetirementBatch(
             [WebViewRetirementBatchEntry(

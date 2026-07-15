@@ -39,23 +39,9 @@ final class SpaceProfileTransitionService {
     func start(
         spaceID: UUID,
         profileID: UUID,
-        settlementObserver: ProfileTransitionService.Settlement? = nil
-    ) -> TabProfileAssignmentExecutionOutcome {
-        start(
-            spaceID: spaceID,
-            profileID: profileID,
-            intentObserver: nil,
-            settlementObserver: settlementObserver
-        )
-    }
-
-    @discardableResult
-    func start(
-        spaceID: UUID,
-        profileID: UUID,
-        capturingIntent: @escaping (
+        capturingIntent: ((
             DeferredWebViewSpaceProfileAssignmentIntent
-        ) -> Void,
+        ) -> Void)? = nil,
         settlementObserver: ProfileTransitionService.Settlement? = nil
     ) -> TabProfileAssignmentExecutionOutcome {
         start(
@@ -89,12 +75,14 @@ final class SpaceProfileTransitionService {
             return .failed
         }
         let tabIntents = admitted.tabCandidates.map { candidate in
-            DeferredWebViewSpaceProfileTabIntent(
+            let navigationIntent = candidate.tab.mainFrameLoads.currentIntent
+            return DeferredWebViewSpaceProfileTabIntent(
                 tabID: candidate.tab.id,
                 intent: candidate.tab.profileAssignment.begin(
                     desiredProfileID: candidate.desiredProfileID,
                     resolvedProfileID: admitted.profile.id,
-                    targetURL: admission.targetURL(for: candidate.tab),
+                    targetURL: navigationIntent.targetURL,
+                    navigationRevision: navigationIntent.revision,
                     requiresStructuralPersistence: false
                 )
             )
@@ -293,7 +281,7 @@ final class SpaceProfileTransitionService {
             transactionsBySpaceID.removeValue(forKey: intent.spaceID)
         case .terminal:
             transactionsBySpaceID.removeValue(forKey: intent.spaceID)
-        case .staged:
+        case .staged, .retainedCleanupConflict:
             return
         }
     }

@@ -97,8 +97,8 @@ final class ShortcutLiveTabRetirementServiceTests: XCTestCase {
         tabManager.tabClosureService.removeTab(liveTab.id)
 
         XCTAssertNil(tabManager.liveShortcutTabs.entry(tabId: liveTab.id))
-        XCTAssertEqual(probe.tabClosureBatches, [[liveTab.id]])
-        XCTAssertEqual(probe.unloadedTabIds, [liveTab.id])
+        XCTAssertTrue(probe.tabClosureBatches.isEmpty)
+        XCTAssertTrue(probe.unloadedTabIds.isEmpty)
         XCTAssertEqual(probe.extensionClosedTabIds, [liveTab.id])
     }
 
@@ -125,7 +125,7 @@ final class ShortcutLiveTabRetirementServiceTests: XCTestCase {
 
         XCTAssertNil(windowState.currentTabId)
         XCTAssertNil(windowState.currentShortcutPinId)
-        XCTAssertEqual(probe.validationCount, 1)
+        XCTAssertEqual(probe.validationCount, 0)
     }
 
     func testPreparedRuntimeLeaseSurvivesDetachFromStructuralSubscriber() throws {
@@ -154,7 +154,7 @@ final class ShortcutLiveTabRetirementServiceTests: XCTestCase {
 
         XCTAssertTrue(result.didRetire)
         XCTAssertNil(tabManager.runtimePorts)
-        XCTAssertEqual(probe.unloadedTabIds, [liveTab.id])
+        XCTAssertTrue(probe.unloadedTabIds.isEmpty)
         _ = cancellable
     }
 
@@ -214,9 +214,9 @@ final class ShortcutLiveTabRetirementServiceTests: XCTestCase {
             )
         )
         XCTAssertNil(tabManager.tabCollectionMembershipOwner.tab(for: liveTab.id))
-        XCTAssertEqual(probe.tabClosureBatches, [[liveTab.id]])
+        XCTAssertTrue(probe.tabClosureBatches.isEmpty)
         XCTAssertEqual(probe.extensionClosedTabIds, [liveTab.id])
-        XCTAssertEqual(probe.unloadedTabIds, [liveTab.id])
+        XCTAssertTrue(probe.unloadedTabIds.isEmpty)
         XCTAssertEqual(
             probe.removeAllWebViewsCalls.map(\.tabId),
             [liveTab.id]
@@ -287,7 +287,7 @@ final class ShortcutLiveTabRetirementServiceTests: XCTestCase {
         )
         XCTAssertEqual(
             probe.tabClosureBatches,
-            [[firstLiveTab.id, secondLiveTab.id]]
+            []
         )
         XCTAssertNil(firstWindow.currentTabId)
         XCTAssertNil(firstWindow.currentShortcutPinId)
@@ -301,7 +301,7 @@ final class ShortcutLiveTabRetirementServiceTests: XCTestCase {
                     .recentSelectionItemsBySpace[space.id]
             )
         }
-        XCTAssertEqual(probe.validationCount, 1)
+        XCTAssertEqual(probe.validationCount, 0)
         XCTAssertEqual(
             probe.persistedWindowIds,
             windows.map(\.id).sorted { $0.uuidString < $1.uuidString }

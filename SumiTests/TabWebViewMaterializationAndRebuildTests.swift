@@ -768,6 +768,7 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
             desiredProfileID: targetProfile.id,
             resolvedProfileID: targetProfile.id,
             targetURL: tab.url,
+            navigationRevision: tab.mainFrameLoads.currentIntent.revision,
             requiresStructuralPersistence: true
         )
 
@@ -842,6 +843,7 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
             desiredProfileID: targetProfile.id,
             resolvedProfileID: targetProfile.id,
             targetURL: tab.url,
+            navigationRevision: tab.mainFrameLoads.currentIntent.revision,
             requiresStructuralPersistence: true
         )
 
@@ -1358,6 +1360,41 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
             fixture,
             expectsUnchangedGeneration: false
         )
+    }
+
+    func testDuplicateTabReplacementBatchRejectsBeforeRepositoryAdmission()
+        throws {
+        let fixture = try makePreparedPolicyReplacementFixture(
+            path: "duplicate-tab-batch"
+        )
+        var modelStageCount = 0
+        let pipeline = replacementPipeline(
+            repository: fixture.repository,
+            tab: fixture.tab,
+            departureBatches: { _ in
+                XCTFail("Invalid batch cannot retire a generation")
+            },
+            destroy: { _ in
+                XCTFail("Invalid batch cannot destroy a WebView")
+            }
+        )
+
+        guard case .invalid = pipeline.begin(
+            [fixture.prepared, fixture.prepared],
+            profileIDs: [],
+            model: .transaction(TestWebViewReplacementModelTransaction(
+                stage: { modelStageCount += 1 }
+            )),
+            completion: { _ in
+                XCTFail("Invalid batch cannot start settlement")
+            }
+        ) else {
+            return XCTFail("Expected duplicate Tab rejection")
+        }
+
+        XCTAssertEqual(modelStageCount, 0)
+        XCTAssertEqual(fixture.originalReceipt.phase, .cancelled)
+        assertPlacementWasNotReplaced(fixture)
     }
 
     func testPolicyCancellationRollbackFailureRetainsTerminalOwner()

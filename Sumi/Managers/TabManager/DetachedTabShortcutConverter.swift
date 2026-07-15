@@ -7,63 +7,107 @@ import SumiWebRuntime
 /// a window materializes one later when the launcher is activated.
 @MainActor
 final class DetachedTabShortcutConverter {
-    private let regularTabs: RegularTabCollectionOwner
+    private let batches: ShortcutTabBindingBatchFactory
+    private let windows: ShortcutTabWindowQuery
     private let containerRemoval: ShortcutContainerRemovalOwner
     private let membership: TabCollectionMembershipOwner
     private let selection: TabSelectionStateOwner
-    private let structuralLookup: TabStructuralLookupCoordinator
     private let runtimeTeardown: TabRuntimeTeardownService
     private let windowReconciler: RegularTabShortcutWindowReconciler
 
     init(
-        regularTabs: RegularTabCollectionOwner,
+        batches: ShortcutTabBindingBatchFactory,
+        windows: ShortcutTabWindowQuery,
         containerRemoval: ShortcutContainerRemovalOwner,
         membership: TabCollectionMembershipOwner,
         selection: TabSelectionStateOwner,
-        structuralLookup: TabStructuralLookupCoordinator,
         runtimeTeardown: TabRuntimeTeardownService,
-        windowMutations: BrowserWindowShortcutMutationOwner
+        windowReconciler: RegularTabShortcutWindowReconciler
     ) {
-        self.regularTabs = regularTabs
+        self.batches = batches
+        self.windows = windows
         self.containerRemoval = containerRemoval
         self.membership = membership
         self.selection = selection
-        self.structuralLookup = structuralLookup
         self.runtimeTeardown = runtimeTeardown
-        windowReconciler = RegularTabShortcutWindowReconciler(
-            regularTabs: regularTabs,
-            windowMutations: windowMutations
-        )
+        self.windowReconciler = windowReconciler
     }
 
     convenience init(tabManager: TabManager) {
         self.init(
-            regularTabs: tabManager.regularTabCollectionOwner,
+            batches: ShortcutTabBindingBatchFactory(
+                runtimeConnection: tabManager.runtimePortConnection,
+                windowMutations: tabManager.shortcutWindowMutationOwner,
+                profiles: tabManager.profileAssignments.tabs,
+                persistence: ShortcutSplitLauncherWindowPersistence(
+                    structuralLookup: tabManager.structuralLookupCoordinator
+                ),
+                structuralLookup: tabManager.structuralLookupCoordinator
+            ),
+            windows: tabManager.shortcutTabWindowQuery,
             containerRemoval: tabManager.shortcutContainerRemovalOwner,
             membership: tabManager.tabCollectionMembershipOwner,
             selection: tabManager.selectionStateOwner,
-            structuralLookup: tabManager.structuralLookupCoordinator,
             runtimeTeardown: tabManager.runtimeTeardown,
-            windowMutations: tabManager.shortcutWindowMutationOwner
+            windowReconciler: RegularTabShortcutWindowReconciler(
+                regularTabs: tabManager.regularTabCollectionOwner
+            )
         )
+    }
+
+    func beginBindingBatch(
+        using attachment: TabRuntimeAttachmentWitness
+    ) -> ShortcutTabBindingBatchBuilder {
+        batches.make(using: attachment)
     }
 
     func prepare(
         transition: RegularTabShortcutWindowTransitionPlan,
-        using authorization: AuthorizedDetachedTabShortcutConversion,
-        participants: RegularTabShortcutCommitParticipants
-    ) -> DetachedTabShortcutConversionReceipt? {
-        DetachedTabShortcutConversionReceipt(
-            transition: transition,
-            authorization: authorization,
-            participants: participants,
-            regularTabs: regularTabs,
-            containerRemoval: containerRemoval,
+        using authorization: AuthorizedDetachedTabShortcutConversion
+    ) -> PreparedDetachedTabShortcutTransition? {
+        guard let source = DetachedTabShortcutSourceModelTransaction(
+            tab: authorization.tab,
+            container: containerRemoval,
             membership: membership,
-            selection: selection,
-            structuralLookup: structuralLookup,
-            runtimeTeardown: runtimeTeardown,
-            windowReconciler: windowReconciler
+            selection: selection
+        ) else { return nil }
+        guard let exposure = DetachedTabRuntimeExposureWitness(
+            tab: authorization.tab,
+            attachment: authorization.runtimeAttachment,
+            windows: windows
+        ) else { return nil }
+        guard let terminal = DetachedTabTerminalRetirementPublisher(
+            tab: authorization.tab,
+            source: source,
+            exposure: exposure,
+            teardown: runtimeTeardown
+        ) else { return nil }
+        let windows = authorization.runtime.flatMap {
+            windowReconciler.prepareContribution(
+                originalTabId: authorization.tab.id,
+                splitTransition: transition,
+                sourceSpaceId: authorization.tab.spaceId,
+                liveTabsByWindowId: [:],
+                terminalIdentitiesByWindowId: [:],
+                selectedWindowIds: [],
+                using: $0
+            )
+        } ?? .empty
+        let runtime = DetachedTabRuntimeRetirementParticipant(
+            source: source,
+            exposure: exposure,
+            terminal: terminal
+        )
+        guard runtime.validateForStaging() else { return nil }
+        return PreparedDetachedTabShortcutTransition(
+            windows: windows,
+            runtime: runtime
         )
     }
+}
+
+@MainActor
+struct PreparedDetachedTabShortcutTransition {
+    let windows: ShortcutTabBindingWindowContribution
+    let runtime: DetachedTabRuntimeRetirementParticipant
 }

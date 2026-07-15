@@ -4,7 +4,7 @@ import WebKit
 
 enum ProfileTransitionSettlement: Equatable {
     case committed
-    case rejected(TabProfileAssignmentExecutionOutcome)
+    case rejected(ProfileTransitionRejectionReason)
     case rolledBack(WebViewReplacementRollbackReason)
     case conflicted
     case leaseLost
@@ -75,6 +75,7 @@ final class ProfileTransitionService {
     private struct Request {
         let targetProfile: Profile
         let tabs: [Tab]
+        let intentsByTabID: [UUID: DeferredWebViewProfileAssignmentIntent]
         let model: WebViewReplacementModelParticipant
         let kind: RequestKind
 
@@ -101,6 +102,7 @@ final class ProfileTransitionService {
             Request(
                 targetProfile: targetProfile,
                 tabs: [tab],
+                intentsByTabID: [tab.id: intent],
                 model: .transaction(ProfileTransitionModelParticipant(
                     model: TabProfileAssignmentModelTransaction(
                         tab: tab,
@@ -124,7 +126,9 @@ final class ProfileTransitionService {
         settlement: @escaping Settlement
     ) -> TabProfileAssignmentExecutionOutcome {
         let tabs = intent.tabIntents.compactMap { tabsByID[$0.tabID] }
+        let intentTabIDs = intent.tabIntents.map(\.tabID)
         guard tabs.count == intent.tabIntents.count,
+              Set(intentTabIDs).count == intentTabIDs.count,
               intent.spaceID == spaceID,
               intent.desiredProfileID == targetProfile.id else {
             settlement(.rejected(.stale))
@@ -134,6 +138,11 @@ final class ProfileTransitionService {
             Request(
                 targetProfile: targetProfile,
                 tabs: tabs,
+                intentsByTabID: Dictionary(
+                    uniqueKeysWithValues: intent.tabIntents.map {
+                        ($0.tabID, $0.intent)
+                    }
+                ),
                 model: .transaction(ProfileTransitionModelParticipant(
                     model: model,
                     tabs: tabs
@@ -167,31 +176,11 @@ final class ProfileTransitionService {
         })
         let live = snapshots.filter { $0.value.allKnownWebViews.isEmpty == false }
         guard live.isEmpty == false else {
-            do {
-                try request.model.stage()
-                guard request.model.stagedModelIsExact() else {
-                    settlement(.conflicted)
-                    return .failed
-                }
-                guard request.model.canClaimTerminalModel() else {
-                    settlement(
-                        rollbackStagedModel(request.model)
-                            ? .rolledBack(.commitValidationFailed)
-                            : .conflicted
-                    )
-                    return .failed
-                }
-                guard request.model.claimTerminalModel() == .sealed else {
-                    settlement(.leaseLost)
-                    return .failed
-                }
-                request.model.publishCommit()
-                settlement(.committed)
-                return .committed
-            } catch {
-                settlement(.rejected(.stale))
-                return .stale
-            }
+            let outcome = ProfileTransitionModelOnlySettlement.execute(
+                request.model
+            )
+            settlement(outcome.settlement)
+            return outcome.tabExecution
         }
 
         if let barrier = live.values.flatMap(\.allKnownWebViews)
@@ -216,6 +205,7 @@ final class ProfileTransitionService {
             tabs: request.tabs,
             liveSnapshots: live,
             targetProfile: request.targetProfile,
+            intentsByTabID: request.intentsByTabID,
             reason: request.reason
         ) else {
             settlement(.rejected(.failed))
@@ -268,24 +258,12 @@ final class ProfileTransitionService {
             // Synchronous settlement already restored the model/repository and
             // delivered its typed rollback through `completion`.
             return .failed
-        case .settlementConflict:
-            settlement(.conflicted)
+        case .settlementConflict(let delivery):
+            if delivery == .callerOwned { settlement(.conflicted) }
             return .failed
-        case .leaseLost:
-            settlement(.leaseLost)
+        case .leaseLost(let delivery):
+            if delivery == .callerOwned { settlement(.leaseLost) }
             return .failed
-        }
-    }
-
-    private func rollbackStagedModel(
-        _ model: WebViewReplacementModelParticipant
-    ) -> Bool {
-        do {
-            try model.rollback()
-            model.publishRollback()
-            return true
-        } catch {
-            return false
         }
     }
 

@@ -565,9 +565,13 @@ final class WebViewRuntimeGraph {
         engine: tabWebViewRebuild
     )
 
-    private lazy var profileTransitionService: ProfileTransitionService = ProfileTransitionService(
-        runtime: .init(
+    private(set) lazy var profileAssignmentService =
+        WebViewProfileRuntimeComposition.make(
             webViewSessions: webViewSessions,
+            runtimeTabs: runtimeTabs,
+            resolveRuntimeTab: resolveRuntimeTab,
+            replacementPipeline: replacementPipeline,
+            replacementActivation: replacementActivation,
             admissionIsBlocked: { [weak self] profileID in
                 self?.websiteDataCleanupService.admissionIsBlocked(
                     profileID: profileID
@@ -583,25 +587,16 @@ final class WebViewRuntimeGraph {
             isProtected: { [weak self] webView in
                 self?.protectionRuntime.isProtected(webView) ?? false
             },
+            preparedIsProtected: { [weak self] webView in
+                self?.protectionRuntime.isProtected(webView) ?? true
+            },
             deferProtectedCommand: { [weak self] command, webView, reason in
                 self?.protectionRuntime.schedule(
                     command,
                     for: webView,
                     reason: reason
                 ) ?? .invalidTarget
-            },
-            provisioning: ProfileReplacementProvisioning(),
-            pipeline: replacementPipeline,
-            activation: replacementActivation
-        )
-    )
-
-    private(set) lazy var profileAssignmentService: WebViewProfileAssignmentService =
-        WebViewProfileAssignmentService(
-            runtimeTabs: runtimeTabs,
-            resolveRuntimeTab: resolveRuntimeTab,
-            transitions: profileTransitionService,
-            replacementPipeline: replacementPipeline
+            }
         )
 
     private(set) lazy var websiteDataCleanupService: WebsiteDataCleanupService = WebsiteDataCleanupService(

@@ -92,12 +92,12 @@ final class WindowSplitPresentationEffectExecutor {
     }
 
     func publishTerminalEffects(
-        for plan: WindowSplitPresentationSettlementPlan,
-        validator: WindowSplitPresentationSettlementValidator,
+        witness: WindowSplitPresentationTerminalWitness,
         participants: WindowSplitPresentationTerminalParticipants
     ) {
+        let plan = witness.plan
         for windowPlan in plan.windows {
-            guard validator.terminalWindowIsCurrent(windowPlan) else {
+            guard witness.isCurrent(windowPlan) else {
                 continue
             }
             if let activeTab = windowPlan.activeTab {
@@ -108,15 +108,15 @@ final class WindowSplitPresentationEffectExecutor {
                     windowPlan.expectedWindowState.currentSpaceId
                 )
             }
-            guard validator.terminalWindowIsCurrent(windowPlan) else {
+            guard witness.isCurrent(windowPlan) else {
                 continue
             }
             publishWindowChangeAction(windowPlan.window.id)
-            guard validator.terminalWindowIsCurrent(windowPlan) else {
+            guard witness.isCurrent(windowPlan) else {
                 continue
             }
             refreshCompositorAction(windowPlan.window)
-            guard validator.terminalWindowIsCurrent(windowPlan) else {
+            guard witness.isCurrent(windowPlan) else {
                 continue
             }
             if windowPlan.before
@@ -126,7 +126,7 @@ final class WindowSplitPresentationEffectExecutor {
                     urgency: plan.sessionWriteUrgency
                 )
             }
-            guard validator.terminalWindowIsCurrent(windowPlan) else {
+            guard witness.isCurrent(windowPlan) else {
                 continue
             }
             let receipt = WindowSplitPresentationTerminalWindowReceipt(
@@ -134,7 +134,7 @@ final class WindowSplitPresentationEffectExecutor {
             )
             for participant in participants
                 where participant.targetWindow === windowPlan.window {
-                guard validator.terminalWindowIsCurrent(windowPlan) else {
+                guard witness.isCurrent(windowPlan) else {
                     break
                 }
                 participant.publish(after: receipt)

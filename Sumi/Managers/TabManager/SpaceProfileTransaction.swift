@@ -13,6 +13,7 @@ final class SpaceProfileTransaction {
     enum State: Equatable {
         case pending
         case staged
+        case retainedCleanupConflict
         case terminal
     }
 
@@ -72,6 +73,7 @@ final class SpaceProfileTransaction {
         }
         return tabParticipants.allSatisfy {
             $0.tab.profileAssignment.isCurrent($0.intent.intent)
+                && navigationIsCurrent($0)
         }
     }
 
@@ -90,10 +92,10 @@ final class SpaceProfileTransaction {
                     && self?.profileMutation.prepare() == true
             },
             commit: { [weak self] in
-                _ = self?.commitModel(revision: revision)
+                self?.commitModel(revision: revision) == true
             },
             rollback: { [weak self] in
-                _ = self?.rollbackModel()
+                self?.rollbackModel() == true
             }
         )
         switch profileMutation.beginRetirement(
@@ -104,8 +106,12 @@ final class SpaceProfileTransaction {
             publishStagedModel()
             return true
         case .terminallyDrainedModelCommitted:
-            _ = rollbackModel()
+            if rollbackModel() == false {
+                state = .retainedCleanupConflict
+            }
             return false
+        case .modelConflict(let batch):
+            return settleFailedRetirementStage(batch)
         case .notRequired, .rejected:
             return false
         }
@@ -117,6 +123,7 @@ final class SpaceProfileTransaction {
             && exactTabResidencesAreCurrent()
             && tabParticipants.allSatisfy {
                 $0.tab.profileAssignment.isCurrentStaged($0.intent.intent)
+                    && navigationIsCurrent($0)
             }
     }
 
@@ -127,19 +134,46 @@ final class SpaceProfileTransaction {
     }
 
     func sealCommit() -> WebViewReplacementTerminalModelClaimOutcome {
-        guard canSealCommit() else { return .terminallyDrained }
+        guard canSealCommit(), profileMutation.claimTerminalModel() else {
+            return .terminallyDrained
+        }
         switch profileMutation.commitRetirement() {
         case .committed(let effects):
-            let receipt = SpaceProfilePresentationTerminalEffectReceipt(effects)
+            let receipt = SpaceProfilePresentationTerminalEffectReceipt.normal(
+                effects
+            )
             terminalEffects = receipt
+            guard profileMutation.commitSilentTerminalModel() else {
+                return .terminallyDrained
+            }
             finishPrevalidatedStagedModel()
             return .sealed
+        case .cleanupRequired(let effects):
+            terminalEffects = SpaceProfilePresentationTerminalEffectReceipt.drainOnly(
+                effects
+            )
+            guard profileMutation.commitSilentTerminalModel() else {
+                return .terminallyDrained
+            }
+            finishPrevalidatedStagedModel()
+            return .terminallyDrained
         case .terminallyDrained:
+            profileMutation.cancelTerminalModelClaim()
             finishPrevalidatedStagedModel()
             return .terminallyDrained
         case .conflict:
             return .terminallyDrained
         }
+    }
+
+    func claimedModelIsExact() -> Bool {
+        state == .terminal
+            && profileMutation.claimedModelIsExact()
+            && exactTabResidencesAreCurrent()
+            && tabParticipants.allSatisfy {
+                $0.tab.profileAssignment.isCurrentFinished($0.intent.intent)
+                    && navigationIsCurrent($0)
+            }
     }
 
     func publishCommit(onTerminalEffectsConsumed: @escaping () -> Void) {
@@ -163,18 +197,27 @@ final class SpaceProfileTransaction {
     /// A terminal repository drain owns every WebView generation and prevents
     /// the outer settlement from reporting commit or rollback. Settle the exact
     /// retained model witnesses without resolving replacement objects by UUID.
+    func canSettleTerminalDrain() -> Bool {
+        switch state {
+        case .pending, .terminal:
+            return true
+        case .staged, .retainedCleanupConflict:
+            return tabParticipants.allSatisfy {
+                $0.tab.profileAssignment.canSettleTerminalDrain(
+                    $0.intent.intent
+                )
+            }
+        }
+    }
+
     @discardableResult
     func settleTerminalDrain() -> Bool {
+        guard canSettleTerminalDrain() else { return false }
         switch state {
         case .pending:
             abortPending()
             return state == .terminal
         case .staged:
-            guard tabParticipants.allSatisfy({
-                $0.tab.profileAssignment.canSettleTerminalDrain(
-                    $0.intent.intent
-                )
-            }) else { return false }
             structuralLookup.withTransaction { [self] in
                 for participant in tabParticipants {
                     precondition(participant.tab.profileAssignment
@@ -182,7 +225,25 @@ final class SpaceProfileTransaction {
                 }
                 profileMutation.settleTerminalModelAfterDrain()
             }
+            let effects = terminalEffects
             state = .terminal
+            if let effects {
+                profileMutation.settleTerminalDrain(effects)
+            }
+            return true
+        case .retainedCleanupConflict:
+            structuralLookup.withTransaction { [self] in
+                for participant in tabParticipants {
+                    precondition(participant.tab.profileAssignment
+                        .settleTerminalDrain(participant.intent.intent))
+                }
+                profileMutation.settleTerminalModelAfterDrain()
+            }
+            let effects = terminalEffects
+            state = .terminal
+            if let effects {
+                profileMutation.settleTerminalDrain(effects)
+            }
             return true
         case .terminal:
             if let terminalEffects {
@@ -211,7 +272,9 @@ final class SpaceProfileTransaction {
         guard isCurrentPending(revision: revision) else { return false }
         var compensated = false
         let didStage = structuralLookup.withTransaction { [self] in
-            guard profileMutation.stageModel() else { return false }
+            guard profileMutation.stageModel() else {
+                return false
+            }
             var stagedParticipants: [TabParticipant] = []
             for participant in tabParticipants {
                 guard participant.tab.profileAssignment.stage(
@@ -239,8 +302,58 @@ final class SpaceProfileTransaction {
             state = .staged
         } else if compensated {
             state = .terminal
+        } else if state == .pending {
+            let modelRemainedPending = isCurrentPending(revision: revision)
+            if modelRemainedPending == false {
+                state = .retainedCleanupConflict
+            }
         }
         return didStage
+    }
+
+    private func settleFailedRetirementStage(
+        _ batch: TabRuntimeRetirementBatch
+    ) -> Bool {
+        let outcome: SpaceProfileRetirementModelConflictOutcome
+        switch state {
+        case .pending, .terminal:
+            outcome = profileMutation
+                .settleCompensatedRetirementModelConflict(batch)
+        case .retainedCleanupConflict, .staged:
+            outcome = profileMutation
+                .settleRetainedRetirementModelConflict(batch)
+        }
+        switch outcome {
+        case .restored:
+            return false
+        case .cleanupRequired(let ownership):
+            terminalEffects = SpaceProfilePresentationTerminalEffectReceipt.drainOnly(
+                .committed(ownership)
+            )
+            state = .retainedCleanupConflict
+            return false
+        case .terminallyDrained:
+            guard settleFailedModelAfterRepositoryDrain() else {
+                state = .retainedCleanupConflict
+                return false
+            }
+            return false
+        }
+    }
+
+    private func settleFailedModelAfterRepositoryDrain() -> Bool {
+        guard tabParticipants.allSatisfy({
+            $0.tab.profileAssignment.canSettleTerminalDrain($0.intent.intent)
+        }) else { return false }
+        structuralLookup.withTransaction { [self] in
+            tabParticipants.forEach {
+                precondition($0.tab.profileAssignment
+                    .settleTerminalDrain($0.intent.intent))
+            }
+            profileMutation.settleTerminalModelAfterDrain()
+        }
+        state = .terminal
+        return true
     }
 
     private func canRollbackModel() -> Bool {
@@ -311,5 +424,11 @@ final class SpaceProfileTransaction {
             currentTabsByID[participant.tab.id] === participant.tab
                 && participant.tab.spaceId == intent.spaceID
         }
+    }
+
+    private func navigationIsCurrent(_ participant: TabParticipant) -> Bool {
+        let current = participant.tab.mainFrameLoads.currentIntent
+        return current.revision == participant.intent.intent.navigationRevision
+            && current.targetURL == participant.intent.intent.targetURL
     }
 }

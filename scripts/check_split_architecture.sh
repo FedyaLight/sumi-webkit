@@ -1,18 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$repo_root"
-
-status=0
-
-fail_matches() {
-  local message="$1"
-  local matches="$2"
-  [[ -z "$matches" ]] && return
-  printf 'error: %s:\n%s\n' "$message" "$matches" >&2
-  status=1
-}
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "$script_dir/.." && pwd)"
+# shellcheck source=scripts/lib/architecture_guard.sh
+source "$script_dir/lib/architecture_guard.sh"
+guard_initialize "$repo_root"
 
 retired_files=(
   Sumi/Managers/SplitViewManager
@@ -41,12 +34,8 @@ retired_files=(
   SumiTests/SplitGroupTestSupport.swift
   SumiTests/SplitGroupTests.swift
 )
-
 for file in "${retired_files[@]}"; do
-  if [[ -e "$file" ]]; then
-    printf 'error: retired split surface returned: %s\n' "$file" >&2
-    status=1
-  fi
+  guard_expect_absent_path 'retired split surface' "$file"
 done
 
 required_domain_files=(
@@ -57,12 +46,8 @@ required_domain_files=(
   Packages/SumiDomain/Sources/SumiDomain/Split/SplitLayoutSizing.swift
   Packages/SumiDomain/Sources/SumiDomain/Split/SplitLayoutReconciler.swift
 )
-
 for file in "${required_domain_files[@]}"; do
-  if [[ ! -f "$file" ]]; then
-    printf 'error: canonical split domain component missing: %s\n' "$file" >&2
-    status=1
-  fi
+  guard_require_file "$file"
 done
 
 required_runtime_components=(
@@ -73,7 +58,23 @@ required_runtime_components=(
   Sumi/Models/Window/WindowSplitPresentation.swift
   Sumi/Managers/BrowserManager/WindowSplitMaterializationService.swift
   Sumi/Managers/BrowserManager/ShortcutSplitLauncherMoveTransaction.swift
-  Sumi/Managers/BrowserManager/ShortcutSplitLauncherCatalogAdapter.swift
+  Sumi/Managers/BrowserManager/ShortcutSplitLauncherMoveBatchStaging.swift
+  Sumi/Managers/BrowserManager/ShortcutSplitLauncherMoveBatchCheckpoint.swift
+  Sumi/Managers/BrowserManager/ShortcutSplitLauncherMoveBatchParticipant.swift
+  Sumi/Managers/BrowserManager/ShortcutSplitLauncherMoveBatchPreparing.swift
+  Sumi/Managers/BrowserManager/ShortcutSplitLauncherMoveBatchReceipt.swift
+  Sumi/Managers/BrowserManager/ShortcutSplitLauncherPreparedMove.swift
+  Sumi/Managers/BrowserManager/ShortcutSplitLauncherCatalogMovePlan.swift
+  Sumi/Managers/BrowserManager/ShortcutSplitLauncherBindingContribution.swift
+  Sumi/Managers/BrowserManager/ShortcutSplitLauncherCatalogTransaction.swift
+  Sumi/Managers/BrowserManager/ShortcutSplitLauncherCatalogSnapshot.swift
+  Sumi/Managers/BrowserManager/ShortcutSplitLauncherCatalogPinReceipt.swift
+  Sumi/Managers/BrowserManager/ShortcutSplitLauncherReleasePlanner.swift
+  Sumi/Managers/BrowserManager/ShortcutSplitLauncherReleasePlanner+Live.swift
+  Sumi/Managers/BrowserManager/ShortcutSplitLauncherReleaseReceipt.swift
+  Sumi/Managers/BrowserManager/PreparedShortcutSplitLauncherRestorationBatch.swift
+  Sumi/Managers/BrowserManager/SplitShortcutMemberRestoreHandoffReceipt.swift
+  Sumi/Managers/BrowserManager/ShortcutSplitLauncherRestoration.swift
   Sumi/Managers/SplitRuntime/WindowSplitQuery.swift
   Sumi/Managers/SplitRuntime/WindowSplitPresentationSynchronizer.swift
   Sumi/Managers/SplitRuntime/SplitLayoutService.swift
@@ -92,164 +93,106 @@ required_runtime_components=(
   Sumi/Managers/SplitRuntime/SplitInsertionService.swift
   Sumi/Managers/SplitRuntime/SplitTabClosureService.swift
 )
-
 for file in "${required_runtime_components[@]}"; do
-  if [[ ! -f "$file" ]]; then
-    printf 'error: decomposed split runtime component missing: %s\n' "$file" >&2
-    status=1
-  fi
+  guard_require_file "$file"
 done
 
-duplicate_domain_declarations="$(
-  rg -n '\b(struct|class|enum) (SplitGroup|SplitLayoutTree|SplitMemberID|SplitMember)\b' \
-    Sumi SidebarChrome UI App Settings FloatingBar \
-    -g '*.swift' || true
-)"
-fail_matches \
-  "split durable model escaped the SumiDomain package" \
-  "$duplicate_domain_declarations"
+guard_expect_no_matches \
+  'split durable model escaped the SumiDomain package' \
+  '\b(struct|class|enum) (SplitGroup|SplitLayoutTree|SplitMemberID|SplitMember)\b' \
+  -g '*.swift' Sumi SidebarChrome UI App Settings FloatingBar
 
-retired_type_hits="$(
-  rg -n \
-    '\b(SplitGroupMember|SplitGroupHost|SplitGroupCollectionStateOwner|SplitGroupIndexStore|TabManagerSplitGroupRepairOwner|TabSplitGroupStructureOwner|SpaceLauncherProjectionOwner|SplitMembershipResolutionOwner|SplitEmptyPlaceholderOwner|SplitPreviewStateOwner)\b' \
-    Sumi SumiTests SidebarChrome UI App Settings FloatingBar \
-    -g '*.swift' \
-    -g '!LegacySplitGroupV1Migration.swift' \
-    -g '!SplitGroupArchiveMigrationTests.swift' || true
-)"
-fail_matches "retired split identity or god surface is still referenced" "$retired_type_hits"
+guard_expect_no_matches \
+  'retired split identity or god surface is still referenced' \
+  '\b(SplitGroupMember|SplitGroupHost|SplitGroupCollectionStateOwner|SplitGroupIndexStore|TabManagerSplitGroupRepairOwner|TabSplitGroupStructureOwner|SpaceLauncherProjectionOwner|SplitMembershipResolutionOwner|SplitEmptyPlaceholderOwner|SplitPreviewStateOwner)\b' \
+  -g '*.swift' \
+  -g '!LegacySplitGroupV1Migration.swift' \
+  -g '!SplitGroupArchiveMigrationTests.swift' \
+  Sumi SumiTests SidebarChrome UI App Settings FloatingBar
 
-new_split_owner_hits="$(
-  rg -n '\b(class|struct|actor) [A-Za-z0-9_]*Split[A-Za-z0-9_]*Owner\b' \
-    Sumi SumiTests SidebarChrome UI App Settings FloatingBar \
-    -g '*.swift' || true
-)"
-fail_matches \
-  "split responsibility was hidden behind a new Owner surface" \
-  "$new_split_owner_hits"
+guard_expect_no_matches \
+  'split responsibility was hidden behind a new Owner surface' \
+  '\b(class|struct|actor) [A-Za-z0-9_]*Split[A-Za-z0-9_]*Owner\b' \
+  -g '*.swift' Sumi SumiTests SidebarChrome UI App Settings FloatingBar
 
-retired_split_hub_hits="$(
-  rg -n '\b(SplitViewManager|SplitViewRuntime)\b' \
-    Sumi SumiTests SumiUITests SidebarChrome UI App Settings FloatingBar \
-    -g '*.swift' || true
-)"
-fail_matches \
-  "retired split composition hub or runtime callback bag is still referenced in production" \
-  "$retired_split_hub_hits"
+guard_expect_no_matches \
+  'retired split composition hub or runtime callback bag is still referenced in production' \
+  '\b(SplitViewManager|SplitViewRuntime)\b' \
+  -g '*.swift' Sumi SumiTests SumiUITests SidebarChrome UI App Settings FloatingBar
 
-split_runtime_component_capture_hits="$(
-  rg -n '\b(SplitDropCaptureView|SplitDropCaptureViewPolicy|SplitDropCaptureHitPolicy)\b' \
-    Sumi/Managers/SplitRuntime \
-    -g '*.swift' || true
-)"
-fail_matches \
-  "split runtime depends on component-only drop capture behavior" \
-  "$split_runtime_component_capture_hits"
+guard_expect_no_matches \
+  'split runtime depends on component-only drop capture behavior' \
+  '\b(SplitDropCaptureView|SplitDropCaptureViewPolicy|SplitDropCaptureHitPolicy)\b' \
+  -g '*.swift' Sumi/Managers/SplitRuntime
 
-split_runtime_ui_framework_hits="$(
-  rg -n '^import (AppKit|SwiftUI|WebKit)$' \
-    Sumi/Managers/SplitRuntime \
-    -g '*.swift' || true
-)"
-fail_matches \
-  "split runtime imported a UI or browser framework" \
-  "$split_runtime_ui_framework_hits"
+guard_expect_no_matches \
+  'split runtime imported a UI or browser framework' \
+  '^import (AppKit|SwiftUI|WebKit)$' \
+  -g '*.swift' Sumi/Managers/SplitRuntime
 
-split_composition_escape_hits="$(
-  rg -n '\bBrowserSplitServices\b' \
-    Sumi SumiTests SumiUITests SidebarChrome UI App Settings FloatingBar \
-    -g '*.swift' \
-    -g '!BrowserSplitServices.swift' \
-    -g '!BrowserManager.swift' || true
-)"
-fail_matches \
-  "composition-only split storage escaped into feature code" \
-  "$split_composition_escape_hits"
+guard_expect_no_matches \
+  'composition-only split storage escaped into feature code' \
+  '\bBrowserSplitServices\b' \
+  -g '*.swift' \
+  -g '!BrowserSplitServices.swift' \
+  -g '!BrowserManager.swift' \
+  Sumi SumiTests SumiUITests SidebarChrome UI App Settings FloatingBar
 
 # Access to the graph itself is limited to explicit construction edges. Each
 # allowed file must immediately inject one concrete field into feature code.
-split_composition_access_hits="$(
-  rg -n '\bsplitComposition\b' \
-    Sumi SidebarChrome UI App Settings FloatingBar \
-    -g '*.swift' \
-    -g '!BrowserManager.swift' \
-    -g '!BrowserWindowViewContextComposition.swift' \
-    -g '!BrowserTabManagerRuntimePortsFactory.swift' \
-    -g '!BrowserTabRuntimeCompositionService.swift' \
-    -g '!BrowserManager+WebViewRuntimeComposition.swift' \
-    -g '!BrowserKeyboardShortcutCommandOwner.swift' \
-    -g '!BrowserGlanceRuntimeService.swift' \
-    -g '!BrowserURLBarBundle+Live.swift' \
-    -g '!SplitShortcutServices+Live.swift' \
-    -g '!SidebarBrowserContext.swift' \
-    -g '!BrowserAppOrchestrationOwner.swift' || true
-)"
-fail_matches \
-  "split composition graph was accessed outside an approved construction edge" \
-  "$split_composition_access_hits"
+guard_expect_no_matches \
+  'split composition graph was accessed outside an approved construction edge' \
+  '\bsplitComposition\b' \
+  -g '*.swift' \
+  -g '!BrowserManager.swift' \
+  -g '!BrowserWindowViewContextComposition.swift' \
+  -g '!BrowserTabManagerRuntimePortsFactory.swift' \
+  -g '!BrowserTabRuntimeCompositionService.swift' \
+  -g '!BrowserManager+WebViewRuntimeComposition.swift' \
+  -g '!BrowserKeyboardShortcutCommandOwner.swift' \
+  -g '!BrowserGlanceRuntimeService.swift' \
+  -g '!BrowserURLBarBundle+Live.swift' \
+  -g '!SplitShortcutServices+Live.swift' \
+  -g '!SidebarBrowserContext.swift' \
+  -g '!BrowserAppOrchestrationOwner.swift' \
+  Sumi SidebarChrome UI App Settings FloatingBar
 
-split_composition_behavior_hits="$(
-  rg -n '^    ((private|fileprivate|internal|public)[[:space:]]+)?(mutating[[:space:]]+)?(func|var|subscript)\b' \
-    Sumi/Managers/BrowserManager/BrowserSplitServices.swift || true
-)"
-fail_matches \
-  "composition-only split storage gained forwarding behavior or mutable state" \
-  "$split_composition_behavior_hits"
+guard_expect_no_matches \
+  'composition-only split storage gained forwarding behavior or mutable state' \
+  '^    ((private|fileprivate|internal|public)[[:space:]]+)?(mutating[[:space:]]+)?(func|var|subscript)\b' \
+  Sumi/Managers/BrowserManager/BrowserSplitServices.swift
 
-retired_api_hits="$(
-  rg -n -U \
-    'SplitGroup\.make\([[:space:]]*tabIds:|\b(maximumTabs|replacingMemberTab|swappingTabs|movingTab)\b|\b(removing|inserting)\(tabId:|\b(splitGroupStructureOwner|splitGroupCollectionStateOwner|splitGroupIndexStore|splitGroupRepairOwner)\b|\b(group|groupId)\(containingMemberId:' \
-    Sumi SumiTests SidebarChrome UI App Settings FloatingBar \
-    -g '*.swift' \
-    -g '!LegacySplitGroupV1Migration.swift' \
-    -g '!SplitGroupArchiveMigrationTests.swift' || true
-)"
-fail_matches \
-  "retired live-tab split API is still used outside v1 migration" \
-  "$retired_api_hits"
+guard_expect_no_matches \
+  'retired live-tab split API is still used outside v1 migration' \
+  'SplitGroup\.make\([[:space:]]*tabIds:|\b(maximumTabs|replacingMemberTab|swappingTabs|movingTab)\b|\b(removing|inserting)\(tabId:|\b(splitGroupStructureOwner|splitGroupCollectionStateOwner|splitGroupIndexStore|splitGroupRepairOwner)\b|\b(group|groupId)\(containingMemberId:' \
+  -U -g '*.swift' \
+  -g '!LegacySplitGroupV1Migration.swift' \
+  -g '!SplitGroupArchiveMigrationTests.swift' \
+  Sumi SumiTests SidebarChrome UI App Settings FloatingBar
 
-retired_window_selection_hits="$(
-  rg -n \
-    '\b(updateActiveSplitSide|updateActiveSide|activeSplitGroup|activeSplitGroupID)\b' \
-    Sumi SumiTests SidebarChrome UI App Settings FloatingBar \
-    -g '*.swift' || true
-)"
-fail_matches \
-  "retired global split-selection API is still referenced" \
-  "$retired_window_selection_hits"
+guard_expect_no_matches \
+  'retired global split-selection API is still referenced' \
+  '\b(updateActiveSplitSide|updateActiveSide|activeSplitGroup|activeSplitGroupID)\b' \
+  -g '*.swift' Sumi SumiTests SidebarChrome UI App Settings FloatingBar
 
-legacy_session_selection_hits="$(
-  rg -n '\bactiveSplitGroupId\b' \
-    Sumi SumiTests SidebarChrome UI App Settings FloatingBar \
-    -g '*.swift' \
-    -g '!WindowSessionModels.swift' \
-    -g '!WindowSplitSessionCodingTests.swift' || true
-)"
-fail_matches \
-  "decode-only legacy split selection escaped its migration seam" \
-  "$legacy_session_selection_hits"
+guard_expect_no_matches \
+  'decode-only legacy split selection escaped its migration seam' \
+  '\bactiveSplitGroupId\b' \
+  -g '*.swift' \
+  -g '!WindowSessionModels.swift' \
+  -g '!WindowSplitSessionCodingTests.swift' \
+  Sumi SumiTests SidebarChrome UI App Settings FloatingBar
 
-durable_window_state_hits="$(
-  rg -n '\b(activeTabId|tabIds|host)[[:space:]]*:' \
-    Packages/SumiDomain/Sources/SumiDomain/Split \
-    -g '*.swift' || true
-)"
-fail_matches \
-  "canonical durable split model regained window-local or parallel identity state" \
-  "$durable_window_state_hits"
+guard_expect_no_matches \
+  'canonical durable split model regained window-local or parallel identity state' \
+  '\b(activeTabId|tabIds|host)[[:space:]]*:' \
+  -g '*.swift' Packages/SumiDomain/Sources/SumiDomain/Split
 
-presentation_mechanism_hits="$(
-  rg -n '\b(Tab|WKWebView|BrowserManager|TabManager)\b' \
-    Sumi/Models/Window/WindowSplitPresentation.swift \
-    Sumi/Managers/SplitRuntime/WindowSplitProjection.swift \
-    -g '*.swift' || true
-)"
-fail_matches \
-  "window split projection stores or reaches back through browser mechanisms" \
-  "$presentation_mechanism_hits"
+guard_expect_no_matches \
+  'window split projection stores or reaches back through browser mechanisms' \
+  '\b(Tab|WKWebView|BrowserManager|TabManager)\b' \
+  -g '*.swift' \
+  Sumi/Models/Window/WindowSplitPresentation.swift \
+  Sumi/Managers/SplitRuntime/WindowSplitProjection.swift
 
-if [[ $status -ne 0 ]]; then
-  exit "$status"
-fi
-
-echo "split architecture boundary passed"
+guard_finish 'split architecture boundary'

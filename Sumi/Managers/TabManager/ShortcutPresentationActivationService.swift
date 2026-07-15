@@ -283,4 +283,19 @@ final class ShortcutPresentationActivationService: ShortcutPresentationActivatin
             committer: committer
         )
     }
+
+    func prepareActivation(
+        _ remainder: DisplayedShortcutActivationRemainder,
+        preview: ShortcutPresentationCatalogInsertionPreview
+    ) -> ShortcutPresentationActivationReceipt? {
+        guard let admissions = planner.prepare(
+            remainder,
+            preview: preview
+        ) else { return nil }
+        return ShortcutPresentationActivationReceipt(
+            admissions: admissions,
+            planner: planner,
+            committer: committer
+        )
+    }
 }

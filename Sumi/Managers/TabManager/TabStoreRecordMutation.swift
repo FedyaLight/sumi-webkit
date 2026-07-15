@@ -79,8 +79,8 @@ enum TabStoreRecordMutation {
         existing.color = folder.color
         existing.spaceId = folder.spaceId
         existing.parentFolderId = folder.parentFolderId
-        existing.isOpen = folder.isOpen
         existing.index = folder.index
+        existing.isOpen = folder.isOpen
     }
 
     static func upsert(

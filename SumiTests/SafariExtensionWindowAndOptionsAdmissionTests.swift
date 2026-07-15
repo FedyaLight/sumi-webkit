@@ -186,6 +186,9 @@ extension SafariExtensionWebViewControllerWiringTests {
             profile: attachedRuntime.profile,
             ephemeralProfile: attachedRuntime.ephemeralProfile,
             windowState: attachedRuntime.windowState,
+            windowRegistrationReceipt:
+            attachedRuntime.windowRegistrationReceipt,
+            registeredWindow: attachedRuntime.registeredWindow,
             activeWindowState: attachedRuntime.activeWindowState,
             allTabs: attachedRuntime.allTabs,
             allWindowStates: attachedRuntime.allWindowStates,

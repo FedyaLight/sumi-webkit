@@ -58,6 +58,37 @@ final class TabStructuralLookupOwner {
         store.remove(tab.id)
     }
 
+    func detachExact(_ tab: Tab) -> Bool {
+        guard store.remove(tab) else { return false }
+        attachedLiveTabIDs.remove(tab.id)
+        return true
+    }
+
+    func containsExact(_ tab: Tab) -> Bool {
+        store.containsExact(tab)
+    }
+
+    func containsNone(of tabIDs: Set<UUID>) -> Bool {
+        tabIDs.allSatisfy { store.tab(for: $0) == nil }
+    }
+
+    func attachIfAbsent(
+        _ tabs: [Tab],
+        retainingExact source: Tab
+    ) -> Bool {
+        let tabIDs = tabs.map(\.id)
+        let insertedIDs = Set(tabIDs)
+        guard insertedIDs.count == tabIDs.count,
+              insertedIDs.contains(source.id) == false,
+              store.containsExact(source),
+              containsNone(of: insertedIDs) else { return false }
+        tabs.forEach {
+            store.insert($0)
+            attachedLiveTabIDs.insert($0.id)
+        }
+        return true
+    }
+
     func remove(_ id: UUID) {
         store.remove(id)
     }

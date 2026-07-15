@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$repo_root"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "$script_dir/.." && pwd)"
+# shellcheck source=scripts/lib/architecture_guard.sh
+source "$script_dir/lib/architecture_guard.sh"
+guard_initialize "$repo_root"
 
 production_roots=(App Sumi Settings SidebarChrome FloatingBar UI)
 all_swift_roots=("${production_roots[@]}" SumiTests SumiUITests)
@@ -23,32 +26,8 @@ child_surface_router="Sumi/Models/Tab/Navigation/WebKitChildSurfaceRouter.swift"
 navigation_protocols="Sumi/Models/Tab/Navigation/SumiNavigationResponding.swift"
 status=0
 
-fail_matches() {
-  local message="$1"
-  local matches="$2"
-  [[ -z "$matches" ]] && return
-  printf 'error: %s:\n%s\n' "$message" "$matches" >&2
-  status=1
-}
 
-require_file() {
-  local file="$1"
-  if [[ ! -f "$file" ]]; then
-    printf 'error: required physical WebView interaction source missing: %s\n' \
-      "$file" >&2
-    status=1
-  fi
-}
 
-require_pattern() {
-  local file="$1"
-  local pattern="$2"
-  local message="$3"
-  if [[ ! -f "$file" ]] || ! rg -q "$pattern" "$file"; then
-    printf 'error: %s\n' "$message" >&2
-    status=1
-  fi
-}
 
 for required in \
   "$focusable_web_view" \
@@ -62,7 +41,7 @@ for required in \
   "$child_shell_transaction" \
   "$link_glance_routing" \
   "$child_surface_router"; do
-  require_file "$required"
+  guard_require_file "$required"
 done
 
 if [[ -e "$retired_tab_state" ]]; then
@@ -80,167 +59,182 @@ fi
 # These Tab-scoped slots and forwarding APIs allow two window clones to mutate
 # one another and must remain deleted from production and tests.
 retired_tab_api_hits="$(
-  rg -n \
+  guard_capture_matches \
     '\b(TabWebViewInteractionStateOwner|TabScriptMessageRuntimeOwner|scriptMessageRuntimeOwner|webViewInteractionStateOwner|webViewInteractionCancellables|popupUserActivationTracker|setClickModifierFlags|clearWebViewInteractionEvent|recentWebViewInteractionModifierFlags|recentWebViewMouseDownModifierFlags|onLinkHover|lastHoveredLinkURL|lastWebPageContextMenuTarget)\b' \
-    "${all_swift_roots[@]}" -g '*.swift' -g '!**/.build/**' || true
+    "${all_swift_roots[@]}" -g '*.swift' -g '!**/.build/**'
 )"
-fail_matches "retired Tab-scoped WebView interaction API reintroduced" \
-  "$retired_tab_api_hits"
+if [[ -n "$retired_tab_api_hits" ]]; then
+  guard_record_failure "retired Tab-scoped WebView interaction API reintroduced:
+$retired_tab_api_hits"
+fi
 
 retired_popup_route_hits="$(
-  rg -n '\b(PendingGeneratedWindowRoutes|sumiLoadInNewWindow)\b' \
-    "${all_swift_roots[@]}" -g '*.swift' -g '!**/.build/**' || true
+  guard_capture_matches '\b(PendingGeneratedWindowRoutes|sumiLoadInNewWindow)\b' \
+    "${all_swift_roots[@]}" -g '*.swift' -g '!**/.build/**'
 )"
-fail_matches "uncorrelatable generated window.open route reintroduced" \
-  "$retired_popup_route_hits"
+if [[ -n "$retired_popup_route_hits" ]]; then
+  guard_record_failure "uncorrelatable generated window.open route reintroduced:
+$retired_popup_route_hits"
+fi
 
 ambiguous_navigation_protocol_hits="$(
-  rg -n '\b(SumiNavigationActionWebViewResponding|SumiNavigationActionContextResponding)\b' \
-    "${all_swift_roots[@]}" -g '*.swift' -g '!**/.build/**' || true
+  guard_capture_matches '\b(SumiNavigationActionWebViewResponding|SumiNavigationActionContextResponding)\b' \
+    "${all_swift_roots[@]}" -g '*.swift' -g '!**/.build/**'
 )"
-fail_matches "ambiguous navigation WebView role reintroduced" \
-  "$ambiguous_navigation_protocol_hits"
+if [[ -n "$ambiguous_navigation_protocol_hits" ]]; then
+  guard_record_failure "ambiguous navigation WebView role reintroduced:
+$ambiguous_navigation_protocol_hits"
+fi
 
 registry_hits="$(
-  rg -n '\bWebViewInteractionStateRegistry\b' \
-    "${all_swift_roots[@]}" -g '*.swift' -g '!**/.build/**' || true
+  guard_capture_matches '\bWebViewInteractionStateRegistry\b' \
+    "${all_swift_roots[@]}" -g '*.swift' -g '!**/.build/**'
 )"
-fail_matches "parallel WebView interaction registry reintroduced" "$registry_hits"
+if [[ -n "$registry_hits" ]]; then
+  guard_record_failure "parallel WebView interaction registry reintroduced:
+$registry_hits"
+fi
 
 # Do not hide a replacement interaction hub behind another generic Owner in
 # the Tab model. Concrete gesture/link/context roles live beside WKWebView.
 tab_interaction_owner_hits="$(
-  rg -n '\b(class|struct|actor|enum)\s+[A-Za-z0-9_]*Interaction[A-Za-z0-9_]*Owner\b' \
-    Sumi/Models/Tab -g '*.swift' || true
-  rg --files Sumi/Models/Tab \
-    | rg '/[^/]*Interaction[^/]*Owner\.swift$' || true
+  guard_capture_matches '\b(class|struct|actor|enum)\s+[A-Za-z0-9_]*Interaction[A-Za-z0-9_]*Owner\b' \
+    Sumi/Models/Tab -g '*.swift'
+  find Sumi/Models/Tab -type f -print \
+    | guard_capture_matches '/[^/]*Interaction[^/]*Owner\.swift$' -
 )"
-fail_matches "generic interaction Owner reintroduced in Tab model" \
-  "$tab_interaction_owner_hits"
+if [[ -n "$tab_interaction_owner_hits" ]]; then
+  guard_record_failure "generic interaction Owner reintroduced in Tab model:
+$tab_interaction_owner_hits"
+fi
 
-require_pattern \
-  "$focusable_web_view" \
-  '^[[:space:]]*let[[:space:]]+gestures[[:space:]]*=[[:space:]]*WebViewGestureState\(\)' \
-  "FocusableWKWebView must physically own its gesture state"
-require_pattern \
-  "$focusable_web_view" \
-  '^[[:space:]]*let[[:space:]]+hoveredLink[[:space:]]*=[[:space:]]*WebViewHoveredLinkState\(\)' \
-  "FocusableWKWebView must physically own its hovered-link state"
-require_pattern \
-  "$focusable_web_view" \
-  '^[[:space:]]*let[[:space:]]+contextMenu[[:space:]]*=[[:space:]]*WebViewContextMenuState\(\)' \
-  "FocusableWKWebView must physically own its context-menu state"
-require_pattern \
-  "$focusable_web_view" \
-  '^[[:space:]]*let[[:space:]]+popupUserActivation[[:space:]]*=[[:space:]]*SumiPopupUserActivationTracker\(\)' \
-  "FocusableWKWebView must physically own its popup user-activation state"
+contract_count="$(guard_count_matches '^[[:space:]]*let[[:space:]]+gestures[[:space:]]*=[[:space:]]*WebViewGestureState\(\)' "$focusable_web_view")"
+if (( contract_count == 0 )); then
+  guard_record_failure "FocusableWKWebView must physically own its gesture state"
+fi
+contract_count="$(guard_count_matches '^[[:space:]]*let[[:space:]]+hoveredLink[[:space:]]*=[[:space:]]*WebViewHoveredLinkState\(\)' "$focusable_web_view")"
+if (( contract_count == 0 )); then
+  guard_record_failure "FocusableWKWebView must physically own its hovered-link state"
+fi
+contract_count="$(guard_count_matches '^[[:space:]]*let[[:space:]]+contextMenu[[:space:]]*=[[:space:]]*WebViewContextMenuState\(\)' "$focusable_web_view")"
+if (( contract_count == 0 )); then
+  guard_record_failure "FocusableWKWebView must physically own its context-menu state"
+fi
+contract_count="$(guard_count_matches '^[[:space:]]*let[[:space:]]+popupUserActivation[[:space:]]*=[[:space:]]*SumiPopupUserActivationTracker\(\)' "$focusable_web_view")"
+if (( contract_count == 0 )); then
+  guard_record_failure "FocusableWKWebView must physically own its popup user-activation state"
+fi
 
-require_pattern \
-  "$interaction_state" \
-  '\bfinal[[:space:]]+class[[:space:]]+WebViewGestureState\b' \
-  "physical WebView gesture state type is missing"
-require_pattern \
-  "$interaction_state" \
-  '\bfinal[[:space:]]+class[[:space:]]+WebViewHoveredLinkState\b' \
-  "physical WebView hovered-link state type is missing"
-require_pattern \
-  "$interaction_state" \
-  '\bfinal[[:space:]]+class[[:space:]]+WebViewContextMenuState\b' \
-  "physical WebView context-menu state type is missing"
+contract_count="$(guard_count_matches '\bfinal[[:space:]]+class[[:space:]]+WebViewGestureState\b' "$interaction_state")"
+if (( contract_count == 0 )); then
+  guard_record_failure "physical WebView gesture state type is missing"
+fi
+contract_count="$(guard_count_matches '\bfinal[[:space:]]+class[[:space:]]+WebViewHoveredLinkState\b' "$interaction_state")"
+if (( contract_count == 0 )); then
+  guard_record_failure "physical WebView hovered-link state type is missing"
+fi
+contract_count="$(guard_count_matches '\bfinal[[:space:]]+class[[:space:]]+WebViewContextMenuState\b' "$interaction_state")"
+if (( contract_count == 0 )); then
+  guard_record_failure "physical WebView context-menu state type is missing"
+fi
 
-require_pattern \
-  "$popup_responder" \
-  'linkPresentationCommands\.open\(' \
-  "browser-level link routing must use the exact physical presentation command"
-require_pattern \
-  "$navigation_protocols" \
-  '\bSumiNavigationActionSourceAndTargetWebViewResponding\b' \
-  "navigation responders must expose explicit source/target WebView roles"
+contract_count="$(guard_count_matches 'linkPresentationCommands\.open\(' "$popup_responder")"
+if (( contract_count == 0 )); then
+  guard_record_failure "browser-level link routing must use the exact physical presentation command"
+fi
+contract_count="$(guard_count_matches '\bSumiNavigationActionSourceAndTargetWebViewResponding\b' "$navigation_protocols")"
+if (( contract_count == 0 )); then
+  guard_record_failure "navigation responders must expose explicit source/target WebView roles"
+fi
 
 logical_tab_source_fallback_hits="$(
-  rg -n 'sourceURL.*\?\?.*(tab|sourceTab)\.url|extensionOwnedSourceURL.*(tab|sourceTab)\.url' \
-    "$popup_responder" Sumi/AuxiliaryWindows/AuxiliaryWindowUIDelegate.swift || true
+  guard_capture_matches 'sourceURL.*\?\?.*(tab|sourceTab)\.url|extensionOwnedSourceURL.*(tab|sourceTab)\.url' \
+    "$popup_responder" Sumi/AuxiliaryWindows/AuxiliaryWindowUIDelegate.swift
 )"
-fail_matches "popup origin borrowed from logical Tab URL" \
-  "$logical_tab_source_fallback_hits"
+if [[ -n "$logical_tab_source_fallback_hits" ]]; then
+  guard_record_failure "popup origin borrowed from logical Tab URL:
+$logical_tab_source_fallback_hits"
+fi
 
 logical_tab_link_command_hits="$(
-  rg -n '\b(TabBrowserActionService|browserActionService\.openLink|openURLInGlance)\b|var[[:space:]]+openLink:[[:space:]]*\(URL,[[:space:]]*Tab' \
-    "${all_swift_roots[@]}" -g '*.swift' -g '!**/.build/**' || true
+  guard_capture_matches '\b(TabBrowserActionService|browserActionService\.openLink|openURLInGlance)\b|var[[:space:]]+openLink:[[:space:]]*\(URL,[[:space:]]*Tab' \
+    "${all_swift_roots[@]}" -g '*.swift' -g '!**/.build/**'
 )"
-fail_matches "link/Glance browser command routed from a logical Tab" \
-  "$logical_tab_link_command_hits"
+if [[ -n "$logical_tab_link_command_hits" ]]; then
+  guard_record_failure "link/Glance browser command routed from a logical Tab:
+$logical_tab_link_command_hits"
+fi
 
-require_pattern \
-  "$link_presentation_commands" \
-  'case[[:space:]]+newTab\(selected:[[:space:]]*Bool\)' \
-  "new-tab link disposition must preserve the selected flag"
-require_pattern \
-  "$link_presentation_commands" \
-  'case[[:space:]]+newWindow\(selected:[[:space:]]*Bool\)' \
-  "new-window link disposition must preserve the selected flag"
-require_pattern \
-  "$link_presentation_commands" \
-  'resolveSource\(sourceWebView\)' \
-  "link presentation commands must consume the exact physical source receipt"
-require_pattern \
-  "$link_presentation_commands" \
-  'guard[[:space:]]+activateSource\(source\)' \
-  "Glance must activate the exact validated physical source receipt before presentation"
-require_pattern \
-  "$link_presentation_factory" \
-  'sourceResolver\.resolve\(webView\)' \
-  "link presentation composition must use the shared physical source resolver"
-require_pattern \
-  "$physical_source_receipt" \
-  'ownership\.webView\(' \
-  "physical source resolution must verify the exact tracked WebView slot"
-require_pattern \
-  "$physical_source_receipt" \
-  'registry\.windows\[tracked\.windowID\]' \
-  "physical source resolution must bind the tracked physical window"
-require_pattern \
-  "$physical_source_receipt" \
-  'let[[:space:]]+presentationProfile:[[:space:]]*Profile' \
-  "physical source receipts must preserve the presentation profile"
-require_pattern \
-  "$physical_source_receipt" \
-  'let[[:space:]]+executionProfile:[[:space:]]*Profile' \
-  "physical source receipts must keep execution partition distinct from presentation"
-require_pattern \
-  "$link_glance_routing" \
-  'linkPresentationCommands\.presentInGlance\(' \
-  "Glance routing must use the exact WebKit navigation-action source"
-require_pattern \
-  "$link_glance_routing" \
-  'from:[[:space:]]*sourceWebView' \
-  "Glance routing must pass its exact physical source to presentation"
-require_pattern \
-  "$child_surface_router" \
-  'childWindows\?\.open\(' \
-  "WebKit child windows must return the exact WebKit-configured child"
-require_pattern \
-  "$child_surface_router" \
-  'configuration:[[:space:]]*request\.configuration' \
-  "WebKit child windows must preserve WebKit's exact child configuration"
-require_pattern \
-  "$child_shell_transaction" \
-  'validateBeforeShell:' \
-  "WebKit child Tab/WebView ownership must settle before shell publication"
-require_pattern \
-  "$child_shell_transaction" \
-  'initialTabExecutionProfileID:' \
-  "WebKit child shell transaction must publish the exact execution profile before registration"
-require_pattern \
-  "$child_window_transaction" \
-  'configuration\.websiteDataStore[[:space:]]*===[[:space:]]*source\.dataStore' \
-  "WebKit child windows must preserve the physical opener data-store partition"
-require_pattern \
-  "$child_window_transaction" \
-  'sourceResolver\.isCurrent\(source\)' \
-  "WebKit child windows must revalidate their physical source receipt"
+contract_count="$(guard_count_matches 'case[[:space:]]+newTab\(selected:[[:space:]]*Bool\)' "$link_presentation_commands")"
+if (( contract_count == 0 )); then
+  guard_record_failure "new-tab link disposition must preserve the selected flag"
+fi
+contract_count="$(guard_count_matches 'case[[:space:]]+newWindow\(selected:[[:space:]]*Bool\)' "$link_presentation_commands")"
+if (( contract_count == 0 )); then
+  guard_record_failure "new-window link disposition must preserve the selected flag"
+fi
+contract_count="$(guard_count_matches 'resolveSource\(sourceWebView\)' "$link_presentation_commands")"
+if (( contract_count == 0 )); then
+  guard_record_failure "link presentation commands must consume the exact physical source receipt"
+fi
+contract_count="$(guard_count_matches 'guard[[:space:]]+activateSource\(source\)' "$link_presentation_commands")"
+if (( contract_count == 0 )); then
+  guard_record_failure "Glance must activate the exact validated physical source receipt before presentation"
+fi
+contract_count="$(guard_count_matches 'sourceResolver\.resolve\(webView\)' "$link_presentation_factory")"
+if (( contract_count == 0 )); then
+  guard_record_failure "link presentation composition must use the shared physical source resolver"
+fi
+contract_count="$(guard_count_matches 'ownership\.webView\(' "$physical_source_receipt")"
+if (( contract_count == 0 )); then
+  guard_record_failure "physical source resolution must verify the exact tracked WebView slot"
+fi
+contract_count="$(guard_count_matches 'registry\.windows\[tracked\.windowID\]' "$physical_source_receipt")"
+if (( contract_count == 0 )); then
+  guard_record_failure "physical source resolution must bind the tracked physical window"
+fi
+contract_count="$(guard_count_matches 'let[[:space:]]+presentationProfile:[[:space:]]*Profile' "$physical_source_receipt")"
+if (( contract_count == 0 )); then
+  guard_record_failure "physical source receipts must preserve the presentation profile"
+fi
+contract_count="$(guard_count_matches 'let[[:space:]]+executionProfile:[[:space:]]*Profile' "$physical_source_receipt")"
+if (( contract_count == 0 )); then
+  guard_record_failure "physical source receipts must keep execution partition distinct from presentation"
+fi
+contract_count="$(guard_count_matches 'linkPresentationCommands\.presentInGlance\(' "$link_glance_routing")"
+if (( contract_count == 0 )); then
+  guard_record_failure "Glance routing must use the exact WebKit navigation-action source"
+fi
+contract_count="$(guard_count_matches 'from:[[:space:]]*sourceWebView' "$link_glance_routing")"
+if (( contract_count == 0 )); then
+  guard_record_failure "Glance routing must pass its exact physical source to presentation"
+fi
+contract_count="$(guard_count_matches 'childWindows\?\.open\(' "$child_surface_router")"
+if (( contract_count == 0 )); then
+  guard_record_failure "WebKit child windows must return the exact WebKit-configured child"
+fi
+contract_count="$(guard_count_matches 'configuration:[[:space:]]*request\.configuration' "$child_surface_router")"
+if (( contract_count == 0 )); then
+  guard_record_failure "WebKit child windows must preserve WebKit's exact child configuration"
+fi
+contract_count="$(guard_count_matches 'validateBeforeShell:' "$child_shell_transaction")"
+if (( contract_count == 0 )); then
+  guard_record_failure "WebKit child Tab/WebView ownership must settle before shell publication"
+fi
+contract_count="$(guard_count_matches 'initialTabExecutionProfileID:' "$child_shell_transaction")"
+if (( contract_count == 0 )); then
+  guard_record_failure "WebKit child shell transaction must publish the exact execution profile before registration"
+fi
+contract_count="$(guard_count_matches 'configuration\.websiteDataStore[[:space:]]*===[[:space:]]*source\.dataStore' "$child_window_transaction")"
+if (( contract_count == 0 )); then
+  guard_record_failure "WebKit child windows must preserve the physical opener data-store partition"
+fi
+contract_count="$(guard_count_matches 'sourceResolver\.isCurrent\(source\)' "$child_window_transaction")"
+if (( contract_count == 0 )); then
+  guard_record_failure "WebKit child windows must revalidate their physical source receipt"
+fi
 
-child_shell_transaction_loc="$(wc -l < "$child_shell_transaction" | tr -d ' ')"
+child_shell_transaction_loc="$(guard_count_lines "$child_shell_transaction")"
 if (( child_shell_transaction_loc > 150 )); then
   printf 'error: WebKit child shell transaction exceeded focused boundary (%s > 150)\n' \
     "$child_shell_transaction_loc" >&2
@@ -248,48 +242,53 @@ if (( child_shell_transaction_loc > 150 )); then
 fi
 
 late_webkit_child_window_hits="$(
-  rg -n '\.createWindowForLink\(' \
+  guard_capture_matches '\.createWindowForLink\(' \
     Sumi/Managers/BrowserManager/TabBrowserRuntimeFactory.swift \
     "$popup_responder" \
-    "$child_window_transaction" || true
+    "$child_window_transaction"
 )"
-fail_matches "WebKit child window reconstructed through URL-only shell routing" \
-  "$late_webkit_child_window_hits"
+if [[ -n "$late_webkit_child_window_hits" ]]; then
+  guard_record_failure "WebKit child window reconstructed through URL-only shell routing:
+$late_webkit_child_window_hits"
+fi
 
 stale_hover_command_hits="$(
-  rg -n '\b(routeDynamicGlanceIfNeeded|dynamicGlanceURL|shouldSwallowNextMouseUpAfterDynamicGlance)\b' \
-    "$focusable_web_view" || true
+  guard_capture_matches '\b(routeDynamicGlanceIfNeeded|dynamicGlanceURL|shouldSwallowNextMouseUpAfterDynamicGlance)\b' \
+    "$focusable_web_view"
 )"
-fail_matches "hover snapshots must not authorize browser commands" \
-  "$stale_hover_command_hits"
+if [[ -n "$stale_hover_command_hits" ]]; then
+  guard_record_failure "hover snapshots must not authorize browser commands:
+$stale_hover_command_hits"
+fi
 
 uncorrelated_context_route_hits="$(
-  rg -n '\b(NativeContextMenuRoute|consumeNativeContextMenuRequest|preparedContextTarget|openNativeContextItemInNewTab|downloadNativeContextResource)\b' \
-    "${all_swift_roots[@]}" -g '*.swift' -g '!**/.build/**' || true
+  guard_capture_matches '\b(NativeContextMenuRoute|consumeNativeContextMenuRequest|preparedContextTarget|openNativeContextItemInNewTab|downloadNativeContextResource)\b' \
+    "${all_swift_roots[@]}" -g '*.swift' -g '!**/.build/**'
 )"
-fail_matches "uncorrelated context-menu routing reintroduced" \
-  "$uncorrelated_context_route_hits"
+if [[ -n "$uncorrelated_context_route_hits" ]]; then
+  guard_record_failure "uncorrelated context-menu routing reintroduced:
+$uncorrelated_context_route_hits"
+fi
 
-if [[ ! -f "$link_script" ]] \
-    || ! rg -q '\bmessage\.webView\b' "$link_script" \
-    || ! rg -q 'as\?[[:space:]]+FocusableWKWebView' "$link_script" \
-    || ! rg -q '\.hoveredLink\.update\(' "$link_script"; then
+link_message_count="$(guard_count_matches '\bmessage\.webView\b' "$link_script")"
+link_cast_count="$(guard_count_matches 'as\?[[:space:]]+FocusableWKWebView' "$link_script")"
+link_update_count="$(guard_count_matches '\.hoveredLink\.update\(' "$link_script")"
+if (( link_message_count == 0 || link_cast_count == 0 || link_update_count == 0 )); then
   printf 'error: link script handler must update the exact message.webView hovered-link state\n' >&2
   status=1
 fi
 
-if [[ -f "$context_menu_script" ]]; then
-  if ! rg -q '\bmessage\.webView\b' "$context_menu_script" \
-      || ! rg -q 'as\?[[:space:]]+FocusableWKWebView' "$context_menu_script" \
-      || ! rg -q '\.contextMenu\.record\(' "$context_menu_script"; then
-    printf 'error: context-menu script handler must update the exact message.webView context state\n' >&2
-    status=1
-  fi
+context_message_count="$(guard_count_matches '\bmessage\.webView\b' "$context_menu_script")"
+context_cast_count="$(guard_count_matches 'as\?[[:space:]]+FocusableWKWebView' "$context_menu_script")"
+context_record_count="$(guard_count_matches '\.contextMenu\.record\(' "$context_menu_script")"
+if (( context_message_count == 0 || context_cast_count == 0 || context_record_count == 0 )); then
+  printf 'error: context-menu script handler must update the exact message.webView context state\n' >&2
+  status=1
 fi
 
-if [[ "$status" -ne 0 ]]; then
+if (( status != 0 || guard_failures != 0 )); then
   echo "WebView interaction-state boundary audit failed" >&2
-  exit "$status"
+  exit 1
 fi
 
 echo "WebView interaction-state boundary audit passed"

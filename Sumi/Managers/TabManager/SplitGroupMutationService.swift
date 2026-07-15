@@ -10,7 +10,10 @@ import SumiDomain
 final class SplitGroupMutationService {
     private let store: SplitGroupStore
     private let withStructuralTransaction: (@MainActor () -> Void) -> Void
-    private let announceChange: () -> Void
+    private let beforeStructuralPublication: (
+        @escaping @MainActor () -> Void
+    ) -> Void
+    private let announceChange: @MainActor () -> Void
     private let requestStructuralPublish: (TabStructureChangeScope) -> Void
     private let markStructurallyDirty: () -> Void
     private let schedulePersistence: () -> Void
@@ -18,13 +21,17 @@ final class SplitGroupMutationService {
     init(
         store: SplitGroupStore,
         withStructuralTransaction: @escaping (@MainActor () -> Void) -> Void,
-        announceChange: @escaping () -> Void,
+        beforeStructuralPublication: @escaping (
+            @escaping @MainActor () -> Void
+        ) -> Void,
+        announceChange: @escaping @MainActor () -> Void,
         requestStructuralPublish: @escaping (TabStructureChangeScope) -> Void,
         markStructurallyDirty: @escaping () -> Void,
         schedulePersistence: @escaping () -> Void
     ) {
         self.store = store
         self.withStructuralTransaction = withStructuralTransaction
+        self.beforeStructuralPublication = beforeStructuralPublication
         self.announceChange = announceChange
         self.requestStructuralPublish = requestStructuralPublish
         self.markStructurallyDirty = markStructurallyDirty
@@ -318,7 +325,7 @@ final class SplitGroupMutationService {
         guard SumiDomain.SplitGroup.sanitized(groups) == groups else { return false }
         guard store.groups != groups else { return true }
         withStructuralTransaction {
-            announceChange()
+            announceBeforeStructuralPublication()
             store.replaceAll(with: groups)
             requestStructuralPublish(scope(for: groups))
         }
@@ -341,7 +348,7 @@ final class SplitGroupMutationService {
         withStructuralTransaction {
             // MainActor serialization plus the exact snapshot guard above make
             // this mutation indivisible with respect to other split commits.
-            announceChange()
+            announceBeforeStructuralPublication()
             store.replaceAll(with: replacement)
             alongside?()
             markStructurallyDirty()
@@ -355,7 +362,7 @@ final class SplitGroupMutationService {
 
     func publishPreparedReplacement(_ plan: SplitGroupReplacementPlan) {
         withStructuralTransaction {
-            announceChange()
+            announceBeforeStructuralPublication()
             markStructurallyDirty()
             requestStructuralPublish(scope(for: plan.expected + plan.replacement))
         }
@@ -378,13 +385,6 @@ final class SplitGroupMutationService {
 
         var committed = false
         withStructuralTransaction {
-            // Install the canonical topology without observation before any
-            // sibling participant can publish. A synchronous window or
-            // residence observer must resolve the terminal split graph, not
-            // the source graph. Failed admission has no outward boundary and
-            // therefore restores this exact raw snapshot. Once the side
-            // effect succeeds, a reentrant topology mutation is authoritative
-            // and must never be overwritten by this outer transaction.
             store.replaceAll(with: replacement)
             guard sideEffect() else {
                 precondition(
@@ -394,7 +394,7 @@ final class SplitGroupMutationService {
                 store.replaceAll(with: expected)
                 return
             }
-            announceChange()
+            announceBeforeStructuralPublication()
             markStructurallyDirty()
             requestStructuralPublish(scope(for: expected + replacement))
             committed = true
@@ -414,6 +414,10 @@ final class SplitGroupMutationService {
         }
         return .spaces(Set(groups.compactMap(\.container.spaceId)))
     }
+
+    private func announceBeforeStructuralPublication() {
+        beforeStructuralPublication(announceChange)
+    }
 }
 
 extension SplitGroupMutationService {
@@ -428,6 +432,14 @@ extension SplitGroupMutationService {
                 tabManager.structuralLookupCoordinator.withTransaction {
                     operation()
                 }
+            },
+            beforeStructuralPublication: { [weak tabManager] action in
+                guard let tabManager else {
+                    action()
+                    return
+                }
+                tabManager.structuralLookupCoordinator
+                    .runBeforeCurrentBatchPublication(action)
             },
             announceChange: { [weak tabManager] in
                 tabManager?.objectWillChange.send()

@@ -90,19 +90,6 @@ private extension ShortcutHostedSplitUnloadService {
     ) {
         self.init(
             runtimeLease: runtimeLease,
-            selectTabWithoutPersistence: { [weak browserManager] tab, windowState in
-                browserManager?.applyTabSelection(
-                    tab,
-                    in: windowState,
-                    updateSpaceFromTab: true,
-                    updateTheme: true,
-                    rememberSelection: true,
-                    persistSelection: false
-                )
-            },
-            showEmptyStateWithoutPersistence: { [weak browserManager] windowState in
-                browserManager?.showEmptyStateWithoutPersistence(in: windowState)
-            },
             performImmediateVisualHandoff: { [weak browserManager] windowState in
                 _ = browserManager?.shellRuntime.windowVisuals
                     .performImmediateVisualHandoffIfPossible(in: windowState)
@@ -110,10 +97,6 @@ private extension ShortcutHostedSplitUnloadService {
             refreshCompositor: { [weak browserManager] windowState in
                 browserManager?.shellRuntime.windowVisuals
                     .refreshCompositor(for: windowState)
-            },
-            persistWindowSession: { [weak browserManager] windowState in
-                browserManager?.windowSessionBundle.persistence
-                    .persist(windowState)
             }
         )
     }

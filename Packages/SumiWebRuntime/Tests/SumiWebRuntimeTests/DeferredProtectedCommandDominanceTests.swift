@@ -605,7 +605,8 @@ final class DeferredProtectedCommandDominanceTests: XCTestCase {
                 expectedProfileID: UUID(),
                 desiredProfileID: UUID(),
                 resolvedProfileID: UUID(),
-                targetURL: URL(string: "https://example.com/profile")!
+                targetURL: URL(string: "https://example.com/profile")!,
+                navigationRevision: revision
             )
         )
     }
@@ -620,7 +621,8 @@ final class DeferredProtectedCommandDominanceTests: XCTestCase {
             expectedProfileID: nil,
             desiredProfileID: nil,
             resolvedProfileID: UUID(),
-            targetURL: URL(string: "https://example.com/space-profile")!
+            targetURL: URL(string: "https://example.com/space-profile")!,
+            navigationRevision: revision
         )
         return .assignSpaceProfile(
             intent: DeferredWebViewSpaceProfileAssignmentIntent(

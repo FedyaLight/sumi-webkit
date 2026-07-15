@@ -1,8 +1,6 @@
 import Foundation
 
-/// Exact raw launcher catalog state used only while a compound split mutation
-/// is unpublished. Source object identity is retained so compensation restores
-/// the same launchers, not merely equivalent clones.
+/// Exact unpublished catalog state retaining source launcher identity.
 @MainActor
 struct ShortcutSplitLauncherCatalogSnapshot {
     private let pinnedByProfile: [
@@ -47,6 +45,21 @@ struct ShortcutSplitLauncherCatalogSnapshot {
             pendingPinnedWithoutProfile: pendingPinnedWithoutProfile.map(\.pin)
         )
         precondition(isCurrent(in: pins))
+    }
+
+    func pin(withID id: UUID) -> ShortcutPin? {
+        let matches = pinnedByProfile.values.flatMap { $0 }
+            + spacePinnedShortcuts.values.flatMap { $0 }
+            + pendingPinnedWithoutProfile
+        let pins = matches.filter { $0.pin.id == id }.map(\.pin)
+        return pins.count == 1 ? pins[0] : nil
+    }
+
+    func contains(
+        _ receipt: ShortcutSplitLauncherCatalogPinReceipt
+    ) -> Bool {
+        guard let pin = pin(withID: receipt.pin.id) else { return false }
+        return receipt.accepts(pin)
     }
 
     private static func matches(

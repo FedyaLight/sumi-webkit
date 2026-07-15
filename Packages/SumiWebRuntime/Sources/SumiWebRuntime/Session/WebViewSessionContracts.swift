@@ -180,20 +180,23 @@ public struct WebViewRetirementBatchEntry: Equatable, Sendable {
     }
 }
 
-/// A prevalidated model transaction paired with one retirement batch. The
-/// repository stores only its identity fingerprint; the caller retains the
-/// receipt and supplies it again if the batch rolls back.
+/// Exact model state shared by the caller and one retirement batch.
 @MainActor
-public struct WebViewRetirementModelTransactionReceipt {
+public final class WebViewRetirementModelTransactionReceipt {
+    public enum State: Equatable {
+        case prepared, modelStaged, modelRolledBack, conflicted
+    }
+
     let id: UUID
     private let isCurrentAction: @MainActor () -> Bool
-    private let commitAction: @MainActor () -> Void
-    private let rollbackAction: @MainActor () -> Void
+    private let commitAction: @MainActor () -> Bool
+    private let rollbackAction: @MainActor () -> Bool
+    public private(set) var state = State.prepared
 
     public init(
         isCurrent: @escaping @MainActor () -> Bool,
-        commit: @escaping @MainActor () -> Void,
-        rollback: @escaping @MainActor () -> Void
+        commit: @escaping @MainActor () -> Bool,
+        rollback: @escaping @MainActor () -> Bool
     ) {
         id = UUID()
         isCurrentAction = isCurrent
@@ -201,9 +204,27 @@ public struct WebViewRetirementModelTransactionReceipt {
         rollbackAction = rollback
     }
 
-    func isCurrent() -> Bool { isCurrentAction() }
-    func commit() { commitAction() }
-    func rollback() { rollbackAction() }
+    func isCurrent() -> Bool {
+        state == .prepared && isCurrentAction()
+    }
+
+    @discardableResult
+    func commit() -> Bool {
+        guard state == .prepared else { return false }
+        state = .conflicted
+        guard commitAction() else { return false }
+        state = .modelStaged
+        return true
+    }
+
+    @discardableResult
+    func rollback() -> Bool {
+        guard state == .modelStaged else { return false }
+        state = .conflicted
+        guard rollbackAction() else { return false }
+        state = .modelRolledBack
+        return true
+    }
 }
 
 public enum WebViewReplacementBatchBeginResult {
@@ -246,6 +267,7 @@ public enum WebViewRetirementBatchBeginResult {
     case conflict(tabID: UUID)
     case invalid(tabID: UUID?)
     case modelValidationFailed
+    case modelConflict(WebViewRetirementBatchLease)
     case noLongerActive
 }
 
@@ -259,7 +281,19 @@ public enum WebViewRetirementBatchRollbackResult {
     case rolledBack
     case noLongerActive
     case modelTransactionMismatch
+    case modelConflict
     case conflict(tabID: UUID, currentGeneration: UInt64)
+}
+
+public enum WebViewRetirementModelConflictRestoreResult {
+    case restored
+    case noLongerActive
+    case conflict(tabID: UUID, currentGeneration: UInt64)
+}
+
+public enum WebViewRetirementCleanupClaimResult {
+    case claimed(retired: [UUID: WebViewSessionSnapshot])
+    case noLongerActive
 }
 
 public struct WebViewPendingCleanupClaim {

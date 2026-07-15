@@ -186,6 +186,18 @@ final class SpaceProfileMutationTransaction {
         presentation.beginRetirement(modelTransaction: modelTransaction)
     }
 
+    func settleCompensatedRetirementModelConflict(
+        _ batch: TabRuntimeRetirementBatch
+    ) -> SpaceProfileRetirementModelConflictOutcome {
+        presentation.settleCompensatedModelConflict(batch)
+    }
+
+    func settleRetainedRetirementModelConflict(
+        _ batch: TabRuntimeRetirementBatch
+    ) -> SpaceProfileRetirementModelConflictOutcome {
+        presentation.settleRetainedModelConflict(batch)
+    }
+
     @discardableResult
     func stageModel() -> Bool {
         guard prepare() else { return false }
@@ -223,6 +235,18 @@ final class SpaceProfileMutationTransaction {
         stagedModelIsExact() && presentation.canCommitRetirement()
     }
 
+    func claimTerminalModel() -> Bool {
+        state == .staged && presentation.claimTerminalModel()
+    }
+
+    func commitSilentTerminalModel() -> Bool {
+        state == .staged && presentation.commitSilentTerminalModel()
+    }
+
+    func cancelTerminalModelClaim() {
+        presentation.cancelTerminalModelClaim()
+    }
+
     func commitRetirement() -> SpaceProfileRetirementCommitOutcome {
         guard state == .staged,
               currentResidenceHasProfile(targetProfileID) else {
@@ -241,6 +265,12 @@ final class SpaceProfileMutationTransaction {
         precondition(canFinishModel())
         presentation.finishPrevalidatedModel()
         state = .terminal
+    }
+
+    func claimedModelIsExact() -> Bool {
+        state == .terminal
+            && currentResidenceHasProfile(targetProfileID)
+            && presentation.claimedModelIsExact()
     }
 
     func settleTerminalModelAfterDrain() {

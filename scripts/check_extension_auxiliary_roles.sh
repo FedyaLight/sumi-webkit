@@ -1,8 +1,62 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$repo_root"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "$script_dir/.." && pwd)"
+# shellcheck source=scripts/lib/architecture_guard.sh
+source "$script_dir/lib/architecture_guard.sh"
+guard_initialize "$repo_root"
+
+scan_arguments() {
+  local mode="$1"
+  shift
+  local options=()
+  while (( $# > 0 )) && [[ "$1" == -* ]]; do
+    options+=("$1")
+    shift
+  done
+  local pattern="$1"
+  shift
+  case "$mode" in
+    capture)
+      if (( ${#options[@]} > 0 )); then
+        guard_capture_matches "$pattern" "${options[@]}" "$@"
+      else
+        guard_capture_matches "$pattern" "$@"
+      fi
+      ;;
+    count)
+      if (( ${#options[@]} > 0 )); then
+        guard_count_matches "$pattern" "${options[@]}" "$@"
+      else
+        guard_count_matches "$pattern" "$@"
+      fi
+      ;;
+  esac
+}
+
+capture_matches() {
+  scan_arguments capture "$@"
+}
+
+count_matches() {
+  scan_arguments count "$@"
+}
+
+require_matches() {
+  local count
+  count="$(scan_arguments count "$@")" || return
+  if (( count == 0 )); then
+    printf 'error: required auxiliary-window production invariant missing: %s\n' "$*" >&2
+    return 1
+  fi
+}
+
+scan_has_matches() {
+  local count
+  count="$(scan_arguments count "$@")" || exit $?
+  (( count > 0 ))
+}
 
 bridge='Sumi/Managers/ExtensionManager/ExtensionControllerDelegateBridge.swift'
 opening='Sumi/Managers/ExtensionManager/ExtensionControllerOpeningCallbackHandler.swift'
@@ -35,9 +89,6 @@ close_router='Sumi/Managers/BrowserManager/BrowserWebViewCloseRouter.swift'
 permission_runtime='Sumi/Managers/BrowserManager/TabBrowserHostServicesRuntimeFactory.swift'
 compact_window='Sumi/Components/Window/AuxiliaryCompactWindow.swift'
 window_router='Sumi/Managers/ExtensionManager/ExtensionWindowRequestRouter.swift'
-receipt_tests='SumiTests/AuxiliaryWindowReceiptABATests.swift'
-state_tests='SumiTests/AuxiliaryWindowStateTransitionTests.swift'
-
 for file in "$bridge" "$opening" "$opening_runtime" "$initial" "$content" "$native" \
   "$residency" "$retention" "$loading" "$settlement" "$deferred" \
   "$weak_events" "$browser_aux" "$session_registry" "$teardown" \
@@ -45,140 +96,116 @@ for file in "$bridge" "$opening" "$opening_runtime" "$initial" "$content" "$nati
   "$state_coordinator" "$manager_support" \
   "$extension_control" "$tab_commands" "$presentation" \
   "$page_resolution" "$window_presentation" "$close_router" \
-  "$permission_runtime" "$compact_window" "$window_router" \
-  "$receipt_tests" "$state_tests"; do
+  "$permission_runtime" "$compact_window" "$window_router"; do
   [[ -f "$file" ]] || { echo "error: missing extension auxiliary role: $file" >&2; exit 1; }
 done
 
-if rg -n 'Task \{' "$bridge"; then
+if scan_has_matches 'Task \{' "$bridge"; then
   echo 'error: controller delegate bridge regained asynchronous opening transactions' >&2
   exit 1
 fi
-rg -q 'ExtensionControllerOpeningCallbackHandler' "$bridge"
-rg -q 'runtime\.contextPreloader\.prepare' "$opening"
-rg -q 'presentExtensionPopupWindow' "$opening"
-rg -q 'ExtensionControllerCallbackEvidence' "$opening"
-rg -q 'admission\.isCurrent' "$opening"
-rg -q 'hasUnresolvedExtensionOwnership == false' "$opening"
-rg -q 'ExtensionPopupWindowPresentationReceipt' \
+require_matches 'ExtensionControllerOpeningCallbackHandler' "$bridge"
+require_matches 'runtime\.contextPreloader\.prepare' "$opening"
+require_matches 'presentExtensionPopupWindow' "$opening"
+require_matches 'ExtensionControllerCallbackEvidence' "$opening"
+require_matches 'admission\.isCurrent' "$opening"
+require_matches 'hasUnresolvedExtensionOwnership == false' "$opening"
+require_matches 'ExtensionPopupWindowPresentationReceipt' \
   "$extension_bridge"
-rg -q 'presentation\?\.retire\(\)' "$opening"
-rg -q 'struct AuxiliaryWindowSessionReceipt: Hashable' "$session_registry"
-rg -Fq 'fileprivate init(session: AuxiliaryWindowSession)' "$session_registry"
-rg -q 'let sessionIdentity: ObjectIdentifier' "$session_registry"
-rg -q 'let webViewIdentity: ObjectIdentifier' "$session_registry"
-rg -Fq 'guard isCurrent(receipt),' "$session_registry"
-rg -Fq 'sessions.remove(receipt)' "$teardown"
-if rg -U -n \
+require_matches 'presentation\?\.retire\(\)' "$opening"
+require_matches 'struct AuxiliaryWindowSessionReceipt: Hashable' "$session_registry"
+require_matches -F 'fileprivate init(session: AuxiliaryWindowSession)' "$session_registry"
+require_matches 'let sessionIdentity: ObjectIdentifier' "$session_registry"
+require_matches 'let webViewIdentity: ObjectIdentifier' "$session_registry"
+require_matches -F 'guard isCurrent(receipt),' "$session_registry"
+require_matches -F 'sessions.remove(receipt)' "$teardown"
+if scan_has_matches -U \
   'func (teardown|receipt|remove)\(\s*(for )?webView|closeAuxiliaryWindowWebView|containsAuxiliaryWebView|closeAuxiliaryWindowSession\(\s*_ session:|recordAuxiliaryWindowSessionFocus\(\s*_ sessionId:|focusAuxiliaryWindowSession\(\s*_ sessionId:' \
   "$session_registry" "$teardown" "$extension_control" "$extension_bridge" \
   "$tab_commands" "$close_router"; then
   echo 'error: auxiliary destructive/focus control regained mutable WebView, session, or UUID authority' >&2
   exit 1
 fi
-rg -Uq 'protocol ExtensionAuxiliaryTabClosing[^}]+auxiliaryWindowSessionReceipt[^}]+closeAuxiliaryWindowSession\(\s*_ receipt: AuxiliaryWindowSessionReceipt' \
+require_matches -U 'protocol ExtensionAuxiliaryTabClosing[^}]+auxiliaryWindowSessionReceipt[^}]+closeAuxiliaryWindowSession\(\s*_ receipt: AuxiliaryWindowSessionReceipt' \
   "$extension_bridge"
-rg -Fq 'miniWindowAdapter?.bind(receipt)' "$presentation"
-rg -Fq 'private var sessionReceipt: AuxiliaryWindowSessionReceipt?' \
+require_matches -F 'miniWindowAdapter?.bind(receipt)' "$presentation"
+require_matches -F 'private var sessionReceipt: AuxiliaryWindowSessionReceipt?' \
   "$extension_bridge"
-rg -Fq 'func bind(_ receipt: AuxiliaryWindowSessionReceipt)' \
+require_matches -F 'func bind(_ receipt: AuxiliaryWindowSessionReceipt)' \
   "$extension_bridge"
-rg -Fq 'auxiliaryWindows?.focusAuxiliaryWindowSession(sessionReceipt)' \
+require_matches -F 'auxiliaryWindows?.focusAuxiliaryWindowSession(sessionReceipt)' \
   "$extension_bridge"
-rg -Fq 'private let stateTransitions = ExtensionWindowStateTransitionCoordinator(' \
+require_matches -F 'private let stateTransitions = ExtensionWindowStateTransitionCoordinator(' \
   "$extension_bridge"
-rg -Fq 'stateTransitions.transition(' "$extension_bridge"
-rg -Fq 'self.sessionReceipt == expectedReceipt' "$extension_bridge"
-rg -Fq 'ObjectIdentifier(current) == sessionIdentity' "$extension_bridge"
-rg -Fq 'current.window === window' "$extension_bridge"
-rg -Fq 'isRetired = true' "$extension_bridge"
-rg -Fq 'stateTransitions.invalidateActiveTransition()' "$extension_bridge"
-rg -Uq 'isRetired = true[[:space:]]+stateTransitions\.invalidateActiveTransition\(\)[[:space:]]+auxiliaryWindows\.closeAuxiliaryWindowSession\(sessionReceipt\)' \
+require_matches -F 'stateTransitions.transition(' "$extension_bridge"
+require_matches -F 'self.sessionReceipt == expectedReceipt' "$extension_bridge"
+require_matches -F 'ObjectIdentifier(current) == sessionIdentity' "$extension_bridge"
+require_matches -F 'current.window === window' "$extension_bridge"
+require_matches -F 'isRetired = true' "$extension_bridge"
+require_matches -F 'stateTransitions.invalidateActiveTransition()' "$extension_bridge"
+require_matches -U 'isRetired = true[[:space:]]+stateTransitions\.invalidateActiveTransition\(\)[[:space:]]+auxiliaryWindows\.closeAuxiliaryWindowSession\(sessionReceipt\)' \
   "$extension_bridge"
-rg -Fq 'if window.isZoomed { return .maximized }' "$extension_bridge"
-rg -Fq 'previous.ownsWindow(with: windowIdentity)' "$state_coordinator"
-rg -Fq 'admissionGeneration == requestGeneration' "$state_coordinator"
-rg -Fq 'ObjectIdentifier(window) == windowIdentity' "$state_coordinator"
-rg -Fq 'guard self?.active?.id == finishedID else { return }' \
+require_matches -F 'if window.isZoomed { return .maximized }' "$extension_bridge"
+require_matches -F 'previous.ownsWindow(with: windowIdentity)' "$state_coordinator"
+require_matches -F 'admissionGeneration == requestGeneration' "$state_coordinator"
+require_matches -F 'ObjectIdentifier(window) == windowIdentity' "$state_coordinator"
+require_matches -F 'guard self?.active?.id == finishedID else { return }' \
   "$state_coordinator"
 for notification in didMiniaturize didDeminiaturize didEnterFullScreen \
   didExitFullScreen didResize; do
-  rg -Fq "NSWindow.${notification}Notification" "$state_coordinator"
+  require_matches -F "NSWindow.${notification}Notification" "$state_coordinator"
 done
-rg -Fq 'object: window' "$state_coordinator"
-rg -Fq 'settlement.isSatisfied(by: window)' "$state_coordinator"
-rg -Fq 'window.isZoomed == expected' "$state_coordinator"
-rg -Fq 'action?(window)' "$state_coordinator"
-rg -Uq 'action\?\(window\)[[:space:]]+guard validateCurrentWindow\(\) else' \
+require_matches -F 'object: window' "$state_coordinator"
+require_matches -F 'settlement.isSatisfied(by: window)' "$state_coordinator"
+require_matches -F 'window.isZoomed == expected' "$state_coordinator"
+require_matches -F 'action?(window)' "$state_coordinator"
+require_matches -U 'action\?\(window\)[[:space:]]+guard validateCurrentWindow\(\) else' \
   "$state_coordinator"
-rg -Fq 'closeObservation?.invalidate()' "$state_coordinator"
-rg -Fq 'settlementObservation?.invalidate()' "$state_coordinator"
-rg -Fq 'deinit {' "$state_coordinator"
-rg -Fq 'removeObservers()' "$state_coordinator"
-rg -Uq 'didComplete = true[[:space:]]+removeObservers\(\)[[:space:]]+let completion = self\.completion[[:space:]]+self\.completion = nil[[:space:]]+didFinish\(id\)[[:space:]]+completion\?\(error\)' \
+require_matches -F 'closeObservation?.invalidate()' "$state_coordinator"
+require_matches -F 'settlementObservation?.invalidate()' "$state_coordinator"
+require_matches -F 'deinit {' "$state_coordinator"
+require_matches -F 'removeObservers()' "$state_coordinator"
+require_matches -U 'didComplete = true[[:space:]]+removeObservers\(\)[[:space:]]+let completion = self\.completion[[:space:]]+self\.completion = nil[[:space:]]+didFinish\(id\)[[:space:]]+completion\?\(error\)' \
   "$state_coordinator"
-rg -Fq 'miniWindowStateTransitionSuperseded' "$manager_support"
-rg -Fq 'miniWindowStateTransitionInvalidated' "$manager_support"
-if rg -n 'Timer|asyncAfter|sleep\(|usleep\(|poll' "$state_coordinator"; then
+require_matches -F 'miniWindowStateTransitionSuperseded' "$manager_support"
+require_matches -F 'miniWindowStateTransitionInvalidated' "$manager_support"
+if scan_has_matches 'Timer|asyncAfter|sleep\(|usleep\(|poll' "$state_coordinator"; then
   echo 'error: mini-window state settlement regained timers, sleeps, or polling' >&2
   exit 1
 fi
-rg -q 'testMiniWindowAdapterFocusRejectsReplacementDuringOrderFront' \
-  "$receipt_tests"
-rg -q 'testMiniWindowAdapterSetFrameRejectsReplacementDuringResize' \
-  "$receipt_tests"
-rg -q 'testMiniWindowAdapterSetStateRejectsReplacementDuringMiniaturize' \
-  "$receipt_tests"
-rg -Fq 'target.window.observe(' "$receipt_tests"
-rg -Fq '\.isVisible' "$receipt_tests"
-rg -Fq 'change.oldValue == false' "$receipt_tests"
-rg -Fq 'change.newValue == true' "$receipt_tests"
-rg -Fq 'NSWindow.willMiniaturizeNotification' "$receipt_tests"
-rg -Fq 'NSWindow.didMiniaturizeNotification' "$receipt_tests"
-rg -q 'testMiniWindowAdapterSetStateCompletesAfterExactNativeSettlement' \
-  "$state_tests"
-rg -q 'testMiniWindowAdapterStateSupersessionSequencesNativeSettlement' \
-  "$state_tests"
-rg -q 'testMiniWindowAdapterCloseInvalidatesActiveStateExactlyOnce' \
-  "$state_tests"
-rg -Fq 'replacementObservedMiniaturize' "$state_tests"
-rg -Fq 'replacementObservedDeminiaturize' "$state_tests"
-rg -Fq 'assertForOverFulfill = true' "$state_tests"
-rg -q 'testAuxiliaryPermissionContextsRejectWrongDataStoreWithoutBridgeEffects' \
-  "$receipt_tests"
-rg -q '\.miniaturizable' "$compact_window"
-rg -Fq '$0.performMiniaturize(nil)' "$state_coordinator"
-rg -Uq 'trackedOwner\([[:space:]]+containing: webView[[:space:]]+\)[[:space:]]+\{' \
+require_matches '\.miniaturizable' "$compact_window"
+require_matches -F '$0.performMiniaturize(nil)' "$state_coordinator"
+require_matches -U 'trackedOwner\([[:space:]]+containing: webView[[:space:]]+\)[[:space:]]+\{' \
   "$permission_runtime"
-rg -Fq 'isAuxiliaryMiniWindowTab(sourceTab)' "$permission_runtime"
-rg -Fq 'webViewRoutingService.ownsLiveWebView' "$permission_runtime"
-rg -Fq 'let profileID = sourceTab.profileId' "$permission_runtime"
-rg -Fq 'profile.id == profileID' "$permission_runtime"
-rg -Fq 'sumiIsNormalTabWebViewConfiguration == false' "$permission_runtime"
-rg -Uq 'webView\.configuration\.websiteDataStore[[:space:]]+=== profile\.dataStore' \
+require_matches -F 'isAuxiliaryMiniWindowTab(sourceTab)' "$permission_runtime"
+require_matches -F 'webViewRoutingService.ownsLiveWebView' "$permission_runtime"
+require_matches -F 'let profileID = sourceTab.profileId' "$permission_runtime"
+require_matches -F 'profile.id == profileID' "$permission_runtime"
+require_matches -F 'sumiIsNormalTabWebViewConfiguration == false' "$permission_runtime"
+require_matches -U 'webView\.configuration\.websiteDataStore[[:space:]]+=== profile\.dataStore' \
   "$permission_runtime"
-rg -q 'let sessionReceipt = presented\.receipt' "$extension_opening"
-rg -Fq 'teardown.teardown(' "$extension_opening"
-rg -q 'sessionReceipt,' "$extension_opening"
-if rg -U -n '\[weak session\]|teardown\.teardown\(\s*for:\s*session\.webView' \
+require_matches 'let sessionReceipt = presented\.receipt' "$extension_opening"
+require_matches -F 'teardown.teardown(' "$extension_opening"
+require_matches 'sessionReceipt,' "$extension_opening"
+if scan_has_matches -U '\[weak session\]|teardown\.teardown\(\s*for:\s*session\.webView' \
   "$extension_opening" "$popup_opening"; then
   echo 'error: popup retirement regained mutable WebView/session lookup authority' >&2
   exit 1
 fi
-if rg -n 'map\(\\\.webView\)' "$teardown"; then
+if scan_has_matches 'map\(\\\.webView\)' "$teardown"; then
   echo 'error: bulk auxiliary teardown must snapshot exact receipts, not WebViews' >&2
   exit 1
 fi
-rg -q 'sessions\.sessionsSnapshot\(\)\.compactMap' "$teardown"
-rg -q 'sessions\.sessions\(forExtensionID: extensionID\)' "$teardown"
+require_matches 'sessions\.sessionsSnapshot\(\)\.compactMap' "$teardown"
+require_matches 'sessions\.sessions\(forExtensionID: extensionID\)' "$teardown"
 ui_detach_lines=( $(
-  rg -n 'session\.webView\.uiDelegate = nil' "$teardown" | cut -d: -f1
+  capture_matches 'session\.webView\.uiDelegate = nil' "$teardown" | cut -d: -f1
 ) )
 navigation_detach_lines=( $(
-  rg -n 'session\.webView\.navigationDelegate = nil' "$teardown" | cut -d: -f1
+  capture_matches 'session\.webView\.navigationDelegate = nil' "$teardown" | cut -d: -f1
 ) )
 stop_lines=( $(
-  rg -n 'session\.webView\.stopLoading\(\)' "$teardown" | cut -d: -f1
+  capture_matches 'session\.webView\.stopLoading\(\)' "$teardown" | cut -d: -f1
 ) )
 if (( ${#ui_detach_lines[@]} < 2 \
       || ${#navigation_detach_lines[@]} < 2 \
@@ -193,24 +220,27 @@ for index in 0 1; do
     exit 1
   fi
 done
-if rg -n 'session\(for: webView\)|webView\.window' "$ui_delegate"; then
+if scan_has_matches 'session\(for: webView\)|webView\.window' "$ui_delegate"; then
   echo 'error: auxiliary UI delegate regained mutable WebView lookup authority' >&2
   exit 1
 fi
-if (( $(rg -c 'currentSession\(for: webView\)' "$ui_delegate") < 7 )); then
+current_session_validation_count="$(
+  count_matches 'currentSession\(for: webView\)' "$ui_delegate"
+)"
+if (( current_session_validation_count < 7 )); then
   echo 'error: every auxiliary UI callback and popup permission tail must revalidate its exact receipt' >&2
   exit 1
 fi
-rg -Fq 'let session = sessions.session(for: sessionReceipt)' "$ui_delegate"
-rg -Uq 'permissionResult\.isAllowed,\s+currentSession\(for: webView\) === session' \
+require_matches -F 'let session = sessions.session(for: sessionReceipt)' "$ui_delegate"
+require_matches -U 'permissionResult\.isAllowed,\s+currentSession\(for: webView\) === session' \
   "$ui_delegate"
-rg -Uq 'currentPageID: currentPageID,\s+completionHandler: exactSessionCompletion' \
+require_matches -U 'currentPageID: currentPageID,\s+completionHandler: exactSessionCompletion' \
   "$ui_delegate"
-cleanup_line="$(rg -n 'session\.tab\.performComprehensiveWebViewCleanup' \
+cleanup_line="$(capture_matches 'session\.tab\.performComprehensiveWebViewCleanup' \
   "$teardown" | cut -d: -f1)"
-tab_remove_line="$(rg -n 'tabs\.removeMiniWindowTab' "$teardown" | cut -d: -f1)"
-close_callback_line="$(rg -n 'notifyAuxiliaryWindowClosed' "$teardown" | cut -d: -f1)"
-reuse_guard_line="$(rg -n 'physicalIdentityWasNotReused' "$teardown" | head -1 | cut -d: -f1)"
+tab_remove_line="$(capture_matches 'tabs\.removeMiniWindowTab' "$teardown" | cut -d: -f1)"
+close_callback_line="$(capture_matches 'notifyAuxiliaryWindowClosed' "$teardown" | cut -d: -f1)"
+reuse_guard_line="$(capture_matches 'physicalIdentityWasNotReused' "$teardown" | head -1 | cut -d: -f1)"
 if [[ -z "$cleanup_line" || -z "$tab_remove_line" \
       || -z "$close_callback_line" || -z "$reuse_guard_line" ]] \
     || (( cleanup_line >= tab_remove_line \
@@ -219,18 +249,18 @@ if [[ -z "$cleanup_line" || -z "$tab_remove_line" \
   echo 'error: auxiliary physical retirement must finish before the reentrant close callback and guarded focus tail' >&2
   exit 1
 fi
-rg -q 'load\.hasUnresolvedExtensionOwnership == false' "$window_router"
-if rg -n 'auxiliaryContains|teardownAuxiliaryWebView|auxiliaryWindowSession\(for: webView\)' \
+require_matches 'load\.hasUnresolvedExtensionOwnership == false' "$window_router"
+if scan_has_matches 'auxiliaryContains|teardownAuxiliaryWebView|auxiliaryWindowSession\(for: webView\)' \
   "$close_router"; then
   echo 'error: generic WebView close routing regained auxiliary WebView authority' >&2
   exit 1
 fi
-rg -q 'teardownAuxiliarySessionForTab' "$close_router"
-rg -Uq 'session\.tab === tab,[[:space:]]+let receipt = auxiliaryWindows\.sessions\.receipt' \
+require_matches 'teardownAuxiliarySessionForTab' "$close_router"
+require_matches -U 'session\.tab === tab,[[:space:]]+let receipt = auxiliaryWindows\.sessions\.receipt' \
   "$close_router"
-atomic_load_line="$(rg -n 'let load = loadResolver\.resolve' "$window_router" | tail -1 | cut -d: -f1)"
-atomic_reject_line="$(rg -n 'load\.hasUnresolvedExtensionOwnership == false' "$window_router" | tail -2 | head -1 | cut -d: -f1)"
-atomic_prepare_line="$(rg -n 'await prepare\(' "$window_router" | tail -1 | cut -d: -f1)"
+atomic_load_line="$(capture_matches 'let load = loadResolver\.resolve' "$window_router" | tail -1 | cut -d: -f1)"
+atomic_reject_line="$(capture_matches 'load\.hasUnresolvedExtensionOwnership == false' "$window_router" | tail -2 | head -1 | cut -d: -f1)"
+atomic_prepare_line="$(capture_matches 'await prepare\(' "$window_router" | tail -1 | cut -d: -f1)"
 if [[ -z "$atomic_load_line" || -z "$atomic_reject_line" \
       || -z "$atomic_prepare_line" ]] \
     || (( atomic_load_line >= atomic_reject_line \
@@ -238,32 +268,34 @@ if [[ -z "$atomic_load_line" || -z "$atomic_reject_line" \
   echo 'error: unresolved extension-owned window load must fail before preload' >&2
   exit 1
 fi
-rg -q 'let sessionIdentity: ObjectIdentifier' "$extension_bridge"
-rg -q 'let webViewIdentity: ObjectIdentifier' "$extension_bridge"
-rg -q 'exactContextIdentity' "$page_resolution"
-rg -q '\$0\.id == identity\.extensionId && \$0\.isEnabled' \
+require_matches 'let sessionIdentity: ObjectIdentifier' "$extension_bridge"
+require_matches 'let webViewIdentity: ObjectIdentifier' "$extension_bridge"
+require_matches 'exactContextIdentity' "$page_resolution"
+require_matches '\$0\.id == identity\.extensionId && \$0\.isEnabled' \
   "$page_resolution"
-rg -q 'candidates\.dropFirst\(\)\.allSatisfy' "$page_resolution"
-owner_guard_line="$(rg -n 'extensionIntegration == nil \|\| extensionID != nil' \
+require_matches 'candidates\.dropFirst\(\)\.allSatisfy' "$page_resolution"
+owner_guard_line="$(capture_matches 'extensionIntegration == nil \|\| extensionID != nil' \
   "$popup_opening" | cut -d: -f1)"
-external_create_line="$(rg -n 'guard let tab = tabs\.createMiniWindowTab' \
+external_create_line="$(capture_matches 'guard let tab = tabs\.createMiniWindowTab' \
   "$popup_opening" | tail -1 | cut -d: -f1)"
 if [[ -z "$owner_guard_line" || -z "$external_create_line" ]] \
     || (( owner_guard_line >= external_create_line )); then
   echo 'error: external extension popup owner evidence must fail before tab mutation' >&2
   exit 1
 fi
-if (( $(rg -c 'runtime\.integration\.resolveExtensionID' \
-  "$extension_opening") < 2 )); then
+owner_validation_count="$(
+  count_matches 'runtime\.integration\.resolveExtensionID' "$extension_opening"
+)"
+if (( owner_validation_count < 2 )); then
   echo 'error: extension window owner evidence must be revalidated after awaits' >&2
   exit 1
 fi
-last_owner_validation_line="$(rg -n 'runtime\.integration\.resolveExtensionID' \
+last_owner_validation_line="$(capture_matches 'runtime\.integration\.resolveExtensionID' \
   "$extension_opening" | tail -1 | cut -d: -f1)"
-extension_create_line="$(rg -n 'guard let tab = tabs\.createMiniWindowTab' \
+extension_create_line="$(capture_matches 'guard let tab = tabs\.createMiniWindowTab' \
   "$extension_opening" | cut -d: -f1)"
-load_line="$(rg -n 'tab\.loadURL\(loadURL\)' "$extension_opening" | cut -d: -f1)"
-history_line="$(rg -n 'runtime\.recentRequests\.record\(loadURL\)' \
+load_line="$(capture_matches 'tab\.loadURL\(loadURL\)' "$extension_opening" | cut -d: -f1)"
+history_line="$(capture_matches 'runtime\.recentRequests\.record\(loadURL\)' \
   "$extension_opening" | cut -d: -f1)"
 if [[ -z "$last_owner_validation_line" || -z "$extension_create_line" \
       || -z "$load_line" || -z "$history_line" ]] \
@@ -272,102 +304,60 @@ if [[ -z "$last_owner_validation_line" || -z "$extension_create_line" \
   echo 'error: extension popup mutation/history escaped exact owner or completion admission' >&2
   exit 1
 fi
-if rg -n 'presentExtensionExternalWebPopup' \
+if scan_has_matches 'presentExtensionExternalWebPopup' \
   "$extension_bridge" "$window_presentation"; then
   echo 'error: dead external popup forwarding capability returned to extension presentation' >&2
   exit 1
 fi
-rg -q 'testExternalPopupRejectsInvalidOwnerEvidenceBeforeAnyMutation' \
-  "$receipt_tests"
-rg -q 'testFocusRestoreRejectsTargetReplacedDuringFocusCallback' \
-  "$receipt_tests"
-rg -q 'testStalePopupReceiptCannotRetireSameWebViewReplacementOrSibling' \
-  SumiTests/AuxiliaryWindowLifecycleTests.swift
-rg -q 'testPopupReceiptRetiresCurrentExactSessionAndKeepsSibling' \
-  SumiTests/AuxiliaryWindowLifecycleTests.swift
-rg -q 'testReentrantPopupRejectionPreservesSameWebViewReplacement' \
-  SumiTests/AuxiliaryWindowLifecycleTests.swift
-rg -q 'testReentrantExternalPopupRejectionPreservesSameWebViewReplacement' \
-  SumiTests/AuxiliaryWindowPublicationLifecycleTests.swift
-rg -q 'testBulkCloseUsesExactReceiptSnapshotAcrossSameWebViewReplacement' \
-  SumiTests/AuxiliaryWindowLifecycleTests.swift
-rg -q 'testStaleUIDelegateCannotActOnSameWebViewReplacement' \
-  SumiTests/AuxiliaryWindowReceiptABATests.swift
-rg -q 'testPopupPermissionReentrancyCannotOpenChildForReplacement' \
-  SumiTests/AuxiliaryWindowReceiptABATests.swift
-rg -q 'testFilePickerAsyncTailRejectsSameWebViewReplacement' \
-  SumiTests/AuxiliaryWindowReceiptABATests.swift
-rg -q 'testCloseCallbackReplacementKeepsSamePhysicalResources' \
-  SumiTests/AuxiliaryWindowReceiptABATests.swift
-rg -q 'testUnresolvedExtensionWindowFailsBeforePreparationOrMutation' \
-  SumiTests/SafariExtensionWindowAndOptionsAdmissionTests.swift
-rg -q 'AuxiliaryPublicationIdentityTuple' \
-  SumiTests/AuxiliaryWindowPublicationLifecycleTests.swift
-rg -q 'originalPublication.count, 2' \
-  SumiTests/AuxiliaryWindowPublicationLifecycleTests.swift
-rg -q 'unrelatedEvents.isEmpty' \
-  SumiTests/AuxiliaryWindowPublicationLifecycleTests.swift
-rg -q 'replacement.openWindows.isEmpty' \
-  SumiTests/AuxiliaryWindowPublicationLifecycleTests.swift
-rg -q 'private weak var target' "$weak_events"
-rg -q 'events: WeakAuxiliaryWindowExtensionEvents' "$browser_aux"
-rg -Fq 'let extensionEvents: (any AuxiliaryWindowExtensionEventHandling)?' \
+require_matches 'private weak var target' "$weak_events"
+require_matches 'events: WeakAuxiliaryWindowExtensionEvents' "$browser_aux"
+require_matches -F 'let extensionEvents: (any AuxiliaryWindowExtensionEventHandling)?' \
   Sumi/AuxiliaryWindows/AuxiliaryWindowSessionRegistry.swift
-if rg -n 'weak var extensionEvents' \
+if scan_has_matches 'weak var extensionEvents' \
   Sumi/AuxiliaryWindows/AuxiliaryWindowSessionRegistry.swift; then
   echo 'error: auxiliary session stopped owning its weak lifetime projection' >&2
   exit 1
 fi
-if rg -n 'events: self' "$browser_aux" \
+if scan_has_matches 'events: self' "$browser_aux" \
   Sumi/Managers/ExtensionManager/ExtensionControllerOpeningCallbackComposition.swift; then
   echo 'error: auxiliary integration regained transitive ExtensionManager retention' >&2
   exit 1
 fi
-rg -q 'private struct ScheduledTask' "$content"
-rg -q 'tasksByProfile\[profileID\]\?\.token == token' "$content"
-rg -q 'retiredTokens' "$content"
-rg -q 'testCancelledContentScriptTaskCannotRemoveNewSameProfileTask' \
-  SumiTests/ExtensionNativeMessagingBackgroundWakeOwnerTests.swift
-rg -q 'testFullCallbackRejectsUnresolvedOwnershipBeforePreloadOrMaterialization' \
-  SumiTests/ExtensionRequestedTabServicesTests.swift
-rg -q 'testAuxiliaryIntegrationReceiptDoesNotRetainExtensionManager' \
-  SumiTests/SafariExtensionLazyRuntimePolicyTests.swift
-rg -q 'testWeakExtensionEventsFailClosedAfterEventRootDeallocation' \
-  SumiTests/AuxiliaryWindowLifecycleTests.swift
-rg -Fq 'target?.notifyAuxiliaryWindowOpened(session) ?? false' "$weak_events"
+require_matches 'private struct ScheduledTask' "$content"
+require_matches 'tasksByProfile\[profileID\]\?\.token == token' "$content"
+require_matches 'retiredTokens' "$content"
+require_matches -F 'target?.notifyAuxiliaryWindowOpened(session) ?? false' "$weak_events"
 
-if rg -n 'private (weak|unowned) var manager|private unowned let manager' \
+if scan_has_matches 'private (weak|unowned) var manager|private unowned let manager' \
   "$initial" "$native" "$retention" "$loading" "$settlement" "$deferred"; then
   echo 'error: auxiliary role regained an ExtensionManager backreference' >&2
   exit 1
 fi
-if rg -n '\bExtensionManager\b|\[(weak|unowned) manager\]' \
+if scan_has_matches '\bExtensionManager\b|\[(weak|unowned) manager\]' \
   "$opening" "$deferred"; then
   echo 'error: exact opening/deferred roles regained an ExtensionManager root' >&2
   exit 1
 fi
-rg -q 'let runtimeQuery: ExtensionDeferredRuntimeQuery' "$deferred"
-rg -q 'let contextLoading: ExtensionContextResidencyOwner' "$deferred"
-rg -q 'let backgroundWake: ExtensionBackgroundWakeCoordinator' "$deferred"
-rg -q 'deferredRuntimeOwnerStoreStorage?' \
+require_matches 'let runtimeQuery: ExtensionDeferredRuntimeQuery' "$deferred"
+require_matches 'let contextLoading: ExtensionContextResidencyOwner' "$deferred"
+require_matches 'let backgroundWake: ExtensionBackgroundWakeCoordinator' "$deferred"
+require_matches 'deferredRuntimeOwnerStoreStorage?' \
   Sumi/Managers/ExtensionManager/ExtensionManager.swift
-if rg -n '_ = deferredRuntimeOwnerStore' \
+if scan_has_matches '_ = deferredRuntimeOwnerStore' \
   Sumi/Managers/ExtensionManager/ExtensionManager.swift; then
   echo 'error: disabled extension runtime eagerly materializes deferred owners' >&2
   exit 1
 fi
-rg -Fq 'XCTAssertNil(manager.loadedInitialDocumentRuntimePreparationOwner)' \
-  SumiTests/SafariExtensionLazyRuntimePolicyTests.swift
-if rg -n 'struct Dependencies|dependencies\.' \
+if scan_has_matches 'struct Dependencies|dependencies\.' \
   "$residency" "$retention" "$loading" "$settlement"; then
   echo 'error: context residency closure dependency bag returned' >&2
   exit 1
 fi
-rg -q 'ExtensionContentScriptContextPreparationOwner' "$initial"
-rg -q 'ExtensionInitialDocumentNativeMessagingWarmupOwner' "$initial"
-rg -q 'let retention: ExtensionContextRetentionOwner' "$residency"
-rg -q 'let loading: ExtensionContextLoadingOwner' "$residency"
-rg -q 'let settlement: ExtensionContextSettlementOwner' "$residency"
+require_matches 'ExtensionContentScriptContextPreparationOwner' "$initial"
+require_matches 'ExtensionInitialDocumentNativeMessagingWarmupOwner' "$initial"
+require_matches 'let retention: ExtensionContextRetentionOwner' "$residency"
+require_matches 'let loading: ExtensionContextLoadingOwner' "$residency"
+require_matches 'let settlement: ExtensionContextSettlementOwner' "$residency"
 
 for limit_and_file in \
   "320:$bridge" \

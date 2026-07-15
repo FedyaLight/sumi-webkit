@@ -4,7 +4,8 @@ import XCTest
 
 @MainActor
 final class ShortcutSplitLauncherMoveTransactionTests: XCTestCase {
-    func testRejectedBatchDoesNotCreateSidebarSideEffect() {
+    func testRejectedBatchDoesNotCreateSidebarSideEffect() throws {
+        let tabManager = try makeInMemoryTabManager()
         let pin = makePin()
         var receivedIDs: [UUID] = []
         let batches = TestShortcutSplitLauncherMoveBatchPreparer(
@@ -13,14 +14,27 @@ final class ShortcutSplitLauncherMoveTransactionTests: XCTestCase {
                 receivedIDs = $0.map { $0.pin.id }
                 return nil
             },
-            prepareForComposedResidenceAggregate: { _ in
+            prepareForComposedResidenceAggregate: { _, _ in
                 XCTFail("Unexpected composed-residence preparation")
+                return nil
+            },
+            prepareBindingContributionForComposedResidenceAggregate: { _ in
+                XCTFail("Unexpected composed binding contribution")
+                return nil
+            },
+            preflightBindingContribution: { _ in
+                XCTFail("Unexpected binding preflight")
+                return nil
+            },
+            prepareBindingContributionPlan: { _, _ in
+                XCTFail("Unexpected insertion-plan contribution")
                 return nil
             }
         )
         let transaction = ShortcutSplitLauncherMoveTransaction(
             batches: batches,
-            windowMutations: BrowserWindowShortcutMutationOwner()
+            windowMutations: BrowserWindowShortcutMutationOwner(),
+            folderOpenState: tabManager.folderOpenState
         )
 
         XCTAssertNil(transaction.stage([restoration(for: pin)]))
@@ -28,6 +42,7 @@ final class ShortcutSplitLauncherMoveTransactionTests: XCTestCase {
     }
 
     func testPreparedBatchSettlesBeforeTerminalPublication() throws {
+        let tabManager = try makeInMemoryTabManager()
         let pin = makePin()
         var effects: [String] = []
         let batch = TestShortcutSplitLauncherMoveBatchParticipant(
@@ -43,12 +58,25 @@ final class ShortcutSplitLauncherMoveTransactionTests: XCTestCase {
             batches: TestShortcutSplitLauncherMoveBatchPreparer(
                 accepts: { _, _ in true },
                 prepare: { _ in batch },
-                prepareForComposedResidenceAggregate: { _ in
+                prepareForComposedResidenceAggregate: { _, _ in
                     XCTFail("Unexpected composed-residence preparation")
+                    return nil
+                },
+                prepareBindingContributionForComposedResidenceAggregate: { _ in
+                    XCTFail("Unexpected composed binding contribution")
+                    return nil
+                },
+                preflightBindingContribution: { _ in
+                    XCTFail("Unexpected binding preflight")
+                    return nil
+                },
+                prepareBindingContributionPlan: { _, _ in
+                    XCTFail("Unexpected insertion-plan contribution")
                     return nil
                 }
             ),
-            windowMutations: BrowserWindowShortcutMutationOwner()
+            windowMutations: BrowserWindowShortcutMutationOwner(),
+            folderOpenState: tabManager.folderOpenState
         )
 
         let sideEffect = try XCTUnwrap(
@@ -61,7 +89,8 @@ final class ShortcutSplitLauncherMoveTransactionTests: XCTestCase {
         XCTAssertEqual(effects, ["settle", "publish"])
     }
 
-    func testComposedResidenceStageUsesItsDedicatedBatchPreparation() {
+    func testComposedResidenceStageUsesItsDedicatedBatchPreparation() throws {
+        let tabManager = try makeInMemoryTabManager()
         let pin = makePin()
         var ordinaryPreparationCount = 0
         var composedPreparationCount = 0
@@ -78,18 +107,31 @@ final class ShortcutSplitLauncherMoveTransactionTests: XCTestCase {
                     ordinaryPreparationCount += 1
                     return nil
                 },
-                prepareForComposedResidenceAggregate: { _ in
+                prepareForComposedResidenceAggregate: { _, _ in
                     composedPreparationCount += 1
                     return batch
+                },
+                prepareBindingContributionForComposedResidenceAggregate: { _ in
+                    XCTFail("Unexpected composed binding contribution")
+                    return nil
+                },
+                preflightBindingContribution: { _ in
+                    XCTFail("Unexpected binding preflight")
+                    return nil
+                },
+                prepareBindingContributionPlan: { _, _ in
+                    XCTFail("Unexpected insertion-plan contribution")
+                    return nil
                 }
             ),
-            windowMutations: BrowserWindowShortcutMutationOwner()
+            windowMutations: BrowserWindowShortcutMutationOwner(),
+            folderOpenState: tabManager.folderOpenState
         )
 
         XCTAssertNotNil(
             transaction.stageForComposedResidenceAggregate([
                 restoration(for: pin),
-            ])
+            ], bindingMode: .preservingLiveBindings)
         )
         XCTAssertEqual(ordinaryPreparationCount, 0)
         XCTAssertEqual(composedPreparationCount, 1)

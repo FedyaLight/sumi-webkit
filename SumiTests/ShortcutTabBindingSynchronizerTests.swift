@@ -1,4 +1,5 @@
 import Combine
+import SumiWebRuntime
 import XCTest
 
 @testable import Sumi
@@ -110,6 +111,458 @@ final class ShortcutTabBindingSynchronizerTests: XCTestCase {
         XCTAssertEqual(window.currentShortcutPinRole, .spacePinned)
     }
 
+    func testUnsettledProfileRejectsRefreshAndRebindWithoutResidenceMutation()
+        throws {
+        let window = BrowserWindowState()
+        let tabManager = try makeInMemoryTabManager(
+            windowState: { $0 == window.id ? window : nil },
+            windows: { [(window.id, window)] }
+        )
+        let sourceSpace = tabManager.spaceServices.catalog.createSpace(
+            name: "Source"
+        )
+        let targetSpace = tabManager.spaceServices.catalog.createSpace(
+            name: "Target"
+        )
+        let source = makePin(spaceId: sourceSpace.id)
+        let target = ShortcutPin(
+            id: UUID(),
+            role: .spacePinned,
+            spaceId: targetSpace.id,
+            index: 0,
+            launchURL: source.launchURL,
+            title: source.title
+        )
+        let liveTab = try XCTUnwrap(tabManager.shortcutTabMaterializer.materialize(
+            source,
+            in: window.id,
+            currentSpaceId: sourceSpace.id
+        ))
+        let sourceEntry = try XCTUnwrap(
+            tabManager.liveShortcutTabs.entry(containing: liveTab)
+        )
+        let intent = liveTab.profileAssignment.begin(
+            desiredProfileID: UUID(),
+            resolvedProfileID: UUID(),
+            targetURL: liveTab.url,
+            navigationRevision: liveTab.mainFrameLoads.currentIntent.revision,
+            requiresStructuralPersistence: false
+        )
+
+        XCTAssertFalse(
+            tabManager.shortcutTabBindings.refreshInstances(
+                for: source.moved(to: targetSpace.id)
+            )
+        )
+        XCTAssertNil(
+            tabManager.shortcutTabMaterializer.materialize(
+                source,
+                in: window.id,
+                currentSpaceId: sourceSpace.id
+            )
+        )
+        XCTAssertFalse(
+            tabManager.shortcutTabBindings.rebind(
+                liveTab,
+                from: source,
+                to: target
+            )
+        )
+        XCTAssertTrue(liveTab.profileAssignment.isCurrent(intent))
+        XCTAssertEqual(liveTab.spaceId, sourceSpace.id)
+        XCTAssertTrue(
+            tabManager.liveShortcutTabs.entry(containing: liveTab)?
+                .isIdentical(to: sourceEntry) == true
+        )
+        liveTab.profileAssignment.abort(intent)
+    }
+
+    func testProfilelessSpaceRefreshUsesCapturedDefaultProfile() throws {
+        let window = BrowserWindowState()
+        let fallbackProfile = Profile(name: "Fallback")
+        let tabManager = try makeInMemoryTabManager(
+            currentProfileId: { nil },
+            defaultProfileId: { fallbackProfile.id },
+            profile: { $0 == fallbackProfile.id ? fallbackProfile : nil },
+            windowState: { $0 == window.id ? window : nil },
+            windows: { [(window.id, window)] }
+        )
+        window.tabManager = tabManager
+        let sourceSpace = tabManager.spaceServices.catalog.createSpace(
+            name: "Source"
+        )
+        let targetSpace = tabManager.spaceServices.catalog.createSpace(
+            name: "Target"
+        )
+        let source = makePin(spaceId: sourceSpace.id)
+        let liveTab = try XCTUnwrap(
+            tabManager.shortcutTabMaterializer.materialize(
+                source,
+                in: window.id,
+                currentSpaceId: sourceSpace.id
+            )
+        )
+
+        XCTAssertNil(liveTab.profileId)
+        XCTAssertTrue(
+            tabManager.shortcutTabBindings.refreshInstances(
+                for: source.moved(to: targetSpace.id)
+            )
+        )
+
+        XCTAssertEqual(liveTab.spaceId, targetSpace.id)
+        XCTAssertNil(liveTab.profileId)
+        XCTAssertIdentical(
+            tabManager.liveShortcutTabs.tab(for: source.id, in: window.id),
+            liveTab
+        )
+    }
+
+    func testProfilelessSpaceRefreshUsesCapturedCurrentProfile() throws {
+        let window = BrowserWindowState()
+        let fallbackProfile = Profile(name: "Fallback")
+        let tabManager = try makeInMemoryTabManager(
+            currentProfileId: { fallbackProfile.id },
+            defaultProfileId: { nil },
+            profile: { $0 == fallbackProfile.id ? fallbackProfile : nil },
+            windowState: { $0 == window.id ? window : nil },
+            windows: { [(window.id, window)] }
+        )
+        window.tabManager = tabManager
+        let sourceSpace = tabManager.spaceServices.catalog.createSpace(
+            name: "Source"
+        )
+        let targetSpace = tabManager.spaceServices.catalog.createSpace(
+            name: "Target"
+        )
+        let source = makePin(spaceId: sourceSpace.id)
+        let liveTab = try XCTUnwrap(
+            tabManager.shortcutTabMaterializer.materialize(
+                source,
+                in: window.id,
+                currentSpaceId: sourceSpace.id
+            )
+        )
+
+        XCTAssertTrue(
+            tabManager.shortcutTabBindings.refreshInstances(
+                for: source.moved(to: targetSpace.id)
+            )
+        )
+
+        XCTAssertEqual(liveTab.spaceId, targetSpace.id)
+        XCTAssertNil(liveTab.profileId)
+        XCTAssertIdentical(
+            tabManager.liveShortcutTabs.tab(for: source.id, in: window.id),
+            liveTab
+        )
+    }
+
+    func testProfilelessRefreshRejectsBeforeMutationWithoutFallbackProfile()
+        throws {
+        let window = BrowserWindowState()
+        let fallbackProfile = Profile(name: "Fallback")
+        var currentProfileID: UUID? = fallbackProfile.id
+        var defaultProfileID: UUID? = fallbackProfile.id
+        var persistedWindowIDs: [UUID] = []
+        let tabManager = try makeInMemoryTabManager(
+            currentProfileId: { currentProfileID },
+            defaultProfileId: { defaultProfileID },
+            profile: { $0 == fallbackProfile.id ? fallbackProfile : nil },
+            windowState: { $0 == window.id ? window : nil },
+            windows: { [(window.id, window)] },
+            persistWindowSession: { persistedWindowIDs.append($0.id) }
+        )
+        window.tabManager = tabManager
+        let sourceSpace = tabManager.spaceServices.catalog.createSpace(
+            name: "Source"
+        )
+        let targetSpace = tabManager.spaceServices.catalog.createSpace(
+            name: "Target"
+        )
+        let source = makePin(spaceId: sourceSpace.id)
+        let liveTab = try XCTUnwrap(
+            tabManager.shortcutTabMaterializer.materialize(
+                source,
+                in: window.id,
+                currentSpaceId: sourceSpace.id
+            )
+        )
+        let sourceEntry = try XCTUnwrap(
+            tabManager.liveShortcutTabs.entry(containing: liveTab)
+        )
+        let sourceWindow = window.unpublishedShortcutMutationState
+        let sourceRevision = liveTab.profileAssignment.changeRevision
+        var structuralEvents = 0
+        let cancellable = tabManager.tabStructureEventBus
+            .structureChangedPublisher.sink { structuralEvents += 1 }
+        structuralEvents = 0
+        currentProfileID = nil
+        defaultProfileID = nil
+
+        XCTAssertFalse(
+            tabManager.shortcutTabBindings.refreshInstances(
+                for: source.moved(to: targetSpace.id)
+            )
+        )
+
+        XCTAssertEqual(liveTab.spaceId, sourceSpace.id)
+        XCTAssertEqual(
+            liveTab.profileAssignment.changeRevision,
+            sourceRevision
+        )
+        XCTAssertEqual(window.unpublishedShortcutMutationState, sourceWindow)
+        XCTAssertTrue(
+            tabManager.liveShortcutTabs.entry(containing: liveTab)?
+                .isIdentical(to: sourceEntry) == true
+        )
+        XCTAssertEqual(structuralEvents, 0)
+        XCTAssertTrue(persistedWindowIDs.isEmpty)
+        _ = cancellable
+    }
+
+    func testDuplicateRefreshAdmissionRejectsWithoutResidenceMutationOrTrap()
+        throws {
+        let window = BrowserWindowState()
+        let tabManager = try makeInMemoryTabManager(
+            windowState: { $0 == window.id ? window : nil },
+            windows: { [(window.id, window)] }
+        )
+        window.tabManager = tabManager
+        let sourceSpace = tabManager.spaceServices.catalog.createSpace(
+            name: "Source"
+        )
+        let targetSpace = tabManager.spaceServices.catalog.createSpace(
+            name: "Target"
+        )
+        let source = makePin(spaceId: sourceSpace.id)
+        let target = source.moved(to: targetSpace.id)
+        let liveTab = try XCTUnwrap(
+            tabManager.shortcutTabMaterializer.materialize(
+                source,
+                in: window.id,
+                currentSpaceId: sourceSpace.id
+            )
+        )
+        let sourceEntry = try XCTUnwrap(
+            tabManager.liveShortcutTabs.entry(containing: liveTab)
+        )
+        let sourceWindow = window.unpublishedShortcutMutationState
+        let admitted = try XCTUnwrap(
+            tabManager.shortcutTabBindings.refreshAdmission(for: target)
+        )
+        let change = try XCTUnwrap(admitted.changes.first)
+        let duplicate = LiveShortcutPresentationRefreshAdmission(
+            pin: target,
+            changes: [change, change]
+        )
+        var structuralEvents = 0
+        let cancellable = tabManager.tabStructureEventBus
+            .structureChangedPublisher.sink { structuralEvents += 1 }
+        structuralEvents = 0
+
+        XCTAssertFalse(tabManager.shortcutTabBindings.refreshInstances(
+            for: target,
+            admission: duplicate
+        ))
+
+        XCTAssertTrue(
+            tabManager.liveShortcutTabs.entry(containing: liveTab)?
+                .isIdentical(to: sourceEntry) == true
+        )
+        XCTAssertEqual(liveTab.spaceId, sourceSpace.id)
+        XCTAssertEqual(liveTab.shortcutPinId, source.id)
+        XCTAssertEqual(window.unpublishedShortcutMutationState, sourceWindow)
+        XCTAssertEqual(structuralEvents, 0)
+        _ = cancellable
+    }
+
+    func testProfilelessRefreshRejectsFallbackDriftBeforeModelStage() throws {
+        let window = BrowserWindowState()
+        let firstProfile = Profile(name: "First")
+        let replacementProfile = Profile(name: "Replacement")
+        let profiles = [
+            firstProfile.id: firstProfile,
+            replacementProfile.id: replacementProfile,
+        ]
+        var currentProfileID: UUID? = firstProfile.id
+        var executionCount = 0
+        let lifecycle = TestRuntimePorts.webViewLifecycle(
+            retirement: .rejecting,
+            executePreparedProfileAssignments: {
+                assignments,
+                binding,
+                _ in
+                executionCount += 1
+                currentProfileID = replacementProfile.id
+                let transaction =
+                    PreparedProfileAssignmentBatchModelTransaction(
+                        assignments: assignments,
+                        binding: binding
+                    )
+                XCTAssertFalse(transaction.validateForStaging())
+                return .rejectedUnstaged(.stale)
+            }
+        )
+        let tabManager = try makeInMemoryTabManager(
+            currentProfileId: { currentProfileID },
+            defaultProfileId: { nil },
+            profile: { profiles[$0] },
+            windowState: { $0 == window.id ? window : nil },
+            windows: { [(window.id, window)] },
+            webViewLifecycle: lifecycle
+        )
+        window.tabManager = tabManager
+        let sourceSpace = tabManager.spaceServices.catalog.createSpace(
+            name: "Source"
+        )
+        let targetSpace = tabManager.spaceServices.catalog.createSpace(
+            name: "Target"
+        )
+        let source = makePin(spaceId: sourceSpace.id)
+        let liveTab = try XCTUnwrap(
+            tabManager.shortcutTabMaterializer.materialize(
+                source,
+                in: window.id,
+                currentSpaceId: sourceSpace.id
+            )
+        )
+        let sourceEntry = try XCTUnwrap(
+            tabManager.liveShortcutTabs.entry(containing: liveTab)
+        )
+        let sourceWindow = window.unpublishedShortcutMutationState
+        let sourceRevision = liveTab.profileAssignment.changeRevision
+
+        XCTAssertFalse(
+            tabManager.shortcutTabBindings.refreshInstances(
+                for: source.moved(to: targetSpace.id)
+            )
+        )
+
+        XCTAssertEqual(executionCount, 1)
+        XCTAssertEqual(liveTab.spaceId, sourceSpace.id)
+        XCTAssertEqual(
+            liveTab.profileAssignment.changeRevision,
+            sourceRevision
+        )
+        XCTAssertEqual(window.unpublishedShortcutMutationState, sourceWindow)
+        XCTAssertTrue(
+            tabManager.liveShortcutTabs.entry(containing: liveTab)?
+                .isIdentical(to: sourceEntry) == true
+        )
+    }
+
+    func testPipelineOwnedRefreshPublishesNothingAndRollsBackExactModel()
+        throws {
+        let window = BrowserWindowState()
+        let sourceProfile = Profile(name: "Source")
+        let targetProfile = Profile(name: "Target")
+        let profiles = [
+            sourceProfile.id: sourceProfile,
+            targetProfile.id: targetProfile,
+        ]
+        var pending: (any WebViewReplacementModelTransaction)?
+        var inspectBeforeRepositoryStage: (() -> Void)?
+        var sourceWasExactBeforeRepositoryStage = false
+        var persistedWindowIDs: [UUID] = []
+        let lifecycle = TestRuntimePorts.webViewLifecycle(
+            retirement: .rejecting,
+            executePreparedProfileAssignments: {
+                assignments,
+                binding,
+                _ in
+                inspectBeforeRepositoryStage?()
+                let transaction = PreparedProfileAssignmentBatchModelTransaction(
+                    assignments: assignments,
+                    binding: binding
+                )
+                guard transaction.validateForStaging() else {
+                    return .rejectedUnstaged(.stale)
+                }
+                do { try transaction.stage() } catch {
+                    return .rejectedSettled
+                }
+                pending = transaction
+                return .pipelineOwned
+            }
+        )
+        let tabManager = try makeInMemoryTabManager(
+            currentProfileId: { sourceProfile.id },
+            defaultProfileId: { sourceProfile.id },
+            profile: { profiles[$0] },
+            windowState: { $0 == window.id ? window : nil },
+            windows: { [(window.id, window)] },
+            persistWindowSession: { persistedWindowIDs.append($0.id) },
+            webViewLifecycle: lifecycle
+        )
+        window.tabManager = tabManager
+        let sourceSpace = tabManager.spaceServices.catalog.createSpace(
+            name: "Source",
+            profileId: sourceProfile.id
+        )
+        let targetSpace = tabManager.spaceServices.catalog.createSpace(
+            name: "Target",
+            profileId: targetProfile.id
+        )
+        let source = makePin(spaceId: sourceSpace.id)
+        tabManager.structuralCollectionMutationOwner
+            .setSpacePinnedShortcuts([source], for: sourceSpace.id)
+        let liveTab = try XCTUnwrap(
+            tabManager.shortcutTabMaterializer.materialize(
+                source,
+                in: window.id,
+                currentSpaceId: sourceSpace.id
+            )
+        )
+        let sourceEntry = try XCTUnwrap(
+            tabManager.liveShortcutTabs.entry(containing: liveTab)
+        )
+        window.currentSpaceId = sourceSpace.id
+        window.currentTabId = liveTab.id
+        window.currentShortcutPinId = source.id
+        window.currentShortcutPinRole = source.role
+        var structuralEvents = 0
+        let cancellable = tabManager.tabStructureEventBus
+            .structureChangedPublisher.sink { structuralEvents += 1 }
+        structuralEvents = 0
+        inspectBeforeRepositoryStage = {
+            sourceWasExactBeforeRepositoryStage =
+                tabManager.liveShortcutTabs.entry(containing: liveTab)?
+                    .isIdentical(to: sourceEntry) == true
+                && liveTab.spaceId == sourceSpace.id
+                && liveTab.shortcutPinId == source.id
+                && window.currentSpaceId == sourceSpace.id
+                && window.currentShortcutPinId == source.id
+        }
+
+        XCTAssertTrue(
+            tabManager.shortcutTabBindings.refreshInstances(
+                for: source.moved(to: targetSpace.id)
+            )
+        )
+
+        XCTAssertNotNil(pending)
+        XCTAssertTrue(sourceWasExactBeforeRepositoryStage)
+        XCTAssertEqual(structuralEvents, 0)
+        XCTAssertTrue(persistedWindowIDs.isEmpty)
+
+        let transaction = try XCTUnwrap(pending)
+        try transaction.rollback()
+        transaction.publishRollback()
+
+        XCTAssertTrue(
+            tabManager.liveShortcutTabs.entry(containing: liveTab)?
+                .isIdentical(to: sourceEntry) == true
+        )
+        XCTAssertEqual(liveTab.spaceId, sourceSpace.id)
+        XCTAssertEqual(liveTab.profileId, sourceProfile.id)
+        XCTAssertEqual(window.currentSpaceId, sourceSpace.id)
+        XCTAssertEqual(window.currentShortcutPinId, source.id)
+        XCTAssertEqual(structuralEvents, 0)
+        XCTAssertTrue(persistedWindowIDs.isEmpty)
+        _ = cancellable
+    }
+
     func testRebindRekeysExactInstanceAndRepairsSelectionMetadata() throws {
         let window = BrowserWindowState()
         let tabManager = try makeInMemoryTabManager(
@@ -214,7 +667,7 @@ final class ShortcutTabBindingSynchronizerTests: XCTestCase {
         )
     }
 
-    func testStagedRefreshRejectsWindowDriftAndRollsBackResidenceWithoutEffects() throws {
+    func testPreparedRefreshRejectsWindowDriftWithoutMutatingResidence() throws {
         let window = BrowserWindowState()
         var persistedWindowIDs: [UUID] = []
         let tabManager = try makeInMemoryTabManager(
@@ -230,6 +683,8 @@ final class ShortcutTabBindingSynchronizerTests: XCTestCase {
             name: "Target"
         )
         let source = makePin(spaceId: sourceSpace.id)
+        tabManager.structuralCollectionMutationOwner
+            .setSpacePinnedShortcuts([source], for: sourceSpace.id)
         let liveTab = try XCTUnwrap(
             tabManager.shortcutTabMaterializer.materialize(
                 source,
@@ -241,12 +696,21 @@ final class ShortcutTabBindingSynchronizerTests: XCTestCase {
         window.currentTabId = liveTab.id
         window.currentShortcutPinId = source.id
         window.currentShortcutPinRole = source.role
-        let moved = source.moved(to: targetSpace.id)
-        let staging = ShortcutSplitLauncherBindingStaging(
-            tabManager: tabManager
-        )
-        let admission = try XCTUnwrap(
-            staging.admission(for: moved)
+        let transaction = ShortcutSplitLauncherMoveTransaction(
+            batches: ShortcutSplitLauncherMoveBatchStaging(
+                catalog: ShortcutSplitLauncherCatalogTransaction(
+                    pinStore: tabManager.shortcutPinStoreOwner,
+                    pins: tabManager.shortcutPinCollectionStateOwner
+                ),
+                bindingStaging: ShortcutSplitLauncherBindingStaging(
+                    tabManager: tabManager
+                ),
+                residenceMutations: tabManager.liveShortcutTabs.staging,
+                structuralMutations: tabManager.structuralCollectionMutationOwner,
+                structuralLookup: tabManager.structuralLookupCoordinator
+            ),
+            windowMutations: tabManager.shortcutWindowMutationOwner,
+            folderOpenState: tabManager.folderOpenState
         )
         var structuralEvents = 0
         let cancellable = tabManager.tabStructureEventBus
@@ -254,17 +718,25 @@ final class ShortcutTabBindingSynchronizerTests: XCTestCase {
         structuralEvents = 0
         let profileRevision = liveTab.profileAssignment.changeRevision
 
-        let receipt = try XCTUnwrap(
-            staging.stage(
-                pin: moved,
-                admission: admission
-            )
+        let mutation = try XCTUnwrap(
+            transaction.stage([
+                PreparedShortcutSplitLauncherRestoration(
+                    pin: source,
+                    destination: ShortcutSplitLauncherDestination(
+                        role: .spacePinned,
+                        profileId: nil,
+                        spaceId: targetSpace.id,
+                        folderId: nil,
+                        index: 0
+                    )
+                ),
+            ])
         )
 
         XCTAssertEqual(
             tabManager.liveShortcutTabs.entry(containing: liveTab)?
                 .presentationPage.page.spaceID,
-            targetSpace.id
+            sourceSpace.id
         )
         XCTAssertEqual(liveTab.spaceId, sourceSpace.id)
         XCTAssertEqual(window.currentSpaceId, sourceSpace.id)
@@ -275,9 +747,8 @@ final class ShortcutTabBindingSynchronizerTests: XCTestCase {
         let foreignTabID = UUID()
         window.currentTabId = foreignTabID
 
-        XCTAssertFalse(receipt.isCurrent())
-        XCTAssertTrue(receipt.canRollback())
-        XCTAssertTrue(receipt.rollback())
+        XCTAssertFalse(mutation.isCurrent())
+        XCTAssertTrue(mutation.rollback())
         XCTAssertEqual(
             tabManager.liveShortcutTabs.entry(containing: liveTab)?
                 .presentationPage.page.spaceID,
@@ -367,11 +838,13 @@ final class ShortcutTabBindingSynchronizerTests: XCTestCase {
                 tabManager: tabManager
             ),
             residenceMutations: tabManager.liveShortcutTabs.staging,
-            folderOpenState: tabManager.folderOpenState
+            structuralMutations: tabManager.structuralCollectionMutationOwner,
+            structuralLookup: tabManager.structuralLookupCoordinator
         )
         let transaction = ShortcutSplitLauncherMoveTransaction(
             batches: batches,
-            windowMutations: tabManager.shortcutWindowMutationOwner
+            windowMutations: tabManager.shortcutWindowMutationOwner,
+            folderOpenState: tabManager.folderOpenState
         )
         let destination = ShortcutSplitLauncherDestination(
             role: .essential,
@@ -384,34 +857,26 @@ final class ShortcutTabBindingSynchronizerTests: XCTestCase {
         let cancellable = tabManager.tabStructureEventBus
             .structureChangedPublisher.sink { structuralEvents += 1 }
         structuralEvents = 0
-        var restoredBeforeOuterRollback = false
+        let mutation = try XCTUnwrap(transaction.stage([
+            PreparedShortcutSplitLauncherRestoration(
+                pin: first,
+                destination: destination
+            ),
+            PreparedShortcutSplitLauncherRestoration(
+                pin: second,
+                destination: destination
+            ),
+        ]))
+        XCTAssertIdentical(
+            tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: firstID),
+            first
+        )
+        XCTAssertIdentical(
+            tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: secondID),
+            second
+        )
 
-        let committed = tabManager.structuralCollectionMutationOwner
-            .withReversibleSideEffects {
-                let result = transaction.stage([
-                    PreparedShortcutSplitLauncherRestoration(
-                        pin: first,
-                        destination: destination
-                    ),
-                    PreparedShortcutSplitLauncherRestoration(
-                        pin: second,
-                        destination: destination
-                    ),
-                ])
-                restoredBeforeOuterRollback =
-                    tabManager.shortcutPinCollectionStateOwner
-                        .shortcutPin(by: firstID) === first
-                    && tabManager.shortcutPinCollectionStateOwner
-                        .shortcutPin(by: secondID) === second
-                    && tabManager.liveShortcutTabs
-                        .entry(containing: firstTab)?.pinId == firstID
-                    && tabManager.liveShortcutTabs
-                        .entry(containing: secondTab)?.pinId == secondID
-                return result != nil
-            }
-
-        XCTAssertFalse(committed)
-        XCTAssertTrue(restoredBeforeOuterRollback)
+        XCTAssertFalse(mutation.settleModel())
         XCTAssertIdentical(
             tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: firstID),
             first
@@ -442,6 +907,173 @@ final class ShortcutTabBindingSynchronizerTests: XCTestCase {
         _ = cancellable
     }
 
+    func testLauncherBatchExecutesAllProfilesBeforeAnyWindowPersistence() throws {
+        let window = BrowserWindowState()
+        let sourceProfile = Profile(name: "Source")
+        let targetProfile = Profile(name: "Target")
+        let profiles = [
+            sourceProfile.id: sourceProfile,
+            targetProfile.id: targetProfile,
+        ]
+        var profileExecutions = 0
+        var profileCountsAtPersistence: [Int] = []
+        let tabManager = try makeInMemoryTabManager(
+            currentProfileId: { sourceProfile.id },
+            defaultProfileId: { sourceProfile.id },
+            profile: { profiles[$0] },
+            windowState: { $0 == window.id ? window : nil },
+            windows: { [(window.id, window)] },
+            persistWindowSession: { _ in
+                profileCountsAtPersistence.append(profileExecutions)
+            },
+            executeProfileAssignment: { tab, _, intent in
+                profileExecutions += 1
+                return tab.profileAssignment.commit(intent) ? .committed : .stale
+            }
+        )
+        window.tabManager = tabManager
+        let sourceSpaces = (0..<2).map { index in
+            tabManager.spaceServices.catalog.createSpace(
+                name: "Source \(index)",
+                profileId: sourceProfile.id
+            )
+        }
+        let targetSpace = tabManager.spaceServices.catalog.createSpace(
+            name: "Target",
+            profileId: targetProfile.id
+        )
+        let pins = sourceSpaces.enumerated().map { index, space in
+            ShortcutPin(
+                id: UUID(),
+                role: .spacePinned,
+                spaceId: space.id,
+                index: 0,
+                launchURL: URL(string: "https://ordered-\(index).example")!,
+                title: "Ordered \(index)"
+            )
+        }.compactMap { pin in
+            tabManager.shortcutPinStoreOwner.insert(pin, at: pin.index)
+        }
+        XCTAssertEqual(pins.count, 2)
+        let tabs = try zip(pins, sourceSpaces).map { pin, sourceSpace in
+            try XCTUnwrap(tabManager.shortcutTabMaterializer.materialize(
+                pin,
+                in: window.id,
+                currentSpaceId: sourceSpace.id
+            ))
+        }
+        window.currentSpaceId = sourceSpaces[0].id
+        window.currentTabId = tabs[0].id
+        window.currentShortcutPinId = pins[0].id
+        window.currentShortcutPinRole = pins[0].role
+
+        let batches = ShortcutSplitLauncherMoveBatchStaging(
+            catalog: ShortcutSplitLauncherCatalogTransaction(
+                pinStore: tabManager.shortcutPinStoreOwner,
+                pins: tabManager.shortcutPinCollectionStateOwner
+            ),
+            bindingStaging: ShortcutSplitLauncherBindingStaging(
+                tabManager: tabManager
+            ),
+            residenceMutations: tabManager.liveShortcutTabs.staging,
+            structuralMutations: tabManager.structuralCollectionMutationOwner,
+            structuralLookup: tabManager.structuralLookupCoordinator
+        )
+        let transaction = ShortcutSplitLauncherMoveTransaction(
+            batches: batches,
+            windowMutations: tabManager.shortcutWindowMutationOwner,
+            folderOpenState: tabManager.folderOpenState
+        )
+        let restorations = zip(pins, pins.indices).map { pin, index in
+            PreparedShortcutSplitLauncherRestoration(
+                pin: pin,
+                destination: ShortcutSplitLauncherDestination(
+                    role: .spacePinned,
+                    profileId: nil,
+                    spaceId: targetSpace.id,
+                    folderId: nil,
+                    index: index
+                )
+            )
+        }
+        XCTAssertTrue(restorations.allSatisfy {
+            transaction.accepts($0.pin, destination: $0.destination)
+        })
+        var structuralEvents = 0
+        let cancellable = tabManager.tabStructureEventBus
+            .structureChangedPublisher.sink { structuralEvents += 1 }
+        structuralEvents = 0
+        let mutation = try XCTUnwrap(transaction.stage(restorations))
+
+        XCTAssertEqual(structuralEvents, 0)
+        XCTAssertTrue(mutation.settleModel())
+        XCTAssertEqual(structuralEvents, 0)
+        XCTAssertEqual(tabs.map(\.profileId), [nil, nil])
+        XCTAssertEqual(profileExecutions, 0)
+        XCTAssertTrue(profileCountsAtPersistence.isEmpty)
+
+        mutation.commit()
+
+        XCTAssertEqual(profileExecutions, 2)
+        XCTAssertEqual(profileCountsAtPersistence, [2])
+        XCTAssertEqual(structuralEvents, 1)
+        _ = cancellable
+    }
+
+    func testResidenceTerminalDrainRejectsBeforeAbandoningAnyParticipant() {
+        let first = TerminalDrainResidenceParticipant(canAbandon: true)
+        let rejecting = TerminalDrainResidenceParticipant(canAbandon: false)
+        let aggregate = ShortcutTabBindingResidenceCompositeTransaction([
+            first,
+            rejecting,
+        ])
+
+        XCTAssertFalse(aggregate.canAbandonForTerminalDrain())
+        XCTAssertEqual(first.abandonCount, 0)
+        XCTAssertEqual(rejecting.abandonCount, 0)
+    }
+
+    func testRetainedLauncherFailureSealsStructuralOwnerWithoutPublishing()
+        throws {
+        let tabManager = try makeInMemoryTabManager()
+        let space = tabManager.spaceServices.catalog.createSpace(name: "Space")
+        let target = makePin(spaceId: space.id)
+        var structuralEvents = 0
+        let cancellable = tabManager.tabStructureEventBus
+            .structureChangedPublisher.sink { structuralEvents += 1 }
+        structuralEvents = 0
+        let model = RetainedFailureLauncherBindingModel {
+            tabManager.structuralCollectionMutationOwner
+                .setSpacePinnedShortcuts([target], for: space.id)
+        }
+        let aggregate = ShortcutSplitLauncherBindingAggregateTransaction(
+            model: model,
+            structuralMutations: tabManager.structuralCollectionMutationOwner,
+            structuralLookup: tabManager.structuralLookupCoordinator
+        )
+
+        XCTAssertThrowsError(try aggregate.stage())
+        XCTAssertTrue(aggregate.retainsModelAfterFailedStage())
+        XCTAssertIdentical(
+            tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: target.id),
+            target
+        )
+        XCTAssertEqual(structuralEvents, 0)
+        let unrelated = try XCTUnwrap(
+            tabManager.structuralCollectionMutationOwner.prepareAggregate()
+        )
+        XCTAssertTrue(unrelated.rollback())
+        XCTAssertTrue(aggregate.canSettleTerminalDrain())
+        XCTAssertTrue(aggregate.settleTerminalDrain())
+        XCTAssertIdentical(
+            tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: target.id),
+            target
+        )
+        XCTAssertEqual(model.terminalDrainCount, 1)
+        XCTAssertEqual(structuralEvents, 0)
+        _ = cancellable
+    }
+
     private func makePin(spaceId: UUID) -> ShortcutPin {
         ShortcutPin(
             id: UUID(),
@@ -452,6 +1084,71 @@ final class ShortcutTabBindingSynchronizerTests: XCTestCase {
             title: "Binding"
         )
     }
+}
+
+@MainActor
+private final class TerminalDrainResidenceParticipant:
+    ShortcutTabBindingResidenceTransaction {
+    let canAbandon: Bool
+    private(set) var abandonCount = 0
+
+    init(canAbandon: Bool) {
+        self.canAbandon = canAbandon
+    }
+
+    func validateForStaging() -> Bool { true }
+    func stage() -> Bool { true }
+    func stagedModelIsExact() -> Bool { true }
+    func cancelPrepared() -> Bool { true }
+    func canRollback() -> Bool { true }
+    func publish() -> Bool { true }
+    func rollback() -> Bool { true }
+    func canAbandonForTerminalDrain() -> Bool { canAbandon }
+    func abandonForTerminalDrain() { abandonCount += 1 }
+}
+
+@MainActor
+private final class RetainedFailureLauncherBindingModel:
+    ShortcutSplitLauncherBindingModelTransaction {
+    let exactBindingTabs: [Tab] = []
+    private let stageCatalogMutation: () -> Void
+    private(set) var terminalDrainCount = 0
+
+    init(stageCatalogMutation: @escaping () -> Void) {
+        self.stageCatalogMutation = stageCatalogMutation
+    }
+
+    func validateForStaging() -> Bool { true }
+    func stageCatalog() -> Bool {
+        stageCatalogMutation()
+        return true
+    }
+    func prepareStructuralRollbackAfterCatalogStage() -> Bool { false }
+    func stageBinding() throws { throw RetainedFailure() }
+    func stagedModelIsExact() -> Bool { false }
+    func canClaimTerminalModel() -> Bool { false }
+    func claimTerminalModel() -> WebViewReplacementTerminalModelClaimOutcome {
+        .terminallyDrained
+    }
+    func claimedModelIsExact() -> Bool { false }
+    func publishModelCommit(beforeWindowPublication: () -> Void) {
+        preconditionFailure("Retained failure cannot publish")
+    }
+    func publishTerminalEffects() {
+        preconditionFailure("Retained failure cannot publish")
+    }
+    func cancelPrepared() -> Bool { false }
+    func rollbackBinding() throws { throw RetainedFailure() }
+    func confirmStructuralRollback() -> Bool { false }
+    func publishRollback() {}
+    func retainsModelAfterFailedStage() -> Bool { true }
+    func canSettleTerminalDrain() -> Bool { true }
+    func settleTerminalDrain() -> Bool {
+        terminalDrainCount += 1
+        return true
+    }
+
+    private struct RetainedFailure: Error {}
 }
 
 private extension ShortcutPin {

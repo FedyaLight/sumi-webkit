@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$repo_root"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "$script_dir/.." && pwd)"
+# shellcheck source=scripts/lib/architecture_guard.sh
+source "$script_dir/lib/architecture_guard.sh"
+guard_initialize "$repo_root"
 
 fixture_dir="SumiUITests/Fixtures/SmokeStore"
 manifest="$fixture_dir/sumi-ui-smoke-store-manifest.json"
@@ -11,11 +14,9 @@ fixture_resolver="SumiUITests/SumiLaunchSmokeStoreFixture.swift"
 test_case="SumiUITests/SumiLaunchSmokeUITestCase.swift"
 
 for file in "$manifest" "$fixture_support" "$fixture_resolver" "$test_case"; do
-  if [[ ! -f "$file" ]]; then
-    printf 'error: UI smoke fixture boundary file missing: %s\n' "$file" >&2
-    exit 1
-  fi
+  guard_require_file "$file"
 done
+guard_require_directory "$fixture_dir"
 
 python3 - "$fixture_dir" "$manifest" <<'PY'
 import hashlib
@@ -67,7 +68,9 @@ for entry in manifest["files"]:
         )
 PY
 
-if rg -n 'Thread\.sleep' SumiUITests --glob '*.swift'; then
+thread_sleep_hits="$(guard_capture_matches 'Thread\.sleep' SumiUITests --glob '*.swift')"
+if [[ -n "$thread_sleep_hits" ]]; then
+  printf '%s\n' "$thread_sleep_hits"
   echo 'error: SumiUITests must synchronize on observable UI state, not Thread.sleep' >&2
   exit 1
 fi
@@ -78,7 +81,9 @@ runtime_files=(
   "$test_case"
 )
 forbidden_runtime_pattern='getpwuid|homeDirectoryForCurrentUser|NSHomeDirectory|Library/Application Support/com\.sumi\.browser/default\.store|SumiTests/Fixtures|#filePath'
-if rg -n "$forbidden_runtime_pattern" "${runtime_files[@]}"; then
+forbidden_runtime_hits="$(guard_capture_matches "$forbidden_runtime_pattern" "${runtime_files[@]}")"
+if [[ -n "$forbidden_runtime_hits" ]]; then
+  printf '%s\n' "$forbidden_runtime_hits"
   echo 'error: UI fixture runtime must not resolve source-tree, home-directory, or developer app-support state' >&2
   exit 1
 fi

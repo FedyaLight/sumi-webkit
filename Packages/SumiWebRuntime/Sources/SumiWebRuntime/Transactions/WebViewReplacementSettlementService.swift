@@ -25,6 +25,7 @@ public final class WebViewReplacementSettlementService {
         case awaitingBindings
         case claimingTerminalModel
         case retiringCommitted
+        case restoringRollback
         case conflicted
     }
 
@@ -228,8 +229,7 @@ public final class WebViewReplacementSettlementService {
 
         runtime.quiesceRetired(retired)
         guard transactionsByID[transactionID] === transaction else { return }
-        complete(transaction, outcome: .conflicted)
-        runtime.observeSettlement(.conflicted(transactionID))
+        completeConflict(transaction)
     }
 
     /// Accepts only the transaction nonce, exact live WebView, semantic
@@ -367,11 +367,16 @@ public final class WebViewReplacementSettlementService {
         for transaction in transactions {
             transaction.timeoutTask?.cancel()
             transaction.timeoutTask = nil
-            transaction.model.settleTerminalDrain()
-            complete(transaction, outcome: .abandonedForTerminalShutdown)
-            runtime.observeSettlement(
-                .abandonedForTerminalShutdown(transaction.id)
-            )
+            if transaction.model.canSettleTerminalDrain(),
+               transaction.model.settleTerminalDrain() {
+                complete(transaction, outcome: .abandonedForTerminalShutdown)
+                runtime.observeSettlement(
+                    .abandonedForTerminalShutdown(transaction.id)
+                )
+            } else {
+                complete(transaction, outcome: .conflicted)
+                runtime.observeSettlement(.conflicted(transaction.id))
+            }
         }
     }
 
@@ -382,7 +387,11 @@ public final class WebViewReplacementSettlementService {
               case .awaitingBindings = transaction.state else {
             return .leaseLost(transaction.id)
         }
-        guard runtime.validateCommitLease(transaction.lease) else {
+        let commitLeaseIsValid = runtime.validateCommitLease(transaction.lease)
+        guard transactionsByID[transaction.id] === transaction else {
+            return .leaseLost(transaction.id)
+        }
+        guard commitLeaseIsValid else {
             let reason = WebViewReplacementRollbackReason
                 .commitValidationFailed
             switch rollback(transaction, reason: reason) {
@@ -394,11 +403,19 @@ public final class WebViewReplacementSettlementService {
                 return .leaseLost(transaction.id)
             }
         }
-        guard transaction.model.stagedModelIsExact() else {
+        let stagedModelIsExact = transaction.model.stagedModelIsExact()
+        guard transactionsByID[transaction.id] === transaction else {
+            return .leaseLost(transaction.id)
+        }
+        guard stagedModelIsExact else {
             markConflicted(transaction)
             return .conflicted(transaction.id)
         }
-        guard transaction.model.canClaimTerminalModel() else {
+        let canClaimTerminalModel = transaction.model.canClaimTerminalModel()
+        guard transactionsByID[transaction.id] === transaction else {
+            return .leaseLost(transaction.id)
+        }
+        guard canClaimTerminalModel else {
             let reason = WebViewReplacementRollbackReason
                 .commitValidationFailed
             switch rollback(transaction, reason: reason) {
@@ -412,6 +429,27 @@ public final class WebViewReplacementSettlementService {
         }
         switch runtime.commitLease(transaction.lease) {
         case .committed(let retired):
+            guard transactionsByID[transaction.id] === transaction else {
+                runtime.retireCommitted(retired)
+                return .leaseLost(transaction.id)
+            }
+            let committedModelIsExact = transaction.model.stagedModelIsExact()
+            guard transactionsByID[transaction.id] === transaction else {
+                runtime.retireCommitted(retired)
+                return .leaseLost(transaction.id)
+            }
+            guard committedModelIsExact else {
+                return retireCommittedAndQuarantine(transaction, retired: retired)
+            }
+            let committedModelCanBeClaimed = transaction.model
+                .canClaimTerminalModel()
+            guard transactionsByID[transaction.id] === transaction else {
+                runtime.retireCommitted(retired)
+                return .leaseLost(transaction.id)
+            }
+            guard committedModelCanBeClaimed else {
+                return retireCommittedAndQuarantine(transaction, retired: retired)
+            }
             transaction.state = .claimingTerminalModel
             let claimOutcome = transaction.model.claimTerminalModel()
             guard transactionsByID[transaction.id] === transaction else {
@@ -419,6 +457,17 @@ public final class WebViewReplacementSettlementService {
                 // repository commit returned it to this settlement service.
                 runtime.retireCommitted(retired)
                 return .leaseLost(transaction.id)
+            }
+            guard claimOutcome == .sealed else {
+                return retireCommittedAndQuarantine(transaction, retired: retired)
+            }
+            let claimedModelIsExact = transaction.model.claimedModelIsExact()
+            guard transactionsByID[transaction.id] === transaction else {
+                runtime.retireCommitted(retired)
+                return .leaseLost(transaction.id)
+            }
+            guard claimedModelIsExact else {
+                return retireCommittedAndQuarantine(transaction, retired: retired)
             }
             transaction.state = .retiringCommitted
             runtime.retireCommitted(retired)
@@ -428,25 +477,30 @@ public final class WebViewReplacementSettlementService {
                 // predecessor returned by the repository.
                 return .leaseLost(transaction.id)
             }
-            remove(transaction)
-            switch claimOutcome {
-            case .sealed:
-                complete(transaction, outcome: .committed)
-                runtime.observeSettlement(.committed(transaction.id))
-                return .committed(transaction.id)
-            case .terminallyDrained:
-                complete(transaction, outcome: .leaseLost)
-                runtime.observeSettlement(.leaseLost(transaction.id))
+            let retiredModelIsExact = transaction.model.claimedModelIsExact()
+            guard transactionsByID[transaction.id] === transaction else {
                 return .leaseLost(transaction.id)
             }
+            guard retiredModelIsExact else {
+                retainCommittedConflict(transaction)
+                return .conflicted(transaction.id)
+            }
+            remove(transaction)
+            complete(transaction, outcome: .committed)
+            runtime.observeSettlement(.committed(transaction.id))
+            return .committed(transaction.id)
         case .conflict:
+            guard transactionsByID[transaction.id] === transaction else {
+                return .leaseLost(transaction.id)
+            }
             markConflicted(transaction)
             return .conflicted(transaction.id)
         case .noLongerActive:
-            remove(transaction)
-            complete(transaction, outcome: .leaseLost)
-            runtime.observeSettlement(.leaseLost(transaction.id))
-            return .leaseLost(transaction.id)
+            guard transactionsByID[transaction.id] === transaction else {
+                return .leaseLost(transaction.id)
+            }
+            markConflicted(transaction)
+            return .conflicted(transaction.id)
         }
     }
 
@@ -462,29 +516,40 @@ public final class WebViewReplacementSettlementService {
         // staged evidence drifted while bindings were pending, neither the
         // repository nor the model may compensate against an alias/newer
         // value. Keep both generations quarantined for terminal ownership.
-        guard transaction.model.stagedModelIsExact() else {
+        let stagedModelIsExact = transaction.model.stagedModelIsExact()
+        guard transactionsByID[transaction.id] === transaction else {
+            return .leaseLost
+        }
+        guard stagedModelIsExact else {
             markConflicted(transaction)
             return .conflicted
         }
-        switch runtime.rollbackLease(
+        let rollbackResult = runtime.rollbackLease(
             transaction.lease,
             transaction.model.rollback
-        ) {
+        )
+        guard transactionsByID[transaction.id] === transaction else {
+            return .leaseLost
+        }
+        switch rollbackResult {
         case .rolledBack(let discarded):
-            remove(transaction)
+            transaction.state = .restoringRollback
             runtime.restoreAfterRollback(
                 discarded,
                 transaction.retiredBeforeBegin,
                 reason
             )
+            guard transactionsByID[transaction.id] === transaction else {
+                return .leaseLost
+            }
+            remove(transaction)
             complete(transaction, outcome: .rolledBack(reason))
             runtime.observeSettlement(.rolledBack(transaction.id, reason))
             return .rolledBack
         case .terminallyDrained:
-            remove(transaction)
-            complete(transaction, outcome: .leaseLost)
-            runtime.observeSettlement(.leaseLost(transaction.id))
-            return .leaseLost
+            return settleAfterRepositoryTerminalDrain(transaction)
+                ? .leaseLost
+                : .conflicted
         case .modelRollbackFailed:
             markConflicted(transaction)
             return .conflicted
@@ -492,20 +557,57 @@ public final class WebViewReplacementSettlementService {
             markConflicted(transaction)
             return .conflicted
         case .noLongerActive:
-            remove(transaction)
-            complete(transaction, outcome: .leaseLost)
-            runtime.observeSettlement(.leaseLost(transaction.id))
-            return .leaseLost
+            markConflicted(transaction)
+            return .conflicted
         }
     }
 
+    private func settleAfterRepositoryTerminalDrain(
+        _ transaction: Transaction
+    ) -> Bool {
+        guard transactionsByID[transaction.id] === transaction else {
+            return true
+        }
+        remove(transaction)
+        guard transaction.model.canSettleTerminalDrain(),
+              transaction.model.settleTerminalDrain() else {
+            complete(transaction, outcome: .conflicted)
+            runtime.observeSettlement(.conflicted(transaction.id))
+            return false
+        }
+        complete(transaction, outcome: .abandonedForTerminalShutdown)
+        runtime.observeSettlement(.abandonedForTerminalShutdown(transaction.id))
+        return true
+    }
+
     private func markConflicted(_ transaction: Transaction) {
-        guard case .awaitingBindings = transaction.state else { return }
+        guard transactionsByID[transaction.id] === transaction,
+              case .awaitingBindings = transaction.state else { return }
         transaction.state = .conflicted
         transaction.timeoutTask?.cancel()
         transaction.timeoutTask = nil
-        complete(transaction, outcome: .conflicted)
-        runtime.observeSettlement(.conflicted(transaction.id))
+        completeConflict(transaction)
+    }
+
+    private func retireCommittedAndQuarantine(
+        _ transaction: Transaction,
+        retired: [UUID: WebViewSessionSnapshot]
+    ) -> WebViewReplacementSettlementStartResult {
+        transaction.state = .retiringCommitted
+        runtime.retireCommitted(retired)
+        guard transactionsByID[transaction.id] === transaction else {
+            return .leaseLost(transaction.id)
+        }
+        retainCommittedConflict(transaction)
+        return .conflicted(transaction.id)
+    }
+
+    private func retainCommittedConflict(_ transaction: Transaction) {
+        guard transactionsByID[transaction.id] === transaction else { return }
+        transaction.state = .conflicted
+        transaction.timeoutTask?.cancel()
+        transaction.timeoutTask = nil
+        completeConflict(transaction)
     }
 
     private func remove(_ transaction: Transaction) {
@@ -532,5 +634,13 @@ public final class WebViewReplacementSettlementService {
         transaction.didCompleteOutcome = true
         transaction.receipt.complete(with: outcome)
         transaction.completion(outcome)
+    }
+
+    private func completeConflict(_ transaction: Transaction) {
+        guard transaction.didCompleteOutcome == false else { return }
+        transaction.didCompleteOutcome = true
+        transaction.receipt.complete(with: .conflicted)
+        runtime.observeSettlement(.conflicted(transaction.id))
+        transaction.completion(.conflicted)
     }
 }

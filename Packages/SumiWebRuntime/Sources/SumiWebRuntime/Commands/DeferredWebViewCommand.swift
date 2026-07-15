@@ -64,12 +64,14 @@ public struct DeferredWebViewRebuildIntent: Equatable {
 /// `desiredProfileID` is the value that will become observable on the Tab;
 /// `resolvedProfileID` identifies the concrete profile used to provision every
 /// replacement when the desired value intentionally inherits from a space.
+/// URL and navigation revision are one exact main-frame witness.
 public struct DeferredWebViewProfileAssignmentIntent: Equatable {
     public let revision: UInt64
     public let expectedProfileID: UUID?
     public let desiredProfileID: UUID?
     public let resolvedProfileID: UUID
     public let targetURL: URL
+    public let navigationRevision: UInt64
     public let requiresStructuralPersistence: Bool
 
     public init(
@@ -78,6 +80,7 @@ public struct DeferredWebViewProfileAssignmentIntent: Equatable {
         desiredProfileID: UUID?,
         resolvedProfileID: UUID,
         targetURL: URL,
+        navigationRevision: UInt64,
         requiresStructuralPersistence: Bool = false
     ) {
         self.revision = revision
@@ -85,6 +88,7 @@ public struct DeferredWebViewProfileAssignmentIntent: Equatable {
         self.desiredProfileID = desiredProfileID
         self.resolvedProfileID = resolvedProfileID
         self.targetURL = targetURL
+        self.navigationRevision = navigationRevision
         self.requiresStructuralPersistence = requiresStructuralPersistence
     }
 }

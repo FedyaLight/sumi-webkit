@@ -38,7 +38,7 @@ final class ShortcutSplitLauncherPlacementService {
 
     func prepareRestorations(
         for members: [SplitMember]
-    ) -> [PreparedShortcutSplitLauncherRestoration]? {
+    ) -> PreparedShortcutSplitLauncherRestorationBatch? {
         let shortcutMembers = members.filter {
             if case .shortcutPin = $0.memberID { return true }
             return false
@@ -48,115 +48,21 @@ final class ShortcutSplitLauncherPlacementService {
               Set(restorations.map { $0.pin.id }).count == restorations.count else {
             return nil
         }
-        return restorations
-    }
-
-    func prepareNoMoveRelease(
-        for members: [SplitMember]
-    ) -> ShortcutSplitLauncherReleaseReceipt? {
-        let shortcutMembers = members.filter {
-            if case .shortcutPin = $0.memberID { return true }
-            return false
-        }
-        var placements: [ShortcutSplitLauncherReleasePlacement] = []
-        for member in shortcutMembers {
-            guard case .shortcutPin(let pinID) = member.memberID,
-                  let pin = shortcutPin(pinID),
-                  let destination = destinationResolver.destination(
-                      for: member,
-                      pin: pin
-                  ), Self.matches(pin, destination) else { return nil }
-            placements.append(ShortcutSplitLauncherReleasePlacement(
-                pin: ShortcutSplitLauncherCatalogPinReceipt(pin),
-                destination: destination
-            ))
-        }
-        guard Set(placements.map { $0.pin.pin.id }).count == placements.count
-        else { return nil }
-        return ShortcutSplitLauncherReleaseReceipt(
-            placementService: self,
-            placements: placements
+        return PreparedShortcutSplitLauncherRestorationBatch(
+            restorations: restorations,
+            moves: moves
         )
     }
 
-    @discardableResult
-    func applyAndCommit(
-        _ restorations: [PreparedShortcutSplitLauncherRestoration]
-    ) -> Bool {
-        guard let receipt = apply(restorations),
-              receipt.settleModel() else { return false }
-        receipt.commit()
-        return true
-    }
-
-    /// Applies a preflighted batch without scheduling persistence. The caller
-    /// must invoke this inside the same structural transaction as the split
-    /// mutation. Unexpected catalog drift is rolled back before reporting
-    /// failure.
-    func apply(
-        _ restorations: [PreparedShortcutSplitLauncherRestoration]
-    ) -> RegularTabShortcutSidebarMutation? {
-        moves.stage(restorations)
-    }
-
-    func applyForComposedResidenceAggregate(
-        _ restorations: [PreparedShortcutSplitLauncherRestoration]
-    ) -> RegularTabShortcutSidebarMutation? {
-        moves.stageForComposedResidenceAggregate(restorations)
-    }
-
-    func mutationPreparation(
-        _ restorations: [PreparedShortcutSplitLauncherRestoration]
-    ) -> RegularTabShortcutSidebarMutationPreparation {
-        .launcher(transaction: moves, restorations: restorations)
-    }
-
-    func acceptsRelease(
-        _ placements: [ShortcutSplitLauncherReleasePlacement]
-    ) -> Bool {
-        placements.allSatisfy { placement in
-            guard let pin = shortcutPin(placement.pin.pin.id) else {
-                return false
-            }
-            return placement.pin.accepts(pin)
-                && Self.matches(pin, placement.destination)
+    /// Proves the request before structural mutation, then retains the exact
+    /// planner so staging can re-admit canonical pins after the candidate
+    /// insertion's expected reindexing.
+    func prepareSidebarMutation(
+        for members: [SplitMember]
+    ) -> RegularTabShortcutSidebarMutationPreparation? {
+        guard let restorations = prepareRestorations(for: members) else {
+            return nil
         }
-    }
-
-    private static func matches(
-        _ pin: ShortcutPin,
-        _ destination: ShortcutSplitLauncherDestination
-    ) -> Bool {
-        pin.role == destination.role
-            && pin.profileId == destination.profileId
-            && pin.spaceId == destination.spaceId
-            && pin.folderId == destination.folderId
-            && pin.index == destination.index
-    }
-}
-
-@MainActor
-struct ShortcutSplitLauncherReleasePlacement {
-    let pin: ShortcutSplitLauncherCatalogPinReceipt
-    let destination: ShortcutSplitLauncherDestination
-}
-
-/// Exact proof that released shortcut members retain their durable launcher
-/// placements and therefore require no catalog or residence mutation.
-@MainActor
-final class ShortcutSplitLauncherReleaseReceipt {
-    private let placementService: ShortcutSplitLauncherPlacementService
-    private let placements: [ShortcutSplitLauncherReleasePlacement]
-
-    init(
-        placementService: ShortcutSplitLauncherPlacementService,
-        placements: [ShortcutSplitLauncherReleasePlacement]
-    ) {
-        self.placementService = placementService
-        self.placements = placements
-    }
-
-    func isCurrent() -> Bool {
-        placementService.acceptsRelease(placements)
+        return .launcher(restorations)
     }
 }

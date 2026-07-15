@@ -29,28 +29,29 @@ final class ShortcutTabMaterializationCommitter {
         in windowID: UUID,
         currentSpaceID: UUID?,
         presentationPage: LiveShortcutPresentationPageReceipt
-    ) -> Tab {
-        structuralLookup.withTransaction {
-            if let existing = registry.tab(for: pin.id, in: windowID) {
-                if let entry = registry.entry(containing: existing),
-                   entry.presentationPage != presentationPage {
-                    precondition(registry.relocate(
-                        existing,
-                        from: pin.id,
-                        to: pin.id,
-                        in: windowID,
-                        presentationPage: presentationPage
-                    ))
-                }
-                bindings.applyExisting(
-                    pin,
-                    to: existing,
-                    currentSpaceId: currentSpaceID
-                )
-                membership.attach(existing)
-                return existing
-            }
+    ) -> Tab? {
+        if let existing = registry.tab(for: pin.id, in: windowID) {
+            guard bindings.refreshInstances(for: pin),
+                  registry.entry(containing: existing)?.presentationPage
+                    == presentationPage else { return nil }
+            return existing
+        }
+        return commitFresh(
+            pin,
+            in: windowID,
+            currentSpaceID: currentSpaceID,
+            presentationPage: presentationPage
+        )
+    }
 
+    func commitFresh(
+        _ pin: ShortcutPin,
+        in windowID: UUID,
+        currentSpaceID: UUID?,
+        presentationPage: LiveShortcutPresentationPageReceipt
+    ) -> Tab {
+        precondition(registry.tab(for: pin.id, in: windowID) == nil)
+        return structuralLookup.withTransaction {
             let tab = freshTabs.makeDetached(
                 for: pin,
                 currentSpaceID: currentSpaceID

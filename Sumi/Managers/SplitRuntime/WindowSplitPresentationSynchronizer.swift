@@ -6,6 +6,38 @@ enum WindowSplitSessionWriteUrgency {
     case immediate
 }
 
+@MainActor
+extension WindowSplitPresentationSynchronizer {
+    func prepareSettlementAgainstSource(
+        previousGroups: [SumiDomain.SplitGroup],
+        sourceGroups: [SumiDomain.SplitGroup],
+        replacementGroups: [SumiDomain.SplitGroup],
+        affectedGroupIDs: Set<UUID>,
+        preferredSelections: [UUID: WindowSplitSelection],
+        insertionPreview: ShortcutPresentationCatalogInsertionPreview,
+        residenceContribution: DisplayedShortcutResidenceContribution,
+        requiredWindows: [UUID: BrowserWindowState],
+        terminalParticipants: WindowSplitPresentationTerminalParticipants
+    ) -> PreparedWindowSplitPresentationSettlement? {
+        prepareSettlement(
+            previousGroups: previousGroups,
+            replacementGroups: replacementGroups,
+            currentGroups: sourceGroups,
+            affectedGroupIDs: affectedGroupIDs,
+            standaloneMembers: [:],
+            unavailableMembers: [:],
+            preferredSelections: preferredSelections,
+            activationSource: .displayedBinding(
+                insertionPreview,
+                residenceContribution
+            ),
+            requiredWindows: requiredWindows,
+            terminalParticipants: terminalParticipants,
+            sessionWriteUrgency: .scheduled
+        )
+    }
+}
+
 /// Reconciles window-local selection and materialization after a shared split
 /// group changes. Durable structure is already committed when this service is
 /// called; it never chooses or mutates shared split topology.
@@ -60,12 +92,68 @@ final class WindowSplitPresentationSynchronizer {
         affectedGroupIDs: Set<UUID>,
         standaloneMembers: [UUID: SplitMemberID] = [:],
         unavailableMembers: [UUID: Set<SplitMemberID>] = [:],
+        preferredSelections: [UUID: WindowSplitSelection] = [:],
         requiredWindows: [UUID: BrowserWindowState] = [:],
         terminalParticipants: WindowSplitPresentationTerminalParticipants,
         sessionWriteUrgency: WindowSplitSessionWriteUrgency = .scheduled
     ) -> PreparedWindowSplitPresentationSettlement? {
+        prepareSettlement(
+            previousGroups: previousGroups,
+            replacementGroups: replacementGroups,
+            currentGroups: replacementGroups,
+            affectedGroupIDs: affectedGroupIDs,
+            standaloneMembers: standaloneMembers,
+            unavailableMembers: unavailableMembers,
+            preferredSelections: preferredSelections,
+            activationSource: .canonical,
+            requiredWindows: requiredWindows,
+            terminalParticipants: terminalParticipants,
+            sessionWriteUrgency: sessionWriteUrgency
+        )
+    }
+
+    func prepareSettlementAgainstSource(
+        previousGroups: [SumiDomain.SplitGroup],
+        sourceGroups: [SumiDomain.SplitGroup],
+        replacementGroups: [SumiDomain.SplitGroup],
+        affectedGroupIDs: Set<UUID>,
+        standaloneMembers: [UUID: SplitMemberID] = [:],
+        unavailableMembers: [UUID: Set<SplitMemberID>] = [:],
+        preferredSelections: [UUID: WindowSplitSelection] = [:],
+        requiredWindows: [UUID: BrowserWindowState] = [:],
+        terminalParticipants: WindowSplitPresentationTerminalParticipants,
+        sessionWriteUrgency: WindowSplitSessionWriteUrgency = .scheduled
+    ) -> PreparedWindowSplitPresentationSettlement? {
+        prepareSettlement(
+            previousGroups: previousGroups,
+            replacementGroups: replacementGroups,
+            currentGroups: sourceGroups,
+            affectedGroupIDs: affectedGroupIDs,
+            standaloneMembers: standaloneMembers,
+            unavailableMembers: unavailableMembers,
+            preferredSelections: preferredSelections,
+            activationSource: .canonical,
+            requiredWindows: requiredWindows,
+            terminalParticipants: terminalParticipants,
+            sessionWriteUrgency: sessionWriteUrgency
+        )
+    }
+
+    private func prepareSettlement(
+        previousGroups: [SumiDomain.SplitGroup],
+        replacementGroups: [SumiDomain.SplitGroup],
+        currentGroups: [SumiDomain.SplitGroup],
+        affectedGroupIDs: Set<UUID>,
+        standaloneMembers: [UUID: SplitMemberID],
+        unavailableMembers: [UUID: Set<SplitMemberID>],
+        preferredSelections: [UUID: WindowSplitSelection],
+        activationSource: WindowSplitPresentationActivationSource,
+        requiredWindows: [UUID: BrowserWindowState],
+        terminalParticipants: WindowSplitPresentationTerminalParticipants,
+        sessionWriteUrgency: WindowSplitSessionWriteUrgency
+    ) -> PreparedWindowSplitPresentationSettlement? {
         guard let tabManager = tabManager(),
-              tabManager.splitGroupStore.groups == replacementGroups else {
+              tabManager.splitGroupStore.groups == currentGroups else {
             return nil
         }
         guard let draft = WindowSplitPresentationDraftPlanner().prepare(
@@ -75,16 +163,22 @@ final class WindowSplitPresentationSynchronizer {
                 affectedGroupIDs: affectedGroupIDs,
                 standaloneMembers: standaloneMembers,
                 unavailableMembers: unavailableMembers,
+                preferredSelections: preferredSelections,
                 requiredWindows: requiredWindows,
                 sessionWriteUrgency: sessionWriteUrgency
             ),
+            currentGroups: currentGroups,
             tabManager: tabManager,
             windows: windows()
-        ), let activation = tabManager.shortcutPresentationActivation
-            .prepareActivation(draft.activationRequests),
+        ) else { return nil }
+        guard let residences = WindowSplitPresentationResidencePreparer().prepare(
+            source: activationSource,
+            requests: draft.activationRequests,
+            activation: tabManager.shortcutPresentationActivation
+        ),
             let plan = WindowSplitPresentationSettlementPlanner().prepare(
                 draft,
-                activationTabs: activation.tabs,
+                shortcutWitnesses: residences.shortcutWitnesses,
                 regularTabs: tabManager.regularTabCollectionOwner
             ) else { return nil }
         let participantIDs = terminalParticipants.map(ObjectIdentifier.init)
@@ -96,7 +190,7 @@ final class WindowSplitPresentationSynchronizer {
               }) else { return nil }
         return PreparedWindowSplitPresentationSettlement(
             plan: plan,
-            activation: activation,
+            residences: residences,
             validator: WindowSplitPresentationSettlementValidator(
                 splitGroups: tabManager.splitGroupStore,
                 regularTabs: tabManager.regularTabCollectionOwner,
@@ -277,5 +371,16 @@ final class WindowSplitPresentationSynchronizer {
                 presentationSpaceID: windowState.currentSpaceId
             )
         }
+    }
+
+    func splitDropPresentationProjection(
+        _ effect: SplitDropCommitEffect,
+        caller: BrowserWindowState
+    ) -> SplitDropPresentationSelectionProjection? {
+        SplitDropPresentationSelectionProjector.prepare(
+            effect,
+            caller: caller,
+            windows: windows()
+        )
     }
 }

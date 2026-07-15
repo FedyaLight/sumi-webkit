@@ -17,6 +17,7 @@ final class SpaceProfilePresentationTerminalEffectPublisher {
 
     func publish(
         _ receipt: SpaceProfilePresentationTerminalEffectReceipt,
+        terminalRetirement: SpaceProfileTerminalRetirementParticipant?,
         expectedTabIDs: Set<UUID>,
         canPublishNormally: @escaping () -> Bool,
         afterTeardown: @escaping (RuntimePortRegistry?) -> Void
@@ -25,6 +26,10 @@ final class SpaceProfilePresentationTerminalEffectPublisher {
             [runtimeTeardown] in
             guard canPublishNormally() else {
                 receipt.claimDrain { effects in
+                    if let terminalRetirement {
+                        terminalRetirement.settleTerminalDrain(effects)
+                        return
+                    }
                     guard case .committed(let committed) = effects else {
                         return
                     }
@@ -34,16 +39,34 @@ final class SpaceProfilePresentationTerminalEffectPublisher {
                 return
             }
             receipt.claimNormal { effects in
+                if let terminalRetirement {
+                    terminalRetirement.publish(
+                        effects,
+                        canPublishNormally: canPublishNormally,
+                        afterTeardown: afterTeardown
+                    )
+                    return
+                }
                 let runtime: RuntimePortRegistry?
                 switch effects {
                 case .none:
                     runtime = nil
                 case .committed(let committed):
+                    guard let claimed = runtimeTeardown.retirement
+                        .claimNormalRuntimePublication(committed) else {
+                        return
+                    }
                     precondition(
-                        runtimeTeardown.retirement.publish(committed)
+                        runtimeTeardown.retirement.publishClaimedRuntime(
+                            claimed,
+                            beforeDestruction: { runtime in
+                                guard canPublishNormally() else { return }
+                                afterTeardown(runtime)
+                            }
+                        )
                             == expectedTabIDs
                     )
-                    runtime = committed.runtime
+                    return
                 case .empty(let prepared):
                     precondition(
                         runtimeTeardown.finish(prepared) == expectedTabIDs

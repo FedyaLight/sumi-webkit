@@ -1,24 +1,33 @@
 import Foundation
 import SumiWebRuntime
 
-enum SpaceProfileRetirementBeginOutcome: Equatable {
+enum SpaceProfileRetirementBeginOutcome {
     case notRequired
     case modelCommitted
     case terminallyDrainedModelCommitted
+    case modelConflict(TabRuntimeRetirementBatch)
     case rejected
 }
 
 @MainActor
 enum SpaceProfileRetirementCommitOutcome {
     case committed(SpaceProfilePresentationTerminalEffects)
+    case cleanupRequired(SpaceProfilePresentationTerminalEffects)
     case terminallyDrained
     case conflict
 }
 
 @MainActor
+enum SpaceProfileRetirementModelConflictOutcome {
+    case restored
+    case cleanupRequired(CommittedTabRuntimeRetirementCleanupOwnership)
+    case terminallyDrained
+}
+
+@MainActor
 enum SpaceProfilePresentationTerminalEffects {
     case none
-    case committed(CommittedTabRuntimeRetirement)
+    case committed(CommittedTabRuntimeRetirementCleanupOwnership)
     case empty(PreparedTabRuntimeTeardown)
 }
 
@@ -27,19 +36,45 @@ enum SpaceProfilePresentationTerminalEffects {
 /// callbacks, but exactly one path can claim and consume the retained effects.
 @MainActor
 final class SpaceProfilePresentationTerminalEffectReceipt {
+    private enum PublicationCapability {
+        case normalOrDrain
+        case drainOnly
+    }
+
     private enum State {
         case pending
-        case claimedNormal
-        case claimedDrain
         case finished
     }
 
     private var effects: SpaceProfilePresentationTerminalEffects?
+    private let publicationCapability: PublicationCapability
     private var state = State.pending
     private var onConsumed: (() -> Void)?
 
-    init(_ effects: SpaceProfilePresentationTerminalEffects) {
+    private init(
+        _ effects: SpaceProfilePresentationTerminalEffects,
+        publicationCapability: PublicationCapability
+    ) {
         self.effects = effects
+        self.publicationCapability = publicationCapability
+    }
+
+    static func normal(
+        _ effects: SpaceProfilePresentationTerminalEffects
+    ) -> SpaceProfilePresentationTerminalEffectReceipt {
+        SpaceProfilePresentationTerminalEffectReceipt(
+            effects,
+            publicationCapability: .normalOrDrain
+        )
+    }
+
+    static func drainOnly(
+        _ effects: SpaceProfilePresentationTerminalEffects
+    ) -> SpaceProfilePresentationTerminalEffectReceipt {
+        SpaceProfilePresentationTerminalEffectReceipt(
+            effects,
+            publicationCapability: .drainOnly
+        )
     }
 
     func registerConsumption(_ action: @escaping () -> Void) -> Bool {
@@ -52,27 +87,26 @@ final class SpaceProfilePresentationTerminalEffectReceipt {
     func claimNormal(
         _ consume: (SpaceProfilePresentationTerminalEffects) -> Void
     ) -> Bool {
-        claim(as: .claimedNormal, consume)
+        guard case .normalOrDrain = publicationCapability else { return false }
+        return claim(consume)
     }
 
     @discardableResult
     func claimDrain(
         _ consume: (SpaceProfilePresentationTerminalEffects) -> Void
     ) -> Bool {
-        claim(as: .claimedDrain, consume)
+        claim(consume)
     }
 
     private func claim(
-        as claimedState: State,
         _ consume: (SpaceProfilePresentationTerminalEffects) -> Void
     ) -> Bool {
         guard case .pending = state, let effects else { return false }
-        state = claimedState
-        self.effects = nil
-        consume(effects)
         state = .finished
+        self.effects = nil
         let completion = onConsumed
         onConsumed = nil
+        consume(effects)
         completion?()
         return true
     }
@@ -108,6 +142,7 @@ final class SpaceProfilePresentationTransition {
     private let residences: SpaceProfilePresentationResidenceMutation
     private var preparedRuntime: RuntimePortRegistry?
     private var retirementBatch: TabRuntimeRetirementBatch?
+    private var terminalRetirement: SpaceProfileTerminalRetirementParticipant?
     private var state: State = .pending
 
     init(
@@ -138,6 +173,18 @@ final class SpaceProfilePresentationTransition {
                   let runtime = runtimeLease.registry,
                   retirementWindowsAreCurrent(in: runtime) else { return false }
             preparedRuntime = runtime
+            if terminalRetirement == nil {
+                terminalRetirement = SpaceProfileTerminalRetirementParticipant(
+                    tabs: retirements.map(\.entry.tab),
+                    teardown: runtimeTeardown,
+                    sourceModelIsExact: { [weak self] in
+                        self?.terminalSourceModelIsExact() == true
+                    }
+                )
+            }
+            guard terminalRetirement?.isCurrentBeforeModelStage() == true else {
+                return false
+            }
         }
         guard residences.canStage() else { return false }
         state = .prepared
@@ -149,7 +196,8 @@ final class SpaceProfilePresentationTransition {
             && residences.canStage()
             && (retirements.isEmpty
                 || (runtimeConnection.accepts(runtimeLease)
-                    && preparedRuntime.map(retirementWindowsAreCurrent) == true))
+                    && preparedRuntime.map(retirementWindowsAreCurrent) == true
+                    && terminalRetirement?.isCurrentBeforeModelStage() == true))
     }
 
     var requiresRetirementBatch: Bool {
@@ -175,8 +223,44 @@ final class SpaceProfilePresentationTransition {
         case .terminallyDrained:
             guard state == .staged else { return .rejected }
             return .terminallyDrainedModelCommitted
+        case .modelConflict(let batch):
+            return .modelConflict(batch)
         case .modelValidationFailed, .rejected:
             return .rejected
+        }
+    }
+
+    func settleCompensatedModelConflict(
+        _ batch: TabRuntimeRetirementBatch
+    ) -> SpaceProfileRetirementModelConflictOutcome {
+        switch runtimeTeardown.retirement.restoreAfterModelCompensation(batch) {
+        case .rolledBack:
+            terminalRetirement?.cancelBeforeSilentCommit()
+            return .restored
+        case .noLongerActive:
+            terminalRetirement?.cancelBeforeSilentCommit()
+            return .terminallyDrained
+        case .modelTransactionMismatch, .modelConflict, .conflict:
+            let outcome = claimModelConflictCleanup(batch)
+            terminalRetirement?.cancelBeforeSilentCommit()
+            return outcome
+        }
+    }
+
+    func settleRetainedModelConflict(
+        _ batch: TabRuntimeRetirementBatch
+    ) -> SpaceProfileRetirementModelConflictOutcome {
+        claimModelConflictCleanup(batch)
+    }
+
+    private func claimModelConflictCleanup(
+        _ batch: TabRuntimeRetirementBatch
+    ) -> SpaceProfileRetirementModelConflictOutcome {
+        switch runtimeTeardown.retirement.claimCleanupAfterModelConflict(batch) {
+        case .claimed(let ownership):
+            return .cleanupRequired(ownership)
+        case .noLongerActive:
+            return .terminallyDrained
         }
     }
 
@@ -197,6 +281,7 @@ final class SpaceProfilePresentationTransition {
 
     func rollbackModel() -> Bool {
         guard canRollbackModel(), residences.rollback() else { return false }
+        terminalRetirement?.cancelBeforeSilentCommit()
         state = .terminal
         return true
     }
@@ -221,6 +306,9 @@ final class SpaceProfilePresentationTransition {
 
     func canCommitRetirement() -> Bool {
         guard stagedModelIsExact() else { return false }
+        guard terminalRetirement?.canClaimModel() != false else {
+            return false
+        }
         if let retirementBatch {
             return runtimeTeardown.retirement.canCommit(retirementBatch)
         }
@@ -232,12 +320,27 @@ final class SpaceProfilePresentationTransition {
             }
     }
 
+    func claimTerminalModel() -> Bool {
+        guard state == .staged else { return false }
+        return terminalRetirement?.claimModel() ?? true
+    }
+
+    func commitSilentTerminalModel() -> Bool {
+        terminalRetirement?.commitSilentModel() ?? true
+    }
+
+    func cancelTerminalModelClaim() {
+        terminalRetirement?.cancelBeforeSilentCommit()
+    }
+
     func commitRetirement() -> SpaceProfileRetirementCommitOutcome {
         guard state == .staged else { return .conflict }
         if let retirementBatch {
             switch runtimeTeardown.retirement.commit(retirementBatch) {
             case .committed(let committed):
                 return .committed(.committed(committed))
+            case .cleanupOnly(let ownership):
+                return .cleanupRequired(.committed(ownership))
             case .noLongerActive:
                 return .terminallyDrained
             case .conflict:
@@ -270,7 +373,12 @@ final class SpaceProfilePresentationTransition {
         state = .terminal
     }
 
+    func claimedModelIsExact() -> Bool {
+        state == .terminal && residences.isCurrentStaged()
+    }
+
     func settleTerminalModelAfterDrain() {
+        terminalRetirement?.cancelBeforeSilentCommit()
         retirementBatch = nil
         state = .terminal
     }
@@ -282,6 +390,7 @@ final class SpaceProfilePresentationTransition {
         let expectedTabIDs = Set(retirements.map(\.entry.tab.id))
         terminalPublisher.publish(
             receipt,
+            terminalRetirement: terminalRetirement,
             expectedTabIDs: expectedTabIDs,
             canPublishNormally: { [runtimeConnection, runtimeLease] in
                 runtimeConnection.accepts(runtimeLease)
@@ -297,6 +406,10 @@ final class SpaceProfilePresentationTransition {
     ) {
         precondition(state == .terminal)
         receipt.claimDrain { [runtimeTeardown] effects in
+            if let terminalRetirement {
+                terminalRetirement.settleTerminalDrain(effects)
+                return
+            }
             guard case .committed(let committed) = effects else { return }
             runtimeTeardown.retirement.destroyAfterTerminalDrain(committed)
         }
@@ -330,6 +443,17 @@ final class SpaceProfilePresentationTransition {
         retirements.allSatisfy { retirement in
             runtime.windowState(for: retirement.entry.windowId)
                 === retirement.window
+        }
+    }
+
+    private func terminalSourceModelIsExact() -> Bool {
+        switch state {
+        case .pending, .prepared:
+            return residences.canStage()
+        case .staged:
+            return residences.isCurrentStaged()
+        case .terminal:
+            return residences.isCurrentStaged()
         }
     }
 }

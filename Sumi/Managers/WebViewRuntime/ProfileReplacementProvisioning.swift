@@ -8,21 +8,51 @@ import SumiWebRuntime
 @MainActor
 struct ProfileReplacementProvisioning {
     func prepare(
+        assignments: [PreparedTabProfileAssignment],
+        liveSnapshots: [UUID: WebViewSessionSnapshot],
+        reason: String
+    ) -> [PreparedWebViewReplacement]? {
+        var prepared: [PreparedWebViewReplacement] = []
+        for assignment in assignments {
+            guard let snapshot = liveSnapshots[assignment.tab.id] else {
+                continue
+            }
+            guard let replacement = prepare(
+                tab: assignment.tab,
+                snapshot: snapshot,
+                targetProfile: assignment.targetProfile,
+                targetURL: assignment.targetURL,
+                semanticRevision: assignment.navigationIntent.revision,
+                reason: reason
+            ) else {
+                discard(prepared)
+                return nil
+            }
+            prepared.append(replacement)
+        }
+        return prepared
+    }
+
+    func prepare(
         tabs: [Tab],
         liveSnapshots: [UUID: WebViewSessionSnapshot],
         targetProfile: Profile,
+        intentsByTabID: [UUID: DeferredWebViewProfileAssignmentIntent],
         reason: String
     ) -> [PreparedWebViewReplacement]? {
         var prepared: [PreparedWebViewReplacement] = []
         for tab in tabs {
             guard let snapshot = liveSnapshots[tab.id] else { continue }
-            let navigationIntent = tab.mainFrameLoads.currentIntent
+            guard let intent = intentsByTabID[tab.id] else {
+                discard(prepared)
+                return nil
+            }
             guard let replacement = prepare(
                 tab: tab,
                 snapshot: snapshot,
                 targetProfile: targetProfile,
-                targetURL: navigationIntent.targetURL,
-                semanticRevision: navigationIntent.revision,
+                targetURL: intent.targetURL,
+                semanticRevision: intent.navigationRevision,
                 reason: reason
             ) else {
                 discard(prepared)

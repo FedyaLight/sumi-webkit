@@ -31,53 +31,27 @@ final class ShortcutTabBindingRuntimeMutation {
 
     func refresh(
         _ pin: ShortcutPin,
-        residences: LiveShortcutPresentationResidenceTransaction
+        admission: LiveShortcutPresentationRefreshAdmission,
+        refreshes: LiveShortcutPresentationRefreshService
     ) -> Bool {
         let lease = runtimeConnection.captureLease()
         guard runtimeConnection.accepts(lease),
-              residences.isCurrent() else {
-            precondition(residences.rollback())
-            return false
-        }
-
-        var changedWindows: [UUID: BrowserWindowState] = [:]
-        var executions: [ShortcutTabBindingExecutionReceipt] = []
-        structuralLookup.withTransaction {
-            precondition(windowMutations.withAggregate {
-                for entry in registry.entries(for: pin.id) {
-                    let window = lease.windowState(for: entry.windowId)
-                    let source = ShortcutBindingIdentity(tab: entry.tab)
-                    let selected = window.map {
-                        ShortcutSelectionIdentity.isSelected(
-                            tabId: entry.tab.id,
-                            pinId: source?.pinId,
-                            in: $0
-                        )
-                    } ?? false
-                    executions.append(targets.prepareExisting(
-                        pin,
-                        to: entry.tab,
-                        currentSpaceID: window?.currentSpaceId
-                    ))
-                    stageSelection(
-                        tab: entry.tab,
-                        source: source,
-                        target: pin,
-                        selected: selected,
-                        window: window,
-                        changedWindows: &changedWindows
-                    )
-                }
-                return true
-            })
-            precondition(
-                residences.publish(),
-                "Shortcut binding lost staged presentation residences"
-            )
-        }
-        executions.forEach { $0.execute() }
-        persist(changedWindows, using: lease.registry)
-        return true
+              refreshes.acceptsCurrent(admission, for: pin),
+              let prepared = prepare(
+                  pin,
+                  changes: admission.changes,
+                  using: lease
+              ),
+              let residences = refreshes.prepareResidenceTransaction(
+                  admission,
+                  for: pin
+              ) else { return false }
+        return execute(
+            pin: pin,
+            prepared: prepared,
+            residences: residences,
+            using: lease
+        )
     }
 
     func rebind(
@@ -88,83 +62,145 @@ final class ShortcutTabBindingRuntimeMutation {
         guard let entry = registry.entry(containing: tab),
               entry.pinId == sourcePin.id else { return false }
         let lease = runtimeConnection.captureLease()
-        var changedWindows: [UUID: BrowserWindowState] = [:]
-        let didRebind = structuralLookup.withTransaction {
-            let window = lease.windowState(for: entry.windowId)
-            let source = ShortcutBindingIdentity(tab: tab)
-            let selected = window.map {
-                ShortcutSelectionIdentity.isSelected(
-                    tabId: tab.id,
-                    pinId: sourcePin.id,
-                    in: $0
-                )
-            } ?? false
-            guard let page = targets.presentationPage(
-                for: targetPin,
-                windowID: entry.windowId,
-                spaceID: targetPin.spaceId ?? entry.presentationPage.page.spaceID
-            ), runtimeConnection.accepts(lease),
-                  let residence = registry.staging.relocate(
-                      tab,
-                      from: sourcePin.id,
-                      to: targetPin.id,
-                      in: entry.windowId,
-                      presentationPage: page
-                  ) else { return false }
-            let execution = targets.prepareExisting(
-                targetPin,
-                to: tab,
-                currentSpaceID: window?.currentSpaceId
+        let window = lease.windowState(for: entry.windowId)
+        guard runtimeConnection.accepts(lease),
+              let binding = targets.prepareExisting(
+                  targetPin,
+                  to: tab,
+                  currentSpaceID: window?.currentSpaceId,
+                  using: lease
+              ),
+              let page = targets.presentationPage(
+                  for: targetPin,
+                  windowID: entry.windowId,
+                  spaceID: targetPin.spaceId
+                      ?? entry.presentationPage.page.spaceID
+              ) else { return false }
+        let source = ShortcutBindingIdentity(tab: tab)
+        let selected = window.map {
+            ShortcutSelectionIdentity.isSelected(
+                tabId: tab.id,
+                pinId: sourcePin.id,
+                in: $0
             )
-            precondition(windowMutations.withAggregate {
-                stageSelection(
-                    tab: tab,
-                    source: source,
-                    target: targetPin,
-                    selected: selected,
-                    window: window,
-                    changedWindows: &changedWindows
-                )
-                return true
-            })
-            registry.staging.publish([residence])
-            execution.execute()
-            return true
-        }
-        persist(changedWindows, using: lease.registry)
-        return didRebind
-    }
-
-    private func stageSelection(
-        tab: Tab,
-        source: ShortcutBindingIdentity?,
-        target: ShortcutPin,
-        selected: Bool,
-        window: BrowserWindowState?,
-        changedWindows: inout [UUID: BrowserWindowState]
-    ) {
-        guard let window else { return }
-        var requiresPersistence = false
-        windowMutations.stage(window) { state in
-            requiresPersistence = ShortcutSelectionTransition.apply(
+        } ?? false
+        guard let residencePlan = registry.staging.prepareRelocation(
+            tab,
+            from: sourcePin.id,
+            to: targetPin.id,
+            in: entry.windowId,
+            presentationPage: page
+        ) else { return false }
+        let admission = LiveShortcutPresentationRefreshAdmission(
+            pin: targetPin,
+            changes: [.init(
                 tab: tab,
-                source: source,
-                targetPin: target,
-                isSelected: selected,
-                to: &state
-            )
-        }
-        if requiresPersistence { changedWindows[window.id] = window }
+                windowID: entry.windowId,
+                sourcePage: entry.presentationPage,
+                targetPage: page
+            )]
+        )
+        let residences = LiveShortcutPresentationResidenceTransaction(
+            pin: targetPin,
+            admission: admission,
+            staging: registry.staging,
+            plans: [residencePlan]
+        )
+        let plan = ShortcutSplitLauncherBindingPlan(
+            tab: tab,
+            windowID: entry.windowId,
+            windowState: window,
+            tabReceipt: binding.receipt,
+            windowReceipt: window.map(ShortcutSplitLauncherWindowReceipt.init),
+            sourceIdentity: source,
+            wasSelected: selected,
+            target: binding.target
+        )
+        return execute(
+            pin: targetPin,
+            prepared: [.init(plan: plan, profile: binding.profile)],
+            residences: residences,
+            using: lease
+        )
     }
 
-    private func persist(
-        _ windows: [UUID: BrowserWindowState],
-        using runtime: RuntimePortRegistry?
-    ) {
-        guard let runtime, windows.isEmpty == false else { return }
-        let ordered = windows.values.sorted { $0.id.uuidString < $1.id.uuidString }
-        structuralLookup.runAfterCurrentBatch {
-            ordered.forEach(runtime.persistWindowSession(for:))
+    private func prepare(
+        _ pin: ShortcutPin,
+        changes: [LiveShortcutPresentationRefreshAdmission.Change],
+        using lease: TabRuntimePortLease
+    ) -> [PreparedShortcutTabRuntimeBinding]? {
+        var result: [PreparedShortcutTabRuntimeBinding] = []
+        for change in changes {
+            let window = lease.windowState(for: change.windowID)
+            guard let binding = targets.prepareExisting(
+                pin,
+                to: change.tab,
+                currentSpaceID: window?.currentSpaceId,
+                using: lease
+            ) else { return nil }
+            let source = ShortcutBindingIdentity(tab: change.tab)
+            result.append(.init(
+                plan: ShortcutSplitLauncherBindingPlan(
+                    tab: change.tab,
+                    windowID: change.windowID,
+                    windowState: window,
+                    tabReceipt: binding.receipt,
+                    windowReceipt: window.map(
+                        ShortcutSplitLauncherWindowReceipt.init
+                    ),
+                    sourceIdentity: source,
+                    wasSelected: window.map {
+                        ShortcutSelectionIdentity.isSelected(
+                            tabId: change.tab.id,
+                            pinId: source?.pinId,
+                            in: $0
+                        )
+                    } ?? false,
+                    target: binding.target
+                ),
+                profile: binding.profile
+            ))
         }
+        return result
+    }
+
+    private func execute(
+        pin: ShortcutPin,
+        prepared: [PreparedShortcutTabRuntimeBinding],
+        residences: LiveShortcutPresentationResidenceTransaction,
+        using lease: TabRuntimePortLease
+    ) -> Bool {
+        let inputs = [ShortcutTabBindingModelTransaction.Input(
+                pin: pin,
+                plans: prepared.map(\.plan),
+                residences: residences
+            )]
+        let builder = ShortcutTabBindingBatchBuilder(
+            runtimeConnection: runtimeConnection,
+            runtimeAttachment: TabRuntimeAttachmentWitness(
+                connection: runtimeConnection,
+                lease: lease
+            ),
+            windowMutations: windowMutations,
+            profiles: targets.profiles,
+            persistence: ShortcutSplitLauncherWindowPersistence(
+                structuralLookup: structuralLookup
+            ),
+            structuralLookup: structuralLookup
+        )
+        let contribution = ShortcutTabBindingBatchContribution(
+            inputs: inputs,
+            profileAdmissions: prepared.map(\.profile),
+            residences: inputs.map {
+                ShortcutTabBindingResidenceReceiptTransaction($0.residences)
+            }
+        )
+        guard let (model, profiles) = builder.makeTransaction(
+            from: contribution
+        ) else {
+            guard residences.cancelPrepared() else { return false }
+            return false
+        }
+        return profiles.execute(bindingModel: model).wasAccepted
     }
 }

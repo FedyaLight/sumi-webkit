@@ -10,12 +10,14 @@ final class TabProfileAssignmentStateMachineTests: XCTestCase {
             desiredProfileID: UUID(),
             resolvedProfileID: UUID(),
             targetURL: URL(string: "https://first.example")!,
+            navigationRevision: 0,
             requiresStructuralPersistence: false
         )
         let second = transaction.begin(
             desiredProfileID: UUID(),
             resolvedProfileID: UUID(),
             targetURL: URL(string: "https://second.example")!,
+            navigationRevision: 0,
             requiresStructuralPersistence: true
         )
 
@@ -31,6 +33,7 @@ final class TabProfileAssignmentStateMachineTests: XCTestCase {
             desiredProfileID: desiredProfileID,
             resolvedProfileID: desiredProfileID,
             targetURL: URL(string: "https://commit.example")!,
+            navigationRevision: 0,
             requiresStructuralPersistence: true
         )
 
@@ -47,6 +50,7 @@ final class TabProfileAssignmentStateMachineTests: XCTestCase {
             desiredProfileID: desiredProfileID,
             resolvedProfileID: desiredProfileID,
             targetURL: URL(string: "https://stage.example")!,
+            navigationRevision: 0,
             requiresStructuralPersistence: false
         )
 
@@ -66,6 +70,7 @@ final class TabProfileAssignmentStateMachineTests: XCTestCase {
             desiredProfileID: UUID(),
             resolvedProfileID: UUID(),
             targetURL: URL(string: "https://rollback.example")!,
+            navigationRevision: 0,
             requiresStructuralPersistence: true
         )
 
@@ -82,6 +87,7 @@ final class TabProfileAssignmentStateMachineTests: XCTestCase {
             desiredProfileID: UUID(),
             resolvedProfileID: UUID(),
             targetURL: URL(string: "https://stale.example")!,
+            navigationRevision: 0,
             requiresStructuralPersistence: false
         )
 
@@ -102,6 +108,7 @@ final class TabProfileAssignmentStateMachineTests: XCTestCase {
             desiredProfileID: UUID(),
             resolvedProfileID: UUID(),
             targetURL: URL(string: "https://aba.example")!,
+            navigationRevision: 0,
             requiresStructuralPersistence: false
         )
 
@@ -120,6 +127,7 @@ final class TabProfileAssignmentStateMachineTests: XCTestCase {
             desiredProfileID: desiredProfileID,
             resolvedProfileID: desiredProfileID,
             targetURL: URL(string: "https://settling.example")!,
+            navigationRevision: 0,
             requiresStructuralPersistence: false
         )
         XCTAssertTrue(transaction.stage(intent))
@@ -138,6 +146,7 @@ final class TabProfileAssignmentStateMachineTests: XCTestCase {
             desiredProfileID: UUID(),
             resolvedProfileID: UUID(),
             targetURL: URL(string: "https://same-value.example")!,
+            navigationRevision: 0,
             requiresStructuralPersistence: false
         )
 
@@ -153,12 +162,14 @@ final class TabProfileAssignmentStateMachineTests: XCTestCase {
             desiredProfileID: UUID(),
             resolvedProfileID: UUID(),
             targetURL: URL(string: "https://stale-abort.example")!,
+            navigationRevision: 0,
             requiresStructuralPersistence: false
         )
         let current = transaction.begin(
             desiredProfileID: UUID(),
             resolvedProfileID: UUID(),
             targetURL: URL(string: "https://current.example")!,
+            navigationRevision: 0,
             requiresStructuralPersistence: false
         )
 
@@ -177,6 +188,7 @@ final class TabProfileAssignmentStateMachineTests: XCTestCase {
             desiredProfileID: desiredProfileID,
             resolvedProfileID: desiredProfileID,
             targetURL: tab.url,
+            navigationRevision: tab.mainFrameLoads.currentIntent.revision,
             requiresStructuralPersistence: false
         )
         XCTAssertTrue(tab.profileAssignment.stage(intent))

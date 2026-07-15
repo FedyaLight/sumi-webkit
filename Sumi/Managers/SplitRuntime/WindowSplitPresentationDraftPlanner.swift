@@ -38,14 +38,16 @@ struct WindowSplitPresentationDraftPlanner {
 
     func prepare(
         _ input: WindowSplitPresentationSettlementInput,
+        currentGroups: [SumiDomain.SplitGroup],
         tabManager: TabManager,
         windows: [BrowserWindowState]
     ) -> WindowSplitPresentationDraftPlan? {
         let windowIDs = Set(windows.map(\.id))
         let requestedWindowIDs = Set(input.standaloneMembers.keys)
             .union(input.unavailableMembers.keys)
+            .union(input.preferredSelections.keys)
         guard input.affectedGroupIDs.isEmpty == false,
-              tabManager.splitGroupStore.groups == input.replacementGroups,
+              tabManager.splitGroupStore.groups == currentGroups,
               windowIDs.count == windows.count,
               Set(input.previousGroups.map(\.id)).count
                 == input.previousGroups.count,
@@ -94,7 +96,9 @@ struct WindowSplitPresentationDraftPlanner {
         var activationRequests = ActivationRequestBuilder()
 
         for window in windows {
-            let selectedGroupID = window.splitSelection?.groupID
+            let preferredSelection = input.preferredSelections[window.id]
+            let selectedGroupID = preferredSelection?.groupID
+                ?? window.splitSelection?.groupID
             guard input.standaloneMembers[window.id] != nil
                     || selectedGroupID.map(
                         input.affectedGroupIDs.contains
@@ -119,7 +123,8 @@ struct WindowSplitPresentationDraftPlanner {
 
             if let selectedGroupID,
                let group = replacementByID[selectedGroupID] {
-                let requested = window.splitSelection?.activeMemberID
+                let requested = preferredSelection?.activeMemberID
+                    ?? window.splitSelection?.activeMemberID
                 guard let activeMemberID = requested.flatMap({
                     group.contains($0) ? $0 : nil
                 }) ?? group.memberIDs.first else { return nil }

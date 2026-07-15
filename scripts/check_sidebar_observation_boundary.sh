@@ -1,56 +1,45 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo_root="$(cd "$(dirname "$0")/.." && pwd)"
-cd "$repo_root"
-
-die() {
-  echo "sidebar observation boundary: $1" >&2
-  exit 1
-}
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "$script_dir/.." && pwd)"
+# shellcheck source=scripts/lib/architecture_guard.sh
+source "$script_dir/lib/architecture_guard.sh"
+guard_initialize "$repo_root"
 
 forbid() {
   local pattern="$1"
   local message="$2"
   local matches
-  local status
   shift 2
-  if matches="$(rg -n -e "$pattern" "$@")"; then
+  matches="$(guard_capture_matches "$pattern" "$@")"
+  if [[ -n "$matches" ]]; then
     printf '%s\n' "$matches"
-    die "$message"
-  else
-    status=$?
-  fi
-  if [[ "$status" -ne 1 ]]; then
-    echo "sidebar observation boundary: rg failed with status $status" >&2
-    return "$status"
+    guard_record_failure "sidebar observation boundary: $message"
+    exit 1
   fi
 }
 
 require() {
   local pattern="$1"
   local message="$2"
-  local status
+  local count
   shift 2
-  if rg -q -e "$pattern" "$@"; then
-    return 0
-  else
-    status=$?
+  count="$(guard_count_matches "$pattern" "$@")"
+  if (( count == 0 )); then
+    guard_record_failure "sidebar observation boundary: $message"
+    exit 1
   fi
-  if [[ "$status" -eq 1 ]]; then
-    die "$message"
-  fi
-  echo "sidebar observation boundary: rg failed with status $status" >&2
-  return "$status"
 }
 
 require_absent() {
   local path
   for path in "$@"; do
-    if [[ -e "$path" ]]; then
-      die "retired architecture regrew at $path"
-    fi
+    guard_expect_absent_path "retired architecture" "$path"
   done
+  if (( guard_failures != 0 )); then
+    exit 1
+  fi
 }
 
 sidebar_root="SidebarChrome/Sidebar/SpacesSideBarView.swift"

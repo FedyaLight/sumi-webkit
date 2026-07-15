@@ -35,6 +35,17 @@ final class TabLookupStore {
         tabLookup.removeValue(forKey: id)
     }
 
+    func remove(_ tab: Tab) -> Bool {
+        guard let current = tabLookup[tab.id] else { return true }
+        guard current === tab else { return false }
+        tabLookup.removeValue(forKey: tab.id)
+        return true
+    }
+
+    func containsExact(_ tab: Tab) -> Bool {
+        tabLookup[tab.id] === tab
+    }
+
     func insertTransientExtensionTab(_ tab: Tab) {
         tabLookup[tab.id] = tab
         transientTabLookupIDs.insert(tab.id)

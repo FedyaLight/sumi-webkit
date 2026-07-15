@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$repo_root"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "$script_dir/.." && pwd)"
+# shellcheck source=scripts/lib/architecture_guard.sh
+source "$script_dir/lib/architecture_guard.sh"
+guard_initialize "$repo_root"
 
 old_loader='Sumi/Managers/ExtensionManager/ExtensionRuntimeContextLoader.swift'
 loader='Sumi/Managers/ExtensionManager/ExtensionContextLoader.swift'
@@ -33,9 +36,12 @@ for file in "${required_files[@]}"; do
   }
 done
 
-if [[ -e "$old_loader" ]] \
-    || rg -n '\bExtensionRuntimeContextLoader\b|\bruntimeContextLoader\b' \
-      Sumi SumiTests >/dev/null; then
+retired_loader_hits="$(
+  guard_capture_matches \
+    '\bExtensionRuntimeContextLoader\b|\bruntimeContextLoader\b' \
+    Sumi SumiTests
+)"
+if [[ -e "$old_loader" || -L "$old_loader" || -n "$retired_loader_hits" ]]; then
   printf 'error: deleted manager-root context loader returned\n' >&2
   exit 1
 fi
@@ -47,31 +53,56 @@ root_free_roles=(
   "$source_cache"
   "$storage"
 )
-if rg -n '\bExtensionManager\b|\bBrowserManager\b|struct (Dependencies|Actions)\b|init\(manager:' \
-    "${root_free_roles[@]}"; then
+root_reachthrough_hits="$(
+  guard_capture_matches \
+    '\bExtensionManager\b|\bBrowserManager\b|struct (Dependencies|Actions)\b|init\(manager:' \
+    "${root_free_roles[@]}"
+)"
+if [[ -n "$root_reachthrough_hits" ]]; then
+  printf '%s\n' "$root_reachthrough_hits" >&2
   printf 'error: context-load role regained a manager-root or closure bag\n' >&2
   exit 1
 fi
 
-if rg -n -P '^\s*(private\s+)?(weak\s+)?(var|let)\s+\w+\s*:\s*(any\s+)?[A-Za-z0-9_]+Owner\??\s*$' \
-    "$loader" "$transaction" "$source_cache" "$storage"; then
+owner_storage_hits="$(
+  guard_capture_matches \
+    '^\s*(private\s+)?(weak\s+)?(var|let)\s+\w+\s*:\s*(any\s+)?[A-Za-z0-9_]+Owner\??\s*$' \
+    "$loader" "$transaction" "$source_cache" "$storage" -P
+)"
+if [[ -n "$owner_storage_hits" ]]; then
+  printf '%s\n' "$owner_storage_hits" >&2
   printf 'error: context-load orchestration stores an Owner surface\n' >&2
   exit 1
 fi
-if rg -n '\b[A-Za-z0-9_]+Owner\b' "$loader" "$transaction"; then
+owner_reachthrough_hits="$(
+  guard_capture_matches '\b[A-Za-z0-9_]+Owner\b' "$loader" "$transaction"
+)"
+if [[ -n "$owner_reachthrough_hits" ]]; then
+  printf '%s\n' "$owner_reachthrough_hits" >&2
   printf 'error: context load/transaction reached through an Owner surface\n' >&2
   exit 1
 fi
 
-if ! rg -Fq 'private let admission: ExtensionContextLoadAdmission' \
-    "$source_cache" \
-    || rg -n 'ExtensionLoadedContextAuthority' "$source_cache"; then
+source_cache_admission_count="$(
+  guard_count_matches \
+    'private let admission: ExtensionContextLoadAdmission' "$source_cache" -F
+)"
+source_cache_authority_hits="$(
+  guard_capture_matches 'ExtensionLoadedContextAuthority' "$source_cache"
+)"
+if (( source_cache_admission_count == 0 )) \
+    || [[ -n "$source_cache_authority_hits" ]]; then
   printf 'error: source cache regained destructive context rollback authority\n' >&2
   exit 1
 fi
-if ! rg -Fq 'admission: contextLoadAdmission' "$manager" \
-    || ! rg -Fq 'WebExtensionRuntimeSourceCache(admission: contextLoadAdmission)' \
-      "$manager"; then
+shared_admission_wiring_count="$(
+  guard_count_matches 'admission: contextLoadAdmission' "$manager" -F
+)"
+source_cache_wiring_count="$(
+  guard_count_matches \
+    'WebExtensionRuntimeSourceCache(admission: contextLoadAdmission)' "$manager" -F
+)"
+if (( shared_admission_wiring_count == 0 || source_cache_wiring_count == 0 )); then
   printf 'error: source publication and loaded-context authority no longer share narrow admission\n' >&2
   exit 1
 fi
@@ -81,7 +112,10 @@ for required_loader_call in \
   'contextPreparation.prepare(' \
   'storage.prepare()' \
   'controllerTransaction.load('; do
-  if ! rg -Fq "$required_loader_call" "$loader"; then
+  required_loader_call_count="$(
+    guard_count_matches "$required_loader_call" "$loader" -F
+  )"
+  if (( required_loader_call_count == 0 )); then
     printf 'error: context loader lost explicit phase: %s\n' \
       "$required_loader_call" >&2
     exit 1
@@ -94,15 +128,25 @@ for required_transaction_call in \
   'controllerDelegateReadiness.controllerDidBecomeReady(' \
   'rollback.rollBack(' \
   'rollbackResult.externalStateDisposition != .rollbackAllowed'; do
-  if ! rg -Fq "$required_transaction_call" "$transaction"; then
+  required_transaction_call_count="$(
+    guard_count_matches "$required_transaction_call" "$transaction" -F
+  )"
+  if (( required_transaction_call_count == 0 )); then
     printf 'error: controller transaction lost exact mutation/compensation: %s\n' \
       "$required_transaction_call" >&2
     exit 1
   fi
 done
 
-load_line="$(rg -n -F 'try controller.load(context)' "$transaction" | cut -d: -f1)"
-readiness_line="$(rg -n -F 'controllerDelegateReadiness.controllerDidBecomeReady(' "$transaction" | cut -d: -f1)"
+load_line="$(
+  guard_capture_matches 'try controller.load(context)' "$transaction" -F \
+    | cut -d: -f1
+)"
+readiness_line="$(
+  guard_capture_matches \
+    'controllerDelegateReadiness.controllerDidBecomeReady(' "$transaction" -F \
+    | cut -d: -f1
+)"
 if [[ -z "$load_line" || -z "$readiness_line" ]] \
     || (( readiness_line <= load_line )); then
   printf 'error: controller delegate receipt is not consumed after successful WebKit load\n' >&2
@@ -114,21 +158,36 @@ for readiness_proof in \
   'lhs.controller === rhs.controller' \
   'profileRuntime.isCurrent(receipt)' \
   'pendingByProfile.removeAll()'; do
-  if ! rg -Fq "$readiness_proof" "$delegate_readiness"; then
+  readiness_proof_count="$(
+    guard_count_matches "$readiness_proof" "$delegate_readiness" -F
+  )"
+  if (( readiness_proof_count == 0 )); then
     printf 'error: controller delegate readiness lost exact proof: %s\n' \
       "$readiness_proof" >&2
     exit 1
   fi
 done
-if ! rg -Fq 'controllerDelegateReadiness.controllerInstalled(' \
-    "$controller_provisioning" \
-    || ! rg -Fq 'controllerDelegateReadiness.cancelAll()' \
-      "$controller_release"; then
+installed_receipt_count="$(
+  guard_count_matches \
+    'controllerDelegateReadiness.controllerInstalled(' "$controller_provisioning" -F
+)"
+cancel_receipt_count="$(
+  guard_count_matches \
+    'controllerDelegateReadiness.cancelAll()' "$controller_release" -F
+)"
+if (( installed_receipt_count == 0 || cancel_receipt_count == 0 )); then
   printf 'error: controller delegate receipt lost provisioning/release boundary\n' >&2
   exit 1
 fi
-cancel_line="$(rg -n -F 'controllerDelegateReadiness.cancelAll()' "$controller_release" | cut -d: -f1)"
-release_line="$(rg -n -F 'webExtensionController = nil' "$controller_release" | cut -d: -f1)"
+cancel_line="$(
+  guard_capture_matches \
+    'controllerDelegateReadiness.cancelAll()' "$controller_release" -F \
+    | cut -d: -f1
+)"
+release_line="$(
+  guard_capture_matches 'webExtensionController = nil' "$controller_release" -F \
+    | cut -d: -f1
+)"
 if [[ -z "$cancel_line" || -z "$release_line" ]] \
     || (( cancel_line >= release_line )); then
   printf 'error: pending delegate receipts are not cancelled before controller release\n' >&2
@@ -142,13 +201,19 @@ for disposition in \
   preserveForActiveBinding \
   preserveForCompetingTransaction \
   preserveUntilSharedCleanup; do
-  if ! rg -Fq "case $disposition" "$authority"; then
+  disposition_count="$(
+    guard_count_matches "case $disposition" "$authority" -F
+  )"
+  if (( disposition_count == 0 )); then
     printf 'error: typed external rollback disposition missing: %s\n' \
       "$disposition" >&2
     exit 1
   fi
 done
-if rg -n 'permitsExternalStateRollback' Sumi SumiTests >/dev/null; then
+flattened_authority_hits="$(
+  guard_capture_matches 'permitsExternalStateRollback' Sumi SumiTests
+)"
+if [[ -n "$flattened_authority_hits" ]]; then
   printf 'error: external rollback authority flattened back to Bool\n' >&2
   exit 1
 fi
@@ -156,49 +221,31 @@ fi
 diagnostic_body="$(
   sed -n '/func traceNativeMessagingContextBinding(/,/^    }/p' "$diagnostics"
 )"
-if rg -n '\bmanager\b|ExtensionManager' <<<"$diagnostic_body"; then
+diagnostic_root_hits="$(
+  guard_capture_matches '\bmanager\b|ExtensionManager' - <<<"$diagnostic_body"
+)"
+if [[ -n "$diagnostic_root_hits" ]]; then
+  printf '%s\n' "$diagnostic_root_hits" >&2
   printf 'error: native-messaging binding diagnostics regained manager-root lookup\n' >&2
   exit 1
 fi
 
-if rg -n 'Timer|Task\.sleep|asyncAfter|DispatchSource' \
+idle_work_hits="$(
+  guard_capture_matches 'Timer|Task\.sleep|asyncAfter|DispatchSource' \
     "$loader" "$transaction" "$source_cache" "$storage" \
-    "$delegate_readiness" "$controller_provisioning"; then
+    "$delegate_readiness" "$controller_provisioning"
+)"
+if [[ -n "$idle_work_hits" ]]; then
+  printf '%s\n' "$idle_work_hits" >&2
   printf 'error: context-load path gained polling/timer idle work\n' >&2
   exit 1
 fi
-if ! rg -Fq 'capabilitySnapshot: @autoclosure () ->' "$storage"; then
+lazy_snapshot_count="$(
+  guard_count_matches 'capabilitySnapshot: @autoclosure () ->' "$storage" -F
+)"
+if (( lazy_snapshot_count == 0 )); then
   printf 'error: disabled storage diagnostics regained eager manifest analysis\n' >&2
   exit 1
 fi
-
-required_regressions=(
-  'SumiTests/WebExtensionRuntimeSourceCacheTests.swift|testConcurrentSameKeyCoalescesOneSourceCreation'
-  'SumiTests/WebExtensionRuntimeSourceCacheTests.swift|testCancellingSoleWaiterPromptlyReleasesPendingPublication'
-  'SumiTests/WebExtensionRuntimeSourceCacheTests.swift|testRemoveWhileSuspendedCannotAdoptNewSameKeyPublication'
-  'SumiTests/ExtensionContextPreparationTests.swift|testStoredDecisionOverridesManifestGrantDuringPreparation'
-  'SumiTests/WebExtensionRuntimeStoragePreparationTests.swift|testPrepareUsesExactControllerAndRuntimeIdentifiers'
-  'SumiTests/ExtensionRuntimeTransactionFailureTests.swift|testReentrantPolicyPublicationStopsBeforeStorageMutation'
-  'SumiTests/ExtensionRuntimeTransactionFailureTests.swift|testReplacementBindingPropagatesExternalPreservationAuthority'
-  'SumiTests/ExtensionRuntimeTransactionFailureTests.swift|testSiblingBindingPropagatesActiveBindingPreservationAuthority'
-  'SumiTests/ExtensionRuntimeTransactionFailureTests.swift|testCompetingMutationPropagatesTransactionPreservationAuthority'
-  'SumiTests/ExtensionControllerDelegateReadinessTests.swift|testImmediateReadinessBindsInstalledController'
-  'SumiTests/ExtensionControllerDelegateReadinessTests.swift|testCancellationRejectsPendingReadiness'
-  'SumiTests/ExtensionControllerDelegateReadinessTests.swift|testNewControllerSupersedesPendingControllerForProfile'
-  'SumiTests/ExtensionRuntimeTransactionFailureTests.swift|testSuccessfulWebKitLoadConsumesDelegateReceiptOnce'
-  'SumiTests/ExtensionRuntimeTransactionFailureTests.swift|testRolledBackWebKitLoadPreservesDelegateReceiptWithoutBinding'
-  'SumiTests/ExtensionRuntimeRecoveryTests.swift|testFailedEnableWithUnloadFailurePreservesEnabledLiveBinding'
-  'SumiTests/ExtensionRuntimeRecoveryTests.swift|testNonQuiescentPackageReplacementPreservesCandidateAndLiveRuntime'
-)
-for specification in "${required_regressions[@]}"; do
-  test_file="${specification%%|*}"
-  test_function="${specification#*|}"
-  if [[ ! -f "$test_file" ]] \
-      || ! rg -q "^[[:space:]]*func ${test_function}\\(" "$test_file"; then
-    printf 'error: context-load regression missing: %s (%s)\n' \
-      "$test_function" "$test_file" >&2
-    exit 1
-  fi
-done
 
 printf 'extension context-load boundary guard passed\n'

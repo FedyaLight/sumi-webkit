@@ -9,7 +9,7 @@ final class ShortcutLiveTabClosePersistenceTests: XCTestCase {
 
         XCTAssertTrue(fixture.service.close(fixture.liveTab, in: fixture.windowState))
 
-        XCTAssertEqual(fixture.probe.commits, [.explicit])
+        XCTAssertEqual(fixture.probe.commits, [.retirement])
         XCTAssertEqual(fixture.windowState.currentTabId, fixture.fallback?.id)
         XCTAssertNil(fixture.windowState.currentShortcutPinId)
         XCTAssertTrue(fixture.probe.teardownObservedAfterVisualHandoff)
@@ -35,7 +35,7 @@ final class ShortcutLiveTabClosePersistenceTests: XCTestCase {
 
         XCTAssertTrue(fixture.service.close(fixture.liveTab, in: fixture.windowState))
 
-        XCTAssertEqual(fixture.probe.commits, [.explicit])
+        XCTAssertEqual(fixture.probe.commits, [.retirement])
         XCTAssertNil(fixture.windowState.currentTabId)
         XCTAssertNil(fixture.windowState.currentShortcutPinId)
         XCTAssertTrue(fixture.windowState.isShowingEmptyState)
@@ -76,7 +76,7 @@ private extension ShortcutLiveTabClosePersistenceTests {
         let tabManager = try makeInMemoryTabManager(
             windowState: { $0 == windowState.id ? windowState : nil },
             windows: { [(windowState.id, windowState)] },
-            unloadTab: { _ in
+            notifyTabClosedIfLoaded: { _ in
                 probe.teardownObservedAfterVisualHandoff =
                     probe.didPerformVisualHandoff
             },
@@ -119,6 +119,7 @@ private extension ShortcutLiveTabClosePersistenceTests {
 
         let service = makeService(
             tabManager: tabManager,
+            windowState: windowState,
             pin: pin,
             probe: probe
         )
@@ -135,6 +136,7 @@ private extension ShortcutLiveTabClosePersistenceTests {
 
     func makeService(
         tabManager: TabManager,
+        windowState: BrowserWindowState,
         pin: ShortcutPin,
         probe: PersistenceProbe
     ) -> ShortcutLiveTabCloseService {
@@ -146,34 +148,11 @@ private extension ShortcutLiveTabClosePersistenceTests {
                     selectionService: ShellSelectionService { _ in [] }
                 )
             },
-            selectTabWithoutPersistence: { tab, state in
-                _ = WindowTabSelectionStateApplicator.apply(
-                    tab,
-                    to: state,
-                    updateSpaceFromTab: true,
-                    rememberSelection: true
-                )
-            },
             performImmediateVisualHandoffIfPossible: { _ in
                 probe.didPerformVisualHandoff = true
-            },
-            persistWindowSession: { _ in probe.commits.append(.explicit) },
-            showEmptyStateWithoutPersistence: { state in
                 probe.registryWasClearedBeforeEmptyHandoff =
                     tabManager.shortcutPresentationOwner
-                        .shortcutLiveTab(for: pin.id, in: state.id) == nil
-                if let stillLive = tabManager.shortcutPresentationOwner
-                    .shortcutLiveTab(for: pin.id, in: state.id) {
-                    state.currentTabId = stillLive.id
-                    state.currentShortcutPinId = pin.id
-                    state.currentShortcutPinRole = pin.role
-                    state.isShowingEmptyState = false
-                } else {
-                    state.currentTabId = nil
-                    state.currentShortcutPinId = nil
-                    state.currentShortcutPinRole = nil
-                    state.isShowingEmptyState = true
-                }
+                        .shortcutLiveTab(for: pin.id, in: windowState.id) == nil
             },
             splitShortcuts: { nil },
             notifications: { nil }

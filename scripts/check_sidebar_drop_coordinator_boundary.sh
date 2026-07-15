@@ -4,18 +4,13 @@
 # mutation stays on SidebarDragOperationExecuting / the existing router.
 set -euo pipefail
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$repo_root"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "$script_dir/.." && pwd)"
+# shellcheck source=scripts/lib/architecture_guard.sh
+source "$script_dir/lib/architecture_guard.sh"
+guard_initialize "$repo_root"
 
 status=0
-
-fail_matches() {
-  local message="$1"
-  local matches="$2"
-  [[ -z "$matches" ]] && return
-  printf 'error: %s:\n%s\n' "$message" "$matches" >&2
-  status=1
-}
 
 coordinator='Sumi/Components/DragDrop/SidebarDropCoordinator.swift'
 inventory='Sumi/Components/DragDrop/SidebarDragSourceInventory.swift'
@@ -26,115 +21,86 @@ composition='Sumi/Managers/BrowserManager/BrowserWindowViewContextComposition.sw
 router='Sumi/Managers/TabManager/SidebarDragOperationRouter.swift'
 
 for file in "$coordinator" "$inventory" "$executing" "$projection" "$port" "$composition"; do
-  if [[ ! -f "$file" ]]; then
-    printf 'error: sidebar drop boundary file missing: %s\n' "$file" >&2
-    status=1
-  fi
+  guard_require_file "$file"
 done
-if (( status != 0 )); then
-  exit "$status"
-fi
 
 # Coordinator must not accept or mention manager roots.
 coordinator_manager_hits="$(
-  rg -n '\bBrowserManager\b|\bTabManager\b' "$coordinator" || true
+  guard_capture_matches '\bBrowserManager\b|\bTabManager\b' "$coordinator"
 )"
-fail_matches \
-  "SidebarDropCoordinator regained BrowserManager/TabManager reach-through" \
-  "$coordinator_manager_hits"
+if [[ -n "$coordinator_manager_hits" ]]; then
+  guard_record_failure "SidebarDropCoordinator regained BrowserManager/TabManager reach-through:
+$coordinator_manager_hits"
+fi
 
 # Read inventory must not hold manager roots or DI bags.
 inventory_manager_hits="$(
-  rg -n '\bBrowserManager\b|\bTabManager\b' "$inventory" || true
+  guard_capture_matches '\bBrowserManager\b|\bTabManager\b' "$inventory"
 )"
-fail_matches \
-  "SidebarDragSourceInventory contains manager-root" \
-  "$inventory_manager_hits"
+if [[ -n "$inventory_manager_hits" ]]; then
+  guard_record_failure "SidebarDragSourceInventory contains manager-root:
+$inventory_manager_hits"
+fi
 
 closure_bag_hits="$(
-  rg -n '\bstruct[[:space:]]+Dependencies\b|\bstruct[[:space:]]+Actions\b' \
-    "$coordinator" "$inventory" "$executing" "$projection" || true
+  guard_capture_matches '\bstruct[[:space:]]+Dependencies\b|\bstruct[[:space:]]+Actions\b' \
+    "$coordinator" "$inventory" "$executing" "$projection"
 )"
-fail_matches \
-  "sidebar drop boundary grew a Dependencies/Actions closure bag" \
-  "$closure_bag_hits"
+if [[ -n "$closure_bag_hits" ]]; then
+  guard_record_failure "sidebar drop boundary grew a Dependencies/Actions closure bag:
+$closure_bag_hits"
+fi
 
 # Coordinator must not take raw structure owners back as collaborators.
 owner_reach_hits="$(
-  rg -n 'ShortcutPinCollectionStateOwner|SplitGroupSidebarOrderingService|RegularTabCollectionOwner|TabFolderCollectionStateOwner|SpacePinnedStructureOwner' \
-    "$coordinator" || true
+  guard_capture_matches 'ShortcutPinCollectionStateOwner|SplitGroupSidebarOrderingService|RegularTabCollectionOwner|TabFolderCollectionStateOwner|SpacePinnedStructureOwner' \
+    "$coordinator"
 )"
-fail_matches \
-  "SidebarDropCoordinator received direct owner reach-through" \
-  "$owner_reach_hits"
+if [[ -n "$owner_reach_hits" ]]; then
+  guard_record_failure "SidebarDropCoordinator received direct owner reach-through:
+$owner_reach_hits"
+fi
 
 # Coordinator must compose through the narrow inventory + operation seams.
-require_pattern() {
-  local file="$1"
-  local pattern="$2"
-  local message="$3"
-  if ! rg -q "$pattern" "$file"; then
-    printf 'error: %s\n' "$message" >&2
-    status=1
+required_contracts=(
+  "$coordinator|sourceInventory:[[:space:]]*any[[:space:]]+SidebarDragSourceInventorying|SidebarDropCoordinator lost SidebarDragSourceInventorying collaborator"
+  "$coordinator|dragOperations:[[:space:]]*any[[:space:]]+SidebarDragOperationExecuting|SidebarDropCoordinator lost SidebarDragOperationExecuting collaborator"
+  "$executing|protocol[[:space:]]+SidebarDragOperationExecuting|SidebarDragOperationExecuting protocol missing"
+  "$executing|extension[[:space:]]+SidebarDragOperationRouter:[[:space:]]*SidebarDragOperationExecuting|SidebarDragOperationRouter must remain the live operation authority"
+  "$composition|SidebarDragSourceInventory\\(|window-view composition must build SidebarDragSourceInventory"
+  "$composition|dragOperations:[[:space:]]*tabManager\\.sidebarDragRouter|window-view composition must resolve sidebarDragRouter once"
+  "$composition|dragTransactions:[[:space:]]*dragTransactions|window-view composition must pass the exact transaction port"
+  "$port|windows\\.contains\\(windowState\\)|SidebarDragTransactionPort must validate exact window identity"
+)
+for contract in "${required_contracts[@]}"; do
+  file="${contract%%|*}"
+  remainder="${contract#*|}"
+  pattern="${remainder%%|*}"
+  message="${remainder#*|}"
+  match_count="$(guard_count_matches "$pattern" "$file")"
+  if (( match_count == 0 )); then
+    guard_record_failure "$message"
   fi
-}
-
-require_pattern \
-  "$coordinator" \
-  'sourceInventory:[[:space:]]*any[[:space:]]+SidebarDragSourceInventorying' \
-  "SidebarDropCoordinator lost SidebarDragSourceInventorying collaborator"
-require_pattern \
-  "$coordinator" \
-  'dragOperations:[[:space:]]*any[[:space:]]+SidebarDragOperationExecuting' \
-  "SidebarDropCoordinator lost SidebarDragOperationExecuting collaborator"
-require_pattern \
-  "$executing" \
-  'protocol[[:space:]]+SidebarDragOperationExecuting' \
-  "SidebarDragOperationExecuting protocol missing"
-require_pattern \
-  "$executing" \
-  'extension[[:space:]]+SidebarDragOperationRouter:[[:space:]]*SidebarDragOperationExecuting' \
-  "SidebarDragOperationRouter must remain the live operation authority"
-require_pattern \
-  "$composition" \
-  'SidebarDragSourceInventory\(' \
-  "window-view composition must build SidebarDragSourceInventory"
-require_pattern \
-  "$composition" \
-  'dragOperations:[[:space:]]*tabManager\.sidebarDragRouter' \
-  "window-view composition must resolve sidebarDragRouter once"
-require_pattern \
-  "$composition" \
-  'dragTransactions:[[:space:]]*dragTransactions' \
-  "window-view composition must pass the exact transaction port"
-require_pattern \
-  "$port" \
-  'windows\.contains\(windowState\)' \
-  "SidebarDragTransactionPort must validate exact window identity"
+done
 runtime_router_reach="$(
   awk '
     /func commit\(/ { in_drop = 1 }
     in_drop { print }
     in_drop && /^[[:space:]]*\},?$/ { exit }
-  ' "$port" | rg -n 'tabManager\.|browserManager\.' || true
+  ' "$port" | guard_capture_matches 'tabManager\.|browserManager\.' -
 )"
-fail_matches \
-  "sidebar drop transaction resolves manager roots during the operation" \
-  "$runtime_router_reach"
+if [[ -n "$runtime_router_reach" ]]; then
+  guard_record_failure "sidebar drop transaction resolves manager roots during the operation:
+$runtime_router_reach"
+fi
 
 # Focused surface size caps keep the inventory from becoming a god-object.
-line_count() {
-  wc -l < "$1" | tr -d ' '
-}
-
-collaborator_count() {
-  rg -c '^[[:space:]]*private[[:space:]]+(let|weak[[:space:]]+var)\b' "$1" || true
-}
-
-inventory_lines="$(line_count "$inventory")"
-inventory_collaborators="$(collaborator_count "$inventory")"
-coordinator_lines="$(line_count "$coordinator")"
-executing_lines="$(line_count "$executing")"
+inventory_lines="$(guard_count_lines "$inventory")"
+inventory_collaborators="$(
+  guard_count_matches '^[[:space:]]*private[[:space:]]+(let|weak[[:space:]]+var)\b' "$inventory"
+)"
+coordinator_lines="$(guard_count_lines "$coordinator")"
+executing_lines="$(guard_count_lines "$executing")"
 
 if (( inventory_lines > 200 )); then
   printf 'error: SidebarDragSourceInventory exceeded focused LOC cap (%s > 200)\n' \
@@ -172,8 +138,8 @@ if (( router_dependency_lets > 17 )); then
   status=1
 fi
 
-if (( status != 0 )); then
-  exit "$status"
+if (( status != 0 || guard_failures != 0 )); then
+  exit 1
 fi
 
 echo "sidebar drop coordinator boundary passed"

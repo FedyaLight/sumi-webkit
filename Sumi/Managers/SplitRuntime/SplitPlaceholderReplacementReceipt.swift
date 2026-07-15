@@ -76,7 +76,7 @@ final class SplitPlaceholderTopologyMutation {
     func commitModel() -> Bool {
         guard topology.commitModel() else { return false }
         guard placeholderRetirement.commitModel() else {
-            topology.rollbackModel()
+            precondition(topology.rollbackModel())
             return false
         }
         return true

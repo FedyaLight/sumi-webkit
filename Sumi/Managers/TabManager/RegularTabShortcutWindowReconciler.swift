@@ -7,44 +7,57 @@ import SumiDomain
 @MainActor
 final class RegularTabShortcutWindowReconciler {
     private let regularTabs: RegularTabCollectionOwner
-    private let windowMutations: BrowserWindowShortcutMutationOwner
 
-    init(
-        regularTabs: RegularTabCollectionOwner,
-        windowMutations: BrowserWindowShortcutMutationOwner
-    ) {
+    init(regularTabs: RegularTabCollectionOwner) {
         self.regularTabs = regularTabs
-        self.windowMutations = windowMutations
     }
 
-    func reconcile(
+    func prepareContribution(
         originalTabId: UUID,
         splitTransition: RegularTabShortcutWindowTransitionPlan,
         sourceSpaceId: UUID?,
         liveTabsByWindowId: [UUID: Tab],
+        terminalIdentitiesByWindowId: [UUID: ShortcutBindingIdentity],
         selectedWindowIds: Set<UUID>,
         using runtime: RuntimePortRegistry
-    ) -> [BrowserWindowState] {
-        var changedStates: [UUID: BrowserWindowState] = [:]
+    ) -> ShortcutTabBindingWindowContribution? {
+        guard Set(liveTabsByWindowId.keys)
+                == Set(terminalIdentitiesByWindowId.keys) else { return nil }
+        var terminalSelectionsByWindowID:
+            [UUID: DisplayedTabShortcutTerminalSelectionPlan] = [:]
+        for (windowID, tab) in liveTabsByWindowId {
+            guard let identity = terminalIdentitiesByWindowId[windowID]
+            else { return nil }
+            terminalSelectionsByWindowID[windowID] = .init(
+                tab: tab,
+                identity: identity
+            )
+        }
+        let fallbackRegularTabID = sourceSpaceId.flatMap { spaceID in
+            regularTabs.tabs(in: spaceID).first {
+                $0.id != originalTabId
+            }?.id
+        }
+        var entries: [ShortcutTabBindingWindowContribution.Entry] = []
         runtime.forEachWindow { windowId, windowState in
-            var requiresPersistence = false
-            windowMutations.stage(windowState) { state in
-                requiresPersistence = DisplayedTabShortcutWindowTransition.apply(
-                    to: &state,
-                    originalTabId: originalTabId,
-                    splitTransition: splitTransition,
-                    liveTab: liveTabsByWindowId[windowId],
-                    sourceSpaceId: sourceSpaceId,
-                    isSelected: selectedWindowIds.contains(windowId),
-                    regularTabs: regularTabs
-                )
-            }
-            if requiresPersistence {
-                changedStates[windowId] = windowState
-            }
+            let source = windowState.unpublishedShortcutMutationState
+            var target = source
+            let requiresPersistence = DisplayedTabShortcutWindowTransition.apply(
+                to: &target,
+                originalTabId: originalTabId,
+                splitTransition: splitTransition,
+                terminalSelection: terminalSelectionsByWindowID[windowId],
+                sourceSpaceId: sourceSpaceId,
+                isSelected: selectedWindowIds.contains(windowId),
+                fallbackRegularTabID: fallbackRegularTabID
+            )
+            entries.append(.init(
+                window: windowState,
+                source: source,
+                target: target,
+                requiresPersistence: requiresPersistence
+            ))
         }
-        return changedStates.values.sorted {
-            $0.id.uuidString < $1.id.uuidString
-        }
+        return ShortcutTabBindingWindowContribution(entries: entries)
     }
 }

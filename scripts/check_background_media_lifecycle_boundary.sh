@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$repo_root"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "$script_dir/.." && pwd)"
+# shellcheck source=scripts/lib/architecture_guard.sh
+source "$script_dir/lib/architecture_guard.sh"
+guard_initialize "$repo_root"
 
 service="Sumi/Services/SumiBackgroundMediaOptimizationService.swift"
 lifecycle="Sumi/Managers/BrowserManager/BrowserRuntimeLifecycle.swift"
@@ -10,10 +13,7 @@ browser_manager="Sumi/Managers/BrowserManager/BrowserManager.swift"
 termination="Sumi/Managers/BrowserManager/BrowserTerminationRuntimeLease.swift"
 
 for file in "$service" "$lifecycle" "$browser_manager" "$termination"; do
-  if [[ ! -f "$file" ]]; then
-    printf 'error: background-media lifecycle source missing: %s\n' "$file" >&2
-    exit 1
-  fi
+  guard_require_file "$file"
 done
 
 extract_scope() {
@@ -32,15 +32,18 @@ extract_scope() {
   ' "$file"
 }
 
-fail() {
-  printf 'error: background-media lifecycle boundary: %s\n' "$1" >&2
-  exit 1
-}
-
 init_body="$(extract_scope "$service" 'init(notificationCenter:')"
-[[ -n "$init_body" ]] || fail "service initializer is missing"
-if rg -q 'addObserver|Task[[:space:]]*\{|scheduleReconcile|pendingReasons|appliedCommandsByWebView' <<<"$init_body"; then
-  fail "init must remain resource-free"
+if [[ -z "$init_body" ]]; then
+  guard_record_failure "background-media lifecycle boundary: service initializer is missing"
+  exit 1
+fi
+init_resource_count="$(
+  guard_count_matches 'addObserver|Task[[:space:]]*\{|scheduleReconcile|pendingReasons|appliedCommandsByWebView' \
+    - <<< "$init_body"
+)"
+if (( init_resource_count > 0 )); then
+  guard_record_failure "background-media lifecycle boundary: init must remain resource-free"
+  exit 1
 fi
 
 attach_body="$(extract_scope "$service" 'func attach(runtime:')"
@@ -49,8 +52,11 @@ for required in \
   'self\.runtime = runtime' \
   'notificationCenter\.addObserver' \
   'attachmentGeneration'; do
-  rg -q "$required" <<<"$attach_body" \
-    || fail "attach lost required activation step: $required"
+  required_count="$(guard_count_matches "$required" - <<< "$attach_body")"
+  if (( required_count == 0 )); then
+    guard_record_failure "background-media lifecycle boundary: attach lost required activation step: $required"
+    exit 1
+  fi
 done
 
 detach_body="$(extract_scope "$service" 'func detach()')"
@@ -63,48 +69,77 @@ for required in \
   'didTruncatePendingReasons = false' \
   'appliedCommandsByWebView\.removeAll\(\)' \
   'attachmentGeneration'; do
-  rg -q "$required" <<<"$detach_body" \
-    || fail "detach lost required retirement step: $required"
+  required_count="$(guard_count_matches "$required" - <<< "$detach_body")"
+  if (( required_count == 0 )); then
+    guard_record_failure "background-media lifecycle boundary: detach lost required retirement step: $required"
+    exit 1
+  fi
 done
 
 schedule_body="$(extract_scope "$service" 'func scheduleReconcile(reason: String)')"
-rg -Fq 'guard runtime != nil else { return }' <<<"$schedule_body" \
-  || fail "scheduleReconcile must be a no-op while detached"
-
-invalidate_body="$(extract_scope "$service" 'func invalidateAppliedCommand(for webView:')"
-rg -Fq 'guard runtime != nil else { return }' <<<"$invalidate_body" \
-  || fail "command invalidation must be a no-op while detached"
-
-shutdown_body="$(extract_scope "$lifecycle" 'func shutdown()')"
-shutdown_cancel_line="$(rg -n -F 'runtimeGraphSubscription?.cancel()' <<<"$shutdown_body" | cut -d: -f1)"
-shutdown_detach_line="$(rg -n -F 'backgroundMediaOptimization.detach()' <<<"$shutdown_body" | cut -d: -f1)"
-[[ -n "$shutdown_cancel_line" && -n "$shutdown_detach_line" ]] \
-  || fail "runtime shutdown must cancel inputs and detach background media"
-(( shutdown_cancel_line < shutdown_detach_line )) \
-  || fail "runtime shutdown must cancel structural input before detaching background media"
-
-manager_deinit="$(extract_scope "$browser_manager" 'isolated deinit')"
-manager_shutdown_line="$(rg -n -F 'runtimeLifecycle.shutdown()' <<<"$manager_deinit" | cut -d: -f1)"
-manager_tab_detach_line="$(rg -n -F 'tabManager.detachBrowserRuntime()' <<<"$manager_deinit" | cut -d: -f1)"
-[[ -n "$manager_shutdown_line" && -n "$manager_tab_detach_line" ]] \
-  || fail "BrowserManager deinit lost runtime or tab detach"
-(( manager_shutdown_line < manager_tab_detach_line )) \
-  || fail "background media must detach before tab runtime teardown"
-
-finalize_body="$(extract_scope "$termination" 'func finalizeTermination()')"
-termination_detach_line="$(rg -n -F 'backgroundMediaOptimization.detach()' <<<"$finalize_body" | cut -d: -f1)"
-termination_flush_line="$(rg -n -F 'windowPersistence.flush()' <<<"$finalize_body" | cut -d: -f1)"
-[[ -n "$termination_detach_line" && -n "$termination_flush_line" ]] \
-  || fail "termination finalization lost detach or persistence boundary"
-(( termination_detach_line < termination_flush_line )) \
-  || fail "termination must detach background media before persistence and WebKit cleanup"
-
-if rg -q 'BrowserManager' "$service"; then
-  fail "service must not recover BrowserManager through a hidden lookup"
+schedule_guard_count="$(
+  guard_count_matches 'guard runtime != nil else { return }' -F - <<< "$schedule_body"
+)"
+if (( schedule_guard_count == 0 )); then
+  guard_record_failure "background-media lifecycle boundary: scheduleReconcile must be a no-op while detached"
+  exit 1
 fi
 
-if rg -q 'Timer|Task\.sleep|DispatchSourceTimer' "$service"; then
-  fail "service must not add timers or polling"
+invalidate_body="$(extract_scope "$service" 'func invalidateAppliedCommand(for webView:')"
+invalidate_guard_count="$(
+  guard_count_matches 'guard runtime != nil else { return }' -F - <<< "$invalidate_body"
+)"
+if (( invalidate_guard_count == 0 )); then
+  guard_record_failure "background-media lifecycle boundary: command invalidation must be a no-op while detached"
+  exit 1
+fi
+
+shutdown_body="$(extract_scope "$lifecycle" 'func shutdown()')"
+shutdown_cancel_line="$(guard_capture_matches 'runtimeGraphSubscription?.cancel()' -F - <<< "$shutdown_body" | cut -d: -f1)"
+shutdown_detach_line="$(guard_capture_matches 'backgroundMediaOptimization.detach()' -F - <<< "$shutdown_body" | cut -d: -f1)"
+if [[ -z "$shutdown_cancel_line" || -z "$shutdown_detach_line" ]]; then
+  guard_record_failure "background-media lifecycle boundary: runtime shutdown must cancel inputs and detach background media"
+  exit 1
+fi
+if (( shutdown_cancel_line >= shutdown_detach_line )); then
+  guard_record_failure "background-media lifecycle boundary: runtime shutdown must cancel structural input before detaching background media"
+  exit 1
+fi
+
+manager_deinit="$(extract_scope "$browser_manager" 'isolated deinit')"
+manager_shutdown_line="$(guard_capture_matches 'runtimeLifecycle.shutdown()' -F - <<< "$manager_deinit" | cut -d: -f1)"
+manager_tab_detach_line="$(guard_capture_matches 'tabManager.detachBrowserRuntime()' -F - <<< "$manager_deinit" | cut -d: -f1)"
+if [[ -z "$manager_shutdown_line" || -z "$manager_tab_detach_line" ]]; then
+  guard_record_failure "background-media lifecycle boundary: BrowserManager deinit lost runtime or tab detach"
+  exit 1
+fi
+if (( manager_shutdown_line >= manager_tab_detach_line )); then
+  guard_record_failure "background-media lifecycle boundary: background media must detach before tab runtime teardown"
+  exit 1
+fi
+
+finalize_body="$(extract_scope "$termination" 'func finalizeTermination()')"
+termination_detach_line="$(guard_capture_matches 'backgroundMediaOptimization.detach()' -F - <<< "$finalize_body" | cut -d: -f1)"
+termination_flush_line="$(guard_capture_matches 'windowPersistence.flush()' -F - <<< "$finalize_body" | cut -d: -f1)"
+if [[ -z "$termination_detach_line" || -z "$termination_flush_line" ]]; then
+  guard_record_failure "background-media lifecycle boundary: termination finalization lost detach or persistence boundary"
+  exit 1
+fi
+if (( termination_detach_line >= termination_flush_line )); then
+  guard_record_failure "background-media lifecycle boundary: termination must detach background media before persistence and WebKit cleanup"
+  exit 1
+fi
+
+browser_manager_count="$(guard_count_matches 'BrowserManager' "$service")"
+if (( browser_manager_count > 0 )); then
+  guard_record_failure "background-media lifecycle boundary: service must not recover BrowserManager through a hidden lookup"
+  exit 1
+fi
+
+timer_count="$(guard_count_matches 'Timer|Task\.sleep|DispatchSourceTimer' "$service")"
+if (( timer_count > 0 )); then
+  guard_record_failure "background-media lifecycle boundary: service must not add timers or polling"
+  exit 1
 fi
 
 echo "background-media lifecycle boundary passed"

@@ -109,6 +109,15 @@ final class WebViewSessionTransitionTransactionStore {
         return batch
     }
 
+    func releaseRetirementRollbackClaim(
+        for lease: WebViewRetirementBatchLease
+    ) -> Batch? {
+        guard var batch = rollingBackBatch(for: lease) else { return nil }
+        batch.settlementPhase = .open
+        batchesByID[lease.id] = batch
+        return batch
+    }
+
     func install(_ batch: Batch) {
         precondition(batchesByID[batch.lease.id] == nil)
         for tabID in batch.entriesByTabID.keys {

@@ -121,9 +121,11 @@ final class SplitGroupSidebarOrderingService {
             switch item {
             case .folder(let folderID):
                 guard let folder = folderMap[folderID] else { continue }
-                folder.index = index
-                folder.spaceId = spaceID
-                folder.parentFolderId = nil
+                folder.installPlacement(TabFolderPlacement(
+                    spaceID: spaceID,
+                    parentFolderID: nil,
+                    index: index
+                ))
                 orderedFolders.append(folder)
 
             case .shortcut(let pinID):

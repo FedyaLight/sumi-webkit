@@ -1,15 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$repo_root"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "$script_dir/.." && pwd)"
+# shellcheck source=scripts/lib/architecture_guard.sh
+source "$script_dir/lib/architecture_guard.sh"
+guard_initialize "$repo_root"
 
 for removed_file in \
   Sumi/ContentBlocking/SumiAdblockUpdatePipeline.swift \
   Sumi/ContentBlocking/SumiProtectionBundleRemoteUpdate.swift \
   Sumi/ContentBlocking/SumiContentBlockingScheduledTaskOwner.swift \
   Sumi/ContentBlocking/ProtectionRuntimeSynchronizer.swift; do
-  if [[ -e "$removed_file" ]]; then
+  if [[ -e "$removed_file" || -L "$removed_file" ]]; then
     echo "error: retired Adblock god surface returned: $removed_file" >&2
     exit 1
   fi
@@ -22,49 +25,53 @@ for removed_symbol in \
   SumiContentBlockingScheduledTaskOwner \
   AdblockWebKitRuleListStore \
   ProtectionRuntimeSynchronizer; do
-  if rg -n "\\b${removed_symbol}\\b" Sumi SumiTests --glob '*.swift' >/dev/null; then
+  removed_symbol_count="$(
+    guard_count_matches "\\b${removed_symbol}\\b" Sumi SumiTests --glob '*.swift'
+  )"
+  if (( removed_symbol_count > 0 )); then
     echo "error: retired Adblock abstraction returned: $removed_symbol" >&2
     exit 1
   fi
 done
 
-check_max_lines() {
-  local file="$1"
-  local maximum="$2"
-  local actual
-  actual="$(wc -l < "$file" | tr -d ' ')"
+line_budgets=(
+  "Sumi/ContentBlocking/AdblockGenerationArchive.swift|280"
+  "Sumi/ContentBlocking/AdblockGenerationMutationGate.swift|100"
+  "Sumi/ContentBlocking/AdblockGenerationRecovery.swift|170"
+  "Sumi/ContentBlocking/AdblockGenerationRetention.swift|130"
+  "Sumi/ContentBlocking/AdblockPreparedBundleInstaller.swift|260"
+  "Sumi/ContentBlocking/AdblockPersistedGenerationActivation.swift|100"
+  "Sumi/ContentBlocking/AdblockGenerationStartup.swift|140"
+  "Sumi/ContentBlocking/AdblockRuleListRuntime.swift|300"
+  "Sumi/ContentBlocking/AdblockSitePolicy.swift|210"
+  "Sumi/ContentBlocking/AdblockManifestRuleListProvider.swift|130"
+  "Sumi/ContentBlocking/ContentBlockingTaskRegistry.swift|100"
+  "Sumi/ContentBlocking/SumiAdBlockingModule.swift|200"
+  "Sumi/ContentBlocking/SumiProtectionBundleRemoteUpdater.swift|160"
+  "Sumi/ContentBlocking/SumiProtectionBundleReleaseValidator.swift|220"
+  "Sumi/ContentBlocking/SumiProtectionBundleCache.swift|200"
+  "Sumi/ContentBlocking/SumiProtectionBundleCacheTransaction.swift|570"
+  "Sumi/ContentBlocking/SumiProtectionBundleQuarantine.swift|250"
+  "Sumi/ContentBlocking/SumiAdblockNativeRuleBundle.swift|190"
+  "Sumi/ContentBlocking/SumiAdblockNativeBundleReader.swift|290"
+  "Sumi/ContentBlocking/SumiAdblockNativeGenerationProjector.swift|210"
+  "Sumi/ContentBlocking/SumiPreparedAdblockBundleResolver.swift|330"
+  "Sumi/ContentBlocking/SumiContentBlockingService.swift|360"
+  "Sumi/ContentBlocking/SumiContentBlockingStateMachine.swift|125"
+  "Sumi/ContentBlocking/SumiRuleListProviderRuntime.swift|130"
+  "Sumi/ContentBlocking/SumiProfileContentBlockingRuntime.swift|150"
+  "Sumi/ContentBlocking/ContentBlockingTaskRegistry.swift|80"
+)
+for budget in "${line_budgets[@]}"; do
+  file="${budget%%|*}"
+  maximum="${budget#*|}"
+  guard_require_file "$file"
+  actual="$(guard_count_lines "$file")"
   if (( actual > maximum )); then
     echo "error: $file grew beyond its architectural role ($actual > $maximum LOC)" >&2
     exit 1
   fi
-}
-
-check_max_lines Sumi/ContentBlocking/AdblockGenerationArchive.swift 280
-check_max_lines Sumi/ContentBlocking/AdblockGenerationMutationGate.swift 100
-check_max_lines Sumi/ContentBlocking/AdblockGenerationRecovery.swift 170
-check_max_lines Sumi/ContentBlocking/AdblockGenerationRetention.swift 130
-check_max_lines Sumi/ContentBlocking/AdblockPreparedBundleInstaller.swift 260
-check_max_lines Sumi/ContentBlocking/AdblockPersistedGenerationActivation.swift 100
-check_max_lines Sumi/ContentBlocking/AdblockGenerationStartup.swift 140
-check_max_lines Sumi/ContentBlocking/AdblockRuleListRuntime.swift 300
-check_max_lines Sumi/ContentBlocking/AdblockSitePolicy.swift 210
-check_max_lines Sumi/ContentBlocking/AdblockManifestRuleListProvider.swift 130
-check_max_lines Sumi/ContentBlocking/ContentBlockingTaskRegistry.swift 100
-check_max_lines Sumi/ContentBlocking/SumiAdBlockingModule.swift 200
-check_max_lines Sumi/ContentBlocking/SumiProtectionBundleRemoteUpdater.swift 160
-check_max_lines Sumi/ContentBlocking/SumiProtectionBundleReleaseValidator.swift 220
-check_max_lines Sumi/ContentBlocking/SumiProtectionBundleCache.swift 200
-check_max_lines Sumi/ContentBlocking/SumiProtectionBundleCacheTransaction.swift 570
-check_max_lines Sumi/ContentBlocking/SumiProtectionBundleQuarantine.swift 250
-check_max_lines Sumi/ContentBlocking/SumiAdblockNativeRuleBundle.swift 190
-check_max_lines Sumi/ContentBlocking/SumiAdblockNativeBundleReader.swift 290
-check_max_lines Sumi/ContentBlocking/SumiAdblockNativeGenerationProjector.swift 210
-check_max_lines Sumi/ContentBlocking/SumiPreparedAdblockBundleResolver.swift 330
-check_max_lines Sumi/ContentBlocking/SumiContentBlockingService.swift 360
-check_max_lines Sumi/ContentBlocking/SumiContentBlockingStateMachine.swift 125
-check_max_lines Sumi/ContentBlocking/SumiRuleListProviderRuntime.swift 130
-check_max_lines Sumi/ContentBlocking/SumiProfileContentBlockingRuntime.swift 150
-check_max_lines Sumi/ContentBlocking/ContentBlockingTaskRegistry.swift 80
+done
 
 focused_files=(
   Sumi/ContentBlocking/AdblockGenerationArchive.swift
@@ -95,62 +102,84 @@ focused_files=(
   Sumi/ContentBlocking/ContentBlockingTaskRegistry.swift
 )
 
-if rg -n '\bOwner\b|Owner\.swift' "${focused_files[@]}" >/dev/null; then
+owner_count="$(guard_count_matches '\bOwner\b|Owner\.swift' "${focused_files[@]}")"
+if (( owner_count > 0 )); then
   echo "error: Adblock update responsibility was hidden behind an Owner name" >&2
   exit 1
 fi
 
-if rg -n 'Dictionary\(uniqueKeysWithValues:\s*release\.assets' Sumi/ContentBlocking --glob '*.swift' >/dev/null; then
+trapping_dictionary_count="$(
+  guard_count_matches 'Dictionary\(uniqueKeysWithValues:\s*release\.assets' \
+    Sumi/ContentBlocking --glob '*.swift'
+)"
+if (( trapping_dictionary_count > 0 )); then
   echo "error: untrusted release asset names must not use a trapping dictionary initializer" >&2
   exit 1
 fi
 
-if rg -n 'CryptoKit|OSLog|FileManager|Data\(contentsOf:|JSONSerialization' \
+native_io_count="$(guard_count_matches 'CryptoKit|OSLog|FileManager|Data\(contentsOf:|JSONSerialization' \
   Sumi/ContentBlocking/SumiAdblockNativeRuleBundle.swift \
-  Sumi/ContentBlocking/SumiAdblockNativeGenerationProjector.swift >/dev/null; then
+  Sumi/ContentBlocking/SumiAdblockNativeGenerationProjector.swift)"
+if (( native_io_count > 0 )); then
   echo "error: native bundle model/projection regained filesystem or diagnostics IO" >&2
   exit 1
 fi
 
-if rg -n '\b(load|bundledDirectoryURL|contentRuleListDefinitions|stagedShardURLs|compiledGenerationManifest)\s*\(' \
-  Sumi/ContentBlocking/SumiAdblockNativeRuleBundle.swift >/dev/null; then
+native_responsibility_count="$(guard_count_matches \
+  '\b(load|bundledDirectoryURL|contentRuleListDefinitions|stagedShardURLs|compiledGenerationManifest)\s*\(' \
+  Sumi/ContentBlocking/SumiAdblockNativeRuleBundle.swift)"
+if (( native_responsibility_count > 0 )); then
   echo "error: native bundle value regained reader/projector responsibilities" >&2
   exit 1
 fi
 
-if rg -n 'changesPublisher|AnyCancellable|ruleSourceGeneration|beginRuleSourceRefresh|isCurrentRuleSourceRefresh|disableAfterRuleSourceFailure' \
+provider_leak_count="$(guard_count_matches \
+  'changesPublisher|AnyCancellable|ruleSourceGeneration|beginRuleSourceRefresh|isCurrentRuleSourceRefresh|disableAfterRuleSourceFailure' \
   Sumi/ContentBlocking/SumiContentBlockingService.swift \
-  Sumi/ContentBlocking/SumiContentBlockingStateMachine.swift >/dev/null; then
+  Sumi/ContentBlocking/SumiContentBlockingStateMachine.swift)"
+if (( provider_leak_count > 0 )); then
   echo "error: provider observation/generation leaked back into policy runtime" >&2
   exit 1
 fi
 
-if rg -n 'ContentBlockingTaskRegistry\(\)' \
-  Sumi/ContentBlocking SumiTests --glob '*.swift' >/dev/null; then
+untyped_registry_count="$(guard_count_matches 'ContentBlockingTaskRegistry\(\)' \
+  Sumi/ContentBlocking SumiTests --glob '*.swift')"
+if (( untyped_registry_count > 0 )); then
   echo "error: content-blocking task registry lost its exact key type" >&2
   exit 1
 fi
 
-rg -q 'ContentBlockingItemExchange\.swap' Sumi/ContentBlocking/AdblockGenerationArchive.swift
-rg -q 'ContentBlockingItemExchange\.swap' Sumi/ContentBlocking/SumiProtectionBundleCacheTransaction.swift
-rg -q 'unavailableMarkerFileName' Sumi/ContentBlocking/SumiPreparedAdblockBundleResolver.swift
-rg -q 'previousGenerationId' Sumi/ContentBlocking/AdblockGenerationRetention.swift
-rg -q 'mutationGate\.stop\(\)' Sumi/ContentBlocking/AdblockRuleListRuntime.swift
-rg -q 'cache\.commit\(' Sumi/ContentBlocking/SumiProtectionBundleRemoteUpdater.swift
-rg -q 'bundleReader\.contentRuleListDefinitions' Sumi/ContentBlocking/AdblockPreparedBundleInstaller.swift
-rg -q 'generationProjector\.compiledManifest' Sumi/ContentBlocking/AdblockPreparedBundleInstaller.swift
-rg -q 'SumiRuleListProviderRuntime' Sumi/ContentBlocking/SumiContentBlockingService.swift
-rg -q 'ContentBlockingTaskRegistry<TaskKey>' Sumi/ContentBlocking/SumiRuleListProviderRuntime.swift
-rg -q 'stagePreparedContentBlockingUpdate' Sumi/ContentBlocking/AdblockRuleListPublication.swift
-rg -q 'publishStagedContentBlockingUpdate' Sumi/ContentBlocking/AdblockRuleListPublication.swift
-rg -q 'private var runtimeLevel = SumiProtectionLevel\.off' Sumi/ContentBlocking/SumiAdBlockingModule.swift
-rg -q 'ruleProvider\.setRuntimeLevel\(level\)' Sumi/ContentBlocking/ProtectionAttachmentService.swift
+required_contracts=(
+  'Sumi/ContentBlocking/AdblockGenerationArchive.swift|ContentBlockingItemExchange\.swap'
+  'Sumi/ContentBlocking/SumiProtectionBundleCacheTransaction.swift|ContentBlockingItemExchange\.swap'
+  'Sumi/ContentBlocking/SumiPreparedAdblockBundleResolver.swift|unavailableMarkerFileName'
+  'Sumi/ContentBlocking/AdblockGenerationRetention.swift|previousGenerationId'
+  'Sumi/ContentBlocking/AdblockRuleListRuntime.swift|mutationGate\.stop\(\)'
+  'Sumi/ContentBlocking/SumiProtectionBundleRemoteUpdater.swift|cache\.commit\('
+  'Sumi/ContentBlocking/AdblockPreparedBundleInstaller.swift|bundleReader\.contentRuleListDefinitions'
+  'Sumi/ContentBlocking/AdblockPreparedBundleInstaller.swift|generationProjector\.compiledManifest'
+  'Sumi/ContentBlocking/SumiContentBlockingService.swift|SumiRuleListProviderRuntime'
+  'Sumi/ContentBlocking/SumiRuleListProviderRuntime.swift|ContentBlockingTaskRegistry<TaskKey>'
+  'Sumi/ContentBlocking/AdblockRuleListPublication.swift|stagePreparedContentBlockingUpdate'
+  'Sumi/ContentBlocking/AdblockRuleListPublication.swift|publishStagedContentBlockingUpdate'
+  'Sumi/ContentBlocking/SumiAdBlockingModule.swift|private var runtimeLevel = SumiProtectionLevel\.off'
+  'Sumi/ContentBlocking/ProtectionAttachmentService.swift|ruleProvider\.setRuntimeLevel\(level\)'
+)
+for contract in "${required_contracts[@]}"; do
+  file="${contract%%|*}"
+  pattern="${contract#*|}"
+  contract_count="$(guard_count_matches "$pattern" "$file")"
+  if (( contract_count == 0 )); then
+    guard_record_failure "required Adblock architecture contract is missing from $file: $pattern"
+    exit 1
+  fi
+done
 
 rollback_transaction=Sumi/ContentBlocking/SumiProtectionBundleCacheTransaction.swift
-rollback_marker_line="$(rg -n 'try quarantineIO\.publishUnavailableMarker' "$rollback_transaction" | head -1 | cut -d: -f1)"
-rollback_swap_line="$(rg -n 'ContentBlockingItemExchange\.swap\(destination, stagedBundleURL\)' "$rollback_transaction" | tail -1 | cut -d: -f1)"
-restored_phase_line="$(rg -n 'phase = \.revalidatingRestored' "$rollback_transaction" | cut -d: -f1)"
-restored_receipt_line="$(rg -n 'restoredReceipt == previousReceipt' "$rollback_transaction" | cut -d: -f1)"
+rollback_marker_line="$(guard_capture_matches 'try quarantineIO\.publishUnavailableMarker' "$rollback_transaction" | head -1 | cut -d: -f1)"
+rollback_swap_line="$(guard_capture_matches 'ContentBlockingItemExchange\.swap\(destination, stagedBundleURL\)' "$rollback_transaction" | tail -1 | cut -d: -f1)"
+restored_phase_line="$(guard_capture_matches 'phase = \.revalidatingRestored' "$rollback_transaction" | cut -d: -f1)"
+restored_receipt_line="$(guard_capture_matches 'restoredReceipt == previousReceipt' "$rollback_transaction" | cut -d: -f1)"
 post_restore_quarantine_line="$(awk -v start="$restored_receipt_line" 'NR > start && /try quarantine\(/ { print NR; exit }' "$rollback_transaction")"
 
 if [[ -z "$rollback_marker_line" || -z "$rollback_swap_line" || -z "$restored_phase_line" || -z "$restored_receipt_line" || -z "$post_restore_quarantine_line" ]] \
@@ -162,16 +191,18 @@ if [[ -z "$rollback_marker_line" || -z "$rollback_swap_line" || -z "$restored_ph
   exit 1
 fi
 
-if rg -n 'precondition|preconditionFailure|fatalError|try\?' \
+rollback_trap_count="$(guard_count_matches 'precondition|preconditionFailure|fatalError|try\?' \
   Sumi/ContentBlocking/SumiProtectionBundleCacheTransaction.swift \
-  Sumi/ContentBlocking/SumiProtectionBundleQuarantine.swift >/dev/null; then
+  Sumi/ContentBlocking/SumiProtectionBundleQuarantine.swift)"
+if (( rollback_trap_count > 0 )); then
   echo "error: protection rollback corruption and forensic cleanup must use typed failures" >&2
   exit 1
 fi
 
-if rg -n '\b(setPreparedBundleRuntimeEnabled|func setEnabled\(_ isEnabled: Bool\))' \
+split_boolean_count="$(guard_count_matches '\b(setPreparedBundleRuntimeEnabled|func setEnabled\(_ isEnabled: Bool\))' \
   Sumi/ContentBlocking/SumiAdBlockingModule.swift \
-  Sumi/ContentBlocking/ProtectionAttachmentRuleProviding.swift >/dev/null; then
+  Sumi/ContentBlocking/ProtectionAttachmentRuleProviding.swift)"
+if (( split_boolean_count > 0 )); then
   echo "error: atomic Adblock runtime level regressed to split boolean forwarding" >&2
   exit 1
 fi
