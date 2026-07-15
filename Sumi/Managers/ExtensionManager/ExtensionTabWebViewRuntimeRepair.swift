@@ -58,7 +58,7 @@ protocol ExtensionTabWebViewRuntimeRepairing: AnyObject {
     func repair(
         _ tab: Tab,
         reason: String,
-        allowWhenExtensionsNotLoaded: Bool
+        publicationStage: ExtensionRuntimePublicationStage
     ) -> ExtensionTabWebViewRuntimeRepairOutcome
 }
 
@@ -111,11 +111,11 @@ final class ExtensionTabWebViewRuntimeRepair:
     func repair(
         _ tab: Tab,
         reason: String,
-        allowWhenExtensionsNotLoaded: Bool = false
+        publicationStage: ExtensionRuntimePublicationStage = .loadedRuntime
     ) -> ExtensionTabWebViewRuntimeRepairOutcome {
         guard isCurrent(tab),
-              runtimeLoadStatus?.extensionsLoaded == true
-                || allowWhenExtensionsNotLoaded,
+              let runtimeLoadStatus,
+              publicationStage.admits(runtimeLoadStatus),
               let profileID = profiles?.profileID(for: tab),
               let controller = profileRuntime?.controller(for: profileID)
         else { return .notApplicable }
@@ -228,7 +228,7 @@ final class ExtensionProfileWebViewRuntimeReconciler {
 
     func reconcile(
         profileID: UUID,
-        allowWhenExtensionsNotLoaded: Bool = false,
+        publicationStage: ExtensionRuntimePublicationStage = .loadedRuntime,
         reason: String
     ) {
         #if DEBUG
@@ -242,7 +242,7 @@ final class ExtensionProfileWebViewRuntimeReconciler {
             repair?.repair(
                 tab,
                 reason: reason,
-                allowWhenExtensionsNotLoaded: allowWhenExtensionsNotLoaded
+                publicationStage: publicationStage
             )
         }
     }

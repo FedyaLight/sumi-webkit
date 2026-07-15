@@ -29,22 +29,28 @@ struct ExtensionAuxiliaryWindowPublication {
 final class ExtensionAuxiliaryWindowPublicationResolver {
     private let adapterStore: ExtensionBrowserAdapterStore
     private let profileRuntime: ExtensionProfileRuntime
+    private let tabProfiles: any ExtensionTabProfileResolving
+    private let windowProfileID:
+        @MainActor (BrowserWindowState) -> UUID?
     private let tabPublication:
         any ExtensionAuxiliaryTabPublicationPreparing
 
     init(
         adapterStore: ExtensionBrowserAdapterStore,
         profileRuntime: ExtensionProfileRuntime,
+        tabProfiles: any ExtensionTabProfileResolving,
+        windowProfileID: @escaping @MainActor (BrowserWindowState) -> UUID?,
         tabPublication: any ExtensionAuxiliaryTabPublicationPreparing
     ) {
         self.adapterStore = adapterStore
         self.profileRuntime = profileRuntime
+        self.tabProfiles = tabProfiles
+        self.windowProfileID = windowProfileID
         self.tabPublication = tabPublication
     }
 
     func resolvePublication(
         for session: AuxiliaryWindowSession,
-        runtime: ExtensionManagerRuntime,
         control: (any ExtensionAuxiliaryWindowControl)?
     ) -> ExtensionAuxiliaryWindowPublication? {
         guard let control,
@@ -52,10 +58,7 @@ final class ExtensionAuxiliaryWindowPublicationResolver {
               let adapter = session.miniWindowAdapter,
               adapterStore.existingMiniWindowAdapter(for: session.id)
                 === adapter,
-              let profileID = profileRuntime.resolvedProfileId(
-                  for: session.tab,
-                  runtime: runtime
-              ),
+              let profileID = tabProfiles.profileID(for: session.tab),
               let ownerExtensionID = session.ownerExtensionID,
               let context = ownerContext(
                   for: session,
@@ -65,8 +68,7 @@ final class ExtensionAuxiliaryWindowPublicationResolver {
                   for: session,
                   profileID: profileID,
                   ownerExtensionID: ownerExtensionID,
-                  ownerContext: context,
-                  runtime: runtime
+                  ownerContext: context
               )
         else {
             return nil
@@ -84,23 +86,20 @@ final class ExtensionAuxiliaryWindowPublicationResolver {
     func projectionIsCurrent(
         _ publication: ExtensionAuxiliaryWindowPublication,
         session: AuxiliaryWindowSession,
-        runtime: ExtensionManagerRuntime,
         control: (any ExtensionAuxiliaryWindowControl)?
     ) -> Bool {
         guard publication.represents(session),
               control?.auxiliaryWindowSession(for: session.id) === session,
               adapterStore.existingMiniWindowAdapter(for: session.id)
                 === publication.adapter,
-              profileRuntime.resolvedProfileId(
-                  for: session.tab,
-                  runtime: runtime
-              ) == publication.profileID,
+              tabProfiles.profileID(for: session.tab)
+                == publication.profileID,
               ownerContext(
                   for: session,
                   profileID: publication.profileID
               ) === publication.context,
               session.ownerExtensionID == publication.ownerExtensionID,
-              publication.tabReceipt.isCurrent(runtime: runtime)
+              publication.tabReceipt.isCurrent()
         else {
             return false
         }
@@ -110,13 +109,11 @@ final class ExtensionAuxiliaryWindowPublicationResolver {
     func publicationIsCurrent(
         _ publication: ExtensionAuxiliaryWindowPublication,
         session: AuxiliaryWindowSession,
-        runtime: ExtensionManagerRuntime,
         control: (any ExtensionAuxiliaryWindowControl)?
     ) -> Bool {
         projectionIsCurrent(
             publication,
             session: session,
-            runtime: runtime,
             control: control
         ) && publication.context.openWindows.contains { openWindow in
             (openWindow as AnyObject) === publication.adapter
@@ -125,13 +122,9 @@ final class ExtensionAuxiliaryWindowPublicationResolver {
 
     func windowMatchesProfile(
         _ window: BrowserWindowState,
-        publication: ExtensionAuxiliaryWindowPublication,
-        runtime: ExtensionManagerRuntime
+        publication: ExtensionAuxiliaryWindowPublication
     ) -> Bool {
-        profileRuntime.resolvedProfileId(
-            for: window,
-            runtime: runtime
-        ) == publication.profileID
+        windowProfileID(window) == publication.profileID
     }
 
     private func ownerContext(

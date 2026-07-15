@@ -10,7 +10,9 @@ final class ExtensionRuntimeLifecycleBoundaryTests: XCTestCase {
         let profileID = UUID()
         let harness = DemandHarness(profileID: profileID)
 
-        XCTAssertNil(harness.coordinator.request(reason: .install))
+        XCTAssertNil(
+            harness.coordinator.requestRuntimeIfDemanded(reason: .install)
+        )
         XCTAssertEqual(harness.provisioning.ensureCount, 0)
         XCTAssertEqual(harness.lifecycle.state, .idle)
         XCTAssertFalse(harness.loadStatus.extensionsLoaded)
@@ -20,22 +22,20 @@ final class ExtensionRuntimeLifecycleBoundaryTests: XCTestCase {
         let harness = DemandHarness(profileID: UUID())
         harness.loadStatus.markExtensionsLoaded()
 
-        XCTAssertNil(harness.coordinator.request(reason: .install))
+        XCTAssertNil(
+            harness.coordinator.requestRuntimeIfDemanded(reason: .install)
+        )
         XCTAssertTrue(harness.loadStatus.extensionsLoaded)
         XCTAssertEqual(harness.provisioning.ensureCount, 0)
     }
 
     func testUnsupportedDemandDoesNotProvisionOrPublishRuntime() {
         let profileID = UUID()
-        let harness = DemandHarness(
-            profileID: profileID,
-            extensionSupportAvailable: false
-        )
+        let harness = DemandHarness.unavailable(profileID: profileID)
 
         XCTAssertNil(
-            harness.coordinator.request(
+            harness.coordinator.requestRuntimeExplicitly(
                 reason: .install,
-                allowWithoutEnabledExtensions: true,
                 profileId: profileID
             )
         )
@@ -49,10 +49,7 @@ final class ExtensionRuntimeLifecycleBoundaryTests: XCTestCase {
         harness.lifecycle.markFailed()
 
         XCTAssertNil(
-            harness.coordinator.request(
-                reason: .install,
-                allowWithoutEnabledExtensions: true
-            )
+            harness.coordinator.requestRuntimeExplicitly(reason: .install)
         )
         XCTAssertEqual(harness.provisioning.ensureCount, 0)
         XCTAssertEqual(harness.lifecycle.state, .failed)
@@ -63,16 +60,15 @@ final class ExtensionRuntimeLifecycleBoundaryTests: XCTestCase {
         let profileID = UUID()
         let harness = DemandHarness(profileID: profileID)
         let initial = try XCTUnwrap(
-            harness.coordinator.request(
+            harness.coordinator.requestRuntimeExplicitly(
                 reason: .install,
-                allowWithoutEnabledExtensions: true,
                 profileId: profileID
             )
         )
         harness.lifecycle.beginLoading()
 
         let reused = try XCTUnwrap(
-            harness.coordinator.request(
+            harness.coordinator.requestRuntimeIfDemanded(
                 reason: .install,
                 profileId: profileID
             )
@@ -112,7 +108,6 @@ final class ExtensionRuntimeLifecycleBoundaryTests: XCTestCase {
             inactiveContextRetirement: retirement,
             actionAnchors: ExtensionActionPopupAnchorStore(),
             toolbarProfiles: toolbar,
-            extensionSupportAvailable: true,
             reconcileProfile: {
                 reconciledProfiles.append($0)
                 latestReconciliation.fulfill()
@@ -164,7 +159,6 @@ final class ExtensionRuntimeLifecycleBoundaryTests: XCTestCase {
             inactiveContextRetirement: InactiveContextRetirementProbe(),
             actionAnchors: ExtensionActionPopupAnchorStore(),
             toolbarProfiles: ToolbarProfileReloadProbe(),
-            extensionSupportAvailable: true,
             reconcileProfile: { _ in },
             refreshActionSurfaces: { _ in }
         )
@@ -198,7 +192,6 @@ final class ExtensionRuntimeLifecycleBoundaryTests: XCTestCase {
                 inactiveContextRetirement: InactiveContextRetirementProbe(),
                 actionAnchors: ExtensionActionPopupAnchorStore(),
                 toolbarProfiles: ToolbarProfileReloadProbe(),
-                extensionSupportAvailable: true,
                 reconcileProfile: { reconciledProfiles.append($0) },
                 refreshActionSurfaces: { _ in }
             )
@@ -232,7 +225,6 @@ final class ExtensionRuntimeLifecycleBoundaryTests: XCTestCase {
             inactiveContextRetirement: InactiveContextRetirementProbe(),
             actionAnchors: ExtensionActionPopupAnchorStore(),
             toolbarProfiles: ToolbarProfileReloadProbe(),
-            extensionSupportAvailable: true,
             reconcileProfile: { reconciledProfiles.append($0) },
             refreshActionSurfaces: { refreshedProfiles.append($0) }
         )
@@ -419,22 +411,31 @@ private struct DemandHarness {
     let provisioning: ControllerProvisioningProbe
     let coordinator: ExtensionRuntimeDemandCoordinator
 
-    init(
+    init(profileID: UUID?) {
+        self.init(
+            profileID: profileID,
+            lifecycle: ExtensionRuntimeLifecycleAuthority()
+        )
+    }
+
+    static func unavailable(profileID: UUID?) -> Self {
+        let lifecycle = ExtensionRuntimeLifecycleAuthority()
+        lifecycle.markUnavailable()
+        return Self(profileID: profileID, lifecycle: lifecycle)
+    }
+
+    private init(
         profileID: UUID?,
-        extensionSupportAvailable: Bool = true
+        lifecycle: ExtensionRuntimeLifecycleAuthority
     ) {
         let profileRuntime = ExtensionProfileRuntime(
             initialProfileId: profileID
         )
-        let lifecycle = ExtensionRuntimeLifecycleAuthority()
         let loadStatus = ExtensionRuntimeLoadStatusAuthority()
         let demand = ExtensionRuntimeDemandAuthority()
         let provisioning = ControllerProvisioningProbe(
             profileRuntime: profileRuntime
         )
-        if extensionSupportAvailable == false {
-            lifecycle.markUnavailable()
-        }
         self.lifecycle = lifecycle
         self.loadStatus = loadStatus
         self.demand = demand

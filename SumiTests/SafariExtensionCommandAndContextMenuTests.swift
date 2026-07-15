@@ -16,18 +16,23 @@ final class SafariExtensionCommandAndContextMenuTests: XCTestCase {
     func testManifestCommandDispatchesFromKeyboardEvent() async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Command Dispatch Profile")
-        let manager = makeSafariExtensionTestExtensionManager(
+        let fixture = makeSafariExtensionManagerTestFixture(
             context: container.mainContext,
             initialProfile: profile
         )
+        let manager = fixture.manager
+        let inspection = fixture.inspection
 
         let installed = try await installCommandAndMenuProbeExtension(
             manager: manager,
             scratchDirectory: makeScratchDirectory()
         )
-        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
+        _ = try await inspection.installation.lifecycle.enable(installed.id)
         let extensionContext = try XCTUnwrap(
-            manager.getExtensionContext(for: installed.id, profileId: profile.id)
+            inspection.contextState.profileState.context(
+                for: installed.id,
+                profileId: profile.id
+            )
         )
         XCTAssertTrue(extensionContext.isLoaded)
 
@@ -47,7 +52,9 @@ final class SafariExtensionCommandAndContextMenuTests: XCTestCase {
             keyDownEvent(key: "u", keyCode: 32, modifiers: [.option, .shift])
         )
         XCTAssertTrue(
-            manager.performExtensionKeyboardCommand(for: matching),
+            inspection.actionSurfaces.keyboardCommands.performCommand(
+                for: matching
+            ),
             "Alt+Shift+U must dispatch the manifest command"
         )
 
@@ -55,7 +62,9 @@ final class SafariExtensionCommandAndContextMenuTests: XCTestCase {
             keyDownEvent(key: "i", keyCode: 34, modifiers: [.option, .shift])
         )
         XCTAssertFalse(
-            manager.performExtensionKeyboardCommand(for: differentKey),
+            inspection.actionSurfaces.keyboardCommands.performCommand(
+                for: differentKey
+            ),
             "A non-declared shortcut must not be consumed"
         )
 
@@ -63,7 +72,9 @@ final class SafariExtensionCommandAndContextMenuTests: XCTestCase {
             keyDownEvent(key: "u", keyCode: 32, modifiers: [])
         )
         XCTAssertFalse(
-            manager.performExtensionKeyboardCommand(for: unmodified),
+            inspection.actionSurfaces.keyboardCommands.performCommand(
+                for: unmodified
+            ),
             "Plain typing must never reach extension command dispatch"
         )
     }
@@ -77,11 +88,14 @@ final class SafariExtensionCommandAndContextMenuTests: XCTestCase {
         let container = try makeTestContainer()
         let profile = Profile(name: "Context Menu Profile")
         let browserConfiguration = BrowserConfiguration()
-        let manager = makeSafariExtensionTestExtensionManager(
+        let fixture = makeSafariExtensionManagerTestFixture(
             context: container.mainContext,
             initialProfile: profile,
             browserConfiguration: browserConfiguration
         )
+        let manager = fixture.manager
+        let inspection = fixture.inspection
+        let attachedRuntime = fixture.attachedRuntime
         let windowRegistry = WindowRegistry()
         let browserManager = makeSafariExtensionTestBrowserManager(
             profile: profile,
@@ -97,19 +111,23 @@ final class SafariExtensionCommandAndContextMenuTests: XCTestCase {
             manager: manager,
             scratchDirectory: makeScratchDirectory()
         )
-        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
-        manager.setDefaultSiteAccess(
+        _ = try await inspection.installation.lifecycle.enable(installed.id)
+        inspection.actionPolicy.siteAccess.setDefaultSiteAccess(
             .allow,
             extensionId: installed.id,
             profileId: profile.id
         )
         let extensionContext = try XCTUnwrap(
-            manager.getExtensionContext(for: installed.id, profileId: profile.id)
+            inspection.contextState.profileState.context(
+                for: installed.id,
+                profileId: profile.id
+            )
         )
         XCTAssertTrue(extensionContext.isLoaded)
 
         // menus.create runs at the top of the background worker.
-        _ = try await manager.ensureBackgroundAvailableIfRequired(
+        _ = try await inspection.nativeMessaging.backgroundWakes
+            .ensureBackgroundAvailableIfRequired(
             for: extensionContext.webExtension,
             context: extensionContext,
             reason: .enable
@@ -118,7 +136,7 @@ final class SafariExtensionCommandAndContextMenuTests: XCTestCase {
         let configuration = browserConfiguration.auxiliaryWebViewConfiguration(
             surface: .extensionOptions
         )
-        manager.prepareWebViewConfigForExtensionRuntime(
+        inspection.normalTabs.configuration.prepareWebViewConfigForExtensionRuntime(
             configuration,
             profileId: profile.id,
             reason: "SafariExtensionCommandAndContextMenuTests"
@@ -145,11 +163,14 @@ final class SafariExtensionCommandAndContextMenuTests: XCTestCase {
         webView.owningTab = tab
         tab.replaceUntrackedWebView(webView)
 
-        manager.normalTabRegistration.register(
+        attachedRuntime.runtime.normalTabs.tabRegistration.register(
             tab,
             reason: "SafariExtensionCommandAndContextMenuTests"
         )
-        XCTAssertTrue(manager.publishedExtensionTabs.containsPublishedTab(tab))
+        XCTAssertTrue(
+            attachedRuntime.runtime.normalTabs.publishedTabs
+                .containsPublishedTab(tab)
+        )
 
         let didFinish = expectation(description: "page loaded")
         let delegate = NavigationDelegateBox {
@@ -166,7 +187,8 @@ final class SafariExtensionCommandAndContextMenuTests: XCTestCase {
         webView.navigationDelegate = nil
 
         try await waitForMenuRegistration(in: webView)
-        let menuItems = manager.pageContextMenuItems(for: tab)
+        let menuItems = inspection.normalTabs.requestedTabs
+            .pageContextMenuItems(for: tab)
 
         XCTAssertTrue(
             containsMenuItem(titled: "Sumi Probe Menu Item", in: menuItems),
@@ -349,7 +371,7 @@ final class SafariExtensionCommandAndContextMenuTests: XCTestCase {
                 options: [.atomic]
             )
 
-        return try await manager.extensionInstaller.install(
+        return try await manager.settingsCatalogBinding().install(
             from: directoryURL,
             enableOnInstall: false
         )

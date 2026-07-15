@@ -7,7 +7,7 @@ protocol ExtensionTabControllerPreparing: AnyObject {
     func repair(
         _ tab: Tab,
         reason: String,
-        allowWhenExtensionsNotLoaded: Bool
+        publicationStage: ExtensionRuntimePublicationStage
     ) -> ExtensionTabWebViewRuntimeRepairOutcome
 }
 
@@ -49,7 +49,7 @@ final class ExtensionNormalTabRegistration: ExtensionDeferredTabRuntimeResuming 
     func register(
         _ tab: Tab,
         reason: String,
-        allowWhenExtensionsNotLoaded: Bool = false
+        publicationStage: ExtensionRuntimePublicationStage = .loadedRuntime
     ) {
         guard let generation = tabPublicationRevisions?.issue() else { return }
         guard tabs?.extensionTab(for: tab.id) === tab,
@@ -58,15 +58,17 @@ final class ExtensionNormalTabRegistration: ExtensionDeferredTabRuntimeResuming 
             return
         }
         tab.extensionPageRuntimeOwner.prepareGeneration(generation)
-        guard runtimeLoadStatus?.extensionsLoaded == true
-            || allowWhenExtensionsNotLoaded
-        else { return }
+        guard let runtimeLoadStatus,
+              publicationStage.admits(runtimeLoadStatus)
+        else {
+            return
+        }
 
         tab.extensionPageRuntimeOwner.markEligible(for: generation)
         controllers?.repair(
             tab,
             reason: reason,
-            allowWhenExtensionsNotLoaded: allowWhenExtensionsNotLoaded
+            publicationStage: publicationStage
         )
         publishIfNeeded(tab, reason: reason)
     }
@@ -87,7 +89,7 @@ final class ExtensionNormalTabRegistration: ExtensionDeferredTabRuntimeResuming 
         controllers?.repair(
             tab,
             reason: reason,
-            allowWhenExtensionsNotLoaded: false
+            publicationStage: .loadedRuntime
         )
         publishIfNeeded(tab, reason: reason)
     }

@@ -135,7 +135,11 @@ reject_production_pattern \
 shutdown_file='Sumi/Managers/ExtensionManager/ExtensionRuntimeShutdown.swift'
 require_production_pattern \
   'exact terminal extension runtime shutdown API missing' \
-  'func shutDown\([[:space:]]*reason: String,[[:space:]]*runtime capturedRuntime: ExtensionManagerRuntime,[[:space:]]*activityResources: ExtensionRuntimeActivityCancellation\.Resources,[[:space:]]*isExtensionSupportAvailable: Bool,[[:space:]]*admission: Admission = \.forced[[:space:]]*\) -> Result' \
+  'func shutDown\([[:space:]]*reason: String,[[:space:]]*browserTabs: \[Tab\],[[:space:]]*liveWebViews: @MainActor \(Tab\) -> \[WKWebView\],[[:space:]]*activityResources: ExtensionRuntimeActivityCancellation\.Resources,[[:space:]]*admission: Admission = \.forced[[:space:]]*\) -> Result' \
+  "$shutdown_file" -U
+reject_production_pattern \
+  'terminal extension runtime shutdown regained a synthetic support flag' \
+  'func shutDown\([^)]*isExtensionSupportAvailable:' \
   "$shutdown_file" -U
 
 installation_publish_body="$(

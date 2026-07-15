@@ -5,16 +5,26 @@ import WebKit
 @MainActor
 final class ExtensionURLPermissionCallbackSettlement {
     private let admission: ExtensionControllerCallbackAdmission
+    private let decisions: ExtensionPermissionDecisionStore
+    private let siteAccess: ExtensionSiteAccessPolicyCoordinator
+    private let prompt: ExtensionPermissionPromptPresenter
 
-    init(admission: ExtensionControllerCallbackAdmission) {
+    init(
+        admission: ExtensionControllerCallbackAdmission,
+        decisions: ExtensionPermissionDecisionStore,
+        siteAccess: ExtensionSiteAccessPolicyCoordinator,
+        prompt: ExtensionPermissionPromptPresenter
+    ) {
         self.admission = admission
+        self.decisions = decisions
+        self.siteAccess = siteAccess
+        self.prompt = prompt
     }
 
     func promptForPermissionToAccess(
         _ urls: Set<URL>,
         in tab: (any WKWebExtensionTab)?,
         evidence: ExtensionControllerCallbackEvidence,
-        manager: ExtensionManager,
         completionHandler: @escaping (Set<URL>, Date?) -> Void
     ) {
         let extensionContext = evidence.context
@@ -32,7 +42,7 @@ final class ExtensionURLPermissionCallbackSettlement {
                 tab: tab,
                 extensionId: evidence.extensionID,
                 profileId: evidence.profileID,
-                manager: manager
+                siteAccess: siteAccess
             ) {
             case .alreadyGranted:
                 Self.recordHostPermission(true, evidence, "promptAlreadyGranted")
@@ -48,7 +58,7 @@ final class ExtensionURLPermissionCallbackSettlement {
                     includeHostPattern: true,
                     expirationDate: nil,
                     evidence: evidence,
-                    manager: manager
+                    siteAccess: siteAccess
                 ) else {
                     completionHandler([], nil)
                     return
@@ -73,19 +83,19 @@ final class ExtensionURLPermissionCallbackSettlement {
             return
         }
 
-        Task { @MainActor [weak manager, admission = self.admission] in
-            guard let manager, admission.isCurrent(evidence) else {
+        Task { @MainActor [weak self, admission = self.admission] in
+            guard let self, admission.isCurrent(evidence) else {
                 completionHandler([], nil)
                 return
             }
             let promptPatterns = unresolved.compactMap {
-                manager.hostMatchPatternString(for: $0)
+                self.siteAccess.hostMatchPatternString(for: $0)
             }
-            let decision = await manager.promptForExtensionPermissionDecision(
+            let decision = await self.prompt.promptForDecision(
                 extensionContext: extensionContext,
                 targets: unresolved.map(Self.permissionTarget(for:)),
                 reason: "promptForPermissionToAccess",
-                dedupeKey: manager.permissionPromptDedupeKey(
+                dedupeKey: self.decisions.permissionPromptDedupeKey(
                     profileID: evidence.profileID,
                     extensionID: evidence.extensionID,
                     targets: promptPatterns.isEmpty
@@ -104,13 +114,13 @@ final class ExtensionURLPermissionCallbackSettlement {
                     includeHostPattern: true,
                     expirationDate: settlement.expirationDate,
                     evidence: evidence,
-                    manager: manager
+                    siteAccess: self.siteAccess
                 ) else {
                     completionHandler([], nil)
                     return
                 }
-                if let pattern = manager.hostMatchPatternString(for: url) {
-                    manager.persistExtensionPermissionDecision(
+                if let pattern = self.siteAccess.hostMatchPatternString(for: url) {
+                    self.decisions.persistExtensionPermissionDecision(
                         extensionId: evidence.extensionID,
                         profileId: evidence.profileID,
                         targetKind: .matchPattern,
@@ -123,8 +133,8 @@ final class ExtensionURLPermissionCallbackSettlement {
                     completionHandler([], nil)
                     return
                 }
-                if let pattern = manager.hostMatchPatternString(for: url) {
-                    manager.setConfiguredSiteAccess(
+                if let pattern = self.siteAccess.hostMatchPatternString(for: url) {
+                    self.siteAccess.setConfiguredSiteAccess(
                         settlement.storedState == .allowed ? .allow : .deny,
                         extensionId: evidence.extensionID,
                         profileId: evidence.profileID,
@@ -162,11 +172,11 @@ final class ExtensionURLPermissionCallbackSettlement {
         includeHostPattern: Bool,
         expirationDate: Date?,
         evidence: ExtensionControllerCallbackEvidence,
-        manager: ExtensionManager
+        siteAccess: ExtensionSiteAccessPolicyCoordinator
     ) -> Bool {
         guard admission.isCurrent(evidence) else { return false }
         if includeHostPattern,
-           let pattern = manager.hostMatchPatternString(for: url),
+           let pattern = siteAccess.hostMatchPatternString(for: url),
            let matchPattern = SafariExtensionMatchPatternDiagnostics.make(
                pattern,
                purpose: "urlPermissionCallbackSettlement.hostPattern"

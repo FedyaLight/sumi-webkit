@@ -32,7 +32,7 @@ final class SumiSidebarContextMenuOracleUITests: SumiLaunchSmokeUITestCase {
     }
 
     private func waitForSpaceMenu(toExist: Bool, in app: XCUIApplication) {
-        let menuItem = app.menuItems["Space Settings"]
+        let menuItem = app.menuItems["Edit"]
         let predicate = NSPredicate(
             format: toExist
                 ? "exists == true AND hittable == true"

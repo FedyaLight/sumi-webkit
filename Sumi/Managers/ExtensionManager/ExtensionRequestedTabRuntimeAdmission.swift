@@ -17,11 +17,10 @@ struct ExtensionRequestedTabRuntimeAdmission {
         _ tab: Tab,
         load: ExtensionRequestedTabLoad,
         publicationControllerIsReady: Bool,
-        runtime: ExtensionManagerRuntime,
         reason: String
     ) -> Bool {
         if publicationControllerIsReady {
-            return registrar.register(tab, runtime: runtime, reason: reason)
+            return registrar.register(tab, reason: reason)
         }
         return load.isOrdinaryBrowserRequest
             && tab.isEphemeral == false

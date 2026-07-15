@@ -7,19 +7,19 @@ import WebKit
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionRequestedTabResidenceValidator {
-    private let profileRuntime: ExtensionProfileRuntime
-    private let runtime: @MainActor () -> ExtensionManagerRuntime
+    private let tabProfiles: any ExtensionTabProfileResolving
+    private let windowProfileID: @MainActor (BrowserWindowState) -> UUID?
     private let publications: ExtensionWindowPublicationQuery
     private let windowEvidence: ExtensionRequestedWindowEvidence
 
     init(
-        profileRuntime: ExtensionProfileRuntime,
-        runtime: @escaping @MainActor () -> ExtensionManagerRuntime,
+        tabProfiles: any ExtensionTabProfileResolving,
+        windowProfileID: @escaping @MainActor (BrowserWindowState) -> UUID?,
         publications: ExtensionWindowPublicationQuery,
         windowEvidence: ExtensionRequestedWindowEvidence
     ) {
-        self.profileRuntime = profileRuntime
-        self.runtime = runtime
+        self.tabProfiles = tabProfiles
+        self.windowProfileID = windowProfileID
         self.publications = publications
         self.windowEvidence = windowEvidence
     }
@@ -35,7 +35,6 @@ final class ExtensionRequestedTabResidenceValidator {
             ?? browser.preferredExtensionWindowState(containing: tab)
         guard let window else { return nil }
 
-        let currentRuntime = runtime()
         let contextIdentity: (extensionID: String, profileID: UUID)?
         if let extensionContext {
             guard let current = windowEvidence.currentIdentity(
@@ -49,10 +48,7 @@ final class ExtensionRequestedTabResidenceValidator {
             contextIdentity = nil
         }
         let profileID = contextIdentity?.profileID
-            ?? profileRuntime.resolvedProfileId(
-            for: tab,
-            runtime: currentRuntime
-        )
+            ?? tabProfiles.profileID(for: tab)
         let publicationIsCurrent = profileID.map { profileID in
             residencePolicy.requiresExtensionPublication == false
                 || publications.publishedWindowAdapter(
@@ -62,14 +58,8 @@ final class ExtensionRequestedTabResidenceValidator {
         } ?? false
         guard let profileID,
               browser.extensionWindowState(for: window.id) === window,
-              profileRuntime.windowMatchesProfile(
-                  window,
-                  profileId: profileID,
-                  runtime: currentRuntime
-              ), profileRuntime.resolvedProfileId(
-                  for: tab,
-                  runtime: currentRuntime
-              ) == profileID,
+              windowProfileID(window) == profileID,
+              tabProfiles.profileID(for: tab) == profileID,
               let tabSpace = browser.extensionTargetSpace(for: tab),
               let windowSpace = targetSpace(
                   for: window,

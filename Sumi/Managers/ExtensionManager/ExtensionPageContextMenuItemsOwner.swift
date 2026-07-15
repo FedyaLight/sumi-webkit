@@ -12,37 +12,37 @@ import WebKit
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionPageContextMenuItemsOwner {
-    private weak var manager: ExtensionManager?
+    private let publishedTabs: ExtensionPublishedNormalTabQuery
+    private let profileRuntime: ExtensionProfileRuntime
+    private let profileID: @MainActor (Tab) -> UUID?
+    private let adapters: ExtensionAdapterCatalog
 
-    init(manager: ExtensionManager) {
-        self.manager = manager
+    init(
+        publishedTabs: ExtensionPublishedNormalTabQuery,
+        profileRuntime: ExtensionProfileRuntime,
+        profileID: @escaping @MainActor (Tab) -> UUID?,
+        adapters: ExtensionAdapterCatalog
+    ) {
+        self.publishedTabs = publishedTabs
+        self.profileRuntime = profileRuntime
+        self.profileID = profileID
+        self.adapters = adapters
     }
 
     /// WebKit resolves each extension's menu state (visibility, document
     /// patterns, enablement) at fetch time, so fetch immediately before the
     /// menu is shown — items must not be cached across menu presentations.
     func menuItems(for tab: Tab) -> [NSMenuItem] {
-        guard let manager,
-              manager.publishedExtensionTabs.containsPublishedTab(tab),
-              let profileId = manager.resolvedProfileId(for: tab),
-              let tabAdapter = manager.adapterCatalog.stableAdapter(for: tab)
+        guard publishedTabs.containsPublishedTab(tab),
+              let profileId = profileID(tab),
+              let tabAdapter = adapters.stableAdapter(for: tab)
         else { return [] }
 
-        return manager.extensionContexts(for: profileId)
+        return profileRuntime.contexts(for: profileId)
             .sorted { $0.key < $1.key }
             .flatMap { _, extensionContext -> [NSMenuItem] in
                 guard extensionContext.isLoaded else { return [] }
                 return extensionContext.menuItems(for: tabAdapter)
             }
-    }
-}
-
-// MARK: - ExtensionManager facade
-
-@available(macOS 15.5, *)
-@MainActor
-extension ExtensionManager {
-    func pageContextMenuItems(for tab: Tab) -> [NSMenuItem] {
-        pageContextMenuItemsOwner.menuItems(for: tab)
     }
 }

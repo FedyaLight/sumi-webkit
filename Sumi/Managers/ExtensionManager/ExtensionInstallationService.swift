@@ -26,8 +26,10 @@ final class ExtensionInstallationService {
         String, String, [String: Any]?
     ) -> Void
     private let ensureStorageDirectory: @MainActor (String) -> Void
-    private let debugBeforePersist: @MainActor ()
-        -> ((InstalledExtension) throws -> Void)?
+    #if DEBUG
+        private var debugBeforePersist: (@MainActor ()
+            -> ((InstalledExtension) throws -> Void)?)?
+    #endif
     private let emitTrace: @MainActor (String) -> Void
 
     init(
@@ -51,8 +53,6 @@ final class ExtensionInstallationService {
             String, String, [String: Any]?
         ) -> Void,
         ensureStorageDirectory: @escaping @MainActor (String) -> Void,
-        debugBeforePersist: @escaping @MainActor ()
-            -> ((InstalledExtension) throws -> Void)?,
         emitTrace: @escaping @MainActor (String) -> Void
     ) {
         self.metadataStore = metadataStore
@@ -71,9 +71,17 @@ final class ExtensionInstallationService {
         self.hasStoredDataCandidate = hasStoredDataCandidate
         self.traceStoreLifecycle = traceStoreLifecycle
         self.ensureStorageDirectory = ensureStorageDirectory
-        self.debugBeforePersist = debugBeforePersist
         self.emitTrace = emitTrace
     }
+
+    #if DEBUG
+        func installDebugBeforePersist(
+            _ provider: @escaping @MainActor ()
+                -> ((InstalledExtension) throws -> Void)?
+        ) {
+            debugBeforePersist = provider
+        }
+    #endif
 
     func install(
         from sourceURL: URL,
@@ -222,9 +230,11 @@ final class ExtensionInstallationService {
                 ensureStorageDirectory(identity.extensionID)
             }
 
-            if let beforePersist = debugBeforePersist() {
-                try beforePersist(record)
-            }
+            #if DEBUG
+                if let beforePersist = debugBeforePersist?() {
+                    try beforePersist(record)
+                }
+            #endif
             if let activation {
                 try runtimeActivation.validate(activation)
             }

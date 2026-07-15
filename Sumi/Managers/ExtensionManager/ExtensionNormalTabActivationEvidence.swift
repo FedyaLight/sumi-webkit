@@ -34,8 +34,8 @@ final class ExtensionNormalTabActivationValidator {
     private let adapterResolution: ExtensionAdapterCatalog
     private let normalWindows: ExtensionNormalWindowLifecycle
     private let windowPublications: ExtensionWindowPublicationQuery
-    private let runtime: @MainActor () -> ExtensionManagerRuntime
-    private let windowQuery: @MainActor () -> (any ExtensionWindowQuery)?
+    private let tabProfiles: any ExtensionTabProfileResolving
+    private let windowQuery: any ExtensionWindowQuery
     private let extensionsLoaded: @MainActor () -> Bool
 
     init(
@@ -46,8 +46,8 @@ final class ExtensionNormalTabActivationValidator {
         adapterResolution: ExtensionAdapterCatalog,
         normalWindows: ExtensionNormalWindowLifecycle,
         windowPublications: ExtensionWindowPublicationQuery,
-        runtime: @escaping @MainActor () -> ExtensionManagerRuntime,
-        windowQuery: @escaping @MainActor () -> (any ExtensionWindowQuery)?,
+        tabProfiles: any ExtensionTabProfileResolving,
+        windowQuery: any ExtensionWindowQuery,
         extensionsLoaded: @escaping @MainActor () -> Bool
     ) {
         self.runtimePublicationEvidence = runtimePublicationEvidence
@@ -56,7 +56,7 @@ final class ExtensionNormalTabActivationValidator {
         self.adapterResolution = adapterResolution
         self.normalWindows = normalWindows
         self.windowPublications = windowPublications
-        self.runtime = runtime
+        self.tabProfiles = tabProfiles
         self.windowQuery = windowQuery
         self.extensionsLoaded = extensionsLoaded
     }
@@ -74,11 +74,9 @@ final class ExtensionNormalTabActivationValidator {
 
         let runtimePublication = runtimePublicationEvidence.issue()
         let tabGeneration = runtimePublication.tabPublication
-        let currentRuntime = runtime()
         guard let activated = prepareTabEvidence(
                   tab,
-                  generation: tabGeneration,
-                  runtime: currentRuntime
+                  generation: tabGeneration
               ), let controller = profileRuntime.controller(
                   for: activated.profileID
               )
@@ -110,8 +108,7 @@ final class ExtensionNormalTabActivationValidator {
            windowPublications.isAuxiliarySessionTab(candidate) == false,
            let evidence = prepareTabEvidence(
             candidate,
-            generation: tabGeneration,
-            runtime: currentRuntime
+            generation: tabGeneration
            ), evidence.profileID == activated.profileID,
            profileRuntime.controller(for: evidence.profileID) === controller {
             previousEvidence = evidence
@@ -163,30 +160,26 @@ final class ExtensionNormalTabActivationValidator {
 
     private func prepareTabEvidence(
         _ tab: Tab,
-        generation: ExtensionTabPublicationRevision,
-        runtime: ExtensionManagerRuntime
+        generation: ExtensionTabPublicationRevision
     ) -> ExtensionNormalTabActivationEvidence.TabEvidence? {
         guard tab.isEphemeral == false,
               tab.extensionPageRuntimeOwner.isEligible(for: generation),
               tab.extensionPageRuntimeOwner
                 .hasSettledDidOpenTabNotification(for: generation),
-              let profileID = profileRuntime.resolvedProfileId(
-                  for: tab,
-                  runtime: runtime
-              ), let adapter = adapterResolution.stableAdapter(for: tab),
+              let profileID = tabProfiles.profileID(for: tab),
+              let adapter = adapterResolution.stableAdapter(for: tab),
               adapterStore.tabAdapters[tab.id] === adapter,
               adapter.represents(tab)
         else {
             return nil
         }
 
-        let query = windowQuery()
-        let window = query?.preferredExtensionWindowState(containing: tab)
+        let window = windowQuery.preferredExtensionWindowState(containing: tab)
         if let window {
-            guard query?.extensionWindowState(for: window.id) === window,
-                  query?.tabsForExtensionWindow(window).contains(
+            guard windowQuery.extensionWindowState(for: window.id) === window,
+                  windowQuery.tabsForExtensionWindow(window).contains(
                       where: { $0 === tab }
-                  ) == true
+                  )
             else {
                 return nil
             }
@@ -211,10 +204,7 @@ final class ExtensionNormalTabActivationValidator {
               tab.extensionPageRuntimeOwner.isEligible(for: generation),
               tab.extensionPageRuntimeOwner
                 .hasSettledDidOpenTabNotification(for: generation),
-              profileRuntime.resolvedProfileId(
-                  for: tab,
-                  runtime: runtime()
-              ) == evidence.profileID,
+              tabProfiles.profileID(for: tab) == evidence.profileID,
               profileRuntime.controller(for: evidence.profileID) === controller,
               adapterStore.tabAdapters[tab.id] === evidence.adapter,
               evidence.adapter.represents(tab)
@@ -223,11 +213,10 @@ final class ExtensionNormalTabActivationValidator {
         }
 
         guard let window = evidence.window else { return true }
-        let query = windowQuery()
         return evidence.windowIdentity == ObjectIdentifier(window)
-            && query?.extensionWindowState(for: window.id) === window
-            && query?.tabsForExtensionWindow(window).contains(
+            && windowQuery.extensionWindowState(for: window.id) === window
+            && windowQuery.tabsForExtensionWindow(window).contains(
                 where: { $0 === tab }
-            ) == true
+            )
     }
 }

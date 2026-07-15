@@ -8,8 +8,7 @@ enum ExtensionRequestedTabBindingDiagnostics {
         load: ExtensionRequestedTabLoad,
         opensTransientInternalTab: Bool,
         diagnosticProfileID: UUID?,
-        profileRuntime: ExtensionProfileRuntime,
-        runtime: ExtensionManagerRuntime,
+        resolvedProfileID: UUID?,
         hasTabAdapter: Bool
     ) {
         SafariExtensionPermissionLifecycleDiagnostics.logTabBinding(
@@ -19,10 +18,7 @@ enum ExtensionRequestedTabBindingDiagnostics {
                     : .normalBrowserTab,
                 profileBucket: SafariExtensionPermissionLifecycleDiagnostics
                     .bucket(
-                        profileRuntime.resolvedProfileId(
-                            for: tab,
-                            runtime: runtime
-                        ) ?? diagnosticProfileID
+                        resolvedProfileID ?? diagnosticProfileID
                     ),
                 tabBucket: SafariExtensionPermissionLifecycleDiagnostics
                     .bucket(tab.id),

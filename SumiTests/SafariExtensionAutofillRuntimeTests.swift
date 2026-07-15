@@ -20,7 +20,6 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
             manager: seedManager,
             scratchDirectory: scratchDirectory
         )
-        _ = try await seedManager.installedExtensionLifecycle.enable(installed.id)
 
         let registry = SumiModuleRegistry(
             settingsStore: SumiModuleSettingsStore(
@@ -34,7 +33,17 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
             context: container.mainContext,
             initialProfileProvider: { profile }
         )
+        let browserManager = makeSafariExtensionTestBrowserManager(
+            moduleRegistry: registry,
+            profile: profile
+        )
+        module.attach(
+            runtime: BrowserExtensionsModuleRuntimeFactory.runtime(
+                for: browserManager
+            )
+        )
         XCTAssertFalse(module.hasLoadedRuntime)
+        _ = try await seedManager.settingsCatalogBinding().enable(installed.id)
 
         let configuration = BrowserConfiguration.shared.normalTabWebViewConfiguration(
             for: profile,
@@ -47,11 +56,7 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
         )
 
         XCTAssertTrue(module.hasLoadedRuntime)
-        let manager = try XCTUnwrap(module.managerForTesting())
-        XCTAssertIdentical(
-            configuration.webExtensionController,
-            manager.ensureExtensionController(for: profile.id)
-        )
+        _ = try XCTUnwrap(module.managerForTesting())
         XCTAssertNotNil(configuration.webExtensionController)
     }
 
@@ -60,24 +65,26 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
         let profileA = Profile(name: "Profile A")
         let profileB = Profile(name: "Profile B")
         let browserConfiguration = BrowserConfiguration()
-        let manager = ExtensionManager(
+        let fixture = makeSafariExtensionManagerTestFixture(
             context: container.mainContext,
             initialProfile: profileA,
             browserConfiguration: browserConfiguration
         )
-        _ = manager.runtimeDemandCoordinator.request(
-            reason: .install,
-            allowWithoutEnabledExtensions: true
+        let inspection = fixture.inspection
+        _ = inspection.contextCoordination.demand.requestRuntimeExplicitly(
+            reason: .install
         )
-        let controllerA = manager.ensureExtensionController(for: profileA.id)
-        let controllerB = manager.ensureExtensionController(for: profileB.id)
+        let controllerA = inspection.controller.provisioning
+            .ensureExtensionController(for: profileA.id)
+        let controllerB = inspection.controller.provisioning
+            .ensureExtensionController(for: profileB.id)
 
         let configuration = browserConfiguration.auxiliaryWebViewConfiguration(
             surface: .extensionOptions
         )
         configuration.webExtensionController = controllerA
 
-        manager.prepareWebViewConfigForExtensionRuntime(
+        inspection.normalTabs.configuration.prepareWebViewConfigForExtensionRuntime(
             configuration,
             profileId: profileB.id,
             reason: "SafariExtensionAutofillRuntimeTests"
@@ -91,56 +98,74 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
         let container = try makeTestContainer()
         let profile = Profile(name: "Profile A")
         let browserConfiguration = BrowserConfiguration()
-        let manager = ExtensionManager(
+        let fixture = makeSafariExtensionManagerTestFixture(
             context: container.mainContext,
             initialProfile: profile,
             browserConfiguration: browserConfiguration
         )
+        let manager = fixture.manager
+        let inspection = fixture.inspection
         let browserManager = BrowserManager()
         manager.attach(browserManager: browserManager)
         browserManager.profileManager.profiles = [profile]
-        _ = manager.runtimeDemandCoordinator.request(
-            reason: .install,
-            allowWithoutEnabledExtensions: true
+        _ = inspection.contextCoordination.demand.requestRuntimeExplicitly(
+            reason: .install
         )
-        _ = manager.ensureExtensionController(for: profile.id)
+        _ = inspection.controller.provisioning.ensureExtensionController(
+            for: profile.id
+        )
 
         let configuration = browserConfiguration.auxiliaryWebViewConfiguration(
             surface: .extensionOptions
         )
+        let space = browserManager.tabManager.spaceStateOwner.currentSpace
+            ?? browserManager.tabManager.spaceServices.catalog.createSpace(
+                name: "Autofill",
+                profileId: profile.id
+            )
         let tab = browserManager.tabManager.tabFactory.makeTab(
             url: URL(string: "https://example.com")!,
-            name: "Test"
+            name: "Test",
+            spaceId: space.id
         )
         tab.profileId = profile.id
+        browserManager.tabManager.regularTabLifecycleOwner.addTab(tab)
         let webView = FocusableWKWebView(frame: .zero, configuration: configuration)
         webView.owningTab = tab
         tab.replaceUntrackedWebView(webView)
 
         let extensionContext = try await makeLoadedExtensionContext(
             manager: manager,
+            inspection: inspection,
             profile: profile
         )
         XCTAssertNil(
-            manager.tabWebViewResolver.extensionWebView(
+            fixture.attachedRuntime.runtime.controller.tabWebViewResolver
+                .extensionWebView(
                 for: tab,
                 extensionContext: extensionContext
             )
         )
 
-        let adapter = try XCTUnwrap(manager.adapterCatalog.stableAdapter(for: tab))
-        manager.markExtensionRuntimePublicationReady()
-        tab.extensionPageRuntimeOwner.markEligible(for: manager.tabPublicationRevisions.issue())
+        let adapter = try XCTUnwrap(
+            fixture.attachedRuntime.runtime.adapters.stableAdapter(for: tab)
+        )
+        inspection.actionSurfaces.publication.markRuntimePublicationReady()
+        tab.extensionPageRuntimeOwner.markEligible(
+            for: inspection.runtimeAuthorities.tabPublicationRevisions.issue()
+        )
         XCTAssertNil(adapter.webView(for: extensionContext))
     }
 
     func testRegisterTabWithExtensionRuntimeKeepsStableAdapterEligible() async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Profile A")
-        let manager = ExtensionManager(
+        let fixture = makeSafariExtensionManagerTestFixture(
             context: container.mainContext,
             initialProfile: profile
         )
+        let manager = fixture.manager
+        let inspection = fixture.inspection
         let browserManager = BrowserManager()
         let windowRegistry = WindowRegistry()
         browserManager.windowRegistry = windowRegistry
@@ -152,9 +177,11 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
             manager: manager,
             scratchDirectory: scratchDirectory
         )
-        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
-        await manager.ensureContentScriptContextsLoaded(for: profile.id)
-        manager.markExtensionRuntimePublicationReady()
+        _ = try await inspection.installation.lifecycle.enable(installed.id)
+        await inspection.normalTabs.deferredRuntime
+            .initialDocumentRuntimePreparationOwner
+            .ensureContentScriptContextsLoaded(for: profile.id)
+        inspection.actionSurfaces.publication.markRuntimePublicationReady()
 
         let tab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://example.com",
@@ -169,9 +196,9 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
         windowState.currentTabId = tab.id
         windowRegistry.register(windowState)
         windowRegistry.setActive(windowState)
-        let configuration = manager.browserConfiguration
+        let configuration = inspection.controller.browserConfiguration
             .auxiliaryWebViewConfiguration(surface: .extensionOptions)
-        manager.prepareWebViewConfigForExtensionRuntime(
+        inspection.normalTabs.configuration.prepareWebViewConfigForExtensionRuntime(
             configuration,
             profileId: profile.id,
             reason: "SafariExtensionAutofillRuntimeTests.runtimeReload"
@@ -183,59 +210,84 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
         webView.owningTab = tab
         tab.replaceUntrackedWebView(webView)
         XCTAssertTrue(
-            manager.browserContentInventory.tabs(in: manager.runtime)
+            fixture.attachedRuntime.runtime.bridge.tabs.allExtensionTabs
                 .contains { $0 === tab }
         )
         XCTAssertTrue(
-            manager.browserContentInventory.liveWebViews(
-                for: tab,
-                in: manager.runtime
-            ).contains { $0 === webView }
+            fixture.attachedRuntime.runtime.bridge.webViews
+                .extensionLiveWebViews(for: tab)
+                .contains { $0 === webView }
         )
         XCTAssertIdentical(
             webView.configuration.webExtensionController,
-            manager.existingTabControllers.existingController(for: tab)
+            fixture.attachedRuntime.runtime.controller.controllers
+                .existingController(for: tab)
         )
         XCTAssertIdentical(
-            manager.extensionWindowQuery?.currentExtensionTab(in: windowState),
+            fixture.attachedRuntime.runtime.bridge.windows
+                .currentExtensionTab(in: windowState),
             tab
         )
 
-        manager.reloadRuntimePublications(
+        inspection.browserPublication.reloads.reloadLoadedRuntime(
             reason: "SafariExtensionAutofillRuntimeTests",
             profileID: profile.id
         )
 
-        let adapter = try XCTUnwrap(manager.adapterCatalog.stableAdapter(for: tab))
-        XCTAssertTrue(manager.preparedExtensionTabs.containsPreparedTab(tab))
-        XCTAssertNotNil(adapter.url(for: try XCTUnwrap(manager.getExtensionContext(for: installed.id))))
+        let adapter = try XCTUnwrap(
+            fixture.attachedRuntime.runtime.adapters.stableAdapter(for: tab)
+        )
+        XCTAssertTrue(
+            fixture.attachedRuntime.runtime.normalTabs.preparedTabs
+                .containsPreparedTab(tab)
+        )
+        XCTAssertNotNil(
+            adapter.url(
+                for: try XCTUnwrap(
+                    inspection.contextState.profileState.context(
+                        for: installed.id
+                    )
+                )
+            )
+        )
     }
 
     func testEphemeralTabNeverReturnsExtensionWebView() async throws {
         let container = try makeTestContainer()
         let profile = Profile.createEphemeral()
-        let manager = ExtensionManager(
+        let fixture = makeSafariExtensionManagerTestFixture(
             context: container.mainContext,
             initialProfile: profile
         )
-        _ = manager.runtimeDemandCoordinator.request(
-            reason: .install,
-            allowWithoutEnabledExtensions: true
+        let manager = fixture.manager
+        let inspection = fixture.inspection
+        let browserManager = BrowserManager()
+        browserManager.profileManager.profiles = [profile]
+        manager.attach(browserManager: browserManager)
+        _ = inspection.contextCoordination.demand.requestRuntimeExplicitly(
+            reason: .install
         )
-        _ = manager.ensureExtensionController(for: profile.id)
+        _ = inspection.controller.provisioning.ensureExtensionController(
+            for: profile.id
+        )
 
         let tab = makeTab(
             profileId: profile.id,
             url: URL(string: "https://example.com")!
         )
-        tab.extensionPageRuntimeOwner.markEligible(for: manager.tabPublicationRevisions.issue())
+        browserManager.tabManager.regularTabLifecycleOwner.addTab(tab)
+        tab.extensionPageRuntimeOwner.markEligible(
+            for: inspection.runtimeAuthorities.tabPublicationRevisions.issue()
+        )
 
         let extensionContext = try await makeLoadedExtensionContext(
             manager: manager,
+            inspection: inspection,
             profile: profile
         )
         XCTAssertNil(
-            manager.tabWebViewResolver.extensionWebView(
+            fixture.attachedRuntime.runtime.controller.tabWebViewResolver
+                .extensionWebView(
                 for: tab,
                 extensionContext: extensionContext
             )
@@ -262,32 +314,53 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
     func testMarkTabEligibleAfterCommittedNavigationTriggersContentScriptPath() throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Profile A")
-        let manager = ExtensionManager(
+        let fixture = makeSafariExtensionManagerTestFixture(
             context: container.mainContext,
             initialProfile: profile
         )
-        _ = manager.runtimeDemandCoordinator.request(
-            reason: .install,
-            allowWithoutEnabledExtensions: true
+        let manager = fixture.manager
+        let inspection = fixture.inspection
+        _ = inspection.contextCoordination.demand.requestRuntimeExplicitly(
+            reason: .install
         )
-        _ = manager.ensureExtensionController(for: profile.id)
-        manager.markExtensionRuntimePublicationReady()
+        _ = inspection.controller.provisioning.ensureExtensionController(
+            for: profile.id
+        )
+        inspection.actionSurfaces.publication.markRuntimePublicationReady()
 
         let browserManager = BrowserManager()
+        let windowRegistry = WindowRegistry()
+        browserManager.windowRegistry = windowRegistry
         manager.attach(browserManager: browserManager)
         browserManager.profileManager.profiles = [profile]
 
+        let space = browserManager.tabManager.spaceStateOwner.currentSpace
+            ?? browserManager.tabManager.spaceServices.catalog.createSpace(
+                name: "Autofill",
+                profileId: profile.id
+            )
         let tab = browserManager.tabManager.tabFactory.makeTab(
             url: URL(string: "about:blank")!,
-            name: "Autofill"
+            name: "Autofill",
+            spaceId: space.id
         )
         tab.profileId = profile.id
         tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
+        browserManager.tabManager.regularTabLifecycleOwner.addTab(tab)
+        let windowState = BrowserWindowState()
+        windowState.tabManager = browserManager.tabManager
+        windowState.currentSpaceId = tab.spaceId
+        windowState.currentProfileId = profile.id
+        windowState.currentTabId = tab.id
+        windowRegistry.register(windowState)
+        windowRegistry.setActive(windowState)
+        _ = fixture.attachedRuntime.runtime.publications.normalWindows
+            .opened(windowState)
 
         let configuration = BrowserConfiguration().auxiliaryWebViewConfiguration(
             surface: .extensionOptions
         )
-        manager.prepareWebViewConfigForExtensionRuntime(
+        inspection.normalTabs.configuration.prepareWebViewConfigForExtensionRuntime(
             configuration,
             profileId: profile.id,
             reason: "SafariExtensionAutofillRuntimeTests"
@@ -303,13 +376,17 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
             }
         }
 
-        manager.normalTabRegistration.markEligibleAfterCommittedNavigation(
+        fixture.attachedRuntime.runtime.normalTabs.tabRegistration
+            .markEligibleAfterCommittedNavigation(
             tab,
             reason: "SafariExtensionAutofillRuntimeTests"
         )
 
         wait(for: [didOpenExpectation], timeout: 2)
-        XCTAssertTrue(manager.preparedExtensionTabs.containsPreparedTab(tab))
+        XCTAssertTrue(
+            fixture.attachedRuntime.runtime.normalTabs.preparedTabs
+                .containsPreparedTab(tab)
+        )
     }
 
     func testLoginFormFixtureExistsForManualAutofillVerification() throws {
@@ -338,6 +415,7 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
 
     private func makeLoadedExtensionContext(
         manager: ExtensionManager,
+        inspection: ExtensionManagerTestInspection,
         profile: Profile
     ) async throws -> WKWebExtensionContext {
         let scratchDirectory = try makeScratchDirectory()
@@ -345,8 +423,9 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
             manager: manager,
             scratchDirectory: scratchDirectory
         )
-        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
-        let context = try await manager.ensureExtensionLoaded(
+        _ = try await inspection.installation.lifecycle.enable(installed.id)
+        let context = try await inspection.contextCoordination.residency
+            .ensureExtensionLoaded(
             extensionId: installed.id,
             profileId: profile.id
         )
@@ -385,7 +464,7 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
         try Data("<!doctype html><title>popup</title>".utf8)
             .write(to: directoryURL.appendingPathComponent("popup.html"), options: [.atomic])
 
-        return try await manager.extensionInstaller.install(
+        return try await manager.settingsCatalogBinding().install(
             from: directoryURL,
             enableOnInstall: false
         )

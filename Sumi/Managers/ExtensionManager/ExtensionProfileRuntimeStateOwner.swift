@@ -29,69 +29,75 @@ struct ExtensionProfileRuntimeStateOwner {
         }
     }
 
-    private let manager: ExtensionManager
+    private let profileRuntime: ExtensionProfileRuntime
+    private let installedExtensions: InstalledExtensionCollection
+    private let runtimeLifecycle: ExtensionRuntimeLifecycleAuthority
 
-    init(manager: ExtensionManager) {
-        self.manager = manager
+    init(
+        profileRuntime: ExtensionProfileRuntime,
+        installedExtensions: InstalledExtensionCollection,
+        runtimeLifecycle: ExtensionRuntimeLifecycleAuthority
+    ) {
+        self.profileRuntime = profileRuntime
+        self.installedExtensions = installedExtensions
+        self.runtimeLifecycle = runtimeLifecycle
     }
 
     var currentController: WKWebExtensionController? {
-        manager.profileRuntime.controllerForCurrentProfile()
+        profileRuntime.controllerForCurrentProfile()
     }
 
     var currentContexts: [String: WKWebExtensionContext] {
-        manager.profileRuntime.contextsForCurrentProfile()
+        profileRuntime.contextsForCurrentProfile()
     }
 
     func contexts(for profileId: UUID) -> [String: WKWebExtensionContext] {
-        manager.profileRuntime.contexts(for: profileId)
+        profileRuntime.contexts(for: profileId)
     }
 
     func context(
         for extensionId: String,
         profileId: UUID? = nil
     ) -> WKWebExtensionContext? {
-        let resolvedProfileId = manager.resolvedProfileId(
-            explicitProfileId: profileId
-        )
+        let resolvedProfileId = profileId ?? profileRuntime.currentProfileId
         guard let resolvedProfileId else { return nil }
         return contexts(for: resolvedProfileId)[extensionId]
     }
 
     func allLoadedExtensionIDs() -> Set<String> {
-        manager.profileRuntime.allLoadedExtensionIDs()
+        profileRuntime.allLoadedExtensionIDs()
     }
 
     func profileId(for extensionContext: WKWebExtensionContext) -> UUID? {
-        manager.profileRuntime.profileId(for: extensionContext)
+        profileRuntime.profileId(for: extensionContext)
     }
 
     func contextIdentity(
         for extensionContext: WKWebExtensionContext
     ) -> (extensionId: String, profileId: UUID)? {
-        manager.profileRuntime.contextIdentity(for: extensionContext)
+        profileRuntime.contextIdentity(for: extensionContext)
     }
 
     func profileId(for controller: WKWebExtensionController) -> UUID? {
-        manager.profileRuntime.profileId(for: controller)
+        profileRuntime.profileId(for: controller)
     }
 
     func countLoadedContexts() -> Int {
-        manager.profileRuntime.countLoadedExtensionContexts()
+        profileRuntime.countLoadedExtensionContexts()
     }
 
     func readinessContext(
         for profileId: UUID
     ) -> ExtensionRuntimeReadinessContext {
-        let catalogSnapshot = manager.installedExtensionCollection.records
+        let catalogSnapshot = installedExtensions.records
         let enabledExtensionIDs = Set(
             catalogSnapshot.lazy.filter(\.isEnabled).map(\.id)
         )
-        return manager.profileRuntime.readinessContext(
+        return profileRuntime.readinessContext(
             for: profileId,
             hasEnabledExtensionDemand: enabledExtensionIDs.isEmpty == false,
             enabledExtensionIDs: enabledExtensionIDs,
-            globalRuntimeReady: manager.runtimeLifecycle.isReady
+            globalRuntimeReady: runtimeLifecycle.isReady
         )
     }
 
@@ -118,182 +124,9 @@ struct ExtensionProfileRuntimeStateOwner {
         ExtensionSnapshot(
             extensionId: extensionId,
             profileId: profileId,
-            controller: manager.profileRuntime.controllersByProfile[profileId],
+            controller: profileRuntime.controllersByProfile[profileId],
             context: context(for: extensionId, profileId: profileId),
             readiness: readinessContext(for: profileId)
         )
-    }
-}
-
-@available(macOS 15.5, *)
-@MainActor
-extension ExtensionManager {
-    var extensionController: WKWebExtensionController? {
-        profileRuntimeStateOwner.currentController
-    }
-
-    var extensionContexts: [String: WKWebExtensionContext] {
-        profileRuntimeStateOwner.currentContexts
-    }
-
-    func extensionContexts(for profileId: UUID) -> [String: WKWebExtensionContext] {
-        profileRuntimeStateOwner.contexts(for: profileId)
-    }
-
-    @discardableResult
-    func setExtensionContext(
-        _ context: WKWebExtensionContext,
-        extensionId: String,
-        profileId: UUID
-    ) -> ExtensionContextBindingReceipt {
-        let receipt = profileRuntime.setContext(
-            context,
-            extensionId: extensionId,
-            profileId: profileId
-        )
-        traceExtensionContextBindingGeneration(
-            profileId: profileId,
-            generation: profileRuntime.contextBindingGeneration(
-                for: profileId
-            ),
-            reason: "setExtensionContext"
-        )
-        return receipt
-    }
-
-    func extensionContextBindingGeneration(for profileId: UUID) -> UInt64 {
-        profileRuntime.contextBindingGeneration(for: profileId)
-    }
-
-    func bumpExtensionContextBindingGeneration(
-        for profileId: UUID,
-        reason: String
-    ) {
-        let next = profileRuntime.bumpContextBindingGeneration(for: profileId)
-        traceExtensionContextBindingGeneration(
-            profileId: profileId,
-            generation: next,
-            reason: reason
-        )
-    }
-
-    private func traceExtensionContextBindingGeneration(
-        profileId: UUID,
-        generation: UInt64,
-        reason: String
-    ) {
-        runtimeDiagnostics.trace(
-            "extensionContextBindingGeneration profile=\(profileId.uuidString) generation=\(generation) reason=\(reason)"
-        )
-    }
-
-    @discardableResult
-    func removeExtensionContext(
-        extensionId: String,
-        profileId: UUID
-    ) -> WKWebExtensionContext? {
-        guard let removed = profileRuntime.removeContext(
-            extensionId: extensionId,
-            profileId: profileId
-        ) else { return nil }
-        traceExtensionContextBindingGeneration(
-            profileId: profileId,
-            generation: removed.generation,
-            reason: "removeExtensionContext"
-        )
-        return removed.context
-    }
-
-    func allLoadedExtensionIDs() -> Set<String> {
-        profileRuntimeStateOwner.allLoadedExtensionIDs()
-    }
-
-    func profileId(for extensionContext: WKWebExtensionContext) -> UUID? {
-        profileRuntimeStateOwner.profileId(for: extensionContext)
-    }
-
-    func contextIdentity(
-        for extensionContext: WKWebExtensionContext
-    ) -> (extensionId: String, profileId: UUID)? {
-        profileRuntimeStateOwner.contextIdentity(for: extensionContext)
-    }
-
-    func profileId(for controller: WKWebExtensionController) -> UUID? {
-        profileRuntimeStateOwner.profileId(for: controller)
-    }
-
-    func resolvedProfileId(for tab: Tab?) -> UUID? {
-        profileRuntime.resolvedProfileId(
-            for: tab,
-            runtime: runtime
-        )
-    }
-
-    func resolvedProfileId(for windowState: BrowserWindowState) -> UUID? {
-        profileRuntime.resolvedProfileId(
-            for: windowState,
-            runtime: runtime
-        )
-    }
-
-    func resolvedProfileId(explicitProfileId: UUID?) -> UUID? {
-        profileRuntime.resolvedProfileId(
-            explicitProfileId: explicitProfileId,
-            runtime: runtime
-        )
-    }
-
-    var fallbackProfileId: UUID? {
-        resolvedProfileId(explicitProfileId: nil)
-    }
-
-    func isPrivateExtensionRuntimeProfile(_ profileId: UUID?) -> Bool {
-        profileRuntime.isPrivateRuntimeProfile(profileId)
-    }
-
-    func windowMatchesProfile(
-        _ windowState: BrowserWindowState,
-        profileId: UUID
-    ) -> Bool {
-        profileRuntime.windowMatchesProfile(
-            windowState,
-            profileId: profileId,
-            runtime: runtime
-        )
-    }
-
-    func getExtensionContext(
-        for extensionId: String,
-        profileId: UUID? = nil
-    ) -> WKWebExtensionContext? {
-        profileRuntimeStateOwner.context(for: extensionId, profileId: profileId)
-    }
-
-    func missingEnabledExtensionIDs(for profileId: UUID) -> [String] {
-        profileRuntimeStateOwner.missingEnabledExtensionIDs(for: profileId)
-    }
-
-    func isProfileExtensionRuntimeReady(for profileId: UUID) -> Bool {
-        profileRuntimeStateOwner.isProfileReady(for: profileId)
-    }
-
-    func isExtensionRuntimeReady(
-        extensionId: String,
-        profileId: UUID
-    ) -> Bool {
-        profileRuntimeStateOwner.isExtensionReady(
-            extensionId: extensionId,
-            profileId: profileId
-        )
-    }
-
-    func extensionRuntimeReadinessContext(
-        for profileId: UUID
-    ) -> ExtensionRuntimeReadinessContext {
-        profileRuntimeStateOwner.readinessContext(for: profileId)
-    }
-
-    func countLoadedExtensionContexts() -> Int {
-        profileRuntimeStateOwner.countLoadedContexts()
     }
 }

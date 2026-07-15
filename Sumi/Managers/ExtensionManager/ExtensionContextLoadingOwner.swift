@@ -4,17 +4,12 @@ import WebKit
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionContextLoadingOwner {
-    typealias EnabledExtensionLoad = @MainActor (
-        ExtensionEntity,
-        UUID
-    ) async throws -> Void
-
     private let installedExtensions: InstalledExtensionCollection
     private let runtimeAccess: ExtensionRuntimeAccess
     private let metadataStore: ExtensionInstallationMetadataStore
     private let retention: ExtensionContextRetentionOwner
     private let runtimeIsEnabled: @MainActor () -> Bool
-    private let loadEnabledExtension: EnabledExtensionLoad
+    private let loader: ExtensionRuntimeLoader
 
     init(
         installedExtensions: InstalledExtensionCollection,
@@ -22,14 +17,14 @@ final class ExtensionContextLoadingOwner {
         metadataStore: ExtensionInstallationMetadataStore,
         retention: ExtensionContextRetentionOwner,
         runtimeIsEnabled: @escaping @MainActor () -> Bool,
-        loadEnabledExtension: @escaping EnabledExtensionLoad
+        loader: ExtensionRuntimeLoader
     ) {
         self.installedExtensions = installedExtensions
         self.runtimeAccess = runtimeAccess
         self.metadataStore = metadataStore
         self.retention = retention
         self.runtimeIsEnabled = runtimeIsEnabled
-        self.loadEnabledExtension = loadEnabledExtension
+        self.loader = loader
     }
 
     func ensureLoaded(
@@ -46,9 +41,16 @@ final class ExtensionContextLoadingOwner {
         guard let entity = try metadataStore.extensionEntity(for: extensionID),
               entity.isEnabled
         else { return nil }
-        try await loadEnabledExtension(entity, profileID)
+        _ = try await loader.loadEnabled(from: entity, profileID: profileID)
         retain(extensionID: extensionID, profileID: profileID)
         return runtimeAccess.getExtensionContext(extensionID, profileID)
+    }
+
+    func loadedContext(
+        extensionID: String,
+        profileID: UUID
+    ) -> WKWebExtensionContext? {
+        runtimeAccess.getExtensionContext(extensionID, profileID)
     }
 
     func ensureEnabledExtensionsLoaded(profileID: UUID) async {
@@ -61,7 +63,10 @@ final class ExtensionContextLoadingOwner {
                 guard let entity = try metadataStore.extensionEntity(for: record.id),
                       entity.isEnabled
                 else { continue }
-                try await loadEnabledExtension(entity, profileID)
+                _ = try await loader.loadEnabled(
+                    from: entity,
+                    profileID: profileID
+                )
             } catch {
                 ExtensionManager.logger.error(
                     "Failed to load enabled extension \(record.id, privacy: .public) for profile \(profileID.uuidString, privacy: .public): \(error.localizedDescription, privacy: .public)"

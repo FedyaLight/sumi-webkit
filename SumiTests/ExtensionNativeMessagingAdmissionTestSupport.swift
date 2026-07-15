@@ -18,6 +18,7 @@ class ExtensionNativeMessagingAdmissionTestCase: XCTestCase {
 
     struct Harness {
         let manager: ExtensionManager
+        let inspection: ExtensionManagerTestInspection
         let profileID: UUID
         let extensionID: String
         let context: WKWebExtensionContext
@@ -158,25 +159,27 @@ class ExtensionNativeMessagingAdmissionTestCase: XCTestCase {
         )
         modelContainers.append(container)
         let profile = Profile(name: name)
+        let inspection = ExtensionManagerInspectionCapture()
         let manager = ExtensionManager(
             context: container.mainContext,
-            initialProfile: profile
+            initialProfile: profile,
+            testInspectionDidAssemble: inspection.install
         )
         // Intercept every background load before any runtime activation so
         // tests never execute real background content in the test host.
         manager.testHooks.backgroundContentWake = { _, _ in }
         let installed = try await installExtension(
-            manager: manager,
+            inspection: inspection.inspection,
             name: name,
             withBackgroundContent: withBackgroundContent
         )
-        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
+        _ = try await inspection.inspection.installation.lifecycle.enable(installed.id)
         let context = try XCTUnwrap(
-            manager.getExtensionContext(for: installed.id, profileId: profile.id)
+            inspection.inspection.contextState.profileState.context(for: installed.id, profileId: profile.id)
         )
-        let controller = manager.ensureExtensionController(for: profile.id)
+        let controller = inspection.inspection.controller.provisioning.ensureExtensionController(for: profile.id)
         XCTAssertNotNil(
-            manager.controllerCallbackAdmission.capture(
+            inspection.inspection.controller.callbackAdmission.capture(
                 context: context,
                 controller: controller
             ),
@@ -184,6 +187,7 @@ class ExtensionNativeMessagingAdmissionTestCase: XCTestCase {
         )
         return Harness(
             manager: manager,
+            inspection: inspection.inspection,
             profileID: profile.id,
             extensionID: installed.id,
             context: context,
@@ -211,7 +215,7 @@ class ExtensionNativeMessagingAdmissionTestCase: XCTestCase {
             loopGuard: SumiNativeMessagingRelayLoopGuard(),
             extensionsModuleEnabled: { true }
         )
-        harness.manager.nativeMessagingRelayOwner.installRelayForTesting(relay)
+        harness.inspection.nativeMessaging.owners.relayOwner().installRelayForTesting(relay)
         try upsertSafariAppExtensionRecord(harness: harness)
         return launcher
     }
@@ -221,7 +225,7 @@ class ExtensionNativeMessagingAdmissionTestCase: XCTestCase {
             appBundleID: Self.fixtureHostBundleID,
             appexBundleID: "\(Self.fixtureHostBundleID).extension"
         )
-        harness.manager.installedExtensionCollection.upsert(
+        harness.inspection.actionSurfaces.installedExtensions.upsert(
             InstalledExtension(
                 id: harness.extensionID,
                 name: "Fixture",
@@ -277,7 +281,7 @@ class ExtensionNativeMessagingAdmissionTestCase: XCTestCase {
     ) async -> SendResult {
         let collector = SendReplyCollector()
         let firstReply = expectation(description: "native messaging reply")
-        harness.manager.controllerDelegateBridge.webExtensionController(
+        harness.inspection.controller.delegateBridge.webExtensionController(
             controller ?? harness.controller,
             sendMessage: ["type": "ping"],
             toApplicationWithIdentifier: applicationIdentifier,
@@ -317,7 +321,7 @@ class ExtensionNativeMessagingAdmissionTestCase: XCTestCase {
         applicationIdentifier: String? = fixtureHostBundleID
     ) async -> SendReplyCollector {
         let collector = SendReplyCollector()
-        harness.manager.controllerDelegateBridge.webExtensionController(
+        harness.inspection.controller.delegateBridge.webExtensionController(
             harness.controller,
             sendMessage: ["type": "ping"],
             toApplicationWithIdentifier: applicationIdentifier,
@@ -393,7 +397,7 @@ class ExtensionNativeMessagingAdmissionTestCase: XCTestCase {
         beforeSettlement: (@MainActor (ExtensionControllerCallbackEvidence) -> Void)? = nil
     ) async throws -> ConnectResult {
         let evidence = try XCTUnwrap(
-            harness.manager.controllerCallbackAdmission.capture(
+            harness.inspection.controller.callbackAdmission.capture(
                 context: harness.context,
                 controller: harness.controller
             ),
@@ -402,10 +406,9 @@ class ExtensionNativeMessagingAdmissionTestCase: XCTestCase {
         beforeSettlement?(evidence)
         let replyCounter = ReplyCounter()
         let settledError: (any Error)? = await withCheckedContinuation { continuation in
-            harness.manager.nativePortConnectionSettlement.connect(
+            harness.inspection.nativeMessaging.portSettlement.connect(
                 using: port,
-                evidence: evidence,
-                manager: harness.manager
+                evidence: evidence
             ) { error in
                 replyCounter.calls += 1
                 if replyCounter.calls == 1 {
@@ -420,7 +423,7 @@ class ExtensionNativeMessagingAdmissionTestCase: XCTestCase {
     /// Rebinding the same context bumps its binding revision, which is the
     /// same-object rebind invalidation the admission model must catch.
     func rebindSameContext(_ harness: Harness) {
-        _ = harness.manager.profileRuntime.setContext(
+        _ = harness.inspection.contextState.profiles.setContext(
             harness.context,
             extensionId: harness.extensionID,
             profileId: harness.profileID
@@ -441,7 +444,7 @@ class ExtensionNativeMessagingAdmissionTestCase: XCTestCase {
     // MARK: - Fixtures
 
     private func installExtension(
-        manager: ExtensionManager,
+        inspection: ExtensionManagerTestInspection,
         name: String,
         withBackgroundContent: Bool
     ) async throws -> InstalledExtension {
@@ -484,7 +487,7 @@ class ExtensionNativeMessagingAdmissionTestCase: XCTestCase {
                 options: [.atomic]
             )
 
-        return try await manager.extensionInstaller.install(
+        return try await inspection.installation.installer.install(
             from: directory,
             enableOnInstall: false
         )

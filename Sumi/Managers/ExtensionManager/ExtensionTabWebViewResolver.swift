@@ -64,17 +64,3 @@ final class ExtensionTabWebViewResolver: ExtensionTabWebViewProjectionQuery {
         return webView
     }
 }
-
-/// Preserves the read-only projection contract before the browser bridge is
-/// attached. It owns no runtime state and performs no work.
-@available(macOS 15.5, *)
-@MainActor
-final class ExtensionUnavailableTabWebViewProjection:
-    ExtensionTabWebViewProjectionQuery {
-    func extensionWebView(
-        for tab: Tab,
-        extensionContext: WKWebExtensionContext
-    ) -> WKWebView? {
-        nil
-    }
-}

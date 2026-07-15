@@ -30,24 +30,21 @@ final class ExtensionActionPopupFocusReceipt {
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionActionPopupFocusRestorer {
-    private let windows: @MainActor () -> (any ExtensionWindowQuery)?
-    private let liveWebView: @MainActor (Tab) -> WKWebView?
+    private let browser: any ExtensionActionPopupBrowserProjection
 
     init(
-        windows: @escaping @MainActor () -> (any ExtensionWindowQuery)?,
-        liveWebView: @escaping @MainActor (Tab) -> WKWebView?
+        browser: any ExtensionActionPopupBrowserProjection
     ) {
-        self.windows = windows
-        self.liveWebView = liveWebView
+        self.browser = browser
     }
 
     func capture(
         source: ExtensionActionPopupSourceReceipt?
     ) -> ExtensionActionPopupFocusReceipt? {
         guard let resolved = source?.resolveFocusSource(),
-              windows()?.currentExtensionTab(in: resolved.windowState)
+              browser.popupCurrentTab(in: resolved.windowState)
                   === resolved.tab,
-              let webView = liveWebView(resolved.tab),
+              let webView = browser.popupLiveWebView(for: resolved.tab),
               webView.window === resolved.window,
               resolved.window.isKeyWindow,
               let responder = resolved.window.firstResponder,
@@ -73,8 +70,8 @@ final class ExtensionActionPopupFocusRestorer {
               receipt.window === resolved.window,
               receipt.windowState === resolved.windowState,
               receipt.tab === resolved.tab,
-              receipt.webView === liveWebView(resolved.tab),
-              windows()?.currentExtensionTab(in: resolved.windowState)
+              receipt.webView === browser.popupLiveWebView(for: resolved.tab),
+              browser.popupCurrentTab(in: resolved.windowState)
                   === resolved.tab
         else {
             return nil
@@ -95,9 +92,9 @@ final class ExtensionActionPopupFocusRestorer {
                   let webView = receipt.webView,
                   let capturedResponder = receipt.responder,
                   window.isKeyWindow,
-                  self.windows()?.appKitWindow(for: windowState) === window,
-                  self.windows()?.currentExtensionTab(in: windowState) === tab,
-                  self.liveWebView(tab) === webView,
+                  self.browser.popupAppKitWindow(for: windowState) === window,
+                  self.browser.popupCurrentTab(in: windowState) === tab,
+                  self.browser.popupLiveWebView(for: tab) === webView,
                   webView.window === window,
                   webView.superview != nil,
                   Self.responder(capturedResponder, isInside: webView),

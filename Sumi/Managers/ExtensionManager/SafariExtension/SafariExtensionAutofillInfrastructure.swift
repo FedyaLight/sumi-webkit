@@ -41,6 +41,39 @@ struct SafariExtensionAutofillClassification: Codable, Equatable, Sendable {
     var isReady: Bool { primaryBlocker == .none }
 }
 
+@available(macOS 15.5, *)
+@MainActor
+struct SafariExtensionAutofillRuntime {
+    typealias TargetSnapshot =
+        ExtensionBrowserAttachmentAuthority.NormalTabQuery.TargetSnapshot
+
+    private let loaded: @MainActor () -> Bool
+    private let target: @MainActor (
+        _ tab: Tab,
+        _ context: WKWebExtensionContext
+    ) -> TargetSnapshot?
+
+    init(
+        extensionsLoaded: @escaping @MainActor () -> Bool,
+        targetSnapshot: @escaping @MainActor (
+            _ tab: Tab,
+            _ context: WKWebExtensionContext
+        ) -> TargetSnapshot?
+    ) {
+        loaded = extensionsLoaded
+        target = targetSnapshot
+    }
+
+    var extensionsLoaded: Bool { loaded() }
+
+    func targetSnapshot(
+        tab: Tab,
+        context: WKWebExtensionContext
+    ) -> TargetSnapshot? {
+        target(tab, context)
+    }
+}
+
 @MainActor
 enum SafariExtensionAutofillInfrastructureClassifier {
     static func classifyInfrastructure(
@@ -87,7 +120,7 @@ enum SafariExtensionAutofillInfrastructureClassifier {
         tab: Tab,
         installedExtension: InstalledExtension,
         extensionContext: WKWebExtensionContext?,
-        extensionManager: ExtensionManager,
+        runtime: SafariExtensionAutofillRuntime,
         extensionsModuleEnabled: Bool
     ) -> SafariExtensionAutofillClassification {
         let infrastructure = classifyInfrastructure(
@@ -102,13 +135,12 @@ enum SafariExtensionAutofillInfrastructureClassifier {
             )
         }
 
-        guard extensionManager.extensionsLoaded else {
+        guard runtime.extensionsLoaded else {
             return classification(
                 .extensionsRuntimeNotReady,
                 detail: "Extension runtime has not finished loading installed extensions"
             )
         }
-
         guard installedExtension.hasContentScripts else {
             return classification(
                 .contentScriptsNotDeclared,
@@ -123,23 +155,31 @@ enum SafariExtensionAutofillInfrastructureClassifier {
             )
         }
 
-        if extensionManager.contextTabCompatibility
-            .matches(tab, context: extensionContext) == false {
+        guard let target = runtime.targetSnapshot(
+            tab: tab,
+            context: extensionContext
+        ) else {
+            return classification(
+                .extensionsRuntimeNotReady,
+                detail: "Extension runtime is not attached to a browser graph"
+            )
+        }
+
+        if target.contextMatches == false {
             return classification(
                 .targetWebViewWrongProfileController,
                 detail: "Tab profile does not match extension context profile"
             )
         }
 
-        guard extensionManager.publishedExtensionTabs
-            .containsPublishedTab(tab) else {
+        guard target.isPublished else {
             return classification(
                 .tabMappingMissing,
                 detail: "Tab is not eligible for the current extension runtime generation"
             )
         }
 
-        guard extensionManager.adapterCatalog.stableAdapter(for: tab) != nil else {
+        guard target.hasStableAdapter else {
             return classification(
                 .tabMappingMissing,
                 detail: "No stable WKWebExtensionTab adapter is registered for this tab"
@@ -165,20 +205,14 @@ enum SafariExtensionAutofillInfrastructureClassifier {
             )
         }
 
-        guard let webView = extensionManager.exactExtensionTabWebViews
-            .liveWebView(for: tab) else {
+        guard let webView = target.liveWebView else {
             return classification(
                 .targetWebViewMissingExtensionController,
                 detail: "Tab has no live WKWebView for extension targeting"
             )
         }
 
-        let profileId = extensionManager.resolvedProfileId(for: tab)
-        let expectedController = profileId.flatMap {
-            extensionManager.profileRuntime.controllersByProfile[$0]
-        }
-
-        if let expectedController {
+        if let expectedController = target.expectedController {
             let actualController = webView.configuration.webExtensionController
             if let actualController, actualController !== expectedController {
                 return classification(
@@ -195,10 +229,7 @@ enum SafariExtensionAutofillInfrastructureClassifier {
             )
         }
 
-        if extensionManager.tabWebViewResolver.extensionWebView(
-            for: tab,
-            extensionContext: extensionContext
-        ) == nil {
+        if target.extensionWebView == nil {
             return classification(
                 .scriptingExecuteScriptTargetMissing,
                 secondary: [.frameMappingMissing],

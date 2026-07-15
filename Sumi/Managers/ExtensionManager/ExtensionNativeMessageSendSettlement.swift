@@ -10,16 +10,32 @@ import WebKit
 @MainActor
 final class ExtensionNativeMessageSendSettlement {
     private let admission: ExtensionControllerCallbackAdmission
+    private let relayOwner: @MainActor () -> ExtensionNativeMessagingRelayOwner
+    private let backgroundWakes: ExtensionBackgroundWakeCoordinator
+    private let profileRuntime: ExtensionProfileRuntime
+    private let installedExtensions: InstalledExtensionCollection
+    private let diagnostics: ExtensionRuntimeDiagnostics
 
-    init(admission: ExtensionControllerCallbackAdmission) {
+    init(
+        admission: ExtensionControllerCallbackAdmission,
+        relayOwner: @escaping @MainActor () -> ExtensionNativeMessagingRelayOwner,
+        backgroundWakes: ExtensionBackgroundWakeCoordinator,
+        profileRuntime: ExtensionProfileRuntime,
+        installedExtensions: InstalledExtensionCollection,
+        diagnostics: ExtensionRuntimeDiagnostics
+    ) {
         self.admission = admission
+        self.relayOwner = relayOwner
+        self.backgroundWakes = backgroundWakes
+        self.profileRuntime = profileRuntime
+        self.installedExtensions = installedExtensions
+        self.diagnostics = diagnostics
     }
 
     func sendMessage(
         _ message: Any,
         toApplicationWithIdentifier applicationIdentifier: String?,
         evidence: ExtensionControllerCallbackEvidence,
-        manager: ExtensionManager,
         replyHandler: @escaping (Any?, (any Error)?) -> Void
     ) {
         let extensionId = evidence.extensionID
@@ -30,8 +46,9 @@ final class ExtensionNativeMessageSendSettlement {
             extensionId: extensionId
         )
 
-        if manager.nativeMessagingRelayOwner.extensionsModuleEnabledForCallbacks {
-            manager.backgroundWakeCoordinator
+        let relayOwner = relayOwner()
+        if relayOwner.extensionsModuleEnabledForCallbacks {
+            backgroundWakes
                 .scheduleNativeMessagingBackgroundWake(
                     evidence: evidence,
                     admission: admission,
@@ -39,27 +56,27 @@ final class ExtensionNativeMessageSendSettlement {
                 )
         }
 
-        let isPrivateBrowsing = manager.isPrivateExtensionRuntimeProfile(profileId)
+        let isPrivateBrowsing = profileRuntime.isPrivateRuntimeProfile(profileId)
         let extensionDisplayName = ExtensionDisplayNameResolver.displayName(
             for: extensionId,
-            installedExtensions: manager.installedExtensionCollection.records
+            installedExtensions: installedExtensions.records
         )
-        manager.runtimeDiagnostics.traceNativeMessagingContextBinding(
+        diagnostics.traceNativeMessagingContextBinding(
             phase: "delegateSendMessage",
             extensionId: extensionId,
             profileId: profileId,
             loadSource: SafariAppExtensionRuntimeLoadSource.installedSource(
                 for: extensionId,
-                in: manager.installedExtensionCollection.records
+                in: installedExtensions.records
             ),
             webExtension: evidence.context.webExtension,
             extensionContext: evidence.context,
             controller: evidence.controller,
             configuration: evidence.context.webViewConfiguration,
-            profileController: manager.profileRuntime.controller(
+            profileController: profileRuntime.controller(
                 for: profileId
             ),
-            expectedControllerDelegate: manager.controllerDelegateBridge
+            expectedControllerDelegate: evidence.controller.delegate
         )
         let messageShape = SafariExtensionNativeMessagingRoutingProbe
             .sanitizedMessageShape(for: message)
@@ -80,14 +97,14 @@ final class ExtensionNativeMessageSendSettlement {
             }
         #endif
 
-        manager.nativeMessagingRelayOwner.relay.handleSendMessage(
+        relayOwner.relay.handleSendMessage(
             applicationIdentifier: applicationIdentifier,
             message: message,
             extensionId: extensionId,
             profileId: profileId,
             isPrivateBrowsing: isPrivateBrowsing,
             privateAccessAllowed: evidence.context.hasAccessToPrivateData,
-            installedExtensions: manager.installedExtensionCollection.records,
+            installedExtensions: installedExtensions.records,
             extensionDisplayName: extensionDisplayName,
             executionAdmission: { [admission] in admission.isCurrent(evidence) },
             replyHandler: settledReply(

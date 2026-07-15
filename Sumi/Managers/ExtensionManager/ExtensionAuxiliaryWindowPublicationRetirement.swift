@@ -74,7 +74,6 @@ final class ExtensionAuxiliaryWindowPublicationRetirement {
     func retire(
         _ publication: ExtensionAuxiliaryWindowPublication,
         session: AuxiliaryWindowSession,
-        runtime: ExtensionManagerRuntime,
         windowQuery: (any ExtensionWindowQuery)?,
         control: (any ExtensionAuxiliaryWindowControl)?,
         mode: ExtensionAuxiliaryWindowRetirementMode
@@ -127,7 +126,6 @@ final class ExtensionAuxiliaryWindowPublicationRetirement {
         if mode.restoresNormalFocus {
             restoreNormalWindowFocus(
                 for: publication,
-                runtime: runtime,
                 windowQuery: windowQuery
             )
         }
@@ -164,7 +162,6 @@ final class ExtensionAuxiliaryWindowPublicationRetirement {
 
     private func restoreNormalWindowFocus(
         for publication: ExtensionAuxiliaryWindowPublication,
-        runtime: ExtensionManagerRuntime,
         windowQuery: (any ExtensionWindowQuery)?
     ) {
         guard let windowQuery,
@@ -173,8 +170,7 @@ final class ExtensionAuxiliaryWindowPublicationRetirement {
                 === activeWindow,
               publicationResolver.windowMatchesProfile(
                   activeWindow,
-                  publication: publication,
-                  runtime: runtime
+                  publication: publication
               ),
               let adapter = normalWindows.publishedAdapter(
                   for: activeWindow,

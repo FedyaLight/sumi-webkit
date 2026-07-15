@@ -21,8 +21,10 @@ final class ExtensionContextControllerTransaction {
     private let expectedControllerDelegate: ExtensionControllerDelegateBridge
     private let controllerDelegateReadiness:
         ExtensionControllerDelegateReadiness
-    private let debugBeforeControllerLoad:
-        @MainActor () -> BeforeControllerLoad?
+    #if DEBUG
+        private var debugBeforeControllerLoad:
+            (@MainActor () -> BeforeControllerLoad?)?
+    #endif
 
     init(
         authority: ExtensionLoadedContextAuthority,
@@ -33,9 +35,7 @@ final class ExtensionContextControllerTransaction {
         diagnostics: ExtensionRuntimeDiagnostics,
         expectedControllerDelegate: ExtensionControllerDelegateBridge,
         controllerDelegateReadiness:
-            ExtensionControllerDelegateReadiness,
-        debugBeforeControllerLoad:
-            @escaping @MainActor () -> BeforeControllerLoad?
+            ExtensionControllerDelegateReadiness
     ) {
         self.authority = authority
         self.profileRuntime = profileRuntime
@@ -45,8 +45,15 @@ final class ExtensionContextControllerTransaction {
         self.diagnostics = diagnostics
         self.expectedControllerDelegate = expectedControllerDelegate
         self.controllerDelegateReadiness = controllerDelegateReadiness
-        self.debugBeforeControllerLoad = debugBeforeControllerLoad
     }
+
+    #if DEBUG
+        func installDebugBeforeControllerLoad(
+            _ provider: @escaping @MainActor () -> BeforeControllerLoad?
+        ) {
+            debugBeforeControllerLoad = provider
+        }
+    #endif
 
     func load(
         context: WKWebExtensionContext,
@@ -86,7 +93,7 @@ final class ExtensionContextControllerTransaction {
                 expectedControllerDelegate: expectedControllerDelegate
             )
             #if DEBUG
-                try debugBeforeControllerLoad()?(
+                try debugBeforeControllerLoad?()?(
                     request.extensionId,
                     storage.snapshot()
                 )

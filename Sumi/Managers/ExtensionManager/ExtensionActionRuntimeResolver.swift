@@ -28,6 +28,7 @@ final class ExtensionActionRuntimeResolver {
         let contextResidency: ExtensionContextResidencyOwner
         let failureDiagnostics: ExtensionActionPopupFailureDiagnostics
         let resolvedProfileID: @MainActor (Tab) -> UUID?
+        let primaryWindowID: @MainActor (Tab) -> UUID?
         let activeWindowID: @MainActor () -> UUID?
         let trace: @MainActor (String) -> Void
     }
@@ -202,9 +203,8 @@ final class ExtensionActionRuntimeResolver {
                 windowID: anchor.windowID
             )
         }
-        let windowID = currentTab.flatMap {
-            environment.runtimeAccess.runtime().primaryTrackedWindowId($0.id)
-        } ?? environment.activeWindowID()
+        let windowID = currentTab.flatMap(environment.primaryWindowID)
+            ?? environment.activeWindowID()
         guard let windowID,
               let token = environment.anchorResolution.captureActionPopupAnchor(
             extensionId: extensionID,
@@ -275,32 +275,5 @@ final class ExtensionActionRuntimeResolver {
     private func trace(_ message: @autoclosure () -> String) {
         guard ExtensionManager.isWebKitRuntimeTraceEnabled else { return }
         environment.trace(message())
-    }
-}
-
-@available(macOS 15.5, *)
-extension ExtensionActionRuntimeResolver.Environment {
-    @MainActor
-    static func makeLive(manager: ExtensionManager) -> Self {
-        Self(
-            installedExtensions: manager.installedExtensionCollection,
-            runtimeAccess: ExtensionRuntimeAccess(
-                profileRuntime: manager.profileRuntime,
-                controllerProvisioningOwner: manager.controllerProvisioningOwner,
-                runtime: { [weak manager] in manager?.runtime ?? .inactive }
-            ),
-            runtimeLifecycle: manager.runtimeLifecycle,
-            runtimeCatalog: manager.runtimeCatalog,
-            anchorStore: manager.actionPopupAnchorStore,
-            anchorResolution: manager.actionPopupAnchorResolver,
-            profileTransition: manager.profileRuntimeTransition,
-            contextResidency: manager.contextResidencyOwner,
-            failureDiagnostics: manager.actionPopupFailureDiagnostics,
-            resolvedProfileID: { [weak manager] in manager?.resolvedProfileId(for: $0) },
-            activeWindowID: { [weak manager] in
-                manager?.extensionWindowQuery?.activeExtensionWindowState?.id
-            },
-            trace: { [weak manager] message in manager?.runtimeDiagnostics.trace(message) }
-        )
     }
 }

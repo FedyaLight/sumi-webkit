@@ -20,10 +20,7 @@ struct ExtensionOptionsWindowPresentationReceipt {
 struct ExtensionOptionsWindowCallbackRuntime {
     let admission: ExtensionControllerCallbackAdmission
     let installedExtensions: InstalledExtensionCollection
-    let websiteDataMutationAdmissionIsBlocked:
-        ExtensionManagerRuntime.WebsiteDataMutationAdmissionCheck
-    let waitForWebsiteDataMutationAdmission:
-        ExtensionManagerRuntime.WebsiteDataMutationAdmissionWaiter
+    let websiteDataAdmission: ExtensionWebsiteDataMutationAdmission
 
     func isCurrent(
         _ receipt: ExtensionOptionsWindowPresentationReceipt
@@ -59,19 +56,50 @@ enum ExtensionOptionsWindowCallbackComposition {
         let receipt: ExtensionOptionsWindowPresentationReceipt
         let runtime: ExtensionOptionsWindowCallbackRuntime
     }
+}
 
-    static func invocation(
-        from manager: ExtensionManager,
+@available(macOS 15.5, *)
+@MainActor
+final class ExtensionOptionsWindowCallbackComposer {
+    private let admission: ExtensionControllerCallbackAdmission
+    private let profiles: ExtensionBrowserProfileQuery
+    private let profileRuntime: ExtensionProfileRuntime
+    private let installedExtensions: InstalledExtensionCollection
+    private let browserConfiguration: BrowserConfiguration
+    private let configurationPreparation:
+        ExtensionWebViewConfigurationPreparation
+    private let websiteDataAdmission:
+        ExtensionWebsiteDataMutationAdmission
+
+    init(
+        admission: ExtensionControllerCallbackAdmission,
+        profiles: ExtensionBrowserProfileQuery,
+        profileRuntime: ExtensionProfileRuntime,
+        installedExtensions: InstalledExtensionCollection,
+        browserConfiguration: BrowserConfiguration,
+        configurationPreparation: ExtensionWebViewConfigurationPreparation,
+        websiteDataAdmission: ExtensionWebsiteDataMutationAdmission
+    ) {
+        self.admission = admission
+        self.profiles = profiles
+        self.profileRuntime = profileRuntime
+        self.installedExtensions = installedExtensions
+        self.browserConfiguration = browserConfiguration
+        self.configurationPreparation = configurationPreparation
+        self.websiteDataAdmission = websiteDataAdmission
+    }
+
+    func invocation(
         evidence: ExtensionControllerCallbackEvidence
-    ) -> Invocation? {
-        guard manager.controllerCallbackAdmission.isCurrent(evidence),
-              let profile = manager.runtime.profile(evidence.profileID),
+    ) -> ExtensionOptionsWindowCallbackComposition.Invocation? {
+        guard admission.isCurrent(evidence),
+              let profile = profiles.profile(evidence.profileID),
               profile.id == evidence.profileID,
-              manager.profileRuntime.controller(for: evidence.profileID)
+              profileRuntime.controller(for: evidence.profileID)
                 === evidence.controller,
               evidence.controller.configuration.defaultWebsiteDataStore
                 === profile.dataStore,
-              let installedExtension = manager.installedExtensionCollection
+              let installedExtension = installedExtensions
                 .records.first(where: {
                     $0.id == evidence.extensionID && $0.isEnabled
                 }),
@@ -91,11 +119,11 @@ enum ExtensionOptionsWindowCallbackComposition {
             return nil
         }
         configuration.sumiIsNormalTabWebViewConfiguration = false
-        manager.browserConfiguration.applyVisitedLinkStore(
+        browserConfiguration.applyVisitedLinkStore(
             to: configuration,
             for: profile
         )
-        manager.webViewConfigurationPreparation
+        configurationPreparation
             .prepareWebViewConfigForExtensionRuntime(
                 configuration,
                 profileId: evidence.profileID,
@@ -108,7 +136,6 @@ enum ExtensionOptionsWindowCallbackComposition {
             return nil
         }
 
-        let runtime = manager.runtime
         let receipt = ExtensionOptionsWindowPresentationReceipt(
             evidence: evidence,
             profile: profile,
@@ -119,18 +146,42 @@ enum ExtensionOptionsWindowCallbackComposition {
             extensionRoot: resolution.extensionRoot,
             configuration: configuration,
             visitedLinkStore: visitedLinkStore,
-            installedRecordRevision: manager.installedExtensionCollection
+            installedRecordRevision: installedExtensions
                 .recordRevision(for: evidence.extensionID)
         )
         let callbackRuntime = ExtensionOptionsWindowCallbackRuntime(
-            admission: manager.controllerCallbackAdmission,
-            installedExtensions: manager.installedExtensionCollection,
-            websiteDataMutationAdmissionIsBlocked:
-                runtime.websiteDataMutationAdmissionIsBlocked,
-            waitForWebsiteDataMutationAdmission:
-                runtime.waitForWebsiteDataMutationAdmission
+            admission: admission,
+            installedExtensions: installedExtensions,
+            websiteDataAdmission: websiteDataAdmission
         )
         guard callbackRuntime.isCurrent(receipt) else { return nil }
-        return Invocation(receipt: receipt, runtime: callbackRuntime)
+        return ExtensionOptionsWindowCallbackComposition.Invocation(
+            receipt: receipt,
+            runtime: callbackRuntime
+        )
     }
+}
+
+@available(macOS 15.5, *)
+@MainActor
+extension ExtensionOptionsWindowCallbackComposition {
+    static func invocation(
+        callbacks: ExtensionBrowserAttachmentAuthority.ControllerCallbacks,
+        context: WKWebExtensionContext,
+        controller: WKWebExtensionController
+    ) -> Invocation? {
+        callbacks.optionsInvocation(
+            context: context,
+            controller: controller
+        )
+    }
+
+    #if DEBUG
+        static func invocation(
+            callbacks: ExtensionBrowserAttachmentAuthority.ControllerCallbacks,
+            evidence: ExtensionControllerCallbackEvidence
+        ) -> Invocation? {
+            callbacks.optionsInvocation(evidence: evidence)
+        }
+    #endif
 }

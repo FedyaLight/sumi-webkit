@@ -53,7 +53,10 @@ struct AuxiliaryWindowExtensionIntegration {
         Bool
     ) -> ExtensionMiniWindowAdapter?
 
-    let installedExtensions: [InstalledExtension]
+    /// Titles are resolved at presentation time. Keeping the query live avoids
+    /// retaining a stale installation snapshot across enable/disable, update,
+    /// and uninstall transitions.
+    let installedExtensions: @MainActor () -> [InstalledExtension]
     let events: any AuxiliaryWindowExtensionEventHandling
     let resolveExtensionID: ExtensionIDResolver
     let makeMiniWindowAdapter: MiniWindowAdapterFactory
@@ -142,7 +145,7 @@ final class AuxiliaryWindowPresentationService {
             for: request.titleURL,
             extensionID: request.extensionID,
             installedExtensions: request.extensionIntegration?
-                .installedExtensions ?? []
+                .installedExtensions() ?? []
         )
 
         let container = NSView(

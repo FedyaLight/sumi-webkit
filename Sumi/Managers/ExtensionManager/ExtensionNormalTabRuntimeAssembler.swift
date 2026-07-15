@@ -1,10 +1,11 @@
 import Foundation
+import WebKit
 
 /// Private lifetime storage for normal-Tab leaf roles. It is never accepted as
 /// a capability and owns no forwarding behavior.
 @available(macOS 15.5, *)
 @MainActor
-struct ExtensionNormalTabRuntimeComposition {
+struct ExtensionAttachedNormalTabRuntime {
     let tabLifecycleEvents: ExtensionTabLifecycleEmitter
     let preparedTabs: ExtensionPreparedNormalTabQuery
     let publishedTabs: ExtensionPublishedNormalTabQuery
@@ -18,114 +19,69 @@ struct ExtensionNormalTabRuntimeComposition {
     let tabRebind: ExtensionTabLifecycleRebindTransaction
 }
 
-/// Construction-only composition root. ExtensionManager is used only while
-/// wiring leaves and is never stored by the returned graph.
+/// Construction-only composition root. Every role is supplied explicitly;
+/// the returned lifetime stores only the leaf collaborators it owns.
 @available(macOS 15.5, *)
 @MainActor
 enum ExtensionNormalTabRuntimeAssembler {
     static func assemble(
-        manager: ExtensionManager,
+        tabs: any ExtensionTabQuery,
+        liveWebViews: any ExtensionTabWebViewHosting,
+        controllerRuntime: ExtensionControllerRuntimeComposition,
         gate: ExtensionRuntimePublicationGate,
         preparedTabVisibility: ExtensionPreparedTabVisibility,
+        preparedTabs: ExtensionPreparedNormalTabQuery,
+        publishedTabs: ExtensionPublishedNormalTabQuery,
         admission: ExtensionTabPublicationAdmission,
-        publications: ExtensionWindowPublicationQuery
-    ) -> ExtensionNormalTabRuntimeComposition {
-        guard let tabs = manager.extensionTabQuery,
-              let liveWebViews = manager.extensionWebViewHosting,
-              let controllerRuntime = manager.controllerRuntimeComposition
-        else {
-            preconditionFailure(
-                "Normal Tab runtime composition requires an attached browser bridge"
-            )
-        }
+        publications: ExtensionWindowPublicationQuery,
+        tabPublicationRevisions: ExtensionTabPublicationRevisionAuthority,
+        extensionLoadRevisions: ExtensionLoadRevisionAuthority,
+        runtimePublicationEvidence: ExtensionRuntimePublicationEvidenceIssuer,
+        runtimeLoadStatus: ExtensionRuntimeLoadStatusAuthority,
+        profileRuntime: ExtensionProfileRuntime,
+        adapterStore: ExtensionBrowserAdapterStore,
+        adapterCatalog: ExtensionAdapterCatalog,
+        contextLoading: ExtensionInitialDocumentRuntimePreparationOwner,
+        configurationPreparation: ExtensionWebViewConfigurationPreparation,
+        diagnostics: ExtensionRuntimeDiagnostics
+    ) -> ExtensionAttachedNormalTabRuntime {
         let tabProfiles = controllerRuntime.profiles
         let existingControllers = controllerRuntime.controllers
-        let preparedTabs = ExtensionPreparedNormalTabQuery(
-            tabPublicationRevisions: manager.tabPublicationRevisions,
-            tabs: tabs
+        let events = ExtensionTabLifecycleEmitter(
+            preparedTabVisibility: preparedTabVisibility
         )
-        let publishedTabs = ExtensionPublishedNormalTabQuery(
-            prepared: preparedTabs,
-            tabPublicationRevisions: manager.tabPublicationRevisions,
-            publicationGate: gate,
-            profiles: tabProfiles,
-            adapters: manager.adapterStore,
-            windows: publications
-        )
-        #if DEBUG
-            let events = ExtensionTabLifecycleEmitter(
-                preparedTabVisibility: preparedTabVisibility,
-                didOpen: { [weak manager] in
-                    manager?.testHooks.didOpenTab?($0)
-                },
-                didClose: { [weak manager] in
-                    manager?.testHooks.didCloseTab?($0)
-                }
-            )
-        #else
-            let events = ExtensionTabLifecycleEmitter(
-                preparedTabVisibility: preparedTabVisibility
-            )
-        #endif
-        let contexts = manager.initialDocumentRuntimePreparationOwner
         let deferred = ExtensionDeferredTabRegistration(
-            extensionLoadRevisions: manager.extensionLoadRevisions,
+            extensionLoadRevisions: extensionLoadRevisions,
             tabs: tabs,
             profiles: tabProfiles,
-            contextLoading: contexts
+            contextLoading: contextLoading
         )
-        #if DEBUG
-            let opening = ExtensionNormalTabOpenTransaction(
-                runtimePublicationEvidence:
-                    manager.runtimePublicationEvidence,
-                publicationGate: gate,
-                profileRuntime: manager.profileRuntime,
-                profiles: tabProfiles,
-                tabs: tabs,
-                adapters: manager.adapterStore,
-                adapterResolver: manager.adapterCatalog,
-                controllers: existingControllers,
-                controllerAdmission: controllerRuntime.admission,
-                liveWebViews: liveWebViews,
-                contextReadiness: contexts,
-                deferredRegistration: deferred,
-                admission: admission,
-                windowPublications: publications,
-                events: events,
-                diagnostics: manager.runtimeDiagnostics,
-                didDeferOpen: { [weak manager] tabID, reason in
-                    manager?.testHooks.didDeferOpenTab?(tabID, reason)
-                }
-            )
-        #else
-            let opening = ExtensionNormalTabOpenTransaction(
-                runtimePublicationEvidence:
-                    manager.runtimePublicationEvidence,
-                publicationGate: gate,
-                profileRuntime: manager.profileRuntime,
-                profiles: tabProfiles,
-                tabs: tabs,
-                adapters: manager.adapterStore,
-                adapterResolver: manager.adapterCatalog,
-                controllers: existingControllers,
-                controllerAdmission: controllerRuntime.admission,
-                liveWebViews: liveWebViews,
-                contextReadiness: contexts,
-                deferredRegistration: deferred,
-                admission: admission,
-                windowPublications: publications,
-                events: events,
-                diagnostics: manager.runtimeDiagnostics
-            )
-        #endif
+        let opening = ExtensionNormalTabOpenTransaction(
+            runtimePublicationEvidence: runtimePublicationEvidence,
+            publicationGate: gate,
+            profileRuntime: profileRuntime,
+            profiles: tabProfiles,
+            tabs: tabs,
+            adapters: adapterStore,
+            adapterResolver: adapterCatalog,
+            controllers: existingControllers,
+            controllerAdmission: controllerRuntime.admission,
+            liveWebViews: liveWebViews,
+            contextReadiness: contextLoading,
+            deferredRegistration: deferred,
+            admission: admission,
+            windowPublications: publications,
+            events: events,
+            diagnostics: diagnostics
+        )
         let registration = ExtensionNormalTabRegistration(
-            tabPublicationRevisions: manager.tabPublicationRevisions,
-            runtimeLoadStatus: manager.runtimeLoadStatus,
+            tabPublicationRevisions: tabPublicationRevisions,
+            runtimeLoadStatus: runtimeLoadStatus,
             tabs: tabs,
             preparedTabs: preparedTabs,
             controllers: controllerRuntime.repair,
             opening: opening,
-            diagnostics: manager.runtimeDiagnostics
+            diagnostics: diagnostics
         )
         deferred.bind(resumer: registration)
         let liveWebViewPreparation = ExtensionLiveWebViewRuntimePreparation(
@@ -133,58 +89,44 @@ enum ExtensionNormalTabRuntimeAssembler {
             controllers: existingControllers,
             admission: controllerRuntime.admission,
             tabRegistration: registration,
-            diagnostics: manager.runtimeDiagnostics
+            diagnostics: diagnostics
         )
         let requestedTabWebViewMaterializer =
             ExtensionRequestedTabWebViewMaterializer(
                 browserContext: liveWebViews,
                 configurationPreparation:
-                    manager.webViewConfigurationPreparation,
+                    configurationPreparation,
                 livePreparation: liveWebViewPreparation,
                 profiles: tabProfiles,
                 controllers: existingControllers,
                 webViews: controllerRuntime.webViews,
                 controllerAdmission: controllerRuntime.admission
             )
-        #if DEBUG
-            let properties = ExtensionTabPropertyPublisher(
-                publishedTabs: publishedTabs,
-                profiles: tabProfiles,
-                profileRuntime: manager.profileRuntime,
-                adapters: manager.adapterStore,
-                liveWebViews: liveWebViews,
-                didPublish: { [weak manager] tabID, changed in
-                    manager?.testHooks.didChangeTabProperties?(tabID, changed)
-                }
-            )
-        #else
-            let properties = ExtensionTabPropertyPublisher(
-                publishedTabs: publishedTabs,
-                profiles: tabProfiles,
-                profileRuntime: manager.profileRuntime,
-                adapters: manager.adapterStore,
-                liveWebViews: liveWebViews
-            )
-        #endif
+        let properties = ExtensionTabPropertyPublisher(
+            publishedTabs: publishedTabs,
+            profiles: tabProfiles,
+            profileRuntime: profileRuntime,
+            adapters: adapterStore,
+            liveWebViews: liveWebViews
+        )
         let rebind = ExtensionTabLifecycleRebindTransaction(
-            runtimePublicationEvidence:
-                manager.runtimePublicationEvidence,
-            runtimeLoadStatus: manager.runtimeLoadStatus,
-            profileRuntime: manager.profileRuntime,
+            runtimePublicationEvidence: runtimePublicationEvidence,
+            runtimeLoadStatus: runtimeLoadStatus,
+            profileRuntime: profileRuntime,
             tabs: tabs,
             profiles: tabProfiles,
-            adapters: manager.adapterStore,
-            adapterResolver: manager.adapterCatalog,
+            adapters: adapterStore,
+            adapterResolver: adapterCatalog,
             controllers: existingControllers,
             controllerPreparation: controllerRuntime.repair,
             rebuildQuery: controllerRuntime.mismatch,
             liveWebViews: liveWebViews,
-            contextReadiness: contexts,
+            contextReadiness: contextLoading,
             deferredRegistration: deferred,
             registration: registration,
             events: events
         )
-        return ExtensionNormalTabRuntimeComposition(
+        return ExtensionAttachedNormalTabRuntime(
             tabLifecycleEvents: events,
             preparedTabs: preparedTabs,
             publishedTabs: publishedTabs,
@@ -197,64 +139,5 @@ enum ExtensionNormalTabRuntimeAssembler {
             tabProperties: properties,
             tabRebind: rebind
         )
-    }
-}
-
-@available(macOS 15.5, *)
-@MainActor
-extension ExtensionManager {
-    var tabLifecycleEvents: ExtensionTabLifecycleEmitter {
-        _ = runtimePublicationGate
-        return normalTabRuntimeComposition!.tabLifecycleEvents
-    }
-
-    var preparedExtensionTabs: ExtensionPreparedNormalTabQuery {
-        _ = runtimePublicationGate
-        return normalTabRuntimeComposition!.preparedTabs
-    }
-
-    var publishedExtensionTabs: ExtensionPublishedNormalTabQuery {
-        _ = runtimePublicationGate
-        return normalTabRuntimeComposition!.publishedTabs
-    }
-
-    var normalTabOpening: ExtensionNormalTabOpenTransaction {
-        _ = runtimePublicationGate
-        return normalTabRuntimeComposition!.tabOpening
-    }
-
-    var normalTabRegistration: ExtensionNormalTabRegistration {
-        _ = runtimePublicationGate
-        return normalTabRuntimeComposition!.tabRegistration
-    }
-
-    var liveWebViewRuntimePreparation: ExtensionLiveWebViewRuntimePreparation {
-        _ = runtimePublicationGate
-        return normalTabRuntimeComposition!.liveWebViewPreparation
-    }
-
-    var requestedTabWebViewMaterializer:
-        ExtensionRequestedTabWebViewMaterializer {
-        _ = runtimePublicationGate
-        return normalTabRuntimeComposition!.requestedTabWebViewMaterializer
-    }
-
-    var tabPropertyPublisher: ExtensionTabPropertyPublisher {
-        _ = runtimePublicationGate
-        return normalTabRuntimeComposition!.tabProperties
-    }
-
-    var tabLifecycleRebind: ExtensionTabLifecycleRebindTransaction {
-        _ = runtimePublicationGate
-        return normalTabRuntimeComposition!.tabRebind
-    }
-
-    var deferredTabRegistration: ExtensionDeferredTabRegistration {
-        _ = runtimePublicationGate
-        return normalTabRuntimeComposition!.deferredTabRegistration
-    }
-
-    var loadedDeferredTabRegistration: ExtensionDeferredTabRegistration? {
-        normalTabRuntimeComposition?.deferredTabRegistration
     }
 }

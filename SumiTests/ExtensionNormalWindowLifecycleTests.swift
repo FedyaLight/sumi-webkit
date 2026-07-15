@@ -43,20 +43,17 @@ final class ExtensionNormalWindowLifecycleTests: XCTestCase {
             ]
         )
         let profile = Profile(name: "Lifecycle")
+        let attachedRuntime = ExtensionAttachedRuntimeCapture()
         let manager = makeSafariExtensionTestExtensionManager(
             context: container.mainContext,
-            initialProfile: profile
+            initialProfile: profile,
+            attachedRuntimeCapture: attachedRuntime
         )
-        let gate = ExtensionRuntimePublicationGate()
-        let preparedTabVisibility = ExtensionPreparedTabVisibility(gate: gate)
-        let lifecycle = ExtensionNormalWindowLifecycle(
-            resolver: ExtensionNormalWindowProjectionResolver(
-                manager: manager,
-                preparedTabVisibility: preparedTabVisibility
-            ),
-            adapterStore: manager.adapterStore,
-            preparedTabVisibility: preparedTabVisibility
+        let browserManager = makeSafariExtensionTestBrowserManager(
+            profile: profile
         )
+        manager.attach(browserManager: browserManager)
+        let lifecycle = attachedRuntime.runtime.publications.normalWindows
         let token = try XCTUnwrap(
             lifecycle.beginRuntimeReconciliation()
         )

@@ -15,8 +15,8 @@ enum SafariExtensionNativeMessagingProbeBuilder {
         discovered: [DiscoveredSafariExtensionCandidate],
         importStore: any SafariExtensionImportRecordProviding = SafariExtensionImportStore.process,
         installedExtensions: [InstalledExtension] = [],
-        extensionManager: ExtensionManager? = nil,
         extensionsModuleEnabled: Bool = true,
+        runtime: SafariCompatibilityReportRuntime? = nil,
         adapterRegistry: SumiNativeMessagingAdapterRegistry = .production()
     ) -> SafariExtensionNativeMessagingProbeReport {
         let registeredAdapterIdentifiers = adapterRegistry.registeredProtocolIdentifiers
@@ -25,8 +25,8 @@ enum SafariExtensionNativeMessagingProbeBuilder {
             discovered: discovered,
             importStore: importStore,
             installedExtensions: installedExtensions,
-            extensionManager: extensionManager,
-            extensionsModuleEnabled: extensionsModuleEnabled
+            extensionsModuleEnabled: extensionsModuleEnabled,
+            runtime: runtime
         )
         let compatibilityByKey = Dictionary(
             uniqueKeysWithValues: compatibility.entries.map { ($0.targetKey, $0) }

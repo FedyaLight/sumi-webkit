@@ -83,20 +83,23 @@ final class SumiUIOracleHTTPServer: @unchecked Sendable {
                 connection.cancel()
                 return
             }
-            let header = Data(
-                """
-                HTTP/1.1 200 OK\r
-                Content-Type: text/html; charset=utf-8\r
-                Content-Length: \(body.count)\r
-                Cache-Control: no-store\r
-                Connection: close\r
-                \r
-                """.utf8
-            )
+            let header = Data([
+                "HTTP/1.1 200 OK",
+                "Content-Type: text/html; charset=utf-8",
+                "Content-Length: \(body.count)",
+                "Cache-Control: no-store",
+                "Connection: close",
+                "",
+                "",
+            ].joined(separator: "\r\n").utf8)
             connection.send(
                 content: header + body,
-                completion: .contentProcessed { _ in
-                    connection.cancel()
+                contentContext: .finalMessage,
+                isComplete: true,
+                completion: .contentProcessed { error in
+                    if error != nil {
+                        connection.cancel()
+                    }
                 }
             )
         }

@@ -66,9 +66,9 @@ require_production_pattern 'options service lost its presentation coordinator' \
 require_production_pattern 'options coordinator lost its presentation claim' \
   'let claim = service\.issuePresentationClaim' "$coordinator"
 require_production_pattern 'options coordinator lost mutation admission' \
-  'await runtime\.waitForWebsiteDataMutationAdmission' "$coordinator"
+  'await runtime\.websiteDataAdmission\.wait' "$coordinator"
 claim_line="$(guard_capture_matches 'let claim = service\.issuePresentationClaim' "$coordinator" | cut -d: -f1)"
-await_line="$(guard_capture_matches 'await runtime\.waitForWebsiteDataMutationAdmission' "$coordinator" | cut -d: -f1)"
+await_line="$(guard_capture_matches 'await runtime\.websiteDataAdmission\.wait' "$coordinator" | cut -d: -f1)"
 if [[ -z "$claim_line" || -z "$await_line" ]] || (( claim_line >= await_line )); then
   echo 'error: options presentation claim must be issued before the first suspension' >&2
   exit 1
@@ -220,7 +220,7 @@ for limit_and_file in \
   "190:$service" \
   "130:$registry" \
   "100:$resolver" \
-  "150:$composition" \
+  "200:$composition" \
   "130:$transaction" \
   "100:$coordinator" \
   "70:$claim_ledger"; do

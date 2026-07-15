@@ -51,9 +51,9 @@ enum ExtensionPermissionPromptRouting {
         in extensionContext: WKWebExtensionContext,
         extensionId: String,
         profileId: UUID,
-        manager: ExtensionManager
+        decisions: ExtensionPermissionDecisionStore
     ) -> Bool {
-        guard let stored = manager.storedExtensionPermissionDecision(
+        guard let stored = decisions.storedExtensionPermissionDecision(
             extensionId: extensionId,
             profileId: profileId,
             targetKind: .permission,
@@ -74,9 +74,9 @@ enum ExtensionPermissionPromptRouting {
         in extensionContext: WKWebExtensionContext,
         extensionId: String,
         profileId: UUID,
-        manager: ExtensionManager
+        siteAccess: ExtensionSiteAccessPolicyCoordinator
     ) -> Bool {
-        switch manager.configuredSiteAccessLevel(
+        switch siteAccess.configuredSiteAccessLevel(
             for: matchPattern,
             extensionId: extensionId,
             profileId: profileId
@@ -104,7 +104,7 @@ enum ExtensionPermissionPromptRouting {
         tab: (any WKWebExtensionTab)?,
         extensionId: String,
         profileId: UUID,
-        manager: ExtensionManager
+        siteAccess: ExtensionSiteAccessPolicyCoordinator
     ) -> URLPermissionPromptResolution {
         let status = ExtensionPermissionStatusResolver.effectiveStatus(
             for: url,
@@ -120,7 +120,7 @@ enum ExtensionPermissionPromptRouting {
         guard ["http", "https"].contains(url.scheme?.lowercased() ?? "") else {
             return .unresolved
         }
-        switch manager.configuredSiteAccessLevel(
+        switch siteAccess.configuredSiteAccessLevel(
             for: url,
             extensionId: extensionId,
             profileId: profileId
@@ -133,5 +133,4 @@ enum ExtensionPermissionPromptRouting {
             return .unresolved
         }
     }
-
 }

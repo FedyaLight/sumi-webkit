@@ -8,9 +8,9 @@ enum BrowserExtensionsModuleRuntimeFactory {
             currentProfile: { [currentProfileAuthority] in
                 currentProfileAuthority.currentProfile
             },
-            attachManager: { [weak browserManager] manager in
+            attachBrowser: { [weak browserManager] attachment in
                 guard let browserManager else { return }
-                manager.attach(browserManager: browserManager)
+                attachment.attach(to: browserManager)
             },
             liveTabs: { [weak browserManager] in
                 browserManager?.tabManager.tabCollectionMembershipOwner.allTabs() ?? []

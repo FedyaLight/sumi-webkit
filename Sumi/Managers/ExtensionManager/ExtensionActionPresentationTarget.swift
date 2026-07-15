@@ -63,10 +63,47 @@ struct ExtensionActionPresentationChange: Equatable {
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionActionPresentationQuery {
-    private let manager: @MainActor () -> ExtensionManager?
+    struct ContextBinding {
+        let context: WKWebExtensionContext
+        let receipt: ExtensionContextBindingReceipt
+    }
 
-    init(manager: @escaping @MainActor () -> ExtensionManager?) {
-        self.manager = manager
+    typealias ContextBindings = @MainActor (
+        _ extensionID: String
+    ) -> [ContextBinding]
+    typealias CurrentContext = @MainActor (
+        _ receipt: ExtensionContextBindingReceipt
+    ) -> WKWebExtensionContext?
+    typealias StableAdapter = @MainActor (Tab) -> ExtensionTabAdapter?
+    typealias WindowRegistrationReceipt = @MainActor (
+        BrowserWindowState
+    ) -> WindowRegistry.WindowRegistrationReceipt?
+    typealias RegisteredWindow = @MainActor (
+        WindowRegistry.WindowRegistrationReceipt
+    ) -> BrowserWindowState?
+    typealias AllWindows = @MainActor () -> [BrowserWindowState]
+
+    private let contextBindings: ContextBindings
+    private let currentContext: CurrentContext
+    private let stableAdapter: StableAdapter
+    private let windowRegistrationReceipt: WindowRegistrationReceipt
+    private let registeredWindow: RegisteredWindow
+    private let allWindows: AllWindows
+
+    init(
+        contextBindings: @escaping ContextBindings,
+        currentContext: @escaping CurrentContext,
+        stableAdapter: @escaping StableAdapter,
+        windowRegistrationReceipt: @escaping WindowRegistrationReceipt,
+        registeredWindow: @escaping RegisteredWindow,
+        allWindows: @escaping AllWindows
+    ) {
+        self.contextBindings = contextBindings
+        self.currentContext = currentContext
+        self.stableAdapter = stableAdapter
+        self.windowRegistrationReceipt = windowRegistrationReceipt
+        self.registeredWindow = registeredWindow
+        self.allWindows = allWindows
     }
 
     func target(
@@ -74,25 +111,19 @@ final class ExtensionActionPresentationQuery {
         tab: Tab,
         window: BrowserWindowState
     ) -> ExtensionActionPresentationTarget? {
-        guard let manager = manager(),
-              let adapter = manager.adapterCatalog.stableAdapter(for: tab),
-              let windowReceipt = manager.runtime.windowRegistrationReceipt(window),
-              manager.runtime.registeredWindow(windowReceipt) === window,
-              hasUniqueResidence(tab: tab, in: window, manager: manager)
+        guard let adapter = stableAdapter(tab),
+              let windowReceipt = windowRegistrationReceipt(window),
+              registeredWindow(windowReceipt) === window,
+              hasUniqueResidence(tab: tab, in: window)
         else { return nil }
 
-        let candidates = manager.profileRuntime.contextsByProfile.compactMap {
-            profileID, contexts -> ExtensionActionPresentationTarget? in
-            guard let context = contexts[extensionID],
-                  let exactIdentity = manager.profileRuntime
-                  .exactContextIdentity(for: context),
-                  exactIdentity.extensionId == extensionID,
-                  exactIdentity.profileId == profileID,
-                  let receipt = manager.profileRuntime.contextBindingReceipt(
-                      extensionId: extensionID,
-                      profileId: profileID
-                  ),
-                  manager.profileRuntime.context(ifCurrent: receipt) === context,
+        let candidates = contextBindings(extensionID).compactMap {
+            binding -> ExtensionActionPresentationTarget? in
+            let context = binding.context
+            let receipt = binding.receipt
+            let profileID = receipt.key.profileId
+            guard receipt.key.extensionId == extensionID,
+                  currentContext(receipt) === context,
                   let publication = adapter.evidence.currentPublication(
                       visibleTo: context
                   ),
@@ -122,31 +153,21 @@ final class ExtensionActionPresentationQuery {
     func snapshot(
         for target: ExtensionActionPresentationTarget
     ) -> BrowserExtensionActionButtonSnapshot? {
-        guard let manager = manager(),
-              target.contextReceipt.key.extensionId == target.extensionID,
+        guard target.contextReceipt.key.extensionId == target.extensionID,
               target.contextReceipt.key.profileId == target.profileID,
               ObjectIdentifier(target.window) == target.windowIdentifier,
               target.window.id == target.windowID,
-              manager.runtime.registeredWindow(
+              registeredWindow(
                   target.windowRegistrationReceipt
               ) === target.window,
               hasUniqueResidence(
                   tab: target.tab,
-                  in: target.window,
-                  manager: manager
+                  in: target.window
               ),
               ObjectIdentifier(target.tab) == target.tabIdentifier,
               target.tab.id == target.tabID,
-              let context = manager.profileRuntime.context(
-                  ifCurrent: target.contextReceipt
-              ),
-              let exactIdentity = manager.profileRuntime
-              .exactContextIdentity(for: context),
-              exactIdentity.extensionId == target.extensionID,
-              exactIdentity.profileId == target.profileID,
-              let adapter = manager.adapterCatalog.stableAdapter(
-                  for: target.tab
-              ),
+              let context = currentContext(target.contextReceipt),
+              let adapter = stableAdapter(target.tab),
               ObjectIdentifier(adapter) == target.adapterIdentifier,
               let publication = adapter.evidence.currentPublication(
                   visibleTo: context
@@ -165,11 +186,10 @@ final class ExtensionActionPresentationQuery {
 
     private func hasUniqueResidence(
         tab: Tab,
-        in targetWindow: BrowserWindowState,
-        manager: ExtensionManager
+        in targetWindow: BrowserWindowState
     ) -> Bool {
-        let claimingWindows = manager.runtime.allWindowStates().filter { window in
-            guard manager.runtime.windowRegistrationReceipt(window) != nil,
+        let claimingWindows = allWindows().filter { window in
+            guard windowRegistrationReceipt(window) != nil,
                   window.currentTabId == tab.id
             else { return false }
 

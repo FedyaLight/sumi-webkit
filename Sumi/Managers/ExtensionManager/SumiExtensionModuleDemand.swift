@@ -49,7 +49,7 @@ final class SumiExtensionModuleDemand {
     }
 
     func bindRuntimeProvider(
-        _ provider: @escaping @MainActor () -> SumiExtensionsModuleRuntime
+        _ provider: @escaping @MainActor () -> SumiExtensionsModuleRuntime?
     ) {
         lifetime.bindRuntimeProvider(provider)
     }

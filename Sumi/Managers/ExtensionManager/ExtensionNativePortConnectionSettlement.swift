@@ -16,21 +16,38 @@ final class ExtensionNativePortConnectionSettlement {
     }
 
     private let admission: ExtensionControllerCallbackAdmission
+    private let registry: ExtensionNativeMessagingPortRegistry
+    private let relayOwner: @MainActor () -> ExtensionNativeMessagingRelayOwner
+    private let backgroundWakes: ExtensionBackgroundWakeCoordinator
+    private let profileRuntime: ExtensionProfileRuntime
+    private let installedExtensions: InstalledExtensionCollection
+    private let diagnostics: ExtensionRuntimeDiagnostics
 
-    init(admission: ExtensionControllerCallbackAdmission) {
+    init(
+        admission: ExtensionControllerCallbackAdmission,
+        registry: ExtensionNativeMessagingPortRegistry,
+        relayOwner: @escaping @MainActor () -> ExtensionNativeMessagingRelayOwner,
+        backgroundWakes: ExtensionBackgroundWakeCoordinator,
+        profileRuntime: ExtensionProfileRuntime,
+        installedExtensions: InstalledExtensionCollection,
+        diagnostics: ExtensionRuntimeDiagnostics
+    ) {
         self.admission = admission
+        self.registry = registry
+        self.relayOwner = relayOwner
+        self.backgroundWakes = backgroundWakes
+        self.profileRuntime = profileRuntime
+        self.installedExtensions = installedExtensions
+        self.diagnostics = diagnostics
     }
 
     func connect(
         using port: any SumiNativeMessagingPortControlling,
         evidence: ExtensionControllerCallbackEvidence,
-        manager: ExtensionManager,
         completionHandler: @escaping ((any Error)?) -> Void
     ) {
         let extensionId = evidence.extensionID
         let profileId = evidence.profileID
-        let registry = manager.nativeMessagingPortRegistry
-
         // A physical WebKit message port represents one live connection.
         // Reject a duplicate callback before a new session can overwrite the
         // existing port handlers or later disconnect the existing session.
@@ -53,8 +70,9 @@ final class ExtensionNativePortConnectionSettlement {
             extensionId: extensionId
         )
 
-        if manager.nativeMessagingRelayOwner.extensionsModuleEnabledForCallbacks {
-            manager.backgroundWakeCoordinator
+        let relayOwner = relayOwner()
+        if relayOwner.extensionsModuleEnabledForCallbacks {
+            backgroundWakes
                 .scheduleNativeMessagingBackgroundWake(
                     evidence: evidence,
                     admission: admission,
@@ -64,24 +82,24 @@ final class ExtensionNativePortConnectionSettlement {
 
         let extensionDisplayName = ExtensionDisplayNameResolver.displayName(
             for: extensionId,
-            installedExtensions: manager.installedExtensionCollection.records
+            installedExtensions: installedExtensions.records
         )
-        manager.runtimeDiagnostics.traceNativeMessagingContextBinding(
+        diagnostics.traceNativeMessagingContextBinding(
             phase: "delegateConnectNative",
             extensionId: extensionId,
             profileId: profileId,
             loadSource: SafariAppExtensionRuntimeLoadSource.installedSource(
                 for: extensionId,
-                in: manager.installedExtensionCollection.records
+                in: installedExtensions.records
             ),
             webExtension: evidence.context.webExtension,
             extensionContext: evidence.context,
             controller: evidence.controller,
             configuration: evidence.context.webViewConfiguration,
-            profileController: manager.profileRuntime.controller(
+            profileController: profileRuntime.controller(
                 for: profileId
             ),
-            expectedControllerDelegate: manager.controllerDelegateBridge
+            expectedControllerDelegate: evidence.controller.delegate
         )
         #if DEBUG || SUMI_DIAGNOSTICS
             if RuntimeDiagnostics.isVerboseEnabled {
@@ -98,13 +116,13 @@ final class ExtensionNativePortConnectionSettlement {
         #endif
 
         let claim = PortRegistrationClaim()
-        _ = manager.nativeMessagingRelayOwner.relay.handleConnect(
+        _ = relayOwner.relay.handleConnect(
             port: port,
             extensionId: extensionId,
             profileId: profileId,
-            isPrivateBrowsing: manager.isPrivateExtensionRuntimeProfile(profileId),
+            isPrivateBrowsing: profileRuntime.isPrivateRuntimeProfile(profileId),
             privateAccessAllowed: evidence.context.hasAccessToPrivateData,
-            installedExtensions: manager.installedExtensionCollection.records,
+            installedExtensions: installedExtensions.records,
             registerHandler: { [admission] session in
                 guard admission.isCurrent(evidence) else { return false }
                 guard let claimToken = registry.register(

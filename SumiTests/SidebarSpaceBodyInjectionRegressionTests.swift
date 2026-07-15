@@ -158,8 +158,14 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
         async {
         let browserManager = BrowserManager()
         let tabManager = browserManager.tabManager
-        let presentationProfileID = UUID()
-        let executionProfileID = UUID()
+        let presentationProfile = browserManager.profileManager.createProfile(
+            name: "Presentation"
+        )
+        let executionProfile = browserManager.profileManager.createProfile(
+            name: "Execution"
+        )
+        let presentationProfileID = presentationProfile.id
+        let executionProfileID = executionProfile.id
         let firstSameProfileSpace = tabManager.spaceServices.catalog.createSpace(
             name: "Same Profile A",
             profileId: presentationProfileID
@@ -183,6 +189,13 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
             activate: false
         )
         window.currentTabId = selectedTab.id
+        let windowRegistry = WindowRegistry()
+        browserManager.windowRegistry = windowRegistry
+        XCTAssertEqual(windowRegistry.register(window), .registered)
+        defer {
+            windowRegistry.unregister(window.id)
+            browserManager.windowRegistry = nil
+        }
         let unrelatedWindowID = UUID()
         var firstSameProfileChanges = 0
         var presentationChanges = 0
@@ -321,7 +334,7 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
     }
 
     func testToolbarCommandsDoNotPublishWithoutManagerOrForUnpinnedOrder() {
-        let surfaceStore = BrowserExtensionSurfaceStore(extensionManager: nil)
+        let surfaceStore = BrowserExtensionSurfaceStore(binding: nil)
         var exactChanges = 0
         var broadChanges = 0
         let exact = surfaceStore.toolbarLayoutChanges(for: nil).sink {
@@ -358,12 +371,14 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
         )
         registry.enable(.extensions)
         let container = try makeInMemoryStartupModelContainer()
-        let surfaceStore = BrowserExtensionSurfaceStore(extensionManager: nil)
+        let surfaceStore = BrowserExtensionSurfaceStore(binding: nil)
         let module = SumiExtensionsModule(
             moduleRegistry: registry,
             context: container.mainContext,
             surfaceStore: surfaceStore
         )
+        let browserRuntime = attachBrowserRuntime(to: module)
+        defer { withExtendedLifetime(browserRuntime) {} }
         var exactChanges = 0
         var broadChanges = 0
         let exact = surfaceStore.toolbarLayoutChanges(for: nil).sink {
@@ -415,7 +430,8 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
         let profileA = Profile(name: "Current A")
         let profileB = Profile(name: "Rendered B")
         let container = try makeInMemoryStartupModelContainer()
-        let surfaceStore = BrowserExtensionSurfaceStore(extensionManager: nil)
+        let surfaceStore = BrowserExtensionSurfaceStore(binding: nil)
+        var inspection: ExtensionManagerTestInspection?
         let module = SumiExtensionsModule(
             moduleRegistry: registry,
             context: container.mainContext,
@@ -426,13 +442,20 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
                     initialProfile: profile,
                     browserConfiguration: configuration,
                     moduleRegistry: registry,
-                    extensionPreferences: preferences
+                    extensionPreferences: preferences,
+                    testInspectionDidAssemble: { inspection = $0 }
                 )
             },
             surfaceStore: surfaceStore
         )
-        let manager = try XCTUnwrap(module.managerForTesting())
-        XCTAssertEqual(manager.profileRuntime.currentProfileId, profileA.id)
+        let browserRuntime = attachBrowserRuntime(
+            to: module,
+            currentProfile: profileA
+        )
+        defer { withExtendedLifetime(browserRuntime) {} }
+        _ = module.managerForTesting()
+        let roles = try XCTUnwrap(inspection)
+        XCTAssertEqual(roles.contextState.profiles.currentProfileId, profileA.id)
         var currentChanges = 0
         var renderedChanges = 0
         let current = surfaceStore.toolbarLayoutChanges(for: profileA.id).sink {
@@ -455,9 +478,19 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
 
         XCTAssertEqual(currentChanges, 0)
         XCTAssertEqual(renderedChanges, 5)
-        XCTAssertEqual(manager.pinnedToolbarExtensionIDs, [])
-        XCTAssertEqual(manager.pinnedToolbarExtensionIDs(profileId: profileA.id), [])
-        XCTAssertEqual(manager.pinnedToolbarExtensionIDs(profileId: profileB.id), ["one"])
+        XCTAssertEqual(roles.actionSurfaces.publication.pinnedToolbarExtensionIDs, [])
+        XCTAssertEqual(
+            roles.actionSurfaces.toolbarPinning.pinnedToolbarExtensionIDs(
+                profileId: profileA.id
+            ),
+            []
+        )
+        XCTAssertEqual(
+            roles.actionSurfaces.toolbarPinning.pinnedToolbarExtensionIDs(
+                profileId: profileB.id
+            ),
+            ["one"]
+        )
         let reopenedPins = ExtensionToolbarPinningOwner(
             preferences: preferences,
             currentProfileId: { profileA.id },
@@ -486,7 +519,7 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
     }
 
     func testToolbarLayoutChangesOnlyReachAffectedProfile() {
-        let surfaceStore = BrowserExtensionSurfaceStore(extensionManager: nil)
+        let surfaceStore = BrowserExtensionSurfaceStore(binding: nil)
         let firstProfileID = UUID()
         let secondProfileID = UUID()
         var firstChanges = 0
@@ -514,32 +547,46 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
         )
         registry.enable(.extensions)
         let container = try makeInMemoryStartupModelContainer()
-        let surfaceStore = BrowserExtensionSurfaceStore(extensionManager: nil)
+        let surfaceStore = BrowserExtensionSurfaceStore(binding: nil)
+        var inspection: ExtensionManagerTestInspection?
         let module = SumiExtensionsModule(
             moduleRegistry: registry,
             context: container.mainContext,
+            managerFactory: { context, profile, configuration, registry in
+                ExtensionManager(
+                    context: context,
+                    initialProfile: profile,
+                    browserConfiguration: configuration,
+                    moduleRegistry: registry,
+                    testInspectionDidAssemble: { inspection = $0 }
+                )
+            },
             surfaceStore: surfaceStore
         )
-        let manager = try XCTUnwrap(module.managerForTesting())
+        let browserRuntime = attachBrowserRuntime(to: module)
+        defer { withExtendedLifetime(browserRuntime) {} }
+        _ = module.managerForTesting()
+        let installedExtensions = try XCTUnwrap(inspection)
+            .actionSurfaces.installedExtensions
         await drainMainActorTurns()
         var layoutChanges = 0
         let exact = surfaceStore.toolbarLayoutChanges(for: nil).sink {
             layoutChanges += 1
         }
 
-        manager.installedExtensionCollection.upsert(
+        installedExtensions.upsert(
             makeToolbarExtension(version: "1.0", name: "Toolbar Action")
         )
         await drainMainActorTurns()
         XCTAssertEqual(layoutChanges, 1)
 
-        manager.installedExtensionCollection.upsert(
+        installedExtensions.upsert(
             makeToolbarExtension(version: "2.0", name: "Toolbar Action")
         )
         await drainMainActorTurns()
         XCTAssertEqual(layoutChanges, 1)
 
-        manager.installedExtensionCollection.upsert(
+        installedExtensions.upsert(
             makeToolbarExtension(version: "2.0", name: "Renamed Toolbar Action")
         )
         await drainMainActorTurns()
@@ -556,15 +603,28 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
         )
         registry.enable(.extensions)
         let container = try makeInMemoryStartupModelContainer()
-        let surfaceStore = BrowserExtensionSurfaceStore(extensionManager: nil)
+        let surfaceStore = BrowserExtensionSurfaceStore(binding: nil)
+        var inspection: ExtensionManagerTestInspection?
         let module = SumiExtensionsModule(
             moduleRegistry: registry,
             context: container.mainContext,
+            managerFactory: { context, profile, configuration, registry in
+                ExtensionManager(
+                    context: context,
+                    initialProfile: profile,
+                    browserConfiguration: configuration,
+                    moduleRegistry: registry,
+                    testInspectionDidAssemble: { inspection = $0 }
+                )
+            },
             surfaceStore: surfaceStore
         )
-        let manager = try XCTUnwrap(module.managerForTesting())
+        let browserRuntime = attachBrowserRuntime(to: module)
+        defer { withExtendedLifetime(browserRuntime) {} }
+        _ = module.managerForTesting()
+        let actionSurfaces = try XCTUnwrap(inspection).actionSurfaces
         await drainMainActorTurns()
-        manager.installedExtensionCollection.upsert(
+        actionSurfaces.installedExtensions.upsert(
             makeToolbarExtension(version: "1.0", name: "Toolbar Action")
         )
         await drainMainActorTurns()
@@ -580,20 +640,22 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
             displayChanges += 1
         }
 
-        manager.actionStatesByExtensionID["unrelated-extension"] =
-            makeActionState(extensionID: "unrelated-extension", label: "Other")
+        actionSurfaces.publication.setActionSurfaceState(
+            makeActionState(extensionID: "unrelated-extension", label: "Other"),
+            extensionID: "unrelated-extension"
+        )
         surfaceStore.refreshSiteAccessPolicies(profileId: UUID())
         await drainMainActorTurns()
         XCTAssertEqual(displayChanges, 0)
 
-        manager.installedExtensionCollection.upsert(
+        actionSurfaces.installedExtensions.upsert(
             makeToolbarExtension(version: "2.0", name: "Toolbar Action")
         )
         await drainMainActorTurns()
         XCTAssertEqual(displayChanges, 0)
         XCTAssertEqual(model.snapshot.extensions.first?.name, "Toolbar Action")
 
-        manager.installedExtensionCollection.upsert(
+        actionSurfaces.installedExtensions.upsert(
             makeToolbarExtension(version: "2.0", name: "Renamed Action")
         )
         await drainMainActorTurns()
@@ -612,7 +674,7 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
         await drainMainActorTurns()
         XCTAssertEqual(model.snapshot.pinnedExtensionIDs, [])
 
-        manager.installedExtensionCollection.upsert(
+        actionSurfaces.installedExtensions.upsert(
             makeToolbarExtension(
                 version: "2.0",
                 name: "Renamed Action",
@@ -621,7 +683,7 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
         )
         await drainMainActorTurns()
         XCTAssertEqual(model.snapshot.enabledExtensions, [])
-        manager.installedExtensionCollection.upsert(
+        actionSurfaces.installedExtensions.upsert(
             makeToolbarExtension(
                 version: "2.0",
                 name: "Renamed Action"
@@ -701,13 +763,26 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
         )
         registry.enable(.extensions)
         let container = try makeInMemoryStartupModelContainer()
-        let surfaceStore = BrowserExtensionSurfaceStore(extensionManager: nil)
+        let surfaceStore = BrowserExtensionSurfaceStore(binding: nil)
+        var inspection: ExtensionManagerTestInspection?
         let module = SumiExtensionsModule(
             moduleRegistry: registry,
             context: container.mainContext,
+            managerFactory: { context, profile, configuration, registry in
+                ExtensionManager(
+                    context: context,
+                    initialProfile: profile,
+                    browserConfiguration: configuration,
+                    moduleRegistry: registry,
+                    testInspectionDidAssemble: { inspection = $0 }
+                )
+            },
             surfaceStore: surfaceStore
         )
-        let manager = try XCTUnwrap(module.managerForTesting())
+        let browserRuntime = attachBrowserRuntime(to: module)
+        defer { withExtendedLifetime(browserRuntime) {} }
+        _ = module.managerForTesting()
+        let actionSurfaces = try XCTUnwrap(inspection).actionSurfaces
         let sourceProfileID = UUID()
         let destinationProfileID = UUID()
         let records = (0..<3).map {
@@ -720,17 +795,17 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
             )
         }
         let ids = records.map(\.id)
-        manager.pinnedToolbarExtensionIDsByProfile = [
-            ExtensionManager.pinnedToolbarProfileKey(
+        actionSurfaces.toolbarPinning.replacePinnedToolbarExtensionIDsByProfile([
+            ExtensionToolbarPinningOwner.pinnedToolbarProfileKey(
                 for: sourceProfileID
             ): ids,
-            ExtensionManager.pinnedToolbarProfileKey(
+            ExtensionToolbarPinningOwner.pinnedToolbarProfileKey(
                 for: destinationProfileID
             ): ids,
-        ]
+        ])
         let globalIcon = NSImage(size: NSSize(width: 9, height: 9))
         for id in ids {
-            manager.actionStatesByExtensionID[id] =
+            actionSurfaces.publication.setActionSurfaceState(
                 BrowserExtensionActionSurfaceState(
                     extensionID: id,
                     label: "Wrong Profile",
@@ -739,16 +814,18 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
                     isEnabled: true,
                     presentsPopup: false,
                     icon: globalIcon
-                )
+                ),
+                extensionID: id
+            )
         }
         await drainMainActorTurns()
         let staticIcon = NSImage(size: NSSize(width: 3, height: 3))
         surfaceStore.iconCache.imageLoader = { _ in staticIcon }
-        let sourceSlots = manager.orderedPinnedToolbarSlots(
+        let sourceSlots = module.orderedPinnedToolbarSlots(
             enabledExtensions: records,
             profileId: sourceProfileID
         )
-        let destinationSlots = manager.orderedPinnedToolbarSlots(
+        let destinationSlots = module.orderedPinnedToolbarSlots(
             enabledExtensions: records,
             profileId: destinationProfileID
         )
@@ -1030,6 +1107,20 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
             presentsPopup: false,
             icon: nil
         )
+    }
+
+    private func attachBrowserRuntime(
+        to module: SumiExtensionsModule,
+        currentProfile: Profile? = nil
+    ) -> BrowserManager {
+        let browserManager = BrowserManager()
+        browserManager.currentProfile = currentProfile
+        module.attach(
+            runtime: BrowserExtensionsModuleRuntimeFactory.runtime(
+                for: browserManager
+            )
+        )
+        return browserManager
     }
 
     private func makeShortcutPin(

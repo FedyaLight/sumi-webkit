@@ -9,32 +9,33 @@ import WebKit
 @MainActor
 final class ExtensionAuxiliaryWindowPublicationQuery {
     private let ledger: ExtensionAuxiliaryWindowPublicationLedger
-    private let resolver: ExtensionAuxiliaryWindowPublicationResolver
-    private let opening: ExtensionAuxiliaryWindowOpeningTransaction
+    private let adapterStore: ExtensionBrowserAdapterStore
+    private let profileRuntime: ExtensionProfileRuntime
+    private let tabProfiles: any ExtensionTabProfileResolving
 
     init(
         ledger: ExtensionAuxiliaryWindowPublicationLedger,
-        resolver: ExtensionAuxiliaryWindowPublicationResolver,
-        opening: ExtensionAuxiliaryWindowOpeningTransaction
+        adapterStore: ExtensionBrowserAdapterStore,
+        profileRuntime: ExtensionProfileRuntime,
+        tabProfiles: any ExtensionTabProfileResolving
     ) {
         self.ledger = ledger
-        self.resolver = resolver
-        self.opening = opening
+        self.adapterStore = adapterStore
+        self.profileRuntime = profileRuntime
+        self.tabProfiles = tabProfiles
     }
 
     func publishedAdapters(
         ownerExtensionID: String,
         profileID: UUID,
-        runtime: ExtensionManagerRuntime,
         control: (any ExtensionAuxiliaryWindowControl)?
     ) -> [ExtensionMiniWindowAdapter] {
         guard let control else { return [] }
         return ledger.sessionIDs.compactMap { sessionID in
             guard let session = control.auxiliaryWindowSession(for: sessionID),
                   session.window.isVisible,
-                  let publication = opening.committedPublication(
+                  let publication = committedPublication(
                       for: session,
-                      runtime: runtime,
                       control: control
                   ),
                   publication.profileID == profileID,
@@ -49,15 +50,13 @@ final class ExtensionAuxiliaryWindowPublicationQuery {
         _ adapter: ExtensionTabAdapter,
         for tab: Tab,
         visibleTo context: WKWebExtensionContext,
-        runtime: ExtensionManagerRuntime,
         control: (any ExtensionAuxiliaryWindowControl)?
     ) -> Bool {
         guard let control,
               let session = control.auxiliaryWindowSession(for: tab),
               session.tab === tab,
-              let publication = opening.committedPublication(
+              let publication = committedPublication(
                   for: session,
-                  runtime: runtime,
                   control: control
               ) else {
             return false
@@ -69,13 +68,11 @@ final class ExtensionAuxiliaryWindowPublicationQuery {
     func isCurrentWindowAdapter(
         _ adapter: ExtensionMiniWindowAdapter,
         visibleTo context: WKWebExtensionContext,
-        runtime: ExtensionManagerRuntime,
         control: (any ExtensionAuxiliaryWindowControl)?
     ) -> Bool {
         currentPublication(
             for: adapter,
             visibleTo: context,
-            runtime: runtime,
             control: control
         ) != nil
     }
@@ -83,13 +80,11 @@ final class ExtensionAuxiliaryWindowPublicationQuery {
     func tabAdapter(
         for adapter: ExtensionMiniWindowAdapter,
         visibleTo context: WKWebExtensionContext,
-        runtime: ExtensionManagerRuntime,
         control: (any ExtensionAuxiliaryWindowControl)?
     ) -> ExtensionTabAdapter? {
         currentPublication(
             for: adapter,
             visibleTo: context,
-            runtime: runtime,
             control: control
         )?.tabReceipt.adapter
     }
@@ -97,15 +92,13 @@ final class ExtensionAuxiliaryWindowPublicationQuery {
     func canUseCommittedTabPublication(
         for tab: Tab,
         profileID: UUID? = nil,
-        runtime: ExtensionManagerRuntime,
         control: (any ExtensionAuxiliaryWindowControl)?
     ) -> Bool {
         guard let control,
               let session = control.auxiliaryWindowSession(for: tab),
               session.tab === tab,
-              let publication = opening.committedPublication(
+              let publication = committedPublication(
                   for: session,
-                  runtime: runtime,
                   control: control
               ) else {
             return false
@@ -116,7 +109,6 @@ final class ExtensionAuxiliaryWindowPublicationQuery {
     private func currentPublication(
         for adapter: ExtensionMiniWindowAdapter,
         visibleTo context: WKWebExtensionContext,
-        runtime: ExtensionManagerRuntime,
         control: (any ExtensionAuxiliaryWindowControl)?
     ) -> ExtensionAuxiliaryWindowPublication? {
         guard let control,
@@ -126,14 +118,55 @@ final class ExtensionAuxiliaryWindowPublicationQuery {
               let publication = ledger.publication(for: session),
               publication.adapter === adapter,
               publication.context === context,
-              resolver.publicationIsCurrent(
+              publicationIsCurrent(
                   publication,
                   session: session,
-                  runtime: runtime,
                   control: control
               ) else {
             return nil
         }
         return publication
+    }
+
+    private func committedPublication(
+        for session: AuxiliaryWindowSession,
+        control: any ExtensionAuxiliaryWindowControl
+    ) -> ExtensionAuxiliaryWindowPublication? {
+        guard let publication = ledger.publication(for: session),
+              publication.tabReceipt.isCommitted,
+              publicationIsCurrent(
+                  publication,
+                  session: session,
+                  control: control
+              )
+        else {
+            return nil
+        }
+        return publication
+    }
+
+    private func publicationIsCurrent(
+        _ publication: ExtensionAuxiliaryWindowPublication,
+        session: AuxiliaryWindowSession,
+        control: any ExtensionAuxiliaryWindowControl
+    ) -> Bool {
+        publication.represents(session)
+            && control.auxiliaryWindowSession(for: session.id) === session
+            && adapterStore.existingMiniWindowAdapter(for: session.id)
+                === publication.adapter
+            && tabProfiles.profileID(for: session.tab)
+                == publication.profileID
+            && profileRuntime.contexts(for: publication.profileID)[
+                publication.ownerExtensionID
+            ] === publication.context
+            && profileRuntime.profileId(for: publication.context)
+                == publication.profileID
+            && profileRuntime.extensionId(for: publication.context)
+                == publication.ownerExtensionID
+            && session.ownerExtensionID == publication.ownerExtensionID
+            && publication.tabReceipt.isCurrent()
+            && publication.context.openWindows.contains { openWindow in
+                (openWindow as AnyObject) === publication.adapter
+            }
     }
 }

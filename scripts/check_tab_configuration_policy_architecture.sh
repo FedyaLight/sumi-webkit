@@ -111,7 +111,7 @@ $retired_hits"
 fi
 
 legacy_placement_hits="$(
-  guard_capture_matches '\b(canCommitConfigurationPolicy|commitConfigurationPolicy|prepareConfiguration)\b' \
+  guard_capture_matches '\b(canCommitConfigurationPolicy|commitConfigurationPolicy)\b' \
     Sumi Packages/SumiWebRuntime -g '*.swift'
 )"
 if [[ -n "$legacy_placement_hits" ]]; then

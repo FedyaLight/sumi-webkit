@@ -25,7 +25,7 @@ final class ExtensionRuntimeAuthoritiesTests: XCTestCase {
         lifecycle.beginLoading()
         lifecycle.updateReadiness(isReady: true)
         XCTAssertEqual(lifecycle.state, .ready)
-        lifecycle.reset(extensionSupportAvailable: false)
+        lifecycle.markUnavailable()
         XCTAssertEqual(lifecycle.state, .unavailable)
     }
 
@@ -33,25 +33,16 @@ final class ExtensionRuntimeAuthoritiesTests: XCTestCase {
         let demand = ExtensionRuntimeDemandAuthority()
 
         XCTAssertFalse(
-            demand.admitsRuntime(
-                hasEnabledExtensions: false,
-                allowWithoutEnabledExtensions: false
-            )
+            demand.hasRuntimeDemand(hasEnabledExtensions: false)
         )
         demand.recordRuntimeDemandWithoutEnabledExtensions()
         XCTAssertTrue(
-            demand.admitsRuntime(
-                hasEnabledExtensions: false,
-                allowWithoutEnabledExtensions: false
-            )
+            demand.hasRuntimeDemand(hasEnabledExtensions: false)
         )
 
         demand.reset()
         XCTAssertFalse(
-            demand.admitsRuntime(
-                hasEnabledExtensions: false,
-                allowWithoutEnabledExtensions: false
-            )
+            demand.hasRuntimeDemand(hasEnabledExtensions: false)
         )
     }
 

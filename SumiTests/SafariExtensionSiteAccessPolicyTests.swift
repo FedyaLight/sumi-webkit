@@ -30,19 +30,21 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
     func testDefaultAskDoesNotGrantOptionalHostPatterns() async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Site Access")
-        let manager = ExtensionManager(
+        let fixture = makeManager(
             context: container.mainContext,
             initialProfile: profile
         )
+        let manager = fixture.manager
+        let inspection = fixture.inspection
 
         let installed = try await installExtension(
             manager: manager,
             name: "OptionalHostAccess"
         )
-        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
+        _ = try await inspection.installation.lifecycle.enable(installed.id)
 
         let context = try XCTUnwrap(
-            manager.getExtensionContext(for: installed.id, profileId: profile.id)
+            inspection.contextState.profiles.contexts(for: profile.id)[installed.id]
         )
         let matchPattern = try XCTUnwrap(
             WKWebExtension.MatchPattern(string: "https://account.proton.me/*")
@@ -61,24 +63,26 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
     func testExplicitDefaultAllowGrantsDeclaredHostPatterns() async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Explicit Default Allow Site Access")
-        let manager = ExtensionManager(
+        let fixture = makeManager(
             context: container.mainContext,
             initialProfile: profile
         )
+        let manager = fixture.manager
+        let inspection = fixture.inspection
 
         let installed = try await installExtension(
             manager: manager,
             name: "ExplicitAllowHostAccess"
         )
-        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
-        manager.setDefaultSiteAccess(
+        _ = try await inspection.installation.lifecycle.enable(installed.id)
+        inspection.actionPolicy.siteAccess.setDefaultSiteAccess(
             .allow,
             extensionId: installed.id,
             profileId: profile.id
         )
 
         let context = try XCTUnwrap(
-            manager.getExtensionContext(for: installed.id, profileId: profile.id)
+            inspection.contextState.profiles.contexts(for: profile.id)[installed.id]
         )
         let matchPattern = try XCTUnwrap(
             WKWebExtension.MatchPattern(string: "https://account.proton.me/*")
@@ -91,24 +95,26 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
     func testDefaultDenyDeniesDeclaredHostPatterns() async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Default Deny Site Access")
-        let manager = ExtensionManager(
+        let fixture = makeManager(
             context: container.mainContext,
             initialProfile: profile
         )
+        let manager = fixture.manager
+        let inspection = fixture.inspection
 
         let installed = try await installExtension(
             manager: manager,
             name: "DefaultDenyHostAccess"
         )
-        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
-        manager.setDefaultSiteAccess(
+        _ = try await inspection.installation.lifecycle.enable(installed.id)
+        inspection.actionPolicy.siteAccess.setDefaultSiteAccess(
             .deny,
             extensionId: installed.id,
             profileId: profile.id
         )
 
         let context = try XCTUnwrap(
-            manager.getExtensionContext(for: installed.id, profileId: profile.id)
+            inspection.contextState.profiles.contexts(for: profile.id)[installed.id]
         )
         let matchPattern = try XCTUnwrap(
             WKWebExtension.MatchPattern(string: "https://account.proton.me/*")
@@ -121,43 +127,46 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
     func testSiteAccessPersistsAcrossManagerReloadForProfile() async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Persistent Site Access")
-        let firstManager = ExtensionManager(
+        let firstFixture = makeManager(
             context: container.mainContext,
             initialProfile: profile
         )
+        let firstManager = firstFixture.manager
+        let firstInspection = firstFixture.inspection
 
         let installed = try await installExtension(
             manager: firstManager,
             name: "PersistentOptionalHostAccess"
         )
-        _ = try await firstManager.installedExtensionLifecycle.enable(installed.id)
-        firstManager.setDefaultSiteAccess(
+        _ = try await firstInspection.installation.lifecycle.enable(installed.id)
+        firstInspection.actionPolicy.siteAccess.setDefaultSiteAccess(
             .ask,
             extensionId: installed.id,
             profileId: profile.id
         )
 
-        let reloadedManager = ExtensionManager(
+        let reloadedFixture = makeManager(
             context: container.mainContext,
             initialProfile: profile
         )
-        _ = try await reloadedManager.ensureExtensionLoaded(
+        let reloadedManager = reloadedFixture.manager
+        let reloadedInspection = reloadedFixture.inspection
+        _ = try await reloadedInspection.contextCoordination.residency
+            .ensureExtensionLoaded(
             extensionId: installed.id,
             profileId: profile.id
         )
 
         let reloadedContext = try XCTUnwrap(
-            reloadedManager.getExtensionContext(
-                for: installed.id,
-                profileId: profile.id
-            )
+            reloadedInspection.contextState.profiles
+                .contexts(for: profile.id)[installed.id]
         )
         let matchPattern = try XCTUnwrap(
             WKWebExtension.MatchPattern(string: "https://account.proton.me/*")
         )
 
         XCTAssertEqual(
-            reloadedManager.siteAccessPolicy(
+            reloadedInspection.actionPolicy.siteAccess.siteAccessPolicy(
                 extensionId: installed.id,
                 profileId: profile.id
             ).defaultAccess,
@@ -174,16 +183,20 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
         async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Surface Snapshot")
-        let manager = ExtensionManager(
+        let fixture = makeManager(
             context: container.mainContext,
             initialProfile: profile
         )
+        let manager = fixture.manager
+        let inspection = fixture.inspection
 
         let installed = try await installExtension(
             manager: manager,
             name: "SurfaceSnapshotHostAccess"
         )
-        let surfaceStore = BrowserExtensionSurfaceStore(extensionManager: manager)
+        let surfaceStore = BrowserExtensionSurfaceStore(
+            binding: manager.surfaceStoreBinding()
+        )
 
         surfaceStore.refreshSiteAccessPolicies(profileId: profile.id)
         await waitForSurfaceStoreDefaultAccess(
@@ -197,7 +210,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
             .ask
         )
 
-        manager.setDefaultSiteAccess(
+        inspection.actionPolicy.siteAccess.setDefaultSiteAccess(
             .ask,
             extensionId: installed.id,
             profileId: profile.id
@@ -348,32 +361,34 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
         let container = try makeTestContainer()
         let profileA = Profile(name: "Profile A")
         let profileB = Profile(name: "Profile B")
-        let manager = ExtensionManager(
+        let fixture = makeManager(
             context: container.mainContext,
             initialProfile: profileA
         )
+        let manager = fixture.manager
+        let inspection = fixture.inspection
 
         let installed = try await installExtension(
             manager: manager,
             name: "ProfileScopedSiteAccess"
         )
-        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
-        manager.setDefaultSiteAccess(
+        _ = try await inspection.installation.lifecycle.enable(installed.id)
+        inspection.actionPolicy.siteAccess.setDefaultSiteAccess(
             .ask,
             extensionId: installed.id,
             profileId: profileA.id
         )
 
-        _ = try await manager.ensureExtensionLoaded(
+        _ = try await inspection.contextCoordination.residency.ensureExtensionLoaded(
             extensionId: installed.id,
             profileId: profileB.id
         )
 
         let contextA = try XCTUnwrap(
-            manager.getExtensionContext(for: installed.id, profileId: profileA.id)
+            inspection.contextState.profiles.contexts(for: profileA.id)[installed.id]
         )
         let contextB = try XCTUnwrap(
-            manager.getExtensionContext(for: installed.id, profileId: profileB.id)
+            inspection.contextState.profiles.contexts(for: profileB.id)[installed.id]
         )
         let matchPattern = try XCTUnwrap(
             WKWebExtension.MatchPattern(string: "https://account.proton.me/*")
@@ -392,27 +407,29 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
         let container = try makeTestContainer()
         let profileA = Profile(name: "Profile A")
         let profileB = Profile(name: "Profile B")
-        let manager = ExtensionManager(
+        let fixture = makeManager(
             context: container.mainContext,
             initialProfile: profileA
         )
+        let manager = fixture.manager
+        let inspection = fixture.inspection
 
         let installed = try await installExtension(
             manager: manager,
             name: "NativeMessagingPermission",
             permissions: ["nativeMessaging"]
         )
-        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
-        _ = try await manager.ensureExtensionLoaded(
+        _ = try await inspection.installation.lifecycle.enable(installed.id)
+        _ = try await inspection.contextCoordination.residency.ensureExtensionLoaded(
             extensionId: installed.id,
             profileId: profileB.id
         )
 
         let contextA = try XCTUnwrap(
-            manager.getExtensionContext(for: installed.id, profileId: profileA.id)
+            inspection.contextState.profiles.contexts(for: profileA.id)[installed.id]
         )
         let contextB = try XCTUnwrap(
-            manager.getExtensionContext(for: installed.id, profileId: profileB.id)
+            inspection.contextState.profiles.contexts(for: profileB.id)[installed.id]
         )
 
         XCTAssertEqual(
@@ -433,23 +450,25 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
     func testConfiguredAskOverridesExplicitDefaultAllow() async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Configured Ask")
-        let manager = ExtensionManager(
+        let fixture = makeManager(
             context: container.mainContext,
             initialProfile: profile
         )
+        let manager = fixture.manager
+        let inspection = fixture.inspection
 
         let installed = try await installExtension(
             manager: manager,
             name: "ConfiguredAsk"
         )
-        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
-        manager.setDefaultSiteAccess(
+        _ = try await inspection.installation.lifecycle.enable(installed.id)
+        inspection.actionPolicy.siteAccess.setDefaultSiteAccess(
             .allow,
             extensionId: installed.id,
             profileId: profile.id
         )
         let context = try XCTUnwrap(
-            manager.getExtensionContext(for: installed.id, profileId: profile.id)
+            inspection.contextState.profiles.contexts(for: profile.id)[installed.id]
         )
         let matchPattern = try XCTUnwrap(
             WKWebExtension.MatchPattern(string: "https://account.proton.me/*")
@@ -457,7 +476,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
 
         XCTAssertEqual(context.permissionStatus(for: matchPattern), .grantedExplicitly)
 
-        manager.setConfiguredSiteAccess(
+        inspection.actionPolicy.siteAccess.setConfiguredSiteAccess(
             .ask,
             extensionId: installed.id,
             profileId: profile.id,
@@ -465,7 +484,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
         )
 
         XCTAssertEqual(
-            manager.configuredSiteAccessLevel(
+            inspection.actionPolicy.siteAccess.configuredSiteAccessLevel(
                 for: matchPattern,
                 extensionId: installed.id,
                 profileId: profile.id
@@ -482,24 +501,26 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
         async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Default Current Site Access")
-        let manager = ExtensionManager(
+        let fixture = makeManager(
             context: container.mainContext,
             initialProfile: profile
         )
+        let manager = fixture.manager
+        let inspection = fixture.inspection
 
         let installed = try await installExtension(
             manager: manager,
             name: "DefaultCurrentSiteAccess"
         )
-        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
+        _ = try await inspection.installation.lifecycle.enable(installed.id)
         let context = try XCTUnwrap(
-            manager.getExtensionContext(for: installed.id, profileId: profile.id)
+            inspection.contextState.profiles.contexts(for: profile.id)[installed.id]
         )
         let accountURL = try XCTUnwrap(
             URL(string: "https://account.proton.me/u/0")
         )
 
-        manager.grantSiteAccess(
+        inspection.actionPolicy.siteAccess.grantSiteAccess(
             to: accountURL,
             in: context,
             extensionId: installed.id,
@@ -509,7 +530,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
 
         XCTAssertTrue(context.hasAccess(to: accountURL))
         XCTAssertTrue(
-            manager.siteAccessPolicy(
+            inspection.actionPolicy.siteAccess.siteAccessPolicy(
                 extensionId: installed.id,
                 profileId: profile.id
             ).siteRules.isEmpty
@@ -519,10 +540,12 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
     func testSpecificConfiguredRuleOverridesBroadConfiguredRule() async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Specific Site Access")
-        let manager = ExtensionManager(
+        let fixture = makeManager(
             context: container.mainContext,
             initialProfile: profile
         )
+        let manager = fixture.manager
+        let inspection = fixture.inspection
 
         let installed = try await installExtension(
             manager: manager,
@@ -532,9 +555,9 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
                 "https://accounts.example.com/*",
             ]
         )
-        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
+        _ = try await inspection.installation.lifecycle.enable(installed.id)
         let context = try XCTUnwrap(
-            manager.getExtensionContext(for: installed.id, profileId: profile.id)
+            inspection.contextState.profiles.contexts(for: profile.id)[installed.id]
         )
         let broadPattern = try XCTUnwrap(
             WKWebExtension.MatchPattern(string: "*://*/*")
@@ -547,13 +570,13 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
         )
         let otherURL = try XCTUnwrap(URL(string: "https://example.net/"))
 
-        manager.setConfiguredSiteAccess(
+        inspection.actionPolicy.siteAccess.setConfiguredSiteAccess(
             .allow,
             extensionId: installed.id,
             profileId: profile.id,
             matchPatternString: broadPattern.string
         )
-        manager.setConfiguredSiteAccess(
+        inspection.actionPolicy.siteAccess.setConfiguredSiteAccess(
             .deny,
             extensionId: installed.id,
             profileId: profile.id,
@@ -561,7 +584,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
         )
 
         XCTAssertEqual(
-            manager.configuredSiteAccessLevel(
+            inspection.actionPolicy.siteAccess.configuredSiteAccessLevel(
                 for: specificURL,
                 extensionId: installed.id,
                 profileId: profile.id
@@ -569,7 +592,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
             .deny
         )
         XCTAssertEqual(
-            manager.configuredSiteAccessLevel(
+            inspection.actionPolicy.siteAccess.configuredSiteAccessLevel(
                 for: specificPattern,
                 extensionId: installed.id,
                 profileId: profile.id
@@ -577,7 +600,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
             .deny
         )
         XCTAssertEqual(
-            manager.configuredSiteAccessLevel(
+            inspection.actionPolicy.siteAccess.configuredSiteAccessLevel(
                 for: broadPattern,
                 extensionId: installed.id,
                 profileId: profile.id
@@ -591,24 +614,26 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
     func testPrivateAccessRemainsExplicitAndHonorsManifest() async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Private Access")
-        let manager = ExtensionManager(
+        let fixture = makeManager(
             context: container.mainContext,
             initialProfile: profile
         )
+        let manager = fixture.manager
+        let inspection = fixture.inspection
 
         let installed = try await installExtension(
             manager: manager,
             name: "PrivateCapable",
             incognitoMode: "split"
         )
-        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
+        _ = try await inspection.installation.lifecycle.enable(installed.id)
         let context = try XCTUnwrap(
-            manager.getExtensionContext(for: installed.id, profileId: profile.id)
+            inspection.contextState.profiles.contexts(for: profile.id)[installed.id]
         )
 
         XCTAssertFalse(context.hasAccessToPrivateData)
 
-        manager.setPrivateBrowsingAccess(
+        inspection.actionPolicy.siteAccess.setPrivateBrowsingAccess(
             true,
             extensionId: installed.id,
             profileId: profile.id
@@ -620,15 +645,15 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
             name: "PrivateBlocked",
             incognitoMode: "not_allowed"
         )
-        _ = try await manager.installedExtensionLifecycle.enable(blocked.id)
-        manager.setPrivateBrowsingAccess(
+        _ = try await inspection.installation.lifecycle.enable(blocked.id)
+        inspection.actionPolicy.siteAccess.setPrivateBrowsingAccess(
             true,
             extensionId: blocked.id,
             profileId: profile.id
         )
 
         let blockedContext = try XCTUnwrap(
-            manager.getExtensionContext(for: blocked.id, profileId: profile.id)
+            inspection.contextState.profiles.contexts(for: profile.id)[blocked.id]
         )
         XCTAssertFalse(blockedContext.hasAccessToPrivateData)
     }
@@ -636,25 +661,27 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
     func testConfiguredPolicyOverridesLegacyPromptDecisionStore() async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Legacy Prompt Override")
-        let manager = ExtensionManager(
+        let fixture = makeManager(
             context: container.mainContext,
             initialProfile: profile
         )
+        let manager = fixture.manager
+        let inspection = fixture.inspection
 
         let installed = try await installExtension(
             manager: manager,
             name: "LegacyPromptOverride"
         )
-        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
+        _ = try await inspection.installation.lifecycle.enable(installed.id)
 
         let context = try XCTUnwrap(
-            manager.getExtensionContext(for: installed.id, profileId: profile.id)
+            inspection.contextState.profiles.contexts(for: profile.id)[installed.id]
         )
         let matchPattern = try XCTUnwrap(
             WKWebExtension.MatchPattern(string: "https://account.proton.me/*")
         )
 
-        manager.persistExtensionPermissionDecision(
+        inspection.actionPolicy.permissionDecisions.persistExtensionPermissionDecision(
             extensionId: installed.id,
             profileId: profile.id,
             targetKind: .matchPattern,
@@ -662,7 +689,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
             state: .denied,
             expiresAt: nil
         )
-        manager.setConfiguredSiteAccess(
+        inspection.actionPolicy.siteAccess.setConfiguredSiteAccess(
             .allow,
             extensionId: installed.id,
             profileId: profile.id,
@@ -676,9 +703,9 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
             manager.testHooks.permissionPromptDecision = nil
         }
 
-        let controller = manager.ensureExtensionController(for: profile.id)
+        let controller = inspection.controller.provisioning.ensureExtensionController(for: profile.id)
         let grantedPatterns = await withCheckedContinuation { continuation in
-            manager.controllerDelegateBridge.webExtensionController(
+            inspection.controller.delegateBridge.webExtensionController(
                 controller,
                 promptForPermissionMatchPatterns: [matchPattern],
                 in: nil,
@@ -696,18 +723,20 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
         async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Broad Host API Visibility")
-        let manager = ExtensionManager(
+        let fixture = makeManager(
             context: container.mainContext,
             initialProfile: profile
         )
+        let manager = fixture.manager
+        let inspection = fixture.inspection
 
         let installed = try await installBroadHostProbeExtension(
             manager: manager,
             name: "BroadHostProbe"
         )
-        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
+        _ = try await inspection.installation.lifecycle.enable(installed.id)
         let context = try XCTUnwrap(
-            manager.getExtensionContext(for: installed.id, profileId: profile.id)
+            inspection.contextState.profiles.contexts(for: profile.id)[installed.id]
         )
 
         XCTAssertFalse(context.hasRequestedOptionalAccessToAllHosts)
@@ -723,22 +752,24 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
         async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Configured Broad Host API Visibility")
-        let manager = ExtensionManager(
+        let fixture = makeManager(
             context: container.mainContext,
             initialProfile: profile
         )
+        let manager = fixture.manager
+        let inspection = fixture.inspection
 
         let installed = try await installBroadHostProbeExtension(
             manager: manager,
             name: "ConfiguredBroadHostProbe"
         )
-        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
-        manager.setDefaultSiteAccess(
+        _ = try await inspection.installation.lifecycle.enable(installed.id)
+        inspection.actionPolicy.siteAccess.setDefaultSiteAccess(
             .ask,
             extensionId: installed.id,
             profileId: profile.id
         )
-        manager.setConfiguredSiteAccess(
+        inspection.actionPolicy.siteAccess.setConfiguredSiteAccess(
             .allow,
             extensionId: installed.id,
             profileId: profile.id,
@@ -746,7 +777,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
         )
 
         let context = try XCTUnwrap(
-            manager.getExtensionContext(for: installed.id, profileId: profile.id)
+            inspection.contextState.profiles.contexts(for: profile.id)[installed.id]
         )
         XCTAssertTrue(context.hasRequestedOptionalAccessToAllHosts)
 
@@ -766,25 +797,27 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
     func testUnchangedPolicyReapplicationEmitsNoPermissionEvents() async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Idempotent Policy Application")
-        let manager = ExtensionManager(
+        let fixture = makeManager(
             context: container.mainContext,
             initialProfile: profile
         )
+        let manager = fixture.manager
+        let inspection = fixture.inspection
 
         let installed = try await installBroadHostProbeExtension(
             manager: manager,
             name: "IdempotentPolicyProbe"
         )
-        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
+        _ = try await inspection.installation.lifecycle.enable(installed.id)
         let context = try XCTUnwrap(
-            manager.getExtensionContext(for: installed.id, profileId: profile.id)
+            inspection.contextState.profiles.contexts(for: profile.id)[installed.id]
         )
         let initialGrant = expectation(
             forNotification: WKWebExtensionContext
                 .permissionMatchPatternsWereGrantedNotification,
             object: context
         )
-        manager.setDefaultSiteAccess(
+        inspection.actionPolicy.siteAccess.setDefaultSiteAccess(
             .allow,
             extensionId: installed.id,
             profileId: profile.id
@@ -827,7 +860,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
 
         // Context reconciliation may re-apply an unchanged policy repeatedly.
         for _ in 0..<3 {
-            manager.siteAccessPolicyCoordinator.applyConfiguredSiteAccessPolicy(
+            inspection.actionPolicy.siteAccess.applyConfiguredSiteAccessPolicy(
                 to: context,
                 extensionId: installed.id,
                 profileId: profile.id,
@@ -838,7 +871,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
         XCTAssertEqual(context.grantedPermissionMatchPatterns, grantedBefore)
 
         // A real configuration change must still write through.
-        manager.setConfiguredSiteAccess(
+        inspection.actionPolicy.siteAccess.setConfiguredSiteAccess(
             .deny,
             extensionId: installed.id,
             profileId: profile.id,
@@ -866,18 +899,20 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
         async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Broad Host Request Grant")
-        let manager = ExtensionManager(
+        let fixture = makeManager(
             context: container.mainContext,
             initialProfile: profile
         )
+        let manager = fixture.manager
+        let inspection = fixture.inspection
 
         let installed = try await installBroadHostProbeExtension(
             manager: manager,
             name: "BroadHostRequestProbe"
         )
-        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
+        _ = try await inspection.installation.lifecycle.enable(installed.id)
         let context = try XCTUnwrap(
-            manager.getExtensionContext(for: installed.id, profileId: profile.id)
+            inspection.contextState.profiles.contexts(for: profile.id)[installed.id]
         )
 
         var promptedTargets: [[String]] = []
@@ -903,7 +938,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
         )
         XCTAssertEqual(promptedTargets.count, 1)
 
-        let policy = manager.siteAccessPolicy(
+        let policy = inspection.actionPolicy.siteAccess.siteAccessPolicy(
             extensionId: installed.id,
             profileId: profile.id
         )
@@ -922,18 +957,20 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
         async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Broad Host Request Deny")
-        let manager = ExtensionManager(
+        let fixture = makeManager(
             context: container.mainContext,
             initialProfile: profile
         )
+        let manager = fixture.manager
+        let inspection = fixture.inspection
 
         let installed = try await installBroadHostProbeExtension(
             manager: manager,
             name: "BroadHostRequestDenyProbe"
         )
-        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
+        _ = try await inspection.installation.lifecycle.enable(installed.id)
         let context = try XCTUnwrap(
-            manager.getExtensionContext(for: installed.id, profileId: profile.id)
+            inspection.contextState.profiles.contexts(for: profile.id)[installed.id]
         )
 
         var promptCount = 0
@@ -953,7 +990,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
         XCTAssertFalse(try XCTUnwrap(firstResults["contains"]))
         XCTAssertEqual(promptCount, 1)
 
-        let policy = manager.siteAccessPolicy(
+        let policy = inspection.actionPolicy.siteAccess.siteAccessPolicy(
             extensionId: installed.id,
             profileId: profile.id
         )
@@ -988,10 +1025,12 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
     func testExternallyConnectableMatchesAreNotDeclaredSiteAccess() async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "External Connectable Messaging Only")
-        let manager = ExtensionManager(
+        let fixture = makeManager(
             context: container.mainContext,
             initialProfile: profile
         )
+        let manager = fixture.manager
+        let inspection = fixture.inspection
 
         let installed = try await installExtension(
             manager: manager,
@@ -1002,10 +1041,10 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
                 "https://pass.example.test/*",
             ]
         )
-        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
+        _ = try await inspection.installation.lifecycle.enable(installed.id)
 
         let context = try XCTUnwrap(
-            manager.getExtensionContext(for: installed.id, profileId: profile.id)
+            inspection.contextState.profiles.contexts(for: profile.id)[installed.id]
         )
         let accountPattern = try XCTUnwrap(
             WKWebExtension.MatchPattern(string: "https://account.example.test/*")
@@ -1013,7 +1052,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
         let passPattern = try XCTUnwrap(
             WKWebExtension.MatchPattern(string: "https://pass.example.test/*")
         )
-        let declaredPatterns = manager.siteAccessPolicyCoordinator
+        let declaredPatterns = inspection.actionPolicy.siteAccess
             .declaredSiteAccessMatchPatterns(
             for: context.webExtension,
             manifest: installed.manifest
@@ -1050,18 +1089,20 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
 
         let container = try makeTestContainer()
         let profile = Profile(name: "Installed Proton Site Access")
-        let manager = ExtensionManager(
+        let fixture = makeManager(
             context: container.mainContext,
             initialProfile: profile
         )
+        let manager = fixture.manager
+        let inspection = fixture.inspection
         let extensionId = "live-proton-pass-site-access"
 
-        manager.setDefaultSiteAccess(
+        inspection.actionPolicy.siteAccess.setDefaultSiteAccess(
             .allow,
             extensionId: extensionId,
             profileId: profile.id
         )
-        manager.applyConfiguredSiteAccessPolicy(
+        inspection.actionPolicy.siteAccess.applyConfiguredSiteAccessPolicy(
             to: extensionContext,
             extensionId: extensionId,
             profileId: profile.id,
@@ -1078,7 +1119,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
         let passPattern = try XCTUnwrap(
             WKWebExtension.MatchPattern(string: "https://pass.proton.me/*")
         )
-        let declaredPatterns = manager.siteAccessPolicyCoordinator
+        let declaredPatterns = inspection.actionPolicy.siteAccess
             .declaredSiteAccessMatchPatterns(
             for: webExtension,
             manifest: manifest
@@ -1115,6 +1156,22 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
             defer { lock.unlock() }
             storage.append(name)
         }
+    }
+
+    private func makeManager(
+        context: ModelContext,
+        initialProfile: Profile
+    ) -> (
+        manager: ExtensionManager,
+        inspection: ExtensionManagerTestInspection
+    ) {
+        let inspection = ExtensionManagerInspectionCapture()
+        let manager = ExtensionManager(
+            context: context,
+            initialProfile: initialProfile,
+            testInspectionDidAssemble: inspection.install
+        )
+        return (manager, inspection.inspection)
     }
 
     private func makeTestContainer() throws -> ModelContainer {
@@ -1189,7 +1246,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
                 options: [.atomic]
             )
 
-        return try await manager.extensionInstaller.install(
+        return try await manager.settingsCatalogBinding().install(
             from: directory,
             enableOnInstall: false
         )
@@ -1261,7 +1318,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
                 options: [.atomic]
             )
 
-        return try await manager.extensionInstaller.install(
+        return try await manager.settingsCatalogBinding().install(
             from: directory,
             enableOnInstall: false
         )

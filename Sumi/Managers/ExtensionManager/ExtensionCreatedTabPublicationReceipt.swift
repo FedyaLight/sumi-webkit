@@ -31,12 +31,10 @@ final class ExtensionCreatedTabPublicationReceipt {
     }
 
     @discardableResult
-    func commitOpen(runtime: ExtensionManagerRuntime) -> Bool {
+    func commitOpen() -> Bool {
         guard phase == .prepared,
-              validator.preparedEvidenceIsCurrent(
-                  evidence,
-                  runtime: runtime
-              ), evidence.tab.extensionPageRuntimeOwner
+              validator.preparedEvidenceIsCurrent(evidence),
+              evidence.tab.extensionPageRuntimeOwner
                 .commitWindowPrepublication(
                     evidence.stateToken,
                     willEmitOpen: true
@@ -70,7 +68,7 @@ final class ExtensionCreatedTabPublicationReceipt {
         phase = .committed
         retirement.emitOpen(evidence)
 
-        if validator.capturedOpenIsCurrent(evidence, runtime: runtime),
+        if validator.capturedOpenIsCurrent(evidence),
            evidence.tab.extensionPageRuntimeOwner
             .settleDidOpenTabNotification(
                 openClaim,
@@ -85,10 +83,7 @@ final class ExtensionCreatedTabPublicationReceipt {
             return true
         }
 
-        if validator.currentGenerationOpenIsExact(
-            evidence,
-            runtime: runtime
-        ) {
+        if validator.currentGenerationOpenIsExact(evidence) {
             finish(reason: "reentrantCurrentOpen")
             return true
         }

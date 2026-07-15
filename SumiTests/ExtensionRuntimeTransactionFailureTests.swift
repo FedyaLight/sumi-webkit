@@ -17,23 +17,23 @@ final class ExtensionRuntimeTransactionFailureTests:
         let fixture = try await makeLoadFixture(name: "DelegateReadiness")
         defer { fixture.cleanUp() }
         let controller = try XCTUnwrap(
-            fixture.manager.profileRuntime.controller(for: fixture.profile.id)
+            fixture.inspection.contextState.profiles.controller(for: fixture.profile.id)
         )
         let controllerBinding = try XCTUnwrap(
-            fixture.manager.profileRuntime.controllerBindingSnapshot(
+            fixture.inspection.contextState.profiles.controllerBindingSnapshot(
                 for: fixture.profile.id
             )
         )
 
         XCTAssertTrue(controller.extensionContexts.isEmpty)
         XCTAssertTrue(
-            fixture.manager.profileRuntime.contexts(
+            fixture.inspection.contextState.profiles.contexts(
                 for: fixture.profile.id
             ).isEmpty
         )
         XCTAssertIdentical(
             controller.delegate,
-            fixture.manager.controllerDelegateBridge
+            fixture.inspection.controller.delegateBridge
         )
 
         var reachedControllerLoadBoundary = false
@@ -44,13 +44,13 @@ final class ExtensionRuntimeTransactionFailureTests:
             XCTAssertTrue(controller.extensionContexts.isEmpty)
         }
 
-        _ = try await fixture.manager.extensionRuntimeLoader.loadEnabled(
+        _ = try await fixture.inspection.contextCoordination.loader.loadEnabled(
             from: fixture.entity
         )
 
         XCTAssertTrue(reachedControllerLoadBoundary)
         let context = try XCTUnwrap(
-            fixture.manager.profileRuntime.contexts(
+            fixture.inspection.contextState.profiles.contexts(
                 for: fixture.profile.id
             )[fixture.installed.id]
         )
@@ -60,12 +60,12 @@ final class ExtensionRuntimeTransactionFailureTests:
         XCTAssertIdentical(context.webExtensionController, controller)
         XCTAssertIdentical(
             controller.delegate,
-            fixture.manager.controllerDelegateBridge
+            fixture.inspection.controller.delegateBridge
         )
 
         controller.delegate = nil
         XCTAssertFalse(
-            fixture.manager.controllerDelegateBindingReadiness
+            fixture.inspection.controller.delegateReadiness
                 .controllerDidBecomeReady(controllerBinding)
         )
         XCTAssertNil(controller.delegate)
@@ -86,17 +86,17 @@ final class ExtensionRuntimeTransactionFailureTests:
             fixture.cleanUp()
         }
         let controller = try XCTUnwrap(
-            fixture.manager.profileRuntime.controller(for: fixture.profile.id)
+            fixture.inspection.contextState.profiles.controller(for: fixture.profile.id)
         )
         let controllerBinding = try XCTUnwrap(
-            fixture.manager.profileRuntime.controllerBindingSnapshot(
+            fixture.inspection.contextState.profiles.controllerBindingSnapshot(
                 for: fixture.profile.id
             )
         )
         controller.delegate = nil
         fixture.manager.testHooks.beforeControllerLoad = { extensionID, _ in
             let context = try XCTUnwrap(
-                fixture.manager.profileRuntime.contexts(
+                fixture.inspection.contextState.profiles.contexts(
                     for: fixture.profile.id
                 )[extensionID]
             )
@@ -105,7 +105,7 @@ final class ExtensionRuntimeTransactionFailureTests:
         }
 
         do {
-            _ = try await fixture.manager.extensionRuntimeLoader.loadEnabled(
+            _ = try await fixture.inspection.contextCoordination.loader.loadEnabled(
                 from: fixture.entity
             )
             XCTFail("A context already loaded by another controller must fail")
@@ -127,19 +127,19 @@ final class ExtensionRuntimeTransactionFailureTests:
             controller.extensionContexts.contains { $0 === context }
         )
         XCTAssertNil(
-            fixture.manager.profileRuntime.contexts(
+            fixture.inspection.contextState.profiles.contexts(
                 for: fixture.profile.id
             )[fixture.installed.id]
         )
         XCTAssertNil(controller.delegate)
 
         XCTAssertTrue(
-            fixture.manager.controllerDelegateBindingReadiness
+            fixture.inspection.controller.delegateReadiness
                 .controllerDidBecomeReady(controllerBinding)
         )
         XCTAssertIdentical(
             controller.delegate,
-            fixture.manager.controllerDelegateBridge
+            fixture.inspection.controller.delegateBridge
         )
     }
 
@@ -147,10 +147,12 @@ final class ExtensionRuntimeTransactionFailureTests:
         async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Policy Reentrancy")
-        let manager = makeManager(
+        let managerFixture = makeManager(
             context: container.mainContext,
             profile: profile
-        ).manager
+        )
+        let manager = managerFixture.manager
+        let inspection = managerFixture.inspection
         defer {
             manager.clearDebugState()
             _ = manager.shutDownExtensionRuntime(
@@ -180,38 +182,39 @@ final class ExtensionRuntimeTransactionFailureTests:
             profileId: profile.id,
             extensionId: extensionID
         )
-        let claim = manager.contextLoadRegistry.begin(for: key)
+        let claim = inspection.contextCoordination.loads.begin(for: key)
         let preparation = ExtensionContextPreparation(
-            siteAccessPolicyStore: manager.siteAccessPolicyStore,
-            installedExtensions: manager.installedExtensionCollection,
-            permissionDecisions: manager.permissionDecisionStore,
+            siteAccessPolicyStore: inspection.actionPolicy.store,
+            installedExtensions:
+                inspection.actionSurfaces.installedExtensions,
+            permissionDecisions: inspection.actionPolicy.permissionDecisions,
             siteAccessPolicyDidPersist: {
-                manager.contextLoadRegistry.invalidate(key)
+                inspection.contextCoordination.loads.invalidate(key)
             }
         )
         let transaction = ExtensionContextControllerTransaction(
-            authority: manager.loadedContextAuthority,
-            profileRuntime: manager.profileRuntime,
-            rollback: manager.runtimeRollback,
-            errorObservation: manager.contextErrorObservation,
-            runtimeMetrics: manager.runtimeMetrics,
-            diagnostics: manager.runtimeDiagnostics,
-            expectedControllerDelegate: manager.controllerDelegateBridge,
+            authority: inspection.contextState.loadedContexts,
+            profileRuntime: inspection.contextState.profiles,
+            rollback: inspection.retirement.rollback,
+            errorObservation: inspection.contextState.errors,
+            runtimeMetrics: inspection.runtimeAuthorities.metrics,
+            diagnostics: inspection.contextCoordination.diagnostics,
+            expectedControllerDelegate: inspection.controller.delegateBridge,
             controllerDelegateReadiness:
-                manager.controllerDelegateBindingReadiness,
-            debugBeforeControllerLoad: { nil }
+                inspection.controller.delegateReadiness
         )
+        transaction.installDebugBeforeControllerLoad { nil }
         let loader = ExtensionContextLoader(
-            authority: manager.loadedContextAuthority,
-            profileRuntime: manager.profileRuntime,
-            controllerProvisioning: manager.controllerProvisioningOwner,
+            authority: inspection.contextState.loadedContexts,
+            profileRuntime: inspection.contextState.profiles,
+            controllerProvisioning: inspection.controller.provisioning,
             waitForWebsiteDataMutationAdmission: { _ in true },
-            sourceCache: manager.webExtensionRuntimeSourceCache,
+            sourceCache: inspection.contextState.sourceCache,
             contextPreparation: preparation,
-            storagePlanner: manager.webExtensionStorageCleanupPlanner,
-            runtimeMetrics: manager.runtimeMetrics,
-            diagnostics: manager.runtimeDiagnostics,
-            expectedControllerDelegate: manager.controllerDelegateBridge,
+            storagePlanner: inspection.installation.storagePlanner,
+            runtimeMetrics: inspection.runtimeAuthorities.metrics,
+            diagnostics: inspection.contextCoordination.diagnostics,
+            expectedControllerDelegate: inspection.controller.delegateBridge,
             controllerTransaction: transaction
         )
 
@@ -235,7 +238,7 @@ final class ExtensionRuntimeTransactionFailureTests:
         }
 
         let controller = try XCTUnwrap(
-            manager.profileRuntime.controller(for: profile.id)
+            inspection.contextState.profiles.controller(for: profile.id)
         )
         let runtimeIdentifier = ExtensionContextPreparation.runtimeIdentifier(
             extensionID: extensionID,
@@ -244,12 +247,14 @@ final class ExtensionRuntimeTransactionFailureTests:
         )
         let storage = WebExtensionStorageCleanupStore(
             controllerStorageId: controller.configuration.identifier,
-            planner: manager.webExtensionStorageCleanupPlanner,
+            planner: inspection.installation.storagePlanner,
             storageDirectoryNameResolver: { _ in runtimeIdentifier }
         )
         XCTAssertFalse(storage.snapshot(for: extensionID).directoryExists)
         XCTAssertNil(
-            manager.profileRuntime.contexts(for: profile.id)[extensionID]
+            inspection.contextState.profiles.contexts(for: profile.id)[
+                extensionID
+            ]
         )
     }
 
@@ -260,13 +265,13 @@ final class ExtensionRuntimeTransactionFailureTests:
         var replacement: WKWebExtensionContext?
         fixture.manager.testHooks.beforeControllerLoad = { extensionID, _ in
             let current = try XCTUnwrap(
-                fixture.manager.profileRuntime.contexts(
+                fixture.inspection.contextState.profiles.contexts(
                     for: fixture.profile.id
                 )[extensionID]
             )
             let context = WKWebExtensionContext(for: current.webExtension)
             replacement = context
-            _ = fixture.manager.setExtensionContext(
+            _ = fixture.inspection.contextState.profiles.setContext(
                 context,
                 extensionId: extensionID,
                 profileId: fixture.profile.id
@@ -275,7 +280,7 @@ final class ExtensionRuntimeTransactionFailureTests:
         }
 
         let failure = try await captureTransactionFailure {
-            _ = try await fixture.manager.extensionRuntimeLoader.loadEnabled(
+            _ = try await fixture.inspection.contextCoordination.loader.loadEnabled(
                 from: fixture.entity
             )
         }
@@ -285,7 +290,7 @@ final class ExtensionRuntimeTransactionFailureTests:
             .preserveForReplacement
         )
         XCTAssertIdentical(
-            fixture.manager.profileRuntime.contexts(for: fixture.profile.id)[
+            fixture.inspection.contextState.profiles.contexts(for: fixture.profile.id)[
                 fixture.installed.id
             ],
             replacement
@@ -297,17 +302,17 @@ final class ExtensionRuntimeTransactionFailureTests:
         let fixture = try await makeLoadFixture(name: "SiblingAuthority")
         defer { fixture.cleanUp() }
         let siblingProfileID = UUID()
-        _ = fixture.manager.ensureExtensionController(for: siblingProfileID)
+        _ = fixture.inspection.controller.provisioning.ensureExtensionController(for: siblingProfileID)
         var sibling: WKWebExtensionContext?
         fixture.manager.testHooks.beforeControllerLoad = { extensionID, _ in
             let current = try XCTUnwrap(
-                fixture.manager.profileRuntime.contexts(
+                fixture.inspection.contextState.profiles.contexts(
                     for: fixture.profile.id
                 )[extensionID]
             )
             let context = WKWebExtensionContext(for: current.webExtension)
             sibling = context
-            _ = fixture.manager.setExtensionContext(
+            _ = fixture.inspection.contextState.profiles.setContext(
                 context,
                 extensionId: extensionID,
                 profileId: siblingProfileID
@@ -316,7 +321,7 @@ final class ExtensionRuntimeTransactionFailureTests:
         }
 
         let failure = try await captureTransactionFailure {
-            _ = try await fixture.manager.extensionRuntimeLoader.loadEnabled(
+            _ = try await fixture.inspection.contextCoordination.loader.loadEnabled(
                 from: fixture.entity
             )
         }
@@ -326,7 +331,7 @@ final class ExtensionRuntimeTransactionFailureTests:
             .preserveForActiveBinding
         )
         XCTAssertIdentical(
-            fixture.manager.profileRuntime.contexts(for: siblingProfileID)[
+            fixture.inspection.contextState.profiles.contexts(for: siblingProfileID)[
                 fixture.installed.id
             ],
             sibling
@@ -340,7 +345,7 @@ final class ExtensionRuntimeTransactionFailureTests:
         var competingLease: ExtensionRuntimeMutationLease?
         fixture.manager.testHooks.beforeControllerLoad = { extensionID, _ in
             competingLease = try XCTUnwrap(
-                fixture.manager.runtimeMutationRegistry.begin(
+                fixture.inspection.contextCoordination.mutations.begin(
                     extensionID: extensionID,
                     operation: .install
                 )
@@ -349,7 +354,7 @@ final class ExtensionRuntimeTransactionFailureTests:
         }
 
         let failure = try await captureTransactionFailure {
-            _ = try await fixture.manager.extensionRuntimeLoader.loadEnabled(
+            _ = try await fixture.inspection.contextCoordination.loader.loadEnabled(
                 from: fixture.entity
             )
         }
@@ -359,7 +364,7 @@ final class ExtensionRuntimeTransactionFailureTests:
             .preserveForCompetingTransaction
         )
         XCTAssertTrue(
-            fixture.manager.runtimeMutationRegistry.finish(
+            fixture.inspection.contextCoordination.mutations.finish(
                 try XCTUnwrap(competingLease)
             )
         )
@@ -369,24 +374,31 @@ final class ExtensionRuntimeTransactionFailureTests:
     private func makeLoadFixture(name: String) async throws -> LoadFixture {
         let container = try makeTestContainer()
         let profile = Profile(name: name)
-        let manager = makeManager(
+        let managerFixture = makeManager(
             context: container.mainContext,
             profile: profile
-        ).manager
+        )
+        let manager = managerFixture.manager
+        let inspection = managerFixture.inspection
         let installed = try await installUnpackedExtension(
             manager: manager,
             scratchDirectory: try makeScratchDirectory(),
             name: name
         )
         let entity = try XCTUnwrap(
-            try manager.extensionEntity(for: installed.id)
+            try inspection.installation.metadata.extensionEntity(
+                for: installed.id
+            )
         )
         entity.isEnabled = true
         try container.mainContext.save()
-        _ = manager.ensureExtensionController(for: profile.id)
+        _ = inspection.controller.provisioning.ensureExtensionController(
+            for: profile.id
+        )
         return LoadFixture(
             container: container,
             manager: manager,
+            inspection: inspection,
             profile: profile,
             installed: installed,
             entity: entity
@@ -414,6 +426,7 @@ final class ExtensionRuntimeTransactionFailureTests:
 private struct LoadFixture {
     let container: ModelContainer
     let manager: ExtensionManager
+    let inspection: ExtensionManagerTestInspection
     let profile: Profile
     let installed: InstalledExtension
     let entity: ExtensionEntity

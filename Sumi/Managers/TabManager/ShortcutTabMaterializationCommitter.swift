@@ -31,7 +31,10 @@ final class ShortcutTabMaterializationCommitter {
         presentationPage: LiveShortcutPresentationPageReceipt
     ) -> Tab? {
         if let existing = registry.tab(for: pin.id, in: windowID) {
-            guard bindings.refreshInstances(for: pin),
+            guard bindings.refreshInstances(
+                for: pin,
+                presentationSpaceID: currentSpaceID
+            ),
                   registry.entry(containing: existing)?.presentationPage
                     == presentationPage else { return nil }
             return existing

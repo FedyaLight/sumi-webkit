@@ -280,8 +280,7 @@ final class ExtensionActionPopupSessionLedgerTests: XCTestCase {
             logSession: { _, _, _ in }
         )
         let focusRestorer = ExtensionActionPopupFocusRestorer(
-            windows: { nil },
-            liveWebView: { _ in nil }
+            browser: EmptyActionPopupBrowserProjection()
         )
         return Lifecycle(
             ledger: ledger,
@@ -319,4 +318,29 @@ final class ExtensionActionPopupSessionLedgerTests: XCTestCase {
             popoverWillClose: { _, _ in }
         )
     }
+}
+
+@available(macOS 15.5, *)
+@MainActor
+private final class EmptyActionPopupBrowserProjection:
+    ExtensionActionPopupBrowserProjection {
+    func popupWindowState(id: UUID) -> BrowserWindowState? { nil }
+    func popupActiveWindow() -> BrowserWindowState? { nil }
+    func popupWindow(containing tab: Tab) -> BrowserWindowState? { nil }
+    func popupAppKitWindow(for window: BrowserWindowState) -> NSWindow? { nil }
+    func popupTab(id: UUID, in window: BrowserWindowState) -> Tab? { nil }
+    func popupCurrentTab(in window: BrowserWindowState) -> Tab? { nil }
+    func popupProfile(id: UUID) -> Profile? { nil }
+    func popupProfileID(for tab: Tab) -> UUID? { nil }
+    func popupWindow(
+        _ window: BrowserWindowState,
+        matches profileID: UUID
+    ) -> Bool { false }
+    func popupLiveWebView(for tab: Tab) -> WKWebView? { nil }
+    func popupFallbackAnchorView(windowID: UUID) -> NSView? { nil }
+    func popupAppearance(
+        anchorWindow: NSWindow,
+        fallback: NSAppearance
+    ) -> NSAppearance? { nil }
+    func popupTabIsPublished(_ tab: Tab) -> Bool { false }
 }

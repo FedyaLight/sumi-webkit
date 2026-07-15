@@ -91,8 +91,8 @@ enum SafariExtensionRuntimeDiagnosticsBuilder {
         installedExtensions: [InstalledExtension] = [],
         contentBlockerRecords: [InstalledSafariContentBlockerRecord] = [],
         attachedSafariContentRuleListIdentifiers: [String] = [],
-        extensionManager: ExtensionManager? = nil,
         extensionsModuleEnabled: Bool = true,
+        runtime: SafariCompatibilityReportRuntime? = nil,
         adapterRegistry: SumiNativeMessagingAdapterRegistry = .production()
     ) -> SafariExtensionRuntimeDiagnosticReport {
         let compatibility = SafariExtensionCompatibilityReportBuilder.build(
@@ -100,8 +100,8 @@ enum SafariExtensionRuntimeDiagnosticsBuilder {
             discovered: discovered,
             importStore: importStore,
             installedExtensions: installedExtensions,
-            extensionManager: extensionManager,
-            extensionsModuleEnabled: extensionsModuleEnabled
+            extensionsModuleEnabled: extensionsModuleEnabled,
+            runtime: runtime
         )
         let compatibilityByKey = Dictionary(
             uniqueKeysWithValues: compatibility.entries.map { ($0.targetKey, $0) }
@@ -114,7 +114,7 @@ enum SafariExtensionRuntimeDiagnosticsBuilder {
                 $0.id == compatibilityEntry?.installedExtensionId
             }
             let context = compatibilityEntry?.installedExtensionId.flatMap {
-                extensionManager?.getExtensionContext(for: $0)
+                (runtime ?? .inactive).context($0)
             }
 
             let runtimeStatus = buildRuntimeStatus(

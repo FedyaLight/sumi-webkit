@@ -45,10 +45,14 @@ final class ShortcutTabBindingSynchronizer {
     @discardableResult
     func refreshInstances(
         for pin: ShortcutPin,
+        presentationSpaceID: UUID? = nil,
         admission: LiveShortcutPresentationRefreshAdmission? = nil
     ) -> Bool {
         guard let admission = admission
-            ?? presentationRefreshes.admission(for: pin) else {
+            ?? presentationRefreshes.admission(
+                for: pin,
+                presentationSpaceID: presentationSpaceID
+            ) else {
             return false
         }
         return runtimeMutations.refresh(
@@ -82,5 +86,4 @@ final class ShortcutTabBindingSynchronizer {
             currentSpaceID: currentSpaceId
         )
     }
-
 }

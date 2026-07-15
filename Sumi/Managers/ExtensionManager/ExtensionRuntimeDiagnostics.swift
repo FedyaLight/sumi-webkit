@@ -145,21 +145,4 @@ final class ExtensionRuntimeDiagnostics {
             )
         #endif
     }
-
-    func tabDescription(_ tab: Tab, manager: ExtensionManager?) -> String {
-        guard let manager else {
-            return "tab=\(tab.id.uuidString.prefix(8))"
-        }
-
-        let webViews = manager.browserContentInventory.liveWebViews(
-            for: tab,
-            in: manager.runtime
-        )
-            .map { Self.objectDescription($0) }
-            .joined(separator: ",")
-        let resolvedURL = manager.exactExtensionTabWebViews
-            .liveWebView(for: tab)?.url?.absoluteString
-            ?? tab.url.absoluteString
-        return "tab=\(tab.id.uuidString.prefix(8)) url=\(resolvedURL) webViews=[\(webViews)]"
-    }
 }

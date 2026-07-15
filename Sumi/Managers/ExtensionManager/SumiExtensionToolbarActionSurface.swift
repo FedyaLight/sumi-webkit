@@ -8,7 +8,6 @@ final class SumiExtensionToolbarActionSurface {
     private let lifetime: SumiExtensionManagerLifetime
     private let surfaceStore: BrowserExtensionSurfaceStore
     private let siteAccess: SumiExtensionToolbarSiteAccessOwner
-    private let actionPresentation: ExtensionActionPresentationQuery
     private var pendingActionAnchors: [String: [WeakAnchor]] = [:]
 
     init(
@@ -18,12 +17,13 @@ final class SumiExtensionToolbarActionSurface {
         self.lifetime = lifetime
         self.surfaceStore = surfaceStore
         siteAccess = SumiExtensionToolbarSiteAccessOwner(
-            managerIfLoadedAndEnabled: { [weak lifetime] in lifetime?.loadedManagerIfEnabled() },
-            managerIfEnabled: { [weak lifetime] in lifetime?.managerIfEnabled() },
+            runtimeIfLoadedAndEnabled: { [weak lifetime] in
+                lifetime?.loadedToolbarRuntimeIfEnabled()
+            },
+            runtimeIfEnabled: { [weak lifetime] in
+                lifetime?.toolbarRuntimeIfEnabled()
+            },
             fallbackProfileId: { [weak lifetime] in lifetime?.currentProfileID }
-        )
-        actionPresentation = ExtensionActionPresentationQuery(
-            manager: { [weak lifetime] in lifetime?.loadedManagerIfEnabled() }
         )
     }
 
@@ -32,7 +32,7 @@ final class SumiExtensionToolbarActionSurface {
         guard lifetime.isEnabled else { return false }
         if lifetime.hasLoadedRuntime { return true }
         guard lifetime.hasEnabledPersistedExtensions() else { return false }
-        return managerIfEnabled() != nil
+        return runtimeIfEnabled() != nil
     }
 
     func orderedPinnedToolbarSlots(
@@ -173,7 +173,9 @@ final class SumiExtensionToolbarActionSurface {
     }
 
     func getExtensionContext(for extensionID: String) -> WKWebExtensionContext? {
-        lifetime.loadedManagerIfEnabled()?.getExtensionContext(for: extensionID)
+        lifetime.loadedToolbarRuntimeIfEnabled()?.options.context(
+            extensionID: extensionID
+        )
     }
 
     func openOptionsPage(extensionID: String, profileID: UUID? = nil) async {
@@ -203,18 +205,12 @@ final class SumiExtensionToolbarActionSurface {
         service: ExtensionOptionsWindowService,
         invocation: ExtensionOptionsWindowCallbackComposition.Invocation
     )? {
-        guard let manager = managerIfEnabled() else { return nil }
-        let resolvedProfileID =
-            profileID
-            ?? manager.profileRuntime.currentProfileId
-            ?? lifetime.currentProfileID
-        guard let resolvedProfileID else { return nil }
-
-        let context: WKWebExtensionContext?
+        guard let runtime = runtimeIfEnabled() else { return nil }
         do {
-            context = try await manager.ensureExtensionLoaded(
-                extensionId: extensionID,
-                profileId: resolvedProfileID
+            return try await runtime.options.request(
+                extensionID: extensionID,
+                profileID: profileID,
+                fallbackProfileID: lifetime.currentProfileID
             )
         } catch {
             RuntimeDiagnostics.debug(category: "Extensions") {
@@ -222,20 +218,6 @@ final class SumiExtensionToolbarActionSurface {
             }
             return nil
         }
-        guard let context else { return nil }
-        guard let controller = manager.profileRuntime.controller(
-                  for: resolvedProfileID
-              ),
-              let evidence = manager.controllerCallbackAdmission.capture(
-                  context: context,
-                  controller: controller
-              ),
-              let invocation = ExtensionOptionsWindowCallbackComposition
-                .invocation(from: manager, evidence: evidence)
-        else {
-            return nil
-        }
-        return (manager.optionsWindows, invocation)
     }
 
     func openActionPopup(
@@ -246,24 +228,24 @@ final class SumiExtensionToolbarActionSurface {
         guard lifetime.isEnabled else {
             return .blocked(.moduleDisabled, message: "The Extensions module is disabled.")
         }
-        guard let manager = managerIfEnabled() else {
+        guard let runtime = runtimeIfEnabled() else {
             return .blocked(
                 .runtimeUnavailable,
                 message: "Sumi could not create the local extension manager for this action popup."
             )
         }
-        return await manager.extensionActionInvocation.openPopup(
+        return await runtime.popup.open(
             extensionID: extensionID,
             currentTab: currentTab,
-            popupTargetRequest: .explicitAnchor(anchorSessionToken)
+            anchorSessionToken: anchorSessionToken
         )
     }
 
     func setActionAnchorIfLoaded(for extensionID: String, anchorView: NSView) {
         storePendingActionAnchor(for: extensionID, anchorView: anchorView)
-        lifetime.loadedManagerIfEnabled()?.actionAnchorStore.setAnchor(
-            for: extensionID,
-            anchorView: anchorView
+        lifetime.loadedToolbarRuntimeIfEnabled()?.popup.setAnchor(
+            extensionID: extensionID,
+            view: anchorView
         )
     }
 
@@ -274,16 +256,16 @@ final class SumiExtensionToolbarActionSurface {
         profileID: UUID?,
         tab: Tab? = nil
     ) -> UUID? {
-        managerIfEnabled()?.actionPopupAnchorResolver.captureActionPopupAnchor(
-            extensionId: extensionID,
-            windowId: windowID,
-            profileId: profileID,
+        runtimeIfEnabled()?.popup.captureAnchor(
+            extensionID: extensionID,
+            windowID: windowID,
+            profileID: profileID,
             tab: tab
         )
     }
 
     func stableAdapter(for tab: Tab) -> ExtensionTabAdapter? {
-        lifetime.loadedManagerIfEnabled()?.adapterCatalog.stableAdapter(for: tab)
+        lifetime.loadedToolbarRuntimeIfEnabled()?.popup.stableAdapter(for: tab)
     }
 
     func actionPresentationTarget(
@@ -291,7 +273,7 @@ final class SumiExtensionToolbarActionSurface {
         tab: Tab,
         window: BrowserWindowState
     ) -> ExtensionActionPresentationTarget? {
-        actionPresentation.target(
+        lifetime.loadedToolbarRuntimeIfEnabled()?.actionPresentation.target(
             extensionID: extensionID,
             tab: tab,
             window: window
@@ -301,19 +283,20 @@ final class SumiExtensionToolbarActionSurface {
     func actionPresentationSnapshot(
         for target: ExtensionActionPresentationTarget
     ) -> BrowserExtensionActionButtonSnapshot? {
-        actionPresentation.snapshot(for: target)
+        lifetime.loadedToolbarRuntimeIfEnabled()?
+            .actionPresentation.snapshot(for: target)
     }
 
     func closeAllOptionsWindowsIfLoaded() {
-        lifetime.residentManager()?.optionsWindows.closeAllWindows()
+        lifetime.residentToolbarRuntime()?.options.closeAllWindows()
     }
 
     func clearPendingActionAnchors() { pendingActionAnchors.removeAll() }
 
-    private func managerIfEnabled() -> ExtensionManager? {
-        guard let manager = lifetime.managerIfEnabled() else { return nil }
-        transferPendingActionAnchors(to: manager)
-        return manager
+    private func runtimeIfEnabled() -> ExtensionToolbarRuntime? {
+        guard let runtime = lifetime.toolbarRuntimeIfEnabled() else { return nil }
+        transferPendingActionAnchors(to: runtime.popup)
+        return runtime
     }
 
     private func storePendingActionAnchor(for extensionID: String, anchorView: NSView) {
@@ -323,11 +306,13 @@ final class SumiExtensionToolbarActionSurface {
         pendingActionAnchors[extensionID] = Array(anchors.suffix(8))
     }
 
-    private func transferPendingActionAnchors(to manager: ExtensionManager) {
+    private func transferPendingActionAnchors(
+        to popup: ExtensionToolbarPopupRuntime
+    ) {
         for (extensionID, anchors) in pendingActionAnchors {
             for anchor in anchors {
                 guard let view = anchor.view else { continue }
-                manager.actionAnchorStore.setAnchor(for: extensionID, anchorView: view)
+                popup.setAnchor(extensionID: extensionID, view: view)
             }
         }
     }

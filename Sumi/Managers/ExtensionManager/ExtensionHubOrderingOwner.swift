@@ -115,34 +115,3 @@ final class ExtensionHubOrderingOwner {
         return result
     }
 }
-
-// MARK: - ExtensionManager facade
-
-@available(macOS 15.5, *)
-@MainActor
-extension ExtensionManager {
-    func orderedUnpinnedExtensionIDs(
-        candidateIDs: [String],
-        profileId: UUID?
-    ) -> [String] {
-        hubOrderingOwner.orderedUnpinnedExtensionIDs(
-            candidateIDs: candidateIDs,
-            profileId: profileId
-        )
-    }
-
-    @discardableResult
-    func moveUnpinnedExtension(
-        id: String,
-        to targetIndex: Int,
-        within currentOrder: [String],
-        profileId: UUID?
-    ) -> Bool {
-        hubOrderingOwner.moveUnpinnedExtension(
-            id: id,
-            to: targetIndex,
-            within: currentOrder,
-            profileId: profileId
-        )
-    }
-}

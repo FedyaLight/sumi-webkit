@@ -29,9 +29,9 @@ final class ExtensionNativeMessagingConnectCallbackAdmissionTests:
         XCTAssertNil(result.error)
         XCTAssertEqual(result.completionCalls, 1)
         XCTAssertEqual(adapter.connectRequestCount, 1)
-        XCTAssertEqual(harness.manager.nativeMessagingPortRegistry.count, 1)
+        XCTAssertEqual(harness.inspection.nativeMessaging.ports.count, 1)
         XCTAssertNotNil(
-            harness.manager.nativeMessagingPortRegistry.registeredHandler(for: port)
+            harness.inspection.nativeMessaging.ports.registeredHandler(for: port)
         )
         XCTAssertFalse(port.isDisconnected)
     }
@@ -54,7 +54,7 @@ final class ExtensionNativeMessagingConnectCallbackAdmissionTests:
             harness: harness,
             port: port,
             beforeSettlement: { _ in
-                harness.manager.profileRuntime.setController(
+                harness.inspection.contextState.profiles.setController(
                     foreignController,
                     for: harness.profileID
                 )
@@ -64,7 +64,7 @@ final class ExtensionNativeMessagingConnectCallbackAdmissionTests:
         assertIsStaleCallbackError(result.error)
         XCTAssertEqual(result.completionCalls, 1)
         XCTAssertEqual(adapter.connectRequestCount, 0)
-        XCTAssertEqual(harness.manager.nativeMessagingPortRegistry.count, 0)
+        XCTAssertEqual(harness.inspection.nativeMessaging.ports.count, 0)
         XCTAssertTrue(port.isDisconnected)
     }
 
@@ -86,7 +86,7 @@ final class ExtensionNativeMessagingConnectCallbackAdmissionTests:
             harness: harness,
             port: port,
             beforeSettlement: { _ in
-                _ = harness.manager.profileRuntime.setContext(
+                _ = harness.inspection.contextState.profiles.setContext(
                     replacement,
                     extensionId: harness.extensionID,
                     profileId: harness.profileID
@@ -97,9 +97,9 @@ final class ExtensionNativeMessagingConnectCallbackAdmissionTests:
         assertIsStaleCallbackError(result.error)
         XCTAssertEqual(result.completionCalls, 1)
         XCTAssertEqual(adapter.connectRequestCount, 0)
-        XCTAssertEqual(harness.manager.nativeMessagingPortRegistry.count, 0)
+        XCTAssertEqual(harness.inspection.nativeMessaging.ports.count, 0)
         XCTAssertNil(
-            harness.manager.nativeMessagingPortRegistry.registeredHandler(for: port)
+            harness.inspection.nativeMessaging.ports.registeredHandler(for: port)
         )
         XCTAssertTrue(port.isDisconnected)
     }
@@ -121,7 +121,7 @@ final class ExtensionNativeMessagingConnectCallbackAdmissionTests:
         port.onMessageHandlerWired = {
             guard didFire == false else { return }
             didFire = true
-            _ = harness.manager.profileRuntime.setContext(
+            _ = harness.inspection.contextState.profiles.setContext(
                 harness.context,
                 extensionId: harness.extensionID,
                 profileId: harness.profileID
@@ -134,7 +134,7 @@ final class ExtensionNativeMessagingConnectCallbackAdmissionTests:
         assertIsStaleCallbackError(result.error)
         XCTAssertEqual(result.completionCalls, 1)
         XCTAssertEqual(adapter.connectRequestCount, 0)
-        XCTAssertEqual(harness.manager.nativeMessagingPortRegistry.count, 0)
+        XCTAssertEqual(harness.inspection.nativeMessaging.ports.count, 0)
         XCTAssertTrue(port.isDisconnected)
     }
 
@@ -153,7 +153,7 @@ final class ExtensionNativeMessagingConnectCallbackAdmissionTests:
         let firstResult = try await driveConnect(harness: harness, port: port)
         XCTAssertNil(firstResult.error)
         let firstSession = try XCTUnwrap(
-            harness.manager.nativeMessagingPortRegistry.registeredHandler(for: port)
+            harness.inspection.nativeMessaging.ports.registeredHandler(for: port)
         )
 
         // A duplicate callback for the same physical port must fail before a
@@ -164,10 +164,10 @@ final class ExtensionNativeMessagingConnectCallbackAdmissionTests:
         XCTAssertEqual(adapter.connectRequestCount, 1)
 
         XCTAssertIdentical(
-            harness.manager.nativeMessagingPortRegistry.registeredHandler(for: port),
+            harness.inspection.nativeMessaging.ports.registeredHandler(for: port),
             firstSession
         )
-        XCTAssertEqual(harness.manager.nativeMessagingPortRegistry.count, 1)
+        XCTAssertEqual(harness.inspection.nativeMessaging.ports.count, 1)
         XCTAssertFalse(port.isDisconnected)
     }
 
@@ -175,7 +175,7 @@ final class ExtensionNativeMessagingConnectCallbackAdmissionTests:
 
     func testPortKeyReuseCannotBeMutatedByStaleClaim() async throws {
         let harness = try await makeHarness(name: "ConnectPortKeyReuse")
-        let registry = harness.manager.nativeMessagingPortRegistry
+        let registry = harness.inspection.nativeMessaging.ports
         let port = MockNativeMessagingPort()
         let firstSession = makeBarePortSession(port: port)
         let secondSession = makeBarePortSession(port: port)

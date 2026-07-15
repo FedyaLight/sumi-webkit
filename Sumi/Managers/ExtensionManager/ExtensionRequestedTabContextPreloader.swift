@@ -7,20 +7,23 @@ struct ExtensionRequestedTabContextPreloader {
     let loadResolver: ExtensionRequestedTabLoadResolver
     let placement: ExtensionRequestedTabTargetResolver
     private let profileRuntime: ExtensionProfileRuntime
-    private let runtime: @MainActor () -> ExtensionManagerRuntime
+    private let windowProfileID: @MainActor (BrowserWindowState) -> UUID?
+    private let currentProfileID: @MainActor () -> UUID?
     private let contextLoading: any ExtensionContentScriptContextLoading
 
     init(
         loadResolver: ExtensionRequestedTabLoadResolver,
         placement: ExtensionRequestedTabTargetResolver,
         profileRuntime: ExtensionProfileRuntime,
-        runtime: @escaping @MainActor () -> ExtensionManagerRuntime,
+        windowProfileID: @escaping @MainActor (BrowserWindowState) -> UUID?,
+        currentProfileID: @escaping @MainActor () -> UUID?,
         contextLoading: any ExtensionContentScriptContextLoading
     ) {
         self.loadResolver = loadResolver
         self.placement = placement
         self.profileRuntime = profileRuntime
-        self.runtime = runtime
+        self.windowProfileID = windowProfileID
+        self.currentProfileID = currentProfileID
         self.contextLoading = contextLoading
     }
 
@@ -68,19 +71,10 @@ struct ExtensionRequestedTabContextPreloader {
         controller: WKWebExtensionController
     ) async -> UUID? {
         guard load.requiresContentScriptPreload else { return nil }
-        let currentRuntime = runtime()
         let profileId = targetSpace?.profileId
-            ?? targetWindow.flatMap {
-                profileRuntime.resolvedProfileId(
-                    for: $0,
-                    runtime: currentRuntime
-                )
-            }
+            ?? targetWindow.flatMap(windowProfileID)
             ?? profileRuntime.profileId(for: controller)
-            ?? profileRuntime.resolvedProfileId(
-                explicitProfileId: nil,
-                runtime: currentRuntime
-            )
+            ?? currentProfileID()
         guard let profileId else {
             return nil
         }

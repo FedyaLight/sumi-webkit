@@ -69,22 +69,16 @@ struct ExtensionRuntimeTabRebuildPlan {
     }
 
     func execute(
-        canonicalTabs: (any ExtensionTabQuery)?,
-        runtime: ExtensionManagerRuntime,
+        browserAvailable: @MainActor () -> Bool,
+        canonicalTab: @MainActor (UUID) -> Tab?,
+        rebuildLiveWebViews: @MainActor (Tab)
+            -> ExtensionTabWebViewRebuildSubmissionOutcome,
         trace: (Tab, Outcome) -> Void
     ) -> [Execution] {
         candidates.map { candidate in
             let tab = candidate.tab
             let identity = ObjectIdentifier(tab)
-            guard canonicalTabs?.extensionTab(for: tab.id) === tab else {
-                trace(tab, .staleTab)
-                return Execution(
-                    tabID: tab.id,
-                    tabIdentity: identity,
-                    outcome: .staleTab
-                )
-            }
-            guard runtime.browserRuntimeAvailable() else {
+            guard browserAvailable() else {
                 trace(tab, .browserUnavailable)
                 return Execution(
                     tabID: tab.id,
@@ -92,14 +86,21 @@ struct ExtensionRuntimeTabRebuildPlan {
                     outcome: .browserUnavailable
                 )
             }
-
+            guard canonicalTab(tab.id) === tab else {
+                trace(tab, .staleTab)
+                return Execution(
+                    tabID: tab.id,
+                    tabIdentity: identity,
+                    outcome: .staleTab
+                )
+            }
             tab.webExtensionContextOverride = nil
             tab.webViewConfigurationOverride = nil
             tab.extensionPageRuntimeOwner
                 .resetDocumentBindingForContentScriptRebind()
             tab.extensionPageRuntimeOwner.clearOpenNotificationGeneration()
 
-            guard canonicalTabs?.extensionTab(for: tab.id) === tab else {
+            guard canonicalTab(tab.id) === tab else {
                 trace(tab, .staleTab)
                 return Execution(
                     tabID: tab.id,
@@ -108,7 +109,7 @@ struct ExtensionRuntimeTabRebuildPlan {
                 )
             }
 
-            let outcome = Outcome(runtime.rebuildLiveWebViews(tab))
+            let outcome = Outcome(rebuildLiveWebViews(tab))
             trace(tab, outcome)
             return Execution(
                 tabID: tab.id,

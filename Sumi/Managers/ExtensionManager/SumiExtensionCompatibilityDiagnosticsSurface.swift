@@ -20,14 +20,13 @@ final class SumiExtensionCompatibilityDiagnosticsSurface {
 
     func compatibilityReport() -> SafariExtensionCompatibilityReport {
         let discovered = scanAndRefreshCandidates()
-        let manager = lifetime.loadedManagerIfEnabled()
+        let runtime = lifetime.loadedCompatibilityDiagnosticsIfEnabled()
         let report = SafariExtensionCompatibilityReportBuilder.build(
             discovered: discovered,
             importStore: settingsCatalog.importRecordsForDiagnostics(),
-            installedExtensions: manager?.installedExtensionCollection.records ?? [],
-            extensionManager: manager,
+            installedExtensions: runtime?.installedExtensions ?? [],
             extensionsModuleEnabled: lifetime.isEnabled,
-            runtime: .make(extensionManager: manager)
+            runtime: runtime?.reportRuntime
         )
         SafariExtensionCompatibilityReportBuilder.logIfDiagnosticsEnabled(report)
         return report
@@ -35,13 +34,13 @@ final class SumiExtensionCompatibilityDiagnosticsSurface {
 
     func acceptanceMatrix() -> SafariExtensionAcceptanceMatrix {
         let discovered = scanAndRefreshCandidates()
-        let manager = lifetime.loadedManagerIfEnabled()
+        let runtime = lifetime.loadedCompatibilityDiagnosticsIfEnabled()
         let matrix = SafariExtensionAcceptanceMatrixBuilder.build(
             discovered: discovered,
             importStore: settingsCatalog.importRecordsForDiagnostics(),
-            installedExtensions: manager?.installedExtensionCollection.records ?? [],
-            extensionManager: manager,
-            extensionsModuleEnabled: lifetime.isEnabled
+            installedExtensions: runtime?.installedExtensions ?? [],
+            extensionsModuleEnabled: lifetime.isEnabled,
+            runtime: runtime?.reportRuntime
         )
         SafariExtensionAcceptanceMatrixBuilder.logIfDiagnosticsEnabled(matrix)
         return matrix
@@ -49,20 +48,17 @@ final class SumiExtensionCompatibilityDiagnosticsSurface {
 
     func runtimeDiagnosticReport() -> SafariExtensionRuntimeDiagnosticReport {
         let discovered = scanAndRefreshCandidates()
-        let manager = lifetime.loadedManagerIfEnabled()
-        let adapterRegistry =
-            manager?.loadedNativeMessagingRelayOwner?.loadedRelay?.diagnosticsAdapterRegistry
-            ?? SumiNativeMessagingAdapterRegistry.production()
+        let runtime = lifetime.loadedCompatibilityDiagnosticsIfEnabled()
         let report = SafariExtensionRuntimeDiagnosticsBuilder.build(
             discovered: discovered,
             importStore: settingsCatalog.importRecordsForDiagnostics(),
-            installedExtensions: manager?.installedExtensionCollection.records ?? [],
+            installedExtensions: runtime?.installedExtensions ?? [],
             contentBlockerRecords: contentBlocking.installedContentBlockers(),
             attachedSafariContentRuleListIdentifiers: contentBlocking
                 .attachedRuleListIdentifiers(),
-            extensionManager: manager,
             extensionsModuleEnabled: lifetime.isEnabled,
-            adapterRegistry: adapterRegistry
+            runtime: runtime?.reportRuntime,
+            adapterRegistry: runtime?.nativeMessagingAdapters ?? .production()
         )
         SafariExtensionRuntimeDiagnosticsBuilder.logIfDiagnosticsEnabled(report)
         return report
@@ -70,17 +66,14 @@ final class SumiExtensionCompatibilityDiagnosticsSurface {
 
     func nativeMessagingProbe() -> SafariExtensionNativeMessagingProbeReport {
         let discovered = scanAndRefreshCandidates()
-        let manager = lifetime.loadedManagerIfEnabled()
-        let adapterRegistry =
-            manager?.loadedNativeMessagingRelayOwner?.loadedRelay?.diagnosticsAdapterRegistry
-            ?? SumiNativeMessagingAdapterRegistry.production()
+        let runtime = lifetime.loadedCompatibilityDiagnosticsIfEnabled()
         let report = SafariExtensionNativeMessagingProbeBuilder.build(
             discovered: discovered,
             importStore: settingsCatalog.importRecordsForDiagnostics(),
-            installedExtensions: manager?.installedExtensionCollection.records ?? [],
-            extensionManager: manager,
+            installedExtensions: runtime?.installedExtensions ?? [],
             extensionsModuleEnabled: lifetime.isEnabled,
-            adapterRegistry: adapterRegistry
+            runtime: runtime?.reportRuntime,
+            adapterRegistry: runtime?.nativeMessagingAdapters ?? .production()
         )
         SafariExtensionNativeMessagingProbeBuilder.logIfDiagnosticsEnabled(report)
         return report

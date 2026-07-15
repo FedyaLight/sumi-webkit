@@ -8,16 +8,13 @@ import WebKit
 final class ExtensionRuntimeAccess {
     let profileRuntime: ExtensionProfileRuntime
     let controllerProvisioningOwner: ExtensionControllerProvisioningOwner
-    let runtime: @MainActor () -> ExtensionManagerRuntime
 
     init(
         profileRuntime: ExtensionProfileRuntime,
-        controllerProvisioningOwner: ExtensionControllerProvisioningOwner,
-        runtime: @escaping @MainActor () -> ExtensionManagerRuntime
+        controllerProvisioningOwner: ExtensionControllerProvisioningOwner
     ) {
         self.profileRuntime = profileRuntime
         self.controllerProvisioningOwner = controllerProvisioningOwner
-        self.runtime = runtime
     }
 
     func fallbackProfileId() -> UUID? {
@@ -25,10 +22,7 @@ final class ExtensionRuntimeAccess {
     }
 
     func resolvedProfileId(_ explicitProfileId: UUID?) -> UUID? {
-        profileRuntime.resolvedProfileId(
-            explicitProfileId: explicitProfileId,
-            runtime: runtime()
-        )
+        explicitProfileId ?? profileRuntime.currentProfileId
     }
 
     func ensureExtensionController(_ profileId: UUID) {

@@ -15,20 +15,22 @@ final class ExtensionRuntimeShutdownTests: XCTestCase {
     func testIrreversibleMutationDefersShutdownWithoutCancellingRuntime()
         throws {
         let profile = Profile(name: "Irreversible Mutation Profile")
-        let manager = try makeManager(
+        let fixture = try makeManager(
             profile: profile,
             browserConfiguration: BrowserConfiguration()
-        ).manager
+        )
+        let manager = fixture.manager
+        let inspection = fixture.inspection
         let lease = try XCTUnwrap(
-            manager.runtimeMutationRegistry.begin(
+            inspection.contextCoordination.mutations.begin(
                 extensionID: "uninstalling-extension",
                 operation: .uninstall
             )
         )
         XCTAssertTrue(
-            manager.runtimeMutationRegistry.enterIrreversiblePhase(lease)
+            inspection.contextCoordination.mutations.enterIrreversiblePhase(lease)
         )
-        let generation = manager.extensionLoadRevisions.issue()
+        let generation = inspection.runtimeAuthorities.loadRevisions.issue()
 
         let result = manager.shutDownExtensionRuntime(
             reason: "ExtensionRuntimeShutdownTests.irreversible"
@@ -38,13 +40,13 @@ final class ExtensionRuntimeShutdownTests: XCTestCase {
         XCTAssertFalse(result.completed)
         XCTAssertTrue(result.contextOutcomes.isEmpty)
         XCTAssertTrue(result.remainingBindings.isEmpty)
-        XCTAssertTrue(manager.runtimeMutationRegistry.isCurrent(lease))
+        XCTAssertTrue(inspection.contextCoordination.mutations.isCurrent(lease))
         XCTAssertEqual(
-            manager.extensionLoadRevisions.issue(),
+            inspection.runtimeAuthorities.loadRevisions.issue(),
             generation,
             "a rejected shutdown must not cancel in-flight runtime work"
         )
-        XCTAssertTrue(manager.runtimeMutationRegistry.finish(lease))
+        XCTAssertTrue(inspection.contextCoordination.mutations.finish(lease))
     }
 
     func testColdRuntimeTeardownDoesNotMaterializePublicationLifecycle()
@@ -54,13 +56,22 @@ final class ExtensionRuntimeShutdownTests: XCTestCase {
             browserConfiguration: BrowserConfiguration()
         )
         let manager = fixture.manager
-        XCTAssertNil(manager.loadedRuntimePublicationReconciler)
+        let inspection = fixture.inspection
+        XCTAssertNil(
+            inspection.normalTabs.deferredRuntime
+                .loadedInitialDocumentRuntimePreparationOwner
+        )
+        XCTAssertFalse(fixture.attachedRuntime.hasInstalledRuntime)
 
         _ = manager.shutDownExtensionRuntime(
             reason: "ExtensionRuntimeShutdownTests.cold"
         )
 
-        XCTAssertNil(manager.loadedRuntimePublicationReconciler)
+        XCTAssertNil(
+            inspection.normalTabs.deferredRuntime
+                .loadedInitialDocumentRuntimePreparationOwner
+        )
+        XCTAssertFalse(fixture.attachedRuntime.hasInstalledRuntime)
     }
 
     func testRetainedPublicationCollaboratorsDoNotRetainExtensionManager()
@@ -70,24 +81,25 @@ final class ExtensionRuntimeShutdownTests: XCTestCase {
             configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
         )
         let profile = Profile(name: "Publication Lifetime Profile")
+        let attachedRuntime = ExtensionAttachedRuntimeCapture()
         var manager: ExtensionManager? = ExtensionManager(
             context: container.mainContext,
             initialProfile: profile,
             browserConfiguration: BrowserConfiguration(),
             extensionPreferences: UserDefaults(
                 suiteName: UUID().uuidString
-            )!
+            )!,
+            attachedRuntimeDidInstall: attachedRuntime.install
         )
         let browserManager = makeSafariExtensionTestBrowserManager(
             profile: profile
         )
         manager?.attach(browserManager: browserManager)
         weak var weakManager = manager
-        let reconciler = try XCTUnwrap(
-            manager?.runtimePublicationReconciler
-        )
-        let publications = try XCTUnwrap(manager?.windowPublications)
-        let admission = try XCTUnwrap(manager?.tabPublicationAdmission)
+        let reconciler = attachedRuntime.runtime.publications.reconciler
+        let publications = attachedRuntime.runtime.publications
+            .windowPublications
+        let admission = attachedRuntime.runtime.normalTabs.tabOpening
 
         manager = nil
 
@@ -105,58 +117,61 @@ final class ExtensionRuntimeShutdownTests: XCTestCase {
             browserConfiguration: browserConfiguration
         )
         let manager = fixture.manager
+        let inspection = fixture.inspection
         try XCTSkipUnless(manager.isExtensionSupportAvailable)
 
-        _ = manager.runtimeDemandCoordinator.request(
+        _ = inspection.contextCoordination.demand.requestRuntimeExplicitly(
             reason: .install,
-            allowWithoutEnabledExtensions: true,
             profileId: profile.id
         )
-        let controller = try XCTUnwrap(manager.profileRuntime.controllersByProfile[profile.id])
+        let controller = try XCTUnwrap(inspection.contextState.profiles.controllersByProfile[profile.id])
         browserConfiguration.webViewConfiguration.webExtensionController = controller
 
         let anchorView = NSView(frame: NSRect(x: 0, y: 0, width: 32, height: 32))
-        manager.markExtensionRuntimePublicationReady()
-        manager.runtimeLifecycle.updateReadiness(isReady: true)
-        manager.runtimeDemand.recordRuntimeDemandWithoutEnabledExtensions()
-        manager.runtimeCatalog.recordManifest(
+        inspection.actionSurfaces.publication.markRuntimePublicationReady()
+        inspection.runtimeAuthorities.lifecycle.updateReadiness(isReady: true)
+        inspection.runtimeAuthorities.demand.recordRuntimeDemandWithoutEnabledExtensions()
+        inspection.runtimeAuthorities.catalog.recordManifest(
             ["manifest_version": 3],
             for: "alpha"
         )
-        manager.actionStatesByExtensionID["alpha"] = BrowserExtensionActionSurfaceState(
-            extensionID: "alpha",
-            label: "Alpha",
-            badgeText: "1",
-            hasUnreadBadgeText: true,
-            isEnabled: true,
-            presentsPopup: true,
-            icon: nil
+        inspection.actionSurfaces.publication.setActionSurfaceState(
+            BrowserExtensionActionSurfaceState(
+                extensionID: "alpha",
+                label: "Alpha",
+                badgeText: "1",
+                hasUnreadBadgeText: true,
+                isEnabled: true,
+                presentsPopup: true,
+                icon: nil
+            ),
+            extensionID: "alpha"
         )
-        manager.runtimeCatalog.recordLoadError(
+        inspection.runtimeAuthorities.catalog.recordLoadError(
             TestError.failed,
             extensionID: "alpha",
             profileID: profile.id
         )
-        manager.runtimeResidency.touch(
+        inspection.runtimeAuthorities.residency.touch(
             extensionID: "alpha",
             profileID: profile.id
         )
-        manager.runtimeMetrics.recordManifestValidationDuration(0, for: "alpha")
-        manager.contextErrorObservation.seedLoggedErrorFingerprintForTesting(
+        inspection.runtimeAuthorities.metrics.recordManifestValidationDuration(0, for: "alpha")
+        inspection.contextState.errors.seedLoggedErrorFingerprintForTesting(
             "fingerprint",
             extensionId: "alpha",
             profileId: profile.id
         )
-        manager.actionAnchorStore.setAnchor(for: "alpha", anchorView: anchorView)
+        inspection.popups.actionAnchors.setAnchor(for: "alpha", anchorView: anchorView)
         let nativePort = TeardownMockPort()
-        _ = manager.nativeMessagingPortRegistry.register(
+        _ = inspection.nativeMessaging.ports.register(
             handler: makePortSession(port: nativePort, extensionId: "alpha"),
             port: nativePort,
             extensionId: "alpha",
             profileId: profile.id
         )
 
-        let generationBeforeTeardown = manager.extensionLoadRevisions.issue()
+        let generationBeforeTeardown = inspection.runtimeAuthorities.loadRevisions.issue()
 
         let result = manager.shutDownExtensionRuntime(
             reason: "ExtensionRuntimeShutdownTests.full"
@@ -164,30 +179,33 @@ final class ExtensionRuntimeShutdownTests: XCTestCase {
 
         XCTAssertTrue(result.completed)
         XCTAssertEqual(
-            manager.extensionLoadRevisions.issue().generation,
+            inspection.runtimeAuthorities.loadRevisions.issue().generation,
             generationBeforeTeardown.generation + 1
         )
-        XCTAssertTrue(manager.profileRuntime.controllersByProfile.isEmpty)
+        XCTAssertTrue(inspection.contextState.profiles.controllersByProfile.isEmpty)
         XCTAssertNil(browserConfiguration.webViewConfiguration.webExtensionController)
         XCTAssertFalse(
-            manager.runtimeDemand.hasRuntimeDemandWithoutEnabledExtensions
+            inspection.runtimeAuthorities.demand.hasRuntimeDemandWithoutEnabledExtensions
         )
         XCTAssertEqual(
-            manager.runtimeLifecycle.state,
+            inspection.runtimeAuthorities.lifecycle.state,
             manager.isExtensionSupportAvailable ? .idle : .unavailable
         )
-        XCTAssertFalse(manager.extensionsLoaded)
-        XCTAssertTrue(manager.runtimeCatalog.isEmpty)
-        XCTAssertTrue(manager.actionStatesByExtensionID.isEmpty)
-        XCTAssertTrue(manager.runtimeResidency.liveContextKeys.isEmpty)
-        XCTAssertTrue(manager.runtimeMetrics.isEmpty)
-        XCTAssertFalse(manager.contextErrorObservation.hasLoggedErrorFingerprints)
-        XCTAssertFalse(
-            manager.controllerProvisioningOwner.hasExtensionPageUserContentControllers
+        XCTAssertFalse(inspection.actionSurfaces.publication.extensionsLoaded)
+        XCTAssertTrue(inspection.runtimeAuthorities.catalog.isEmpty)
+        XCTAssertTrue(
+            inspection.actionSurfaces.publication
+                .actionStatesByExtensionID.isEmpty
         )
-        XCTAssertTrue(manager.actionAnchorStore.isEmpty)
-        XCTAssertEqual(manager.nativeMessagingPortRegistry.count, 0)
-        XCTAssertTrue(manager.nativeMessagingPortRegistry.extensionIDs.isEmpty)
+        XCTAssertTrue(inspection.runtimeAuthorities.residency.liveContextKeys.isEmpty)
+        XCTAssertTrue(inspection.runtimeAuthorities.metrics.isEmpty)
+        XCTAssertFalse(inspection.contextState.errors.hasLoggedErrorFingerprints)
+        XCTAssertFalse(
+            inspection.controller.provisioning.hasExtensionPageUserContentControllers
+        )
+        XCTAssertTrue(inspection.popups.actionAnchors.isEmpty)
+        XCTAssertEqual(inspection.nativeMessaging.ports.count, 0)
+        XCTAssertTrue(inspection.nativeMessaging.ports.extensionIDs.isEmpty)
     }
 
     func testIncompleteShutdownKeepsTerminalAdmissionSealedUntilSuccessfulRetry()
@@ -199,6 +217,7 @@ final class ExtensionRuntimeShutdownTests: XCTestCase {
             browserConfiguration: browserConfiguration
         )
         let manager = fixture.manager
+        let inspection = fixture.inspection
         try XCTSkipUnless(manager.isExtensionSupportAvailable)
 
         let extensionID = "retry-runtime-shutdown"
@@ -207,8 +226,8 @@ final class ExtensionRuntimeShutdownTests: XCTestCase {
         )
         let webExtension = try await makeWebExtension()
         let extensionContext = WKWebExtensionContext(for: webExtension)
-        manager.profileRuntime.setController(controller, for: profile.id)
-        _ = manager.profileRuntime.setContext(
+        inspection.contextState.profiles.setController(controller, for: profile.id)
+        _ = inspection.contextState.profiles.setContext(
             extensionContext,
             extensionId: extensionID,
             profileId: profile.id
@@ -216,18 +235,18 @@ final class ExtensionRuntimeShutdownTests: XCTestCase {
         browserConfiguration.webViewConfiguration.webExtensionController =
             controller
 
-        manager.markExtensionRuntimePublicationReady()
-        manager.runtimeLifecycle.updateReadiness(isReady: true)
-        manager.runtimeDemand.recordRuntimeDemandWithoutEnabledExtensions()
-        manager.runtimeCatalog.recordManifest(
+        inspection.actionSurfaces.publication.markRuntimePublicationReady()
+        inspection.runtimeAuthorities.lifecycle.updateReadiness(isReady: true)
+        inspection.runtimeAuthorities.demand.recordRuntimeDemandWithoutEnabledExtensions()
+        inspection.runtimeAuthorities.catalog.recordManifest(
             ["manifest_version": 3],
             for: extensionID
         )
-        manager.runtimeMetrics.recordManifestValidationDuration(
+        inspection.runtimeAuthorities.metrics.recordManifestValidationDuration(
             0,
             for: extensionID
         )
-        manager.actionStatesByExtensionID[extensionID] =
+        inspection.actionSurfaces.publication.setActionSurfaceState(
             BrowserExtensionActionSurfaceState(
                 extensionID: extensionID,
                 label: "Retry",
@@ -236,17 +255,19 @@ final class ExtensionRuntimeShutdownTests: XCTestCase {
                 isEnabled: true,
                 presentsPopup: false,
                 icon: nil
-            )
+            ),
+            extensionID: extensionID
+        )
 
         var unloadShouldFail = true
-        installShutdownCollaborators(on: manager) { _, _ in
+        fixture.unloadBehavior.handler = { _, _ in
             if unloadShouldFail {
                 throw TestError.failed
             }
         }
 
         let generationBeforeShutdown =
-            manager.extensionLoadRevisions.issue()
+            inspection.runtimeAuthorities.loadRevisions.issue()
         let incomplete = manager.shutDownExtensionRuntime(
             reason: "ExtensionRuntimeShutdownTests.incomplete"
         )
@@ -263,41 +284,44 @@ final class ExtensionRuntimeShutdownTests: XCTestCase {
             ]
         )
         XCTAssertFalse(
-            manager.runtimeMutationRegistry.admitsLoad(
+            inspection.contextCoordination.mutations.admitsLoad(
                 extensionID: extensionID,
                 lease: nil
             )
         )
         XCTAssertNil(
-            manager.runtimeMutationRegistry.begin(
+            inspection.contextCoordination.mutations.begin(
                 extensionID: "another-extension",
                 operation: .enable
             )
         )
         XCTAssertIdentical(
-            manager.profileRuntime.contexts(for: profile.id)[extensionID],
+            inspection.contextState.profiles.contexts(for: profile.id)[extensionID],
             extensionContext
         )
         XCTAssertIdentical(
-            manager.profileRuntime.controllersByProfile[profile.id],
+            inspection.contextState.profiles.controllersByProfile[profile.id],
             controller
         )
         XCTAssertIdentical(
             browserConfiguration.webViewConfiguration.webExtensionController,
             controller
         )
-        XCTAssertEqual(manager.runtimeLifecycle.state, .ready)
+        XCTAssertEqual(inspection.runtimeAuthorities.lifecycle.state, .ready)
         XCTAssertTrue(
-            manager.runtimeDemand.hasRuntimeDemandWithoutEnabledExtensions
+            inspection.runtimeAuthorities.demand.hasRuntimeDemandWithoutEnabledExtensions
         )
         XCTAssertNotNil(
-            manager.runtimeCatalog.manifest(for: extensionID)
+            inspection.runtimeAuthorities.catalog.manifest(for: extensionID)
         )
         XCTAssertNotNil(
-            manager.runtimeMetrics.metrics(for: extensionID)
+            inspection.runtimeAuthorities.metrics.metrics(for: extensionID)
         )
-        XCTAssertNotNil(manager.actionStatesByExtensionID[extensionID])
-        XCTAssertTrue(manager.extensionsLoaded)
+        XCTAssertNotNil(
+            inspection.actionSurfaces.publication
+                .actionStatesByExtensionID[extensionID]
+        )
+        XCTAssertTrue(inspection.actionSurfaces.publication.extensionsLoaded)
 
         unloadShouldFail = false
         let completed = manager.shutDownExtensionRuntime(
@@ -317,36 +341,39 @@ final class ExtensionRuntimeShutdownTests: XCTestCase {
             .retired
         )
         XCTAssertTrue(
-            manager.runtimeMutationRegistry.admitsLoad(
+            inspection.contextCoordination.mutations.admitsLoad(
                 extensionID: extensionID,
                 lease: nil
             )
         )
         let reopenedMutation = try XCTUnwrap(
-            manager.runtimeMutationRegistry.begin(
+            inspection.contextCoordination.mutations.begin(
                 extensionID: extensionID,
                 operation: .enable
             )
         )
-        XCTAssertTrue(manager.runtimeMutationRegistry.finish(reopenedMutation))
-        XCTAssertTrue(manager.profileRuntime.contexts(for: profile.id).isEmpty)
-        XCTAssertTrue(manager.profileRuntime.controllersByProfile.isEmpty)
+        XCTAssertTrue(inspection.contextCoordination.mutations.finish(reopenedMutation))
+        XCTAssertTrue(inspection.contextState.profiles.contexts(for: profile.id).isEmpty)
+        XCTAssertTrue(inspection.contextState.profiles.controllersByProfile.isEmpty)
         XCTAssertNil(
             browserConfiguration.webViewConfiguration.webExtensionController
         )
         XCTAssertEqual(
-            manager.runtimeLifecycle.state,
+            inspection.runtimeAuthorities.lifecycle.state,
             manager.isExtensionSupportAvailable ? .idle : .unavailable
         )
         XCTAssertFalse(
-            manager.runtimeDemand.hasRuntimeDemandWithoutEnabledExtensions
+            inspection.runtimeAuthorities.demand.hasRuntimeDemandWithoutEnabledExtensions
         )
-        XCTAssertTrue(manager.runtimeCatalog.isEmpty)
-        XCTAssertTrue(manager.runtimeMetrics.isEmpty)
-        XCTAssertTrue(manager.actionStatesByExtensionID.isEmpty)
-        XCTAssertFalse(manager.extensionsLoaded)
+        XCTAssertTrue(inspection.runtimeAuthorities.catalog.isEmpty)
+        XCTAssertTrue(inspection.runtimeAuthorities.metrics.isEmpty)
+        XCTAssertTrue(
+            inspection.actionSurfaces.publication
+                .actionStatesByExtensionID.isEmpty
+        )
+        XCTAssertFalse(inspection.actionSurfaces.publication.extensionsLoaded)
         XCTAssertEqual(
-            manager.extensionLoadRevisions.issue(),
+            inspection.runtimeAuthorities.loadRevisions.issue(),
             ExtensionLoadRevision(
                 generation: generationBeforeShutdown.generation + 2
             )
@@ -362,6 +389,7 @@ final class ExtensionRuntimeShutdownTests: XCTestCase {
             browserConfiguration: browserConfiguration
         )
         let manager = fixture.manager
+        let inspection = fixture.inspection
         try XCTSkipUnless(manager.isExtensionSupportAvailable)
 
         let extensionID = "superseded-runtime-shutdown"
@@ -371,26 +399,26 @@ final class ExtensionRuntimeShutdownTests: XCTestCase {
         let extensionContext = WKWebExtensionContext(
             for: try await makeWebExtension()
         )
-        manager.profileRuntime.setController(controller, for: profile.id)
-        _ = manager.profileRuntime.setContext(
+        inspection.contextState.profiles.setController(controller, for: profile.id)
+        _ = inspection.contextState.profiles.setContext(
             extensionContext,
             extensionId: extensionID,
             profileId: profile.id
         )
         browserConfiguration.webViewConfiguration.webExtensionController =
             controller
-        manager.markExtensionRuntimePublicationReady()
-        manager.runtimeLifecycle.updateReadiness(isReady: true)
-        manager.runtimeDemand.recordRuntimeDemandWithoutEnabledExtensions()
-        manager.runtimeCatalog.recordManifest(
+        inspection.actionSurfaces.publication.markRuntimePublicationReady()
+        inspection.runtimeAuthorities.lifecycle.updateReadiness(isReady: true)
+        inspection.runtimeAuthorities.demand.recordRuntimeDemandWithoutEnabledExtensions()
+        inspection.runtimeAuthorities.catalog.recordManifest(
             ["manifest_version": 3],
             for: extensionID
         )
-        manager.runtimeMetrics.recordManifestValidationDuration(
+        inspection.runtimeAuthorities.metrics.recordManifestValidationDuration(
             0,
             for: extensionID
         )
-        manager.actionStatesByExtensionID[extensionID] =
+        inspection.actionSurfaces.publication.setActionSurfaceState(
             BrowserExtensionActionSurfaceState(
                 extensionID: extensionID,
                 label: "Superseded",
@@ -399,11 +427,13 @@ final class ExtensionRuntimeShutdownTests: XCTestCase {
                 isEnabled: true,
                 presentsPopup: false,
                 icon: nil
-            )
+            ),
+            extensionID: extensionID
+        )
 
-        let mutationRegistry = manager.runtimeMutationRegistry
+        let mutationRegistry = inspection.contextCoordination.mutations
         var replacementTerminalLease: ExtensionRuntimeTerminalLease?
-        installShutdownCollaborators(on: manager) { _, _ in
+        fixture.unloadBehavior.handler = { _, _ in
             replacementTerminalLease = mutationRegistry.beginTerminal()
         }
 
@@ -420,28 +450,31 @@ final class ExtensionRuntimeShutdownTests: XCTestCase {
         XCTAssertEqual(result.contextOutcomes[key], .retired)
         XCTAssertTrue(result.remainingBindings.isEmpty)
         XCTAssertNil(
-            manager.profileRuntime.contexts(for: profile.id)[extensionID]
+            inspection.contextState.profiles.contexts(for: profile.id)[extensionID]
         )
         XCTAssertIdentical(
-            manager.profileRuntime.controllersByProfile[profile.id],
+            inspection.contextState.profiles.controllersByProfile[profile.id],
             controller
         )
         XCTAssertIdentical(
             browserConfiguration.webViewConfiguration.webExtensionController,
             controller
         )
-        XCTAssertEqual(manager.runtimeLifecycle.state, .ready)
+        XCTAssertEqual(inspection.runtimeAuthorities.lifecycle.state, .ready)
         XCTAssertTrue(
-            manager.runtimeDemand.hasRuntimeDemandWithoutEnabledExtensions
+            inspection.runtimeAuthorities.demand.hasRuntimeDemandWithoutEnabledExtensions
         )
         XCTAssertNotNil(
-            manager.runtimeCatalog.manifest(for: extensionID)
+            inspection.runtimeAuthorities.catalog.manifest(for: extensionID)
         )
         XCTAssertNotNil(
-            manager.runtimeMetrics.metrics(for: extensionID)
+            inspection.runtimeAuthorities.metrics.metrics(for: extensionID)
         )
-        XCTAssertNotNil(manager.actionStatesByExtensionID[extensionID])
-        XCTAssertTrue(manager.extensionsLoaded)
+        XCTAssertNotNil(
+            inspection.actionSurfaces.publication
+                .actionStatesByExtensionID[extensionID]
+        )
+        XCTAssertTrue(inspection.actionSurfaces.publication.extensionsLoaded)
 
         let activeTerminalLease = try XCTUnwrap(
             replacementTerminalLease
@@ -482,18 +515,41 @@ final class ExtensionRuntimeShutdownTests: XCTestCase {
     private func makeManager(
         profile: Profile,
         browserConfiguration: BrowserConfiguration
-    ) throws -> (container: ModelContainer, manager: ExtensionManager) {
+    ) throws -> (
+        container: ModelContainer,
+        manager: ExtensionManager,
+        inspection: ExtensionManagerTestInspection,
+        attachedRuntime: ExtensionAttachedRuntimeCapture,
+        unloadBehavior: ShutdownUnloadBehavior
+    ) {
         let container = try ModelContainer(
             for: SumiStartupPersistence.schema,
             configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
         )
+        let inspection = ExtensionManagerInspectionCapture()
+        let attachedRuntime = ExtensionAttachedRuntimeCapture()
+        let unloadBehavior = ShutdownUnloadBehavior()
         let manager = ExtensionManager(
             context: container.mainContext,
             initialProfile: profile,
             browserConfiguration: browserConfiguration,
-            extensionPreferences: UserDefaults(suiteName: UUID().uuidString)!
+            extensionPreferences: UserDefaults(suiteName: UUID().uuidString)!,
+            attachedRuntimeDidInstall: attachedRuntime.install,
+            testInspectionDidAssemble: inspection.install,
+            testAssemblyOverrides: .init(
+                unloadContext: { controller, context in
+                    try unloadBehavior.unload(context, from: controller)
+                },
+                isLoadedContext: { _, _ in true }
+            )
         )
-        return (container, manager)
+        return (
+            container,
+            manager,
+            inspection.inspection,
+            attachedRuntime,
+            unloadBehavior
+        )
     }
 
     private func makeWebExtension() async throws -> WKWebExtension {
@@ -519,56 +575,25 @@ final class ExtensionRuntimeShutdownTests: XCTestCase {
         )
         return try await WKWebExtension(resourceBaseURL: directory)
     }
+}
 
-    private func installShutdownCollaborators(
-        on manager: ExtensionManager,
-        unloadContext: @escaping @MainActor (
-            WKWebExtensionController,
-            WKWebExtensionContext
-        ) throws -> Void
-    ) {
-        let contextRetirement = ExtensionContextRetirement(
-            profileRuntime: manager.profileRuntime,
-            backgroundRuntimeState: manager.backgroundRuntimeStateOwner,
-            runtimeResidency: manager.runtimeResidency,
-            errorObservation: manager.contextErrorObservation,
-            diagnostics: manager.runtimeDiagnostics,
-            unloadContext: unloadContext,
-            isLoadedContext: { _, _ in true }
-        )
-        let scopedRetirement = ExtensionScopedRuntimeRetirement(
-            profileRuntime: manager.profileRuntime,
-            mutationRegistry: manager.runtimeMutationRegistry,
-            loadRegistry: manager.contextLoadRegistry,
-            contextRetirement: contextRetirement,
-            runtimeCatalog: manager.runtimeCatalog,
-            runtimeResidency: manager.runtimeResidency,
-            sourceCache: manager.webExtensionRuntimeSourceCache,
-            errorObservation: manager.contextErrorObservation,
-            nativeMessagingPorts: manager.nativeMessagingPortRegistry,
-            optionsWindows: manager.optionsWindows,
-            actionAnchors: manager.actionAnchorStore,
-            diagnostics: manager.runtimeDiagnostics
-        )
-        manager.contextRetirement = contextRetirement
-        manager.scopedRuntimeRetirement = scopedRetirement
-        manager.runtimeShutdown = ExtensionRuntimeShutdown(
-            activityCancellation: manager.runtimeActivityCancellation,
-            mutationRegistry: manager.runtimeMutationRegistry,
-            scopedRetirement: scopedRetirement,
-            bookkeepingReset: manager.runtimeBookkeepingReset,
-            controllerRelease: manager.controllerRuntimeRelease,
-            profileRuntime: manager.profileRuntime,
-            runtimeLifecycle: manager.runtimeLifecycle,
-            runtimeCatalog: manager.runtimeCatalog,
-            extensionLoadRevisions: manager.extensionLoadRevisions,
-            sourceCache: manager.webExtensionRuntimeSourceCache,
-            errorObservation: manager.contextErrorObservation,
-            optionsWindows: manager.optionsWindows,
-            actionAnchors: manager.actionAnchorStore,
-            nativeMessagingPorts: manager.nativeMessagingPortRegistry,
-            diagnostics: manager.runtimeDiagnostics
-        )
+@available(macOS 15.5, *)
+@MainActor
+private final class ShutdownUnloadBehavior {
+    var handler: (@MainActor (
+        WKWebExtensionController,
+        WKWebExtensionContext
+    ) throws -> Void)?
+
+    func unload(
+        _ context: WKWebExtensionContext,
+        from controller: WKWebExtensionController
+    ) throws {
+        if let handler {
+            try handler(controller, context)
+        } else {
+            try controller.unload(context)
+        }
     }
 }
 

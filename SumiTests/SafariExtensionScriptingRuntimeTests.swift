@@ -22,10 +22,14 @@ final class SafariExtensionScriptingRuntimeTests: XCTestCase {
         let container = try makeTestContainer()
         let profile = Profile(name: "Scripting Runtime Profile")
         let browserConfiguration = BrowserConfiguration()
+        let attachedRuntime = ExtensionAttachedRuntimeCapture()
+        let inspection = ExtensionManagerInspectionCapture()
         let manager = makeSafariExtensionTestExtensionManager(
             context: container.mainContext,
             initialProfile: profile,
-            browserConfiguration: browserConfiguration
+            browserConfiguration: browserConfiguration,
+            attachedRuntimeCapture: attachedRuntime,
+            inspectionCapture: inspection
         )
         let windowRegistry = WindowRegistry()
         let browserManager = makeSafariExtensionTestBrowserManager(
@@ -40,12 +44,14 @@ final class SafariExtensionScriptingRuntimeTests: XCTestCase {
         await browserManager.tabManager.storeRestore.startupRestoreTask?.value
 
         let installed = try await installScriptingProbeExtension(
-            manager: manager,
+            inspection: inspection.inspection,
             scratchDirectory: makeScratchDirectory()
         )
-        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
+        _ = try await inspection.inspection.installation.lifecycle
+            .enable(installed.id)
         let extensionContext = try XCTUnwrap(
-            manager.getExtensionContext(for: installed.id, profileId: profile.id)
+            inspection.inspection.contextState.profiles
+                .contexts(for: profile.id)[installed.id]
         )
         XCTAssertTrue(extensionContext.isLoaded)
         XCTAssertEqual(
@@ -62,7 +68,8 @@ final class SafariExtensionScriptingRuntimeTests: XCTestCase {
             "browser.scripting must not be hidden from Safari-target extensions"
         )
 
-        _ = try await manager.ensureBackgroundAvailableIfRequired(
+        _ = try await inspection.inspection.nativeMessaging.backgroundWakes
+            .ensureBackgroundAvailableIfRequired(
             for: extensionContext.webExtension,
             context: extensionContext,
             reason: .enable
@@ -71,7 +78,8 @@ final class SafariExtensionScriptingRuntimeTests: XCTestCase {
         let configuration = browserConfiguration.auxiliaryWebViewConfiguration(
             surface: .extensionOptions
         )
-        manager.prepareWebViewConfigForExtensionRuntime(
+        inspection.inspection.normalTabs.configuration
+            .prepareWebViewConfigForExtensionRuntime(
             configuration,
             profileId: profile.id,
             reason: "SafariExtensionScriptingRuntimeTests"
@@ -98,12 +106,13 @@ final class SafariExtensionScriptingRuntimeTests: XCTestCase {
         webView.owningTab = tab
         tab.replaceUntrackedWebView(webView)
 
-        manager.normalTabRegistration.register(
+        attachedRuntime.runtime.normalTabs.tabRegistration.register(
             tab,
             reason: "SafariExtensionScriptingRuntimeTests"
         )
         XCTAssertTrue(
-            manager.publishedExtensionTabs.containsPublishedTab(tab),
+            attachedRuntime.runtime.normalTabs.publishedTabs
+                .containsPublishedTab(tab),
             "The scripting target must cross the exact window and tab publication boundaries before the worker resolves sender.tab"
         )
 
@@ -229,7 +238,7 @@ final class SafariExtensionScriptingRuntimeTests: XCTestCase {
     }
 
     private func installScriptingProbeExtension(
-        manager: ExtensionManager,
+        inspection: ExtensionManagerTestInspection,
         scratchDirectory: URL
     ) async throws -> InstalledExtension {
         let directoryURL = scratchDirectory.appendingPathComponent(
@@ -419,7 +428,7 @@ final class SafariExtensionScriptingRuntimeTests: XCTestCase {
             at: destinationDirectory.appendingPathComponent("manifest.json"),
             policy: .safariWebExtension
         )
-        let record = try manager.makeInstalledRecord(
+        let record = try inspection.installation.metadata.makeInstalledRecord(
             extensionId: resolvedExtensionId,
             manifest: installedManifest,
             extensionRoot: destinationDirectory,
@@ -431,8 +440,8 @@ final class SafariExtensionScriptingRuntimeTests: XCTestCase {
             sourceFingerprintURL: destinationDirectory,
             existingEntity: nil
         )
-        try manager.persist(record: record)
-        _ = manager.installedExtensionCatalog.load()
+        try inspection.installation.metadata.persist(record: record)
+        _ = inspection.installation.catalog.load()
         return record
     }
 

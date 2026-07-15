@@ -70,7 +70,7 @@ extension AuxiliaryWindowLifecycleTests {
             guard let session = harness.browserManager.auxiliaryWindows
                 .sessions.session(for: sessionID),
                 let windowAdapter = session.miniWindowAdapter,
-                let tabAdapter = harness.extensionManager.adapterStore
+                let tabAdapter = harness.inspection.normalTabs.adapters
                     .tabAdapters[session.tab.id] else {
                 return XCTFail("Prepared auxiliary publication is missing")
             }
@@ -82,7 +82,7 @@ extension AuxiliaryWindowLifecycleTests {
             )
             XCTAssertTrue(browserTabs.isAuxiliaryMiniWindowTab(session.tab))
             XCTAssertIdentical(
-                harness.extensionManager.existingTabControllers
+                harness.attachedRuntime.controller.controllers
                     .existingController(for: session.tab),
                 configuration.webExtensionController
             )
@@ -96,7 +96,7 @@ extension AuxiliaryWindowLifecycleTests {
             XCTAssertFalse(
                 session.tab.extensionPageRuntimeOwner
                     .hasDidOpenTabNotification(
-                        for: harness.extensionManager.tabPublicationRevisions.issue()
+                        for: harness.inspection.runtimeAuthorities.tabPublicationRevisions.issue()
                     )
             )
         }
@@ -105,7 +105,7 @@ extension AuxiliaryWindowLifecycleTests {
                 .sessions.sessionsSnapshot().first(where: {
                     $0.tab.id == tabID
                 }), let windowAdapter = session.miniWindowAdapter,
-                let tabAdapter = harness.extensionManager.adapterStore
+                let tabAdapter = harness.inspection.normalTabs.adapters
                     .tabAdapters[tabID] else {
                 return
             }
@@ -181,12 +181,12 @@ extension AuxiliaryWindowLifecycleTests {
                 )
         )
         let originalMiniAdapterStore = Dictionary(
-            uniqueKeysWithValues: harness.extensionManager.adapterStore
+            uniqueKeysWithValues: harness.inspection.normalTabs.adapters
                 .miniWindowAdaptersSnapshot().map {
                     ($0.sessionId, ObjectIdentifier($0))
                 }
         )
-        let originalTabAdapterStore = harness.extensionManager.adapterStore
+        let originalTabAdapterStore = harness.inspection.normalTabs.adapters
             .tabAdapters.mapValues { ObjectIdentifier($0) }
         XCTAssertEqual(originalPublication.count, 2)
         XCTAssertEqual(originalWindowProjection.count, 2)
@@ -212,7 +212,7 @@ extension AuxiliaryWindowLifecycleTests {
             failedSessionID = sessionID
             failedTabID = failedSession.tab.id
             didReplace = true
-            harness.extensionManager.setExtensionContext(
+            harness.inspection.contextState.profiles.setContext(
                 replacement,
                 extensionId: ownerExtensionID,
                 profileId: harness.profile.id
@@ -288,7 +288,7 @@ extension AuxiliaryWindowLifecycleTests {
         )
         XCTAssertEqual(
             Dictionary(
-                uniqueKeysWithValues: harness.extensionManager.adapterStore
+                uniqueKeysWithValues: harness.inspection.normalTabs.adapters
                     .miniWindowAdaptersSnapshot().map {
                         ($0.sessionId, ObjectIdentifier($0))
                     }
@@ -296,7 +296,7 @@ extension AuxiliaryWindowLifecycleTests {
             originalMiniAdapterStore
         )
         XCTAssertEqual(
-            harness.extensionManager.adapterStore.tabAdapters
+            harness.inspection.normalTabs.adapters.tabAdapters
                 .mapValues { ObjectIdentifier($0) },
             originalTabAdapterStore
         )
@@ -479,7 +479,7 @@ extension AuxiliaryWindowLifecycleTests {
 
         let wrongConfiguration = WKWebViewConfiguration()
         wrongConfiguration.websiteDataStore = .nonPersistent()
-        wrongConfiguration.webExtensionController = harness.extensionManager
+        wrongConfiguration.webExtensionController = harness.inspection.controller.provisioning
             .ensureExtensionController(for: harness.profile.id)
 
         XCTAssertNil(
@@ -549,11 +549,11 @@ extension AuxiliaryWindowLifecycleTests {
                         session.miniWindowAdapter
                     )
                     let storedMiniWindowAdapter = try XCTUnwrap(
-                        harness.extensionManager.adapterStore
+                        harness.inspection.normalTabs.adapters
                             .existingMiniWindowAdapter(for: session.id)
                     )
                     let tabAdapter = try XCTUnwrap(
-                        harness.extensionManager.adapterStore
+                        harness.inspection.normalTabs.adapters
                             .existingTabAdapter(for: session.tab.id)
                     )
                     XCTAssertIdentical(

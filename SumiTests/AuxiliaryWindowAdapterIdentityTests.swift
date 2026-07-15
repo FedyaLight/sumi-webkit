@@ -19,7 +19,7 @@ extension AuxiliaryWindowLifecycleTests {
         let unrelatedContext = try await makeExtensionContext(
             ownerExtensionID: "unrelated-owner"
         )
-        harness.extensionManager.setExtensionContext(
+        harness.inspection.contextState.profiles.setContext(
             unrelatedContext,
             extensionId: "unrelated-owner",
             profileId: harness.profile.id
@@ -40,7 +40,7 @@ extension AuxiliaryWindowLifecycleTests {
             }
         }
         let tabAdapter = try XCTUnwrap(
-            harness.extensionManager.adapterStore.tabAdapters[session.tab.id]
+            harness.inspection.normalTabs.adapters.tabAdapters[session.tab.id]
         )
         let windowAdapter = try XCTUnwrap(session.miniWindowAdapter)
 
@@ -146,25 +146,30 @@ extension AuxiliaryWindowLifecycleTests {
             harness.browserManager.auxiliaryWindows.sessions
                 .session(for: webView)
         )
-        let control = try XCTUnwrap(
-            harness.extensionManager.extensionAuxiliaryWindows
+        let receipt = try XCTUnwrap(
+            harness.browserManager.auxiliaryWindows.sessions.receipt(
+                for: session
+            )
         )
-        harness.extensionManager.extensionAuxiliaryWindows = nil
+        XCTAssertIdentical(
+            harness.browserManager.auxiliaryWindows.sessions.remove(receipt),
+            session
+        )
 
         XCTAssertFalse(
-            harness.extensionManager.windowPublications
+            harness.attachedRuntime.publications.windowPublications
                 .tabPublicationIsCurrent(
                     session.tab,
                     profileID: harness.profile.id
                 )
         )
         XCTAssertFalse(
-            harness.extensionManager.tabPublicationAdmission.prepareTabOpen(
+            harness.attachedRuntime.publications.tabAdmission.prepareTabOpen(
                 session.tab
             )
         )
 
-        harness.extensionManager.extensionAuxiliaryWindows = control
+        _ = harness.browserManager.auxiliaryWindows.sessions.register(session)
         harness.browserManager.auxiliaryWindows.teardownAuxiliaryWindowForTesting(
             webView,
             reason: .bulkCleanup
@@ -192,10 +197,10 @@ extension AuxiliaryWindowLifecycleTests {
         harness.extensionManager.testHooks = hooks
         defer { harness.extensionManager.clearDebugState() }
 
-        _ = harness.extensionManager.runtimePublicationReconciler.retire(
-            runtime: harness.extensionManager.runtime,
+        _ = harness.attachedRuntime.publications.reconciler
+            .retire(
             auxiliaryControl:
-                harness.extensionManager.extensionAuxiliaryWindows
+                harness.attachedRuntime.bridge.auxiliaryWindows
         )
         XCTAssertEqual(closedTabCount, 1)
         XCTAssertEqual(closedWindowCount, 1)
@@ -213,19 +218,19 @@ extension AuxiliaryWindowLifecycleTests {
         let harness = try await makeExtensionHarness(
             ownerExtensionID: "adapter-owner"
         )
-        harness.extensionManager.reloadRuntimePublications(
+        harness.inspection.browserPublication.reloads.reloadLoadedRuntime(
             reason: "AuxiliaryWindowLifecycleTests.prepareTerminalRetirement",
             profileID: harness.profile.id
         )
         XCTAssertNotNil(
-            harness.extensionManager.windowPublications
+            harness.attachedRuntime.publications.windowPublications
                 .publishedWindowAdapter(
                     for: harness.windowState,
                     profileID: harness.profile.id
                 )
         )
         XCTAssertTrue(
-            harness.extensionManager.normalWindowLifecycle
+            harness.attachedRuntime.publications.normalWindows
                 .tabPublicationIsCurrent(
                     harness.sourceTab,
                     profileID: harness.profile.id
@@ -237,7 +242,7 @@ extension AuxiliaryWindowLifecycleTests {
             harness.browserManager.auxiliaryWindows.sessions
                 .session(for: webView)
         )
-        let generation = harness.extensionManager.tabPublicationRevisions.issue()
+        let generation = harness.inspection.runtimeAuthorities.tabPublicationRevisions.issue()
         var attemptedReload = false
         var publicationChangedDuringReloadAttempt = false
         var openedTabIDs: [UUID] = []
@@ -271,7 +276,7 @@ extension AuxiliaryWindowLifecycleTests {
                 }
             )
 
-            harness.extensionManager.reloadRuntimePublications(
+            harness.inspection.browserPublication.reloads.reloadLoadedRuntime(
                 reason:
                     "AuxiliaryWindowLifecycleTests.reentrantTerminalRetirement",
                 profileID: harness.profile.id
@@ -290,18 +295,18 @@ extension AuxiliaryWindowLifecycleTests {
         harness.extensionManager.testHooks = hooks
         defer { harness.extensionManager.clearDebugState() }
 
-        let outcome = harness.extensionManager.runtimePublicationReconciler
+        let outcome = harness.attachedRuntime.publications
+            .reconciler
             .retire(
-                runtime: harness.extensionManager.runtime,
                 auxiliaryControl:
-                    harness.extensionManager.extensionAuxiliaryWindows
+                    harness.attachedRuntime.bridge.auxiliaryWindows
             )
 
         XCTAssertEqual(outcome, .retired)
         XCTAssertTrue(attemptedReload)
         XCTAssertFalse(publicationChangedDuringReloadAttempt)
         XCTAssertEqual(
-            harness.extensionManager.tabPublicationRevisions.issue(),
+            harness.inspection.runtimeAuthorities.tabPublicationRevisions.issue(),
             generation,
             "A reload rejected by terminal retirement must not choose a new generation"
         )
@@ -313,21 +318,21 @@ extension AuxiliaryWindowLifecycleTests {
         XCTAssertTrue(harness.extensionContext.openTabs.isEmpty)
         XCTAssertTrue(harness.extensionContext.openWindows.isEmpty)
         XCTAssertNil(
-            harness.extensionManager.windowPublications
+            harness.attachedRuntime.publications.windowPublications
                 .publishedWindowAdapter(
                     for: harness.windowState,
                     profileID: harness.profile.id
                 )
         )
         XCTAssertFalse(
-            harness.extensionManager.normalWindowLifecycle
+            harness.attachedRuntime.publications.normalWindows
                 .tabPublicationIsCurrent(
                     harness.sourceTab,
                     profileID: harness.profile.id
                 )
         )
         XCTAssertFalse(
-            harness.extensionManager.runtimePublicationGate
+            harness.attachedRuntime.publications.gate
                 .acceptsBrowserEvents
         )
 
@@ -348,7 +353,7 @@ extension AuxiliaryWindowLifecycleTests {
                 .session(for: webView)
         )
         let tabAdapter = try XCTUnwrap(
-            harness.extensionManager.adapterStore.tabAdapters[session.tab.id]
+            harness.inspection.normalTabs.adapters.tabAdapters[session.tab.id]
         )
         var openedTabCount = 0
         var closedTabCount = 0
@@ -362,7 +367,7 @@ extension AuxiliaryWindowLifecycleTests {
         harness.extensionManager.testHooks = hooks
         defer { harness.extensionManager.clearDebugState() }
 
-        harness.extensionManager.reloadRuntimePublications(
+        harness.inspection.browserPublication.reloads.reloadLoadedRuntime(
             reason: "AuxiliaryWindowLifecycleTests.runtimeReload"
         )
 
@@ -406,16 +411,16 @@ extension AuxiliaryWindowLifecycleTests {
             tab: session.tab,
             window: session.window,
             auxiliaryWindows: try XCTUnwrap(
-                harness.extensionManager.extensionAuxiliaryWindows
+                harness.attachedRuntime.bridge.auxiliaryWindows
             ),
-            windowPublications: harness.extensionManager.windowPublications,
+            windowPublications: harness.attachedRuntime.publications.windowPublications,
             isPrivate: session.isPrivate,
             shouldActivateApp: session.shouldActivateApp
         )
         XCTAssertFalse(forgedAdapter === session.miniWindowAdapter)
 
         XCTAssertThrowsError(
-            try harness.extensionManager.requestedTabTargetResolver.resolve(
+            try harness.attachedRuntime.requestedTabs.targetResolver.resolve(
                 requestedWindow: forgedAdapter,
                 extensionContext: harness.extensionContext
             )
@@ -433,7 +438,7 @@ extension AuxiliaryWindowLifecycleTests {
                 .session(for: webView)
         )
         let retiredAdapter = try XCTUnwrap(
-            harness.extensionManager.adapterStore.tabAdapters[session.tab.id]
+            harness.inspection.normalTabs.adapters.tabAdapters[session.tab.id]
         )
         let reusedID = session.tab.id
 
@@ -442,7 +447,7 @@ extension AuxiliaryWindowLifecycleTests {
             reason: .bulkCleanup
         )
         XCTAssertNil(
-            harness.extensionManager.adapterStore.tabAdapters[reusedID]
+            harness.inspection.normalTabs.adapters.tabAdapters[reusedID]
         )
 
         let replacement = Tab(
@@ -456,7 +461,7 @@ extension AuxiliaryWindowLifecycleTests {
             replacement
         )
         let replacementAdapter = try XCTUnwrap(
-            harness.extensionManager.adapterCatalog
+            harness.attachedRuntime.adapters
                 .stableAdapter(for: replacement)
         )
 
@@ -470,20 +475,18 @@ extension AuxiliaryWindowLifecycleTests {
         }
         XCTAssertNotNil(staleCloseError)
         XCTAssertIdentical(
-            harness.extensionManager.adapterStore.tabAdapters[reusedID],
+            harness.inspection.normalTabs.adapters.tabAdapters[reusedID],
             replacementAdapter
         )
 
-        let runtime = harness.extensionManager.runtime
-        let windows = runtime.allWindowStates()
-        harness.extensionManager.adapterStore.prune(
-            liveTabs: harness.extensionManager.browserContentInventory.tabs(
-                in: runtime
-            ),
+        let attached = harness.attachedRuntime
+        let windows = attached.bridge.windows.allExtensionWindowStates
+        harness.inspection.normalTabs.adapters.prune(
+            liveTabs: attached.bridge.tabs.allExtensionTabs,
             liveWindowIDs: Set(windows.map(\.id))
         )
         XCTAssertIdentical(
-            harness.extensionManager.adapterStore.tabAdapters[reusedID],
+            harness.inspection.normalTabs.adapters.tabAdapters[reusedID],
             replacementAdapter
         )
     }
@@ -523,14 +526,14 @@ extension AuxiliaryWindowLifecycleTests {
         let replacementContext = try await makeExtensionContext(
             ownerExtensionID: ownerExtensionID
         )
-        harness.extensionManager.setExtensionContext(
+        harness.inspection.contextState.profiles.setContext(
             replacementContext,
             extensionId: ownerExtensionID,
             profileId: harness.profile.id
         )
 
         XCTAssertTrue(
-            harness.extensionManager.windowVisibilityResolver
+            harness.attachedRuntime.requestedTabs.windowVisibility
                 .miniWindowAdapters(
                     ownerExtensionID: ownerExtensionID,
                     profileId: harness.profile.id
@@ -551,7 +554,7 @@ extension AuxiliaryWindowLifecycleTests {
         )
         XCTAssertTrue(replacementContext.openWindows.isEmpty)
         XCTAssertNil(
-            harness.extensionManager.adapterStore.existingMiniWindowAdapter(
+            harness.inspection.normalTabs.adapters.existingMiniWindowAdapter(
                 for: session.id
             )
         )
@@ -579,7 +582,7 @@ extension AuxiliaryWindowLifecycleTests {
                 .sessionsSnapshot().isEmpty
         )
         XCTAssertTrue(
-            harness.extensionManager.adapterStore
+            harness.inspection.normalTabs.adapters
                 .miniWindowAdaptersSnapshot().isEmpty
         )
         XCTAssertTrue(
@@ -597,7 +600,7 @@ extension AuxiliaryWindowLifecycleTests {
             ownerExtensionID: ownerExtensionID
         )
         XCTAssertNil(
-            harness.extensionManager.controllerCallbackAdmission.capture(
+            harness.inspection.controller.callbackAdmission.capture(
                 context: unboundContext,
                 controller: harness.controller
             ),
@@ -608,7 +611,7 @@ extension AuxiliaryWindowLifecycleTests {
                 .sessionsSnapshot().isEmpty
         )
         XCTAssertTrue(
-            harness.extensionManager.adapterStore
+            harness.inspection.normalTabs.adapters
                 .miniWindowAdaptersSnapshot().isEmpty
         )
         XCTAssertTrue(
@@ -662,16 +665,16 @@ extension AuxiliaryWindowLifecycleTests {
             windowDelegate: session.windowDelegate
         )
 
-        harness.extensionManager.notifyAuxiliaryWindowClosed(staleSession)
+        harness.inspection.browserPublication.events.closeAuxiliaryWindow(staleSession)
 
         XCTAssertIdentical(
-            harness.extensionManager.adapterStore.existingMiniWindowAdapter(
+            harness.inspection.normalTabs.adapters.existingMiniWindowAdapter(
                 for: session.id
             ),
             publishedAdapter
         )
         XCTAssertIdentical(
-            harness.extensionManager.windowVisibilityResolver
+            harness.attachedRuntime.requestedTabs.windowVisibility
                 .miniWindowAdapters(
                     ownerExtensionID: ownerExtensionID,
                     profileId: harness.profile.id
@@ -710,7 +713,7 @@ extension AuxiliaryWindowLifecycleTests {
         )
 
         let replacementAdapter = try XCTUnwrap(
-            harness.extensionManager.adapterCatalog.miniWindowAdapter(
+            harness.attachedRuntime.adapters.miniWindowAdapter(
                 for: session.id,
                 tab: session.tab,
                 window: NSWindow(),
@@ -719,17 +722,17 @@ extension AuxiliaryWindowLifecycleTests {
             )
         )
         defer {
-            _ = harness.extensionManager.adapterStore.removeMiniWindowAdapter(
+            _ = harness.inspection.normalTabs.adapters.removeMiniWindowAdapter(
                 for: session.id,
                 ifIdenticalTo: replacementAdapter
             )
         }
         XCTAssertFalse(replacementAdapter === retiredAdapter)
 
-        harness.extensionManager.notifyAuxiliaryWindowClosed(session)
+        harness.inspection.browserPublication.events.closeAuxiliaryWindow(session)
 
         XCTAssertIdentical(
-            harness.extensionManager.adapterStore.existingMiniWindowAdapter(
+            harness.inspection.normalTabs.adapters.existingMiniWindowAdapter(
                 for: session.id
             ),
             replacementAdapter

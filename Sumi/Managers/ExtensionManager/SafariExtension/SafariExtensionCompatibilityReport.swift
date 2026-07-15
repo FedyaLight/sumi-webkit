@@ -85,27 +85,25 @@ extension SafariExtensionImportStore: SafariExtensionImportRecordProviding {}
 struct SafariCompatibilityReportRuntime {
     typealias CurrentTabProvider = @MainActor () -> Tab?
     typealias StableAdapterProvider = @MainActor (_ tab: Tab) -> ExtensionTabAdapter?
+    typealias ContextProvider = @MainActor (_ extensionID: String) -> WKWebExtensionContext?
+    typealias ActionStateProvider = @MainActor (
+        _ extensionID: String
+    ) -> BrowserExtensionActionSurfaceState?
+    typealias LifecycleStateProvider = @MainActor () -> ExtensionManager.ExtensionRuntimeState?
 
     let currentTab: CurrentTabProvider
     let stableAdapter: StableAdapterProvider
+    let context: ContextProvider
+    let actionState: ActionStateProvider
+    let lifecycleState: LifecycleStateProvider
 
     static let inactive = SafariCompatibilityReportRuntime(
         currentTab: { nil },
-        stableAdapter: { _ in nil }
+        stableAdapter: { _ in nil },
+        context: { _ in nil },
+        actionState: { _ in nil },
+        lifecycleState: { nil }
     )
-
-    static func make(extensionManager: ExtensionManager?) -> Self {
-        guard let extensionManager else { return .inactive }
-        return Self(
-            currentTab: { [weak extensionManager] in
-                extensionManager?.extensionWindowQuery?
-                    .currentExtensionTabForActiveWindow()
-            },
-            stableAdapter: { [weak extensionManager] tab in
-                extensionManager?.adapterCatalog.stableAdapter(for: tab)
-            }
-        )
-    }
 }
 
 /// PM target extensions for manual acceptance and dev-machine bundle probes.
@@ -178,11 +176,10 @@ enum SafariExtensionCompatibilityReportBuilder {
         discovered: [DiscoveredSafariExtensionCandidate],
         importStore: any SafariExtensionImportRecordProviding,
         installedExtensions: [InstalledExtension] = [],
-        extensionManager: ExtensionManager? = nil,
         extensionsModuleEnabled: Bool = true,
         runtime: SafariCompatibilityReportRuntime? = nil
     ) -> SafariExtensionCompatibilityReport {
-        let runtime = runtime ?? .make(extensionManager: extensionManager)
+        let runtime = runtime ?? .inactive
         let discoveredByAppexID = Dictionary(
             uniqueKeysWithValues: discovered.map { ($0.extensionBundleIdentifier, $0) }
         )
@@ -213,11 +210,11 @@ enum SafariExtensionCompatibilityReportBuilder {
 
             let extensionId = installed?.id ?? imported?.installedExtensionId
             let isEnabled = installed?.isEnabled == true
-            let context = extensionId.flatMap { extensionManager?.getExtensionContext(for: $0) }
+            let context = extensionId.flatMap(runtime.context)
             let isContextLoaded = context != nil
             let isActionAvailable: Bool = {
                 guard let context, let extensionId else { return false }
-                if extensionManager?.actionStatesByExtensionID[extensionId] != nil {
+                if runtime.actionState(extensionId) != nil {
                     return true
                 }
                 return ExtensionActionSurfaceStatePresenter.actionForLoadedContext(
@@ -237,11 +234,9 @@ enum SafariExtensionCompatibilityReportBuilder {
                 isContextLoaded: isContextLoaded,
                 isActionAvailable: isActionAvailable,
                 extensionsModuleEnabled: extensionsModuleEnabled,
-                extensionManager: extensionManager
+                runtimeState: runtime.lifecycleState()
             )
-            let actionState = extensionId.flatMap {
-                extensionManager?.actionStatesByExtensionID[$0]
-            }
+            let actionState = extensionId.flatMap(runtime.actionState)
             let popupLoadStatus = resolvePopupLoadStatus(
                 installed: installed,
                 isEnabled: isEnabled,
@@ -382,7 +377,7 @@ enum SafariExtensionCompatibilityReportBuilder {
         isContextLoaded: Bool,
         isActionAvailable: Bool,
         extensionsModuleEnabled: Bool,
-        extensionManager: ExtensionManager?
+        runtimeState: ExtensionManager.ExtensionRuntimeState?
     ) -> SafariExtensionCompatibilityErrorBucket {
         _ = target
 
@@ -392,8 +387,8 @@ enum SafariExtensionCompatibilityReportBuilder {
         guard installed != nil else { return .notInstalled }
         guard isEnabled else { return .disabled }
 
-        if let extensionManager {
-            switch extensionManager.runtimeLifecycle.state {
+        if let runtimeState {
+            switch runtimeState {
             case .failed:
                 return .runtimeLoadFailed
             case .unavailable:

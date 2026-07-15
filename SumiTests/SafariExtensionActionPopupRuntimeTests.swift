@@ -10,34 +10,35 @@ final class SafariExtensionActionPopupRuntimeTests: XCTestCase {
     func testRuntimeDemandReusesReadyProfileControllerWithoutForceReload() throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Popup Profile")
-        let manager = ExtensionManager(
+        let fixture = makeSafariExtensionManagerTestFixture(
             context: container.mainContext,
             initialProfile: profile
         )
+        let inspection = fixture.inspection
 
-        let initialController = manager.runtimeDemandCoordinator.request(
-            reason: .install,
-            allowWithoutEnabledExtensions: true
+        let initialController = inspection.contextCoordination.demand.requestRuntimeExplicitly(
+            reason: .install
         )
 
-        manager.runtimeLifecycle.reset(extensionSupportAvailable: true)
-        let reusedController = manager.runtimeDemandCoordinator.request(
+        inspection.runtimeAuthorities.lifecycle.resetAfterShutdown()
+        let reusedController = inspection.contextCoordination.demand.requestRuntimeExplicitly(
             reason: .install,
-            allowWithoutEnabledExtensions: true,
             profileId: profile.id
         )
         XCTAssertIdentical(reusedController, initialController)
-        XCTAssertEqual(manager.runtimeLifecycle.state, .ready)
+        XCTAssertEqual(inspection.runtimeAuthorities.lifecycle.state, .ready)
     }
 
     func testProfileExtensionRuntimeReadinessTracksMissingContextsPerProfile() async throws {
         let container = try makeTestContainer()
         let profileA = Profile(name: "Profile A")
         let profileB = Profile(name: "Profile B")
-        let manager = ExtensionManager(
+        let fixture = makeSafariExtensionManagerTestFixture(
             context: container.mainContext,
             initialProfile: profileA
         )
+        let manager = fixture.manager
+        let inspection = fixture.inspection
 
         let scratchDirectory = try makeScratchDirectory()
         let installed = try await installUnpackedExtension(
@@ -45,33 +46,46 @@ final class SafariExtensionActionPopupRuntimeTests: XCTestCase {
             scratchDirectory: scratchDirectory,
             name: "ProfileIsolationExtension"
         )
-        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
+        _ = try await inspection.installation.lifecycle.enable(installed.id)
 
         XCTAssertTrue(
-            manager.isProfileExtensionRuntimeReady(for: profileA.id),
+            inspection.contextState.profileState.isProfileReady(for: profileA.id),
             "Enabled extension should be ready in the profile where it was enabled"
         )
         let profileAContext = try XCTUnwrap(
-            manager.getExtensionContext(for: installed.id, profileId: profileA.id)
+            inspection.contextState.profileState.context(
+                for: installed.id,
+                profileId: profileA.id
+            )
         )
         XCTAssertFalse(
-            manager.isProfileExtensionRuntimeReady(for: profileB.id),
+            inspection.contextState.profileState.isProfileReady(for: profileB.id),
             "A different profile must not inherit another profile's loaded context"
         )
 
-        await manager.ensureEnabledExtensionsLoaded(for: profileB.id)
+        await inspection.contextCoordination.residency
+            .ensureEnabledExtensionsLoaded(for: profileB.id)
         XCTAssertTrue(
-            manager.isProfileExtensionRuntimeReady(for: profileB.id),
+            inspection.contextState.profileState.isProfileReady(for: profileB.id),
             "Profile B should load its own isolated context on demand"
         )
         XCTAssertIdentical(
-            manager.getExtensionContext(for: installed.id, profileId: profileA.id),
+            inspection.contextState.profileState.context(
+                for: installed.id,
+                profileId: profileA.id
+            ),
             profileAContext,
             "Loading another profile must not reset an already loaded profile context"
         )
         XCTAssertNotIdentical(
-            manager.getExtensionContext(for: installed.id, profileId: profileA.id),
-            manager.getExtensionContext(for: installed.id, profileId: profileB.id),
+            inspection.contextState.profileState.context(
+                for: installed.id,
+                profileId: profileA.id
+            ),
+            inspection.contextState.profileState.context(
+                for: installed.id,
+                profileId: profileB.id
+            ),
             "Profile A and Profile B must not share the same WKWebExtensionContext instance"
         )
     }
@@ -83,16 +97,14 @@ final class SafariExtensionActionPopupRuntimeTests: XCTestCase {
             context: container.mainContext,
             profile: profile
         )
-        let manager = fixture.manager
-
         let scratchDirectory = try makeScratchDirectory()
         let installed = try await installSafariStyleCopiedPackage(
-            manager: manager,
+            inspection: fixture.inspection,
             scratchDirectory: scratchDirectory,
             name: "Raindrop",
             manifestVersion: 3
         )
-        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
+        _ = try await fixture.inspection.installation.lifecycle.enable(installed.id)
 
         let tab = makeVisibleTab(
             url: URL(string: "https://example.com/")!,
@@ -100,7 +112,7 @@ final class SafariExtensionActionPopupRuntimeTests: XCTestCase {
             fixture: fixture
         )
 
-        let result = await manager.extensionActionInvocation.openPopup(
+        let result = await fixture.inspection.actionSurfaces.invocation.openPopup(
             extensionID: installed.id,
             currentTab: tab
         )
@@ -119,19 +131,20 @@ final class SafariExtensionActionPopupRuntimeTests: XCTestCase {
     func testRaindropStyleIframePopupPackageReachesWebKitPopupGate() async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Raindrop Iframe Profile")
-        let manager = ExtensionManager(
+        let fixture = makeSafariExtensionManagerTestFixture(
             context: container.mainContext,
             initialProfile: profile
         )
+        let inspection = fixture.inspection
 
         let scratchDirectory = try makeScratchDirectory()
         let installed = try await installSafariStyleCopiedPackage(
-            manager: manager,
+            inspection: inspection,
             scratchDirectory: scratchDirectory,
             name: "Raindrop Iframe",
             packageStyle: .raindropIframePopup
         )
-        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
+        _ = try await inspection.installation.lifecycle.enable(installed.id)
 
         XCTAssertEqual(installed.defaultPopupPath, "assets/action_in_iframe.html")
         XCTAssertTrue(installed.hasAction)
@@ -140,7 +153,7 @@ final class SafariExtensionActionPopupRuntimeTests: XCTestCase {
         let tab = Tab(url: URL(string: "https://example.com/")!)
         tab.profileId = profile.id
 
-        let result = await manager.extensionActionInvocation.openPopup(
+        let result = await inspection.actionSurfaces.invocation.openPopup(
             extensionID: installed.id,
             currentTab: tab
         )
@@ -246,21 +259,23 @@ final class SafariExtensionActionPopupRuntimeTests: XCTestCase {
     func testRaindropStyleIframePopupResourcesRenderInExtensionPageConfiguration() async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Raindrop Iframe Resource Profile")
-        let manager = ExtensionManager(
+        let fixture = makeSafariExtensionManagerTestFixture(
             context: container.mainContext,
             initialProfile: profile
         )
+        let inspection = fixture.inspection
 
         let scratchDirectory = try makeScratchDirectory()
         let installed = try await installSafariStyleCopiedPackage(
-            manager: manager,
+            inspection: inspection,
             scratchDirectory: scratchDirectory,
             name: "Raindrop Iframe Resource",
             packageStyle: .raindropIframePopup
         )
-        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
+        _ = try await inspection.installation.lifecycle.enable(installed.id)
 
-        guard let extensionContext = try await manager.ensureExtensionLoaded(
+        guard let extensionContext = try await inspection.contextCoordination
+            .residency.ensureExtensionLoaded(
             extensionId: installed.id,
             profileId: profile.id
         ) else {
@@ -349,60 +364,66 @@ final class SafariExtensionActionPopupRuntimeTests: XCTestCase {
     func testReimportAfterDeleteCanReachPopupRuntimeGate() async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Reimport Profile")
-        let manager = ExtensionManager(
+        let fixture = makeSafariExtensionManagerTestFixture(
             context: container.mainContext,
             initialProfile: profile
         )
+        let inspection = fixture.inspection
 
         let scratchDirectory = try makeScratchDirectory()
         let installed = try await installSafariStyleCopiedPackage(
-            manager: manager,
+            inspection: inspection,
             scratchDirectory: scratchDirectory,
             name: "Reimport Extension"
         )
-        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
-        try await manager.installedExtensionLifecycle.uninstall(installed.id)
+        _ = try await inspection.installation.lifecycle.enable(installed.id)
+        try await inspection.installation.lifecycle.uninstall(installed.id)
 
         let reinstalled = try await installSafariStyleCopiedPackage(
-            manager: manager,
+            inspection: inspection,
             scratchDirectory: scratchDirectory,
             name: "Reimport Extension",
             extensionId: installed.id
         )
-        _ = try await manager.installedExtensionLifecycle.enable(reinstalled.id)
+        _ = try await inspection.installation.lifecycle.enable(reinstalled.id)
 
-        _ = try await manager.ensureExtensionLoaded(
+        _ = try await inspection.contextCoordination.residency
+            .ensureExtensionLoaded(
             extensionId: reinstalled.id,
             profileId: profile.id
         )
         XCTAssertNotNil(
-            manager.getExtensionContext(for: reinstalled.id, profileId: profile.id)
+            inspection.contextState.profiles.contexts(
+                for: profile.id
+            )[reinstalled.id]
         )
     }
 
     func testMV2SafariAppexStillLoadsThroughRuntimeGate() async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "MV2 Profile")
-        let manager = ExtensionManager(
+        let fixture = makeSafariExtensionManagerTestFixture(
             context: container.mainContext,
             initialProfile: profile
         )
+        let inspection = fixture.inspection
 
         let scratchDirectory = try makeScratchDirectory()
         let installed = try await installSafariStyleCopiedPackage(
-            manager: manager,
+            inspection: inspection,
             scratchDirectory: scratchDirectory,
             name: "Bitwarden",
             manifestVersion: 2
         )
-        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
+        _ = try await inspection.installation.lifecycle.enable(installed.id)
 
-        _ = try await manager.ensureExtensionLoaded(
+        _ = try await inspection.contextCoordination.residency
+            .ensureExtensionLoaded(
             extensionId: installed.id,
             profileId: profile.id
         )
         XCTAssertTrue(
-            manager.isExtensionRuntimeReady(
+            inspection.contextState.profileState.isExtensionReady(
                 extensionId: installed.id,
                 profileId: profile.id
             )
@@ -426,6 +447,8 @@ final class SafariExtensionActionPopupRuntimeTests: XCTestCase {
 
     private struct AttachedBrowserFixture {
         let manager: ExtensionManager
+        let inspection: ExtensionManagerTestInspection
+        let attachedRuntime: ExtensionAttachedBrowserRuntimeInspection
         let browserManager: BrowserManager
         let windowRegistry: WindowRegistry
     }
@@ -465,7 +488,7 @@ final class SafariExtensionActionPopupRuntimeTests: XCTestCase {
             name: "ActiveTab Popup",
             packageStyle: .raindropIframePopup
         )
-        _ = try await fixture.manager.installedExtensionLifecycle.enable(
+        _ = try await fixture.inspection.installation.lifecycle.enable(
             installed.id
         )
         let clickedTab = makeVisibleTab(
@@ -474,7 +497,7 @@ final class SafariExtensionActionPopupRuntimeTests: XCTestCase {
             fixture: fixture
         )
         if let configuredAccess {
-            fixture.manager.setConfiguredSiteAccess(
+            fixture.inspection.actionPolicy.siteAccess.setConfiguredSiteAccess(
                 configuredAccess,
                 extensionId: installed.id,
                 profileId: profile.id,
@@ -482,12 +505,11 @@ final class SafariExtensionActionPopupRuntimeTests: XCTestCase {
             )
         }
         let extensionContext = try XCTUnwrap(
-            fixture.manager.getExtensionContext(
-                for: installed.id,
-                profileId: profile.id
-            )
+            fixture.inspection.contextState.profiles.contexts(
+                for: profile.id
+            )[installed.id]
         )
-        let result = await fixture.manager.extensionActionInvocation.openPopup(
+        let result = await fixture.inspection.actionSurfaces.invocation.openPopup(
             extensionID: installed.id,
             currentTab: clickedTab
         )
@@ -495,7 +517,7 @@ final class SafariExtensionActionPopupRuntimeTests: XCTestCase {
             clickedTab: clickedTab,
             extensionContext: extensionContext,
             adapter: try XCTUnwrap(
-                fixture.manager.adapterCatalog.stableAdapter(for: clickedTab)
+                fixture.attachedRuntime.adapters.stableAdapter(for: clickedTab)
             ),
             result: result
         )
@@ -512,12 +534,13 @@ final class SafariExtensionActionPopupRuntimeTests: XCTestCase {
         )
         registry.enable(.extensions)
         let browserConfiguration = BrowserConfiguration()
-        let manager = makeSafariExtensionTestExtensionManager(
+        let managerFixture = makeSafariExtensionManagerTestFixture(
             context: context,
             initialProfile: profile,
             browserConfiguration: browserConfiguration,
             moduleRegistry: registry
         )
+        let manager = managerFixture.manager
         let extensionsModule = SumiExtensionsModule(
             moduleRegistry: registry,
             context: context,
@@ -540,6 +563,8 @@ final class SafariExtensionActionPopupRuntimeTests: XCTestCase {
         XCTAssertIdentical(extensionsModule.managerForTesting(), manager)
         return AttachedBrowserFixture(
             manager: manager,
+            inspection: managerFixture.inspection,
+            attachedRuntime: managerFixture.attachedRuntime.runtime,
             browserManager: browserManager,
             windowRegistry: windowRegistry
         )
@@ -564,9 +589,10 @@ final class SafariExtensionActionPopupRuntimeTests: XCTestCase {
         )
         tab.profileId = profile.id
         tabManager.regularTabLifecycleOwner.addTab(tab)
-        let configuration = fixture.manager.browserConfiguration
+        let configuration = fixture.inspection.controller.browserConfiguration
             .auxiliaryWebViewConfiguration(surface: .extensionOptions)
-        fixture.manager.prepareWebViewConfigForExtensionRuntime(
+        fixture.inspection.normalTabs.configuration
+            .prepareWebViewConfigForExtensionRuntime(
             configuration,
             profileId: profile.id,
             reason: "SafariExtensionActionPopupRuntimeTests"
@@ -586,7 +612,7 @@ final class SafariExtensionActionPopupRuntimeTests: XCTestCase {
         window.activeTabForSpace[space.id] = tab.id
         fixture.windowRegistry.register(window)
         fixture.windowRegistry.setActive(window)
-        fixture.manager.normalTabRegistration.register(
+        fixture.attachedRuntime.normalTabs.tabRegistration.register(
             tab,
             reason: "SafariExtensionActionPopupRuntimeTests"
         )
@@ -623,14 +649,14 @@ final class SafariExtensionActionPopupRuntimeTests: XCTestCase {
             manifestVersion: manifestVersion,
             packageStyle: packageStyle
         )
-        return try await manager.extensionInstaller.install(
+        return try await manager.settingsCatalogBinding().install(
             from: directoryURL,
             enableOnInstall: false
         )
     }
 
     private func installSafariStyleCopiedPackage(
-        manager: ExtensionManager,
+        inspection: ExtensionManagerTestInspection,
         scratchDirectory: URL,
         name: String,
         manifestVersion: Int = 3,
@@ -664,7 +690,7 @@ final class SafariExtensionActionPopupRuntimeTests: XCTestCase {
             at: manifestURL,
             policy: .safariWebExtension
         )
-        let record = try manager.makeInstalledRecord(
+        let record = try inspection.installation.metadata.makeInstalledRecord(
             extensionId: resolvedExtensionId,
             manifest: manifest,
             extensionRoot: destinationDirectory,
@@ -674,8 +700,8 @@ final class SafariExtensionActionPopupRuntimeTests: XCTestCase {
             sourceFingerprintURL: destinationDirectory,
             existingEntity: nil
         )
-        try manager.persist(record: record)
-        _ = manager.installedExtensionCatalog.load()
+        try inspection.installation.metadata.persist(record: record)
+        _ = inspection.installation.catalog.load()
         return record
     }
 

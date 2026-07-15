@@ -43,7 +43,7 @@ final class SumiExtensionsModule {
         surfaceStore: BrowserExtensionSurfaceStore? = nil
     ) {
         let resolvedSurfaceStore = surfaceStore ?? BrowserExtensionSurfaceStore(
-            extensionManager: nil
+            binding: nil
         )
         let managerLifetime = SumiExtensionManagerLifetime(
             moduleRegistry: moduleRegistry,
@@ -90,7 +90,7 @@ final class SumiExtensionsModule {
     var hasAttachedRuntime: Bool { managerLifetime.hasAttachedRuntime }
 
     func bindRuntimeProvider(
-        _ provider: @escaping @MainActor () -> SumiExtensionsModuleRuntime
+        _ provider: @escaping @MainActor () -> SumiExtensionsModuleRuntime?
     ) {
         demand.bindRuntimeProvider(provider)
     }

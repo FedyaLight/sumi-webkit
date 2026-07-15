@@ -16,11 +16,8 @@ final class ExtensionRuntimeReloadTransaction {
 
     struct Request {
         let reason: String
-        let allowWhenExtensionsNotLoaded: Bool
+        let publicationStage: ExtensionRuntimePublicationStage
         let requestedProfileID: UUID?
-        let extensionsLoaded: Bool
-        let runtime: ExtensionManagerRuntime
-        let windowQuery: (any ExtensionWindowQuery)?
     }
 
     struct Commit {
@@ -37,45 +34,33 @@ final class ExtensionRuntimeReloadTransaction {
 
     private let runtimePublicationEvidence:
         ExtensionRuntimePublicationEvidenceIssuer
-    private let profileRuntime: ExtensionProfileRuntime
     private let normalWindows: ExtensionNormalWindowLifecycle
     private let publicationGate: ExtensionRuntimePublicationGate
-    private let adapterResolution: ExtensionAdapterCatalog
-    private let controllers: any ExtensionTabControllerQuery
-    private let controllerReconciler: ExtensionProfileWebViewRuntimeReconciler
+    private let profiles: ExtensionRuntimeReloadProfileReconciler
     private let tabPublication: any ExtensionNormalTabOpening
-    private let tabEvents: any ExtensionTabLifecycleEventSink
-    private let isAuxiliarySessionTab: @MainActor (Tab) -> Bool
     private let diagnostics: ExtensionRuntimeDiagnostics
-    private let contentInventory: ExtensionBrowserContentInventory
+    private let tabInventory: ExtensionRuntimeReloadTabInventory
+    private let tabRetirement: ExtensionRuntimeReloadTabRetirement
 
     init(
         runtimePublicationEvidence:
             ExtensionRuntimePublicationEvidenceIssuer,
-        profileRuntime: ExtensionProfileRuntime,
         normalWindows: ExtensionNormalWindowLifecycle,
         publicationGate: ExtensionRuntimePublicationGate,
-        adapterResolution: ExtensionAdapterCatalog,
-        controllers: any ExtensionTabControllerQuery,
-        controllerReconciler: ExtensionProfileWebViewRuntimeReconciler,
+        profiles: ExtensionRuntimeReloadProfileReconciler,
         tabPublication: any ExtensionNormalTabOpening,
-        tabEvents: any ExtensionTabLifecycleEventSink,
-        isAuxiliarySessionTab: @escaping @MainActor (Tab) -> Bool,
         diagnostics: ExtensionRuntimeDiagnostics,
-        contentInventory: ExtensionBrowserContentInventory = .init()
+        tabInventory: ExtensionRuntimeReloadTabInventory,
+        tabRetirement: ExtensionRuntimeReloadTabRetirement
     ) {
         self.runtimePublicationEvidence = runtimePublicationEvidence
-        self.profileRuntime = profileRuntime
         self.normalWindows = normalWindows
         self.publicationGate = publicationGate
-        self.adapterResolution = adapterResolution
-        self.controllers = controllers
-        self.controllerReconciler = controllerReconciler
+        self.profiles = profiles
         self.tabPublication = tabPublication
-        self.tabEvents = tabEvents
-        self.isAuxiliarySessionTab = isAuxiliarySessionTab
         self.diagnostics = diagnostics
-        self.contentInventory = contentInventory
+        self.tabInventory = tabInventory
+        self.tabRetirement = tabRetirement
     }
 
     /// Closes the old WebKit graph, settles every new Tab binding while normal
@@ -85,23 +70,15 @@ final class ExtensionRuntimeReloadTransaction {
         _ request: Request,
         publicationClaim: ExtensionRuntimePublicationGate.ReloadClaim
     ) -> Commit? {
-        guard request.extensionsLoaded
-            || request.allowWhenExtensionsNotLoaded
-        else {
-            return nil
-        }
-
         let oldRuntimePublication = runtimePublicationEvidence.issue()
         let oldGeneration = oldRuntimePublication.tabPublication
-        let oldTabs = normalBrowserTabs(in: request.runtime)
+        let oldTabs = tabInventory.normalBrowserTabs()
         guard let token = normalWindows.beginRuntimeReconciliation(
-            allowWhenExtensionsNotLoaded:
-                request.allowWhenExtensionsNotLoaded,
+            publicationStage: request.publicationStage,
             closePublishedTabs: { [weak self] in
-                self?.closePublishedTabs(
+                self?.tabRetirement.closePublishedTabs(
                     oldTabs,
-                    generation: oldGeneration,
-                    runtime: request.runtime
+                    generation: oldGeneration
                 )
             }
         ) else {
@@ -130,7 +107,9 @@ final class ExtensionRuntimeReloadTransaction {
         }
         let generation = runtimePublication.tabPublication
 
-        for profileID in profileIDsToUpdate(for: request) {
+        for profileID in profiles.profileIDs(
+            including: request.requestedProfileID
+        ) {
             guard runtimePublicationEvidence.isCurrent(runtimePublication)
             else {
                 _ = normalWindows.finishRuntimeReconciliation(
@@ -139,10 +118,9 @@ final class ExtensionRuntimeReloadTransaction {
                 )
                 return nil
             }
-            controllerReconciler.reconcile(
+            profiles.reconcile(
                 profileID: profileID,
-                allowWhenExtensionsNotLoaded:
-                    request.allowWhenExtensionsNotLoaded,
+                publicationStage: request.publicationStage,
                 reason: request.reason
             )
         }
@@ -156,22 +134,20 @@ final class ExtensionRuntimeReloadTransaction {
             return nil
         }
 
-        let tabs = normalBrowserTabs(in: request.runtime)
+        let tabs = tabInventory.normalBrowserTabs()
         diagnostics.trace(
-            "extensionRuntimeReload start reason=\(request.reason) generation=\(generation) tabs=\(tabs.count) allowWhenNotLoaded=\(request.allowWhenExtensionsNotLoaded)"
+            "extensionRuntimeReload start reason=\(request.reason) generation=\(generation) tabs=\(tabs.count) stage=\(String(describing: request.publicationStage))"
         )
-        let preparedTabs = prepareTabs(
+        let preparedTabs = tabInventory.prepareTabs(
             tabs,
-            generation: generation,
-            runtime: request.runtime,
-            windowQuery: request.windowQuery
+            generation: generation
         )
-        let windows = request.windowQuery?.allExtensionWindowStates ?? []
+        let republishedWindows = tabInventory.allWindowStates
 
         guard runtimePublicationEvidence.isCurrent(runtimePublication),
               normalWindows.finishRuntimeReconciliation(
                   token,
-                  republishing: windows
+                  republishing: republishedWindows
               )
         else {
             return nil
@@ -201,38 +177,28 @@ final class ExtensionRuntimeReloadTransaction {
             return nil
         }
 
-        let activeWindow = request.windowQuery?.activeExtensionWindowState
-        let activeTab = activeWindow.flatMap { window in
-            request.windowQuery?.currentExtensionTab(in: window)
-        }.flatMap { tab in
-            tab.extensionPageRuntimeOwner.isEligible(for: generation)
-                ? tab
-                : nil
-        }
+        let activeTarget = tabInventory.activeTarget(for: generation)
         diagnostics.trace(
             "extensionRuntimeReload complete reason=\(request.reason) generation=\(generation) preparedTabs=\(preparedTabs.count)"
         )
         return Commit(
             runtimePublication: runtimePublication,
             preparedTabCount: preparedTabs.count,
-            activeWindow: activeWindow,
-            activeTab: activeTab
+            activeWindow: activeTarget?.window,
+            activeTab: activeTarget?.tab
         )
     }
 
     /// Balances the old Tab graph while its window projections and controllers
     /// are still readable, then leaves normal-window publication unavailable.
-    func retireRuntime(
-        _ runtime: ExtensionManagerRuntime
-    ) -> RetirementOutcome {
+    func retireRuntime() -> RetirementOutcome {
         let generation = runtimePublicationEvidence.issue().tabPublication
-        let tabs = normalBrowserTabs(in: runtime)
+        let tabs = tabInventory.normalBrowserTabs()
         let didRetire = normalWindows.closeAllForRuntimeTeardown(
             closePublishedTabs: { [weak self] in
-                self?.closePublishedTabs(
+                self?.tabRetirement.closePublishedTabs(
                     tabs,
-                    generation: generation,
-                    runtime: runtime
+                    generation: generation
                 )
             }
         )
@@ -242,147 +208,21 @@ final class ExtensionRuntimeReloadTransaction {
     /// Revalidates the exact focus target after `didFocusWindow`, which is an
     /// external synchronous callback and may replace the generation, active
     /// window, or selected Tab before activation is emitted.
-    func activationTarget(
-        after commit: Commit,
-        windowQuery: (any ExtensionWindowQuery)?
-    ) -> ActivationTarget? {
+    func activationTarget(after commit: Commit) -> ActivationTarget? {
         guard runtimePublicationEvidence.isCurrent(
                   commit.runtimePublication
               ),
               let expectedWindow = commit.activeWindow,
               let expectedTab = commit.activeTab,
-              let windowQuery,
-              let activeWindow = windowQuery.activeExtensionWindowState,
-              activeWindow === expectedWindow,
-              windowQuery.extensionWindowState(for: activeWindow.id)
-                === activeWindow,
-              let activeTab = windowQuery.currentExtensionTab(
-                  in: activeWindow
+              let target = tabInventory.activeTarget(
+                  expectedWindow: expectedWindow,
+                  expectedTab: expectedTab,
+                  generation: commit.runtimePublication.tabPublication
               ),
-              activeTab === expectedTab,
-              activeTab.extensionPageRuntimeOwner.isEligible(
-                  for: commit.runtimePublication.tabPublication
-              ),
-              normalWindows.prepareTabActivation(activeTab)
+              normalWindows.prepareTabActivation(target.tab)
         else {
             return nil
         }
-        return ActivationTarget(window: activeWindow, tab: activeTab)
-    }
-
-    private func closePublishedTabs(
-        _ tabs: [Tab],
-        generation: ExtensionTabPublicationRevision,
-        runtime: ExtensionManagerRuntime
-    ) {
-        for tab in tabs {
-            guard tab.extensionPageRuntimeOwner
-                .hasDidOpenTabNotification(for: generation),
-                let profileID = resolvedProfileID(for: tab, runtime: runtime),
-                let controller = profileRuntime.controller(for: profileID),
-                controllers.existingController(for: tab) === controller,
-                let adapter = adapterResolution.stableAdapter(for: tab),
-                profileRuntime.contexts(for: profileID).values.contains(
-                    where: { context in
-                        context.openTabs.contains { openTab in
-                            (openTab as AnyObject) === adapter
-                        }
-                    }
-                )
-            else {
-                continue
-            }
-            // Reserve the close before entering WebKit. Reentrant teardown can
-            // still query the old projection, but cannot deliver this close a
-            // second time.
-            guard tab.extensionPageRuntimeOwner
-                .claimDidOpenTabNotificationForClose(
-                    generation: generation
-                )
-            else {
-                continue
-            }
-            tabEvents.emitDidCloseTab(
-                tab,
-                controller: controller,
-                adapter: adapter
-            )
-        }
-    }
-
-    private func prepareTabs(
-        _ tabs: [Tab],
-        generation: ExtensionTabPublicationRevision,
-        runtime: ExtensionManagerRuntime,
-        windowQuery: (any ExtensionWindowQuery)?
-    ) -> [Tab] {
-        var candidates: [Tab] = []
-        candidates.reserveCapacity(tabs.count)
-
-        for tab in tabs {
-            tab.extensionPageRuntimeOwner.prepareGeneration(generation)
-            guard tab.isEphemeral == false,
-                  let profileID = resolvedProfileID(for: tab, runtime: runtime),
-                  let controller = profileRuntime.controller(for: profileID),
-                  controllers.existingController(for: tab) === controller,
-                  adapterResolution.stableAdapter(for: tab) != nil,
-                  contentInventory.liveWebViews(for: tab, in: runtime).contains(
-                      where: {
-                          $0.configuration.webExtensionController === controller
-                      }
-                  )
-            else {
-                continue
-            }
-            candidates.append(tab)
-        }
-
-        guard let windowQuery else { return [] }
-        let candidateIDs = Set(candidates.map(\.id))
-        var prepared: [Tab] = []
-        prepared.reserveCapacity(candidates.count)
-
-        for tab in candidates {
-            guard let window = windowQuery
-                .preferredExtensionWindowState(containing: tab),
-                  windowQuery.extensionWindowState(for: window.id) === window,
-                  window.isIncognito == false,
-                  let selectedTab = windowQuery.currentExtensionTab(in: window),
-                  candidateIDs.contains(selectedTab.id),
-                  resolvedProfileID(for: selectedTab, runtime: runtime)
-                    == resolvedProfileID(for: tab, runtime: runtime)
-            else {
-                continue
-            }
-            tab.extensionPageRuntimeOwner.markEligible(for: generation)
-            prepared.append(tab)
-        }
-        return prepared
-    }
-
-    private func profileIDsToUpdate(for request: Request) -> Set<UUID> {
-        var profileIDs = Set(profileRuntime.controllersByProfile.keys)
-        if let requestedProfileID = request.requestedProfileID {
-            profileIDs.insert(requestedProfileID)
-        }
-        if let currentProfileID = profileRuntime.currentProfileId {
-            profileIDs.insert(currentProfileID)
-        }
-        return profileIDs
-    }
-
-    private func resolvedProfileID(
-        for tab: Tab,
-        runtime: ExtensionManagerRuntime
-    ) -> UUID? {
-        profileRuntime.resolvedProfileId(for: tab, runtime: runtime)
-    }
-
-    private func normalBrowserTabs(
-        in runtime: ExtensionManagerRuntime
-    ) -> [Tab] {
-        contentInventory.tabs(in: runtime).filter {
-            isAuxiliarySessionTab($0) == false
-        }
+        return ActivationTarget(window: target.window, tab: target.tab)
     }
 }

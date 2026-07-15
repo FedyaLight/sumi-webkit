@@ -8,21 +8,24 @@ import WebKit
 @MainActor
 final class ExtensionRequestedTabInitialTargetResolver {
     private let browserContext: @MainActor () -> (any ExtensionTabTargetQuery)?
-    private let profileRuntime: ExtensionProfileRuntime
-    private let runtime: @MainActor () -> ExtensionManagerRuntime
+    private let tabProfiles: any ExtensionTabProfileResolving
+    private let currentProfileID: @MainActor () -> UUID?
+    private let windowProfileID: @MainActor (BrowserWindowState) -> UUID?
     private let publications: ExtensionWindowPublicationQuery
     private let windowEvidence: ExtensionRequestedWindowEvidence
 
     init(
         browserContext: @escaping @MainActor () -> (any ExtensionTabTargetQuery)?,
-        profileRuntime: ExtensionProfileRuntime,
-        runtime: @escaping @MainActor () -> ExtensionManagerRuntime,
+        tabProfiles: any ExtensionTabProfileResolving,
+        currentProfileID: @escaping @MainActor () -> UUID?,
+        windowProfileID: @escaping @MainActor (BrowserWindowState) -> UUID?,
         publications: ExtensionWindowPublicationQuery,
         windowEvidence: ExtensionRequestedWindowEvidence
     ) {
         self.browserContext = browserContext
-        self.profileRuntime = profileRuntime
-        self.runtime = runtime
+        self.tabProfiles = tabProfiles
+        self.currentProfileID = currentProfileID
+        self.windowProfileID = windowProfileID
         self.publications = publications
         self.windowEvidence = windowEvidence
     }
@@ -79,13 +82,9 @@ final class ExtensionRequestedTabInitialTargetResolver {
             )
         }
 
-        let currentRuntime = runtime()
         let profileID = extensionContext.flatMap {
             windowEvidence.currentIdentity(for: $0)?.profileID
-        } ?? profileRuntime.resolvedProfileId(
-            explicitProfileId: nil,
-            runtime: currentRuntime
-        )
+        } ?? currentProfileID()
         let window = browser.activeExtensionWindowState.flatMap {
             candidate -> BrowserWindowState? in
             let publicationIsCurrent = profileID.map { profileID in
@@ -98,11 +97,8 @@ final class ExtensionRequestedTabInitialTargetResolver {
             guard browser.extensionWindowState(for: candidate.id)
                     === candidate,
                   let profileID,
-                  profileRuntime.windowMatchesProfile(
-                      candidate,
-                      profileId: profileID,
-                      runtime: currentRuntime
-                  ), publicationIsCurrent
+                  windowProfileID(candidate) == profileID,
+                  publicationIsCurrent
             else {
                 return nil
             }
@@ -151,16 +147,10 @@ final class ExtensionRequestedTabInitialTargetResolver {
         residencePolicy: ExtensionRequestedTabResidencePolicy
     ) -> BrowserWindowState? {
         guard let browser = browserContext() else { return nil }
-        let currentRuntime = runtime()
-        let profileID = profileRuntime.resolvedProfileId(
-            for: openerTab,
-            runtime: currentRuntime
-        ) ?? extensionContext.flatMap {
+        let profileID = tabProfiles.profileID(for: openerTab)
+            ?? extensionContext.flatMap {
             windowEvidence.currentIdentity(for: $0)?.profileID
-        } ?? profileRuntime.resolvedProfileId(
-            explicitProfileId: nil,
-            runtime: currentRuntime
-        )
+        } ?? currentProfileID()
         let candidates = [
             browser.extensionWindowState(containing: openerTab),
             browser.activeExtensionWindowState,
@@ -175,11 +165,8 @@ final class ExtensionRequestedTabInitialTargetResolver {
             } ?? false
             guard browser.extensionWindowState(for: window.id) === window,
                   let profileID,
-                  profileRuntime.windowMatchesProfile(
-                      window,
-                      profileId: profileID,
-                      runtime: currentRuntime
-                  ), publicationIsCurrent
+                  windowProfileID(window) == profileID,
+                  publicationIsCurrent
             else {
                 return false
             }

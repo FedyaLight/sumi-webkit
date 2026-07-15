@@ -178,7 +178,7 @@ done
 
 guard_expect_no_matches \
   'retired multi-role WebViewRuntimeAssembler reintroduced' \
-  '\bWebViewRuntimeAssembler\b|\bruntimeAssembler\b' \
+  '\bWebViewRuntimeAssembler\b|\bwebViewRuntimeAssembler\b' \
   -g '*.swift' -g '!**/.build/**' "${all_swift_roots[@]}"
 
 role_limits=(

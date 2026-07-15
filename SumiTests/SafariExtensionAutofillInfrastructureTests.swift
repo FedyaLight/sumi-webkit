@@ -25,18 +25,21 @@ final class SafariExtensionAutofillInfrastructureTests: XCTestCase {
     func testFileURLClassifiedAsHostPermissionDeniedForAllURLs() async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Profile A")
-        let manager = ExtensionManager(
+        let fixture = makeSafariExtensionManagerTestFixture(
             context: container.mainContext,
             initialProfile: profile
         )
+        let manager = fixture.manager
+        let inspection = fixture.inspection
         let installed = try await installProbeExtension(manager: manager)
-        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
-        manager.setDefaultSiteAccess(
+        _ = try await inspection.installation.lifecycle.enable(installed.id)
+        inspection.actionPolicy.siteAccess.setDefaultSiteAccess(
             .allow,
             extensionId: installed.id,
             profileId: profile.id
         )
-        let loadedContext = try await manager.ensureExtensionLoaded(
+        let loadedContext = try await inspection.contextCoordination.residency
+            .ensureExtensionLoaded(
             extensionId: installed.id,
             profileId: profile.id
         )
@@ -53,18 +56,21 @@ final class SafariExtensionAutofillInfrastructureTests: XCTestCase {
     func testHTTPSLocalhostPassesHostPermissionWithAllURLs() async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Profile A")
-        let manager = ExtensionManager(
+        let fixture = makeSafariExtensionManagerTestFixture(
             context: container.mainContext,
             initialProfile: profile
         )
+        let manager = fixture.manager
+        let inspection = fixture.inspection
         let installed = try await installProbeExtension(manager: manager)
-        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
-        manager.setDefaultSiteAccess(
+        _ = try await inspection.installation.lifecycle.enable(installed.id)
+        inspection.actionPolicy.siteAccess.setDefaultSiteAccess(
             .allow,
             extensionId: installed.id,
             profileId: profile.id
         )
-        let loadedContext = try await manager.ensureExtensionLoaded(
+        let loadedContext = try await inspection.contextCoordination.residency
+            .ensureExtensionLoaded(
             extensionId: installed.id,
             profileId: profile.id
         )
@@ -88,13 +94,15 @@ final class SafariExtensionAutofillInfrastructureTests: XCTestCase {
     func testClassifyTabReportsPrivateTabBlocked() async throws {
         let container = try makeTestContainer()
         let profile = Profile.createEphemeral()
-        let manager = ExtensionManager(
+        let fixture = makeSafariExtensionManagerTestFixture(
             context: container.mainContext,
             initialProfile: profile
         )
+        let manager = fixture.manager
         let browserManager = makeSafariExtensionTestBrowserManager(profile: profile)
         manager.attach(browserManager: browserManager)
-        manager.markExtensionRuntimePublicationReady()
+        fixture.inspection.actionSurfaces.publication
+            .markRuntimePublicationReady()
         let installed = try await installProbeExtension(manager: manager)
         let tab = browserManager.tabManager.tabFactory.makeTab(
             url: URL(string: "http://127.0.0.1/login-form.html")!,
@@ -107,7 +115,7 @@ final class SafariExtensionAutofillInfrastructureTests: XCTestCase {
             tab: tab,
             installedExtension: installed,
             extensionContext: nil,
-            extensionManager: manager,
+            runtime: manager.autofillRuntime(),
             extensionsModuleEnabled: true
         )
         XCTAssertEqual(result.primaryBlocker, .privateTabBlocked)
@@ -117,28 +125,34 @@ final class SafariExtensionAutofillInfrastructureTests: XCTestCase {
         let container = try makeTestContainer()
         let profile = Profile(name: "Profile A")
         let browserConfiguration = BrowserConfiguration()
-        let manager = ExtensionManager(
+        let fixture = makeSafariExtensionManagerTestFixture(
             context: container.mainContext,
             initialProfile: profile,
             browserConfiguration: browserConfiguration
         )
+        let manager = fixture.manager
+        let inspection = fixture.inspection
         let browserManager = makeSafariExtensionTestBrowserManager(profile: profile)
+        let windowRegistry = WindowRegistry()
+        browserManager.windowRegistry = windowRegistry
         manager.attach(browserManager: browserManager)
-        _ = manager.runtimeDemandCoordinator.request(
-            reason: .install,
-            allowWithoutEnabledExtensions: true
+        _ = inspection.contextCoordination.demand.requestRuntimeExplicitly(
+            reason: .install
         )
-        _ = manager.ensureExtensionController(for: profile.id)
-        manager.markExtensionRuntimePublicationReady()
+        _ = inspection.controller.provisioning.ensureExtensionController(
+            for: profile.id
+        )
+        inspection.actionSurfaces.publication.markRuntimePublicationReady()
 
         let installed = try await installProbeExtension(manager: manager)
-        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
-        manager.setDefaultSiteAccess(
+        _ = try await inspection.installation.lifecycle.enable(installed.id)
+        inspection.actionPolicy.siteAccess.setDefaultSiteAccess(
             .allow,
             extensionId: installed.id,
             profileId: profile.id
         )
-        let loadedExtensionContext = try await manager.ensureExtensionLoaded(
+        let loadedExtensionContext = try await inspection.contextCoordination
+            .residency.ensureExtensionLoaded(
             extensionId: installed.id,
             profileId: profile.id
         )
@@ -147,19 +161,50 @@ final class SafariExtensionAutofillInfrastructureTests: XCTestCase {
         let configuration = browserConfiguration.auxiliaryWebViewConfiguration(
             surface: .extensionOptions
         )
+        let space = browserManager.tabManager.spaceStateOwner.currentSpace
+            ?? browserManager.tabManager.spaceServices.catalog.createSpace(
+                name: "Autofill",
+                profileId: profile.id
+            )
         let tab = browserManager.tabManager.tabFactory.makeTab(
             url: URL(string: "http://127.0.0.1/login-form.html")!,
-            name: "Loaded"
+            name: "Loaded",
+            spaceId: space.id
         )
         tab.profileId = profile.id
         tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
-        tab.extensionPageRuntimeOwner.markEligible(for: manager.tabPublicationRevisions.issue())
-        _ = manager.adapterCatalog.stableAdapter(for: tab)
+        browserManager.tabManager.regularTabLifecycleOwner.addTab(tab)
+        let windowState = BrowserWindowState()
+        windowState.tabManager = browserManager.tabManager
+        windowState.currentSpaceId = tab.spaceId
+        windowState.currentProfileId = profile.id
+        windowState.currentTabId = tab.id
+        windowRegistry.register(windowState)
+        windowRegistry.setActive(windowState)
+        inspection.normalTabs.configuration.prepareWebViewConfigForExtensionRuntime(
+            configuration,
+            profileId: profile.id,
+            reason: "SafariExtensionAutofillInfrastructureTests.missingController"
+        )
 
         let webView = FocusableWKWebView(frame: .zero, configuration: configuration)
         webView.owningTab = tab
         tab.replaceUntrackedWebView(webView)
-        webView.load(
+        _ = fixture.attachedRuntime.runtime.publications.normalWindows
+            .opened(windowState)
+        fixture.attachedRuntime.runtime.normalTabs.tabRegistration.register(
+            tab,
+            reason: "SafariExtensionAutofillInfrastructureTests.missingController"
+        )
+        let unconfiguredWebView = FocusableWKWebView(
+            frame: .zero,
+            configuration: browserConfiguration.auxiliaryWebViewConfiguration(
+                surface: .extensionOptions
+            )
+        )
+        unconfiguredWebView.owningTab = tab
+        tab.replaceUntrackedWebView(unconfiguredWebView)
+        unconfiguredWebView.load(
             URLRequest(url: URL(string: "http://127.0.0.1/login-form.html")!)
         )
 
@@ -167,7 +212,7 @@ final class SafariExtensionAutofillInfrastructureTests: XCTestCase {
             tab: tab,
             installedExtension: installed,
             extensionContext: extensionContext,
-            extensionManager: manager,
+            runtime: manager.autofillRuntime(),
             extensionsModuleEnabled: true
         )
         XCTAssertEqual(result.primaryBlocker, .targetWebViewMissingExtensionController)
@@ -177,28 +222,33 @@ final class SafariExtensionAutofillInfrastructureTests: XCTestCase {
         let container = try makeTestContainer()
         let profile = Profile(name: "Profile A")
         let browserConfiguration = BrowserConfiguration()
-        let manager = ExtensionManager(
+        let fixture = makeSafariExtensionManagerTestFixture(
             context: container.mainContext,
             initialProfile: profile,
             browserConfiguration: browserConfiguration
         )
+        let manager = fixture.manager
+        let inspection = fixture.inspection
         let browserManager = makeSafariExtensionTestBrowserManager(profile: profile)
+        let windowRegistry = WindowRegistry()
+        browserManager.windowRegistry = windowRegistry
         manager.attach(browserManager: browserManager)
-        _ = manager.runtimeDemandCoordinator.request(
-            reason: .install,
-            allowWithoutEnabledExtensions: true
+        _ = inspection.contextCoordination.demand.requestRuntimeExplicitly(
+            reason: .install
         )
-        let expectedController = manager.ensureExtensionController(for: profile.id)
-        manager.markExtensionRuntimePublicationReady()
+        let expectedController = inspection.controller.provisioning
+            .ensureExtensionController(for: profile.id)
+        inspection.actionSurfaces.publication.markRuntimePublicationReady()
 
         let installed = try await installProbeExtension(manager: manager)
-        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
-        manager.setDefaultSiteAccess(
+        _ = try await inspection.installation.lifecycle.enable(installed.id)
+        inspection.actionPolicy.siteAccess.setDefaultSiteAccess(
             .allow,
             extensionId: installed.id,
             profileId: profile.id
         )
-        let loadedExtensionContext = try await manager.ensureExtensionLoaded(
+        let loadedExtensionContext = try await inspection.contextCoordination
+            .residency.ensureExtensionLoaded(
             extensionId: installed.id,
             profileId: profile.id
         )
@@ -207,30 +257,52 @@ final class SafariExtensionAutofillInfrastructureTests: XCTestCase {
         let configuration = browserConfiguration.auxiliaryWebViewConfiguration(
             surface: .extensionOptions
         )
-        manager.prepareWebViewConfigForExtensionRuntime(
+        inspection.normalTabs.configuration.prepareWebViewConfigForExtensionRuntime(
             configuration,
             profileId: profile.id,
             reason: "SafariExtensionAutofillInfrastructureTests"
         )
 
+        let space = browserManager.tabManager.spaceStateOwner.currentSpace
+            ?? browserManager.tabManager.spaceServices.catalog.createSpace(
+                name: "Autofill",
+                profileId: profile.id
+            )
         let tab = browserManager.tabManager.tabFactory.makeTab(
             url: URL(string: "http://127.0.0.1/login-form.html")!,
-            name: "Ready"
+            name: "Ready",
+            spaceId: space.id
         )
         tab.profileId = profile.id
         tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
-        tab.extensionPageRuntimeOwner.markEligible(for: manager.tabPublicationRevisions.issue())
+        browserManager.tabManager.regularTabLifecycleOwner.addTab(tab)
+        let windowState = BrowserWindowState()
+        windowState.tabManager = browserManager.tabManager
+        windowState.currentSpaceId = tab.spaceId
+        windowState.currentProfileId = profile.id
+        windowState.currentTabId = tab.id
+        windowRegistry.register(windowState)
+        windowRegistry.setActive(windowState)
+        _ = fixture.attachedRuntime.runtime.publications.normalWindows
+            .opened(windowState)
+        tab.extensionPageRuntimeOwner.markEligible(
+            for: inspection.runtimeAuthorities.tabPublicationRevisions.issue()
+        )
 
         let webView = FocusableWKWebView(frame: .zero, configuration: configuration)
         webView.owningTab = tab
         tab.replaceUntrackedWebView(webView)
-        _ = manager.adapterCatalog.stableAdapter(for: tab)
+        _ = fixture.attachedRuntime.runtime.adapters.stableAdapter(for: tab)
+        fixture.attachedRuntime.runtime.normalTabs.tabRegistration.register(
+            tab,
+            reason: "SafariExtensionAutofillInfrastructureTests.ready"
+        )
 
         let result = SafariExtensionAutofillInfrastructureClassifier.classifyTab(
             tab: tab,
             installedExtension: installed,
             extensionContext: extensionContext,
-            extensionManager: manager,
+            runtime: manager.autofillRuntime(),
             extensionsModuleEnabled: true
         )
         XCTAssertEqual(result.primaryBlocker, .none, result.detail)
@@ -282,7 +354,7 @@ final class SafariExtensionAutofillInfrastructureTests: XCTestCase {
         try Data("true;".utf8)
             .write(to: directoryURL.appendingPathComponent("content.js"), options: [.atomic])
 
-        return try await manager.extensionInstaller.install(
+        return try await manager.settingsCatalogBinding().install(
             from: directoryURL,
             enableOnInstall: false
         )

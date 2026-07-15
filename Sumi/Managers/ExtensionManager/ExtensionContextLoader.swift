@@ -11,7 +11,7 @@ final class ExtensionContextLoader {
     private let controllerProvisioning:
         any ExtensionWebViewConfigurationProvisioning
     private let waitForWebsiteDataMutationAdmission:
-        ExtensionManagerRuntime.WebsiteDataMutationAdmissionWaiter
+        @MainActor (UUID) async -> Bool
     private let sourceCache: WebExtensionRuntimeSourceCache
     private let contextPreparation: ExtensionContextPreparation
     private let storagePlanner: WebExtensionStorageCleanupPlanner
@@ -26,7 +26,7 @@ final class ExtensionContextLoader {
         controllerProvisioning:
             any ExtensionWebViewConfigurationProvisioning,
         waitForWebsiteDataMutationAdmission:
-            @escaping ExtensionManagerRuntime.WebsiteDataMutationAdmissionWaiter,
+            @escaping @MainActor (UUID) async -> Bool,
         sourceCache: WebExtensionRuntimeSourceCache,
         contextPreparation: ExtensionContextPreparation,
         storagePlanner: WebExtensionStorageCleanupPlanner,

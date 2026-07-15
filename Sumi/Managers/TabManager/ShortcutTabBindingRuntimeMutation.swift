@@ -38,9 +38,9 @@ final class ShortcutTabBindingRuntimeMutation {
         guard runtimeConnection.accepts(lease),
               refreshes.acceptsCurrent(admission, for: pin),
               let prepared = prepare(
-                  pin,
-                  changes: admission.changes,
-                  using: lease
+            pin,
+            changes: admission.changes,
+            using: lease
               ),
               let residences = refreshes.prepareResidenceTransaction(
                   admission,

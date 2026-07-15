@@ -13,6 +13,8 @@ final class ExtensionCreatedTabRuntimeRegistrar {
         runtimePublicationEvidence:
             ExtensionRuntimePublicationEvidenceIssuer,
         profileRuntime: ExtensionProfileRuntime,
+        tabProfiles: any ExtensionTabProfileResolving,
+        browserProfiles: ExtensionBrowserProfileQuery,
         adapterStore: ExtensionBrowserAdapterStore,
         controllers: any ExtensionTabControllerQuery,
         webViews: ExtensionExactTabWebViewQuery,
@@ -33,6 +35,8 @@ final class ExtensionCreatedTabRuntimeRegistrar {
         validator = ExtensionCreatedTabPublicationValidator(
             runtimePublicationEvidence: runtimePublicationEvidence,
             profileRuntime: profileRuntime,
+            tabProfiles: tabProfiles,
+            browserProfiles: browserProfiles,
             controllers: controllers,
             webViews: webViews,
             controllerAdmission: controllerAdmission,
@@ -52,10 +56,9 @@ final class ExtensionCreatedTabRuntimeRegistrar {
     @discardableResult
     func register(
         _ tab: Tab,
-        runtime: ExtensionManagerRuntime,
         reason: String
     ) -> Bool {
-        guard let base = validator.prepareBase(for: tab, runtime: runtime) else {
+        guard let base = validator.prepareBase(for: tab) else {
             diagnostics.trace(
                 "registerExtensionCreatedTab rejected reason=\(reason) because=runtimePreparationFailed \(tabDescription(tab))"
             )
@@ -83,10 +86,7 @@ final class ExtensionCreatedTabRuntimeRegistrar {
             stateToken: preparation,
             reason: reason
         )
-        guard validator.preparedEvidenceIsCurrent(
-            evidence,
-            runtime: runtime
-        ) else {
+        guard validator.preparedEvidenceIsCurrent(evidence) else {
             let restored = tab.extensionPageRuntimeOwner
                 .rollbackWindowPrepublication(preparation)
             if restored {
@@ -107,7 +107,7 @@ final class ExtensionCreatedTabRuntimeRegistrar {
             diagnostics: diagnostics,
             evidence: evidence
         )
-        return receipt.commitOpen(runtime: runtime)
+        return receipt.commitOpen()
     }
 
     private func tabDescription(_ tab: Tab) -> String {

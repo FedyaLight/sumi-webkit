@@ -11,6 +11,11 @@ import WebKit
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionActionInvocationService {
+    private enum BindingRecoveryAdmission {
+        case available
+        case consumed
+    }
+
     struct Environment {
         let runtimeResolver: ExtensionActionRuntimeResolver
         let requestAdmission: ExtensionActionRequestAdmission
@@ -20,7 +25,9 @@ final class ExtensionActionInvocationService {
         let runtimeMetrics: ExtensionRuntimeMetricsAuthority
         let stableAdapter: @MainActor (Tab) -> ExtensionTabAdapter?
         let registerTab: @MainActor (Tab, String) -> Void
-        let actionDispatchProbe: @MainActor (String) -> Void
+        #if DEBUG
+            let actionDispatchProbe: @MainActor (String) -> Void
+        #endif
         let trace: @MainActor (String) -> Void
     }
 
@@ -47,7 +54,7 @@ final class ExtensionActionInvocationService {
             extensionID: extensionID,
             currentTab: currentTab,
             popupTargetRequest: popupTargetRequest,
-            allowsBindingRecovery: true
+            bindingRecovery: .available
         )
     }
 
@@ -55,7 +62,7 @@ final class ExtensionActionInvocationService {
         extensionID: String,
         currentTab: Tab?,
         popupTargetRequest: ExtensionActionPopupTargetRequest,
-        allowsBindingRecovery: Bool
+        bindingRecovery: BindingRecoveryAdmission
     ) async -> BrowserExtensionActionPopupRequestResult {
         guard let request = environment.requestAdmission.capture(
                   extensionID: extensionID,
@@ -173,7 +180,7 @@ final class ExtensionActionInvocationService {
                 message: "This popup is still loading and awaiting WebKit settlement from the previous click."
             )
         case .popupBindingRecoveryRequired(let stalledBinding):
-            guard allowsBindingRecovery,
+            guard case .available = bindingRecovery,
                   await popupBindingRecovery.recover(stalledBinding)
             else {
                 return .blocked(
@@ -185,10 +192,12 @@ final class ExtensionActionInvocationService {
                 extensionID: extensionID,
                 currentTab: currentTab,
                 popupTargetRequest: popupTargetRequest,
-                allowsBindingRecovery: false
+                bindingRecovery: .consumed
             )
         }
-        environment.actionDispatchProbe(extensionID)
+        #if DEBUG
+            environment.actionDispatchProbe(extensionID)
+        #endif
         // Barrier: dispatch itself is observable; a reentrant replacement
         // cannot undo WebKit's call, but must cancel local popup admission and
         // return a stale result rather than report a popup that cannot present.

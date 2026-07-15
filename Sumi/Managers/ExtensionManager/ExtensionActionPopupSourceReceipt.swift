@@ -5,23 +5,14 @@ import WebKit
 @MainActor
 final class ExtensionActionPopupSourceAdmission {
     private let callbackAdmission: ExtensionActionPopupCallbackAdmission
-    private let windowQuery: @MainActor () -> (any ExtensionWindowQuery)?
-    private let currentProfile: @MainActor (UUID) -> Profile?
-    private let resolvedProfileID: @MainActor (Tab) -> UUID?
-    private let windowMatchesProfile: @MainActor (BrowserWindowState, UUID) -> Bool
+    private let browser: any ExtensionActionPopupBrowserProjection
 
     init(
         callbackAdmission: ExtensionActionPopupCallbackAdmission,
-        windowQuery: @escaping @MainActor () -> (any ExtensionWindowQuery)?,
-        currentProfile: @escaping @MainActor (UUID) -> Profile?,
-        resolvedProfileID: @escaping @MainActor (Tab) -> UUID?,
-        windowMatchesProfile: @escaping @MainActor (BrowserWindowState, UUID) -> Bool
+        browser: any ExtensionActionPopupBrowserProjection
     ) {
         self.callbackAdmission = callbackAdmission
-        self.windowQuery = windowQuery
-        self.currentProfile = currentProfile
-        self.resolvedProfileID = resolvedProfileID
-        self.windowMatchesProfile = windowMatchesProfile
+        self.browser = browser
     }
 
     func capture(
@@ -34,20 +25,14 @@ final class ExtensionActionPopupSourceAdmission {
         guard callbackAdmission.isCurrent(evidence),
               target.extensionID == evidence.extensionID,
               target.profileID == evidence.profileID,
-              let windowQuery = windowQuery(),
-              let windowState = windowQuery.extensionWindowState(
-                  for: target.windowID
-              ),
+              let windowState = browser.popupWindowState(id: target.windowID),
               windowState === expectedWindowState,
-              windowMatchesProfile(windowState, evidence.profileID),
-              let window = windowQuery.appKitWindow(for: windowState),
-              let tab = windowQuery.extensionTab(
-                  withID: expectedTab.id,
-                  in: windowState
-              ),
+              browser.popupWindow(windowState, matches: evidence.profileID),
+              let window = browser.popupAppKitWindow(for: windowState),
+              let tab = browser.popupTab(id: expectedTab.id, in: windowState),
               tab === expectedTab,
-              resolvedProfileID(tab) == evidence.profileID,
-              let profile = currentProfile(evidence.profileID),
+              browser.popupProfileID(for: tab) == evidence.profileID,
+              let profile = browser.popupProfile(id: evidence.profileID),
               tab.resolveProfile() === profile,
               popupWebView.configuration.websiteDataStore === profile.dataStore,
               popupWebView.configuration.webExtensionController
@@ -59,10 +44,7 @@ final class ExtensionActionPopupSourceAdmission {
         return ExtensionActionPopupSourceReceipt(
             evidence: evidence,
             callbackAdmission: callbackAdmission,
-            windowQuery: self.windowQuery,
-            currentProfile: currentProfile,
-            resolvedProfileID: resolvedProfileID,
-            windowMatchesProfile: windowMatchesProfile,
+            browser: browser,
             windowID: target.windowID,
             tabID: tab.id,
             windowState: windowState,
@@ -90,10 +72,7 @@ final class ExtensionActionPopupSourceReceipt {
 
     private let evidence: ExtensionActionPopupCallbackEvidence
     private let callbackAdmission: ExtensionActionPopupCallbackAdmission
-    private let windowQuery: @MainActor () -> (any ExtensionWindowQuery)?
-    private let currentProfile: @MainActor (UUID) -> Profile?
-    private let resolvedProfileID: @MainActor (Tab) -> UUID?
-    private let windowMatchesProfile: @MainActor (BrowserWindowState, UUID) -> Bool
+    private let browser: any ExtensionActionPopupBrowserProjection
     private weak var windowState: BrowserWindowState?
     private weak var window: NSWindow?
     private weak var tab: Tab?
@@ -104,10 +83,7 @@ final class ExtensionActionPopupSourceReceipt {
     fileprivate init(
         evidence: ExtensionActionPopupCallbackEvidence,
         callbackAdmission: ExtensionActionPopupCallbackAdmission,
-        windowQuery: @escaping @MainActor () -> (any ExtensionWindowQuery)?,
-        currentProfile: @escaping @MainActor (UUID) -> Profile?,
-        resolvedProfileID: @escaping @MainActor (Tab) -> UUID?,
-        windowMatchesProfile: @escaping @MainActor (BrowserWindowState, UUID) -> Bool,
+        browser: any ExtensionActionPopupBrowserProjection,
         windowID: UUID,
         tabID: UUID,
         windowState: BrowserWindowState,
@@ -118,10 +94,7 @@ final class ExtensionActionPopupSourceReceipt {
     ) {
         self.evidence = evidence
         self.callbackAdmission = callbackAdmission
-        self.windowQuery = windowQuery
-        self.currentProfile = currentProfile
-        self.resolvedProfileID = resolvedProfileID
-        self.windowMatchesProfile = windowMatchesProfile
+        self.browser = browser
         self.extensionID = evidence.extensionID
         self.profileID = evidence.profileID
         self.windowID = windowID
@@ -154,17 +127,16 @@ final class ExtensionActionPopupSourceReceipt {
               let expectedWindowState = windowState,
               let expectedWindow = window,
               let expectedTab = tab,
-              let windowQuery = windowQuery(),
-              windowQuery.extensionWindowState(for: windowID)
+              browser.popupWindowState(id: windowID)
                   === expectedWindowState,
-              windowQuery.appKitWindow(for: expectedWindowState)
+              browser.popupAppKitWindow(for: expectedWindowState)
                   === expectedWindow,
-              windowQuery.extensionTab(withID: tabID, in: expectedWindowState)
+              browser.popupTab(id: tabID, in: expectedWindowState)
                   === expectedTab,
-              windowMatchesProfile(expectedWindowState, profileID),
-              resolvedProfileID(expectedTab) == profileID,
+              browser.popupWindow(expectedWindowState, matches: profileID),
+              browser.popupProfileID(for: expectedTab) == profileID,
               expectedTab.resolveProfile() === profile,
-              currentProfile(profileID) === profile
+              browser.popupProfile(id: profileID) === profile
         else {
             return nil
         }

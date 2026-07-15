@@ -12,7 +12,6 @@ final class ExtensionRuntimeActivityCancellation {
         let nativeMessagingWakes:
             ExtensionNativeMessagingBackgroundWakeOwner?
         let publicationReconciler: ExtensionRuntimePublicationReconciler?
-        let runtime: ExtensionManagerRuntime
         let auxiliaryWindows: (any ExtensionAuxiliaryWindowControl)?
         let nativeMessagingRelay: SumiNativeMessagingRelay?
     }
@@ -44,7 +43,6 @@ final class ExtensionRuntimeActivityCancellation {
         resources.nativeMessagingWakes?.cancelAllWakeTasks()
         backgroundRuntimeState.cancelAllWakeTasks()
         resources.publicationReconciler?.retire(
-            runtime: resources.runtime,
             auxiliaryControl: resources.auxiliaryWindows
         )
         diagnostics.trace(

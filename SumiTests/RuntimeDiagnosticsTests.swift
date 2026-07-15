@@ -64,9 +64,11 @@ final class RuntimeDiagnosticsTests: XCTestCase {
             for: SumiStartupPersistence.schema,
             configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
         )
-        let manager = ExtensionManager(
+        let inspection = ExtensionManagerInspectionCapture()
+        _ = ExtensionManager(
             context: container.mainContext,
-            initialProfile: Profile(name: "Tests")
+            initialProfile: Profile(name: "Tests"),
+            testInspectionDidAssemble: inspection.install
         )
 
         var evaluated = false
@@ -76,7 +78,8 @@ final class RuntimeDiagnosticsTests: XCTestCase {
             return "should not log"
         }
 
-        manager.runtimeDiagnostics.trace(makeTraceMessage())
+        inspection.inspection.contextCoordination.diagnostics
+            .trace(makeTraceMessage())
 
         XCTAssertFalse(evaluated)
     }

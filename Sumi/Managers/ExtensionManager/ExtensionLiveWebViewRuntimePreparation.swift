@@ -69,19 +69,3 @@ final class ExtensionLiveWebViewRuntimePreparation:
         )
     }
 }
-
-@available(macOS 15.5, *)
-@MainActor
-extension ExtensionManager {
-    func prepareWebViewForExtensionRuntime(
-        _ webView: WKWebView,
-        currentURL: URL? = nil,
-        reason: String = #function
-    ) {
-        liveWebViewRuntimePreparation.prepareWebViewForExtensionRuntime(
-            webView,
-            currentURL: currentURL,
-            reason: reason
-        )
-    }
-}

@@ -9,16 +9,26 @@ import WebKit
 @MainActor
 final class ExtensionPermissionCallbackSettlement {
     private let admission: ExtensionControllerCallbackAdmission
+    private let decisions: ExtensionPermissionDecisionStore
+    private let siteAccess: ExtensionSiteAccessPolicyCoordinator
+    private let prompt: ExtensionPermissionPromptPresenter
 
-    init(admission: ExtensionControllerCallbackAdmission) {
+    init(
+        admission: ExtensionControllerCallbackAdmission,
+        decisions: ExtensionPermissionDecisionStore,
+        siteAccess: ExtensionSiteAccessPolicyCoordinator,
+        prompt: ExtensionPermissionPromptPresenter
+    ) {
         self.admission = admission
+        self.decisions = decisions
+        self.siteAccess = siteAccess
+        self.prompt = prompt
     }
 
     func promptForPermissions(
         _ permissions: Set<WKWebExtension.Permission>,
         in tab: (any WKWebExtensionTab)?,
         evidence: ExtensionControllerCallbackEvidence,
-        manager: ExtensionManager,
         completionHandler: @escaping (Set<WKWebExtension.Permission>, Date?) -> Void
     ) {
         let extensionContext = evidence.context
@@ -45,7 +55,7 @@ final class ExtensionPermissionCallbackSettlement {
                 in: extensionContext,
                 extensionId: evidence.extensionID,
                 profileId: evidence.profileID,
-                manager: manager
+                decisions: decisions
             ) {
                 storedResolvedPermissions.insert(permission)
             }
@@ -69,8 +79,8 @@ final class ExtensionPermissionCallbackSettlement {
             return
         }
 
-        Task { @MainActor [weak manager, admission = self.admission] in
-            guard let manager else {
+        Task { @MainActor [weak self, admission = self.admission] in
+            guard let self else {
                 completionHandler([], nil)
                 return
             }
@@ -78,11 +88,11 @@ final class ExtensionPermissionCallbackSettlement {
                 completionHandler([], nil)
                 return
             }
-            let decision = await manager.promptForExtensionPermissionDecision(
+            let decision = await self.prompt.promptForDecision(
                 extensionContext: extensionContext,
                 targets: promptPermissions.map(\.rawValue),
                 reason: "promptForPermissions",
-                dedupeKey: manager.permissionPromptDedupeKey(
+                dedupeKey: self.decisions.permissionPromptDedupeKey(
                     profileID: evidence.profileID,
                     extensionID: evidence.extensionID,
                     targets: promptPermissions.map(\.rawValue)
@@ -105,7 +115,7 @@ final class ExtensionPermissionCallbackSettlement {
                     completionHandler([], nil)
                     return
                 }
-                manager.persistExtensionPermissionDecision(
+                self.decisions.persistExtensionPermissionDecision(
                     extensionId: evidence.extensionID,
                     profileId: evidence.profileID,
                     targetKind: .permission,
@@ -133,7 +143,6 @@ final class ExtensionPermissionCallbackSettlement {
         _ matchPatterns: Set<WKWebExtension.MatchPattern>,
         in tab: (any WKWebExtensionTab)?,
         evidence: ExtensionControllerCallbackEvidence,
-        manager: ExtensionManager,
         completionHandler: @escaping (Set<WKWebExtension.MatchPattern>, Date?) -> Void
     ) {
         let extensionContext = evidence.context
@@ -158,7 +167,7 @@ final class ExtensionPermissionCallbackSettlement {
                 in: extensionContext,
                 extensionId: evidence.extensionID,
                 profileId: evidence.profileID,
-                manager: manager
+                siteAccess: siteAccess
             ) {
                 policyResolvedMatches.insert(matchPattern)
             }
@@ -182,8 +191,8 @@ final class ExtensionPermissionCallbackSettlement {
             return
         }
 
-        Task { @MainActor [weak manager, admission = self.admission] in
-            guard let manager else {
+        Task { @MainActor [weak self, admission = self.admission] in
+            guard let self else {
                 completionHandler([], nil)
                 return
             }
@@ -191,11 +200,11 @@ final class ExtensionPermissionCallbackSettlement {
                 completionHandler([], nil)
                 return
             }
-            let decision = await manager.promptForExtensionPermissionDecision(
+            let decision = await self.prompt.promptForDecision(
                 extensionContext: extensionContext,
                 targets: promptMatches.map(Self.extensionPermissionTarget(for:)),
                 reason: "promptForPermissionMatchPatterns",
-                dedupeKey: manager.permissionPromptDedupeKey(
+                dedupeKey: self.decisions.permissionPromptDedupeKey(
                     profileID: evidence.profileID,
                     extensionID: evidence.extensionID,
                     targets: promptMatches.map(\.string)
@@ -218,7 +227,7 @@ final class ExtensionPermissionCallbackSettlement {
                     completionHandler([], nil)
                     return
                 }
-                manager.persistExtensionPermissionDecision(
+                self.decisions.persistExtensionPermissionDecision(
                     extensionId: evidence.extensionID,
                     profileId: evidence.profileID,
                     targetKind: .matchPattern,
@@ -230,7 +239,7 @@ final class ExtensionPermissionCallbackSettlement {
                     completionHandler([], nil)
                     return
                 }
-                manager.setConfiguredSiteAccess(
+                self.siteAccess.setConfiguredSiteAccess(
                     settlement.storedState == .allowed ? .allow : .deny,
                     extensionId: evidence.extensionID,
                     profileId: evidence.profileID,

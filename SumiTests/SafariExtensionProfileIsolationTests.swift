@@ -11,51 +11,26 @@ final class SafariExtensionProfileIsolationTests: XCTestCase {
         let currentProfileId = UUID()
         let tabProfileId = UUID()
         let owner = ExtensionProfileRuntime(initialProfileId: currentProfileId)
+        let profiles = ExtensionTabProfileResolution(
+            profileRuntime: owner,
+            windowProfiles: nil
+        )
         let tab = Tab()
         tab.profileId = tabProfileId
 
-        XCTAssertEqual(
-            owner.resolvedProfileId(for: tab, runtime: .inactive),
-            tabProfileId
-        )
-        XCTAssertEqual(
-            owner.resolvedProfileId(explicitProfileId: nil, runtime: .inactive),
-            currentProfileId
-        )
+        XCTAssertEqual(profiles.profileID(for: tab), tabProfileId)
+        XCTAssertEqual(profiles.profileID(for: Tab()), currentProfileId)
     }
 
-    func testProfileRuntimeOwnerUsesRuntimeProfileFallbacks() {
-        let runtimeProfile = Profile(name: "Runtime Profile")
-        let owner = ExtensionProfileRuntime(initialProfileId: nil)
-        let runtime = ExtensionManagerRuntime(
-            currentProfile: { runtimeProfile },
-            profile: { profileId in
-                profileId == runtimeProfile.id ? runtimeProfile : nil
-            },
-            ephemeralProfile: { _ in nil },
-            windowState: { _ in nil },
-            windowRegistrationReceipt: { _ in nil },
-            registeredWindow: { _ in nil },
-            activeWindowState: { nil },
-            allTabs: { [] },
-            allWindowStates: { [] },
-            windowStateContainingTab: { _ in nil },
-            windowOwnedWebView: { _, _ in nil },
-            primaryTrackedWindowId: { _ in nil },
-            untrackedOwnedWebView: { _ in nil },
-            trackedWebViews: { _ in [] },
-            rebuildLiveWebViews: { _ in .noLiveWindows },
-            websiteDataMutationAdmissionIsBlocked: { _ in false },
-            waitForWebsiteDataMutationAdmission: { _ in true },
-            browserRuntimeAvailable: { false },
-            extensionsModuleEnabled: { .enabled(true) }
+    func testProfileRuntimeOwnerRemembersItsCurrentProfileWithoutBrowserGraph() {
+        let profile = Profile(name: "Remembered Profile")
+        let owner = ExtensionProfileRuntime(
+            initialProfileId: profile.id,
+            initialProfile: profile
         )
 
-        XCTAssertEqual(
-            owner.resolvedProfileId(explicitProfileId: nil, runtime: runtime),
-            runtimeProfile.id
-        )
-        XCTAssertIdentical(owner.currentProfile(in: runtime), runtimeProfile)
+        XCTAssertIdentical(owner.rememberedProfile(for: profile.id), profile)
+        XCTAssertIdentical(owner.currentRememberedProfile, profile)
     }
 
     func testProfileRuntimeOwnerProfileActivationReportsRuntimeDemand() {
@@ -87,18 +62,19 @@ final class SafariExtensionProfileIsolationTests: XCTestCase {
         )
         let profileA = Profile(name: "Profile A")
         let profileB = Profile(name: "Profile B")
-        let manager = ExtensionManager(
+        let fixture = makeManager(
             context: container.mainContext,
             initialProfile: profileA
         )
+        let manager = fixture.manager
+        let inspection = fixture.inspection
 
-        _ = manager.runtimeDemandCoordinator.request(
-            reason: .install,
-            allowWithoutEnabledExtensions: true
+        _ = inspection.contextCoordination.demand.requestRuntimeExplicitly(
+            reason: .install
         )
 
-        let controllerA = manager.ensureExtensionController(for: profileA.id)
-        let controllerB = manager.ensureExtensionController(for: profileB.id)
+        let controllerA = inspection.controller.provisioning.ensureExtensionController(for: profileA.id)
+        let controllerB = inspection.controller.provisioning.ensureExtensionController(for: profileB.id)
 
         XCTAssertNotIdentical(controllerA, controllerB)
         XCTAssertNotEqual(
@@ -126,25 +102,26 @@ final class SafariExtensionProfileIsolationTests: XCTestCase {
         )
         let profileA = Profile(name: "Profile A")
         let profileB = Profile(name: "Profile B")
-        let manager = ExtensionManager(
+        let fixture = makeManager(
             context: container.mainContext,
             initialProfile: profileA
         )
+        let manager = fixture.manager
+        let inspection = fixture.inspection
 
-        _ = manager.runtimeDemandCoordinator.request(
-            reason: .install,
-            allowWithoutEnabledExtensions: true
+        _ = inspection.contextCoordination.demand.requestRuntimeExplicitly(
+            reason: .install
         )
 
-        manager.profileRuntimeTransition.switchProfile(profileID: profileA.id)
-        let activeA = try XCTUnwrap(manager.extensionController)
+        inspection.contextCoordination.profileTransition.switchProfile(profileID: profileA.id)
+        let activeA = try XCTUnwrap(inspection.contextState.profiles.controllerForCurrentProfile())
         XCTAssertEqual(
             activeA.configuration.defaultWebsiteDataStore?.identifier,
             profileA.dataStore.identifier
         )
 
-        manager.profileRuntimeTransition.switchProfile(profileID: profileB.id)
-        let activeB = try XCTUnwrap(manager.extensionController)
+        inspection.contextCoordination.profileTransition.switchProfile(profileID: profileB.id)
+        let activeB = try XCTUnwrap(inspection.contextState.profiles.controllerForCurrentProfile())
         XCTAssertNotIdentical(activeA, activeB)
         XCTAssertEqual(
             activeB.configuration.defaultWebsiteDataStore?.identifier,
@@ -159,20 +136,21 @@ final class SafariExtensionProfileIsolationTests: XCTestCase {
         )
         let profileA = Profile(name: "Profile A")
         let profileB = Profile(name: "Profile B")
-        let manager = ExtensionManager(
+        let fixture = makeManager(
             context: container.mainContext,
             initialProfile: profileA
         )
+        let manager = fixture.manager
+        let inspection = fixture.inspection
 
-        _ = manager.runtimeDemandCoordinator.request(
-            reason: .webViewConfiguration,
-            allowWithoutEnabledExtensions: true
+        _ = inspection.contextCoordination.demand.requestRuntimeExplicitly(
+            reason: .webViewConfiguration
         )
 
         let configuration = BrowserConfiguration.shared.auxiliaryWebViewConfiguration(
             surface: .extensionOptions
         )
-        manager.prepareWebViewConfigForExtensionRuntime(
+        inspection.normalTabs.configuration.prepareWebViewConfigForExtensionRuntime(
             configuration,
             profileId: profileB.id,
             reason: "SafariExtensionProfileIsolationTests"
@@ -195,14 +173,32 @@ final class SafariExtensionProfileIsolationTests: XCTestCase {
             configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
         )
         let profile = Profile(name: "Profile")
-        let manager = ExtensionManager(
+        let fixture = makeManager(
             context: container.mainContext,
             initialProfile: profile
         )
+        let manager = fixture.manager
+        let inspection = fixture.inspection
 
         XCTAssertNotEqual(
-            manager.extensionControllerIdentifier(for: profile.id),
+            manager.controllerIdentifierOwner.identifier,
             profile.id
         )
+    }
+
+    private func makeManager(
+        context: ModelContext,
+        initialProfile: Profile
+    ) -> (
+        manager: ExtensionManager,
+        inspection: ExtensionManagerTestInspection
+    ) {
+        let inspection = ExtensionManagerInspectionCapture()
+        let manager = ExtensionManager(
+            context: context,
+            initialProfile: initialProfile,
+            testInspectionDidAssemble: inspection.install
+        )
+        return (manager, inspection.inspection)
     }
 }

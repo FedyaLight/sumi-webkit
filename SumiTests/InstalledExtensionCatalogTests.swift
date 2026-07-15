@@ -8,19 +8,17 @@ final class InstalledExtensionCatalogTests: XCTestCase {
     func testFailedFetchPreservesAuthoritativeCatalogReadinessToolbarPinsRevisionAndDurability() throws {
         let harness = try makeHarness()
         let existing = makeRecord(id: "existing-extension")
-        harness.manager.installedExtensionCollection.upsert(
+        harness.inspection.actionSurfaces.installedExtensions.upsert(
             existing,
             durability: .volatileExactRuntime
         )
-        let revision = harness.manager.installedExtensionCollection.recordRevision(
+        let revision = harness.inspection.actionSurfaces.installedExtensions.recordRevision(
             for: existing.id
         )
-        harness.manager.markExtensionRuntimePublicationReady()
-        harness.manager.pinnedToolbarExtensionIDsByProfile[harness.profileKey] = [
-            existing.id,
-        ]
+        harness.inspection.actionSurfaces.publication.markRuntimePublicationReady()
+        harness.setPinnedToolbarExtensionIDs([existing.id])
 
-        let enabled = harness.manager.installedExtensionCatalog.publish(
+        let enabled = harness.inspection.installation.catalog.publish(
             .init(
                 didFetchPersistedMetadata: false,
                 records: [],
@@ -30,25 +28,25 @@ final class InstalledExtensionCatalogTests: XCTestCase {
 
         XCTAssertTrue(enabled.isEmpty)
         XCTAssertEqual(
-            harness.manager.installedExtensionCollection.records.map(\.id),
+            harness.inspection.actionSurfaces.installedExtensions.records.map(\.id),
             [existing.id]
         )
         XCTAssertEqual(
-            harness.manager.installedExtensionCollection.recordRevision(
+            harness.inspection.actionSurfaces.installedExtensions.recordRevision(
                 for: existing.id
             ),
             revision
         )
         XCTAssertEqual(
-            harness.manager.installedExtensionCollection.recordDurability(
+            harness.inspection.actionSurfaces.installedExtensions.recordDurability(
                 for: existing.id
             ),
             .volatileExactRuntime
         )
-        XCTAssertTrue(harness.manager.extensionsLoaded)
-        XCTAssertEqual(harness.manager.pinnedToolbarExtensionIDs, [existing.id])
+        XCTAssertTrue(harness.inspection.actionSurfaces.publication.extensionsLoaded)
+        XCTAssertEqual(harness.inspection.actionSurfaces.publication.pinnedToolbarExtensionIDs, [existing.id])
         XCTAssertEqual(
-            harness.manager.pinnedToolbarExtensionIDsByProfile[harness.profileKey],
+            harness.inspection.actionSurfaces.toolbarPinning.pinnedToolbarExtensionIDsByProfile[harness.profileKey],
             [existing.id]
         )
     }
@@ -57,12 +55,10 @@ final class InstalledExtensionCatalogTests: XCTestCase {
         let harness = try makeHarness()
         let enabled = makeRecord(id: "enabled-extension")
         let disabled = makeRecord(id: "disabled-extension", isEnabled: false)
-        harness.manager.pinnedToolbarExtensionIDsByProfile[harness.profileKey] = [
-            disabled.id,
-        ]
+        harness.setPinnedToolbarExtensionIDs([disabled.id])
         let enabledEntity = ExtensionEntity(record: enabled)
 
-        let entitiesToLoad = harness.manager.installedExtensionCatalog.publish(
+        let entitiesToLoad = harness.inspection.installation.catalog.publish(
             .init(
                 didFetchPersistedMetadata: true,
                 records: [disabled, enabled],
@@ -72,25 +68,25 @@ final class InstalledExtensionCatalogTests: XCTestCase {
 
         XCTAssertEqual(entitiesToLoad.map(\.id), [enabled.id])
         XCTAssertEqual(
-            Set(harness.manager.installedExtensionCollection.records.map(\.id)),
+            Set(harness.inspection.actionSurfaces.installedExtensions.records.map(\.id)),
             Set([enabled.id, disabled.id])
         )
-        XCTAssertTrue(harness.manager.extensionsLoaded)
+        XCTAssertTrue(harness.inspection.actionSurfaces.publication.extensionsLoaded)
         XCTAssertEqual(
-            harness.manager.pinnedToolbarExtensionIDs,
+            harness.inspection.actionSurfaces.publication.pinnedToolbarExtensionIDs,
             [disabled.id]
         )
         XCTAssertEqual(
-            harness.manager.pinnedToolbarExtensionIDsByProfile[harness.profileKey],
+            harness.inspection.actionSurfaces.toolbarPinning.pinnedToolbarExtensionIDsByProfile[harness.profileKey],
             [disabled.id]
         )
     }
 
     func testFailedInitialFetchDoesNotPublishReadiness() throws {
         let harness = try makeHarness()
-        XCTAssertFalse(harness.manager.extensionsLoaded)
+        XCTAssertFalse(harness.inspection.actionSurfaces.publication.extensionsLoaded)
 
-        _ = harness.manager.installedExtensionCatalog.publish(
+        _ = harness.inspection.installation.catalog.publish(
             .init(
                 didFetchPersistedMetadata: false,
                 records: [],
@@ -98,31 +94,29 @@ final class InstalledExtensionCatalogTests: XCTestCase {
             )
         )
 
-        XCTAssertFalse(harness.manager.extensionsLoaded)
+        XCTAssertFalse(harness.inspection.actionSurfaces.publication.extensionsLoaded)
     }
 
     func testVolatileReconciliationFailurePreservesExactLiveSnapshotAndDefersPublication() throws {
         let harness = try makeHarness()
         let exactLiveRecord = makeRecord(id: "exact-live-extension")
-        harness.manager.installedExtensionCollection.upsert(
+        harness.inspection.actionSurfaces.installedExtensions.upsert(
             exactLiveRecord,
             durability: .volatileExactRuntime
         )
-        let revision = harness.manager.installedExtensionCollection.recordRevision(
+        let revision = harness.inspection.actionSurfaces.installedExtensions.recordRevision(
             for: exactLiveRecord.id
         )
-        harness.manager.pinnedToolbarExtensionIDsByProfile[harness.profileKey] = [
-            exactLiveRecord.id,
-        ]
+        harness.setPinnedToolbarExtensionIDs([exactLiveRecord.id])
         let persistence = FailingCatalogPersistence()
         var didPublishReadiness = false
         let catalog = InstalledExtensionCatalog(
             environment: .init(
-                metadataStore: harness.manager.installationMetadataStore,
-                installedRecords: harness.manager.installedExtensionCollection,
+                metadataStore: harness.inspection.installation.metadata,
+                installedRecords: harness.inspection.actionSurfaces.installedExtensions,
                 volatileRecords: ExtensionVolatileInstallationRecordReconciler(
                     persistence: persistence,
-                    installedRecords: harness.manager.installedExtensionCollection
+                    installedRecords: harness.inspection.actionSurfaces.installedExtensions
                 ),
                 liveContextCount: { 0 },
                 markCatalogLoaded: { didPublishReadiness = true },
@@ -135,29 +129,29 @@ final class InstalledExtensionCatalogTests: XCTestCase {
         XCTAssertTrue(enabled.isEmpty)
         XCTAssertEqual(persistence.persistedIDs, [exactLiveRecord.id])
         XCTAssertFalse(didPublishReadiness)
-        XCTAssertFalse(harness.manager.extensionsLoaded)
+        XCTAssertFalse(harness.inspection.actionSurfaces.publication.extensionsLoaded)
         XCTAssertEqual(
-            harness.manager.installedExtensionCollection.records.map(\.id),
+            harness.inspection.actionSurfaces.installedExtensions.records.map(\.id),
             [exactLiveRecord.id]
         )
         XCTAssertEqual(
-            harness.manager.installedExtensionCollection.recordRevision(
+            harness.inspection.actionSurfaces.installedExtensions.recordRevision(
                 for: exactLiveRecord.id
             ),
             revision
         )
         XCTAssertEqual(
-            harness.manager.installedExtensionCollection.recordDurability(
+            harness.inspection.actionSurfaces.installedExtensions.recordDurability(
                 for: exactLiveRecord.id
             ),
             .volatileExactRuntime
         )
         XCTAssertEqual(
-            harness.manager.pinnedToolbarExtensionIDs,
+            harness.inspection.actionSurfaces.publication.pinnedToolbarExtensionIDs,
             [exactLiveRecord.id]
         )
         XCTAssertEqual(
-            harness.manager.pinnedToolbarExtensionIDsByProfile[harness.profileKey],
+            harness.inspection.actionSurfaces.toolbarPinning.pinnedToolbarExtensionIDsByProfile[harness.profileKey],
             [exactLiveRecord.id]
         )
     }
@@ -165,11 +159,11 @@ final class InstalledExtensionCatalogTests: XCTestCase {
     func testSuccessfulEmptySnapshotClearsCatalogPublishesReadinessAndReconcilesPins() throws {
         let harness = try makeHarness()
         let existing = makeRecord(id: "removed-extension")
-        harness.manager.installedExtensionCollection.setAll([existing])
-        harness.manager.resetExtensionRuntimePublicationReadiness()
-        harness.manager.pinnedToolbarExtensionIDsByProfile[harness.profileKey] = [existing.id]
+        harness.inspection.actionSurfaces.installedExtensions.setAll([existing])
+        harness.inspection.actionSurfaces.publication.resetRuntimePublicationReadiness()
+        harness.setPinnedToolbarExtensionIDs([existing.id])
 
-        let enabled = harness.manager.installedExtensionCatalog.publish(
+        let enabled = harness.inspection.installation.catalog.publish(
             .init(
                 didFetchPersistedMetadata: true,
                 records: [],
@@ -178,11 +172,11 @@ final class InstalledExtensionCatalogTests: XCTestCase {
         )
 
         XCTAssertTrue(enabled.isEmpty)
-        XCTAssertTrue(harness.manager.installedExtensionCollection.records.isEmpty)
-        XCTAssertTrue(harness.manager.extensionsLoaded)
-        XCTAssertTrue(harness.manager.pinnedToolbarExtensionIDs.isEmpty)
+        XCTAssertTrue(harness.inspection.actionSurfaces.installedExtensions.records.isEmpty)
+        XCTAssertTrue(harness.inspection.actionSurfaces.publication.extensionsLoaded)
+        XCTAssertTrue(harness.inspection.actionSurfaces.publication.pinnedToolbarExtensionIDs.isEmpty)
         XCTAssertTrue(
-            harness.manager.pinnedToolbarExtensionIDsByProfile[harness.profileKey]?.isEmpty == true
+            harness.inspection.actionSurfaces.toolbarPinning.pinnedToolbarExtensionIDsByProfile[harness.profileKey]?.isEmpty == true
         )
     }
 
@@ -197,18 +191,23 @@ final class InstalledExtensionCatalogTests: XCTestCase {
             for: SumiStartupPersistence.schema,
             configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
         )
+        let inspection = ExtensionManagerInspectionCapture()
         let manager = ExtensionManager(
             context: container.mainContext,
             initialProfile: profile,
             browserConfiguration: BrowserConfiguration(),
-            extensionPreferences: preferences
+            extensionPreferences: preferences,
+            testInspectionDidAssemble: inspection.install
         )
         // Construction performs a real successful empty load. Reset readiness
         // so each test can establish the pre-publication state it owns.
-        manager.resetExtensionRuntimePublicationReadiness()
+        inspection.inspection.actionSurfaces.publication.resetRuntimePublicationReadiness()
         return Harness(
             manager: manager,
-            profileKey: ExtensionManager.pinnedToolbarProfileKey(for: profile.id)
+            inspection: inspection.inspection,
+            profileKey: ExtensionToolbarPinningOwner.pinnedToolbarProfileKey(
+                for: profile.id
+            )
         )
     }
 
@@ -259,7 +258,17 @@ final class InstalledExtensionCatalogTests: XCTestCase {
 
     private struct Harness {
         let manager: ExtensionManager
+        let inspection: ExtensionManagerTestInspection
         let profileKey: String
+
+        @MainActor
+        func setPinnedToolbarExtensionIDs(_ ids: [String]) {
+            var idsByProfile = inspection.actionSurfaces.toolbarPinning
+                .pinnedToolbarExtensionIDsByProfile
+            idsByProfile[profileKey] = ids
+            inspection.actionSurfaces.toolbarPinning
+                .replacePinnedToolbarExtensionIDsByProfile(idsByProfile)
+        }
     }
 }
 

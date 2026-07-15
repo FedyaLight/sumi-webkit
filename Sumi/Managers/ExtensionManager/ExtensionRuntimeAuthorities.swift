@@ -1,5 +1,21 @@
 import Foundation
 
+enum ExtensionRuntimeDemandReason: String {
+    case webViewConfiguration
+    case install
+}
+
+@available(macOS 15.5, *)
+enum ExtensionRuntimePublicationStage: Equatable {
+    case loadedRuntime
+    case loadFinalization
+
+    @MainActor
+    func admits(_ loadStatus: ExtensionRuntimeLoadStatusAuthority) -> Bool {
+        self == .loadFinalization || loadStatus.extensionsLoaded
+    }
+}
+
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionRuntimeLifecycleAuthority {
@@ -30,8 +46,8 @@ final class ExtensionRuntimeLifecycleAuthority {
         state = .failed
     }
 
-    func reset(extensionSupportAvailable: Bool) {
-        state = extensionSupportAvailable ? .idle : .unavailable
+    func resetAfterShutdown() {
+        state = .idle
     }
 }
 
@@ -44,13 +60,8 @@ final class ExtensionRuntimeDemandAuthority {
         allowsRuntimeWithoutEnabledExtensions
     }
 
-    func admitsRuntime(
-        hasEnabledExtensions: Bool,
-        allowWithoutEnabledExtensions: Bool
-    ) -> Bool {
-        hasEnabledExtensions
-            || allowWithoutEnabledExtensions
-            || allowsRuntimeWithoutEnabledExtensions
+    func hasRuntimeDemand(hasEnabledExtensions: Bool) -> Bool {
+        hasEnabledExtensions || allowsRuntimeWithoutEnabledExtensions
     }
 
     func recordRuntimeDemandWithoutEnabledExtensions() {

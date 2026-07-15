@@ -31,22 +31,27 @@ final class ExtensionInstallRuntimeActivator {
         let operation: Operation
     }
 
-    private let manager: ExtensionManager
     private let authority: ExtensionLoadedContextAuthority
+    private let backgroundWakes: ExtensionBackgroundWakeCoordinator
+    private let reloadPublications: @MainActor (String, UUID) -> Void
 
-    init(manager: ExtensionManager) {
-        self.manager = manager
-        self.authority = manager.loadedContextAuthority
+    init(
+        authority: ExtensionLoadedContextAuthority,
+        backgroundWakes: ExtensionBackgroundWakeCoordinator,
+        reloadPublications: @escaping @MainActor (String, UUID) -> Void
+    ) {
+        self.authority = authority
+        self.backgroundWakes = backgroundWakes
+        self.reloadPublications = reloadPublications
     }
 
     func activate(_ request: Request) async throws {
         try validate(request.loadedContext)
         // New install-time contexts must see existing tabs/windows before
         // `extensionsLoaded` flips, or MV3 onboarding (`tabs.create`) may race.
-        manager.reloadRuntimePublications(
-            reason: request.operation.resyncReason,
-            allowWhenExtensionsNotLoaded: true,
-            profileID: request.loadedContext.bindingReceipt.key.profileId
+        reloadPublications(
+            request.operation.resyncReason,
+            request.loadedContext.bindingReceipt.key.profileId
         )
         try validate(request.loadedContext)
 
@@ -55,7 +60,7 @@ final class ExtensionInstallRuntimeActivator {
             installedWebExtension.displayName ?? request.installedExtensionId
         do {
             // Await background load so `runtime.onInstalled` can run in this install cycle.
-            _ = try await manager.ensureBackgroundAvailableIfRequired(
+            _ = try await backgroundWakes.ensureBackgroundAvailableIfRequired(
                 for: installedWebExtension,
                 context: request.loadedContext.context,
                 reason: .install,

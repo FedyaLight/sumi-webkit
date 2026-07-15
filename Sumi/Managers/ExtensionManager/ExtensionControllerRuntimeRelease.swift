@@ -27,7 +27,7 @@ final class ExtensionControllerRuntimeRelease {
         self.controllerDelegateReadiness = controllerDelegateReadiness
     }
 
-    func release(isExtensionSupportAvailable: Bool) {
+    func releaseAfterShutdown() {
         controllerDelegateReadiness.cancelAll()
         browserConfiguration.webViewConfiguration.webExtensionController = nil
         for controller in profileRuntime.controllersByProfile.values {
@@ -36,8 +36,6 @@ final class ExtensionControllerRuntimeRelease {
         profileRuntime.replaceControllers([:])
         profileRuntime.removeAllWebsiteDataStores()
         runtimeDemand.reset()
-        runtimeLifecycle.reset(
-            extensionSupportAvailable: isExtensionSupportAvailable
-        )
+        runtimeLifecycle.resetAfterShutdown()
     }
 }

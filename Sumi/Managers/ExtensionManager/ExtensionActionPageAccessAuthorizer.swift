@@ -20,9 +20,7 @@ enum ExtensionActionPageAccessOutcome {
 @MainActor
 final class ExtensionActionPageAccessAuthorizer {
     struct Environment {
-        /// Deferred so constructing the invocation boundary for a rejected
-        /// click cannot materialize the runtime bundle's lazy systems.
-        let siteAccess: @MainActor () -> ExtensionSiteAccessPolicyCoordinator?
+        let siteAccess: ExtensionSiteAccessPolicyCoordinator
         let decisions: ExtensionPermissionDecisionStore
         let prompt: @MainActor (
             WKWebExtensionContext, [String], String, String
@@ -46,13 +44,10 @@ final class ExtensionActionPageAccessAuthorizer {
     func applyConfiguredPolicy(
         evidence: ExtensionActionInvocationEvidence
     ) -> Bool {
-        guard admission.isCurrent(evidence),
-              let siteAccess = environment.siteAccess(),
-              admission.isCurrent(evidence)
-        else {
+        guard admission.isCurrent(evidence) else {
             return false
         }
-        siteAccess.applyConfiguredSiteAccessPolicy(
+        environment.siteAccess.applyConfiguredSiteAccessPolicy(
             to: evidence.context,
             extensionId: evidence.extensionID,
             profileId: evidence.profileID,
@@ -96,7 +91,7 @@ final class ExtensionActionPageAccessAuthorizer {
             return .denied
         }
         guard admission.isCurrent(evidence) else { return .stale }
-        guard let siteAccess = environment.siteAccess() else { return .stale }
+        let siteAccess = environment.siteAccess
         switch siteAccess.configuredSiteAccessLevel(
             for: pageURL,
             extensionId: evidence.extensionID,
@@ -267,26 +262,5 @@ final class ExtensionActionPageAccessAuthorizer {
 
     private static func stringArray(from value: Any?) -> [String] {
         value as? [String] ?? []
-    }
-}
-
-@available(macOS 15.5, *)
-extension ExtensionActionPageAccessAuthorizer.Environment {
-    @MainActor
-    static func makeLive(manager: ExtensionManager) -> Self {
-        Self(
-            siteAccess: { [weak manager] in
-                manager?.siteAccessPolicyCoordinator
-            },
-            decisions: manager.permissionDecisionStore,
-            prompt: { [weak manager] context, targets, reason, dedupeKey in
-                await manager?.promptForExtensionPermissionDecision(
-                    extensionContext: context,
-                    targets: targets,
-                    reason: reason,
-                    dedupeKey: dedupeKey
-                ) ?? .deny
-            }
-        )
     }
 }

@@ -16,11 +16,14 @@ final class SafariExtensionInlineOverlayRuntimeTests: XCTestCase {
         let container = try makeTestContainer()
         let profile = Profile(name: "Inline Overlay Runtime Profile")
         let browserConfiguration = BrowserConfiguration()
-        let manager = ExtensionManager(
+        let fixture = makeSafariExtensionManagerTestFixture(
             context: container.mainContext,
             initialProfile: profile,
             browserConfiguration: browserConfiguration
         )
+        let manager = fixture.manager
+        let inspection = fixture.inspection
+        let attachedRuntime = fixture.attachedRuntime
         let windowRegistry = WindowRegistry()
         let browserManager = makeSafariExtensionTestBrowserManager(
             profile: profile,
@@ -30,24 +33,27 @@ final class SafariExtensionInlineOverlayRuntimeTests: XCTestCase {
         await browserManager.tabManager.storeRestore.startupRestoreTask?.value
 
         let installed = try await installSafariStyleInlineOverlayProbeExtension(
-            manager: manager,
+            inspection: inspection,
             scratchDirectory: makeScratchDirectory()
         )
-        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
-        manager.setDefaultSiteAccess(
+        _ = try await inspection.installation.lifecycle.enable(installed.id)
+        inspection.actionPolicy.siteAccess.setDefaultSiteAccess(
             .allow,
             extensionId: installed.id,
             profileId: profile.id
         )
         let extensionContext = try XCTUnwrap(
-            manager.getExtensionContext(for: installed.id, profileId: profile.id)
+            inspection.contextState.profileState.context(
+                for: installed.id,
+                profileId: profile.id
+            )
         )
         XCTAssertTrue(extensionContext.isLoaded)
 
         let configuration = browserConfiguration.auxiliaryWebViewConfiguration(
             surface: .extensionOptions
         )
-        manager.prepareWebViewConfigForExtensionRuntime(
+        inspection.normalTabs.configuration.prepareWebViewConfigForExtensionRuntime(
             configuration,
             profileId: profile.id,
             reason: "SafariExtensionInlineOverlayRuntimeTests"
@@ -74,11 +80,14 @@ final class SafariExtensionInlineOverlayRuntimeTests: XCTestCase {
         webView.owningTab = tab
         tab.replaceUntrackedWebView(webView)
 
-        manager.normalTabRegistration.register(
+        attachedRuntime.runtime.normalTabs.tabRegistration.register(
             tab,
             reason: "SafariExtensionInlineOverlayRuntimeTests"
         )
-        XCTAssertTrue(manager.publishedExtensionTabs.containsPublishedTab(tab))
+        XCTAssertTrue(
+            attachedRuntime.runtime.normalTabs.publishedTabs
+                .containsPublishedTab(tab)
+        )
 
         let didFinish = expectation(description: "page loaded")
         let delegate = NavigationDelegateBox {
@@ -174,7 +183,7 @@ final class SafariExtensionInlineOverlayRuntimeTests: XCTestCase {
     }
 
     private func installSafariStyleInlineOverlayProbeExtension(
-        manager: ExtensionManager,
+        inspection: ExtensionManagerTestInspection,
         scratchDirectory: URL
     ) async throws -> InstalledExtension {
         let directoryURL = scratchDirectory.appendingPathComponent(
@@ -679,7 +688,7 @@ final class SafariExtensionInlineOverlayRuntimeTests: XCTestCase {
             at: destinationDirectory.appendingPathComponent("manifest.json"),
             policy: .safariWebExtension
         )
-        let record = try manager.makeInstalledRecord(
+        let record = try inspection.installation.metadata.makeInstalledRecord(
             extensionId: resolvedExtensionId,
             manifest: installedManifest,
             extensionRoot: destinationDirectory,
@@ -691,8 +700,8 @@ final class SafariExtensionInlineOverlayRuntimeTests: XCTestCase {
             sourceFingerprintURL: destinationDirectory,
             existingEntity: nil
         )
-        try manager.persist(record: record)
-        _ = manager.installedExtensionCatalog.load()
+        try inspection.installation.metadata.persist(record: record)
+        _ = inspection.installation.catalog.load()
         return record
     }
 

@@ -7,6 +7,15 @@ import WebKit
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionContextRetirement {
+    typealias UnloadContext = @MainActor (
+        WKWebExtensionController,
+        WKWebExtensionContext
+    ) throws -> Void
+    typealias IsLoadedContext = @MainActor (
+        WKWebExtensionController,
+        WKWebExtensionContext
+    ) -> Bool
+
     enum Outcome: Equatable {
         case retired
         case notBound
@@ -22,15 +31,11 @@ final class ExtensionContextRetirement {
     private let errorObservation: ExtensionContextErrorObservation
     private let diagnostics: ExtensionRuntimeDiagnostics
     private let actionPopups: ExtensionActionPopupRuntimeRetirement?
-    private let unloadContext: @MainActor (
-        WKWebExtensionController,
-        WKWebExtensionContext
-    ) throws -> Void
-    private let isLoadedContext: @MainActor (
-        WKWebExtensionController,
-        WKWebExtensionContext
-    ) -> Bool
     private var inFlightReceipts = Set<ExtensionContextBindingReceipt>()
+    #if DEBUG
+        private var debugUnloadContext: UnloadContext?
+        private var debugIsLoadedContext: IsLoadedContext?
+    #endif
 
     init(
         profileRuntime: ExtensionProfileRuntime,
@@ -38,19 +43,7 @@ final class ExtensionContextRetirement {
         runtimeResidency: ExtensionRuntimeResidencyAuthority,
         errorObservation: ExtensionContextErrorObservation,
         diagnostics: ExtensionRuntimeDiagnostics,
-        actionPopups: ExtensionActionPopupRuntimeRetirement? = nil,
-        unloadContext: @escaping @MainActor (
-            WKWebExtensionController,
-            WKWebExtensionContext
-        ) throws -> Void = { controller, context in
-            try controller.unload(context)
-        },
-        isLoadedContext: @escaping @MainActor (
-            WKWebExtensionController,
-            WKWebExtensionContext
-        ) -> Bool = { controller, context in
-            controller.extensionContexts.contains(where: { $0 === context })
-        }
+        actionPopups: ExtensionActionPopupRuntimeRetirement? = nil
     ) {
         self.profileRuntime = profileRuntime
         self.backgroundRuntimeState = backgroundRuntimeState
@@ -58,9 +51,43 @@ final class ExtensionContextRetirement {
         self.errorObservation = errorObservation
         self.diagnostics = diagnostics
         self.actionPopups = actionPopups
-        self.unloadContext = unloadContext
-        self.isLoadedContext = isLoadedContext
     }
+
+    #if DEBUG
+        convenience init(
+            profileRuntime: ExtensionProfileRuntime,
+            backgroundRuntimeState: ExtensionBackgroundRuntimeStateOwner,
+            runtimeResidency: ExtensionRuntimeResidencyAuthority,
+            errorObservation: ExtensionContextErrorObservation,
+            diagnostics: ExtensionRuntimeDiagnostics,
+            actionPopups: ExtensionActionPopupRuntimeRetirement? = nil,
+            unloadContext: @escaping UnloadContext,
+            isLoadedContext: @escaping IsLoadedContext = { controller, context in
+                controller.extensionContexts.contains { $0 === context }
+            }
+        ) {
+            self.init(
+                profileRuntime: profileRuntime,
+                backgroundRuntimeState: backgroundRuntimeState,
+                runtimeResidency: runtimeResidency,
+                errorObservation: errorObservation,
+                diagnostics: diagnostics,
+                actionPopups: actionPopups
+            )
+            installDebugOperations(
+                unloadContext: unloadContext,
+                isLoadedContext: isLoadedContext
+            )
+        }
+
+        func installDebugOperations(
+            unloadContext: UnloadContext?,
+            isLoadedContext: IsLoadedContext?
+        ) {
+            debugUnloadContext = unloadContext
+            debugIsLoadedContext = isLoadedContext
+        }
+    #endif
 
     func retireCurrent(
         extensionId: String,
@@ -147,7 +174,7 @@ final class ExtensionContextRetirement {
         // context it never loaded throws; the local binding is nevertheless
         // safe to retire because the controller is the authoritative loaded
         // context inventory.
-        guard isLoadedContext(controller, context) else {
+        guard contextIsLoaded(context, in: controller) else {
             return completeRetirement(
                 context: context,
                 receipt: receipt,
@@ -156,7 +183,7 @@ final class ExtensionContextRetirement {
         }
 
         do {
-            try unloadContext(controller, context)
+            try unload(context, from: controller)
         } catch {
             if profileRuntime.isCurrent(receipt) == false {
                 errorObservation.removeObservation(
@@ -178,6 +205,31 @@ final class ExtensionContextRetirement {
             receipt: receipt,
             phase: "afterWebKitUnload"
         )
+    }
+
+    private func contextIsLoaded(
+        _ context: WKWebExtensionContext,
+        in controller: WKWebExtensionController
+    ) -> Bool {
+        #if DEBUG
+            if let debugIsLoadedContext {
+                return debugIsLoadedContext(controller, context)
+            }
+        #endif
+        return controller.extensionContexts.contains { $0 === context }
+    }
+
+    private func unload(
+        _ context: WKWebExtensionContext,
+        from controller: WKWebExtensionController
+    ) throws {
+        #if DEBUG
+            if let debugUnloadContext {
+                try debugUnloadContext(controller, context)
+                return
+            }
+        #endif
+        try controller.unload(context)
     }
 
     private func completeRetirement(

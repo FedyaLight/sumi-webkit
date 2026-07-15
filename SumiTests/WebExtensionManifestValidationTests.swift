@@ -337,21 +337,27 @@ final class WebExtensionManifestValidationTests: XCTestCase {
         container.mainContext.insert(ExtensionEntity(record: staleRecord))
         try container.mainContext.save()
 
-        let manager = ExtensionManager(
+        let fixture = makeSafariExtensionManagerTestFixture(
             context: container.mainContext,
             initialProfile: Profile(name: "Metadata Refresh Profile"),
             browserConfiguration: BrowserConfiguration()
         )
 
-        _ = manager.installedExtensionCatalog.load()
+        _ = fixture.inspection.installation.catalog.load()
 
         let refreshed = try XCTUnwrap(
-            manager.installedExtensionCollection.records.first { $0.id == staleRecord.id }
+            fixture.inspection.actionSurfaces.installedExtensions.records.first {
+                $0.id == staleRecord.id
+            }
         )
         XCTAssertEqual(refreshed.backgroundModel, .persistentPage)
         XCTAssertTrue(refreshed.hasBackground)
 
-        let entity = try XCTUnwrap(try manager.extensionEntity(for: staleRecord.id))
+        let entity = try XCTUnwrap(
+            try fixture.inspection.installation.metadata.extensionEntity(
+                for: staleRecord.id
+            )
+        )
         XCTAssertEqual(entity.backgroundModelRawValue, "persistent_page")
         XCTAssertTrue(entity.hasBackground)
     }

@@ -18,7 +18,8 @@ final class LiveShortcutPresentationRefreshService {
     }
 
     func admission(
-        for pin: ShortcutPin
+        for pin: ShortcutPin,
+        presentationSpaceID: UUID? = nil
     ) -> LiveShortcutPresentationRefreshAdmission? {
         switch pin.role {
         case .essential where pin.profileId == nil:
@@ -30,8 +31,16 @@ final class LiveShortcutPresentationRefreshService {
         }
         var changes: [LiveShortcutPresentationRefreshAdmission.Change] = []
         for entry in registry.entries(for: pin.id) {
-            let targetSpaceID = pin.spaceId
-                ?? entry.presentationPage.page.spaceID
+            let targetSpaceID: UUID
+            switch pin.role {
+            case .essential:
+                targetSpaceID = presentationSpaceID
+                    ?? entry.presentationPage.page.spaceID
+            case .spacePinned:
+                targetSpaceID = pin.spaceId
+                    ?? presentationSpaceID
+                    ?? entry.presentationPage.page.spaceID
+            }
             guard let targetPage = resolution.presentationPageReceipt(
                 for: pin,
                 windowID: entry.windowId,

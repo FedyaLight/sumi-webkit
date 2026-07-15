@@ -44,7 +44,6 @@ final class ExtensionAuxiliaryWindowOpeningTransaction {
     @discardableResult
     func open(
         _ session: AuxiliaryWindowSession,
-        runtime: ExtensionManagerRuntime,
         control: (any ExtensionAuxiliaryWindowControl)?,
         shouldFocus: Bool
     ) -> Bool {
@@ -56,7 +55,6 @@ final class ExtensionAuxiliaryWindowOpeningTransaction {
                resolver.publicationIsCurrent(
                    existing,
                    session: session,
-                   runtime: runtime,
                    control: control
                ) {
                 return true
@@ -67,7 +65,6 @@ final class ExtensionAuxiliaryWindowOpeningTransaction {
             _ = retirement.retire(
                 existing,
                 session: session,
-                runtime: runtime,
                 windowQuery: nil,
                 control: control,
                 mode: .runtimeSuspension
@@ -76,7 +73,6 @@ final class ExtensionAuxiliaryWindowOpeningTransaction {
 
         guard let publication = resolver.resolvePublication(
             for: session,
-            runtime: runtime,
             control: control
         ) else {
             return false
@@ -84,7 +80,6 @@ final class ExtensionAuxiliaryWindowOpeningTransaction {
         guard resolver.projectionIsCurrent(
             publication,
             session: session,
-            runtime: runtime,
             control: control
         ), ledger.insertPrepared(publication, for: session) else {
             _ = publication.tabReceipt.cancelBeforeWindowPublication()
@@ -98,16 +93,15 @@ final class ExtensionAuxiliaryWindowOpeningTransaction {
         guard isExactCurrent(
             publication,
             session: session,
-            runtime: runtime,
             control: control,
             committed: false
         ) else {
-            reject(publication, session: session, runtime: runtime, control: control)
+            reject(publication, session: session, control: control)
             return false
         }
 
-        guard publication.tabReceipt.commitOpen(runtime: runtime) else {
-            reject(publication, session: session, runtime: runtime, control: control)
+        guard publication.tabReceipt.commitOpen() else {
+            reject(publication, session: session, control: control)
             return false
         }
         #if DEBUG
@@ -119,11 +113,10 @@ final class ExtensionAuxiliaryWindowOpeningTransaction {
         guard isExactCurrent(
             publication,
             session: session,
-            runtime: runtime,
             control: control,
             committed: true
         ) else {
-            reject(publication, session: session, runtime: runtime, control: control)
+            reject(publication, session: session, control: control)
             return false
         }
 
@@ -133,7 +126,6 @@ final class ExtensionAuxiliaryWindowOpeningTransaction {
                 reject(
                     publication,
                     session: session,
-                    runtime: runtime,
                     control: control
                 )
                 return false
@@ -142,11 +134,10 @@ final class ExtensionAuxiliaryWindowOpeningTransaction {
             guard isExactCurrent(
                 publication,
                 session: session,
-                runtime: runtime,
                 control: control,
                 committed: true
             ) else {
-                reject(publication, session: session, runtime: runtime, control: control)
+                reject(publication, session: session, control: control)
                 return false
             }
             publication.context.didFocusWindow(publication.adapter)
@@ -156,12 +147,11 @@ final class ExtensionAuxiliaryWindowOpeningTransaction {
             guard isExactCurrent(
                 publication,
                 session: session,
-                runtime: runtime,
                 control: control,
                 committed: true
             ), (publication.context.focusedWindow as AnyObject?)
                 === publication.adapter else {
-                reject(publication, session: session, runtime: runtime, control: control)
+                reject(publication, session: session, control: control)
                 return false
             }
         }
@@ -169,11 +159,10 @@ final class ExtensionAuxiliaryWindowOpeningTransaction {
         guard isExactCurrent(
             publication,
             session: session,
-            runtime: runtime,
             control: control,
             committed: true
         ) else {
-            reject(publication, session: session, runtime: runtime, control: control)
+            reject(publication, session: session, control: control)
             return false
         }
         return true
@@ -181,12 +170,10 @@ final class ExtensionAuxiliaryWindowOpeningTransaction {
 
     func focus(
         _ session: AuxiliaryWindowSession,
-        runtime: ExtensionManagerRuntime,
         control: (any ExtensionAuxiliaryWindowControl)?
     ) {
         guard let publication = committedPublication(
             for: session,
-            runtime: runtime,
             control: control
         ), (publication.context.focusedWindow as AnyObject?)
             !== publication.adapter else {
@@ -200,7 +187,6 @@ final class ExtensionAuxiliaryWindowOpeningTransaction {
 
         guard let current = committedPublication(
             for: session,
-            runtime: runtime,
             control: control
         ), samePublication(current, publication),
               (publication.context.focusedWindow as AnyObject?)
@@ -211,7 +197,6 @@ final class ExtensionAuxiliaryWindowOpeningTransaction {
             _ = retirement.retire(
                 publication,
                 session: session,
-                runtime: runtime,
                 windowQuery: nil,
                 control: control,
                 mode: .terminal(restoreNormalFocus: false)
@@ -226,7 +211,6 @@ final class ExtensionAuxiliaryWindowOpeningTransaction {
 
     func committedPublication(
         for session: AuxiliaryWindowSession,
-        runtime: ExtensionManagerRuntime,
         control: (any ExtensionAuxiliaryWindowControl)?
     ) -> ExtensionAuxiliaryWindowPublication? {
         guard let publication = ledger.publication(for: session),
@@ -234,7 +218,6 @@ final class ExtensionAuxiliaryWindowOpeningTransaction {
               resolver.publicationIsCurrent(
                   publication,
                   session: session,
-                  runtime: runtime,
                   control: control
               )
         else {
@@ -246,7 +229,6 @@ final class ExtensionAuxiliaryWindowOpeningTransaction {
     private func isExactCurrent(
         _ publication: ExtensionAuxiliaryWindowPublication,
         session: AuxiliaryWindowSession,
-        runtime: ExtensionManagerRuntime,
         control: (any ExtensionAuxiliaryWindowControl)?,
         committed: Bool
     ) -> Bool {
@@ -258,7 +240,6 @@ final class ExtensionAuxiliaryWindowOpeningTransaction {
             && resolver.publicationIsCurrent(
                 publication,
                 session: session,
-                runtime: runtime,
                 control: control
             )
     }
@@ -266,14 +247,12 @@ final class ExtensionAuxiliaryWindowOpeningTransaction {
     private func reject(
         _ publication: ExtensionAuxiliaryWindowPublication,
         session: AuxiliaryWindowSession,
-        runtime: ExtensionManagerRuntime,
         control: (any ExtensionAuxiliaryWindowControl)?
     ) {
         guard ledger.containsExact(publication, for: session) else { return }
         _ = retirement.retire(
             publication,
             session: session,
-            runtime: runtime,
             windowQuery: nil,
             control: control,
             mode: .rejected

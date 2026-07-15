@@ -655,7 +655,7 @@
         "SumiTests/ExtensionActionPopupBindingRecoveryTests",
         "SumiTests/ExtensionActionPopupSessionLedgerTests",
         "SumiTests/ExtensionActionPopupSourceReceiptTests",
-        "SumiTests/ExtensionBrowserContentInventoryTests",
+        "SumiTests/ExtensionBrowserDirectionalRoleTests",
         "SumiTests/ExtensionContextErrorObservationTests",
         "SumiTests/ExtensionContextLoadRegistryTests",
         "SumiTests/ExtensionContextPreparationTests",

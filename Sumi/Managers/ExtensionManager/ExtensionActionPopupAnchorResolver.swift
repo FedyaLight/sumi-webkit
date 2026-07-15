@@ -15,9 +15,7 @@ import WebKit
 final class ExtensionActionPopupAnchorResolver {
     private let actionAnchorStore: ExtensionActionAnchorStore
     private let actionPopupAnchorStore: ExtensionActionPopupAnchorStore
-    private let windowQuery: @MainActor () -> (any ExtensionWindowQuery)?
-    private let windowPresentation:
-        @MainActor () -> (any ExtensionWindowPresentation)?
+    private let browser: any ExtensionActionPopupBrowserProjection
     private let fallbackProfileId: @MainActor () -> UUID?
     private let resolvedProfileId: @MainActor (BrowserWindowState) -> UUID?
     private let windowMatchesProfile: @MainActor (BrowserWindowState, UUID) -> Bool
@@ -26,9 +24,7 @@ final class ExtensionActionPopupAnchorResolver {
     init(
         actionAnchorStore: ExtensionActionAnchorStore,
         actionPopupAnchorStore: ExtensionActionPopupAnchorStore,
-        windowQuery: @escaping @MainActor () -> (any ExtensionWindowQuery)?,
-        windowPresentation:
-            @escaping @MainActor () -> (any ExtensionWindowPresentation)?,
+        browser: any ExtensionActionPopupBrowserProjection,
         fallbackProfileId: @escaping @MainActor () -> UUID?,
         resolvedProfileId: @escaping @MainActor (BrowserWindowState) -> UUID?,
         windowMatchesProfile: @escaping @MainActor (BrowserWindowState, UUID) -> Bool,
@@ -36,8 +32,7 @@ final class ExtensionActionPopupAnchorResolver {
     ) {
         self.actionAnchorStore = actionAnchorStore
         self.actionPopupAnchorStore = actionPopupAnchorStore
-        self.windowQuery = windowQuery
-        self.windowPresentation = windowPresentation
+        self.browser = browser
         self.fallbackProfileId = fallbackProfileId
         self.resolvedProfileId = resolvedProfileId
         self.windowMatchesProfile = windowMatchesProfile
@@ -52,7 +47,7 @@ final class ExtensionActionPopupAnchorResolver {
     ) -> UUID? {
         let captureProfileId =
             profileId
-            ?? windowQuery()?.extensionWindowState(for: windowId).flatMap {
+            ?? browser.popupWindowState(id: windowId).flatMap {
                 resolvedProfileId($0)
             }
             ?? fallbackProfileId()
@@ -64,14 +59,12 @@ final class ExtensionActionPopupAnchorResolver {
             return nil
         }
 
-        guard let windowState = windowQuery()?.extensionWindowState(
-                  for: windowId
-              ),
+        guard let windowState = browser.popupWindowState(id: windowId),
               windowMatchesProfile(windowState, captureProfileId),
               tab.map({
-                  windowQuery()?.extensionTab(withID: $0.id, in: windowState)
+                  browser.popupTab(id: $0.id, in: windowState)
                       === $0
-                      && windowQuery()?.currentExtensionTab(in: windowState)
+                      && browser.popupCurrentTab(in: windowState)
                           === $0
               }) ?? true
         else {
@@ -118,8 +111,8 @@ final class ExtensionActionPopupAnchorResolver {
         }
 
         let appearance = resolved.anchorView.window.flatMap { anchorWindow in
-            windowPresentation()?.extensionActionPopupAppearance(
-               forAnchorWindow: anchorWindow,
+            browser.popupAppearance(
+               anchorWindow: anchorWindow,
                fallback: anchorWindow.effectiveAppearance
             )
         }
@@ -145,12 +138,10 @@ final class ExtensionActionPopupAnchorResolver {
         source: ExtensionActionPopupAnchorSource,
         resolution: ExtensionActionPopupAnchorResolution
     )? {
-        guard let windowState = windowQuery()?.extensionWindowState(
-                  for: target.windowID
-              ),
+        guard let windowState = browser.popupWindowState(id: target.windowID),
               windowState === target.source.windowState,
               windowMatchesProfile(windowState, target.profileID),
-              let appKitWindow = windowQuery()?.appKitWindow(for: windowState)
+              let appKitWindow = browser.popupAppKitWindow(for: windowState)
         else {
             return nil
         }
@@ -210,10 +201,8 @@ final class ExtensionActionPopupAnchorResolver {
         for extensionId: String,
         windowId: UUID
     ) -> NSView? {
-        let targetWindow = windowQuery().flatMap { query in
-            query.extensionWindowState(for: windowId).flatMap(
-                query.appKitWindow(for:)
-            )
+        let targetWindow = browser.popupWindowState(id: windowId).flatMap {
+            browser.popupAppKitWindow(for: $0)
         }
         return actionAnchorStore.liveAnchorView(
             for: extensionId,
@@ -223,7 +212,7 @@ final class ExtensionActionPopupAnchorResolver {
     }
 
     private func urlHubFallbackAnchorView(for windowId: UUID) -> NSView? {
-        windowPresentation()?.extensionURLHubFallbackAnchorView(for: windowId)
+        browser.popupFallbackAnchorView(windowID: windowId)
     }
 
     private func isActionPopupAnchorViewReady(_ view: NSView?) -> Bool {
@@ -233,5 +222,4 @@ final class ExtensionActionPopupAnchorResolver {
             checkHiddenAncestors: true
         )
     }
-
 }

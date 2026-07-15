@@ -11,7 +11,8 @@ struct ExtensionRequestedTabOpeningService {
     let runtimeAdmission: ExtensionRequestedTabRuntimeAdmission
     private let browserContext: @MainActor () -> (any ExtensionTabCreation)?
     private let profileRuntime: ExtensionProfileRuntime
-    private let runtime: @MainActor () -> ExtensionManagerRuntime
+    private let tabProfileID: @MainActor (Tab) -> UUID?
+    private let windowProfileID: @MainActor (BrowserWindowState) -> UUID?
     private let hasTabAdapter: @MainActor (Tab) -> Bool
 
     init(
@@ -22,7 +23,8 @@ struct ExtensionRequestedTabOpeningService {
         registrar: ExtensionCreatedTabRuntimeRegistrar,
         browserContext: @escaping @MainActor () -> (any ExtensionTabCreation)?,
         profileRuntime: ExtensionProfileRuntime,
-        runtime: @escaping @MainActor () -> ExtensionManagerRuntime,
+        tabProfileID: @escaping @MainActor (Tab) -> UUID?,
+        windowProfileID: @escaping @MainActor (BrowserWindowState) -> UUID?,
         hasTabAdapter: @escaping @MainActor (Tab) -> Bool
     ) {
         self.recentRequests = recentRequests
@@ -34,7 +36,8 @@ struct ExtensionRequestedTabOpeningService {
         )
         self.browserContext = browserContext
         self.profileRuntime = profileRuntime
-        self.runtime = runtime
+        self.tabProfileID = tabProfileID
+        self.windowProfileID = windowProfileID
         self.hasTabAdapter = hasTabAdapter
     }
 
@@ -84,15 +87,9 @@ struct ExtensionRequestedTabOpeningService {
             shouldBeActive: shouldBeActive,
             shouldBePinned: shouldBePinned
         )
-        let currentRuntime = runtime()
         let rollbackSelectionID = target.window?.currentTabId
         let diagnosticProfileId = target.space?.profileId
-            ?? target.window.flatMap {
-                profileRuntime.resolvedProfileId(
-                    for: $0,
-                    runtime: currentRuntime
-                )
-            }
+            ?? target.window.flatMap(windowProfileID)
             ?? extensionContext.flatMap { profileRuntime.profileId(for: $0) }
             ?? profileRuntime.profileId(for: controller)
             ?? profileRuntime.currentProfileId
@@ -174,7 +171,6 @@ struct ExtensionRequestedTabOpeningService {
             newTab,
             load: load,
             publicationControllerIsReady: publicationControllerIsReady,
-            runtime: runtime(),
             reason: reason
         ) else {
             throw ExtensionManagerCallbackError
@@ -226,11 +222,9 @@ struct ExtensionRequestedTabOpeningService {
             load: load,
             opensTransientInternalTab: opensTransientInternalTab,
             diagnosticProfileID: diagnosticProfileId,
-            profileRuntime: profileRuntime,
-            runtime: runtime(),
+            resolvedProfileID: tabProfileID(newTab),
             hasTabAdapter: hasTabAdapter(newTab)
         )
         return newTab
     }
-
 }

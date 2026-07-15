@@ -185,10 +185,9 @@ final class ExtensionScopedRuntimeRetirementTests: XCTestCase {
             loadRegistry: fixture.loadRegistry,
             contextRetirement: contextRetirement
         )
-        let retirement = ExtensionRuntimeRetirement(
-            scopedRetirement: fixture.retirement { _, _ in },
-            actionSurfaces: { nil },
-            resources: { fixture.resources }
+        let retirement = makeRuntimeRetirement(
+            authority: authority,
+            scopedRetirement: fixture.retirement { _, _ in }
         )
         let rollback = ExtensionRuntimeRollback(
             authority: authority,
@@ -1095,10 +1094,9 @@ final class ExtensionScopedRuntimeRetirementTests: XCTestCase {
             loadRegistry: fixture.loadRegistry,
             contextRetirement: contextRetirement
         )
-        let runtimeRetirement = ExtensionRuntimeRetirement(
-            scopedRetirement: fixture.retirement { _, _ in },
-            actionSurfaces: { nil },
-            resources: { fixture.resources }
+        let runtimeRetirement = makeRuntimeRetirement(
+            authority: authority,
+            scopedRetirement: fixture.retirement { _, _ in }
         )
         return (
             ExtensionRuntimeRollback(
@@ -1135,6 +1133,37 @@ final class ExtensionScopedRuntimeRetirementTests: XCTestCase {
                 )
             },
             portInactivityTimeout: .seconds(3_600)
+        )
+    }
+
+    private func makeRuntimeRetirement(
+        authority: ExtensionLoadedContextAuthority,
+        scopedRetirement: ExtensionScopedRuntimeRetirement
+    ) -> ExtensionRuntimeRetirement {
+        let actionSurfaces = ExtensionActionSurfacePublisher(
+            authority: authority,
+            extensionIDForContext: { _ in nil },
+            setActionSurfaceState: { _, _ in },
+            removeActionSurfaceState: { _ in },
+            publishActionPresentationChange: { _ in },
+            exactContextIdentity: { _ in nil },
+            actionForLoadedContext: { _, _ in nil },
+            ensureBackgroundAvailableIfRequired: { _, _, _, _ in },
+            reconcileOpenTabsAfterExtensionContextLoad: { _ in }
+        )
+        let attachment = ExtensionBrowserAttachmentAuthority()
+        return ExtensionRuntimeRetirement(
+            scopedRetirement: scopedRetirement,
+            actionSurfaces: actionSurfaces,
+            attachedRetirement:
+                ExtensionBrowserAttachmentAuthority.Retirement(
+                    attachment: attachment
+                ),
+            nativeMessagingOwners:
+                ExtensionDemandScopedNativeMessagingOwners(
+                    moduleRegistry: .unavailable(),
+                    runtimeLifecycle: ExtensionRuntimeLifecycleAuthority()
+                )
         )
     }
 }

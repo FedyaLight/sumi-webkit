@@ -21,12 +21,12 @@ final class ExtensionRuntimeTabRebuildPlanTests: XCTestCase {
 
         XCTAssertTrue(
             plan.execute(
-                canonicalTabs: RuntimeTabRebuildQuery(canonical: tab),
-                runtime: makeRuntime(
-                    rebuilds: RuntimeTabRebuildRecorder(
-                        outcome: .committed
-                    )
-                ),
+                browserAvailable: { true },
+                canonicalTab: RuntimeTabRebuildQuery(canonical: tab)
+                    .extensionTab,
+                rebuildLiveWebViews: RuntimeTabRebuildRecorder(
+                    outcome: .committed
+                ).rebuild,
                 trace: { _, _ in
                     XCTFail("an empty plan must not emit trace events")
                 }
@@ -44,8 +44,9 @@ final class ExtensionRuntimeTabRebuildPlanTests: XCTestCase {
         let plan = makePlan(tabs: [tab, tab])
 
         let executions = plan.execute(
-            canonicalTabs: tabs,
-            runtime: makeRuntime(rebuilds: rebuilds),
+            browserAvailable: { true },
+            canonicalTab: tabs.extensionTab,
+            rebuildLiveWebViews: rebuilds.rebuild,
             trace: { traces.append(($0, $1)) }
         )
 
@@ -75,8 +76,9 @@ final class ExtensionRuntimeTabRebuildPlanTests: XCTestCase {
         let plan = makePlan(tabs: [candidate])
 
         let executions = plan.execute(
-            canonicalTabs: tabs,
-            runtime: makeRuntime(rebuilds: rebuilds),
+            browserAvailable: { true },
+            canonicalTab: tabs.extensionTab,
+            rebuildLiveWebViews: rebuilds.rebuild,
             trace: {
                 tracedTab = $0
                 tracedOutcome = $1
@@ -107,11 +109,9 @@ final class ExtensionRuntimeTabRebuildPlanTests: XCTestCase {
         let plan = makePlan(tabs: [tab])
 
         let executions = plan.execute(
-            canonicalTabs: tabs,
-            runtime: makeRuntime(
-                browserAvailable: false,
-                rebuilds: rebuilds
-            ),
+            browserAvailable: { false },
+            canonicalTab: tabs.extensionTab,
+            rebuildLiveWebViews: rebuilds.rebuild,
             trace: { _, outcome in tracedOutcome = outcome }
         )
 
@@ -141,8 +141,9 @@ final class ExtensionRuntimeTabRebuildPlanTests: XCTestCase {
             var tracedOutcome: ExtensionRuntimeTabRebuildPlan.Outcome?
 
             let executions = makePlan(tabs: [tab]).execute(
-                canonicalTabs: tabs,
-                runtime: makeRuntime(rebuilds: rebuilds),
+                browserAvailable: { true },
+                canonicalTab: tabs.extensionTab,
+                rebuildLiveWebViews: rebuilds.rebuild,
                 trace: { _, outcome in tracedOutcome = outcome }
             )
 
@@ -188,33 +189,6 @@ final class ExtensionRuntimeTabRebuildPlanTests: XCTestCase {
             controllers: [],
             tabs: tabs,
             liveWebViews: { _ in [] }
-        )
-    }
-
-    private func makeRuntime(
-        browserAvailable: Bool = true,
-        rebuilds: RuntimeTabRebuildRecorder
-    ) -> ExtensionManagerRuntime {
-        ExtensionManagerRuntime(
-            currentProfile: { nil },
-            profile: { _ in nil },
-            ephemeralProfile: { _ in nil },
-            windowState: { _ in nil },
-            windowRegistrationReceipt: { _ in nil },
-            registeredWindow: { _ in nil },
-            activeWindowState: { nil },
-            allTabs: { [] },
-            allWindowStates: { [] },
-            windowStateContainingTab: { _ in nil },
-            windowOwnedWebView: { _, _ in nil },
-            primaryTrackedWindowId: { _ in nil },
-            untrackedOwnedWebView: { _ in nil },
-            trackedWebViews: { _ in [] },
-            rebuildLiveWebViews: { rebuilds.rebuild($0) },
-            websiteDataMutationAdmissionIsBlocked: { _ in false },
-            waitForWebsiteDataMutationAdmission: { _ in true },
-            browserRuntimeAvailable: { browserAvailable },
-            extensionsModuleEnabled: { .enabled(true) }
         )
     }
 

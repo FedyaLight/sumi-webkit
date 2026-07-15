@@ -20,16 +20,14 @@ final class ExtensionLoadedContextFinalizer {
     }
 
     private let authority: ExtensionLoadedContextAuthority
-    private let actionSurfaces: @MainActor () ->
-        ExtensionActionSurfacePublisher?
+    private let actionSurfaces: ExtensionActionSurfacePublisher
     private let retention: ExtensionContextRetentionOwner
     private let settlement: ExtensionContextSettlementOwner
     private let installationActivation: ExtensionInstallRuntimeActivator
 
     init(
         authority: ExtensionLoadedContextAuthority,
-        actionSurfaces: @escaping @MainActor () ->
-            ExtensionActionSurfacePublisher?,
+        actionSurfaces: ExtensionActionSurfacePublisher,
         retention: ExtensionContextRetentionOwner,
         settlement: ExtensionContextSettlementOwner,
         installationActivation: ExtensionInstallRuntimeActivator
@@ -59,9 +57,6 @@ final class ExtensionLoadedContextFinalizer {
 
         switch activation {
         case .background(let wakeReason):
-            guard let actionSurfaces = actionSurfaces() else {
-                throw CancellationError()
-            }
             try await actionSurfaces.finalizeEnabledExtensionRuntime(
                 loadedContext,
                 backgroundWakeReason: wakeReason

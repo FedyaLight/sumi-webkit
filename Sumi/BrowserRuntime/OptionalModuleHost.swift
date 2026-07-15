@@ -70,7 +70,7 @@ final class OptionalModuleHost {
     /// re-running BrowserManagerRuntimeWiring.
     private func bindRuntimeProviders(into browserManager: BrowserManager) {
         extensions.bindRuntimeProvider { [weak browserManager] in
-            guard let browserManager else { return .inactive }
+            guard let browserManager else { return nil }
             return BrowserExtensionsModuleRuntimeFactory.runtime(for: browserManager)
         }
         boosts.bindRuntimeProvider { [weak browserManager] in

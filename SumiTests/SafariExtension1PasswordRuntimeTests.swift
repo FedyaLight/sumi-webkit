@@ -31,10 +31,14 @@ final class SafariExtension1PasswordRuntimeTests: XCTestCase {
         let container = try makeTestContainer()
         let profile = Profile(name: "1Password Runtime Profile")
         let browserConfiguration = BrowserConfiguration()
+        let attachedRuntime = ExtensionAttachedRuntimeCapture()
+        let inspection = ExtensionManagerInspectionCapture()
         let manager = makeSafariExtensionTestExtensionManager(
             context: container.mainContext,
             initialProfile: profile,
-            browserConfiguration: browserConfiguration
+            browserConfiguration: browserConfiguration,
+            attachedRuntimeCapture: attachedRuntime,
+            inspectionCapture: inspection
         )
         let browserManager = makeSafariExtensionTestBrowserManager(profile: profile)
         manager.attach(browserManager: browserManager)
@@ -42,12 +46,13 @@ final class SafariExtension1PasswordRuntimeTests: XCTestCase {
 
         // Real import path for a Safari app extension: validates the signed
         // bundle, copies resources for persistence, loads the runtime.
-        let installed = try await manager.extensionInstaller.install(
+        let installed = try await inspection.inspection.installation.installer.install(
             from: appexURL,
             enableOnInstall: true
         )
         let extensionContext = try XCTUnwrap(
-            manager.getExtensionContext(for: installed.id, profileId: profile.id)
+            inspection.inspection.contextState.profiles
+                .contexts(for: profile.id)[installed.id]
         )
         XCTAssertTrue(extensionContext.isLoaded)
 
@@ -92,7 +97,8 @@ final class SafariExtension1PasswordRuntimeTests: XCTestCase {
 
         // MV2 persistent background page must load through the wake path.
         XCTAssertTrue(extensionContext.webExtension.hasBackgroundContent)
-        _ = try await manager.ensureBackgroundAvailableIfRequired(
+        _ = try await inspection.inspection.nativeMessaging.backgroundWakes
+            .ensureBackgroundAvailableIfRequired(
             for: extensionContext.webExtension,
             context: extensionContext,
             reason: .enable
@@ -109,7 +115,8 @@ final class SafariExtension1PasswordRuntimeTests: XCTestCase {
         let configuration = browserConfiguration.auxiliaryWebViewConfiguration(
             surface: .extensionOptions
         )
-        manager.prepareWebViewConfigForExtensionRuntime(
+        inspection.inspection.normalTabs.configuration
+            .prepareWebViewConfigForExtensionRuntime(
             configuration,
             profileId: profile.id,
             reason: "SafariExtension1PasswordRuntimeTests"
@@ -125,7 +132,7 @@ final class SafariExtension1PasswordRuntimeTests: XCTestCase {
         let webView = FocusableWKWebView(frame: .zero, configuration: configuration)
         webView.owningTab = tab
         tab.replaceUntrackedWebView(webView)
-        manager.normalTabRegistration.register(
+        attachedRuntime.runtime.normalTabs.tabRegistration.register(
             tab,
             reason: "SafariExtension1PasswordRuntimeTests"
         )
@@ -152,7 +159,9 @@ final class SafariExtension1PasswordRuntimeTests: XCTestCase {
             extensionContext.hasInjectedContent(for: server.loginBasicURL),
             "content scripts must be injectable for the loaded login page URL"
         )
-        let adapter = try XCTUnwrap(manager.adapterCatalog.stableAdapter(for: tab))
+        let adapter = try XCTUnwrap(
+            attachedRuntime.runtime.adapters.stableAdapter(for: tab)
+        )
         XCTAssertNotNil(
             extensionContext.action(for: adapter),
             "the browser_action surface must resolve for the tab"

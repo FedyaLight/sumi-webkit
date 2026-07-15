@@ -11,24 +11,35 @@ final class ExtensionTabPropertyPublisher {
     private weak var profileRuntime: ExtensionProfileRuntime?
     private weak var adapters: ExtensionBrowserAdapterStore?
     private weak var liveWebViews: (any ExtensionTabLiveWebViewQuery)?
-    private let didPublish:
-        ((UUID, WKWebExtension.TabChangedProperties) -> Void)?
+    #if DEBUG
+        private var didPublish:
+            ((UUID, WKWebExtension.TabChangedProperties) -> Void)?
+    #endif
 
     init(
         publishedTabs: any ExtensionPublishedTabQuery,
         profiles: any ExtensionTabProfileResolving,
         profileRuntime: ExtensionProfileRuntime,
         adapters: ExtensionBrowserAdapterStore,
-        liveWebViews: any ExtensionTabLiveWebViewQuery,
-        didPublish: ((UUID, WKWebExtension.TabChangedProperties) -> Void)? = nil
+        liveWebViews: any ExtensionTabLiveWebViewQuery
     ) {
         self.publishedTabs = publishedTabs
         self.profiles = profiles
         self.profileRuntime = profileRuntime
         self.adapters = adapters
         self.liveWebViews = liveWebViews
-        self.didPublish = didPublish
     }
+
+    #if DEBUG
+        func installDebugDidPublish(
+            _ callback: @escaping (
+                UUID,
+                WKWebExtension.TabChangedProperties
+            ) -> Void
+        ) {
+            didPublish = callback
+        }
+    #endif
 
     func publishChange(
         for tab: Tab,
@@ -88,6 +99,8 @@ final class ExtensionTabPropertyPublisher {
         // The report state is claimed immediately before the synchronous
         // callback so reentrant model updates cannot publish the same value.
         controller.didChangeTabProperties(changed, for: adapter)
-        didPublish?(tab.id, changed)
+        #if DEBUG
+            didPublish?(tab.id, changed)
+        #endif
     }
 }

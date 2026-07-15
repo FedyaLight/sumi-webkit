@@ -11,89 +11,50 @@ final class ExtensionInitialTabPublicationPreparer {
     private let runtimePublicationEvidence:
         ExtensionRuntimePublicationEvidenceIssuer
     private let profileRuntime: ExtensionProfileRuntime
-    private let controllerQuery: any ExtensionTabControllerQuery
-    private let webViews: ExtensionExactTabWebViewQuery
-    private let controllerAdmission: any ExtensionWebViewControllerAdmitting
-    private let contextLoading: any ExtensionContentScriptContextLoading
-    private let windowPublications: ExtensionWindowPublicationQuery
+    private let residenceAdmission: ExtensionInitialTabResidenceAdmission
+    private let runtimeAdmission: ExtensionInitialTabRuntimeAdmission
     private let adapters: ExtensionCreatedTabAdapterPublication
-    private let events: any ExtensionInitialTabLifecycleEventSink
-    private let extensionsLoaded: @MainActor () -> Bool
+    private let validator: ExtensionInitialTabPublicationValidator
+    private let retirement: ExtensionInitialTabPublicationRetirement
     private let diagnostics: ExtensionRuntimeDiagnostics
 
     init(
-        runtimePublicationEvidence:
-            ExtensionRuntimePublicationEvidenceIssuer,
+        runtimePublicationEvidence: ExtensionRuntimePublicationEvidenceIssuer,
         profileRuntime: ExtensionProfileRuntime,
-        adapterStore: ExtensionBrowserAdapterStore,
-        controllerQuery: any ExtensionTabControllerQuery,
-        webViews: ExtensionExactTabWebViewQuery,
-        controllerAdmission: any ExtensionWebViewControllerAdmitting,
-        adapterResolution: ExtensionAdapterCatalog,
-        contextLoading: any ExtensionContentScriptContextLoading,
-        windowPublications: ExtensionWindowPublicationQuery,
-        events: any ExtensionInitialTabLifecycleEventSink,
-        extensionsLoaded: @escaping @MainActor () -> Bool,
+        residenceAdmission: ExtensionInitialTabResidenceAdmission,
+        runtimeAdmission: ExtensionInitialTabRuntimeAdmission,
+        adapters: ExtensionCreatedTabAdapterPublication,
+        validator: ExtensionInitialTabPublicationValidator,
+        retirement: ExtensionInitialTabPublicationRetirement,
         diagnostics: ExtensionRuntimeDiagnostics
     ) {
         self.runtimePublicationEvidence = runtimePublicationEvidence
         self.profileRuntime = profileRuntime
-        self.controllerQuery = controllerQuery
-        self.webViews = webViews
-        self.controllerAdmission = controllerAdmission
-        self.contextLoading = contextLoading
-        self.windowPublications = windowPublications
-        self.events = events
-        self.extensionsLoaded = extensionsLoaded
+        self.residenceAdmission = residenceAdmission
+        self.runtimeAdmission = runtimeAdmission
+        self.adapters = adapters
+        self.validator = validator
+        self.retirement = retirement
         self.diagnostics = diagnostics
-        adapters = ExtensionCreatedTabAdapterPublication(
-            store: adapterStore,
-            resolution: adapterResolution
-        )
     }
 
     func prepare(
         window: BrowserWindowState,
         tab: Tab,
         webView: FocusableWKWebView,
-        runtime: ExtensionManagerRuntime,
-        windowRegistry: any ExtensionWindowQuery,
         reason: String
     ) -> ExtensionInitialTabPublicationReceipt? {
-        guard extensionsLoaded(),
-              window.isIncognito == false,
-              tab.isEphemeral == false,
-              let windowProfileID = profileRuntime.resolvedProfileId(
-                  for: window,
-                  runtime: runtime
-              ),
-              profileRuntime.resolvedProfileId(for: tab, runtime: runtime)
-                == windowProfileID,
-              contextLoading.profileHasLoadedContentScriptContexts(
-                  profileId: windowProfileID
-              ),
-              let profile = runtime.profile(windowProfileID),
-              webView.configuration.websiteDataStore === profile.dataStore,
-              webViews.liveWebView(for: tab) === webView,
-              let controller = controllerQuery.existingController(for: tab),
-              controllerAdmission.admit(
-                  controller,
-                  profileID: windowProfileID,
-                  to: webView,
-                  for: tab
-              ).isUsable,
-              profileRuntime.controller(for: windowProfileID) === controller,
-              webView.configuration.webExtensionController === controller,
-              exactResidenceMatches(
-                  window: window,
-                  tab: tab,
-                  webView: webView
-              )
-        else {
-            return nil
-        }
+        guard let residence = residenceAdmission.admit(
+            window: window,
+            tab: tab,
+            webView: webView
+        ), let controller = runtimeAdmission.admit(
+            tab: tab,
+            webView: webView,
+            profileID: residence.profileID
+        ) else { return nil }
 
-        let dataStore = profile.dataStore
+        let dataStore = residence.profile.dataStore
         let runtimePublication = runtimePublicationEvidence.issue()
         let generation = runtimePublication.tabPublication
         let stateToken = tab.extensionPageRuntimeOwner
@@ -109,32 +70,17 @@ final class ExtensionInitialTabPublicationPreparer {
             window: window,
             tab: tab,
             webView: webView,
-            profile: profile,
+            profile: residence.profile,
             dataStore: dataStore,
-            profileID: windowProfileID,
+            profileID: residence.profileID,
             runtimePublication: runtimePublication,
             contextBindingGeneration: profileRuntime
-                .contextBindingGeneration(for: windowProfileID),
+                .contextBindingGeneration(for: residence.profileID),
             controller: controller,
             adapter: preparedAdapter.adapter,
             createdAdapter: preparedAdapter.created,
             stateToken: stateToken,
             reason: reason
-        )
-        let validator = ExtensionInitialTabPublicationValidator(
-            runtimePublicationEvidence: runtimePublicationEvidence,
-            profileRuntime: profileRuntime,
-            controllerQuery: controllerQuery,
-            webViews: webViews,
-            contextLoading: contextLoading,
-            windowRegistry: windowRegistry,
-            windowPublications: windowPublications,
-            adapters: adapters,
-            extensionsLoaded: extensionsLoaded
-        )
-        let retirement = ExtensionInitialTabPublicationRetirement(
-            events: events,
-            adapters: adapters
         )
         guard validator.preparedEvidenceIsCurrent(
             evidence,
@@ -152,27 +98,6 @@ final class ExtensionInitialTabPublicationPreparer {
             retirement: retirement,
             diagnostics: diagnostics,
             evidence: evidence
-        )
-    }
-
-    private func exactResidenceMatches(
-        window: BrowserWindowState,
-        tab: Tab,
-        webView: FocusableWKWebView
-    ) -> Bool {
-        guard window.currentTabId == tab.id,
-              webView.owningTab === tab,
-              window.tabManager?.tabCollectionMembershipOwner.tab(
-                  for: tab.id
-              ) === tab,
-              case .window(let trackedOwner) = tab.webViewSession
-                .residence(of: webView)
-        else {
-            return false
-        }
-        return trackedOwner == TrackedWebViewOwner(
-            tabID: tab.id,
-            windowID: window.id
         )
     }
 }

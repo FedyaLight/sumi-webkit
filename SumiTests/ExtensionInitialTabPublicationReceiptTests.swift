@@ -36,7 +36,7 @@ final class ExtensionInitialTabPublicationReceiptTests:
         )
         XCTAssertFalse(harness.tab.extensionPageRuntimeOwner
             .hasAnyDidOpenTabNotification())
-        XCTAssertNil(harness.manager.adapterStore.tabAdapters[harness.tab.id])
+        XCTAssertNil(harness.inspection.normalTabs.adapters.tabAdapters[harness.tab.id])
 
         harness.publication.revokeCommittedPublicationIfNeeded(
             for: harness.window
@@ -48,7 +48,7 @@ final class ExtensionInitialTabPublicationReceiptTests:
         async throws {
         let harness = try await makeHarness()
         let identity = try XCTUnwrap(
-            harness.manager.profileRuntime.exactContextIdentity(
+            harness.inspection.contextState.profiles.exactContextIdentity(
                 for: harness.context
             )
         )
@@ -60,7 +60,7 @@ final class ExtensionInitialTabPublicationReceiptTests:
             let replacement = WKWebExtensionContext(
                 for: harness.context.webExtension
             )
-            _ = harness.manager.profileRuntime.setContext(
+            _ = harness.inspection.contextState.profiles.setContext(
                 replacement,
                 extensionId: identity.extensionId,
                 profileId: identity.profileId
@@ -84,7 +84,7 @@ final class ExtensionInitialTabPublicationReceiptTests:
         )
         XCTAssertFalse(harness.tab.extensionPageRuntimeOwner
             .hasAnyDidOpenTabNotification())
-        XCTAssertNil(harness.manager.adapterStore.tabAdapters[harness.tab.id])
+        XCTAssertNil(harness.inspection.normalTabs.adapters.tabAdapters[harness.tab.id])
 
         harness.publication.revokeCommittedPublicationIfNeeded(
             for: harness.window
@@ -104,12 +104,12 @@ final class ExtensionInitialTabPublicationReceiptTests:
 
         harness.publication.commitRegistration(harness.window)
         let adapter = try XCTUnwrap(
-            harness.manager.adapterStore.tabAdapters[harness.tab.id]
+            harness.inspection.normalTabs.adapters.tabAdapters[harness.tab.id]
         )
         let profileID = harness.profileID
         let nextGeneration = try XCTUnwrap(
-            harness.manager.tabPublicationRevisions.advance(
-                ifCurrent: harness.manager.tabPublicationRevisions.issue()
+            harness.inspection.runtimeAuthorities.tabPublicationRevisions.advance(
+                ifCurrent: harness.inspection.runtimeAuthorities.tabPublicationRevisions.issue()
             )
         )
         harness.tab.extensionPageRuntimeOwner.prepareGeneration(
@@ -119,14 +119,14 @@ final class ExtensionInitialTabPublicationReceiptTests:
             for: nextGeneration
         )
         harness.tab.extensionPageRuntimeOwner.noteOpenNotification(
-            extensionContextBindingGeneration: harness.manager.profileRuntime
+            extensionContextBindingGeneration: harness.inspection.contextState.profiles
                 .contextBindingGeneration(for: profileID),
             contextReadiness: .loaded
         )
         harness.tab.extensionPageRuntimeOwner.markDidOpenTab(
             generation: nextGeneration
         )
-        harness.manager.profileRuntime.controller(
+        harness.inspection.contextState.profiles.controller(
             for: profileID
         )?.didOpenTab(adapter)
 
@@ -159,9 +159,10 @@ final class ExtensionInitialTabPublicationReceiptTests:
         }
 
         XCTAssertTrue(
-            harness.manager.normalWindowLifecycle.opened(harness.window)
+            harness.attachedRuntime.publications.normalWindows
+                .opened(harness.window)
         )
-        harness.manager.normalTabRegistration.register(
+        harness.attachedRuntime.normalTabs.tabRegistration.register(
             harness.tab,
             reason: #function
         )
@@ -186,6 +187,8 @@ final class ExtensionInitialTabPublicationReceiptTests:
 
     private struct Harness {
         let manager: ExtensionManager
+        let inspection: ExtensionManagerTestInspection
+        let attachedRuntime: ExtensionAttachedBrowserRuntimeInspection
         let windowRegistry: WindowRegistry
         let window: BrowserWindowState
         let tab: Tab
@@ -205,11 +208,15 @@ final class ExtensionInitialTabPublicationReceiptTests:
             )
         )
         moduleRegistry.enable(.extensions)
+        let attachedRuntime = ExtensionAttachedRuntimeCapture()
+        let inspection = ExtensionManagerInspectionCapture()
         let manager = makeSafariExtensionTestExtensionManager(
             context: container.mainContext,
             initialProfile: profile,
             browserConfiguration: browserConfiguration,
-            moduleRegistry: moduleRegistry
+            moduleRegistry: moduleRegistry,
+            attachedRuntimeCapture: attachedRuntime,
+            inspectionCapture: inspection
         )
         let extensionsModule = SumiExtensionsModule(
             moduleRegistry: moduleRegistry,
@@ -238,8 +245,8 @@ final class ExtensionInitialTabPublicationReceiptTests:
             scratchDirectory: scratchDirectory,
             name: "InitialTabPublicationExtension"
         )
-        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
-        let loadedContext = try await manager.ensureExtensionLoaded(
+        _ = try await inspection.inspection.installation.lifecycle.enable(installed.id)
+        let loadedContext = try await inspection.inspection.contextCoordination.residency.ensureExtensionLoaded(
             extensionId: installed.id,
             profileId: profile.id
         )
@@ -290,12 +297,15 @@ final class ExtensionInitialTabPublicationReceiptTests:
         windowRegistry.register(window)
         windowRegistry.setActive(window)
         addTeardownBlock {
-            windowRegistry.unregister(window.id)
-            appKitWindow.close()
+            withExtendedLifetime(appKitWindow) {
+                windowRegistry.unregister(window.id)
+            }
         }
 
         return Harness(
             manager: manager,
+            inspection: inspection.inspection,
+            attachedRuntime: attachedRuntime.runtime,
             windowRegistry: windowRegistry,
             window: window,
             tab: tab,

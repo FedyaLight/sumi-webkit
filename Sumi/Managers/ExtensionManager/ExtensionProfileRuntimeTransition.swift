@@ -40,7 +40,6 @@ final class ExtensionProfileRuntimeTransition {
         any ExtensionInactiveProfileContextRetiring
     private let actionAnchors: ExtensionActionPopupAnchorStore
     private let toolbarProfiles: any ExtensionToolbarProfileReloading
-    private let extensionSupportAvailable: Bool
     private let reconcileProfile: @MainActor (UUID) -> Void
     private let refreshActionSurfaces: @MainActor (UUID) -> Void
 
@@ -56,7 +55,6 @@ final class ExtensionProfileRuntimeTransition {
         inactiveContextRetirement: any ExtensionInactiveProfileContextRetiring,
         actionAnchors: ExtensionActionPopupAnchorStore,
         toolbarProfiles: any ExtensionToolbarProfileReloading,
-        extensionSupportAvailable: Bool,
         reconcileProfile: @escaping @MainActor (UUID) -> Void,
         refreshActionSurfaces: @escaping @MainActor (UUID) -> Void
     ) {
@@ -68,7 +66,6 @@ final class ExtensionProfileRuntimeTransition {
         self.inactiveContextRetirement = inactiveContextRetirement
         self.actionAnchors = actionAnchors
         self.toolbarProfiles = toolbarProfiles
-        self.extensionSupportAvailable = extensionSupportAvailable
         self.reconcileProfile = reconcileProfile
         self.refreshActionSurfaces = refreshActionSurfaces
     }
@@ -107,7 +104,7 @@ final class ExtensionProfileRuntimeTransition {
         actionAnchors.clearAnchors(notMatching: profileID)
         toolbarProfiles.reloadPinnedToolbarExtensionsForCurrentProfile()
 
-        guard extensionSupportAvailable, runtimeInitialized else {
+        guard runtimeInitialized else {
             return pendingReceipt
         }
         let controller = controllerProvisioning.ensureExtensionController(

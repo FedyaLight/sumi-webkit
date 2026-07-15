@@ -27,8 +27,8 @@ enum ExtensionOptionsWindowPresentationCoordinator {
             return
         }
 
-        if runtime.websiteDataMutationAdmissionIsBlocked(
-            receipt.evidence.profileID
+        if runtime.websiteDataAdmission.isBlocked(
+            profileID: receipt.evidence.profileID
         ) {
             Task { @MainActor [weak service] in
                 guard let service,
@@ -37,8 +37,8 @@ enum ExtensionOptionsWindowPresentationCoordinator {
                           receipt: receipt,
                           runtime: runtime
                       ),
-                      await runtime.waitForWebsiteDataMutationAdmission(
-                          receipt.evidence.profileID
+                      await runtime.websiteDataAdmission.wait(
+                          profileID: receipt.evidence.profileID
                       ),
                       service.presentationIsCurrent(
                           claim,

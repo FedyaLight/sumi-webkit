@@ -242,7 +242,8 @@ final class SafariExtensionAccountForkPipelineTests: XCTestCase {
         /// (installed-catalog publication), which traps if the container
         /// backing the manager's ModelContext has been deallocated.
         let container: ModelContainer
-        let manager: ExtensionManager
+        let inspection: ExtensionManagerTestInspection
+        let attachedRuntime: ExtensionAttachedBrowserRuntimeInspection
         let webView: WKWebView
         let runtimeIdentifier: String
         let tabLifecycleLog: TabLifecycleLog
@@ -254,10 +255,11 @@ final class SafariExtensionAccountForkPipelineTests: XCTestCase {
         /// extension created itself through `tabs.create`).
         @MainActor
         func adapterResolutionDiagnostics(for probedTab: Tab) -> String {
-            let adapter = manager.adapterCatalog.stableAdapter(for: probedTab)
+            let adapter = attachedRuntime.adapters.stableAdapter(for: probedTab)
             let adapterWebView = adapter?.webView(for: extensionContext)
             let lookupTab = browserManager.tabManager.tabCollectionMembershipOwner.tab(for: probedTab.id)
-            let tabMatchesContext = manager.contextTabCompatibility.matches(
+            let tabMatchesContext = attachedRuntime.controller
+                .contextCompatibility.matches(
                 probedTab,
                 context: extensionContext
             )
@@ -265,8 +267,8 @@ final class SafariExtensionAccountForkPipelineTests: XCTestCase {
                 + "adapterTabMatches=\(adapter?.tab === probedTab) "
                 + "tabManagerLookup=\(lookupTab == nil ? "nil" : (lookupTab === probedTab ? "match" : "OTHER")) "
                 + "adapterWebViewMatchesTab=\(adapterWebView === probedTab.resolvedCurrentWebView()) "
-                + "tabEligible=\(manager.preparedExtensionTabs.containsPreparedTab(probedTab)) "
-                + "resolvedProfile=\(String(describing: manager.resolvedProfileId(for: probedTab))) "
+                + "tabEligible=\(attachedRuntime.normalTabs.preparedTabs.containsPreparedTab(probedTab)) "
+                + "resolvedProfile=\(String(describing: attachedRuntime.controller.profiles.profileID(for: probedTab))) "
                 + "controllerAttached=\(probedTab.resolvedCurrentWebView()?.configuration.webExtensionController != nil) "
                 + "tabMatchesContext=\(tabMatchesContext)"
         }
@@ -276,20 +278,21 @@ final class SafariExtensionAccountForkPipelineTests: XCTestCase {
         /// and compares each adapter's `webView(for:)` page).
         @MainActor
         var adapterResolutionDiagnostics: String {
-            let adapter = manager.adapterCatalog.stableAdapter(for: tab)
+            let adapter = attachedRuntime.adapters.stableAdapter(for: tab)
             let adapterWebView = adapter?.webView(for: extensionContext)
-            let eligible = manager.preparedExtensionTabs.containsPreparedTab(tab)
+            let eligible = attachedRuntime.normalTabs.preparedTabs.containsPreparedTab(tab)
             let adapterTab = adapter?.tab
             let lookupTab = browserManager.tabManager.tabCollectionMembershipOwner.tab(for: tab.id)
             let containingSpaces = browserManager.tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()
                 .filter { _, tabs in tabs.contains(where: { $0 === tab }) }
                 .keys
-            let resolvedLiveWebView = manager.exactExtensionTabWebViews
+            let resolvedLiveWebView = attachedRuntime.controller.webViews
                 .liveWebView(for: tab)
             let resolvedLiveWebViewDescription = resolvedLiveWebView == nil
                 ? "nil"
                 : (resolvedLiveWebView === webView ? "harnessWebView" : "OTHER")
-            let tabMatchesContext = manager.contextTabCompatibility.matches(
+            let tabMatchesContext = attachedRuntime.controller
+                .contextCompatibility.matches(
                 tab,
                 context: extensionContext
             )
@@ -306,18 +309,20 @@ final class SafariExtensionAccountForkPipelineTests: XCTestCase {
                 + "primaryWindowId=\(String(describing: tab.resolvedPrimaryWindowId())) "
                 + "currentWebViewIsHarness=\(tab.resolvedCurrentWebView() === webView) "
                 + "owningTabMatches=\((webView as? FocusableWKWebView)?.owningTab === tab) "
-                + "resolvedProfile=\(String(describing: manager.resolvedProfileId(for: tab))) "
+                + "resolvedProfile=\(String(describing: attachedRuntime.controller.profiles.profileID(for: tab))) "
                 + "controllerAttached=\(webView.configuration.webExtensionController != nil) "
                 + "tabMatchesContext=\(tabMatchesContext) "
                 + "resolvedLiveWebView=\(resolvedLiveWebViewDescription) "
-                + "contextProfile=\(String(describing: manager.profileId(for: extensionContext))) "
+                + "contextProfile=\(String(describing: inspection.contextState.profiles.profileId(for: extensionContext))) "
                 + controllerIdentityDiagnostics
         }
 
         @MainActor
         var controllerIdentityDiagnostics: String {
-            let profileId = manager.resolvedProfileId(for: tab)
-            let expected = profileId.flatMap { manager.profileRuntime.controller(for: $0) }
+            let profileId = attachedRuntime.controller.profiles.profileID(for: tab)
+            let expected = profileId.flatMap {
+                inspection.contextState.profiles.controller(for: $0)
+            }
             let attached = webView.configuration.webExtensionController
             let expectedDescription = expected.map { "\(ObjectIdentifier($0))" } ?? "nil"
             let attachedDescription = attached.map { "\(ObjectIdentifier($0))" } ?? "nil"
@@ -386,12 +391,15 @@ final class SafariExtensionAccountForkPipelineTests: XCTestCase {
             )
         )
         moduleRegistry.enable(.extensions)
-        let manager = makeSafariExtensionTestExtensionManager(
+        let managerFixture = makeSafariExtensionManagerTestFixture(
             context: container.mainContext,
             initialProfile: profile,
             browserConfiguration: browserConfiguration,
             moduleRegistry: moduleRegistry
         )
+        let manager = managerFixture.manager
+        let inspection = managerFixture.inspection
+        let attachedRuntime = managerFixture.attachedRuntime
         let extensionsModule = SumiExtensionsModule(
             moduleRegistry: moduleRegistry,
             context: container.mainContext,
@@ -431,24 +439,25 @@ final class SafariExtensionAccountForkPipelineTests: XCTestCase {
         }
 
         let installed = try await installAccountForkProbeExtension(
-            manager: manager,
+            inspection: inspection,
             scratchDirectory: makeScratchDirectory()
         )
-        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
-        manager.setDefaultSiteAccess(
+        _ = try await inspection.installation.lifecycle.enable(installed.id)
+        inspection.actionPolicy.siteAccess.setDefaultSiteAccess(
             .allow,
             extensionId: installed.id,
             profileId: profile.id
         )
         let extensionContext = try XCTUnwrap(
-            manager.getExtensionContext(for: installed.id, profileId: profile.id)
+            inspection.contextState.profiles.contexts(for: profile.id)[installed.id]
         )
         XCTAssertTrue(extensionContext.isLoaded)
 
         // In the real login flow the service worker is already awake (the
         // action popup woke it before opening the account tab), so the probe
         // wakes it explicitly the same way.
-        _ = try await manager.ensureBackgroundAvailableIfRequired(
+        _ = try await inspection.nativeMessaging.backgroundWakes
+            .ensureBackgroundAvailableIfRequired(
             for: extensionContext.webExtension,
             context: extensionContext,
             reason: .enable
@@ -457,7 +466,7 @@ final class SafariExtensionAccountForkPipelineTests: XCTestCase {
         let configuration = browserConfiguration.auxiliaryWebViewConfiguration(
             surface: .extensionOptions
         )
-        manager.prepareWebViewConfigForExtensionRuntime(
+        inspection.normalTabs.configuration.prepareWebViewConfigForExtensionRuntime(
             configuration,
             profileId: profile.id,
             reason: "SafariExtensionAccountForkPipelineTests"
@@ -497,11 +506,14 @@ final class SafariExtensionAccountForkPipelineTests: XCTestCase {
         webView.owningTab = tab
         tab.replaceUntrackedWebView(webView)
 
-        manager.normalTabRegistration.register(
+        attachedRuntime.runtime.normalTabs.tabRegistration.register(
             tab,
             reason: "SafariExtensionAccountForkPipelineTests"
         )
-        XCTAssertTrue(manager.publishedExtensionTabs.containsPublishedTab(tab))
+        XCTAssertTrue(
+            attachedRuntime.runtime.normalTabs.publishedTabs
+                .containsPublishedTab(tab)
+        )
 
         let didFinish = expectation(description: "account page loaded")
         let delegate = NavigationDelegateBox {
@@ -516,7 +528,8 @@ final class SafariExtensionAccountForkPipelineTests: XCTestCase {
 
         return ForkProbeHarness(
             container: container,
-            manager: manager,
+            inspection: inspection,
+            attachedRuntime: managerFixture.attachedRuntime.runtime,
             webView: webView,
             runtimeIdentifier: extensionContext.uniqueIdentifier,
             tabLifecycleLog: tabLifecycleLog,
@@ -976,7 +989,7 @@ final class SafariExtensionAccountForkPipelineTests: XCTestCase {
     // MARK: - Probe extension
 
     private func installAccountForkProbeExtension(
-        manager: ExtensionManager,
+        inspection: ExtensionManagerTestInspection,
         scratchDirectory: URL
     ) async throws -> InstalledExtension {
         let directoryURL = scratchDirectory.appendingPathComponent(
@@ -1211,7 +1224,7 @@ final class SafariExtensionAccountForkPipelineTests: XCTestCase {
             at: destinationDirectory.appendingPathComponent("manifest.json"),
             policy: .safariWebExtension
         )
-        let record = try manager.makeInstalledRecord(
+        let record = try inspection.installation.metadata.makeInstalledRecord(
             extensionId: resolvedExtensionId,
             manifest: installedManifest,
             extensionRoot: destinationDirectory,
@@ -1223,8 +1236,8 @@ final class SafariExtensionAccountForkPipelineTests: XCTestCase {
             sourceFingerprintURL: destinationDirectory,
             existingEntity: nil
         )
-        try manager.persist(record: record)
-        _ = manager.installedExtensionCatalog.load()
+        try inspection.installation.metadata.persist(record: record)
+        _ = inspection.installation.catalog.load()
         return record
     }
 

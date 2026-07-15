@@ -128,10 +128,14 @@ final class SafariExtensionPermissionsOriginsCompatibilityTests: XCTestCase {
         let container = try makeTestContainer()
         let profile = Profile(name: "Permissions Origins Profile")
         let browserConfiguration = BrowserConfiguration()
+        let attachedRuntime = ExtensionAttachedRuntimeCapture()
+        let inspection = ExtensionManagerInspectionCapture()
         let manager = makeSafariExtensionTestExtensionManager(
             context: container.mainContext,
             initialProfile: profile,
-            browserConfiguration: browserConfiguration
+            browserConfiguration: browserConfiguration,
+            attachedRuntimeCapture: attachedRuntime,
+            inspectionCapture: inspection
         )
         let browserManager = makeSafariExtensionTestBrowserManager()
         browserManager.profileManager.profiles = [profile]
@@ -140,17 +144,20 @@ final class SafariExtensionPermissionsOriginsCompatibilityTests: XCTestCase {
 
         let scratchDirectory = try makeScratchDirectory()
         let installed = try await installPermissionsOriginProbeExtension(
-            manager: manager,
+            installer: inspection.inspection.installation.installer,
             scratchDirectory: scratchDirectory
         )
-        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
-        manager.setDefaultSiteAccess(
+        _ = try await inspection.inspection.installation.lifecycle.enable(
+            installed.id
+        )
+        inspection.inspection.actionPolicy.siteAccess.setDefaultSiteAccess(
             .allow,
             extensionId: installed.id,
             profileId: profile.id
         )
         let extensionContext = try XCTUnwrap(
-            manager.getExtensionContext(for: installed.id, profileId: profile.id)
+            inspection.inspection.contextState.profiles
+                .contexts(for: profile.id)[installed.id]
         )
         XCTAssertTrue(extensionContext.isLoaded)
 
@@ -158,7 +165,8 @@ final class SafariExtensionPermissionsOriginsCompatibilityTests: XCTestCase {
         let configuration = browserConfiguration.auxiliaryWebViewConfiguration(
             surface: .extensionOptions
         )
-        manager.prepareWebViewConfigForExtensionRuntime(
+        inspection.inspection.normalTabs.configuration
+            .prepareWebViewConfigForExtensionRuntime(
             configuration,
             profileId: profile.id,
             reason: "SafariExtensionPermissionsOriginsCompatibilityTests"
@@ -177,7 +185,7 @@ final class SafariExtensionPermissionsOriginsCompatibilityTests: XCTestCase {
         webView.owningTab = tab
         tab.replaceUntrackedWebView(webView)
 
-        manager.normalTabRegistration.register(
+        attachedRuntime.runtime.normalTabs.tabRegistration.register(
             tab,
             reason: "SafariExtensionPermissionsOriginsCompatibilityTests"
         )
@@ -253,7 +261,7 @@ final class SafariExtensionPermissionsOriginsCompatibilityTests: XCTestCase {
     }
 
     private func installPermissionsOriginProbeExtension(
-        manager: ExtensionManager,
+        installer: ExtensionInstallationService,
         scratchDirectory: URL
     ) async throws -> InstalledExtension {
         let directoryURL = scratchDirectory.appendingPathComponent(
@@ -392,7 +400,7 @@ final class SafariExtensionPermissionsOriginsCompatibilityTests: XCTestCase {
         try Data(probeScript.utf8)
             .write(to: directoryURL.appendingPathComponent("probe.js"), options: [.atomic])
 
-        return try await manager.extensionInstaller.install(
+        return try await installer.install(
             from: directoryURL,
             enableOnInstall: false
         )

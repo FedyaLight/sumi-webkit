@@ -69,11 +69,12 @@ final class SafariExtensionImportAutoEnableTests: XCTestCase {
         defer { harness.reset() }
         let importStore = RecordingSafariExtensionImportStore()
         let container = try makeTestContainer()
-        let module = makeEnabledModule(
+        let fixture = makeEnabledModule(
             context: container.mainContext,
             importStore: importStore,
             defaults: harness.defaults
         )
+        let module = fixture.module
         let candidate = try makeSafariWebExtensionCandidate(
             bundleIdentifier: "com.example.sync-disabled"
         )
@@ -95,29 +96,36 @@ final class SafariExtensionImportAutoEnableTests: XCTestCase {
         defer { harness.reset() }
         let importStore = RecordingSafariExtensionImportStore()
         let container = try makeTestContainer()
-        let module = makeEnabledModule(
+        let fixture = makeEnabledModule(
             context: container.mainContext,
             importStore: importStore,
             defaults: harness.defaults
         )
+        let module = fixture.module
         let candidate = try makeSafariWebExtensionCandidate(
             bundleIdentifier: "com.example.sync-existing-enabled"
         )
         let firstResult = await module.syncDiscoveredSafariWebExtensions([candidate])
         let installed = try XCTUnwrap(firstResult.addedExtensions.first)
-        let manager = try XCTUnwrap(module.managerForTesting(materializeIfNeeded: false))
-        let entity = try XCTUnwrap(try manager.extensionEntity(for: installed.id))
-        try manager.installationMetadataStore.setEnabled(true, for: entity)
-        let enabledRecord = manager.installationMetadataStore.record(
+        let entity = try XCTUnwrap(
+            try fixture.inspection.installation.metadata.extensionEntity(
+                for: installed.id
+            )
+        )
+        try fixture.inspection.installation.metadata.setEnabled(true, for: entity)
+        let enabledRecord = fixture.inspection.installation.metadata.record(
             installed,
             withEnabledState: true
         )
-        manager.installedExtensionCollection.setAll([enabledRecord])
+        fixture.inspection.actionSurfaces.installedExtensions.setAll([enabledRecord])
 
         let secondResult = await module.syncDiscoveredSafariWebExtensions([candidate])
 
         XCTAssertTrue(secondResult.addedExtensions.isEmpty)
-        XCTAssertEqual(manager.installedExtensionCollection.records.first?.isEnabled, true)
+        XCTAssertEqual(
+            fixture.inspection.actionSurfaces.installedExtensions.records.first?.isEnabled,
+            true
+        )
         XCTAssertEqual(importStore.markedImports.map { $0.candidate.id }, [candidate.id])
     }
 
@@ -128,11 +136,12 @@ final class SafariExtensionImportAutoEnableTests: XCTestCase {
         defer { harness.reset() }
         let importStore = RecordingSafariExtensionImportStore()
         let container = try makeTestContainer()
-        let module = makeEnabledModule(
+        let fixture = makeEnabledModule(
             context: container.mainContext,
             importStore: importStore,
             defaults: harness.defaults
         )
+        let module = fixture.module
         let contentBlocker = makeCandidate(
             bundleIdentifier: "com.example.content-blocker",
             bundleKind: .contentBlocker,
@@ -143,7 +152,9 @@ final class SafariExtensionImportAutoEnableTests: XCTestCase {
 
         XCTAssertTrue(result.addedExtensions.isEmpty)
         XCTAssertTrue(importStore.markedImports.isEmpty)
-        XCTAssertTrue(module.managerForTesting(materializeIfNeeded: false)?.installedExtensionCollection.records.isEmpty ?? false)
+        XCTAssertTrue(
+            fixture.inspection.actionSurfaces.installedExtensions.records.isEmpty
+        )
     }
 
     private func makeCandidate(
@@ -171,21 +182,42 @@ final class SafariExtensionImportAutoEnableTests: XCTestCase {
     }
 
     @available(macOS 15.5, *)
+    @available(macOS 15.5, *)
     private func makeEnabledModule(
         context: ModelContext,
         importStore: RecordingSafariExtensionImportStore,
         defaults: UserDefaults
-    ) -> SumiExtensionsModule {
+    ) -> EnabledModuleFixture {
         let registry = SumiModuleRegistry(
             settingsStore: SumiModuleSettingsStore(userDefaults: defaults)
         )
         registry.enable(.extensions)
         let profile = Profile(name: "Safari Sync Profile")
-        return SumiExtensionsModule(
+        let managerFixture = makeSafariExtensionManagerTestFixture(
+            context: context,
+            initialProfile: profile,
+            moduleRegistry: registry
+        )
+        let browserManager = makeSafariExtensionTestBrowserManager(
+            moduleRegistry: registry,
+            profile: profile
+        )
+        let module = SumiExtensionsModule(
             moduleRegistry: registry,
             context: context,
             initialProfileProvider: { profile },
-            safariExtensionImportStore: importStore
+            safariExtensionImportStore: importStore,
+            managerFactory: { _, _, _, _ in managerFixture.manager }
+        )
+        module.attach(
+            runtime: BrowserExtensionsModuleRuntimeFactory.runtime(
+                for: browserManager
+            )
+        )
+        return EnabledModuleFixture(
+            module: module,
+            inspection: managerFixture.inspection,
+            browserManager: browserManager
         )
     }
 
@@ -214,6 +246,14 @@ final class SafariExtensionImportAutoEnableTests: XCTestCase {
             appexURL: appexURL
         )
     }
+}
+
+@available(macOS 15.5, *)
+@MainActor
+private struct EnabledModuleFixture {
+    let module: SumiExtensionsModule
+    let inspection: ExtensionManagerTestInspection
+    let browserManager: BrowserManager
 }
 
 private final class RecordingSafariExtensionImportStore: SafariExtensionImportStoring,

@@ -9,19 +9,25 @@ import WebKit
 final class ExtensionTabLifecycleEmitter:
     ExtensionTabLifecycleEventSink,
     ExtensionInitialTabLifecycleEventSink {
-    private let didOpen: ((UUID) -> Void)?
-    private let didClose: ((UUID) -> Void)?
+    #if DEBUG
+        private var didOpen: ((UUID) -> Void)?
+        private var didClose: ((UUID) -> Void)?
+    #endif
     private let preparedTabVisibility: ExtensionPreparedTabVisibility
 
-    init(
-        preparedTabVisibility: ExtensionPreparedTabVisibility,
-        didOpen: ((UUID) -> Void)? = nil,
-        didClose: ((UUID) -> Void)? = nil
-    ) {
+    init(preparedTabVisibility: ExtensionPreparedTabVisibility) {
         self.preparedTabVisibility = preparedTabVisibility
-        self.didOpen = didOpen
-        self.didClose = didClose
     }
+
+    #if DEBUG
+        func installDebugCallbacks(
+            didOpen: @escaping (UUID) -> Void,
+            didClose: @escaping (UUID) -> Void
+        ) {
+            self.didOpen = didOpen
+            self.didClose = didClose
+        }
+    #endif
 
     func emitDidOpenTab(
         _ tab: Tab,
@@ -30,7 +36,9 @@ final class ExtensionTabLifecycleEmitter:
     ) {
         preparedTabVisibility.withTabOpenCallback(tab: tab) {
             controller.didOpenTab(adapter)
-            didOpen?(tab.id)
+            #if DEBUG
+                didOpen?(tab.id)
+            #endif
         }
     }
 
@@ -40,7 +48,9 @@ final class ExtensionTabLifecycleEmitter:
         adapter: ExtensionTabAdapter
     ) {
         controller.didCloseTab(adapter, windowIsClosing: false)
-        didClose?(tab.id)
+        #if DEBUG
+            didClose?(tab.id)
+        #endif
     }
 
     func emitDidOpenInitialTab(
@@ -57,7 +67,8 @@ final class ExtensionTabLifecycleEmitter:
         adapter: ExtensionTabAdapter
     ) {
         controller.didCloseTab(adapter, windowIsClosing: true)
-        didClose?(tab.id)
+        #if DEBUG
+            didClose?(tab.id)
+        #endif
     }
-
 }

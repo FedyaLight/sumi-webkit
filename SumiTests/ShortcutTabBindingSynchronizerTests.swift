@@ -6,9 +6,28 @@ import XCTest
 
 @MainActor
 final class ShortcutTabBindingSynchronizerTests: XCTestCase {
+    /// Ordinary binding fixtures model a real inherited profile. Tests that
+    /// exercise profileless/fallback behavior pass the full shared factory
+    /// explicitly and therefore bypass this narrow convenience overload.
+    private func makeProfiledShortcutTabManager(
+        windowState: @escaping (UUID) -> BrowserWindowState? = { _ in nil },
+        windows: @escaping () -> [(UUID, BrowserWindowState)] = { [] },
+        persistWindowSession: @escaping (BrowserWindowState) -> Void = { _ in }
+    ) throws -> TabManager {
+        let profile = Profile(name: "Shortcut Binding Test")
+        return try makeInMemoryTabManager(
+            currentProfileId: { profile.id },
+            defaultProfileId: { profile.id },
+            profile: { $0 == profile.id ? profile : nil },
+            windowState: windowState,
+            windows: windows,
+            persistWindowSession: persistWindowSession
+        )
+    }
+
     func testRefreshMovesRuntimeBindingWithoutSwitchingBackgroundWindowSpace() throws {
         let window = BrowserWindowState()
-        let tabManager = try makeInMemoryTabManager(
+        let tabManager = try makeProfiledShortcutTabManager(
             windowState: { $0 == window.id ? window : nil },
             windows: { [(window.id, window)] }
         )
@@ -38,7 +57,7 @@ final class ShortcutTabBindingSynchronizerTests: XCTestCase {
 
     func testRebindDoesNotTreatStaleShortcutMetadataAsSelection() throws {
         let window = BrowserWindowState()
-        let tabManager = try makeInMemoryTabManager(
+        let tabManager = try makeProfiledShortcutTabManager(
             windowState: { $0 == window.id ? window : nil },
             windows: { [(window.id, window)] }
         )
@@ -86,7 +105,7 @@ final class ShortcutTabBindingSynchronizerTests: XCTestCase {
 
     func testRefreshSwitchesSpaceOnlyForSelectedLiveInstance() throws {
         let window = BrowserWindowState()
-        let tabManager = try makeInMemoryTabManager(
+        let tabManager = try makeProfiledShortcutTabManager(
             windowState: { $0 == window.id ? window : nil },
             windows: { [(window.id, window)] }
         )
@@ -114,7 +133,7 @@ final class ShortcutTabBindingSynchronizerTests: XCTestCase {
     func testUnsettledProfileRejectsRefreshAndRebindWithoutResidenceMutation()
         throws {
         let window = BrowserWindowState()
-        let tabManager = try makeInMemoryTabManager(
+        let tabManager = try makeProfiledShortcutTabManager(
             windowState: { $0 == window.id ? window : nil },
             windows: { [(window.id, window)] }
         )
@@ -262,8 +281,8 @@ final class ShortcutTabBindingSynchronizerTests: XCTestCase {
         throws {
         let window = BrowserWindowState()
         let fallbackProfile = Profile(name: "Fallback")
-        var currentProfileID: UUID? = fallbackProfile.id
-        var defaultProfileID: UUID? = fallbackProfile.id
+        var currentProfileID: UUID?
+        var defaultProfileID: UUID?
         var persistedWindowIDs: [UUID] = []
         let tabManager = try makeInMemoryTabManager(
             currentProfileId: { currentProfileID },
@@ -281,6 +300,8 @@ final class ShortcutTabBindingSynchronizerTests: XCTestCase {
             name: "Target"
         )
         let source = makePin(spaceId: sourceSpace.id)
+        currentProfileID = fallbackProfile.id
+        defaultProfileID = fallbackProfile.id
         let liveTab = try XCTUnwrap(
             tabManager.shortcutTabMaterializer.materialize(
                 source,
@@ -324,7 +345,7 @@ final class ShortcutTabBindingSynchronizerTests: XCTestCase {
     func testDuplicateRefreshAdmissionRejectsWithoutResidenceMutationOrTrap()
         throws {
         let window = BrowserWindowState()
-        let tabManager = try makeInMemoryTabManager(
+        let tabManager = try makeProfiledShortcutTabManager(
             windowState: { $0 == window.id ? window : nil },
             windows: { [(window.id, window)] }
         )
@@ -555,7 +576,7 @@ final class ShortcutTabBindingSynchronizerTests: XCTestCase {
                 .isIdentical(to: sourceEntry) == true
         )
         XCTAssertEqual(liveTab.spaceId, sourceSpace.id)
-        XCTAssertEqual(liveTab.profileId, sourceProfile.id)
+        XCTAssertNil(liveTab.profileId)
         XCTAssertEqual(window.currentSpaceId, sourceSpace.id)
         XCTAssertEqual(window.currentShortcutPinId, source.id)
         XCTAssertEqual(structuralEvents, 0)
@@ -565,12 +586,16 @@ final class ShortcutTabBindingSynchronizerTests: XCTestCase {
 
     func testRebindRekeysExactInstanceAndRepairsSelectionMetadata() throws {
         let window = BrowserWindowState()
+        let profileID = UUID()
+        let profile = Profile(id: profileID, name: "Space")
         let tabManager = try makeInMemoryTabManager(
+            currentProfileId: { profileID },
+            defaultProfileId: { profileID },
+            profile: { $0 == profileID ? profile : nil },
             windowState: { $0 == window.id ? window : nil },
             windows: { [(window.id, window)] }
         )
         window.tabManager = tabManager
-        let profileID = UUID()
         let space = tabManager.spaceServices.catalog.createSpace(
             name: "Space",
             profileId: profileID
@@ -629,7 +654,7 @@ final class ShortcutTabBindingSynchronizerTests: XCTestCase {
     func testHistoryOnlyRefreshDoesNotPersistWindowSession() throws {
         let window = BrowserWindowState()
         var persistedWindowIds: [UUID] = []
-        let tabManager = try makeInMemoryTabManager(
+        let tabManager = try makeProfiledShortcutTabManager(
             windowState: { $0 == window.id ? window : nil },
             windows: { [(window.id, window)] },
             persistWindowSession: { persistedWindowIds.append($0.id) }
@@ -670,7 +695,7 @@ final class ShortcutTabBindingSynchronizerTests: XCTestCase {
     func testPreparedRefreshRejectsWindowDriftWithoutMutatingResidence() throws {
         let window = BrowserWindowState()
         var persistedWindowIDs: [UUID] = []
-        let tabManager = try makeInMemoryTabManager(
+        let tabManager = try makeProfiledShortcutTabManager(
             windowState: { $0 == window.id ? window : nil },
             windows: { [(window.id, window)] },
             persistWindowSession: { persistedWindowIDs.append($0.id) }
@@ -765,13 +790,17 @@ final class ShortcutTabBindingSynchronizerTests: XCTestCase {
     func testLauncherBatchCapacityRaceRestoresRawCatalogAndResidences() throws {
         let window = BrowserWindowState()
         var persistedWindowIDs: [UUID] = []
+        let profileID = UUID()
+        let profile = Profile(id: profileID, name: "Source")
         let tabManager = try makeInMemoryTabManager(
+            currentProfileId: { profileID },
+            defaultProfileId: { profileID },
+            profile: { $0 == profileID ? profile : nil },
             windowState: { $0 == window.id ? window : nil },
             windows: { [(window.id, window)] },
             persistWindowSession: { persistedWindowIDs.append($0.id) }
         )
         window.tabManager = tabManager
-        let profileID = UUID()
         let space = tabManager.spaceServices.catalog.createSpace(
             name: "Source",
             profileId: profileID
@@ -894,11 +923,11 @@ final class ShortcutTabBindingSynchronizerTests: XCTestCase {
             secondTab
         )
         XCTAssertEqual(window.unpublishedShortcutMutationState, sourceWindow)
-        XCTAssertEqual(
+        XCTAssertGreaterThan(
             firstTab.profileAssignment.changeRevision,
             sourceFirstRevision
         )
-        XCTAssertEqual(
+        XCTAssertGreaterThan(
             secondTab.profileAssignment.changeRevision,
             sourceSecondRevision
         )
@@ -917,6 +946,26 @@ final class ShortcutTabBindingSynchronizerTests: XCTestCase {
         ]
         var profileExecutions = 0
         var profileCountsAtPersistence: [Int] = []
+        let lifecycle = TestRuntimePorts.webViewLifecycle(
+            retirement: .rejecting,
+            executePreparedProfileAssignments: {
+                assignments,
+                binding,
+                settlement in
+                profileExecutions += assignments.count
+                let model = PreparedProfileAssignmentBatchModelTransaction(
+                    assignments: assignments,
+                    binding: binding
+                )
+                guard model.validateForStaging() else {
+                    return .rejectedUnstaged(.stale)
+                }
+                let outcome = ProfileTransitionModelOnlySettlement
+                    .execute(.transaction(model))
+                settlement(outcome.settlement)
+                return outcome.batchExecution
+            }
+        )
         let tabManager = try makeInMemoryTabManager(
             currentProfileId: { sourceProfile.id },
             defaultProfileId: { sourceProfile.id },
@@ -926,10 +975,7 @@ final class ShortcutTabBindingSynchronizerTests: XCTestCase {
             persistWindowSession: { _ in
                 profileCountsAtPersistence.append(profileExecutions)
             },
-            executeProfileAssignment: { tab, _, intent in
-                profileExecutions += 1
-                return tab.profileAssignment.commit(intent) ? .committed : .stale
-            }
+            webViewLifecycle: lifecycle
         )
         window.tabManager = tabManager
         let sourceSpaces = (0..<2).map { index in
@@ -1007,10 +1053,10 @@ final class ShortcutTabBindingSynchronizerTests: XCTestCase {
 
         XCTAssertEqual(structuralEvents, 0)
         XCTAssertTrue(mutation.settleModel())
-        XCTAssertEqual(structuralEvents, 0)
+        XCTAssertEqual(structuralEvents, 1)
         XCTAssertEqual(tabs.map(\.profileId), [nil, nil])
-        XCTAssertEqual(profileExecutions, 0)
-        XCTAssertTrue(profileCountsAtPersistence.isEmpty)
+        XCTAssertEqual(profileExecutions, 2)
+        XCTAssertEqual(profileCountsAtPersistence, [2])
 
         mutation.commit()
 
@@ -1035,7 +1081,7 @@ final class ShortcutTabBindingSynchronizerTests: XCTestCase {
 
     func testRetainedLauncherFailureSealsStructuralOwnerWithoutPublishing()
         throws {
-        let tabManager = try makeInMemoryTabManager()
+        let tabManager = try makeProfiledShortcutTabManager()
         let space = tabManager.spaceServices.catalog.createSpace(name: "Space")
         let target = makePin(spaceId: space.id)
         var structuralEvents = 0

@@ -8,11 +8,29 @@ final class ExtensionPermissionPromptPresenter {
     private typealias PromptDecision = ExtensionManager.ExtensionPermissionPromptDecision
     private typealias PromptDecisionOperation = @MainActor () async -> PromptDecision
     private typealias PromptQueueOperation = @MainActor () async -> Void
+    typealias InjectedDecision = @MainActor (
+        WKWebExtensionContext,
+        [String],
+        String
+    ) -> ExtensionManager.ExtensionPermissionPromptDecision?
 
     private var promptQueue: [PromptQueueOperation] = []
     private var isPresentingPrompt = false
     private var promptWaitersByKey:
         [String: [CheckedContinuation<PromptDecision, Never>]] = [:]
+    #if DEBUG
+        private var injectedDecision: InjectedDecision?
+    #endif
+
+    init() {}
+
+    #if DEBUG
+        func installDebugInjectedDecision(
+            _ decision: @escaping InjectedDecision
+        ) {
+            injectedDecision = decision
+        }
+    #endif
 
     func promptForDecision(
         extensionContext: WKWebExtensionContext,
@@ -21,7 +39,16 @@ final class ExtensionPermissionPromptPresenter {
         dedupeKey: String,
         extensionIdentifier: String?
     ) async -> ExtensionManager.ExtensionPermissionPromptDecision {
-        await enqueuePrompt(key: dedupeKey) {
+        #if DEBUG
+            if let decision = injectedDecision?(
+                extensionContext,
+                targets,
+                reason
+            ) {
+                return decision
+            }
+        #endif
+        return await enqueuePrompt(key: dedupeKey) {
             await Self.presentPrompt(
                 extensionContext: extensionContext,
                 targets: targets,
@@ -142,37 +169,5 @@ final class ExtensionPermissionPromptPresenter {
         let uniqueTargets = Array(Set(targets)).sorted()
         guard uniqueTargets.count > 4 else { return uniqueTargets }
         return Array(uniqueTargets.prefix(4)) + ["and \(uniqueTargets.count - 4) more"]
-    }
-}
-
-@available(macOS 15.5, *)
-@MainActor
-extension ExtensionManager {
-    func promptForExtensionPermissionDecision(
-        extensionContext: WKWebExtensionContext,
-        targets: [String],
-        reason: String,
-        dedupeKey: String? = nil,
-        extensionIdentifier: String? = nil
-    ) async -> ExtensionPermissionPromptDecision {
-        #if DEBUG
-            if let permissionPromptDecision = testHooks.permissionPromptDecision {
-                return permissionPromptDecision(extensionContext, targets, reason)
-            }
-        #endif
-
-        guard let resolvedDedupeKey = dedupeKey ?? permissionPromptDedupeKey(
-            extensionContext: extensionContext,
-            targets: targets
-        ) else {
-            return .deny
-        }
-        return await permissionPromptPresenter.promptForDecision(
-            extensionContext: extensionContext,
-            targets: targets,
-            reason: reason,
-            dedupeKey: resolvedDedupeKey,
-            extensionIdentifier: extensionIdentifier ?? extensionID(for: extensionContext)
-        )
     }
 }

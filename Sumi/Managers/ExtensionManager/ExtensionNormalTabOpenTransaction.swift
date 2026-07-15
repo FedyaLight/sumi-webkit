@@ -61,7 +61,9 @@ final class ExtensionNormalTabOpenTransaction: ExtensionNormalTabOpening {
         (any ExtensionTabPublicationEvidenceQuery)?
     private let events: ExtensionTabLifecycleEmitter
     private let diagnostics: ExtensionRuntimeDiagnostics
-    private let didDeferOpen: ((UUID, String) -> Void)?
+    #if DEBUG
+        private var didDeferOpen: ((UUID, String) -> Void)?
+    #endif
 
     init(
         runtimePublicationEvidence:
@@ -80,8 +82,7 @@ final class ExtensionNormalTabOpenTransaction: ExtensionNormalTabOpening {
         admission: ExtensionTabPublicationAdmission,
         windowPublications: any ExtensionTabPublicationEvidenceQuery,
         events: ExtensionTabLifecycleEmitter,
-        diagnostics: ExtensionRuntimeDiagnostics,
-        didDeferOpen: ((UUID, String) -> Void)? = nil
+        diagnostics: ExtensionRuntimeDiagnostics
     ) {
         self.runtimePublicationEvidence = runtimePublicationEvidence
         self.publicationGate = publicationGate
@@ -99,8 +100,15 @@ final class ExtensionNormalTabOpenTransaction: ExtensionNormalTabOpening {
         self.windowPublications = windowPublications
         self.events = events
         self.diagnostics = diagnostics
-        self.didDeferOpen = didDeferOpen
     }
+
+    #if DEBUG
+        func installDebugDidDeferOpen(
+            _ callback: @escaping (UUID, String) -> Void
+        ) {
+            didDeferOpen = callback
+        }
+    #endif
 
     @discardableResult
     func publishOpen(_ tab: Tab) -> Bool {
@@ -120,7 +128,9 @@ final class ExtensionNormalTabOpenTransaction: ExtensionNormalTabOpening {
         reloadClaim: ExtensionRuntimePublicationGate.ReloadClaim?
     ) -> Bool {
         func deferOpen(_ reason: String) -> Bool {
-            didDeferOpen?(tab.id, reason)
+            #if DEBUG
+                didDeferOpen?(tab.id, reason)
+            #endif
             return false
         }
 

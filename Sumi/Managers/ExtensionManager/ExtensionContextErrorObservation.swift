@@ -220,19 +220,3 @@ final class ExtensionContextErrorObservation {
         return "{\(parts.joined(separator: ", "))}"
     }
 }
-
-@available(macOS 15.5, *)
-@MainActor
-extension ExtensionManager {
-    func observeExtensionErrors(
-        for extensionContext: WKWebExtensionContext,
-        extensionId: String,
-        profileId: UUID
-    ) {
-        contextErrorObservation.observe(
-            extensionContext,
-            extensionId: extensionId,
-            profileId: profileId
-        )
-    }
-}

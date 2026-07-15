@@ -34,24 +34,20 @@ struct ExtensionActionPopupPresentationTarget {
 @MainActor
 final class ExtensionActionPopupTargetCapture {
     private let anchors: ExtensionActionPopupAnchorStore
-    private let windows: @MainActor () -> (any ExtensionWindowQuery)?
-    private let windowMatchesProfile: @MainActor (BrowserWindowState, UUID) -> Bool
+    private let browser: any ExtensionActionPopupBrowserProjection
 
     init(
         anchors: ExtensionActionPopupAnchorStore,
-        windows: @escaping @MainActor () -> (any ExtensionWindowQuery)?,
-        windowMatchesProfile: @escaping @MainActor (BrowserWindowState, UUID) -> Bool
+        browser: any ExtensionActionPopupBrowserProjection
     ) {
         self.anchors = anchors
-        self.windows = windows
-        self.windowMatchesProfile = windowMatchesProfile
+        self.browser = browser
     }
 
     func capture(
         action: WKWebExtension.Action,
         evidence: ExtensionActionPopupCallbackEvidence
     ) -> ExtensionActionPopupPresentationTarget? {
-        guard let windows = windows() else { return nil }
         if let invocation = evidence.invocation {
             let target = invocation.target
             guard let anchor = anchors.claimAnchor(
@@ -61,10 +57,10 @@ final class ExtensionActionPopupTargetCapture {
                   anchor.profileID == evidence.profileID,
                   anchor.windowID == target.windowID,
                   let windowState = anchor.windowState,
-                  windows.extensionWindowState(for: target.windowID)
+                  browser.popupWindowState(id: target.windowID)
                       === windowState,
-                  windowMatchesProfile(windowState, evidence.profileID),
-                  exactTab(in: anchor, windowState: windowState, windows: windows)
+                  browser.popupWindow(windowState, matches: evidence.profileID),
+                  exactTab(in: anchor, windowState: windowState)
             else { return nil }
             let source: ExtensionActionPopupPresentationTarget.Source
             if let tab = anchor.tab {
@@ -98,16 +94,12 @@ final class ExtensionActionPopupTargetCapture {
                   publication.contextIdentity.extensionID
                       == evidence.extensionID,
                   publication.contextIdentity.profileID == evidence.profileID,
-                  let window = windows.extensionWindowState(
-                      containing: publication.tab
-                  ),
-                  windows.extensionTab(
-                      withID: publication.tab.id,
-                      in: window
-                  ) === publication.tab,
-                  windows.currentExtensionTab(in: window)
+                  let window = browser.popupWindow(containing: publication.tab),
+                  browser.popupTab(id: publication.tab.id, in: window)
                       === publication.tab,
-                  windowMatchesProfile(window, evidence.profileID)
+                  browser.popupCurrentTab(in: window)
+                      === publication.tab,
+                  browser.popupWindow(window, matches: evidence.profileID)
             else { return nil }
             return .init(
                 extensionID: evidence.extensionID,
@@ -123,8 +115,8 @@ final class ExtensionActionPopupTargetCapture {
             )
         }
 
-        guard let window = windows.activeExtensionWindowState,
-              windowMatchesProfile(window, evidence.profileID)
+        guard let window = browser.popupActiveWindow(),
+              browser.popupWindow(window, matches: evidence.profileID)
         else {
             return nil
         }
@@ -138,10 +130,12 @@ final class ExtensionActionPopupTargetCapture {
     }
 
     func isCurrent(_ target: ExtensionActionPopupPresentationTarget) -> Bool {
-        guard let windows = windows(),
-              windows.extensionWindowState(for: target.windowID)
+        guard browser.popupWindowState(id: target.windowID)
                   === target.source.windowState,
-              windowMatchesProfile(target.source.windowState, target.profileID)
+              browser.popupWindow(
+                  target.source.windowState,
+                  matches: target.profileID
+              )
         else { return false }
         switch target.source {
         case .browserClick(
@@ -150,8 +144,8 @@ final class ExtensionActionPopupTargetCapture {
             let profileAssignmentRevision,
             let documentProof
         ):
-            return windows.extensionTab(withID: tab.id, in: windowState) === tab
-                && windows.currentExtensionTab(in: windowState) === tab
+            return browser.popupTab(id: tab.id, in: windowState) === tab
+                && browser.popupCurrentTab(in: windowState) === tab
                 && tab.profileAssignment.changeRevision
                     == profileAssignmentRevision
                 && tab.committedDocumentRuntime.authorityProof == documentProof
@@ -161,11 +155,11 @@ final class ExtensionActionPopupTargetCapture {
             let publication,
             let context
         ):
-            guard windows.extensionTab(
-                      withID: publication.tab.id,
+            guard browser.popupTab(
+                      id: publication.tab.id,
                       in: windowState
                   ) === publication.tab,
-                  windows.currentExtensionTab(in: windowState)
+                  browser.popupCurrentTab(in: windowState)
                       === publication.tab,
                   adapter.evidence.isCurrent(
                       publication,
@@ -180,15 +174,14 @@ final class ExtensionActionPopupTargetCapture {
 
     private func exactTab(
         in anchor: ExtensionActionPopupAnchor,
-        windowState: BrowserWindowState,
-        windows: any ExtensionWindowQuery
+        windowState: BrowserWindowState
     ) -> Bool {
         guard let tabID = anchor.tabID else {
             return anchor.tab == nil
         }
         guard let tab = anchor.tab,
-              windows.extensionTab(withID: tabID, in: windowState) === tab,
-              windows.currentExtensionTab(in: windowState) === tab,
+              browser.popupTab(id: tabID, in: windowState) === tab,
+              browser.popupCurrentTab(in: windowState) === tab,
               tab.profileAssignment.changeRevision
                   == anchor.tabProfileAssignmentRevision,
               tab.committedDocumentRuntime.authorityProof

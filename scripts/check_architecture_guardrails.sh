@@ -12,6 +12,7 @@ checks=(
   "scripts/check_protected_command_dispatch_boundary.sh"
   "scripts/check_auxiliary_window_architecture.sh"
   "scripts/check_extension_browser_bridge_architecture.sh"
+  "scripts/check_extension_manager_composition_boundary.sh"
   "scripts/check_extension_normal_tab_runtime_boundary.sh"
   "scripts/check_extension_controller_runtime_boundary.sh"
   "scripts/check_extension_runtime_lifecycle_boundary.sh"

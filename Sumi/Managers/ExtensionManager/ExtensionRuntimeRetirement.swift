@@ -6,21 +6,24 @@ import Foundation
 @MainActor
 final class ExtensionRuntimeRetirement {
     private let scopedRetirement: ExtensionScopedRuntimeRetirement
-    private let actionSurfaces: @MainActor () ->
-        ExtensionActionSurfacePublisher?
-    private let resources: @MainActor () ->
-        ExtensionScopedRuntimeRetirement.Resources
+    private let actionSurfaces: ExtensionActionSurfacePublisher
+    private let attachedRetirement:
+        ExtensionBrowserAttachmentAuthority.Retirement
+    private let nativeMessagingOwners:
+        ExtensionDemandScopedNativeMessagingOwners
 
     init(
         scopedRetirement: ExtensionScopedRuntimeRetirement,
-        actionSurfaces: @escaping @MainActor () ->
-            ExtensionActionSurfacePublisher?,
-        resources: @escaping @MainActor () ->
-            ExtensionScopedRuntimeRetirement.Resources
+        actionSurfaces: ExtensionActionSurfacePublisher,
+        attachedRetirement:
+            ExtensionBrowserAttachmentAuthority.Retirement,
+        nativeMessagingOwners:
+            ExtensionDemandScopedNativeMessagingOwners
     ) {
         self.scopedRetirement = scopedRetirement
         self.actionSurfaces = actionSurfaces
-        self.resources = resources
+        self.attachedRetirement = attachedRetirement
+        self.nativeMessagingOwners = nativeMessagingOwners
     }
 
     func retire(
@@ -28,14 +31,15 @@ final class ExtensionRuntimeRetirement {
         cause: ExtensionScopedRuntimeRetirement.Cause,
         mutationLease: ExtensionRuntimeMutationLease
     ) -> ExtensionScopedRuntimeRetirement.Result {
-        let result = scopedRetirement.retire(
+        let result = attachedRetirement.retire(
+            using: scopedRetirement,
             extensionID: extensionID,
             cause: cause,
             admission: .mutation(mutationLease),
-            resources: resources()
+            nativeMessagingOwners: nativeMessagingOwners
         )
         if result.completed {
-            actionSurfaces()?.clearActionSurfaceState(for: extensionID)
+            actionSurfaces.clearActionSurfaceState(for: extensionID)
         }
         return result
     }
@@ -45,14 +49,15 @@ final class ExtensionRuntimeRetirement {
         claim: ExtensionContextLoadClaim,
         mutationLease: ExtensionRuntimeMutationLease?
     ) -> ExtensionScopedRuntimeRetirement.Result {
-        let result = scopedRetirement.retire(
+        let result = attachedRetirement.retire(
+            using: scopedRetirement,
             extensionID: extensionID,
             cause: .runtimeRollback,
             admission: .rollback(claim, mutationLease),
-            resources: resources()
+            nativeMessagingOwners: nativeMessagingOwners
         )
         if result.completed {
-            actionSurfaces()?.clearActionSurfaceState(for: extensionID)
+            actionSurfaces.clearActionSurfaceState(for: extensionID)
         }
         return result
     }

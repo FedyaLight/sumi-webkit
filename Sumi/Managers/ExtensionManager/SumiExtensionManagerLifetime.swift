@@ -1,25 +1,55 @@
 import Foundation
 import SwiftData
 
+@available(macOS 15.5, *)
+@MainActor
+struct ExtensionManagerLifetimeControl {
+    private let installedExtensions: InstalledExtensionCollection
+    private let runtimeDemand: ExtensionRuntimeDemandAuthority
+    private let mutations: ExtensionRuntimeMutationRegistry
+
+    init(
+        installedExtensions: InstalledExtensionCollection,
+        runtimeDemand: ExtensionRuntimeDemandAuthority,
+        mutations: ExtensionRuntimeMutationRegistry
+    ) {
+        self.installedExtensions = installedExtensions
+        self.runtimeDemand = runtimeDemand
+        self.mutations = mutations
+    }
+
+    func hasNormalTabRuntimeDemand() -> Bool {
+        installedExtensions.records.contains(where: \.isEnabled)
+            || runtimeDemand.hasRuntimeDemandWithoutEnabledExtensions
+    }
+
+    func runWhenTerminalAdmissionAvailable(
+        _ operation: @escaping @MainActor () -> Void
+    ) {
+        mutations.runWhenTerminalAdmissionAvailable(operation)
+    }
+}
+
 @MainActor
 struct SumiExtensionsModuleRuntime {
     typealias CurrentProfileProvider = @MainActor () -> Profile?
-    typealias ManagerAttacher = @MainActor (_ manager: ExtensionManager) -> Void
+    typealias BrowserAttacher = @MainActor (
+        _ attachment: ExtensionManagerBrowserAttachment
+    ) -> Void
     typealias LiveTabsProvider = @MainActor () -> [Tab]
 
     let currentProfile: CurrentProfileProvider
-    let attachManager: ManagerAttacher
+    let attachBrowser: BrowserAttacher
     let liveTabs: LiveTabsProvider
-
-    static let inactive = SumiExtensionsModuleRuntime(
-        currentProfile: { nil },
-        attachManager: { _ in },
-        liveTabs: { [] }
-    )
 }
 
 @MainActor
 final class SumiExtensionManagerLifetime {
+    private struct Resident {
+        let manager: ExtensionManager
+        let module: ExtensionManagerModuleResidence
+    }
+
     private let moduleRegistry: SumiModuleRegistry
     private let context: ModelContext?
     private let browserConfiguration: BrowserConfiguration
@@ -32,10 +62,11 @@ final class SumiExtensionManagerLifetime {
     ) -> ExtensionManager
 
     let surfaceStore: BrowserExtensionSurfaceStore
-    private(set) var runtime = SumiExtensionsModuleRuntime.inactive
-    private var runtimeProvider: (@MainActor () -> SumiExtensionsModuleRuntime)?
-    private var cachedManager: ExtensionManager?
-    private(set) var hasAttachedRuntime = false
+    private var runtime: SumiExtensionsModuleRuntime?
+    private var runtimeProvider: (
+        @MainActor () -> SumiExtensionsModuleRuntime?
+    )?
+    private var resident: Resident?
 
     init(
         moduleRegistry: SumiModuleRegistry,
@@ -59,55 +90,66 @@ final class SumiExtensionManagerLifetime {
     }
 
     var isEnabled: Bool { moduleRegistry.isEnabled(.extensions) }
-    var hasLoadedRuntime: Bool { cachedManager != nil }
-    var currentProfileID: UUID? { runtime.currentProfile()?.id }
-    var liveTabs: [Tab] { runtime.liveTabs() }
+    var hasLoadedRuntime: Bool { resident != nil }
+    var hasAttachedRuntime: Bool { runtime != nil }
+    var currentProfileID: UUID? { runtime?.currentProfile()?.id }
+    var liveTabs: [Tab] { runtime?.liveTabs() ?? [] }
 
     func setEnabledInRegistry(_ isEnabled: Bool) {
         moduleRegistry.setEnabled(isEnabled, for: .extensions)
     }
 
     func bindRuntimeProvider(
-        _ provider: @escaping @MainActor () -> SumiExtensionsModuleRuntime
+        _ provider: @escaping @MainActor () -> SumiExtensionsModuleRuntime?
     ) {
         runtimeProvider = provider
     }
 
     func attach(runtime: SumiExtensionsModuleRuntime) {
+        guard isEnabled else { return }
         self.runtime = runtime
-        hasAttachedRuntime = true
-        if let cachedManager {
-            runtime.attachManager(cachedManager)
+        if let resident {
+            runtime.attachBrowser(resident.module.browserAttachment)
         }
     }
 
-    func attachRuntimeFromProviderIfNeeded() {
-        guard hasAttachedRuntime == false, let runtimeProvider else { return }
-        runtime = runtimeProvider()
-        hasAttachedRuntime = true
+    @discardableResult
+    func attachRuntimeFromProviderIfNeeded() -> Bool {
+        guard isEnabled else { return false }
+        if runtime != nil { return true }
+        guard let runtimeProvider, let runtime = runtimeProvider() else {
+            return false
+        }
+        attach(runtime: runtime)
+        return true
     }
 
     func clearAttachedRuntime() {
-        runtime = .inactive
-        hasAttachedRuntime = false
+        runtime = nil
     }
 
-    func loadedManagerIfEnabled() -> ExtensionManager? {
-        guard isEnabled else { return nil }
-        return cachedManager
+    func loadedCompatibilityDiagnosticsIfEnabled()
+        -> ExtensionCompatibilityDiagnosticsSnapshot? {
+        loadedModuleIfEnabled()?.compatibilityDiagnosticsSnapshot()
     }
 
-    /// Teardown-only access to a resident manager after demand has already
-    /// been disabled. This never materializes the optional runtime.
-    func residentManager() -> ExtensionManager? {
-        cachedManager
+    func loadedToolbarRuntimeIfEnabled() -> ExtensionToolbarRuntime? {
+        loadedModuleIfEnabled()?.toolbarRuntime
     }
 
-    func managerIfEnabled() -> ExtensionManager? {
-        guard isEnabled else { return nil }
-        if let cachedManager {
-            surfaceStore.bind(cachedManager)
-            return cachedManager
+    func toolbarRuntimeIfEnabled() -> ExtensionToolbarRuntime? {
+        moduleIfEnabled()?.toolbarRuntime
+    }
+
+    func residentToolbarRuntime() -> ExtensionToolbarRuntime? {
+        resident?.module.toolbarRuntime
+    }
+
+    private func moduleIfEnabled() -> ExtensionManagerModuleResidence? {
+        guard isEnabled, let runtime else { return nil }
+        if let resident {
+            surfaceStore.activate(resident.module.surfaceBinding)
+            return resident.module
         }
         guard let context else { return nil }
 
@@ -117,27 +159,46 @@ final class SumiExtensionManagerLifetime {
             browserConfiguration,
             moduleRegistry
         )
-        cachedManager = manager
-        runtime.attachManager(manager)
-        surfaceStore.bind(manager)
-        return manager
+        let module = manager.moduleResidence
+        resident = Resident(manager: manager, module: module)
+        runtime.attachBrowser(module.browserAttachment)
+        surfaceStore.activate(module.surfaceBinding)
+        return module
     }
 
-    func managerIfNeededForNormalTabRuntime() -> ExtensionManager? {
-        guard isEnabled else { return nil }
-        if let cachedManager {
-            let hasRuntimeDemand =
-                cachedManager.installedExtensionCollection.records.contains(
-                    where: \.isEnabled
-                )
-                || cachedManager.runtimeDemand.admitsRuntime(
-                    hasEnabledExtensions: false,
-                    allowWithoutEnabledExtensions: false
-                )
-            return hasRuntimeDemand ? cachedManager : nil
+    private func moduleIfNeededForNormalTabRuntime()
+        -> ExtensionManagerModuleResidence? {
+        guard isEnabled, runtime != nil else { return nil }
+        if let resident {
+            return resident.module.lifetimeControl.hasNormalTabRuntimeDemand()
+                ? resident.module
+                : nil
         }
         guard hasEnabledPersistedExtensions() else { return nil }
-        return managerIfEnabled()
+        return moduleIfEnabled()
+    }
+
+    func browserRuntimeIfNeededForNormalTab()
+        -> ExtensionModuleBrowserRuntime? {
+        moduleIfNeededForNormalTabRuntime()?.browserRuntime
+    }
+
+    func loadedBrowserRuntimeIfEnabled()
+        -> ExtensionModuleBrowserRuntime? {
+        loadedModuleIfEnabled()?.browserRuntime
+    }
+
+    func residentBrowserRuntime() -> ExtensionModuleBrowserRuntime? {
+        resident?.module.browserRuntime
+    }
+
+    func settingsCatalogIfEnabled() -> ExtensionSettingsCatalogBinding? {
+        moduleIfEnabled()?.settingsCatalog
+    }
+
+    func loadedSettingsCatalogIfEnabled()
+        -> ExtensionSettingsCatalogBinding? {
+        loadedModuleIfEnabled()?.settingsCatalog
     }
 
     func hasEnabledPersistedExtensions() -> Bool {
@@ -157,43 +218,66 @@ final class SumiExtensionManagerLifetime {
 
     func quiesceForWebsiteDataMutation(profileIDs: Set<UUID>) -> Bool {
         guard #available(macOS 15.5, *) else { return true }
-        guard let cachedManager else { return true }
-        return cachedManager.quiesceForWebsiteDataMutation(profileIDs: profileIDs)
+        guard let module = resident?.module else { return true }
+        return module.websiteDataQuiescence.quiesce(profileIDs: profileIDs)
     }
 
     func tearDownLoadedRuntime(reason: String) {
-        guard let cachedManager else {
-            surfaceStore.bind(nil)
+        guard let resident else {
+            surfaceStore.deactivate()
             return
         }
 
-        let result = cachedManager.shutDownExtensionRuntime(reason: reason)
-        surfaceStore.bind(nil)
+        let result = resident.module.shutDown(reason: reason)
+        surfaceStore.deactivate()
         if result.completionStatus == .mutationInProgress {
-            scheduleRuntimeTeardownRetry(manager: cachedManager, reason: reason)
+            scheduleRuntimeTeardownRetry(
+                manager: resident.manager,
+                module: resident.module,
+                reason: reason
+            )
             return
         }
         guard result.completed else { return }
-        _ = cachedManager.executeExtensionRuntimeRebuildPlan(
+        _ = resident.module.executeRebuildPlan(
             result.tabRebuildPlan,
             reason: reason
         )
-        self.cachedManager = nil
+        self.resident = nil
     }
 
     private func scheduleRuntimeTeardownRetry(
         manager: ExtensionManager,
+        module: ExtensionManagerModuleResidence,
         reason: String
     ) {
-        manager.runtimeMutationRegistry.runWhenTerminalAdmissionAvailable {
+        module.lifetimeControl.runWhenTerminalAdmissionAvailable {
             [weak self, weak manager] in
             Task { @MainActor [weak self, weak manager] in
                 guard let self, let manager,
                       self.isEnabled == false,
-                      self.cachedManager === manager
+                      self.resident?.manager === manager
                 else { return }
                 self.tearDownLoadedRuntime(reason: "\(reason).deferred")
             }
         }
     }
+
+    private func loadedModuleIfEnabled()
+        -> ExtensionManagerModuleResidence? {
+        guard isEnabled, runtime != nil else { return nil }
+        return resident?.module
+    }
+
+    #if DEBUG
+        func managerIfEnabled() -> ExtensionManager? {
+            guard moduleIfEnabled() != nil else { return nil }
+            return resident?.manager
+        }
+
+        func loadedManagerIfEnabled() -> ExtensionManager? {
+            guard loadedModuleIfEnabled() != nil else { return nil }
+            return resident?.manager
+        }
+    #endif
 }

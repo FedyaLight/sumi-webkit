@@ -35,7 +35,6 @@ final class ExtensionControllerProvisioningOwner:
     struct Dependencies {
         let browserConfiguration: BrowserConfiguration
         let profileRuntime: ExtensionProfileRuntime
-        let runtime: @MainActor () -> ExtensionManagerRuntime
         let currentProfileId: @MainActor () -> UUID?
         let assignControllerDelegate: @MainActor (WKWebExtensionController) -> Void
         let controllerDelegateReadiness:
@@ -133,10 +132,7 @@ final class ExtensionControllerProvisioningOwner:
     }
 
     func websiteDataStore(for profileId: UUID) -> WKWebsiteDataStore {
-        dependencies.profileRuntime.websiteDataStore(
-            for: profileId,
-            runtime: dependencies.runtime()
-        )
+        dependencies.profileRuntime.websiteDataStore(for: profileId)
     }
 
     func removeAllExtensionPageUserContentControllers() {
@@ -208,66 +204,5 @@ final class ExtensionControllerProvisioningOwner:
         dataStore.fetchDataRecords(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes()) { records in
             ExtensionManager.logger.debug("Extension data store ready for profile \(profileId.uuidString, privacy: .public): \(records.count) records")
         }
-    }
-}
-
-@available(macOS 15.5, *)
-extension ExtensionControllerProvisioningOwner.Dependencies {
-    @MainActor
-    static func live(manager: ExtensionManager) -> Self {
-        Self(
-            browserConfiguration: manager.browserConfiguration,
-            profileRuntime: manager.profileRuntime,
-            runtime: { [weak manager] in
-                manager?.runtime ?? .inactive
-            },
-            currentProfileId: { [weak manager] in
-                manager?.profileRuntime.currentProfileId
-            },
-            assignControllerDelegate: { [weak manager] controller in
-                controller.delegate = manager?.controllerDelegateBridge
-            },
-            controllerDelegateReadiness:
-                manager.controllerDelegateBindingReadiness,
-            traceControllerBinding: { [weak manager] phase, profileId, controller, configuration in
-                manager?.runtimeDiagnostics.traceNativeMessagingContextBinding(
-                    phase: phase,
-                    extensionId: nil,
-                    profileId: profileId,
-                    controller: controller,
-                    configuration: configuration,
-                    profileController: profileId.flatMap {
-                        manager?.profileRuntime.controller(for: $0)
-                    },
-                    expectedControllerDelegate:
-                        manager?.controllerDelegateBridge
-                )
-            },
-            controllerDescription: { controller in
-                ExtensionRuntimeDiagnostics.objectDescription(controller)
-            },
-            trace: { [weak manager] message in
-                manager?.runtimeDiagnostics.trace(message())
-            }
-        )
-    }
-}
-
-@available(macOS 15.5, *)
-@MainActor
-extension ExtensionManager {
-    @discardableResult
-    func ensureExtensionController(for profileId: UUID) -> WKWebExtensionController {
-        controllerProvisioningOwner.ensureExtensionController(for: profileId)
-    }
-
-    func getExtensionDataStore(
-        for profileId: UUID
-    ) -> WKWebsiteDataStore {
-        controllerProvisioningOwner.websiteDataStore(for: profileId)
-    }
-
-    func extensionControllerIdentifier(for profileId: UUID) -> UUID {
-        ExtensionControllerProvisioningOwner.extensionControllerIdentifier(for: profileId)
     }
 }

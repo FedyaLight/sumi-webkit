@@ -5,40 +5,48 @@ import WebKit
 @MainActor
 final class ExtensionPageNavigationPreparationOwner {
     private let webViewReplacement = TabWebViewReplacementService()
+    private let tabProfiles: any ExtensionTabProfileResolving
+    private let webViews: ExtensionExactTabWebViewQuery
+    private let controllerProvisioning: ExtensionControllerProvisioningOwner
+
+    init(
+        tabProfiles: any ExtensionTabProfileResolving,
+        webViews: ExtensionExactTabWebViewQuery,
+        controllerProvisioning: ExtensionControllerProvisioningOwner
+    ) {
+        self.tabProfiles = tabProfiles
+        self.webViews = webViews
+        self.controllerProvisioning = controllerProvisioning
+    }
 
     @discardableResult
     func prepareNavigation(
         _ tab: Tab,
         targetURL: URL,
-        reason: String,
-        manager: ExtensionManager
+        reason: String
     ) -> TabWebViewReplacementOutcome {
         if ExtensionURLIdentity.isOwned(targetURL) {
             return prepareExtensionOwnedNavigation(
                 tab,
                 targetURL: targetURL,
-                reason: reason,
-                manager: manager
+                reason: reason
             )
         }
         return clearExtensionPageOverrideIfNeeded(
             tab,
             targetURL: targetURL,
-            reason: reason,
-            manager: manager
+            reason: reason
         )
     }
 
     private func prepareExtensionOwnedNavigation(
         _ tab: Tab,
         targetURL: URL,
-        reason: String,
-        manager: ExtensionManager
+        reason: String
     ) -> TabWebViewReplacementOutcome {
         guard let extensionContext = extensionContext(
             for: targetURL,
-            tab: tab,
-            manager: manager
+            tab: tab
         ) else {
             return .notNeeded
         }
@@ -48,8 +56,7 @@ final class ExtensionPageNavigationPreparationOwner {
         guard let configuration = extensionContext.webViewConfiguration,
               needsExtensionPageWebViewReplacement(
                   tab,
-                  configuration: configuration,
-                  manager: manager
+                  configuration: configuration
               )
         else {
             return .notNeeded
@@ -76,8 +83,7 @@ final class ExtensionPageNavigationPreparationOwner {
     private func clearExtensionPageOverrideIfNeeded(
         _ tab: Tab,
         targetURL: URL,
-        reason: String,
-        manager: ExtensionManager
+        reason: String
     ) -> TabWebViewReplacementOutcome {
         guard tab.webExtensionContextOverride != nil else {
             return .notNeeded
@@ -85,8 +91,7 @@ final class ExtensionPageNavigationPreparationOwner {
         let previousExtensionContext = tab.webExtensionContextOverride
         tab.webExtensionContextOverride = nil
 
-        guard let currentWebView = manager.exactExtensionTabWebViews
-            .liveWebView(for: tab),
+        guard let currentWebView = webViews.liveWebView(for: tab),
               currentWebView.configuration.sumiIsNormalTabWebViewConfiguration == false
         else {
             return .notNeeded
@@ -105,8 +110,7 @@ final class ExtensionPageNavigationPreparationOwner {
 
     private func extensionContext(
         for targetURL: URL,
-        tab: Tab,
-        manager: ExtensionManager
+        tab: Tab
     ) -> WKWebExtensionContext? {
         if let currentOverride = tab.webExtensionContextOverride,
            targetURL.scheme?.lowercased() == currentOverride.baseURL.scheme?.lowercased(),
@@ -114,41 +118,22 @@ final class ExtensionPageNavigationPreparationOwner {
             return currentOverride
         }
 
-        guard let profileId = manager.resolvedProfileId(for: tab) else {
+        guard let profileId = tabProfiles.profileID(for: tab) else {
             return nil
         }
-        let controller = manager.ensureExtensionController(for: profileId)
+        let controller = controllerProvisioning.ensureExtensionController(
+            for: profileId
+        )
         return controller.extensionContext(for: targetURL)
     }
 
     private func needsExtensionPageWebViewReplacement(
         _ tab: Tab,
-        configuration: WKWebViewConfiguration,
-        manager: ExtensionManager
+        configuration: WKWebViewConfiguration
     ) -> Bool {
-        guard let currentWebView = manager.exactExtensionTabWebViews
-            .liveWebView(for: tab) else {
+        guard let currentWebView = webViews.liveWebView(for: tab) else {
             return false
         }
         return currentWebView.configuration !== configuration
-    }
-}
-
-// MARK: - ExtensionManager facade
-
-@available(macOS 15.5, *)
-@MainActor
-extension ExtensionManager {
-    func prepareExtensionPageNavigation(
-        _ tab: Tab,
-        targetURL: URL,
-        reason: String
-    ) -> TabWebViewReplacementOutcome {
-        pageNavigationPreparationOwner.prepareNavigation(
-            tab,
-            targetURL: targetURL,
-            reason: reason,
-            manager: self
-        )
     }
 }

@@ -13,16 +13,19 @@ final class SafariExtensionRuntimeDataStoreTests: XCTestCase {
             configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
         )
         let profile = Profile(name: "Extension Store Profile")
-        let manager = ExtensionManager(
+        let fixture = makeManager(
             context: container.mainContext,
             initialProfile: profile
         )
-        _ = manager.runtimeDemandCoordinator.request(
-            reason: .install,
-            allowWithoutEnabledExtensions: true
+        let manager = fixture.manager
+        let inspection = fixture.inspection
+        _ = inspection.contextCoordination.demand.requestRuntimeExplicitly(
+            reason: .install
         )
 
-        let controller = try XCTUnwrap(manager.extensionController)
+        let controller = try XCTUnwrap(
+            inspection.contextState.profiles.controllerForCurrentProfile()
+        )
         let profileStore = profile.dataStore
         let controllerDefaultStore = try XCTUnwrap(
             controller.configuration.defaultWebsiteDataStore
@@ -41,24 +44,28 @@ final class SafariExtensionRuntimeDataStoreTests: XCTestCase {
             configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
         )
         let profile = Profile(name: "Prepared Configuration Profile")
-        let manager = ExtensionManager(
+        let fixture = makeManager(
             context: container.mainContext,
             initialProfile: profile
         )
-        XCTAssertNil(manager.controllerRuntimeComposition)
-        XCTAssertNil(manager.extensionController)
+        let manager = fixture.manager
+        let inspection = fixture.inspection
+        XCTAssertNil(
+            inspection.contextState.profiles.controllerForCurrentProfile()
+        )
 
         let configuration = BrowserConfiguration.shared.auxiliaryWebViewConfiguration(
             surface: .extensionOptions
         )
-        manager.prepareWebViewConfigForExtensionRuntime(
+        inspection.normalTabs.configuration.prepareWebViewConfigForExtensionRuntime(
             configuration,
             profileId: profile.id,
             reason: "SafariExtensionRuntimeDataStoreTests"
         )
 
-        XCTAssertNil(manager.controllerRuntimeComposition)
-        XCTAssertNotNil(manager.extensionController)
+        XCTAssertNotNil(
+            inspection.contextState.profiles.controllerForCurrentProfile()
+        )
         XCTAssertNotNil(configuration.webExtensionController)
         XCTAssertIdentical(configuration.websiteDataStore, profile.dataStore)
         XCTAssertTrue(configuration.websiteDataStore.isPersistent)
@@ -73,18 +80,19 @@ final class SafariExtensionRuntimeDataStoreTests: XCTestCase {
         let browserManager = makeSafariExtensionTestBrowserManager(
             profile: profile
         )
-        let manager = ExtensionManager(
+        let fixture = makeManager(
             context: container.mainContext,
             initialProfile: profile
         )
+        let manager = fixture.manager
+        let inspection = fixture.inspection
         manager.attach(browserManager: browserManager)
-        manager.runtimeLifecycle.updateReadiness(isReady: true)
-        let reconciler = manager.profileWebViewRuntimeReconciler
+        inspection.runtimeAuthorities.lifecycle.updateReadiness(isReady: true)
+        let reconciler = fixture.attachedRuntime.runtime.controller.reconciler
         let initialCount = reconciler.reconciliationRequestCount
 
-        _ = manager.runtimeDemandCoordinator.request(
+        _ = inspection.contextCoordination.demand.requestRuntimeExplicitly(
             reason: .webViewConfiguration,
-            allowWithoutEnabledExtensions: true,
             profileId: profile.id
         )
 
@@ -100,16 +108,18 @@ final class SafariExtensionRuntimeDataStoreTests: XCTestCase {
         let browserManager = makeSafariExtensionTestBrowserManager(
             profile: profile
         )
-        let manager = ExtensionManager(
+        let fixture = makeManager(
             context: container.mainContext,
             initialProfile: profile
         )
+        let manager = fixture.manager
+        let inspection = fixture.inspection
         manager.attach(browserManager: browserManager)
-        let composition = try XCTUnwrap(manager.controllerRuntimeComposition)
+        let composition = fixture.attachedRuntime.runtime.controller
 
         manager.attach(browserManager: browserManager)
 
-        let repeated = try XCTUnwrap(manager.controllerRuntimeComposition)
+        let repeated = fixture.attachedRuntime.runtime.controller
         XCTAssertIdentical(repeated.profiles, composition.profiles)
         XCTAssertIdentical(repeated.controllers, composition.controllers)
         XCTAssertIdentical(repeated.webViews, composition.webViews)
@@ -144,15 +154,16 @@ final class SafariExtensionRuntimeDataStoreTests: XCTestCase {
         windowRegistry.register(privateWindow)
         windowRegistry.setActive(privateWindow)
 
-        let manager = ExtensionManager(
+        let fixture = makeManager(
             context: container.mainContext,
             initialProfile: persistentProfile
         )
+        let manager = fixture.manager
+        let inspection = fixture.inspection
         manager.attach(browserManager: browserManager)
 
-        _ = manager.runtimeDemandCoordinator.request(
-            reason: .webViewConfiguration,
-            allowWithoutEnabledExtensions: true
+        _ = inspection.contextCoordination.demand.requestRuntimeExplicitly(
+            reason: .webViewConfiguration
         )
 
         let configuration = BrowserConfiguration.shared.normalTabWebViewConfiguration(
@@ -162,7 +173,7 @@ final class SafariExtensionRuntimeDataStoreTests: XCTestCase {
         XCTAssertFalse(configuration.websiteDataStore.isPersistent)
         XCTAssertIdentical(configuration.websiteDataStore, ephemeralProfile.dataStore)
 
-        manager.prepareWebViewConfigForExtensionRuntime(
+        inspection.normalTabs.configuration.prepareWebViewConfigForExtensionRuntime(
             configuration,
             profileId: ephemeralProfile.id,
             reason: "SafariExtensionRuntimeDataStoreTests.ephemeral"
@@ -192,18 +203,20 @@ final class SafariExtensionRuntimeDataStoreTests: XCTestCase {
         browserManager.profileManager.profiles = [persistentProfile]
         windowRegistry.register(privateWindow)
 
-        let manager = ExtensionManager(
+        let fixture = makeManager(
             context: container.mainContext,
             initialProfile: persistentProfile
         )
+        let manager = fixture.manager
+        let inspection = fixture.inspection
         manager.attach(browserManager: browserManager)
 
-        _ = manager.ensureExtensionController(for: ephemeralProfile.id)
-        XCTAssertTrue(manager.isPrivateExtensionRuntimeProfile(ephemeralProfile.id))
+        _ = inspection.controller.provisioning.ensureExtensionController(for: ephemeralProfile.id)
+        XCTAssertTrue(inspection.contextState.profiles.isPrivateRuntimeProfile(ephemeralProfile.id))
 
         windowRegistry.unregister(privateWindow.id)
 
-        XCTAssertTrue(manager.isPrivateExtensionRuntimeProfile(ephemeralProfile.id))
+        XCTAssertTrue(inspection.contextState.profiles.isPrivateRuntimeProfile(ephemeralProfile.id))
     }
 
     func testProfileStoreCachePreservesCurrentProfileOnEviction() {
@@ -271,5 +284,24 @@ final class SafariExtensionRuntimeDataStoreTests: XCTestCase {
         XCTAssertIdentical(cache.cachedStore(for: firstProfileId), firstStore)
         XCTAssertNil(cache.cachedStore(for: secondProfileId))
         XCTAssertNotNil(cache.cachedStore(for: newestProfileId))
+    }
+
+    private func makeManager(
+        context: ModelContext,
+        initialProfile: Profile
+    ) -> (
+        manager: ExtensionManager,
+        inspection: ExtensionManagerTestInspection,
+        attachedRuntime: ExtensionAttachedRuntimeCapture
+    ) {
+        let inspection = ExtensionManagerInspectionCapture()
+        let attachedRuntime = ExtensionAttachedRuntimeCapture()
+        let manager = ExtensionManager(
+            context: context,
+            initialProfile: initialProfile,
+            attachedRuntimeDidInstall: attachedRuntime.install,
+            testInspectionDidAssemble: inspection.install
+        )
+        return (manager, inspection.inspection, attachedRuntime)
     }
 }

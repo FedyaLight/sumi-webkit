@@ -7,6 +7,93 @@ import XCTest
 @available(macOS 15.5, *)
 @MainActor
 final class SumiExtensionsModuleResidentDemandTests: XCTestCase {
+    func testEnabledModuleFailsClosedUntilExactRuntimeActivatesOnce()
+        throws {
+        let container = try ModelContainer(
+            for: SumiStartupPersistence.schema,
+            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
+        )
+        let defaults = try XCTUnwrap(
+            UserDefaults(suiteName: UUID().uuidString)
+        )
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: defaults)
+        )
+        let profile = Profile(name: "Passive extension surface")
+        let configuration = BrowserConfiguration()
+        var scheduledUpdates: [@MainActor () -> Void] = []
+        let surfaceStore = BrowserExtensionSurfaceStore(
+            updateScheduler: { operation in
+                scheduledUpdates.append(operation)
+            }
+        )
+        var managerFactoryAdmissions = 0
+        var browserAttachments: [ExtensionManagerBrowserAttachment] = []
+        var createdManager: ExtensionManager?
+        let module = SumiExtensionsModule(
+            moduleRegistry: registry,
+            context: container.mainContext,
+            browserConfiguration: configuration,
+            initialProfileProvider: { profile },
+            managerFactory: { _, _, _, _ in
+                managerFactoryAdmissions += 1
+                let manager = self.makeSafariExtensionTestExtensionManager(
+                    context: container.mainContext,
+                    initialProfile: profile,
+                    browserConfiguration: configuration,
+                    moduleRegistry: registry
+                )
+                createdManager = manager
+                return manager
+            },
+            surfaceStore: surfaceStore
+        )
+        defer { module.setEnabled(false) }
+
+        XCTAssertFalse(module.isEnabled)
+        XCTAssertNil(createdManager)
+        XCTAssertEqual(managerFactoryAdmissions, 0)
+        XCTAssertTrue(scheduledUpdates.isEmpty)
+
+        module.bindRuntimeProvider { nil }
+        module.setEnabled(true)
+        module.pinToToolbar("missing-extension", profileId: profile.id)
+        XCTAssertFalse(module.hasAttachedRuntime)
+        XCTAssertNil(createdManager)
+        XCTAssertEqual(managerFactoryAdmissions, 0)
+        XCTAssertTrue(browserAttachments.isEmpty)
+        XCTAssertTrue(scheduledUpdates.isEmpty)
+
+        module.attach(
+            runtime: SumiExtensionsModuleRuntime(
+                currentProfile: { profile },
+                attachBrowser: { browserAttachments.append($0) },
+                liveTabs: { [] }
+            )
+        )
+        XCTAssertTrue(module.hasAttachedRuntime)
+        XCTAssertNil(createdManager)
+        XCTAssertTrue(browserAttachments.isEmpty)
+
+        module.pinToToolbar("missing-extension", profileId: profile.id)
+
+        let manager = try XCTUnwrap(createdManager)
+        XCTAssertIdentical(createdManager, manager)
+        XCTAssertEqual(browserAttachments.count, 1)
+        XCTAssertEqual(managerFactoryAdmissions, 1)
+        XCTAssertEqual(scheduledUpdates.count, 3)
+
+        module.pinToToolbar("missing-extension", profileId: profile.id)
+
+        XCTAssertEqual(browserAttachments.count, 1)
+        XCTAssertEqual(managerFactoryAdmissions, 1)
+        XCTAssertEqual(
+            scheduledUpdates.count,
+            3,
+            "resident manager access must not churn observers or schedule updates"
+        )
+    }
+
     func testResidentEnabledCatalogPreparesNormalTabWithoutColdStoreLookup()
         throws {
         let fixture = try makeFixture(hasEnabledExtension: true)
@@ -23,7 +110,8 @@ final class SumiExtensionsModuleResidentDemandTests: XCTestCase {
 
         XCTAssertIdentical(
             configuration.webExtensionController,
-            fixture.manager.ensureExtensionController(for: fixture.profile.id)
+            fixture.inspection.controller.provisioning
+                .ensureExtensionController(for: fixture.profile.id)
         )
     }
 
@@ -37,19 +125,20 @@ final class SumiExtensionsModuleResidentDemandTests: XCTestCase {
             reason: #function
         )
 
-        XCTAssertIdentical(
-            fixture.module.managerForTesting(materializeIfNeeded: false),
-            fixture.manager
-        )
         XCTAssertNil(configuration.webExtensionController)
-        XCTAssertNil(fixture.manager.extensionController)
+        XCTAssertNil(
+            fixture.inspection.contextState.profiles.controller(
+                for: fixture.profile.id
+            )
+        )
     }
 
     func testResidentCatalogWithoutEnabledExtensionsSkipsNormalTabRegistration()
         throws {
         let fixture = try makeFixture(hasEnabledExtension: false)
         let tab = Tab(loadsCachedFaviconOnInit: false)
-        let generation = fixture.manager.tabPublicationRevisions.issue()
+        let generation = fixture.inspection.runtimeAuthorities
+            .tabPublicationRevisions.issue()
 
         fixture.module.registerTabWithExtensionRuntimeIfLoaded(
             tab,
@@ -59,20 +148,25 @@ final class SumiExtensionsModuleResidentDemandTests: XCTestCase {
         XCTAssertFalse(
             tab.extensionPageRuntimeOwner.isEligible(for: generation)
         )
-        XCTAssertNil(fixture.manager.extensionController)
+        XCTAssertNil(
+            fixture.inspection.contextState.profiles.controller(
+                for: fixture.profile.id
+            )
+        )
     }
 
     func testDisabledModuleRetriesShutdownAfterIrreversibleMutationFinishes()
         async throws {
         let fixture = try makeFixture(hasEnabledExtension: true)
         let uninstall = try XCTUnwrap(
-            fixture.manager.runtimeMutationRegistry.begin(
+            fixture.inspection.contextCoordination.mutations.begin(
                 extensionID: "resident-enabled",
                 operation: .uninstall
             )
         )
         XCTAssertTrue(
-            fixture.manager.runtimeMutationRegistry.enterIrreversiblePhase(
+            fixture.inspection.contextCoordination.mutations
+                .enterIrreversiblePhase(
                 uninstall
             )
         )
@@ -84,7 +178,7 @@ final class SumiExtensionsModuleResidentDemandTests: XCTestCase {
             "the transaction retains its runtime until irreversible work ends"
         )
         XCTAssertTrue(
-            fixture.manager.runtimeMutationRegistry.finish(uninstall)
+            fixture.inspection.contextCoordination.mutations.finish(uninstall)
         )
         for _ in 0..<4 {
             await Task.yield()
@@ -97,6 +191,7 @@ final class SumiExtensionsModuleResidentDemandTests: XCTestCase {
         container: ModelContainer,
         module: SumiExtensionsModule,
         manager: ExtensionManager,
+        inspection: ExtensionManagerTestInspection,
         profile: Profile
     ) {
         let container = try ModelContainer(
@@ -112,13 +207,16 @@ final class SumiExtensionsModuleResidentDemandTests: XCTestCase {
         registry.enable(.extensions)
         let profile = Profile(name: "Resident extension runtime")
         let configuration = BrowserConfiguration()
-        let manager = ExtensionManager(
+        let inspectionCapture = ExtensionManagerInspectionCapture()
+        let manager = makeSafariExtensionTestExtensionManager(
             context: container.mainContext,
             initialProfile: profile,
             browserConfiguration: configuration,
-            moduleRegistry: registry
+            moduleRegistry: registry,
+            inspectionCapture: inspectionCapture
         )
-        manager.installedExtensionCollection.setAll(
+        let inspection = inspectionCapture.inspection
+        inspection.actionSurfaces.installedExtensions.setAll(
             hasEnabledExtension
                 ? [makeInstalledExtension(isEnabled: true)]
                 : []
@@ -130,8 +228,17 @@ final class SumiExtensionsModuleResidentDemandTests: XCTestCase {
             initialProfileProvider: { profile },
             managerFactory: { _, _, _, _ in manager }
         )
-        XCTAssertIdentical(module.managerForTesting(), manager)
-        return (container, module, manager, profile)
+        var browserAttachments: [ExtensionManagerBrowserAttachment] = []
+        module.attach(
+            runtime: SumiExtensionsModuleRuntime(
+                currentProfile: { profile },
+                attachBrowser: { browserAttachments.append($0) },
+                liveTabs: { [] }
+            )
+        )
+        module.pinToToolbar("missing-extension", profileId: profile.id)
+        XCTAssertEqual(browserAttachments.count, 1)
+        return (container, module, manager, inspection, profile)
     }
 
     private func makeInstalledExtension(isEnabled: Bool) -> InstalledExtension {

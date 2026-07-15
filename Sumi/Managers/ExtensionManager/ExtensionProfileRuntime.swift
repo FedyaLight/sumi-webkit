@@ -6,15 +6,22 @@ import WebKit
 final class ExtensionProfileRuntime {
     private var state = ExtensionProfileRuntimeState()
     private let websiteDataStoreCache: ExtensionProfileWebsiteDataStoreCache
+    private var knownProfilesByID: [UUID: Profile]
     var currentProfileId: UUID?
 
     init(
         initialProfileId: UUID?,
+        initialProfile: Profile? = nil,
         websiteDataStoreCache: ExtensionProfileWebsiteDataStoreCache =
             ExtensionProfileWebsiteDataStoreCache()
     ) {
         self.currentProfileId = initialProfileId
         self.websiteDataStoreCache = websiteDataStoreCache
+        if let initialProfile {
+            knownProfilesByID = [initialProfile.id: initialProfile]
+        } else {
+            knownProfilesByID = [:]
+        }
     }
 
     var controllersByProfile: [UUID: WKWebExtensionController] {
@@ -229,78 +236,28 @@ final class ExtensionProfileRuntime {
             || runtimeIsReadyOrLoading
     }
 
-    func resolvedProfileId(
-        for tab: Tab?,
-        runtime: ExtensionManagerRuntime
-    ) -> UUID? {
-        guard let tab else { return currentProfileId }
-        if let profileId = tab.profileId {
-            return profileId
-        }
-        if let profile = tab.resolveProfile() {
-            return profile.id
-        }
-        if let windowId = runtime.primaryTrackedWindowId(tab.id),
-           let windowState = runtime.windowState(windowId) {
-            return resolvedProfileId(
-                for: windowState,
-                runtime: runtime
-            )
-        }
-        return currentProfileId ?? runtime.currentProfile()?.id
-    }
-
-    func resolvedProfileId(
-        explicitProfileId: UUID?,
-        runtime: ExtensionManagerRuntime
-    ) -> UUID? {
-        explicitProfileId ?? currentProfileId ?? runtime.currentProfile()?.id
-    }
-
-    func resolvedProfileId(
-        for windowState: BrowserWindowState,
-        runtime: ExtensionManagerRuntime
-    ) -> UUID? {
-        if windowState.isIncognito, let profile = windowState.ephemeralProfile {
-            return profile.id
-        }
-        if let profileId = windowState.currentProfileId {
-            return profileId
-        }
-        return runtime.currentProfile()?.id
-    }
-
-    func windowMatchesProfile(
-        _ windowState: BrowserWindowState,
-        profileId: UUID,
-        runtime: ExtensionManagerRuntime
-    ) -> Bool {
-        resolvedProfileId(
-            for: windowState,
-            runtime: runtime
-        ) == profileId
-    }
-
-    func currentProfile(in runtime: ExtensionManagerRuntime) -> Profile? {
-        guard let currentProfileId else { return runtime.currentProfile() }
-        return runtime.profile(currentProfileId) ?? runtime.currentProfile()
-    }
-
-    func websiteDataStore(
-        for profileId: UUID,
-        runtime: ExtensionManagerRuntime
-    ) -> WKWebsiteDataStore {
+    func websiteDataStore(for profileId: UUID) -> WKWebsiteDataStore {
         websiteDataStoreCache.store(
             for: profileId,
-            activeProfile: activeProfile(
-                for: profileId,
-                runtime: runtime
-            ),
+            activeProfile: knownProfilesByID[profileId],
             currentProfileId: currentProfileId
         )
     }
 
+    func rememberProfile(_ profile: Profile) {
+        knownProfilesByID[profile.id] = profile
+    }
+
+    func rememberedProfile(for profileID: UUID) -> Profile? {
+        knownProfilesByID[profileID]
+    }
+
+    var currentRememberedProfile: Profile? {
+        currentProfileId.flatMap { knownProfilesByID[$0] }
+    }
+
     func rememberPrivateRuntimeProfileIfNeeded(_ profile: Profile) {
+        rememberProfile(profile)
         websiteDataStoreCache.rememberPrivateRuntimeProfileIfNeeded(profile)
     }
 
@@ -310,16 +267,5 @@ final class ExtensionProfileRuntime {
 
     func removeAllWebsiteDataStores() {
         websiteDataStoreCache.removeAll()
-    }
-
-    private func activeProfile(
-        for profileId: UUID,
-        runtime: ExtensionManagerRuntime
-    ) -> Profile? {
-        if let profile = runtime.profile(profileId) {
-            return profile
-        }
-
-        return runtime.ephemeralProfile(profileId)
     }
 }

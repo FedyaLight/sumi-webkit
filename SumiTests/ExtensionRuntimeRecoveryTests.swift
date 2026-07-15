@@ -13,29 +13,29 @@ final class ExtensionRuntimeRecoveryTests:
         let fixture = try await makeFixture()
         defer { fixture.cleanUp() }
         let controllerA = try XCTUnwrap(
-            fixture.manager.profileRuntime.controller(for: fixture.profileA.id)
+            fixture.inspection.contextState.profiles.controller(for: fixture.profileA.id)
         )
         let retirementLease = try XCTUnwrap(
-            fixture.manager.runtimeMutationRegistry.begin(
+            fixture.inspection.contextCoordination.mutations.begin(
                 extensionID: fixture.installed.id,
                 operation: .disable
             )
         )
-        let retirement = fixture.manager.runtimeRetirement.retire(
+        let retirement = fixture.inspection.retirement.runtime.retire(
             extensionID: fixture.installed.id,
             cause: .disabled,
             mutationLease: retirementLease
         )
         XCTAssertTrue(retirement.completed)
         XCTAssertTrue(
-            fixture.manager.runtimeMutationRegistry.finish(retirementLease)
+            fixture.inspection.contextCoordination.mutations.finish(retirementLease)
         )
-        try fixture.manager.installationMetadataStore.setEnabled(
+        try fixture.inspection.installation.metadata.setEnabled(
             false,
             for: fixture.entity
         )
-        fixture.manager.installedExtensionCollection.upsert(
-            fixture.manager.installationMetadataStore.record(
+        fixture.inspection.actionSurfaces.installedExtensions.upsert(
+            fixture.inspection.installation.metadata.record(
                 fixture.installed,
                 withEnabledState: false
             )
@@ -48,7 +48,7 @@ final class ExtensionRuntimeRecoveryTests:
         fixture.installFinalizationRecorder(recorder)
 
         do {
-            _ = try await fixture.manager.installedExtensionLifecycle.enable(
+            _ = try await fixture.inspection.installation.lifecycle.enable(
                 fixture.installed.id
             )
             XCTFail("Non-quiescent enable rollback must be reported")
@@ -63,13 +63,13 @@ final class ExtensionRuntimeRecoveryTests:
 
         XCTAssertTrue(fixture.entity.isEnabled)
         XCTAssertEqual(
-            fixture.manager.installedExtensionCollection.records.first {
+            fixture.inspection.actionSurfaces.installedExtensions.records.first {
                 $0.id == fixture.installed.id
             }?.isEnabled,
             true
         )
         let retainedContext = try XCTUnwrap(
-            fixture.manager.profileRuntime.contexts(for: fixture.profileA.id)[
+            fixture.inspection.contextState.profiles.contexts(for: fixture.profileA.id)[
                 fixture.installed.id
             ]
         )
@@ -85,7 +85,7 @@ final class ExtensionRuntimeRecoveryTests:
         let fixture = try await makeFixture()
         defer { fixture.cleanUp() }
         let controllerA = try XCTUnwrap(
-            fixture.manager.profileRuntime.controller(for: fixture.profileA.id)
+            fixture.inspection.contextState.profiles.controller(for: fixture.profileA.id)
         )
         let replacementName = "RuntimeRecoveryReplacement"
         let replacementVersion = "2.0"
@@ -117,7 +117,7 @@ final class ExtensionRuntimeRecoveryTests:
         }
 
         do {
-            _ = try await fixture.manager.extensionInstaller.install(
+            _ = try await fixture.inspection.installation.installer.install(
                 from: fixture.sourceURL,
                 enableOnInstall: true
             )
@@ -132,7 +132,7 @@ final class ExtensionRuntimeRecoveryTests:
         }
 
         let candidateEntity = try XCTUnwrap(
-            fixture.manager.installationMetadataStore.extensionEntity(
+            fixture.inspection.installation.metadata.extensionEntity(
                 for: fixture.installed.id
             )
         )
@@ -165,7 +165,7 @@ final class ExtensionRuntimeRecoveryTests:
         XCTAssertEqual(candidateEntity.version, replacementVersion)
         XCTAssertTrue(candidateEntity.isEnabled)
         let candidateRecord = try XCTUnwrap(
-            fixture.manager.installedExtensionCollection.records.first {
+            fixture.inspection.actionSurfaces.installedExtensions.records.first {
                 $0.id == fixture.installed.id
             }
         )
@@ -173,7 +173,7 @@ final class ExtensionRuntimeRecoveryTests:
         XCTAssertEqual(candidateRecord.version, replacementVersion)
         XCTAssertTrue(candidateRecord.isEnabled)
         let retainedContextA = try XCTUnwrap(
-            fixture.manager.profileRuntime.contexts(for: fixture.profileA.id)[
+            fixture.inspection.contextState.profiles.contexts(for: fixture.profileA.id)[
                 fixture.installed.id
             ]
         )
@@ -184,7 +184,7 @@ final class ExtensionRuntimeRecoveryTests:
             })
         )
         XCTAssertNil(
-            fixture.manager.profileRuntime.contexts(for: fixture.profileB.id)[
+            fixture.inspection.contextState.profiles.contexts(for: fixture.profileB.id)[
                 fixture.installed.id
             ]
         )
@@ -194,13 +194,13 @@ final class ExtensionRuntimeRecoveryTests:
             })
         )
         let nextLease = try XCTUnwrap(
-            fixture.manager.runtimeMutationRegistry.begin(
+            fixture.inspection.contextCoordination.mutations.begin(
                 extensionID: fixture.installed.id,
                 operation: .enable
             )
         )
         XCTAssertTrue(
-            fixture.manager.runtimeMutationRegistry.finish(nextLease)
+            fixture.inspection.contextCoordination.mutations.finish(nextLease)
         )
     }
 
@@ -232,7 +232,7 @@ final class ExtensionRuntimeRecoveryTests:
         }
 
         do {
-            _ = try await fixture.manager.extensionInstaller.install(
+            _ = try await fixture.inspection.installation.installer.install(
                 from: fixture.sourceURL,
                 enableOnInstall: true
             )
@@ -249,12 +249,12 @@ final class ExtensionRuntimeRecoveryTests:
         )
         XCTAssertEqual(recorder.reconciliationCount, 2)
         let restoredContextA = try XCTUnwrap(
-            fixture.manager.profileRuntime.contexts(for: fixture.profileA.id)[
+            fixture.inspection.contextState.profiles.contexts(for: fixture.profileA.id)[
                 fixture.installed.id
             ]
         )
         let restoredContextB = try XCTUnwrap(
-            fixture.manager.profileRuntime.contexts(for: fixture.profileB.id)[
+            fixture.inspection.contextState.profiles.contexts(for: fixture.profileB.id)[
                 fixture.installed.id
             ]
         )
@@ -278,7 +278,7 @@ final class ExtensionRuntimeRecoveryTests:
             originalPackageManifest
         )
         let restoredEntity = try XCTUnwrap(
-            fixture.manager.installationMetadataStore.extensionEntity(
+            fixture.inspection.installation.metadata.extensionEntity(
                 for: fixture.installed.id
             )
         )
@@ -291,7 +291,7 @@ final class ExtensionRuntimeRecoveryTests:
         )
         XCTAssertTrue(restoredEntity.isEnabled)
         let restoredRecord = try XCTUnwrap(
-            fixture.manager.installedExtensionCollection.records.first {
+            fixture.inspection.actionSurfaces.installedExtensions.records.first {
                 $0.id == fixture.installed.id
             }
         )
@@ -306,7 +306,7 @@ final class ExtensionRuntimeRecoveryTests:
         defer { fixture.cleanUp() }
         let originalLastUpdateDate = fixture.entity.lastUpdateDate
         fixture.unloadFault.controllerToFail = fixture.controllerB
-        fixture.manager.backgroundRuntimeStateOwner.removeRuntimeState(
+        fixture.inspection.contextState.background.removeRuntimeState(
             for: ExtensionRuntimeResidencyState.scopedKey(
                 extensionId: fixture.installed.id,
                 profileId: fixture.profileB.id
@@ -316,7 +316,7 @@ final class ExtensionRuntimeRecoveryTests:
         fixture.installFinalizationRecorder(recorder)
 
         do {
-            try await fixture.manager.installedExtensionLifecycle.disable(
+            try await fixture.inspection.installation.lifecycle.disable(
                 fixture.installed.id,
                 releaseRuntimeIfIdle: false
             )
@@ -334,13 +334,13 @@ final class ExtensionRuntimeRecoveryTests:
         )
         XCTAssertEqual(recorder.reconciliationCount, 2)
         let recoveredA = try XCTUnwrap(
-            fixture.manager.profileRuntime.contexts(for: fixture.profileA.id)[
+            fixture.inspection.contextState.profiles.contexts(for: fixture.profileA.id)[
                 fixture.installed.id
             ]
         )
         XCTAssertFalse(recoveredA === fixture.originalContextA)
         XCTAssertIdentical(
-            fixture.manager.profileRuntime.contexts(for: fixture.profileB.id)[
+            fixture.inspection.contextState.profiles.contexts(for: fixture.profileB.id)[
                 fixture.installed.id
             ],
             fixture.originalContextB
@@ -357,7 +357,7 @@ final class ExtensionRuntimeRecoveryTests:
             accuracy: 0.000_001
         )
         XCTAssertEqual(
-            fixture.manager.installedExtensionCollection.records.first {
+            fixture.inspection.actionSurfaces.installedExtensions.records.first {
                 $0.id == fixture.installed.id
             }?.isEnabled,
             true
@@ -375,7 +375,7 @@ final class ExtensionRuntimeRecoveryTests:
         fixture.installFinalizationRecorder(recorder)
 
         do {
-            try await fixture.manager.installedExtensionLifecycle.disable(
+            try await fixture.inspection.installation.lifecycle.disable(
                 fixture.installed.id,
                 releaseRuntimeIfIdle: false
             )
@@ -404,12 +404,12 @@ final class ExtensionRuntimeRecoveryTests:
             "a failed profile must not prevent later profiles from recovery"
         )
         XCTAssertNil(
-            fixture.manager.profileRuntime.contexts(for: fixture.profileA.id)[
+            fixture.inspection.contextState.profiles.contexts(for: fixture.profileA.id)[
                 fixture.installed.id
             ]
         )
         XCTAssertIdentical(
-            fixture.manager.profileRuntime.contexts(for: fixture.profileB.id)[
+            fixture.inspection.contextState.profiles.contexts(for: fixture.profileB.id)[
                 fixture.installed.id
             ],
             fixture.originalContextB
@@ -421,7 +421,7 @@ final class ExtensionRuntimeRecoveryTests:
         )
         XCTAssertTrue(fixture.entity.isEnabled)
         XCTAssertEqual(
-            fixture.manager.installedExtensionCollection.records.first {
+            fixture.inspection.actionSurfaces.installedExtensions.records.first {
                 $0.id == fixture.installed.id
             }?.isEnabled,
             true
@@ -432,16 +432,48 @@ final class ExtensionRuntimeRecoveryTests:
         let container = try makeTestContainer()
         let profileA = Profile(name: "Recovery A")
         let profileB = Profile(name: "Recovery B")
-        let manager = makeManager(
-            context: container.mainContext,
-            profile: profileA
-        ).manager
-        try XCTSkipUnless(manager.isExtensionSupportAvailable)
         let unloadFault = RecoveryUnloadFault()
-        installContextRetirementFault(
-            unloadFault,
-            on: manager
+        let finalization = RecoveryFinalizationObservation()
+        var assembledInspection: ExtensionManagerTestInspection?
+        let overrides = ExtensionManagerTestAssemblyOverrides(
+            unloadContext: { controller, context in
+                try unloadFault.unload(context, from: controller)
+            },
+            actionFinalization: .init(
+                backgroundWake: { _, context, _, isCurrent in
+                    guard let inspection = assembledInspection,
+                          let identity = inspection.contextState.profiles
+                            .exactContextIdentity(for: context)
+                    else {
+                        throw CancellationError()
+                    }
+                    finalization.recorder?.record(identity.profileId)
+                    if finalization.recorder?.consumeInvalidation(
+                        for: identity.profileId
+                    ) == true {
+                        inspection.contextCoordination.loads.invalidate(
+                            .init(
+                                profileId: identity.profileId,
+                                extensionId: identity.extensionId
+                            )
+                        )
+                    }
+                    guard isCurrent() else { throw CancellationError() }
+                },
+                reconcile: { _ in
+                    finalization.recorder?.recordReconciliation()
+                }
+            )
         )
+        let managerFixture = makeManager(
+            context: container.mainContext,
+            profile: profileA,
+            assemblyOverrides: overrides
+        )
+        let manager = managerFixture.manager
+        let inspection = managerFixture.inspection
+        assembledInspection = inspection
+        try XCTSkipUnless(manager.isExtensionSupportAvailable)
 
         let installed = try await installUnpackedExtension(
             manager: manager,
@@ -449,32 +481,32 @@ final class ExtensionRuntimeRecoveryTests:
             name: "RuntimeRecovery-\(UUID().uuidString)"
         )
         let entity = try XCTUnwrap(
-            manager.installationMetadataStore.extensionEntity(
+            inspection.installation.metadata.extensionEntity(
                 for: installed.id
             )
         )
-        try manager.installationMetadataStore.setEnabled(true, for: entity)
-        manager.installedExtensionCollection.upsert(
-            manager.installationMetadataStore.record(
+        try inspection.installation.metadata.setEnabled(true, for: entity)
+        inspection.actionSurfaces.installedExtensions.upsert(
+            inspection.installation.metadata.record(
                 installed,
                 withEnabledState: true
             )
         )
 
         let lease = try XCTUnwrap(
-            manager.runtimeMutationRegistry.begin(
+            inspection.contextCoordination.mutations.begin(
                 extensionID: installed.id,
                 operation: .enable
             )
         )
-        defer { _ = manager.runtimeMutationRegistry.finish(lease) }
-        _ = try await manager.extensionRuntimeLoader.loadEnabled(
+        defer { _ = inspection.contextCoordination.mutations.finish(lease) }
+        _ = try await inspection.contextCoordination.loader.loadEnabled(
             from: entity,
             profileID: profileA.id,
             activation: .background(.enable),
             mutationLease: lease
         )
-        _ = try await manager.extensionRuntimeLoader.loadEnabled(
+        _ = try await inspection.contextCoordination.loader.loadEnabled(
             from: entity,
             profileID: profileB.id,
             activation: .background(.enable),
@@ -484,6 +516,8 @@ final class ExtensionRuntimeRecoveryTests:
         return RecoveryFixture(
             container: container,
             manager: manager,
+            inspection: inspection,
+            finalization: finalization,
             profileA: profileA,
             profileB: profileB,
             installed: installed,
@@ -493,15 +527,18 @@ final class ExtensionRuntimeRecoveryTests:
             ),
             entity: entity,
             originalContextA: try XCTUnwrap(
-                manager.profileRuntime.contexts(for: profileA.id)[installed.id]
+                inspection.contextState.profiles.contexts(for: profileA.id)[
+                    installed.id
+                ]
             ),
             originalContextB: try XCTUnwrap(
-                manager.profileRuntime.contexts(for: profileB.id)[installed.id]
+                inspection.contextState.profiles.contexts(for: profileB.id)[
+                    installed.id
+                ]
             ),
             controllerB: try XCTUnwrap(
-                manager.profileRuntime.controller(for: profileB.id)
+                inspection.contextState.profiles.controller(for: profileB.id)
             ),
-            originalActionSurfacePublisher: manager.actionSurfacePublisher,
             unloadFault: unloadFault
         )
     }
@@ -526,37 +563,6 @@ final class ExtensionRuntimeRecoveryTests:
             options: [.atomic]
         )
     }
-
-    private func installContextRetirementFault(
-        _ fault: RecoveryUnloadFault,
-        on manager: ExtensionManager
-    ) {
-        let retirement = ExtensionContextRetirement(
-            profileRuntime: manager.profileRuntime,
-            backgroundRuntimeState: manager.backgroundRuntimeStateOwner,
-            runtimeResidency: manager.runtimeResidency,
-            errorObservation: manager.contextErrorObservation,
-            diagnostics: manager.runtimeDiagnostics,
-            unloadContext: { controller, context in
-                try fault.unload(context, from: controller)
-            }
-        )
-        manager.contextRetirement = retirement
-        manager.scopedRuntimeRetirement = ExtensionScopedRuntimeRetirement(
-            profileRuntime: manager.profileRuntime,
-            mutationRegistry: manager.runtimeMutationRegistry,
-            loadRegistry: manager.contextLoadRegistry,
-            contextRetirement: retirement,
-            runtimeCatalog: manager.runtimeCatalog,
-            runtimeResidency: manager.runtimeResidency,
-            sourceCache: manager.webExtensionRuntimeSourceCache,
-            errorObservation: manager.contextErrorObservation,
-            nativeMessagingPorts: manager.nativeMessagingPortRegistry,
-            optionsWindows: manager.optionsWindows,
-            actionAnchors: manager.actionAnchorStore,
-            diagnostics: manager.runtimeDiagnostics
-        )
-    }
 }
 
 @available(macOS 15.5, *)
@@ -564,6 +570,8 @@ final class ExtensionRuntimeRecoveryTests:
 private final class RecoveryFixture {
     let container: ModelContainer
     let manager: ExtensionManager
+    let inspection: ExtensionManagerTestInspection
+    let finalization: RecoveryFinalizationObservation
     let profileA: Profile
     let profileB: Profile
     let installed: InstalledExtension
@@ -572,12 +580,13 @@ private final class RecoveryFixture {
     let originalContextA: WKWebExtensionContext
     let originalContextB: WKWebExtensionContext
     let controllerB: WKWebExtensionController
-    let originalActionSurfacePublisher: ExtensionActionSurfacePublisher
     let unloadFault: RecoveryUnloadFault
 
     init(
         container: ModelContainer,
         manager: ExtensionManager,
+        inspection: ExtensionManagerTestInspection,
+        finalization: RecoveryFinalizationObservation,
         profileA: Profile,
         profileB: Profile,
         installed: InstalledExtension,
@@ -586,11 +595,12 @@ private final class RecoveryFixture {
         originalContextA: WKWebExtensionContext,
         originalContextB: WKWebExtensionContext,
         controllerB: WKWebExtensionController,
-        originalActionSurfacePublisher: ExtensionActionSurfacePublisher,
         unloadFault: RecoveryUnloadFault
     ) {
         self.container = container
         self.manager = manager
+        self.inspection = inspection
+        self.finalization = finalization
         self.profileA = profileA
         self.profileB = profileB
         self.installed = installed
@@ -599,68 +609,18 @@ private final class RecoveryFixture {
         self.originalContextA = originalContextA
         self.originalContextB = originalContextB
         self.controllerB = controllerB
-        self.originalActionSurfacePublisher = originalActionSurfacePublisher
         self.unloadFault = unloadFault
     }
 
     func installFinalizationRecorder(
         _ recorder: RecoveryFinalizationRecorder
     ) {
-        manager.actionSurfacePublisher = ExtensionActionSurfacePublisher(
-            authority: manager.loadedContextAuthority,
-            extensionIDForContext: { [weak manager] context in
-                guard let manager,
-                      let identity = manager.profileRuntime
-                        .exactContextIdentity(for: context)
-                else {
-                    return nil
-                }
-                return identity.extensionId
-            },
-            setActionSurfaceState: { _, _ in },
-            removeActionSurfaceState: { _ in },
-            publishActionPresentationChange: { _ in },
-            exactContextIdentity: { [weak manager] context in
-                manager?.profileRuntime.exactContextIdentity(for: context)
-                    .map {
-                        (
-                            extensionID: $0.extensionId,
-                            profileID: $0.profileId
-                        )
-                    }
-            },
-            currentExtensionTab: { nil },
-            stableAdapter: { _ in nil },
-            ensureBackgroundAvailableIfRequired: {
-                [weak manager, weak recorder] _, context, _, isCurrent in
-                guard let manager,
-                      let identity = manager.profileRuntime
-                        .exactContextIdentity(for: context)
-                else {
-                    throw CancellationError()
-                }
-                recorder?.record(identity.profileId)
-                if recorder?.consumeInvalidation(
-                    for: identity.profileId
-                ) == true {
-                    manager.contextLoadRegistry.invalidate(
-                        .init(
-                            profileId: identity.profileId,
-                            extensionId: identity.extensionId
-                        )
-                    )
-                }
-                guard isCurrent() else { throw CancellationError() }
-            },
-            reconcileOpenTabsAfterExtensionContextLoad: { [weak recorder] _ in
-                recorder?.recordReconciliation()
-            }
-        )
+        finalization.recorder = recorder
     }
 
     func cleanUp() {
         unloadFault.controllerToFail = nil
-        manager.actionSurfacePublisher = originalActionSurfacePublisher
+        finalization.recorder = nil
         _ = manager.shutDownExtensionRuntime(
             reason: "ExtensionRuntimeRecoveryTests.cleanup"
         )
@@ -679,6 +639,12 @@ private final class RecoveryFixture {
             )
         }
     }
+}
+
+@available(macOS 15.5, *)
+@MainActor
+private final class RecoveryFinalizationObservation {
+    var recorder: RecoveryFinalizationRecorder?
 }
 
 @available(macOS 15.5, *)

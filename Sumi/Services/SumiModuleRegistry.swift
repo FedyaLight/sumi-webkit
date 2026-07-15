@@ -69,6 +69,20 @@ final class SumiModuleRegistry {
         return settingsStore.isEnabled(moduleID)
     }
 
+    /// Runtime-only compatibility for isolated/test composition. An
+    /// unavailable registry means there is no product toggle authority, so a
+    /// runtime that was explicitly constructed remains admissible. Product
+    /// composition always supplies an available registry and follows its
+    /// durable toggle.
+    func isEnabledForRuntimeBoundary(_ moduleID: SumiModuleID) -> Bool {
+        switch availability {
+        case .available:
+            return settingsStore.isEnabled(moduleID)
+        case .unavailable:
+            return true
+        }
+    }
+
     var isAvailable: Bool {
         availability == .available
     }

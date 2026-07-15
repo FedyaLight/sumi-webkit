@@ -65,11 +65,11 @@ final class ExtensionNativeMessagingSendCallbackAdmissionTests:
             "capture failure must not reach the relay"
         )
         XCTAssertNil(
-            harness.manager.nativeMessagingRelayOwner.loadedRelay,
+            harness.inspection.nativeMessaging.loadedRelay,
             "capture failure must not materialize the relay"
         )
-        XCTAssertNil(
-            harness.manager.loadedNativeMessagingBackgroundWakeOwner,
+        XCTAssertFalse(
+            harness.inspection.nativeMessaging.hasLoadedWakeOwner,
             "capture failure must not create the background-wake owner"
         )
     }
@@ -110,11 +110,11 @@ final class ExtensionNativeMessagingSendCallbackAdmissionTests:
         let collector = await dispatchSend(harness: harness)
         XCTAssertEqual(adapter.oneShotRequestCount, 1)
 
-        harness.manager.profileRuntime.setController(
+        harness.inspection.contextState.profiles.setController(
             replacementController,
             for: harness.profileID
         )
-        harness.manager.profileRuntime.setController(
+        harness.inspection.contextState.profiles.setController(
             harness.controller,
             for: harness.profileID
         )
@@ -143,7 +143,7 @@ final class ExtensionNativeMessagingSendCallbackAdmissionTests:
         let collector = await dispatchSend(harness: harness)
         XCTAssertEqual(adapter.oneShotRequestCount, 1)
 
-        harness.manager.extensionLoadRevisions.advance()
+        harness.inspection.runtimeAuthorities.loadRevisions.advance()
         adapter.completeHeldOneShotReplies(value: ["secret": true])
         await drainMainActorTurns()
 
@@ -164,7 +164,7 @@ final class ExtensionNativeMessagingSendCallbackAdmissionTests:
         let collector = await dispatchSend(harness: harness)
         XCTAssertEqual(adapter.oneShotRequestCount, 1)
 
-        _ = harness.manager.profileRuntime.setContext(
+        _ = harness.inspection.contextState.profiles.setContext(
             unrelatedContext,
             extensionId: "unrelated-extension",
             profileId: harness.profileID
@@ -256,7 +256,7 @@ final class ExtensionNativeMessagingSendCallbackAdmissionTests:
 
     func testManagerDeallocationFailsSendClosed() async throws {
         var harness: Harness? = try await makeHarness(name: "SendManagerGone")
-        let bridge = try XCTUnwrap(harness?.manager.controllerDelegateBridge)
+        let bridge = try XCTUnwrap(harness?.inspection.controller.delegateBridge)
         let controller = try XCTUnwrap(harness?.controller)
         let context = try XCTUnwrap(harness?.context)
         weak let weakManager = harness?.manager
@@ -290,9 +290,11 @@ final class ExtensionNativeMessagingSendCallbackAdmissionTests:
             for: SumiStartupPersistence.schema,
             configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
         )
+        let inspection = ExtensionManagerInspectionCapture()
         let manager = ExtensionManager(
             context: container.mainContext,
-            initialProfile: Profile(name: "ZeroCost")
+            initialProfile: Profile(name: "ZeroCost"),
+            testInspectionDidAssemble: inspection.install
         )
         let foreignController = WKWebExtensionController(
             configuration: .nonPersistent()
@@ -301,7 +303,7 @@ final class ExtensionNativeMessagingSendCallbackAdmissionTests:
         let countersBefore = SumiNativeMessagingRuntimeCounters.snapshot()
 
         var replies: [(Any?, (any Error)?)] = []
-        manager.controllerDelegateBridge.webExtensionController(
+        inspection.inspection.controller.delegateBridge.webExtensionController(
             foreignController,
             sendMessage: ["type": "ping"],
             toApplicationWithIdentifier: Self.fixtureHostBundleID,
@@ -313,8 +315,10 @@ final class ExtensionNativeMessagingSendCallbackAdmissionTests:
 
         XCTAssertEqual(replies.count, 1)
         assertIsStaleCallbackError(replies.first?.1)
-        XCTAssertNil(manager.nativeMessagingRelayOwner.loadedRelay)
-        XCTAssertNil(manager.loadedNativeMessagingBackgroundWakeOwner)
+        XCTAssertNil(inspection.inspection.nativeMessaging.loadedRelay)
+        XCTAssertFalse(
+            inspection.inspection.nativeMessaging.hasLoadedWakeOwner
+        )
         XCTAssertEqual(
             SumiNativeMessagingRuntimeCounters.snapshot(),
             countersBefore,

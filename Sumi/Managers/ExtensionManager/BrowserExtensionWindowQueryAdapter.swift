@@ -39,6 +39,18 @@ final class BrowserExtensionWindowQueryAdapter: ExtensionWindowQuery {
         windowRegistry()?.allWindows ?? []
     }
 
+    func registrationReceipt(
+        for window: BrowserWindowState
+    ) -> WindowRegistry.WindowRegistrationReceipt? {
+        windowRegistry()?.registrationReceipt(for: window)
+    }
+
+    func window(
+        ifCurrent receipt: WindowRegistry.WindowRegistrationReceipt
+    ) -> BrowserWindowState? {
+        windowRegistry()?.window(ifCurrent: receipt)
+    }
+
     func extensionWindowState(containing tab: Tab) -> BrowserWindowState? {
         windowContainingTab(tab)
     }

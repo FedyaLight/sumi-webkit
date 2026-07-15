@@ -73,27 +73,3 @@ final class InstalledExtensionCatalog {
         environment.trace(message())
     }
 }
-
-@available(macOS 15.5, *)
-extension InstalledExtensionCatalog.Environment {
-    @MainActor
-    static func makeLive(manager: ExtensionManager) -> Self {
-        Self(
-            metadataStore: manager.installationMetadataStore,
-            installedRecords: manager.installedExtensionCollection,
-            volatileRecords: ExtensionVolatileInstallationRecordReconciler(
-                persistence: manager.installationMetadataStore,
-                installedRecords: manager.installedExtensionCollection
-            ),
-            liveContextCount: { [weak manager] in
-                manager?.profileRuntime.contextsForCurrentProfile().count ?? 0
-            },
-            markCatalogLoaded: { [weak manager] in
-                manager?.markExtensionRuntimePublicationReady()
-            },
-            trace: { [weak manager] message in
-                manager?.runtimeDiagnostics.trace(message)
-            }
-        )
-    }
-}

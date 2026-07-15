@@ -95,11 +95,14 @@ final class SafariExtensionInstalledInternalPageRenderTests: XCTestCase {
         let container = try makeTestContainer()
         let profile = Profile(name: "Installed 1Password Profile")
         let browserConfiguration = BrowserConfiguration()
-        let manager = ExtensionManager(
+        let fixture = makeSafariExtensionManagerTestFixture(
             context: container.mainContext,
             initialProfile: profile,
             browserConfiguration: browserConfiguration
         )
+        let manager = fixture.manager
+        let inspection = fixture.inspection
+        let attachedRuntime = fixture.attachedRuntime
         let registry = SumiModuleRegistry(
             settingsStore: SumiModuleSettingsStore(
                 userDefaults: UserDefaults(suiteName: UUID().uuidString)!
@@ -130,9 +133,8 @@ final class SafariExtensionInstalledInternalPageRenderTests: XCTestCase {
         windowRegistry.register(windowState)
         windowRegistry.setActive(windowState)
         manager.attach(browserManager: browserManager)
-        _ = manager.runtimeDemandCoordinator.request(
+        _ = inspection.contextCoordination.demand.requestRuntimeExplicitly(
             reason: .install,
-            allowWithoutEnabledExtensions: true,
             profileId: profile.id
         )
 
@@ -142,23 +144,24 @@ final class SafariExtensionInstalledInternalPageRenderTests: XCTestCase {
         }
         let webExtension = try await WKWebExtension(appExtensionBundle: bundle)
         let extensionContext = WKWebExtensionContext(for: webExtension)
-        let controller = manager.ensureExtensionController(for: profile.id)
+        let controller = inspection.controller.provisioning
+            .ensureExtensionController(for: profile.id)
         let extensionId = candidate.extensionBundleIdentifier
 
         extensionContext.unsupportedAPIs =
             WebExtensionRuntimeCompatibilityPolicy.unsupportedAPIs(
                 for: webExtension.manifest
             )
-        manager.setExtensionContext(
+        inspection.contextState.profiles.setContext(
             extensionContext,
             extensionId: extensionId,
             profileId: profile.id
         )
-        manager.runtimeCatalog.recordManifest(
+        inspection.runtimeAuthorities.catalog.recordManifest(
             webExtension.manifest,
             for: extensionId
         )
-        manager.markExtensionRuntimePublicationReady()
+        inspection.actionSurfaces.publication.markRuntimePublicationReady()
 
         try controller.load(extensionContext)
         defer {
@@ -166,7 +169,7 @@ final class SafariExtensionInstalledInternalPageRenderTests: XCTestCase {
         }
 
         let welcome = try await renderMetricsThroughSumiTab(
-            manager: manager,
+            attachedRuntime: attachedRuntime.runtime,
             browserManager: browserManager,
             controller: controller,
             extensionContext: extensionContext,
@@ -178,7 +181,7 @@ final class SafariExtensionInstalledInternalPageRenderTests: XCTestCase {
         XCTAssertGreaterThan(welcome.scriptCount, 0, welcome.debugSummary)
 
         let migration = try await renderMetricsThroughSumiTab(
-            manager: manager,
+            attachedRuntime: attachedRuntime.runtime,
             browserManager: browserManager,
             controller: controller,
             extensionContext: extensionContext,
@@ -326,7 +329,7 @@ final class SafariExtensionInstalledInternalPageRenderTests: XCTestCase {
     }
 
     private func renderMetricsThroughSumiTab(
-        manager: ExtensionManager,
+        attachedRuntime: ExtensionAttachedBrowserRuntimeInspection,
         browserManager: BrowserManager,
         controller: WKWebExtensionController,
         extensionContext: WKWebExtensionContext,
@@ -335,7 +338,7 @@ final class SafariExtensionInstalledInternalPageRenderTests: XCTestCase {
         let pageURL = try XCTUnwrap(
             URL(string: pagePath, relativeTo: extensionContext.baseURL)?.absoluteURL
         )
-        let tab = try manager.requestedTabOpening.open(
+        let tab = try attachedRuntime.requestedTabs.opening.open(
             url: pageURL,
             shouldBeActive: true,
             shouldBePinned: false,

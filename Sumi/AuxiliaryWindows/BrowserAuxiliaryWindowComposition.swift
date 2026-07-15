@@ -178,34 +178,6 @@ private final class BrowserAuxiliaryWindowMutationAdmission:
     }
 }
 
-extension ExtensionManager: AuxiliaryWindowExtensionEventHandling {
-    func auxiliaryWindowIntegration() -> AuxiliaryWindowExtensionIntegration {
-        AuxiliaryWindowExtensionIntegration(
-            installedExtensions: installedExtensionCollection.records,
-            events: WeakAuxiliaryWindowExtensionEvents(target: self),
-            resolveExtensionID: {
-                [weak self] context, openerTab, sourceURL, explicitExtensionID in
-                self?.ownerExtensionID(
-                    extensionContext: context,
-                    openerTab: openerTab,
-                    extensionOwnedSourceURL: sourceURL,
-                    explicitExtensionID: explicitExtensionID
-                )
-            },
-            makeMiniWindowAdapter: {
-                [weak self] sessionID, tab, window, isPrivate, shouldActivate in
-                self?.adapterCatalog.miniWindowAdapter(
-                    for: sessionID,
-                    tab: tab,
-                    window: window,
-                    isPrivate: isPrivate,
-                    shouldActivateApp: shouldActivate
-                )
-            }
-        )
-    }
-}
-
 extension SumiExtensionsModule: AuxiliaryWindowExtensionRuntimeResolving {
     func loadedEnabledAuxiliaryWindowIntegration()
         -> AuxiliaryWindowExtensionIntegration? {

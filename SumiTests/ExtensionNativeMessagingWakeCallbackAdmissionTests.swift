@@ -17,7 +17,7 @@ final class ExtensionNativeMessagingWakeCallbackAdmissionTests:
     /// recorder observes exactly the callback-admitted loads.
     private func armWakeRecorder(_ harness: Harness) async -> WakeRecorder {
         await drainScheduledRuntimeTasks(harness)
-        harness.manager.backgroundRuntimeStateOwner.removeAll()
+        harness.inspection.contextState.background.removeAll()
         let recorder = WakeRecorder()
         harness.manager.testHooks.backgroundContentWake = { wakeKey, _ in
             recorder.loadedWakeKeys.append(wakeKey)
@@ -64,7 +64,7 @@ final class ExtensionNativeMessagingWakeCallbackAdmissionTests:
         )
 
         let collector = SendReplyCollector()
-        harness.manager.controllerDelegateBridge.webExtensionController(
+        harness.inspection.controller.delegateBridge.webExtensionController(
             harness.controller,
             sendMessage: ["type": "ping"],
             toApplicationWithIdentifier: Self.fixtureHostBundleID,
@@ -74,7 +74,7 @@ final class ExtensionNativeMessagingWakeCallbackAdmissionTests:
         }
         // The wake and relay tasks are scheduled but have not started yet;
         // replacing the context now must prevent both effects.
-        _ = harness.manager.profileRuntime.setContext(
+        _ = harness.inspection.contextState.profiles.setContext(
             replacement,
             extensionId: harness.extensionID,
             profileId: harness.profileID
@@ -126,7 +126,7 @@ final class ExtensionNativeMessagingWakeCallbackAdmissionTests:
         // turn must not remove the newer wake when it unwinds.
         let firstCollector = SendReplyCollector()
         let secondCollector = SendReplyCollector()
-        harness.manager.controllerDelegateBridge.webExtensionController(
+        harness.inspection.controller.delegateBridge.webExtensionController(
             harness.controller,
             sendMessage: ["type": "ping"],
             toApplicationWithIdentifier: Self.fixtureHostBundleID,
@@ -135,7 +135,7 @@ final class ExtensionNativeMessagingWakeCallbackAdmissionTests:
             firstCollector.record(value, error)
         }
         rebindSameContext(harness)
-        harness.manager.controllerDelegateBridge.webExtensionController(
+        harness.inspection.controller.delegateBridge.webExtensionController(
             harness.controller,
             sendMessage: ["type": "ping"],
             toApplicationWithIdentifier: Self.fixtureHostBundleID,
@@ -158,7 +158,7 @@ final class ExtensionNativeMessagingWakeCallbackAdmissionTests:
         afterDispatch: (@MainActor () -> Void)? = nil
     ) async -> SendReplyCollector {
         let collector = SendReplyCollector()
-        harness.manager.controllerDelegateBridge.webExtensionController(
+        harness.inspection.controller.delegateBridge.webExtensionController(
             harness.controller,
             sendMessage: ["type": "ping"],
             toApplicationWithIdentifier: Self.fixtureHostBundleID,

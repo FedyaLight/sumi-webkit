@@ -425,7 +425,7 @@ final class ExtensionControllerRuntimeBoundaryTests: XCTestCase {
         repair.repair(
             canonical,
             reason: #function,
-            allowWhenExtensionsNotLoaded: true
+            publicationStage: .loadFinalization
         )
 
         XCTAssertIdentical(tabs.canonical, replacement)
@@ -1120,7 +1120,7 @@ private final class ControllerRuntimeRepairCounter:
     func repair(
         _: Tab,
         reason _: String,
-        allowWhenExtensionsNotLoaded _: Bool
+        publicationStage _: ExtensionRuntimePublicationStage
     ) -> ExtensionTabWebViewRuntimeRepairOutcome {
         callCount += 1
         return .publicationInvalidated(.deferred)

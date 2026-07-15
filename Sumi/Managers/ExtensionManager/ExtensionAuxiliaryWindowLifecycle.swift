@@ -16,18 +16,23 @@ final class ExtensionAuxiliaryWindowLifecycle {
 
     #if DEBUG
         init(
+            ledger: ExtensionAuxiliaryWindowPublicationLedger,
+            publications: ExtensionAuxiliaryWindowPublicationQuery,
             adapterStore: ExtensionBrowserAdapterStore,
             profileRuntime: ExtensionProfileRuntime,
+            tabProfiles: any ExtensionTabProfileResolving,
+            windowProfileID: @escaping @MainActor (BrowserWindowState) -> UUID?,
             tabPublication: any ExtensionAuxiliaryTabPublicationPreparing,
             normalWindows: ExtensionNormalWindowLifecycle,
             debugEvent: @escaping @MainActor (
                 ExtensionAuxiliaryPublicationDebugEvent
             ) -> Void
         ) {
-            let ledger = ExtensionAuxiliaryWindowPublicationLedger()
             let resolver = ExtensionAuxiliaryWindowPublicationResolver(
                 adapterStore: adapterStore,
                 profileRuntime: profileRuntime,
+                tabProfiles: tabProfiles,
+                windowProfileID: windowProfileID,
                 tabPublication: tabPublication
             )
             let retirement = ExtensionAuxiliaryWindowPublicationRetirement(
@@ -47,23 +52,24 @@ final class ExtensionAuxiliaryWindowLifecycle {
                 debugEvent: debugEvent
             )
             self.opening = opening
-            publications = ExtensionAuxiliaryWindowPublicationQuery(
-                ledger: ledger,
-                resolver: resolver,
-                opening: opening
-            )
+            self.publications = publications
         }
     #else
         init(
+            ledger: ExtensionAuxiliaryWindowPublicationLedger,
+            publications: ExtensionAuxiliaryWindowPublicationQuery,
             adapterStore: ExtensionBrowserAdapterStore,
             profileRuntime: ExtensionProfileRuntime,
+            tabProfiles: any ExtensionTabProfileResolving,
+            windowProfileID: @escaping @MainActor (BrowserWindowState) -> UUID?,
             tabPublication: any ExtensionAuxiliaryTabPublicationPreparing,
             normalWindows: ExtensionNormalWindowLifecycle
         ) {
-            let ledger = ExtensionAuxiliaryWindowPublicationLedger()
             let resolver = ExtensionAuxiliaryWindowPublicationResolver(
                 adapterStore: adapterStore,
                 profileRuntime: profileRuntime,
+                tabProfiles: tabProfiles,
+                windowProfileID: windowProfileID,
                 tabPublication: tabPublication
             )
             let retirement = ExtensionAuxiliaryWindowPublicationRetirement(
@@ -81,23 +87,17 @@ final class ExtensionAuxiliaryWindowLifecycle {
                 retirement: retirement
             )
             self.opening = opening
-            publications = ExtensionAuxiliaryWindowPublicationQuery(
-                ledger: ledger,
-                resolver: resolver,
-                opening: opening
-            )
+            self.publications = publications
         }
     #endif
 
     @discardableResult
     func opened(
         _ session: AuxiliaryWindowSession,
-        runtime: ExtensionManagerRuntime,
         control: (any ExtensionAuxiliaryWindowControl)?
     ) -> Bool {
         opening.open(
             session,
-            runtime: runtime,
             control: control,
             shouldFocus: session.shouldActivateApp
         )
@@ -105,15 +105,13 @@ final class ExtensionAuxiliaryWindowLifecycle {
 
     func focused(
         _ session: AuxiliaryWindowSession,
-        runtime: ExtensionManagerRuntime,
         control: (any ExtensionAuxiliaryWindowControl)?
     ) {
-        opening.focus(session, runtime: runtime, control: control)
+        opening.focus(session, control: control)
     }
 
     func closed(
         _ session: AuxiliaryWindowSession,
-        runtime: ExtensionManagerRuntime,
         windowQuery: (any ExtensionWindowQuery)?
     ) {
         guard let publication = ledger.publication(for: session) else {
@@ -124,7 +122,6 @@ final class ExtensionAuxiliaryWindowLifecycle {
         _ = retirement.retire(
             publication,
             session: session,
-            runtime: runtime,
             windowQuery: windowQuery,
             control: nil,
             mode: .terminal(restoreNormalFocus: true)
@@ -134,7 +131,6 @@ final class ExtensionAuxiliaryWindowLifecycle {
     /// Closes old-generation owner-context publications while native sessions
     /// remain alive for exact republishing into the next generation.
     func suspendForRuntimeReload(
-        runtime: ExtensionManagerRuntime,
         control: (any ExtensionAuxiliaryWindowControl)?
     ) -> [AuxiliaryWindowSession] {
         guard let control else { return [] }
@@ -149,7 +145,6 @@ final class ExtensionAuxiliaryWindowLifecycle {
             _ = retirement.retire(
                 publication,
                 session: session,
-                runtime: runtime,
                 windowQuery: nil,
                 control: control,
                 mode: .runtimeSuspension
@@ -160,7 +155,6 @@ final class ExtensionAuxiliaryWindowLifecycle {
 
     func republishAfterRuntimeReload(
         _ sessions: [AuxiliaryWindowSession],
-        runtime: ExtensionManagerRuntime,
         control: (any ExtensionAuxiliaryWindowControl)?,
         continuingWhile shouldContinue: @MainActor () -> Bool = { true }
     ) {
@@ -173,7 +167,6 @@ final class ExtensionAuxiliaryWindowLifecycle {
             }
             let reopened = opening.open(
                 session,
-                runtime: runtime,
                 control: control,
                 shouldFocus: NSApp.keyWindow === session.window
             )
@@ -190,7 +183,6 @@ final class ExtensionAuxiliaryWindowLifecycle {
     /// Retires the extension-visible graph before controllers/contexts leave.
     /// Later native teardown sees an empty ledger and cannot duplicate closes.
     func closeAllForRuntimeTeardown(
-        runtime: ExtensionManagerRuntime,
         control: (any ExtensionAuxiliaryWindowControl)?
     ) {
         guard let control else { return }
@@ -205,7 +197,6 @@ final class ExtensionAuxiliaryWindowLifecycle {
             _ = retirement.retire(
                 publication,
                 session: session,
-                runtime: runtime,
                 windowQuery: nil,
                 control: control,
                 mode: .terminal(restoreNormalFocus: false)

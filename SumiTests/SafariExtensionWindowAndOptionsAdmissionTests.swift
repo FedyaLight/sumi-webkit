@@ -11,11 +11,14 @@ extension SafariExtensionWebViewControllerWiringTests {
         let container = try makeTestContainer()
         let profile = Profile(name: "Unresolved requested window")
         let browserConfiguration = BrowserConfiguration()
-        let manager = makeManager(
+        let managerFixture = makeManager(
             context: container.mainContext,
             profile: profile,
             browserConfiguration: browserConfiguration
-        ).manager
+        )
+        let manager = managerFixture.manager
+        let inspection = managerFixture.inspection
+        let attachedRuntime = managerFixture.attachedRuntime
         let registry = SumiModuleRegistry(
             settingsStore: SumiModuleSettingsStore(
                 userDefaults: UserDefaults(suiteName: UUID().uuidString)!
@@ -41,11 +44,16 @@ extension SafariExtensionWebViewControllerWiringTests {
             profileId: profile.id
         )
         manager.attach(browserManager: browserManager)
-        let controller = manager.ensureExtensionController(for: profile.id)
+        let controller = inspection.controller.provisioning
+            .ensureExtensionController(for: profile.id)
 
         let prepared = UnresolvedRequestedWindowPreparedStub()
         let creator = UnresolvedRequestedWindowCreatorStub(prepared: prepared)
-        manager.extensionRequestedWindowCreation = creator
+        let router = makeWindowRequestRouter(
+            inspection: inspection,
+            attachedRuntime: attachedRuntime.runtime,
+            windowCreation: creator
+        )
         let originalWindowIDs = Set(windowRegistry.windows.keys)
         let originalTabIDs = Set(
             browserManager.tabManager.tabCollectionMembershipOwner
@@ -57,14 +65,15 @@ extension SafariExtensionWebViewControllerWiringTests {
         var completionWindow: (any WKWebExtensionWindow)?
         var completionError: (any Error)?
 
-        manager.openExtensionWindowUsingTabURLs(
-            [
+        router.open(
+            tabURLs: [
                 URL(
                     string: "safari-web-extension://unresolved-owner/page.html"
                 )!,
             ],
             controller: controller,
-            completionHandler: { window, error in
+            extensionContext: nil,
+            completion: { window, error in
                 completionWindow = window
                 completionError = error
                 completed.fulfill()
@@ -95,11 +104,14 @@ extension SafariExtensionWebViewControllerWiringTests {
         let container = try makeTestContainer()
         let profile = Profile(name: "Extension Options Profile")
         let browserConfiguration = BrowserConfiguration()
-        let manager = makeManager(
+        let optionsManagerFixture = makeManager(
             context: container.mainContext,
             profile: profile,
             browserConfiguration: browserConfiguration
-        ).manager
+        )
+        let manager = optionsManagerFixture.manager
+        let inspection = optionsManagerFixture.inspection
+        let attachedRuntime = optionsManagerFixture.attachedRuntime
         let registry = SumiModuleRegistry(
             settingsStore: SumiModuleSettingsStore(
                 userDefaults: UserDefaults(suiteName: UUID().uuidString)!
@@ -127,36 +139,33 @@ extension SafariExtensionWebViewControllerWiringTests {
             name: "ExtensionOptionsRenderedPage",
             optionsPage: "options.html"
         )
-        let enabledInstalled = try await manager.installedExtensionLifecycle
+        let enabledInstalled = try await inspection.installation.lifecycle
             .enable(installed.id)
 
-        let loadedContext = try await manager.ensureExtensionLoaded(
+        let loadedContext = try await inspection.contextCoordination.residency
+            .ensureExtensionLoaded(
             extensionId: installed.id,
             profileId: profile.id
         )
         let extensionContext = try XCTUnwrap(loadedContext)
         let controller = try XCTUnwrap(
-            manager.profileRuntime.controllersByProfile[profile.id]
+            inspection.contextState.profiles.controllersByProfile[profile.id]
         )
         let staleEvidence = try XCTUnwrap(
-            manager.controllerCallbackAdmission.capture(
+            inspection.controller.callbackAdmission.capture(
                 context: extensionContext,
                 controller: controller
             )
         )
         let enabledInvocation = try XCTUnwrap(
-            ExtensionOptionsWindowCallbackComposition.invocation(
-                from: manager,
-                evidence: staleEvidence
-            )
+            attachedRuntime.runtime.optionsComposer
+                .invocation(evidence: staleEvidence)
         )
 
-        manager.installedExtensionCollection.upsert(installed)
+        inspection.actionSurfaces.installedExtensions.upsert(installed)
         XCTAssertNil(
-            ExtensionOptionsWindowCallbackComposition.invocation(
-                from: manager,
-                evidence: staleEvidence
-            ),
+            attachedRuntime.runtime.optionsComposer
+                .invocation(evidence: staleEvidence),
             "disabled options record rejected"
         )
         let disabledReceipt = ExtensionOptionsWindowPresentationReceipt(
@@ -168,45 +177,39 @@ extension SafariExtensionWebViewControllerWiringTests {
             extensionRoot: enabledInvocation.receipt.extensionRoot,
             configuration: enabledInvocation.receipt.configuration,
             visitedLinkStore: enabledInvocation.receipt.visitedLinkStore,
-            installedRecordRevision: manager.installedExtensionCollection
+            installedRecordRevision:
+                inspection.actionSurfaces.installedExtensions
                 .recordRevision(for: installed.id)
         )
         XCTAssertFalse(
             enabledInvocation.runtime.isCurrent(disabledReceipt),
             "disabled options record rejected during revalidation"
         )
-        manager.installedExtensionCollection.upsert(enabledInstalled)
+        inspection.actionSurfaces.installedExtensions.upsert(enabledInstalled)
 
-        let attachedRuntime = manager.runtime
+        let attached = attachedRuntime.runtime
         let mutationAdmission = OptionsMutationAdmissionGate()
         var mutationWaiter: CheckedContinuation<Bool, Never>?
         let didSuspend = expectation(description: "options admission suspended")
-        manager.runtime = ExtensionManagerRuntime(
-            currentProfile: attachedRuntime.currentProfile,
-            profile: attachedRuntime.profile,
-            ephemeralProfile: attachedRuntime.ephemeralProfile,
-            windowState: attachedRuntime.windowState,
-            windowRegistrationReceipt:
-            attachedRuntime.windowRegistrationReceipt,
-            registeredWindow: attachedRuntime.registeredWindow,
-            activeWindowState: attachedRuntime.activeWindowState,
-            allTabs: attachedRuntime.allTabs,
-            allWindowStates: attachedRuntime.allWindowStates,
-            windowStateContainingTab: attachedRuntime.windowStateContainingTab,
-            windowOwnedWebView: attachedRuntime.windowOwnedWebView,
-            primaryTrackedWindowId: attachedRuntime.primaryTrackedWindowId,
-            untrackedOwnedWebView: attachedRuntime.untrackedOwnedWebView,
-            trackedWebViews: attachedRuntime.trackedWebViews,
-            rebuildLiveWebViews: attachedRuntime.rebuildLiveWebViews,
-            websiteDataMutationAdmissionIsBlocked: { _ in
-                mutationAdmission.isBlocked
-            },
-            waitForWebsiteDataMutationAdmission: { _ in
-                didSuspend.fulfill()
-                return await withCheckedContinuation { mutationWaiter = $0 }
-            },
-            browserRuntimeAvailable: attachedRuntime.browserRuntimeAvailable,
-            extensionsModuleEnabled: attachedRuntime.extensionsModuleEnabled
+        let gatedComposer = ExtensionOptionsWindowCallbackComposer(
+            admission: inspection.controller.callbackAdmission,
+            profiles: attached.profileQuery,
+            profileRuntime: inspection.contextState.profiles,
+            installedExtensions:
+                inspection.actionSurfaces.installedExtensions,
+            browserConfiguration: browserConfiguration,
+            configurationPreparation: inspection.normalTabs.configuration,
+            websiteDataAdmission: ExtensionWebsiteDataMutationAdmission(
+                isBlocked: { _ in
+                    mutationAdmission.isBlocked
+                },
+                wait: { _ in
+                    didSuspend.fulfill()
+                    return await withCheckedContinuation {
+                        mutationWaiter = $0
+                    }
+                }
+            )
         )
         let staleCompletion = expectation(
             description: "stale options admission rejected"
@@ -214,12 +217,9 @@ extension SafariExtensionWebViewControllerWiringTests {
         var staleCompletionError: Error?
         var staleCompletionCount = 0
         let staleInvocation = try XCTUnwrap(
-            ExtensionOptionsWindowCallbackComposition.invocation(
-                from: manager,
-                evidence: staleEvidence
-            )
+            gatedComposer.invocation(evidence: staleEvidence)
         )
-        manager.optionsWindows.presentOptionsPageWindow(
+        inspection.actionSurfaces.optionsWindows.presentOptionsPageWindow(
             invocation: staleInvocation
         ) { error in
             staleCompletionCount += 1
@@ -228,7 +228,7 @@ extension SafariExtensionWebViewControllerWiringTests {
         }
         await fulfillment(of: [didSuspend], timeout: 2.0)
         let replacementRoot = try makeScratchDirectory()
-        manager.installedExtensionCollection.upsert(
+        inspection.actionSurfaces.installedExtensions.upsert(
             replacingPackageRoot(
                 of: enabledInstalled,
                 with: replacementRoot
@@ -239,20 +239,22 @@ extension SafariExtensionWebViewControllerWiringTests {
         await fulfillment(of: [staleCompletion], timeout: 2.0)
         XCTAssertEqual(staleCompletionCount, 1)
         XCTAssertTrue(staleCompletionError is CancellationError)
-        XCTAssertNil(manager.optionsWindows.windows[installed.id])
+        XCTAssertNil(
+            inspection.actionSurfaces.optionsWindows.windows[installed.id]
+        )
 
-        manager.runtime = attachedRuntime
-        manager.installedExtensionCollection.upsert(enabledInstalled)
-        let reloadedContext = try await manager.ensureExtensionLoaded(
+        inspection.actionSurfaces.installedExtensions.upsert(enabledInstalled)
+        let reloadedContext = try await inspection.contextCoordination.residency
+            .ensureExtensionLoaded(
             extensionId: installed.id,
             profileId: profile.id
         )
         let restoredContext = try XCTUnwrap(reloadedContext)
         let restoredController = try XCTUnwrap(
-            manager.profileRuntime.controller(for: profile.id)
+            inspection.contextState.profiles.controller(for: profile.id)
         )
         let evidence = try XCTUnwrap(
-            manager.controllerCallbackAdmission.capture(
+            inspection.controller.callbackAdmission.capture(
                 context: restoredContext,
                 controller: restoredController
             )
@@ -268,15 +270,13 @@ extension SafariExtensionWebViewControllerWiringTests {
                 for: otherProfile,
                 surface: .extensionOptions
             )
-        manager.profileRuntime.currentProfileId = otherProfile.id
+        inspection.contextState.profiles.currentProfileId = otherProfile.id
 
         let openedOptions = expectation(description: "options page opened")
         var completionError: Error?
         let invocation = try XCTUnwrap(
-            ExtensionOptionsWindowCallbackComposition.invocation(
-                from: manager,
-                evidence: evidence
-            )
+            attachedRuntime.runtime.optionsComposer
+                .invocation(evidence: evidence)
         )
         XCTAssertIdentical(
             invocation.receipt.configuration.webExtensionController,
@@ -311,18 +311,22 @@ extension SafariExtensionWebViewControllerWiringTests {
         let supersededRuntime = ExtensionOptionsWindowCallbackRuntime(
             admission: invocation.runtime.admission,
             installedExtensions: invocation.runtime.installedExtensions,
-            websiteDataMutationAdmissionIsBlocked: { _ in true },
-            waitForWebsiteDataMutationAdmission: { _ in
-                supersededDidSuspend.fulfill()
-                return await withCheckedContinuation { supersededWaiter = $0 }
-            }
+            websiteDataAdmission: ExtensionWebsiteDataMutationAdmission(
+                isBlocked: { _ in true },
+                wait: { _ in
+                    supersededDidSuspend.fulfill()
+                    return await withCheckedContinuation {
+                        supersededWaiter = $0
+                    }
+                }
+            )
         )
         let supersededInvocation = ExtensionOptionsWindowCallbackComposition
             .Invocation(
                 receipt: invocation.receipt,
                 runtime: supersededRuntime
             )
-        manager.optionsWindows.presentOptionsPageWindow(
+        inspection.actionSurfaces.optionsWindows.presentOptionsPageWindow(
             invocation: supersededInvocation
         ) { error in
             supersededCompletionCount += 1
@@ -331,7 +335,7 @@ extension SafariExtensionWebViewControllerWiringTests {
         }
         await fulfillment(of: [supersededDidSuspend], timeout: 2.0)
 
-        manager.optionsWindows.presentOptionsPageWindow(
+        inspection.actionSurfaces.optionsWindows.presentOptionsPageWindow(
             invocation: invocation
         ) { error in
             completionError = error
@@ -340,20 +344,22 @@ extension SafariExtensionWebViewControllerWiringTests {
         await fulfillment(of: [openedOptions], timeout: 2.0)
         XCTAssertNil(completionError)
 
-        let window = try XCTUnwrap(manager.optionsWindows.windows[installed.id])
+        let window = try XCTUnwrap(
+            inspection.actionSurfaces.optionsWindows.windows[installed.id]
+        )
         let currentReceipt = try XCTUnwrap(
-            manager.optionsWindows.receipt(for: installed.id)
+            inspection.actionSurfaces.optionsWindows.receipt(for: installed.id)
         )
         supersededWaiter?.resume(returning: true)
         await fulfillment(of: [supersededCompletion], timeout: 2.0)
         XCTAssertEqual(supersededCompletionCount, 1)
         XCTAssertTrue(supersededCompletionError is CancellationError)
         XCTAssertEqual(
-            manager.optionsWindows.receipt(for: installed.id),
+            inspection.actionSurfaces.optionsWindows.receipt(for: installed.id),
             currentReceipt
         )
         XCTAssertIdentical(
-            manager.optionsWindows.windows[installed.id],
+            inspection.actionSurfaces.optionsWindows.windows[installed.id],
             window
         )
         let contentView = try XCTUnwrap(window.contentView)

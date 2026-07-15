@@ -52,11 +52,6 @@ final class ExtensionRuntimePublicationReconciler {
         _ request: ExtensionRuntimeReloadTransaction.Request,
         auxiliaryControl: (any ExtensionAuxiliaryWindowControl)?
     ) -> ExtensionRuntimeReloadTransaction.Commit? {
-        guard request.extensionsLoaded
-            || request.allowWhenExtensionsNotLoaded
-        else {
-            return nil
-        }
         let work = ReloadWork(
             request: request,
             auxiliaryControl: auxiliaryControl
@@ -131,7 +126,6 @@ final class ExtensionRuntimePublicationReconciler {
         let request = work.request
 
         let suspendedSessions = auxiliaryWindows.suspendForRuntimeReload(
-            runtime: request.runtime,
             control: work.auxiliaryControl
         )
         guard gate.reloadIsCurrent(claim) else { return nil }
@@ -145,14 +139,12 @@ final class ExtensionRuntimePublicationReconciler {
         if normalWindows.acceptsNewPublications {
             auxiliaryWindows.republishAfterRuntimeReload(
                 suspendedSessions,
-                runtime: request.runtime,
                 control: work.auxiliaryControl,
                 continuingWhile: { [weak gate] in
                     gate?.reloadIsCurrent(claim) == true
                 }
             )
         }
-
 
         drainDeferredTabClosures()
         guard gate.reloadIsCurrent(claim) else { return nil }
@@ -176,7 +168,6 @@ final class ExtensionRuntimePublicationReconciler {
 
     @discardableResult
     func retire(
-        runtime: ExtensionManagerRuntime,
         auxiliaryControl: (any ExtensionAuxiliaryWindowControl)?
     ) -> ExtensionRuntimeReloadTransaction.RetirementOutcome {
         replayScheduler.cancel()
@@ -186,10 +177,9 @@ final class ExtensionRuntimePublicationReconciler {
         }
         drainDeferredTabClosures()
         auxiliaryWindows.closeAllForRuntimeTeardown(
-            runtime: runtime,
             control: auxiliaryControl
         )
-        let outcome = reloadTransaction.retireRuntime(runtime)
+        let outcome = reloadTransaction.retireRuntime()
         gate.finishTerminalRetirement()
         return outcome
     }

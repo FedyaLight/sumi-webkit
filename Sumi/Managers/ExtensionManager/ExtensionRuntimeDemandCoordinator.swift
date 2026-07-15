@@ -1,17 +1,16 @@
 import Foundation
 import WebKit
 
-enum ExtensionRuntimeDemandReason: String {
-    case webViewConfiguration
-    case install
-}
-
 /// Admits explicit extension-runtime demand for one resolved profile.
-/// Catalog readiness remains owned by `InstalledExtensionCatalog`; this role
-/// only provisions a controller and advances runtime state.
+/// Catalog readiness remains owned by `InstalledExtensionCatalog`.
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionRuntimeDemandCoordinator {
+    private enum Admission {
+        case existingDemand
+        case explicitRuntime
+    }
+
     private let installedExtensions: InstalledExtensionCollection
     private let profileRuntime: ExtensionProfileRuntime
     private let runtimeLifecycle: ExtensionRuntimeLifecycleAuthority
@@ -39,27 +38,46 @@ final class ExtensionRuntimeDemandCoordinator {
     }
 
     @discardableResult
-    func request(
+    func requestRuntimeIfDemanded(
         reason: ExtensionRuntimeDemandReason,
-        allowWithoutEnabledExtensions: Bool = false,
         profileId explicitProfileID: UUID? = nil
+    ) -> WKWebExtensionController? {
+        request(
+            reason: reason,
+            admission: .existingDemand,
+            profileId: explicitProfileID
+        )
+    }
+
+    @discardableResult
+    func requestRuntimeExplicitly(
+        reason: ExtensionRuntimeDemandReason,
+        profileId explicitProfileID: UUID? = nil
+    ) -> WKWebExtensionController? {
+        request(
+            reason: reason,
+            admission: .explicitRuntime,
+            profileId: explicitProfileID
+        )
+    }
+
+    private func request(
+        reason: ExtensionRuntimeDemandReason,
+        admission: Admission,
+        profileId explicitProfileID: UUID?
     ) -> WKWebExtensionController? {
         PerformanceTrace.emitEvent("ExtensionManager.lazyRuntimeRequested")
 
         guard runtimeLifecycle.state != .unavailable else { return nil }
 
-        // One catalog snapshot governs this entire admission. A concurrent
-        // install/disable cannot change the meaning halfway through it.
         let catalogSnapshot = installedExtensions.records
         let enabledExtensionIDs = Set(
             catalogSnapshot.lazy.filter(\.isEnabled).map(\.id)
         )
-        guard runtimeDemand.admitsRuntime(
-            hasEnabledExtensions: enabledExtensionIDs.isEmpty == false,
-            allowWithoutEnabledExtensions: allowWithoutEnabledExtensions
-        )
-        else {
-            return nil
+        if case .existingDemand = admission {
+            guard runtimeDemand.hasRuntimeDemand(
+                hasEnabledExtensions: enabledExtensionIDs.isEmpty == false
+            ) else { return nil }
         }
 
         let resolvedProfileID = explicitProfileID
@@ -67,7 +85,7 @@ final class ExtensionRuntimeDemandCoordinator {
             ?? runtimeProfileID()
         guard let resolvedProfileID else { return nil }
 
-        if allowWithoutEnabledExtensions {
+        if case .explicitRuntime = admission {
             runtimeDemand.recordRuntimeDemandWithoutEnabledExtensions()
         }
 

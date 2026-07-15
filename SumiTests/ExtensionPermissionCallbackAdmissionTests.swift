@@ -1,3 +1,4 @@
+import Combine
 import SwiftData
 import WebKit
 import XCTest
@@ -51,7 +52,7 @@ final class ExtensionPermissionCallbackAdmissionTests: XCTestCase {
             .grantedExplicitly
         )
         let stored = try XCTUnwrap(
-            harness.manager.storedExtensionPermissionDecision(
+            harness.inspection.actionPolicy.permissionDecisions.storedExtensionPermissionDecision(
                 extensionId: harness.extensionID,
                 profileId: harness.profileID,
                 targetKind: .permission,
@@ -91,7 +92,7 @@ final class ExtensionPermissionCallbackAdmissionTests: XCTestCase {
             .unknown
         )
         XCTAssertNil(
-            harness.manager.storedExtensionPermissionDecision(
+            harness.inspection.actionPolicy.permissionDecisions.storedExtensionPermissionDecision(
                 extensionId: harness.extensionID,
                 profileId: harness.profileID,
                 targetKind: .permission,
@@ -115,7 +116,7 @@ final class ExtensionPermissionCallbackAdmissionTests: XCTestCase {
         }
         defer { harness.manager.testHooks.permissionPromptDecision = nil }
 
-        harness.manager.controllerDelegateBridge.webExtensionController(
+        harness.inspection.controller.delegateBridge.webExtensionController(
             harness.controller,
             promptForPermissions: [permission],
             in: nil,
@@ -128,7 +129,7 @@ final class ExtensionPermissionCallbackAdmissionTests: XCTestCase {
 
         // The bridge has captured evidence, but its Task cannot start until
         // this main-actor turn yields. Rebinding now must prevent presentation.
-        _ = harness.manager.profileRuntime.setContext(
+        _ = harness.inspection.contextState.profiles.setContext(
             harness.context,
             extensionId: harness.extensionID,
             profileId: harness.profileID
@@ -151,8 +152,8 @@ final class ExtensionPermissionCallbackAdmissionTests: XCTestCase {
             for: harness.context.webExtension
         )
         harness.manager.testHooks.permissionPromptDecision = {
-            [manager = harness.manager] _, _, _ in
-            _ = manager.profileRuntime.setContext(
+            [inspection = harness.inspection] _, _, _ in
+            _ = inspection.contextState.profiles.setContext(
                 replacement,
                 extensionId: harness.extensionID,
                 profileId: harness.profileID
@@ -175,7 +176,7 @@ final class ExtensionPermissionCallbackAdmissionTests: XCTestCase {
             .unknown
         )
         XCTAssertNil(
-            harness.manager.storedExtensionPermissionDecision(
+            harness.inspection.actionPolicy.permissionDecisions.storedExtensionPermissionDecision(
                 extensionId: harness.extensionID,
                 profileId: harness.profileID,
                 targetKind: .permission,
@@ -190,8 +191,8 @@ final class ExtensionPermissionCallbackAdmissionTests: XCTestCase {
         let harness = try await makeHarness(name: "SameContextRebind")
         let permission = WKWebExtension.Permission(rawValue: "cookies")
         harness.manager.testHooks.permissionPromptDecision = {
-            [manager = harness.manager] _, _, _ in
-            _ = manager.profileRuntime.setContext(
+            [inspection = harness.inspection] _, _, _ in
+            _ = inspection.contextState.profiles.setContext(
                 harness.context,
                 extensionId: harness.extensionID,
                 profileId: harness.profileID
@@ -209,7 +210,7 @@ final class ExtensionPermissionCallbackAdmissionTests: XCTestCase {
             .unknown
         )
         XCTAssertNil(
-            harness.manager.storedExtensionPermissionDecision(
+            harness.inspection.actionPolicy.permissionDecisions.storedExtensionPermissionDecision(
                 extensionId: harness.extensionID,
                 profileId: harness.profileID,
                 targetKind: .permission,
@@ -228,13 +229,13 @@ final class ExtensionPermissionCallbackAdmissionTests: XCTestCase {
         )
         var staleDrive = true
         harness.manager.testHooks.permissionPromptDecision = {
-            [manager = harness.manager] _, _, _ in
+            [inspection = harness.inspection] _, _, _ in
             if staleDrive {
-                manager.profileRuntime.setController(
+                inspection.contextState.profiles.setController(
                     replacementController,
                     for: harness.profileID
                 )
-                manager.profileRuntime.setController(
+                inspection.contextState.profiles.setController(
                     harness.controller,
                     for: harness.profileID
                 )
@@ -252,7 +253,7 @@ final class ExtensionPermissionCallbackAdmissionTests: XCTestCase {
             .unknown
         )
         XCTAssertNil(
-            harness.manager.storedExtensionPermissionDecision(
+            harness.inspection.actionPolicy.permissionDecisions.storedExtensionPermissionDecision(
                 extensionId: harness.extensionID,
                 profileId: harness.profileID,
                 targetKind: .permission,
@@ -277,8 +278,8 @@ final class ExtensionPermissionCallbackAdmissionTests: XCTestCase {
         let harness = try await makeHarness(name: "LoadGeneration")
         let permission = WKWebExtension.Permission(rawValue: "cookies")
         harness.manager.testHooks.permissionPromptDecision = {
-            [manager = harness.manager] _, _, _ in
-            manager.extensionLoadRevisions.advance()
+            [inspection = harness.inspection] _, _, _ in
+            inspection.runtimeAuthorities.loadRevisions.advance()
             return .allow(expirationDate: nil)
         }
         defer { harness.manager.testHooks.permissionPromptDecision = nil }
@@ -292,7 +293,7 @@ final class ExtensionPermissionCallbackAdmissionTests: XCTestCase {
             .unknown
         )
         XCTAssertNil(
-            harness.manager.storedExtensionPermissionDecision(
+            harness.inspection.actionPolicy.permissionDecisions.storedExtensionPermissionDecision(
                 extensionId: harness.extensionID,
                 profileId: harness.profileID,
                 targetKind: .permission,
@@ -308,8 +309,8 @@ final class ExtensionPermissionCallbackAdmissionTests: XCTestCase {
         let permission = WKWebExtension.Permission(rawValue: "cookies")
         let unrelatedContext = try await makeUnrelatedExtensionContext()
         harness.manager.testHooks.permissionPromptDecision = {
-            [manager = harness.manager] _, _, _ in
-            _ = manager.profileRuntime.setContext(
+            [inspection = harness.inspection] _, _, _ in
+            _ = inspection.contextState.profiles.setContext(
                 unrelatedContext,
                 extensionId: "unrelated-extension",
                 profileId: harness.profileID
@@ -327,7 +328,7 @@ final class ExtensionPermissionCallbackAdmissionTests: XCTestCase {
             .grantedExplicitly
         )
         let stored = try XCTUnwrap(
-            harness.manager.storedExtensionPermissionDecision(
+            harness.inspection.actionPolicy.permissionDecisions.storedExtensionPermissionDecision(
                 extensionId: harness.extensionID,
                 profileId: harness.profileID,
                 targetKind: .permission,
@@ -358,32 +359,28 @@ final class ExtensionPermissionCallbackAdmissionTests: XCTestCase {
         // Fire only once a configured rule for one of the prompt patterns
         // exists, so unrelated policy-store persistence cannot trip it early.
         let rebindTrigger = ReentrantRebindTrigger {
-            [manager = harness.manager] in
+            [inspection = harness.inspection] in
             let ruleWritten = [patternA, patternB].contains { pattern in
-                manager.configuredSiteAccessLevel(
+                inspection.actionPolicy.siteAccess.configuredSiteAccessLevel(
                     for: pattern,
                     extensionId: harness.extensionID,
                     profileId: harness.profileID
                 ) != .ask
             }
             guard ruleWritten else { return false }
-            _ = manager.profileRuntime.setContext(
+            _ = inspection.contextState.profiles.setContext(
                 harness.context,
                 extensionId: harness.extensionID,
                 profileId: harness.profileID
             )
             return true
         }
-        let observer = NotificationCenter.default.addObserver(
-            forName: .sumiExtensionSiteAccessPoliciesDidChange,
-            object: harness.manager,
-            queue: nil
-        ) { _ in
+        let observer = harness.inspection.actionSurfaces.publication.siteAccessPolicyChangePublisher.sink {
             MainActor.assumeIsolated {
                 rebindTrigger.fireIfArmed()
             }
         }
-        defer { NotificationCenter.default.removeObserver(observer) }
+        defer { observer.cancel() }
 
         let result = await driveMatchPatternsPrompt(
             [patternA, patternB],
@@ -396,7 +393,7 @@ final class ExtensionPermissionCallbackAdmissionTests: XCTestCase {
         XCTAssertEqual(result.completionCalls, 1)
 
         let persistedStates = [patternA, patternB].map { pattern in
-            harness.manager.storedExtensionPermissionDecision(
+            harness.inspection.actionPolicy.permissionDecisions.storedExtensionPermissionDecision(
                 extensionId: harness.extensionID,
                 profileId: harness.profileID,
                 targetKind: .matchPattern,
@@ -409,7 +406,7 @@ final class ExtensionPermissionCallbackAdmissionTests: XCTestCase {
             "exactly the first pattern settles; the stale tail must stop"
         )
         let configuredLevels = [patternA, patternB].map { pattern in
-            harness.manager.configuredSiteAccessLevel(
+            harness.inspection.actionPolicy.siteAccess.configuredSiteAccessLevel(
                 for: pattern,
                 extensionId: harness.extensionID,
                 profileId: harness.profileID
@@ -427,8 +424,8 @@ final class ExtensionPermissionCallbackAdmissionTests: XCTestCase {
             WKWebExtension.MatchPattern(string: "https://account.proton.me/*")
         )
         harness.manager.testHooks.permissionPromptDecision = {
-            [manager = harness.manager] _, _, _ in
-            _ = manager.profileRuntime.setContext(
+            [inspection = harness.inspection] _, _, _ in
+            _ = inspection.contextState.profiles.setContext(
                 harness.context,
                 extensionId: harness.extensionID,
                 profileId: harness.profileID
@@ -446,7 +443,7 @@ final class ExtensionPermissionCallbackAdmissionTests: XCTestCase {
             .unknown
         )
         XCTAssertNil(
-            harness.manager.storedExtensionPermissionDecision(
+            harness.inspection.actionPolicy.permissionDecisions.storedExtensionPermissionDecision(
                 extensionId: harness.extensionID,
                 profileId: harness.profileID,
                 targetKind: .matchPattern,
@@ -454,7 +451,7 @@ final class ExtensionPermissionCallbackAdmissionTests: XCTestCase {
             )
         )
         XCTAssertEqual(
-            harness.manager.configuredSiteAccessLevel(
+            harness.inspection.actionPolicy.siteAccess.configuredSiteAccessLevel(
                 for: pattern,
                 extensionId: harness.extensionID,
                 profileId: harness.profileID
@@ -471,8 +468,8 @@ final class ExtensionPermissionCallbackAdmissionTests: XCTestCase {
         let diagnosticsBefore = SafariExtensionAutofillFillDiagnostics
             .snapshot().bucketCounts
         harness.manager.testHooks.permissionPromptDecision = {
-            [manager = harness.manager] _, _, _ in
-            _ = manager.profileRuntime.setContext(
+            [inspection = harness.inspection] _, _, _ in
+            _ = inspection.contextState.profiles.setContext(
                 harness.context,
                 extensionId: harness.extensionID,
                 profileId: harness.profileID
@@ -488,7 +485,7 @@ final class ExtensionPermissionCallbackAdmissionTests: XCTestCase {
         XCTAssertEqual(result.completionCalls, 1)
         XCTAssertFalse(harness.context.hasAccess(to: url))
         XCTAssertEqual(
-            harness.manager.configuredSiteAccessLevel(
+            harness.inspection.actionPolicy.siteAccess.configuredSiteAccessLevel(
                 for: url,
                 extensionId: harness.extensionID,
                 profileId: harness.profileID
@@ -496,7 +493,7 @@ final class ExtensionPermissionCallbackAdmissionTests: XCTestCase {
             .ask
         )
         XCTAssertNil(
-            harness.manager.storedExtensionPermissionDecision(
+            harness.inspection.actionPolicy.permissionDecisions.storedExtensionPermissionDecision(
                 extensionId: harness.extensionID,
                 profileId: harness.profileID,
                 targetKind: .matchPattern,
@@ -525,7 +522,7 @@ final class ExtensionPermissionCallbackAdmissionTests: XCTestCase {
         XCTAssertEqual(result.completionCalls, 1)
         XCTAssertTrue(harness.context.hasAccess(to: url))
         XCTAssertEqual(
-            harness.manager.configuredSiteAccessLevel(
+            harness.inspection.actionPolicy.siteAccess.configuredSiteAccessLevel(
                 for: url,
                 extensionId: harness.extensionID,
                 profileId: harness.profileID
@@ -533,7 +530,7 @@ final class ExtensionPermissionCallbackAdmissionTests: XCTestCase {
             .allow
         )
         let stored = try XCTUnwrap(
-            harness.manager.storedExtensionPermissionDecision(
+            harness.inspection.actionPolicy.permissionDecisions.storedExtensionPermissionDecision(
                 extensionId: harness.extensionID,
                 profileId: harness.profileID,
                 targetKind: .matchPattern,
@@ -548,7 +545,7 @@ final class ExtensionPermissionCallbackAdmissionTests: XCTestCase {
     func testStoredDecisionFastPathRequiresExactCurrentEvidence() async throws {
         let harness = try await makeHarness(name: "StoredFastPath")
         let permission = WKWebExtension.Permission(rawValue: "cookies")
-        harness.manager.persistExtensionPermissionDecision(
+        harness.inspection.actionPolicy.permissionDecisions.persistExtensionPermissionDecision(
             extensionId: harness.extensionID,
             profileId: harness.profileID,
             targetKind: .permission,
@@ -595,6 +592,7 @@ final class ExtensionPermissionCallbackAdmissionTests: XCTestCase {
 
     private struct Harness {
         let manager: ExtensionManager
+        let inspection: ExtensionManagerTestInspection
         let profileID: UUID
         let extensionID: String
         let context: WKWebExtensionContext
@@ -604,18 +602,29 @@ final class ExtensionPermissionCallbackAdmissionTests: XCTestCase {
     private func makeHarness(name: String) async throws -> Harness {
         let container = try makeTestContainer()
         let profile = Profile(name: name)
+        let inspection = ExtensionManagerInspectionCapture()
         let manager = ExtensionManager(
             context: container.mainContext,
-            initialProfile: profile
+            initialProfile: profile,
+            testInspectionDidAssemble: inspection.install
         )
-        let installed = try await installExtension(manager: manager, name: name)
-        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
+        let installed = try await installExtension(
+            inspection: inspection.inspection,
+            name: name
+        )
+        _ = try await inspection.inspection.installation.lifecycle.enable(
+            installed.id
+        )
         let context = try XCTUnwrap(
-            manager.getExtensionContext(for: installed.id, profileId: profile.id)
+            inspection.inspection.contextState.profileState.context(
+                for: installed.id,
+                profileId: profile.id
+            )
         )
-        let controller = manager.ensureExtensionController(for: profile.id)
+        let controller = inspection.inspection.controller.provisioning
+            .ensureExtensionController(for: profile.id)
         XCTAssertNotNil(
-            manager.controllerCallbackAdmission.capture(
+            inspection.inspection.controller.callbackAdmission.capture(
                 context: context,
                 controller: controller
             ),
@@ -623,6 +632,7 @@ final class ExtensionPermissionCallbackAdmissionTests: XCTestCase {
         )
         return Harness(
             manager: manager,
+            inspection: inspection.inspection,
             profileID: profile.id,
             extensionID: installed.id,
             context: context,
@@ -642,7 +652,7 @@ final class ExtensionPermissionCallbackAdmissionTests: XCTestCase {
         var completionCalls = 0
         let settled: (Set<WKWebExtension.Permission>, Date?) =
             await withCheckedContinuation { continuation in
-                harness.manager.controllerDelegateBridge.webExtensionController(
+                harness.inspection.controller.delegateBridge.webExtensionController(
                     controller ?? harness.controller,
                     promptForPermissions: permissions,
                     in: nil,
@@ -670,7 +680,7 @@ final class ExtensionPermissionCallbackAdmissionTests: XCTestCase {
         var completionCalls = 0
         let settled: (Set<WKWebExtension.MatchPattern>, Date?) =
             await withCheckedContinuation { continuation in
-                harness.manager.controllerDelegateBridge.webExtensionController(
+                harness.inspection.controller.delegateBridge.webExtensionController(
                     controller ?? harness.controller,
                     promptForPermissionMatchPatterns: matchPatterns,
                     in: nil,
@@ -698,7 +708,7 @@ final class ExtensionPermissionCallbackAdmissionTests: XCTestCase {
         var completionCalls = 0
         let settled: (Set<URL>, Date?) =
             await withCheckedContinuation { continuation in
-                harness.manager.controllerDelegateBridge.webExtensionController(
+                harness.inspection.controller.delegateBridge.webExtensionController(
                     controller ?? harness.controller,
                     promptForPermissionToAccess: urls,
                     in: nil,
@@ -730,7 +740,7 @@ final class ExtensionPermissionCallbackAdmissionTests: XCTestCase {
     }
 
     private func installExtension(
-        manager: ExtensionManager,
+        inspection: ExtensionManagerTestInspection,
         name: String
     ) async throws -> InstalledExtension {
         let directory = FileManager.default.temporaryDirectory
@@ -770,7 +780,7 @@ final class ExtensionPermissionCallbackAdmissionTests: XCTestCase {
                 options: [.atomic]
             )
 
-        return try await manager.extensionInstaller.install(
+        return try await inspection.installation.installer.install(
             from: directory,
             enableOnInstall: false
         )

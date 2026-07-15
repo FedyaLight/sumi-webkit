@@ -19,9 +19,10 @@ final class ExtensionBackgroundWakeCoordinator {
         ExtensionManager.ExtensionBackgroundWakeReason,
         String
     ) -> Void
-    /// Debug-only wake override; returns nil in release builds.
-    private let debugBackgroundContentWake: @MainActor ()
-        -> (@MainActor (String, WKWebExtensionContext) async throws -> Void)?
+    #if DEBUG
+        private var debugBackgroundContentWake: (@MainActor ()
+            -> (@MainActor (String, WKWebExtensionContext) async throws -> Void)?)?
+    #endif
 
     init(
         backgroundRuntimeStateOwner: ExtensionBackgroundRuntimeStateOwner,
@@ -35,9 +36,7 @@ final class ExtensionBackgroundWakeCoordinator {
             WKWebExtensionContext,
             ExtensionManager.ExtensionBackgroundWakeReason,
             String
-        ) -> Void,
-        debugBackgroundContentWake: @escaping @MainActor ()
-            -> (@MainActor (String, WKWebExtensionContext) async throws -> Void)?
+        ) -> Void
     ) {
         self.backgroundRuntimeStateOwner = backgroundRuntimeStateOwner
         self.nativeMessagingBackgroundWakeOwner = nativeMessagingBackgroundWakeOwner
@@ -46,8 +45,16 @@ final class ExtensionBackgroundWakeCoordinator {
         self.runtimeMetrics = runtimeMetrics
         self.trace = trace
         self.logBackgroundWakeFailure = logBackgroundWakeFailure
-        self.debugBackgroundContentWake = debugBackgroundContentWake
     }
+
+    #if DEBUG
+        func installDebugBackgroundContentWake(
+            _ provider: @escaping @MainActor ()
+                -> (@MainActor (String, WKWebExtensionContext) async throws -> Void)?
+        ) {
+            debugBackgroundContentWake = provider
+        }
+    #endif
 
     @discardableResult
     func ensureBackgroundAvailableIfRequired(
@@ -63,12 +70,20 @@ final class ExtensionBackgroundWakeCoordinator {
             reason: reason,
             trace: { [trace] in trace($0) },
             isCurrent: isCurrent,
-            loadBackgroundContent: { [debugBackgroundContentWake] in
-                if let backgroundContentWake = debugBackgroundContentWake() {
-                    try await backgroundContentWake(wakeKey, extensionContext)
-                } else {
+            loadBackgroundContent: {
+                #if DEBUG
+                    if let backgroundContentWake =
+                        self.debugBackgroundContentWake?() {
+                        try await backgroundContentWake(
+                            wakeKey,
+                            extensionContext
+                        )
+                    } else {
+                        try await extensionContext.loadBackgroundContent()
+                    }
+                #else
                     try await extensionContext.loadBackgroundContent()
-                }
+                #endif
             },
             recordWakeMetric: { [runtimeMetrics] duration, reason, didFail in
                 runtimeMetrics.recordBackgroundWake(
@@ -134,15 +149,23 @@ final class ExtensionBackgroundWakeCoordinator {
             reason: .nativeMessaging,
             trace: { [trace] in trace($0) },
             isCurrent: { admission.isCurrent(evidence) },
-            loadBackgroundContent: { [debugBackgroundContentWake] in
+            loadBackgroundContent: {
                 guard admission.isCurrent(evidence) else {
                     throw CancellationError()
                 }
-                if let backgroundContentWake = debugBackgroundContentWake() {
-                    try await backgroundContentWake(wakeKey, evidence.context)
-                } else {
+                #if DEBUG
+                    if let backgroundContentWake =
+                        self.debugBackgroundContentWake?() {
+                        try await backgroundContentWake(
+                            wakeKey,
+                            evidence.context
+                        )
+                    } else {
+                        try await evidence.context.loadBackgroundContent()
+                    }
+                #else
                     try await evidence.context.loadBackgroundContent()
-                }
+                #endif
             },
             recordWakeMetric: { [runtimeMetrics] duration, reason, didFail in
                 guard admission.isCurrent(evidence) else { return }
@@ -180,87 +203,5 @@ final class ExtensionBackgroundWakeCoordinator {
             profileId: resolvedProfileId
         )
         return backgroundRuntimeStateOwner.state(for: wakeKey)
-    }
-}
-
-@available(macOS 15.5, *)
-extension ExtensionBackgroundWakeCoordinator {
-    convenience init(manager: ExtensionManager) {
-        self.init(
-            backgroundRuntimeStateOwner: manager.backgroundRuntimeStateOwner,
-            nativeMessagingBackgroundWakeOwner: { [weak manager] in
-                manager?.nativeMessagingBackgroundWakeOwner
-            },
-            contextIdentity: { [weak manager] context in
-                manager?.contextIdentity(for: context)
-            },
-            resolvedProfileId: { [weak manager] profileID in
-                manager?.resolvedProfileId(explicitProfileId: profileID)
-            },
-            runtimeMetrics: manager.runtimeMetrics,
-            trace: { [weak manager] message in
-                manager?.runtimeDiagnostics.trace(message)
-            },
-            logBackgroundWakeFailure: {
-                [weak manager] error, context, reason, operation in
-                manager?.logBackgroundWakeFailure(
-                    error,
-                    extensionContext: context,
-                    reason: reason,
-                    operation: operation
-                )
-            },
-            debugBackgroundContentWake: { [weak manager] in
-                #if DEBUG
-                    manager?.testHooks.backgroundContentWake
-                #else
-                    nil
-                #endif
-            }
-        )
-    }
-}
-
-// MARK: - ExtensionManager facade
-
-@available(macOS 15.5, *)
-@MainActor
-extension ExtensionManager {
-    @discardableResult
-    func ensureBackgroundAvailableIfRequired(
-        for webExtension: WKWebExtension,
-        context extensionContext: WKWebExtensionContext,
-        reason: ExtensionBackgroundWakeReason,
-        isCurrent: @escaping @MainActor () -> Bool = { true }
-    ) async throws -> Bool {
-        try await backgroundWakeCoordinator.ensureBackgroundAvailableIfRequired(
-            for: webExtension,
-            context: extensionContext,
-            reason: reason,
-            isCurrent: isCurrent
-        )
-    }
-
-    func cancelNativeMessagingBackgroundWakeTasks(forExtensionId extensionId: String) {
-        loadedNativeMessagingBackgroundWakeOwner?.cancelWakeTasks(
-            forExtensionId: extensionId
-        )
-    }
-
-    /// Operates on the loaded wake owner directly: this runs during manager
-    /// deinit, where instantiating the lazy coordinator would form a weak
-    /// reference to a deallocating object.
-    func cancelNativeMessagingBackgroundWakeTasks() {
-        loadedNativeMessagingBackgroundWakeOwner?.cancelAllWakeTasks()
-    }
-
-    func backgroundRuntimeState(
-        for extensionId: String,
-        profileId: UUID? = nil
-    ) -> BackgroundRuntimeState {
-        backgroundWakeCoordinator.backgroundRuntimeState(
-            for: extensionId,
-            profileId: profileId
-        )
     }
 }

@@ -9,6 +9,8 @@ final class ExtensionCreatedTabPublicationValidator {
     private let runtimePublicationEvidence:
         ExtensionRuntimePublicationEvidenceIssuer
     private let profileRuntime: ExtensionProfileRuntime
+    private let tabProfiles: any ExtensionTabProfileResolving
+    private let browserProfiles: ExtensionBrowserProfileQuery
     private let controllers: any ExtensionTabControllerQuery
     private let webViews: ExtensionExactTabWebViewQuery
     private let controllerAdmission: any ExtensionWebViewControllerAdmitting
@@ -21,6 +23,8 @@ final class ExtensionCreatedTabPublicationValidator {
         runtimePublicationEvidence:
             ExtensionRuntimePublicationEvidenceIssuer,
         profileRuntime: ExtensionProfileRuntime,
+        tabProfiles: any ExtensionTabProfileResolving,
+        browserProfiles: ExtensionBrowserProfileQuery,
         controllers: any ExtensionTabControllerQuery,
         webViews: ExtensionExactTabWebViewQuery,
         controllerAdmission: any ExtensionWebViewControllerAdmitting,
@@ -31,6 +35,8 @@ final class ExtensionCreatedTabPublicationValidator {
     ) {
         self.runtimePublicationEvidence = runtimePublicationEvidence
         self.profileRuntime = profileRuntime
+        self.tabProfiles = tabProfiles
+        self.browserProfiles = browserProfiles
         self.controllers = controllers
         self.webViews = webViews
         self.controllerAdmission = controllerAdmission
@@ -41,17 +47,14 @@ final class ExtensionCreatedTabPublicationValidator {
     }
 
     func prepareBase(
-        for tab: Tab,
-        runtime: ExtensionManagerRuntime
+        for tab: Tab
     ) -> ExtensionCreatedTabPublicationBaseEvidence? {
         guard extensionsLoaded(),
               tab.isEphemeral == false,
-              let profileID = profileRuntime.resolvedProfileId(
-                  for: tab,
-                  runtime: runtime
-              ), contextLoading.profileHasLoadedContentScriptContexts(
+              let profileID = tabProfiles.profileID(for: tab),
+              contextLoading.profileHasLoadedContentScriptContexts(
                   profileId: profileID
-              ), let dataStore = runtime.profile(profileID)?.dataStore,
+              ), let dataStore = browserProfiles.anyProfile(profileID)?.dataStore,
               let webView = webViews.liveWebView(for: tab),
               webView.configuration.websiteDataStore === dataStore,
               let controller = controllers.existingController(for: tab),
@@ -80,10 +83,9 @@ final class ExtensionCreatedTabPublicationValidator {
     }
 
     func preparedEvidenceIsCurrent(
-        _ evidence: ExtensionCreatedTabPublicationEvidence,
-        runtime: ExtensionManagerRuntime
+        _ evidence: ExtensionCreatedTabPublicationEvidence
     ) -> Bool {
-        capturedRuntimeStateIsCurrent(evidence, runtime: runtime)
+        capturedRuntimeStateIsCurrent(evidence)
             && evidence.tab.extensionPageRuntimeOwner
                 .canCommitWindowPrepublication(evidence.stateToken)
             && evidence.tab.extensionPageRuntimeOwner
@@ -91,10 +93,9 @@ final class ExtensionCreatedTabPublicationValidator {
     }
 
     func capturedOpenIsCurrent(
-        _ evidence: ExtensionCreatedTabPublicationEvidence,
-        runtime: ExtensionManagerRuntime
+        _ evidence: ExtensionCreatedTabPublicationEvidence
     ) -> Bool {
-        capturedRuntimeStateIsCurrent(evidence, runtime: runtime)
+        capturedRuntimeStateIsCurrent(evidence)
             && evidence.tab.extensionPageRuntimeOwner
                 .isCommittedWindowPrepublicationCurrent(
                     evidence.stateToken,
@@ -104,8 +105,7 @@ final class ExtensionCreatedTabPublicationValidator {
     }
 
     func currentGenerationOpenIsExact(
-        _ evidence: ExtensionCreatedTabPublicationEvidence,
-        runtime: ExtensionManagerRuntime
+        _ evidence: ExtensionCreatedTabPublicationEvidence
     ) -> Bool {
         let base = evidence.base
         let currentRuntimePublication = runtimePublicationEvidence.issue()
@@ -113,11 +113,9 @@ final class ExtensionCreatedTabPublicationValidator {
         let binding = base.tab.extensionPageRuntimeOwner
             .documentBindingSnapshot()
         guard extensionsLoaded(),
-              profileRuntime.resolvedProfileId(
-                  for: base.tab,
-                  runtime: runtime
-              ) == base.profileID,
-              runtime.profile(base.profileID)?.dataStore === base.dataStore,
+              tabProfiles.profileID(for: base.tab) == base.profileID,
+              browserProfiles.anyProfile(base.profileID)?.dataStore
+                === base.dataStore,
               base.webView.configuration.websiteDataStore === base.dataStore,
               contextLoading.profileHasLoadedContentScriptContexts(
                   profileId: base.profileID
@@ -162,19 +160,16 @@ final class ExtensionCreatedTabPublicationValidator {
     }
 
     private func capturedRuntimeStateIsCurrent(
-        _ evidence: ExtensionCreatedTabPublicationEvidence,
-        runtime: ExtensionManagerRuntime
+        _ evidence: ExtensionCreatedTabPublicationEvidence
     ) -> Bool {
         let base = evidence.base
         return extensionsLoaded()
             && runtimePublicationEvidence.isCurrent(
                 base.runtimePublication
             )
-            && profileRuntime.resolvedProfileId(
-                for: base.tab,
-                runtime: runtime
-            ) == base.profileID
-            && runtime.profile(base.profileID)?.dataStore === base.dataStore
+            && tabProfiles.profileID(for: base.tab) == base.profileID
+            && browserProfiles.anyProfile(base.profileID)?.dataStore
+                === base.dataStore
             && base.webView.configuration.websiteDataStore === base.dataStore
             && profileRuntime.controller(for: base.profileID)
                 === base.controller

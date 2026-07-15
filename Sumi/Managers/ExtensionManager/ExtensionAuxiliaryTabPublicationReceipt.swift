@@ -16,6 +16,8 @@ final class ExtensionAuxiliaryTabPublicationReceipt {
     private let runtimePublicationEvidence:
         ExtensionRuntimePublicationEvidenceIssuer
     private let profileRuntime: ExtensionProfileRuntime
+    private let browserProfiles: ExtensionBrowserProfileQuery
+    private let tabProfiles: any ExtensionTabProfileResolving
     private let adapterStore: ExtensionBrowserAdapterStore
     private let controllers: any ExtensionTabControllerQuery
     private let webViews: ExtensionExactTabWebViewQuery
@@ -38,6 +40,8 @@ final class ExtensionAuxiliaryTabPublicationReceipt {
         runtimePublicationEvidence:
             ExtensionRuntimePublicationEvidenceIssuer,
         profileRuntime: ExtensionProfileRuntime,
+        browserProfiles: ExtensionBrowserProfileQuery,
+        tabProfiles: any ExtensionTabProfileResolving,
         adapterStore: ExtensionBrowserAdapterStore,
         controllers: any ExtensionTabControllerQuery,
         webViews: ExtensionExactTabWebViewQuery,
@@ -57,6 +61,8 @@ final class ExtensionAuxiliaryTabPublicationReceipt {
     ) {
         self.runtimePublicationEvidence = runtimePublicationEvidence
         self.profileRuntime = profileRuntime
+        self.browserProfiles = browserProfiles
+        self.tabProfiles = tabProfiles
         self.adapterStore = adapterStore
         self.controllers = controllers
         self.webViews = webViews
@@ -85,16 +91,16 @@ final class ExtensionAuxiliaryTabPublicationReceipt {
         self.tab === tab && self.webView === webView
     }
 
-    func isCurrent(runtime: ExtensionManagerRuntime) -> Bool {
+    func isCurrent() -> Bool {
         switch phase {
         case .prepared:
-            isExactRuntimeStateCurrent(runtime: runtime)
+            isExactRuntimeStateCurrent()
                 && tab.extensionPageRuntimeOwner
                     .canCommitWindowPrepublication(stateToken)
                 && tab.extensionPageRuntimeOwner
                     .hasDidOpenTabNotification(for: generation) == false
         case .committed:
-            isExactRuntimeStateCurrent(runtime: runtime)
+            isExactRuntimeStateCurrent()
                 && tab.extensionPageRuntimeOwner
                     .isCommittedWindowPrepublicationCurrent(
                         stateToken,
@@ -109,9 +115,9 @@ final class ExtensionAuxiliaryTabPublicationReceipt {
     }
 
     @discardableResult
-    func commitOpen(runtime: ExtensionManagerRuntime) -> Bool {
+    func commitOpen() -> Bool {
         guard phase == .prepared,
-              isCurrent(runtime: runtime),
+              isCurrent(),
               tab.extensionPageRuntimeOwner.commitWindowPrepublication(
                   stateToken,
                   willEmitOpen: true
@@ -141,7 +147,7 @@ final class ExtensionAuxiliaryTabPublicationReceipt {
         // close and cannot observe this receipt as merely prepared.
         phase = .committed
         ownerContext.didOpenTab(adapter)
-        return isCurrent(runtime: runtime)
+        return isCurrent()
             && tab.extensionPageRuntimeOwner.settleDidOpenTabNotification(
                 openClaim,
                 generation: generation
@@ -201,14 +207,11 @@ final class ExtensionAuxiliaryTabPublicationReceipt {
         return true
     }
 
-    private func isExactRuntimeStateCurrent(
-        runtime: ExtensionManagerRuntime
-    ) -> Bool {
+    private func isExactRuntimeStateCurrent() -> Bool {
         extensionsLoaded()
             && runtimePublicationEvidence.isCurrent(runtimePublication)
-            && profileRuntime.resolvedProfileId(for: tab, runtime: runtime)
-                == profileID
-            && runtime.profile(profileID)?.dataStore === dataStore
+            && tabProfiles.profileID(for: tab) == profileID
+            && browserProfiles.anyProfile(profileID)?.dataStore === dataStore
             && webView.configuration.websiteDataStore === dataStore
             && profileRuntime.controller(for: profileID) === controller
             && profileRuntime.profileId(for: ownerContext) == profileID

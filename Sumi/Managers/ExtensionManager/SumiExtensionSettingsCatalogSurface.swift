@@ -18,36 +18,38 @@ final class SumiExtensionSettingsCatalogSurface {
         self.lifetime = lifetime
         safariImport = SumiSafariWebExtensionImportOwner(
             importStore: importStore,
-            managerIfEnabled: { [weak lifetime] in lifetime?.managerIfEnabled() }
+            runtimeIfEnabled: { [weak lifetime] in
+                lifetime?.settingsCatalogIfEnabled()
+            }
         )
     }
 
     var surfaceStore: BrowserExtensionSurfaceStore { lifetime.surfaceStore }
 
     func runtimeIsAvailable() -> Bool {
-        lifetime.managerIfEnabled() != nil
+        lifetime.settingsCatalogIfEnabled() != nil
     }
 
     func installedExtensionsIfLoaded() -> [InstalledExtension] {
-        lifetime.loadedManagerIfEnabled()?.installedExtensionCollection.records ?? []
+        lifetime.loadedSettingsCatalogIfEnabled()?.installedExtensions ?? []
     }
 
     func enableExtension(_ extensionID: String) async throws -> InstalledExtension {
-        guard let manager = lifetime.managerIfEnabled() else {
+        guard let runtime = lifetime.settingsCatalogIfEnabled() else {
             throw ExtensionError.unsupportedOS
         }
-        return try await manager.installedExtensionLifecycle.enable(extensionID)
+        return try await runtime.enable(extensionID)
     }
 
     func disableExtension(_ extensionID: String) async throws {
-        guard let manager = lifetime.managerIfEnabled() else { return }
-        try await manager.installedExtensionLifecycle.disable(extensionID)
+        guard let runtime = lifetime.settingsCatalogIfEnabled() else { return }
+        try await runtime.disable(extensionID)
     }
 
     func uninstallExtension(_ extensionID: String) async throws {
-        guard let manager = lifetime.managerIfEnabled() else { return }
+        guard let runtime = lifetime.settingsCatalogIfEnabled() else { return }
         safariImport.removeImportedRecord(forInstalledExtensionId: extensionID)
-        try await manager.installedExtensionLifecycle.uninstall(extensionID)
+        try await runtime.uninstall(extensionID)
     }
 
     func enableSafariAppExtension(from candidate: DiscoveredSafariExtensionCandidate) async throws -> InstalledExtension {

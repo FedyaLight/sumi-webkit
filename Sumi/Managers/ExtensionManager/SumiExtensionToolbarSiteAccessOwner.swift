@@ -3,20 +3,21 @@ import Foundation
 /// Toolbar pinning + site-access policy surface for `SumiExtensionsModule`.
 @MainActor
 final class SumiExtensionToolbarSiteAccessOwner {
-    typealias LoadedManagerProvider = @MainActor () -> ExtensionManager?
-    typealias EnabledManagerProvider = @MainActor () -> ExtensionManager?
+    typealias LoadedRuntimeProvider = @MainActor () -> ExtensionToolbarRuntime?
+    typealias EnabledRuntimeProvider = @MainActor () -> ExtensionToolbarRuntime?
     typealias CurrentProfileIDProvider = @MainActor () -> UUID?
-    private let managerIfLoadedAndEnabled: LoadedManagerProvider
-    private let managerIfEnabled: EnabledManagerProvider
+
+    private let runtimeIfLoadedAndEnabled: LoadedRuntimeProvider
+    private let runtimeIfEnabled: EnabledRuntimeProvider
     private let fallbackProfileId: CurrentProfileIDProvider
 
     init(
-        managerIfLoadedAndEnabled: @escaping LoadedManagerProvider,
-        managerIfEnabled: @escaping EnabledManagerProvider,
+        runtimeIfLoadedAndEnabled: @escaping LoadedRuntimeProvider,
+        runtimeIfEnabled: @escaping EnabledRuntimeProvider,
         fallbackProfileId: @escaping CurrentProfileIDProvider
     ) {
-        self.managerIfLoadedAndEnabled = managerIfLoadedAndEnabled
-        self.managerIfEnabled = managerIfEnabled
+        self.runtimeIfLoadedAndEnabled = runtimeIfLoadedAndEnabled
+        self.runtimeIfEnabled = runtimeIfEnabled
         self.fallbackProfileId = fallbackProfileId
     }
 
@@ -24,32 +25,32 @@ final class SumiExtensionToolbarSiteAccessOwner {
         enabledExtensions: [BrowserExtensionToolbarDisplayRecord],
         profileId: UUID?
     ) -> [PinnedToolbarSlot] {
-        guard let manager = managerIfLoadedAndEnabled() else { return [] }
-        return manager.orderedPinnedToolbarSlots(
+        guard let runtime = runtimeIfLoadedAndEnabled() else { return [] }
+        return runtime.ordering.orderedPinnedSlots(
             enabledExtensions: enabledExtensions,
-            profileId: profileId
+            profileID: profileId
         )
     }
 
     func pinnedToolbarExtensionIDs(profileId: UUID?) -> [String] {
-        managerIfLoadedAndEnabled()?.pinnedToolbarExtensionIDs(
-            profileId: profileId
+        runtimeIfLoadedAndEnabled()?.ordering.pinnedExtensionIDs(
+            profileID: profileId
         ) ?? []
     }
 
     @discardableResult
     func pinToToolbar(_ extensionId: String, profileId: UUID?) -> Bool {
-        managerIfEnabled()?.pinToToolbar(
+        runtimeIfEnabled()?.ordering.pin(
             extensionId,
-            profileId: profileId
+            profileID: profileId
         ) ?? false
     }
 
     @discardableResult
     func unpinFromToolbar(_ extensionId: String, profileId: UUID?) -> Bool {
-        managerIfEnabled()?.unpinFromToolbar(
+        runtimeIfEnabled()?.ordering.unpin(
             extensionId,
-            profileId: profileId
+            profileID: profileId
         ) ?? false
     }
 
@@ -59,10 +60,10 @@ final class SumiExtensionToolbarSiteAccessOwner {
         to targetIndex: Int,
         profileId: UUID?
     ) -> Bool {
-        managerIfEnabled()?.movePinnedToolbarSlot(
+        runtimeIfEnabled()?.ordering.movePinned(
             id: id,
             to: targetIndex,
-            profileId: profileId
+            profileID: profileId
         ) ?? false
     }
 
@@ -70,10 +71,10 @@ final class SumiExtensionToolbarSiteAccessOwner {
         candidateIDs: [String],
         profileId: UUID?
     ) -> [String] {
-        guard let manager = managerIfLoadedAndEnabled() else { return candidateIDs }
-        return manager.orderedUnpinnedExtensionIDs(
+        guard let runtime = runtimeIfLoadedAndEnabled() else { return candidateIDs }
+        return runtime.ordering.orderedUnpinned(
             candidateIDs: candidateIDs,
-            profileId: profileId
+            profileID: profileId
         )
     }
 
@@ -84,11 +85,11 @@ final class SumiExtensionToolbarSiteAccessOwner {
         within currentOrder: [String],
         profileId: UUID?
     ) -> Bool {
-        managerIfEnabled()?.moveUnpinnedExtension(
+        runtimeIfEnabled()?.ordering.moveUnpinned(
             id: id,
             to: targetIndex,
             within: currentOrder,
-            profileId: profileId
+            profileID: profileId
         ) ?? false
     }
 
@@ -96,14 +97,14 @@ final class SumiExtensionToolbarSiteAccessOwner {
         extensionId: String,
         profileId: UUID?
     ) -> SafariExtensionSiteAccessPolicy? {
-        guard let manager = managerIfEnabled() else { return nil }
+        guard let runtime = runtimeIfEnabled() else { return nil }
         guard let resolvedProfileId = resolvedProfileId(
             profileId,
-            manager: manager
+            runtime: runtime.siteAccess
         ) else { return nil }
-        return manager.siteAccessPolicy(
-            extensionId: extensionId,
-            profileId: resolvedProfileId
+        return runtime.siteAccess.policy(
+            extensionID: extensionId,
+            profileID: resolvedProfileId
         )
     }
 
@@ -112,15 +113,15 @@ final class SumiExtensionToolbarSiteAccessOwner {
         extensionId: String,
         profileId: UUID?
     ) {
-        guard let manager = managerIfEnabled() else { return }
+        guard let runtime = runtimeIfEnabled() else { return }
         guard let resolvedProfileId = resolvedProfileId(
             profileId,
-            manager: manager
+            runtime: runtime.siteAccess
         ) else { return }
-        manager.setDefaultSiteAccess(
+        runtime.siteAccess.setDefault(
             access,
-            extensionId: extensionId,
-            profileId: resolvedProfileId
+            extensionID: extensionId,
+            profileID: resolvedProfileId
         )
     }
 
@@ -129,15 +130,15 @@ final class SumiExtensionToolbarSiteAccessOwner {
         extensionId: String,
         profileId: UUID?
     ) {
-        guard let manager = managerIfEnabled() else { return }
+        guard let runtime = runtimeIfEnabled() else { return }
         guard let resolvedProfileId = resolvedProfileId(
             profileId,
-            manager: manager
+            runtime: runtime.siteAccess
         ) else { return }
-        manager.setPrivateBrowsingAccess(
+        runtime.siteAccess.setPrivateBrowsing(
             isAllowed,
-            extensionId: extensionId,
-            profileId: resolvedProfileId
+            extensionID: extensionId,
+            profileID: resolvedProfileId
         )
     }
 
@@ -147,25 +148,23 @@ final class SumiExtensionToolbarSiteAccessOwner {
         profileId: UUID?,
         matchPatternString: String
     ) {
-        guard let manager = managerIfEnabled() else { return }
+        guard let runtime = runtimeIfEnabled() else { return }
         guard let resolvedProfileId = resolvedProfileId(
             profileId,
-            manager: manager
+            runtime: runtime.siteAccess
         ) else { return }
-        manager.setConfiguredSiteAccess(
+        runtime.siteAccess.setConfigured(
             access,
-            extensionId: extensionId,
-            profileId: resolvedProfileId,
+            extensionID: extensionId,
+            profileID: resolvedProfileId,
             matchPatternString: matchPatternString
         )
     }
 
     private func resolvedProfileId(
         _ profileId: UUID?,
-        manager: ExtensionManager
+        runtime: ExtensionToolbarSiteAccessRuntime
     ) -> UUID? {
-        profileId
-            ?? manager.profileRuntime.currentProfileId
-            ?? fallbackProfileId()
+        runtime.resolvedProfileID(profileId) ?? fallbackProfileId()
     }
 }

@@ -58,23 +58,95 @@ enum SafariExtensionLiveWebKitTestLease {
     }
 }
 
+@available(macOS 15.5, *)
+@MainActor
+struct SafariExtensionManagerTestFixture {
+    let manager: ExtensionManager
+    let inspection: ExtensionManagerTestInspection
+    let attachedRuntime: ExtensionAttachedRuntimeCapture
+}
+
 @MainActor
 extension XCTestCase {
+    func makeSafariExtensionManagerTestFixture(
+        context: ModelContext,
+        initialProfile: Profile?,
+        browserConfiguration: BrowserConfiguration? = nil,
+        moduleRegistry: SumiModuleRegistry = .unavailable(),
+        extensionPreferences: UserDefaults? = nil,
+        assemblyOverrides: ExtensionManagerTestAssemblyOverrides? = nil
+    ) -> SafariExtensionManagerTestFixture {
+        let attachedRuntime = ExtensionAttachedRuntimeCapture()
+        let inspection = ExtensionManagerInspectionCapture()
+        let manager = makeSafariExtensionTestExtensionManager(
+            context: context,
+            initialProfile: initialProfile,
+            browserConfiguration: browserConfiguration,
+            moduleRegistry: moduleRegistry,
+            extensionPreferences: extensionPreferences,
+            attachedRuntimeCapture: attachedRuntime,
+            inspectionCapture: inspection,
+            assemblyOverrides: assemblyOverrides
+        )
+        return SafariExtensionManagerTestFixture(
+            manager: manager,
+            inspection: inspection.inspection,
+            attachedRuntime: attachedRuntime
+        )
+    }
+
     func makeSafariExtensionTestExtensionManager(
         context: ModelContext,
         initialProfile: Profile?,
         browserConfiguration: BrowserConfiguration? = nil,
         moduleRegistry: SumiModuleRegistry = .unavailable(),
-        extensionPreferences: UserDefaults? = nil
+        extensionPreferences: UserDefaults? = nil,
+        attachedRuntimeCapture: ExtensionAttachedRuntimeCapture? = nil,
+        inspectionCapture: ExtensionManagerInspectionCapture? = nil,
+        assemblyOverrides: ExtensionManagerTestAssemblyOverrides? = nil
     ) -> ExtensionManager {
-        let manager = ExtensionManager(
-            context: context,
-            initialProfile: initialProfile,
-            browserConfiguration: browserConfiguration,
-            moduleRegistry: moduleRegistry,
-            extensionPreferences: extensionPreferences
-                ?? UserDefaults(suiteName: UUID().uuidString)!
-        )
+        let preferences = extensionPreferences
+            ?? UserDefaults(suiteName: UUID().uuidString)!
+        let manager: ExtensionManager
+        if let attachedRuntimeCapture {
+            manager = ExtensionManager(
+                context: context,
+                initialProfile: initialProfile,
+                browserConfiguration: browserConfiguration,
+                moduleRegistry: moduleRegistry,
+                extensionPreferences: preferences,
+                attachedRuntimeDidInstall: attachedRuntimeCapture.install,
+                testInspectionDidAssemble: inspectionCapture?.install,
+                testAssemblyOverrides: assemblyOverrides
+            )
+        } else if let inspectionCapture {
+            manager = ExtensionManager(
+                context: context,
+                initialProfile: initialProfile,
+                browserConfiguration: browserConfiguration,
+                moduleRegistry: moduleRegistry,
+                extensionPreferences: preferences,
+                testInspectionDidAssemble: inspectionCapture.install,
+                testAssemblyOverrides: assemblyOverrides
+            )
+        } else if let assemblyOverrides {
+            manager = ExtensionManager(
+                context: context,
+                initialProfile: initialProfile,
+                browserConfiguration: browserConfiguration,
+                moduleRegistry: moduleRegistry,
+                extensionPreferences: preferences,
+                testAssemblyOverrides: assemblyOverrides
+            )
+        } else {
+            manager = ExtensionManager(
+                context: context,
+                initialProfile: initialProfile,
+                browserConfiguration: browserConfiguration,
+                moduleRegistry: moduleRegistry,
+                extensionPreferences: preferences
+            )
+        }
         let teardownBox = SafariExtensionManagerTeardownBox(manager: manager)
         addTeardownBlock { @MainActor in
             guard let manager = teardownBox.manager else { return }

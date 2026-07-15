@@ -276,7 +276,7 @@ if [[ -z "${dispatch_line:-}" || -z "${dispatch_probe_line:-}" \
   status=1
 fi
 recovery_retry_count="$(
-  guard_count_matches 'allowsBindingRecovery: false' "$service"
+  guard_count_matches 'bindingRecovery: \.consumed' "$service"
 )"
 if (( ${recovery_retry_count:-0} != 1 )); then
   printf 'error: popup binding recovery must retry the full transaction exactly once\n' >&2
@@ -300,9 +300,9 @@ for required_dimension in \
     status=1
   fi
 done
-for request_dimension in 'runtimeBindingAtClick' 'resolvedProfileId\(' \
+for request_dimension in 'runtimeBindingAtClick' 'profileID\(page\.tab\) == page\.resolvedProfileID' \
   'request\.resolvedProfileID == profileID' \
-  'browserRuntime\.allTabs\(\)\.contains.*==='; do
+  'allTabs\(\)\.contains[[:space:]]*\{[[:space:]]*\$0 === page\.tab'; do
   dimension_count="$(
     guard_count_matches "$request_dimension" \
       "$request_admission" "$admission" -U

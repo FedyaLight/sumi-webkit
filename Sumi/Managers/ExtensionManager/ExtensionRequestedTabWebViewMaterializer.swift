@@ -38,7 +38,9 @@ struct ExtensionRequestedTabWebViewMaterializer {
     ) {
         guard let livePreparation,
               tab.webExtensionContextOverride == nil,
-              tab.requiresPrimaryWebView
+              tab.requiresPrimaryWebView,
+              profiles.profileID(for: tab) != nil,
+              controllers.existingController(for: tab) != nil
         else {
             return
         }

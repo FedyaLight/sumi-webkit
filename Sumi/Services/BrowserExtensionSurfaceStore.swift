@@ -10,12 +10,6 @@ import AppKit
 import Combine
 import Foundation
 
-extension Notification.Name {
-    static let sumiExtensionSiteAccessPoliciesDidChange = Notification.Name(
-        "SumiExtensionSiteAccessPoliciesDidChange"
-    )
-}
-
 struct BrowserExtensionActionSurfaceState {
     var extensionID: String
     var label: String
@@ -331,6 +325,10 @@ final class URLBarExtensionDisplayModel: ObservableObject {
 
 @MainActor
 final class BrowserExtensionSurfaceStore: ObservableObject {
+    typealias UpdateScheduler = @MainActor (
+        _ operation: @escaping @MainActor () -> Void
+    ) -> Void
+
     @Published private(set) var installedExtensions: [InstalledExtension] = []
     @Published private(set) var actionStatesByExtensionID:
         [String: BrowserExtensionActionSurfaceState] = [:]
@@ -347,15 +345,27 @@ final class BrowserExtensionSurfaceStore: ObservableObject {
         Never
     >()
     private var cancellables: Set<AnyCancellable> = []
-    private weak var extensionManager: ExtensionManager?
+    private var binding: BrowserExtensionSurfaceBinding?
     private var activeSiteAccessProfileId: UUID?
     private var scheduledInstalledExtensionsGeneration = 0
     private var toolbarRecordProjection: [BrowserExtensionToolbarDisplayRecord] = []
     private var scheduledActionStatesGeneration = 0
     private var scheduledSiteAccessPoliciesGeneration = 0
+    private let updateScheduler: UpdateScheduler
 
-    init(extensionManager: ExtensionManager?) {
-        bind(extensionManager)
+    init(
+        binding: BrowserExtensionSurfaceBinding? = nil,
+        updateScheduler: @escaping UpdateScheduler = { operation in
+            Task { @MainActor in
+                await Task.yield()
+                operation()
+            }
+        }
+    ) {
+        self.updateScheduler = updateScheduler
+        if let binding {
+            activate(binding)
+        }
     }
 
     var enabledExtensions: [InstalledExtension] {
@@ -396,21 +406,14 @@ final class BrowserExtensionSurfaceStore: ObservableObject {
         actionPresentationChanged.eraseToAnyPublisher()
     }
 
-    func bind(_ extensionManager: ExtensionManager?) {
-        guard self.extensionManager !== extensionManager else { return }
+    @discardableResult
+    func activate(_ binding: BrowserExtensionSurfaceBinding) -> Bool {
+        guard self.binding !== binding else { return false }
 
         cancellables.removeAll()
-        self.extensionManager = extensionManager
+        self.binding = binding
 
-        guard let extensionManager else {
-            activeSiteAccessProfileId = nil
-            scheduleInstalledExtensionsUpdate([])
-            scheduleActionStatesUpdate([:])
-            scheduleSiteAccessPoliciesUpdate([:])
-            return
-        }
-
-        extensionManager.installedExtensionCollection.$records
+        binding.installedExtensionsPublisher
             .sink { [weak self] installedExtensions in
                 self?.scheduleInstalledExtensionsUpdate(installedExtensions)
                 self?.refreshSiteAccessPoliciesForCurrentProfile(
@@ -419,26 +422,36 @@ final class BrowserExtensionSurfaceStore: ObservableObject {
             }
             .store(in: &cancellables)
 
-        extensionManager.$actionStatesByExtensionID
+        binding.actionStatesPublisher
             .sink { [weak self] actionStates in
                 self?.scheduleActionStatesUpdate(actionStates)
             }
             .store(in: &cancellables)
 
-        extensionManager.actionPresentationChanges
+        binding.actionPresentationChangePublisher
             .sink { [weak self] change in
                 self?.actionPresentationChanged.send(change)
             }
             .store(in: &cancellables)
 
-        NotificationCenter.default.publisher(
-            for: .sumiExtensionSiteAccessPoliciesDidChange,
-            object: extensionManager
-        )
+        binding.siteAccessPolicyChangePublisher
         .sink { [weak self] _ in
             self?.refreshSiteAccessPoliciesForCurrentProfile()
         }
         .store(in: &cancellables)
+
+        return true
+    }
+
+    func deactivate() {
+        guard binding != nil else { return }
+
+        cancellables.removeAll()
+        binding = nil
+        activeSiteAccessProfileId = nil
+        scheduleInstalledExtensionsUpdate([])
+        scheduleActionStatesUpdate([:])
+        scheduleSiteAccessPoliciesUpdate([:])
     }
 
     func refreshSiteAccessPolicies(profileId: UUID?) {
@@ -451,8 +464,7 @@ final class BrowserExtensionSurfaceStore: ObservableObject {
     ) {
         scheduledInstalledExtensionsGeneration &+= 1
         let generation = scheduledInstalledExtensionsGeneration
-        Task { @MainActor [weak self] in
-            await Task.yield()
+        updateScheduler { [weak self] in
             guard self?.scheduledInstalledExtensionsGeneration == generation else {
                 return
             }
@@ -474,8 +486,7 @@ final class BrowserExtensionSurfaceStore: ObservableObject {
     ) {
         scheduledActionStatesGeneration &+= 1
         let generation = scheduledActionStatesGeneration
-        Task { @MainActor [weak self] in
-            await Task.yield()
+        updateScheduler { [weak self] in
             guard self?.scheduledActionStatesGeneration == generation else {
                 return
             }
@@ -486,17 +497,17 @@ final class BrowserExtensionSurfaceStore: ObservableObject {
     private func refreshSiteAccessPoliciesForCurrentProfile(
         extensionIds: [String]? = nil
     ) {
-        guard let extensionManager, let activeSiteAccessProfileId else {
+        guard let binding, let activeSiteAccessProfileId else {
             scheduleSiteAccessPoliciesUpdate([:])
             return
         }
 
         let resolvedExtensionIds =
-            extensionIds ?? extensionManager.installedExtensionCollection.records.map(\.id)
+            extensionIds ?? binding.installedExtensions().map(\.id)
         scheduleSiteAccessPoliciesUpdate(
-            extensionManager.siteAccessPolicySnapshot(
-                extensionIds: resolvedExtensionIds,
-                profileId: activeSiteAccessProfileId
+            binding.siteAccessPolicySnapshot(
+                resolvedExtensionIds,
+                activeSiteAccessProfileId
             )
         )
     }
@@ -506,12 +517,50 @@ final class BrowserExtensionSurfaceStore: ObservableObject {
     ) {
         scheduledSiteAccessPoliciesGeneration &+= 1
         let generation = scheduledSiteAccessPoliciesGeneration
-        Task { @MainActor [weak self] in
-            await Task.yield()
+        updateScheduler { [weak self] in
             guard self?.scheduledSiteAccessPoliciesGeneration == generation else {
                 return
             }
             self?.siteAccessPoliciesByExtensionID = policies
         }
+    }
+}
+
+@MainActor
+final class BrowserExtensionSurfaceBinding {
+    let installedExtensionsPublisher:
+        Published<[InstalledExtension]>.Publisher
+    let actionStatesPublisher:
+        Published<[String: BrowserExtensionActionSurfaceState]>.Publisher
+    let actionPresentationChangePublisher:
+        AnyPublisher<ExtensionActionPresentationChange, Never>
+    let siteAccessPolicyChangePublisher: AnyPublisher<Void, Never>
+    let installedExtensions: @MainActor () -> [InstalledExtension]
+    let siteAccessPolicySnapshot: @MainActor (
+        _ extensionIDs: [String],
+        _ profileID: UUID
+    ) -> [String: SafariExtensionSiteAccessPolicy]
+
+    init(
+        installedExtensionsPublisher:
+            Published<[InstalledExtension]>.Publisher,
+        actionStatesPublisher:
+            Published<[String: BrowserExtensionActionSurfaceState]>.Publisher,
+        actionPresentationChangePublisher:
+            AnyPublisher<ExtensionActionPresentationChange, Never>,
+        siteAccessPolicyChangePublisher: AnyPublisher<Void, Never>,
+        installedExtensions: @escaping @MainActor () -> [InstalledExtension],
+        siteAccessPolicySnapshot: @escaping @MainActor (
+            _ extensionIDs: [String],
+            _ profileID: UUID
+        ) -> [String: SafariExtensionSiteAccessPolicy]
+    ) {
+        self.installedExtensionsPublisher = installedExtensionsPublisher
+        self.actionStatesPublisher = actionStatesPublisher
+        self.actionPresentationChangePublisher =
+            actionPresentationChangePublisher
+        self.siteAccessPolicyChangePublisher = siteAccessPolicyChangePublisher
+        self.installedExtensions = installedExtensions
+        self.siteAccessPolicySnapshot = siteAccessPolicySnapshot
     }
 }

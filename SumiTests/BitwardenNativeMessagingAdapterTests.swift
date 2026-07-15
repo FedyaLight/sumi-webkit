@@ -964,11 +964,13 @@ final class BitwardenNativeMessagingAdapterTests: XCTestCase {
             for: ExtensionEntity.self,
             configurations: ModelConfiguration(isStoredInMemoryOnly: true)
         )
-        let manager = ExtensionManager(
+        let inspection = ExtensionManagerInspectionCapture()
+        _ = ExtensionManager(
             context: ModelContext(container),
-            initialProfile: nil
+            initialProfile: nil,
+            testInspectionDidAssemble: inspection.install
         )
-        let bridge = manager.controllerDelegateBridge
+        let bridge = inspection.inspection.controller.delegateBridge
         XCTAssertTrue(
             bridge.responds(
                 to: NSSelectorFromString(

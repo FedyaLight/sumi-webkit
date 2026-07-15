@@ -29,25 +29,29 @@ struct ExtensionRequestedTabTargetResolver {
     init(
         browserContext: @escaping @MainActor () -> (any ExtensionTabTargetQuery)?,
         profileRuntime: ExtensionProfileRuntime,
-        runtime: @escaping @MainActor () -> ExtensionManagerRuntime,
+        tabProfiles: any ExtensionTabProfileResolving,
+        currentProfileID: @escaping @MainActor () -> UUID?,
+        windowProfileID: @escaping @MainActor (BrowserWindowState) -> UUID?,
         publications: ExtensionWindowPublicationQuery
     ) {
         self.browserContext = browserContext
         let evidence = ExtensionRequestedWindowEvidence(
             profileRuntime: profileRuntime,
-            runtime: runtime,
+            tabProfiles: tabProfiles,
+            windowProfileID: windowProfileID,
             publications: publications
         )
         initial = ExtensionRequestedTabInitialTargetResolver(
             browserContext: browserContext,
-            profileRuntime: profileRuntime,
-            runtime: runtime,
+            tabProfiles: tabProfiles,
+            currentProfileID: currentProfileID,
+            windowProfileID: windowProfileID,
             publications: publications,
             windowEvidence: evidence
         )
         residence = ExtensionRequestedTabResidenceValidator(
-            profileRuntime: profileRuntime,
-            runtime: runtime,
+            tabProfiles: tabProfiles,
+            windowProfileID: windowProfileID,
             publications: publications,
             windowEvidence: evidence
         )

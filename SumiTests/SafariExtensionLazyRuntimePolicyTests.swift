@@ -10,27 +10,38 @@ final class SafariExtensionLazyRuntimePolicyTests: XCTestCase {
     func testLaunchStartsWithZeroExtensionContexts() throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Lazy Launch")
-        let manager = ExtensionManager(
+        let fixture = makeSafariExtensionManagerTestFixture(
             context: container.mainContext,
             initialProfile: profile
         )
+        let inspection = fixture.inspection
 
-        XCTAssertEqual(manager.countLoadedExtensionContexts(), 0)
-        XCTAssertTrue(manager.profileRuntime.contextsByProfile.isEmpty)
-        XCTAssertNil(manager.loadedInitialDocumentRuntimePreparationOwner)
-        XCTAssertNil(manager.loadedNativeMessagingBackgroundWakeOwner)
+        XCTAssertEqual(inspection.contextState.profiles.countLoadedExtensionContexts(), 0)
+        XCTAssertTrue(inspection.contextState.profiles.contextsByProfile.isEmpty)
+        XCTAssertNil(
+            inspection.normalTabs.deferredRuntime
+                .loadedInitialDocumentRuntimePreparationOwner
+        )
+        XCTAssertFalse(inspection.nativeMessaging.hasLoadedWakeOwner)
     }
 
     func testAuxiliaryIntegrationReceiptDoesNotRetainExtensionManager()
         async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Weak Auxiliary Events")
+        let attachedRuntime = ExtensionAttachedRuntimeCapture()
         var manager: ExtensionManager? = ExtensionManager(
             context: container.mainContext,
-            initialProfile: profile
+            initialProfile: profile,
+            attachedRuntimeDidInstall: attachedRuntime.install
         )
+        let browserManager = makeSafariExtensionTestBrowserManager(
+            profile: profile
+        )
+        manager?.attach(browserManager: browserManager)
         weak var weakManager = manager
-        let integration = try XCTUnwrap(manager).auxiliaryWindowIntegration()
+        let integration = attachedRuntime.runtime.requestedTabs
+            .auxiliaryIntegration
         let receiptHeld = expectation(description: "integration held by task")
         var releaseTask: CheckedContinuation<Void, Never>?
         let callbackTask = Task { @MainActor in
@@ -55,19 +66,20 @@ final class SafariExtensionLazyRuntimePolicyTests: XCTestCase {
         let registry = makeScopedModuleRegistry()
         registry.enable(.extensions)
 
-        let manager = ExtensionManager(
+        let fixture = makeSafariExtensionManagerTestFixture(
             context: container.mainContext,
             initialProfile: profile,
             moduleRegistry: registry
         )
 
         XCTAssertEqual(
-            manager.nativeMessagingRelayOwner.extensionsModuleEnabledForCallbacks,
+            fixture.inspection.nativeMessaging.owners.relayOwner()
+                .extensionsModuleEnabledForCallbacks,
             true
         )
     }
 
-    func testExtensionsModuleDefaultFactoryPassesScopedRegistryToManager() throws {
+    func testExtensionsModuleScopedRegistryGatesResidentDefaultManager() throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Scoped Module")
         let registry = makeScopedModuleRegistry()
@@ -77,14 +89,20 @@ final class SafariExtensionLazyRuntimePolicyTests: XCTestCase {
             context: container.mainContext,
             initialProfileProvider: { profile }
         )
+        let browserManager = BrowserManager()
+        module.attach(
+            runtime: BrowserExtensionsModuleRuntimeFactory.runtime(
+                for: browserManager
+            )
+        )
 
         let manager = try XCTUnwrap(module.managerForTesting())
         registry.disable(.extensions)
 
-        XCTAssertEqual(
-            manager.nativeMessagingRelayOwner.extensionsModuleEnabledForCallbacks,
-            false
-        )
+        XCTAssertFalse(module.isEnabled)
+        XCTAssertNil(module.managerForTesting())
+        registry.enable(.extensions)
+        XCTAssertIdentical(module.managerForTesting(), manager)
     }
 
     func testExtensionsModuleRuntimeSuppliesProfileAndAttachesManager() throws {
@@ -99,6 +117,7 @@ final class SafariExtensionLazyRuntimePolicyTests: XCTestCase {
 
         var initialProfileUsedByFactory: Profile?
         var createdManager: ExtensionManager?
+        let attachedRuntime = ExtensionAttachedRuntimeCapture()
         let module = SumiExtensionsModule(
             moduleRegistry: registry,
             context: container.mainContext,
@@ -109,7 +128,8 @@ final class SafariExtensionLazyRuntimePolicyTests: XCTestCase {
                     context: context,
                     initialProfile: initialProfile,
                     browserConfiguration: browserConfiguration,
-                    moduleRegistry: moduleRegistry
+                    moduleRegistry: moduleRegistry,
+                    attachedRuntimeDidInstall: attachedRuntime.install
                 )
                 createdManager = manager
                 return manager
@@ -121,17 +141,25 @@ final class SafariExtensionLazyRuntimePolicyTests: XCTestCase {
 
         XCTAssertIdentical(initialProfileUsedByFactory, runtimeProfile)
         let attachedManager = try XCTUnwrap(createdManager)
-        XCTAssertTrue(attachedManager.runtime.browserRuntimeAvailable())
-        XCTAssertIdentical(attachedManager.runtime.currentProfile(), runtimeProfile)
+        XCTAssertTrue(
+            attachedRuntime.runtime.bridge.availability.isAvailable
+        )
+        XCTAssertIdentical(
+            attachedRuntime.runtime.profileQuery.currentProfile(),
+            runtimeProfile
+        )
+        withExtendedLifetime(attachedManager) {}
     }
 
     func testDisabledInstallDoesNotCreateRuntimeControllerOrContext() async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Disabled Install")
-        let manager = ExtensionManager(
+        let fixture = makeSafariExtensionManagerTestFixture(
             context: container.mainContext,
             initialProfile: profile
         )
+        let manager = fixture.manager
+        let inspection = fixture.inspection
 
         let scratchDirectory = try makeScratchDirectory()
         _ = try await installUnpackedExtension(
@@ -140,11 +168,14 @@ final class SafariExtensionLazyRuntimePolicyTests: XCTestCase {
             name: "DisabledInstallExtension"
         )
 
-        XCTAssertEqual(manager.countLoadedExtensionContexts(), 0)
-        XCTAssertTrue(manager.profileRuntime.contextsByProfile.isEmpty)
-        XCTAssertTrue(manager.profileRuntime.controllersByProfile.isEmpty)
-        XCTAssertNil(manager.loadedInitialDocumentRuntimePreparationOwner)
-        XCTAssertNil(manager.loadedNativeMessagingBackgroundWakeOwner)
+        XCTAssertEqual(inspection.contextState.profiles.countLoadedExtensionContexts(), 0)
+        XCTAssertTrue(inspection.contextState.profiles.contextsByProfile.isEmpty)
+        XCTAssertTrue(inspection.contextState.profiles.controllersByProfile.isEmpty)
+        XCTAssertNil(
+            inspection.normalTabs.deferredRuntime
+                .loadedInitialDocumentRuntimePreparationOwner
+        )
+        XCTAssertFalse(inspection.nativeMessaging.hasLoadedWakeOwner)
     }
 
     func testEightProfilesWithOneExtensionCreatesAtMostOneContextUntilUsed() async throws {
@@ -154,10 +185,12 @@ final class SafariExtensionLazyRuntimePolicyTests: XCTestCase {
             profiles.append(Profile(name: "Profile \(index)"))
         }
 
-        let manager = ExtensionManager(
+        let fixture = makeSafariExtensionManagerTestFixture(
             context: container.mainContext,
             initialProfile: profiles[0]
         )
+        let manager = fixture.manager
+        let inspection = fixture.inspection
 
         let scratchDirectory = try makeScratchDirectory()
         let installed = try await installUnpackedExtension(
@@ -165,40 +198,41 @@ final class SafariExtensionLazyRuntimePolicyTests: XCTestCase {
             scratchDirectory: scratchDirectory,
             name: "LazyPolicyExtension"
         )
-        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
+        _ = try await inspection.installation.lifecycle.enable(installed.id)
 
         XCTAssertEqual(
-            manager.countLoadedExtensionContexts(),
+            inspection.contextState.profiles.countLoadedExtensionContexts(),
             1,
             "Enable should load only the active profile's context"
         )
 
         for profile in profiles.dropFirst() {
-            manager.profileRuntimeTransition.switchProfile(profileID: profile.id)
+            inspection.contextCoordination.profileTransition
+                .switchProfile(profileID: profile.id)
         }
 
         XCTAssertEqual(
-            manager.countLoadedExtensionContexts(),
+            inspection.contextState.profiles.countLoadedExtensionContexts(),
             0,
             "Switching across inactive profiles should unload prior contexts"
         )
 
         let targetProfile = profiles[7]
-        _ = try await manager.ensureExtensionLoaded(
+        _ = try await inspection.contextCoordination.residency
+            .ensureExtensionLoaded(
             extensionId: installed.id,
             profileId: targetProfile.id
         )
 
         XCTAssertEqual(
-            manager.countLoadedExtensionContexts(),
+            inspection.contextState.profiles.countLoadedExtensionContexts(),
             1,
             "Only the requested profile/extension pair should be live"
         )
         XCTAssertNotNil(
-            manager.getExtensionContext(
-                for: installed.id,
-                profileId: targetProfile.id
-            )
+            inspection.contextState.profiles.contexts(
+                for: targetProfile.id
+            )[installed.id]
         )
     }
 
@@ -206,10 +240,12 @@ final class SafariExtensionLazyRuntimePolicyTests: XCTestCase {
         let container = try makeTestContainer()
         let profileA = Profile(name: "Cache A")
         let profileB = Profile(name: "Cache B")
-        let manager = ExtensionManager(
+        let fixture = makeSafariExtensionManagerTestFixture(
             context: container.mainContext,
             initialProfile: profileA
         )
+        let manager = fixture.manager
+        let inspection = fixture.inspection
 
         let scratchDirectory = try makeScratchDirectory()
         let installed = try await installUnpackedExtension(
@@ -217,19 +253,23 @@ final class SafariExtensionLazyRuntimePolicyTests: XCTestCase {
             scratchDirectory: scratchDirectory,
             name: "CacheReuseExtension"
         )
-        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
+        _ = try await inspection.installation.lifecycle.enable(installed.id)
 
         let contextA = try XCTUnwrap(
-            manager.getExtensionContext(for: installed.id, profileId: profileA.id)
+            inspection.contextState.profiles.contexts(for: profileA.id)[installed.id]
         )
-        manager.unloadExtensionContextsForInactiveProfiles(keepingProfileId: profileB.id)
+        inspection.contextCoordination.residency
+            .unloadExtensionContextsForInactiveProfiles(
+                keepingProfileId: profileB.id
+            )
 
-        _ = try await manager.ensureExtensionLoaded(
+        _ = try await inspection.contextCoordination.residency
+            .ensureExtensionLoaded(
             extensionId: installed.id,
             profileId: profileB.id
         )
         let contextB = try XCTUnwrap(
-            manager.getExtensionContext(for: installed.id, profileId: profileB.id)
+            inspection.contextState.profiles.contexts(for: profileB.id)[installed.id]
         )
 
         XCTAssertNotIdentical(contextA, contextB)
@@ -244,10 +284,12 @@ final class SafariExtensionLazyRuntimePolicyTests: XCTestCase {
         let container = try makeTestContainer()
         let profileA = Profile(name: "Disable A")
         let profileB = Profile(name: "Disable B")
-        let manager = ExtensionManager(
+        let fixture = makeSafariExtensionManagerTestFixture(
             context: container.mainContext,
             initialProfile: profileA
         )
+        let manager = fixture.manager
+        let inspection = fixture.inspection
 
         let scratchDirectory = try makeScratchDirectory()
         let installed = try await installUnpackedExtension(
@@ -255,56 +297,68 @@ final class SafariExtensionLazyRuntimePolicyTests: XCTestCase {
             scratchDirectory: scratchDirectory,
             name: "DisableUnloadExtension"
         )
-        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
-        _ = try await manager.ensureExtensionLoaded(
+        _ = try await inspection.installation.lifecycle.enable(installed.id)
+        _ = try await inspection.contextCoordination.residency
+            .ensureExtensionLoaded(
             extensionId: installed.id,
             profileId: profileB.id
         )
-        XCTAssertEqual(manager.countLoadedExtensionContexts(), 2)
+        XCTAssertEqual(
+            inspection.contextState.profiles.countLoadedExtensionContexts(),
+            2
+        )
 
-        try await manager.installedExtensionLifecycle.disable(installed.id)
+        try await inspection.installation.lifecycle.disable(installed.id)
 
-        XCTAssertEqual(manager.countLoadedExtensionContexts(), 0)
+        XCTAssertEqual(
+            inspection.contextState.profiles.countLoadedExtensionContexts(),
+            0
+        )
         XCTAssertNil(
-            manager.webExtensionRuntimeSourceCache.entry(for: installed.id)
+            inspection.contextState.sourceCache.entry(for: installed.id)
         )
     }
 
     func testWebsiteDataMutationQuiescesTargetProfileAndReloadsOnlyOnDemand() async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Mutation Quiesce")
-        let manager = ExtensionManager(
+        let fixture = makeSafariExtensionManagerTestFixture(
             context: container.mainContext,
             initialProfile: profile
         )
+        let manager = fixture.manager
+        let inspection = fixture.inspection
         let scratchDirectory = try makeScratchDirectory()
         let installed = try await installUnpackedExtension(
             manager: manager,
             scratchDirectory: scratchDirectory,
             name: "MutationQuiesceExtension"
         )
-        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
+        _ = try await inspection.installation.lifecycle.enable(installed.id)
         XCTAssertNotNil(
-            manager.getExtensionContext(for: installed.id, profileId: profile.id)
+            inspection.contextState.profiles.contexts(for: profile.id)[installed.id]
         )
 
-        let generationBeforeQuiesce = manager.extensionLoadRevisions.issue()
+        let generationBeforeQuiesce = inspection.runtimeAuthorities
+            .loadRevisions.issue()
         XCTAssertTrue(
             manager.quiesceForWebsiteDataMutation(profileIDs: [profile.id])
         )
         XCTAssertFalse(
-            manager.extensionLoadRevisions.isCurrent(generationBeforeQuiesce)
+            inspection.runtimeAuthorities.loadRevisions
+                .isCurrent(generationBeforeQuiesce)
         )
         XCTAssertNil(
-            manager.getExtensionContext(for: installed.id, profileId: profile.id)
+            inspection.contextState.profiles.contexts(for: profile.id)[installed.id]
         )
 
-        _ = try await manager.ensureExtensionLoaded(
+        _ = try await inspection.contextCoordination.residency
+            .ensureExtensionLoaded(
             extensionId: installed.id,
             profileId: profile.id
         )
         XCTAssertNotNil(
-            manager.getExtensionContext(for: installed.id, profileId: profile.id)
+            inspection.contextState.profiles.contexts(for: profile.id)[installed.id]
         )
     }
 
@@ -351,7 +405,7 @@ final class SafariExtensionLazyRuntimePolicyTests: XCTestCase {
             name: name,
             manifestVersion: manifestVersion
         )
-        return try await manager.extensionInstaller.install(
+        return try await manager.settingsCatalogBinding().install(
             from: directoryURL,
             enableOnInstall: false
         )

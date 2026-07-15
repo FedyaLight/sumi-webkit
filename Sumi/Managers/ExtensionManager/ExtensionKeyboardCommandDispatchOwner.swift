@@ -13,10 +13,15 @@ import WebKit
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionKeyboardCommandDispatchOwner {
-    private weak var manager: ExtensionManager?
+    private let profileRuntime: ExtensionProfileRuntime
+    private let diagnostics: ExtensionRuntimeDiagnostics
 
-    init(manager: ExtensionManager) {
-        self.manager = manager
+    init(
+        profileRuntime: ExtensionProfileRuntime,
+        diagnostics: ExtensionRuntimeDiagnostics
+    ) {
+        self.profileRuntime = profileRuntime
+        self.diagnostics = diagnostics
     }
 
     /// Callers must have already offered the event to Sumi's own shortcuts;
@@ -32,12 +37,12 @@ final class ExtensionKeyboardCommandDispatchOwner {
         }
 
         // Deterministic winner when two extensions declare the same shortcut.
-        let contexts = (manager?.extensionContexts ?? [:])
+        let contexts = profileRuntime.contextsForCurrentProfile()
             .sorted { $0.key < $1.key }
         for (extensionId, extensionContext) in contexts {
             guard extensionContext.isLoaded else { continue }
             if extensionContext.performCommand(for: event) {
-                manager?.runtimeDiagnostics.trace(
+                diagnostics.trace(
                     "extension keyboard command performed extensionId=\(extensionId)"
                 )
                 return true
@@ -48,11 +53,3 @@ final class ExtensionKeyboardCommandDispatchOwner {
 }
 
 // MARK: - ExtensionManager facade
-
-@available(macOS 15.5, *)
-@MainActor
-extension ExtensionManager {
-    func performExtensionKeyboardCommand(for event: NSEvent) -> Bool {
-        keyboardCommandDispatchOwner.performCommand(for: event)
-    }
-}

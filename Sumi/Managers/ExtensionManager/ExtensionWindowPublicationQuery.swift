@@ -14,23 +14,17 @@ enum ExtensionAuxiliaryTabPublicationState {
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionWindowPublicationQuery {
-    private let normalWindows: ExtensionNormalWindowLifecycle
+    private let normalWindows: ExtensionNormalWindowPublicationQuery
     private let auxiliaryWindows: ExtensionAuxiliaryWindowPublicationQuery
-    private let runtime: @MainActor () -> ExtensionManagerRuntime
-    private let control:
-        @MainActor () -> (any ExtensionAuxiliaryWindowControl)?
+    private let control: any ExtensionAuxiliaryWindowControl
 
     init(
-        normalWindows: ExtensionNormalWindowLifecycle,
+        normalWindows: ExtensionNormalWindowPublicationQuery,
         auxiliaryWindows: ExtensionAuxiliaryWindowPublicationQuery,
-        runtime: @escaping @MainActor () -> ExtensionManagerRuntime,
-        control: @escaping @MainActor () -> (
-            any ExtensionAuxiliaryWindowControl
-        )?
+        control: any ExtensionAuxiliaryWindowControl
     ) {
         self.normalWindows = normalWindows
         self.auxiliaryWindows = auxiliaryWindows
-        self.runtime = runtime
         self.control = control
     }
 
@@ -51,13 +45,12 @@ final class ExtensionWindowPublicationQuery {
         var adapters = auxiliaryWindows.publishedAdapters(
             ownerExtensionID: ownerExtensionID,
             profileID: profileID,
-            runtime: runtime(),
-            control: control()
+            control: control
         )
         adapters.sort {
             $0.sessionId.uuidString < $1.sessionId.uuidString
         }
-        guard let focused = control()?
+        guard let focused = control
             .focusedExtensionMiniWindowAdapter(
                 forOwnerExtensionID: ownerExtensionID
             ), let index = adapters.firstIndex(where: { $0 === focused }) else {
@@ -71,20 +64,18 @@ final class ExtensionWindowPublicationQuery {
     func auxiliaryTabPublicationState(
         for tab: Tab
     ) -> ExtensionAuxiliaryTabPublicationState {
-        let currentControl = control()
+        let currentControl = control
         if tab.isAuxiliaryMiniWindow {
-            guard let currentControl,
-                  let session = currentControl.auxiliaryWindowSession(for: tab),
+            guard let session = currentControl.auxiliaryWindowSession(for: tab),
                   session.tab === tab else {
                 return .unavailable
             }
             return auxiliaryWindows.canUseCommittedTabPublication(
                 for: tab,
-                runtime: runtime(),
                 control: currentControl
             ) ? .committed : .unavailable
         }
-        guard currentControl?.auxiliaryWindowSession(for: tab) == nil else {
+        guard currentControl.auxiliaryWindowSession(for: tab) == nil else {
             return .unavailable
         }
         return .notAuxiliarySession
@@ -100,8 +91,7 @@ final class ExtensionWindowPublicationQuery {
             adapter,
             for: tab,
             visibleTo: context,
-            runtime: runtime(),
-            control: control()
+            control: control
         )
     }
 
@@ -112,8 +102,7 @@ final class ExtensionWindowPublicationQuery {
         auxiliaryWindows.isCurrentWindowAdapter(
             adapter,
             visibleTo: context,
-            runtime: runtime(),
-            control: control()
+            control: control
         )
     }
 
@@ -124,33 +113,28 @@ final class ExtensionWindowPublicationQuery {
         auxiliaryWindows.tabAdapter(
             for: adapter,
             visibleTo: context,
-            runtime: runtime(),
-            control: control()
+            control: control
         )
     }
 
     func isAuxiliarySessionTab(_ tab: Tab) -> Bool {
         if tab.isAuxiliaryMiniWindow { return true }
-        guard let control = control() else { return false }
         return control.auxiliaryWindowSession(for: tab)?.tab === tab
     }
 
     func tabPublicationIsCurrent(_ tab: Tab, profileID: UUID) -> Bool {
         if tab.isAuxiliaryMiniWindow {
-            guard let control = control(),
-                  let session = control.auxiliaryWindowSession(for: tab),
+            guard let session = control.auxiliaryWindowSession(for: tab),
                   session.tab === tab else {
                 return false
             }
             return auxiliaryWindows.canUseCommittedTabPublication(
                 for: tab,
                 profileID: profileID,
-                runtime: runtime(),
                 control: control
             )
         }
-        if let control = control(),
-           control.auxiliaryWindowSession(for: tab) != nil {
+        if control.auxiliaryWindowSession(for: tab) != nil {
             return false
         }
         return normalWindows.tabPublicationIsCurrent(

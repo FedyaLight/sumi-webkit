@@ -59,20 +59,3 @@ final class ExtensionWebViewConfigurationPreparation:
         )
     }
 }
-
-@available(macOS 15.5, *)
-@MainActor
-extension ExtensionManager {
-    func prepareWebViewConfigForExtensionRuntime(
-        _ configuration: WKWebViewConfiguration,
-        profileId: UUID? = nil,
-        reason: String = #function
-    ) {
-        webViewConfigurationPreparation
-            .prepareWebViewConfigForExtensionRuntime(
-                configuration,
-                profileId: profileId,
-                reason: reason
-            )
-    }
-}

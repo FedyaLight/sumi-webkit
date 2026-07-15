@@ -26,6 +26,7 @@ class SumiLaunchSmokeUITestCase: XCTestCase {
     nonisolated(unsafe) var smokeAppSupportURL: URL?
     nonisolated(unsafe) var smokeAppSupportDirectories: [URL] = []
     nonisolated(unsafe) var sidebarDragMarkerURL: URL?
+    nonisolated(unsafe) var launchedApplications: [XCUIApplication] = []
     let smokeWindowSessionOverrideFileName = "sumi-window-session-override.json"
     let smokeWindowSessionOverrideEnvironmentKey = "SUMI_WINDOW_SESSION_OVERRIDE_PATH"
     let smokeShortcutDriftPinEnvironmentKey = "SUMI_SIDEBAR_DRIFT_SHORTCUT_PIN_ID"
@@ -67,6 +68,10 @@ class SumiLaunchSmokeUITestCase: XCTestCase {
     }
 
     override func tearDownWithError() throws {
+        for application in launchedApplications.reversed() {
+            application.terminate()
+        }
+        launchedApplications.removeAll()
         for directory in smokeAppSupportDirectories {
             try? FileManager.default.removeItem(at: directory)
         }
@@ -95,6 +100,7 @@ class SumiLaunchSmokeUITestCase: XCTestCase {
             _ = try prepareSmokeStoreURL()
         }
         let app = XCUIApplication()
+        app.launchArguments.append(contentsOf: ["-ApplePersistenceIgnoreState", "YES"])
         app.launchArguments.append("--uitest-smoke")
         app.launchArguments.append("--uitest-sidebar-drag-marker=\(sidebarDragMarkerFileURL().path)")
         // Keeps automatic downloads out of the real ~/Downloads so macOS TCC does not prompt every run.
@@ -124,6 +130,7 @@ class SumiLaunchSmokeUITestCase: XCTestCase {
             app.launchEnvironment[key] = value
         }
         app.launch()
+        launchedApplications.append(app)
         app.activate()
         return app
     }

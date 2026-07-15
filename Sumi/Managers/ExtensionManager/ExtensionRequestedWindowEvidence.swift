@@ -12,16 +12,19 @@ final class ExtensionRequestedWindowEvidence {
     }
 
     private let profileRuntime: ExtensionProfileRuntime
-    private let runtime: @MainActor () -> ExtensionManagerRuntime
+    private let tabProfiles: any ExtensionTabProfileResolving
+    private let windowProfileID: @MainActor (BrowserWindowState) -> UUID?
     private let publications: ExtensionWindowPublicationQuery
 
     init(
         profileRuntime: ExtensionProfileRuntime,
-        runtime: @escaping @MainActor () -> ExtensionManagerRuntime,
+        tabProfiles: any ExtensionTabProfileResolving,
+        windowProfileID: @escaping @MainActor (BrowserWindowState) -> UUID?,
         publications: ExtensionWindowPublicationQuery
     ) {
         self.profileRuntime = profileRuntime
-        self.runtime = runtime
+        self.tabProfiles = tabProfiles
+        self.windowProfileID = windowProfileID
         self.publications = publications
     }
 
@@ -45,11 +48,8 @@ final class ExtensionRequestedWindowEvidence {
            let identity = currentIdentity(for: extensionContext),
            let window = browser.extensionWindowState(
                for: adapter.windowId
-           ), profileRuntime.windowMatchesProfile(
-               window,
-               profileId: identity.profileID,
-               runtime: runtime()
-           ), publications.publishedWindowAdapter(
+           ), windowProfileID(window) == identity.profileID,
+           publications.publishedWindowAdapter(
                for: window,
                profileID: identity.profileID
            ) === adapter {
@@ -93,10 +93,7 @@ final class ExtensionRequestedWindowEvidence {
               ), session.id == adapter.sessionId,
               session.miniWindowAdapter === adapter,
               session.ownerExtensionID == identity.extensionID,
-              profileRuntime.resolvedProfileId(
-                  for: session.tab,
-                  runtime: runtime()
-              ) == identity.profileID,
+              tabProfiles.profileID(for: session.tab) == identity.profileID,
               ownerContext(
                   for: session,
                   extensionID: identity.extensionID,

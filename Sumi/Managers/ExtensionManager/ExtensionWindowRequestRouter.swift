@@ -124,6 +124,14 @@ final class ExtensionWindowRequestRouter {
             )
             return
         }
+        guard windowQuery() != nil else {
+            completion(
+                nil,
+                ExtensionManagerCallbackError.browserManagerUnavailable
+                    .nsError()
+            )
+            return
+        }
 
         Task { @MainActor [weak self] in
             guard let self else {
@@ -423,86 +431,5 @@ final class ExtensionWindowRequestRouter {
             }
         }
         return true
-    }
-}
-
-@available(macOS 15.5, *)
-extension ExtensionWindowRequestRouter {
-    convenience init(manager: ExtensionManager) {
-        self.init(
-            profileRuntime: manager.profileRuntime,
-            targetResolver: manager.requestedTabTargetResolver,
-            loadResolver: manager.requestedTabLoadResolver,
-            contextPreloader: manager.requestedTabContextPreloader,
-            tabOpening: manager.requestedTabOpening,
-            windowQuery: { [weak manager] in
-                manager?.extensionWindowQuery
-            },
-            windowCreation: { [weak manager] in
-                manager?.extensionRequestedWindowCreation
-            },
-            publishedWindow: { [weak manager] window, profileID in
-                manager?.windowPublications.publishedWindowAdapter(
-                    for: window,
-                    profileID: profileID
-                )
-            }
-        )
-    }
-}
-
-@available(macOS 15.5, *)
-@MainActor
-extension ExtensionManager {
-    func openExtensionWindowUsingTabURLs(
-        _ configuration: WKWebExtension.WindowConfiguration,
-        controller: WKWebExtensionController,
-        extensionContext: WKWebExtensionContext? = nil,
-        completionHandler: @escaping (
-            (any WKWebExtensionWindow)?,
-            (any Error)?
-        ) -> Void
-    ) {
-        openExtensionWindowUsingTabURLs(
-            configuration.tabURLs,
-            controller: controller,
-            extensionContext: extensionContext,
-            completionHandler: completionHandler
-        )
-    }
-
-    func openExtensionWindowUsingTabURLs(
-        _ tabURLs: [URL],
-        controller: WKWebExtensionController,
-        extensionContext: WKWebExtensionContext? = nil,
-        completionHandler: @escaping (
-            (any WKWebExtensionWindow)?,
-            (any Error)?
-        ) -> Void
-    ) {
-        guard tabURLs.count <= 1 else {
-            completionHandler(
-                nil,
-                ExtensionManagerCallbackError
-                    .multipleWindowTabsUnsupported.nsError()
-            )
-            return
-        }
-        guard attachedBrowserManager != nil,
-              controllerRuntimeComposition != nil
-        else {
-            completionHandler(
-                nil,
-                ExtensionManagerCallbackError.browserManagerUnavailable
-                    .nsError()
-            )
-            return
-        }
-        extensionWindowRequestRouter.open(
-            tabURLs: tabURLs,
-            controller: controller,
-            extensionContext: extensionContext,
-            completion: completionHandler
-        )
     }
 }

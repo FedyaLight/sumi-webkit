@@ -44,9 +44,11 @@ final class SafariExtensionSessionDiagnosticsTests: XCTestCase {
             configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
         )
         let profile = Profile(name: "Diagnostics Runtime")
+        let inspection = ExtensionManagerInspectionCapture()
         let manager = ExtensionManager(
             context: container.mainContext,
-            initialProfile: nil
+            initialProfile: nil,
+            testInspectionDidAssemble: inspection.install
         )
         let runtime = SafariExtensionSessionDiagnosticsRuntime(
             currentTab: { nil },
@@ -60,11 +62,13 @@ final class SafariExtensionSessionDiagnosticsTests: XCTestCase {
         let diagnostic = await SafariExtensionSessionDiagnosticsBuilder.build(
             extensionId: "example-extension",
             phase: .opened,
-            extensionManager: manager,
+            installedExtensions:
+                inspection.inspection.actionSurfaces.installedExtensions.records,
+            profileRuntime: inspection.inspection.contextState.profiles,
+            isPopupActive: inspection.inspection.popups.sessions.hasVisibleSession,
             runtime: runtime
         )
 
-        XCTAssertFalse(manager.runtime.browserRuntimeAvailable())
         XCTAssertFalse(diagnostic.extensionContextLoaded)
         XCTAssertNil(diagnostic.activeTabStore)
         XCTAssertNil(diagnostic.extensionControllerDefaultStore)

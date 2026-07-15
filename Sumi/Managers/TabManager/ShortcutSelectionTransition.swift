@@ -41,7 +41,7 @@ enum ShortcutSelectionTransition {
             target: ShortcutBindingIdentity(
                 pinId: targetPin.id,
                 role: targetPin.role,
-                spaceId: tab.spaceId
+                spaceId: targetPin.spaceId
             ),
             isSelected: isSelected,
             to: &state

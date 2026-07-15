@@ -101,7 +101,7 @@ final class ExtensionRequestedTabServicesTests:
         }
 
         XCTAssertThrowsError(
-            try harness.manager.requestedTabOpening.open(
+            try harness.attachedRuntime.requestedTabs.opening.open(
                 url: URL(
                     string: "safari-web-extension://unloaded/options.html"
                 ),
@@ -127,7 +127,7 @@ final class ExtensionRequestedTabServicesTests:
         async throws {
         let harness = try await makeRequestedPublicationHarness()
         let evidence = try XCTUnwrap(
-            harness.manager.controllerCallbackAdmission.capture(
+            harness.inspection.controller.callbackAdmission.capture(
                 context: harness.extensionContext,
                 controller: harness.controller
             )
@@ -136,7 +136,7 @@ final class ExtensionRequestedTabServicesTests:
         let opening = CountingCallbackOpening()
         let adapters = CountingAdapterResolver()
         let runtime = ExtensionControllerTabOpeningCallbackRuntime(
-            admission: harness.manager.controllerCallbackAdmission,
+            admission: harness.inspection.controller.callbackAdmission,
             loadResolver: ExtensionRequestedTabLoadResolver(),
             contextPreloader: preloader,
             tabOpening: opening,
@@ -180,11 +180,11 @@ final class ExtensionRequestedTabServicesTests:
             scratchDirectory: scratchDirectory,
             name: "RequestedTabSecondExtension"
         )
-        _ = try await harness.manager.installedExtensionLifecycle.enable(
+        _ = try await harness.inspection.installation.lifecycle.enable(
             second.id
         )
-        let loadedSecondContext = try await harness.manager
-            .ensureExtensionLoaded(
+        let loadedSecondContext = try await harness.inspection
+            .contextCoordination.residency.ensureExtensionLoaded(
                 extensionId: second.id,
                 profileId: harness.profile.id
             )
@@ -203,7 +203,7 @@ final class ExtensionRequestedTabServicesTests:
             .map(\.id)
 
         XCTAssertThrowsError(
-            try harness.manager.requestedTabOpening.open(
+            try harness.attachedRuntime.requestedTabs.opening.open(
                 url: crossExtensionURL,
                 shouldBeActive: true,
                 shouldBePinned: false,
@@ -246,18 +246,23 @@ final class ExtensionRequestedTabServicesTests:
         SafariExtensionLiveWebKitTestLease.holdForProcess()
         let container = try makeTestContainer()
         let profile = Profile(name: "Profile A")
+        let attachedRuntime = ExtensionAttachedRuntimeCapture()
+        let inspection = ExtensionManagerInspectionCapture()
         let manager = makeSafariExtensionTestExtensionManager(
             context: container.mainContext,
-            initialProfile: profile
+            initialProfile: profile,
+            attachedRuntimeCapture: attachedRuntime,
+            inspectionCapture: inspection
         )
-        _ = manager.runtimeDemandCoordinator.request(
-            reason: .install,
-            allowWithoutEnabledExtensions: true
+        _ = inspection.inspection.contextCoordination.demand.requestRuntimeExplicitly(
+            reason: .install
         )
-        let expectedController = manager.ensureExtensionController(for: profile.id)
+        let expectedController = inspection.inspection.controller.provisioning
+            .ensureExtensionController(for: profile.id)
         let browserManager = makeSafariExtensionTestBrowserManager(profile: profile)
         manager.attach(browserManager: browserManager)
-        let materializer = manager.requestedTabWebViewMaterializer
+        let materializer = attachedRuntime.runtime.normalTabs
+            .requestedTabWebViewMaterializer
         let space = browserManager.tabManager.spaceStateOwner.firstSpace(
             forProfile: profile.id
         ) ?? browserManager.tabManager.spaceServices.catalog.createSpace(
@@ -281,7 +286,7 @@ final class ExtensionRequestedTabServicesTests:
         let materializedWebView = try XCTUnwrap(tab.resolvedCurrentWebView())
         XCTAssertNil(tab.resolvedPrimaryWindowId())
         XCTAssertIdentical(
-            manager.exactExtensionTabWebViews.untrackedWebView(for: tab),
+            attachedRuntime.runtime.controller.webViews.untrackedWebView(for: tab),
             materializedWebView
         )
         XCTAssertIdentical(
@@ -299,7 +304,7 @@ final class ExtensionRequestedTabServicesTests:
 
     func testRequestedTargetSpaceUsesContextProfileWhenCurrentSpaceBelongsToAnotherProfile() throws {
         let harness = try makeProfileRoutingHarness()
-        let resolver = harness.manager.requestedTabTargetResolver
+        let resolver = harness.attachedRuntime.requestedTabs.targetResolver
 
         let targetSpace = resolver.targetSpace(
             for: nil,
@@ -426,7 +431,7 @@ final class ExtensionRequestedTabServicesTests:
                 .webViewRuntime.ownershipQuery.webView(
                     for: tab.id,
                     in: harness.window.id
-                ) === harness.manager.exactExtensionTabWebViews
+                ) === harness.attachedRuntime.controller.webViews
                     .liveWebView(for: tab)
         }
         harness.manager.testHooks.didActivateTab = { tabID in
@@ -438,7 +443,7 @@ final class ExtensionRequestedTabServicesTests:
             harness.manager.testHooks.didActivateTab = nil
         }
 
-        let tab = try harness.manager.requestedTabOpening.open(
+        let tab = try harness.attachedRuntime.requestedTabs.opening.open(
             url: URL(string: "https://requested.example/active")!,
             shouldBeActive: true,
             shouldBePinned: true,
@@ -456,14 +461,14 @@ final class ExtensionRequestedTabServicesTests:
         XCTAssertNotNil(tab.shortcutPinId)
         XCTAssertTrue(
             tab.extensionPageRuntimeOwner.hasDidOpenTabNotification(
-                for: harness.manager.tabPublicationRevisions.issue()
+                for: harness.inspection.runtimeAuthorities.tabPublicationRevisions.issue()
             )
         )
     }
 
     func testDidOpenReentrancyFailureDiscardsTabAdapterAndEligibilityWithoutSelection() async throws {
         let harness = try await makeRequestedPublicationHarness()
-        let originalGeneration = harness.manager.tabPublicationRevisions.issue()
+        let originalGeneration = harness.inspection.runtimeAuthorities.tabPublicationRevisions.issue()
         var rejectedTab: Tab?
         var rejectedAdapter: ExtensionTabAdapter?
         var lifecycleEvents: [String] = []
@@ -477,12 +482,12 @@ final class ExtensionRequestedTabServicesTests:
                 return
             }
             rejectedTab = tab
-            rejectedAdapter = harness.manager.adapterStore.tabAdapters[tabID]
+            rejectedAdapter = harness.inspection.normalTabs.adapters.tabAdapters[tabID]
             lifecycleEvents.append("didOpen")
             harness.browserManager.selectTab(tab, in: harness.window)
             XCTAssertEqual(harness.window.currentTabId, tab.id)
-            _ = harness.manager.tabPublicationRevisions.advance(
-                ifCurrent: harness.manager.tabPublicationRevisions.issue()
+            _ = harness.inspection.runtimeAuthorities.tabPublicationRevisions.advance(
+                ifCurrent: harness.inspection.runtimeAuthorities.tabPublicationRevisions.issue()
             )
         }
         harness.manager.testHooks.didCloseTab = { tabID in
@@ -499,7 +504,7 @@ final class ExtensionRequestedTabServicesTests:
         }
 
         XCTAssertThrowsError(
-            try harness.manager.requestedTabOpening.open(
+            try harness.attachedRuntime.requestedTabs.opening.open(
                 url: URL(string: "https://requested.example/rejected")!,
                 shouldBeActive: true,
                 shouldBePinned: true,
@@ -519,7 +524,7 @@ final class ExtensionRequestedTabServicesTests:
             harness.browserManager.tabManager.tabCollectionMembershipOwner
                 .tab(for: tab.id)
         )
-        XCTAssertNil(harness.manager.adapterStore.tabAdapters[tab.id])
+        XCTAssertNil(harness.inspection.normalTabs.adapters.tabAdapters[tab.id])
         XCTAssertNil(tab.extensionPageRuntimeOwner.currentEligibleGeneration())
         XCTAssertFalse(tab.extensionPageRuntimeOwner.hasAnyDidOpenTabNotification())
         XCTAssertFalse(tab.isPinned)
@@ -529,7 +534,7 @@ final class ExtensionRequestedTabServicesTests:
             }
         )
         XCTAssertEqual(
-            harness.manager.tabPublicationRevisions.issue().generation,
+            harness.inspection.runtimeAuthorities.tabPublicationRevisions.issue().generation,
             originalGeneration.generation + 1
         )
     }
@@ -543,8 +548,8 @@ final class ExtensionRequestedTabServicesTests:
             guard tabID != harness.sourceTab.id else { return }
             rejectedTabID = tabID
             lifecycleEvents.append("didOpen")
-            _ = harness.manager.tabPublicationRevisions.advance(
-                ifCurrent: harness.manager.tabPublicationRevisions.issue()
+            _ = harness.inspection.runtimeAuthorities.tabPublicationRevisions.advance(
+                ifCurrent: harness.inspection.runtimeAuthorities.tabPublicationRevisions.issue()
             )
         }
         harness.manager.testHooks.didCloseTab = { tabID in
@@ -557,7 +562,7 @@ final class ExtensionRequestedTabServicesTests:
         }
 
         XCTAssertThrowsError(
-            try harness.manager.requestedTabOpening.open(
+            try harness.attachedRuntime.requestedTabs.opening.open(
                 url: harness.extensionContext.baseURL
                     .appendingPathComponent("transient.html"),
                 shouldBeActive: false,
@@ -575,36 +580,48 @@ final class ExtensionRequestedTabServicesTests:
             harness.browserManager.tabManager.tabCollectionMembershipOwner
                 .tab(for: tabID)
         )
-        XCTAssertNil(harness.manager.adapterStore.tabAdapters[tabID])
+        XCTAssertNil(harness.inspection.normalTabs.adapters.tabAdapters[tabID])
     }
 
     func testExplicitStaleNormalWindowAdapterWithSameUUIDIsRejectedWithoutFallback() async throws {
         let harness = try await makeRequestedPublicationHarness()
-        let windowQuery = try XCTUnwrap(harness.manager.extensionWindowQuery)
-        let activation = try XCTUnwrap(
-            harness.manager.extensionWindowActivation
-        )
+        let windowQuery = harness.attachedRuntime.bridge.windows
+        let activation = harness.attachedRuntime.bridge.windowActivation
+        let attached = harness.attachedRuntime
         let staleAdapter = ExtensionWindowAdapter(
             windowState: harness.window,
             windowQuery: windowQuery,
             windowActivation: activation,
-            contextPublications: harness.manager.contextPublications,
+            identity: ExtensionWindowAdapterIdentityProjection(
+                contextPublications: harness.inspection.contextState.publications,
+                profileIDForWindow: {
+                    $0.isIncognito
+                        ? $0.ephemeralProfile?.id
+                        : $0.currentProfileId
+                            ?? attached.profileQuery.currentProfile()?.id
+                },
+                profileIDForTab: attached.controller.profiles.profileID,
+                extensionIDForContext: harness.inspection.contextState.profiles.extensionId
+            ),
             preparedTabVisibility: ExtensionPreparedTabVisibility(
                 gate: ExtensionRuntimePublicationGate()
             ),
-            extensionManager: harness.manager
+            windowPublications: attached.publications.windowPublications,
+            tabAdapters: attached.adapters,
+            publishedTabs: attached.normalTabs.publishedTabs,
+            preparedTabs: attached.normalTabs.preparedTabs
         )
 
         XCTAssertEqual(staleAdapter.windowId, harness.publishedWindow.windowId)
         XCTAssertFalse(staleAdapter === harness.publishedWindow)
         XCTAssertThrowsError(
-            try harness.manager.requestedTabTargetResolver.resolve(
+            try harness.attachedRuntime.requestedTabs.targetResolver.resolve(
                 requestedWindow: staleAdapter,
                 extensionContext: harness.extensionContext
             )
         )
         XCTAssertIdentical(
-            harness.manager.windowPublications
+            harness.attachedRuntime.publications.windowPublications
                 .publishedWindowAdapter(
                     for: harness.window,
                     profileID: harness.profile.id
@@ -617,20 +634,20 @@ final class ExtensionRequestedTabServicesTests:
         let harness = try await makeRequestedPublicationHarness()
         let staleContext = harness.extensionContext
         let identity = try XCTUnwrap(
-            harness.manager.profileRuntime.exactContextIdentity(
+            harness.inspection.contextState.profiles.exactContextIdentity(
                 for: staleContext
             )
         )
         let replacementContext = WKWebExtensionContext(
             for: harness.extensionContext.webExtension
         )
-        harness.manager.profileRuntime.setContext(
+        harness.inspection.contextState.profiles.setContext(
             replacementContext,
             extensionId: identity.extensionId,
             profileId: identity.profileId
         )
         defer {
-            harness.manager.profileRuntime.setContext(
+            harness.inspection.contextState.profiles.setContext(
                 staleContext,
                 extensionId: identity.extensionId,
                 profileId: identity.profileId
@@ -638,19 +655,19 @@ final class ExtensionRequestedTabServicesTests:
         }
 
         XCTAssertThrowsError(
-            try harness.manager.requestedTabTargetResolver.resolve(
+            try harness.attachedRuntime.requestedTabs.targetResolver.resolve(
                 requestedWindow: harness.publishedWindow,
                 extensionContext: staleContext
             )
         )
         XCTAssertThrowsError(
-            try harness.manager.requestedTabTargetResolver.resolve(
+            try harness.attachedRuntime.requestedTabs.targetResolver.resolve(
                 requestedWindow: nil,
                 extensionContext: staleContext
             )
         )
         XCTAssertIdentical(
-            harness.manager.windowPublications
+            harness.attachedRuntime.publications.windowPublications
                 .publishedWindowAdapter(
                     for: harness.window,
                     profileID: harness.profile.id
@@ -664,20 +681,20 @@ final class ExtensionRequestedTabServicesTests:
         let harness = try await makeRequestedPublicationHarness()
         let staleContext = harness.extensionContext
         let identity = try XCTUnwrap(
-            harness.manager.profileRuntime.exactContextIdentity(
+            harness.inspection.contextState.profiles.exactContextIdentity(
                 for: staleContext
             )
         )
         let replacementContext = WKWebExtensionContext(
             for: staleContext.webExtension
         )
-        harness.manager.profileRuntime.setContext(
+        harness.inspection.contextState.profiles.setContext(
             replacementContext,
             extensionId: identity.extensionId,
             profileId: identity.profileId
         )
         defer {
-            harness.manager.profileRuntime.setContext(
+            harness.inspection.contextState.profiles.setContext(
                 staleContext,
                 extensionId: identity.extensionId,
                 profileId: identity.profileId
@@ -685,15 +702,15 @@ final class ExtensionRequestedTabServicesTests:
         }
 
         let tabAdapter = try XCTUnwrap(
-            harness.manager.adapterStore.tabAdapters[harness.sourceTab.id]
+            harness.inspection.normalTabs.adapters.tabAdapters[harness.sourceTab.id]
         )
         let appKitWindow = try XCTUnwrap(
-            harness.manager.extensionWindowQuery?.appKitWindow(
+            harness.attachedRuntime.bridge.windows.appKitWindow(
                 for: harness.window
             )
         )
         let sourceWebView = try XCTUnwrap(
-            harness.manager.exactExtensionTabWebViews.liveWebView(
+            harness.attachedRuntime.controller.webViews.liveWebView(
                 for: harness.sourceTab
             )
         )
@@ -770,7 +787,7 @@ final class ExtensionRequestedTabServicesTests:
         }
         XCTAssertNotNil(staleWindowCloseError)
         XCTAssertIdentical(
-            harness.manager.extensionWindowQuery?.extensionWindowState(
+            harness.attachedRuntime.bridge.windows.extensionWindowState(
                 for: harness.window.id
             ),
             harness.window
@@ -839,14 +856,14 @@ final class ExtensionRequestedTabServicesTests:
         let harness = try await makeRequestedPublicationHarness()
         let staleTab = harness.sourceTab
         let staleAdapter = try XCTUnwrap(
-            harness.manager.adapterStore.tabAdapters[staleTab.id]
+            harness.inspection.normalTabs.adapters.tabAdapters[staleTab.id]
         )
         let spaceID = try XCTUnwrap(staleTab.spaceId)
         harness.browserManager.tabManager.tabClosureService.removeTab(
             staleTab.id
         )
         XCTAssertNil(
-            harness.manager.adapterStore.existingTabAdapter(
+            harness.inspection.normalTabs.adapters.existingTabAdapter(
                 for: staleTab.id
             )
         )
@@ -865,16 +882,17 @@ final class ExtensionRequestedTabServicesTests:
         )
 
         let replacementAdapter = try XCTUnwrap(
-            harness.manager.adapterCatalog.stableAdapter(
+            harness.attachedRuntime.adapters.stableAdapter(
                 for: replacementTab
             )
         )
         replacementTab.extensionPageRuntimeOwner.markEligible(
-            for: harness.manager.tabPublicationRevisions.issue()
+            for: harness.inspection.runtimeAuthorities
+                .tabPublicationRevisions.issue()
         )
         let replacementWebView = attachUsableExtensionWebView(
             to: replacementTab,
-            manager: harness.manager,
+            inspection: harness.inspection,
             profile: harness.profile
         )
 
@@ -883,19 +901,19 @@ final class ExtensionRequestedTabServicesTests:
         XCTAssertNil(staleAdapter.tab)
         XCTAssertIdentical(replacementAdapter.tab, replacementTab)
         XCTAssertIdentical(
-            harness.manager.adapterStore.tabAdapters[replacementTab.id],
+            harness.inspection.normalTabs.adapters.tabAdapters[replacementTab.id],
             replacementAdapter
         )
         XCTAssertNil(staleAdapter.url(for: harness.extensionContext))
         XCTAssertNil(staleAdapter.window(for: harness.extensionContext))
         XCTAssertNil(
-            harness.manager.tabWebViewResolver.extensionWebView(
+            harness.attachedRuntime.controller.tabWebViewResolver.extensionWebView(
                 for: staleTab,
                 extensionContext: harness.extensionContext
             )
         )
         XCTAssertIdentical(
-            harness.manager.tabWebViewResolver.extensionWebView(
+            harness.attachedRuntime.controller.tabWebViewResolver.extensionWebView(
                 for: replacementTab,
                 extensionContext: harness.extensionContext
             ),
@@ -957,6 +975,8 @@ final class ExtensionRequestedTabServicesTests:
 
     private struct ProfileRoutingHarness {
         let manager: ExtensionManager
+        let inspection: ExtensionManagerTestInspection
+        let attachedRuntime: ExtensionAttachedBrowserRuntimeInspection
         let browserManager: BrowserManager
         let profileA: Profile
         let profileB: Profile
@@ -966,6 +986,8 @@ final class ExtensionRequestedTabServicesTests:
 
     struct RequestedPublicationHarness {
         let manager: ExtensionManager
+        let inspection: ExtensionManagerTestInspection
+        let attachedRuntime: ExtensionAttachedBrowserRuntimeInspection
         let browserManager: BrowserManager
         let profile: Profile
         let window: BrowserWindowState
@@ -990,11 +1012,15 @@ final class ExtensionRequestedTabServicesTests:
             )
         )
         moduleRegistry.enable(.extensions)
+        let attachedRuntime = ExtensionAttachedRuntimeCapture()
+        let inspection = ExtensionManagerInspectionCapture()
         let manager = makeSafariExtensionTestExtensionManager(
             context: container.mainContext,
             initialProfile: profile,
             browserConfiguration: browserConfiguration,
-            moduleRegistry: moduleRegistry
+            moduleRegistry: moduleRegistry,
+            attachedRuntimeCapture: attachedRuntime,
+            inspectionCapture: inspection
         )
         let extensionsModule = SumiExtensionsModule(
             moduleRegistry: moduleRegistry,
@@ -1054,14 +1080,19 @@ final class ExtensionRequestedTabServicesTests:
             scratchDirectory: scratchDirectory,
             name: "RequestedTabTransactionExtension"
         )
-        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
-        let loadedContext = try await manager.ensureExtensionLoaded(
+        _ = try await inspection.inspection.installation.lifecycle.enable(
+            installed.id
+        )
+        let loadedContext = try await inspection.inspection
+            .contextCoordination.residency.ensureExtensionLoaded(
             extensionId: installed.id,
             profileId: profile.id
         )
         let extensionContext = try XCTUnwrap(loadedContext)
         let controller = try XCTUnwrap(
-            manager.profileRuntime.controller(for: profile.id)
+            inspection.inspection.contextState.profiles.controller(
+                for: profile.id
+            )
         )
 
         browserManager.materializeVisibleTabWebViewIfNeeded(
@@ -1075,23 +1106,23 @@ final class ExtensionRequestedTabServicesTests:
             ) as? FocusableWKWebView
         )
         let sourcePublication = try XCTUnwrap(
-            manager.initialTabPublicationPreparer.prepare(
+            attachedRuntime.runtime.requestedTabs.initialTabPreparer.prepare(
                 window: window,
                 tab: sourceTab,
                 webView: sourceWebView,
-                runtime: manager.runtime,
-                windowRegistry: browserManager.extensionBridgeComposition.windows,
                 reason: "ExtensionRequestedTabServicesTests.source"
             )
         )
-        XCTAssertTrue(manager.normalWindowLifecycle.opened(window))
+        XCTAssertTrue(
+            attachedRuntime.runtime.publications.normalWindows.opened(window)
+        )
         XCTAssertTrue(
             sourcePublication.publishInitialTab(
                 afterWindowOpened: window
             )
         )
         let publishedWindow = try XCTUnwrap(
-            manager.windowPublications
+            attachedRuntime.runtime.publications.windowPublications
                 .publishedWindowAdapter(
                     for: window,
                     profileID: profile.id
@@ -1100,6 +1131,8 @@ final class ExtensionRequestedTabServicesTests:
 
         return RequestedPublicationHarness(
             manager: manager,
+            inspection: inspection.inspection,
+            attachedRuntime: attachedRuntime.runtime,
             browserManager: browserManager,
             profile: profile,
             window: window,
@@ -1114,9 +1147,13 @@ final class ExtensionRequestedTabServicesTests:
         let container = try makeTestContainer()
         let profileA = Profile(name: "Profile A")
         let profileB = Profile(name: "Profile B")
+        let attachedRuntime = ExtensionAttachedRuntimeCapture()
+        let inspection = ExtensionManagerInspectionCapture()
         let manager = makeSafariExtensionTestExtensionManager(
             context: container.mainContext,
-            initialProfile: profileA
+            initialProfile: profileA,
+            attachedRuntimeCapture: attachedRuntime,
+            inspectionCapture: inspection
         )
         let browserManager = makeSafariExtensionTestBrowserManager(profile: profileA)
         browserManager.profileManager.profiles = [profileA, profileB]
@@ -1130,6 +1167,8 @@ final class ExtensionRequestedTabServicesTests:
 
         return ProfileRoutingHarness(
             manager: manager,
+            inspection: inspection.inspection,
+            attachedRuntime: attachedRuntime.runtime,
             browserManager: browserManager,
             profileA: profileA,
             profileB: profileB,

@@ -72,10 +72,11 @@ final class SafariExtensionInstallationSecurityTests: XCTestCase {
     func testInstallRejectsMaliciousGeckoIDBeforeMovingOutsideExtensionsRoot()
         async throws {
         let container = try makeTestContainer()
-        let manager = ExtensionManager(
+        let fixture = makeSafariExtensionManagerTestFixture(
             context: container.mainContext,
             initialProfile: Profile(name: "Malicious ID Profile")
         )
+        let manager = fixture.manager
         let escapedLeaf = "sumi-security-\(UUID().uuidString)"
         let maliciousID = "../\(escapedLeaf)"
         let source = try makeUnpackedExtension(
@@ -90,7 +91,7 @@ final class SafariExtensionInstallationSecurityTests: XCTestCase {
         }
 
         do {
-            _ = try await manager.extensionInstaller.install(
+            _ = try await manager.settingsCatalogBinding().install(
                 from: source,
                 enableOnInstall: false
             )
@@ -102,22 +103,26 @@ final class SafariExtensionInstallationSecurityTests: XCTestCase {
         }
 
         XCTAssertFalse(FileManager.default.fileExists(atPath: escapedDestination.path))
-        XCTAssertFalse(manager.installedExtensionCollection.records.contains { $0.id == maliciousID })
+        XCTAssertFalse(
+            fixture.inspection.actionSurfaces.installedExtensions.records
+                .contains { $0.id == maliciousID }
+        )
     }
 
     func testInstallKeepsLegitimateGeckoIDInsideExtensionsRoot() async throws {
         let container = try makeTestContainer()
-        let manager = ExtensionManager(
+        let fixture = makeSafariExtensionManagerTestFixture(
             context: container.mainContext,
             initialProfile: Profile(name: "Legitimate ID Profile")
         )
+        let manager = fixture.manager
         let extensionId = "addon-\(UUID().uuidString)@example.com"
         let source = try makeUnpackedExtension(
             name: "LegitimateGeckoID",
             geckoId: extensionId
         )
 
-        let installed = try await manager.extensionInstaller.install(
+        let installed = try await manager.settingsCatalogBinding().install(
             from: source,
             enableOnInstall: false
         )
@@ -140,10 +145,11 @@ final class SafariExtensionInstallationSecurityTests: XCTestCase {
 
     func testSafariAppexInstallPrefersBundleIdentifierOverManifestGeckoID() async throws {
         let container = try makeTestContainer()
-        let manager = ExtensionManager(
+        let fixture = makeSafariExtensionManagerTestFixture(
             context: container.mainContext,
             initialProfile: Profile(name: "Safari Bundle ID Profile")
         )
+        let manager = fixture.manager
         let bundleIdentifier = "com.example.safari.\(UUID().uuidString.lowercased())"
         let geckoId = "gecko-\(UUID().uuidString.lowercased())@example.com"
         let manifest: [String: Any] = [
@@ -172,7 +178,7 @@ final class SafariExtensionInstallationSecurityTests: XCTestCase {
             )
         )
 
-        let installed = try await manager.extensionInstaller.install(
+        let installed = try await manager.settingsCatalogBinding().install(
             from: appexURL,
             enableOnInstall: false
         )
@@ -184,11 +190,12 @@ final class SafariExtensionInstallationSecurityTests: XCTestCase {
     func testOptionalNativeMessagingIsNotPregrantedOnInstall() async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Optional Native Messaging Profile")
-        let manager = ExtensionManager(
+        let fixture = makeSafariExtensionManagerTestFixture(
             context: container.mainContext,
             initialProfile: profile
         )
-        let installed = try await manager.extensionInstaller.install(
+        let manager = fixture.manager
+        let installed = try await manager.settingsCatalogBinding().install(
             from: try makeUnpackedExtension(
                 name: "OptionalNativeMessaging",
                 geckoId: "optional-native-\(UUID().uuidString)@example.com",
@@ -203,7 +210,9 @@ final class SafariExtensionInstallationSecurityTests: XCTestCase {
         }
 
         let context = try XCTUnwrap(
-            manager.getExtensionContext(for: installed.id, profileId: profile.id)
+            fixture.inspection.contextState.profiles.contexts(
+                for: profile.id
+            )[installed.id]
         )
 
         XCTAssertFalse(
@@ -220,11 +229,12 @@ final class SafariExtensionInstallationSecurityTests: XCTestCase {
     func testOptionalPermissionsAreNotPregrantedUnderTests() async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Optional Permissions Profile")
-        let manager = ExtensionManager(
+        let fixture = makeSafariExtensionManagerTestFixture(
             context: container.mainContext,
             initialProfile: profile
         )
-        let installed = try await manager.extensionInstaller.install(
+        let manager = fixture.manager
+        let installed = try await manager.settingsCatalogBinding().install(
             from: try makeUnpackedExtension(
                 name: "OptionalTabs",
                 geckoId: "optional-tabs-\(UUID().uuidString)@example.com",
@@ -239,7 +249,9 @@ final class SafariExtensionInstallationSecurityTests: XCTestCase {
         }
 
         let context = try XCTUnwrap(
-            manager.getExtensionContext(for: installed.id, profileId: profile.id)
+            fixture.inspection.contextState.profiles.contexts(
+                for: profile.id
+            )[installed.id]
         )
         let storagePermission = WKWebExtension.Permission(rawValue: "storage")
         let tabsPermission = WKWebExtension.Permission(rawValue: "tabs")
@@ -255,11 +267,12 @@ final class SafariExtensionInstallationSecurityTests: XCTestCase {
     func testRequiredNativeMessagingStillPregrantsOnInstall() async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Required Native Messaging Profile")
-        let manager = ExtensionManager(
+        let fixture = makeSafariExtensionManagerTestFixture(
             context: container.mainContext,
             initialProfile: profile
         )
-        let installed = try await manager.extensionInstaller.install(
+        let manager = fixture.manager
+        let installed = try await manager.settingsCatalogBinding().install(
             from: try makeUnpackedExtension(
                 name: "RequiredNativeMessaging",
                 geckoId: "required-native-\(UUID().uuidString)@example.com",
@@ -274,7 +287,9 @@ final class SafariExtensionInstallationSecurityTests: XCTestCase {
         }
 
         let context = try XCTUnwrap(
-            manager.getExtensionContext(for: installed.id, profileId: profile.id)
+            fixture.inspection.contextState.profiles.contexts(
+                for: profile.id
+            )[installed.id]
         )
 
         XCTAssertTrue(
@@ -289,10 +304,11 @@ final class SafariExtensionInstallationSecurityTests: XCTestCase {
 
     func testFailedReinstallRestoresPackageAndPersistedRecord() async throws {
         let container = try makeTestContainer()
-        let manager = ExtensionManager(
+        let fixture = makeSafariExtensionManagerTestFixture(
             context: container.mainContext,
             initialProfile: Profile(name: "Rollback Profile")
         )
+        let manager = fixture.manager
         let extensionID = "rollback-\(UUID().uuidString)@example.com"
         let originalSource = try makeUnpackedExtension(
             name: "RollbackOriginal",
@@ -301,7 +317,7 @@ final class SafariExtensionInstallationSecurityTests: XCTestCase {
         let originalMarker = originalSource.appendingPathComponent("marker.txt")
         try Data("original".utf8).write(to: originalMarker)
 
-        let original = try await manager.extensionInstaller.install(
+        let original = try await manager.settingsCatalogBinding().install(
             from: originalSource,
             enableOnInstall: false
         )
@@ -328,7 +344,7 @@ final class SafariExtensionInstallationSecurityTests: XCTestCase {
         defer { manager.testHooks.beforePersistInstalledRecord = nil }
 
         do {
-            _ = try await manager.extensionInstaller.install(
+            _ = try await manager.settingsCatalogBinding().install(
                 from: replacementSource,
                 enableOnInstall: false
             )
@@ -342,22 +358,26 @@ final class SafariExtensionInstallationSecurityTests: XCTestCase {
         )
         XCTAssertEqual(restoredMarker, Data("original".utf8))
         XCTAssertEqual(
-            manager.installedExtensionCollection.records.first(where: { $0.id == extensionID })?.name,
+            fixture.inspection.actionSurfaces.installedExtensions.records
+                .first(where: { $0.id == extensionID })?.name,
             original.name
         )
         let persisted = try XCTUnwrap(
-            manager.installationMetadataStore.extensionEntity(for: extensionID)
+            fixture.inspection.installation.metadata.extensionEntity(
+                for: extensionID
+            )
         )
         XCTAssertEqual(persisted.name, original.name)
     }
 
     func testEnableWithoutRuntimeProfileRollsBackEnabledState() async throws {
         let container = try makeTestContainer()
-        let manager = ExtensionManager(
+        let fixture = makeSafariExtensionManagerTestFixture(
             context: container.mainContext,
             initialProfile: nil
         )
-        let installed = try await manager.extensionInstaller.install(
+        let manager = fixture.manager
+        let installed = try await manager.settingsCatalogBinding().install(
             from: try makeUnpackedExtension(
                 name: "EnableRollback",
                 geckoId: "enable-rollback-\(UUID().uuidString)@example.com"
@@ -375,19 +395,23 @@ final class SafariExtensionInstallationSecurityTests: XCTestCase {
         }
 
         do {
-            _ = try await manager.installedExtensionLifecycle.enable(installed.id)
+            _ = try await fixture.inspection.installation.lifecycle
+                .enable(installed.id)
             XCTFail("Enable should fail without a runtime profile")
         } catch {
             XCTAssertTrue(error.localizedDescription.contains("profile is unavailable"))
         }
 
         let entity = try XCTUnwrap(
-            manager.installationMetadataStore.extensionEntity(for: installed.id)
+            fixture.inspection.installation.metadata.extensionEntity(
+                for: installed.id
+            )
         )
         XCTAssertFalse(entity.isEnabled)
         XCTAssertFalse(
             try XCTUnwrap(
-                manager.installedExtensionCollection.records.first(where: { $0.id == installed.id })
+                fixture.inspection.actionSurfaces.installedExtensions.records
+                    .first(where: { $0.id == installed.id })
             ).isEnabled
         )
     }

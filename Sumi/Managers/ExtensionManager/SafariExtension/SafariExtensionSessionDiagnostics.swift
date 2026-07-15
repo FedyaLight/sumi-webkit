@@ -83,30 +83,29 @@ struct SafariExtensionSessionDiagnosticsRuntime {
         activeTabStore: { _ in nil }
     )
 
-    static func make(extensionManager: ExtensionManager) -> Self {
+    static func make(
+        browser: any ExtensionActionPopupBrowserProjection
+    ) -> Self {
         Self(
-            currentTab: { [weak extensionManager] in
-                extensionManager?.extensionWindowQuery?
-                    .currentExtensionTabForActiveWindow()
-            },
-            currentProfile: { [weak extensionManager] in
-                extensionManager?.runtime.currentProfile()
-            },
-            profile: { [weak extensionManager] profileId in
-                extensionManager?.runtime.profile(profileId)
-            },
-            activeTabStore: { [weak extensionManager] tab in
-                guard let windowQuery = extensionManager?.extensionWindowQuery,
-                      let webViewHosting = extensionManager?.extensionWebViewHosting,
-                      let activeWindow = windowQuery.activeExtensionWindowState,
-                      let webView = webViewHosting.extensionWindowOwnedWebView(
-                          for: tab,
-                          in: activeWindow.id
-                      )
-                else {
+            currentTab: { [weak browser] in
+                guard let window = browser?.popupActiveWindow() else {
                     return nil
                 }
-                return webView.configuration.websiteDataStore
+                return browser?.popupCurrentTab(in: window)
+            },
+            currentProfile: { [weak browser] in
+                guard let window = browser?.popupActiveWindow(),
+                      let profileID = window.currentProfileId
+                        ?? window.ephemeralProfile?.id
+                else { return nil }
+                return browser?.popupProfile(id: profileID)
+            },
+            profile: { [weak browser] profileId in
+                browser?.popupProfile(id: profileId)
+            },
+            activeTabStore: { [weak browser] tab in
+                browser?.popupLiveWebView(for: tab)?
+                    .configuration.websiteDataStore
             }
         )
     }
@@ -117,20 +116,24 @@ enum SafariExtensionSessionDiagnosticsBuilder {
     static func build(
         extensionId: String,
         phase: SafariExtensionPopupLifecyclePhase,
-        extensionManager: ExtensionManager,
+        installedExtensions: [InstalledExtension],
+        profileRuntime: ExtensionProfileRuntime,
+        isPopupActive: Bool,
         popupWebView: WKWebView? = nil,
-        runtime: SafariExtensionSessionDiagnosticsRuntime? = nil
+        runtime: SafariExtensionSessionDiagnosticsRuntime
     ) async -> SafariExtensionSessionDiagnostic {
-        let runtime = runtime ?? .make(extensionManager: extensionManager)
-        let installed = extensionManager.installedExtensionCollection.records.first { $0.id == extensionId }
+        let installed = installedExtensions.first { $0.id == extensionId }
         let activeTab = runtime.currentTab()
         let activeProfileId =
-            activeTab.flatMap { extensionManager.resolvedProfileId(for: $0) }
+            activeTab.flatMap {
+                $0.profileId
+                    ?? $0.resolveProfile()?.id
+                    ?? profileRuntime.currentProfileId
+            }
             ?? runtime.currentProfile()?.id
-        let context = extensionManager.getExtensionContext(
-            for: extensionId,
-            profileId: activeProfileId
-        )
+        let context = activeProfileId.flatMap {
+            profileRuntime.contexts(for: $0)[extensionId]
+        }
         let safariRuntimeLoadSource: SafariAppExtensionRuntimeLoadSource? = {
             guard let installed, installed.sourceKind == .safariAppExtension else {
                 return nil
@@ -151,11 +154,11 @@ enum SafariExtensionSessionDiagnosticsBuilder {
             ?? runtime.currentProfile()?.dataStore
         let controllerDefaultStore =
             activeProfileId
-            .flatMap { extensionManager.profileRuntime.controllersByProfile[$0] }?
+            .flatMap { profileRuntime.controllersByProfile[$0] }?
             .configuration.defaultWebsiteDataStore
         let pageConfigurationStore =
             activeProfileId
-            .flatMap { extensionManager.profileRuntime.controllersByProfile[$0] }?
+            .flatMap { profileRuntime.controllersByProfile[$0] }?
             .configuration.webViewConfiguration?
             .websiteDataStore
         let activeTabStore: WKWebsiteDataStore? = {
@@ -187,7 +190,7 @@ enum SafariExtensionSessionDiagnosticsBuilder {
             popupAlignedWithProfile: popupAlignedWithProfile,
             extensionContextLoaded: context != nil,
             popupWebViewPresent: popupWebView != nil,
-            isPopupActive: extensionManager.isPopupActive
+            isPopupActive: isPopupActive
         )
 
         return SafariExtensionSessionDiagnostic(
@@ -198,7 +201,7 @@ enum SafariExtensionSessionDiagnosticsBuilder {
             popupUsesOriginalAppex: safariRuntimeLoadSource == .originalAppexBundle,
             extensionContextLoaded: context != nil,
             popupWebViewPresent: popupWebView != nil,
-            isPopupActive: extensionManager.isPopupActive,
+            isPopupActive: isPopupActive,
             activeTabStore: enrichedSnapshot(
                 tabSnapshot,
                 profileStore: profileStore,

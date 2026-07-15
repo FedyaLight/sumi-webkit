@@ -8,8 +8,7 @@ protocol ExtensionAuxiliaryTabPublicationPreparing: AnyObject {
         for session: AuxiliaryWindowSession,
         profileID: UUID,
         ownerExtensionID: String,
-        ownerContext: WKWebExtensionContext,
-        runtime: ExtensionManagerRuntime
+        ownerContext: WKWebExtensionContext
     ) -> ExtensionAuxiliaryTabPublicationReceipt?
 }
 
@@ -22,71 +21,39 @@ final class ExtensionAuxiliaryTabPublicationPreparer:
     ExtensionAuxiliaryTabPublicationPreparing {
     private let runtimePublicationEvidence:
         ExtensionRuntimePublicationEvidenceIssuer
-    private let profileRuntime: ExtensionProfileRuntime
     private let adapterStore: ExtensionBrowserAdapterStore
-    private let controllers: any ExtensionTabControllerQuery
-    private let webViews: ExtensionExactTabWebViewQuery
-    private let controllerAdmission: any ExtensionWebViewControllerAdmitting
     private let adapterResolution: ExtensionAdapterCatalog
-    private let extensionsLoaded: @MainActor () -> Bool
+    private let admission: ExtensionAuxiliaryTabPublicationAdmission
+    private let receipts: ExtensionAuxiliaryTabPublicationReceiptFactory
 
     init(
         runtimePublicationEvidence:
             ExtensionRuntimePublicationEvidenceIssuer,
-        profileRuntime: ExtensionProfileRuntime,
         adapterStore: ExtensionBrowserAdapterStore,
-        controllers: any ExtensionTabControllerQuery,
-        webViews: ExtensionExactTabWebViewQuery,
-        controllerAdmission: any ExtensionWebViewControllerAdmitting,
         adapterResolution: ExtensionAdapterCatalog,
-        extensionsLoaded: @escaping @MainActor () -> Bool
+        admission: ExtensionAuxiliaryTabPublicationAdmission,
+        receipts: ExtensionAuxiliaryTabPublicationReceiptFactory
     ) {
         self.runtimePublicationEvidence = runtimePublicationEvidence
-        self.profileRuntime = profileRuntime
         self.adapterStore = adapterStore
-        self.controllers = controllers
-        self.webViews = webViews
-        self.controllerAdmission = controllerAdmission
         self.adapterResolution = adapterResolution
-        self.extensionsLoaded = extensionsLoaded
+        self.admission = admission
+        self.receipts = receipts
     }
 
     func prepareTabPublication(
         for session: AuxiliaryWindowSession,
         profileID: UUID,
         ownerExtensionID: String,
-        ownerContext: WKWebExtensionContext,
-        runtime: ExtensionManagerRuntime
+        ownerContext: WKWebExtensionContext
     ) -> ExtensionAuxiliaryTabPublicationReceipt? {
         let tab = session.tab
-        let webView = session.webView
-        guard extensionsLoaded(),
-              session.isPrivate == false,
-              profileRuntime.resolvedProfileId(
-                  for: tab,
-                  runtime: runtime
-              ) == profileID,
-              let dataStore = runtime.profile(profileID)?.dataStore,
-              webView.configuration.websiteDataStore === dataStore,
-              profileRuntime.profileId(for: ownerContext) == profileID,
-              profileRuntime.extensionId(for: ownerContext)
-                == ownerExtensionID,
-              profileRuntime.contexts(for: profileID)[ownerExtensionID]
-                === ownerContext,
-              webViews.untrackedWebView(for: tab)
-                === webView,
-              let controller = controllers.existingController(for: tab),
-              controllerAdmission.admit(
-                  controller,
-                  profileID: profileID,
-                  to: webView,
-                  for: tab
-              ).isUsable,
-              profileRuntime.controller(for: profileID) === controller,
-              webView.configuration.webExtensionController === controller
-        else {
-            return nil
-        }
+        guard let admitted = admission.admit(
+            session: session,
+            profileID: profileID,
+            ownerExtensionID: ownerExtensionID,
+            ownerContext: ownerContext
+        ) else { return nil }
 
         let runtimePublication = runtimePublicationEvidence.issue()
         let generation = runtimePublication.tabPublication
@@ -106,24 +73,17 @@ final class ExtensionAuxiliaryTabPublicationPreparer:
             return nil
         }
 
-        return ExtensionAuxiliaryTabPublicationReceipt(
-            runtimePublicationEvidence: runtimePublicationEvidence,
-            profileRuntime: profileRuntime,
-            adapterStore: adapterStore,
-            controllers: controllers,
-            webViews: webViews,
-            extensionsLoaded: extensionsLoaded,
+        return receipts.make(
             tab: tab,
-            webView: webView,
-            dataStore: dataStore,
+            webView: session.webView,
+            dataStore: admitted.dataStore,
             profileID: profileID,
             ownerExtensionID: ownerExtensionID,
             ownerContext: ownerContext,
-            controller: controller,
+            controller: admitted.controller,
             adapter: adapter,
             runtimePublication: runtimePublication,
-            contextBindingGeneration: profileRuntime
-                .contextBindingGeneration(for: profileID),
+            contextBindingGeneration: admitted.contextBindingGeneration,
             createdAdapter: previousAdapter == nil,
             stateToken: stateToken
         )

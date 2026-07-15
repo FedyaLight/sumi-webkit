@@ -41,8 +41,6 @@ final class ExtensionDeferredRuntimeOwnerStore {
     private let contextLoading: ExtensionContextResidencyOwner
     private let backgroundWake: ExtensionBackgroundWakeCoordinator
     private let failureLogger: ExtensionDeferredRuntimeFailureLogger
-    private var nativeMessagingBackgroundWakeOwnerStorage:
-        ExtensionNativeMessagingBackgroundWakeOwner?
     private var initialDocumentRuntimePreparationOwnerStorage:
         ExtensionInitialDocumentRuntimePreparationOwner?
 
@@ -62,19 +60,6 @@ final class ExtensionDeferredRuntimeOwnerStore {
         self.contextLoading = contextLoading
         self.backgroundWake = backgroundWake
         self.failureLogger = failureLogger
-    }
-
-    var nativeMessagingBackgroundWakeOwner: ExtensionNativeMessagingBackgroundWakeOwner {
-        if let nativeMessagingBackgroundWakeOwnerStorage {
-            return nativeMessagingBackgroundWakeOwnerStorage
-        }
-        let owner = ExtensionNativeMessagingBackgroundWakeOwner()
-        nativeMessagingBackgroundWakeOwnerStorage = owner
-        return owner
-    }
-
-    var loadedNativeMessagingBackgroundWakeOwner: ExtensionNativeMessagingBackgroundWakeOwner? {
-        nativeMessagingBackgroundWakeOwnerStorage
     }
 
     var initialDocumentRuntimePreparationOwner: ExtensionInitialDocumentRuntimePreparationOwner {

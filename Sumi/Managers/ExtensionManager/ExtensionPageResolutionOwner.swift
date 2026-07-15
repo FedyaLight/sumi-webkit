@@ -5,10 +5,18 @@ import WebKit
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionPageResolutionOwner {
-    private weak var manager: ExtensionManager?
+    private let profileRuntime: ExtensionProfileRuntime
+    private let installedExtensions: InstalledExtensionCollection
+    private let currentProfileID: @MainActor () -> UUID?
 
-    init(manager: ExtensionManager) {
-        self.manager = manager
+    init(
+        profileRuntime: ExtensionProfileRuntime,
+        installedExtensions: InstalledExtensionCollection,
+        currentProfileID: @escaping @MainActor () -> UUID?
+    ) {
+        self.profileRuntime = profileRuntime
+        self.installedExtensions = installedExtensions
+        self.currentProfileID = currentProfileID
     }
 
     func ownerExtensionID(
@@ -17,19 +25,18 @@ final class ExtensionPageResolutionOwner {
         extensionOwnedSourceURL: URL? = nil,
         explicitExtensionID: String? = nil
     ) -> String? {
-        guard let manager else { return nil }
         var profileID = openerTab?.profileId
             ?? openerTab?.resolveProfile()?.id
         var candidates: [String] = []
 
         func admitContext(_ context: WKWebExtensionContext) -> Bool {
-            guard let identity = manager.profileRuntime
+            guard let identity = profileRuntime
                 .exactContextIdentity(for: context),
                   profileID.map({ $0 == identity.profileId }) ?? true,
-                  manager.profileRuntime.contexts(for: identity.profileId)[
+                  profileRuntime.contexts(for: identity.profileId)[
                       identity.extensionId
                   ] === context,
-                  manager.installedExtensionCollection.records.contains(
+                  installedExtensions.records.contains(
                       where: {
                           $0.id == identity.extensionId && $0.isEnabled
                       }
@@ -50,19 +57,19 @@ final class ExtensionPageResolutionOwner {
             return nil
         }
         if profileID == nil {
-            profileID = manager.runtime.currentProfile()?.id
+            profileID = currentProfileID()
         }
 
         func admitExtensionID(_ extensionID: String) -> Bool {
             guard extensionID.isEmpty == false,
                   let profileID,
-                  manager.installedExtensionCollection.records.contains(
+                  installedExtensions.records.contains(
                       where: { $0.id == extensionID && $0.isEnabled }
                   ),
-                  let context = manager.profileRuntime.contexts(
+                  let context = profileRuntime.contexts(
                       for: profileID
                   )[extensionID],
-                  manager.profileRuntime.exactContextIdentity(for: context)
+                  profileRuntime.exactContextIdentity(for: context)
                     .map({
                         $0.extensionId == extensionID
                             && $0.profileId == profileID
@@ -81,7 +88,7 @@ final class ExtensionPageResolutionOwner {
 
         func admitExtensionOwnedURL(_ url: URL) -> Bool {
             guard let profileID else { return false }
-            let matches = manager.profileRuntime.contexts(for: profileID)
+            let matches = profileRuntime.contexts(for: profileID)
                 .filter { _, context in
                     Self.isURL(url, ownedBy: context.baseURL)
                 }
@@ -125,31 +132,5 @@ final class ExtensionPageResolutionOwner {
         let requestedPath = url.standardized.path
         return requestedPath == basePath
             || requestedPath.hasPrefix(basePath + "/")
-    }
-}
-
-// MARK: - ExtensionManager facade
-
-@available(macOS 15.5, *)
-@MainActor
-extension ExtensionManager {
-    func extensionID(
-        for extensionContext: WKWebExtensionContext
-    ) -> String? {
-        profileRuntime.extensionId(for: extensionContext)
-    }
-
-    func ownerExtensionID(
-        extensionContext: WKWebExtensionContext? = nil,
-        openerTab: Tab? = nil,
-        extensionOwnedSourceURL: URL? = nil,
-        explicitExtensionID: String? = nil
-    ) -> String? {
-        pageResolutionOwner.ownerExtensionID(
-            extensionContext: extensionContext,
-            openerTab: openerTab,
-            extensionOwnedSourceURL: extensionOwnedSourceURL,
-            explicitExtensionID: explicitExtensionID
-        )
     }
 }

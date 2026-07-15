@@ -18,7 +18,7 @@ delegate_readiness='Sumi/Managers/ExtensionManager/ExtensionControllerDelegateRe
 controller_provisioning='Sumi/Managers/ExtensionManager/ExtensionControllerProvisioningOwner.swift'
 controller_release='Sumi/Managers/ExtensionManager/ExtensionControllerRuntimeRelease.swift'
 diagnostics='Sumi/Managers/ExtensionManager/ExtensionRuntimeDiagnostics.swift'
-manager='Sumi/Managers/ExtensionManager/ExtensionManager.swift'
+manager='Sumi/Managers/ExtensionManager/ExtensionManagerContextStateAssembly.swift'
 
 required_files=(
   "$loader"
@@ -96,13 +96,21 @@ if (( source_cache_admission_count == 0 )) \
   exit 1
 fi
 shared_admission_wiring_count="$(
-  guard_count_matches 'admission: contextLoadAdmission' "$manager" -F
+  guard_count_matches 'admission: admission' "$manager" -F
 )"
 source_cache_wiring_count="$(
   guard_count_matches \
-    'WebExtensionRuntimeSourceCache(admission: contextLoadAdmission)' "$manager" -F
+    'WebExtensionRuntimeSourceCache\([[:space:]]*admission: admission' \
+    "$manager" -U
 )"
-if (( shared_admission_wiring_count == 0 || source_cache_wiring_count == 0 )); then
+authority_wiring_count="$(
+  guard_count_matches \
+    'ExtensionLoadedContextAuthority\([^)]*admission: admission' \
+    "$manager" -U
+)"
+if (( shared_admission_wiring_count < 2 \
+      || source_cache_wiring_count == 0 \
+      || authority_wiring_count == 0 )); then
   printf 'error: source publication and loaded-context authority no longer share narrow admission\n' >&2
   exit 1
 fi

@@ -31,18 +31,24 @@ struct ExtensionActionRequestEvidence {
 final class ExtensionActionRequestAdmission {
     private let runtimeBindingAdmission: ExtensionControllerCallbackAdmission
     private let profileRuntime: ExtensionProfileRuntime
-    private let runtime: @MainActor () -> ExtensionManagerRuntime
+    private let allTabs: @MainActor () -> [Tab]
+    private let profileID: @MainActor (Tab) -> UUID?
+    private let currentProfileID: @MainActor () -> UUID?
     private let installedExtensions: InstalledExtensionCollection
 
     init(
         runtimeBindingAdmission: ExtensionControllerCallbackAdmission,
         profileRuntime: ExtensionProfileRuntime,
-        runtime: @escaping @MainActor () -> ExtensionManagerRuntime,
+        allTabs: @escaping @MainActor () -> [Tab],
+        profileID: @escaping @MainActor (Tab) -> UUID?,
+        currentProfileID: @escaping @MainActor () -> UUID?,
         installedExtensions: InstalledExtensionCollection
     ) {
         self.runtimeBindingAdmission = runtimeBindingAdmission
         self.profileRuntime = profileRuntime
-        self.runtime = runtime
+        self.allTabs = allTabs
+        self.profileID = profileID
+        self.currentProfileID = currentProfileID
         self.installedExtensions = installedExtensions
     }
 
@@ -50,29 +56,22 @@ final class ExtensionActionRequestAdmission {
         extensionID: String,
         currentTab: Tab?
     ) -> ExtensionActionRequestEvidence? {
-        let browserRuntime = runtime()
         if let currentTab,
-           browserRuntime.allTabs().contains(where: { $0 === currentTab }) == false {
+           allTabs().contains(where: { $0 === currentTab }) == false {
             return nil
         }
         let page = currentTab.map {
             ExtensionActionRequestEvidence.PageAuthority(
                 tab: $0,
                 profileID: $0.profileId,
-                resolvedProfileID: profileRuntime.resolvedProfileId(
-                    for: $0,
-                    runtime: browserRuntime
-                ),
+                resolvedProfileID: profileID($0),
                 profileAssignmentRevision: $0.profileAssignment.changeRevision,
                 documentProof: $0.committedDocumentRuntime.authorityProof,
                 pageURL: $0.url
             )
         }
         let resolvedProfileID = page?.resolvedProfileID
-            ?? profileRuntime.resolvedProfileId(
-                explicitProfileId: nil,
-                runtime: browserRuntime
-            )
+            ?? currentProfileID()
         let runtimeBindingAtClick: ExtensionControllerCallbackEvidence? =
             resolvedProfileID.flatMap { profileID in
             guard let context = profileRuntime.contexts(for: profileID)[extensionID],
@@ -103,21 +102,14 @@ final class ExtensionActionRequestAdmission {
            runtimeBindingAdmission.isCurrent(runtimeBindingAtClick) == false {
             return false
         }
-        let browserRuntime = runtime()
         guard let page = evidence.page else {
-            return profileRuntime.resolvedProfileId(
-                explicitProfileId: nil,
-                runtime: browserRuntime
-            ) == evidence.resolvedProfileID
+            return currentProfileID() == evidence.resolvedProfileID
         }
-        return browserRuntime.allTabs().contains { $0 === page.tab }
+        return allTabs().contains { $0 === page.tab }
             && page.tab.profileAssignment.changeRevision
                 == page.profileAssignmentRevision
             && page.tab.profileId == page.profileID
-            && profileRuntime.resolvedProfileId(
-                for: page.tab,
-                runtime: browserRuntime
-            ) == page.resolvedProfileID
+            && profileID(page.tab) == page.resolvedProfileID
             && page.tab.committedDocumentRuntime.authorityProof
                 == page.documentProof
     }

@@ -118,7 +118,7 @@ final class ExtensionTabLifecycleRebindTransaction {
         controllerPreparation?.repair(
             tab,
             reason: reason,
-            allowWhenExtensionsNotLoaded: false
+            publicationStage: .loadedRuntime
         )
         if contextReadiness?
             .profileNeedsInitialDocumentExtensionContextLoad(

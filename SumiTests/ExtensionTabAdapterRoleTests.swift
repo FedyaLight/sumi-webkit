@@ -10,7 +10,7 @@ extension ExtensionRequestedTabServicesTests {
         async throws {
         let harness = try await makeRequestedPublicationHarness()
         let adapter = try XCTUnwrap(
-            harness.manager.adapterStore.existingTabAdapter(
+            harness.inspection.normalTabs.adapters.existingTabAdapter(
                 for: harness.sourceTab.id
             )
         )
@@ -26,7 +26,7 @@ extension ExtensionRequestedTabServicesTests {
             )
         )
         XCTAssertTrue(
-            harness.manager.adapterStore.removeTabAdapter(
+            harness.inspection.normalTabs.adapters.removeTabAdapter(
                 for: harness.sourceTab.id,
                 ifIdenticalTo: adapter
             )
@@ -56,19 +56,18 @@ extension ExtensionRequestedTabServicesTests {
 
     func testPromotionInvalidationPreventsSelectionMutation() async throws {
         let harness = try await makeRequestedPublicationHarness()
-        let underlyingMutation = try XCTUnwrap(
-            harness.manager.extensionTabMutation
-        )
+        let underlyingMutation = harness.attachedRuntime.bridge.tabMutation
         let mutation = ReentrantExtensionTabMutation(
             underlying: underlyingMutation,
-            afterPromotion: { [weak manager = harness.manager] tab in
-                manager?.adapterStore.removeTabAdapter(for: tab.id)
+            afterPromotion: {
+                [adapters = harness.inspection.normalTabs.adapters] tab in
+                adapters.removeTabAdapter(for: tab.id)
             }
         )
         let adapter = try replacePublishedAdapter(
             in: harness,
             tabMutation: mutation,
-            webViews: harness.manager.tabWebViewResolver
+            webViews: harness.attachedRuntime.controller.tabWebViewResolver
         )
 
         let completion = expectation(description: "reentrant activation rejected")
@@ -86,9 +85,7 @@ extension ExtensionRequestedTabServicesTests {
     func testWebViewResolutionInvalidationPreventsStaleZoomMutation()
         async throws {
         let harness = try await makeRequestedPublicationHarness()
-        let underlyingMutation = try XCTUnwrap(
-            harness.manager.extensionTabMutation
-        )
+        let underlyingMutation = harness.attachedRuntime.bridge.tabMutation
         let webView = try XCTUnwrap(
             harness.browserManager.webViewRuntime.ownershipQuery.webView(
                 for: harness.sourceTab.id,
@@ -98,8 +95,9 @@ extension ExtensionRequestedTabServicesTests {
         let originalZoom = webView.pageZoom
         let webViews = ReentrantExtensionTabWebViewQuery(
             webView: webView,
-            duringResolution: { [weak manager = harness.manager] tab in
-                manager?.adapterStore.removeTabAdapter(for: tab.id)
+            duringResolution: {
+                [adapters = harness.inspection.normalTabs.adapters] tab in
+                adapters.removeTabAdapter(for: tab.id)
             }
         )
         let adapter = try replacePublishedAdapter(
@@ -135,7 +133,7 @@ extension ExtensionRequestedTabServicesTests {
                 activate: false
             )
         var adapter: ExtensionTabAdapter? = try XCTUnwrap(
-            harness.manager.adapterCatalog.stableAdapter(
+            harness.attachedRuntime.adapters.stableAdapter(
                 for: unpublishedTab
             )
         )
@@ -145,7 +143,7 @@ extension ExtensionRequestedTabServicesTests {
         weak var releasedCommands = adapter?.commands
 
         XCTAssertTrue(
-            harness.manager.adapterStore.removeTabAdapter(
+            harness.inspection.normalTabs.adapters.removeTabAdapter(
                 for: unpublishedTab.id,
                 ifIdenticalTo: try XCTUnwrap(adapter)
             )
@@ -163,34 +161,32 @@ extension ExtensionRequestedTabServicesTests {
         tabMutation: any ExtensionTabCommandRouting,
         webViews: any ExtensionTabWebViewProjectionQuery
     ) throws -> ExtensionTabAdapter {
-        let manager = harness.manager
+        let inspection = harness.inspection
         let previous = try XCTUnwrap(
-            manager.adapterStore.existingTabAdapter(
+            inspection.normalTabs.adapters.existingTabAdapter(
                 for: harness.sourceTab.id
             )
         )
         XCTAssertTrue(
-            manager.adapterStore.removeTabAdapter(
+            inspection.normalTabs.adapters.removeTabAdapter(
                 for: harness.sourceTab.id,
                 ifIdenticalTo: previous
             )
         )
-        let windowQuery = try XCTUnwrap(manager.extensionWindowQuery)
-        let tabQuery = try XCTUnwrap(manager.extensionTabQuery)
-        let webViewHosting = try XCTUnwrap(manager.extensionWebViewHosting)
-        let auxiliaryWindows = try XCTUnwrap(
-            manager.extensionAuxiliaryWindows
-        )
+        let windowQuery = harness.attachedRuntime.bridge.windows
+        let tabQuery = harness.attachedRuntime.bridge.tabs
+        let webViewHosting = harness.attachedRuntime.bridge.webViews
+        let auxiliaryWindows = harness.attachedRuntime.bridge.auxiliaryWindows
         let evidence = ExtensionTabCurrentPublicationEvidence(
             tab: harness.sourceTab,
             tabQuery: tabQuery,
-            tabPublicationRevisions: manager.tabPublicationRevisions,
-            profileID: { [weak manager] tab in
-                manager?.resolvedProfileId(for: tab)
-            },
-            adapterPublications: manager.adapterStore,
-            windowPublications: manager.windowPublications,
-            contextPublications: manager.contextPublications
+            tabPublicationRevisions:
+                inspection.runtimeAuthorities.tabPublicationRevisions,
+            profileID: harness.attachedRuntime.controller.profiles.profileID,
+            adapterPublications: inspection.normalTabs.adapters,
+            windowPublications: harness.attachedRuntime.publications
+                .windowPublications,
+            contextPublications: inspection.contextState.publications
         )
         let projection = ExtensionTabReadProjection(
             evidence: evidence,
@@ -198,7 +194,8 @@ extension ExtensionRequestedTabServicesTests {
             tabQuery: tabQuery,
             webViews: webViews,
             auxiliaryWindows: auxiliaryWindows,
-            windowPublications: manager.windowPublications
+            windowPublications: harness.attachedRuntime.publications
+                .windowPublications
         )
         let commands = ExtensionTabCommandMutation(
             evidence: evidence,
@@ -213,7 +210,7 @@ extension ExtensionRequestedTabServicesTests {
             projection: projection,
             commands: commands
         )
-        let stored = manager.adapterStore.tabAdapter(
+        let stored = inspection.normalTabs.adapters.tabAdapter(
             for: harness.sourceTab,
             create: { adapter }
         )

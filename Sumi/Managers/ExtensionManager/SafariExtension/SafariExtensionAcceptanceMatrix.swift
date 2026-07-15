@@ -54,8 +54,8 @@ enum SafariExtensionAcceptanceMatrixBuilder {
         discovered: [DiscoveredSafariExtensionCandidate],
         importStore: any SafariExtensionImportRecordProviding,
         installedExtensions: [InstalledExtension] = [],
-        extensionManager: ExtensionManager? = nil,
         extensionsModuleEnabled: Bool = true,
+        runtime: SafariCompatibilityReportRuntime? = nil,
         applicationSearchRoots: [URL] = SafariExtensionScanner.defaultApplicationSearchRoots()
     ) -> SafariExtensionAcceptanceMatrix {
         let compatibilityReport = SafariExtensionCompatibilityReportBuilder.build(
@@ -63,8 +63,8 @@ enum SafariExtensionAcceptanceMatrixBuilder {
             discovered: discovered,
             importStore: importStore,
             installedExtensions: installedExtensions,
-            extensionManager: extensionManager,
-            extensionsModuleEnabled: extensionsModuleEnabled
+            extensionsModuleEnabled: extensionsModuleEnabled,
+            runtime: runtime
         )
         let compatibilityByKey = Dictionary(
             uniqueKeysWithValues: compatibilityReport.entries.map { ($0.targetKey, $0) }
@@ -363,8 +363,11 @@ enum SafariExtensionContentScriptProbe {
     static func isTabReconcilePathWiredViaCompiledRuntime() -> Bool {
         guard #available(macOS 15.5, *) else { return false }
         let reconcile:
-            @MainActor (ExtensionManager) -> (String, Bool, UUID?) -> Void =
-                ExtensionManager.reloadRuntimePublications
+            @MainActor (ExtensionBrowserAttachmentAuthority.Reloads) -> (
+                String,
+                UUID?
+            ) -> Void = ExtensionBrowserAttachmentAuthority.Reloads
+                .finalizeRuntimeLoad
         let finalize:
             @MainActor (ExtensionActionSurfacePublisher) -> (
                 ExtensionLoadedContext,

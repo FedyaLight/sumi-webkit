@@ -348,25 +348,34 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
     private weak var exactWindowState: BrowserWindowState?
     private weak var windowQuery: (any ExtensionWindowQuery)?
     private weak var windowActivation: (any ExtensionWindowActivation)?
-    private weak var contextPublications: ExtensionContextPublicationQuery?
-    private weak var extensionManager: ExtensionManager?
+    private let identity: ExtensionWindowAdapterIdentityProjection
+    private weak var windowPublications: ExtensionWindowPublicationQuery?
+    private weak var tabAdapters: (any ExtensionTabAdapterResolving)?
+    private weak var publishedTabs: ExtensionPublishedNormalTabQuery?
+    private weak var preparedTabs: ExtensionPreparedNormalTabQuery?
     private let preparedTabVisibility: ExtensionPreparedTabVisibility
 
     init(
         windowState: BrowserWindowState,
         windowQuery: any ExtensionWindowQuery,
         windowActivation: any ExtensionWindowActivation,
-        contextPublications: ExtensionContextPublicationQuery,
+        identity: ExtensionWindowAdapterIdentityProjection,
         preparedTabVisibility: ExtensionPreparedTabVisibility,
-        extensionManager: ExtensionManager
+        windowPublications: ExtensionWindowPublicationQuery,
+        tabAdapters: any ExtensionTabAdapterResolving,
+        publishedTabs: ExtensionPublishedNormalTabQuery,
+        preparedTabs: ExtensionPreparedNormalTabQuery
     ) {
         self.windowId = windowState.id
         self.exactWindowState = windowState
         self.windowQuery = windowQuery
         self.windowActivation = windowActivation
-        self.contextPublications = contextPublications
+        self.identity = identity
         self.preparedTabVisibility = preparedTabVisibility
-        self.extensionManager = extensionManager
+        self.windowPublications = windowPublications
+        self.tabAdapters = tabAdapters
+        self.publishedTabs = publishedTabs
+        self.preparedTabs = preparedTabs
         super.init()
     }
 
@@ -383,16 +392,10 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
     private func publishedWindowState(
         for extensionContext: WKWebExtensionContext
     ) -> BrowserWindowState? {
-        guard let extensionManager,
-              let windowState,
-              let contextProfileId = contextPublications?.currentIdentity(
-                for: extensionContext
-              )?.profileID,
-              extensionManager.windowMatchesProfile(
-                windowState,
-                profileId: contextProfileId
-              ),
-              extensionManager.windowPublications.publishedWindowAdapter(
+        guard let windowState,
+              let contextProfileId = identity.profileID(for: extensionContext),
+              identity.profileID(for: windowState) == contextProfileId,
+              windowPublications?.publishedWindowAdapter(
                     for: windowState,
                     profileID: contextProfileId
                 ) === self
@@ -421,27 +424,25 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
     func activeTab(for extensionContext: WKWebExtensionContext) -> (any WKWebExtensionTab)? {
         guard
             let windowQuery,
-            let extensionManager,
+            let tabAdapters,
             let windowState = publishedWindowState(for: extensionContext),
-            let contextProfileId = contextPublications?.currentIdentity(
-                for: extensionContext
-            )?.profileID,
+            let contextProfileId = identity.profileID(for: extensionContext),
             let tab = windowQuery.currentExtensionTab(in: windowState),
-            extensionManager.resolvedProfileId(for: tab) == contextProfileId,
+            identity.profileID(for: tab) == contextProfileId,
             tabIsVisibleToPublishedWindow(tab, in: windowState)
         else {
             SafariExtensionAutofillFillDiagnostics.recordPopupTabVisibility(
                 seesCurrentTab: false,
-                extensionId: extensionManager?.extensionID(for: extensionContext),
+                extensionId: identity.extensionID(for: extensionContext),
                 reason: "activeTabAdapterUnavailable"
             )
             return nil
         }
 
-        let adapter = extensionManager.adapterCatalog.stableAdapter(for: tab)
+        let adapter = tabAdapters.stableAdapter(for: tab)
         SafariExtensionAutofillFillDiagnostics.recordPopupTabVisibility(
             seesCurrentTab: adapter != nil,
-            extensionId: extensionManager.extensionID(for: extensionContext),
+            extensionId: identity.extensionID(for: extensionContext),
             reason: "activeTabAdapterResolved"
         )
         return adapter
@@ -449,22 +450,17 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
 
     func tabs(for extensionContext: WKWebExtensionContext) -> [any WKWebExtensionTab] {
         guard let windowQuery,
-              let extensionManager,
+              let tabAdapters,
               let windowState = publishedWindowState(for: extensionContext),
-              let contextProfileId = contextPublications?.currentIdentity(
-                for: extensionContext
-              )?.profileID,
-              extensionManager.windowMatchesProfile(
-                windowState,
-                profileId: contextProfileId
-              )
+              let contextProfileId = identity.profileID(for: extensionContext),
+              identity.profileID(for: windowState) == contextProfileId
         else { return [] }
 
         return windowQuery.tabsForExtensionWindow(windowState).filter {
-            extensionManager.resolvedProfileId(for: $0) == contextProfileId
+            identity.profileID(for: $0) == contextProfileId
                 && tabIsVisibleToPublishedWindow($0, in: windowState)
         }.compactMap {
-            extensionManager.adapterCatalog.stableAdapter(for: $0)
+            tabAdapters.stableAdapter(for: $0)
         }
     }
 
@@ -472,15 +468,14 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
         _ tab: Tab,
         in windowState: BrowserWindowState
     ) -> Bool {
-        guard let extensionManager else { return false }
-        if extensionManager.publishedExtensionTabs.containsPublishedTab(tab) {
+        if publishedTabs?.containsPublishedTab(tab) == true {
             return true
         }
         return preparedTabVisibility.allowsPreparedTabRead(
             tab,
             in: windowState,
             through: self
-        ) && extensionManager.preparedExtensionTabs.containsPreparedTab(tab)
+        ) && preparedTabs?.containsPreparedTab(tab) == true
     }
 
     func frame(for extensionContext: WKWebExtensionContext) -> CGRect {

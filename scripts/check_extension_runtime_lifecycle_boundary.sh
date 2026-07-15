@@ -10,7 +10,7 @@ guard_initialize "$repo_root"
 old='Sumi/Managers/ExtensionManager/ExtensionRuntimeLifecycleOwner.swift'
 demand='Sumi/Managers/ExtensionManager/ExtensionRuntimeDemandCoordinator.swift'
 transition='Sumi/Managers/ExtensionManager/ExtensionProfileRuntimeTransition.swift'
-attachment='Sumi/Managers/ExtensionManager/ExtensionManager+BrowserRuntimeAttachment.swift'
+attachment='Sumi/Managers/ExtensionManager/ExtensionBrowserAttachmentAuthority.swift'
 residency='Sumi/Managers/ExtensionManager/ExtensionContextResidencyOwner.swift'
 settlement='Sumi/Managers/ExtensionManager/ExtensionContextSettlementOwner.swift'
 installation='Sumi/Managers/ExtensionManager/ExtensionInstallationService.swift'
@@ -40,6 +40,24 @@ if [[ -n "$tombstones" ]]; then
     "$tombstones" >&2
   status=1
 fi
+
+mode_flag_hits="$(
+  guard_capture_matches \
+    '\ballowWithoutEnabledExtensions\b|\ballowWhenExtensionsNotLoaded\b|\bisExtensionSupportAvailable[[:space:]]*:' \
+    Sumi SumiTests -g '*.swift'
+)"
+if [[ -n "$mode_flag_hits" ]]; then
+  printf 'error: extension runtime regained a broad Bool mode API:\n%s\n' \
+    "$mode_flag_hits" >&2
+  status=1
+fi
+for operation in requestRuntimeIfDemanded requestRuntimeExplicitly; do
+  operation_count="$(guard_count_matches "func $operation(" "$demand" -F)"
+  if (( operation_count != 1 )); then
+    echo "error: demand coordinator lost named operation: $operation" >&2
+    status=1
+  fi
+done
 
 role_bags="$(
   guard_capture_matches \

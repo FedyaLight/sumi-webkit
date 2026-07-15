@@ -1,4 +1,5 @@
 import Combine
+import Foundation
 import SwiftData
 import WebKit
 import XCTest
@@ -76,8 +77,8 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
         var dispatches = 0
         harness.manager.testHooks.didDispatchExtensionAction = { _ in dispatches += 1 }
         harness.manager.testHooks.permissionPromptDecision = {
-            [manager = harness.manager] _, _, _ in
-            _ = manager.profileRuntime.setContext(
+            [inspection = harness.inspection] _, _, _ in
+            _ = inspection.contextState.profiles.setContext(
                 replacement,
                 extensionId: harness.extensionID,
                 profileId: harness.profileID
@@ -109,8 +110,8 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
         var dispatches = 0
         harness.manager.testHooks.didDispatchExtensionAction = { _ in dispatches += 1 }
         harness.manager.testHooks.permissionPromptDecision = {
-            [manager = harness.manager] _, _, _ in
-            _ = manager.profileRuntime.setContext(
+            [inspection = harness.inspection] _, _, _ in
+            _ = inspection.contextState.profiles.setContext(
                 harness.context,
                 extensionId: harness.extensionID,
                 profileId: harness.profileID
@@ -132,7 +133,7 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
 
     func testControllerABADuringAuthorizationCannotReviveInvocation() async throws {
         let harness = try await makeHarness(name: "ControllerABA")
-        let originalController = harness.manager.ensureExtensionController(
+        let originalController = harness.inspection.controller.provisioning.ensureExtensionController(
             for: harness.profileID
         )
         let replacementController = WKWebExtensionController(
@@ -142,13 +143,13 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
         var staleDrive = true
         harness.manager.testHooks.didDispatchExtensionAction = { _ in dispatches += 1 }
         harness.manager.testHooks.permissionPromptDecision = {
-            [manager = harness.manager] _, _, _ in
+            [inspection = harness.inspection] _, _, _ in
             if staleDrive {
-                manager.profileRuntime.setController(
+                inspection.contextState.profiles.setController(
                     replacementController,
                     for: harness.profileID
                 )
-                manager.profileRuntime.setController(
+                inspection.contextState.profiles.setController(
                     originalController,
                     for: harness.profileID
                 )
@@ -183,8 +184,8 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
         var dispatches = 0
         harness.manager.testHooks.didDispatchExtensionAction = { _ in dispatches += 1 }
         harness.manager.testHooks.permissionPromptDecision = {
-            [manager = harness.manager] _, _, _ in
-            manager.extensionLoadRevisions.advance()
+            [inspection = harness.inspection] _, _, _ in
+            inspection.runtimeAuthorities.loadRevisions.advance()
             return .allow(expirationDate: nil)
         }
         defer { clearHooks(harness) }
@@ -206,8 +207,8 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
         var dispatches = 0
         harness.manager.testHooks.didDispatchExtensionAction = { _ in dispatches += 1 }
         harness.manager.testHooks.permissionPromptDecision = {
-            [manager = harness.manager] _, _, _ in
-            manager.installedExtensionCollection.remove(id: harness.extensionID)
+            [inspection = harness.inspection] _, _, _ in
+            inspection.actionSurfaces.installedExtensions.remove(id: harness.extensionID)
             return .allow(expirationDate: nil)
         }
         defer { clearHooks(harness) }
@@ -224,15 +225,15 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
     func testInstalledRecordDisableDuringAuthorizationInvalidatesInvocation() async throws {
         let harness = try await makeHarness(name: "RecordDisable")
         let disabledRecord = try XCTUnwrap(
-            harness.manager.installedExtensionCollection.records
+            harness.inspection.actionSurfaces.installedExtensions.records
                 .first { $0.id == harness.extensionID }
                 .map { Self.copyRecord($0, isEnabled: false) }
         )
         var dispatches = 0
         harness.manager.testHooks.didDispatchExtensionAction = { _ in dispatches += 1 }
         harness.manager.testHooks.permissionPromptDecision = {
-            [manager = harness.manager] _, _, _ in
-            manager.installedExtensionCollection.upsert(disabledRecord)
+            [inspection = harness.inspection] _, _, _ in
+            inspection.actionSurfaces.installedExtensions.upsert(disabledRecord)
             return .allow(expirationDate: nil)
         }
         defer { clearHooks(harness) }
@@ -252,8 +253,8 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
         var dispatches = 0
         harness.manager.testHooks.didDispatchExtensionAction = { _ in dispatches += 1 }
         harness.manager.testHooks.permissionPromptDecision = {
-            [manager = harness.manager] _, _, _ in
-            manager.installedExtensionCollection.upsert(
+            [inspection = harness.inspection] _, _, _ in
+            inspection.actionSurfaces.installedExtensions.upsert(
                 Self.makeSyntheticRecord(id: "unrelated-\(UUID().uuidString)")
             )
             return .allow(expirationDate: nil)
@@ -350,8 +351,8 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
         var dispatches = 0
         harness.manager.testHooks.didDispatchExtensionAction = { _ in dispatches += 1 }
         harness.manager.testHooks.permissionPromptDecision = {
-            [manager = harness.manager] _, _, _ in
-            _ = manager.profileRuntime.setContext(
+            [inspection = harness.inspection] _, _, _ in
+            _ = inspection.contextState.profiles.setContext(
                 harness.context,
                 extensionId: harness.extensionID,
                 profileId: harness.profileID
@@ -400,8 +401,8 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
         var dispatches = 0
         harness.manager.testHooks.didDispatchExtensionAction = { _ in dispatches += 1 }
         harness.manager.testHooks.permissionPromptDecision = {
-            [manager = harness.manager] _, _, _ in
-            _ = manager.profileRuntime.setContext(
+            [inspection = harness.inspection] _, _, _ in
+            _ = inspection.contextState.profiles.setContext(
                 harness.context,
                 extensionId: harness.extensionID,
                 profileId: harness.profileID
@@ -444,27 +445,23 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
         // notification synchronously between the WebKit grant and the durable
         // decision persistence; rebinding there is a reentrant replacement
         // caused by the invocation's own observable effect.
-        let trigger = ReentrantMutationTrigger { [manager = harness.manager] in
-            guard manager.configuredSiteAccessLevel(
+        let trigger = ReentrantMutationTrigger { [inspection = harness.inspection] in
+            guard inspection.actionPolicy.siteAccess.configuredSiteAccessLevel(
                 for: Self.clickedPageURL,
                 extensionId: harness.extensionID,
                 profileId: harness.profileID
             ) == .allow else { return false }
-            _ = manager.profileRuntime.setContext(
+            _ = inspection.contextState.profiles.setContext(
                 harness.context,
                 extensionId: harness.extensionID,
                 profileId: harness.profileID
             )
             return true
         }
-        let observer = NotificationCenter.default.addObserver(
-            forName: .sumiExtensionSiteAccessPoliciesDidChange,
-            object: harness.manager,
-            queue: nil
-        ) { _ in
+        let observer = harness.inspection.actionSurfaces.publication.siteAccessPolicyChangePublisher.sink {
             MainActor.assumeIsolated { trigger.fireIfArmed() }
         }
-        defer { NotificationCenter.default.removeObserver(observer) }
+        defer { observer.cancel() }
 
         let result = await harness.openPopup()
         await drainMainActorTurns()
@@ -500,21 +497,21 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
         // persistence: the invocation's own publication effect reentrantly
         // replaces the binding before `performAction`.
         var cancellables = Set<AnyCancellable>()
-        let trigger = ReentrantMutationTrigger { [manager = harness.manager] in
-            guard manager.storedExtensionPermissionDecision(
+        let trigger = ReentrantMutationTrigger { [inspection = harness.inspection] in
+            guard inspection.actionPolicy.permissionDecisions.storedExtensionPermissionDecision(
                 extensionId: harness.extensionID,
                 profileId: harness.profileID,
                 targetKind: .matchPattern,
                 target: Self.clickedHostPattern
             ) != nil else { return false }
-            _ = manager.profileRuntime.setContext(
+            _ = inspection.contextState.profiles.setContext(
                 harness.context,
                 extensionId: harness.extensionID,
                 profileId: harness.profileID
             )
             return true
         }
-        harness.manager.$actionStatesByExtensionID
+        harness.inspection.actionSurfaces.publication.actionStatesPublisher
             .dropFirst()
             .sink { _ in trigger.fireIfArmed() }
             .store(in: &cancellables)
@@ -542,9 +539,9 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
         var promptCount = 0
         harness.manager.testHooks.didDispatchExtensionAction = { _ in dispatches += 1 }
         harness.manager.testHooks.permissionPromptDecision = {
-            [manager = harness.manager] _, _, _ in
+            [inspection = harness.inspection] _, _, _ in
             promptCount += 1
-            _ = manager.profileRuntime.setContext(
+            _ = inspection.contextState.profiles.setContext(
                 harness.context,
                 extensionId: harness.extensionID,
                 profileId: harness.profileID
@@ -572,7 +569,10 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
     func testUntrackedTabIsRejectedBeforeRuntimeResolution() async throws {
         let harness = try await makeHarness(name: "PreResolutionProfile")
         let detachedTab = Tab(url: Self.clickedPageURL)
-        let boundary = makeAdmission(manager: harness.manager)
+        let boundary = makeAdmission(
+            inspection: harness.inspection,
+            attachedRuntime: harness.attachedRuntime
+        )
         let request = boundary.request.capture(
             extensionID: harness.extensionID,
             currentTab: detachedTab
@@ -583,7 +583,10 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
 
     func testNoTabFallbackProfileChangeDuringRuntimeResolutionInvalidatesRequest() async throws {
         let harness = try await makeHarness(name: "PreResolutionNoTabProfile")
-        let boundary = makeAdmission(manager: harness.manager)
+        let boundary = makeAdmission(
+            inspection: harness.inspection,
+            attachedRuntime: harness.attachedRuntime
+        )
         let request = try XCTUnwrap(
             boundary.request.capture(
                 extensionID: harness.extensionID,
@@ -591,7 +594,7 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
             )
         )
 
-        _ = harness.manager.profileRuntime.activateProfile(
+        _ = harness.inspection.contextState.profiles.activateProfile(
             UUID(),
             hasExtensionDemand: false,
             runtimeIsReadyOrLoading: false
@@ -601,7 +604,7 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
             request: request,
             profileID: harness.profileID,
             context: harness.context,
-            controller: harness.manager.profileRuntime.controller(
+            controller: harness.inspection.contextState.profiles.controller(
                 for: harness.profileID
             )
         )
@@ -613,7 +616,10 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
 
     func testExistingRuntimeRebindDuringRuntimeResolutionInvalidatesRequest() async throws {
         let harness = try await makeHarness(name: "PreResolutionRuntimeRebind")
-        let boundary = makeAdmission(manager: harness.manager)
+        let boundary = makeAdmission(
+            inspection: harness.inspection,
+            attachedRuntime: harness.attachedRuntime
+        )
         let request = try XCTUnwrap(
             boundary.request.capture(
                 extensionID: harness.extensionID,
@@ -621,7 +627,7 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
             )
         )
 
-        _ = harness.manager.profileRuntime.setContext(
+        _ = harness.inspection.contextState.profiles.setContext(
             harness.context,
             extensionId: harness.extensionID,
             profileId: harness.profileID
@@ -631,7 +637,7 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
             request: request,
             profileID: harness.profileID,
             context: harness.context,
-            controller: harness.manager.profileRuntime.controller(
+            controller: harness.inspection.contextState.profiles.controller(
                 for: harness.profileID
             )
         )
@@ -643,7 +649,10 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
 
     func testDocumentReplacementDuringRuntimeResolutionInvalidatesRequest() async throws {
         let harness = try await makeHarness(name: "PreResolutionDocument")
-        let boundary = makeAdmission(manager: harness.manager)
+        let boundary = makeAdmission(
+            inspection: harness.inspection,
+            attachedRuntime: harness.attachedRuntime
+        )
         let request = try XCTUnwrap(
             boundary.request.capture(
                 extensionID: harness.extensionID,
@@ -671,7 +680,7 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
             request: request,
             profileID: harness.profileID,
             context: harness.context,
-            controller: harness.manager.profileRuntime.controller(
+            controller: harness.inspection.contextState.profiles.controller(
                 for: harness.profileID
             )
         )
@@ -683,16 +692,19 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
 
     func testAdapterAbsenceIsExactAuthority() async throws {
         let harness = try await makeHarness(name: "ExactAdapterAbsence")
-        harness.manager.normalTabRegistration.register(
+        harness.attachedRuntime.normalTabs.tabRegistration.register(
             harness.tab,
             reason: "ExtensionActionInvocationAdmissionTests"
         )
         let adapter = try XCTUnwrap(
-            harness.manager.adapterCatalog.stableAdapter(for: harness.tab)
+            harness.attachedRuntime.adapters.stableAdapter(for: harness.tab)
         )
-        harness.manager.adapterStore.removeTabAdapter(for: harness.tab.id)
+        harness.inspection.normalTabs.adapters.removeTabAdapter(for: harness.tab.id)
 
-        let boundary = makeAdmission(manager: harness.manager)
+        let boundary = makeAdmission(
+            inspection: harness.inspection,
+            attachedRuntime: harness.attachedRuntime
+        )
         let request = try XCTUnwrap(
             boundary.request.capture(
                 extensionID: harness.extensionID,
@@ -704,7 +716,7 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
                 request: request,
                 profileID: harness.profileID,
                 context: harness.context,
-                controller: harness.manager.profileRuntime.controller(
+                controller: harness.inspection.contextState.profiles.controller(
                     for: harness.profileID
                 )
             )
@@ -714,7 +726,7 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
         )
         XCTAssertTrue(boundary.invocation.isCurrent(admittedAbsence))
 
-        harness.manager.adapterStore.tabAdapters[harness.tab.id] = adapter
+        harness.inspection.normalTabs.adapters.tabAdapters[harness.tab.id] = adapter
 
         XCTAssertFalse(boundary.invocation.isCurrent(admittedAbsence))
     }
@@ -724,12 +736,17 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
     func testRejectedInvocationDoesNotMaterializeLazyRuntimeSystems() async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "ZeroCost")
+        let inspection = ExtensionManagerInspectionCapture()
+        let attachedRuntime = ExtensionAttachedRuntimeCapture()
         let manager = ExtensionManager(
             context: container.mainContext,
-            initialProfile: profile
+            initialProfile: profile,
+            attachedRuntimeDidInstall: attachedRuntime.install,
+            testInspectionDidAssemble: inspection.install
         )
 
-        let result = await manager.extensionActionInvocation.openPopup(
+        let result = await inspection.inspection.actionSurfaces.invocation
+            .openPopup(
             extensionID: "not-installed",
             currentTab: nil
         )
@@ -738,9 +755,12 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
         // The lazy runtime systems whose materialization carries background
         // cost (native messaging, background wakes, the browser runtime
         // bridge) must stay cold for a rejected invocation.
-        XCTAssertNil(manager.loadedNativeMessagingRelayOwner)
-        XCTAssertNil(manager.loadedNativeMessagingBackgroundWakeOwner)
-        XCTAssertNil(manager.loadedRuntimePublicationReconciler)
+        XCTAssertNil(inspection.inspection.nativeMessaging.loadedRelay)
+        XCTAssertFalse(
+            inspection.inspection.nativeMessaging.hasLoadedWakeOwner
+        )
+        XCTAssertFalse(attachedRuntime.hasInstalledRuntime)
+        withExtendedLifetime(manager) {}
     }
 
     // MARK: - 20. Popup invocation settlement and exact recovery
@@ -751,10 +771,10 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
         let (evidence, action) = try exactInvocation(
             in: harness
         )
-        var now: TimeInterval = 10
+        let clock = ExtensionActionInvocationTestClock(now: 10)
         let ledger = ExtensionActionPopupInvocationLedger(
             recoveryInterval: 5,
-            now: { now }
+            now: { clock.now() }
         )
         let target = ExtensionActionPopupInvocationTarget(
             anchorSessionToken: UUID(),
@@ -768,7 +788,7 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
         ) else {
             return XCTFail("first exact invocation must register")
         }
-        now = 14.9
+        clock.set(14.9)
         guard case .awaitingSettlement = ledger.register(
             evidence: evidence,
             action: action,
@@ -776,7 +796,7 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
         ) else {
             return XCTFail("a live request inside the deadline must stay single-flight")
         }
-        now = 15
+        clock.set(15)
         guard case .recoveryRequired(let receipt) = ledger.register(
             evidence: evidence,
             action: action,
@@ -787,7 +807,7 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
 
         XCTAssertEqual(
             receipt,
-            harness.manager.profileRuntime.contextBindingReceipt(
+            harness.inspection.contextState.profiles.contextBindingReceipt(
                 extensionId: harness.extensionID,
                 profileId: harness.profileID
             )
@@ -822,7 +842,7 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
             return XCTFail("canceled dispatch must require a fresh binding")
         }
         let callbackEvidence = try XCTUnwrap(
-            harness.manager.actionPopupCallbackAdmission.capture(
+            harness.inspection.popups.callbackAdmission.capture(
                 context: harness.context,
                 controller: evidence.runtimeBinding.controller
             )
@@ -867,7 +887,7 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
             return XCTFail("a coalesced click must keep one WebKit invocation")
         }
         let callbackEvidence = try XCTUnwrap(
-            harness.manager.actionPopupCallbackAdmission.capture(
+            harness.inspection.popups.callbackAdmission.capture(
                 context: harness.context,
                 controller: evidence.runtimeBinding.controller
             )
@@ -899,11 +919,11 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
         }
 
         let installed = try XCTUnwrap(
-            harness.manager.installedExtensionCollection.records.first {
+            harness.inspection.actionSurfaces.installedExtensions.records.first {
                 $0.id == harness.extensionID
             }
         )
-        harness.manager.installedExtensionCollection.upsert(installed)
+        harness.inspection.actionSurfaces.installedExtensions.upsert(installed)
         let (currentEvidence, currentAction) = try exactInvocation(in: harness)
         XCTAssertIdentical(firstAction, currentAction)
         let currentTarget = ExtensionActionPopupInvocationTarget(
@@ -918,7 +938,7 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
             return XCTFail("new catalog authority must replace the stale entry")
         }
         let callbackEvidence = try XCTUnwrap(
-            harness.manager.actionPopupCallbackAdmission.capture(
+            harness.inspection.popups.callbackAdmission.capture(
                 context: harness.context,
                 controller: currentEvidence.runtimeBinding.controller
             )
@@ -941,28 +961,28 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
             anchorSessionToken: UUID(),
             windowID: UUID()
         )
-        guard case .registered = harness.manager.actionPopupInvocationLedger
+        guard case .registered = harness.inspection.popups.invocations
             .register(evidence: evidence, action: action, target: target)
         else {
             return XCTFail("popup invocation must register before retirement")
         }
         let receipt = try XCTUnwrap(
-            harness.manager.profileRuntime.contextBindingReceipt(
+            harness.inspection.contextState.profiles.contextBindingReceipt(
                 extensionId: harness.extensionID,
                 profileId: harness.profileID
             )
         )
         var observedQuarantineInsideUnload = false
         let retirement = ExtensionContextRetirement(
-            profileRuntime: harness.manager.profileRuntime,
-            backgroundRuntimeState: harness.manager.backgroundRuntimeStateOwner,
-            runtimeResidency: harness.manager.runtimeResidency,
-            errorObservation: harness.manager.contextErrorObservation,
-            diagnostics: harness.manager.runtimeDiagnostics,
-            actionPopups: harness.manager.actionPopupRuntimeRetirement,
+            profileRuntime: harness.inspection.contextState.profiles,
+            backgroundRuntimeState: harness.inspection.contextState.background,
+            runtimeResidency: harness.inspection.runtimeAuthorities.residency,
+            errorObservation: harness.inspection.contextState.errors,
+            diagnostics: harness.inspection.contextCoordination.diagnostics,
+            actionPopups: harness.inspection.popups.runtimeRetirement,
             unloadContext: { _, _ in
-                guard case .recoveryRequired(let observed) = harness.manager
-                    .actionPopupInvocationLedger.register(
+                guard case .recoveryRequired(let observed) = harness.inspection
+                    .popups.invocations.register(
                         evidence: evidence,
                         action: action,
                         target: target
@@ -983,8 +1003,8 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
 
         XCTAssertEqual(retirement.retire(receipt), .unloadFailed)
         XCTAssertTrue(observedQuarantineInsideUnload)
-        guard case .recoveryRequired(let preserved) = harness.manager
-            .actionPopupInvocationLedger.register(
+        guard case .recoveryRequired(let preserved) = harness.inspection
+            .popups.invocations.register(
                 evidence: evidence,
                 action: action,
                 target: target
@@ -999,7 +1019,7 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
         async throws {
         let harness = try await makeHarness(name: "PopupServiceRecovery")
         let receipt = try XCTUnwrap(
-            harness.manager.profileRuntime.contextBindingReceipt(
+            harness.inspection.contextState.profiles.contextBindingReceipt(
                 extensionId: harness.extensionID,
                 profileId: harness.profileID
             )
@@ -1013,7 +1033,8 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
         defer { clearHooks(harness) }
 
         let service = makeInvocationService(
-            manager: harness.manager,
+            inspection: harness.inspection,
+            attachedRuntime: harness.attachedRuntime,
             actionDispatch: dispatch,
             bindingRecovery: recovery,
             actionDispatchProbe: { _ in dispatches += 1 }
@@ -1038,6 +1059,8 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
 
     private struct Harness {
         let manager: ExtensionManager
+        let inspection: ExtensionManagerTestInspection
+        let attachedRuntime: ExtensionAttachedBrowserRuntimeInspection
         let browserManager: BrowserManager
         let profileID: UUID
         let extensionID: String
@@ -1057,8 +1080,8 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
                 capturedAt: Date(),
                 buttonView: nil
             )
-            manager.actionPopupAnchorStore.store(anchor)
-            return await manager.extensionActionInvocation.openPopup(
+            inspection.popups.anchors.store(anchor)
+            return await inspection.actionSurfaces.invocation.openPopup(
                 extensionID: extensionID,
                 currentTab: tab,
                 popupTargetRequest: .explicitAnchor(anchor.sessionToken)
@@ -1067,7 +1090,7 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
 
         @MainActor
         func storedDecision() -> ExtensionManager.ExtensionStoredPermissionDecision? {
-            manager.storedExtensionPermissionDecision(
+            inspection.actionPolicy.permissionDecisions.storedExtensionPermissionDecision(
                 extensionId: extensionID,
                 profileId: profileID,
                 targetKind: .matchPattern,
@@ -1077,7 +1100,7 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
 
         @MainActor
         func configuredLevel() -> SafariExtensionSiteAccessLevel {
-            manager.configuredSiteAccessLevel(
+            inspection.actionPolicy.siteAccess.configuredSiteAccessLevel(
                 for: ExtensionActionInvocationAdmissionTests.clickedPageURL,
                 extensionId: extensionID,
                 profileId: profileID
@@ -1093,7 +1116,9 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
 
         @MainActor
         func actionPopupMetricCount() -> Int {
-            let metrics = manager.runtimeMetrics.metrics(for: extensionID)
+            let metrics = inspection.runtimeAuthorities.metrics.metrics(
+                for: extensionID
+            )
             guard let metrics, metrics.lastBackgroundWakeReason == .actionPopup
             else {
                 return 0
@@ -1126,9 +1151,7 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
             harness: harness,
             windowState: secondWindow
         )
-        let query = ExtensionActionPresentationQuery {
-            harness.manager
-        }
+        let query = makePresentationQuery(harness: harness)
         let firstTarget = try XCTUnwrap(query.target(
             extensionID: harness.extensionID,
             tab: firstTab,
@@ -1140,10 +1163,10 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
             window: secondWindow
         ))
         let firstAdapter = try XCTUnwrap(
-            harness.manager.adapterCatalog.stableAdapter(for: firstTab)
+            harness.attachedRuntime.adapters.stableAdapter(for: firstTab)
         )
         let secondAdapter = try XCTUnwrap(
-            harness.manager.adapterCatalog.stableAdapter(for: secondTab)
+            harness.attachedRuntime.adapters.stableAdapter(for: secondTab)
         )
         let firstAction = try XCTUnwrap(
             harness.context.action(for: firstAdapter)
@@ -1182,12 +1205,13 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
         let executionContext = WKWebExtensionContext(
             for: harness.context.webExtension
         )
-        harness.manager.setExtensionContext(
+        harness.inspection.contextState.profiles.setContext(
             executionContext,
             extensionId: harness.extensionID,
             profileId: executionProfileID
         )
-        let executionController = harness.manager.ensureExtensionController(
+        let executionController = harness.inspection.controller.provisioning
+            .ensureExtensionController(
             for: executionProfileID
         )
         try executionController.load(executionContext)
@@ -1199,9 +1223,7 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
             profileID: executionProfileID,
             harness: harness
         )
-        let query = ExtensionActionPresentationQuery {
-            harness.manager
-        }
+        let query = makePresentationQuery(harness: harness)
 
         let target = try XCTUnwrap(query.target(
             extensionID: harness.extensionID,
@@ -1211,7 +1233,7 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
 
         XCTAssertNotEqual(executionProfileID, harness.profileID)
         XCTAssertEqual(
-            harness.manager.profileRuntime.currentProfileId,
+            harness.inspection.contextState.profiles.currentProfileId,
             harness.profileID
         )
         XCTAssertFalse(executionContext === harness.context)
@@ -1230,16 +1252,14 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
             profileID: harness.profileID,
             harness: harness
         )
-        let query = ExtensionActionPresentationQuery {
-            harness.manager
-        }
+        let query = makePresentationQuery(harness: harness)
         XCTAssertNotNil(query.target(
             extensionID: harness.extensionID,
             tab: publishedTab,
             window: harness.windowState
         ))
 
-        _ = harness.manager.profileRuntime.setContext(
+        _ = harness.inspection.contextState.profiles.setContext(
             harness.context,
             extensionId: harness.extensionID,
             profileId: UUID()
@@ -1259,9 +1279,7 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
             profileID: harness.profileID,
             harness: harness
         )
-        let query = ExtensionActionPresentationQuery {
-            harness.manager
-        }
+        let query = makePresentationQuery(harness: harness)
         let staleTarget = try XCTUnwrap(query.target(
             extensionID: harness.extensionID,
             tab: tab,
@@ -1313,9 +1331,7 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
         addTeardownBlock { @MainActor in
             harness.windowRegistry.unregister(secondWindow.id)
         }
-        let query = ExtensionActionPresentationQuery {
-            harness.manager
-        }
+        let query = makePresentationQuery(harness: harness)
 
         XCTAssertNil(query.target(
             extensionID: harness.extensionID,
@@ -1329,6 +1345,42 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
         ))
     }
 
+    private func makePresentationQuery(
+        harness: Harness
+    ) -> ExtensionActionPresentationQuery {
+        let profiles = harness.inspection.contextState.profiles
+        let adapters = harness.attachedRuntime.adapters
+        let windows = harness.attachedRuntime.bridge.windows
+        return ExtensionActionPresentationQuery(
+            contextBindings: { extensionID in
+                profiles.contextsByProfile.compactMap {
+                    profileID, contexts in
+                    guard let context = contexts[extensionID],
+                          let identity = profiles.exactContextIdentity(
+                              for: context
+                          ),
+                          identity.extensionId == extensionID,
+                          identity.profileId == profileID,
+                          let receipt = profiles.contextBindingReceipt(
+                              extensionId: extensionID,
+                              profileId: profileID
+                          ),
+                          profiles.context(ifCurrent: receipt) === context
+                    else { return nil }
+                    return ExtensionActionPresentationQuery.ContextBinding(
+                        context: context,
+                        receipt: receipt
+                    )
+                }
+            },
+            currentContext: profiles.context(ifCurrent:),
+            stableAdapter: adapters.stableAdapter(for:),
+            windowRegistrationReceipt: windows.registrationReceipt(for:),
+            registeredWindow: windows.window(ifCurrent:),
+            allWindows: { windows.allExtensionWindowStates }
+        )
+    }
+
     private func makePublishedPresentationTab(
         url: URL,
         profileID: UUID,
@@ -1336,9 +1388,10 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
         windowState: BrowserWindowState? = nil
     ) -> Tab {
         let windowState = windowState ?? harness.windowState
-        let configuration = harness.manager.browserConfiguration
+        let configuration = harness.inspection.controller.browserConfiguration
             .auxiliaryWebViewConfiguration(surface: .extensionOptions)
-        harness.manager.prepareWebViewConfigForExtensionRuntime(
+        harness.inspection.normalTabs.configuration
+            .prepareWebViewConfigForExtensionRuntime(
             configuration,
             profileId: profileID,
             reason: #function
@@ -1363,12 +1416,13 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
         windowState.currentProfileId = profileID
         windowState.currentSpaceId = tab.spaceId
         windowState.currentTabId = tab.id
-        harness.manager.normalTabRegistration.register(
+        harness.attachedRuntime.normalTabs.tabRegistration.register(
             tab,
             reason: #function
         )
         XCTAssertTrue(
-            harness.manager.publishedExtensionTabs.containsPublishedTab(tab)
+            harness.attachedRuntime.normalTabs.publishedTabs
+                .containsPublishedTab(tab)
         )
         return tab
     }
@@ -1379,51 +1433,114 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
     }
 
     private func makeAdmission(
-        manager: ExtensionManager
+        inspection: ExtensionManagerTestInspection,
+        attachedRuntime: ExtensionAttachedBrowserRuntimeInspection
     ) -> (
         request: ExtensionActionRequestAdmission,
         invocation: ExtensionActionInvocationAdmission
     ) {
         let request = ExtensionActionRequestAdmission(
-            runtimeBindingAdmission: manager.controllerCallbackAdmission,
-            profileRuntime: manager.profileRuntime,
-            runtime: { [weak manager] in manager?.runtime ?? .inactive },
-            installedExtensions: manager.installedExtensionCollection
+            runtimeBindingAdmission: inspection.controller.callbackAdmission,
+            profileRuntime: inspection.contextState.profiles,
+            allTabs: { [tabs = attachedRuntime.bridge.tabs] in
+                tabs.allExtensionTabs
+            },
+            profileID: attachedRuntime.controller.profiles.profileID,
+            currentProfileID: {
+                [profiles = inspection.contextState.profiles] in
+                profiles.currentProfileId
+                    ?? profiles.currentRememberedProfile?.id
+            },
+            installedExtensions: inspection.actionSurfaces.installedExtensions
         )
         let invocation = ExtensionActionInvocationAdmission(
-            runtimeBindingAdmission: manager.controllerCallbackAdmission,
+            runtimeBindingAdmission: inspection.controller.callbackAdmission,
             requestAdmission: request,
-            installedExtensions: manager.installedExtensionCollection,
-            adapterStore: manager.adapterStore
+            installedExtensions: inspection.actionSurfaces.installedExtensions,
+            adapterStore: inspection.normalTabs.adapters
         )
         return (request, invocation)
     }
 
     private func makeInvocationService(
-        manager: ExtensionManager,
+        inspection: ExtensionManagerTestInspection,
+        attachedRuntime: ExtensionAttachedBrowserRuntimeInspection,
         actionDispatch: any ExtensionActionDispatching,
         bindingRecovery: any ExtensionActionPopupBindingRecovering,
         actionDispatchProbe: @escaping @MainActor (String) -> Void
     ) -> ExtensionActionInvocationService {
-        let boundary = makeAdmission(manager: manager)
+        let boundary = makeAdmission(
+            inspection: inspection,
+            attachedRuntime: attachedRuntime
+        )
         return ExtensionActionInvocationService(
             environment: .init(
                 runtimeResolver: ExtensionActionRuntimeResolver(
-                    environment: .makeLive(manager: manager)
+                    environment: .init(
+                        installedExtensions:
+                            inspection.actionSurfaces.installedExtensions,
+                        runtimeAccess:
+                            inspection.contextCoordination.runtimeAccess,
+                        runtimeLifecycle:
+                            inspection.runtimeAuthorities.lifecycle,
+                        runtimeCatalog:
+                            inspection.runtimeAuthorities.catalog,
+                        anchorStore: inspection.popups.anchors,
+                        anchorResolution: inspection.popups.anchorResolver,
+                        profileTransition:
+                            inspection.contextCoordination.profileTransition,
+                        contextResidency:
+                            inspection.contextCoordination.residency,
+                        failureDiagnostics:
+                            inspection.actionPolicy.popupFailureDiagnostics,
+                        resolvedProfileID:
+                            attachedRuntime.controller.profiles.profileID,
+                        primaryWindowID: {
+                            [windows = attachedRuntime.bridge.windows] tab in
+                            windows.preferredExtensionWindowState(
+                                containing: tab
+                            )?.id
+                        },
+                        activeWindowID: {
+                            [windows = attachedRuntime.bridge.windows] in
+                            windows.activeExtensionWindowState?.id
+                        },
+                        trace: { _ in }
+                    )
                 ),
                 requestAdmission: boundary.request,
                 pageAccess: ExtensionActionPageAccessAuthorizer(
-                    environment: .makeLive(manager: manager),
+                    environment: .init(
+                        siteAccess: inspection.actionPolicy.siteAccess,
+                        decisions:
+                            inspection.actionPolicy.permissionDecisions,
+                        prompt: {
+                            [prompt = inspection.actionPolicy.permissionPrompt,
+                             profiles = inspection.contextState.profiles]
+                            context, targets, reason, dedupeKey in
+                            await prompt.promptForDecision(
+                                extensionContext: context,
+                                targets: targets,
+                                reason: reason,
+                                dedupeKey: dedupeKey,
+                                extensionIdentifier:
+                                    profiles.extensionId(for: context)
+                            )
+                        }
+                    ),
                     admission: boundary.invocation
                 ),
                 admission: boundary.invocation,
-                actionPublication: manager.actionSurfacePublisher,
-                runtimeMetrics: manager.runtimeMetrics,
-                stableAdapter: { [weak manager] in
-                    manager?.adapterCatalog.stableAdapter(for: $0)
+                actionPublication: inspection.actionSurfaces.publisher,
+                runtimeMetrics: inspection.runtimeAuthorities.metrics,
+                stableAdapter: { [adapters = attachedRuntime.adapters] in
+                    adapters.stableAdapter(for: $0)
                 },
-                registerTab: { [weak manager] tab, reason in
-                    manager?.normalTabRegistration.register(tab, reason: reason)
+                registerTab: {
+                    [tabRegistration = attachedRuntime.normalTabs.tabRegistration]
+                    tab,
+                    reason in
+                    tabRegistration.register(tab, reason: reason)
                 },
                 actionDispatchProbe: actionDispatchProbe,
                 trace: { _ in }
@@ -1436,11 +1553,14 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
     private func exactInvocation(
         in harness: Harness
     ) throws -> (ExtensionActionInvocationEvidence, WKWebExtension.Action) {
-        harness.manager.normalTabRegistration.register(
+        harness.attachedRuntime.normalTabs.tabRegistration.register(
             harness.tab,
             reason: "ExtensionActionInvocationAdmissionTests.exactInvocation"
         )
-        let boundary = makeAdmission(manager: harness.manager)
+        let boundary = makeAdmission(
+            inspection: harness.inspection,
+            attachedRuntime: harness.attachedRuntime
+        )
         let request = try XCTUnwrap(
             boundary.request.capture(
                 extensionID: harness.extensionID,
@@ -1456,7 +1576,7 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
             )
         )
         let adapter = try XCTUnwrap(
-            harness.manager.adapterCatalog.stableAdapter(for: harness.tab)
+            harness.attachedRuntime.adapters.stableAdapter(for: harness.tab)
         )
         let evidence = try XCTUnwrap(
             boundary.invocation.admitAdapter(adapter, for: captured)
@@ -1470,9 +1590,13 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
     private func makeHarness(name: String) async throws -> Harness {
         let container = try makeTestContainer()
         let profile = Profile(name: name)
+        let attachedRuntime = ExtensionAttachedRuntimeCapture()
+        let inspection = ExtensionManagerInspectionCapture()
         let manager = makeSafariExtensionTestExtensionManager(
             context: container.mainContext,
-            initialProfile: profile
+            initialProfile: profile,
+            attachedRuntimeCapture: attachedRuntime,
+            inspectionCapture: inspection
         )
         let windowRegistry = WindowRegistry()
         let browserManager = makeSafariExtensionTestBrowserManager(
@@ -1482,12 +1606,17 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
         manager.attach(browserManager: browserManager)
         await browserManager.tabManager.storeRestore.startupRestoreTask?.value
         let installed = try await installPromptingExtension(
-            manager: manager,
+            inspection: inspection.inspection,
             name: name
         )
-        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
+        _ = try await inspection.inspection.installation.lifecycle.enable(
+            installed.id
+        )
         let context = try XCTUnwrap(
-            manager.getExtensionContext(for: installed.id, profileId: profile.id)
+            inspection.inspection.contextState.profileState.context(
+                for: installed.id,
+                profileId: profile.id
+            )
         )
         let tab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: Self.clickedPageURL.absoluteString,
@@ -1507,6 +1636,8 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
         }
         return Harness(
             manager: manager,
+            inspection: inspection.inspection,
+            attachedRuntime: attachedRuntime.runtime,
             browserManager: browserManager,
             profileID: profile.id,
             extensionID: installed.id,
@@ -1521,7 +1652,7 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
     /// action-click permission prompt: a concrete host permission for the
     /// clicked page, no `activeTab`.
     private func installPromptingExtension(
-        manager: ExtensionManager,
+        inspection: ExtensionManagerTestInspection,
         name: String
     ) async throws -> InstalledExtension {
         let directory = FileManager.default.temporaryDirectory
@@ -1556,7 +1687,7 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
                 options: [.atomic]
             )
 
-        return try await manager.extensionInstaller.install(
+        return try await inspection.installation.installer.install(
             from: directory,
             enableOnInstall: false
         )
@@ -1645,6 +1776,25 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
             ),
             manifest: ["manifest_version": 3, "name": "Unrelated", "version": "1.0"]
         )
+    }
+}
+
+private final class ExtensionActionInvocationTestClock: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: TimeInterval
+
+    init(now: TimeInterval) {
+        value = now
+    }
+
+    func now() -> TimeInterval {
+        lock.withLock { value }
+    }
+
+    func set(_ value: TimeInterval) {
+        lock.withLock {
+            self.value = value
+        }
     }
 }
 

@@ -61,7 +61,7 @@ capture_count="$(
   awk '
     /\/\/ MARK: - Native Messaging/ { section = 1; next }
     /\/\/ MARK: -/ { section = 0 }
-    section && /controllerCallbackAdmission\.capture\(/ { count += 1 }
+    section && /coreRoutes\.callbackAdmission\.capture\(/ { count += 1 }
     END { print count + 0 }
   ' "$bridge"
 )"

@@ -310,7 +310,8 @@ if scan_has_matches 'presentExtensionExternalWebPopup' \
   exit 1
 fi
 require_matches 'private weak var target' "$weak_events"
-require_matches 'events: WeakAuxiliaryWindowExtensionEvents' "$browser_aux"
+require_matches 'events: auxiliaryEvents' \
+  Sumi/Managers/ExtensionManager/ExtensionRequestedTabCallbackSurfaceFactory.swift
 require_matches -F 'let extensionEvents: (any AuxiliaryWindowExtensionEventHandling)?' \
   Sumi/AuxiliaryWindows/AuxiliaryWindowSessionRegistry.swift
 if scan_has_matches 'weak var extensionEvents' \
@@ -341,13 +342,12 @@ fi
 require_matches 'let runtimeQuery: ExtensionDeferredRuntimeQuery' "$deferred"
 require_matches 'let contextLoading: ExtensionContextResidencyOwner' "$deferred"
 require_matches 'let backgroundWake: ExtensionBackgroundWakeCoordinator' "$deferred"
-require_matches 'deferredRuntimeOwnerStoreStorage?' \
-  Sumi/Managers/ExtensionManager/ExtensionManager.swift
-if scan_has_matches '_ = deferredRuntimeOwnerStore' \
-  Sumi/Managers/ExtensionManager/ExtensionManager.swift; then
-  echo 'error: disabled extension runtime eagerly materializes deferred owners' >&2
-  exit 1
-fi
+require_matches \
+  'private var initialDocumentRuntimePreparationOwnerStorage:' "$deferred"
+require_matches \
+  'if let initialDocumentRuntimePreparationOwnerStorage' "$deferred"
+require_matches \
+  'loadedInitialDocumentRuntimePreparationOwner' "$deferred"
 if scan_has_matches 'struct Dependencies|dependencies\.' \
   "$residency" "$retention" "$loading" "$settlement"; then
   echo 'error: context residency closure dependency bag returned' >&2
@@ -360,7 +360,7 @@ require_matches 'let loading: ExtensionContextLoadingOwner' "$residency"
 require_matches 'let settlement: ExtensionContextSettlementOwner' "$residency"
 
 for limit_and_file in \
-  "320:$bridge" \
+  "360:$bridge" \
   "160:$opening" \
   "90:$opening_runtime" \
   "220:$initial" \

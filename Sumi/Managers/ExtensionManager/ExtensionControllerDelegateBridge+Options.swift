@@ -9,22 +9,15 @@ extension ExtensionControllerDelegateBridge {
         openOptionsPageFor extensionContext: WKWebExtensionContext,
         completionHandler: @escaping (Error?) -> Void
     ) {
-        guard let manager = loadedManagerForCallback(),
-              let evidence = manager.controllerCallbackAdmission.capture(
-                  context: extensionContext,
-                  controller: controller
-              )
+        guard let (invocation, windows) = optionsInvocation(
+            context: extensionContext,
+            controller: controller
+        )
         else {
             completionHandler(CancellationError())
             return
         }
-        guard let invocation = ExtensionOptionsWindowCallbackComposition
-            .invocation(from: manager, evidence: evidence)
-        else {
-            completionHandler(ExtensionOptionsPageResolution.notFoundError())
-            return
-        }
-        manager.optionsWindows.presentOptionsPageWindow(
+        windows.presentOptionsPageWindow(
             invocation: invocation,
             completionHandler: completionHandler
         )

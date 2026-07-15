@@ -3,21 +3,20 @@ import Foundation
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionNativeMessagingRelayOwner {
-    private weak var manager: ExtensionManager?
+    private let moduleRegistry: SumiModuleRegistry
+    private let runtimeLifecycle: ExtensionRuntimeLifecycleAuthority
     private var relayStorage: SumiNativeMessagingRelay?
 
-    init(manager: ExtensionManager) {
-        self.manager = manager
+    init(
+        moduleRegistry: SumiModuleRegistry,
+        runtimeLifecycle: ExtensionRuntimeLifecycleAuthority
+    ) {
+        self.moduleRegistry = moduleRegistry
+        self.runtimeLifecycle = runtimeLifecycle
     }
 
     var extensionsModuleEnabledForCallbacks: Bool {
-        guard let manager else { return false }
-        switch manager.runtime.extensionsModuleEnabled() {
-        case .enabled(let isEnabled):
-            return isEnabled
-        case .unavailable:
-            return manager.moduleRegistry.isEnabled(.extensions)
-        }
+        moduleRegistry.isEnabledForRuntimeBoundary(.extensions)
     }
 
     var relay: SumiNativeMessagingRelay {
@@ -29,9 +28,8 @@ final class ExtensionNativeMessagingRelayOwner {
             extensionsModuleEnabled: { [weak self] in
                 self?.extensionsModuleEnabledForCallbacks ?? false
             },
-            profileRuntimeLoaded: { [weak self] in
-                guard let manager = self?.manager else { return false }
-                return manager.runtimeLifecycle.isReadyOrLoading
+            profileRuntimeLoaded: { [runtimeLifecycle] in
+                runtimeLifecycle.isReadyOrLoading
             }
         )
         relayStorage = relay

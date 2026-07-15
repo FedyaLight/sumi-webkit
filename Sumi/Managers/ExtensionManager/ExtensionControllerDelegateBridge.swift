@@ -11,31 +11,100 @@ import AppKit
 import Foundation
 import WebKit
 
+/// The browser-bound half of WebKit delegate routing. It is assembled in full
+/// and installed exactly once when the extension runtime attaches to a browser.
+@available(macOS 15.5, *)
+@MainActor
+struct ExtensionControllerDelegateBrowserRoutes {
+    let actionSurfaces: ExtensionActionSurfacePublisher
+    let actionPopupCallbackAdmission: ExtensionActionPopupCallbackAdmission
+    let actionPopupInvocationLedger: ExtensionActionPopupInvocationLedger
+    let actionPopupCoordinator: ExtensionActionPopupCoordinator
+    let windows: ExtensionWindowVisibilityResolver
+    let opening: ExtensionControllerOpeningCallbackRuntime
+    let optionsComposer: ExtensionOptionsWindowCallbackComposer
+    let optionsWindows: ExtensionOptionsWindowService
+}
+
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionControllerDelegateBridge: NSObject, WKWebExtensionControllerDelegate {
-    private weak var manager: ExtensionManager?
+    struct RoutesReceipt: Equatable {
+        fileprivate let identity: ObjectIdentifier
+    }
+
+    private struct CoreRoutes {
+        let callbackAdmission: ExtensionControllerCallbackAdmission
+        let permissions: ExtensionPermissionCallbackSettlement
+        let urlPermissions: ExtensionURLPermissionCallbackSettlement
+        let nativeMessages: ExtensionNativeMessageSendSettlement
+        let nativePorts: ExtensionNativePortConnectionSettlement
+    }
+
+    private let coreRoutes: CoreRoutes
     private let openingCallbacks = ExtensionControllerOpeningCallbackHandler()
-    init(manager: ExtensionManager) {
-        self.manager = manager
+    private var browserRoutes: ExtensionControllerDelegateBrowserRoutes?
+
+    func optionsInvocation(
+        context: WKWebExtensionContext,
+        controller: WKWebExtensionController
+    ) -> (
+        ExtensionOptionsWindowCallbackComposition.Invocation,
+        ExtensionOptionsWindowService
+    )? {
+        guard let routes = browserRoutes,
+              let evidence = coreRoutes.callbackAdmission.capture(
+                  context: context,
+                  controller: controller
+              ),
+              let invocation = routes.optionsComposer.invocation(
+                  evidence: evidence
+              )
+        else {
+            return nil
+        }
+        return (invocation, routes.optionsWindows)
+    }
+
+    init(
+        callbackAdmission: ExtensionControllerCallbackAdmission,
+        permissions: ExtensionPermissionCallbackSettlement,
+        urlPermissions: ExtensionURLPermissionCallbackSettlement,
+        nativeMessages: ExtensionNativeMessageSendSettlement,
+        nativePorts: ExtensionNativePortConnectionSettlement
+    ) {
+        coreRoutes = CoreRoutes(
+            callbackAdmission: callbackAdmission,
+            permissions: permissions,
+            urlPermissions: urlPermissions,
+            nativeMessages: nativeMessages,
+            nativePorts: nativePorts
+        )
         super.init()
     }
 
-    func loadedManagerForCallback() -> ExtensionManager? { manager }
+    @discardableResult
+    func installBrowserRoutes(
+        _ routes: ExtensionControllerDelegateBrowserRoutes
+    ) -> RoutesReceipt? {
+        guard browserRoutes == nil else { return nil }
+        browserRoutes = routes
+        return RoutesReceipt(identity: ObjectIdentifier(self))
+    }
 
     // MARK: - Windows
     func webExtensionController(
         _ controller: WKWebExtensionController,
         focusedWindowFor extensionContext: WKWebExtensionContext
     ) -> (any WKWebExtensionWindow)? {
-        manager?.windowVisibilityResolver.focusedWindow(for: extensionContext)
+        browserRoutes?.windows.focusedWindow(for: extensionContext)
     }
 
     func webExtensionController(
         _ controller: WKWebExtensionController,
         openWindowsFor extensionContext: WKWebExtensionContext
     ) -> [any WKWebExtensionWindow] {
-        manager?.windowVisibilityResolver.openWindows(for: extensionContext) ?? []
+        browserRoutes?.windows.openWindows(for: extensionContext) ?? []
     }
 
     // MARK: - Actions
@@ -44,7 +113,7 @@ final class ExtensionControllerDelegateBridge: NSObject, WKWebExtensionControlle
         didUpdate action: WKWebExtension.Action,
         forExtensionContext extensionContext: WKWebExtensionContext
     ) {
-        manager?.actionSurfacePublisher.updateActionSurfaceState(
+        browserRoutes?.actionSurfaces.updateActionSurfaceState(
             for: action,
             extensionContext: extensionContext
         )
@@ -56,13 +125,13 @@ final class ExtensionControllerDelegateBridge: NSObject, WKWebExtensionControlle
         for extensionContext: WKWebExtensionContext,
         completionHandler: @escaping (Error?) -> Void
     ) {
-        guard let manager else {
+        guard let routes = browserRoutes else {
             completionHandler(
                 ExtensionManagerCallbackError.extensionManagerUnavailable.nsError()
             )
             return
         }
-        guard let evidence = manager.actionPopupCallbackAdmission.capture(
+        guard let evidence = routes.actionPopupCallbackAdmission.capture(
                   context: extensionContext,
                   controller: controller
               )
@@ -71,7 +140,7 @@ final class ExtensionControllerDelegateBridge: NSObject, WKWebExtensionControlle
             return
         }
         let invocation: ExtensionActionPopupInvocationReceipt?
-        switch manager.actionPopupInvocationLedger.claim(
+        switch routes.actionPopupInvocationLedger.claim(
             action: action,
             evidence: evidence
         ) {
@@ -83,7 +152,7 @@ final class ExtensionControllerDelegateBridge: NSObject, WKWebExtensionControlle
         case .unsolicited:
             invocation = nil
         }
-        manager.actionPopupCoordinator.present(
+        routes.actionPopupCoordinator.present(
             action: action,
             evidence: evidence.attaching(invocation: invocation),
             completionHandler: completionHandler
@@ -102,8 +171,7 @@ final class ExtensionControllerDelegateBridge: NSObject, WKWebExtensionControlle
         for extensionContext: WKWebExtensionContext,
         completionHandler: @escaping (Set<WKWebExtension.Permission>, Date?) -> Void
     ) {
-        guard let manager,
-              let evidence = manager.controllerCallbackAdmission.capture(
+        guard let evidence = coreRoutes.callbackAdmission.capture(
                   context: extensionContext,
                   controller: controller
               )
@@ -111,11 +179,10 @@ final class ExtensionControllerDelegateBridge: NSObject, WKWebExtensionControlle
             completionHandler([], nil)
             return
         }
-        manager.permissionCallbackSettlement.promptForPermissions(
+        coreRoutes.permissions.promptForPermissions(
             permissions,
             in: tab,
             evidence: evidence,
-            manager: manager,
             completionHandler: completionHandler
         )
     }
@@ -127,8 +194,7 @@ final class ExtensionControllerDelegateBridge: NSObject, WKWebExtensionControlle
         for extensionContext: WKWebExtensionContext,
         completionHandler: @escaping (Set<WKWebExtension.MatchPattern>, Date?) -> Void
     ) {
-        guard let manager,
-              let evidence = manager.controllerCallbackAdmission.capture(
+        guard let evidence = coreRoutes.callbackAdmission.capture(
                   context: extensionContext,
                   controller: controller
               )
@@ -136,11 +202,10 @@ final class ExtensionControllerDelegateBridge: NSObject, WKWebExtensionControlle
             completionHandler([], nil)
             return
         }
-        manager.permissionCallbackSettlement.promptForPermissionMatchPatterns(
+        coreRoutes.permissions.promptForPermissionMatchPatterns(
             matchPatterns,
             in: tab,
             evidence: evidence,
-            manager: manager,
             completionHandler: completionHandler
         )
     }
@@ -152,8 +217,7 @@ final class ExtensionControllerDelegateBridge: NSObject, WKWebExtensionControlle
         for extensionContext: WKWebExtensionContext,
         completionHandler: @escaping (Set<URL>, Date?) -> Void
     ) {
-        guard let manager,
-              let evidence = manager.controllerCallbackAdmission.capture(
+        guard let evidence = coreRoutes.callbackAdmission.capture(
                   context: extensionContext,
                   controller: controller
               )
@@ -161,11 +225,10 @@ final class ExtensionControllerDelegateBridge: NSObject, WKWebExtensionControlle
             completionHandler([], nil)
             return
         }
-        manager.urlPermissionCallbackSettlement.promptForPermissionToAccess(
+        coreRoutes.urlPermissions.promptForPermissionToAccess(
             urls,
             in: tab,
             evidence: evidence,
-            manager: manager,
             completionHandler: completionHandler
         )
     }
@@ -177,13 +240,11 @@ final class ExtensionControllerDelegateBridge: NSObject, WKWebExtensionControlle
         for extensionContext: WKWebExtensionContext,
         completionHandler: @escaping ((any WKWebExtensionTab)?, (any Error)?) -> Void
     ) {
-        guard let manager,
-              let invocation = ExtensionControllerOpeningCallbackComposition
-                  .invocation(
-                      from: manager,
-                      context: extensionContext,
-                      controller: controller
-                  )
+        guard let routes = browserRoutes,
+              let evidence = coreRoutes.callbackAdmission.capture(
+                  context: extensionContext,
+                  controller: controller
+              )
         else {
             completionHandler(
                 nil,
@@ -193,8 +254,8 @@ final class ExtensionControllerDelegateBridge: NSObject, WKWebExtensionControlle
         }
         openingCallbacks.openNewTab(
             configuration: configuration,
-            evidence: invocation.evidence,
-            runtime: invocation.runtime.tabOpeningCallback,
+            evidence: evidence,
+            runtime: routes.opening.tabOpeningCallback,
             completionHandler: completionHandler
         )
     }
@@ -208,13 +269,11 @@ final class ExtensionControllerDelegateBridge: NSObject, WKWebExtensionControlle
         let request = ExtensionWindowOpeningRequest(
             configuration: configuration
         )
-        guard let manager,
-              let invocation = ExtensionControllerOpeningCallbackComposition
-                  .invocation(
-                      from: manager,
-                      context: extensionContext,
-                      controller: controller
-                  )
+        guard let routes = browserRoutes,
+              let evidence = coreRoutes.callbackAdmission.capture(
+                  context: extensionContext,
+                  controller: controller
+              )
         else {
             completionHandler(
                 nil,
@@ -224,8 +283,8 @@ final class ExtensionControllerDelegateBridge: NSObject, WKWebExtensionControlle
         }
         openingCallbacks.openNewWindow(
             request: request,
-            evidence: invocation.evidence,
-            runtime: invocation.runtime,
+            evidence: evidence,
+            runtime: routes.opening,
             completionHandler: completionHandler
         )
     }
@@ -243,8 +302,7 @@ final class ExtensionControllerDelegateBridge: NSObject, WKWebExtensionControlle
         for extensionContext: WKWebExtensionContext,
         replyHandler: @escaping (Any?, (any Error)?) -> Void
     ) {
-        guard let manager,
-              let evidence = manager.controllerCallbackAdmission.capture(
+        guard let evidence = coreRoutes.callbackAdmission.capture(
                   context: extensionContext,
                   controller: controller
               )
@@ -258,11 +316,10 @@ final class ExtensionControllerDelegateBridge: NSObject, WKWebExtensionControlle
             )
             return
         }
-        manager.nativeMessageSendSettlement.sendMessage(
+        coreRoutes.nativeMessages.sendMessage(
             message,
             toApplicationWithIdentifier: applicationIdentifier,
             evidence: evidence,
-            manager: manager,
             replyHandler: replyHandler
         )
     }
@@ -273,8 +330,7 @@ final class ExtensionControllerDelegateBridge: NSObject, WKWebExtensionControlle
         for extensionContext: WKWebExtensionContext,
         completionHandler: @escaping ((any Error)?) -> Void
     ) {
-        guard let manager,
-              let evidence = manager.controllerCallbackAdmission.capture(
+        guard let evidence = coreRoutes.callbackAdmission.capture(
                   context: extensionContext,
                   controller: controller
               )
@@ -288,10 +344,9 @@ final class ExtensionControllerDelegateBridge: NSObject, WKWebExtensionControlle
             )
             return
         }
-        manager.nativePortConnectionSettlement.connect(
+        coreRoutes.nativePorts.connect(
             using: port,
             evidence: evidence,
-            manager: manager,
             completionHandler: completionHandler
         )
     }

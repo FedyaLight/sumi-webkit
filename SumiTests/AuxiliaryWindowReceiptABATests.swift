@@ -443,7 +443,7 @@ extension AuxiliaryWindowLifecycleTests {
             auxiliaryWindows.sessions.receipt(for: target)
         )
         let control = try XCTUnwrap(
-            harness.extensionManager.extensionAuxiliaryWindows
+            harness.attachedRuntime.bridge.auxiliaryWindows
         )
         let siblingAdapter = try XCTUnwrap(sibling.miniWindowAdapter)
         harness.extensionContext.didFocusWindow(siblingAdapter)
@@ -461,7 +461,7 @@ extension AuxiliaryWindowLifecycleTests {
                 window: target.window,
                 auxiliaryWindows: control,
                 windowPublications:
-                    harness.extensionManager.windowPublications,
+                    harness.attachedRuntime.publications.windowPublications,
                 isPrivate: target.isPrivate,
                 shouldActivateApp: target.shouldActivateApp
             )
@@ -523,7 +523,7 @@ extension AuxiliaryWindowLifecycleTests {
         )
         let adapter = try XCTUnwrap(target.miniWindowAdapter)
         let control = try XCTUnwrap(
-            harness.extensionManager.extensionAuxiliaryWindows
+            harness.attachedRuntime.bridge.auxiliaryWindows
         )
         target.window.orderOut(nil)
         XCTAssertFalse(target.window.isVisible)
@@ -538,7 +538,7 @@ extension AuxiliaryWindowLifecycleTests {
                     auxiliaryWindows: auxiliaryWindows,
                     control: control,
                     windowPublications:
-                        harness.extensionManager.windowPublications
+                        harness.attachedRuntime.publications.windowPublications
                 )
                 return replacement != nil
             }
@@ -588,7 +588,7 @@ extension AuxiliaryWindowLifecycleTests {
         )
         let adapter = try XCTUnwrap(target.miniWindowAdapter)
         let control = try XCTUnwrap(
-            harness.extensionManager.extensionAuxiliaryWindows
+            harness.attachedRuntime.bridge.auxiliaryWindows
         )
         var replacement: AuxiliaryWindowReceiptTestRegistration?
         let effectProbe = AuxiliaryWindowEffectBoundaryProbe(
@@ -599,7 +599,7 @@ extension AuxiliaryWindowLifecycleTests {
                     auxiliaryWindows: auxiliaryWindows,
                     control: control,
                     windowPublications:
-                        harness.extensionManager.windowPublications
+                        harness.attachedRuntime.publications.windowPublications
                 )
             }
         )
@@ -640,7 +640,7 @@ extension AuxiliaryWindowLifecycleTests {
         )
         let adapter = try XCTUnwrap(target.miniWindowAdapter)
         let control = try XCTUnwrap(
-            harness.extensionManager.extensionAuxiliaryWindows
+            harness.attachedRuntime.bridge.auxiliaryWindows
         )
         var replacement: AuxiliaryWindowReceiptTestRegistration?
         let miniaturizeTrigger = AuxiliaryWindowOneShotEffectTrigger(
@@ -651,7 +651,7 @@ extension AuxiliaryWindowLifecycleTests {
                     auxiliaryWindows: auxiliaryWindows,
                     control: control,
                     windowPublications:
-                        harness.extensionManager.windowPublications
+                        harness.attachedRuntime.publications.windowPublications
                 )
                 return replacement != nil
             }
@@ -739,21 +739,21 @@ extension AuxiliaryWindowLifecycleTests {
         let disabledContext = try await makeExtensionContext(
             ownerExtensionID: disabledOwnerID
         )
-        harness.extensionManager.setExtensionContext(
+        harness.inspection.contextState.profiles.setContext(
             crossContext,
             extensionId: crossOwnerID,
             profileId: harness.profile.id
         )
-        harness.extensionManager.setExtensionContext(
+        harness.inspection.contextState.profiles.setContext(
             disabledContext,
             extensionId: disabledOwnerID,
             profileId: harness.profile.id
         )
-        harness.extensionManager.installedExtensionCollection.upsert(
+        harness.inspection.actionSurfaces.installedExtensions.upsert(
             auxiliaryInstalledExtension(id: crossOwnerID),
             durability: .volatileExactRuntime
         )
-        harness.extensionManager.installedExtensionCollection.upsert(
+        harness.inspection.actionSurfaces.installedExtensions.upsert(
             auxiliaryInstalledExtension(
                 id: disabledOwnerID,
                 isEnabled: false
@@ -774,7 +774,7 @@ extension AuxiliaryWindowLifecycleTests {
                 .auxiliaryMiniWindowTabsByID.keys
         )
         let originalAdapterIDs = Set(
-            harness.extensionManager.adapterStore
+            harness.inspection.normalTabs.adapters
                 .miniWindowAdaptersSnapshot().map(ObjectIdentifier.init)
         )
         let originalNativeWindowIDs = Set(
@@ -841,7 +841,7 @@ extension AuxiliaryWindowLifecycleTests {
         )
         XCTAssertEqual(
             Set(
-                harness.extensionManager.adapterStore
+                harness.inspection.normalTabs.adapters
                     .miniWindowAdaptersSnapshot().map(ObjectIdentifier.init)
             ),
             originalAdapterIDs

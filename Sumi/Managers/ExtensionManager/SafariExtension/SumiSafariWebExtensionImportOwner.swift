@@ -3,17 +3,17 @@ import Foundation
 /// Owns Safari Web Extension discovery sync, install-from-candidate, and import-store access.
 @MainActor
 final class SumiSafariWebExtensionImportOwner {
-    typealias ManagerProvider = @MainActor () -> ExtensionManager?
+    typealias RuntimeProvider = @MainActor () -> ExtensionSettingsCatalogBinding?
 
     private let importStore: any SafariExtensionImportStoring & SafariExtensionImportRecordProviding
-    private let managerIfEnabled: ManagerProvider
+    private let runtimeIfEnabled: RuntimeProvider
 
     init(
         importStore: any SafariExtensionImportStoring & SafariExtensionImportRecordProviding,
-        managerIfEnabled: @escaping ManagerProvider
+        runtimeIfEnabled: @escaping RuntimeProvider
     ) {
         self.importStore = importStore
-        self.managerIfEnabled = managerIfEnabled
+        self.runtimeIfEnabled = runtimeIfEnabled
     }
 
     func recordsForDiagnostics() -> any SafariExtensionImportRecordProviding {
@@ -37,7 +37,7 @@ final class SumiSafariWebExtensionImportOwner {
     ) async -> SafariWebExtensionSyncResult {
         refreshDiscoveredCandidates(candidates)
 
-        guard let manager = managerIfEnabled() else {
+        guard let runtime = runtimeIfEnabled() else {
             return SafariWebExtensionSyncResult(
                 addedExtensions: [],
                 failedMessages: [ExtensionError.unsupportedOS.localizedDescription],
@@ -46,11 +46,11 @@ final class SumiSafariWebExtensionImportOwner {
         }
 
         var installedSourcePaths = Set(
-            manager.installedExtensionCollection.records.map {
+            runtime.installedExtensions.map {
                 Self.standardizedFilePath($0.sourceBundlePath)
             }
         )
-        let installedExtensionIDs = Set(manager.installedExtensionCollection.records.map(\.id))
+        let installedExtensionIDs = Set(runtime.installedExtensions.map(\.id))
         let installedImportedBundleIDs = Set(
             importStore.importedRecords()
                 .filter { installedExtensionIDs.contains($0.installedExtensionId) }
@@ -116,11 +116,11 @@ final class SumiSafariWebExtensionImportOwner {
                 "Only Safari Web Extensions can be enabled in the WebExtension runtime."
             )
         }
-        guard let manager = managerIfEnabled() else {
+        guard let runtime = runtimeIfEnabled() else {
             throw ExtensionError.unsupportedOS
         }
 
-        let installed = try await manager.extensionInstaller.install(
+        let installed = try await runtime.install(
             from: candidate.appexURL,
             enableOnInstall: enableOnInstall
         )

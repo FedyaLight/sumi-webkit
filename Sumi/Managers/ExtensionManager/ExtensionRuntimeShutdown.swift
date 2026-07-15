@@ -1,4 +1,5 @@
 import Foundation
+import WebKit
 
 /// The single flagless terminal extension-runtime transaction. It captures an
 /// exact tab rebuild plan, cancels asynchronous work, retires scoped contexts,
@@ -84,9 +85,9 @@ final class ExtensionRuntimeShutdown {
     @discardableResult
     func shutDown(
         reason: String,
-        runtime capturedRuntime: ExtensionManagerRuntime,
+        browserTabs: [Tab],
+        liveWebViews: @MainActor (Tab) -> [WKWebView],
         activityResources: ExtensionRuntimeActivityCancellation.Resources,
-        isExtensionSupportAvailable: Bool,
         admission: Admission = .forced
     ) -> Result {
         let signpostState = PerformanceTrace.beginInterval(
@@ -132,12 +133,11 @@ final class ExtensionRuntimeShutdown {
         let hasLoadedRuntime = knownExtensionIDs.isEmpty == false
             || profileRuntime.controllersByProfile.isEmpty == false
             || runtimeLifecycle.isReadyOrLoading
-        let inventory = ExtensionBrowserContentInventory()
         let rebuildPlan = ExtensionRuntimeTabRebuildPlan.capture(
             hasLoadedUserRuntime: hasLoadedRuntime,
             controllers: Array(profileRuntime.controllersByProfile.values),
-            tabs: inventory.tabs(in: capturedRuntime),
-            liveWebViews: { inventory.liveWebViews(for: $0, in: capturedRuntime) }
+            tabs: browserTabs,
+            liveWebViews: liveWebViews
         )
 
         diagnostics.trace("runtimeShutdown start reason=\(reason)")
@@ -201,9 +201,7 @@ final class ExtensionRuntimeShutdown {
         }
 
         bookkeepingReset.reset()
-        controllerRelease.release(
-            isExtensionSupportAvailable: isExtensionSupportAvailable
-        )
+        controllerRelease.releaseAfterShutdown()
         guard mutationRegistry.finish(terminalLease) else {
             diagnostics.trace(
                 "runtimeShutdown superseded during finalization reason=\(reason)"
@@ -227,12 +225,15 @@ final class ExtensionRuntimeShutdown {
     func executeRebuildPlan(
         _ plan: ExtensionRuntimeTabRebuildPlan,
         reason: String,
-        canonicalTabs: (any ExtensionTabQuery)?,
-        runtime: ExtensionManagerRuntime
+        browserAvailable: @MainActor () -> Bool,
+        canonicalTab: @MainActor (UUID) -> Tab?,
+        rebuildLiveWebViews: @MainActor (Tab)
+            -> ExtensionTabWebViewRebuildSubmissionOutcome
     ) -> [ExtensionRuntimeTabRebuildPlan.Execution] {
         plan.execute(
-            canonicalTabs: canonicalTabs,
-            runtime: runtime,
+            browserAvailable: browserAvailable,
+            canonicalTab: canonicalTab,
+            rebuildLiveWebViews: rebuildLiveWebViews,
             trace: { [diagnostics] tab, outcome in
                 diagnostics.trace(
                     "runtimeShutdown rebuild reason=\(reason) "
@@ -253,52 +254,5 @@ final class ExtensionRuntimeShutdown {
         identifiers.formUnion(errorObservation.observedExtensionIDs)
         identifiers.formUnion(actionAnchors.extensionIDs)
         return identifiers
-    }
-}
-
-@available(macOS 15.5, *)
-@MainActor
-extension ExtensionManager {
-    @discardableResult
-    func shutDownExtensionRuntime(
-        reason: String,
-        admission: ExtensionRuntimeShutdown.Admission = .forced
-    ) -> ExtensionRuntimeShutdown.Result {
-        let capturedRuntime = runtime
-        let result = runtimeShutdown.shutDown(
-            reason: reason,
-            runtime: capturedRuntime,
-            activityResources: .init(
-                initialDocumentPreparation:
-                    loadedInitialDocumentRuntimePreparationOwner,
-                deferredTabRegistration: loadedDeferredTabRegistration,
-                nativeMessagingWakes:
-                    loadedNativeMessagingBackgroundWakeOwner,
-                publicationReconciler: loadedRuntimePublicationReconciler,
-                runtime: capturedRuntime,
-                auxiliaryWindows: extensionAuxiliaryWindows,
-                nativeMessagingRelay:
-                    loadedNativeMessagingRelayOwner?.loadedRelay
-            ),
-            isExtensionSupportAvailable: isExtensionSupportAvailable,
-            admission: admission
-        )
-        if result.completed {
-            actionStatesByExtensionID.removeAll()
-            resetExtensionRuntimePublicationReadiness()
-        }
-        return result
-    }
-
-    func executeExtensionRuntimeRebuildPlan(
-        _ plan: ExtensionRuntimeTabRebuildPlan,
-        reason: String
-    ) -> [ExtensionRuntimeTabRebuildPlan.Execution] {
-        runtimeShutdown.executeRebuildPlan(
-            plan,
-            reason: reason,
-            canonicalTabs: extensionTabQuery,
-            runtime: runtime
-        )
     }
 }

@@ -1,6 +1,6 @@
 import CoreGraphics
-import SumiDomain
 @testable import Sumi
+import SumiDomain
 import SwiftData
 import XCTest
 
@@ -794,7 +794,9 @@ private final class TestSidebarBrowserContextHarness {
     private let downloadManager = DownloadManager.unavailable()
     private let downloadsPopoverPresenter = DownloadsPopoverPresenter()
     private let glanceManager = GlanceManager()
-    private let extensionSurfaceStore = BrowserExtensionSurfaceStore(extensionManager: nil)
+    private let extensionSurfaceStore = BrowserExtensionSurfaceStore(
+        binding: nil
+    )
     private let workspaceThemeCoordinator = WorkspaceThemeCoordinator()
     private let transitionEventRecorder = TransitionEventRecorder()
 

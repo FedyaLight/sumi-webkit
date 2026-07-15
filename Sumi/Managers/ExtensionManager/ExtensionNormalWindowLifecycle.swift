@@ -4,9 +4,21 @@ import WebKit
 /// Owns ordered publication of exact normal-window projections. Model/profile
 /// resolution is delegated to `ExtensionNormalWindowProjectionResolver`; this
 /// type owns only lifecycle state, reentrancy barriers, and WebKit event order.
+#if DEBUG
+    @available(macOS 15.5, *)
+    @MainActor
+    enum ExtensionNormalWindowLifecycleDebugEvent {
+        case didOpenWindow(UUID)
+        case didFocusWindow(UUID)
+    }
+#endif
+
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionNormalWindowLifecycle {
+    private typealias PublishedWindow =
+        ExtensionNormalWindowPublicationLedger.Publication
+
     private final class PublicationLease:
         BrowserWindowExtensionPublication {
         private weak var lifecycle: ExtensionNormalWindowLifecycle?
@@ -56,7 +68,7 @@ final class ExtensionNormalWindowLifecycle {
 
     struct RuntimeReconciliationToken: Equatable {
         fileprivate let epoch: UInt64
-        fileprivate let allowsUnloadedRuntime: Bool
+        fileprivate let publicationStage: ExtensionRuntimePublicationStage
     }
 
     private enum Phase: Equatable {
@@ -66,21 +78,24 @@ final class ExtensionNormalWindowLifecycle {
         case runtimeUnavailable(UInt64)
     }
 
-    private struct PublishedWindow {
-        let lifecycleEpoch: UInt64
-        let projection: ExtensionNormalWindowProjection
-    }
-
     private let resolver: ExtensionNormalWindowProjectionResolver
+    private let validator: ExtensionNormalWindowPublicationValidator
+    private let ledger: ExtensionNormalWindowPublicationLedger
+    private let publicationQuery: ExtensionNormalWindowPublicationQuery
     private let adapterStore: ExtensionBrowserAdapterStore
     private let preparedTabVisibility: ExtensionPreparedTabVisibility
     #if DEBUG
-        private let debugDidOpenWindow: @MainActor (UUID) -> Void
+        private let debugEvent:
+            @MainActor (ExtensionNormalWindowLifecycleDebugEvent) -> Void
     #endif
-    private var phase = Phase.active
+    private var phase = Phase.active {
+        didSet { synchronizeLedgerReadPolicy() }
+    }
     private var lifecycleEpoch: UInt64 = 0
-    private var activeAllowsUnloadedRuntime = false
-    private var publishedByWindowID: [UUID: PublishedWindow] = [:]
+    private var activePublicationStage = ExtensionRuntimePublicationStage
+        .loadedRuntime {
+        didSet { synchronizeLedgerReadPolicy() }
+    }
     private var closingWindowIdentityByID: [UUID: ObjectIdentifier] = [:]
 
     var acceptsNewPublications: Bool {
@@ -90,24 +105,44 @@ final class ExtensionNormalWindowLifecycle {
     #if DEBUG
         init(
             resolver: ExtensionNormalWindowProjectionResolver,
+            validator: ExtensionNormalWindowPublicationValidator,
+            ledger: ExtensionNormalWindowPublicationLedger,
             adapterStore: ExtensionBrowserAdapterStore,
             preparedTabVisibility: ExtensionPreparedTabVisibility,
-            debugDidOpenWindow: @escaping @MainActor (UUID) -> Void = { _ in }
+            debugEvent: @escaping @MainActor (
+                ExtensionNormalWindowLifecycleDebugEvent
+            ) -> Void = { _ in }
         ) {
             self.resolver = resolver
+            self.validator = validator
+            self.ledger = ledger
+            self.publicationQuery = ExtensionNormalWindowPublicationQuery(
+                ledger: ledger,
+                validator: validator
+            )
             self.adapterStore = adapterStore
             self.preparedTabVisibility = preparedTabVisibility
-            self.debugDidOpenWindow = debugDidOpenWindow
+            self.debugEvent = debugEvent
+            synchronizeLedgerReadPolicy()
         }
     #else
         init(
             resolver: ExtensionNormalWindowProjectionResolver,
+            validator: ExtensionNormalWindowPublicationValidator,
+            ledger: ExtensionNormalWindowPublicationLedger,
             adapterStore: ExtensionBrowserAdapterStore,
             preparedTabVisibility: ExtensionPreparedTabVisibility
         ) {
             self.resolver = resolver
+            self.validator = validator
+            self.ledger = ledger
+            self.publicationQuery = ExtensionNormalWindowPublicationQuery(
+                ledger: ledger,
+                validator: validator
+            )
             self.adapterStore = adapterStore
             self.preparedTabVisibility = preparedTabVisibility
+            synchronizeLedgerReadPolicy()
         }
     #endif
 
@@ -129,7 +164,7 @@ final class ExtensionNormalWindowLifecycle {
 
     func closed(_ window: BrowserWindowState) {
         guard case .active = phase else { return }
-        guard let published = publishedByWindowID[window.id] else {
+        guard let published = ledger.publication(for: window.id) else {
             removeUnpublishedAdapter(for: window)
             return
         }
@@ -142,25 +177,28 @@ final class ExtensionNormalWindowLifecycle {
     }
 
     func focused(_ window: BrowserWindowState) {
-        guard resolver.isExactRegistered(window) else { return }
+        guard validator.isExactRegistered(window) else { return }
         resolver.switchToWindowProfile(window)
         guard let published = reconcile(window) else { return }
         published.projection.controller.didFocusWindow(
             published.projection.windowAdapter
         )
+        #if DEBUG
+            debugEvent(.didFocusWindow(window.id))
+        #endif
     }
 
     /// A normal Tab can cross WebKit's didOpenTab boundary only after its exact
     /// containing window projection has crossed didOpenWindow for the same
     /// profile and generation. Transient/mini-window Tabs use their own ledger.
     func prepareTabOpen(_ tab: Tab) -> Bool {
-        if resolver.canPublishWithoutNormalWindow(tab) {
+        if validator.canPublishWithoutNormalWindow(tab) {
             return true
         }
         guard case .active = phase,
-              let window = resolver.preferredWindow(for: tab),
+              let window = validator.preferredWindow(for: tab),
               let published = reconcile(window),
-              resolver.profileID(for: tab)
+              validator.profileID(for: tab)
                 == published.projection.profileID
         else {
             return false
@@ -174,28 +212,8 @@ final class ExtensionNormalWindowLifecycle {
         prepareTabOpen(tab)
     }
 
-    /// Read-only proof used after a Tab open callback. Unlike admission this
-    /// never reconciles or closes a window, so validation cannot publish new
-    /// state while checking whether the callback transaction stayed current.
     func tabPublicationIsCurrent(_ tab: Tab, profileID: UUID) -> Bool {
-        if resolver.canPublishWithoutNormalWindow(tab) {
-            return resolver.profileID(for: tab) == profileID
-        }
-        guard phaseAllowsPublishedReads,
-              let window = resolver.preferredWindow(for: tab),
-              let published = publishedByWindowID[window.id],
-              published.projection.windowIdentity
-                == ObjectIdentifier(window),
-              published.projection.profileID == profileID,
-              resolver.profileID(for: tab) == profileID
-        else {
-            return false
-        }
-        return resolver.validate(
-            published.projection,
-            for: window,
-            allowWhenExtensionsNotLoaded: activeAllowsUnloadedRuntime
-        )
+        publicationQuery.tabPublicationIsCurrent(tab, profileID: profileID)
     }
 
     func windowPublicationIsCurrent(
@@ -203,21 +221,10 @@ final class ExtensionNormalWindowLifecycle {
         selectedTab: Tab,
         profileID: UUID
     ) -> Bool {
-        guard phaseAllowsPublishedReads,
-              let published = publishedByWindowID[window.id],
-              published.projection.windowIdentity
-                == ObjectIdentifier(window),
-              published.projection.selectedTabIdentity
-                == ObjectIdentifier(selectedTab),
-              published.projection.selectedTabID == selectedTab.id,
-              published.projection.profileID == profileID
-        else {
-            return false
-        }
-        return resolver.validate(
-            published.projection,
-            for: window,
-            allowWhenExtensionsNotLoaded: activeAllowsUnloadedRuntime
+        publicationQuery.windowPublicationIsCurrent(
+            window,
+            selectedTab: selectedTab,
+            profileID: profileID
         )
     }
 
@@ -225,29 +232,14 @@ final class ExtensionNormalWindowLifecycle {
         for window: BrowserWindowState,
         profileID: UUID
     ) -> ExtensionWindowAdapter? {
-        guard phaseAllowsPublishedReads,
-              let published = publishedByWindowID[window.id],
-              published.projection.windowIdentity
-                == ObjectIdentifier(window),
-              published.projection.profileID == profileID
-        else {
-            return nil
-        }
-        guard resolver.validate(
-            published.projection,
-            for: window,
-            allowWhenExtensionsNotLoaded: activeAllowsUnloadedRuntime
-        ) else {
-            return nil
-        }
-        return published.projection.windowAdapter
+        publicationQuery.publishedAdapter(for: window, profileID: profileID)
     }
 
     /// Begins a generation-wide replacement. Existing projections leave the
     /// ledger before callbacks, and no reentrant Tab/window event can reopen a
     /// normal projection until the exact token is finished.
     func beginRuntimeReconciliation(
-        allowWhenExtensionsNotLoaded: Bool = false,
+        publicationStage: ExtensionRuntimePublicationStage = .loadedRuntime,
         closePublishedTabs: @MainActor () -> Void = {}
     ) -> RuntimeReconciliationToken? {
         guard closingWindowIdentityByID.isEmpty else { return nil }
@@ -263,7 +255,7 @@ final class ExtensionNormalWindowLifecycle {
         lifecycleEpoch &+= 1
         let token = RuntimeReconciliationToken(
             epoch: lifecycleEpoch,
-            allowsUnloadedRuntime: allowWhenExtensionsNotLoaded
+            publicationStage: publicationStage
         )
         phase = .reconciling(token)
 
@@ -278,13 +270,14 @@ final class ExtensionNormalWindowLifecycle {
             // now-stale reload token must never resume publication.
             guard phase == .reconciling(token) else { return nil }
 
-            let publications = Array(publishedByWindowID)
-            publishedByWindowID.removeAll()
-            for (windowID, published) in publications {
-                closeDetached(published, windowID: windowID)
+            for entry in ledger.takeAll() {
+                closeDetached(
+                    entry.publication,
+                    windowID: entry.windowID
+                )
             }
         }
-        activeAllowsUnloadedRuntime = false
+        activePublicationStage = .loadedRuntime
         return token
     }
 
@@ -300,7 +293,7 @@ final class ExtensionNormalWindowLifecycle {
         lifecycleEpoch &+= 1
         let resumedEpoch = lifecycleEpoch
         phase = .active
-        activeAllowsUnloadedRuntime = token.allowsUnloadedRuntime
+        activePublicationStage = token.publicationStage
 
         for window in windows {
             guard phase == .active,
@@ -329,13 +322,14 @@ final class ExtensionNormalWindowLifecycle {
                 phase = .retiring(retirementEpoch)
                 closePublishedTabs()
 
-                let publications = Array(publishedByWindowID)
-                publishedByWindowID.removeAll()
-                for (windowID, published) in publications {
-                    closeDetached(published, windowID: windowID)
+                for entry in ledger.takeAll() {
+                    closeDetached(
+                        entry.publication,
+                        windowID: entry.windowID
+                    )
                 }
                 phase = .runtimeUnavailable(retirementEpoch)
-                activeAllowsUnloadedRuntime = false
+                activePublicationStage = .loadedRuntime
                 return true
             }
             guard let token = beginRuntimeReconciliation(
@@ -348,7 +342,7 @@ final class ExtensionNormalWindowLifecycle {
             }
             lifecycleEpoch &+= 1
             phase = .runtimeUnavailable(lifecycleEpoch)
-            activeAllowsUnloadedRuntime = false
+            activePublicationStage = .loadedRuntime
             return true
         case .reconciling:
             // Invalidate the in-flight reload token before crossing another
@@ -359,13 +353,14 @@ final class ExtensionNormalWindowLifecycle {
             phase = .retiring(retirementEpoch)
             closePublishedTabs()
 
-            let publications = Array(publishedByWindowID)
-            publishedByWindowID.removeAll()
-            for (windowID, published) in publications {
-                closeDetached(published, windowID: windowID)
+            for entry in ledger.takeAll() {
+                closeDetached(
+                    entry.publication,
+                    windowID: entry.windowID
+                )
             }
             phase = .runtimeUnavailable(retirementEpoch)
-            activeAllowsUnloadedRuntime = false
+            activePublicationStage = .loadedRuntime
             return true
         }
     }
@@ -381,14 +376,14 @@ final class ExtensionNormalWindowLifecycle {
             return nil
         }
 
-        if let existing = publishedByWindowID[windowID] {
+        if let existing = ledger.publication(for: windowID) {
             guard existing.projection.windowIdentity == identity else {
                 return nil
             }
-            if resolver.validate(
+            if validator.validate(
                 existing.projection,
                 for: window,
-                allowWhenExtensionsNotLoaded: activeAllowsUnloadedRuntime
+                publicationStage: activePublicationStage
             ) {
                 return existing
             }
@@ -401,7 +396,7 @@ final class ExtensionNormalWindowLifecycle {
             // close/open path below.
             if let refreshedProjection = resolver.resolve(
                 window,
-                allowWhenExtensionsNotLoaded: activeAllowsUnloadedRuntime
+                publicationStage: activePublicationStage
             ), refreshedProjection.belongsToSameWindowPublication(
                 as: existing.projection
             ) {
@@ -409,18 +404,17 @@ final class ExtensionNormalWindowLifecycle {
                     lifecycleEpoch: existing.lifecycleEpoch,
                     projection: refreshedProjection
                 )
-                publishedByWindowID[windowID] = refreshed
+                ledger.set(refreshed, for: windowID)
                 return refreshed
             }
 
             close(existing, windowID: windowID)
             guard case .active = phase else { return nil }
-            if let reentrant = publishedByWindowID[windowID] {
-                return resolver.validate(
+            if let reentrant = ledger.publication(for: windowID) {
+                return validator.validate(
                     reentrant.projection,
                     for: window,
-                    allowWhenExtensionsNotLoaded:
-                        activeAllowsUnloadedRuntime
+                    publicationStage: activePublicationStage
                 )
                     ? reentrant
                     : nil
@@ -429,7 +423,7 @@ final class ExtensionNormalWindowLifecycle {
 
         guard let projection = resolver.resolve(
             window,
-            allowWhenExtensionsNotLoaded: activeAllowsUnloadedRuntime
+            publicationStage: activePublicationStage
         ) else {
             return nil
         }
@@ -438,7 +432,7 @@ final class ExtensionNormalWindowLifecycle {
             lifecycleEpoch: publicationEpoch,
             projection: projection
         )
-        publishedByWindowID[windowID] = published
+        ledger.set(published, for: windowID)
         preparedTabVisibility.withWindowOpenCallback(
             window: window,
             adapter: projection.windowAdapter,
@@ -446,24 +440,23 @@ final class ExtensionNormalWindowLifecycle {
         ) {
             projection.controller.didOpenWindow(projection.windowAdapter)
             #if DEBUG
-                debugDidOpenWindow(windowID)
+                debugEvent(.didOpenWindow(windowID))
             #endif
         }
 
         guard case .active = phase,
               lifecycleEpoch == publicationEpoch,
-              let current = publishedByWindowID[windowID],
+              let current = ledger.publication(for: windowID),
               current.lifecycleEpoch == publicationEpoch,
               current.projection.windowAdapter
                 === projection.windowAdapter,
-              resolver.validate(
+              validator.validate(
                   current.projection,
                   for: window,
-                  allowWhenExtensionsNotLoaded:
-                      activeAllowsUnloadedRuntime
+                  publicationStage: activePublicationStage
               )
         else {
-            if let current = publishedByWindowID[windowID],
+            if let current = ledger.publication(for: windowID),
                current.lifecycleEpoch == publicationEpoch,
                current.projection.windowAdapter === projection.windowAdapter {
                 close(current, windowID: windowID)
@@ -477,7 +470,7 @@ final class ExtensionNormalWindowLifecycle {
         _ published: PublishedWindow,
         windowID: UUID
     ) {
-        guard let current = publishedByWindowID[windowID],
+        guard let current = ledger.publication(for: windowID),
               current.lifecycleEpoch == published.lifecycleEpoch,
               current.projection.windowIdentity
                 == published.projection.windowIdentity,
@@ -486,7 +479,7 @@ final class ExtensionNormalWindowLifecycle {
         else {
             return
         }
-        publishedByWindowID.removeValue(forKey: windowID)
+        _ = ledger.remove(for: windowID)
         closeDetached(published, windowID: windowID)
     }
 
@@ -531,11 +524,10 @@ final class ExtensionNormalWindowLifecycle {
                   for: lease,
                   window: window
               ),
-              resolver.validate(
+              validator.validate(
                   published.projection,
                   for: window,
-                  allowWhenExtensionsNotLoaded:
-                      activeAllowsUnloadedRuntime
+                  publicationStage: activePublicationStage
               )
         else {
             return false
@@ -580,12 +572,12 @@ final class ExtensionNormalWindowLifecycle {
         // synchronous callback to reopen either projection.
         closingWindowIdentityByID[windowID] = windowIdentity
         closingPublishedTabs()
-        if let current = publishedByWindowID[windowID],
+        if let current = ledger.publication(for: windowID),
            current.lifecycleEpoch == published.lifecycleEpoch,
            current.projection.windowIdentity == windowIdentity,
            current.projection.windowAdapter
             === published.projection.windowAdapter {
-            publishedByWindowID.removeValue(forKey: windowID)
+            _ = ledger.remove(for: windowID)
         }
         _ = adapterStore.removeWindowAdapter(
             for: windowID,
@@ -605,7 +597,7 @@ final class ExtensionNormalWindowLifecycle {
     ) -> PublishedWindow? {
         guard lease.windowID == window.id,
               lease.windowIdentity == ObjectIdentifier(window),
-              let published = publishedByWindowID[window.id],
+              let published = ledger.publication(for: window.id),
               published.lifecycleEpoch == lease.lifecycleEpoch,
               published.projection.windowIdentity == lease.windowIdentity,
               published.projection.windowAdapter === lease.adapter
@@ -622,5 +614,12 @@ final class ExtensionNormalWindowLifecycle {
         case .runtimeUnavailable:
             return false
         }
+    }
+
+    private func synchronizeLedgerReadPolicy() {
+        ledger.updateReadPolicy(
+            acceptsPublishedReads: phaseAllowsPublishedReads,
+            publicationStage: activePublicationStage
+        )
     }
 }

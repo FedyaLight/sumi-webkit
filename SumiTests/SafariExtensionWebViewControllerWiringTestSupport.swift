@@ -11,15 +11,28 @@ class SafariExtensionWebViewControllerWiringTestCase: XCTestCase {
     func makeManager(
         context: ModelContext,
         profile: Profile,
-        browserConfiguration: BrowserConfiguration = BrowserConfiguration()
-    ) -> (manager: ExtensionManager, browserConfiguration: BrowserConfiguration) {
-        SafariExtensionLiveWebKitTestLease.holdForProcess()
-        let manager = makeSafariExtensionTestExtensionManager(
+        browserConfiguration: BrowserConfiguration = BrowserConfiguration(),
+        moduleRegistry: SumiModuleRegistry = .unavailable(),
+        assemblyOverrides: ExtensionManagerTestAssemblyOverrides? = nil
+    ) -> (
+        manager: ExtensionManager,
+        browserConfiguration: BrowserConfiguration,
+        attachedRuntime: ExtensionAttachedRuntimeCapture,
+        inspection: ExtensionManagerTestInspection
+    ) {
+        let fixture = makeSafariExtensionManagerTestFixture(
             context: context,
             initialProfile: profile,
-            browserConfiguration: browserConfiguration
+            browserConfiguration: browserConfiguration,
+            moduleRegistry: moduleRegistry,
+            assemblyOverrides: assemblyOverrides
         )
-        return (manager, browserConfiguration)
+        return (
+            fixture.manager,
+            browserConfiguration,
+            fixture.attachedRuntime,
+            fixture.inspection
+        )
     }
 
     func makeBrowserManager(
@@ -35,16 +48,39 @@ class SafariExtensionWebViewControllerWiringTestCase: XCTestCase {
         return browserManager
     }
 
+    func makeWindowRequestRouter(
+        inspection: ExtensionManagerTestInspection,
+        attachedRuntime: ExtensionAttachedBrowserRuntimeInspection,
+        windowCreation: any ExtensionRequestedWindowCreating
+    ) -> ExtensionWindowRequestRouter {
+        ExtensionWindowRequestRouter(
+            profileRuntime: inspection.contextState.profiles,
+            targetResolver: attachedRuntime.requestedTabs.targetResolver,
+            loadResolver: inspection.normalTabs.loadResolver,
+            contextPreloader: attachedRuntime.requestedTabs.contextPreloader,
+            tabOpening: attachedRuntime.requestedTabs.opening,
+            windowQuery: { attachedRuntime.bridge.windows },
+            windowCreation: { windowCreation },
+            publishedWindow: { window, profileID in
+                attachedRuntime.publications.windowPublications
+                    .publishedWindowAdapter(
+                        for: window,
+                        profileID: profileID
+                    )
+            }
+        )
+    }
+
     @discardableResult
     func attachUsableExtensionWebView(
         to tab: Tab,
-        manager: ExtensionManager,
+        inspection: ExtensionManagerTestInspection,
         profile: Profile
     ) -> WKWebView {
-        let configuration = manager.browserConfiguration.auxiliaryWebViewConfiguration(
-            surface: .extensionOptions
-        )
-        manager.prepareWebViewConfigForExtensionRuntime(
+        let configuration = inspection.controller.browserConfiguration
+            .auxiliaryWebViewConfiguration(surface: .extensionOptions)
+        inspection.normalTabs.configuration
+            .prepareWebViewConfigForExtensionRuntime(
             configuration,
             profileId: profile.id,
             reason: "SafariExtensionWebViewControllerWiringTests"
@@ -104,7 +140,7 @@ class SafariExtensionWebViewControllerWiringTestCase: XCTestCase {
 
     @discardableResult
     func publishNormalExtensionWindow(
-        manager: ExtensionManager,
+        inspection: ExtensionManagerTestInspection,
         browserManager: BrowserManager,
         profile: Profile
     ) -> BrowserWindowState {
@@ -123,21 +159,22 @@ class SafariExtensionWebViewControllerWiringTestCase: XCTestCase {
         )
         attachUsableExtensionWebView(
             to: sourceTab,
-            manager: manager,
+            inspection: inspection,
             profile: profile
         )
-        manager.reloadRuntimePublications(
+        inspection.browserPublication.reloads.reloadLoadedRuntime(
             reason: "SafariExtensionWebViewControllerWiringTests.sourceWindow",
             profileID: profile.id
         )
         XCTAssertNotNil(
-            manager.adapterStore.existingWindowAdapter(for: window.id)
+            inspection.normalTabs.adapters.existingWindowAdapter(for: window.id)
         )
         return window
     }
 
     func makeLoadedExtensionContext(
         manager: ExtensionManager,
+        inspection: ExtensionManagerTestInspection,
         profile: Profile
     ) async throws -> WKWebExtensionContext {
         let scratchDirectory = try makeScratchDirectory()
@@ -146,12 +183,26 @@ class SafariExtensionWebViewControllerWiringTestCase: XCTestCase {
             scratchDirectory: scratchDirectory,
             name: "ContextProbeExtension"
         )
-        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
-        let context = try await manager.ensureExtensionLoaded(
+        _ = try await inspection.installation.lifecycle.enable(installed.id)
+        let context = try await inspection.contextCoordination.residency
+            .ensureExtensionLoaded(
             extensionId: installed.id,
             profileId: profile.id
         )
         return try XCTUnwrap(context)
+    }
+
+    func backgroundRuntimeState(
+        in inspection: ExtensionManagerTestInspection,
+        extensionID: String,
+        profileID: UUID
+    ) -> ExtensionManager.BackgroundRuntimeState {
+        inspection.contextState.background.state(
+            for: ExtensionRuntimeResidencyState.scopedKey(
+                extensionId: extensionID,
+                profileId: profileID
+            )
+        )
     }
 
     func makeTestContainer() throws -> ModelContainer {
@@ -275,7 +326,7 @@ class SafariExtensionWebViewControllerWiringTestCase: XCTestCase {
         try Data("<!doctype html><title>overlay</title>".utf8)
             .write(to: directoryURL.appendingPathComponent("overlay.html"), options: [.atomic])
 
-        return try await manager.extensionInstaller.install(
+        return try await manager.settingsCatalogBinding().install(
             from: directoryURL,
             enableOnInstall: false
         )
@@ -315,7 +366,7 @@ class SafariExtensionWebViewControllerWiringTestCase: XCTestCase {
         try Data("globalThis.__sumiBackgroundProbe = true;".utf8)
             .write(to: directoryURL.appendingPathComponent("background.js"), options: [.atomic])
 
-        return try await manager.extensionInstaller.install(
+        return try await manager.settingsCatalogBinding().install(
             from: directoryURL,
             enableOnInstall: false
         )
@@ -356,7 +407,7 @@ class SafariExtensionWebViewControllerWiringTestCase: XCTestCase {
         try Data("globalThis.__sumiNativeMessagingBackgroundProbe = true;".utf8)
             .write(to: directoryURL.appendingPathComponent("background.js"), options: [.atomic])
 
-        return try await manager.extensionInstaller.install(
+        return try await manager.settingsCatalogBinding().install(
             from: directoryURL,
             enableOnInstall: false
         )
@@ -416,7 +467,7 @@ class SafariExtensionWebViewControllerWiringTestCase: XCTestCase {
         )
             .write(to: directoryURL.appendingPathComponent("popup.js"), options: [.atomic])
 
-        return try await manager.extensionInstaller.install(
+        return try await manager.settingsCatalogBinding().install(
             from: directoryURL,
             enableOnInstall: false
         )

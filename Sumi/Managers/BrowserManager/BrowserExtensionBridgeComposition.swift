@@ -11,6 +11,9 @@ import Foundation
 /// they need; this type intentionally exposes no forwarding methods.
 @MainActor
 final class BrowserExtensionBridgeComposition {
+    let availability: ExtensionBrowserRuntimeAvailability
+    let profiles: ExtensionBrowserProfileQuery
+    let websiteDataAdmission: ExtensionWebsiteDataMutationAdmission
     let windows: BrowserExtensionWindowQueryAdapter
     let tabs: BrowserExtensionTabQueryAdapter
     let requestedTabTargets: BrowserRequestedTabTargetAdapter
@@ -22,6 +25,38 @@ final class BrowserExtensionBridgeComposition {
     let requestedWindows: BrowserExtensionRequestedWindowTransaction
 
     init(browserManager: BrowserManager) {
+        availability = ExtensionBrowserRuntimeAvailability {
+            [weak browserManager] in browserManager != nil
+        }
+        let currentProfileAuthority = browserManager.currentProfileAuthority
+        profiles = ExtensionBrowserProfileQuery(
+            currentProfile: { [currentProfileAuthority] in
+                currentProfileAuthority.currentProfile
+            },
+            profile: { [weak browserManager] profileID in
+                browserManager?.profileManager.profiles.first {
+                    $0.id == profileID
+                }
+            },
+            ephemeralProfile: { [weak browserManager] profileID in
+                browserManager?.windowRegistry?.windows.values
+                    .compactMap(\.ephemeralProfile)
+                    .first { $0.id == profileID }
+            }
+        )
+        websiteDataAdmission = ExtensionWebsiteDataMutationAdmission(
+            isBlocked: { [weak browserManager] profileID in
+                browserManager?.webViewRuntime.websiteDataCleanupService
+                    .admissionIsBlocked(profileID: profileID) ?? false
+            },
+            wait: { [weak browserManager] profileID in
+                guard let browserManager else { return false }
+                return await browserManager.webViewRuntime
+                    .websiteDataCleanupService.waitForAdmission(
+                        profileID: profileID
+                    )
+            }
+        )
         let webViewOwnershipQuery = browserManager.webViewRuntime.ownershipQuery
         let extensionTabWebViewReplacement = browserManager.webViewRuntime
             .extensionTabWebViewReplacement
