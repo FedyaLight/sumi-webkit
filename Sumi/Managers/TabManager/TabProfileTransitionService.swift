@@ -10,31 +10,49 @@ final class TabProfileTransitionService {
         let callback: ProfileTransitionService.Settlement
     }
 
-    private unowned let tabManager: TabManager
+    private struct RuntimeAdmission {
+        let revision: UInt64
+        let lease: TabRuntimePortLease
+    }
+
+    private let runtimeConnection: TabRuntimePortConnection
     private let policy: ProfileAssignmentPolicy
     private let pendingInheritance: PendingTabProfileInheritance
+    private let publication: TabProfileTransitionPublication
     private var observersByTabID: [UUID: SettlementObserver] = [:]
+    private var runtimeAdmissionsByTabID: [UUID: RuntimeAdmission] = [:]
 
     init(
-        tabManager: TabManager,
+        runtimeConnection: TabRuntimePortConnection,
         policy: ProfileAssignmentPolicy,
-        pendingInheritance: PendingTabProfileInheritance
+        pendingInheritance: PendingTabProfileInheritance,
+        publication: TabProfileTransitionPublication
     ) {
-        self.tabManager = tabManager
+        self.runtimeConnection = runtimeConnection
         self.policy = policy
         self.pendingInheritance = pendingInheritance
+        self.publication = publication
     }
 
     @discardableResult
     func assign(_ tab: Tab, toProfile profileID: UUID) -> Bool {
-        guard policy.profileExists(profileID) else {
-            RuntimeDiagnostics.emit(
-                "⚠️ [TabManager] Attempted to assign tab to unknown profile: \(profileID)"
-            )
-            return false
-        }
         if tab.profileId == profileID {
+            let pendingRevision = tab.profileAssignment.changeRevision
+            let lease = runtimeConnection.captureLease()
+            guard policy.profileExists(profileID, using: lease),
+                  runtimeConnection.acceptsExactAttachment(lease) else {
+                RuntimeDiagnostics.emit(
+                    "⚠️ [TabManager] Attempted to assign tab to unknown profile: \(profileID)"
+                )
+                return false
+            }
             let didCancel = tab.profileAssignment.cancelPending()
+            if didCancel {
+                removeRuntimeAdmission(
+                    for: tab,
+                    revision: pendingRevision
+                )
+            }
             if didCancel, reconcileStableInheritance(for: tab) {
                 publishStructuralMutation(for: tab)
             }
@@ -96,13 +114,20 @@ final class TabProfileTransitionService {
         // Both callers have already committed to changing `spaceId`; a nil
         // preparation only means that no WebView profile replacement is needed.
         pendingInheritance.tabLeftSourceSpace(tab)
+        let lease = runtimeConnection.captureLease()
         guard let profileIDs = policy.profileIDsForSpaceTransition(
             tab: tab,
             targetSpaceID: targetSpaceID,
-            desiredProfileID: desiredProfileID
-        ) else { return nil }
+            desiredProfileID: desiredProfileID,
+            using: lease
+        ), runtimeConnection.acceptsExactAttachment(lease) else {
+            return nil
+        }
 
-        _ = tab.profileAssignment.cancelPending()
+        let pendingRevision = tab.profileAssignment.changeRevision
+        if tab.profileAssignment.cancelPending() {
+            removeRuntimeAdmission(for: tab, revision: pendingRevision)
+        }
         let preparation = TabSpaceProfileTransitionPreparation(
             tabID: tab.id,
             sourceSpaceID: tab.spaceId,
@@ -120,16 +145,17 @@ final class TabProfileTransitionService {
         runtimeFallback: TabRuntimeFallbackProfileWitness?,
         using lease: TabRuntimePortLease
     ) -> ShortcutTabProfileAssignmentAdmission? {
-        guard tab.profileAssignment.hasUnsettledAssignment == false else {
+        guard runtimeConnection.acceptsExactAttachment(lease),
+              tab.profileAssignment.hasUnsettledAssignment == false else {
             return nil
         }
         let sourceProfileID = tab.profileId
         let sourceRevision = tab.profileAssignment.changeRevision
         guard let sourceProfile = policy.resolvedAssignmentProfile(
             for: tab,
-            desiredProfileID: sourceProfileID
-        ), lease.profile(with: sourceProfile.id) === sourceProfile,
-           let targetProfile = lease.profile(with: resolvedProfileID),
+            desiredProfileID: sourceProfileID,
+            using: lease
+        ), let targetProfile = lease.profile(with: resolvedProfileID),
            let profileWitness = lease.captureProfileAssignmentWitness(
                sourceProfile: sourceProfile,
                targetProfile: targetProfile
@@ -151,6 +177,9 @@ final class TabProfileTransitionService {
             sourceSessionWebViews: tab.webViewSession.allKnownWebViews,
             targetURL: sourceWebView?.url ?? tab.url
         )
+        guard runtimeConnection.acceptsExactAttachment(lease) else {
+            return nil
+        }
         return ShortcutTabProfileAssignmentAdmission(
             assignment: assignment
         )
@@ -187,14 +216,34 @@ final class TabProfileTransitionService {
                   revision: intent.navigationRevision,
                   targetURL: intent.targetURL
               ),
-              let profile = policy.resolvedAssignmentProfile(
-                  for: tab,
-                  desiredProfileID: intent.desiredProfileID
-              ), profile.id == intent.resolvedProfileID else {
+              let admission = runtimeAdmissionsByTabID[tab.id],
+              admission.revision == intent.revision else {
             receive(.rejected(.stale), tab: tab, intent: intent)
             return false
         }
-        return execute(tab: tab, profile: profile, intent: intent).wasAccepted
+        guard runtimeConnection.acceptsExactAttachment(admission.lease) else {
+            receive(.leaseLost, tab: tab, intent: intent)
+            return false
+        }
+        let profile = policy.resolvedAssignmentProfile(
+            for: tab,
+            desiredProfileID: intent.desiredProfileID,
+            using: admission.lease
+        )
+        guard runtimeConnection.acceptsExactAttachment(admission.lease) else {
+            receive(.leaseLost, tab: tab, intent: intent)
+            return false
+        }
+        guard let profile, profile.id == intent.resolvedProfileID else {
+            receive(.rejected(.stale), tab: tab, intent: intent)
+            return false
+        }
+        return execute(
+            tab: tab,
+            profile: profile,
+            intent: intent,
+            using: admission.lease
+        ).wasAccepted
     }
 
     @discardableResult
@@ -202,12 +251,14 @@ final class TabProfileTransitionService {
         desiredProfileID: UUID?,
         tab: Tab,
         requiresStructuralPersistence: Bool,
+        using runtimeLease: TabRuntimePortLease? = nil,
         settlementObserver: ProfileTransitionService.Settlement? = nil
     ) -> TabProfileAssignmentExecutionOutcome {
         start(
             desiredProfileID: desiredProfileID,
             tab: tab,
             requiresStructuralPersistence: requiresStructuralPersistence,
+            runtimeLease: runtimeLease,
             intentObserver: nil,
             settlementObserver: settlementObserver
         )
@@ -218,6 +269,7 @@ final class TabProfileTransitionService {
         desiredProfileID: UUID?,
         tab: Tab,
         requiresStructuralPersistence: Bool,
+        using runtimeLease: TabRuntimePortLease? = nil,
         capturingIntent: @escaping (
             DeferredWebViewProfileAssignmentIntent
         ) -> Void,
@@ -227,6 +279,7 @@ final class TabProfileTransitionService {
             desiredProfileID: desiredProfileID,
             tab: tab,
             requiresStructuralPersistence: requiresStructuralPersistence,
+            runtimeLease: runtimeLease,
             intentObserver: capturingIntent,
             settlementObserver: settlementObserver
         )
@@ -236,13 +289,17 @@ final class TabProfileTransitionService {
         desiredProfileID: UUID?,
         tab: Tab,
         requiresStructuralPersistence: Bool,
+        runtimeLease: TabRuntimePortLease?,
         intentObserver: ((DeferredWebViewProfileAssignmentIntent) -> Void)?,
         settlementObserver: ProfileTransitionService.Settlement?
     ) -> TabProfileAssignmentExecutionOutcome {
-        guard let profile = policy.resolvedAssignmentProfile(
+        let lease = runtimeLease ?? runtimeConnection.captureLease()
+        guard runtimeConnection.acceptsExactAttachment(lease),
+              let profile = policy.resolvedAssignmentProfile(
             for: tab,
-            desiredProfileID: desiredProfileID
-        ) else {
+            desiredProfileID: desiredProfileID,
+            using: lease
+        ), runtimeConnection.acceptsExactAttachment(lease) else {
             return .failed
         }
         let navigationIntent = tab.mainFrameLoads.currentIntent
@@ -253,6 +310,10 @@ final class TabProfileTransitionService {
             navigationRevision: navigationIntent.revision,
             requiresStructuralPersistence: requiresStructuralPersistence
         )
+        runtimeAdmissionsByTabID[tab.id] = RuntimeAdmission(
+            revision: intent.revision,
+            lease: lease
+        )
         intentObserver?(intent)
         if let settlementObserver {
             observersByTabID[tab.id] = SettlementObserver(
@@ -261,9 +322,14 @@ final class TabProfileTransitionService {
             )
         }
 
-        let outcome = execute(tab: tab, profile: profile, intent: intent)
+        let outcome = execute(
+            tab: tab,
+            profile: profile,
+            intent: intent,
+            using: lease
+        )
         if let settlement = outcome.immediateSettlement,
-           observersByTabID[tab.id]?.revision == intent.revision {
+           runtimeAdmissionsByTabID[tab.id]?.revision == intent.revision {
             receive(settlement, tab: tab, intent: intent)
         }
         return outcome
@@ -274,6 +340,7 @@ final class TabProfileTransitionService {
         intent: DeferredWebViewProfileAssignmentIntent
     ) {
         tab.profileAssignment.abort(intent)
+        removeRuntimeAdmission(for: tab, revision: intent.revision)
         if reconcileStableInheritance(for: tab) {
             publishStructuralMutation(for: tab)
         }
@@ -285,9 +352,14 @@ final class TabProfileTransitionService {
     private func execute(
         tab: Tab,
         profile: Profile,
-        intent: DeferredWebViewProfileAssignmentIntent
+        intent: DeferredWebViewProfileAssignmentIntent,
+        using lease: TabRuntimePortLease
     ) -> TabProfileAssignmentExecutionOutcome {
-        guard let lifecycle = tabManager.runtimePorts?.webViewLifecycle else {
+        guard runtimeConnection.acceptsExactAttachment(lease) else {
+            receive(.leaseLost, tab: tab, intent: intent)
+            return .failed
+        }
+        guard let lifecycle = lease.registry?.webViewLifecycle else {
             receive(.rejected(.failed), tab: tab, intent: intent)
             return .failed
         }
@@ -297,7 +369,13 @@ final class TabProfileTransitionService {
             intent: intent,
             settlement: { [weak self, weak tab] settlement in
                 guard let self, let tab else { return }
-                receive(settlement, tab: tab, intent: intent)
+                receive(
+                    runtimeConnection.acceptsExactAttachment(lease)
+                        ? settlement
+                        : .leaseLost,
+                    tab: tab,
+                    intent: intent
+                )
             }
         )
     }
@@ -307,6 +385,7 @@ final class TabProfileTransitionService {
         tab: Tab,
         intent: DeferredWebViewProfileAssignmentIntent
     ) {
+        removeRuntimeAdmission(for: tab, revision: intent.revision)
         var requiresStructuralPublication = false
         switch settlement {
         case .committed:
@@ -315,7 +394,9 @@ final class TabProfileTransitionService {
             tab.profileAssignment.abort(intent)
         case .rolledBack:
             requiresStructuralPublication = intent.requiresStructuralPersistence
-        case .conflicted, .leaseLost, .terminalShutdown:
+        case .leaseLost, .terminalShutdown:
+            tab.profileAssignment.abort(intent)
+        case .conflicted:
             break
         }
         let didNormalizeInheritance = pendingInheritance.tabTransitionSettled(
@@ -323,10 +404,9 @@ final class TabProfileTransitionService {
             tab: tab,
             intent: intent,
             canonicalProfileID: tab.spaceId.flatMap {
-                tabManager.spaceStateOwner.profileId(for: $0)
+                publication.profileID(for: $0)
             },
-            isTabStillInSpace: tabManager.tabCollectionMembershipOwner
-                .allTabs().contains { $0 === tab && $0.spaceId == tab.spaceId }
+            isTabStillInSpace: publication.containsExact(tab)
         )
         if requiresStructuralPublication || didNormalizeInheritance {
             publishStructuralMutation(for: tab)
@@ -338,25 +418,24 @@ final class TabProfileTransitionService {
         observer.callback(settlement)
     }
 
-    private func publishStructuralMutation(for tab: Tab) {
-        if let spaceID = tab.spaceId {
-            tabManager.structuralPersistence
-                .markRegularTabsStructurallyDirty(for: spaceID)
+    private func removeRuntimeAdmission(for tab: Tab, revision: UInt64) {
+        guard runtimeAdmissionsByTabID[tab.id]?.revision == revision else {
+            return
         }
-        tabManager.structuralPersistence.scheduleStructuralPersistence()
-        tabManager.structuralLookupCoordinator.requestPublish(
-            scope: tab.spaceId.map { .space($0) } ?? .runtimeOnly
-        )
+        runtimeAdmissionsByTabID.removeValue(forKey: tab.id)
+    }
+
+    private func publishStructuralMutation(for tab: Tab) {
+        publication.publishStructuralMutation(for: tab)
     }
 
     private func reconcileStableInheritance(for tab: Tab) -> Bool {
         pendingInheritance.tabBecameStable(
             tab,
             canonicalProfileID: tab.spaceId.flatMap {
-                tabManager.spaceStateOwner.profileId(for: $0)
+                publication.profileID(for: $0)
             },
-            isTabStillInSpace: tabManager.tabCollectionMembershipOwner
-                .allTabs().contains { $0 === tab && $0.spaceId == tab.spaceId }
+            isTabStillInSpace: publication.containsExact(tab)
         )
     }
 }

@@ -28,6 +28,10 @@ final class TabStructuralCollectionStore {
         shortcutPins.pinnedByProfileSnapshot()[profileID] ?? []
     }
 
+    func profilePinsEntry(for profileID: UUID) -> [ShortcutPin]? {
+        shortcutPins.pinnedByProfileSnapshot()[profileID]
+    }
+
     func spacePins(for spaceID: UUID) -> [ShortcutPin] {
         shortcutPins.spacePinnedShortcutsSnapshot()[spaceID] ?? []
     }
@@ -47,6 +51,12 @@ final class TabStructuralCollectionStore {
     func replaceProfilePins(_ pins: [ShortcutPin], for profileID: UUID) {
         var snapshot = shortcutPins.pinnedByProfileSnapshot()
         snapshot[profileID] = pins
+        shortcutPins.replacePinnedByProfile(snapshot)
+    }
+
+    func removeProfilePins(for profileID: UUID) {
+        var snapshot = shortcutPins.pinnedByProfileSnapshot()
+        snapshot.removeValue(forKey: profileID)
         shortcutPins.replacePinnedByProfile(snapshot)
     }
 

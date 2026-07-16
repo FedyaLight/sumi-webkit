@@ -32,21 +32,6 @@ final class SpaceProfileMutationService {
         self.changes = changes
     }
 
-    convenience init(tabManager: TabManager) {
-        self.init(
-            spaces: tabManager.spaceStateOwner,
-            pins: tabManager.shortcutPinCollectionStateOwner,
-            registry: tabManager.liveShortcutTabs,
-            runtimeConnection: tabManager.runtimePortConnection,
-            runtimeTeardown: tabManager.runtimeTeardown,
-            terminalPublisher: SpaceProfilePresentationTerminalEffectPublisher(
-                structuralLookup: tabManager.structuralLookupCoordinator,
-                runtimeTeardown: tabManager.runtimeTeardown
-            ),
-            changes: tabManager.objectWillChange
-        )
-    }
-
     func transaction(
         space: Space,
         expectedProfileID: UUID?,

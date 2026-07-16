@@ -131,6 +131,27 @@ final class TabStructuralCollectionMutationOwner {
         }
     }
 
+    @discardableResult
+    func removePinnedTabs(for profileId: UUID) -> [ShortcutPin]? {
+        guard store.profilePinsEntry(for: profileId) != nil else { return nil }
+        var removed: [ShortcutPin]?
+        mutate {
+            guard let previous = store.profilePinsEntry(for: profileId) else {
+                return
+            }
+            removed = previous
+            willMutate()
+            store.removeProfilePins(for: profileId)
+            record(.profilePins(
+                profileId,
+                previous: previous,
+                current: [],
+                allPins: store.allPins()
+            ))
+        }
+        return removed
+    }
+
     func setSpacePinnedShortcuts(_ items: [ShortcutPin], for spaceId: UUID) {
         mutate {
             let previous = store.spacePins(for: spaceId)

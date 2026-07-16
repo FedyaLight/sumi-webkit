@@ -40,6 +40,7 @@ final class ShortcutTabProfileAssignmentBatch {
         return Set(bindingTabIDs).count == bindingTabIDs.count
             && Set(admissionTabIDs).count == admissionTabIDs.count
             && Set(bindingTabIDs) == Set(admissionTabIDs)
+            && lease.registry != nil
             && connection.acceptsExactAttachment(lease)
             && admissions.allSatisfy { $0.isCurrent(using: lease) }
     }
@@ -54,13 +55,6 @@ final class ShortcutTabProfileAssignmentBatch {
                 bindingModel: bindingModel,
                 settlement: settlement
             )
-        }
-        if lease.registry == nil {
-            let outcome = ProfileTransitionModelOnlySettlement.execute(
-                .transaction(bindingModel)
-            )
-            settlement(outcome.settlement)
-            return outcome.batchExecution
         }
         let assignments = admissions.map(\.assignment)
         let outcome = lease.executePreparedProfileAssignments(

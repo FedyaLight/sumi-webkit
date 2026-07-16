@@ -20,6 +20,7 @@ func makeInMemoryTabManager(
     defaultProfileId: @escaping () -> UUID? = { nil },
     profileExists: @escaping (UUID) -> Bool = { _ in true },
     profile: @escaping (UUID) -> Profile? = { _ in nil },
+    retirement: TestRuntimePorts.RetirementCapabilities = .rejecting,
     windowState: @escaping (UUID) -> BrowserWindowState? = { _ in nil },
     windows: @escaping () -> [(UUID, BrowserWindowState)] = { [] },
     visibleSplitTabIds: @escaping (UUID) -> [UUID] = { _ in [] },
@@ -54,7 +55,7 @@ func makeInMemoryTabManager(
         updateTabVisibility: updateTabVisibility,
         webViewLifecycle: webViewLifecycle
             ?? TestRuntimePorts.webViewLifecycle(
-                retirement: .rejecting,
+                retirement: retirement,
                 materializeVisibleTabWebViewIfNeeded: materializeVisibleTabWebViewIfNeeded,
                 unloadTab: unloadTab,
                 requireRemoveAllWebViews: requireRemoveAllWebViews,

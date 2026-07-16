@@ -6,14 +6,36 @@ extension ProfileAssignmentServices {
         tabManager: TabManager,
         selectionContext: TabSelectionContextProjection
     ) -> ProfileAssignmentServices {
-        let policy = ProfileAssignmentPolicy(tabManager: tabManager)
+        let policy = ProfileAssignmentPolicy(
+            runtimeConnection: tabManager.runtimePortConnection,
+            spaces: tabManager.spaceStateOwner,
+            membership: tabManager.tabCollectionMembershipOwner,
+            transientTabs: tabManager.transientTabRegistryOwner
+        )
         let pendingInheritance = PendingTabProfileInheritance()
         let tabs = TabProfileTransitionService(
-            tabManager: tabManager,
+            runtimeConnection: tabManager.runtimePortConnection,
             policy: policy,
-            pendingInheritance: pendingInheritance
+            pendingInheritance: pendingInheritance,
+            publication: TabProfileTransitionPublication(
+                spaces: tabManager.spaceStateOwner,
+                membership: tabManager.tabCollectionMembershipOwner,
+                persistence: tabManager.structuralPersistence,
+                structuralLookup: tabManager.structuralLookupCoordinator
+            )
         )
-        let spaceMutations = SpaceProfileMutationService(tabManager: tabManager)
+        let spaceMutations = SpaceProfileMutationService(
+            spaces: tabManager.spaceStateOwner,
+            pins: tabManager.shortcutPinCollectionStateOwner,
+            registry: tabManager.liveShortcutTabs,
+            runtimeConnection: tabManager.runtimePortConnection,
+            runtimeTeardown: tabManager.runtimeTeardown,
+            terminalPublisher: SpaceProfilePresentationTerminalEffectPublisher(
+                structuralLookup: tabManager.structuralLookupCoordinator,
+                runtimeTeardown: tabManager.runtimeTeardown
+            ),
+            changes: tabManager.objectWillChange
+        )
         let spaceAdmission = SpaceProfileTransitionAdmission(
             profileMutations: spaceMutations,
             tabCandidates: SpaceProfileTabCandidatePlanner(
@@ -50,13 +72,29 @@ extension ProfileAssignmentServices {
             runtimeConnection: tabManager.runtimePortConnection,
             persistence: tabManager.structuralPersistence
         )
+        let deletionReferences = ShortcutProfileReferenceMutationApplicator(
+            structuralMutations: tabManager.structuralCollectionMutationOwner,
+            spacePinnedStructure: tabManager.spacePinnedStructureOwner,
+            persistence: tabManager.structuralPersistence,
+            runtimeConnection: tabManager.runtimePortConnection
+        )
         let deletion = ProfileDeletionMigration(
-            tabManager: tabManager,
             policy: policy,
-            tabTransitions: tabs,
-            spaceTransitions: spaces,
-            spaceTransitionLifecycle: spaceRepository,
-            selection: selection
+            runtimeConnection: tabManager.runtimePortConnection,
+            operations: ProfileDeletionOperationPlanner(
+                spaces: tabManager.spaceStateOwner,
+                policy: policy,
+                tabTransitions: tabs,
+                spaceTransitions: spaces,
+                spaceTransitionLifecycle: spaceRepository
+            ),
+            settlement: ProfileDeletionSettlementCoordinator(),
+            finalizer: ProfileDeletionFinalizer(
+                pins: tabManager.shortcutPinCollectionStateOwner,
+                references: deletionReferences,
+                runtimeConnection: tabManager.runtimePortConnection,
+                selection: selection
+            )
         )
         return ProfileAssignmentServices(
             policy: policy,

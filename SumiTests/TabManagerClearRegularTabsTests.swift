@@ -380,7 +380,11 @@ final class TabManagerClearRegularTabsTests: XCTestCase {
             spaceProfileId: Profile(id: spaceProfileId, name: "Space"),
             pinnedProfileId: Profile(id: pinnedProfileId, name: "Pinned"),
         ]
-        let tabManager = try makeInMemoryTabManager(profile: { profiles[$0] })
+        let tabManager = try makeInMemoryTabManager(
+            profileExists: { profiles[$0] != nil },
+            profile: { profiles[$0] },
+            retirement: .accepting
+        )
         let space = tabManager.spaceServices.catalog.createSpace(name: "Work", profileId: spaceProfileId)
         let tab = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com", in: space, activate: false)
         let pin = try XCTUnwrap(
@@ -418,7 +422,11 @@ final class TabManagerClearRegularTabsTests: XCTestCase {
                 name: "Execution"
             ),
         ]
-        let tabManager = try makeInMemoryTabManager(profile: { profiles[$0] })
+        let tabManager = try makeInMemoryTabManager(
+            profileExists: { profiles[$0] != nil },
+            profile: { profiles[$0] },
+            retirement: .accepting
+        )
         let space = tabManager.spaceServices.catalog.createSpace(name: "Work", profileId: ownerProfileId)
         let tab = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com", in: space, activate: false)
         let pin = try XCTUnwrap(
@@ -446,9 +454,13 @@ final class TabManagerClearRegularTabsTests: XCTestCase {
 
     func testPinTabConvertsDisplayedTabUsingOwningWindowContext() throws {
         let profileId = UUID()
+        let profile = Profile(id: profileId, name: "Profile")
         let windowState = BrowserWindowState()
         let tabManager = try makeInMemoryTabManager(
             currentProfileId: { profileId },
+            profileExists: { $0 == profileId },
+            profile: { $0 == profileId ? profile : nil },
+            retirement: .accepting,
             windowState: { windowId in
                 windowId == windowState.id ? windowState : nil
             },
@@ -473,6 +485,7 @@ final class TabManagerClearRegularTabsTests: XCTestCase {
 
     func testPinTabPreservesPrimaryOwnerAndMaterializesActionWindow() throws {
         let profileId = UUID()
+        let profile = Profile(id: profileId, name: "Profile")
         let primaryWindow = BrowserWindowState()
         let actionWindow = BrowserWindowState()
         var materializations: [(tabId: UUID, windowId: UUID)] = []
@@ -482,6 +495,9 @@ final class TabManagerClearRegularTabsTests: XCTestCase {
         ]
         let tabManager = try makeInMemoryTabManager(
             currentProfileId: { profileId },
+            profileExists: { $0 == profileId },
+            profile: { $0 == profileId ? profile : nil },
+            retirement: .accepting,
             windowState: { windowsById[$0] },
             windows: { windowsById.map { ($0.key, $0.value) } },
             primaryTrackedWindowId: { tabId in
@@ -546,12 +562,21 @@ final class TabManagerClearRegularTabsTests: XCTestCase {
             deletedProfileId: Profile(id: deletedProfileId, name: "Deleted"),
             fallbackProfileId: Profile(id: fallbackProfileId, name: "Fallback"),
         ]
-        let tabManager = try makeInMemoryTabManager(profile: { profiles[$0] })
+        let windowState = BrowserWindowState()
+        let tabManager = try makeInMemoryTabManager(
+            profileExists: { profiles[$0] != nil },
+            profile: { profiles[$0] },
+            retirement: .accepting,
+            windowState: { $0 == windowState.id ? windowState : nil },
+            windows: { [(windowState.id, windowState)] }
+        )
         let deletedSpace = tabManager.spaceServices.catalog.createSpace(
             name: "Deleted Work",
             profileId: deletedProfileId
         )
         _ = tabManager.spaceServices.catalog.createSpace(name: "Work", profileId: fallbackProfileId)
+        windowState.currentSpaceId = deletedSpace.id
+        windowState.currentProfileId = deletedProfileId
         let pin = try XCTUnwrap(tabManager.shortcutPinStoreOwner.insert(ShortcutPin(
             id: UUID(),
             role: .essential,
@@ -562,7 +587,7 @@ final class TabManagerClearRegularTabsTests: XCTestCase {
         ), at: 0))
         let liveTab = tabManager.shortcutTabMaterializer.materialize(
             pin,
-            in: UUID(),
+            in: windowState.id,
             currentSpaceId: deletedSpace.id
         )!
         tabManager.selectionStateOwner.replaceCurrentTab(liveTab)
@@ -578,8 +603,13 @@ final class TabManagerClearRegularTabsTests: XCTestCase {
     }
 
     func testLauncherFaviconPartitionFallsBackToContainerProfileWhenExecutionProfileIsImplicit() throws {
-        let tabManager = try makeInMemoryTabManager()
         let profileId = UUID()
+        let profile = Profile(id: profileId, name: "Profile")
+        let tabManager = try makeInMemoryTabManager(
+            profileExists: { $0 == profileId },
+            profile: { $0 == profileId ? profile : nil },
+            retirement: .accepting
+        )
         let space = tabManager.spaceServices.catalog.createSpace(name: "Work", profileId: profileId)
         let tab = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/app", in: space, activate: false)
         tab.profileId = profileId

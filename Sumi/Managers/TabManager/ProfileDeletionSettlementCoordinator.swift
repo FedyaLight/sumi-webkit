@@ -24,6 +24,7 @@ struct ProfileDeletionSettlementPlan {
     let deletedProfileID: UUID
     let fallbackProfileID: UUID
     let operations: [ProfileDeletionOperation]
+    let abortTransitions: @MainActor (Set<UUID>) -> Int
 }
 
 /// Generic all-operation settlement gate. It knows nothing about TabManager,
@@ -61,16 +62,13 @@ final class ProfileDeletionSettlementCoordinator {
         }
     }
 
-    private let abortTransitions: (Set<UUID>) -> Int
     private let waitForTimeout: @MainActor () async -> Void
     private var activeRun: Run?
 
     init(
         timeout: Duration = .seconds(30),
-        waitForTimeout: (@MainActor () async -> Void)? = nil,
-        abortTransitions: @escaping (Set<UUID>) -> Int
+        waitForTimeout: (@MainActor () async -> Void)? = nil
     ) {
-        self.abortTransitions = abortTransitions
         self.waitForTimeout = waitForTimeout ?? {
             do {
                 try await Task.sleep(for: timeout)
@@ -155,7 +153,7 @@ final class ProfileDeletionSettlementCoordinator {
         guard let run = activeRun, run.id == runID else { return }
         activeRun = nil
         run.timeoutTask = nil
-        _ = abortTransitions(
+        _ = run.plan.abortTransitions(
             [run.plan.deletedProfileID, run.plan.fallbackProfileID]
         )
         for operationID in run.pending.sorted(by: operationOrder) {

@@ -1105,12 +1105,15 @@ final class ShortcutTabBindingSynchronizerTests: XCTestCase {
             target
         )
         XCTAssertEqual(structuralEvents, 0)
+        XCTAssertNil(
+            tabManager.structuralCollectionMutationOwner.prepareAggregate()
+        )
+        XCTAssertTrue(aggregate.canSettleTerminalDrain())
+        XCTAssertTrue(aggregate.settleTerminalDrain())
         let unrelated = try XCTUnwrap(
             tabManager.structuralCollectionMutationOwner.prepareAggregate()
         )
         XCTAssertTrue(unrelated.rollback())
-        XCTAssertTrue(aggregate.canSettleTerminalDrain())
-        XCTAssertTrue(aggregate.settleTerminalDrain())
         XCTAssertIdentical(
             tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: target.id),
             target

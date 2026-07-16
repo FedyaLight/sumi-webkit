@@ -33,6 +33,14 @@ final class ShortcutPresentationActivationStagedMutation {
             registry.staging.rollback(changes),
             "Shortcut activation residence rollback diverged"
         )
+        detachUnregisteredFreshTabs()
+    }
+
+    func forfeitPreservingCurrent() {
+        detachUnregisteredFreshTabs()
+    }
+
+    private func detachUnregisteredFreshTabs() {
         for tab in attachedTabs.reversed()
             where registry.entry(containing: tab) == nil
                 && membership.tab(for: tab.id) === tab {
@@ -96,5 +104,4 @@ final class ShortcutPresentationActivationCommitter {
             attachedTabs: attachedTabs
         )
     }
-
 }

@@ -81,6 +81,18 @@ profile_selection_core=(
   "${profile_selection_services[@]}"
   Sumi/Managers/TabManager/ProfileAssignmentServices.swift
 )
+profile_assignment_policy_core=(
+  Sumi/Managers/TabManager/ProfileAssignmentPolicy.swift
+)
+profile_assignment_manager_free_core=(
+  Sumi/Managers/TabManager/ProfileAssignmentPolicy.swift
+  Sumi/Managers/TabManager/TabProfileTransitionService.swift
+  Sumi/Managers/TabManager/TabProfileTransitionPublication.swift
+  Sumi/Managers/TabManager/ProfileDeletionMigration.swift
+  Sumi/Managers/TabManager/ProfileDeletionSettlementCoordinator.swift
+  Sumi/Managers/TabManager/ShortcutProfileReferenceMutation.swift
+  Sumi/Managers/TabManager/SpaceProfileMutationService.swift
+)
 runtime_attachment_services=(
   Sumi/Managers/TabManager/TabRuntimePortsAttachmentOwner.swift
   Sumi/Managers/TabManager/TabRuntimeAttachmentBootstrap.swift
@@ -108,6 +120,8 @@ guard_require_discovered_sources 'floating bar' "${floating_bar_services[@]}"
 guard_require_discovered_sources 'active page' "${active_page_services[@]}"
 guard_require_discovered_sources 'Tab selection' "${tab_selection_services[@]}"
 guard_require_discovered_sources 'profile selection' "${profile_selection_core[@]}"
+guard_require_discovered_sources 'profile assignment policy' "${profile_assignment_policy_core[@]}"
+guard_require_discovered_sources 'manager-free profile assignment' "${profile_assignment_manager_free_core[@]}"
 guard_require_discovered_sources 'runtime attachment' "${runtime_attachment_services[@]}"
 
 # Main-frame mutation must stay behind the exact owners/composition root. This
@@ -253,6 +267,39 @@ for profile_selection_service in "${profile_selection_services[@]}"; do
     "$profile_selection_collaborators" \
     5
 done
+guard_expect_no_matches \
+  'profile assignment policy manager reachback' \
+  '\bTabManager\b|\btabManager\b' \
+  "${profile_assignment_policy_core[@]}"
+guard_expect_no_matches \
+  'profile assignment policy generic dependency bags' \
+  '\bstruct[[:space:]]+(Dependencies|Actions|Context|Environment|Capabilities)\b' \
+  "${profile_assignment_policy_core[@]}"
+guard_expect_no_matches \
+  'profile assignment policy stored callback dependencies' \
+  '^[[:space:]]*private[[:space:]]+let[[:space:]]+[A-Za-z_][A-Za-z0-9_]*:.*->' \
+  "${profile_assignment_policy_core[@]}"
+profile_assignment_policy_collaborators="$(
+  guard_count_matches \
+    '^[[:space:]]*private[[:space:]]+let\b' \
+    "${profile_assignment_policy_core[@]}"
+)"
+guard_exact \
+  'ProfileAssignmentPolicy stored collaborators' \
+  "$profile_assignment_policy_collaborators" \
+  4
+guard_expect_no_matches \
+  'profile assignment manager recovery' \
+  '\btabManager\b|:[[:space:]]*TabManager\b' \
+  "${profile_assignment_manager_free_core[@]}"
+guard_expect_no_matches \
+  'profile assignment generic dependency bags' \
+  '\bstruct[[:space:]]+(Dependencies|Actions|Context|Environment|Capabilities)\b' \
+  "${profile_assignment_manager_free_core[@]}"
+guard_expect_no_matches \
+  'direct profile-pin removal outside structural mutation authority' \
+  '\bremovePinnedPins\(' \
+  -g '*.swift' Sumi
 guard_expect_no_matches \
   'dead pending Space activation state' \
   '\bpendingSpaceActivation\b' \
@@ -445,6 +492,10 @@ guard_expect_no_matches \
   'optional shortcut profile admission' \
   'PreparedTabProfileAssignment\?|compactMap\(\\\.assignment\)' \
   -g '*.swift' Sumi
+guard_expect_no_matches \
+  'detached shortcut profile batch model-only fallback' \
+  '\bProfileTransitionModelOnlySettlement\b' \
+  Sumi/Managers/TabManager/ShortcutTabProfileAssignmentBatch.swift
 guard_expect_no_matches \
   'imperative live-shortcut residence staging bypass' \
   '^    func (register|relocate|remove)\(' \

@@ -66,86 +66,68 @@ struct ShortcutProfileReferenceMutationPlanner {
 /// persistence/publication effects.
 @MainActor
 final class ShortcutProfileReferenceMutationApplicator {
-    private unowned let tabManager: TabManager
+    private let structuralMutations: TabStructuralCollectionMutationOwner
+    private let spacePinnedStructure: SpacePinnedStructureOwner
+    private let persistence: TabStructuralPersistenceService
+    private let runtimeConnection: TabRuntimePortConnection
 
-    init(tabManager: TabManager) {
-        self.tabManager = tabManager
+    init(
+        structuralMutations: TabStructuralCollectionMutationOwner,
+        spacePinnedStructure: SpacePinnedStructureOwner,
+        persistence: TabStructuralPersistenceService,
+        runtimeConnection: TabRuntimePortConnection
+    ) {
+        self.structuralMutations = structuralMutations
+        self.spacePinnedStructure = spacePinnedStructure
+        self.persistence = persistence
+        self.runtimeConnection = runtimeConnection
     }
 
-    func apply(_ plan: ShortcutProfileReferenceMutationPlan) {
-        guard !plan.isEmpty else { return }
+    func apply(
+        _ plan: ShortcutProfileReferenceMutationPlan,
+        using runtimeLease: TabRuntimePortLease
+    ) -> Bool {
+        guard runtimeConnection.acceptsExactAttachment(runtimeLease) else {
+            return false
+        }
+        guard !plan.isEmpty else { return true }
+        guard let aggregate = structuralMutations.prepareAggregate() else {
+            return false
+        }
 
-        if let removedPins = plan.removedProfilePins {
-            tabManager.objectWillChange.send()
-            _ = tabManager.shortcutPinCollectionStateOwner.removePinnedPins(
-                for: plan.deletedProfileID
-            )
-            tabManager.structuralPersistence.recordShortcutPinsStructuralChange(
-                previous: removedPins,
-                current: []
-            )
-            tabManager.structuralPersistence.markPinnedSnapshotDirty(
-                for: plan.deletedProfileID
-            )
-            tabManager.structuralLookupCoordinator.requestPublish(
-                scope: .profile(plan.deletedProfileID)
-            )
+        if plan.removedProfilePins != nil {
+            structuralMutations.removePinnedTabs(for: plan.deletedProfileID)
         }
 
         for profileID in plan.profilePinReplacements.keys.sorted(by: uuidOrder) {
             guard let pins = plan.profilePinReplacements[profileID] else {
                 continue
             }
-            tabManager.structuralCollectionMutationOwner.setPinnedTabs(
+            structuralMutations.setPinnedTabs(
                 ShortcutPin.reindexed(pins),
                 for: profileID
             )
         }
         for spaceID in plan.spacePinReplacements.keys.sorted(by: uuidOrder) {
             guard let pins = plan.spacePinReplacements[spaceID] else { continue }
-            tabManager.structuralCollectionMutationOwner.setSpacePinnedShortcuts(
-                tabManager.spacePinnedStructureOwner
-                    .normalizedSpacePinnedShortcuts(pins),
+            structuralMutations.setSpacePinnedShortcuts(
+                spacePinnedStructure.normalizedSpacePinnedShortcuts(pins),
                 for: spaceID
             )
         }
 
-        tabManager.structuralPersistence.scheduleStructuralPersistence()
+        guard runtimeConnection.acceptsExactAttachment(runtimeLease),
+              aggregate.stage(),
+              runtimeConnection.acceptsExactAttachment(runtimeLease),
+              aggregate.publish() else {
+            _ = aggregate.rollback()
+            return false
+        }
+        persistence.scheduleStructuralPersistence()
+        return true
     }
 
     private func uuidOrder(_ lhs: UUID, _ rhs: UUID) -> Bool {
         lhs.uuidString < rhs.uuidString
-    }
-}
-
-@MainActor
-final class ShortcutExecutionProfileAssignmentService {
-    private unowned let tabManager: TabManager
-    private let policy: ProfileAssignmentPolicy
-
-    init(tabManager: TabManager, policy: ProfileAssignmentPolicy) {
-        self.tabManager = tabManager
-        self.policy = policy
-    }
-
-    @discardableResult
-    func assign(
-        _ pin: ShortcutPin,
-        toExecutionProfile profileID: UUID
-    ) -> ShortcutPin? {
-        guard policy.profileExists(profileID) else {
-            RuntimeDiagnostics.emit(
-                "⚠️ [TabManager] Attempted to assign pinned tab to unknown profile: \(profileID)"
-            )
-            return nil
-        }
-        let current = tabManager.shortcutPinCollectionStateOwner.shortcutPin(
-            by: pin.id
-        ) ?? pin
-        guard current.executionProfileId != profileID else { return current }
-        return tabManager.shortcutPinCommandOwner.updateShortcutPin(
-            current,
-            executionProfileId: .some(profileID)
-        )
     }
 }

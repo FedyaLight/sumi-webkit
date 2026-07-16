@@ -268,6 +268,47 @@ final class ShortcutTabMaterializerTests: XCTestCase {
         _ = cancellable
     }
 
+    func testFreshResidenceDriftRejectsWithoutLeakingMembership() throws {
+        let profileID = UUID()
+        let tabManager = try makeInMemoryTabManager()
+        let space = Space(name: "Target", profileId: profileID)
+        tabManager.spaceStateOwner.replaceSpaces([space])
+        let pin = ShortcutPin(
+            id: UUID(),
+            role: .spacePinned,
+            executionProfileId: profileID,
+            spaceId: space.id,
+            index: 0,
+            launchURL: URL(string: "https://residence-drift.example")!,
+            title: "Residence Drift"
+        )
+        tabManager.structuralCollectionMutationOwner
+            .setSpacePinnedShortcuts([pin], for: space.id)
+        let windowID = UUID()
+        var stagedTab: Tab?
+
+        let accepted = tabManager.shortcutPresentationActivation
+            .withActivation([
+                .init(
+                    pinID: pin.id,
+                    windowID: windowID,
+                    presentationSpaceID: space.id
+                ),
+            ]) { tabs in
+                stagedTab = tabs.first
+                guard let stagedTab else { return false }
+                return tabManager.liveShortcutTabs.remove(
+                    tabId: stagedTab.id
+                ) != nil
+            }
+
+        XCTAssertFalse(accepted)
+        XCTAssertNil(tabManager.liveShortcutTabs.tab(for: pin.id, in: windowID))
+        XCTAssertNil(stagedTab.flatMap {
+            tabManager.tabCollectionMembershipOwner.tab(for: $0.id)
+        })
+    }
+
     func testReentrantResidenceDriftRejectsWithoutCrashingRollback() throws {
         let profileID = UUID()
         let tabManager = try makeInMemoryTabManager()
@@ -398,10 +439,17 @@ final class ShortcutTabMaterializerTests: XCTestCase {
     }
 
     func testFreshEssentialUsesExecutionProfileAndReusesExactIdentity() throws {
-        let tabManager = try makeInMemoryTabManager()
         let windowId = UUID()
         let ownerProfileId = UUID()
-        let executionProfileId = UUID()
+        let executionProfile = Profile(name: "Execution")
+        let executionProfileId = executionProfile.id
+        let tabManager = try makeInMemoryTabManager(
+            profile: { $0 == executionProfileId ? executionProfile : nil }
+        )
+        let presentationSpace = tabManager.spaceServices.catalog.createSpace(
+            name: "Presentation",
+            profileId: ownerProfileId
+        )
         let ignoredSpaceId = UUID()
         let ignoredFolderId = UUID()
         let pin = ShortcutPin(
@@ -424,7 +472,7 @@ final class ShortcutTabMaterializerTests: XCTestCase {
             tabManager.shortcutTabMaterializer.materialize(
                 pin,
                 in: windowId,
-                currentSpaceId: ignoredSpaceId
+                currentSpaceId: presentationSpace.id
             )!
         }
 
@@ -450,7 +498,7 @@ final class ShortcutTabMaterializerTests: XCTestCase {
             tabManager.shortcutTabMaterializer.materialize(
                 pin,
                 in: windowId,
-                currentSpaceId: UUID()
+                currentSpaceId: presentationSpace.id
             )!
         }
 
@@ -459,8 +507,11 @@ final class ShortcutTabMaterializerTests: XCTestCase {
     }
 
     func testSpacePinnedMaterializationInheritsMetadataAndRebindsOnce() throws {
-        let spaceProfileId = UUID()
-        let tabManager = try makeInMemoryTabManager()
+        let spaceProfile = Profile(name: "Space")
+        let spaceProfileId = spaceProfile.id
+        let tabManager = try makeInMemoryTabManager(
+            profile: { $0 == spaceProfileId ? spaceProfile : nil }
+        )
         let space = tabManager.spaceServices.catalog.createSpace(
             name: "Workspace",
             profileId: spaceProfileId
@@ -494,7 +545,7 @@ final class ShortcutTabMaterializerTests: XCTestCase {
         XCTAssertEqual(fresh.shortcutPinId, pin.id)
         XCTAssertEqual(fresh.shortcutPinRole, .spacePinned)
         XCTAssertEqual(fresh.spaceId, space.id)
-        XCTAssertEqual(fresh.profileId, spaceProfileId)
+        XCTAssertNil(fresh.profileId)
         XCTAssertEqual(fresh.folderId, firstFolderId)
         XCTAssertFalse(fresh.isPinned)
         XCTAssertFalse(fresh.isSpacePinned)
@@ -512,7 +563,7 @@ final class ShortcutTabMaterializerTests: XCTestCase {
         XCTAssertIdentical(rebound, fresh)
         XCTAssertEqual(rebound.folderId, secondFolderId)
         XCTAssertEqual(rebound.spaceId, space.id)
-        XCTAssertEqual(rebound.profileId, spaceProfileId)
-        XCTAssertEqual(eventCount, 1)
+        XCTAssertNil(rebound.profileId)
+        XCTAssertEqual(eventCount, 0)
     }
 }

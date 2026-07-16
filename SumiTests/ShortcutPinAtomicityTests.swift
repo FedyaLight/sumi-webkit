@@ -256,8 +256,13 @@ final class ShortcutPinAtomicityTests: XCTestCase {
 
     func testPublicConversionCommitsSelectedSplitAndPinAsOneStructuralEvent() throws {
         let window = BrowserWindowState()
+        let profile = Profile(name: "Conversion")
         var visibleSplitIds: [UUID] = []
         let tabManager = try makeInMemoryTabManager(
+            currentProfileId: { profile.id },
+            defaultProfileId: { profile.id },
+            profile: { $0 == profile.id ? profile : nil },
+            retirement: .accepting,
             windowState: { $0 == window.id ? window : nil },
             windows: { [(window.id, window)] },
             visibleSplitTabIds: { $0 == window.id ? visibleSplitIds : [] },
@@ -265,6 +270,7 @@ final class ShortcutPinAtomicityTests: XCTestCase {
                 tabId == window.currentTabId ? window.id : nil
             }
         )
+        window.tabManager = tabManager
         let space = tabManager.spaceServices.catalog.createSpace(name: "Space")
         let tab = tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://selected-split.example",
@@ -485,16 +491,23 @@ final class ShortcutPinAtomicityTests: XCTestCase {
     func testPublicConversionRepairsNonDisplayingWindowAfterCommit() throws {
         let displayed = BrowserWindowState()
         let stale = BrowserWindowState()
+        let profile = Profile(name: "Conversion")
         let states = [displayed.id: displayed, stale.id: stale]
         var structuralEvents = 0
         var persisted: [(windowId: UUID, events: Int)] = []
         let tabManager = try makeInMemoryTabManager(
+            currentProfileId: { profile.id },
+            defaultProfileId: { profile.id },
+            profile: { $0 == profile.id ? profile : nil },
+            retirement: .accepting,
             windowState: { states[$0] },
             windows: { states.map { ($0.key, $0.value) } },
             persistWindowSession: {
                 persisted.append(($0.id, structuralEvents))
             }
         )
+        displayed.tabManager = tabManager
+        stale.tabManager = tabManager
         let space = tabManager.spaceServices.catalog.createSpace(name: "Space")
         let tab = tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://displayed.example",

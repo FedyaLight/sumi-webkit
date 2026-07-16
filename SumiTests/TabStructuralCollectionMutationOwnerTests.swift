@@ -77,6 +77,37 @@ final class TabStructuralCollectionMutationOwnerTests: XCTestCase {
         XCTAssertEqual(harness.publishCount, 1)
     }
 
+    func testRemovePinnedTabsDeletesProfileEntryAndPublishes() throws {
+        let profileId = UUID()
+        let pin = Self.makePin(
+            role: .essential,
+            profileId: profileId,
+            index: 0
+        )
+        let harness = try Harness()
+        harness.pinnedByProfile[profileId] = [pin]
+        let owner = harness.makeOwner()
+
+        let removed = owner.removePinnedTabs(for: profileId)
+
+        XCTAssertEqual(removed?.map(\.id), [pin.id])
+        XCTAssertNil(harness.pinnedByProfile[profileId])
+        XCTAssertEqual(harness.dirtySet.deletedTabIds, [pin.id])
+        XCTAssertEqual(harness.publishCount, 1)
+    }
+
+    func testRemoveMissingPinnedTabsPerformsNoMutation() throws {
+        let harness = try Harness()
+        let owner = harness.makeOwner()
+
+        XCTAssertNil(owner.removePinnedTabs(for: UUID()))
+
+        XCTAssertTrue(harness.pinnedByProfile.isEmpty)
+        XCTAssertTrue(harness.dirtySet.isEmpty)
+        XCTAssertEqual(harness.announceCount, 0)
+        XCTAssertEqual(harness.publishCount, 0)
+    }
+
     func testSetFoldersRunsStructuralSideEffects() throws {
         let spaceId = UUID()
         let previousFolder = Self.makeFolder(name: "Previous", spaceId: spaceId, index: 0)

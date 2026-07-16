@@ -74,11 +74,6 @@ final class ShortcutPinCollectionStateOwner {
         spacePinnedShortcuts[spaceId]?.isEmpty == false
     }
 
-    @discardableResult
-    func removePinnedPins(for profileId: UUID) -> [ShortcutPin] {
-        pinnedByProfile.removeValue(forKey: profileId) ?? []
-    }
-
     func drainPendingPinnedWithoutProfile() -> [ShortcutPin] {
         let pins = pendingPinnedWithoutProfile
         pendingPinnedWithoutProfile.removeAll()

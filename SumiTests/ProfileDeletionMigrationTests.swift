@@ -23,7 +23,8 @@ final class ProfileDeletionMigrationTests: XCTestCase {
                         deferredOperation(id: .tab(UUID())) {
                             callbacks.append($0)
                         },
-                    ]
+                    ],
+                    abortTransitions: { _ in 0 }
                 )
             )
             finishedOutcome = outcome
@@ -58,7 +59,8 @@ final class ProfileDeletionMigrationTests: XCTestCase {
                         },
                         cancelPending: {}
                     ),
-                ]
+                ],
+                abortTransitions: { _ in 0 }
             )
         )
         XCTAssertEqual(outcome, .rejected)
@@ -69,13 +71,7 @@ final class ProfileDeletionMigrationTests: XCTestCase {
         let fallbackProfileID = UUID()
         var abortedProfileIDs: Set<UUID> = []
         var cancelCount = 0
-        let coordinator = makeCoordinator(
-            waitForTimeout: {},
-            abortTransitions: { profileIDs in
-                abortedProfileIDs = profileIDs
-                return 1
-            }
-        )
+        let coordinator = makeCoordinator(waitForTimeout: {})
 
         let outcome = await coordinator.settle(
             .init(
@@ -87,7 +83,11 @@ final class ProfileDeletionMigrationTests: XCTestCase {
                         start: { _ in .deferred },
                         cancelPending: { cancelCount += 1 }
                     ),
-                ]
+                ],
+                abortTransitions: { profileIDs in
+                    abortedProfileIDs = profileIDs
+                    return 1
+                }
             )
         )
 
@@ -122,12 +122,10 @@ final class ProfileDeletionMigrationTests: XCTestCase {
             } catch {
                 return
             }
-        },
-        abortTransitions: @escaping (Set<UUID>) -> Int = { _ in 0 }
+        }
     ) -> ProfileDeletionSettlementCoordinator {
         ProfileDeletionSettlementCoordinator(
-            waitForTimeout: waitForTimeout,
-            abortTransitions: abortTransitions
+            waitForTimeout: waitForTimeout
         )
     }
 }

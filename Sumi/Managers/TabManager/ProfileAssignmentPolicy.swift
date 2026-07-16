@@ -11,53 +11,88 @@ enum DeletedProfileTabAssignment: Equatable {
 final class ProfileAssignmentPolicy {
     typealias PlacementProfileIDs = (current: UUID?, default: UUID?)
 
-    private unowned let tabManager: TabManager
+    private let runtimeConnection: TabRuntimePortConnection
+    private let spaces: TabSpaceCollectionStateOwner
+    private let membership: TabCollectionMembershipOwner
+    private let transientTabs: TabTransientTabRegistryOwner
 
-    init(tabManager: TabManager) {
-        self.tabManager = tabManager
+    init(
+        runtimeConnection: TabRuntimePortConnection,
+        spaces: TabSpaceCollectionStateOwner,
+        membership: TabCollectionMembershipOwner,
+        transientTabs: TabTransientTabRegistryOwner
+    ) {
+        self.runtimeConnection = runtimeConnection
+        self.spaces = spaces
+        self.membership = membership
+        self.transientTabs = transientTabs
     }
 
     func profileExists(_ profileID: UUID) -> Bool {
-        tabManager.runtimePorts?.profileExists(profileID) ?? true
+        let lease = runtimeConnection.captureLease()
+        let exists = profileExists(profileID, using: lease)
+        guard runtimeConnection.acceptsExactAttachment(lease) else {
+            return false
+        }
+        return exists
     }
 
-    func profile(with profileID: UUID) -> Profile? {
-        tabManager.runtimePorts?.profile(with: profileID)
+    func profileExists(
+        _ profileID: UUID,
+        using lease: TabRuntimePortLease
+    ) -> Bool {
+        lease.registry?.profileExists(profileID) ?? false
     }
 
     func resolvedAssignmentProfile(
         for tab: Tab,
         desiredProfileID: UUID?
     ) -> Profile? {
-        guard let runtime = tabManager.runtimePorts else { return nil }
+        let lease = runtimeConnection.captureLease()
+        guard runtimeConnection.acceptsExactAttachment(lease) else {
+            return nil
+        }
+        let profile = resolvedAssignmentProfile(
+            for: tab,
+            desiredProfileID: desiredProfileID,
+            using: lease
+        )
+        guard runtimeConnection.acceptsExactAttachment(lease) else {
+            return nil
+        }
+        return profile
+    }
+
+    func resolvedAssignmentProfile(
+        for tab: Tab,
+        desiredProfileID: UUID?,
+        using lease: TabRuntimePortLease
+    ) -> Profile? {
         if let desiredProfileID {
-            return runtime.profile(with: desiredProfileID)
+            return lease.profile(with: desiredProfileID)
         }
         if let spaceID = tab.spaceId,
-           let inheritedProfileID = tabManager.spaceStateOwner.profileId(
+           let inheritedProfileID = spaces.profileId(
                for: spaceID
-           ), let profile = runtime.profile(with: inheritedProfileID) {
+           ), let profile = lease.profile(with: inheritedProfileID) {
             return profile
         }
-        if let currentProfileID = runtime.currentProfileId,
-           let profile = runtime.profile(with: currentProfileID) {
+        if let currentProfileID = lease.currentProfileID,
+           let profile = lease.profile(with: currentProfileID) {
             return profile
         }
-        if let defaultProfileID = runtime.defaultProfileId {
-            return runtime.profile(with: defaultProfileID)
+        if let defaultProfileID = lease.defaultProfileID {
+            return lease.profile(with: defaultProfileID)
         }
         return nil
     }
 
-    func resolvedPlacementProfile(profileID: UUID) -> Profile? {
-        tabManager.runtimePorts?.profile(with: profileID)
-    }
-
     func placementProfileIDs() -> PlacementProfileIDs {
-        (
-            current: tabManager.runtimePorts?.currentProfileId,
-            default: tabManager.runtimePorts?.defaultProfileId
-        )
+        let lease = runtimeConnection.captureLease()
+        guard runtimeConnection.acceptsExactAttachment(lease) else {
+            return (current: nil, default: nil)
+        }
+        return (current: lease.currentProfileID, default: lease.defaultProfileID)
     }
 
     func profileIDsForSpaceTransition(
@@ -65,18 +100,42 @@ final class ProfileAssignmentPolicy {
         targetSpaceID: UUID?,
         desiredProfileID: UUID?
     ) -> (current: UUID, target: UUID)? {
-        guard tab.spaceId != targetSpaceID,
+        let lease = runtimeConnection.captureLease()
+        guard runtimeConnection.acceptsExactAttachment(lease) else {
+            return nil
+        }
+        let profileIDs = profileIDsForSpaceTransition(
+            tab: tab,
+            targetSpaceID: targetSpaceID,
+            desiredProfileID: desiredProfileID,
+            using: lease
+        )
+        guard runtimeConnection.acceptsExactAttachment(lease) else {
+            return nil
+        }
+        return profileIDs
+    }
+
+    func profileIDsForSpaceTransition(
+        tab: Tab,
+        targetSpaceID: UUID?,
+        desiredProfileID: UUID?,
+        using lease: TabRuntimePortLease
+    ) -> (current: UUID, target: UUID)? {
+        guard lease.registry != nil,
+              runtimeConnection.acceptsExactAttachment(lease),
+              tab.spaceId != targetSpaceID,
               tab.profileId == nil,
               let current = tab.spaceId.flatMap(
-                  tabManager.spaceStateOwner.profileId(for:)
-              ) ?? tabManager.runtimePorts?.currentProfileId
-                  ?? tabManager.runtimePorts?.defaultProfileId,
+                  spaces.profileId(for:)
+              ) ?? lease.currentProfileID
+                  ?? lease.defaultProfileID,
               let target = desiredProfileID
                   ?? targetSpaceID.flatMap(
-                      tabManager.spaceStateOwner.profileId(for:)
+                      spaces.profileId(for:)
                   )
-                  ?? tabManager.runtimePorts?.currentProfileId
-                  ?? tabManager.runtimePorts?.defaultProfileId,
+                  ?? lease.currentProfileID
+                  ?? lease.defaultProfileID,
               current != target else {
             return nil
         }
@@ -86,11 +145,12 @@ final class ProfileAssignmentPolicy {
     func deletionAssignment(
         for tab: Tab,
         deletedProfileID: UUID,
-        fallbackProfileID: UUID
+        fallbackProfileID: UUID,
+        using lease: TabRuntimePortLease
     ) -> DeletedProfileTabAssignment {
         if tab.profileId == deletedProfileID {
             if let spaceID = tab.spaceId,
-               let inheritedProfileID = tabManager.spaceStateOwner.profileId(
+               let inheritedProfileID = spaces.profileId(
                    for: spaceID
                ), inheritedProfileID != deletedProfileID {
                 return .assign(nil)
@@ -100,8 +160,11 @@ final class ProfileAssignmentPolicy {
 
         let isContextlessDeletedProfile = tab.profileId == nil
             && tab.spaceId == nil
-            && resolvedAssignmentProfile(for: tab, desiredProfileID: nil)?.id
-                == deletedProfileID
+            && resolvedAssignmentProfile(
+                for: tab,
+                desiredProfileID: nil,
+                using: lease
+            )?.id == deletedProfileID
         return isContextlessDeletedProfile
             ? .assign(fallbackProfileID)
             : .none
@@ -110,11 +173,8 @@ final class ProfileAssignmentPolicy {
     func allProfileManagedTabs() -> [Tab] {
         var seen: Set<UUID> = []
         return (
-            tabManager.tabCollectionMembershipOwner.allTabs()
-                + Array(
-                    tabManager.transientTabRegistryOwner
-                        .auxiliaryMiniWindowTabsByID.values
-                )
+            membership.allTabs()
+                + Array(transientTabs.auxiliaryMiniWindowTabsByID.values)
         ).filter { seen.insert($0.id).inserted }
     }
 }

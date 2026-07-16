@@ -74,6 +74,11 @@ final class ShortcutPresentationActivationReceipt {
         guard case .staged(let mutation) = state else {
             preconditionFailure("Shortcut activation was not staged")
         }
+        guard mutation.canPublish() else {
+            mutation.forfeitPreservingCurrent()
+            state = .abandoned
+            return
+        }
         mutation.rollback()
         state = .rolledBack
     }
@@ -86,9 +91,10 @@ final class ShortcutPresentationActivationReceipt {
     }
 
     func forfeitPreservingCurrent() {
-        guard case .staged = state else {
+        guard case .staged(let mutation) = state else {
             preconditionFailure("Shortcut activation is not staged")
         }
+        mutation.forfeitPreservingCurrent()
         state = .abandoned
     }
 
