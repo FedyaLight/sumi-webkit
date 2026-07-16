@@ -1,244 +1,220 @@
 import Foundation
-import SumiDomain
-import SwiftData
 
-/// Restores the persisted tab structure from the SwiftData store at startup and
-/// persists repairs before an awaited restore reports completion.
+/// Restores persisted tab structure and settles one exact attachment-bound attempt.
 @MainActor
 final class TabStoreRestoreService {
+    private enum Outcome {
+        case abandoned
+        case settledWithoutInstall
+        case installed
+
+        var shouldFinish: Bool { self != .abandoned }
+        var didInstall: Bool { self == .installed }
+    }
+
+    private struct ActiveLoad {
+        let attempt: TabStartupRestoreAttempt
+        let task: Task<Void, Never>
+    }
+
     private let payloadLoader: any TabRestorePayloadLoading
     private let structuralStore: TabStructuralSnapshotStore
-    private let tabFactory: TabFactory
-    private let defaultProfileId: () -> UUID?
+    private let runtimeConnection: TabRuntimePortConnection
     private let structuralRevision: () -> UInt64
     private let loadLifecycle: TabStartupRestoreLifecycle
-    private let structuralInstaller: TabStructuralInstallOwner
-    private let runtimePreparation: TabRuntimePreparationOwner
-    private let lazyRestore: TabLazyRestoreCoordinator
-    private let persistence: TabStructuralPersistenceService
-    private let syncWorkspaceTheme: (Space) -> Void
-    private(set) var startupRestoreTask: Task<Void, Never>?
+    private let payloadApplier: TabRestorePayloadApplyService
+    private var activeLoad: ActiveLoad?
+
+    var startupRestoreTask: Task<Void, Never>? { activeLoad?.task }
 
     init(
         payloadLoader: any TabRestorePayloadLoading,
         structuralStore: TabStructuralSnapshotStore,
-        tabFactory: TabFactory,
-        defaultProfileId: @escaping () -> UUID?,
+        runtimeConnection: TabRuntimePortConnection,
         structuralRevision: @escaping () -> UInt64,
         loadLifecycle: TabStartupRestoreLifecycle,
-        structuralInstaller: TabStructuralInstallOwner,
-        runtimePreparation: TabRuntimePreparationOwner,
-        lazyRestore: TabLazyRestoreCoordinator,
-        persistence: TabStructuralPersistenceService,
-        syncWorkspaceTheme: @escaping (Space) -> Void
+        payloadApplier: TabRestorePayloadApplyService
     ) {
         self.payloadLoader = payloadLoader
         self.structuralStore = structuralStore
-        self.tabFactory = tabFactory
-        self.defaultProfileId = defaultProfileId
+        self.runtimeConnection = runtimeConnection
         self.structuralRevision = structuralRevision
         self.loadLifecycle = loadLifecycle
-        self.structuralInstaller = structuralInstaller
-        self.runtimePreparation = runtimePreparation
-        self.lazyRestore = lazyRestore
-        self.persistence = persistence
-        self.syncWorkspaceTheme = syncWorkspaceTheme
-    }
-
-    convenience init(
-        modelContainer: ModelContainer,
-        structuralStore: TabStructuralSnapshotStore,
-        tabFactory: TabFactory,
-        runtimePorts: @escaping () -> RuntimePortRegistry?,
-        structuralLookup: TabStructuralLookupCoordinator,
-        loadLifecycle: TabStartupRestoreLifecycle,
-        structuralInstaller: TabStructuralInstallOwner,
-        runtimePreparation: TabRuntimePreparationOwner,
-        lazyRestore: TabLazyRestoreCoordinator,
-        persistence: TabStructuralPersistenceService
-    ) {
-        self.init(
-            payloadLoader: TabRestoreLoader(container: modelContainer),
-            structuralStore: structuralStore,
-            tabFactory: tabFactory,
-            defaultProfileId: { runtimePorts()?.defaultProfileId },
-            structuralRevision: { structuralLookup.mutationRevision },
-            loadLifecycle: loadLifecycle,
-            structuralInstaller: structuralInstaller,
-            runtimePreparation: runtimePreparation,
-            lazyRestore: lazyRestore,
-            persistence: persistence,
-            syncWorkspaceTheme: {
-                runtimePorts()?.syncWorkspaceThemeAcrossWindows(for: $0, animate: false)
-            }
-        )
+        self.payloadApplier = payloadApplier
     }
 
     deinit {
         MainActor.assumeIsolated {
-            startupRestoreTask?.cancel()
-            startupRestoreTask = nil
+            activeLoad?.task.cancel()
+            activeLoad = nil
         }
     }
 
-    func cancelPendingRestore() {
-        startupRestoreTask?.cancel()
-        startupRestoreTask = nil
+    func cancelPendingRestore(_ attempt: TabStartupRestoreAttempt) {
+        guard let activeLoad,
+              activeLoad.attempt.matches(attempt) else { return }
+        activeLoad.task.cancel()
+        self.activeLoad = nil
     }
 
     func loadFromStore(expectedStructuralRevision: UInt64? = nil) {
-        let expectedStructuralRevision = expectedStructuralRevision
-            ?? structuralRevision()
-        startupRestoreTask?.cancel()
-        startupRestoreTask = Task { [weak self] in
-            _ = await self?.loadFromStoreAwaitingResult(
-                expectedStructuralRevision: expectedStructuralRevision
-            )
-        }
+        guard let runtimeAttachment = captureRuntimeAttachment() else { return }
+        let revision = expectedStructuralRevision ?? structuralRevision()
+        guard let attempt = loadLifecycle.beginDirectLoad(
+            using: runtimeAttachment,
+            expectedStructuralRevision: revision
+        ) else { return }
+        schedule(attempt)
+    }
+
+    func loadFromStore(_ attempt: TabStartupRestoreAttempt) {
+        schedule(attempt)
     }
 
     @discardableResult
     func loadFromStoreAwaitingResult(
         expectedStructuralRevision: UInt64? = nil
     ) async -> Bool {
+        guard let runtimeAttachment = captureRuntimeAttachment() else {
+            return false
+        }
+        let revision = expectedStructuralRevision ?? structuralRevision()
+        guard let attempt = loadLifecycle.beginDirectLoad(
+            using: runtimeAttachment,
+            expectedStructuralRevision: revision
+        ) else { return false }
+        let outcome = await perform(attempt)
+        return settleDirect(attempt, outcome: outcome)
+    }
+
+    private func schedule(_ attempt: TabStartupRestoreAttempt) {
+        guard attempt.isRuntimeCurrent(), activeLoad == nil else { return }
+        let task = Task { @MainActor [weak self] in
+            guard let self else { return }
+            let outcome = await self.perform(attempt)
+            self.settleScheduled(
+                attempt,
+                outcome: outcome
+            )
+        }
+        activeLoad = ActiveLoad(attempt: attempt, task: task)
+    }
+
+    private func perform(_ attempt: TabStartupRestoreAttempt) async -> Outcome {
         let signpostState = PerformanceTrace.beginInterval("TabManager.loadFromStore")
         defer {
             PerformanceTrace.endInterval("TabManager.loadFromStore", signpostState)
         }
 
-        loadLifecycle.markLoadStarted()
-        defer {
-            loadLifecycle.markLoadFinished()
-            startupRestoreTask = nil
+        guard loadIsCurrent(attempt) else { return .abandoned }
+        let expectedRevision = attempt.expectedStructuralRevision
+        guard structuralRevision() == expectedRevision else {
+            logStaleRevision(expectedRevision, stage: "before loading")
+            return .settledWithoutInstall
         }
-        let restoreStartRevision = expectedStructuralRevision
-            ?? structuralRevision()
 
         do {
-            let revisionBeforeLoad = structuralRevision()
-            guard revisionBeforeLoad == restoreStartRevision else {
-                RuntimeDiagnostics.debug(
-                    "Skipped stale startup restore before loading because the live tab structure changed after the restore request (expected revision: \(restoreStartRevision), current revision: \(revisionBeforeLoad)).",
-                    category: "TabManager"
-                )
-                return false
-            }
-
-            let defaultProfileId = defaultProfileId()
-            if defaultProfileId == nil {
+            let defaultProfileID = attempt.runtimeAttachment.lease.defaultProfileID
+            if defaultProfileID == nil {
                 RuntimeDiagnostics.debug(
                     "No profiles available to assign to spaces during load; reconciliation deferred.",
                     category: "TabManager"
                 )
             }
-
-            let payload = try await payloadLoader.load(defaultProfileId: defaultProfileId)
-            if Task.isCancelled { return false }
-
-            let currentRevision = structuralRevision()
-            guard currentRevision == restoreStartRevision else {
-                RuntimeDiagnostics.debug(
-                    "Skipped stale startup restore because the live tab structure changed while loading (start revision: \(restoreStartRevision), current revision: \(currentRevision)).",
-                    category: "TabManager"
-                )
-                return false
+            let payload = try await payloadLoader.load(
+                defaultProfileId: defaultProfileID
+            )
+            guard loadIsCurrent(attempt) else { return .abandoned }
+            guard structuralRevision() == expectedRevision else {
+                logStaleRevision(expectedRevision, stage: "while loading")
+                return .settledWithoutInstall
             }
 
-            let applyResult = applyRestorePayload(payload)
-            await persistRestoreRepairIfNeeded(applyResult)
-            return true
+            let disposition = payloadApplier.apply(
+                payload,
+                runtimeAttachment: attempt.runtimeAttachment,
+                admitted: {
+                    self.loadLifecycle.admitsInstall(attempt)
+                        && self.structuralRevision() == expectedRevision
+                },
+                onInstalled: { _ in
+                    _ = self.loadLifecycle.markStructuralCommit(attempt)
+                }
+            )
+            switch disposition {
+            case .notInstalled:
+                return loadIsCurrent(attempt)
+                    && structuralRevision() != expectedRevision
+                    ? .settledWithoutInstall
+                    : .abandoned
+            case .installed(let installed):
+                return await persistRepair(
+                    installed.repair,
+                    for: attempt
+                ) ? .installed : .abandoned
+            }
         } catch {
-            RuntimeDiagnostics.debug("SwiftData load error: \(String(describing: error))", category: "TabManager")
-            return false
+            guard loadIsCurrent(attempt) else { return .abandoned }
+            RuntimeDiagnostics.debug(
+                "SwiftData load error: \(String(describing: error))",
+                category: "TabManager"
+            )
+            return .settledWithoutInstall
         }
     }
 
-    private struct RestoreApplyResult {
-        let snapshot: TabPersistenceSnapshot?
-        let reasons: [String]
-    }
-
-    private func applyRestorePayload(_ payload: TabRestorePayload) -> RestoreApplyResult {
-        let signpostState = PerformanceTrace.beginInterval("TabManager.restoreApplyMainActor")
-        defer {
-            PerformanceTrace.endInterval("TabManager.restoreApplyMainActor", signpostState)
-        }
-
+    private func persistRepair(
+        _ repair: TabRestorePayloadApplyService.Repair?,
+        for attempt: TabStartupRestoreAttempt
+    ) async -> Bool {
+        guard loadLifecycle.ownsCommitted(attempt) else { return false }
+        guard let repair else { return true }
         RuntimeDiagnostics.debug(
-            "Loading tabs from store: total=\(payload.totalTabCount), pinned=\(payload.pinnedCount), spacePinned=\(payload.spacePinnedCount), regular=\(payload.regularCount)",
-            category: "TabManager"
-        )
-
-        let restoredState = TabRestoreRuntimeStateBuilder(tabFactory: tabFactory)
-            .makeState(from: payload)
-
-        let restoredCurrentSpace = payload.currentSpaceId.flatMap { currentSpaceId in
-            restoredState.spaces.first(where: { $0.id == currentSpaceId })
-        } ?? restoredState.spaces.first
-
-        let selectionTabs = restoredCurrentSpace.flatMap { restoredState.tabsBySpace[$0.id] } ?? []
-        let restoredCurrentTab: Tab?
-        if let selectedTabId = payload.currentTabId,
-           let match = selectionTabs.first(where: { $0.id == selectedTabId }) {
-            restoredCurrentTab = match
-        } else {
-            restoredCurrentTab = selectionTabs.first
-        }
-
-        structuralInstaller.installRestoredCollections(
-            restoredState,
-            splitGroups: SumiDomain.SplitGroup.sanitized(payload.splitGroups),
-            currentSpace: restoredCurrentSpace,
-            currentTab: restoredCurrentTab
-        )
-
-        for tab in restoredState.tabsBySpace.values.flatMap(\.self) {
-            runtimePreparation.prepare(tab)
-        }
-
-        lazyRestore.reset(
-            restoredTabIDs: Set(restoredState.tabsBySpace.values.flatMap { $0.map(\.id) })
-        )
-        persistence.prepareForRestoredState()
-
-        RuntimeDiagnostics.debug(
-            "Current Space: \(restoredCurrentSpace?.name ?? "None"), Tab: \(restoredCurrentTab?.name ?? "None")",
-            category: "TabManager"
-        )
-
-        if let restoredCurrentSpace {
-            syncWorkspaceTheme(restoredCurrentSpace)
-        }
-
-        let uniqueRepairReasons = Array(Set(restoredState.repairReasons)).sorted()
-        guard uniqueRepairReasons.isEmpty == false else {
-            return RestoreApplyResult(snapshot: nil, reasons: [])
-        }
-
-        let snapshot = uniqueRepairReasons == payload.repairReasons
-            ? payload.snapshot
-            : persistence.buildSnapshot()
-        return RestoreApplyResult(snapshot: snapshot, reasons: uniqueRepairReasons)
-    }
-
-    private func persistRestoreRepairIfNeeded(_ result: RestoreApplyResult) async {
-        guard let snapshot = result.snapshot else {
-            return
-        }
-
-        let generation = persistence.reservePersistenceGeneration()
-        let reasonSummary = result.reasons.joined(separator: ", ")
-        let signpostState = PerformanceTrace.beginInterval("TabManager.restoreRepairFullReconcile")
-        defer {
-            PerformanceTrace.endInterval("TabManager.restoreRepairFullReconcile", signpostState)
-        }
-        RuntimeDiagnostics.debug(
-            "Persisting restore repair via full reconcile: \(reasonSummary)",
+            "Persisting restore repair: \(repair.reasons.joined(separator: ", "))",
             category: "TabManager"
         )
         _ = await structuralStore.persistFullReconcile(
-            snapshot: snapshot,
-            generation: generation
+            snapshot: repair.snapshot,
+            generation: repair.generation
+        )
+        return loadLifecycle.ownsCommitted(attempt)
+    }
+
+    private func settleScheduled(
+        _ attempt: TabStartupRestoreAttempt,
+        outcome: Outcome
+    ) {
+        guard activeLoad?.attempt.matches(attempt) == true else { return }
+        activeLoad = nil
+        guard outcome.shouldFinish, loadLifecycle.finish(attempt) else { return }
+    }
+
+    private func settleDirect(
+        _ attempt: TabStartupRestoreAttempt,
+        outcome: Outcome
+    ) -> Bool {
+        guard outcome.shouldFinish,
+              loadLifecycle.finish(attempt) else { return false }
+        return outcome.didInstall
+    }
+
+    private func loadIsCurrent(_ attempt: TabStartupRestoreAttempt) -> Bool {
+        Task.isCancelled == false && loadLifecycle.admitsInstall(attempt)
+    }
+
+    private func logStaleRevision(_ expected: UInt64, stage: String) {
+        RuntimeDiagnostics.debug(
+            "Skipped stale startup restore \(stage) because the live tab structure changed (expected revision: \(expected), current revision: \(structuralRevision())).",
+            category: "TabManager"
+        )
+    }
+
+    private func captureRuntimeAttachment() -> TabRuntimeAttachmentWitness? {
+        let lease = runtimeConnection.captureLease()
+        guard runtimeConnection.accepts(lease) else { return nil }
+        return TabRuntimeAttachmentWitness(
+            connection: runtimeConnection,
+            lease: lease
         )
     }
 }

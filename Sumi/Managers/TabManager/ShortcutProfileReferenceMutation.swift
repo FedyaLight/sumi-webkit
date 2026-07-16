@@ -97,7 +97,7 @@ final class ShortcutProfileReferenceMutationApplicator {
                 continue
             }
             tabManager.structuralCollectionMutationOwner.setPinnedTabs(
-                tabManager.shortcutPinStoreOwner.reindexed(pins),
+                ShortcutPin.reindexed(pins),
                 for: profileID
             )
         }

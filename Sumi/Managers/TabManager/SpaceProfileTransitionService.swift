@@ -1,131 +1,71 @@
 import Foundation
 import SumiWebRuntime
 
-/// Owns one Space/profile transaction, including every inherited Tab intent,
-/// until the shared WebView replacement pipeline settles it.
 @MainActor
 final class SpaceProfileTransitionService {
-    private struct SettlementObserver {
-        let revision: UInt64
-        let callback: ProfileTransitionService.Settlement
-    }
-
-    private unowned let tabManager: TabManager
-    private let pendingInheritance: PendingTabProfileInheritance
+    private let runtimeConnection: TabRuntimePortConnection
     private let admission: SpaceProfileTransitionAdmission
-    private var revisionBySpaceID: [UUID: UInt64] = [:]
-    private var transactionsBySpaceID: [UUID: SpaceProfileTransaction] = [:]
-    private var observersBySpaceID: [UUID: SettlementObserver] = [:]
+    private let repository: SpaceProfileTransitionRepository
 
     init(
-        tabManager: TabManager,
-        pendingInheritance: PendingTabProfileInheritance,
-        admission: SpaceProfileTransitionAdmission
+        runtimeConnection: TabRuntimePortConnection,
+        admission: SpaceProfileTransitionAdmission,
+        repository: SpaceProfileTransitionRepository
     ) {
-        self.tabManager = tabManager
-        self.pendingInheritance = pendingInheritance
+        self.runtimeConnection = runtimeConnection
         self.admission = admission
+        self.repository = repository
     }
 
-    @discardableResult
-    func assign(
-        spaceID: UUID,
-        toProfile profileID: UUID
-    ) -> TabProfileAssignmentExecutionOutcome {
-        start(spaceID: spaceID, profileID: profileID)
-    }
+    var lifecycle: SpaceProfileTransitionRepository { repository }
 
     @discardableResult
     func start(
         spaceID: UUID,
         profileID: UUID,
+        using runtimeLease: TabRuntimePortLease? = nil,
         capturingIntent: ((
             DeferredWebViewSpaceProfileAssignmentIntent
         ) -> Void)? = nil,
         settlementObserver: ProfileTransitionService.Settlement? = nil
     ) -> TabProfileAssignmentExecutionOutcome {
-        start(
-            spaceID: spaceID,
-            profileID: profileID,
-            intentObserver: capturingIntent,
-            settlementObserver: settlementObserver
-        )
-    }
-
-    private func start(
-        spaceID: UUID,
-        profileID: UUID,
-        intentObserver: ((DeferredWebViewSpaceProfileAssignmentIntent) -> Void)?,
-        settlementObserver: ProfileTransitionService.Settlement?
-    ) -> TabProfileAssignmentExecutionOutcome {
-        guard let space = tabManager.spaceStateOwner.space(with: spaceID) else {
-            return .failed
-        }
-        if let transaction = transactionsBySpaceID[spaceID] {
-            if transaction.state == .pending, space.profileId == profileID {
-                cancelPending(spaceID: spaceID)
-            }
+        let runtimeLease = runtimeLease ?? runtimeConnection.captureLease()
+        guard runtimeConnection.accepts(runtimeLease),
+              let space = repository.space(with: spaceID),
+              repository.hasTransaction(for: spaceID) == false else {
             return .failed
         }
         guard space.profileId != profileID else { return .committed }
-        guard let admitted = admission.admit(
+        let revision = repository.nextRevision(for: spaceID)
+        guard let transaction = admission.prepare(
             space: space,
-            targetProfileID: profileID
-        ) else {
-            return .failed
-        }
-        let tabIntents = admitted.tabCandidates.map { candidate in
-            let navigationIntent = candidate.tab.mainFrameLoads.currentIntent
-            return DeferredWebViewSpaceProfileTabIntent(
-                tabID: candidate.tab.id,
-                intent: candidate.tab.profileAssignment.begin(
-                    desiredProfileID: candidate.desiredProfileID,
-                    resolvedProfileID: admitted.profile.id,
-                    targetURL: navigationIntent.targetURL,
-                    navigationRevision: navigationIntent.revision,
-                    requiresStructuralPersistence: false
-                )
-            )
-        }
-        let revision = (revisionBySpaceID[spaceID] ?? 0) &+ 1
-        revisionBySpaceID[spaceID] = revision
-        let intent = DeferredWebViewSpaceProfileAssignmentIntent(
+            targetProfileID: profileID,
             revision: revision,
-            spaceID: spaceID,
-            expectedProfileID: space.profileId,
-            desiredProfileID: profileID,
-            tabIntents: tabIntents
-        )
-        guard let transaction = admission.transaction(
-            intent: intent,
-            tabs: admitted.tabCandidates.map(\.tab),
-            profileMutation: admitted.mutation
+            using: runtimeLease,
+            connection: runtimeConnection
+        ) else { return .failed }
+        guard repository.install(
+            transaction,
+            observer: settlementObserver
         ) else {
-            for (candidate, tabIntent) in zip(
-                admitted.tabCandidates,
-                tabIntents
-            ) {
-                candidate.tab.profileAssignment.abort(tabIntent.intent)
-            }
+            transaction.abortPending()
             return .failed
         }
-        transactionsBySpaceID[spaceID] = transaction
-        intentObserver?(intent)
-        if let settlementObserver {
-            observersBySpaceID[spaceID] = SettlementObserver(
-                revision: revision,
-                callback: settlementObserver
-            )
+        let intent = transaction.intent
+        capturingIntent?(intent)
+        guard runtimeConnection.accepts(runtimeLease) else {
+            repository.receive(.leaseLost, intent: intent)
+            return .stale
         }
 
         let outcome = execute(
             space: space,
-            profile: admitted.profile,
-            intent: intent
+            profile: transaction.targetProfile,
+            intent: intent,
+            using: runtimeLease
         )
-        if let settlement = outcome.immediateSettlement,
-           observersBySpaceID[spaceID]?.revision == revision {
-            receive(settlement, intent: intent)
+        if let settlement = outcome.immediateSettlement {
+            repository.receive(settlement, intent: intent)
         }
         return outcome
     }
@@ -134,219 +74,72 @@ final class SpaceProfileTransitionService {
     func executeDeferred(
         _ intent: DeferredWebViewSpaceProfileAssignmentIntent
     ) -> Bool {
-        guard isCurrent(intent),
-              let space = tabManager.spaceStateOwner.space(
-                  with: intent.spaceID
-              ),
-              let profile = admission.resolvedProfile(intent.desiredProfileID),
+        guard let transaction = repository.transaction(for: intent),
+              transaction.isCurrentPending(revision: intent.revision) else {
+            return rejectDeferred(.rejected(.stale), intent: intent)
+        }
+        let runtimeLease = transaction.runtimeLease
+        guard runtimeConnection.accepts(runtimeLease),
+              let runtime = runtimeLease.registry else {
+            return rejectDeferred(.leaseLost, intent: intent)
+        }
+        let space = repository.space(with: intent.spaceID)
+        let profile = runtime.profile(with: intent.desiredProfileID)
+        guard runtimeConnection.accepts(runtimeLease) else {
+            return rejectDeferred(.leaseLost, intent: intent)
+        }
+        guard let space, let profile,
               profile.id == intent.desiredProfileID else {
-            receive(.rejected(.stale), intent: intent)
-            return false
+            return rejectDeferred(.rejected(.stale), intent: intent)
         }
-        return execute(space: space, profile: profile, intent: intent)
-            .wasAccepted
+        return execute(
+            space: space,
+            profile: profile,
+            intent: intent,
+            using: runtimeLease
+        ).wasAccepted
     }
 
-    func isCurrentDeferred(
-        _ intent: DeferredWebViewSpaceProfileAssignmentIntent
+    private func rejectDeferred(
+        _ settlement: ProfileTransitionSettlement,
+        intent: DeferredWebViewSpaceProfileAssignmentIntent
     ) -> Bool {
-        isCurrent(intent)
-    }
-
-    func inFlightProfileID(for spaceID: UUID) -> UUID? {
-        guard let transaction = transactionsBySpaceID[spaceID],
-              transaction.state != .terminal
-        else { return nil }
-        return transaction.desiredProfileID
-    }
-
-    @discardableResult
-    func registerCreationFollower(
-        _ tab: Tab,
-        in spaceID: UUID,
-        profileID: UUID
-    ) -> Bool {
-        guard let transaction = transactionsBySpaceID[spaceID],
-              transaction.state != .terminal,
-              transaction.desiredProfileID == profileID,
-              tab.profileId == profileID,
-              tabIsMember(tab, of: spaceID)
-        else { return false }
-
-        pendingInheritance.record(
-            tab: tab,
-            spaceID: spaceID,
-            spaceRevision: transaction.intent.revision,
-            inheritedProfileID: profileID
-        )
-        return true
-    }
-
-    func cancelPendingDeletionIntent(
-        _ intent: DeferredWebViewSpaceProfileAssignmentIntent
-    ) {
-        abortPending(intent)
-        pendingInheritance.discard(spaceIntent: intent)
-        if observersBySpaceID[intent.spaceID]?.revision == intent.revision {
-            observersBySpaceID.removeValue(forKey: intent.spaceID)
-        }
+        repository.receive(settlement, intent: intent)
+        return false
     }
 
     private func execute(
         space: Space,
         profile: Profile,
-        intent: DeferredWebViewSpaceProfileAssignmentIntent
+        intent: DeferredWebViewSpaceProfileAssignmentIntent,
+        using runtimeLease: TabRuntimePortLease
     ) -> TabProfileAssignmentExecutionOutcome {
-        guard let lifecycle = tabManager.runtimePorts?.webViewLifecycle else {
-            receive(.rejected(.failed), intent: intent)
+        guard runtimeConnection.accepts(runtimeLease),
+              let lifecycle = runtimeLease.registry?.webViewLifecycle else {
+            repository.receive(.leaseLost, intent: intent)
             return .failed
         }
-        guard let transaction = transaction(for: intent) else {
-            receive(.rejected(.stale), intent: intent)
+        guard let transaction = repository.transaction(for: intent) else {
+            repository.receive(.rejected(.stale), intent: intent)
             return .stale
         }
         let model = SpaceProfileReplacementModelParticipant(
             transaction: transaction,
-            owner: self,
-            intent: intent,
-            revision: revisionBySpaceID[intent.spaceID] ?? 0
+            owner: repository
         )
-        return lifecycle.executeSpaceProfileAssignment(
+        let outcome = lifecycle.executeSpaceProfileAssignment(
             space: space,
             targetProfile: profile,
             intent: intent,
             model: model,
-            settlement: { [weak self] settlement in
-                self?.receive(settlement, intent: intent)
+            settlement: { [weak repository] settlement in
+                repository?.receive(settlement, intent: intent)
             }
         )
-    }
-
-    private func isCurrent(
-        _ intent: DeferredWebViewSpaceProfileAssignmentIntent
-    ) -> Bool {
-        guard let transaction = transaction(for: intent) else { return false }
-        return transaction.isCurrentPending(
-            revision: revisionBySpaceID[intent.spaceID] ?? 0
-        )
-    }
-
-    private func receive(
-        _ settlement: ProfileTransitionSettlement,
-        intent: DeferredWebViewSpaceProfileAssignmentIntent
-    ) {
-        switch settlement {
-        case .committed:
-            pendingInheritance.spaceTransitionCommitted(
-                intent: intent,
-                canonicalProfileID: tabManager.spaceStateOwner.profileId(
-                    for: intent.spaceID
-                ),
-                isTabStillInSpace: { [weak tabManager] tab, spaceID in
-                    tabManager?.tabCollectionMembershipOwner.allTabs().contains {
-                        $0 === tab && $0.spaceId == spaceID
-                    } == true
-                }
-            )
-            publishStructuralMutation(spaceID: intent.spaceID)
-        case .rejected:
-            abortPending(intent)
-            pendingInheritance.discard(spaceIntent: intent)
-        case .rolledBack:
-            pendingInheritance.discard(spaceIntent: intent)
-        case .leaseLost, .terminalShutdown:
-            if let transaction = transaction(for: intent) {
-                if transaction.settleTerminalDrain() {
-                    transactionsBySpaceID.removeValue(forKey: intent.spaceID)
-                }
-            }
-            pendingInheritance.discard(spaceIntent: intent)
-        case .conflicted:
-            break
+        guard runtimeConnection.accepts(runtimeLease) else {
+            repository.receive(.leaseLost, intent: intent)
+            return .stale
         }
-
-        guard let observer = observersBySpaceID[intent.spaceID],
-              observer.revision == intent.revision else { return }
-        observersBySpaceID.removeValue(forKey: intent.spaceID)
-        observer.callback(settlement)
-    }
-
-    private func abortPending(
-        _ intent: DeferredWebViewSpaceProfileAssignmentIntent
-    ) {
-        guard let transaction = transaction(for: intent) else { return }
-        switch transaction.state {
-        case .pending:
-            transaction.abortPending()
-            transactionsBySpaceID.removeValue(forKey: intent.spaceID)
-        case .terminal:
-            transactionsBySpaceID.removeValue(forKey: intent.spaceID)
-        case .staged, .retainedCleanupConflict:
-            return
-        }
-    }
-
-    private func cancelPending(spaceID: UUID) {
-        guard let transaction = transactionsBySpaceID[spaceID],
-              transaction.state == .pending else { return }
-        abortPending(transaction.intent)
-        pendingInheritance.discard(spaceIntent: transaction.intent)
-    }
-
-    private func transaction(
-        for intent: DeferredWebViewSpaceProfileAssignmentIntent
-    ) -> SpaceProfileTransaction? {
-        guard let transaction = transactionsBySpaceID[intent.spaceID],
-              transaction.intent == intent else { return nil }
-        return transaction
-    }
-
-    func ownsReplacementModel(
-        _ candidate: SpaceProfileTransaction,
-        intent: DeferredWebViewSpaceProfileAssignmentIntent
-    ) -> Bool {
-        transaction(for: intent) === candidate
-    }
-
-    func replacementModelDidPublishCommit(
-        _ candidate: SpaceProfileTransaction,
-        intent: DeferredWebViewSpaceProfileAssignmentIntent
-    ) {
-        guard ownsReplacementModel(candidate, intent: intent) else { return }
-        transactionsBySpaceID.removeValue(forKey: intent.spaceID)
-    }
-
-    func replacementModelDidPublishRollback(
-        _ candidate: SpaceProfileTransaction,
-        intent: DeferredWebViewSpaceProfileAssignmentIntent
-    ) {
-        guard ownsReplacementModel(candidate, intent: intent) else { return }
-        transactionsBySpaceID.removeValue(forKey: intent.spaceID)
-        publishStructuralMutation(spaceID: intent.spaceID)
-    }
-
-    func replacementModelDidSettleTerminalDrain(
-        _ candidate: SpaceProfileTransaction,
-        intent: DeferredWebViewSpaceProfileAssignmentIntent
-    ) {
-        if ownsReplacementModel(candidate, intent: intent) {
-            transactionsBySpaceID.removeValue(forKey: intent.spaceID)
-        }
-        pendingInheritance.discard(spaceIntent: intent)
-    }
-
-    private func tabIsMember(_ candidate: Tab, of spaceID: UUID) -> Bool {
-        tabManager.tabCollectionMembershipOwner.allTabs().contains { tab in
-            tab === candidate && tab.spaceId == spaceID
-        }
-    }
-
-    private func publishStructuralMutation(spaceID: UUID) {
-        tabManager.structuralPersistence.markAllSpacesStructurallyDirty()
-        tabManager.structuralPersistence.markRegularTabsStructurallyDirty(
-            for: spaceID
-        )
-        tabManager.structuralPersistence.scheduleStructuralPersistence()
-        tabManager.structuralLookupCoordinator.requestPublish(scope: .space(spaceID, catalog: true))
+        return outcome
     }
 }

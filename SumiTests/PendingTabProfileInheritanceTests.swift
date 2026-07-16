@@ -26,9 +26,9 @@ final class PendingTabProfileInheritanceTests: XCTestCase {
         )
 
         XCTAssertEqual(
-            tabManager.profileAssignments.spaces.assign(
+            tabManager.profileAssignments.spaces.start(
                 spaceID: space.id,
-                toProfile: pendingProfile.id
+                profileID: pendingProfile.id
             ),
             .deferred
         )
@@ -91,9 +91,9 @@ final class PendingTabProfileInheritanceTests: XCTestCase {
         tabManager.spaceStateOwner.replaceSpaces([space])
 
         XCTAssertEqual(
-            tabManager.profileAssignments.spaces.assign(
+            tabManager.profileAssignments.spaces.start(
                 spaceID: space.id,
-                toProfile: pendingProfile.id
+                profileID: pendingProfile.id
             ),
             .deferred
         )
@@ -143,9 +143,9 @@ final class PendingTabProfileInheritanceTests: XCTestCase {
         tabManager.spaceStateOwner.replaceSpaces([space])
 
         XCTAssertEqual(
-            tabManager.profileAssignments.spaces.assign(
+            tabManager.profileAssignments.spaces.start(
                 spaceID: space.id,
-                toProfile: pendingProfile.id
+                profileID: pendingProfile.id
             ),
             .deferred
         )
@@ -198,9 +198,9 @@ final class PendingTabProfileInheritanceTests: XCTestCase {
         tabManager.spaceStateOwner.replaceSpaces([space])
 
         XCTAssertEqual(
-            tabManager.profileAssignments.spaces.assign(
+            tabManager.profileAssignments.spaces.start(
                 spaceID: space.id,
-                toProfile: pendingProfile.id
+                profileID: pendingProfile.id
             ),
             .deferred
         )
@@ -263,9 +263,9 @@ final class PendingTabProfileInheritanceTests: XCTestCase {
         tabManager.spaceStateOwner.replaceSpaces([space])
 
         XCTAssertEqual(
-            tabManager.profileAssignments.spaces.assign(
+            tabManager.profileAssignments.spaces.start(
                 spaceID: space.id,
-                toProfile: pendingProfile.id
+                profileID: pendingProfile.id
             ),
             .deferred
         )
@@ -330,6 +330,7 @@ final class PendingTabProfileInheritanceTests: XCTestCase {
         transition: DeferredSpaceProfileTransition
     ) throws -> TabManager {
         let tabManager = try makeInMemoryTabManager()
+        tabManager.runtimePortsAttachmentOwner.detach()
         tabManager.runtimePortsAttachmentOwner.attach(
             TestRuntimePorts.make(
                 currentProfileId: currentProfileID,

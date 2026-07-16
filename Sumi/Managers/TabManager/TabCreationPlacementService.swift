@@ -52,7 +52,7 @@ final class TabCreationPlacementService {
             fallbackSpaceId: fallbackSpaceId
         )
         let existingProfileId = targetSpace.profileId
-        let inFlightProfileId = profileTransitions.inFlightProfileID(
+        let inFlightProfileId = profileTransitions.lifecycle.inFlightProfileID(
             for: targetSpace.id
         )
         let tab = install(
@@ -77,7 +77,7 @@ final class TabCreationPlacementService {
                     "In-flight Space followers must be pinned before materialization"
                 )
                 precondition(
-                    profileTransitions.registerCreationFollower(
+                    profileTransitions.lifecycle.registerCreationFollower(
                         tab,
                         in: targetSpace.id,
                         profileID: inFlightProfileId
@@ -94,9 +94,9 @@ final class TabCreationPlacementService {
             return tab
         }
 
-        _ = profileTransitions.assign(
+        _ = profileTransitions.start(
             spaceID: targetSpace.id,
-            toProfile: desiredProfileId
+            profileID: desiredProfileId
         )
         return tab
     }

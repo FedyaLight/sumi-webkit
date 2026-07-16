@@ -183,7 +183,7 @@ extension TabTransientWebKitTabLifecycleOwner.Dependencies {
     @MainActor
     static func live(tabManager: TabManager) -> Self {
         Self(
-            settings: { [weak tabManager] in tabManager?.sumiSettings ?? tabManager?.runtimePorts?.settings },
+            settings: { [weak tabManager] in tabManager?.runtimePortConnection.current?.settings },
             runtimePorts: { [weak tabManager] in tabManager?.runtimePorts },
             membershipOwner: { [weak tabManager] in
                 guard let tabManager else { preconditionFailure("TabManager dependency used after deallocation") }

@@ -15,7 +15,6 @@ extension ProfileAssignmentServices {
         )
         let spaceMutations = SpaceProfileMutationService(tabManager: tabManager)
         let spaceAdmission = SpaceProfileTransitionAdmission(
-            policy: policy,
             profileMutations: spaceMutations,
             tabCandidates: SpaceProfileTabCandidatePlanner(
                 membership: tabManager.tabCollectionMembershipOwner,
@@ -25,10 +24,20 @@ extension ProfileAssignmentServices {
             membership: tabManager.tabCollectionMembershipOwner,
             structuralLookup: tabManager.structuralLookupCoordinator
         )
-        let spaces = SpaceProfileTransitionService(
-            tabManager: tabManager,
+        let spacePublication = SpaceProfileTransitionPublication(
+            membership: tabManager.tabCollectionMembershipOwner,
+            persistence: tabManager.structuralPersistence,
+            structuralLookup: tabManager.structuralLookupCoordinator
+        )
+        let spaceRepository = SpaceProfileTransitionRepository(
+            spaces: tabManager.spaceStateOwner,
             pendingInheritance: pendingInheritance,
-            admission: spaceAdmission
+            publication: spacePublication
+        )
+        let spaces = SpaceProfileTransitionService(
+            runtimeConnection: tabManager.runtimePortConnection,
+            admission: spaceAdmission,
+            repository: spaceRepository
         )
         let shortcuts = ShortcutExecutionProfileAssignmentService(
             tabManager: tabManager,
@@ -46,12 +55,15 @@ extension ProfileAssignmentServices {
             policy: policy,
             tabTransitions: tabs,
             spaceTransitions: spaces,
+            spaceTransitionLifecycle: spaceRepository,
             selection: selection
         )
         return ProfileAssignmentServices(
             policy: policy,
             tabs: tabs,
             spaces: spaces,
+            spaceLifecycle: spaceRepository,
+            spaceAvailability: spacePublication,
             shortcuts: shortcuts,
             selection: selection,
             deletion: deletion

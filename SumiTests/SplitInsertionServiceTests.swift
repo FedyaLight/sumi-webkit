@@ -540,6 +540,7 @@ final class SplitInsertionServiceTests: XCTestCase {
         var runtimeWindowPersistenceCount = 0
         var profileExecutionCount = 0
         let profile = Profile(id: scenario.profileID, name: "Profile")
+        fixture.manager.runtimePortsAttachmentOwner.detach()
         fixture.manager.runtimePortsAttachmentOwner.attach(
             TestRuntimePorts.make(
                 currentProfileId: { scenario.profileID },
@@ -881,6 +882,7 @@ private extension SplitInsertionServiceTests {
                 placeholderRetirement: placeholderRetirement
             )
         )
+        manager.runtimePortsAttachmentOwner.detach()
         manager.runtimePortsAttachmentOwner.attach(TestRuntimePorts.make(
             windowState: { $0 == window.id ? window : nil },
             windows: { [(window.id, window)] },

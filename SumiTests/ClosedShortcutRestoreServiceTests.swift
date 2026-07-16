@@ -195,7 +195,8 @@ final class ClosedShortcutRestoreServiceTests: XCTestCase {
             for: harness.space.id,
             name: "Now Live"
         )
-        harness.tabManager.installRuntimePorts(
+        harness.tabManager.runtimePortsAttachmentOwner.detach()
+        harness.tabManager.runtimePortsAttachmentOwner.attach(
             TestRuntimePorts.make(isLiveFolder: { $0 == folder.id })
         )
         let pin = ShortcutPin(

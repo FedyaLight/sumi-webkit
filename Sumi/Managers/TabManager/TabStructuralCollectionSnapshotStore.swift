@@ -23,6 +23,7 @@ final class TabStructuralCollectionSnapshotStore {
             folders: folderSnapshot,
             pinned: shortcutPins.pinnedByProfileSnapshot(),
             spacePinned: shortcutPins.spacePinnedShortcutsSnapshot(),
+            pendingPinnedWithoutProfile: shortcutPins.pendingPinnedWithoutProfileSnapshot(),
             folderReceipts: folderSnapshot.values.flatMap(\.self).map(
                 TabStructuralMutationTransaction.FolderReceipt.init
             )
@@ -33,8 +34,66 @@ final class TabStructuralCollectionSnapshotStore {
         snapshot.folderReceipts.forEach { $0.restore() }
         regularTabs.replaceTabsBySpace(snapshot.tabs, publish: false)
         folders.replaceFoldersBySpace(snapshot.folders)
-        shortcutPins.replacePinnedByProfile(snapshot.pinned)
-        shortcutPins.replaceSpacePinnedShortcuts(snapshot.spacePinned)
+        shortcutPins.replaceAll(
+            pinnedByProfile: snapshot.pinned,
+            spacePinnedShortcuts: snapshot.spacePinned,
+            pendingPinnedWithoutProfile: snapshot.pendingPinnedWithoutProfile
+        )
+    }
+
+    func restoreUncontended(
+        source: TabStructuralMutationTransaction.Snapshot,
+        target: TabStructuralMutationTransaction.Snapshot
+    ) {
+        let current = capture()
+        let restoredFolderKeys = restorableFolderKeys(
+            current: current,
+            source: source,
+            target: target
+        )
+        let mergedFolders = Self.restoringUncontended(
+            current: current.folders,
+            source: source.folders,
+            target: target.folders,
+            eligibleKeys: restoredFolderKeys
+        )
+        let sourceFolderReceipts: [
+            ObjectIdentifier: TabStructuralMutationTransaction.FolderReceipt
+        ] = source.folderReceipts.reduce(into: [:]) {
+            $0[ObjectIdentifier($1.folder)] = $1
+        }
+        restoredFolderKeys.forEach { key in
+            source.folders[key]?.forEach { folder in
+                sourceFolderReceipts[ObjectIdentifier(folder)]?.restore()
+            }
+        }
+
+        regularTabs.replaceTabsBySpace(
+            Self.restoringUncontended(
+                current: current.tabs,
+                source: source.tabs,
+                target: target.tabs
+            ),
+            publish: false
+        )
+        folders.replaceFoldersBySpace(mergedFolders)
+        shortcutPins.replaceAll(
+            pinnedByProfile: Self.restoringUncontended(
+                current: current.pinned,
+                source: source.pinned,
+                target: target.pinned
+            ),
+            spacePinnedShortcuts: Self.restoringUncontended(
+                current: current.spacePinned,
+                source: source.spacePinned,
+                target: target.spacePinned
+            ),
+            pendingPinnedWithoutProfile: Self.sameObjects(
+                current.pendingPinnedWithoutProfile,
+                target.pendingPinnedWithoutProfile
+            ) ? source.pendingPinnedWithoutProfile
+                : current.pendingPinnedWithoutProfile
+        )
     }
 
     func matches(_ expected: TabStructuralMutationTransaction.Snapshot) -> Bool {
@@ -43,6 +102,10 @@ final class TabStructuralCollectionSnapshotStore {
             && Self.sameObjects(current.folders, expected.folders)
             && Self.sameObjects(current.pinned, expected.pinned)
             && Self.sameObjects(current.spacePinned, expected.spacePinned)
+            && Self.sameObjects(
+                current.pendingPinnedWithoutProfile,
+                expected.pendingPinnedWithoutProfile
+            )
             && expected.folderReceipts.allSatisfy { $0.acceptsCurrent() }
     }
 
@@ -56,6 +119,85 @@ final class TabStructuralCollectionSnapshotStore {
                 return false
             }
             return zip(items, expected).allSatisfy { $0 === $1 }
+        }
+    }
+
+    private static func sameObjects<T: AnyObject>(
+        _ lhs: [T],
+        _ rhs: [T]
+    ) -> Bool {
+        lhs.count == rhs.count
+            && zip(lhs, rhs).allSatisfy { $0 === $1 }
+    }
+
+    private func restorableFolderKeys(
+        current: TabStructuralMutationTransaction.Snapshot,
+        source: TabStructuralMutationTransaction.Snapshot,
+        target: TabStructuralMutationTransaction.Snapshot
+    ) -> Set<UUID> {
+        let targetReceipts: [
+            ObjectIdentifier: TabStructuralMutationTransaction.FolderReceipt
+        ] = target.folderReceipts.reduce(into: [:]) {
+            $0[ObjectIdentifier($1.folder)] = $1
+        }
+        let sourceReceipts: [
+            ObjectIdentifier: TabStructuralMutationTransaction.FolderReceipt
+        ] = source.folderReceipts.reduce(into: [:]) {
+            $0[ObjectIdentifier($1.folder)] = $1
+        }
+        let keys = Set(current.folders.keys)
+            .union(source.folders.keys)
+            .union(target.folders.keys)
+        return keys.filter { key in
+            guard Self.sameOptionalObjects(
+                current.folders[key],
+                target.folders[key]
+            ) else { return false }
+            let targetFolders = target.folders[key, default: []]
+            guard targetFolders.allSatisfy({ folder in
+                targetReceipts[ObjectIdentifier(folder)]?.acceptsCurrent() == true
+            }) else { return false }
+            let targetIdentities = Set(targetFolders.map(ObjectIdentifier.init))
+            return source.folders[key, default: []].allSatisfy { folder in
+                let identity = ObjectIdentifier(folder)
+                return targetIdentities.contains(identity)
+                    || sourceReceipts[identity]?.acceptsCurrent() == true
+            }
+        }
+    }
+
+    private static func restoringUncontended<T: AnyObject>(
+        current: [UUID: [T]],
+        source: [UUID: [T]],
+        target: [UUID: [T]],
+        eligibleKeys: Set<UUID>? = nil
+    ) -> [UUID: [T]] {
+        var result = current
+        let keys = Set(current.keys).union(source.keys).union(target.keys)
+        for key in keys where eligibleKeys?.contains(key) ?? true {
+            guard sameOptionalObjects(current[key], target[key]) else {
+                continue
+            }
+            if let sourceItems = source[key] {
+                result[key] = sourceItems
+            } else {
+                result.removeValue(forKey: key)
+            }
+        }
+        return result
+    }
+
+    private static func sameOptionalObjects<T: AnyObject>(
+        _ lhs: [T]?,
+        _ rhs: [T]?
+    ) -> Bool {
+        switch (lhs, rhs) {
+        case (nil, nil):
+            return true
+        case (.some(let lhs), .some(let rhs)):
+            return sameObjects(lhs, rhs)
+        case (.some, nil), (nil, .some):
+            return false
         }
     }
 }

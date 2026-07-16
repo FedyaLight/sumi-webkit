@@ -2,6 +2,7 @@ import Combine
 import Foundation
 import Observation
 import SumiDomain
+import SumiWebRuntime
 import XCTest
 
 @testable import Sumi
@@ -356,6 +357,121 @@ final class TabStructuralCollectionMutationOwnerTests: XCTestCase {
         XCTAssertTrue(next.rollback())
     }
 
+    func testMutationAfterStageInvalidatesAndReleasesSealedAggregate() throws {
+        let stagedProfileID = UUID()
+        let foreignProfileID = UUID()
+        let stagedPin = Self.makePin(
+            role: .essential,
+            profileId: stagedProfileID,
+            index: 0
+        )
+        let foreignPin = Self.makePin(
+            role: .essential,
+            profileId: foreignProfileID,
+            index: 0
+        )
+        let favicon = StructuralMutationFaviconOracle()
+        let harness = try Harness(faviconService: favicon)
+        let owner = harness.makeOwner()
+        let aggregate = try XCTUnwrap(owner.prepareAggregate())
+        owner.setPinnedTabs([stagedPin], for: stagedProfileID)
+        XCTAssertTrue(aggregate.stage())
+        var availabilityCount = 0
+        let observationID = try XCTUnwrap(owner.observeNextAvailability {
+            availabilityCount += 1
+        })
+
+        owner.setPinnedTabs([foreignPin], for: foreignProfileID)
+
+        XCTAssertEqual(harness.publishCount, 1)
+        XCTAssertEqual(favicon.syncedPinIDs, [[foreignPin.id]])
+        XCTAssertFalse(aggregate.publish())
+        XCTAssertEqual(availabilityCount, 1)
+        XCTAssertFalse(owner.isAvailabilityObservationActive)
+        XCTAssertEqual(harness.publishCount, 1)
+        XCTAssertIdentical(
+            harness.pinnedByProfile[foreignProfileID]?.first,
+            foreignPin
+        )
+        XCTAssertNil(harness.pinnedByProfile[stagedProfileID]?.first)
+        let next = try XCTUnwrap(owner.prepareAggregate())
+        XCTAssertTrue(next.rollback())
+        owner.cancelAvailabilityObservation(observationID)
+    }
+
+    func testForeignMutationRestoresSourceOnlyFolderKeyAndReceipt() throws {
+        let sourceSpaceID = UUID()
+        let foreignProfileID = UUID()
+        let sourceFolder = Self.makeFolder(
+            name: "Source",
+            spaceId: sourceSpaceID,
+            index: 0
+        )
+        let sourceOpenState = sourceFolder.isOpen
+        let foreignPin = Self.makePin(
+            role: .essential,
+            profileId: foreignProfileID,
+            index: 0
+        )
+        let harness = try Harness()
+        harness.foldersBySpace = [sourceSpaceID: [sourceFolder]]
+        let owner = harness.makeOwner()
+        let aggregate = try XCTUnwrap(owner.prepareAggregate())
+
+        harness.foldersBySpace = [:]
+        XCTAssertTrue(aggregate.stage())
+        owner.setPinnedTabs([foreignPin], for: foreignProfileID)
+
+        XCTAssertFalse(aggregate.publish())
+        XCTAssertIdentical(
+            harness.foldersBySpace[sourceSpaceID]?.first,
+            sourceFolder
+        )
+        XCTAssertEqual(sourceFolder.name, "Source")
+        XCTAssertEqual(sourceFolder.isOpen, sourceOpenState)
+        XCTAssertIdentical(
+            harness.pinnedByProfile[foreignProfileID]?.first,
+            foreignPin
+        )
+        let next = try XCTUnwrap(owner.prepareAggregate())
+        XCTAssertTrue(next.rollback())
+    }
+
+    func testForeignFolderPropertyMutationPreventsSourceOnlyRestore() throws {
+        let sourceSpaceID = UUID()
+        let foreignProfileID = UUID()
+        let sourceFolder = Self.makeFolder(
+            name: "Source",
+            spaceId: sourceSpaceID,
+            index: 0
+        )
+        let foreignPin = Self.makePin(
+            role: .essential,
+            profileId: foreignProfileID,
+            index: 0
+        )
+        let harness = try Harness()
+        harness.foldersBySpace = [sourceSpaceID: [sourceFolder]]
+        let owner = harness.makeOwner()
+        let aggregate = try XCTUnwrap(owner.prepareAggregate())
+
+        harness.foldersBySpace = [:]
+        XCTAssertTrue(aggregate.stage())
+        sourceFolder.name = "Foreign"
+
+        owner.setPinnedTabs([foreignPin], for: foreignProfileID)
+
+        XCTAssertFalse(aggregate.publish())
+        XCTAssertNil(harness.foldersBySpace[sourceSpaceID])
+        XCTAssertEqual(sourceFolder.name, "Foreign")
+        XCTAssertIdentical(
+            harness.pinnedByProfile[foreignProfileID]?.first,
+            foreignPin
+        )
+        let next = try XCTUnwrap(owner.prepareAggregate())
+        XCTAssertTrue(next.rollback())
+    }
+
     private static func makeTab(index: Int) -> Tab {
         Tab(
             url: URL(string: "https://example.com/\(index)")!,
@@ -389,12 +505,30 @@ final class TabStructuralCollectionMutationOwnerTests: XCTestCase {
     @MainActor
     private final class Harness {
         let manager: TabManager
+        private let retainedModelContainer: AnyObject?
         private var cancellables = Set<AnyCancellable>()
         private(set) var announceCount = 0
         private(set) var tabsSnapshotPublishCount = 0
 
-        init() throws {
-            manager = try makeInMemoryTabManager()
+        init(
+            faviconService: (any BrowserFaviconServicing)? = nil
+        ) throws {
+            if let faviconService {
+                let container = try makeInMemoryStartupModelContainer()
+                retainedModelContainer = container
+                manager = TabManager(
+                    runtimePorts: nil,
+                    context: container.mainContext,
+                    webViewSessions: WebViewSessionRepository(),
+                    loadPersistedState: false,
+                    faviconService: faviconService
+                )
+            } else {
+                retainedModelContainer = nil
+                manager = try makeInMemoryTabManager(
+                    attachRuntimePorts: false
+                )
+            }
             manager.objectWillChange.sink { [weak self] _ in
                 self?.announceCount += 1
             }.store(in: &cancellables)
@@ -446,6 +580,32 @@ final class TabStructuralCollectionMutationOwnerTests: XCTestCase {
 @MainActor
 private final class FolderPlacementObservationOracle {
     var count = 0
+}
+
+@MainActor
+private final class StructuralMutationFaviconOracle: BrowserFaviconServicing {
+    private(set) var syncedPinIDs: [[UUID]] = []
+
+    func partition(profile: Profile?) -> SumiFaviconPartition {
+        .regular(profile?.id)
+    }
+
+    func invalidateSite(domain _: String, profile _: Profile?) {}
+
+    func syncShortcutPins(_ pins: [ShortcutPin]) {
+        syncedPinIDs.append(pins.map(\.id))
+    }
+
+    func syncBookmarks(
+        _: [SumiBookmark],
+        partition _: SumiFaviconPartition
+    ) {}
+
+    func clearFaviconPartition(for _: Profile) {}
+
+#if DEBUG
+    func drainRuntimeTasksForTests(cancel _: Bool) async {}
+#endif
 }
 
 @MainActor
@@ -516,7 +676,9 @@ final class TabStructuralInstallOwnerTests: XCTestCase {
             restoredState,
             splitGroups: [],
             currentSpace: space,
-            currentTab: nil
+            currentTab: nil,
+            admitted: { true },
+            onInstalled: {}
         )
 
         XCTAssertEqual(harness.transactionCount, 1)

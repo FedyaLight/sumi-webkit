@@ -30,15 +30,21 @@ final class PreparedTabStructuralCollectionAggregate {
 
     func isCurrent() -> Bool {
         guard case .staged = state, let target else { return false }
-        return owner.currentSnapshotMatches(target)
+        return owner.ownsSettlement(transaction)
+            && owner.currentSnapshotMatches(target)
     }
 
     @discardableResult
     func publish() -> Bool {
-        guard isCurrent() else { return false }
+        guard isCurrent() else {
+            discardInvalidatedSettlementIfNeeded()
+            return false
+        }
         state = .terminal
-        owner.apply(transaction.finish(committed: true))
-        return true
+        return owner.apply(
+            transaction.finish(committed: true),
+            from: transaction
+        )
     }
 
     @discardableResult
@@ -49,24 +55,42 @@ final class PreparedTabStructuralCollectionAggregate {
             if transaction.hasRecordedMutations == false {
                 transaction.discardUnmodified()
                 state = .terminal
-                return true
+                return owner.discardReleased(transaction)
             }
         case .staged:
-            guard isCurrent() else { return false }
+            guard isCurrent() else {
+                discardInvalidatedSettlementIfNeeded()
+                return false
+            }
         case .terminal:
             return false
         }
         state = .terminal
-        owner.apply(transaction.finish(committed: false))
-        return true
+        return owner.apply(
+            transaction.finish(committed: false),
+            from: transaction
+        )
     }
 
     func abandonForTerminalDrain() {
         precondition(canAbandonForTerminalDrain())
+        transaction.discardCoveredByTerminalDrain()
+        precondition(owner.abandonSettlement(transaction))
         state = .terminal
     }
 
     func canAbandonForTerminalDrain() -> Bool { isCurrent() }
+
+    private func discardInvalidatedSettlementIfNeeded() {
+        guard case .staged = state,
+              owner.ownsSettlement(transaction) else { return }
+        let source = transaction.discardInvalidated()
+        precondition(owner.compensateInvalidatedSettlement(
+            transaction,
+            source: source
+        ))
+        state = .terminal
+    }
 }
 
 extension TabStructuralCollectionMutationOwner {

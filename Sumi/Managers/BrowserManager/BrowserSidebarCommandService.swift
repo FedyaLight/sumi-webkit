@@ -83,9 +83,9 @@ final class BrowserSidebarCommandService {
                 try browserManager?.tabManager.spaceServices.catalog.updateSpaceIcon(spaceId: spaceID, icon: icon)
             },
             assignSpaceProfile: { [weak browserManager] spaceID, profileID in
-                browserManager?.tabManager.profileAssignments.spaces.assign(
+                browserManager?.tabManager.profileAssignments.spaces.start(
                     spaceID: spaceID,
-                    toProfile: profileID
+                    profileID: profileID
                 )
             },
             renameFolder: { [weak browserManager] folderID, name in

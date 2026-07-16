@@ -49,6 +49,7 @@ final class TabStructuralMutationTransaction {
         let folders: [UUID: [TabFolder]]
         let pinned: [UUID: [ShortcutPin]]
         let spacePinned: [UUID: [ShortcutPin]]
+        let pendingPinnedWithoutProfile: [ShortcutPin]
         let folderReceipts: [FolderReceipt]
     }
 
@@ -116,6 +117,17 @@ final class TabStructuralMutationTransaction {
 
     func discardUnmodified() {
         precondition(isFinished == false && hasRecordedMutations == false)
+        isFinished = true
+    }
+
+    func discardInvalidated() -> Snapshot {
+        precondition(isFinished == false)
+        isFinished = true
+        return snapshot
+    }
+
+    func discardCoveredByTerminalDrain() {
+        precondition(isFinished == false)
         isFinished = true
     }
 }

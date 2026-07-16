@@ -2,23 +2,39 @@ import Foundation
 
 @MainActor
 final class TabRuntimePreparationOwner {
-    private let runtimePorts: @MainActor () -> RuntimePortRegistry?
-    private let settings: @MainActor () -> SumiSettingsService?
-
-    init(
-        runtimePorts: @escaping @MainActor () -> RuntimePortRegistry?,
-        settings: @escaping @MainActor () -> SumiSettingsService?
-    ) {
-        self.runtimePorts = runtimePorts
-        self.settings = settings
+    enum Result: Equatable {
+        case completed
+        case superseded
     }
 
-    func prepare(_ tab: Tab) {
-        let ports = runtimePorts()
-        ports?.webViewLifecycle.prepareTab(tab)
+    private let runtimeConnection: TabRuntimePortConnection
 
-        if tab.sumiSettings == nil {
-            tab.sumiSettings = settings() ?? ports?.settings
+    init(runtimeConnection: TabRuntimePortConnection) {
+        self.runtimeConnection = runtimeConnection
+    }
+
+    @discardableResult
+    func prepare(_ tab: Tab) -> Result {
+        prepare(tab, using: runtimeConnection.captureLease())
+    }
+
+    @discardableResult
+    func prepare(_ tab: Tab, using lease: TabRuntimePortLease) -> Result {
+        guard runtimeConnection.accepts(lease), let ports = lease.registry else {
+            return .superseded
         }
+        ports.webViewLifecycle.prepareTab(tab)
+        guard runtimeConnection.accepts(lease) else {
+            return .superseded
+        }
+
+        let settings = ports.settings
+        guard runtimeConnection.accepts(lease) else {
+            return .superseded
+        }
+        if tab.sumiSettings == nil {
+            tab.sumiSettings = settings
+        }
+        return .completed
     }
 }

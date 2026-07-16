@@ -1,5 +1,6 @@
 import Combine
 import SumiWebRuntime
+import WebKit
 import XCTest
 
 @testable import Sumi
@@ -44,19 +45,9 @@ final class ShortcutLiveTabRetirementServiceTests: XCTestCase {
             in: windowState.id,
             currentSpaceId: space.id
         )!
+        liveTab.replaceUntrackedWebView(WKWebView())
         windowState.currentTabId = liveTab.id
         windowState.currentShortcutPinId = pin.id
-        var cleanupRuntime = TabWebViewCleanupRuntime.inactive
-        cleanupRuntime.removeAllWebViews = { _, _, _ in
-            WebViewTabTeardownResult(
-                discoveredWebViewCount: 1,
-                cleanedWebViewCount: 0,
-                deferredWebViewCount: 0,
-                unscheduledProtectedWebViewCount: 0,
-                blockedWebViewCount: 1
-            )
-        }
-        liveTab.navigationRuntime.webViewCleanupRuntime = cleanupRuntime
 
         let retirement = tabManager.shortcutLiveTabRetirement.retire(
             pinId: pin.id,
@@ -125,7 +116,57 @@ final class ShortcutLiveTabRetirementServiceTests: XCTestCase {
 
         XCTAssertNil(windowState.currentTabId)
         XCTAssertNil(windowState.currentShortcutPinId)
-        XCTAssertEqual(probe.validationCount, 0)
+        XCTAssertEqual(probe.validationCount, 1)
+    }
+
+    func testValidationAttachmentReplacementSuppressesStalePersistence() throws {
+        let windowState = BrowserWindowState()
+        let probe = RetirementProbe()
+        let tabManager = try makeTabManager(
+            windows: [windowState],
+            probe: probe
+        )
+        let space = tabManager.spaceServices.catalog.createSpace(name: "Space")
+        let pin = makePin(spaceId: space.id)
+        let liveTab = tabManager.shortcutTabMaterializer.materialize(
+            pin,
+            in: windowState.id,
+            currentSpaceId: space.id
+        )!
+        windowState.currentSpaceId = space.id
+        windowState.currentTabId = liveTab.id
+        windowState.currentShortcutPinId = pin.id
+        windowState.currentShortcutPinRole = pin.role
+        var replacementPersistenceCount = 0
+        probe.validationAction = { [weak tabManager] in
+            guard let tabManager else {
+                XCTFail("Tab manager deallocated during validation")
+                return
+            }
+            XCTAssertTrue(tabManager.runtimePortsAttachmentOwner.detach())
+            XCTAssertEqual(
+                tabManager.runtimePortsAttachmentOwner.attach(
+                    TestRuntimePorts.make(
+                        windowState: { id in
+                            id == windowState.id ? windowState : nil
+                        },
+                        windows: { [(windowState.id, windowState)] },
+                        windowStates: { [windowState] },
+                        persistWindowSession: { _ in
+                            replacementPersistenceCount += 1
+                        }
+                    )
+                ),
+                .attached
+            )
+        }
+
+        tabManager.tabClosureService.removeTab(liveTab.id)
+
+        XCTAssertEqual(probe.validationCount, 1)
+        XCTAssertTrue(probe.persistedWindowIds.isEmpty)
+        XCTAssertEqual(replacementPersistenceCount, 0)
+        XCTAssertNotNil(tabManager.runtimePorts)
     }
 
     func testPreparedRuntimeLeaseSurvivesDetachFromStructuralSubscriber() throws {
@@ -161,9 +202,23 @@ final class ShortcutLiveTabRetirementServiceTests: XCTestCase {
     func testBackgroundRetirementReportsSuccessAndRunsCompleteTeardownOnce() throws {
         let windowState = BrowserWindowState()
         let probe = RetirementProbe()
+        let runtimeRetirement = TestRuntimePorts.RetirementCapabilities(
+            canRetire: { _ in true },
+            beginCommitted: { _ in true },
+            committedRetirementIsExact: { _ in true },
+            destroy: { generations in
+                probe.destroyedGenerationTabIDs.append(
+                    generations.map(\.tabID)
+                )
+            },
+            destroyAfterTerminalDrain: { _ in
+                XCTFail("Committed retirement must use normal destruction")
+            }
+        )
         let tabManager = try makeTabManager(
             windows: [windowState],
-            probe: probe
+            probe: probe,
+            retirement: runtimeRetirement
         )
         let space = tabManager.spaceServices.catalog.createSpace(name: "Space")
         let pin = makePin(spaceId: space.id)
@@ -174,7 +229,7 @@ final class ShortcutLiveTabRetirementServiceTests: XCTestCase {
             in: windowState.id,
             currentSpaceId: space.id
         )!
-        installCompletedCleanupRuntime(on: liveTab, probe: probe)
+        liveTab.replaceUntrackedWebView(WKWebView())
         let unrelatedSelection = UUID()
         windowState.currentTabId = unrelatedSelection
         windowState.selectedShortcutPinForSpace[space.id] = pin.id
@@ -217,14 +272,7 @@ final class ShortcutLiveTabRetirementServiceTests: XCTestCase {
         XCTAssertTrue(probe.tabClosureBatches.isEmpty)
         XCTAssertEqual(probe.extensionClosedTabIds, [liveTab.id])
         XCTAssertTrue(probe.unloadedTabIds.isEmpty)
-        XCTAssertEqual(
-            probe.removeAllWebViewsCalls.map(\.tabId),
-            [liveTab.id]
-        )
-        XCTAssertEqual(
-            probe.removeAllWebViewsCalls.map(\.closeFullscreen),
-            [true]
-        )
+        XCTAssertEqual(probe.destroyedGenerationTabIDs, [[liveTab.id]])
         XCTAssertEqual(lifecycle.count, 1)
     }
 
@@ -301,7 +349,7 @@ final class ShortcutLiveTabRetirementServiceTests: XCTestCase {
                     .recentSelectionItemsBySpace[space.id]
             )
         }
-        XCTAssertEqual(probe.validationCount, 0)
+        XCTAssertEqual(probe.validationCount, 1)
         XCTAssertEqual(
             probe.persistedWindowIds,
             windows.map(\.id).sorted { $0.uuidString < $1.uuidString }
@@ -358,6 +406,7 @@ final class ShortcutLiveTabRetirementServiceTests: XCTestCase {
         let statesById = Dictionary(
             uniqueKeysWithValues: windows.map { ($0.id, $0) }
         )
+        tabManager.runtimePortsAttachmentOwner.detach()
         tabManager.runtimePortsAttachmentOwner.attach(
             TestRuntimePorts.make(
                 windowState: { statesById[$0] },
@@ -392,7 +441,8 @@ final class ShortcutLiveTabRetirementServiceTests: XCTestCase {
 
     private func makeTabManager(
         windows: [BrowserWindowState],
-        probe: RetirementProbe
+        probe: RetirementProbe,
+        retirement: TestRuntimePorts.RetirementCapabilities = .rejecting
     ) throws -> TabManager {
         let runtime = TestRuntimePorts.make(
             windowState: { windowId in
@@ -401,13 +451,9 @@ final class ShortcutLiveTabRetirementServiceTests: XCTestCase {
             windows: { windows.map { ($0.id, $0) } },
             windowStates: { windows },
             webViewLifecycle: TestRuntimePorts.webViewLifecycle(
-                retirement: .rejecting,
+                retirement: retirement,
                 unloadTab: { probe.unloadedTabIds.append($0.id) },
-                requireRemoveAllWebViews: { tab, closeFullscreen in
-                    probe.removeAllWebViewsCalls.append(
-                        (tab.id, closeFullscreen)
-                    )
-                }
+                requireRemoveAllWebViews: { _, _ in }
             ),
             handleTabClosures: { tabIds in
                 probe.tabClosureBatches.append(tabIds)
@@ -417,6 +463,7 @@ final class ShortcutLiveTabRetirementServiceTests: XCTestCase {
             },
             validateWindowStates: {
                 probe.validationCount += 1
+                probe.validationAction?()
                 return []
             },
             persistWindowSession: {
@@ -432,24 +479,6 @@ final class ShortcutLiveTabRetirementServiceTests: XCTestCase {
         )
         windows.forEach { $0.tabManager = tabManager }
         return tabManager
-    }
-
-    private func installCompletedCleanupRuntime(
-        on tab: Tab,
-        probe: RetirementProbe
-    ) {
-        var runtime = TabWebViewCleanupRuntime.inactive
-        runtime.removeAllWebViews = { tab, closeFullscreen, intent in
-            XCTAssertEqual(intent, .retirement)
-            probe.removeAllWebViewsCalls.append((tab.id, closeFullscreen))
-            return WebViewTabTeardownResult(
-                discoveredWebViewCount: 1,
-                cleanedWebViewCount: 1,
-                deferredWebViewCount: 0,
-                unscheduledProtectedWebViewCount: 0
-            )
-        }
-        tab.navigationRuntime.webViewCleanupRuntime = runtime
     }
 
     private func makeWindowStateReconciler(
@@ -509,9 +538,10 @@ private final class RetirementProbe {
     var tabClosureBatches: [Set<UUID>] = []
     var extensionClosedTabIds: [UUID] = []
     var unloadedTabIds: [UUID] = []
-    var removeAllWebViewsCalls: [(tabId: UUID, closeFullscreen: Bool)] = []
+    var destroyedGenerationTabIDs: [[UUID]] = []
     var persistedWindowIds: [UUID] = []
     var validationCount = 0
+    var validationAction: (() -> Void)?
 }
 
 private final class TabLifecycleNotificationRecorder: @unchecked Sendable {

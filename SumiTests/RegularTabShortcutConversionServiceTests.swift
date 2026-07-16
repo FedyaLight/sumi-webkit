@@ -28,7 +28,7 @@ final class RegularTabShortcutConversionServiceTests: XCTestCase {
         let cancellable = tabManager.tabStructureEventBus
             .structureChangedPublisher.sink { structuralEvents += 1 }
         structuralEvents = 0
-        tabManager.runtimePortConnection.detach()
+        tabManager.runtimePortsAttachmentOwner.detach()
 
         let pin = try XCTUnwrap(
             tabManager.regularTabShortcutConversion.convert(
@@ -134,6 +134,7 @@ final class RegularTabShortcutConversionServiceTests: XCTestCase {
         )
         tabManager.regularTabCollectionOwner.insert(source, in: space.id, at: 0)
         let preparation = tabManager.regularTabShortcutConversion.prepare(source)
+        tabManager.runtimePortsAttachmentOwner.detach()
         tabManager.runtimePortsAttachmentOwner.attach(
             TestRuntimePorts.make(
                 webViewLifecycle: lifecycle,
@@ -751,8 +752,8 @@ final class RegularTabShortcutConversionServiceTests: XCTestCase {
             .structureChangedPublisher.sink {
                 guard didReattach == false else { return }
                 didReattach = true
-                tabManager.runtimePortConnection.detach()
-                tabManager.runtimePortConnection.attach(replacementRuntime)
+                tabManager.runtimePortsAttachmentOwner.detach()
+                tabManager.runtimePortsAttachmentOwner.attach(replacementRuntime)
             }
 
         let pin = tabManager.shortcutPinCommandOwner.convertTabToShortcutPin(

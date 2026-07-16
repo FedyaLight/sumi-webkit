@@ -25,24 +25,7 @@ final class ShortcutPinStoreOwner {
     func withPinnedArray(for profileId: UUID, _ mutate: (inout [ShortcutPin]) -> Void) {
         var pins = dependencies.pinnedByProfile()[profileId] ?? []
         mutate(&pins)
-        dependencies.setPinnedTabs(reindexed(pins), profileId)
-    }
-
-    func reindexed(_ pins: [ShortcutPin]) -> [ShortcutPin] {
-        pins.enumerated().map { index, pin in
-            ShortcutPin(
-                id: pin.id,
-                role: pin.role,
-                profileId: pin.profileId,
-                executionProfileId: pin.executionProfileId,
-                spaceId: pin.spaceId,
-                index: index,
-                folderId: pin.folderId,
-                launchURL: pin.launchURL,
-                title: pin.title,
-                iconAsset: pin.iconAsset
-            )
-        }
+        dependencies.setPinnedTabs(ShortcutPin.reindexed(pins), profileId)
     }
 
     @discardableResult
@@ -66,7 +49,7 @@ final class ShortcutPinStoreOwner {
             guard destination.count < EssentialsShortcutPlacementOwner.CapacityPolicy.maxItems else { return nil }
             let safeIndex = max(0, min(targetIndex, destination.count))
             destination.insert(pin, at: safeIndex)
-            let reindexedPins = reindexed(destination)
+            let reindexedPins = ShortcutPin.reindexed(destination)
             dependencies.setPinnedTabs(reindexedPins, profileId)
             return reindexedPins[safeIndex]
         case .spacePinned:
@@ -266,7 +249,7 @@ final class ShortcutPinStoreOwner {
         if pin.role == .essential, let profileId = pin.profileId {
             var pins = dependencies.pinnedByProfile()[profileId] ?? []
             pins.removeAll { $0.id == pin.id }
-            dependencies.setPinnedTabs(reindexed(pins), profileId)
+            dependencies.setPinnedTabs(ShortcutPin.reindexed(pins), profileId)
         } else if pin.role == .spacePinned, let spaceId = pin.spaceId {
             if pin.folderId == nil {
                 let items = dependencies.topLevelSpacePinnedItems(spaceId).filter { item in
@@ -333,7 +316,7 @@ private extension ShortcutPinStoreOwner {
             var pins = dependencies.pinnedByProfile()[profileId] ?? []
             pins.removeAll { $0.id == pin.id }
             pins.insert(pin, at: max(0, min(pin.index, pins.count)))
-            dependencies.setPinnedTabs(reindexed(pins), profileId)
+            dependencies.setPinnedTabs(ShortcutPin.reindexed(pins), profileId)
         case .spacePinned:
             guard let spaceId = pin.spaceId else { return }
             if pin.folderId == nil {

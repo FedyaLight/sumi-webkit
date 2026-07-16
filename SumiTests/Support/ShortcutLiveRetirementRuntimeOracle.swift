@@ -118,7 +118,7 @@ final class ShortcutLiveRetirementRuntimeOracle {
     }
 
     private func replaceAttachment() {
-        tabManager.detachBrowserRuntime()
+        tabManager.runtimePortsAttachmentOwner.detach()
         tabManager.runtimePortsAttachmentOwner.attach(runtime)
     }
 }

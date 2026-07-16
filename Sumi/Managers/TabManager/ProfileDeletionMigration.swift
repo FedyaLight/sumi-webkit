@@ -19,6 +19,7 @@ final class ProfileDeletionMigration {
     private let policy: ProfileAssignmentPolicy
     private let tabTransitions: TabProfileTransitionService
     private let spaceTransitions: SpaceProfileTransitionService
+    private let spaceTransitionLifecycle: SpaceProfileTransitionRepository
     private let selection: ProfileSelectionCoordinator
     private let referencePlanner = ShortcutProfileReferenceMutationPlanner()
     private let referenceApplicator: ShortcutProfileReferenceMutationApplicator
@@ -29,12 +30,14 @@ final class ProfileDeletionMigration {
         policy: ProfileAssignmentPolicy,
         tabTransitions: TabProfileTransitionService,
         spaceTransitions: SpaceProfileTransitionService,
+        spaceTransitionLifecycle: SpaceProfileTransitionRepository,
         selection: ProfileSelectionCoordinator
     ) {
         self.tabManager = tabManager
         self.policy = policy
         self.tabTransitions = tabTransitions
         self.spaceTransitions = spaceTransitions
+        self.spaceTransitionLifecycle = spaceTransitionLifecycle
         self.selection = selection
         referenceApplicator = ShortcutProfileReferenceMutationApplicator(
             tabManager: tabManager
@@ -102,11 +105,12 @@ final class ProfileDeletionMigration {
                             settlementObserver: callback
                         )
                     },
-                    cancelPending: { [weak spaceTransitions] in
-                        guard let spaceTransitions, let intent = state.intent else {
+                    cancelPending: { [weak spaceTransitionLifecycle] in
+                        guard let spaceTransitionLifecycle,
+                              let intent = state.intent else {
                             return
                         }
-                        spaceTransitions.cancelPendingDeletionIntent(intent)
+                        spaceTransitionLifecycle.cancelPending(intent)
                     }
                 )
             )

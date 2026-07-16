@@ -4,14 +4,26 @@ import Foundation
 @MainActor
 enum BrowserManagerRuntimeWiring {
     static func attach(to browserManager: BrowserManager) -> AnyCancellable {
+        precondition(
+            browserManager.tabManager.runtimePortsAttachmentOwner.canAttach,
+            "Browser tab runtime ports must attach exactly once"
+        )
         attachWebViewRuntime(to: browserManager)
         attachShellRuntime(to: browserManager)
         browserManager.compositorManager.attach(runtime: .make(browserManager: browserManager))
         let tabRuntimeCompositionCancellable = BrowserTabRuntimeCompositionService.attach(
             to: browserManager
         )
-        let runtimePortRegistry = BrowserTabManagerRuntimePortsFactory.registry(for: browserManager)
-        browserManager.tabManager.runtimePortsAttachmentOwner.attach(runtimePortRegistry)
+        let runtimePortRegistry = BrowserTabManagerRuntimePortsFactory.registry(
+            for: browserManager
+        )
+        precondition(
+            browserManager.tabManager.runtimePortsAttachmentOwner.attach(
+                runtimePortRegistry
+            ) == .attached,
+            "Browser tab runtime ports must attach exactly once"
+        )
+        startPersistedStateLoadIfShellReady(browserManager)
         // Live Folders runtime attaches only when the module is enabled (W4/R9),
         // via OptionalModuleHost.attachEnabled.
         precondition(
@@ -82,15 +94,8 @@ enum BrowserManagerRuntimeWiring {
         _ browserManager: BrowserManager
     ) {
         guard browserManager.windowRegistry != nil else { return }
-        let tabManager = browserManager.tabManager
-        tabManager.startupRestoreLifecycle.startIfNeeded(
-            runtimeIsAttached: tabManager.runtimePorts != nil,
-            restore: { [weak tabManager] revision in
-                tabManager?.storeRestore.loadFromStore(
-                    expectedStructuralRevision: revision
-                )
-            }
-        )
+        browserManager.tabManager.runtimePortsAttachmentOwner
+            .startPersistedStateRestoreIfNeeded()
     }
 
     static func tabSelectionRuntimeNotifications(

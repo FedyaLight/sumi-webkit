@@ -50,8 +50,10 @@ final class SpaceProfileMutationService {
     func transaction(
         space: Space,
         expectedProfileID: UUID?,
-        targetProfileID: UUID?
+        targetProfileID: UUID?,
+        using runtimeLease: TabRuntimePortLease
     ) -> SpaceProfileMutationTransaction? {
+        guard runtimeConnection.accepts(runtimeLease) else { return nil }
         let selectedSpace = spaces.currentSpace.flatMap {
             $0.id == space.id ? $0 : nil
         }
@@ -68,8 +70,9 @@ final class SpaceProfileMutationService {
               let presentation = presentationTransition(
                   spaceID: space.id,
                   expectedProfileID: expectedProfileID,
-                  targetProfileID: targetProfileID
-              ) else { return nil }
+                  targetProfileID: targetProfileID,
+                  using: runtimeLease
+              ), runtimeConnection.accepts(runtimeLease) else { return nil }
         return SpaceProfileMutationTransaction(
             space: space,
             selectedSpace: selectedSpace,
@@ -84,11 +87,12 @@ final class SpaceProfileMutationService {
     private func presentationTransition(
         spaceID: UUID,
         expectedProfileID: UUID?,
-        targetProfileID: UUID?
+        targetProfileID: UUID?,
+        using runtimeLease: TabRuntimePortLease
     ) -> SpaceProfilePresentationTransition? {
+        guard runtimeConnection.accepts(runtimeLease) else { return nil }
         var relocations: [SpaceProfilePresentationTransition.Relocation] = []
         var retirements: [SpaceProfilePresentationTransition.Retirement] = []
-        let runtimeLease = runtimeConnection.captureLease()
         for entry in registry.entries(presentedInSpace: spaceID) {
             let expectedPage = LiveShortcutPresentationPageReceipt(
                 windowID: entry.windowId,
@@ -116,11 +120,13 @@ final class SpaceProfileMutationService {
                       profileID == expectedProfileID,
                       entry.tab.spaceId == nil,
                       let runtime = runtimeLease.registry,
-                      let window = runtime.windowState(for: entry.windowId)
+                      let window = runtime.windowState(for: entry.windowId),
+                      runtimeConnection.accepts(runtimeLease)
                 else { return nil }
                 retirements.append(.init(entry: entry, window: window))
             }
         }
+        guard runtimeConnection.accepts(runtimeLease) else { return nil }
         return SpaceProfilePresentationTransition(
             relocations: relocations,
             retirements: retirements,

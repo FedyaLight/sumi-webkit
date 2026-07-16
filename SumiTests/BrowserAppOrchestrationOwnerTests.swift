@@ -41,7 +41,10 @@ final class BrowserAppOrchestrationOwnerTests: XCTestCase {
             harness.browserManager.keyboardShortcutManager,
             harness.keyboardShortcutManager
         )
-        XCTAssertIdentical(harness.browserManager.tabManager.sumiSettings, harness.settingsManager)
+        XCTAssertIdentical(
+            harness.browserManager.tabManager.runtimePorts?.settings,
+            harness.settingsManager
+        )
         XCTAssertNotNil(harness.browserManager.windowShellContentViewFactory)
         XCTAssertEqual(harness.startUpdaterCallCount(), 1)
     }

@@ -5,6 +5,29 @@ import XCTest
 
 @MainActor
 final class TabManagerDeinitializationTests: XCTestCase {
+    func testDeinitDetachesExternallyRetainedRuntimeConnection() throws {
+        var tabManager: TabManager? = try makeInMemoryTabManager(
+            attachRuntimePorts: false
+        )
+        var sentinel: RuntimeLifetimeSentinel? = RuntimeLifetimeSentinel()
+        weak var releasedSentinel = sentinel
+        attachRuntime(
+            retaining: try XCTUnwrap(sentinel),
+            to: try XCTUnwrap(tabManager)
+        )
+        let connection = try XCTUnwrap(tabManager?.runtimePortConnection)
+        weak var released = tabManager
+        sentinel = nil
+
+        XCTAssertNotNil(releasedSentinel)
+
+        tabManager = nil
+
+        XCTAssertNil(released)
+        XCTAssertNil(releasedSentinel)
+        XCTAssertNil(connection.current)
+    }
+
     func testDeinitWithUnusedStructuralGraphReleasesWithoutTrap() throws {
         let container = try makeContainer()
         var tabManager: TabManager? = TabManager(
@@ -109,4 +132,22 @@ final class TabManagerDeinitializationTests: XCTestCase {
             configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
         )
     }
+
+    private func attachRuntime(
+        retaining sentinel: RuntimeLifetimeSentinel,
+        to tabManager: TabManager
+    ) {
+        let runtime = TestRuntimePorts.make(
+            profileExists: { [sentinel] _ in
+                _ = sentinel
+                return true
+            }
+        )
+        XCTAssertEqual(
+            tabManager.runtimePortsAttachmentOwner.attach(runtime),
+            .attached
+        )
+    }
 }
+
+private final class RuntimeLifetimeSentinel {}

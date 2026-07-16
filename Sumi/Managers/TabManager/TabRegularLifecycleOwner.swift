@@ -250,7 +250,7 @@ extension TabRegularLifecycleOwner.Dependencies {
                 tabManager.structuralLookupCoordinator.withTransaction(operation)
             },
             settings: { [weak tabManager] in
-                tabManager?.sumiSettings
+                tabManager?.runtimePortConnection.current?.settings
             },
             runtimePorts: { [weak tabManager] in
                 tabManager?.runtimePorts

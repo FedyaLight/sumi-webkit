@@ -256,7 +256,7 @@ final class ShortcutPinCommandOwner {
 
                 pins[index] = updatedPin.refreshed(index: pin.index)
                 dependencies.structuralCollectionMutationOwner.setPinnedTabs(
-                    dependencies.shortcutPinStoreOwner.reindexed(pins),
+                    ShortcutPin.reindexed(pins),
                     for: profileId
                 )
                 if let inserted = dependencies.shortcutPinCollectionStateOwner.shortcutPin(by: pin.id) {
@@ -374,7 +374,7 @@ final class ShortcutPinCommandOwner {
             if currentIndex < arr.count { arr.remove(at: currentIndex) }
             arr.insert(pin, at: max(0, min(adjustedIndex, arr.count)))
             dependencies.structuralCollectionMutationOwner.setPinnedTabs(
-                dependencies.shortcutPinStoreOwner.reindexed(arr),
+                ShortcutPin.reindexed(arr),
                 for: pid
             )
             dependencies.scheduleStructuralPersistence()

@@ -71,10 +71,24 @@ tab_selection_services=(
 profile_selection_services=(
   Sumi/Managers/TabManager/ProfileSelectionCoordinator.swift
   Sumi/Managers/TabManager/SpaceProfileReconciliationService.swift
+  Sumi/Managers/TabManager/SpaceProfileTransitionService.swift
+  Sumi/Managers/TabManager/SpaceProfileTransitionAdmission.swift
+  Sumi/Managers/TabManager/SpaceProfileTransitionRepository.swift
+  Sumi/Managers/TabManager/SpaceProfileTransitionPublication.swift
+  Sumi/Managers/TabManager/SpaceProfileTransitionAvailability.swift
 )
 profile_selection_core=(
   "${profile_selection_services[@]}"
   Sumi/Managers/TabManager/ProfileAssignmentServices.swift
+)
+runtime_attachment_services=(
+  Sumi/Managers/TabManager/TabRuntimePortsAttachmentOwner.swift
+  Sumi/Managers/TabManager/TabRuntimeAttachmentBootstrap.swift
+  Sumi/Managers/TabManager/PendingShortcutPinAdopter.swift
+  Sumi/Managers/TabManager/TabRuntimeAttachmentSettlement.swift
+  Sumi/Managers/TabManager/TabRuntimeAttachmentDeferredWorkOwner.swift
+  Sumi/Managers/TabManager/TabRuntimeAttachmentRestoreStarter.swift
+  Sumi/Managers/TabManager/TabRuntimePreparationOwner.swift
 )
 
 guard_require_discovered_sources() {
@@ -94,6 +108,7 @@ guard_require_discovered_sources 'floating bar' "${floating_bar_services[@]}"
 guard_require_discovered_sources 'active page' "${active_page_services[@]}"
 guard_require_discovered_sources 'Tab selection' "${tab_selection_services[@]}"
 guard_require_discovered_sources 'profile selection' "${profile_selection_core[@]}"
+guard_require_discovered_sources 'runtime attachment' "${runtime_attachment_services[@]}"
 
 # Main-frame mutation must stay behind the exact owners/composition root. This
 # protects authority placement without freezing method counts or test names.
@@ -137,6 +152,7 @@ guard_expect_no_matches \
   '\.profileAssignment\.(begin|cancelPending|commit|stage|finish|rollback|abort|replaceCurrentProfileID)\b' \
   -g '*.swift' \
   -g '!ProfileTransitionService.swift' \
+  -g '!SpaceProfileTransitionAdmission.swift' \
   -g '!SpaceProfileTransaction.swift' \
   -g '!SpaceProfileTransitionService.swift' \
   -g '!TabProfileTransitionService.swift' \
@@ -209,6 +225,23 @@ guard_expect_no_matches \
   'profile selection stored callback dependencies' \
   '^[[:space:]]*private[[:space:]]+let[[:space:]]+[A-Za-z_][A-Za-z0-9_]*:.*->' \
   "${profile_selection_core[@]}"
+guard_expect_no_matches \
+  'mutable runtime resolution inside Space-profile transaction pipeline' \
+  '\bruntime(Connection|PortConnection)\.current\b' \
+  Sumi/Managers/TabManager/SpaceProfileReconciliationService.swift \
+  Sumi/Managers/TabManager/SpaceProfileTransitionService.swift \
+  Sumi/Managers/TabManager/SpaceProfileTransitionAdmission.swift \
+  Sumi/Managers/TabManager/SpaceProfileMutationService.swift
+space_reconciliation_exact_lease_calls="$(
+  guard_count_matches \
+    'spaceTransitions\.start\([[:space:][:print:]]*using:[[:space:]]*lease' \
+    --multiline \
+    Sumi/Managers/TabManager/SpaceProfileReconciliationService.swift
+)"
+guard_exact \
+  'Space reconciliation exact-lease transition entry' \
+  "$space_reconciliation_exact_lease_calls" \
+  1
 for profile_selection_service in "${profile_selection_services[@]}"; do
   profile_selection_collaborators="$(
     guard_count_matches \
@@ -232,6 +265,106 @@ guard_expect_no_matches \
   'behavior in ProfileAssignmentServices capability group' \
   '\bfunc[[:space:]]+' \
   Sumi/Managers/TabManager/ProfileAssignmentServices.swift
+guard_expect_no_matches \
+  'runtime attachment generic dependency bags' \
+  '\bstruct[[:space:]]+(Dependencies|Actions|Context|Environment|Capabilities)\b' \
+  "${runtime_attachment_services[@]}"
+guard_expect_no_matches \
+  'runtime attachment manager reachback' \
+  '\bTabManager\b|\btabManager\b' \
+  "${runtime_attachment_services[@]}"
+guard_expect_no_matches \
+  'runtime attachment stored callback dependencies' \
+  '^[[:space:]]*private[[:space:]]+let[[:space:]]+[A-Za-z_][A-Za-z0-9_]*:.*->' \
+  "${runtime_attachment_services[@]}"
+for runtime_attachment_service in "${runtime_attachment_services[@]}"; do
+  runtime_attachment_collaborators="$(
+    guard_count_matches \
+      '^[[:space:]]*private[[:space:]]+(let|weak[[:space:]]+var)\b' \
+      "$runtime_attachment_service"
+  )"
+  guard_max \
+    "$(basename "$runtime_attachment_service" .swift) stored collaborators" \
+    "$runtime_attachment_collaborators" \
+    5
+done
+runtime_attachment_owner_collaborators="$(
+  guard_count_matches \
+    '^[[:space:]]*private[[:space:]]+(let|weak[[:space:]]+var)\b' \
+    Sumi/Managers/TabManager/TabRuntimePortsAttachmentOwner.swift
+)"
+guard_max \
+  'TabRuntimePortsAttachmentOwner hard collaborator cap' \
+  "$runtime_attachment_owner_collaborators" \
+  3
+pending_pin_adopter_collaborators="$(
+  guard_count_matches \
+    '^[[:space:]]*private[[:space:]]+(let|weak[[:space:]]+var)\b' \
+    Sumi/Managers/TabManager/PendingShortcutPinAdopter.swift
+)"
+guard_max \
+  'PendingShortcutPinAdopter hard collaborator cap' \
+  "$pending_pin_adopter_collaborators" \
+  3
+runtime_attachment_settlement_collaborators="$(
+  guard_count_matches \
+    '^[[:space:]]*private[[:space:]]+(let|weak[[:space:]]+var)\b' \
+    Sumi/Managers/TabManager/TabRuntimeAttachmentSettlement.swift
+)"
+guard_max \
+  'TabRuntimeAttachmentSettlement hard collaborator cap' \
+  "$runtime_attachment_settlement_collaborators" \
+  4
+guard_expect_no_matches \
+  'runtime-port property mutation outside attachment authority' \
+  '\bruntimePortConnection\.(attach|detach)\(' \
+  -g '*.swift' \
+  Sumi
+guard_expect_no_matches \
+  'runtime connection mutation outside attachment authority' \
+  '\bconnection\.(attach|detach)\(' \
+  -g '*.swift' \
+  -g '!TabRuntimePortsAttachmentOwner.swift' \
+  Sumi/Managers/TabManager
+guard_expect_no_matches \
+  'TabManager runtime-port installation bypass' \
+  '\binstallRuntimePorts\b' \
+  Sumi
+guard_expect_no_matches \
+  'direct pending-pin drain outside atomic adopter' \
+  '\bdrainPendingPinnedWithoutProfile\(' \
+  -g '*.swift' \
+  -g '!PendingShortcutPinAdopter.swift' \
+  -g '!ShortcutPinCollectionStateOwner.swift' \
+  Sumi
+guard_expect_no_matches \
+  'direct runtime-attachment object publication' \
+  'objectWillChange\.send\(' \
+  "${runtime_attachment_services[@]}"
+automatic_restore_policy_count="$(
+  guard_count_matches \
+    'guard policy\.automaticallyStarts else' \
+    Sumi/Managers/TabManager/TabRuntimeAttachmentRestoreStarter.swift
+)"
+guard_exact \
+  'automatic attachment restore policy authority' \
+  "$automatic_restore_policy_count" \
+  1
+enabled_restore_graph_gate_count="$(
+  guard_count_matches \
+    'guard tm\.startupRestorePolicy\.isEnabled else' \
+    Sumi/Managers/TabManager/TabLifecycleOwnerBag.swift
+)"
+guard_exact \
+  'attachment restore graph enabled-load gate' \
+  "$enabled_restore_graph_gate_count" \
+  1
+guard_expect_no_matches \
+  'startup restore bypass outside attachment owner' \
+  'startupRestoreLifecycle\.startIfNeeded\(' \
+  -g '*.swift' \
+  -g '!TabRuntimeAttachmentRestoreStarter.swift' \
+  Sumi
 guard_expect_no_matches \
   'BrowserManager TabManager reassignment' \
   '\bbrowserManager\.tabManager\s*=' \

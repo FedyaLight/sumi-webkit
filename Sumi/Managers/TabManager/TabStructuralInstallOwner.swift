@@ -31,13 +31,16 @@ final class TabStructuralInstallOwner {
         self.dependencies = dependencies
     }
 
+    @discardableResult
     func installRestoredCollections(
         _ restoredState: TabRestoreRuntimeState,
         splitGroups: [SplitGroup],
         currentSpace: Space?,
-        currentTab: Tab?
-    ) {
-        install(
+        currentTab: Tab?,
+        admitted: @escaping @MainActor () -> Bool,
+        onInstalled: @escaping @MainActor () -> Void
+    ) -> Bool {
+        installCore(
             spaces: restoredState.spaces,
             tabsBySpace: restoredState.tabsBySpace,
             foldersBySpace: restoredState.foldersBySpace,
@@ -47,10 +50,13 @@ final class TabStructuralInstallOwner {
             splitGroups: splitGroups,
             currentSpace: currentSpace,
             currentTab: currentTab,
-            resetDirtyState: false
+            resetDirtyState: false,
+            admitted: admitted,
+            onInstalled: onInstalled
         )
     }
 
+    @discardableResult
     func install(
         spaces: [Space],
         tabsBySpace: [UUID: [Tab]],
@@ -61,10 +67,44 @@ final class TabStructuralInstallOwner {
         splitGroups: [SplitGroup],
         currentSpace: Space?,
         currentTab: Tab?,
-        resetDirtyState: Bool = true
-    ) {
+        resetDirtyState: Bool = true,
+        admitted: @escaping @MainActor () -> Bool = { true }
+    ) -> Bool {
+        installCore(
+            spaces: spaces,
+            tabsBySpace: tabsBySpace,
+            foldersBySpace: foldersBySpace,
+            pinnedByProfile: pinnedByProfile,
+            spacePinnedShortcuts: spacePinnedShortcuts,
+            pendingPinnedWithoutProfile: pendingPinnedWithoutProfile,
+            splitGroups: splitGroups,
+            currentSpace: currentSpace,
+            currentTab: currentTab,
+            resetDirtyState: resetDirtyState,
+            admitted: admitted,
+            onInstalled: {}
+        )
+    }
+
+    private func installCore(
+        spaces: [Space],
+        tabsBySpace: [UUID: [Tab]],
+        foldersBySpace: [UUID: [TabFolder]],
+        pinnedByProfile: [UUID: [ShortcutPin]],
+        spacePinnedShortcuts: [UUID: [ShortcutPin]],
+        pendingPinnedWithoutProfile: [ShortcutPin],
+        splitGroups: [SplitGroup],
+        currentSpace: Space?,
+        currentTab: Tab?,
+        resetDirtyState: Bool,
+        admitted: @escaping @MainActor () -> Bool,
+        onInstalled: @escaping @MainActor () -> Void
+    ) -> Bool {
+        var didInstall = false
         dependencies.withStructuralUpdateTransaction {
+            guard admitted() else { return }
             dependencies.objectWillChange()
+            guard admitted() else { return }
             dependencies.replaceSpaces(spaces)
             dependencies.replaceTabsBySpace(tabsBySpace)
             dependencies.replaceFoldersBySpace(foldersBySpace)
@@ -76,16 +116,19 @@ final class TabStructuralInstallOwner {
             )
             dependencies.replaceCurrentSpace(currentSpace)
             dependencies.replaceCurrentTab(currentTab)
-            dependencies.syncShortcutPins(
-                Array(pinnedByProfile.values.joined()) + Array(spacePinnedShortcuts.values.joined())
-            )
             dependencies.rebuildTabLookup()
             dependencies.markSnapshotCacheDirty()
             if resetDirtyState {
                 dependencies.resetStructuralDirtySet()
             }
             dependencies.requestStructuralPublish()
+            onInstalled()
+            didInstall = true
+            dependencies.syncShortcutPins(
+                Array(pinnedByProfile.values.joined()) + Array(spacePinnedShortcuts.values.joined())
+            )
         }
+        return didInstall
     }
 }
 

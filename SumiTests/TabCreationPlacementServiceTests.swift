@@ -41,6 +41,7 @@ final class TabCreationPlacementServiceTests: XCTestCase {
         )
         tabManager.spaceStateOwner.replaceSpaces([selected, currentProfileSpace])
         tabManager.spaceStateOwner.replaceCurrentSpace(selected)
+        tabManager.runtimePortsAttachmentOwner.detach()
         tabManager.runtimePortsAttachmentOwner.attach(
             TestRuntimePorts.make(
                 currentProfileId: { currentProfileID },
@@ -95,9 +96,9 @@ final class TabCreationPlacementServiceTests: XCTestCase {
         tabManager.spaceStateOwner.replaceSpaces([space])
 
         XCTAssertEqual(
-            tabManager.profileAssignments.spaces.assign(
+            tabManager.profileAssignments.spaces.start(
                 spaceID: space.id,
-                toProfile: pendingProfile.id
+                profileID: pendingProfile.id
             ),
             .deferred
         )
@@ -137,9 +138,9 @@ final class TabCreationPlacementServiceTests: XCTestCase {
         tabManager.spaceStateOwner.replaceSpaces([space])
 
         XCTAssertEqual(
-            tabManager.profileAssignments.spaces.assign(
+            tabManager.profileAssignments.spaces.start(
                 spaceID: space.id,
-                toProfile: pendingProfile.id
+                profileID: pendingProfile.id
             ),
             .deferred
         )
@@ -205,6 +206,7 @@ final class TabCreationPlacementServiceTests: XCTestCase {
         let tabManager = try makeInMemoryTabManager()
         let profileID = UUID()
         let profile = Profile(id: profileID, name: "Current")
+        tabManager.runtimePortsAttachmentOwner.detach()
         tabManager.runtimePortsAttachmentOwner.attach(
             TestRuntimePorts.make(
                 currentProfileId: { profileID },
@@ -228,6 +230,7 @@ final class TabCreationPlacementServiceTests: XCTestCase {
         let failedSpace = Space(name: "Failed")
         failedManager.spaceStateOwner.replaceSpaces([failedSpace])
         var failedDefaultProfileID: UUID?
+        failedManager.runtimePortsAttachmentOwner.detach()
         failedManager.runtimePortsAttachmentOwner.attach(
             TestRuntimePorts.make(
                 defaultProfileId: { failedDefaultProfileID },
@@ -249,6 +252,7 @@ final class TabCreationPlacementServiceTests: XCTestCase {
         let profile = Profile(id: profileID, name: "Deferred")
         let transition = DeferredSpaceProfileTransition()
         var deferredDefaultProfileID: UUID?
+        deferredManager.runtimePortsAttachmentOwner.detach()
         deferredManager.runtimePortsAttachmentOwner.attach(
             TestRuntimePorts.make(
                 defaultProfileId: { deferredDefaultProfileID },
@@ -271,6 +275,7 @@ final class TabCreationPlacementServiceTests: XCTestCase {
         let profile = Profile(name: "Target")
         let transition = DeferredSpaceProfileTransition()
         let tabManager = try makeInMemoryTabManager()
+        tabManager.runtimePortsAttachmentOwner.detach()
         tabManager.runtimePortsAttachmentOwner.attach(
             TestRuntimePorts.make(
                 currentProfileId: { profile.id },
@@ -350,9 +355,9 @@ final class TabCreationPlacementServiceTests: XCTestCase {
         XCTAssertNil(follower.profileId)
 
         XCTAssertEqual(
-            tabManager.profileAssignments.spaces.assign(
+            tabManager.profileAssignments.spaces.start(
                 spaceID: space.id,
-                toProfile: laterProfile.id
+                profileID: laterProfile.id
             ),
             .deferred
         )
@@ -467,6 +472,7 @@ final class TabCreationPlacementServiceTests: XCTestCase {
         let tabManager = try makeInMemoryTabManager()
         tabManager.spaceStateOwner.removeAll()
         let profileID = UUID()
+        tabManager.runtimePortsAttachmentOwner.detach()
         tabManager.runtimePortsAttachmentOwner.attach(
             TestRuntimePorts.make(currentProfileId: { profileID })
         )
@@ -552,6 +558,7 @@ final class TabCreationPlacementServiceTests: XCTestCase {
         transition: DeferredSpaceProfileTransition
     ) throws -> TabManager {
         let tabManager = try makeInMemoryTabManager()
+        tabManager.runtimePortsAttachmentOwner.detach()
         tabManager.runtimePortsAttachmentOwner.attach(
             TestRuntimePorts.make(
                 currentProfileId: currentProfileID,

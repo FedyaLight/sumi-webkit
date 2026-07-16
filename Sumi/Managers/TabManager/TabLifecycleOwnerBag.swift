@@ -20,11 +20,46 @@ final class TabLifecycleOwnerBag {
     private var tm: TabManager { tabManager }
 
     lazy var runtimePreparationOwner = TabRuntimePreparationOwner(
-        runtimePorts: { [weak self] in self?.tm.runtimePorts },
-        settings: { [weak self] in self?.tm.sumiSettings }
+        runtimeConnection: tm.runtimePortConnection
+    )
+    lazy var pendingShortcutPinAdopter = PendingShortcutPinAdopter(
+        pins: tm.shortcutPinCollectionStateOwner,
+        structuralMutations: tm.structuralCollectionMutationOwner,
+        persistence: tm.structuralPersistence
+    )
+    lazy var runtimeAttachmentBootstrap = TabRuntimeAttachmentBootstrap(
+        connection: tm.runtimePortConnection,
+        membership: tm.tabCollectionMembershipOwner,
+        runtimePreparation: runtimePreparationOwner,
+        selection: tm.selectionStateOwner
+    )
+    lazy var runtimeAttachmentRestoreStarter: TabRuntimeAttachmentRestoreStarter? = {
+        guard tm.startupRestorePolicy.isEnabled else {
+            return nil
+        }
+        return TabRuntimeAttachmentRestoreStarter(
+            connection: tm.runtimePortConnection,
+            policy: tm.startupRestorePolicy,
+            lifecycle: tm.startupRestoreLifecycle,
+            restore: tm.storeRestore
+        )
+    }()
+    lazy var runtimeAttachmentDeferredWorkOwner = TabRuntimeAttachmentDeferredWorkOwner(
+        connection: tm.runtimePortConnection,
+        spaceProfiles: spaceProfileReconciliation,
+        spaceAvailability: profileAssignments.spaceAvailability,
+        pendingPins: pendingShortcutPinAdopter
+    )
+    lazy var runtimeAttachmentSettlement = TabRuntimeAttachmentSettlement(
+        connection: tm.runtimePortConnection,
+        spaces: tm.spaceStateOwner,
+        deferredWork: runtimeAttachmentDeferredWorkOwner,
+        restoreStarter: runtimeAttachmentRestoreStarter
     )
     lazy var runtimePortsAttachmentOwner = TabRuntimePortsAttachmentOwner(
-        dependencies: .live(tabManager: tm)
+        connection: tm.runtimePortConnection,
+        bootstrap: runtimeAttachmentBootstrap,
+        settlement: runtimeAttachmentSettlement
     )
     lazy var regularTabLifecycleOwner = TabRegularLifecycleOwner(
         dependencies: .live(tabManager: tm)
@@ -55,7 +90,7 @@ final class TabLifecycleOwnerBag {
         spaces: tm.spaceStateOwner,
         runtimeConnection: tm.runtimePortConnection,
         spaceTransitions: profileAssignments.spaces,
-        persistence: tm.structuralPersistence
+        transitionLifecycle: profileAssignments.spaceLifecycle
     )
     lazy var transientWebKitTabLifecycleOwner = TabTransientWebKitTabLifecycleOwner(
         dependencies: .live(tabManager: tm)

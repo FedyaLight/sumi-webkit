@@ -38,12 +38,15 @@ final class TabRuntimePortConnection {
     /// captured ports instead of repeatedly resolving mutable composition-root
     /// state through weak manager callbacks.
     func captureLease() -> TabRuntimePortLease {
-        TabRuntimePortLease(
-            registry: registry,
-            attachmentIdentity: attachmentIdentity,
-            attachmentRevision: attachmentRevision,
-            currentProfileID: registry?.currentProfileId,
-            defaultProfileID: registry?.defaultProfileId
+        let capturedRegistry = registry
+        let capturedIdentity = attachmentIdentity
+        let capturedRevision = attachmentRevision
+        return TabRuntimePortLease(
+            registry: capturedRegistry,
+            attachmentIdentity: capturedIdentity,
+            attachmentRevision: capturedRevision,
+            currentProfileID: capturedRegistry?.currentProfileId,
+            defaultProfileID: capturedRegistry?.defaultProfileId
         )
     }
 

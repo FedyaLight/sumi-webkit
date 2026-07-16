@@ -137,7 +137,7 @@ final class SplitShortcutServicesTests: XCTestCase {
         let retirement = TestRuntimePorts.RetirementCapabilities(
             canRetire: { _ in true },
             beginCommitted: { _ in
-                fixture.tabManager.detachBrowserRuntime()
+                fixture.tabManager.runtimePortsAttachmentOwner.detach()
                 fixture.tabManager.runtimePortsAttachmentOwner.attach(runtime)
                 return true
             },
@@ -1174,6 +1174,7 @@ private extension SplitShortcutServicesTests {
         let windowsByID = Dictionary(
             uniqueKeysWithValues: windowStates.map { ($0.id, $0) }
         )
+        tabManager.runtimePortsAttachmentOwner.detach()
         tabManager.runtimePortsAttachmentOwner.attach(
             TestRuntimePorts.make(
                 defaultProfileId: { profile.id },

@@ -63,8 +63,16 @@ final class ProfileSelectionCoordinatorTests: XCTestCase {
         tabManager.structuralPersistence.resetDirtySet()
         tabManager.structuralPersistence.cancelPendingPersistence()
 
-        makeSpaceReconciliationService(tabManager).reconcileIfNeeded()
+        let result = makeSpaceReconciliationService(tabManager).startNext(
+            using: tabManager.runtimePortConnection.captureLease(),
+            completion: { _ in
+                XCTFail("No-profile reconciliation must not defer")
+            }
+        )
 
+        guard case .completed(.unavailable) = result else {
+            return XCTFail("Missing default profile must remain unavailable")
+        }
         XCTAssertNil(space.profileId)
         XCTAssertTrue(tabManager.structuralPersistence.dirtySet.isEmpty)
         XCTAssertNil(tabManager.structuralPersistence.scheduledPersistTask)
@@ -82,8 +90,16 @@ final class ProfileSelectionCoordinatorTests: XCTestCase {
         tabManager.structuralPersistence.resetDirtySet()
         tabManager.structuralPersistence.cancelPendingPersistence()
 
-        makeSpaceReconciliationService(tabManager).reconcileIfNeeded()
+        let result = makeSpaceReconciliationService(tabManager).startNext(
+            using: tabManager.runtimePortConnection.captureLease(),
+            completion: { _ in
+                XCTFail("Model-only reconciliation must not defer")
+            }
+        )
 
+        guard case .completed(.committed) = result else {
+            return XCTFail("Model-only reconciliation must commit")
+        }
         XCTAssertEqual(space.profileId, profileID)
         XCTAssertTrue(
             tabManager.structuralPersistence.dirtySet.dirtySpaceIds
@@ -117,7 +133,7 @@ final class ProfileSelectionCoordinatorTests: XCTestCase {
             spaces: tabManager.spaceStateOwner,
             runtimeConnection: tabManager.runtimePortConnection,
             spaceTransitions: tabManager.profileAssignments.spaces,
-            persistence: tabManager.structuralPersistence
+            transitionLifecycle: tabManager.profileAssignments.spaceLifecycle
         )
     }
 }

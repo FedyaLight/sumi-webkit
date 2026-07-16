@@ -2,10 +2,24 @@ import Foundation
 
 @MainActor
 final class TabStructuralCollectionMutationOwner {
+    private struct AvailabilityObservation {
+        let id: UUID
+        let action: @MainActor () -> Void
+    }
+
     private let store: TabStructuralCollectionStore
     private let snapshots: TabStructuralCollectionSnapshotStore
     private let publisher: TabStructuralMutationPublisher
     private var transaction: TabStructuralMutationTransaction?
+    private var settlingTransaction: TabStructuralMutationTransaction?
+    private var settlingTarget: TabStructuralMutationTransaction.Snapshot?
+    private var isApplyingSettlement = false
+    private var foreignMutationDepth = 0
+    private var availabilityObservation: AvailabilityObservation?
+
+    var isAvailabilityObservationActive: Bool {
+        availabilityObservation != nil
+    }
 
     init(
         store: TabStructuralCollectionStore,
@@ -18,7 +32,38 @@ final class TabStructuralCollectionMutationOwner {
     }
 
     func prepareAggregate() -> PreparedAggregate? {
-        guard transaction == nil else { return nil }
+        guard transaction == nil,
+              settlingTransaction == nil,
+              foreignMutationDepth == 0 else { return nil }
+        return openAggregate()
+    }
+
+    func observeNextAvailability(
+        _ action: @escaping @MainActor () -> Void
+    ) -> UUID? {
+        guard transaction != nil
+                || settlingTransaction != nil
+                || foreignMutationDepth > 0 else {
+            return nil
+        }
+        precondition(
+            availabilityObservation == nil,
+            "Structural availability already has an observer"
+        )
+        let id = UUID()
+        availabilityObservation = AvailabilityObservation(
+            id: id,
+            action: action
+        )
+        return id
+    }
+
+    func cancelAvailabilityObservation(_ id: UUID) {
+        guard availabilityObservation?.id == id else { return }
+        availabilityObservation = nil
+    }
+
+    private func openAggregate() -> PreparedAggregate {
         let transaction = TabStructuralMutationTransaction(
             snapshot: snapshots.capture()
         )
@@ -101,30 +146,76 @@ final class TabStructuralCollectionMutationOwner {
     }
 
     func apply(
-        _ settlement: TabStructuralMutationTransaction.Settlement
-    ) {
+        _ settlement: TabStructuralMutationTransaction.Settlement,
+        from candidate: TabStructuralMutationTransaction
+    ) -> Bool {
+        guard settlingTransaction === candidate else { return false }
+        isApplyingSettlement = true
         switch settlement {
         case .committed:
             publisher.publish(settlement)
         case .rolledBack(let snapshot):
             snapshots.restore(snapshot)
         }
+        isApplyingSettlement = false
+        settlingTransaction = nil
+        settlingTarget = nil
+        publishAvailabilityIfNeeded()
+        return true
     }
 
     func seal(
         _ candidate: TabStructuralMutationTransaction
     ) -> TabStructuralMutationTransaction.Snapshot? {
-        guard transaction === candidate else { return nil }
+        guard transaction === candidate,
+              settlingTransaction == nil else { return nil }
         let target = snapshots.capture()
         transaction = nil
+        settlingTransaction = candidate
+        settlingTarget = target
         return target
     }
 
     func releaseOpen(
         _ candidate: TabStructuralMutationTransaction
     ) -> Bool {
-        guard transaction === candidate else { return false }
+        guard transaction === candidate,
+              settlingTransaction == nil else { return false }
         transaction = nil
+        settlingTransaction = candidate
+        settlingTarget = nil
+        return true
+    }
+
+    func discardReleased(
+        _ candidate: TabStructuralMutationTransaction
+    ) -> Bool {
+        guard settlingTransaction === candidate else { return false }
+        settlingTransaction = nil
+        settlingTarget = nil
+        publishAvailabilityIfNeeded()
+        return true
+    }
+
+    func abandonSettlement(
+        _ candidate: TabStructuralMutationTransaction
+    ) -> Bool {
+        discardReleased(candidate)
+    }
+
+    func compensateInvalidatedSettlement(
+        _ candidate: TabStructuralMutationTransaction,
+        source: TabStructuralMutationTransaction.Snapshot
+    ) -> Bool {
+        guard settlingTransaction === candidate,
+              let settlingTarget else { return false }
+        snapshots.restoreUncontended(
+            source: source,
+            target: settlingTarget
+        )
+        settlingTransaction = nil
+        self.settlingTarget = nil
+        publishAvailabilityIfNeeded()
         return true
     }
 
@@ -132,6 +223,12 @@ final class TabStructuralCollectionMutationOwner {
         _ candidate: TabStructuralMutationTransaction
     ) -> Bool {
         transaction === candidate
+    }
+
+    func ownsSettlement(
+        _ candidate: TabStructuralMutationTransaction
+    ) -> Bool {
+        settlingTransaction === candidate
     }
 
     func currentSnapshotMatches(
@@ -145,11 +242,13 @@ final class TabStructuralCollectionMutationOwner {
     }
 
     private func mutate(_ operation: () -> Void) {
-        if transaction == nil {
-            publisher.withTransaction(operation)
-        } else {
+        if transaction != nil {
             operation()
+            return
         }
+        beginForeignMutation()
+        publisher.withTransaction(operation)
+        endForeignMutation()
     }
 
     private func tabsDidChange() {
@@ -166,6 +265,38 @@ final class TabStructuralCollectionMutationOwner {
         } else {
             publisher.publish(effect)
         }
+    }
+
+    private func publishAvailabilityIfNeeded() {
+        guard transaction == nil,
+              settlingTransaction == nil,
+              foreignMutationDepth == 0,
+              let observation = availabilityObservation else { return }
+        availabilityObservation = nil
+        observation.action()
+    }
+
+    private func beginForeignMutation() {
+        let beginsOuterMutation = foreignMutationDepth == 0
+        foreignMutationDepth += 1
+        if beginsOuterMutation,
+           isApplyingSettlement == false,
+           let settlingTransaction,
+           let settlingTarget {
+            let source = settlingTransaction.discardInvalidated()
+            snapshots.restoreUncontended(
+                source: source,
+                target: settlingTarget
+            )
+            self.settlingTransaction = nil
+            self.settlingTarget = nil
+        }
+    }
+
+    private func endForeignMutation() {
+        precondition(foreignMutationDepth > 0)
+        foreignMutationDepth -= 1
+        publishAvailabilityIfNeeded()
     }
 
     private static func sortedTabs(_ tabs: [Tab]) -> [Tab] {

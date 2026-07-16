@@ -348,9 +348,8 @@ final class TabStructuralPersistenceService {
         dirtySet = TabStructuralDirtySet()
     }
 
-    /// Resets scheduling and dirty state after restored data replaced the live structure.
-    func prepareForRestoredState() {
-        markSnapshotCacheDirty()
+    /// Settles persistence bookkeeping after the installer invalidated its cache.
+    func settleAfterRestoredStateInstallation() {
         resetDirtySet()
         cancelScheduledStructuralPersistence()
     }

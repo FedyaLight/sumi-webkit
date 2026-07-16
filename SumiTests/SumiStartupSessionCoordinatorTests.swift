@@ -313,7 +313,6 @@ final class SumiStartupSessionCoordinatorTests: XCTestCase {
             dataServices: .unavailable()
         )
         let tabManager = browserManager.tabManager
-        tabManager.sumiSettings = settings
         browserManager.sumiSettings = settings
         browserManager.lastSessionWindowsStore = LastSessionWindowsStore(userDefaults: defaults.defaults)
 

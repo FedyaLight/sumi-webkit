@@ -91,8 +91,6 @@ final class BrowserAppOrchestrationOwner {
         nowPlayingController.configure(
             context: BrowserManagerRuntimeWiring.nativeNowPlayingRuntimeContext(for: browserManager)
         )
-        browserManager.tabManager.sumiSettings = settingsManager
-
         dependencies.startUpdater()
         keyboardShortcutManager.attach(
             actionRouter: browserManager.shortcutActionRouter,

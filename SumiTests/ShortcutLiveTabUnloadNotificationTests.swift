@@ -47,6 +47,7 @@ final class ShortcutLiveTabUnloadNotificationTests: XCTestCase {
         let windowState = BrowserWindowState()
         windowState.tabManager = tabManager
         windowState.currentSpaceId = space.id
+        tabManager.runtimePortsAttachmentOwner.detach()
         tabManager.runtimePortsAttachmentOwner.attach(
             TestRuntimePorts.make(
                 windowState: { [windowState] windowId in

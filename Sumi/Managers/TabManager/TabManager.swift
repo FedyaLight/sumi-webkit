@@ -8,7 +8,6 @@ import SwiftData
 class TabManager: ObservableObject {
     let runtimePortConnection: TabRuntimePortConnection
     var runtimePorts: RuntimePortRegistry? { runtimePortConnection.current }
-    weak var sumiSettings: SumiSettingsService?
     let context: ModelContext
     let structuralSnapshotStore: TabStructuralSnapshotStore
     let selectionStore: TabSelectionStore
@@ -30,6 +29,7 @@ class TabManager: ObservableObject {
     var shortcutPinCollectionStateOwner: ShortcutPinCollectionStateOwner { stateStore.shortcutPins }
     var transientTabRegistryOwner: TabTransientTabRegistryOwner { stateStore.transientTabs }
     let tabStructureEventBus: TabStructureEventBus
+    let startupRestorePolicy: TabStartupRestorePolicy
     let startupRestoreLifecycle: TabStartupRestoreLifecycle
 
     lazy var structureOwners = TabStructureOwnerBag(tabManager: self)
@@ -72,17 +72,22 @@ class TabManager: ObservableObject {
         regularTabs: regularTabCollectionOwner,
         presentation: shortcutPresentationOwner
     )
-    lazy var storeRestore = TabStoreRestoreService(
-        modelContainer: context.container,
-        structuralStore: structuralSnapshotStore,
+    lazy var restorePayloadApplier = TabRestorePayloadApplyService(
         tabFactory: tabFactory,
-        runtimePorts: { [weak self] in self?.runtimePorts },
-        structuralLookup: structuralLookupCoordinator,
-        loadLifecycle: startupRestoreLifecycle,
         structuralInstaller: structuralInstallOwner,
         runtimePreparation: runtimePreparationOwner,
         lazyRestore: lazyRestoreCoordinator,
         persistence: structuralPersistence
+    )
+    lazy var storeRestore = TabStoreRestoreService(
+        payloadLoader: TabRestoreLoader(container: context.container),
+        structuralStore: structuralSnapshotStore,
+        runtimeConnection: runtimePortConnection,
+        structuralRevision: { [weak self] in
+            self?.structuralLookupCoordinator.mutationRevision ?? 0
+        },
+        loadLifecycle: startupRestoreLifecycle,
+        payloadApplier: restorePayloadApplier
     )
     lazy var startupStateReset = TabStartupStateReset(
         state: stateStore,
@@ -122,17 +127,18 @@ class TabManager: ObservableObject {
         faviconCapabilities: BrowserFaviconCapabilities = TabDependencyIsolationDefaults.faviconCapabilities,
         visitedLinkStore: any BrowserVisitedLinkStoreManaging = TabDependencyIsolationDefaults.visitedLinkStore
     ) {
-        self.runtimePortConnection = TabRuntimePortConnection(runtimePorts)
+        self.runtimePortConnection = TabRuntimePortConnection()
         self.context = context
         let stateStore = TabStateStore()
         self.stateStore = stateStore
         let eventBus = tabStructureEventBus ?? TabStructureEventBus()
         self.tabStructureEventBus = eventBus
-        self.startupRestoreLifecycle = TabStartupRestoreLifecycle(
-            shouldLoadPersistedState: loadPersistedState,
-            automaticallyStartAfterRuntimeAttachment: automaticallyStartPersistedStateLoad,
-            eventBus: eventBus
+        self.startupRestorePolicy = TabStartupRestorePolicy(
+            isEnabled: loadPersistedState,
+            automaticallyStarts: automaticallyStartPersistedStateLoad,
+            requestedStructuralRevision: 0
         )
+        self.startupRestoreLifecycle = TabStartupRestoreLifecycle(eventBus: eventBus)
         self.faviconService = faviconService
         self.faviconCapabilities = faviconCapabilities
         self.visitedLinkStore = visitedLinkStore
@@ -171,40 +177,40 @@ class TabManager: ObservableObject {
         )
         lifecycleOwners.faviconPresentationRefreshOwner.startObserving()
         if let runtimePorts {
-            lifecycleOwners.runtimePortsAttachmentOwner.attach(runtimePorts)
+            precondition(
+                lifecycleOwners.runtimePortsAttachmentOwner.attach(runtimePorts)
+                    == .attached,
+                "Initial tab runtime ports must attach exactly once"
+            )
         }
     }
 
     deinit {
         MainActor.assumeIsolated {
+            if runtimePortConnection.current != nil {
+                precondition(lifecycleOwners.runtimePortsAttachmentOwner.detach())
+                precondition(runtimePortConnection.current == nil)
+            }
             lifecycleOwners.faviconPresentationRefreshOwner.stop()
             stateStore.removeAll()
             // Do not materialize the lazy structural owner bag while `self`
             // is already deallocating. If the lookup was used, its bag releases
             // the index immediately after this deinit; stateStore removal above
             // already drops the canonical tab graph.
-            runtimePortConnection.detach()
         }
         RuntimeDiagnostics.debug("Cleaned up all tab resources.", category: "TabManager")
     }
 }
 
 extension TabManager {
-    func installRuntimePorts(_ ports: RuntimePortRegistry) {
-        runtimePortConnection.attach(ports)
-    }
-
     /// Stops work that may resume through BrowserManager-backed ports after
     /// the browser root has begun deallocation. Lazy persistence services are
     /// touched only if startup restore already reached them.
     func detachBrowserRuntime() {
-        let canceledBeforeStoreRestore = startupRestoreLifecycle.cancelPendingStart()
-        if startupRestoreLifecycle.didStartPersistedStateLoad,
-           canceledBeforeStoreRestore == false {
-            storeRestore.cancelPendingRestore()
-            structuralPersistence.cancelPendingPersistence()
-        }
-        runtimePortConnection.detach()
+        precondition(
+            lifecycleOwners.runtimePortsAttachmentOwner.detach(),
+            "Browser tab runtime must detach before its ports deallocate"
+        )
     }
 
     func requireRuntimePorts() -> RuntimePortRegistry {

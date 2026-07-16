@@ -39,32 +39,34 @@ func makeInMemoryTabManager(
     },
     webViewLifecycle: TabManagerWebViewLifecycleService? = nil,
     webViewSessions: WebViewSessionRepository = WebViewSessionRepository(),
-    loadPersistedState: Bool = false
+    loadPersistedState: Bool = false,
+    attachRuntimePorts: Bool = true
 ) throws -> TabManager {
     let container = try makeInMemoryStartupModelContainer()
+    let runtimePorts = TestRuntimePorts.make(
+        currentProfileId: currentProfileId,
+        defaultProfileId: defaultProfileId,
+        profileExists: profileExists,
+        profile: profile,
+        windowState: windowState,
+        windows: windows,
+        windowStates: { windows().map(\.1) },
+        updateTabVisibility: updateTabVisibility,
+        webViewLifecycle: webViewLifecycle
+            ?? TestRuntimePorts.webViewLifecycle(
+                retirement: .rejecting,
+                materializeVisibleTabWebViewIfNeeded: materializeVisibleTabWebViewIfNeeded,
+                unloadTab: unloadTab,
+                requireRemoveAllWebViews: requireRemoveAllWebViews,
+                primaryTrackedWindowId: primaryTrackedWindowId,
+                executeProfileAssignment: executeProfileAssignment
+            ),
+        visibleSplitTabIds: visibleSplitTabIds,
+        notifyTabClosedIfLoaded: notifyTabClosedIfLoaded,
+        persistWindowSession: persistWindowSession
+    )
     return TabManager(
-        runtimePorts: TestRuntimePorts.make(
-            currentProfileId: currentProfileId,
-            defaultProfileId: defaultProfileId,
-            profileExists: profileExists,
-            profile: profile,
-            windowState: windowState,
-            windows: windows,
-            windowStates: { windows().map(\.1) },
-            updateTabVisibility: updateTabVisibility,
-            webViewLifecycle: webViewLifecycle
-                ?? TestRuntimePorts.webViewLifecycle(
-                    retirement: .rejecting,
-                    materializeVisibleTabWebViewIfNeeded: materializeVisibleTabWebViewIfNeeded,
-                    unloadTab: unloadTab,
-                    requireRemoveAllWebViews: requireRemoveAllWebViews,
-                    primaryTrackedWindowId: primaryTrackedWindowId,
-                    executeProfileAssignment: executeProfileAssignment
-                ),
-            visibleSplitTabIds: visibleSplitTabIds,
-            notifyTabClosedIfLoaded: notifyTabClosedIfLoaded,
-            persistWindowSession: persistWindowSession
-        ),
+        runtimePorts: attachRuntimePorts ? runtimePorts : nil,
         context: container.mainContext,
         webViewSessions: webViewSessions,
         loadPersistedState: loadPersistedState

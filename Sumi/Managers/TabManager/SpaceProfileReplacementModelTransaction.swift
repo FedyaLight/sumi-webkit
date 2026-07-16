@@ -7,36 +7,32 @@ final class SpaceProfileReplacementModelParticipant:
     SpaceProfileWebViewReplacementTransaction {
     private enum ModelError: Error { case stale }
     private weak var transaction: SpaceProfileTransaction?
-    private weak var owner: SpaceProfileTransitionService?
-    private let intent: DeferredWebViewSpaceProfileAssignmentIntent
-    private let revision: UInt64
+    private weak var owner: SpaceProfileTransitionRepository?
     private var didClaim = false
 
     init(
         transaction: SpaceProfileTransaction,
-        owner: SpaceProfileTransitionService,
-        intent: DeferredWebViewSpaceProfileAssignmentIntent,
-        revision: UInt64
+        owner: SpaceProfileTransitionRepository
     ) {
         self.transaction = transaction
         self.owner = owner
-        self.intent = intent
-        self.revision = revision
     }
 
     func validateForStaging() -> Bool {
         guard let transaction, owns(transaction) else { return false }
-        return transaction.isCurrentPending(revision: revision)
+        return transaction.isCurrentPending(revision: transaction.intent.revision)
     }
 
     func exactTabsForRuntime() -> [Tab]? {
         guard let transaction, owns(transaction) else { return nil }
-        return transaction.exactParticipantTabs(revision: revision)
+        return transaction.exactParticipantTabs(
+            revision: transaction.intent.revision
+        )
     }
 
     func stage() throws {
         guard let transaction, owns(transaction),
-              transaction.stage(revision: revision) else {
+              transaction.stage(revision: transaction.intent.revision) else {
             throw ModelError.stale
         }
     }
@@ -71,12 +67,11 @@ final class SpaceProfileReplacementModelParticipant:
 
     func publishCommit() {
         guard let transaction, owns(transaction) else { return }
-        let intent = intent
         transaction.publishCommit { [weak owner, weak transaction] in
             guard let transaction else { return }
-            owner?.replacementModelDidPublishCommit(
+            owner?.replacementModelDidPublish(
                 transaction,
-                intent: intent
+                structuralMutation: false
             )
         }
     }
@@ -90,7 +85,10 @@ final class SpaceProfileReplacementModelParticipant:
     func publishRollback() {
         guard let transaction, owns(transaction) else { return }
         transaction.publishRolledBackModel()
-        owner?.replacementModelDidPublishRollback(transaction, intent: intent)
+        owner?.replacementModelDidPublish(
+            transaction,
+            structuralMutation: true
+        )
     }
 
     func canSettleTerminalDrain() -> Bool {
@@ -101,14 +99,11 @@ final class SpaceProfileReplacementModelParticipant:
     func settleTerminalDrain() -> Bool {
         guard let transaction, owns(transaction),
               transaction.settleTerminalDrain() else { return false }
-        owner?.replacementModelDidSettleTerminalDrain(
-            transaction,
-            intent: intent
-        )
+        owner?.replacementModelDidSettleTerminalDrain(transaction)
         return true
     }
 
     private func owns(_ transaction: SpaceProfileTransaction) -> Bool {
-        owner?.ownsReplacementModel(transaction, intent: intent) == true
+        owner?.transaction(for: transaction.intent) === transaction
     }
 }

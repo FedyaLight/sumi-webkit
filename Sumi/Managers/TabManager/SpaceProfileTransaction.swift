@@ -18,6 +18,8 @@ final class SpaceProfileTransaction {
     }
 
     let intent: DeferredWebViewSpaceProfileAssignmentIntent
+    let targetProfile: Profile
+    let runtimeLease: TabRuntimePortLease
     private let profileMutation: SpaceProfileMutationTransaction
     private let tabParticipants: [TabParticipant]
     private let membership: TabCollectionMembershipOwner
@@ -27,8 +29,10 @@ final class SpaceProfileTransaction {
 
     init?(
         intent: DeferredWebViewSpaceProfileAssignmentIntent,
+        targetProfile: Profile,
         tabs: [Tab],
         profileMutation: SpaceProfileMutationTransaction,
+        runtimeLease: TabRuntimePortLease,
         membership: TabCollectionMembershipOwner,
         structuralLookup: TabStructuralLookupCoordinator
     ) {
@@ -48,6 +52,8 @@ final class SpaceProfileTransaction {
             participants.append(TabParticipant(tab: tab, intent: tabIntent))
         }
         self.intent = intent
+        self.targetProfile = targetProfile
+        self.runtimeLease = runtimeLease
         self.profileMutation = profileMutation
         tabParticipants = participants
         self.membership = membership

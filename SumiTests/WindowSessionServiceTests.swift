@@ -425,8 +425,12 @@ final class WindowSessionServiceTests: XCTestCase {
 
     func testActiveEssentialShortcutSurvivesPreloadSetupAndMaterializesAfterTabLoad() throws {
         let tabManager = try makeInMemoryTabManager(loadPersistedState: false)
-        let space = Space(id: UUID(), name: "Primary")
         let profileId = UUID()
+        let space = Space(
+            id: UUID(),
+            name: "Primary",
+            profileId: profileId
+        )
         let pin = ShortcutPin(
             id: UUID(),
             role: .essential,

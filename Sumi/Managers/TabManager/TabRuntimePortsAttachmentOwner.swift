@@ -2,114 +2,128 @@ import Foundation
 
 @MainActor
 final class TabRuntimePortsAttachmentOwner {
-    struct Dependencies {
-        let setRuntimePorts: @MainActor (RuntimePortRegistry) -> Void
-        let allTabs: @MainActor () -> [Tab]
-        let prepareTabForRuntime: @MainActor (Tab) -> Void
-        let pendingPinnedWithoutProfileSnapshot: @MainActor () -> [ShortcutPin]
-        let drainPendingPinnedWithoutProfile: @MainActor () -> [ShortcutPin]
-        let appendPinnedPins: @MainActor (UUID, [ShortcutPin]) -> Void
-        let sendObjectWillChange: @MainActor () -> Void
-        let scheduleStructuralPersistence: @MainActor () -> Void
-        let currentTab: @MainActor () -> Tab?
-        let replaceCurrentTab: @MainActor (Tab?) -> Void
-        let currentSpace: @MainActor () -> Space?
-        let reconcileSpaceProfilesIfNeeded: @MainActor () -> Void
-        let startPersistedStateLoadAfterRuntimeAttachmentIfConfigured: @MainActor () -> Void
+    enum Outcome: Equatable {
+        case attached
+        case busy
+        case superseded
     }
 
-    private let dependencies: Dependencies
-
-    init(dependencies: Dependencies) {
-        self.dependencies = dependencies
+    private enum State {
+        case detached
+        case attaching
+        case bootstrapping(TabRuntimePortLease)
+        case attached(TabRuntimePortLease)
+        case detaching(TabRuntimePortLease)
     }
 
-    func attach(_ ports: RuntimePortRegistry) {
-        dependencies.setRuntimePorts(ports)
+    private let connection: TabRuntimePortConnection
+    private let bootstrap: TabRuntimeAttachmentBootstrap
+    private let settlement: TabRuntimeAttachmentSettlement
+    private var state = State.detached
 
-        let knownTabs = dependencies.allTabs()
-        for tab in knownTabs {
-            dependencies.prepareTabForRuntime(tab)
-        }
-
-        let pendingPins = dependencies.pendingPinnedWithoutProfileSnapshot()
-        if let currentProfileId = ports.currentProfileId,
-           !pendingPins.isEmpty {
-            dependencies.sendObjectWillChange()
-            let drainedPins = dependencies.drainPendingPinnedWithoutProfile()
-            dependencies.appendPinnedPins(currentProfileId, drainedPins)
-            dependencies.scheduleStructuralPersistence()
-        }
-
-        if let current = dependencies.currentTab(),
-           let match = knownTabs.first(where: { $0.id == current.id }) {
-            dependencies.replaceCurrentTab(match)
-        }
-
-        if let space = dependencies.currentSpace() {
-            ports.syncWorkspaceThemeAcrossWindows(for: space, animate: false)
-        }
-
-        dependencies.reconcileSpaceProfilesIfNeeded()
-        dependencies.startPersistedStateLoadAfterRuntimeAttachmentIfConfigured()
+    var canAttach: Bool {
+        if case .detached = state { return true }
+        return false
     }
-}
 
-extension TabRuntimePortsAttachmentOwner.Dependencies {
-    @MainActor
-    static func live(tabManager: TabManager) -> Self {
-        Self(
-            setRuntimePorts: { [weak tabManager] ports in
-                tabManager?.installRuntimePorts(ports)
-            },
-            allTabs: { [weak tabManager] in
-                tabManager?.tabCollectionMembershipOwner.allTabs() ?? []
-            },
-            prepareTabForRuntime: { [weak tabManager] tab in
-                tabManager?.runtimePreparationOwner.prepare(tab)
-            },
-            pendingPinnedWithoutProfileSnapshot: { [weak tabManager] in
-                tabManager?.shortcutPinCollectionStateOwner.pendingPinnedWithoutProfileSnapshot() ?? []
-            },
-            drainPendingPinnedWithoutProfile: { [weak tabManager] in
-                tabManager?.shortcutPinCollectionStateOwner.drainPendingPinnedWithoutProfile() ?? []
-            },
-            appendPinnedPins: { [weak tabManager] profileId, pins in
-                tabManager?.shortcutPinStoreOwner.withPinnedArray(for: profileId) { arr in
-                    arr.append(contentsOf: pins)
-                }
-            },
-            sendObjectWillChange: { [weak tabManager] in
-                tabManager?.objectWillChange.send()
-            },
-            scheduleStructuralPersistence: { [weak tabManager] in
-                tabManager?.structuralPersistence.scheduleStructuralPersistence()
-            },
-            currentTab: { [weak tabManager] in
-                tabManager?.selectionStateOwner.currentTab
-            },
-            replaceCurrentTab: { [weak tabManager] tab in
-                tabManager?.selectionStateOwner.replaceCurrentTab(tab)
-            },
-            currentSpace: { [weak tabManager] in
-                tabManager?.spaceStateOwner.currentSpace
-            },
-            reconcileSpaceProfilesIfNeeded: { [weak tabManager] in
-                tabManager?.lifecycleOwners.spaceProfileReconciliation
-                    .reconcileIfNeeded()
-            },
-            startPersistedStateLoadAfterRuntimeAttachmentIfConfigured: { [weak tabManager] in
-                guard let tabManager else { return }
-                tabManager.startupRestoreLifecycle
-                    .startAfterRuntimeAttachmentIfConfigured(
-                        runtimeIsAttached: tabManager.runtimePorts != nil,
-                        restore: { [weak tabManager] revision in
-                            tabManager?.storeRestore.loadFromStore(
-                                expectedStructuralRevision: revision
-                            )
-                        }
-                    )
+    init(
+        connection: TabRuntimePortConnection,
+        bootstrap: TabRuntimeAttachmentBootstrap,
+        settlement: TabRuntimeAttachmentSettlement
+    ) {
+        self.connection = connection
+        self.bootstrap = bootstrap
+        self.settlement = settlement
+    }
+
+    @discardableResult
+    func attach(_ ports: RuntimePortRegistry) -> Outcome {
+        guard canAttach else { return .busy }
+        state = .attaching
+        connection.attach(ports)
+        let lease = connection.captureLease()
+        guard case .attaching = state, connection.accepts(lease) else {
+            state = .detached
+            return .superseded
+        }
+        state = .bootstrapping(lease)
+
+        guard case .completed = bootstrap.run(using: lease), owns(lease) else {
+            detachIfCurrent(lease)
+            return .superseded
+        }
+
+        state = .attached(lease)
+        switch settlement.finish(using: lease) {
+        case .completed:
+            return owns(lease) ? .attached : .superseded
+        case .superseded:
+            return .superseded
+        }
+    }
+
+    @discardableResult
+    func detach() -> Bool {
+        switch state {
+        case .detached:
+            return true
+        case .attaching, .detaching:
+            return false
+        case .bootstrapping, .attached:
+            return detachCurrentIfPossible()
+        }
+    }
+
+    func startPersistedStateRestoreIfNeeded() {
+        guard let lease = currentLease, owns(lease) else { return }
+        settlement.startPersistedStateRestoreIfNeeded(using: lease)
+    }
+
+    private var currentLease: TabRuntimePortLease? {
+        switch state {
+        case .detached, .attaching:
+            return nil
+        case .bootstrapping(let lease), .attached(let lease),
+             .detaching(let lease):
+            return lease
+        }
+    }
+
+    private func owns(_ lease: TabRuntimePortLease) -> Bool {
+        guard let currentLease else { return false }
+        return connection.sameAttachment(currentLease, lease)
+            && connection.accepts(lease)
+    }
+
+    @discardableResult
+    private func detachCurrentIfPossible() -> Bool {
+        guard let lease = currentLease, owns(lease) else { return false }
+        let previousState = state
+        state = .detaching(lease)
+        guard settlement.prepareForDetach() else {
+            if ownsDetachingClaim(lease), connection.accepts(lease) {
+                state = previousState
+            } else {
+                state = .detached
             }
-        )
+            return false
+        }
+        guard ownsDetachingClaim(lease), connection.accepts(lease) else {
+            state = .detached
+            return false
+        }
+        connection.detach()
+        state = .detached
+        return true
+    }
+
+    private func ownsDetachingClaim(_ lease: TabRuntimePortLease) -> Bool {
+        guard case .detaching(let claimedLease) = state else { return false }
+        return connection.sameAttachment(claimedLease, lease)
+    }
+
+    private func detachIfCurrent(_ lease: TabRuntimePortLease) {
+        guard owns(lease) else { return }
+        _ = detachCurrentIfPossible()
     }
 }

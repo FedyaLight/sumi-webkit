@@ -131,6 +131,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
             loadPersistedState: true,
             automaticallyStartPersistedStateLoad: false
         )
+        tabManager.runtimePortsAttachmentOwner.detach()
         tabManager.runtimePortsAttachmentOwner.attach(TestRuntimePorts.inactive)
 
         let liveSpace = tabManager.spaceServices.catalog.createSpace(
@@ -143,14 +144,8 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
             activate: true
         )
 
-        tabManager.startupRestoreLifecycle.startIfNeeded(
-            runtimeIsAttached: tabManager.runtimePorts != nil,
-            restore: { [weak tabManager] revision in
-                tabManager?.storeRestore.loadFromStore(
-                    expectedStructuralRevision: revision
-                )
-            }
-        )
+        tabManager.runtimePortsAttachmentOwner
+            .startPersistedStateRestoreIfNeeded()
         for _ in 0..<50
         where tabManager.startupRestoreLifecycle.hasLoadedInitialData == false {
             await Task.yield()
@@ -177,28 +172,24 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
             webViewSessions: webViewSessions,
             loadPersistedState: false
         )
+        tabManager.runtimePortsAttachmentOwner.detach()
         tabManager.runtimePortsAttachmentOwner.attach(TestRuntimePorts.inactive)
+        let payloadApplier = TabRestorePayloadApplyService(
+            tabFactory: tabManager.tabFactory,
+            structuralInstaller: tabManager.structuralInstallOwner,
+            runtimePreparation: tabManager.runtimePreparationOwner,
+            lazyRestore: tabManager.lazyRestoreCoordinator,
+            persistence: tabManager.structuralPersistence
+        )
         let restoreService = TabStoreRestoreService(
             payloadLoader: payloadLoader,
             structuralStore: tabManager.structuralSnapshotStore,
-            tabFactory: tabManager.tabFactory,
-            defaultProfileId: { [weak tabManager] in
-                tabManager?.runtimePorts?.defaultProfileId
-            },
+            runtimeConnection: tabManager.runtimePortConnection,
             structuralRevision: { [weak tabManager] in
                 tabManager?.structuralLookupCoordinator.mutationRevision ?? 0
             },
             loadLifecycle: tabManager.startupRestoreLifecycle,
-            structuralInstaller: tabManager.structuralInstallOwner,
-            runtimePreparation: tabManager.runtimePreparationOwner,
-            lazyRestore: tabManager.lazyRestoreCoordinator,
-            persistence: tabManager.structuralPersistence,
-            syncWorkspaceTheme: { [weak tabManager] space in
-                tabManager?.runtimePorts?.syncWorkspaceThemeAcrossWindows(
-                    for: space,
-                    animate: false
-                )
-            }
+            payloadApplier: payloadApplier
         )
 
         let restoreTask = Task { @MainActor in
@@ -274,6 +265,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
             context: container.mainContext,
             loadPersistedState: false
         )
+        tabManager.runtimePortsAttachmentOwner.detach()
         tabManager.runtimePortsAttachmentOwner.attach(
             TestRuntimePorts.make(
                 currentProfileId: { profile.id },
@@ -1409,6 +1401,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
         let runtime = webViewLifecycle.map {
             TestRuntimePorts.make(webViewLifecycle: $0)
         } ?? TestRuntimePorts.inactive
+        tabManager.runtimePortsAttachmentOwner.detach()
         tabManager.runtimePortsAttachmentOwner.attach(runtime)
         return tabManager
     }

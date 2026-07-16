@@ -88,6 +88,7 @@ final class TabSpaceServiceIntegrationTests: XCTestCase {
             profileId: currentProfileId
         )
         tabManager.spaceStateOwner.replaceCurrentSpace(defaultProfileSpace)
+        tabManager.runtimePortsAttachmentOwner.detach()
         tabManager.runtimePortsAttachmentOwner.attach(
             TestRuntimePorts.make(
                 currentProfileId: { currentProfileId },
@@ -113,6 +114,7 @@ final class TabSpaceServiceIntegrationTests: XCTestCase {
         )
         let unassigned = Space(name: "Unassigned")
         tabManager.spaceStateOwner.replaceSpaces([unassigned])
+        tabManager.runtimePortsAttachmentOwner.detach()
         tabManager.runtimePortsAttachmentOwner.attach(
             TestRuntimePorts.make(
                 currentProfileId: { currentProfileId },
@@ -137,6 +139,7 @@ final class TabSpaceServiceIntegrationTests: XCTestCase {
         let tabManager = try makeInMemoryTabManager()
         let currentProfileId = UUID()
         tabManager.spaceStateOwner.removeAll()
+        tabManager.runtimePortsAttachmentOwner.detach()
         tabManager.runtimePortsAttachmentOwner.attach(
             TestRuntimePorts.make(currentProfileId: { currentProfileId })
         )
@@ -163,6 +166,7 @@ final class TabSpaceServiceIntegrationTests: XCTestCase {
         let tabManager = try makeInMemoryTabManager()
         let space = tabManager.spaceServices.catalog.createSpace(name: "Work")
         let spy = NotificationPresentingSpy()
+        tabManager.runtimePortsAttachmentOwner.detach()
         tabManager.runtimePortsAttachmentOwner.attach(
             TestRuntimePorts.make(
                 notifications: { spy }

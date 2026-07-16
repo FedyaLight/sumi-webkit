@@ -1,5 +1,6 @@
-@testable import Sumi
 import XCTest
+
+@testable import Sumi
 import SumiDomain
 
 @MainActor
@@ -391,7 +392,6 @@ final class SettingsNavigationTests: XCTestCase {
 
         browserManager.windowRegistry = windowRegistry
         browserManager.sumiSettings = settings
-        browserManager.tabManager.sumiSettings = settings
         browserManager.tabManager.spaceStateOwner.replaceSpaces([space])
         browserManager.tabManager.spaceStateOwner.replaceCurrentSpace(space)
 

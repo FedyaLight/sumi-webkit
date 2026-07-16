@@ -138,6 +138,12 @@ final class ShortcutPin: NSObject, ObservableObject, Identifiable {
         )
     }
 
+    static func reindexed(_ pins: [ShortcutPin]) -> [ShortcutPin] {
+        pins.enumerated().map { index, pin in
+            pin.refreshed(index: index)
+        }
+    }
+
     func moved(toFolderId folderId: UUID?) -> ShortcutPin {
         ShortcutPin(
             id: id,

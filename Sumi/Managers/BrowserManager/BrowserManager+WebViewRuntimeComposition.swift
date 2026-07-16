@@ -117,8 +117,7 @@ extension BrowserManager {
                 BrowserManager.requireBrowserManager(
                     browserManager,
                     operation: "validate deferred space profile assignment"
-                ).tabManager.profileAssignments.spaces
-                    .isCurrentDeferred(intent)
+                ).tabManager.profileAssignments.spaceLifecycle.isCurrent(intent)
             },
             executeSpaceProfileAssignment: {
                 [weak browserManager]

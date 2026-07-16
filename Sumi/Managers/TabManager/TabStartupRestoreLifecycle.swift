@@ -1,78 +1,93 @@
 import Foundation
 
-/// Owns the one-shot startup restore gate and initial-data readiness event.
-/// Store loading remains in `TabStoreRestoreService`; this lifecycle decides
-/// whether and when that load is admitted.
+/// Owns exact restore phase and terminal initial-data readiness.
 @MainActor
 final class TabStartupRestoreLifecycle {
+    private enum Phase {
+        case idle
+        case loading(TabStartupRestoreAttempt)
+        case committed(TabStartupRestoreAttempt)
+        case completed
+    }
     private let eventBus: TabStructureEventBus
-    private let shouldLoadPersistedState: Bool
-    private let automaticallyStartAfterRuntimeAttachment: Bool
-    private let requestedStructuralRevision: UInt64?
-
-    private(set) var hasLoadedInitialData = false
-    private(set) var didStartPersistedStateLoad = false
-    private var pendingStartTask: Task<Void, Never>?
-
-    init(
-        shouldLoadPersistedState: Bool,
-        automaticallyStartAfterRuntimeAttachment: Bool,
-        requestedStructuralRevision: UInt64 = 0,
-        eventBus: TabStructureEventBus
-    ) {
-        self.shouldLoadPersistedState = shouldLoadPersistedState
-        self.automaticallyStartAfterRuntimeAttachment =
-            automaticallyStartAfterRuntimeAttachment
-        self.requestedStructuralRevision = shouldLoadPersistedState
-            ? requestedStructuralRevision
-            : nil
+    private var generation: UInt64 = 0
+    private var phase = Phase.idle
+    var hasLoadedInitialData: Bool {
+        if case .completed = phase { return true }
+        return false
+    }
+    var didStartPersistedStateLoad: Bool {
+        if case .idle = phase { return false }
+        return true
+    }
+    init(eventBus: TabStructureEventBus) {
         self.eventBus = eventBus
     }
-
-    func markLoadStarted() {
-        hasLoadedInitialData = false
-        eventBus.resetInitialDataLoaded()
-    }
-
     func markLoadFinished() {
-        hasLoadedInitialData = true
+        phase = .completed
         eventBus.publishInitialDataLoaded()
     }
-
-    func startIfNeeded(
-        runtimeIsAttached: Bool,
-        restore: @escaping @MainActor (UInt64) -> Void
-    ) {
-        guard shouldLoadPersistedState,
-              !didStartPersistedStateLoad,
-              let requestedStructuralRevision
-        else { return }
-        precondition(
-            runtimeIsAttached,
-            "Persisted tab restore requires runtime ports to be attached first"
+    func makeAttempt(
+        revision: UInt64,
+        using attachment: TabRuntimeAttachmentWitness
+    ) -> TabStartupRestoreAttempt? {
+        guard case .idle = phase else { return nil }
+        generation &+= 1
+        return TabStartupRestoreAttempt(
+            generation: generation,
+            expectedStructuralRevision: revision,
+            runtimeAttachment: attachment
         )
-        didStartPersistedStateLoad = true
-        pendingStartTask = Task { @MainActor [weak self] in
-            guard Task.isCancelled == false else { return }
-            self?.pendingStartTask = nil
-            restore(requestedStructuralRevision)
-        }
     }
-
-    /// Returns true when restore had not yet reached TabStoreRestoreService.
-    @discardableResult
-    func cancelPendingStart() -> Bool {
-        guard let pendingStartTask else { return false }
-        pendingStartTask.cancel()
-        self.pendingStartTask = nil
+    func activate(_ attempt: TabStartupRestoreAttempt) -> Bool {
+        guard case .idle = phase, attempt.isRuntimeCurrent() else { return false }
+        phase = .loading(attempt)
+        eventBus.resetInitialDataLoaded()
+        return true
+    }
+    func beginDirectLoad(
+        using attachment: TabRuntimeAttachmentWitness,
+        expectedStructuralRevision revision: UInt64
+    ) -> TabStartupRestoreAttempt? {
+        guard attachment.isCurrent() else { return nil }
+        if case .completed = phase {
+            phase = .idle
+        }
+        guard let attempt = makeAttempt(
+            revision: revision,
+            using: attachment
+        ) else { return nil }
+        return activate(attempt) ? attempt : nil
+    }
+    func admitsInstall(_ attempt: TabStartupRestoreAttempt) -> Bool {
+        guard case .loading(let current) = phase else { return false }
+        return current.matches(attempt) && attempt.isRuntimeCurrent()
+    }
+    func markStructuralCommit(_ attempt: TabStartupRestoreAttempt) -> Bool {
+        guard admitsInstall(attempt) else { return false }
+        phase = .committed(attempt)
         return true
     }
 
-    func startAfterRuntimeAttachmentIfConfigured(
-        runtimeIsAttached: Bool,
-        restore: @escaping @MainActor (UInt64) -> Void
-    ) {
-        guard automaticallyStartAfterRuntimeAttachment else { return }
-        startIfNeeded(runtimeIsAttached: runtimeIsAttached, restore: restore)
+    func ownsCommitted(_ attempt: TabStartupRestoreAttempt) -> Bool {
+        guard case .committed(let current) = phase else { return false }
+        return current.matches(attempt)
+    }
+
+    func finish(_ attempt: TabStartupRestoreAttempt) -> Bool {
+        switch phase {
+        case .loading where admitsInstall(attempt),
+             .committed where ownsCommitted(attempt):
+            markLoadFinished()
+            return true
+        case .idle, .loading, .committed, .completed:
+            return false
+        }
+    }
+
+    func revokeLoadingAttempt() -> TabStartupRestoreAttempt? {
+        guard case .loading(let attempt) = phase else { return nil }
+        phase = .idle
+        return attempt
     }
 }

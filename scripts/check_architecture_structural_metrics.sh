@@ -15,6 +15,8 @@ guard_initialize "$repo_root"
 role_budgets=(
   "BrowserManager|Sumi/Managers/BrowserManager/BrowserManager.swift|200|-"
   "TabManager|Sumi/Managers/TabManager/TabManager.swift|220|-"
+  "Tab store restore orchestration|Sumi/Managers/TabManager/TabStoreRestoreService.swift|260|7"
+  "Tab restore payload apply|Sumi/Managers/TabManager/TabRestorePayloadApplyService.swift|180|5"
   "Tab model|Sumi/Models/Tab/Tab.swift|704|-"
   "ExtensionManager transition debt|Sumi/Managers/ExtensionManager/ExtensionManager.swift|1050|-"
   "Tab extension runtime transition debt|Sumi/Models/Tab/TabExtensionPageRuntimeOwner.swift|1000|-"
@@ -94,7 +96,10 @@ role_budgets=(
   "Space removal|Sumi/Managers/TabManager/SpaceRemovalService.swift|75|6"
   "Space activation|Sumi/Managers/TabManager/SpaceActivationService.swift|160|6"
   "Tab creation placement|Sumi/Managers/TabManager/TabCreationPlacementService.swift|135|5"
-  "Space profile transition|Sumi/Managers/TabManager/SpaceProfileTransitionService.swift|355|3"
+  "Space profile transition service|Sumi/Managers/TabManager/SpaceProfileTransitionService.swift|200|3"
+  "Space profile transition repository|Sumi/Managers/TabManager/SpaceProfileTransitionRepository.swift|300|3"
+  "Space profile transition publication|Sumi/Managers/TabManager/SpaceProfileTransitionPublication.swift|50|4"
+  "Space profile transition availability|Sumi/Managers/TabManager/SpaceProfileTransitionAvailability.swift|60|0"
   "Space content retirement|Sumi/Managers/TabManager/SpaceContentRetirementService.swift|80|5"
   "Space content retirement transaction|Sumi/Managers/TabManager/SpaceContentRetirementTransaction.swift|65|4"
   "Space split-group retirement|Sumi/Managers/TabManager/SpaceSplitGroupRetirementService.swift|65|2"
@@ -217,6 +222,32 @@ for budget in "${role_budgets[@]}"; do
       "$maximum_dependencies"
   fi
 done
+
+space_profile_transition_topology_lines="$(
+  guard_sum_lines \
+    Sumi/Managers/TabManager/SpaceProfileTransitionService.swift \
+    Sumi/Managers/TabManager/SpaceProfileTransitionAdmission.swift \
+    Sumi/Managers/TabManager/SpaceProfileTransitionRepository.swift \
+    Sumi/Managers/TabManager/SpaceProfileTransitionPublication.swift \
+    Sumi/Managers/TabManager/SpaceProfileTransitionAvailability.swift
+)"
+guard_max \
+  'Space profile transition complete topology LOC' \
+  "$space_profile_transition_topology_lines" \
+  600
+
+startup_restore_topology_lines="$(
+  guard_sum_lines \
+    Sumi/Managers/TabManager/TabStartupRestoreAttempt.swift \
+    Sumi/Managers/TabManager/TabStartupRestoreLifecycle.swift \
+    Sumi/Managers/TabManager/TabRuntimeAttachmentRestoreStarter.swift \
+    Sumi/Managers/TabManager/TabStoreRestoreService.swift \
+    Sumi/Managers/TabManager/TabRestorePayloadApplyService.swift
+)"
+guard_max \
+  'Startup restore complete topology LOC' \
+  "$startup_restore_topology_lines" \
+  600
 
 for budget in "${stored_state_budgets[@]}"; do
   IFS='|' read -r label file maximum_state <<< "$budget"
