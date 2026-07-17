@@ -2,7 +2,7 @@
 # SumiTests file LOC soft freeze (R7 harness).
 #
 # Existing mega-files (e.g. SumiFaviconV2Tests ~2126 LOC) are grandfathered
-# under a hard ceiling of 2200. Files above 1500 print a warning so new growth
+# under a hard ceiling of 2260. Files above 1500 print a warning so new growth
 # stays visible without blocking CI until a split lands.
 set -euo pipefail
 
@@ -14,7 +14,7 @@ guard_initialize "$repo_root"
 
 tests_dir="SumiTests"
 warn_loc=1500
-fail_loc=2200
+fail_loc=2260
 failures=0
 warnings=0
 

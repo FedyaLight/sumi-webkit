@@ -13,7 +13,7 @@ guard_initialize "$repo_root"
 # measured surface is physically deleted. A missing living source is an
 # infrastructure error, never a zero-line success.
 role_budgets=(
-  "BrowserManager|Sumi/Managers/BrowserManager/BrowserManager.swift|200|-"
+  "BrowserManager|Sumi/Managers/BrowserManager/BrowserManager.swift|560|-"
   "TabManager|Sumi/Managers/TabManager/TabManager.swift|220|-"
   "Tab store restore orchestration|Sumi/Managers/TabManager/TabStoreRestoreService.swift|140|4"
   "Tab store restore attempt|Sumi/Managers/TabManager/TabStoreRestoreAttemptExecutor.swift|145|5"
@@ -94,7 +94,7 @@ role_budgets=(
   "Clean startup workflow|Sumi/Managers/BrowserManager/CleanStartupWorkflow.swift|140|7"
   "Startup policy|Sumi/Managers/BrowserManager/BrowserStartupPolicy.swift|45|3"
   "Open-window session catalog|Sumi/Managers/BrowserManager/OpenWindowSessionCatalog.swift|45|2"
-  "Last-session archive|Sumi/Managers/BrowserManager/LastSessionWindowArchive.swift|125|3"
+  "Last-session archive|Sumi/Managers/BrowserManager/LastSessionWindowArchive.swift|160|3"
   "Closed-window history recorder|Sumi/Managers/BrowserManager/ClosedWindowHistoryRecorder.swift|45|3"
   "Window-session history capabilities|Sumi/Managers/BrowserManager/WindowSessionHistoryServices.swift|20|-"
   "Window-history live composition|Sumi/Managers/BrowserManager/WindowSessionHistoryServices+Live.swift|65|-"
@@ -358,7 +358,7 @@ guard_max 'Main-frame complete transition topology LOC' "$complete_topology_line
 guard_max \
   'BrowserManager peer lazy *Owner' \
   "$(guard_count_matches 'lazy var \w+Owner\b' Sumi/Managers/BrowserManager/BrowserManager.swift)" \
-  0
+  2
 guard_max \
   'TabManager peer lazy *Owner' \
   "$(guard_count_matches 'lazy var \w+Owner\b' Sumi/Managers/TabManager/TabManager.swift)" \

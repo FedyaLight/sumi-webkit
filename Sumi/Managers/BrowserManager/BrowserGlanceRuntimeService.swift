@@ -3,8 +3,10 @@ import WebKit
 
 @MainActor
 enum BrowserGlanceRuntimeService {
-    static func runtime(for browserManager: BrowserManager) -> GlanceManager.Runtime {
-        let splitQuery = browserManager.splitQuery
+    static func runtime(
+        for browserManager: BrowserManager,
+        splitQuery: WindowSplitQuery
+    ) -> GlanceManager.Runtime {
         let emptySplitCreation = browserManager.splitEmptyCreation
         let webViewCompositor = browserManager.webViewRuntime.compositorRuntime
         let untrackedMaterialization = browserManager.webViewRuntime

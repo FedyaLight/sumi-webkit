@@ -13,6 +13,18 @@ guard_initialize "$repo_root"
 router='Sumi/Managers/KeyboardShortcutManager/BrowserShortcutActionRouter.swift'
 composition='Sumi/Managers/KeyboardShortcutManager/BrowserShortcutActionComposition.swift'
 manager='Sumi/Managers/KeyboardShortcutManager/KeyboardShortcutManager.swift'
+page_dispatcher='Sumi/Managers/KeyboardShortcutManager/BrowserShortcutPageCommandDispatcher.swift'
+tab_dispatcher='Sumi/Managers/KeyboardShortcutManager/BrowserShortcutTabCommandDispatcher.swift'
+window_space_dispatcher='Sumi/Managers/KeyboardShortcutManager/BrowserShortcutWindowSpaceCommandDispatcher.swift'
+chrome_dispatcher='Sumi/Managers/KeyboardShortcutManager/BrowserShortcutChromeCommandDispatcher.swift'
+overlay_dispatcher='Sumi/Managers/KeyboardShortcutManager/BrowserShortcutOverlayCommandDispatcher.swift'
+dispatcher_files=(
+  "$page_dispatcher"
+  "$tab_dispatcher"
+  "$window_space_dispatcher"
+  "$chrome_dispatcher"
+  "$overlay_dispatcher"
+)
 tab_commands='Sumi/Managers/BrowserManager/BrowserKeyboardTabSelectionCommands.swift'
 split_commands='Sumi/Managers/BrowserManager/BrowserKeyboardSplitCommands.swift'
 space_commands='Sumi/Managers/BrowserManager/BrowserKeyboardSpaceCommands.swift'
@@ -30,6 +42,7 @@ browser_root='Sumi/Managers/BrowserManager/BrowserManager.swift'
 production_roots=(App Sumi Settings SidebarChrome FloatingBar UI)
 shortcut_sources=(
   "$router"
+  "${dispatcher_files[@]}"
   "$composition"
   "$manager"
   "$tab_commands"
@@ -78,11 +91,11 @@ guard_exact \
   1
 guard_exact \
   'router contains five behaviorful domain dispatchers' \
-  "$(guard_count_matches '^final class BrowserShortcut.*CommandDispatcher' "$router")" \
+  "$(guard_count_matches '^final class BrowserShortcut.*CommandDispatcher' "${dispatcher_files[@]}")" \
   5
 guard_exact \
   'five domain switches plus one domain router' \
-  "$(guard_count_matches 'switch action' "$router")" \
+  "$(guard_count_matches 'switch action' "$router" "${dispatcher_files[@]}")" \
   6
 guard_exact \
   'shortcut domain classification is exhaustive' \
@@ -105,16 +118,18 @@ count_type_collaborators() {
   ' "$file"
 }
 
-for type in \
-  BrowserShortcutPageCommandDispatcher \
-  BrowserShortcutTabCommandDispatcher \
-  BrowserShortcutWindowSpaceCommandDispatcher \
-  BrowserShortcutChromeCommandDispatcher \
-  BrowserShortcutOverlayCommandDispatcher \
-  BrowserShortcutActionRouter; do
-  guard_max "$type collaborators" \
-    "$(count_type_collaborators "$type" "$router")" 5
-done
+guard_max 'BrowserShortcutPageCommandDispatcher collaborators' \
+  "$(count_type_collaborators BrowserShortcutPageCommandDispatcher "$page_dispatcher")" 5
+guard_max 'BrowserShortcutTabCommandDispatcher collaborators' \
+  "$(count_type_collaborators BrowserShortcutTabCommandDispatcher "$tab_dispatcher")" 5
+guard_max 'BrowserShortcutWindowSpaceCommandDispatcher collaborators' \
+  "$(count_type_collaborators BrowserShortcutWindowSpaceCommandDispatcher "$window_space_dispatcher")" 5
+guard_max 'BrowserShortcutChromeCommandDispatcher collaborators' \
+  "$(count_type_collaborators BrowserShortcutChromeCommandDispatcher "$chrome_dispatcher")" 5
+guard_max 'BrowserShortcutOverlayCommandDispatcher collaborators' \
+  "$(count_type_collaborators BrowserShortcutOverlayCommandDispatcher "$overlay_dispatcher")" 5
+guard_max 'BrowserShortcutActionRouter collaborators' \
+  "$(count_type_collaborators BrowserShortcutActionRouter "$router")" 5
 
 guard_max 'BrowserKeyboardTabSelectionCommands collaborators' \
   "$(count_type_collaborators BrowserKeyboardTabSelectionCommands "$tab_commands")" 5

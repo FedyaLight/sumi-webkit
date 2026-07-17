@@ -2,7 +2,10 @@ import Foundation
 
 @MainActor
 enum BrowserTabManagerRuntimePortsFactory {
-    static func registry(for browserManager: BrowserManager) -> RuntimePortRegistry {
+    static func registry(
+        for browserManager: BrowserManager,
+        splitQuery: WindowSplitQuery
+    ) -> RuntimePortRegistry {
         let webViewRuntime = browserManager.webViewRuntime
         return RuntimePortRegistry(
             profileQuery: LiveTabProfileQueryPort(
@@ -19,7 +22,7 @@ enum BrowserTabManagerRuntimePortsFactory {
             ),
             splitCoordination: LiveTabSplitCoordinationPort(
                 tabClosures: browserManager.splitTabClosures,
-                query: browserManager.splitQuery
+                query: splitQuery
             ),
             extensionLifecycle: LiveTabExtensionLifecyclePort(
                 extensions: browserManager.optionalModules.extensions.runtimeSurface

@@ -122,11 +122,20 @@ fi
 
 composition_root='Sumi/BrowserRuntime/BrowserCompositionRoot+TabSession.swift'
 guard_require_file "$composition_root"
+store_restore_factory='Sumi/BrowserRuntime/BrowserTabStoreRestoreFactory.swift'
+startup_reset_factory='Sumi/BrowserRuntime/BrowserTabStartupStateResetFactory.swift'
+last_session_merge_factory='Sumi/BrowserRuntime/BrowserLastSessionMergeFactory.swift'
+for file in \
+  "$store_restore_factory" \
+  "$startup_reset_factory" \
+  "$last_session_merge_factory"; do
+  guard_require_file "$file"
+done
 eager_persistence_contracts=(
   'let runtimeStore = DefaultTabRuntimeStore\('
-  'let storeRestore = TabStoreRestoreService\('
-  'let startupStateReset = TabStartupStateReset\('
-  'let lastSessionMergeMaterializer = TabLastSessionMergeMaterializer\('
+  'let storeRestore = BrowserTabStoreRestoreFactory\.make\('
+  'let startupStateReset = BrowserTabStartupStateResetFactory\.make\('
+  'let lastSessionMergeMaterializer = BrowserLastSessionMergeFactory\.make\('
 )
 for pattern in "${eager_persistence_contracts[@]}"; do
   count="$(guard_count_matches "$pattern" "$composition_root")"
@@ -134,6 +143,18 @@ for pattern in "${eager_persistence_contracts[@]}"; do
     guard_record_failure "eager persistence composition changed: $pattern ($count != 1)"
   fi
 done
+guard_exact \
+  'store-restore factory constructs one service' \
+  "$(guard_count_matches 'TabStoreRestoreService\(' "$store_restore_factory")" \
+  1
+guard_exact \
+  'startup-reset factory constructs one transaction' \
+  "$(guard_count_matches 'TabStartupStateReset\(' "$startup_reset_factory")" \
+  1
+guard_exact \
+  'last-session factory constructs one materializer' \
+  "$(guard_count_matches 'TabLastSessionMergeMaterializer\(' "$last_session_merge_factory")" \
+  1
 
 legacy_last_session_hits="$(
   guard_capture_matches \

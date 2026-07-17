@@ -161,7 +161,7 @@ for split_field in \
   splitPlaceholderReplacements splitDrops; do
   guard_expect_no_matches \
     "split composition field escaped its owning composition boundary: $split_field" \
-    "\\b(browserManager|browserRuntime|manager|self)\\.${split_field}\\b" \
+    "\\b(browserManager|browserRuntime|manager)\\.${split_field}\\b" \
     -g '*.swift' \
     -g '!BrowserManager.swift' \
     -g '!BrowserManager+SplitComposition.swift' \

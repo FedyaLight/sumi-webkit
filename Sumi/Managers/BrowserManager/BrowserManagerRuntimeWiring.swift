@@ -28,7 +28,8 @@ enum BrowserManagerRuntimeWiring {
             closeRouter: browserManager.webViewCloseRouter
         )
         let runtimePortRegistry = BrowserTabManagerRuntimePortsFactory.registry(
-            for: browserManager
+            for: browserManager,
+            splitQuery: splitQuery
         )
         precondition(
             browserManager.tabRuntimeLifecycle.start(with: runtimePortRegistry)
@@ -50,7 +51,10 @@ enum BrowserManagerRuntimeWiring {
         )
         browserManager.optionalModules.attachEnabled(into: browserManager)
         browserManager.glanceManager.attach(
-            runtime: BrowserGlanceRuntimeService.runtime(for: browserManager)
+            runtime: BrowserGlanceRuntimeService.runtime(
+                for: browserManager,
+                splitQuery: splitQuery
+            )
         )
         browserManager.authenticationManager.attach(
             runtime: BrowserAuthenticationRuntimeFactory.runtime(for: browserManager)

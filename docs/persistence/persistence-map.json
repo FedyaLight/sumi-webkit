@@ -277,7 +277,7 @@
       "legacySources": "The default WKWebsiteDataStore and existing profile UUID stores",
       "productionTypes": ["Profile", "BrowserConfig", "ExtensionProfileWebsiteDataStoreCache"],
       "semanticSources": [
-        "Sumi/Managers/BrowserManager/BrowserChromeCommands.swift",
+        "Sumi/Managers/BrowserManager/BrowserPagePrivacyCommandOwner.swift",
         "Sumi/Managers/ExtensionManager/ExtensionProfileWebsiteDataStoreCache.swift",
         "Sumi/Models/BrowserConfig/BrowserConfig.swift",
         "Sumi/Models/Profile/Profile.swift"
@@ -609,7 +609,7 @@
       "owner": "webkit-website-data",
       "kind": "webkit_persistent",
       "paths": [
-        "Sumi/Managers/BrowserManager/BrowserChromeCommands.swift",
+        "Sumi/Managers/BrowserManager/BrowserPagePrivacyCommandOwner.swift",
         "Sumi/Managers/ExtensionManager/ExtensionProfileWebsiteDataStoreCache.swift",
         "Sumi/Models/BrowserConfig/BrowserConfig.swift",
         "Sumi/Models/Profile/Profile.swift"

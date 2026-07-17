@@ -95,9 +95,9 @@ if (( invalidate_guard_count == 0 )); then
 fi
 
 shutdown_body="$(extract_scope "$lifecycle" 'func shutdown() {')"
-shutdown_cancel_line="$(guard_capture_matches 'runtimeGraphSubscription?.cancel()' -F - <<< "$shutdown_body" | cut -d: -f1)"
-shutdown_detach_line="$(guard_capture_matches 'backgroundMediaOptimization.detach()' -F - <<< "$shutdown_body" | cut -d: -f1)"
-shutdown_tab_runtime_line="$(guard_capture_matches 'tabRuntimeLifecycle.shutdown()' -F - <<< "$shutdown_body" | cut -d: -f1)"
+shutdown_cancel_line="$(guard_capture_matches 'runtimeSubscription?.cancel()' -F - <<< "$shutdown_body" | cut -d: -f1)"
+shutdown_detach_line="$(guard_capture_matches 'backgroundMedia.detach()' -F - <<< "$shutdown_body" | cut -d: -f1)"
+shutdown_tab_runtime_line="$(guard_capture_matches 'tabRuntime.shutdown()' -F - <<< "$shutdown_body" | cut -d: -f1)"
 if [[ -z "$shutdown_cancel_line" || -z "$shutdown_detach_line" || -z "$shutdown_tab_runtime_line" ]]; then
   guard_record_failure "background-media lifecycle boundary: runtime shutdown must cancel inputs, detach background media, and shut down the tab runtime"
   exit 1

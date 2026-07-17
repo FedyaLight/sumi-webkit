@@ -74,7 +74,12 @@ guard_expect_no_matches \
   "$manager"
 guard_expect_no_matches \
   'a consumer can recover a retained lifetime node' \
-  '\.lifetime\.' Sumi -g '*.swift'
+  '\.lifetime\.' Sumi -g '*.swift' \
+  -g '!ExtensionBrowserAttachmentAuthority.swift'
+guard_exact \
+  'attachment authority owns the sole lifetime retirement traversal' \
+  "$(guard_count_matches '\battachment\.lifetime\.browserRoutes\.retire\(\)' "$attachment")" \
+  1
 guard_expect_no_matches \
   'generic attached-runtime accessor regrew' \
   '\bwithAttached\b' "$extension_root" -g '*.swift'
