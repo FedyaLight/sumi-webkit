@@ -58,7 +58,7 @@ final class ProfileRetirementStartupRecoveryTests: XCTestCase {
             }
         )
 
-        try await recovery.recover()
+        _ = try await recovery.recover()
 
         XCTAssertEqual(phases, [.migratingReferences, .logicallyDeleted])
         XCTAssertEqual(completedSteps, ProfileRetirementCleanupStep.ordered)
@@ -77,7 +77,7 @@ final class ProfileRetirementStartupRecoveryTests: XCTestCase {
         XCTAssertTrue(try fixture.ledger.commitLogicalDeletion(token))
         var completedSteps: [ProfileRetirementCleanupStep] = []
 
-        try await makeRecovery(
+        _ = try await makeRecovery(
             ledger: fixture.ledger,
             completedSteps: { completedSteps.append($0) }
         ).recover()
@@ -102,7 +102,7 @@ final class ProfileRetirementStartupRecoveryTests: XCTestCase {
         XCTAssertTrue(try fixture.ledger.completeCleanupStep(.favicons, using: token))
         var completedSteps: [ProfileRetirementCleanupStep] = []
 
-        try await makeRecovery(
+        _ = try await makeRecovery(
             ledger: fixture.ledger,
             completedSteps: { completedSteps.append($0) }
         ).recover()
@@ -135,11 +135,10 @@ final class ProfileRetirementStartupRecoveryTests: XCTestCase {
             }
         )
 
-        do {
-            try await recovery.recover()
-            XCTFail("Expected runtime cleanup preparation to fail closed")
-        } catch is TestCleanupFailure {}
+        let report = try await recovery.recover()
 
+        XCTAssertTrue(report.hasDeferredRecovery)
+        XCTAssertEqual(report.issues.map(\.profileID), [fixture.profile.id])
         XCTAssertFalse(didConstructCleanup)
         XCTAssertEqual(fixture.ledger.record(for: token)?.phase, .logicallyDeleted)
         XCTAssertEqual(
@@ -158,15 +157,13 @@ final class ProfileRetirementStartupRecoveryTests: XCTestCase {
         XCTAssertTrue(try fixture.ledger.commitLogicalDeletion(token))
         var firstAttempt: [ProfileRetirementCleanupStep] = []
 
-        do {
-            try await makeRecovery(
-                ledger: fixture.ledger,
-                failingAt: .permissions,
-                completedSteps: { firstAttempt.append($0) }
-            ).recover()
-            XCTFail("Expected cleanup failure to keep startup recovery closed")
-        } catch is TestCleanupFailure {}
+        let report = try await makeRecovery(
+            ledger: fixture.ledger,
+            failingAt: .permissions,
+            completedSteps: { firstAttempt.append($0) }
+        ).recover()
 
+        XCTAssertTrue(report.hasDeferredRecovery)
         XCTAssertEqual(firstAttempt, [.websiteData, .applicationData, .favicons])
         XCTAssertEqual(fixture.ledger.record(for: token)?.phase, .cleaning)
         XCTAssertEqual(
@@ -178,7 +175,7 @@ final class ProfileRetirementStartupRecoveryTests: XCTestCase {
             context: ModelContext(fixture.container)
         )
         var resumed: [ProfileRetirementCleanupStep] = []
-        try await makeRecovery(
+        _ = try await makeRecovery(
             ledger: reloaded,
             completedSteps: { resumed.append($0) }
         ).recover()
@@ -187,7 +184,7 @@ final class ProfileRetirementStartupRecoveryTests: XCTestCase {
         XCTAssertEqual(reloaded.record(for: token)?.phase, .retired)
 
         var noOpSteps: [ProfileRetirementCleanupStep] = []
-        try await makeRecovery(
+        _ = try await makeRecovery(
             ledger: reloaded,
             completedSteps: { noOpSteps.append($0) }
         ).recover()
@@ -204,15 +201,13 @@ final class ProfileRetirementStartupRecoveryTests: XCTestCase {
         XCTAssertTrue(try fixture.ledger.commitLogicalDeletion(token))
         var firstAttempt: [ProfileRetirementCleanupStep] = []
 
-        do {
-            try await makeRecovery(
-                ledger: fixture.ledger,
-                failingAt: .favicons,
-                completedSteps: { firstAttempt.append($0) }
-            ).recover()
-            XCTFail("Expected favicon cleanup failure to keep recovery closed")
-        } catch is TestCleanupFailure {}
+        let report = try await makeRecovery(
+            ledger: fixture.ledger,
+            failingAt: .favicons,
+            completedSteps: { firstAttempt.append($0) }
+        ).recover()
 
+        XCTAssertTrue(report.hasDeferredRecovery)
         XCTAssertEqual(firstAttempt, [.websiteData, .applicationData])
         XCTAssertEqual(
             fixture.ledger.record(for: token)?.nextCleanupStep,
@@ -223,7 +218,7 @@ final class ProfileRetirementStartupRecoveryTests: XCTestCase {
             context: ModelContext(fixture.container)
         )
         var retry: [ProfileRetirementCleanupStep] = []
-        try await makeRecovery(
+        _ = try await makeRecovery(
             ledger: reloaded,
             completedSteps: { retry.append($0) }
         ).recover()
@@ -263,11 +258,85 @@ final class ProfileRetirementStartupRecoveryTests: XCTestCase {
             }
         )
 
-        try await recovery.recover()
+        _ = try await recovery.recover()
 
         XCTAssertEqual(preparedPhases, [.retired])
         XCTAssertFalse(didConstructCleanup)
         XCTAssertEqual(fixture.ledger.record(for: token)?.phase, .retired)
+    }
+
+    func testReferenceMigrationFailureDefersOnlyBlockedProfile() async throws {
+        let fixture = try makeFixture()
+        let token = try fixture.ledger.reserve(
+            profile: fixture.profile,
+            fallbackID: fixture.fallback.id
+        )
+        XCTAssertTrue(try fixture.ledger.beginReferenceMigration(token))
+        var sanitizedProfileIDs: Set<UUID> = []
+        let recovery = ProfileRetirementStartupRecovery(
+            ledger: fixture.ledger,
+            migrateReferences: { record in
+                throw ProfileRetirementStartupRecoveryError
+                    .referenceMigrationFailed(profileID: record.snapshot.id)
+            },
+            sanitizeDeferredReferences: { profileIDs in
+                sanitizedProfileIDs = profileIDs
+                return true
+            },
+            cleanupFactory: { _ in
+                ProfileDeletionCleanupOrchestrator(participants: [])
+            }
+        )
+
+        let report = try await recovery.recover()
+
+        XCTAssertTrue(report.hasDeferredRecovery)
+        XCTAssertEqual(sanitizedProfileIDs, Set([fixture.profile.id]))
+        XCTAssertEqual(fixture.ledger.record(for: token)?.phase, .migratingReferences)
+        let lease = try fixture.ledger.beginReferenceMutation(
+            to: [fixture.fallback.id]
+        )
+        XCTAssertTrue(fixture.ledger.endReferenceMutation(lease))
+        XCTAssertFalse(fixture.ledger.isReferenceAllowed(fixture.profile.id))
+    }
+
+    func testProfileManagerLoadDoesNotDeleteSuppressedRetiringProfile() throws {
+        let fixture = try makeFixture()
+        let token = try fixture.ledger.reserve(
+            profile: fixture.profile,
+            fallbackID: fixture.fallback.id
+        )
+        XCTAssertTrue(try fixture.ledger.beginReferenceMigration(token))
+        let context = ModelContext(fixture.container)
+        let fallbackID = fixture.fallback.id
+        let fallbackPredicate = #Predicate<ProfileEntity> {
+            $0.id == fallbackID
+        }
+        let fallbackEntity = try XCTUnwrap(
+            context.fetch(
+                FetchDescriptor<ProfileEntity>(predicate: fallbackPredicate)
+            ).first
+        )
+        fallbackEntity.index = 2
+        try context.save()
+        let reloaded = try ProfileReferenceAdmissionLedger(
+            context: ModelContext(fixture.container)
+        )
+
+        let manager = ProfileManager(
+            context: ModelContext(fixture.container),
+            profileReferenceAdmission: reloaded
+        )
+
+        XCTAssertEqual(manager.profiles.map(\.id), [fixture.fallback.id])
+        XCTAssertTrue(try profileExists(fixture.profile.id, in: fixture.container))
+        let verificationContext = ModelContext(fixture.container)
+        let normalizedFallback = try XCTUnwrap(
+            verificationContext.fetch(
+                FetchDescriptor<ProfileEntity>(predicate: fallbackPredicate)
+            ).first
+        )
+        XCTAssertEqual(normalizedFallback.index, 0)
     }
 
     private func makeRecovery(

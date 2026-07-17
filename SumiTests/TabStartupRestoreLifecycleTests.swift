@@ -7,6 +7,80 @@ import XCTest
 
 @MainActor
 final class TabStartupRestoreLifecycleTests: XCTestCase {
+    func testRestorePlannerSanitizesBlockedProfileReferences() throws {
+        let blockedProfileID = UUID()
+        let fallbackProfileID = UUID()
+        let spaceID = UUID()
+        let regularTabID = UUID()
+        let launcherID = UUID()
+        let payload = TabRestorePlanner().makePayload(
+            from: TabRestoreStoreRecords(
+                spaces: [
+                    TabRestoreSpaceRecord(
+                        id: spaceID,
+                        name: "Blocked profile space",
+                        icon: SumiPersistentGlyph.spaceDefaultIconValue,
+                        index: 0,
+                        workspaceThemeData: nil,
+                        profileId: blockedProfileID
+                    )
+                ],
+                tabs: [
+                    TabRestoreTabRecord(
+                        id: regularTabID,
+                        urlString: "https://example.com/regular",
+                        name: "Regular",
+                        isPinned: false,
+                        isSpacePinned: false,
+                        index: 0,
+                        spaceId: spaceID,
+                        profileId: blockedProfileID,
+                        executionProfileId: blockedProfileID,
+                        folderId: nil,
+                        iconAsset: nil,
+                        currentURLString: nil,
+                        canGoBack: false,
+                        canGoForward: false
+                    ),
+                    TabRestoreTabRecord(
+                        id: launcherID,
+                        urlString: "https://example.com/launcher",
+                        name: "Launcher",
+                        isPinned: true,
+                        isSpacePinned: false,
+                        index: 0,
+                        spaceId: nil,
+                        profileId: blockedProfileID,
+                        executionProfileId: blockedProfileID,
+                        folderId: nil,
+                        iconAsset: nil,
+                        currentURLString: nil,
+                        canGoBack: false,
+                        canGoForward: false
+                    )
+                ],
+                folders: [],
+                states: []
+            ),
+            defaultProfileId: fallbackProfileID,
+            blockedProfileIDs: [blockedProfileID]
+        )
+
+        XCTAssertEqual(payload.spaces.first?.profileId, fallbackProfileID)
+        XCTAssertNil(payload.regularTabsBySpace[spaceID]?.first?.profileId)
+        let launcher = try XCTUnwrap(
+            payload.pinnedShortcutsByProfile[fallbackProfileID]?.first
+        )
+        XCTAssertEqual(launcher.id, launcherID)
+        XCTAssertNil(launcher.executionProfileId)
+        XCTAssertTrue(
+            payload.repairReasons.contains("reassigned blocked space profile")
+        )
+        XCTAssertTrue(
+            payload.repairReasons.contains("reassigned blocked launcher profile")
+        )
+    }
+
     func testRestoreStopsBeforePreparingReplacementAttachmentAfterInstallReentry() async throws {
         let payloadLoader = SuspendedFixedTabRestorePayloadLoader(
             payload: makeTwoTabRestorePayload()

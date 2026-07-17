@@ -5,6 +5,7 @@ struct TabRestoreSpacePlanner: Sendable {
     func makeSpaces(
         from records: [TabRestoreSpaceRecord],
         defaultProfileId: UUID?,
+        blockedProfileIDs: Set<UUID>,
         repairReasons: inout Set<String>
     ) -> [TabRestoreSpaceDTO] {
         var seenIds: Set<UUID> = []
@@ -18,8 +19,13 @@ struct TabRestoreSpacePlanner: Sendable {
 
                 let workspaceTheme = WorkspaceTheme.decode(record.workspaceThemeData ?? Data())
                     ?? .default
-                let profileId = record.profileId ?? defaultProfileId
-                if record.profileId == nil, defaultProfileId != nil {
+                let storedProfileID = record.profileId.flatMap {
+                    blockedProfileIDs.contains($0) ? nil : $0
+                }
+                let profileId = storedProfileID ?? defaultProfileId
+                if record.profileId != nil, storedProfileID == nil {
+                    repairReasons.insert("reassigned blocked space profile")
+                } else if record.profileId == nil, defaultProfileId != nil {
                     repairReasons.insert("assigned default profile to space")
                 }
                 return TabRestoreSpaceDTO(

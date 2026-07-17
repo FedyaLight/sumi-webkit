@@ -50,14 +50,20 @@ final class ProfileReferenceAdmissionLedger {
     private let store: ProfileRetirementStore?
     private let allowsReferencesWithoutStore: Bool
     private var retirementByProfileID: [UUID: ProfileRetirementRecord]
+    private var quarantinedRetirementByProfileID: [UUID: ProfileRetirementQuarantine]
     private var admissionRevisionByProfileID: [UUID: UInt64] = [:]
     private var activeMutation: ActiveMutation?
+    private var allowsUnrelatedReferencesDuringDeferredRecovery = false
 
     init(store: ProfileRetirementStore) throws {
         self.store = store
         allowsReferencesWithoutStore = false
-        self.retirementByProfileID = try Dictionary(
-            uniqueKeysWithValues: store.records().map { ($0.snapshot.id, $0) }
+        let loadResult = try store.loadForAdmission()
+        self.retirementByProfileID = Dictionary(
+            uniqueKeysWithValues: loadResult.records.map { ($0.snapshot.id, $0) }
+        )
+        self.quarantinedRetirementByProfileID = Dictionary(
+            uniqueKeysWithValues: loadResult.quarantined.map { ($0.profileID, $0) }
         )
     }
 
@@ -69,6 +75,7 @@ final class ProfileReferenceAdmissionLedger {
         self.store = nil
         allowsReferencesWithoutStore = false
         self.retirementByProfileID = [:]
+        self.quarantinedRetirementByProfileID = [:]
     }
 
     #if DEBUG
@@ -76,6 +83,7 @@ final class ProfileReferenceAdmissionLedger {
             store = nil
             allowsReferencesWithoutStore = testingAllowsReferences
             retirementByProfileID = [:]
+            quarantinedRetirementByProfileID = [:]
         }
 
         static func testingAllowingReferences() -> ProfileReferenceAdmissionLedger {
@@ -95,6 +103,16 @@ final class ProfileReferenceAdmissionLedger {
         }
     }
 
+    var quarantinedRetirements: [ProfileRetirementQuarantine] {
+        quarantinedRetirementByProfileID.values.sorted {
+            $0.profileID.uuidString < $1.profileID.uuidString
+        }
+    }
+
+    var blockedProfileIDs: Set<UUID> {
+        Set(retirementByProfileID.keys).union(quarantinedRetirementByProfileID.keys)
+    }
+
     func record(for token: ProfileRetirementToken) -> ProfileRetirementRecord? {
         guard let record = retirementByProfileID[token.profileID],
               record.token == token
@@ -106,7 +124,7 @@ final class ProfileReferenceAdmissionLedger {
 
     func isReferenceAllowed(_ profileID: UUID) -> Bool {
         (store != nil || allowsReferencesWithoutStore)
-            && retirementByProfileID[profileID] == nil
+            && blockedProfileIDs.contains(profileID) == false
     }
 
     func admitReference(to profileID: UUID) -> ProfileReferenceAdmissionReceipt? {
@@ -141,12 +159,19 @@ final class ProfileReferenceAdmissionLedger {
         let activeRetirements = retirementByProfileID.values.filter {
             $0.phase != .retired
         }
+        if activeRetirements.isEmpty,
+           quarantinedRetirementByProfileID.isEmpty == false,
+           profileIDs.count == 1,
+           profileIDs.allSatisfy(isReferenceAllowed) {
+            return try beginReferenceMutation(
+                to: profileIDs,
+                requiresQuiescentRetirement: false
+            )
+        }
         guard activeRetirements.count == 1,
               let retirement = activeRetirements.first,
-              retirement.phase == .migratingReferences
-        else {
-            throw ProfileReferenceAdmissionLedgerError
-                .retirementMigrationUnavailable
+              retirement.phase == .migratingReferences else {
+            throw ProfileReferenceAdmissionLedgerError.retirementMigrationUnavailable
         }
         let exactFallback = Set([retirement.fallbackProfileID])
         guard profileIDs == exactFallback else {
@@ -191,11 +216,10 @@ final class ProfileReferenceAdmissionLedger {
             )
         }
         if requiresQuiescentRetirement,
-           let retirement = retirementByProfileID.values.first(where: {
-            $0.phase != .retired
-           }) {
+           allowsUnrelatedReferencesDuringDeferredRecovery == false,
+           let profileID = activeRetirementProfileID {
             throw ProfileReferenceAdmissionLedgerError.retirementInProgress(
-                retirement.snapshot.id
+                profileID
             )
         }
         let receipts = try profileIDs.sorted(by: uuidOrder).map { profileID in
@@ -220,6 +244,19 @@ final class ProfileReferenceAdmissionLedger {
             scope: scope,
             receipts: receipts
         )
+    }
+
+    func allowUnrelatedReferencesDuringDeferredRecovery() {
+        allowsUnrelatedReferencesDuringDeferredRecovery = true
+    }
+
+    private var activeRetirementProfileID: UUID? {
+        if let retirement = retirementByProfileID.values.first(where: {
+            $0.phase != .retired
+        }) {
+            return retirement.snapshot.id
+        }
+        return quarantinedRetirementByProfileID.keys.first
     }
 
     func validate(_ lease: ProfileReferenceMutationLease) -> Bool {
@@ -289,6 +326,21 @@ final class ProfileReferenceAdmissionLedger {
             throw ProfileReferenceAdmissionLedgerError.unavailable
         }
         guard validate(token), try store.beginReferenceMigration(token) else {
+            return false
+        }
+        return try reload(token)
+    }
+
+    func retargetFallback(
+        _ token: ProfileRetirementToken,
+        to fallbackProfileID: UUID
+    ) throws -> Bool {
+        guard let store else {
+            throw ProfileReferenceAdmissionLedgerError.unavailable
+        }
+        guard validate(token),
+              try store.retargetFallback(token, to: fallbackProfileID)
+        else {
             return false
         }
         return try reload(token)

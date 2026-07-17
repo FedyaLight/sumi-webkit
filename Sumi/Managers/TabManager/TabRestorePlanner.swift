@@ -10,12 +10,14 @@ struct TabRestorePlanner: Sendable {
 
     func makePayload(
         from records: TabRestoreStoreRecords,
-        defaultProfileId: UUID?
+        defaultProfileId: UUID?,
+        blockedProfileIDs: Set<UUID> = []
     ) -> TabRestorePayload {
         var repairReasons: Set<String> = []
         var restoredSpaces = spaces.makeSpaces(
             from: records.spaces,
             defaultProfileId: defaultProfileId,
+            blockedProfileIDs: blockedProfileIDs,
             repairReasons: &repairReasons
         )
         if restoredSpaces.isEmpty {
@@ -33,6 +35,7 @@ struct TabRestorePlanner: Sendable {
         let restoredTabs = tabs.categorize(
             records.tabs,
             defaultProfileId: defaultProfileId,
+            blockedProfileIDs: blockedProfileIDs,
             validSpaceIds: validSpaceIds,
             validFolderIdsBySpace: validFolderIdsBySpace,
             repairReasons: &repairReasons

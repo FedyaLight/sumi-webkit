@@ -884,6 +884,7 @@ extension BrowserCompositionRoot {
         )
         let storeRestore = BrowserTabStoreRestoreFactory.make(
             modelContext: modelContext,
+            blockedProfileIDs: profileReferenceAdmission.blockedProfileIDs,
             runtimeConnection: runtimeConnection,
             loadLifecycle: tabManager.startupRestoreLifecycle,
             structuralStore: tabManager.structuralSnapshotStore,

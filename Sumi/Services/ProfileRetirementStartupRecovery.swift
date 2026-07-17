@@ -16,6 +16,7 @@ enum ProfileRetirementStartupRecoveryError: Error, Equatable {
     case cleanupPreparationFailed(profileID: UUID)
     case referenceMigrationUnavailable(profileID: UUID)
     case referenceMigrationFailed(profileID: UUID)
+    case cleanupDeferred(profileID: UUID, reason: String)
 }
 
 extension ProfileRetirementStartupRecoveryError: LocalizedError {
@@ -31,7 +32,38 @@ extension ProfileRetirementStartupRecoveryError: LocalizedError {
             "Profile retirement recovery could not resume reference migration for \(profileID.uuidString)."
         case .referenceMigrationFailed(let profileID):
             "Profile retirement recovery could not complete reference migration for \(profileID.uuidString)."
+        case .cleanupDeferred(let profileID, let reason):
+            "Profile retirement cleanup remains pending for \(profileID.uuidString): \(reason)"
         }
+    }
+}
+
+struct ProfileRetirementRecoveryIssue: Equatable, Sendable {
+    enum Kind: String, Sendable {
+        case quarantinedRecord
+        case referenceMigration
+        case logicalDeletion
+        case cleanup
+    }
+
+    let profileID: UUID
+    let phase: String
+    let kind: Kind
+    let reason: String
+    let requiresReferenceSanitization: Bool
+}
+
+struct ProfileRetirementStartupRecoveryReport: Equatable, Sendable {
+    var issues: [ProfileRetirementRecoveryIssue] = []
+
+    var hasDeferredRecovery: Bool { issues.isEmpty == false }
+
+    var profileIDsRequiringReferenceSanitization: Set<UUID> {
+        Set(
+            issues.lazy
+                .filter(\.requiresReferenceSanitization)
+                .map(\.profileID)
+        )
     }
 }
 
@@ -52,6 +84,9 @@ final class ProfileRetirementStartupRecovery {
     private let prepareCleanup: @MainActor (
         ProfileRetirementRecord
     ) async throws -> Void
+    private let sanitizeDeferredReferences: @MainActor (
+        Set<UUID>
+    ) async -> Bool
 
     init(
         ledger: ProfileReferenceAdmissionLedger,
@@ -66,11 +101,15 @@ final class ProfileRetirementStartupRecovery {
         prepareCleanup: @escaping @MainActor (
             ProfileRetirementRecord
         ) async throws -> Void = { _ in },
+        sanitizeDeferredReferences: @escaping @MainActor (
+            Set<UUID>
+        ) async -> Bool = { _ in true },
         cleanupFactory: @escaping CleanupFactory
     ) {
         self.ledger = ledger
         self.migrateReferences = migrateReferences
         self.prepareCleanup = prepareCleanup
+        self.sanitizeDeferredReferences = sanitizeDeferredReferences
         self.cleanupFactory = cleanupFactory
     }
 
@@ -87,80 +126,182 @@ final class ProfileRetirementStartupRecovery {
         }
     }
 
-    func recover() async throws {
+    func recover() async throws -> ProfileRetirementStartupRecoveryReport {
+        var report = ProfileRetirementStartupRecoveryReport(
+            issues: ledger.quarantinedRetirements.map { quarantine in
+                ProfileRetirementRecoveryIssue(
+                    profileID: quarantine.profileID,
+                    phase: quarantine.phaseRawValue,
+                    kind: .quarantinedRecord,
+                    reason: quarantine.reason,
+                    requiresReferenceSanitization: true
+                )
+            }
+        )
         for initialRecord in ledger.records() {
-            switch initialRecord.phase {
-            case .reserved:
-                guard try ledger.cancel(initialRecord.token) else {
-                    throw ProfileRetirementStartupRecoveryError.staleRecord(
-                        profileID: initialRecord.snapshot.id,
-                        operation: "cancel its pre-cleanup reservation"
-                    )
-                }
-            case .migratingReferences:
-                try await migrateReferences(initialRecord)
-                guard try ledger.commitLogicalDeletion(initialRecord.token),
-                      let logicallyDeletedRecord = ledger.record(
-                          for: initialRecord.token
-                      )
-                else {
-                    throw ProfileRetirementStartupRecoveryError.staleRecord(
-                        profileID: initialRecord.snapshot.id,
-                        operation: "commit recovered logical deletion"
-                    )
-                }
-                try await prepareCleanup(logicallyDeletedRecord)
-                guard try ledger.beginCleaning(initialRecord.token),
-                      let cleaningRecord = ledger.record(
-                          for: initialRecord.token
-                      )
-                else {
-                    throw ProfileRetirementStartupRecoveryError.staleRecord(
-                        profileID: initialRecord.snapshot.id,
-                        operation: "begin recovered cleanup"
-                    )
-                }
-                try await resumeCleanup(cleaningRecord)
-            case .logicallyDeleted:
-                try await prepareCleanup(initialRecord)
-                guard try ledger.beginCleaning(initialRecord.token),
-                      let cleaningRecord = ledger.record(for: initialRecord.token)
-                else {
-                    throw ProfileRetirementStartupRecoveryError.staleRecord(
-                        profileID: initialRecord.snapshot.id,
-                        operation: "begin cleanup"
-                    )
-                }
-                try await resumeCleanup(cleaningRecord)
-            case .cleaning:
-                try await prepareCleanup(initialRecord)
-                try await resumeCleanup(initialRecord)
-            case .retired:
-                guard initialRecord.nextCleanupStep == .completed else {
-                    throw ProfileRetirementStartupRecoveryError.invalidPersistedPhase(
-                        profileID: initialRecord.snapshot.id
-                    )
-                }
-                try await prepareCleanup(initialRecord)
+            do {
+                try await recover(initialRecord)
+            } catch let error as ProfileRetirementStartupRecoveryError {
+                report.issues.append(issue(for: initialRecord, error: error))
             }
         }
+        let profileIDs = report.profileIDsRequiringReferenceSanitization
+        if profileIDs.isEmpty == false,
+           await sanitizeDeferredReferences(profileIDs) == false {
+            for profileID in profileIDs {
+                report.issues.append(
+                    ProfileRetirementRecoveryIssue(
+                        profileID: profileID,
+                        phase: "sanitizingReferences",
+                        kind: .referenceMigration,
+                        reason: "Blocked profile references will be sanitized again during restore.",
+                        requiresReferenceSanitization: true
+                    )
+                )
+            }
+        }
+        if report.hasDeferredRecovery {
+            ledger.allowUnrelatedReferencesDuringDeferredRecovery()
+        }
+        return report
+    }
+
+    private func recover(_ initialRecord: ProfileRetirementRecord) async throws {
+        switch initialRecord.phase {
+        case .reserved:
+            guard try ledger.cancel(initialRecord.token) else {
+                throw ProfileRetirementStartupRecoveryError.staleRecord(
+                    profileID: initialRecord.snapshot.id,
+                    operation: "cancel its pre-cleanup reservation"
+                )
+            }
+        case .migratingReferences:
+            try await migrateReferencesForRecovery(initialRecord)
+            guard try ledger.commitLogicalDeletion(initialRecord.token),
+                  let logicallyDeletedRecord = ledger.record(
+                      for: initialRecord.token
+                  )
+            else {
+                throw ProfileRetirementStartupRecoveryError.staleRecord(
+                    profileID: initialRecord.snapshot.id,
+                    operation: "commit recovered logical deletion"
+                )
+            }
+            try await prepareCleanupForRecovery(logicallyDeletedRecord)
+            guard try ledger.beginCleaning(initialRecord.token),
+                  let cleaningRecord = ledger.record(for: initialRecord.token)
+            else {
+                throw ProfileRetirementStartupRecoveryError.staleRecord(
+                    profileID: initialRecord.snapshot.id,
+                    operation: "begin recovered cleanup"
+                )
+            }
+            try await resumeCleanup(cleaningRecord)
+        case .logicallyDeleted:
+            try await prepareCleanupForRecovery(initialRecord)
+            guard try ledger.beginCleaning(initialRecord.token),
+                  let cleaningRecord = ledger.record(for: initialRecord.token)
+            else {
+                throw ProfileRetirementStartupRecoveryError.staleRecord(
+                    profileID: initialRecord.snapshot.id,
+                    operation: "begin cleanup"
+                )
+            }
+            try await resumeCleanup(cleaningRecord)
+        case .cleaning:
+            try await prepareCleanupForRecovery(initialRecord)
+            try await resumeCleanup(initialRecord)
+        case .retired:
+            guard initialRecord.nextCleanupStep == .completed else {
+                throw ProfileRetirementStartupRecoveryError.invalidPersistedPhase(
+                    profileID: initialRecord.snapshot.id
+                )
+            }
+            try await prepareCleanupForRecovery(initialRecord)
+        }
+    }
+
+    private func migrateReferencesForRecovery(
+        _ record: ProfileRetirementRecord
+    ) async throws {
+        do {
+            try await migrateReferences(record)
+        } catch let error as ProfileRetirementStartupRecoveryError {
+            throw error
+        } catch {
+            throw ProfileRetirementStartupRecoveryError.referenceMigrationFailed(
+                profileID: record.snapshot.id
+            )
+        }
+    }
+
+    private func prepareCleanupForRecovery(
+        _ record: ProfileRetirementRecord
+    ) async throws {
+        do {
+            try await prepareCleanup(record)
+        } catch let error as ProfileRetirementStartupRecoveryError {
+            throw error
+        } catch {
+            throw ProfileRetirementStartupRecoveryError.cleanupDeferred(
+                profileID: record.snapshot.id,
+                reason: error.localizedDescription
+            )
+        }
+    }
+
+    private func issue(
+        for record: ProfileRetirementRecord,
+        error: ProfileRetirementStartupRecoveryError
+    ) -> ProfileRetirementRecoveryIssue {
+        let kind: ProfileRetirementRecoveryIssue.Kind
+        let requiresSanitization: Bool
+        switch error {
+        case .referenceMigrationUnavailable, .referenceMigrationFailed:
+            kind = .referenceMigration
+            requiresSanitization = true
+        case .staleRecord(_, let operation)
+        where operation.contains("logical deletion"):
+            kind = .logicalDeletion
+            requiresSanitization = record.phase == .migratingReferences
+        case .cleanupPreparationFailed, .cleanupDeferred,
+             .invalidPersistedPhase, .staleRecord:
+            kind = .cleanup
+            requiresSanitization = record.phase == .reserved
+        }
+        return ProfileRetirementRecoveryIssue(
+            profileID: record.snapshot.id,
+            phase: record.phase.rawValue,
+            kind: kind,
+            reason: error.localizedDescription,
+            requiresReferenceSanitization: requiresSanitization
+        )
     }
 
     private func resumeCleanup(_ record: ProfileRetirementRecord) async throws {
         let token = record.token
         let cleanup = cleanupFactory(record.snapshot)
-        try await cleanup.cleanup(
-            profileId: record.snapshot.id,
-            startingAt: record.nextCleanupStep,
-            checkpoint: { [ledger] completedStep in
-                guard try ledger.completeCleanupStep(completedStep, using: token) else {
-                    throw ProfileRetirementStartupRecoveryError.staleRecord(
-                        profileID: record.snapshot.id,
-                        operation: "checkpoint cleanup"
-                    )
+        do {
+            try await cleanup.cleanup(
+                profileId: record.snapshot.id,
+                startingAt: record.nextCleanupStep,
+                checkpoint: { [ledger] completedStep in
+                    guard try ledger.completeCleanupStep(completedStep, using: token) else {
+                        throw ProfileRetirementStartupRecoveryError.staleRecord(
+                            profileID: record.snapshot.id,
+                            operation: "checkpoint cleanup"
+                        )
+                    }
                 }
-            }
-        )
+            )
+        } catch let error as ProfileRetirementStartupRecoveryError {
+            throw error
+        } catch {
+            throw ProfileRetirementStartupRecoveryError.cleanupDeferred(
+                profileID: record.snapshot.id,
+                reason: error.localizedDescription
+            )
+        }
         guard try ledger.markRetired(token) else {
             throw ProfileRetirementStartupRecoveryError.staleRecord(
                 profileID: record.snapshot.id,

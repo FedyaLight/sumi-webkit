@@ -70,6 +70,18 @@ struct ProfileRetirementRecord: Equatable, Sendable {
     let nextCleanupStep: ProfileRetirementCleanupStep
 }
 
+struct ProfileRetirementQuarantine: Equatable, Sendable {
+    let profileID: UUID
+    let fallbackProfileID: UUID
+    let phaseRawValue: String
+    let reason: String
+}
+
+struct ProfileRetirementStoreLoadResult: Sendable {
+    let records: [ProfileRetirementRecord]
+    let quarantined: [ProfileRetirementQuarantine]
+}
+
 enum ProfileRetirementStoreError: Error, Equatable {
     case fallbackMatchesRetiringProfile
     case profileNotFound(UUID)
@@ -95,6 +107,34 @@ final class ProfileRetirementStore {
                 sortBy: [SortDescriptor(\.profileIndex, order: .forward)]
             )
         ).map(record(from:))
+    }
+
+    func loadForAdmission() throws -> ProfileRetirementStoreLoadResult {
+        let entities = try context.fetch(
+            FetchDescriptor<ProfileRetirementEntity>(
+                sortBy: [SortDescriptor(\.profileIndex, order: .forward)]
+            )
+        )
+        var records: [ProfileRetirementRecord] = []
+        var quarantined: [ProfileRetirementQuarantine] = []
+        for entity in entities {
+            do {
+                records.append(try record(from: entity))
+            } catch {
+                quarantined.append(
+                    ProfileRetirementQuarantine(
+                        profileID: entity.profileID,
+                        fallbackProfileID: entity.fallbackProfileID,
+                        phaseRawValue: entity.phaseRawValue,
+                        reason: error.localizedDescription
+                    )
+                )
+            }
+        }
+        return ProfileRetirementStoreLoadResult(
+            records: records,
+            quarantined: quarantined
+        )
     }
 
     func record(for token: ProfileRetirementToken) throws -> ProfileRetirementRecord? {
@@ -166,12 +206,28 @@ final class ProfileRetirementStore {
         }
     }
 
+    func retargetFallback(
+        _ token: ProfileRetirementToken,
+        to fallbackProfileID: UUID
+    ) throws -> Bool {
+        guard fallbackProfileID != token.profileID,
+              let entity = try exactEntity(for: token),
+              entity.phaseRawValue == ProfileRetirementPhase.migratingReferences.rawValue,
+              try profileEntity(profileID: fallbackProfileID) != nil,
+              try self.entity(profileID: fallbackProfileID) == nil
+        else {
+            return false
+        }
+        return try save {
+            entity.fallbackProfileID = fallbackProfileID
+        }
+    }
+
     /// Deletes the migrating profile, normalizes remaining profile indices, and
     /// records the durable cleanup handoff in one ModelContext save.
     func commitLogicalDeletion(_ token: ProfileRetirementToken) throws -> Bool {
         guard let retirement = try exactEntity(for: token),
               retirement.phaseRawValue == ProfileRetirementPhase.migratingReferences.rawValue,
-              let profile = try profileEntity(profileID: token.profileID),
               try profileEntity(profileID: retirement.fallbackProfileID) != nil
         else {
             return false
@@ -183,7 +239,9 @@ final class ProfileRetirementStore {
                     sortBy: [SortDescriptor(\.index, order: .forward)]
                 )
             ).filter { $0.id != token.profileID }
-            context.delete(profile)
+            if let profile = try profileEntity(profileID: token.profileID) {
+                context.delete(profile)
+            }
             for (index, remainingProfile) in remainingProfiles.enumerated() {
                 remainingProfile.index = index
             }

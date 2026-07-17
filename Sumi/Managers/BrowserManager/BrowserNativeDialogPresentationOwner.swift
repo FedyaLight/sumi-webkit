@@ -56,12 +56,13 @@ final class BrowserNativeDialogPresentationOwner {
         )
     }
 
+    @discardableResult
     func presentNoticeSheet(
         _ notice: BrowserNoticeSheetModel,
         source: SidebarTransientPresentationSource? = nil
-    ) {
+    ) -> Bool {
         prepareForNativeModalPresentation()
-        _ = modal.present(.notice(notice), source: source)
+        return modal.present(.notice(notice), source: source)
     }
 
     func dismissNativeModalPresentation() {

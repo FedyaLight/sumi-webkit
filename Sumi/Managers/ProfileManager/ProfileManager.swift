@@ -80,7 +80,9 @@ final class ProfileManager: ObservableObject {
             // Normalize indices if not sequential 0..n-1
             let expected = Array(0..<admittedEntities.count)
             let actual = admittedEntities.map { $0.index }
-            if actual != expected { persistProfiles() }
+            if actual != expected {
+                normalizeAdmittedProfileIndices(admittedEntities)
+            }
         } catch {
             RuntimeDiagnostics.emit("[ProfileManager] Failed to load profiles: \(error)")
             self.profiles = []
@@ -156,6 +158,22 @@ final class ProfileManager: ObservableObject {
             try persistProfileSnapshot(profiles)
         } catch {
             RuntimeDiagnostics.emit("[ProfileManager] Persist failed: \(error)")
+        }
+    }
+
+    private func normalizeAdmittedProfileIndices(
+        _ admittedEntities: [ProfileEntity]
+    ) {
+        do {
+            for (index, entity) in admittedEntities.enumerated() {
+                entity.index = index
+            }
+            try saveContext(context)
+        } catch {
+            context.rollback()
+            RuntimeDiagnostics.emit(
+                "[ProfileManager] Failed to normalize admitted profile indices: \(error)"
+            )
         }
     }
 

@@ -18,7 +18,10 @@ final class SumiStartupRecoveryTransaction {
 
     enum Outcome {
         case notClaimed
-        case recovered(SumiImportRecoveryReport?)
+        case recovered(
+            importReport: SumiImportRecoveryReport?,
+            profileRetirement: ProfileRetirementStartupRecoveryReport
+        )
         case failed(Failure)
     }
 
@@ -26,8 +29,10 @@ final class SumiStartupRecoveryTransaction {
 
     func recoverIfNeeded(
         preflight: ProfileRetirementStartupPreflightStatus,
-        recoverProfileRetirement: @MainActor () async throws -> Void,
+        recoverProfileRetirement: @MainActor () async throws
+            -> ProfileRetirementStartupRecoveryReport,
         recoverImport: @MainActor () async throws -> SumiImportRecoveryReport?,
+        hasSafeProfile: @MainActor () -> Bool = { true },
         startRuntime: @MainActor () -> Void
     ) async -> Outcome {
         guard case .pending = state else { return .notClaimed }
@@ -47,11 +52,17 @@ final class SumiStartupRecoveryTransaction {
         }
 
         do {
-            try await recoverProfileRetirement()
-            let report = try await recoverImport()
+            let profileRetirementReport = try await recoverProfileRetirement()
+            guard hasSafeProfile() else {
+                throw SumiStartupRecoveryError.noSafeProfile
+            }
+            let importReport = try await recoverImport()
             startRuntime()
             state = .ready
-            return .recovered(report)
+            return .recovered(
+                importReport: importReport,
+                profileRetirement: profileRetirementReport
+            )
         } catch {
             let failure = Failure(
                 message: error.localizedDescription,
@@ -64,5 +75,13 @@ final class SumiStartupRecoveryTransaction {
             )
             return .failed(failure)
         }
+    }
+}
+
+private enum SumiStartupRecoveryError: LocalizedError {
+    case noSafeProfile
+
+    var errorDescription: String? {
+        "Sumi could not find a safe profile after isolating pending profile deletion."
     }
 }

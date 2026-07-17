@@ -301,6 +301,64 @@ final class ProfileRetirementPersistenceTests: XCTestCase {
         XCTAssertEqual(reloaded.record(for: token)?.nextCleanupStep, .permissions)
     }
 
+    func testLogicalDeletionRollsForwardWhenProfileRowIsAlreadyMissing() throws {
+        let fixture = try makeFixture()
+        let token = try fixture.ledger.reserve(
+            profile: fixture.profile,
+            fallbackID: fixture.fallback.id
+        )
+        XCTAssertTrue(try fixture.ledger.beginReferenceMigration(token))
+
+        let profileID = token.profileID
+        let predicate = #Predicate<ProfileEntity> {
+            $0.id == profileID
+        }
+        let entity = try XCTUnwrap(
+            fixture.context.fetch(
+                FetchDescriptor<ProfileEntity>(predicate: predicate)
+            ).first
+        )
+        fixture.context.delete(entity)
+        try fixture.context.save()
+
+        XCTAssertTrue(try fixture.ledger.commitLogicalDeletion(token))
+        XCTAssertEqual(
+            fixture.ledger.record(for: token)?.phase,
+            .logicallyDeleted
+        )
+    }
+
+    func testMalformedRetirementIsQuarantinedWithoutDisablingLedger() throws {
+        let fixture = try makeFixture()
+        let token = try fixture.ledger.reserve(
+            profile: fixture.profile,
+            fallbackID: fixture.fallback.id
+        )
+        let profileID = token.profileID
+        let predicate = #Predicate<ProfileRetirementEntity> {
+            $0.profileID == profileID
+        }
+        let entity = try XCTUnwrap(
+            fixture.context.fetch(
+                FetchDescriptor<ProfileRetirementEntity>(predicate: predicate)
+            ).first
+        )
+        entity.phaseRawValue = "future-invalid-phase"
+        try fixture.context.save()
+
+        let reloaded = try ProfileReferenceAdmissionLedger(
+            context: ModelContext(fixture.container)
+        )
+
+        XCTAssertTrue(reloaded.isAvailable)
+        XCTAssertFalse(reloaded.isReferenceAllowed(token.profileID))
+        XCTAssertEqual(reloaded.blockedProfileIDs, Set([token.profileID]))
+        XCTAssertEqual(
+            reloaded.quarantinedRetirements.map(\.profileID),
+            [token.profileID]
+        )
+    }
+
     func testMissingFallbackPreventsLogicalDeletionAndDurablePhaseAdvance() throws {
         let fixture = try makeFixture()
         let token = try fixture.ledger.reserve(

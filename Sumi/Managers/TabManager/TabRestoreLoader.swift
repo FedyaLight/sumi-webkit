@@ -5,12 +5,15 @@ import SwiftData
 struct TabRestoreLoader: TabRestorePayloadLoading {
     private let reader: TabRestoreStoreReader
     private let planner: TabRestorePlanner
+    private let blockedProfileIDs: Set<UUID>
 
     init(
         container: ModelContainer,
+        blockedProfileIDs: Set<UUID> = [],
         planner: TabRestorePlanner = TabRestorePlanner()
     ) {
         self.reader = TabRestoreStoreReader(container: container)
+        self.blockedProfileIDs = blockedProfileIDs
         self.planner = planner
     }
 
@@ -22,7 +25,8 @@ struct TabRestoreLoader: TabRestorePayloadLoading {
         let records = try await reader.read()
         return planner.makePayload(
             from: records,
-            defaultProfileId: defaultProfileId
+            defaultProfileId: defaultProfileId,
+            blockedProfileIDs: blockedProfileIDs
         )
     }
 }

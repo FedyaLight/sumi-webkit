@@ -173,7 +173,7 @@ final class BrowserManagerStartupPersistenceTests: XCTestCase {
             browserManager.profileManager.profiles.contains { $0.id == target.id }
         )
 
-        try await browserManager.profileLifecycleBundle
+        _ = try await browserManager.profileLifecycleBundle
             .retirementStartupRecovery.recover()
 
         let targetKey = permissionKey(
@@ -245,15 +245,10 @@ final class BrowserManagerStartupPersistenceTests: XCTestCase {
         )
 
         XCTAssertFalse(browserManager.permissionRuntime.isObservingPermissionEvents)
-        do {
-            try await browserManager.profileLifecycleBundle
-                .retirementStartupRecovery.recover()
-            XCTFail("Expected startup recovery to fail closed")
-        } catch ProfileRetirementStartupRecoveryError.cleanupPreparationFailed(
-            let profileID
-        ) {
-            XCTAssertEqual(profileID, target.id)
-        }
+        let report = try await browserManager.profileLifecycleBundle
+            .retirementStartupRecovery.recover()
+        XCTAssertEqual(report.issues.map(\.profileID), [target.id])
+        XCTAssertTrue(report.hasDeferredRecovery)
         XCTAssertFalse(browserManager.permissionRuntime.isObservingPermissionEvents)
     }
 
@@ -270,6 +265,7 @@ final class BrowserManagerStartupPersistenceTests: XCTestCase {
                 recoverProfileRetirement: {
                     profileRecoveryCount += 1
                     await suspension.wait()
+                    return ProfileRetirementStartupRecoveryReport()
                 },
                 recoverImport: {
                     importRecoveryCount += 1
@@ -287,6 +283,7 @@ final class BrowserManagerStartupPersistenceTests: XCTestCase {
                 preflight: .ready,
                 recoverProfileRetirement: {
                     profileRecoveryCount += 1
+                    return ProfileRetirementStartupRecoveryReport()
                 },
                 recoverImport: {
                     importRecoveryCount += 1
@@ -338,6 +335,7 @@ final class BrowserManagerStartupPersistenceTests: XCTestCase {
             preflight: .ready,
             recoverProfileRetirement: {
                 profileRecoveryCount += 1
+                return ProfileRetirementStartupRecoveryReport()
             },
             recoverImport: {
                 importRecoveryCount += 1
@@ -353,6 +351,74 @@ final class BrowserManagerStartupPersistenceTests: XCTestCase {
         XCTAssertEqual(runtimeStartCount, 0)
         guard case .failed = transaction.state else {
             return XCTFail("Failed startup recovery did not remain terminal")
+        }
+    }
+
+    func testDeferredProfileRecoveryStillStartsRuntime() async {
+        let transaction = SumiStartupRecoveryTransaction()
+        let profileID = UUID()
+        var importRecoveryCount = 0
+        var runtimeStartCount = 0
+        let report = ProfileRetirementStartupRecoveryReport(
+            issues: [
+                ProfileRetirementRecoveryIssue(
+                    profileID: profileID,
+                    phase: ProfileRetirementPhase.cleaning.rawValue,
+                    kind: .cleanup,
+                    reason: "Deferred test cleanup",
+                    requiresReferenceSanitization: false
+                )
+            ]
+        )
+
+        let outcome = await transaction.recoverIfNeeded(
+            preflight: .ready,
+            recoverProfileRetirement: { report },
+            recoverImport: {
+                importRecoveryCount += 1
+                return nil
+            },
+            hasSafeProfile: { true },
+            startRuntime: {
+                runtimeStartCount += 1
+            }
+        )
+
+        guard case .recovered(_, let recoveredReport) = outcome else {
+            return XCTFail("Deferred retirement should not fail startup")
+        }
+        XCTAssertEqual(recoveredReport, report)
+        XCTAssertEqual(importRecoveryCount, 1)
+        XCTAssertEqual(runtimeStartCount, 1)
+        guard case .ready = transaction.state else {
+            return XCTFail("Deferred retirement did not become ready")
+        }
+    }
+
+    func testStartupRecoveryWithoutSafeProfileRemainsTerminal() async {
+        let transaction = SumiStartupRecoveryTransaction()
+        var importRecoveryCount = 0
+        var runtimeStartCount = 0
+
+        _ = await transaction.recoverIfNeeded(
+            preflight: .ready,
+            recoverProfileRetirement: {
+                ProfileRetirementStartupRecoveryReport()
+            },
+            recoverImport: {
+                importRecoveryCount += 1
+                return nil
+            },
+            hasSafeProfile: { false },
+            startRuntime: {
+                runtimeStartCount += 1
+            }
+        )
+
+        XCTAssertEqual(importRecoveryCount, 0)
+        XCTAssertEqual(runtimeStartCount, 0)
+        guard case .failed = transaction.state else {
+            return XCTFail("Missing safe profile should remain terminal")
         }
     }
 

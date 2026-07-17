@@ -33,6 +33,9 @@ struct SumiApp: App {
     @State private var keyboardShortcutManager = KeyboardShortcutManager()
     @State private var appOrchestrationOwner = BrowserAppOrchestrationOwner()
     @State private var startupRecovery = SumiStartupRecoveryTransaction()
+    @State private var pendingProfileRetirementNotice:
+        ProfileRetirementStartupRecoveryReport?
+    @State private var isPresentingProfileRetirementNotice = false
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
     // Root runtime facade retained for SwiftUI observation. App lifecycle and platform callbacks
@@ -110,6 +113,7 @@ struct SumiApp: App {
                     )
                     .onAppear {
                         setupApplicationLifecycle()
+                        presentPendingProfileRetirementNoticeIfPossible()
                     }
                 case .failed(let message, let backupURL):
                     VStack(spacing: 12) {
@@ -180,6 +184,9 @@ struct SumiApp: App {
                 )
                 return try await transaction.recoverIfNeeded()
             },
+            hasSafeProfile: {
+                browserManager.profileManager.profiles.isEmpty == false
+            },
             startRuntime: {
                 browserManager.startRuntimeAfterStartupRecovery()
             }
@@ -188,17 +195,50 @@ struct SumiApp: App {
         switch outcome {
         case .notClaimed:
             return
-        case .recovered(let report):
-            guard let report else { return }
-            let backupPath = report.preRestoreBackupURL?.path ?? "none"
-            Self.startupRecoveryLog.notice(
-                "Recovered an interrupted import; preRestoreBackup=\(backupPath, privacy: .public)"
-            )
+        case .recovered(let importReport, let profileRetirement):
+            if profileRetirement.hasDeferredRecovery {
+                pendingProfileRetirementNotice = profileRetirement
+                for issue in profileRetirement.issues {
+                    Self.startupRecoveryLog.error(
+                        "Deferred profile retirement; profile=\(issue.profileID.uuidString, privacy: .public); phase=\(issue.phase, privacy: .public); kind=\(issue.kind.rawValue, privacy: .public); reason=\(issue.reason, privacy: .public)"
+                    )
+                }
+                presentPendingProfileRetirementNoticeIfPossible()
+            }
+            if let importReport {
+                let backupPath = importReport.preRestoreBackupURL?.path ?? "none"
+                Self.startupRecoveryLog.notice(
+                    "Recovered an interrupted import; preRestoreBackup=\(backupPath, privacy: .public)"
+                )
+            }
         case .failed(let failure):
             let backupPath = failure.backupURL?.path ?? "none"
             Self.startupRecoveryLog.error(
                 "Startup recovery failed: \(failure.message, privacy: .public); preRestoreBackup=\(backupPath, privacy: .public)"
             )
+        }
+    }
+
+    private func presentPendingProfileRetirementNoticeIfPossible() {
+        guard pendingProfileRetirementNotice?.hasDeferredRecovery == true,
+              isPresentingProfileRetirementNotice == false else {
+            return
+        }
+        isPresentingProfileRetirementNotice = true
+        Task { @MainActor in
+            defer { isPresentingProfileRetirementNotice = false }
+            await Task.yield()
+            let presented = browserManager.chromeBundle
+                .nativeDialogPresentationOwner.presentNoticeSheet(
+                    BrowserNoticeSheetModel(
+                        title: "Profile Recovery Is Still Pending",
+                        subtitle: "Sumi is ready to use",
+                        message: "A profile involved in an interrupted deletion was isolated. Its browser references were reassigned where possible, and private-data cleanup will be retried the next time Sumi starts."
+                    )
+                )
+            if presented {
+                pendingProfileRetirementNotice = nil
+            }
         }
     }
 

@@ -26,6 +26,7 @@ struct TabRestoreTabPlanner: Sendable {
     func categorize(
         _ records: [TabRestoreTabRecord],
         defaultProfileId: UUID?,
+        blockedProfileIDs: Set<UUID>,
         validSpaceIds: Set<UUID>,
         validFolderIdsBySpace: [UUID: Set<UUID>],
         repairReasons: inout Set<String>
@@ -50,12 +51,14 @@ struct TabRestoreTabPlanner: Sendable {
                 appendEssential(
                     record,
                     defaultProfileId: defaultProfileId,
+                    blockedProfileIDs: blockedProfileIDs,
                     to: &result,
                     repairReasons: &repairReasons
                 )
             } else if record.isSpacePinned {
                 appendSpacePinned(
                     record,
+                    blockedProfileIDs: blockedProfileIDs,
                     validSpaceIds: validSpaceIds,
                     validFolderIdsBySpace: validFolderIdsBySpace,
                     to: &result,
@@ -64,6 +67,7 @@ struct TabRestoreTabPlanner: Sendable {
             } else {
                 appendRegular(
                     record,
+                    blockedProfileIDs: blockedProfileIDs,
                     validSpaceIds: validSpaceIds,
                     to: &result,
                     repairReasons: &repairReasons
@@ -87,21 +91,28 @@ struct TabRestoreTabPlanner: Sendable {
     private func appendEssential(
         _ record: TabRestoreTabRecord,
         defaultProfileId: UUID?,
+        blockedProfileIDs: Set<UUID>,
         to result: inout TabRestoreCategorizedTabs,
         repairReasons: inout Set<String>
     ) {
         if record.isSpacePinned {
             repairReasons.insert("normalized tab with both pinned flags")
         }
-        let profileId = record.profileId ?? defaultProfileId
-        if record.profileId == nil, defaultProfileId != nil {
+        let storedProfileID = allowed(record.profileId, blocked: blockedProfileIDs)
+        let profileId = storedProfileID ?? defaultProfileId
+        if record.profileId != nil, storedProfileID == nil {
+            repairReasons.insert("reassigned blocked launcher profile")
+        } else if record.profileId == nil, defaultProfileId != nil {
             repairReasons.insert("assigned default profile to pinned launcher")
         }
         let shortcut = TabRestoreShortcutDTO(
             id: record.id,
             role: .essential,
             profileId: profileId,
-            executionProfileId: record.executionProfileId,
+            executionProfileId: allowed(
+                record.executionProfileId,
+                blocked: blockedProfileIDs
+            ),
             spaceId: nil,
             index: record.index,
             folderId: nil,
@@ -122,6 +133,7 @@ struct TabRestoreTabPlanner: Sendable {
 
     private func appendSpacePinned(
         _ record: TabRestoreTabRecord,
+        blockedProfileIDs: Set<UUID>,
         validSpaceIds: Set<UUID>,
         validFolderIdsBySpace: [UUID: Set<UUID>],
         to result: inout TabRestoreCategorizedTabs,
@@ -143,7 +155,10 @@ struct TabRestoreTabPlanner: Sendable {
                 id: record.id,
                 role: .spacePinned,
                 profileId: nil,
-                executionProfileId: record.executionProfileId ?? record.profileId,
+                executionProfileId: allowed(
+                    record.executionProfileId ?? record.profileId,
+                    blocked: blockedProfileIDs
+                ),
                 spaceId: spaceId,
                 index: record.index,
                 folderId: folderId,
@@ -160,6 +175,7 @@ struct TabRestoreTabPlanner: Sendable {
 
     private func appendRegular(
         _ record: TabRestoreTabRecord,
+        blockedProfileIDs: Set<UUID>,
         validSpaceIds: Set<UUID>,
         to result: inout TabRestoreCategorizedTabs,
         repairReasons: inout Set<String>
@@ -188,13 +204,20 @@ struct TabRestoreTabPlanner: Sendable {
                 name: record.name,
                 index: record.index,
                 spaceId: spaceId,
-                profileId: record.profileId,
+                profileId: allowed(record.profileId, blocked: blockedProfileIDs),
                 folderId: nil,
                 canGoBack: record.canGoBack,
                 canGoForward: record.canGoForward
             )
         )
         result.regularCount += 1
+    }
+
+    private func allowed(
+        _ profileID: UUID?,
+        blocked: Set<UUID>
+    ) -> UUID? {
+        profileID.flatMap { blocked.contains($0) ? nil : $0 }
     }
 
     private func isOrderedBefore(
