@@ -14,8 +14,192 @@ import SwiftData
 import SwiftUI
 import WebKit
 
+/// Historical models kept only so SwiftData can identify and migrate the
+/// shipped V1 startup store. The user-installable userscript runtime remains
+/// removed; neither model is part of the current schema.
+@Model
+final class UserScriptEntity {
+    @Attribute(.unique) var id: UUID
+    var namespace: String
+    var name: String
+    var version: String?
+    var scriptDescription: String?
+    var author: String?
+    var iconURLString: String?
+    var homepageURLString: String?
+    var supportURLString: String?
+    var downloadURLString: String?
+    var updateURLString: String?
+    var sourcePath: String
+    var contentHash: String
+    var metadataJSON: String
+    var isEnabled: Bool
+    var allowPrivateBrowsing: Bool
+    var installDate: Date
+    var lastUpdateDate: Date
+    var lastRunError: String?
+
+    init(
+        id: UUID = UUID(),
+        namespace: String,
+        name: String,
+        version: String?,
+        scriptDescription: String?,
+        author: String?,
+        iconURLString: String?,
+        homepageURLString: String?,
+        supportURLString: String?,
+        downloadURLString: String?,
+        updateURLString: String?,
+        sourcePath: String,
+        contentHash: String,
+        metadataJSON: String,
+        isEnabled: Bool = true,
+        allowPrivateBrowsing: Bool = false,
+        installDate: Date = Date(),
+        lastUpdateDate: Date = Date(),
+        lastRunError: String? = nil
+    ) {
+        self.id = id
+        self.namespace = namespace
+        self.name = name
+        self.version = version
+        self.scriptDescription = scriptDescription
+        self.author = author
+        self.iconURLString = iconURLString
+        self.homepageURLString = homepageURLString
+        self.supportURLString = supportURLString
+        self.downloadURLString = downloadURLString
+        self.updateURLString = updateURLString
+        self.sourcePath = sourcePath
+        self.contentHash = contentHash
+        self.metadataJSON = metadataJSON
+        self.isEnabled = isEnabled
+        self.allowPrivateBrowsing = allowPrivateBrowsing
+        self.installDate = installDate
+        self.lastUpdateDate = lastUpdateDate
+        self.lastRunError = lastRunError
+    }
+}
+
+@Model
+final class UserScriptResourceEntity {
+    @Attribute(.unique) var id: UUID
+    var scriptId: UUID
+    var kind: String
+    var name: String
+    var sourceURLString: String
+    var localPath: String
+    var mimeType: String?
+    var contentHash: String
+    var updatedAt: Date
+
+    init(
+        id: UUID = UUID(),
+        scriptId: UUID,
+        kind: String,
+        name: String,
+        sourceURLString: String,
+        localPath: String,
+        mimeType: String?,
+        contentHash: String,
+        updatedAt: Date = Date()
+    ) {
+        self.id = id
+        self.scriptId = scriptId
+        self.kind = kind
+        self.name = name
+        self.sourceURLString = sourceURLString
+        self.localPath = localPath
+        self.mimeType = mimeType
+        self.contentHash = contentHash
+        self.updatedAt = updatedAt
+    }
+}
+
 enum SumiStartupSchemaV1: VersionedSchema {
+    /// Frozen before `safariRuntimeIdentity` was added to the live model.
+    @Model
+    final class ExtensionEntity {
+        @Attribute(.unique) var id: String
+        var name: String
+        var version: String
+        var manifestVersion: Int
+        var extensionDescription: String?
+        var isEnabled: Bool
+        var installDate: Date
+        var lastUpdateDate: Date
+        var packagePath: String
+        var iconPath: String?
+        var sourceKindRawValue: String
+        var backgroundModelRawValue: String
+        var incognitoModeRawValue: String
+        var sourcePathFingerprint: String
+        var manifestRootFingerprint: String
+        var sourceBundlePath: String
+        var optionsPagePath: String?
+        var defaultPopupPath: String?
+        var hasBackground: Bool
+        var hasAction: Bool
+        var hasOptionsPage: Bool
+        var hasContentScripts: Bool
+        var hasExtensionPages: Bool
+        var broadScope: Bool
+        var activationSummaryJSON: String
+        var manifestSnapshotJSON: String
+
+        init(record: InstalledExtensionRecord) {
+            id = record.id
+            name = record.name
+            version = record.version
+            manifestVersion = record.manifestVersion
+            extensionDescription = record.description
+            isEnabled = record.isEnabled
+            installDate = record.installDate
+            lastUpdateDate = record.lastUpdateDate
+            packagePath = record.packagePath
+            iconPath = record.iconPath
+            sourceKindRawValue = record.sourceKind.rawValue
+            backgroundModelRawValue = record.backgroundModel.rawValue
+            incognitoModeRawValue = record.incognitoMode.rawValue
+            sourcePathFingerprint = record.sourcePathFingerprint
+            manifestRootFingerprint = record.manifestRootFingerprint
+            sourceBundlePath = record.sourceBundlePath
+            optionsPagePath = record.optionsPagePath
+            defaultPopupPath = record.defaultPopupPath
+            hasBackground = record.hasBackground
+            hasAction = record.hasAction
+            hasOptionsPage = record.hasOptionsPage
+            hasContentScripts = record.hasContentScripts
+            hasExtensionPages = record.hasExtensionPages
+            broadScope = record.activationSummary.broadScope
+            activationSummaryJSON = record.encodedActivationSummary
+            manifestSnapshotJSON = record.encodedManifestSnapshot
+        }
+    }
+
     static let versionIdentifier = Schema.Version(1, 0, 0)
+
+    static var models: [any PersistentModel.Type] {
+        [
+            SpaceEntity.self,
+            ProfileEntity.self,
+            TabEntity.self,
+            FolderEntity.self,
+            TabsStateEntity.self,
+            HistoryEntryEntity.self,
+            HistoryVisitEntity.self,
+            ExtensionEntity.self,
+            SafariContentBlockerEntity.self,
+            UserScriptEntity.self,
+            UserScriptResourceEntity.self,
+            PermissionDecisionEntity.self,
+        ]
+    }
+}
+
+enum SumiStartupSchemaV2: VersionedSchema {
+    static let versionIdentifier = Schema.Version(2, 0, 0)
 
     static var models: [any PersistentModel.Type] {
         [
@@ -33,8 +217,8 @@ enum SumiStartupSchemaV1: VersionedSchema {
     }
 }
 
-enum SumiStartupSchemaV2: VersionedSchema {
-    static let versionIdentifier = Schema.Version(2, 0, 0)
+enum SumiStartupSchemaV3: VersionedSchema {
+    static let versionIdentifier = Schema.Version(3, 0, 0)
 
     static var models: [any PersistentModel.Type] {
         [
@@ -55,7 +239,11 @@ enum SumiStartupSchemaV2: VersionedSchema {
 
 enum SumiStartupMigrationPlan: SchemaMigrationPlan {
     static var schemas: [any VersionedSchema.Type] {
-        [SumiStartupSchemaV1.self, SumiStartupSchemaV2.self]
+        [
+            SumiStartupSchemaV1.self,
+            SumiStartupSchemaV2.self,
+            SumiStartupSchemaV3.self,
+        ]
     }
 
     static var stages: [MigrationStage] {
@@ -63,6 +251,10 @@ enum SumiStartupMigrationPlan: SchemaMigrationPlan {
             .lightweight(
                 fromVersion: SumiStartupSchemaV1.self,
                 toVersion: SumiStartupSchemaV2.self
+            ),
+            .lightweight(
+                fromVersion: SumiStartupSchemaV2.self,
+                toVersion: SumiStartupSchemaV3.self
             ),
         ]
     }
@@ -87,7 +279,7 @@ final class SumiStartupPersistence {
     nonisolated private static let storeFileName = "default.store"
     nonisolated private static let quarantineDirectoryName = "StartupPersistenceQuarantine"
 
-    static let schema = Schema(versionedSchema: SumiStartupSchemaV2.self)
+    static let schema = Schema(versionedSchema: SumiStartupSchemaV3.self)
     static let migrationPlan: (any SchemaMigrationPlan.Type) = SumiStartupMigrationPlan.self
 
     // MARK: - URLs

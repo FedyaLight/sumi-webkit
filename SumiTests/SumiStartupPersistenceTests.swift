@@ -12,10 +12,11 @@ final class SumiStartupPersistenceTests: XCTestCase {
             configuration: ModelConfiguration(isStoredInMemoryOnly: true)
         )
 
-        XCTAssertEqual(SumiStartupPersistence.schema.version, Schema.Version(2, 0, 0))
+        XCTAssertEqual(SumiStartupPersistence.schema.version, Schema.Version(3, 0, 0))
         XCTAssertEqual(SumiStartupSchemaV1.versionIdentifier, Schema.Version(1, 0, 0))
         XCTAssertEqual(SumiStartupSchemaV2.versionIdentifier, Schema.Version(2, 0, 0))
-        let schemaModelNames = SumiStartupSchemaV2.models.map { String(describing: $0) }
+        XCTAssertEqual(SumiStartupSchemaV3.versionIdentifier, Schema.Version(3, 0, 0))
+        let schemaModelNames = SumiStartupSchemaV3.models.map { String(describing: $0) }
         let expectedSchemaModelNames = [
             "SpaceEntity",
             "ProfileEntity",
@@ -35,9 +36,13 @@ final class SumiStartupPersistenceTests: XCTestCase {
             // Xcode 27 beta crashes compiling a key path through this existential.
             // swiftlint:disable:next prefer_key_path
             SumiStartupMigrationPlan.schemas.map { $0.versionIdentifier },
-            [Schema.Version(1, 0, 0), Schema.Version(2, 0, 0)]
+            [
+                Schema.Version(1, 0, 0),
+                Schema.Version(2, 0, 0),
+                Schema.Version(3, 0, 0),
+            ]
         )
-        XCTAssertEqual(SumiStartupMigrationPlan.stages.count, 1)
+        XCTAssertEqual(SumiStartupMigrationPlan.stages.count, 2)
         XCTAssertNotNil(container.migrationPlan)
     }
 

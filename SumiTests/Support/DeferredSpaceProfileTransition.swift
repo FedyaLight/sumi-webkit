@@ -140,7 +140,7 @@ final class DeferredSpaceProfileTransition:
         assignmentCount += 1
         self.intent = intent
         exactTabs = model.exactTabsForRuntime()
-        validateModel = model.validateForStaging
+        validateModel = { model.validateForStaging() }
         stageModel = {
             do {
                 try model.stage()

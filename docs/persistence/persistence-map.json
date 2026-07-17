@@ -30,7 +30,7 @@
       "name": "Startup browser state",
       "classification": "authoritative",
       "technology": "SwiftData backed by a SQLite store family",
-      "versionOwner": "SumiStartupSchemaV1 1.0.0, SumiStartupSchemaV2 2.0.0, and SumiStartupMigrationPlan; recovery manifest format 2 and transition marker format 1 are owned by SumiStartupStoreRecovery",
+      "versionOwner": "SumiStartupSchemaV1 1.0.0, SumiStartupSchemaV2 2.0.0, SumiStartupSchemaV3 3.0.0, and SumiStartupMigrationPlan; V1 retains migration-only UserScript models removed from the current schema; recovery manifest format 2 and transition marker format 1 are owned by SumiStartupStoreRecovery",
       "locationPolicy": "<Application Support>/<runtime bundle identifier>/default.store plus SQLite companions; recovery artifacts remain under the sibling StartupPersistenceQuarantine root",
       "backupRestorePolicy": "Backup v1 includes only the startup records represented by SumiBackupV1Scope portable categories: profiles, spaces and themes, folders, essentials, pinned launchers, and regular tabs. History, permission decisions, and extension metadata and payloads remain local. Recovery quarantine separately preserves byte-for-byte SQLite family members before replacement.",
       "corruptionRecoveryPolicy": "Only structured SQLite corruption evidence authorizes quarantine and fresh-store preparation. Schema mismatch, lock failure, migration failure, or unclassified open failure fails closed without destructive replacement. Interrupted filesystem transitions resume from fsynced markers.",
@@ -39,6 +39,7 @@
         "SumiStartupPersistence",
         "SumiStartupSchemaV1",
         "SumiStartupSchemaV2",
+        "SumiStartupSchemaV3",
         "SumiStartupMigrationPlan",
         "SumiStartupStoreRecovery",
         "SumiStartupStoreIO"
@@ -60,7 +61,10 @@
         {"path": "Sumi/Models/Tab/TabsModel.swift", "type": "FolderEntity"},
         {"path": "Sumi/Models/Tab/TabsModel.swift", "type": "TabEntity"},
         {"path": "Sumi/Models/Tab/TabsModel.swift", "type": "TabsStateEntity"},
-        {"path": "Sumi/Permissions/PermissionDecisionEntity.swift", "type": "PermissionDecisionEntity"}
+        {"path": "Sumi/Permissions/PermissionDecisionEntity.swift", "type": "PermissionDecisionEntity"},
+        {"path": "Sumi/Services/SumiStartupPersistence.swift", "type": "ExtensionEntity"},
+        {"path": "Sumi/Services/SumiStartupPersistence.swift", "type": "UserScriptEntity"},
+        {"path": "Sumi/Services/SumiStartupPersistence.swift", "type": "UserScriptResourceEntity"}
       ],
       "fixtures": [
         "SumiTests/Fixtures/Persistence/startup-swiftdata/default.store",
@@ -693,6 +697,7 @@
     {"path": "Sumi/Permissions/SumiPermissionPersistenceAuthority.swift", "declaration": "static let storageVersion = 1", "owner": "permissions-json"},
     {"path": "Sumi/Services/SumiStartupPersistence.swift", "declaration": "static let versionIdentifier = Schema.Version(1, 0, 0)", "owner": "startup-swiftdata"},
     {"path": "Sumi/Services/SumiStartupPersistence.swift", "declaration": "static let versionIdentifier = Schema.Version(2, 0, 0)", "owner": "startup-swiftdata"},
+    {"path": "Sumi/Services/SumiStartupPersistence.swift", "declaration": "static let versionIdentifier = Schema.Version(3, 0, 0)", "owner": "startup-swiftdata"},
     {"path": "Sumi/Services/SumiStartupStoreRecovery.swift", "declaration": "guard marker.formatVersion == 1, marker.storeFileName == storeURL.lastPathComponent else {", "owner": "startup-swiftdata"},
     {"path": "Sumi/Services/SumiStartupStoreRecovery.swift", "declaration": "guard manifest.formatVersion == 2,", "owner": "startup-swiftdata"}
   ],
