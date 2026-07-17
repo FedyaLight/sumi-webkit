@@ -34,7 +34,6 @@ final class CleanStartupWindowResetTransaction {
             windowState.selectionHistory.recentSelectionItemsBySpace.removeAll()
             windowState.splitSelection = nil
             windowState.restorationState.pendingSplitSelection = nil
-            windowState.restorationState.pendingLegacySplitGroup = nil
             windowState.isShowingEmptyState = windowState === selectedWindow
             windowState.floatingBarPresentationReason = .none
             windowState.presentationState.isFloatingBarVisible = false

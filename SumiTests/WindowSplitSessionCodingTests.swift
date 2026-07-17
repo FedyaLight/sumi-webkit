@@ -26,34 +26,7 @@ final class WindowSplitSessionCodingTests: XCTestCase {
         )
 
         XCTAssertNotNil(object["splitSelection"])
-        XCTAssertNil(object["activeSplitGroupId"])
         XCTAssertEqual(decoded.splitSelection, snapshot.splitSelection)
-        XCTAssertNil(decoded.legacyActiveSplitGroupID)
-    }
-
-    func testLegacyGroupIDRemainsDecodeOnlyMigrationInput() throws {
-        let legacyGroupID = UUID()
-        var object = try XCTUnwrap(
-            JSONSerialization.jsonObject(
-                with: JSONEncoder().encode(makeSnapshot())
-            ) as? [String: Any]
-        )
-        object["activeSplitGroupId"] = legacyGroupID.uuidString
-        let legacyData = try JSONSerialization.data(withJSONObject: object)
-
-        let decoded = try JSONDecoder().decode(
-            WindowSessionSnapshot.self,
-            from: legacyData
-        )
-        let reencodedObject = try XCTUnwrap(
-            JSONSerialization.jsonObject(
-                with: JSONEncoder().encode(decoded)
-            ) as? [String: Any]
-        )
-
-        XCTAssertNil(decoded.splitSelection)
-        XCTAssertEqual(decoded.legacyActiveSplitGroupID, legacyGroupID)
-        XCTAssertNil(reencodedObject["activeSplitGroupId"])
     }
 
     func testSnapshotApplierStagesExactStableMemberWithoutActivatingGroup() {
@@ -80,7 +53,6 @@ final class WindowSplitSessionCodingTests: XCTestCase {
                 preferredMemberID: selection.activeMemberID
             )
         )
-        XCTAssertNil(windowState.restorationState.pendingLegacySplitGroup)
     }
 
     func testSnapshotFactoryReadsWindowLocalSelectionWithoutSplitManager() {

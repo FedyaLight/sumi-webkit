@@ -726,68 +726,6 @@ final class WindowSessionServiceTests: XCTestCase {
         )
     }
 
-    func testLegacySplitSessionSnapshotMigratesAfterTabLoad() throws {
-        let tabManager = BrowserManager()
-        let space = try createSpace(
-            named: "Legacy Split",
-            profileID: UUID(),
-            in: tabManager
-        )
-        let left = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://left.example", in: space, activate: true)
-        let right = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://right.example", in: space, activate: false)
-        let sessionKey = try seedLegacySplitWindowSession(
-            currentSpaceId: space.id,
-            currentTabId: left.id,
-            leftTabId: left.id,
-            rightTabId: right.id,
-            activeSideRawValue: "right",
-            orientation: "vertical"
-        )
-        defer { UserDefaults.standard.removeObject(forKey: sessionKey) }
-
-        let windowRegistry = WindowRegistry()
-        let delegate = TestWindowSessionDelegate(
-            runtime: tabManager,
-            windowRegistry: windowRegistry
-        )
-        let service = delegate.makeRestoreService(lastWindowSessionKey: sessionKey)
-        let windowState = BrowserWindowState(awaitsInitialSessionResolution: true)
-        windowRegistry.register(windowState)
-
-        service.setupWindowState(windowState, currentProfile: delegate.currentProfile)
-
-        XCTAssertEqual(windowState.currentTabId, left.id)
-        XCTAssertNotNil(windowState.restorationState.pendingSplitSelection)
-        XCTAssertNotNil(windowState.restorationState.pendingLegacySplitGroup)
-        XCTAssertNil(
-            tabManager.splitGroupStore.group(containing: .regularTab(left.id))
-        )
-
-        tabManager.startupRestoreLifecycle.markLoadFinished()
-        service.handleTabManagerDataLoaded(windows: delegate.windowRegistry.allWindows)
-
-        let group = try XCTUnwrap(
-            tabManager.splitGroupStore.group(containing: .regularTab(left.id))
-        )
-        XCTAssertEqual(
-            Set(group.memberIDs),
-            Set([.regularTab(left.id), .regularTab(right.id)])
-        )
-        XCTAssertEqual(group.layoutKind, .horizontal)
-        XCTAssertEqual(group.container, .regularTabs(spaceId: space.id))
-        XCTAssertEqual(delegate.focusedSplitGroupIds, [group.id])
-        XCTAssertEqual(windowState.currentTabId, right.id)
-        XCTAssertEqual(
-            windowState.splitSelection,
-            WindowSplitSelection(
-                groupID: group.id,
-                activeMemberID: .regularTab(right.id)
-            )
-        )
-        XCTAssertNil(windowState.restorationState.pendingSplitSelection)
-        XCTAssertNil(windowState.restorationState.pendingLegacySplitGroup)
-    }
-
     func testSetupWindowStateFallsBackToDefaultWhenLoadedSpaceIsMissing() async throws {
         let tabManager = BrowserManager()
         tabManager.startupRestoreLifecycle.markLoadFinished()
@@ -1034,44 +972,6 @@ final class WindowSessionServiceTests: XCTestCase {
         return sessionKey
     }
 
-    private func seedLegacySplitWindowSession(
-        currentSpaceId: UUID,
-        currentTabId: UUID,
-        leftTabId: UUID,
-        rightTabId: UUID,
-        activeSideRawValue: String,
-        orientation: String
-    ) throws -> String {
-        let sessionKey = "SumiTests.windowSession.\(UUID().uuidString)"
-        let payload: [String: Any] = [
-            "currentTabId": currentTabId.uuidString,
-            "currentSpaceId": currentSpaceId.uuidString,
-            "isShowingEmptyState": false,
-            "activeTabsBySpace": [],
-            "activeShortcutsBySpace": [],
-            "sidebarWidth": Double(BrowserWindowState.sidebarDefaultWidth),
-            "savedSidebarWidth": Double(BrowserWindowState.sidebarDefaultWidth),
-            "sidebarContentWidth": Double(BrowserWindowState.sidebarContentWidth(
-                for: BrowserWindowState.sidebarDefaultWidth
-            )),
-            "isSidebarVisible": true,
-            "floatingBarDraft": [
-                "text": "",
-                "navigateCurrentTab": false,
-            ],
-            "splitSession": [
-                "leftTabId": leftTabId.uuidString,
-                "rightTabId": rightTabId.uuidString,
-                "dividerFraction": 0.5,
-                "activeSideRawValue": activeSideRawValue,
-                "orientation": orientation,
-            ],
-        ]
-        let data = try JSONSerialization.data(withJSONObject: payload)
-        UserDefaults.standard.set(data, forKey: sessionKey)
-        return sessionKey
-    }
-
     private func createSpace(
         named name: String,
         profileID: UUID,
@@ -1162,8 +1062,6 @@ final class TestWindowSessionDelegate:
             ),
             splitRestorer: WindowSessionSplitRestorer(
                 groups: runtime.splitGroupStore,
-                mutations: runtime.splitGroupMutations,
-                membership: runtime.tabCollectionMembershipOwner,
                 startupRestore: runtime.startupRestoreLifecycle,
                 focus: self
             ),

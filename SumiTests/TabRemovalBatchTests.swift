@@ -109,13 +109,11 @@ final class TabRemovalBatchTests: XCTestCase {
                   let data = try context.fetch(
                       FetchDescriptor<TabsStateEntity>()
                   ).first?.splitGroupsData,
-                  case .version2(groups: let groups, discardedEntryCount: _) =
-                    try TabPersistenceCodec().decodeSplitGroupArchive(
-                        from: data
-                    ) else {
+                  let archive = try? TabPersistenceCodec()
+                    .decodeSplitGroupArchive(from: data) else {
                 return false
             }
-            return groups.allSatisfy {
+            return archive.groups.allSatisfy {
                 !$0.contains(.regularTab(closed.id))
             }
         }()

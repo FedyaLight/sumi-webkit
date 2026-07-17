@@ -2,16 +2,6 @@
   "formatVersion": 1,
   "provenance": [
     {
-      "id": "historical-swiftdata-50f8ff4b",
-      "description": "Created once from the exact pre-VersionedSchema persistent model declarations shipped at commit 50f8ff4bea88a5d317afb7afac7e4c2966923f7b, including the removed UserScript entities, then checked in as a SQLite store family.",
-      "limitations": "The historical app could not be relaunched because its archived local DDG binary dependency is absent. The fixture therefore uses the historical declarations compiled with the current SwiftData runtime, not an archived app binary. Tests never regenerate it."
-    },
-    {
-      "id": "bookmarks-model-2",
-      "description": "Created once by compiling the checked-in shipped BookmarksModel 2 model with momc and inserting a BookmarkEntity through Core Data.",
-      "limitations": "Contains synthetic fixture data and no user data. Tests never regenerate it."
-    },
-    {
       "id": "shipped-codable-format",
       "description": "Static payload authored against the field names and enum values in a checked-in shipped Codable format at baseline 0fc8454d6; it is decoded only from disk by tests.",
       "limitations": "Synthetic minimal data; it proves wire compatibility, not every optional field combination."
@@ -25,12 +15,12 @@
   "fixtures": [
     {
       "path": "SumiTests/Fixtures/Persistence/adblock/manifest-tampered-index.json",
-      "sha256": "e861d9ca61fed932504979a4058d4ad55330a6804d4294c19f8aa88c10047f2e",
+      "sha256": "b479b318abd4e2ae2e8babfda7b889d38ebe75ce9a2e2d0c973c5c6fbe47253b",
       "bytes": 402,
       "family": "adblock-generation-cache",
       "role": "tampered manifest",
       "provenance": "adversarial-format-mutation",
-      "test": "testAdblockManifestFixturesReadV1AndRejectFutureAndTamper"
+      "test": "testAdblockManifestFixturesReadCurrentAndRejectFutureAndTamper"
     },
     {
       "path": "SumiTests/Fixtures/Persistence/adblock/manifest-unsupported-v7.json",
@@ -39,16 +29,16 @@
       "family": "adblock-generation-cache",
       "role": "unsupported future manifest",
       "provenance": "adversarial-format-mutation",
-      "test": "testAdblockManifestFixturesReadV1AndRejectFutureAndTamper"
+      "test": "testAdblockManifestFixturesReadCurrentAndRejectFutureAndTamper"
     },
     {
-      "path": "SumiTests/Fixtures/Persistence/adblock/manifest-v1.json",
-      "sha256": "3996d7fc3d91a8bfe5a43f5f1c740e81c7d62cf8fe44a4de35d1f423dcf38fb3",
+      "path": "SumiTests/Fixtures/Persistence/adblock/manifest-v6.json",
+      "sha256": "ca0879d5aa51cec1d17167f484c321aba6a429abbfa2627f40fae08cbd2f1961",
       "bytes": 352,
       "family": "adblock-generation-cache",
-      "role": "shipped generation manifest v1",
+      "role": "current generation manifest v6",
       "provenance": "shipped-codable-format",
-      "test": "testAdblockManifestFixturesReadV1AndRejectFutureAndTamper"
+      "test": "testAdblockManifestFixturesReadCurrentAndRejectFutureAndTamper"
     },
     {
       "path": "SumiTests/Fixtures/Persistence/backups/logical-backup-malformed.sumibackup",
@@ -76,15 +66,6 @@
       "role": "shipped logical backup v1",
       "provenance": "shipped-codable-format",
       "test": "testLogicalBackupFixturesReadV1AndRejectFutureAndMalformed"
-    },
-    {
-      "path": "SumiTests/Fixtures/Persistence/bookmarks/SumiBookmarks-v2.sqlite",
-      "sha256": "ccbbd04029d9c02d22a19b2c228b9b12f41ba673909a932db68b198046aa4ec5",
-      "bytes": 40960,
-      "family": "bookmarks-coredata",
-      "role": "shipped Core Data model 2 SQLite store",
-      "provenance": "bookmarks-model-2",
-      "test": "testBookmarkV2SQLiteFixtureLightweightMigratesToCurrentModel"
     },
     {
       "path": "SumiTests/Fixtures/Persistence/boosts/boosts-malformed.json",
@@ -186,24 +167,6 @@
       "test": "testPermissionCanonicalFixtureLoadsAndFutureAndMalformedFailClosed"
     },
     {
-      "path": "SumiTests/Fixtures/Persistence/permissions/legacy-anti-abuse-v1.json",
-      "sha256": "0a2b36c403ea1092134500235536a6902d8d02aac73ed9ea147a9e1ac1409353",
-      "bytes": 640,
-      "family": "permissions-json",
-      "role": "legacy anti-abuse snapshot v1",
-      "provenance": "shipped-codable-format",
-      "test": "testLegacyPermissionFilesMigrateToCanonicalSnapshot"
-    },
-    {
-      "path": "SumiTests/Fixtures/Persistence/permissions/legacy-site-activity-v1.json",
-      "sha256": "d84df68710a91428f371acf308bb0690837436a886b5cd401909cba52e1090c3",
-      "bytes": 697,
-      "family": "permissions-json",
-      "role": "legacy site-activity snapshot v1",
-      "provenance": "shipped-codable-format",
-      "test": "testLegacyPermissionFilesMigrateToCanonicalSnapshot"
-    },
-    {
       "path": "SumiTests/Fixtures/Persistence/permissions/malformed.json",
       "sha256": "56cf4a2d26b5844e1d501aaff17473a012742cc5f87c6860c6b255f1c2b58746",
       "bytes": 57,
@@ -222,67 +185,13 @@
       "test": "testPermissionCanonicalFixtureLoadsAndFutureAndMalformedFailClosed"
     },
     {
-      "path": "SumiTests/Fixtures/Persistence/sessions/last-session-windows-legacy-array.json",
-      "sha256": "254d8499474629afcdbc9a3f6db0901fc1e4f625b79bac3ff259e4ebcade639e",
-      "bytes": 531,
-      "family": "preferences-userdefaults",
-      "role": "legacy bare last-session windows array",
-      "provenance": "shipped-codable-format",
-      "test": "testWindowAndLastSessionLegacyFixturesRemainReadable"
-    },
-    {
-      "path": "SumiTests/Fixtures/Persistence/sessions/window-session-legacy-split.json",
-      "sha256": "c5160debade34216b5246666070e1a884b30df4702059682aeadd1f2721a7dab",
-      "bytes": 631,
-      "family": "preferences-userdefaults",
-      "role": "legacy split window-session payload",
-      "provenance": "shipped-codable-format",
-      "test": "testWindowAndLastSessionLegacyFixturesRemainReadable"
-    },
-    {
-      "path": "SumiTests/Fixtures/Persistence/startup-swiftdata/default.store",
-      "sha256": "9974fe993ee7034a23a9d78b9349b50d190372dbcbf1923b4bafc37f230a3b5c",
-      "bytes": 270336,
-      "family": "startup-swiftdata",
-      "role": "pre-versioned shipped SwiftData SQLite store",
-      "provenance": "historical-swiftdata-50f8ff4b",
-      "test": "testPreVersionedStartupStoreFixtureMigratesWithoutQuarantine"
-    },
-    {
-      "path": "SumiTests/Fixtures/Persistence/startup-swiftdata/default.store-shm",
-      "sha256": "fd4c9fda9cd3f9ae7c962b0ddf37232294d55580e1aa165aa06129b8549389eb",
-      "bytes": 32768,
-      "family": "startup-swiftdata",
-      "role": "pre-versioned shipped SwiftData shared-memory companion",
-      "provenance": "historical-swiftdata-50f8ff4b",
-      "test": "testPreVersionedStartupStoreFixtureMigratesWithoutQuarantine"
-    },
-    {
-      "path": "SumiTests/Fixtures/Persistence/startup-swiftdata/default.store-wal",
-      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "bytes": 0,
-      "family": "startup-swiftdata",
-      "role": "pre-versioned shipped SwiftData WAL companion",
-      "provenance": "historical-swiftdata-50f8ff4b",
-      "test": "testPreVersionedStartupStoreFixtureMigratesWithoutQuarantine"
-    },
-    {
       "path": "SumiTests/Fixtures/Persistence/tabs/split-groups-unsupported-v3.json",
       "sha256": "fd7e486abd0bed1aa608840be40336f905610079c5e1b7ba04467ff2ad2694d2",
       "bytes": 41,
       "family": "preferences-userdefaults",
       "role": "unsupported future split-group archive",
       "provenance": "adversarial-format-mutation",
-      "test": "testSplitArchiveFixturesMigrateV1AndRejectFutureVersion"
-    },
-    {
-      "path": "SumiTests/Fixtures/Persistence/tabs/split-groups-v1.json",
-      "sha256": "af76ab77c06728ee01d532db5d21c6831e3adb42e51385e3bd357cb7764ef418",
-      "bytes": 639,
-      "family": "preferences-userdefaults",
-      "role": "shipped split-group archive v1",
-      "provenance": "shipped-codable-format",
-      "test": "testSplitArchiveFixturesMigrateV1AndRejectFutureVersion"
+      "test": "testSplitArchiveRejectsFutureVersion"
     }
   ]
 }

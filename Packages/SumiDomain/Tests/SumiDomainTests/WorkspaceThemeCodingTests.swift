@@ -50,32 +50,6 @@ final class WorkspaceThemeCodingTests: XCTestCase {
         XCTAssertEqual(decodedAgain, theme)
     }
 
-    func testReconstructedLegacyDefaultFixtureMigratesWithoutRenderingTypes() throws {
-        let theme = try JSONDecoder().decode(
-            WorkspaceTheme.self,
-            from: Self.legacyDefaultFixture
-        )
-
-        XCTAssertTrue(theme.usesExplicitColorScheme)
-        XCTAssertEqual(theme.gradientTheme.opacity, 0.62)
-        XCTAssertEqual(theme.gradientTheme.texture, 0.0625)
-        let color = try XCTUnwrap(theme.gradientTheme.colors.first)
-        XCTAssertEqual(color.hex, "#F4EFDF")
-        XCTAssertEqual(color.lightness, 0.9)
-        XCTAssertEqual(color.position.x, 240.0 / 360.0)
-        XCTAssertEqual(color.position.y, 240.0 / 360.0)
-    }
-
-    func testExplicitFalseCustomFixtureDoesNotTriggerDefaultMigration() throws {
-        let theme = try JSONDecoder().decode(
-            WorkspaceTheme.self,
-            from: Self.explicitFalseCustomFixture
-        )
-
-        XCTAssertFalse(theme.usesExplicitColorScheme)
-        XCTAssertEqual(theme.gradientTheme.colors.first?.hex, "#112233")
-    }
-
     func testNestedSchemaKeysAndEnumRawValuesRemainRequired() {
         XCTAssertThrowsError(
             try JSONDecoder().decode(

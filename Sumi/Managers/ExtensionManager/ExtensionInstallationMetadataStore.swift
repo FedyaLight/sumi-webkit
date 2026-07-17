@@ -28,7 +28,6 @@ final class ExtensionInstallationMetadataStore {
     private let context: ModelContext
     private let packageLayout: ExtensionPackageLayout
     private let packageMaintenance: ExtensionPackageMaintenance
-    private let legacyBackupRecovery: LegacyExtensionBackupRecovery
 
     init(
         context: ModelContext,
@@ -43,9 +42,6 @@ final class ExtensionInstallationMetadataStore {
         self.packageMaintenance = ExtensionPackageMaintenance(
             layout: packageLayout,
             activeGenerations: activePackageGenerations
-        )
-        self.legacyBackupRecovery = LegacyExtensionBackupRecovery(
-            layout: packageLayout
         )
     }
 
@@ -164,27 +160,9 @@ final class ExtensionInstallationMetadataStore {
         var loadedRecords: [InstalledExtension] = []
         var enabledEntitiesToLoad: [ExtensionEntity] = []
         var didMutatePersistence = false
-        var recoveredQuarantineURLs: [URL] = []
-        var deferredPackagePaths: Set<String> = []
 
         for entity in entities {
             let sourceKind = WebExtensionSourceKind(rawValue: entity.sourceKindRawValue) ?? .directory
-            let recovery = legacyBackupRecovery.recover(
-                .init(
-                    extensionID: entity.id,
-                    packagePath: entity.packagePath,
-                    manifestRootFingerprint: entity.manifestRootFingerprint,
-                    sourceKind: sourceKind
-                )
-            )
-            recoveredQuarantineURLs += recovery.quarantinedURLs
-            guard recovery.validationDisposition == .proceed else {
-                deferredPackagePaths.insert(entity.packagePath)
-                Self.logger.error(
-                    "Deferred ambiguous legacy package recovery for \(entity.id, privacy: .public)"
-                )
-                continue
-            }
             let packageURL: URL
             do {
                 packageURL = try extensionResourcesRoot(
@@ -235,8 +213,6 @@ final class ExtensionInstallationMetadataStore {
 
         cleanupOrphanedExtensionPackages(
             referencedPackagePaths: Set(loadedRecords.map(\.packagePath))
-                .union(deferredPackagePaths),
-            recoveredQuarantineURLs: recoveredQuarantineURLs
         )
 
         if didMutatePersistence {
@@ -503,16 +479,12 @@ final class ExtensionInstallationMetadataStore {
     }
 
     private func cleanupOrphanedExtensionPackages(
-        referencedPackagePaths: Set<String>,
-        recoveredQuarantineURLs: [URL]
+        referencedPackagePaths: Set<String>
     ) {
         guard ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil else {
             return
         }
         guard Self.shouldRunOrphanedExtensionPackageCleanup() else {
-            packageMaintenance.deleteQuarantinedPackages(
-                recoveredQuarantineURLs
-            )
             return
         }
         UserDefaults.standard.set(
@@ -522,8 +494,7 @@ final class ExtensionInstallationMetadataStore {
         let orphaned = packageMaintenance.quarantineOrphans(
             referencedPackagePaths: referencedPackagePaths
         )
-        let quarantined = Array(Set(orphaned + recoveredQuarantineURLs))
-        packageMaintenance.deleteQuarantinedPackages(quarantined)
+        packageMaintenance.deleteQuarantinedPackages(orphaned)
     }
 
     nonisolated private static func shouldRunOrphanedExtensionPackageCleanup() -> Bool {

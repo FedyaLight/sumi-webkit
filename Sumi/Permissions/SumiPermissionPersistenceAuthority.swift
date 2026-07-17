@@ -7,11 +7,8 @@ struct SumiPermissionPersistenceDiagnostics: Equatable, Sendable {
         case notLoaded
         case missing
         case loadedFile
-        case loadedLegacySnapshots
-        case loadedLegacyUserDefaults
         case failedFileRead(String)
         case failedFileDecode(String)
-        case failedLegacyUserDefaultsDecode(String)
         case unsupportedFileVersion(Int)
     }
 
@@ -36,10 +33,6 @@ private final class SumiPermissionLoadedStateBox: @unchecked Sendable {
     var value: SumiPermissionPersistenceLoadedState?
 }
 
-private struct SumiPermissionUserDefaultsReference: @unchecked Sendable {
-    let value: UserDefaults?
-}
-
 /// The single state and generation authority for permission persistence.
 ///
 /// Feature stores mutate their domain collections through this type. A
@@ -47,11 +40,6 @@ private struct SumiPermissionUserDefaultsReference: @unchecked Sendable {
 /// utility-QoS publication writes the newest complete generation atomically.
 final class SumiPermissionPersistenceAuthority: @unchecked Sendable {
     static let canonicalFileName = "permission-state.v1.json"
-    static let legacyAntiAbuseFileName = "permission-anti-abuse-events.v1.json"
-    static let legacySiteActivityFileName = "permission-site-activity.v1.json"
-    static let defaultLegacyAntiAbuseStorageKey = "permissions.anti-abuse.events.v1"
-    static let legacySiteActivityStorageKey = "permissions.siteActivity.v1"
-
     static let storageVersion = 1
 
     private static let log = Logger.sumi(category: "PermissionPersistence")
@@ -63,7 +51,6 @@ final class SumiPermissionPersistenceAuthority: @unchecked Sendable {
 
     private struct WriteCandidate {
         var envelope: SumiPermissionPersistenceEnvelope
-        var shouldRetireLegacyPersistence: Bool
     }
 
     private let ioQueue = DispatchQueue(
@@ -72,24 +59,17 @@ final class SumiPermissionPersistenceAuthority: @unchecked Sendable {
     )
     private let stateLock = NSLock()
     private let publisher: SumiPermissionCanonicalSnapshotPublisher?
-    private let legacyDirectoryURL: URL?
-    private let userDefaults: UserDefaults?
-    private let legacyAntiAbuseStorageKey: String
-
     private var generation: UInt64
     private var antiAbuseEvents: [SumiPermissionAntiAbuseEvent]
     private var siteActivityRecordsById: [String: SumiPermissionSiteActivityRecord]
     private var retiredProfileIDs: Set<String>
     private var diagnostics: SumiPermissionPersistenceDiagnostics
     private var isDirty: Bool
-    private var shouldRetireLegacyPersistence: Bool
     private var pendingWrite: DispatchWorkItem?
     private var pendingWriteToken: UInt64?
     private var nextWriteToken: UInt64
 
     init(
-        userDefaults: UserDefaults?,
-        legacyAntiAbuseStorageKey: String = defaultLegacyAntiAbuseStorageKey,
         storageDirectory: URL? = nil,
         bootstrapLoadObserver: (@Sendable () -> Void)? = nil,
         publishingFaultInjector: SumiPermissionCanonicalSnapshotPublisher.FaultInjector? = nil
@@ -104,25 +84,16 @@ final class SumiPermissionPersistenceAuthority: @unchecked Sendable {
                 faultInjector: publishingFaultInjector
             )
         }
-        legacyDirectoryURL = storageDirectory
-        self.userDefaults = userDefaults
-        self.legacyAntiAbuseStorageKey = legacyAntiAbuseStorageKey
-
-        let loaded = if fileURL == nil, userDefaults == nil {
+        let loaded = if fileURL == nil {
             SumiPermissionPersistenceLoadedState(
                 generation: 0,
                 antiAbuseEvents: [],
                 siteActivityRecordsById: [:],
-                outcome: .missing,
-                needsCanonicalWrite: false,
-                shouldRetireLegacyPersistence: false
+                outcome: .missing
             )
         } else {
             Self.loadBootstrapState(
                 fileURL: fileURL,
-                legacyDirectoryURL: storageDirectory,
-                userDefaults: userDefaults,
-                legacyAntiAbuseStorageKey: legacyAntiAbuseStorageKey,
                 observer: bootstrapLoadObserver
             )
         }
@@ -131,8 +102,7 @@ final class SumiPermissionPersistenceAuthority: @unchecked Sendable {
         siteActivityRecordsById = loaded.siteActivityRecordsById
         retiredProfileIDs = []
         diagnostics = SumiPermissionPersistenceDiagnostics(loadOutcome: loaded.outcome)
-        isDirty = loaded.needsCanonicalWrite && publisher != nil
-        shouldRetireLegacyPersistence = loaded.shouldRetireLegacyPersistence
+        isDirty = false
         pendingWrite = nil
         pendingWriteToken = nil
         nextWriteToken = 0
@@ -149,21 +119,12 @@ final class SumiPermissionPersistenceAuthority: @unchecked Sendable {
     /// item lets libdispatch donate priority while all load I/O stays off main.
     private static func loadBootstrapState(
         fileURL: URL?,
-        legacyDirectoryURL: URL?,
-        userDefaults: UserDefaults?,
-        legacyAntiAbuseStorageKey: String,
         observer: (@Sendable () -> Void)?
     ) -> SumiPermissionPersistenceLoadedState {
         let loadedStateBox = SumiPermissionLoadedStateBox()
-        let userDefaultsReference = SumiPermissionUserDefaultsReference(value: userDefaults)
         let work = DispatchWorkItem(qos: .userInitiated, flags: .enforceQoS) {
             observer?()
-            loadedStateBox.value = SumiPermissionSnapshotLoader.load(
-                fileURL: fileURL,
-                legacyDirectoryURL: legacyDirectoryURL,
-                userDefaults: userDefaultsReference.value,
-                legacyAntiAbuseStorageKey: legacyAntiAbuseStorageKey
-            )
+            loadedStateBox.value = SumiPermissionSnapshotLoader.load(fileURL: fileURL)
         }
         bootstrapLoadingQueue.async(execute: work)
         work.wait()
@@ -226,11 +187,10 @@ final class SumiPermissionPersistenceAuthority: @unchecked Sendable {
         let accepted = withStateLock { () -> Bool in
             retiredProfileIDs.insert(normalizedProfileID)
             switch diagnostics.loadOutcome {
-            case .missing, .loadedFile, .loadedLegacySnapshots,
-                 .loadedLegacyUserDefaults:
+            case .missing, .loadedFile:
                 break
             case .notLoaded, .failedFileRead, .failedFileDecode,
-                 .failedLegacyUserDefaultsDecode, .unsupportedFileVersion:
+                 .unsupportedFileVersion:
                 return false
             }
 
@@ -314,30 +274,18 @@ final class SumiPermissionPersistenceAuthority: @unchecked Sendable {
                     generation: generation,
                     antiAbuseEvents: persistentAntiAbuseEvents(),
                     siteActivityRecords: persistentSiteActivityRecords().values.sorted { $0.id < $1.id }
-                ),
-                shouldRetireLegacyPersistence: shouldRetireLegacyPersistence
+                )
             )
         }
         if ignoredCancelledScheduledWrite { return true }
 
-        guard let candidate, let publisher else {
-            return retireLegacyPersistenceIfNeededAfterCanonicalPublication()
-        }
+        guard let candidate, let publisher else { return true }
 
         do {
             try publisher.publish(candidate.envelope)
-            let didRetireLegacyPersistence = !candidate.shouldRetireLegacyPersistence
-                || SumiPermissionSnapshotLoader.retireLegacyPersistence(
-                    legacyDirectoryURL: legacyDirectoryURL,
-                    userDefaults: userDefaults,
-                    legacyAntiAbuseStorageKey: legacyAntiAbuseStorageKey
-                )
             withStateLock {
                 if generation == candidate.envelope.generation {
                     isDirty = false
-                }
-                if didRetireLegacyPersistence {
-                    shouldRetireLegacyPersistence = false
                 }
                 diagnostics.lastWriteFailure = nil
                 diagnostics.successfulWriteCount += 1
@@ -352,22 +300,6 @@ final class SumiPermissionPersistenceAuthority: @unchecked Sendable {
             )
             return false
         }
-    }
-
-    private func retireLegacyPersistenceIfNeededAfterCanonicalPublication() -> Bool {
-        let needsCleanup = withStateLock { shouldRetireLegacyPersistence }
-        guard needsCleanup, publisher?.canonicalFileExists == true else { return true }
-        let didRetire = SumiPermissionSnapshotLoader.retireLegacyPersistence(
-            legacyDirectoryURL: legacyDirectoryURL,
-            userDefaults: userDefaults,
-            legacyAntiAbuseStorageKey: legacyAntiAbuseStorageKey
-        )
-        if didRetire {
-            withStateLock {
-                shouldRetireLegacyPersistence = false
-            }
-        }
-        return didRetire
     }
 
     private func persistentAntiAbuseEvents() -> [SumiPermissionAntiAbuseEvent] {

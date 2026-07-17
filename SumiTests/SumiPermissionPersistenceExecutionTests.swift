@@ -16,7 +16,6 @@ final class SumiPermissionPersistenceExecutionTests: XCTestCase {
         let recorder = PermissionPersistenceExecutionRecorder()
 
         let authority = SumiPermissionPersistenceAuthority(
-            userDefaults: nil,
             storageDirectory: directory,
             publishingFaultInjector: { stage, _ in
                 recorder.recordPublication(stage: stage)
@@ -56,7 +55,6 @@ final class SumiPermissionPersistenceExecutionTests: XCTestCase {
         // Construction is deliberately synchronous on MainActor and loads the
         // published JSON. Returning proves the dependency cannot deadlock main.
         let reloadedAuthority = SumiPermissionPersistenceAuthority(
-            userDefaults: nil,
             storageDirectory: directory,
             bootstrapLoadObserver: { recorder.recordBootstrapLoad() }
         )
@@ -74,7 +72,6 @@ final class SumiPermissionPersistenceExecutionTests: XCTestCase {
         let recorder = PermissionPersistenceExecutionRecorder()
 
         _ = SumiPermissionPersistenceAuthority(
-            userDefaults: nil,
             bootstrapLoadObserver: { recorder.recordBootstrapLoad() }
         )
 

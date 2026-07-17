@@ -9,9 +9,7 @@ final class SumiPermissionEventOwnerTests: XCTestCase {
     func testRecordsPermissionEventsAndCancelsSingleSubscription() async {
         let coordinator = PermissionEventOwnerFakeCoordinator()
         let recentActivityStore = SumiPermissionRecentActivityStore()
-        let siteActivityStore = SumiPermissionSiteActivityStore(
-            userDefaults: UserDefaults(suiteName: "SumiPermissionEventOwner-\(UUID().uuidString)")!
-        )
+        let siteActivityStore = SumiPermissionSiteActivityStore()
         var handledEvents: [SumiPermissionCoordinatorEvent] = []
         let handledExpectation = expectation(description: "permission event handled")
         let owner = SumiPermissionEventOwner(

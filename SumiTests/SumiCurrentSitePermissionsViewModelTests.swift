@@ -99,7 +99,6 @@ final class SumiCurrentSitePermissionsViewModelTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: storageDirectory) }
         let defaults = UserDefaults(suiteName: "SumiAutoplaySiteActivity-\(UUID().uuidString)")!
         let siteActivityStore = SumiPermissionSiteActivityStore(
-            userDefaults: defaults,
             storageDirectory: storageDirectory
         )
         let deps = dependencies(siteActivityStore: siteActivityStore)
@@ -125,7 +124,6 @@ final class SumiCurrentSitePermissionsViewModelTests: XCTestCase {
         XCTAssertTrue(didFlush)
 
         let reloadedStore = SumiPermissionSiteActivityStore(
-            userDefaults: defaults,
             storageDirectory: storageDirectory
         )
         let rootViewModel = SumiCurrentSitePermissionsViewModel()
@@ -420,9 +418,7 @@ final class SumiCurrentSitePermissionsViewModelTests: XCTestCase {
     }
 
     private func makeSiteActivityStore() -> SumiPermissionSiteActivityStore {
-        SumiPermissionSiteActivityStore(
-            userDefaults: UserDefaults(suiteName: "SumiCurrentSiteActivity-\(UUID().uuidString)")!
-        )
+        SumiPermissionSiteActivityStore()
     }
 
     private func blockedPopup(

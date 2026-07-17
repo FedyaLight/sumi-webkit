@@ -62,33 +62,11 @@ struct WindowSessionSnapshotApplier {
             .floatingBarDraft.navigateCurrentTab
 
         windowState.splitSelection = nil
-        if let selection = snapshot.splitSelection {
-            windowState.restorationState.pendingLegacySplitGroup = nil
-            windowState.restorationState.pendingSplitSelection = PendingWindowSplitSelection(
-                groupID: selection.groupID,
-                preferredMemberID: selection.activeMemberID
-            )
-            return
-        }
-
-        if let migration = snapshot.legacySplitSessionForMigration?
-            .makeSplitMigration(spaceId: snapshot.currentSpaceId) {
-            windowState.restorationState.pendingLegacySplitGroup = migration.group
-            windowState.restorationState.pendingSplitSelection = PendingWindowSplitSelection(
-                groupID: migration.group.id,
-                preferredMemberID: migration.preferredMemberID
-            )
-            return
-        }
-
-        windowState.restorationState.pendingLegacySplitGroup = nil
         windowState.restorationState.pendingSplitSelection = snapshot
-            .legacyActiveSplitGroupID.map { groupID in
+            .splitSelection.map { selection in
                 PendingWindowSplitSelection(
-                    groupID: groupID,
-                    preferredMemberID: snapshot.activeShortcutPinId
-                        .map(SplitMemberID.shortcutPin)
-                        ?? snapshot.currentTabId.map(SplitMemberID.regularTab)
+                    groupID: selection.groupID,
+                    preferredMemberID: selection.activeMemberID
                 )
             }
     }

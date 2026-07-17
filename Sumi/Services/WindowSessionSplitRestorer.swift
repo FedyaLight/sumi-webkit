@@ -4,15 +4,12 @@ import SumiDomain
 @MainActor
 struct WindowSessionSplitRestorer {
     let groups: SplitGroupStore
-    let mutations: SplitGroupMutationService
-    let membership: TabCollectionMembershipOwner
     let startupRestore: TabStartupRestoreLifecycle
     let focus: any WindowSessionSplitFocusing
 
     func restorePendingSelectionIfNeeded(
         in windowState: BrowserWindowState
     ) {
-        restoreLegacyGroupIfNeeded(in: windowState)
         guard let pending = windowState.restorationState.pendingSplitSelection else {
             return
         }
@@ -33,36 +30,6 @@ struct WindowSessionSplitRestorer {
             ),
             in: windowState
         )
-    }
-
-    private func restoreLegacyGroupIfNeeded(
-        in windowState: BrowserWindowState
-    ) {
-        guard let group = windowState.restorationState.pendingLegacySplitGroup,
-              startupRestore.hasLoadedInitialData else {
-            return
-        }
-
-        guard group.memberIDs.allSatisfy({ memberID in
-            guard case .regularTab(let tabID) = memberID else { return false }
-            return membership.tab(for: tabID) != nil
-        }) else {
-            windowState.restorationState.pendingLegacySplitGroup = nil
-            if windowState.restorationState.pendingSplitSelection?.groupID == group.id {
-                windowState.restorationState.pendingSplitSelection = nil
-            }
-            return
-        }
-
-        guard mutations.insert(group) else {
-            windowState.restorationState.pendingLegacySplitGroup = nil
-            if groups.group(id: group.id) == nil,
-               windowState.restorationState.pendingSplitSelection?.groupID == group.id {
-                windowState.restorationState.pendingSplitSelection = nil
-            }
-            return
-        }
-        windowState.restorationState.pendingLegacySplitGroup = nil
     }
 
     private func resolvedPreferredMember(

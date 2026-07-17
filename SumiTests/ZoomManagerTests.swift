@@ -79,7 +79,6 @@ final class ZoomManagerTests: XCTestCase {
 
         manager.resetZoom(for: webView, domain: domain, tabId: tabId)
         XCTAssertEqual(manager.getZoomLevel(for: domain), 1.0, accuracy: 0.001)
-        XCTAssertNil(defaults.object(forKey: legacyZoomKey(for: domain)))
     }
 
     func testLoadSavedZoomAppliesPerSiteZoom() {
@@ -92,46 +91,6 @@ final class ZoomManagerTests: XCTestCase {
 
         XCTAssertEqual(webView.pageZoom, 2.5, accuracy: 0.001)
         XCTAssertEqual(manager.getZoomLevel(for: tabId), 2.5, accuracy: 0.001)
-    }
-
-    func testProfileScopedZoomUsesNormalizedKeyAndFallsBackToLegacy() {
-        let manager = makeManager()
-        let profileId = UUID()
-
-        defaults.set(1.25, forKey: legacyZoomKey(for: domain))
-
-        XCTAssertEqual(
-            manager.getZoomLevel(for: domain, profileId: profileId),
-            1.25,
-            accuracy: 0.001
-        )
-
-        manager.saveZoomLevel(1.5, for: " .Example.COM ", profileId: profileId)
-
-        XCTAssertEqual(
-            manager.getZoomLevel(for: domain, profileId: profileId),
-            1.5,
-            accuracy: 0.001
-        )
-        XCTAssertEqual(manager.getZoomLevel(for: domain), 1.25, accuracy: 0.001)
-        XCTAssertNotNil(defaults.object(forKey: scopedZoomKey(for: domain, profileId: profileId)))
-        XCTAssertNotNil(defaults.object(forKey: legacyZoomKey(for: domain)))
-        XCTAssertEqual(defaults.double(forKey: scopedZoomKey(for: domain, profileId: profileId)), 1.5, accuracy: 0.001)
-        XCTAssertEqual(defaults.double(forKey: legacyZoomKey(for: domain)), 1.25, accuracy: 0.001)
-    }
-
-    func testDefaultProfileScopedZoomRemovesScopedAndLegacyValues() {
-        let manager = makeManager()
-        let profileId = UUID()
-
-        defaults.set(1.25, forKey: legacyZoomKey(for: domain))
-        defaults.set(1.5, forKey: scopedZoomKey(for: domain, profileId: profileId))
-
-        manager.saveZoomLevel(1.0, for: domain, profileId: profileId)
-
-        XCTAssertEqual(manager.getZoomLevel(for: domain, profileId: profileId), 1.0, accuracy: 0.001)
-        XCTAssertNil(defaults.object(forKey: scopedZoomKey(for: domain, profileId: profileId)))
-        XCTAssertNil(defaults.object(forKey: legacyZoomKey(for: domain)))
     }
 
     func testLoadSavedZoomUsesProfileScopedZoomWhenAvailable() {
@@ -150,10 +109,6 @@ final class ZoomManagerTests: XCTestCase {
 
     private func makeManager() -> ZoomManager {
         ZoomManager(userDefaults: defaults)
-    }
-
-    private func legacyZoomKey(for domain: String) -> String {
-        "zoom.\(domain.normalizedWebsiteDataDomain)"
     }
 
     private func scopedZoomKey(for domain: String, profileId: UUID) -> String {

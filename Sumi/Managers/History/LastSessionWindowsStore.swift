@@ -145,20 +145,7 @@ final class LastSessionWindowsStore: ObservableObject {
             return .loaded(archive)
         } catch {
             log.error(
-                "Failed to decode last-session archive, trying legacy snapshot format: \(error.localizedDescription, privacy: .public)"
-            )
-        }
-
-        do {
-            let snapshots = try JSONDecoder()
-                .decode([LastSessionWindowSnapshot].self, from: data)
-                .uniqued(by: \.id)
-            return .loaded(
-                Archive(snapshots: snapshots, tabSnapshot: nil)
-            )
-        } catch {
-            log.error(
-                "Failed to decode legacy last-session windows: \(error.localizedDescription, privacy: .public)"
+                "Failed to decode last-session archive: \(error.localizedDescription, privacy: .public)"
             )
         }
         return .failed

@@ -49,9 +49,9 @@ enum TabRestoreRepair {
         }
     }
 
-    /// Decodes the versioned durable split archive or migrates the exact
-    /// decode-only v1 wire shape. Regular tabs and shortcut pins are separate
-    /// catalogs so a stale runtime UUID can never be guessed into existence.
+    /// Decodes the versioned durable split archive. Regular tabs and shortcut
+    /// pins are separate catalogs so a stale runtime UUID can never be guessed
+    /// into existence.
     static func restoreSplitGroups(
         from data: Data?,
         regularTabIDs: Set<UUID>,
@@ -62,34 +62,22 @@ enum TabRestoreRepair {
     ) -> [SumiDomain.SplitGroup] {
         guard let data, data.isEmpty == false else { return [] }
         do {
-            switch try TabPersistenceCodec().decodeSplitGroupArchive(
+            let archive = try TabPersistenceCodec().decodeSplitGroupArchive(
                 from: data
-            ) {
-            case .version2(let groups, let discardedEntryCount):
-                if discardedEntryCount > 0 {
-                    repairReasons.insert(
-                        "removed unreadable split group entry"
-                    )
-                }
-                return repairVersion2SplitGroups(
-                    groups,
-                    regularTabIDs: regularTabIDs,
-                    shortcutPinIDs: Set(
-                        shortcutReturnPlacementsByPinID.keys
-                    ),
-                    repairReasons: &repairReasons
-                )
-
-            case .legacyVersion1(let groups):
-                return LegacySplitGroupV1Migrator(
-                    regularTabIDs: regularTabIDs,
-                    shortcutReturnPlacementsByPinID:
-                        shortcutReturnPlacementsByPinID
-                ).migrate(
-                    groups,
-                    repairReasons: &repairReasons
+            )
+            if archive.discardedEntryCount > 0 {
+                repairReasons.insert(
+                    "removed unreadable split group entry"
                 )
             }
+            return repairVersion2SplitGroups(
+                archive.groups,
+                regularTabIDs: regularTabIDs,
+                shortcutPinIDs: Set(
+                    shortcutReturnPlacementsByPinID.keys
+                ),
+                repairReasons: &repairReasons
+            )
         } catch {
             repairReasons.insert("removed unreadable split groups")
             return []

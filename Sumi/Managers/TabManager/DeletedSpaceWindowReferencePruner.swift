@@ -50,10 +50,6 @@ struct DeletedSpaceWindowReferencePruner {
             windowState.restorationState.pendingSplitSelection = nil
             changed = true
         }
-        if legacySplitReferencesRemoval(windowState, removal: removal) {
-            windowState.restorationState.pendingLegacySplitGroup = nil
-            changed = true
-        }
         return changed
     }
 
@@ -82,23 +78,5 @@ struct DeletedSpaceWindowReferencePruner {
             changed = true
         }
         return changed
-    }
-
-    private func legacySplitReferencesRemoval(
-        _ windowState: BrowserWindowState,
-        removal: SpaceRemovalFootprint
-    ) -> Bool {
-        guard let group = windowState.restorationState.pendingLegacySplitGroup else {
-            return false
-        }
-        return group.container.spaceId == removal.spaceId
-            || group.memberIDs.contains { memberID in
-                switch memberID {
-                case .regularTab(let tabID):
-                    return removal.tabIds.contains(tabID)
-                case .shortcutPin(let pinID):
-                    return removal.shortcutPinIds.contains(pinID)
-                }
-            }
     }
 }

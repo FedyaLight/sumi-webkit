@@ -239,9 +239,7 @@ final class SumiPermissionURLHubIntegrationTests: XCTestCase {
         blockedPopupStore: SumiBlockedPopupStore,
         externalStore: SumiExternalSchemeSessionStore,
         indicatorStore: SumiPermissionIndicatorEventStore,
-        siteActivityStore: SumiPermissionSiteActivityStore = SumiPermissionSiteActivityStore(
-            userDefaults: UserDefaults(suiteName: "SumiPermissionURLHub-\(UUID().uuidString)")!
-        )
+        siteActivityStore: SumiPermissionSiteActivityStore = SumiPermissionSiteActivityStore()
     ) -> SumiCurrentSitePermissionsViewModel.LoadDependencies {
         SumiCurrentSitePermissionsViewModel.LoadDependencies(
             coordinator: coordinator,
@@ -258,9 +256,7 @@ final class SumiPermissionURLHubIntegrationTests: XCTestCase {
     }
 
     private func makeSiteActivityStore() -> SumiPermissionSiteActivityStore {
-        SumiPermissionSiteActivityStore(
-            userDefaults: UserDefaults(suiteName: "SumiPermissionURLHub-\(UUID().uuidString)")!
-        )
+        SumiPermissionSiteActivityStore()
     }
 
     private func blockedPopup(

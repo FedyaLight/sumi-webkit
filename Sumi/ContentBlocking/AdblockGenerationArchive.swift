@@ -182,7 +182,7 @@ actor AdblockGenerationArchive {
     }
 
     private func validateManifestTopology(_ manifest: AdblockCompiledGenerationManifest) throws {
-        guard (1...AdblockCompiledGenerationManifest.currentSchemaVersion).contains(manifest.schemaVersion) else {
+        guard manifest.schemaVersion == AdblockCompiledGenerationManifest.currentSchemaVersion else {
             throw AdblockUpdateDiagnostics(
                 summary: "Unsupported persisted Adblock manifest schema: \(manifest.schemaVersion)"
             )

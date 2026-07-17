@@ -762,11 +762,7 @@ final class SumiWebKitPermissionBridgeTests: XCTestCase {
     }
 
     private func makeSiteActivityStore() throws -> SumiPermissionSiteActivityStore {
-        SumiPermissionSiteActivityStore(
-            userDefaults: try XCTUnwrap(
-                UserDefaults(suiteName: "SumiWebKitPermissionBridgeTests-\(UUID().uuidString)")
-            )
-        )
+        SumiPermissionSiteActivityStore()
     }
 }
 

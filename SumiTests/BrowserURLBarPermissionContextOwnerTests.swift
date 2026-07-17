@@ -160,11 +160,7 @@ final class BrowserURLBarPermissionContextOwnerTests: XCTestCase {
     }
 
     private func makeSiteActivityStore() throws -> SumiPermissionSiteActivityStore {
-        SumiPermissionSiteActivityStore(
-            userDefaults: try XCTUnwrap(
-                UserDefaults(suiteName: "BrowserURLBarPermissionContextOwnerTests-\(UUID().uuidString)")
-            )
-        )
+        SumiPermissionSiteActivityStore()
     }
 
     private func permissionKey() -> SumiPermissionKey {

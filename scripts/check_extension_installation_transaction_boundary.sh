@@ -39,7 +39,6 @@ package="$root/Sumi/Managers/ExtensionManager/ExtensionPackageInstallTransaction
 prepared_package="$root/Sumi/Managers/ExtensionManager/ExtensionInstallationPackage.swift"
 layout="$root/Sumi/Managers/ExtensionManager/ExtensionPackageLayout.swift"
 maintenance="$root/Sumi/Managers/ExtensionManager/ExtensionPackageMaintenance.swift"
-legacy_recovery="$root/Sumi/Managers/ExtensionManager/LegacyExtensionBackupRecovery.swift"
 metadata_store="$root/Sumi/Managers/ExtensionManager/ExtensionInstallationMetadataStore.swift"
 
 if scan_has_matches 'struct (Environment|Dependencies)|ExtensionInstallationService\.Environment' \
@@ -148,11 +147,4 @@ require_matches 'installedRecords\.upsert' "$record"
 require_matches 'changed its declared extension identity' "$identity"
 require_matches 'ExtensionInstallationFailurePolicy\.resolve' "$settlement"
 require_matches 'failureSettlement\.settle' "$service"
-require_matches 'legacyBackupRecovery\.recover' "$metadata_store"
-require_matches '\.union\(deferredPackagePaths\)' "$metadata_store"
-if scan_has_matches 'try\?' "$legacy_recovery"; then
-    echo "legacy package recovery must not silently discard filesystem failures" >&2
-    exit 1
-fi
-
 echo "extension installation transaction boundary passed"

@@ -35,10 +35,6 @@ struct WebExtensionRuntimeStoragePreparation {
     }
 
     func prepare() {
-        storage.adoptLegacyStorageDirectoryIfNeeded(
-            for: extensionID,
-            resolvedStorageName: runtimeIdentifier
-        )
         _ = storage.ensureDirectoryExists(for: extensionID)
     }
 

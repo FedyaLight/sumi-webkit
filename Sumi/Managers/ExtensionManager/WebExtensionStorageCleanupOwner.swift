@@ -202,31 +202,6 @@ final class WebExtensionStorageCleanupOwner {
         )
     }
 
-    /// Adopts a legacy bare-id storage directory into the composed-identifier
-    /// directory before the context loads, preserving extension state across
-    /// the Safari runtime-identifier migration.
-    ///
-    /// The storage identity is resolved from the load request's source kind
-    /// and bundle path — not from `installedExtensions`, which is empty during
-    /// early startup loads and would silently turn adoption into a no-op.
-    func adoptLegacyStorageDirectoryIfNeeded(
-        for extensionId: String,
-        profileId: UUID? = nil,
-        sourceKind: WebExtensionSourceKind,
-        sourceBundlePath: String?
-    ) {
-        let resolvedStorageName = SafariWebExtensionRuntimeIdentity.webKitStorageIdentifier(
-            extensionId: extensionId,
-            sourceKind: sourceKind,
-            sourceBundlePath: sourceBundlePath
-        )
-        storageCleanupStore(profileId: profileId)
-            .adoptLegacyStorageDirectoryIfNeeded(
-                for: extensionId,
-                resolvedStorageName: resolvedStorageName
-            )
-    }
-
     func hasStoredDataCandidate(for extensionId: String) -> Bool {
         storageCleanupStore().hasStoredDataCandidate(for: extensionId)
     }

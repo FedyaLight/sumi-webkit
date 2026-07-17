@@ -35,8 +35,6 @@ final class BrowserWindowSessionBundle {
         )
         let splitRestorer = WindowSessionSplitRestorer(
             groups: browserManager.splitGroupStore,
-            mutations: browserManager.splitGroupMutations,
-            membership: browserManager.tabCollectionMembershipOwner,
             startupRestore: browserManager.startupRestoreLifecycle,
             focus: splitFocus
         )

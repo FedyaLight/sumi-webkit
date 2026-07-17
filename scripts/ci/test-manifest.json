@@ -322,7 +322,6 @@
         "SumiTests/LastSessionWindowArchiveTests",
         "SumiTests/LastSessionWindowsRestoreServiceTests",
         "SumiTests/LastSessionWindowsStoreTests",
-        "SumiTests/LegacyExtensionBackupRecoveryTests",
         "SumiTests/PersistenceFixtureTests",
         "SumiTests/PreparedProfileAssignmentBatchModelTransactionTests",
         "SumiTests/ProfileDeletionFinalizationTests",

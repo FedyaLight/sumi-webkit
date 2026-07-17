@@ -68,7 +68,6 @@ final class SumiPermissionCleanupServiceTests: XCTestCase {
         )
 
         let authority = SumiPermissionPersistenceAuthority(
-            userDefaults: defaults,
             storageDirectory: directory
         )
         let siteActivityStore = SumiPermissionSiteActivityStore(
@@ -193,7 +192,6 @@ final class SumiPermissionCleanupServiceTests: XCTestCase {
         try corruptData.write(to: canonicalURL)
         let siteActivityStore = SumiPermissionSiteActivityStore(
             persistenceAuthority: SumiPermissionPersistenceAuthority(
-                userDefaults: nil,
                 storageDirectory: directory
             )
         )

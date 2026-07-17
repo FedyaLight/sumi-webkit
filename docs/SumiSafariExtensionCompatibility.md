@@ -390,6 +390,10 @@ prefixes, and which selector prefix the final error response corresponds to.
 
 ## Cycle 21 Storage Adoption Safety + Test Isolation (2026-07-03)
 
+> Historical note: the storage-adoption mechanism described in this cycle was
+> removed before release. Current builds use only the resolved current WebKit
+> storage identifier and do not inspect or migrate bare-id directories.
+
 Field report after Cycle 19/20: clean rebuild still reproduced
 `LocalStorage.db … vnode unlinked while in use` under the composed-identifier
 directory plus `runtime.sendNativeMessage(): The companion application secure
@@ -423,7 +427,7 @@ WebKit root proved three distinct defects:
 
 ### Fixed
 
-- `WebExtensionStorageCleanupStore.adoptLegacyStorageDirectoryIfNeeded`:
+- The former storage-adoption path (removed before release):
   - never deletes the composed directory — when it must yield to legacy data
     it is atomically **renamed aside** (`.sumi-replaced-*`), so file
     descriptors WebKit opened after the emptiness check stay valid;
@@ -432,7 +436,7 @@ WebKit root proved three distinct defects:
     with bytes preserved), so the destructive branch can never re-arm;
   - resolves the storage identity from the load request's
     `sourceKind`/`sourceBundlePath` (`ExtensionRuntimeContextLoader` →
-    `adoptLegacyWebExtensionStorageIfNeeded`), not from possibly-unloaded
+    former storage-adoption hook), not from possibly-unloaded
     `installedExtensions`.
 - `ExtensionControllerProvisioningOwner.extensionControllerIdentifier(for:)`
   returns a process-stable **random** identifier in test runs (registered via
@@ -446,11 +450,8 @@ WebKit root proved three distinct defects:
 
 ### Tests
 
-- `WebExtensionStorageCleanupPlannerTests`: new
-  `testAdoptLegacyRemovesStateOnlyLegacyDirectory`,
-  `testAdoptLegacyReplaceSetsComposedDirectoryAsideInsteadOfDeleting`; updated
-  `testAdoptLegacyStorageNeverReplacesComposedDirectoryWithData` to assert the
-  legacy directory is retired with bytes preserved.
+- Storage-adoption regression tests covered state-only, replacement, and
+  composed-data cases; these tests were removed with the pre-release migration.
 - Regression: fork pipeline E2E, profile isolation, Proton companion adapter,
   message router, site access, runtime identity, import auto-enable,
   Bitwarden adapter, inline overlay suites pass.
@@ -624,11 +625,9 @@ Root causes (all storage-identity fallout from the Cycle 18 identifier change):
   Sumi resolves the WebKit directory name through
   `SafariWebExtensionRuntimeIdentity.webKitStorageIdentifier` (composed for
   `.appex`, internal id otherwise; cached per bundle path).
-- One-time legacy adoption: before context load, a legacy bare-id storage
-  directory is moved into the composed-identifier directory when the composed
-  directory has no real data (`adoptLegacyStorageDirectoryIfNeeded`), preserving
-  sessions across the identifier migration. A composed directory that already
-  has store files is never replaced.
+- The one-time bare-id → composed-id adoption described in this historical
+  cycle was removed before release. Current builds create and use only the
+  composed-identifier directory.
 - Safari parity for reinstall: importing/enabling a Safari app extension no
   longer wipes WebKit extension data (Safari preserves extension state across
   reinstall and containing-app updates). Stale-data cleanup now applies only to

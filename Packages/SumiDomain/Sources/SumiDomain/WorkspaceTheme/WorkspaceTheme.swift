@@ -217,13 +217,6 @@ public struct WorkspaceTheme: Codable, Hashable, Sendable {
             forKey: .usesExplicitColorScheme
         ) ?? !gradientTheme.normalizedColors.isEmpty
 
-        if !usesExplicitColorScheme,
-           Self.matchesLegacyDefaultForMigration(gradientTheme) {
-            self.gradientTheme = .default
-            self.usesExplicitColorScheme = true
-            return
-        }
-
         self.gradientTheme = gradientTheme
         self.usesExplicitColorScheme = usesExplicitColorScheme
     }
@@ -246,34 +239,5 @@ public struct WorkspaceTheme: Codable, Hashable, Sendable {
             gradientTheme: .incognito,
             usesExplicitColorScheme: true
         )
-    }
-
-    public static let legacyDefaultGradientTheme = WorkspaceGradientTheme(
-        colors: [
-            WorkspaceThemeColor(
-                hex: WorkspaceGradientTheme.defaultPrimaryHex,
-                isPrimary: true,
-                lightness: 467.0 / 510.0,
-                position: .monochrome
-            ),
-        ],
-        opacity: 0.62,
-        texture: 1.0 / 16.0
-    )
-
-    private static func matchesLegacyDefaultForMigration(
-        _ candidate: WorkspaceGradientTheme
-    ) -> Bool {
-        let colors = candidate.normalizedColors
-        guard colors.count == 1, let color = colors.first else { return false }
-
-        let legacyColor = legacyDefaultGradientTheme.normalizedColors[0]
-        let opacity = min(max(candidate.opacity, 0), 1)
-        let texture = min(max(candidate.texture, 0), 1)
-        return color.hex.caseInsensitiveCompare(legacyColor.hex) == .orderedSame
-            && abs(color.position.x - legacyColor.position.x) <= 1e-4
-            && abs(color.position.y - legacyColor.position.y) <= 1e-4
-            && abs(opacity - legacyDefaultGradientTheme.opacity) <= 0.01
-            && abs(texture - legacyDefaultGradientTheme.texture) <= 0.01
     }
 }

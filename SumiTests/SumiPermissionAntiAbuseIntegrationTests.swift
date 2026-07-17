@@ -10,7 +10,7 @@ final class SumiPermissionAntiAbuseIntegrationTests: XCTestCase {
     func testDismissCooldownSuppressesNotificationPromptAsDefaultWithoutPersistentDeny() async {
         let clock = SumiPermissionAntiAbuseTestClock(now: sumiPermissionIntegrationNow)
         let store = SumiPermissionIntegrationStore()
-        let antiAbuseStore = SumiPermissionAntiAbuseStore(userDefaults: nil)
+        let antiAbuseStore = SumiPermissionAntiAbuseStore()
         let system = FakeSumiSystemPermissionService(
             states: sumiPermissionIntegrationAuthorizedSystemStates()
         )
@@ -66,7 +66,7 @@ final class SumiPermissionAntiAbuseIntegrationTests: XCTestCase {
     func testManualAllowClearsSuppressionForExactPermissionKey() async throws {
         let clock = SumiPermissionAntiAbuseTestClock(now: sumiPermissionIntegrationNow)
         let store = SumiPermissionIntegrationStore()
-        let antiAbuseStore = SumiPermissionAntiAbuseStore(userDefaults: nil)
+        let antiAbuseStore = SumiPermissionAntiAbuseStore()
         let coordinator = SumiPermissionCoordinator(
             policyResolver: DefaultSumiPermissionPolicyResolver(
                 systemPermissionService: FakeSumiSystemPermissionService(

@@ -37,18 +37,7 @@ class ZoomManager: ObservableObject {
             return Self.defaultZoomLevel
         }
 
-        if let rawValue = zoomLevel(forKey: key) {
-            return clampZoom(rawValue)
-        }
-
-        guard profileId != nil,
-              let legacyKey = zoomStorageKey(for: domain, profileId: nil),
-              let rawValue = zoomLevel(forKey: legacyKey)
-        else {
-            return Self.defaultZoomLevel
-        }
-
-        return clampZoom(rawValue)
+        return zoomLevel(forKey: key).map(clampZoom) ?? Self.defaultZoomLevel
     }
 
     /// Save zoom level for a specific domain
@@ -60,10 +49,6 @@ class ZoomManager: ObservableObject {
         let clampedZoom = clampZoom(zoomLevel)
         if isDefaultZoom(clampedZoom) {
             userDefaults.removeObject(forKey: key)
-            if profileId != nil,
-               let legacyKey = zoomStorageKey(for: domain, profileId: nil) {
-                userDefaults.removeObject(forKey: legacyKey)
-            }
         } else {
             userDefaults.set(clampedZoom, forKey: key)
         }

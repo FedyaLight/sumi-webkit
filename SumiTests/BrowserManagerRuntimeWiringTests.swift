@@ -388,7 +388,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         let cleanupService = SumiPermissionCleanupService(
             store: permissionStore,
             recentActivityStore: recentActivityStore,
-            antiAbuseStore: SumiPermissionAntiAbuseStore(userDefaults: nil),
+            antiAbuseStore: SumiPermissionAntiAbuseStore(),
             siteActivityStore: siteActivityStore
         )
         let blockedPopupStore = SumiBlockedPopupStore()
@@ -1160,11 +1160,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
     }
 
     private func makeSiteActivityStore() throws -> SumiPermissionSiteActivityStore {
-        SumiPermissionSiteActivityStore(
-            userDefaults: try XCTUnwrap(
-                UserDefaults(suiteName: "BrowserManagerRuntimeWiringTests-\(UUID().uuidString)")
-            )
-        )
+        SumiPermissionSiteActivityStore()
     }
 }
 

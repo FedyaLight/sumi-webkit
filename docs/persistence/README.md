@@ -8,7 +8,7 @@ Run `scripts/check_persistence_inventory.sh` after changing a store, a persisten
 
 | Family | Class | Owner/version | Logical root | Recovery truth |
 |---|---|---|---|---|
-| Startup browser state | Authoritative | `SumiStartupSchemaV1...V3` 1.0.0...3.0.0 | Application Support runtime root, `default.store` | Structured SQLite corruption alone can quarantine; schema/migration/lock failures fail closed |
+| Startup browser state | Authoritative | `SumiStartupSchemaV3` 3.0.0 | Application Support runtime root, `default.store` | Structured SQLite corruption alone can quarantine; schema/lock failures fail closed |
 | Bookmarks | Authoritative | `BookmarksModel` 6 | Application Support runtime `Bookmarks` root | Core Data lightweight migration; load failure does not authorize deletion |
 | Preferences and small sessions | Authoritative | Per-key owners; split archive v2 | Runtime UserDefaults domain | Per-owner default/legacy decode; no domain transaction |
 | Permission activity | Authoritative | `SumiPermissionPersistenceAuthority` v1 | Runtime `Permissions` root | Unsupported/malformed bytes fail closed and are preserved as unreadable |
@@ -45,7 +45,6 @@ There is no distributed transaction. The actual multi-store boundaries are:
 [`manifest.json`](../../SumiTests/Fixtures/Persistence/manifest.json) records every fixture's provenance, role, size, hash, and consuming test. Tests copy checked-in bytes and never manufacture an “old” payload from current production encoders.
 
 - The startup fixture is a real SQLite/WAL/SHM family created once from the exact persistent declarations at historical commit `50f8ff4bea88a5d317afb7afac7e4c2966923f7b`, including removed UserScript entities. The archived app could not be relaunched because its old local DDG binary dependency is unavailable, so this proves declaration/runtime compatibility rather than execution by the historical binary.
-- The bookmark fixture is a real SQLite store built from the shipped `BookmarksModel 2` model and contains a synthetic bookmark that must survive lightweight migration to model 6.
 - JSON fixtures are static wire payloads for shipped formats. Unsupported, malformed, and tampered variants are separate immutable adversarial inputs.
 - WebKit and Keychain physical stores are OS-owned and machine/container-specific, so portable binary fixtures would be misleading. Their ownership and cleanup boundaries remain guarded semantically; no fixture claims migration access Sumi does not have.
 

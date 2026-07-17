@@ -30,17 +30,14 @@
       "name": "Startup browser state",
       "classification": "authoritative",
       "technology": "SwiftData backed by a SQLite store family",
-      "versionOwner": "SumiStartupSchemaV1 1.0.0, SumiStartupSchemaV2 2.0.0, SumiStartupSchemaV3 3.0.0, and SumiStartupMigrationPlan; V1 retains migration-only UserScript models removed from the current schema; recovery manifest format 2 and transition marker format 1 are owned by SumiStartupStoreRecovery",
+      "versionOwner": "SumiStartupSchemaV3 3.0.0; recovery manifest format 2 and transition marker format 1 are owned by SumiStartupStoreRecovery",
       "locationPolicy": "<Application Support>/<runtime bundle identifier>/default.store plus SQLite companions; recovery artifacts remain under the sibling StartupPersistenceQuarantine root",
       "backupRestorePolicy": "Backup v1 includes only the startup records represented by SumiBackupV1Scope portable categories: profiles, spaces and themes, folders, essentials, pinned launchers, and regular tabs. History, permission decisions, and extension metadata and payloads remain local. Recovery quarantine separately preserves byte-for-byte SQLite family members before replacement.",
       "corruptionRecoveryPolicy": "Only structured SQLite corruption evidence authorizes quarantine and fresh-store preparation. Schema mismatch, lock failure, migration failure, or unclassified open failure fails closed without destructive replacement. Interrupted filesystem transitions resume from fsynced markers.",
-      "legacySources": "The shipped pre-VersionedSchema SwiftData store, including removed UserScript models; compatible stores migrate in place through SwiftData",
+      "legacySources": "No legacy sources; only the current V3 schema is accepted",
       "productionTypes": [
         "SumiStartupPersistence",
-        "SumiStartupSchemaV1",
-        "SumiStartupSchemaV2",
         "SumiStartupSchemaV3",
-        "SumiStartupMigrationPlan",
         "SumiStartupStoreRecovery",
         "SumiStartupStoreIO"
       ],
@@ -61,41 +58,34 @@
         {"path": "Sumi/Models/Tab/TabsModel.swift", "type": "FolderEntity"},
         {"path": "Sumi/Models/Tab/TabsModel.swift", "type": "TabEntity"},
         {"path": "Sumi/Models/Tab/TabsModel.swift", "type": "TabsStateEntity"},
-        {"path": "Sumi/Permissions/PermissionDecisionEntity.swift", "type": "PermissionDecisionEntity"},
-        {"path": "Sumi/Services/SumiStartupPersistence.swift", "type": "ExtensionEntity"},
-        {"path": "Sumi/Services/SumiStartupPersistence.swift", "type": "UserScriptEntity"},
-        {"path": "Sumi/Services/SumiStartupPersistence.swift", "type": "UserScriptResourceEntity"}
+        {"path": "Sumi/Permissions/PermissionDecisionEntity.swift", "type": "PermissionDecisionEntity"}
       ],
-      "fixtures": [
-        "SumiTests/Fixtures/Persistence/startup-swiftdata/default.store",
-        "SumiTests/Fixtures/Persistence/startup-swiftdata/default.store-shm",
-        "SumiTests/Fixtures/Persistence/startup-swiftdata/default.store-wal"
-      ]
+      "fixtures": []
     },
     {
       "id": "bookmarks-coredata",
       "name": "Bookmarks",
       "classification": "authoritative",
       "technology": "Core Data NSPersistentContainer with SQLite",
-      "versionOwner": "BookmarksModel.xcdatamodeld; current version is BookmarksModel 6 and shipped versions are the original model plus 2 through 6",
+      "versionOwner": "BookmarksModel.xcdatamodeld; BookmarksModel 6 is the only current model",
       "locationPolicy": "<Application Support>/<runtime bundle identifier>/Bookmarks/SumiBookmarks.sqlite plus Core Data SQLite companions",
       "backupRestorePolicy": "Logical backup/import snapshots bookmark entities and uses a bookmark checkpoint for compensation; raw SQLite files are not copied into logical backups",
       "corruptionRecoveryPolicy": "Persistent-store load errors make the database unavailable; the app does not silently delete or recreate a failed bookmark store. Core Data performs inferred lightweight migration where compatible.",
-      "legacySources": "BookmarksModel original and versions 2, 3, 4, and 5",
+      "legacySources": "No legacy sources; only BookmarksModel 6 is bundled",
       "productionTypes": ["SumiBookmarkDatabase", "SumiPersistentContainerDatabase"],
       "semanticSources": ["Sumi/Common/Database/SumiPersistentContainerDatabase.swift"],
-      "fixtures": ["SumiTests/Fixtures/Persistence/bookmarks/SumiBookmarks-v2.sqlite"]
+      "fixtures": []
     },
     {
       "id": "preferences-userdefaults",
       "name": "Preference domain and small session records",
       "classification": "authoritative",
       "technology": "UserDefaults values owned independently by settings, feature, extension, and session types",
-      "versionOwner": "There is intentionally no domain-wide schema owner. Each key owner owns its primitive or Codable payload; TabPersistenceCodec owns split archive v2, WindowSessionSnapshotCodec owns its envelope, and LastSessionWindowsStore accepts its legacy bare-array payload.",
+      "versionOwner": "There is intentionally no domain-wide schema owner. Each key owner owns its primitive or Codable payload; TabPersistenceCodec owns split archive v2 and WindowSessionSnapshotCodec owns its envelope.",
       "locationPolicy": "The standard preference domain for the runtime bundle identifier; tests use isolated suites. No code may assume a physical plist path.",
       "backupRestorePolicy": "Backup v1 includes no UserDefaults preferences or session settings; those values remain local and are reset by their owning feature.",
-      "corruptionRecoveryPolicy": "Primitive keys fall back to owner defaults. Codable owners fail closed to an empty/default snapshot and retain explicit legacy decoders where shipped. There is no cross-key transaction.",
-      "legacySources": "Split-group archive v1, legacy split window-session payload, legacy last-session bare array, permission legacy keys, and extension metadata/import keys",
+      "corruptionRecoveryPolicy": "Primitive keys fall back to owner defaults. Codable owners fail closed to an empty/default snapshot. There is no cross-key transaction.",
+      "legacySources": "No legacy migration sources; current owner formats only",
       "productionTypes": [
         "Persisted",
         "SumiSettingsService",
@@ -140,13 +130,9 @@
         "Sumi/Managers/KeyboardShortcutManager/KeyboardShortcutManager.swift",
         "Sumi/Managers/KeyboardShortcutManager/KeyboardShortcutStore.swift",
         "Sumi/Managers/ZoomManager/ZoomManager.swift",
-        "Sumi/Permissions/SumiPermissionAntiAbuseStore.swift",
         "Sumi/Permissions/SumiPermissionCleanupService.swift",
         "Sumi/Permissions/SumiPermissionCleanupSettingsOwner.swift",
-        "Sumi/Permissions/SumiPermissionPersistenceAuthority.swift",
         "Sumi/Permissions/SumiPermissionSettingsRepository.swift",
-        "Sumi/Permissions/SumiPermissionSiteActivityStore.swift",
-        "Sumi/Permissions/SumiPermissionSnapshotLoader.swift",
         "Sumi/Services/RuntimeDiagnostics.swift",
         "Sumi/Services/ProfileApplicationDataCleanupService.swift",
         "Sumi/Services/SumiBrowsingDataCleanupService.swift",
@@ -156,10 +142,7 @@
         "Sumi/Updates/SumiUpdaterService.swift"
       ],
       "fixtures": [
-        "SumiTests/Fixtures/Persistence/sessions/last-session-windows-legacy-array.json",
-        "SumiTests/Fixtures/Persistence/sessions/window-session-legacy-split.json",
-        "SumiTests/Fixtures/Persistence/tabs/split-groups-unsupported-v3.json",
-        "SumiTests/Fixtures/Persistence/tabs/split-groups-v1.json"
+        "SumiTests/Fixtures/Persistence/tabs/split-groups-unsupported-v3.json"
       ]
     },
     {
@@ -170,8 +153,8 @@
       "versionOwner": "SumiPermissionPersistenceAuthority.storageVersion = 1",
       "locationPolicy": "<Application Support>/<runtime bundle identifier>/Permissions/permission-state.v1.json; diagnostic copies use the adjacent unreadable suffix",
       "backupRestorePolicy": "Backup v1 excludes permission decisions, activity, and anti-abuse state; all permission persistence remains local operational state.",
-      "corruptionRecoveryPolicy": "Unsupported or malformed canonical data fails closed, leaves the original bytes in place, and preserves an adjacent unreadable copy. Legacy snapshots publish canonical state before their old files/keys are retired.",
-      "legacySources": "permission-anti-abuse-events.v1.json, permission-site-activity.v1.json, and their historical UserDefaults payloads",
+      "corruptionRecoveryPolicy": "Unsupported or malformed canonical data fails closed, leaves the original bytes in place, and preserves an adjacent unreadable copy.",
+      "legacySources": "No legacy sources; permission-state.v1.json is the only accepted snapshot",
       "productionTypes": [
         "SumiPermissionPersistenceAuthority",
         "SumiPermissionSnapshotLoader",
@@ -179,13 +162,10 @@
       ],
       "semanticSources": [
         "Sumi/Permissions/SumiPermissionCanonicalSnapshotPublisher.swift",
-        "Sumi/Permissions/SumiPermissionPersistenceAuthority.swift",
         "Sumi/Permissions/SumiPermissionSnapshotLoader.swift"
       ],
       "fixtures": [
         "SumiTests/Fixtures/Persistence/permissions/canonical-v1.json",
-        "SumiTests/Fixtures/Persistence/permissions/legacy-anti-abuse-v1.json",
-        "SumiTests/Fixtures/Persistence/permissions/legacy-site-activity-v1.json",
         "SumiTests/Fixtures/Persistence/permissions/malformed.json",
         "SumiTests/Fixtures/Persistence/permissions/unsupported-future-v2.json"
       ]
@@ -251,21 +231,19 @@
       "name": "Installed extension packages",
       "classification": "authoritative",
       "technology": "Application Support package directories coordinated with SwiftData ExtensionEntity metadata",
-      "versionOwner": "ExtensionPackageInstallTransaction owns staging/publication; ExtensionEntity in SumiStartupSchemaV1 owns installed metadata",
-      "locationPolicy": "Extension package roots under <Application Support>/<runtime bundle identifier>; staging, legacy backup, and quarantine names are siblings controlled by the package transaction",
+      "versionOwner": "ExtensionPackageInstallTransaction owns staging/publication; ExtensionEntity in SumiStartupSchemaV3 owns installed metadata",
+      "locationPolicy": "Extension package roots under <Application Support>/<runtime bundle identifier>; staging and quarantine names are siblings controlled by the package transaction",
       "backupRestorePolicy": "Backup v1 excludes extension metadata, configuration, and package payloads. Installation independently stages package bytes before metadata publication and rolls staged filesystem state back on failure.",
-      "corruptionRecoveryPolicy": "Invalid packages are quarantined or removed by explicit maintenance. Legacy backups are recovered with ordered renames. There is no transaction spanning filesystem, SwiftData, and WebKit activation.",
-      "legacySources": "Legacy extension package roots and backup directory layouts",
+      "corruptionRecoveryPolicy": "Invalid packages are quarantined or removed by explicit maintenance. There is no transaction spanning filesystem, SwiftData, and WebKit activation.",
+      "legacySources": "No legacy package layouts; only staged installation generations are supported",
       "productionTypes": [
         "ExtensionPackageInstallTransaction",
         "ExtensionPackageMaintenance",
-        "LegacyExtensionBackupRecovery",
         "ExtensionEntity"
       ],
       "semanticSources": [
         "Sumi/Managers/ExtensionManager/ExtensionPackageInstallTransaction.swift",
-        "Sumi/Managers/ExtensionManager/ExtensionPackageMaintenance.swift",
-        "Sumi/Managers/ExtensionManager/LegacyExtensionBackupRecovery.swift"
+        "Sumi/Managers/ExtensionManager/ExtensionPackageMaintenance.swift"
       ],
       "fixtures": []
     },
@@ -292,12 +270,12 @@
       "id": "webkit-extension-storage",
       "name": "Web extension local storage",
       "classification": "authoritative",
-      "technology": "WKWebExtensionController storage owned by WebKit, with app-owned legacy/current directory cleanup",
-      "versionOwner": "WebKit owns active storage schema; ExtensionRuntimeControllerIdentifierOwner owns controller identifiers and WebExtensionStorageCleanupStore owns directory retirement",
-      "locationPolicy": "WebKit-selected extension storage plus app-scoped current/legacy extension-storage directories under the runtime container",
+      "technology": "WKWebExtensionController storage owned by WebKit, with app-owned scoped cleanup",
+      "versionOwner": "WebKit owns active storage schema; ExtensionRuntimeControllerIdentifierOwner owns controller identifiers",
+      "locationPolicy": "WebKit-selected extension storage under the runtime container",
       "backupRestorePolicy": "Not included in logical backup. Extension uninstall/profile cleanup removes only the scoped controller storage and directory.",
-      "corruptionRecoveryPolicy": "WebKit handles active store corruption. Cleanup moves legacy/current directories through retired names before deletion and never treats extension package metadata as a database transaction.",
-      "legacySources": "Legacy web-extension storage directory and controller identifier mappings",
+      "corruptionRecoveryPolicy": "WebKit handles active store corruption. Scoped cleanup never treats extension package metadata as a database transaction.",
+      "legacySources": "No legacy directory adoption; only the resolved current storage identifier is used",
       "productionTypes": [
         "ExtensionControllerProvisioningOwner",
         "ExtensionRuntimeControllerIdentifierOwner",
@@ -372,17 +350,17 @@
       "name": "Generated adblock archives",
       "classification": "cache",
       "technology": "Versioned JSON generation manifest plus shard/index files",
-      "versionOwner": "AdblockCompiledGenerationManifest.currentSchemaVersion = 6; activeManifest accepts shipped schema range 1 through 6",
+      "versionOwner": "AdblockCompiledGenerationManifest.currentSchemaVersion = 6; activeManifest accepts only schema 6",
       "locationPolicy": "<Application Support>/Sumi/Adblock generation directories and active-generation.json",
       "backupRestorePolicy": "Excluded from logical backup; regenerated from bundled or approved remote rule sources",
       "corruptionRecoveryPolicy": "Manifest version, topology, relative path, size, and SHA-256 validation fail closed. Publication stages a generation before atomic directory/manifest replacement and retention removes only inactive cache generations.",
-      "legacySources": "Generation manifest schemas 1 through 5",
+      "legacySources": "No legacy schemas; the cache is regenerated unless it is schema 6",
       "productionTypes": ["AdblockGenerationArchive", "AdblockCompiledGenerationManifest"],
       "semanticSources": ["Sumi/ContentBlocking/AdblockGenerationArchive.swift"],
       "fixtures": [
         "SumiTests/Fixtures/Persistence/adblock/manifest-tampered-index.json",
         "SumiTests/Fixtures/Persistence/adblock/manifest-unsupported-v7.json",
-        "SumiTests/Fixtures/Persistence/adblock/manifest-v1.json"
+        "SumiTests/Fixtures/Persistence/adblock/manifest-v6.json"
       ]
     },
     {
@@ -538,13 +516,9 @@
         "Sumi/Managers/KeyboardShortcutManager/KeyboardShortcutManager.swift",
         "Sumi/Managers/KeyboardShortcutManager/KeyboardShortcutStore.swift",
         "Sumi/Managers/ZoomManager/ZoomManager.swift",
-        "Sumi/Permissions/SumiPermissionAntiAbuseStore.swift",
         "Sumi/Permissions/SumiPermissionCleanupService.swift",
         "Sumi/Permissions/SumiPermissionCleanupSettingsOwner.swift",
-        "Sumi/Permissions/SumiPermissionPersistenceAuthority.swift",
         "Sumi/Permissions/SumiPermissionSettingsRepository.swift",
-        "Sumi/Permissions/SumiPermissionSiteActivityStore.swift",
-        "Sumi/Permissions/SumiPermissionSnapshotLoader.swift",
         "Sumi/Services/RuntimeDiagnostics.swift",
         "Sumi/Services/ProfileApplicationDataCleanupService.swift",
         "Sumi/Services/SumiBrowsingDataCleanupService.swift",
@@ -605,8 +579,7 @@
       "kind": "file_write",
       "paths": [
         "Sumi/Managers/ExtensionManager/ExtensionPackageInstallTransaction.swift",
-        "Sumi/Managers/ExtensionManager/ExtensionPackageMaintenance.swift",
-        "Sumi/Managers/ExtensionManager/LegacyExtensionBackupRecovery.swift"
+        "Sumi/Managers/ExtensionManager/ExtensionPackageMaintenance.swift"
       ]
     },
     {
@@ -623,11 +596,6 @@
       "owner": "webkit-extension-storage",
       "kind": "webkit_persistent",
       "paths": ["Sumi/Managers/ExtensionManager/ExtensionControllerProvisioningOwner.swift"]
-    },
-    {
-      "owner": "webkit-extension-storage",
-      "kind": "file_write",
-      "paths": ["Sumi/Managers/ExtensionManager/WebExtensionStorageCleanupStore.swift"]
     },
     {
       "owner": "import-journal",
@@ -695,20 +663,13 @@
     {"path": "Sumi/ImportExport/SumiImportTransactionJournal.swift", "declaration": "static let currentVersion = 1", "owner": "import-journal"},
     {"path": "Sumi/Managers/TabManager/TabPersistenceCodec.swift", "declaration": "static let schemaVersion = 2", "owner": "preferences-userdefaults"},
     {"path": "Sumi/Permissions/SumiPermissionPersistenceAuthority.swift", "declaration": "static let storageVersion = 1", "owner": "permissions-json"},
-    {"path": "Sumi/Services/SumiStartupPersistence.swift", "declaration": "static let versionIdentifier = Schema.Version(1, 0, 0)", "owner": "startup-swiftdata"},
-    {"path": "Sumi/Services/SumiStartupPersistence.swift", "declaration": "static let versionIdentifier = Schema.Version(2, 0, 0)", "owner": "startup-swiftdata"},
     {"path": "Sumi/Services/SumiStartupPersistence.swift", "declaration": "static let versionIdentifier = Schema.Version(3, 0, 0)", "owner": "startup-swiftdata"},
     {"path": "Sumi/Services/SumiStartupStoreRecovery.swift", "declaration": "guard marker.formatVersion == 1, marker.storeFileName == storeURL.lastPathComponent else {", "owner": "startup-swiftdata"},
     {"path": "Sumi/Services/SumiStartupStoreRecovery.swift", "declaration": "guard manifest.formatVersion == 2,", "owner": "startup-swiftdata"}
   ],
   "coreDataModels": [
-    {"path": "Sumi/Bookmarks/Store/BookmarksModel.xcdatamodeld/BookmarksModel 2.xcdatamodel/contents", "entities": ["BookmarkEntity"]},
-    {"path": "Sumi/Bookmarks/Store/BookmarksModel.xcdatamodeld/BookmarksModel 3.xcdatamodel/contents", "entities": ["BookmarkEntity"]},
-    {"path": "Sumi/Bookmarks/Store/BookmarksModel.xcdatamodeld/BookmarksModel 4.xcdatamodel/contents", "entities": ["BookmarkEntity"]},
-    {"path": "Sumi/Bookmarks/Store/BookmarksModel.xcdatamodeld/BookmarksModel 5.xcdatamodel/contents", "entities": ["BookmarkEntity"]},
-    {"path": "Sumi/Bookmarks/Store/BookmarksModel.xcdatamodeld/BookmarksModel 6.xcdatamodel/contents", "entities": ["BookmarkEntity"]},
-    {"path": "Sumi/Bookmarks/Store/BookmarksModel.xcdatamodeld/BookmarksModel.xcdatamodel/contents", "entities": ["BookmarkEntity"]}
-  ],
+    {"path": "Sumi/Bookmarks/Store/BookmarksModel.xcdatamodeld/BookmarksModel 6.xcdatamodel/contents", "entities": ["BookmarkEntity"]}
+      ],
   "coreDataCurrentVersions": [
     {"path": "Sumi/Bookmarks/Store/BookmarksModel.xcdatamodeld/.xccurrentversion", "current": "BookmarksModel 6.xcdatamodel"}
   ]

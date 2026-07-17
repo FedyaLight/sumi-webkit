@@ -575,7 +575,7 @@ final class AdblockGenerationArchitectureTests: XCTestCase {
     }
 
     private func makeManifest(
-        schemaVersion: Int = 1,
+        schemaVersion: Int = AdblockCompiledGenerationManifest.currentSchemaVersion,
         generationId: String,
         previousGenerationId: String? = nil,
         shards: [NativeContentBlockingShardDescriptor] = []

@@ -18,7 +18,6 @@ final class BrowserTerminationRuntimeLeaseTests: XCTestCase {
         )
         let publishingGate = GatedPermissionPublisher()
         let authority = SumiPermissionPersistenceAuthority(
-            userDefaults: defaults,
             storageDirectory: directory,
             publishingFaultInjector: { stage, _ in publishingGate.observe(stage) }
         )

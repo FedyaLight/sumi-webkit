@@ -304,7 +304,7 @@ struct SiteSettingsRepositoryHarness {
         )
         self.coordinator = SiteSettingsFakePermissionCoordinator()
         self.recentStore = SumiPermissionRecentActivityStore()
-        self.siteActivityStore = SumiPermissionSiteActivityStore(userDefaults: userDefaults)
+        self.siteActivityStore = SumiPermissionSiteActivityStore()
         self.blockedPopupStore = SumiBlockedPopupStore()
         self.externalSchemeStore = SumiExternalSchemeSessionStore()
         self.indicatorStore = SumiPermissionIndicatorEventStore()
@@ -321,7 +321,7 @@ struct SiteSettingsRepositoryHarness {
         let cleanupService = SumiPermissionCleanupService(
             store: store,
             recentActivityStore: recentStore,
-            antiAbuseStore: SumiPermissionAntiAbuseStore(userDefaults: nil),
+            antiAbuseStore: SumiPermissionAntiAbuseStore(),
             siteActivityStore: siteActivityStore,
             userDefaults: userDefaults,
             now: { Date(timeIntervalSince1970: 1_800_000_000) }

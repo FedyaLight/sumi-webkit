@@ -1,12 +1,9 @@
 import Foundation
 import SumiDomain
 
-enum DecodedSplitGroupArchive {
-    case version2(
-        groups: [SumiDomain.SplitGroup],
-        discardedEntryCount: Int
-    )
-    case legacyVersion1([LegacySplitGroupV1])
+struct DecodedSplitGroupArchive {
+    let groups: [SumiDomain.SplitGroup]
+    let discardedEntryCount: Int
 }
 
 private struct SplitGroupArchiveV2: Encodable {
@@ -26,12 +23,9 @@ private struct SplitGroupArchiveV2: Encodable {
     }
 }
 
-private enum SplitGroupArchivePayload: Decodable {
-    case version2(
-        groups: [SumiDomain.SplitGroup],
-        discardedEntryCount: Int
-    )
-    case legacyVersion1([LegacySplitGroupV1])
+private struct SplitGroupArchivePayload: Decodable {
+    let groups: [SumiDomain.SplitGroup]
+    let discardedEntryCount: Int
 
     private enum CodingKeys: String, CodingKey {
         case schemaVersion
@@ -39,37 +33,25 @@ private enum SplitGroupArchivePayload: Decodable {
     }
 
     init(from decoder: Decoder) throws {
-        if let container = try? decoder.container(
-            keyedBy: CodingKeys.self
-        ), container.contains(.schemaVersion) {
-            let schemaVersion = try container.decode(
-                Int.self,
-                forKey: .schemaVersion
-            )
-            guard schemaVersion == SplitGroupArchiveV2.schemaVersion else {
-                throw DecodingError.dataCorruptedError(
-                    forKey: .schemaVersion,
-                    in: container,
-                    debugDescription:
-                        "Unsupported split group archive schema version \(schemaVersion)."
-                )
-            }
-            let decodedGroups = try container.decode(
-                LossySplitGroupArray.self,
-                forKey: .groups
-            )
-            self = .version2(
-                groups: decodedGroups.groups,
-                discardedEntryCount: decodedGroups.discardedEntryCount
-            )
-            return
-        }
-
-        self = .legacyVersion1(
-            try decoder.singleValueContainer().decode(
-                [LegacySplitGroupV1].self
-            )
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let schemaVersion = try container.decode(
+            Int.self,
+            forKey: .schemaVersion
         )
+        guard schemaVersion == SplitGroupArchiveV2.schemaVersion else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .schemaVersion,
+                in: container,
+                debugDescription:
+                    "Unsupported split group archive schema version \(schemaVersion)."
+            )
+        }
+        let decodedGroups = try container.decode(
+            LossySplitGroupArray.self,
+            forKey: .groups
+        )
+        groups = decodedGroups.groups
+        discardedEntryCount = decodedGroups.discardedEntryCount
     }
 }
 
@@ -131,18 +113,14 @@ struct TabPersistenceCodec: Sendable {
     func decodeSplitGroupArchive(
         from data: Data
     ) throws -> DecodedSplitGroupArchive {
-        switch try JSONDecoder().decode(
+        let payload = try JSONDecoder().decode(
             SplitGroupArchivePayload.self,
             from: data
-        ) {
-        case .version2(let groups, let discardedEntryCount):
-            return .version2(
-                groups: groups,
-                discardedEntryCount: discardedEntryCount
-            )
-        case .legacyVersion1(let groups):
-            return .legacyVersion1(groups)
-        }
+        )
+        return DecodedSplitGroupArchive(
+            groups: payload.groups,
+            discardedEntryCount: payload.discardedEntryCount
+        )
     }
 }
 

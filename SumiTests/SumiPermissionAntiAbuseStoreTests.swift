@@ -20,7 +20,7 @@ final class SumiPermissionAntiAbuseStoreTests: XCTestCase {
     }
 
     func testRecordsAndFiltersEventsByCanonicalPermissionKey() async {
-        let store = SumiPermissionAntiAbuseStore(userDefaults: nil)
+        let store = SumiPermissionAntiAbuseStore()
         let key = antiAbuseKey(.camera)
         let other = antiAbuseKey(.microphone)
         let now = Date(timeIntervalSince1970: 1_800_000_000)
@@ -44,8 +44,6 @@ final class SumiPermissionAntiAbuseStoreTests: XCTestCase {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
 
         let firstStore = SumiPermissionAntiAbuseStore(
-            userDefaults: UserDefaults(suiteName: suiteName)!,
-            storageKey: storageKey,
             storageDirectory: directory
         )
         await firstStore.record(event(.userDismissed, key: persistentKey, at: now))
@@ -55,8 +53,6 @@ final class SumiPermissionAntiAbuseStoreTests: XCTestCase {
         XCTAssertTrue(didFlush)
 
         let secondStore = SumiPermissionAntiAbuseStore(
-            userDefaults: UserDefaults(suiteName: suiteName)!,
-            storageKey: storageKey,
             storageDirectory: directory
         )
         let persistentEvents = await secondStore.events(for: persistentKey, now: now)
@@ -66,86 +62,9 @@ final class SumiPermissionAntiAbuseStoreTests: XCTestCase {
         XCTAssertTrue(ephemeralEvents.isEmpty)
     }
 
-    func testUnreadablePersistentPayloadIsPreservedForDiagnostics() async throws {
-        let suiteName = "SumiAntiAbuseStoreTests-\(UUID().uuidString)"
-        let setupDefaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        let storageKey = "anti-abuse-\(UUID().uuidString)"
-        let unreadablePayload = Data("not-json".utf8)
-        setupDefaults.set(unreadablePayload, forKey: storageKey)
-
-        let store = SumiPermissionAntiAbuseStore(
-            userDefaults: try XCTUnwrap(UserDefaults(suiteName: suiteName)),
-            storageKey: storageKey
-        )
-        _ = await store.events(for: antiAbuseKey(.camera), now: Date(timeIntervalSince1970: 1_800_000_000))
-
-        let assertionDefaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        XCTAssertEqual(assertionDefaults.data(forKey: storageKey), unreadablePayload)
-        XCTAssertEqual(assertionDefaults.data(forKey: "\(storageKey).unreadable"), unreadablePayload)
-    }
-
-    func testUnreadableFilePayloadIsPreservedAndNotOverwrittenByRead() async throws {
-        let directory = try temporaryDirectory()
-        let payloadURL = directory.appendingPathComponent("permission-anti-abuse-events.v1.json")
-        let unreadablePayload = Data("not-json".utf8)
-        try unreadablePayload.write(to: payloadURL)
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: "SumiAntiAbuseFileTests-\(UUID().uuidString)"))
-        let store = SumiPermissionAntiAbuseStore(
-            userDefaults: defaults,
-            storageDirectory: directory
-        )
-
-        let events = await store.events(
-            for: antiAbuseKey(.camera),
-            now: Date(timeIntervalSince1970: 1_800_000_000)
-        )
-        let diagnostics = await store.diagnostics()
-
-        XCTAssertTrue(events.isEmpty)
-        XCTAssertEqual(try Data(contentsOf: payloadURL), unreadablePayload)
-        XCTAssertEqual(try Data(contentsOf: payloadURL.appendingPathExtension("unreadable")), unreadablePayload)
-        if case .failedFileDecode = diagnostics.loadOutcome {
-            // Expected classification.
-        } else {
-            XCTFail("Expected failed file decode, got \(diagnostics.loadOutcome)")
-        }
-    }
-
-    func testLegacyUserDefaultsPayloadMigratesToVersionedFileSnapshot() async throws {
-        let directory = try temporaryDirectory()
-        let suiteName = "SumiAntiAbuseMigrationTests-\(UUID().uuidString)"
-        let storageKey = "anti-abuse-\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        let now = Date(timeIntervalSince1970: 1_800_000_000)
-        let key = antiAbuseKey(.camera)
-        let legacyEvents = [event(.userDismissed, key: key, at: now)]
-        defaults.set(try JSONEncoder().encode(legacyEvents), forKey: storageKey)
-
-        let store = SumiPermissionAntiAbuseStore(
-            userDefaults: defaults,
-            storageKey: storageKey,
-            storageDirectory: directory
-        )
-        let events = await store.events(for: key, now: now)
-        let diagnostics = await store.diagnostics()
-
-        XCTAssertEqual(events.map(\.type), [.userDismissed])
-        XCTAssertEqual(diagnostics.loadOutcome, .loadedLegacyUserDefaults)
-        let authority = await store.persistenceAuthority
-        let didFlush = await authority.flushPendingWrites()
-        XCTAssertTrue(didFlush)
-        let migrated = try Data(
-            contentsOf: directory.appendingPathComponent(SumiPermissionPersistenceAuthority.canonicalFileName)
-        )
-        XCTAssertGreaterThan(migrated.count, 0)
-        let assertionDefaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        XCTAssertNil(assertionDefaults.data(forKey: storageKey))
-    }
-
     func testOneThousandRapidMutationsPublishOneGeneratedSnapshot() async throws {
         let directory = try temporaryDirectory()
         let authority = SumiPermissionPersistenceAuthority(
-            userDefaults: nil,
             storageDirectory: directory
         )
         let key = antiAbuseKey(.camera)
@@ -184,7 +103,6 @@ final class SumiPermissionAntiAbuseStoreTests: XCTestCase {
 
     func testRetentionCapRemovesOldAndExcessEvents() async {
         let store = SumiPermissionAntiAbuseStore(
-            userDefaults: nil,
             retentionInterval: 100,
             maximumEventsPerProfile: 2
         )

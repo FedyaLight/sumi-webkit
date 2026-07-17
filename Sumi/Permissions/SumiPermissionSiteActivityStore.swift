@@ -59,12 +59,10 @@ final class SumiPermissionSiteActivityStore: ObservableObject {
     }
 
     init(
-        userDefaults: UserDefaults? = nil,
         storageDirectory: URL? = nil,
         registrableDomainResolver: any SumiRegistrableDomainResolving = SumiRegistrableDomainResolver()
     ) {
         persistenceAuthority = SumiPermissionPersistenceAuthority(
-            userDefaults: userDefaults,
             storageDirectory: storageDirectory
         )
         self.domainCache = SumiPermissionDomainCache(registrableDomainResolver: registrableDomainResolver)

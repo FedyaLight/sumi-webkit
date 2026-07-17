@@ -23,15 +23,11 @@ actor SumiPermissionAntiAbuseStore: SumiPermissionAntiAbuseStoring {
     }
 
     init(
-        userDefaults: UserDefaults? = nil,
-        storageKey: String = SumiPermissionPersistenceAuthority.defaultLegacyAntiAbuseStorageKey,
         storageDirectory: URL? = nil,
         retentionInterval: TimeInterval = SumiPermissionPromptCooldown.eventRetention,
         maximumEventsPerProfile: Int = SumiPermissionPromptCooldown.maximumEventsPerProfile
     ) {
         persistenceAuthority = SumiPermissionPersistenceAuthority(
-            userDefaults: userDefaults,
-            legacyAntiAbuseStorageKey: storageKey,
             storageDirectory: storageDirectory
         )
         self.retentionInterval = retentionInterval

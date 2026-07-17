@@ -58,7 +58,6 @@ struct SumiApp: App {
             settingsStore: SumiModuleSettingsStore(userDefaults: .standard)
         )
         let permissionPersistenceAuthority = SumiPermissionPersistenceAuthority(
-            userDefaults: .standard,
             storageDirectory: SumiApplicationSupportDirectory.appRootURL()
                 .appendingPathComponent("Permissions", isDirectory: true)
         )

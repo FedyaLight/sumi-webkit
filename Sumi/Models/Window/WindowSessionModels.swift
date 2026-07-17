@@ -2,11 +2,6 @@ import CoreGraphics
 import Foundation
 import SumiDomain
 
-enum LegacySplitOrientation: String, Codable, Hashable {
-    case horizontal
-    case vertical
-}
-
 enum FloatingBarPresentationReason: String, Codable, Equatable, Hashable {
     case none
     case emptySpace
@@ -57,37 +52,6 @@ struct GlanceSessionSnapshot: Codable, Equatable, Hashable {
     var originRectInWindow: GlanceSessionRectSnapshot?
 }
 
-// Decode-only compatibility for window snapshots written before split groups moved
-// into the tab structural store.
-struct LegacySplitSessionSnapshot: Codable, Equatable, Hashable {
-    var leftTabId: UUID
-    var rightTabId: UUID
-    var dividerFraction: Double
-    var activeSideRawValue: String?
-    var orientation: LegacySplitOrientation
-
-    func makeSplitMigration(spaceId: UUID?) -> LegacyWindowSplitMigration? {
-        guard let group = SumiDomain.SplitGroup.make(
-            members: [.regularTab(leftTabId), .regularTab(rightTabId)],
-            layoutKind: orientation == .vertical ? .horizontal : .vertical,
-            container: .regularTabs(spaceId: spaceId)
-        ) else {
-            return nil
-        }
-        return LegacyWindowSplitMigration(
-            group: group,
-            preferredMemberID: .regularTab(
-                activeSideRawValue == "left" ? leftTabId : rightTabId
-            )
-        )
-    }
-}
-
-struct LegacyWindowSplitMigration {
-    let group: SumiDomain.SplitGroup
-    let preferredMemberID: SplitMemberID
-}
-
 struct WindowSessionSnapshot: Codable, Equatable, Hashable {
     var currentTabId: UUID?
     var currentSpaceId: UUID?
@@ -111,8 +75,6 @@ struct WindowSessionSnapshot: Codable, Equatable, Hashable {
     var floatingBarDraft: FloatingBarDraftState
     var splitSelection: WindowSplitSelection? = nil
     var glanceSession: GlanceSessionSnapshot? = nil
-    var legacySplitSessionForMigration: LegacySplitSessionSnapshot?
-    var legacyActiveSplitGroupID: UUID?
 
     private enum CodingKeys: String, CodingKey {
         case currentTabId
@@ -130,9 +92,7 @@ struct WindowSessionSnapshot: Codable, Equatable, Hashable {
         case isSidebarVisible
         case floatingBarDraft
         case splitSelection
-        case activeSplitGroupId
         case glanceSession
-        case splitSession
     }
 
     init(
@@ -169,8 +129,6 @@ struct WindowSessionSnapshot: Codable, Equatable, Hashable {
         self.floatingBarDraft = floatingBarDraft
         self.splitSelection = splitSelection
         self.glanceSession = glanceSession
-        legacySplitSessionForMigration = nil
-        legacyActiveSplitGroupID = nil
     }
 
     init(from decoder: Decoder) throws {
@@ -203,14 +161,7 @@ struct WindowSessionSnapshot: Codable, Equatable, Hashable {
             WindowSplitSelection.self,
             forKey: .splitSelection
         )
-        legacyActiveSplitGroupID = splitSelection == nil
-            ? try container.decodeIfPresent(UUID.self, forKey: .activeSplitGroupId)
-            : nil
         glanceSession = try container.decodeIfPresent(GlanceSessionSnapshot.self, forKey: .glanceSession)
-        legacySplitSessionForMigration = try container.decodeIfPresent(
-            LegacySplitSessionSnapshot.self,
-            forKey: .splitSession
-        )
     }
 
     func encode(to encoder: Encoder) throws {

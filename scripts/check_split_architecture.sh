@@ -112,8 +112,6 @@ guard_expect_no_matches \
   'retired split identity or god surface is still referenced' \
   '\b(SplitGroupMember|SplitGroupHost|SplitGroupCollectionStateOwner|SplitGroupIndexStore|TabManagerSplitGroupRepairOwner|TabSplitGroupStructureOwner|SpaceLauncherProjectionOwner|SplitMembershipResolutionOwner|SplitEmptyPlaceholderOwner|SplitPreviewStateOwner)\b' \
   -g '*.swift' \
-  -g '!LegacySplitGroupV1Migration.swift' \
-  -g '!SplitGroupArchiveMigrationTests.swift' \
   Sumi SumiTests SidebarChrome UI App Settings FloatingBar
 
 guard_expect_no_matches \
@@ -172,8 +170,6 @@ guard_expect_no_matches \
   'retired live-tab split API is still used outside v1 migration' \
   'SplitGroup\.make\([[:space:]]*tabIds:|\b(maximumTabs|replacingMemberTab|swappingTabs|movingTab)\b|\b(removing|inserting)\(tabId:|\b(splitGroupStructureOwner|splitGroupCollectionStateOwner|splitGroupIndexStore|splitGroupRepairOwner)\b|\b(group|groupId)\(containingMemberId:' \
   -U -g '*.swift' \
-  -g '!LegacySplitGroupV1Migration.swift' \
-  -g '!SplitGroupArchiveMigrationTests.swift' \
   Sumi SumiTests SidebarChrome UI App Settings FloatingBar
 
 guard_expect_no_matches \
@@ -182,11 +178,9 @@ guard_expect_no_matches \
   -g '*.swift' Sumi SumiTests SidebarChrome UI App Settings FloatingBar
 
 guard_expect_no_matches \
-  'decode-only legacy split selection escaped its migration seam' \
+  'decode-only legacy split selection returned' \
   '\bactiveSplitGroupId\b' \
   -g '*.swift' \
-  -g '!WindowSessionModels.swift' \
-  -g '!WindowSplitSessionCodingTests.swift' \
   Sumi SumiTests SidebarChrome UI App Settings FloatingBar
 
 guard_expect_no_matches \

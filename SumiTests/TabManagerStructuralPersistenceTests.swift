@@ -898,8 +898,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
             guard let data = state.splitGroupsData,
                   let archive = try? TabPersistenceCodec()
                     .decodeSplitGroupArchive(from: data),
-                  case .version2(let decoded, _) = archive,
-                  let storedGroup = decoded.first(where: { $0.id == resizedGroup.id })
+                  let storedGroup = archive.groups.first(where: { $0.id == resizedGroup.id })
             else {
                 return false
             }
@@ -964,12 +963,11 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
         try await waitForPersistedState(in: container, after: tabManager.structuralPersistence) { state in
             guard let data = state.splitGroupsData,
                   let archive = try? TabPersistenceCodec()
-                    .decodeSplitGroupArchive(from: data),
-                  case .version2(let decoded, _) = archive
+                    .decodeSplitGroupArchive(from: data)
             else {
                 return false
             }
-            return decoded.contains {
+            return archive.groups.contains {
                 $0.id == group.id && $0.contains(.shortcutPin(pin.id))
             }
         }

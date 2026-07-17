@@ -42,11 +42,7 @@ final class SumiPermissionSourceRegressionTests: XCTestCase {
     @MainActor
     func testBrowserManagerPermissionRuntimeRecordsPermissionEvents() async throws {
         let recentActivityStore = SumiPermissionRecentActivityStore()
-        let siteActivityStore = SumiPermissionSiteActivityStore(
-            userDefaults: try XCTUnwrap(
-                UserDefaults(suiteName: "SumiPermissionSourceRegressionTests-\(UUID().uuidString)")
-            )
-        )
+        let siteActivityStore = SumiPermissionSiteActivityStore()
         let systemPermissionService = FakeSumiSystemPermissionService(
             states: sumiPermissionIntegrationAuthorizedSystemStates()
         )

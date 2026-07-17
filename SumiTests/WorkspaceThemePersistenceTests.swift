@@ -78,43 +78,6 @@ final class WorkspaceThemePersistenceTests: XCTestCase {
         XCTAssertEqual(WorkspaceResolvedGradient.default.texture, 1.0 / 16.0, accuracy: 0.0001)
     }
 
-    func testDecodeMigratesLegacyNonExplicitDefaultThemeToPresetOne() throws {
-        // A pre-preset-1 default theme as it was persisted: the old default
-        // gradient shape with the explicit-scheme flag off.
-        let legacyDefault = WorkspaceTheme(
-            gradientTheme: WorkspaceTheme.legacyDefaultGradientTheme,
-            usesExplicitColorScheme: false
-        )
-        let encoded = try XCTUnwrap(legacyDefault.encoded)
-
-        let decoded = try XCTUnwrap(WorkspaceTheme.decode(encoded))
-
-        XCTAssertTrue(decoded.usesExplicitColorScheme)
-        XCTAssertTrue(decoded.visuallyEquals(.default))
-    }
-
-    func testDecodeKeepsNonExplicitCustomColoredThemeUnmigrated() throws {
-        let customTheme = WorkspaceTheme(
-            gradientTheme: WorkspaceGradientTheme(
-                colors: [
-                    WorkspaceThemeColor(
-                        hex: "#112233",
-                        isPrimary: true,
-                        position: .monochrome
-                    ),
-                ],
-                opacity: 0.5,
-                texture: 0.125
-            ),
-            usesExplicitColorScheme: false
-        )
-        let encoded = try XCTUnwrap(customTheme.encoded)
-
-        let decoded = try XCTUnwrap(WorkspaceTheme.decode(encoded))
-
-        XCTAssertFalse(decoded.usesExplicitColorScheme)
-    }
-
     func testLegacyWorkspaceThemePayloadDefaultsExistingColoredThemesToExplicitScheme() throws {
         let legacyJSON = """
         {
