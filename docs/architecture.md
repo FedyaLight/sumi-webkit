@@ -24,6 +24,52 @@ Sumi App ──► SumiDomain
 - **Sumi App** — process composition, browser-runtime ports and events, shell
   UI, layout tokens, hubs, and command routing.
 
+## System Boundary
+
+Sumi is the native browser application layer around system WebKit. It is not a
+fork of WebKit and does not contain an HTML/CSS renderer, JavaScript engine, or
+network stack.
+
+```mermaid
+flowchart TB
+    subgraph Sumi["Sumi application layer — this repository"]
+        Chrome["SwiftUI and AppKit browser chrome"]
+        Product["Tabs, spaces, profiles, Glance, split view, windows"]
+        Runtime["WKWebView lifecycle, navigation coordination, and runtime ownership"]
+        Features["Extensions, permissions, privacy controls, and content blocking"]
+        State["Persistence, recovery, import/export, and updates"]
+
+        Chrome --> Product
+        Product --> Runtime
+        Features --> Runtime
+        Product --> State
+    end
+
+    subgraph WebKit["macOS system WebKit"]
+        API["WKWebView, WKWebsiteDataStore, and WKWebExtension APIs"]
+        Engine["HTML/CSS rendering, JavaScript, networking, and web processes"]
+
+        API --> Engine
+    end
+
+    Runtime --> API
+```
+
+The boundary is behavioral as well as structural:
+
+- Sumi decides when and where a `WKWebView` exists, which browser object owns
+  it, which product navigation intent is current, and when browser state is
+  persisted or restored.
+- Sumi selects and configures WebKit data stores, policies, delegates, user
+  scripts, content rules, and extension surfaces.
+- WebKit implements page loading, rendering, JavaScript, networking, website
+  data internals, web processes, and the underlying web-extension runtime.
+- Sumi may isolate or fail closed around WebKit callbacks, but it does not
+  replace WebKit's engine or process security model.
+
+The remaining sections are an implementation deep dive into how Sumi keeps
+its side of that boundary consistent.
+
 ## Current Reality
 
 Browser shell UI, its layout tokens, and the tab-structure event bus remain in
