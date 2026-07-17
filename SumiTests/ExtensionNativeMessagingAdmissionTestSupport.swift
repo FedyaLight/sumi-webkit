@@ -25,18 +25,7 @@ class ExtensionNativeMessagingAdmissionTestCase: XCTestCase {
         let controller: WKWebExtensionController
     }
 
-    final class MockHostLauncher: SumiHostApplicationLaunching {
-        var bundleURLs: [String: URL] = [:]
-        var openedBundleIdentifiers: [String] = []
-
-        func urlForApplication(withBundleIdentifier bundleIdentifier: String) -> URL? {
-            bundleURLs[bundleIdentifier]
-        }
-
-        func openApplication(withBundleIdentifier bundleIdentifier: String) async throws {
-            openedBundleIdentifiers.append(bundleIdentifier)
-        }
-    }
+    typealias MockHostLauncher = NativeMessagingTestHostLauncher
 
     /// Adapter whose replies/completions are held until the test releases
     /// them, modeling the real async companion-application boundary.

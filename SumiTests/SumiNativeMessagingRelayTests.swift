@@ -5,22 +5,7 @@ import XCTest
 @available(macOS 15.5, *)
 @MainActor
 final class SumiNativeMessagingRelayTests: XCTestCase {
-    private final class MockHostLauncher: SumiHostApplicationLaunching {
-        var bundleURLs: [String: URL] = [:]
-        var openedBundleIdentifiers: [String] = []
-        var openError: Error?
-
-        func urlForApplication(withBundleIdentifier bundleIdentifier: String) -> URL? {
-            bundleURLs[bundleIdentifier]
-        }
-
-        func openApplication(withBundleIdentifier bundleIdentifier: String) async throws {
-            if let openError {
-                throw openError
-            }
-            openedBundleIdentifiers.append(bundleIdentifier)
-        }
-    }
+    private typealias MockHostLauncher = NativeMessagingTestHostLauncher
 
     @MainActor
     private final class FakeProtocolAdapter: SumiNativeMessagingProtocolAdapter {
@@ -107,34 +92,7 @@ final class SumiNativeMessagingRelayTests: XCTestCase {
         }
     }
 
-    @MainActor
-    private final class MockNativeMessagingPort: SumiNativeMessagingPortControlling {
-        var applicationIdentifier: String?
-        var isDisconnected = false
-        var messageHandler: ((Any?, (any Error)?) -> Void)?
-        var disconnectHandler: (((any Error)?) -> Void)?
-        var disconnectError: (any Error)?
-        var sentMessages: [Any?] = []
-
-        func disconnect() {
-            isDisconnected = true
-            disconnectHandler?(disconnectError)
-        }
-
-        func disconnect(throwing error: (any Error)?) {
-            disconnectError = error
-            disconnect()
-        }
-
-        func simulateIncomingMessage(_ message: Any?) {
-            messageHandler?(message, nil)
-        }
-
-        func simulateDisconnect(error: (any Error)? = nil) {
-            isDisconnected = true
-            disconnectHandler?(error)
-        }
-    }
+    private typealias MockNativeMessagingPort = NativeMessagingTestPort
 
     // 1. One-time native message success using fake protocol adapter
     func testOneShotSuccessWithFakeAdapter() async throws {

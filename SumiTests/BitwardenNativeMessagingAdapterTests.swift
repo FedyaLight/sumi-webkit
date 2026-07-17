@@ -6,18 +6,7 @@ import XCTest
 @available(macOS 15.5, *)
 @MainActor
 final class BitwardenNativeMessagingAdapterTests: XCTestCase {
-    private final class MockHostLauncher: SumiHostApplicationLaunching {
-        var bundleURLs: [String: URL] = [:]
-        var openedBundleIdentifiers: [String] = []
-
-        func urlForApplication(withBundleIdentifier bundleIdentifier: String) -> URL? {
-            bundleURLs[bundleIdentifier]
-        }
-
-        func openApplication(withBundleIdentifier bundleIdentifier: String) async {
-            openedBundleIdentifiers.append(bundleIdentifier)
-        }
-    }
+    private typealias MockHostLauncher = NativeMessagingTestHostLauncher
 
     private final class FakeBiometricAuthenticator: BitwardenBiometricAuthenticating {
         var available = true

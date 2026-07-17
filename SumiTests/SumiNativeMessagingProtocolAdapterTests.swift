@@ -8,45 +8,8 @@ import XCTest
 @available(macOS 15.5, *)
 @MainActor
 final class SumiNativeMessagingProtocolAdapterTests: XCTestCase {
-    private final class MockHostLauncher: SumiHostApplicationLaunching {
-        var bundleURLs: [String: URL] = [:]
-        var openedBundleIdentifiers: [String] = []
-
-        func urlForApplication(withBundleIdentifier bundleIdentifier: String) -> URL? {
-            bundleURLs[bundleIdentifier]
-        }
-
-        func openApplication(withBundleIdentifier bundleIdentifier: String) async {
-            openedBundleIdentifiers.append(bundleIdentifier)
-        }
-    }
-
-    private final class MockNativeMessagingPort: SumiNativeMessagingPortControlling {
-        var applicationIdentifier: String?
-        var isDisconnected = false
-        var messageHandler: ((Any?, (any Error)?) -> Void)?
-        var disconnectHandler: (((any Error)?) -> Void)?
-        var disconnectError: (any Error)?
-
-        func disconnect() {
-            isDisconnected = true
-            disconnectHandler?(disconnectError)
-        }
-
-        func disconnect(throwing error: (any Error)?) {
-            disconnectError = error
-            disconnect()
-        }
-
-        func simulateIncomingMessage(_ message: Any?) {
-            messageHandler?(message, nil)
-        }
-
-        func simulateDisconnect(error: (any Error)? = nil) {
-            isDisconnected = true
-            disconnectHandler?(error)
-        }
-    }
+    private typealias MockHostLauncher = NativeMessagingTestHostLauncher
+    private typealias MockNativeMessagingPort = NativeMessagingTestPort
 
     // 1. Fake public adapter handles one-shot native message
     func testFakePublicAdapterHandlesOneShotMessage() async throws {

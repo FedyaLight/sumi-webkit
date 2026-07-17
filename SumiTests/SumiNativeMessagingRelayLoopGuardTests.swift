@@ -5,18 +5,7 @@ import XCTest
 @available(macOS 15.5, *)
 @MainActor
 final class SumiNativeMessagingRelayLoopGuardTests: XCTestCase {
-    private final class MockHostLauncher: SumiHostApplicationLaunching {
-        var bundleURLs: [String: URL] = [:]
-        var openedBundleIdentifiers: [String] = []
-
-        func urlForApplication(withBundleIdentifier bundleIdentifier: String) -> URL? {
-            bundleURLs[bundleIdentifier]
-        }
-
-        func openApplication(withBundleIdentifier bundleIdentifier: String) async {
-            openedBundleIdentifiers.append(bundleIdentifier)
-        }
-    }
+    private typealias MockHostLauncher = NativeMessagingTestHostLauncher
 
     func testRepeatedSendNativeMessageDoesNotRepeatedlyLaunchApp() async throws {
         let appexPath = try makeFixtureApp(
@@ -410,23 +399,7 @@ final class SumiNativeMessagingRelayLoopGuardTests: XCTestCase {
 
     // MARK: - Helpers
 
-    private final class MockNativeMessagingPort: SumiNativeMessagingPortControlling {
-        var applicationIdentifier: String?
-        var isDisconnected = false
-        var messageHandler: ((Any?, (any Error)?) -> Void)?
-        var disconnectHandler: (((any Error)?) -> Void)?
-        var disconnectError: (any Error)?
-
-        func disconnect() {
-            isDisconnected = true
-            disconnectHandler?(disconnectError)
-        }
-
-        func disconnect(throwing error: (any Error)?) {
-            disconnectError = error
-            disconnect()
-        }
-    }
+    private typealias MockNativeMessagingPort = NativeMessagingTestPort
 
     private func connectReply(
         relay: SumiNativeMessagingRelay,

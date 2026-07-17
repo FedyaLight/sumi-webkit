@@ -6,38 +6,8 @@ import XCTest
 @available(macOS 15.5, *)
 @MainActor
 final class SumiNativeMessagingPerformanceGuardTests: XCTestCase {
-    private final class MockHostLauncher: SumiHostApplicationLaunching {
-        var bundleURLs: [String: URL] = [:]
-        var openedBundleIdentifiers: [String] = []
-
-        func urlForApplication(withBundleIdentifier bundleIdentifier: String) -> URL? {
-            bundleURLs[bundleIdentifier]
-        }
-
-        func openApplication(withBundleIdentifier bundleIdentifier: String) async {
-            openedBundleIdentifiers.append(bundleIdentifier)
-        }
-    }
-
-    private final class MockNativeMessagingPort: SumiNativeMessagingPortControlling {
-        var applicationIdentifier: String?
-        var isDisconnected = false
-        var messageHandler: ((Any?, (any Error)?) -> Void)?
-        var disconnectHandler: (((any Error)?) -> Void)?
-        var disconnectError: (any Error)?
-        var didDisconnect: (() -> Void)?
-
-        func disconnect() {
-            isDisconnected = true
-            didDisconnect?()
-            disconnectHandler?(disconnectError)
-        }
-
-        func disconnect(throwing error: (any Error)?) {
-            disconnectError = error
-            disconnect()
-        }
-    }
+    private typealias MockHostLauncher = NativeMessagingTestHostLauncher
+    private typealias MockNativeMessagingPort = NativeMessagingTestPort
 
     override func setUp() {
         super.setUp()

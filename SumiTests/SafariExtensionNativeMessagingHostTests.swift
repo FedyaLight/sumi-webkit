@@ -5,22 +5,7 @@ import XCTest
 @available(macOS 15.5, *)
 @MainActor
 final class NativeMessagingRelayHostTests: XCTestCase {
-    private final class MockHostLauncher: SumiHostApplicationLaunching {
-        var bundleURLs: [String: URL] = [:]
-        var openedBundleIdentifiers: [String] = []
-        var openError: Error?
-
-        func urlForApplication(withBundleIdentifier bundleIdentifier: String) -> URL? {
-            bundleURLs[bundleIdentifier]
-        }
-
-        func openApplication(withBundleIdentifier bundleIdentifier: String) async throws {
-            if let openError {
-                throw openError
-            }
-            openedBundleIdentifiers.append(bundleIdentifier)
-        }
-    }
+    private typealias MockHostLauncher = NativeMessagingTestHostLauncher
 
     func testResolverNormalizesKnownHostAliases() {
         XCTAssertEqual(

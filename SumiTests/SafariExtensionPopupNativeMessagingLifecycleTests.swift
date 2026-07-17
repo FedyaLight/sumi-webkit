@@ -5,38 +5,8 @@ import XCTest
 @available(macOS 15.5, *)
 @MainActor
 final class SafariExtensionPopupNativeMessagingLifecycleTests: XCTestCase {
-    private final class MockHostLauncher: SumiHostApplicationLaunching {
-        var bundleURLs: [String: URL] = [:]
-        var openedBundleIdentifiers: [String] = []
-
-        func urlForApplication(withBundleIdentifier bundleIdentifier: String) -> URL? {
-            bundleURLs[bundleIdentifier]
-        }
-
-        func openApplication(withBundleIdentifier bundleIdentifier: String) async {
-            openedBundleIdentifiers.append(bundleIdentifier)
-        }
-    }
-
-    private final class MockNativeMessagingPort: SumiNativeMessagingPortReplyRecording {
-        var applicationIdentifier: String?
-        var isDisconnected = false
-        var messageHandler: ((Any?, (any Error)?) -> Void)?
-        var disconnectHandler: (((any Error)?) -> Void)?
-        var disconnectError: (any Error)?
-
-        func recordReplyToExtension(_: Any) { /* no-op */ }
-
-        func disconnect() {
-            isDisconnected = true
-            disconnectHandler?(disconnectError)
-        }
-
-        func disconnect(throwing error: (any Error)?) {
-            disconnectError = error
-            disconnect()
-        }
-    }
+    private typealias MockHostLauncher = NativeMessagingTestHostLauncher
+    private typealias MockNativeMessagingPort = NativeMessagingTestPort
 
     private final class SlowOneShotAdapter: SumiNativeMessagingProtocolAdapter {
         let protocolIdentifier = "test.slow"

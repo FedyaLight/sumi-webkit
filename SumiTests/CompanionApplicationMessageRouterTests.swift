@@ -151,8 +151,12 @@ final class CompanionApplicationMessageRouterTests: XCTestCase {
     private func makeRelay(
         router: CompanionApplicationMessageRouter
     ) -> SumiNativeMessagingRelay {
-        SumiNativeMessagingRelay(
-            launcher: MockHostLauncher(),
+        let launcher = NativeMessagingTestHostLauncher()
+        launcher.bundleURLs["com.example.host"] = URL(
+            fileURLWithPath: "/Applications/Fixture.app"
+        )
+        return SumiNativeMessagingRelay(
+            launcher: launcher,
             adapterRegistry: SumiNativeMessagingAdapterRegistry(adapters: []),
             companionApplicationRouter: router
         )
@@ -181,19 +185,6 @@ final class CompanionApplicationMessageRouterTests: XCTestCase {
         }
         await fulfillment(of: [expectation], timeout: 2)
         return (replyValue, replyError)
-    }
-}
-
-@available(macOS 15.5, *)
-@MainActor
-final class MockHostLauncher: SumiHostApplicationLaunching {
-    func urlForApplication(withBundleIdentifier bundleIdentifier: String) -> URL? {
-        _ = bundleIdentifier
-        return URL(fileURLWithPath: "/Applications/Fixture.app")
-    }
-
-    func openApplication(withBundleIdentifier bundleIdentifier: String) async {
-        _ = bundleIdentifier
     }
 }
 
