@@ -1,6 +1,5 @@
 import Foundation
 
-@MainActor
 struct SumiImportFilePreviewReader {
     private let transferService: SumiTransferExportService
     private let backupService: SumiBackupService

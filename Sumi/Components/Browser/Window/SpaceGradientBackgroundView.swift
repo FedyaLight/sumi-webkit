@@ -53,11 +53,12 @@ struct SpaceGradientBackgroundView: View {
     var viewport: SpaceGradientViewport = .full
 
     @Environment(\.resolvedThemeContext) private var themeContext
+    @Environment(\.chromeThemeTokens) private var scopedChromeTokens
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.accessibilityReduceTransparency) private var accessibilityReduceTransparency
 
     private var chromeTokens: ChromeThemeTokens {
-        themeContext.tokens(settings: sumiSettings)
+        scopedChromeTokens ?? themeContext.tokens(settings: sumiSettings)
     }
 
     private var activeResolution: ZenWorkspaceThemeResolution {

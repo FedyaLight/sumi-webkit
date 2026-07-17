@@ -311,14 +311,14 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
         fixture.manager.structuralPersistence.cancelPendingPersistence()
     }
 
-    func testPreparationReentryPreparesExpandedMembershipFixedPoint() throws {
+    func testPreparationUsesSingleSnapshotAndUnloadsReplacedTab() throws {
         let profileID = UUID()
         let fixture = try AttachmentFixture()
         let attachment = fixture.attachment
         let space = Space(name: "Current", profileId: profileID)
         let first = Tab()
         first.spaceId = space.id
-        let replacement = Tab()
+        let replacement = Tab(id: first.id)
         replacement.spaceId = space.id
         let pendingPin = ShortcutPin(
             id: UUID(),
@@ -359,9 +359,8 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
             attachment.attach(runtime),
             .attached
         )
-        XCTAssertEqual(prepared.count, 2)
-        XCTAssertTrue(prepared.contains { $0 === first })
-        XCTAssertTrue(prepared.contains { $0 === replacement })
+        XCTAssertEqual(prepared.count, 1)
+        XCTAssertIdentical(prepared.first, first)
         XCTAssertEqual(unloaded.count, 1)
         XCTAssertIdentical(unloaded.first, first)
         let terminalMembership = fixture.membership

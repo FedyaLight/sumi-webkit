@@ -16,7 +16,7 @@ final class SumiBoostsModuleTests: XCTestCase {
         try await super.tearDown()
     }
 
-    func testDisabledModuleAccessorsDoNotConstructStore() throws {
+    func testDisabledModuleAccessorsDoNotConstructStore() async throws {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
         let registry = SumiModuleRegistry(
@@ -45,7 +45,10 @@ final class SumiBoostsModuleTests: XCTestCase {
         XCTAssertThrowsError(try module.createBoost(tab: tab, profile: nil)) { error in
             XCTAssertEqual(error as? SumiBoostStoreError, .moduleDisabled)
         }
-        XCTAssertThrowsError(try module.importBoost(from: Data(), tab: tab, profile: nil)) { error in
+        do {
+            _ = try await module.importBoost(from: Data(), tab: tab, profile: nil)
+            XCTFail("Expected moduleDisabled")
+        } catch {
             XCTAssertEqual(error as? SumiBoostStoreError, .moduleDisabled)
         }
 

@@ -72,8 +72,9 @@ enum SidebarDropResolver {
             at: location,
             matching: activeScope
         )
+        let baseLocation = state.baseGeometryLocation(from: location)
         return resolve(
-            location: location,
+            location: baseLocation,
             state: state,
             draggedItem: draggedItem,
             hoveredPage: hoveredPage,
@@ -153,7 +154,7 @@ enum SidebarDropResolver {
         state.folderDropIntent = resolution.folderIntent
         state.activeHoveredFolderId = resolution.activeHoveredFolderId
         state.regularExternalDropGap = regularExternalDropGap(
-            location: location,
+            location: state.baseGeometryLocation(from: location),
             state: state,
             slot: resolution.slot
         )
@@ -208,14 +209,7 @@ enum SidebarDropResolver {
             return nil
         }
 
-        let topLevelItems = state.topLevelPinnedItemTargets.values
-            .filter { $0.spaceId == hoveredPage.spaceId }
-            .sorted { lhs, rhs in
-                if lhs.topLevelIndex != rhs.topLevelIndex {
-                    return lhs.topLevelIndex < rhs.topLevelIndex
-                }
-                return lhs.itemId.uuidString < rhs.itemId.uuidString
-            }
+        let topLevelItems = state.topLevelPinnedItemsBySpace[hoveredPage.spaceId] ?? []
 
         if !topLevelItems.isEmpty,
            let slot = resolveTopLevelPinnedSlot(location: location, topLevelItems: topLevelItems) {
@@ -314,8 +308,8 @@ enum SidebarDropResolver {
         hoveredPage: SidebarPageGeometryMetrics?
     ) -> SidebarDropResolution? {
         guard let hoveredPage else { return nil }
-        let targets = state.folderDropTargets.values
-            .filter { $0.spaceId == hoveredPage.spaceId }
+        let targets = (state.folderTargetsBySpace[hoveredPage.spaceId] ?? [])
+            .filter { containingArea(for: $0, at: location) < .greatestFiniteMagnitude }
             .sorted { lhs, rhs in
             let leftArea = containingArea(for: lhs, at: location)
             let rightArea = containingArea(for: rhs, at: location)
@@ -408,12 +402,7 @@ enum SidebarDropResolver {
             return insertIntoFolderResolution(for: target, index: 0)
         }
 
-        let childTargets = state.folderChildDropTargets.values
-            .filter { $0.folderId == target.folderId }
-            .sorted { lhs, rhs in
-                if lhs.index != rhs.index { return lhs.index < rhs.index }
-                return lhs.childId.uuidString < rhs.childId.uuidString
-            }
+        let childTargets = state.folderChildrenByFolder[target.folderId] ?? []
 
         if let childResolution = resolveOpenFolderChildRows(
             target,
@@ -661,11 +650,7 @@ enum SidebarDropResolver {
         location: CGPoint,
         metrics: SidebarEssentialsLayoutMetrics
     ) -> Int {
-        let orderedSlots = metrics.dropSlotFrames.sorted { lhs, rhs in
-            if lhs.slot != rhs.slot { return lhs.slot < rhs.slot }
-            if lhs.frame.minY != rhs.frame.minY { return lhs.frame.minY < rhs.frame.minY }
-            return lhs.frame.minX < rhs.frame.minX
-        }
+        let orderedSlots = metrics.dropSlotFrames
 
         if let containingSlot = orderedSlots.first(where: { $0.frame.contains(location) }) {
             return max(0, min(containingSlot.slot, metrics.visibleItemCount))

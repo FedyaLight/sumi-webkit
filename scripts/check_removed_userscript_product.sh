@@ -27,40 +27,20 @@ removed_symbols=(
   SumiScriptsManager
   SumiScriptsToolbarConstants
   BrowserUserscriptRuntimeFactory
+  UserScriptEntity
+  UserScriptResourceEntity
 )
 
 for symbol in "${removed_symbols[@]}"; do
   matches="$(
     guard_capture_matches \
       "\\b${symbol}\\b" \
-      --glob '*.swift' --glob '*.h' --glob '*.m' --glob '*.mm' \
+      --glob '*.swift' --glob '*.h' --glob '*.m' --glob '*.mm' --glob 'contents' \
       "${production_roots[@]}"
   )"
   if [[ -n "$matches" ]]; then
     guard_record_failure "removed userscript product symbol returned ($symbol): $matches"
   fi
-done
-
-migration_schema="Sumi/Services/SumiStartupPersistence.swift"
-for symbol in UserScriptEntity UserScriptResourceEntity; do
-  matches="$({
-    guard_capture_matches \
-      "\\b${symbol}\\b" \
-      --glob '*.swift' --glob '*.h' --glob '*.m' --glob '*.mm' \
-      "${production_roots[@]}"
-  })"
-  while IFS= read -r match; do
-    [[ -z "$match" ]] && continue
-    if [[ "${match%%:*}" != "$migration_schema" ]]; then
-      guard_record_failure \
-        "removed userscript product symbol returned outside the V1 migration schema ($symbol): $match"
-    fi
-  done <<< "$matches"
-
-  migration_count="$({
-    guard_count_matches "\\b${symbol}\\b" "$migration_schema"
-  })"
-  guard_exact "V1 migration-only $symbol references" "$migration_count" 2
 done
 
 guard_finish 'removed userscript product audit'

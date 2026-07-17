@@ -26,6 +26,7 @@ actor SumiFaviconFetchScheduler {
     struct Configuration: Sendable {
         var globalConcurrencyLimit = 6
         var perOriginConcurrencyLimit = 2
+        var now: @Sendable () -> Date = Date.init
     }
 
     private struct FetchKey: Hashable, Sendable {
@@ -45,14 +46,19 @@ actor SumiFaviconFetchScheduler {
 
     private let fetcher: any SumiFaviconNetworkFetching
     private let limiter: SumiFaviconFetchLimiter
+    private let now: @Sendable () -> Date
     private var inFlight: [FetchKey: ScheduledFetch] = [:]
     private var cachedFailureByKey: [FetchKey: CachedFailure] = [:]
+    private var completedFetchCount = 0
+    private static let failureSweepInterval = 64
+    private static let failureCacheLimit = 1_024
 
     init(
         fetcher: any SumiFaviconNetworkFetching,
         configuration: Configuration = Configuration()
     ) {
         self.fetcher = fetcher
+        self.now = configuration.now
         limiter = SumiFaviconFetchLimiter(
             globalLimit: configuration.globalConcurrencyLimit,
             perOriginLimit: configuration.perOriginConcurrencyLimit
@@ -62,13 +68,16 @@ actor SumiFaviconFetchScheduler {
     func request(
         candidate: SumiFaviconCandidate,
         context: SumiFaviconFetchContext,
-        priority: SumiFaviconFetchPriority,
-        now: Date = Date()
+        priority: SumiFaviconFetchPriority
     ) -> SumiFaviconFetchRequest {
+        let lookupDate = now()
         let key = FetchKey(partition: candidate.partition, url: candidate.iconURL)
         if let cachedFailure = cachedFailureByKey[key],
-           cachedFailure.expiresAt > now {
+           cachedFailure.expiresAt > lookupDate {
             return SumiFaviconFetchRequest(storage: .immediate(.failure(cachedFailure.kind)))
+        }
+        if cachedFailureByKey[key] != nil {
+            cachedFailureByKey.removeValue(forKey: key)
         }
         if let scheduledFetch = inFlight[key] {
             return SumiFaviconFetchRequest(storage: .scheduled(scheduledFetch.task))
@@ -93,7 +102,7 @@ actor SumiFaviconFetchScheduler {
                 await limiter.release(origin: origin)
                 result = Task.isCancelled ? .cancelled : fetched
             }
-            await self?.completeFetch(key: key, token: token, result: result, now: now)
+            await self?.completeFetch(key: key, token: token, result: result)
             return result
         }
         inFlight[key] = ScheduledFetch(token: token, task: task)
@@ -103,18 +112,35 @@ actor SumiFaviconFetchScheduler {
     private func completeFetch(
         key: FetchKey,
         token: UUID,
-        result: SumiFaviconFetchResult,
-        now: Date
+        result: SumiFaviconFetchResult
     ) {
         guard inFlight[key]?.token == token else { return }
         inFlight.removeValue(forKey: key)
+        let completionDate = now()
         if case .failure(let failureKind) = result {
             cachedFailureByKey[key] = CachedFailure(
                 kind: failureKind,
-                expiresAt: now.addingTimeInterval(
+                expiresAt: completionDate.addingTimeInterval(
                     SumiFaviconTTL.failureCacheDuration(for: failureKind)
                 )
             )
+        }
+        completedFetchCount &+= 1
+        if completedFetchCount.isMultiple(of: Self.failureSweepInterval)
+            || cachedFailureByKey.count > Self.failureCacheLimit {
+            pruneFailureCache(now: completionDate)
+        }
+    }
+
+    private func pruneFailureCache(now: Date) {
+        cachedFailureByKey = cachedFailureByKey.filter { $0.value.expiresAt > now }
+        guard cachedFailureByKey.count > Self.failureCacheLimit else { return }
+        let overflow = cachedFailureByKey.count - Self.failureCacheLimit
+        for key in cachedFailureByKey
+            .sorted(by: { $0.value.expiresAt < $1.value.expiresAt })
+            .prefix(overflow)
+            .map(\.key) {
+            cachedFailureByKey.removeValue(forKey: key)
         }
     }
 
@@ -155,6 +181,10 @@ actor SumiFaviconFetchScheduler {
                     }
                 }
             }
+        }
+
+        var cachedFailureCountForTests: Int {
+            cachedFailureByKey.count
         }
     #endif
 

@@ -1,4 +1,3 @@
-@MainActor
 enum SumiImportPreviewWarningBuilder {
     static func warnings(for data: SumiPortableData, source: String) -> [String] {
         var warnings: [String] = []

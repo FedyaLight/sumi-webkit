@@ -20,7 +20,7 @@ The item 46 migration inventory is:
 | Reusable-base / non-XCTest helper-only sources | 3 / 25 | 3 / 25, reported by validation |
 | `SumiUITests` concrete classes / methods | 3 / 36 | 3 / 36 |
 | SumiDomain / SumiWebRuntime package tests | 40 / 120 | 40 / 120 |
-| PR app selectors / distinct classes | 22 / 20 | 22 / 20 |
+| PR app selectors / distinct classes | 22 / 20 | 23 / 21 |
 | Nightly owned `SumiTests` classes | implicit full scheme | 541 explicit classes |
 | Nightly UI selectors | 1 | 1 |
 
@@ -82,6 +82,11 @@ performance suite or second ownership list.
 
 ## Commands and consumers
 
+- `scripts/ci/preflight.sh fast` is the shared local/hosted manifest and syntax
+  gate. `portable` adds architecture guardrails, while `full` also verifies the
+  Xcode toolchain and runs the complete PR profile.
+- `scripts/install_dev_hooks.sh` enables the tracked `.githooks/pre-push` hook,
+  which invokes the same portable preflight used by GitHub Actions.
 - `scripts/ci/run_tests.sh validate` performs strict schema, selector, target
   membership, helper, and exhaustive ownership validation.
 - `scripts/ci/run_tests.sh inventory` prints current source/class/method and
@@ -99,4 +104,6 @@ performance suite or second ownership list.
   not a CI shard or compatibility lane.
 
 Both hosted profiles keep SumiDomain and SumiWebRuntime as explicit package
-lanes on `macos-26` with Xcode 26.6 selected through `DEVELOPER_DIR`.
+lanes on GitHub's official `xcode-27` preview runner. `DEVELOPER_DIR` uses the
+stable `Xcode_27.0` symlink while `verify-toolchain` records the concrete beta
+build selected by the moving preview image.

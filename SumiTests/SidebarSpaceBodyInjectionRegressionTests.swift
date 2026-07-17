@@ -11,7 +11,8 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
         let browserManager = BrowserManager()
         let context = WindowSidebarContext.make(
             browserManager: browserManager,
-            updaterService: SumiUpdaterService(backendFactory: { _ in nil })
+            updaterService: SumiUpdaterService(backendFactory: { _ in nil }),
+            nowPlayingController: SumiNativeNowPlayingController()
         )
         let targetSpaceID = UUID()
         let unrelatedSpaceID = UUID()
@@ -78,7 +79,8 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
 
         let context = WindowSidebarContext.make(
             browserManager: browserManager,
-            updaterService: SumiUpdaterService(backendFactory: { _ in nil })
+            updaterService: SumiUpdaterService(backendFactory: { _ in nil }),
+            nowPlayingController: SumiNativeNowPlayingController()
         )
         let sourcePin = makeShortcutPin(
             title: "Mounted Source",
@@ -203,7 +205,8 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
         var unrelatedChanges = 0
         let context = WindowSidebarContext.make(
             browserManager: browserManager,
-            updaterService: SumiUpdaterService(backendFactory: { _ in nil })
+            updaterService: SumiUpdaterService(backendFactory: { _ in nil }),
+            nowPlayingController: SumiNativeNowPlayingController()
         )
         let firstSameProfile = context.inventoryUpdates.pageChanges(
             windowID: window.id,
@@ -993,7 +996,8 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
         windowRegistry.register(windowState)
         let viewContext = WindowSidebarContext.make(
             browserManager: browserManager,
-            updaterService: updaterService
+            updaterService: updaterService,
+            nowPlayingController: SumiNativeNowPlayingController()
         )
         let dragState = SidebarDragState()
         let settingsSuiteName = "SumiTests.sidebarDragState.\(UUID().uuidString)"

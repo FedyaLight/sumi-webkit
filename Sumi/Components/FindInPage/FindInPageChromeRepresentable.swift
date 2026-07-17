@@ -221,6 +221,7 @@ struct FindInPageChromeRepresentable: NSViewControllerRepresentable {
     @ObservedObject var findManager: FindManager
     @Environment(WindowRegistry.self) private var windowRegistry
     @Environment(\.sumiSettings) private var sumiSettings
+    @Environment(\.chromeThemeTokens) private var scopedChromeTokens
     let windowStateID: UUID
     let themeContext: ResolvedThemeContext
     let keepsChromeMounted: Bool
@@ -298,7 +299,9 @@ struct FindInPageChromeRepresentable: NSViewControllerRepresentable {
         )
         if context.coordinator.lastChromePaintSignature != signature {
             context.coordinator.lastChromePaintSignature = signature
-            let paint = FindInPageChromePaint.resolve(tokens: themeContext.tokens(settings: sumiSettings))
+            let paint = FindInPageChromePaint.resolve(
+                tokens: scopedChromeTokens ?? themeContext.tokens(settings: sumiSettings)
+            )
             findVC.applyChromeColors(paint)
         }
 

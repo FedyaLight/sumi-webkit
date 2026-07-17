@@ -376,7 +376,8 @@ final class BrowserWindowChromeTests: XCTestCase {
             ),
             sidebarContext: .make(
                 browserManager: browserManager,
-                updaterService: updaterService
+                updaterService: updaterService,
+                nowPlayingController: SumiNativeNowPlayingController()
             ),
             floatingBarContext: browserManager.urlBarBundle.floatingBar.browserContext.context,
             nativeModalContext: .make(browserManager: browserManager),

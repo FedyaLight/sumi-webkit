@@ -79,6 +79,7 @@ telemetry-id
 !.github/pull_request_template.md
 !.github/workflows/
 .github/workflows/*
+!.github/workflows/architecture-guardrails.yml
 !.github/workflows/alpha-release.yml
 !.github/workflows/publish-appcast-pages.yml
 !.github/workflows/sumi-ci.yml

@@ -2,11 +2,11 @@
   "version": 2,
   "toolchains": {
     "production": {
-      "name": "Xcode 26.6 on macOS 26",
-      "runner": "macos-26",
-      "developer_dir": "/Applications/Xcode_26.6.app/Contents/Developer",
-      "xcode_version": "26.6",
-      "selection_note": "macos-26 is a moving GitHub-hosted image; DEVELOPER_DIR selects the installed Xcode 26.6 bundle explicitly."
+      "name": "Xcode 27 preview",
+      "runner": "xcode-27",
+      "developer_dir": "/Applications/Xcode_27.0.app/Contents/Developer",
+      "xcode_version": "27.0",
+      "selection_note": "The official xcode-27 preview runner tracks the current Xcode 27 beta through its stable Xcode_27.0 symlink; verify-toolchain records the concrete build in every job."
     }
   },
   "xcode": {
@@ -50,6 +50,7 @@
           "suite": "app-persistence-migration",
           "selection": [
             "SumiTests/BrowserManagerLifecycleWiringTests",
+            "SumiTests/BrowserManagerStartupPersistenceTests/testStartupRecoveryTransactionRunsStagesInOrder",
             "SumiTests/PersistenceFixtureTests"
           ]
         },
@@ -342,7 +343,6 @@
         "SumiTests/SidebarDragGeometryRepositoryTests",
         "SumiTests/SidebarStoredFaviconLoaderTests",
         "SumiTests/SpaceSidebarTransitionCoordinatorTests",
-        "SumiTests/SplitGroupArchiveMigrationTests",
         "SumiTests/SplitGroupStoreTests",
         "SumiTests/SplitShortcutMemberRestoreAggregateTransactionTests",
         "SumiTests/SplitShortcutServicesTests",

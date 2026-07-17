@@ -37,10 +37,11 @@ struct SpaceScrollChromeSurface<Content: View>: View {
     @State private var hasContentBelow = false
 
     @Environment(\.resolvedThemeContext) var themeContext
+    @Environment(\.chromeThemeTokens) var scopedChromeTokens
     @Environment(\.sumiSettings) var sumiSettings
 
     private var tokens: ChromeThemeTokens {
-        themeContext.tokens(settings: sumiSettings)
+        scopedChromeTokens ?? themeContext.tokens(settings: sumiSettings)
     }
 
     private var scrollIndicatorColor: NSColor {

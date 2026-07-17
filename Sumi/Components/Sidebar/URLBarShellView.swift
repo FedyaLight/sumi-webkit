@@ -40,7 +40,7 @@ extension URLBarView {
     }
 
     var tokens: ChromeThemeTokens {
-        themeContext.tokens(settings: sumiSettings)
+        scopedChromeTokens ?? themeContext.tokens(settings: sumiSettings)
     }
 
     var displayURL: String {

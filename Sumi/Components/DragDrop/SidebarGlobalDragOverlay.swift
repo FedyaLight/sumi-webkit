@@ -502,7 +502,6 @@ final class SidebarTabListDragAutoscrollRegistry {
 
         let geometryDelta = documentView.isFlipped ? actualDeltaY : -actualDeltaY
         dragState.adjustGeometryStoreScrollDelta(deltaY: geometryDelta)
-        dragState.requestGeometryRefresh()
         return true
     }
 

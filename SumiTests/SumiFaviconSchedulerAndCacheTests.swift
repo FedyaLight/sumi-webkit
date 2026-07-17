@@ -156,6 +156,73 @@ final class SumiFaviconV2SchedulerAndCacheTests: XCTestCase {
         )
     }
 
+    func testExpiredFailureIsRemovedOnLookupAndRefetched() async throws {
+        let clock = FaviconTestClock(now: Date(timeIntervalSince1970: 2_000_000_000))
+        let fetcher = ImmediateFailureFaviconNetworkFetcher()
+        let scheduler = SumiFaviconFetchScheduler(
+            fetcher: fetcher,
+            configuration: .init(now: { clock.current })
+        )
+        let candidate = SumiFaviconCandidate(
+            pageURL: try XCTUnwrap(URL(string: "https://example.test/")),
+            iconURL: try XCTUnwrap(URL(string: "https://example.test/favicon.ico")),
+            sourceKind: .rootFavicon,
+            partition: .regular(nil)
+        )
+
+        let first = await scheduler.request(
+            candidate: candidate,
+            context: .publicRootFallback,
+            priority: .visibleActiveTab
+        )
+        _ = await first.value
+        XCTAssertEqual(fetcher.callCount, 1)
+
+        clock.advance(by: SumiFaviconTTL.transientTransportFailure + 1)
+        let second = await scheduler.request(
+            candidate: candidate,
+            context: .publicRootFallback,
+            priority: .visibleActiveTab
+        )
+        _ = await second.value
+
+        XCTAssertEqual(fetcher.callCount, 2)
+        let cachedFailureCount = await scheduler.cachedFailureCountForTests
+        XCTAssertEqual(cachedFailureCount, 1)
+    }
+
+    func testFailureCacheNeverExceedsHardCap() async throws {
+        let clock = FaviconTestClock(now: Date(timeIntervalSince1970: 2_000_000_000))
+        let fetcher = ImmediateFailureFaviconNetworkFetcher()
+        let scheduler = SumiFaviconFetchScheduler(
+            fetcher: fetcher,
+            configuration: .init(
+                globalConcurrencyLimit: 16,
+                perOriginConcurrencyLimit: 16,
+                now: { clock.current }
+            )
+        )
+        let pageURL = try XCTUnwrap(URL(string: "https://example.test/"))
+
+        for index in 0..<1_025 {
+            let candidate = SumiFaviconCandidate(
+                pageURL: pageURL,
+                iconURL: try XCTUnwrap(URL(string: "https://example.test/icon-\(index).ico")),
+                sourceKind: .documentLink,
+                partition: .regular(nil)
+            )
+            let request = await scheduler.request(
+                candidate: candidate,
+                context: .publicRootFallback,
+                priority: .backgroundPrefetch
+            )
+            _ = await request.value
+        }
+
+        let cachedFailureCount = await scheduler.cachedFailureCountForTests
+        XCTAssertEqual(cachedFailureCount, 1_024)
+    }
+
     func testPreparedCacheInvalidatesOnlyMatchingRevision() throws {
         let cache = SumiPreparedFaviconCache(totalCostLimit: 1024 * 1024)
         let request = SumiPreparedFaviconRequest(
@@ -508,6 +575,50 @@ private final class FailingFaviconPartitionRemovalFileManager: FileManager,
             throw CocoaError(.fileWriteNoPermission)
         }
         try super.removeItem(at: URL)
+    }
+}
+
+private final class FaviconTestClock: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: Date
+
+    init(now: Date) {
+        value = now
+    }
+
+    var current: Date {
+        lock.lock()
+        defer { lock.unlock() }
+        return value
+    }
+
+    func advance(by interval: TimeInterval) {
+        lock.lock()
+        value = value.addingTimeInterval(interval)
+        lock.unlock()
+    }
+}
+
+private final class ImmediateFailureFaviconNetworkFetcher: SumiFaviconNetworkFetching,
+    @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+
+    var callCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return count
+    }
+
+    func fetch(url _: URL, context _: SumiFaviconFetchContext) async -> SumiFaviconFetchResult {
+        incrementCallCount()
+        return .failure(.transport)
+    }
+
+    private func incrementCallCount() {
+        lock.lock()
+        count += 1
+        lock.unlock()
     }
 }
 

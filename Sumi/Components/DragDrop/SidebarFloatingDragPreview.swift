@@ -275,6 +275,7 @@ struct SidebarTabRowPreviewVisual: View {
 
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
+    @Environment(\.chromeThemeTokens) private var scopedChromeTokens
 
     var body: some View {
         HStack(spacing: SidebarRowLayout.iconTrailingSpacing) {
@@ -304,7 +305,7 @@ struct SidebarTabRowPreviewVisual: View {
     }
 
     private var tokens: ChromeThemeTokens {
-        themeContext.tokens(settings: sumiSettings)
+        scopedChromeTokens ?? themeContext.tokens(settings: sumiSettings)
     }
 }
 
@@ -315,6 +316,7 @@ private struct SidebarFolderRowPreviewVisual: View {
 
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
+    @Environment(\.chromeThemeTokens) private var scopedChromeTokens
 
     var body: some View {
         HStack(spacing: 0) {
@@ -363,6 +365,6 @@ private struct SidebarFolderRowPreviewVisual: View {
     }
 
     private var tokens: ChromeThemeTokens {
-        themeContext.tokens(settings: sumiSettings)
+        scopedChromeTokens ?? themeContext.tokens(settings: sumiSettings)
     }
 }

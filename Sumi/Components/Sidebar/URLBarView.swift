@@ -45,6 +45,7 @@ struct URLBarView: View {
     @Environment(WindowRegistry.self) var windowRegistry
     @Environment(\.sumiSettings) var sumiSettings
     @Environment(\.resolvedThemeContext) var themeContext
+    @Environment(\.chromeThemeTokens) var scopedChromeTokens
 
     let browserContext: URLBarBrowserContext
     let presentationMode: URLBarPresentationMode

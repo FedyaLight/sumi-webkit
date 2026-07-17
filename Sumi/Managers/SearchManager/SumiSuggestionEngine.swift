@@ -1,7 +1,7 @@
 import Foundation
 
-struct SumiSuggestionEngine {
-    enum Item: Equatable {
+struct SumiSuggestionEngine: Sendable {
+    enum Item: Equatable, Sendable {
         case phrase(String)
         case website(URL)
         case bookmark(title: String, url: URL, isFavorite: Bool, score: Int)
@@ -9,7 +9,7 @@ struct SumiSuggestionEngine {
         case openTab(title: String, url: URL, tabId: UUID?, score: Int)
     }
 
-    struct Result: Equatable {
+    struct Result: Equatable, Sendable {
         static let empty = Result(topHits: [], remoteSuggestions: [], localSuggestions: [])
 
         let topHits: [Item]
@@ -21,26 +21,26 @@ struct SumiSuggestionEngine {
         }
     }
 
-    struct HistoryItem {
+    struct HistoryItem: Sendable {
         let url: URL
         let title: String?
         let visitCount: Int
         let failedToLoad: Bool
     }
 
-    struct BookmarkItem {
+    struct BookmarkItem: Sendable {
         let url: URL
         let title: String
         let isFavorite: Bool
     }
 
-    struct TabItem {
+    struct TabItem: Sendable {
         let id: UUID?
         let url: URL
         let title: String
     }
 
-    struct APISuggestion: Decodable {
+    struct APISuggestion: Decodable, Sendable {
         let phrase: String?
         let isNav: Bool?
 
@@ -50,8 +50,8 @@ struct SumiSuggestionEngine {
         }
     }
 
-    struct ScoredSuggestion {
-        enum Kind: Hashable {
+    struct ScoredSuggestion: Sendable {
+        enum Kind: Hashable, Sendable {
             case phrase
             case website
             case bookmark
@@ -77,7 +77,7 @@ struct SumiSuggestionEngine {
         bookmarks: [BookmarkItem],
         openTabs: [TabItem],
         apiSuggestions: [APISuggestion],
-        isUrlIgnored: @escaping (URL) -> Bool = { _ in false }
+        isUrlIgnored: @escaping @Sendable (URL) -> Bool = { _ in false }
     ) -> Result {
         let searchQuery = SearchTextQuery(query)
         guard !searchQuery.isEmpty else { return .empty }
@@ -134,7 +134,7 @@ struct SumiSuggestionEngine {
 
     private func duckDuckGoSuggestions(
         from suggestions: [APISuggestion],
-        isUrlIgnored: (URL) -> Bool
+        isUrlIgnored: @Sendable (URL) -> Bool
     ) -> [Item] {
         suggestions.compactMap { suggestion in
             guard let phrase = suggestion.phrase else { return nil }
@@ -219,7 +219,7 @@ struct SumiSuggestionEngine {
         return result
     }
 
-    private func scored(searchQuery: SearchTextQuery, isUrlIgnored: @escaping (URL) -> Bool) -> (BookmarkItem) -> ScoredSuggestion? {
+    private func scored(searchQuery: SearchTextQuery, isUrlIgnored: @escaping @Sendable (URL) -> Bool) -> (BookmarkItem) -> ScoredSuggestion? {
         { bookmark in
             guard !isUrlIgnored(bookmark.url) else { return nil }
             let score = score(title: bookmark.title, url: bookmark.url, visitCount: 0, searchQuery: searchQuery)
@@ -233,7 +233,7 @@ struct SumiSuggestionEngine {
         }
     }
 
-    private func scored(searchQuery: SearchTextQuery, isUrlIgnored: @escaping (URL) -> Bool) -> (HistoryItem) -> ScoredSuggestion? {
+    private func scored(searchQuery: SearchTextQuery, isUrlIgnored: @escaping @Sendable (URL) -> Bool) -> (HistoryItem) -> ScoredSuggestion? {
         { history in
             guard !isUrlIgnored(history.url) else { return nil }
             let score = score(title: history.title ?? "", url: history.url, visitCount: history.visitCount, searchQuery: searchQuery)
@@ -249,7 +249,7 @@ struct SumiSuggestionEngine {
         }
     }
 
-    private func scored(searchQuery: SearchTextQuery, isUrlIgnored: @escaping (URL) -> Bool) -> (TabItem) -> ScoredSuggestion? {
+    private func scored(searchQuery: SearchTextQuery, isUrlIgnored: @escaping @Sendable (URL) -> Bool) -> (TabItem) -> ScoredSuggestion? {
         { tab in
             guard !isUrlIgnored(tab.url) else { return nil }
             let score = score(title: tab.title, url: tab.url, visitCount: 0, searchQuery: searchQuery)
@@ -305,6 +305,51 @@ struct SumiSuggestionEngine {
         }
 
         return score
+    }
+}
+
+enum SuggestionScoringWorker {
+    static func result(
+        for query: String,
+        history: [SumiSuggestionEngine.HistoryItem],
+        bookmarks: [SumiSuggestionEngine.BookmarkItem],
+        openTabs: [SumiSuggestionEngine.TabItem],
+        apiSuggestions: [SumiSuggestionEngine.APISuggestion],
+        intervalName: StaticString
+    ) async throws -> SumiSuggestionEngine.Result {
+        let interval = PerformanceTrace.beginInterval(intervalName)
+        defer { PerformanceTrace.endInterval(intervalName, interval) }
+        let task = Task.detached(priority: .userInitiated) {
+            try Task.checkCancellation()
+            let result = SumiSuggestionEngine().result(
+                for: query,
+                history: history,
+                bookmarks: bookmarks,
+                openTabs: openTabs,
+                apiSuggestions: apiSuggestions
+            )
+            try Task.checkCancellation()
+            return result
+        }
+        return try await withTaskCancellationHandler {
+            try await task.value
+        } onCancel: {
+            task.cancel()
+        }
+    }
+
+    static func decodeAPIResponse(_ data: Data) async throws -> [SumiSuggestionEngine.APISuggestion] {
+        let task = Task.detached(priority: .userInitiated) {
+            try Task.checkCancellation()
+            let result = try JSONDecoder().decode([SumiSuggestionEngine.APISuggestion].self, from: data)
+            try Task.checkCancellation()
+            return result
+        }
+        return try await withTaskCancellationHandler {
+            try await task.value
+        } onCancel: {
+            task.cancel()
+        }
     }
 }
 

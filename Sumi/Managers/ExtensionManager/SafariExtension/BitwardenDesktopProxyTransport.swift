@@ -125,6 +125,23 @@ enum BitwardenDesktopTransportDiagnostics {
 
 @MainActor
 final class BitwardenDesktopProxyProcessTransport: BitwardenDesktopProxyTransporting {
+    private enum HandshakeState {
+        case idle
+        case waiting(CheckedContinuation<String, any Error>)
+        case received(String)
+        case failed(any Error)
+        case terminal
+
+        var blocksPreconnectionFrames: Bool {
+            switch self {
+            case .received, .failed, .terminal:
+                return true
+            case .idle, .waiting:
+                return false
+            }
+        }
+    }
+
     private(set) var isConnected = false
     var onDisconnect: (() -> Void)?
     var onReceive: (([String: Any]) -> Void)?
@@ -133,13 +150,19 @@ final class BitwardenDesktopProxyProcessTransport: BitwardenDesktopProxyTranspor
     private var stdinHandle: FileHandle?
     private var readTask: Task<Void, Never>?
     private var pendingBuffer = Data()
-    private var handshakeCommand: String?
+    private var handshakeState = HandshakeState.idle
+    private var handshakeTimeoutTask: Task<Void, Never>?
+    private var transportDidEnd = false
 
     func start(
         proxyExecutableURL: URL,
         handshakeTimeout: Duration = .seconds(30)
     ) async throws {
         guard isConnected == false else { return }
+        handshakeTimeoutTask?.cancel()
+        handshakeTimeoutTask = nil
+        handshakeState = .idle
+        transportDidEnd = false
 
         let process = Process()
         process.executableURL = proxyExecutableURL
@@ -169,6 +192,10 @@ final class BitwardenDesktopProxyProcessTransport: BitwardenDesktopProxyTranspor
         startReadLoop(stdoutPipe.fileHandleForReading)
 
         let command = try await waitForHandshakeCommand(timeout: handshakeTimeout)
+        guard !transportDidEnd else {
+            shutdown()
+            throw BitwardenDesktopProxyTransportError.desktopNotRunning
+        }
 
         switch command {
         case "connected":
@@ -197,7 +224,7 @@ final class BitwardenDesktopProxyProcessTransport: BitwardenDesktopProxyTranspor
     func shutdown() {
         let wasActive = isConnected || process != nil || readTask != nil
         isConnected = false
-        handshakeCommand = nil
+        completeHandshake(.failure(BitwardenDesktopProxyTransportError.portDisconnected))
         readTask?.cancel()
         readTask = nil
         stdinHandle?.closeFile()
@@ -234,14 +261,24 @@ final class BitwardenDesktopProxyProcessTransport: BitwardenDesktopProxyTranspor
         while let decoded = BitwardenDesktopProxyFraming.decodeNext(from: &pendingBuffer) {
             if decoded is NSNull {
                 BitwardenDesktopTransportDiagnostics.log(outcome: .desktopReplyMalformed)
+                completeHandshake(.failure(BitwardenDesktopProxyTransportError.malformedReply))
                 continue
             }
             guard let object = decoded as? [String: Any] else {
                 BitwardenDesktopTransportDiagnostics.log(outcome: .desktopReplyMalformed)
+                completeHandshake(.failure(BitwardenDesktopProxyTransportError.malformedReply))
                 continue
             }
-            if handshakeCommand == nil, let command = object["command"] as? String {
-                handshakeCommand = command
+            if !isConnected, handshakeState.blocksPreconnectionFrames {
+                continue
+            }
+            if let command = object["command"] as? String {
+                completeHandshake(.success(command))
+                continue
+            }
+            if !isConnected {
+                BitwardenDesktopTransportDiagnostics.log(outcome: .desktopProxyProtocolMismatch)
+                completeHandshake(.failure(BitwardenDesktopProxyTransportError.protocolMismatch))
                 continue
             }
             onReceive?(object)
@@ -249,26 +286,78 @@ final class BitwardenDesktopProxyProcessTransport: BitwardenDesktopProxyTranspor
     }
 
     private func waitForHandshakeCommand(timeout: Duration) async throws -> String {
-        let deadline = ContinuousClock.now + timeout
-        while ContinuousClock.now < deadline {
-            if let handshakeCommand {
-                return handshakeCommand
-            }
-            if process?.isRunning == false {
-                if handshakeCommand == nil {
-                    BitwardenDesktopTransportDiagnostics.log(outcome: .desktopAppNotRunning)
-                    throw BitwardenDesktopProxyTransportError.desktopNotRunning
-                }
-                BitwardenDesktopTransportDiagnostics.log(outcome: .desktopIntegrationDisabled)
-                throw BitwardenDesktopProxyTransportError.desktopIntegrationDisabled
-            }
-            try await Task.sleep(for: .milliseconds(20))
+        switch handshakeState {
+        case .received(let command):
+            finishConsumedHandshake()
+            return command
+        case .failed(let error):
+            finishConsumedHandshake()
+            throw error
+        case .terminal:
+            throw BitwardenDesktopProxyTransportError.portDisconnected
+        case .waiting:
+            throw BitwardenDesktopProxyTransportError.protocolMismatch
+        case .idle:
+            break
         }
-        BitwardenDesktopTransportDiagnostics.log(outcome: .desktopTimeout)
-        throw BitwardenDesktopProxyTransportError.timeout
+        if process?.isRunning == false {
+            BitwardenDesktopTransportDiagnostics.log(outcome: .desktopAppNotRunning)
+            throw BitwardenDesktopProxyTransportError.desktopNotRunning
+        }
+
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                handshakeState = .waiting(continuation)
+                handshakeTimeoutTask?.cancel()
+                handshakeTimeoutTask = Task { [weak self] in
+                    do {
+                        try await Task.sleep(for: timeout)
+                    } catch {
+                        return
+                    }
+                    guard let self else { return }
+                    BitwardenDesktopTransportDiagnostics.log(outcome: .desktopTimeout)
+                    self.completeHandshake(.failure(BitwardenDesktopProxyTransportError.timeout))
+                }
+            }
+        } onCancel: {
+            Task { @MainActor [weak self] in
+                self?.completeHandshake(.failure(CancellationError()))
+            }
+        }
+    }
+
+    private func completeHandshake(_ result: Result<String, any Error>) {
+        switch handshakeState {
+        case .idle:
+            switch result {
+            case .success(let command):
+                handshakeState = .received(command)
+            case .failure(let error):
+                handshakeState = .failed(error)
+            }
+        case .waiting(let continuation):
+            handshakeState = .terminal
+            handshakeTimeoutTask?.cancel()
+            handshakeTimeoutTask = nil
+            continuation.resume(with: result)
+        case .received, .failed, .terminal:
+            break
+        }
+    }
+
+    private func finishConsumedHandshake() {
+        handshakeState = .terminal
+        handshakeTimeoutTask?.cancel()
+        handshakeTimeoutTask = nil
     }
 
     private func handleTransportEnded() {
+        transportDidEnd = true
+        if !isConnected {
+            BitwardenDesktopTransportDiagnostics.log(outcome: .desktopAppNotRunning)
+            completeHandshake(.failure(BitwardenDesktopProxyTransportError.desktopNotRunning))
+        }
         guard isConnected else { return }
         isConnected = false
         BitwardenDesktopTransportDiagnostics.log(outcome: .desktopSocketUnavailable)

@@ -310,6 +310,38 @@ final class BrowserManagerStartupPersistenceTests: XCTestCase {
         }
     }
 
+    func testStartupRecoveryTransactionRunsStagesInOrder() async {
+        let transaction = SumiStartupRecoveryTransaction()
+        var events: [String] = []
+
+        let outcome = await transaction.recoverIfNeeded(
+            preflight: .ready,
+            recoverProfileRetirement: {
+                events.append("profile retirement")
+                return ProfileRetirementStartupRecoveryReport()
+            },
+            recoverImport: {
+                events.append("import")
+                return nil
+            },
+            hasSafeProfile: {
+                events.append("safe profile")
+                return true
+            },
+            startRuntime: {
+                events.append("runtime")
+            }
+        )
+
+        guard case .recovered = outcome else {
+            return XCTFail("Ordered startup recovery did not complete")
+        }
+        XCTAssertEqual(
+            events,
+            ["profile retirement", "safe profile", "import", "runtime"]
+        )
+    }
+
     func testStartupRecoveryTransactionFailureIsTerminalAndNeverStartsRuntime()
         async {
         let transaction = SumiStartupRecoveryTransaction()

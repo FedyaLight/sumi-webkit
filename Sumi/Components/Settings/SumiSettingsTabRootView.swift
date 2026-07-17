@@ -72,7 +72,7 @@ struct SumiSettingsTabRootView: View {
             .background(SettingsSurfaceStyle.pageBackground)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .environment(\.resolvedThemeContext, surfaceThemeContext)
+        .sumiChromeThemeScope(context: surfaceThemeContext, settings: sumiSettingsModel)
         .environment(\.colorScheme, surfaceThemeContext.chromeColorScheme)
         .onReceive(browserContext.currentProfileUpdates) { profile in
             currentProfileID = profile?.id

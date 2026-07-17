@@ -34,7 +34,7 @@ struct SumiBookmarksTabRootView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(tokens.windowBackground)
-        .environment(\.resolvedThemeContext, surfaceThemeContext)
+        .sumiChromeThemeScope(context: surfaceThemeContext, settings: sumiSettings)
         .environment(\.colorScheme, surfaceThemeContext.chromeColorScheme)
         .environment(\.nativeSurfaceHoverUpdatesEnabled, scrollHoverCoordinator.hoverUpdatesEnabled)
         .overlay(alignment: .topLeading) {
@@ -379,12 +379,13 @@ private struct SumiBookmarkEntityRow: View {
     let faviconImageReader: any BrowserFaviconImageReading
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
+    @Environment(\.chromeThemeTokens) private var scopedChromeTokens
     @Environment(\.nativeSurfaceHoverUpdatesEnabled) private var hoverUpdatesEnabled
     @State private var isHovering = false
     @State private var faviconImage: NSImage?
 
     private var tokens: ChromeThemeTokens {
-        themeContext.tokens(settings: sumiSettings)
+        scopedChromeTokens ?? themeContext.tokens(settings: sumiSettings)
     }
 
     var body: some View {

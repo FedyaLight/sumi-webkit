@@ -352,7 +352,8 @@ struct SumiApp: App {
             ),
             sidebarContext: .make(
                 browserManager: dependencies.browserManager,
-                updaterService: dependencies.updaterService
+                updaterService: dependencies.updaterService,
+                nowPlayingController: dependencies.nowPlayingController
             ),
             floatingBarContext: dependencies.browserManager.urlBarBundle
                 .floatingBar.browserContext.context,
@@ -366,7 +367,6 @@ struct SumiApp: App {
             .ignoresSafeArea(.all)
             .writingToolsBehavior(.disabled)
             .environmentObject(dependencies.browserManager.glanceManager)
-            .environmentObject(dependencies.nowPlayingController)
             .environment(dependencies.windowRegistry)
             .environment(\.sumiSettings, dependencies.settingsManager)
             .environment(\.sumiModuleRegistry, dependencies.browserManager.moduleRegistry)

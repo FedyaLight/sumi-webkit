@@ -208,7 +208,63 @@ struct SidebarEssentialsPreviewState: Equatable {
     var gapSlot: Int?
 }
 
+struct SidebarGeometryHitTestIndex: Equatable {
+    var topLevelPinnedItemsBySpace: [UUID: [SidebarTopLevelPinnedItemMetrics]]
+    var folderTargetsBySpace: [UUID: [SidebarFolderDropTargetMetrics]]
+    var folderChildrenByFolder: [UUID: [SidebarFolderChildDropTargetMetrics]]
+
+    static let empty = SidebarGeometryHitTestIndex(
+        topLevelPinnedItemsBySpace: [:],
+        folderTargetsBySpace: [:],
+        folderChildrenByFolder: [:]
+    )
+
+    init(
+        topLevelPinnedItemTargets: [UUID: SidebarTopLevelPinnedItemMetrics],
+        folderDropTargets: [UUID: SidebarFolderDropTargetMetrics],
+        folderChildDropTargets: [UUID: SidebarFolderChildDropTargetMetrics]
+    ) {
+        topLevelPinnedItemsBySpace = Dictionary(
+            grouping: topLevelPinnedItemTargets.values,
+            by: \.spaceId
+        ).mapValues { items in
+            items.sorted {
+                if $0.topLevelIndex != $1.topLevelIndex {
+                    return $0.topLevelIndex < $1.topLevelIndex
+                }
+                return $0.itemId.uuidString < $1.itemId.uuidString
+            }
+        }
+        folderTargetsBySpace = Dictionary(
+            grouping: folderDropTargets.values,
+            by: \.spaceId
+        )
+        folderChildrenByFolder = Dictionary(
+            grouping: folderChildDropTargets.values,
+            by: \.folderId
+        ).mapValues { children in
+            children.sorted {
+                if $0.index != $1.index { return $0.index < $1.index }
+                return $0.childId.uuidString < $1.childId.uuidString
+            }
+        }
+    }
+
+    private init(
+        topLevelPinnedItemsBySpace: [UUID: [SidebarTopLevelPinnedItemMetrics]],
+        folderTargetsBySpace: [UUID: [SidebarFolderDropTargetMetrics]],
+        folderChildrenByFolder: [UUID: [SidebarFolderChildDropTargetMetrics]]
+    ) {
+        self.topLevelPinnedItemsBySpace = topLevelPinnedItemsBySpace
+        self.folderTargetsBySpace = folderTargetsBySpace
+        self.folderChildrenByFolder = folderChildrenByFolder
+    }
+}
+
 struct SidebarRuntimeGeometryStore {
+    var cumulativeScrollDeltaY: CGFloat = 0
+    var structuralRevision: UInt64 = 0
+    var scrollRevision: UInt64 = 0
     var pageGeometryByKey: [SidebarPageGeometryKey: SidebarPageGeometryMetrics] = [:]
     var sectionFramesBySpace: [SidebarSectionGeometryKey: CGRect] = [:]
     var topLevelPinnedItemTargets: [UUID: SidebarTopLevelPinnedItemMetrics] = [:]
@@ -216,6 +272,7 @@ struct SidebarRuntimeGeometryStore {
     var folderChildDropTargets: [UUID: SidebarFolderChildDropTargetMetrics] = [:]
     var regularListHitTargets: [UUID: SidebarRegularListHitMetrics] = [:]
     var essentialsLayoutMetricsBySpace: [UUID: SidebarEssentialsLayoutMetrics] = [:]
+    var hitTestIndex: SidebarGeometryHitTestIndex = .empty
 }
 
 enum SidebarDragGeometryMutationKey: Hashable {
@@ -256,6 +313,9 @@ final class SidebarDragGeometryMutationBuffer {
 }
 
 struct SidebarGeometrySnapshot: Equatable {
+    var cumulativeScrollDeltaY: CGFloat = 0
+    var structuralRevision: UInt64 = 0
+    var scrollRevision: UInt64 = 0
     var pageGeometryByKey: [SidebarPageGeometryKey: SidebarPageGeometryMetrics] = [:]
     var sectionFramesBySpace: [SidebarSectionGeometryKey: CGRect] = [:]
     var topLevelPinnedItemTargets: [UUID: SidebarTopLevelPinnedItemMetrics] = [:]
@@ -263,6 +323,7 @@ struct SidebarGeometrySnapshot: Equatable {
     var folderChildDropTargets: [UUID: SidebarFolderChildDropTargetMetrics] = [:]
     var regularListHitTargets: [UUID: SidebarRegularListHitMetrics] = [:]
     var essentialsLayoutMetricsBySpace: [UUID: SidebarEssentialsLayoutMetrics] = [:]
+    var hitTestIndex: SidebarGeometryHitTestIndex = .empty
 
     static let empty = SidebarGeometrySnapshot()
 }
@@ -275,6 +336,13 @@ enum SidebarSectionPrefix: Hashable {
 
 @MainActor
 extension SidebarDragState {
+    func baseGeometryLocation(from visibleLocation: CGPoint) -> CGPoint {
+        CGPoint(
+            x: visibleLocation.x,
+            y: visibleLocation.y + geometrySnapshot.cumulativeScrollDeltaY
+        )
+    }
+
     var sectionFramesBySpace: [SidebarSectionGeometryKey: CGRect] {
         geometrySnapshot.sectionFramesBySpace
     }
@@ -303,6 +371,18 @@ extension SidebarDragState {
         geometrySnapshot.essentialsLayoutMetricsBySpace
     }
 
+    var topLevelPinnedItemsBySpace: [UUID: [SidebarTopLevelPinnedItemMetrics]] {
+        geometrySnapshot.hitTestIndex.topLevelPinnedItemsBySpace
+    }
+
+    var folderTargetsBySpace: [UUID: [SidebarFolderDropTargetMetrics]] {
+        geometrySnapshot.hitTestIndex.folderTargetsBySpace
+    }
+
+    var folderChildrenByFolder: [UUID: [SidebarFolderChildDropTargetMetrics]] {
+        geometrySnapshot.hitTestIndex.folderChildrenByFolder
+    }
+
     func sectionFrame(
         for section: SidebarSectionPrefix,
         in spaceId: UUID
@@ -314,7 +394,8 @@ extension SidebarDragState {
         at location: CGPoint,
         matching scope: SidebarDragScope? = nil
     ) -> SidebarPageGeometryMetrics? {
-        pageGeometryByKey.values
+        let location = baseGeometryLocation(from: location)
+        return pageGeometryByKey.values
             .filter { metrics in
                 guard metrics.renderMode == .interactive,
                       metrics.frame.contains(location) else {

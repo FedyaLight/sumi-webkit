@@ -189,7 +189,8 @@ private struct FolderGlyphPickerPanelHost: View {
                 .environment(\.sumiSettings, settings)
                 .sumiNativeSurfaceColorScheme(
                     themeContext.nativeSurfaceColorScheme,
-                    themeContext: themeContext
+                    themeContext: themeContext,
+                    settings: settings
                 )
         } else if let settings {
             panel.environment(\.sumiSettings, settings)
@@ -309,10 +310,11 @@ private struct FolderGlyphSearchField: View {
 
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
+    @Environment(\.chromeThemeTokens) private var scopedChromeTokens
     @FocusState private var isFocused: Bool
 
     private var tokens: ChromeThemeTokens {
-        themeContext.tokens(settings: sumiSettings)
+        scopedChromeTokens ?? themeContext.tokens(settings: sumiSettings)
     }
 
     private var fieldFont: Font {
@@ -397,10 +399,11 @@ private struct FolderGlyphGridCell: View {
 
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
+    @Environment(\.chromeThemeTokens) private var scopedChromeTokens
     @State private var hovering = false
 
     private var tokens: ChromeThemeTokens {
-        themeContext.tokens(settings: sumiSettings)
+        scopedChromeTokens ?? themeContext.tokens(settings: sumiSettings)
     }
 
     var body: some View {
@@ -445,10 +448,11 @@ private struct FolderGlyphResetGridCell: View {
 
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
+    @Environment(\.chromeThemeTokens) private var scopedChromeTokens
     @State private var hovering = false
 
     private var tokens: ChromeThemeTokens {
-        themeContext.tokens(settings: sumiSettings)
+        scopedChromeTokens ?? themeContext.tokens(settings: sumiSettings)
     }
 
     var body: some View {

@@ -32,7 +32,7 @@ jobs:
         id: selection
         run: |
           set -euo pipefail
-          scripts/ci/check_test_sharding.sh
+          scripts/ci/preflight.sh fast
           runner="$(scripts/ci/run_tests.sh toolchain-field pr runner)"
           developer_dir="$(scripts/ci/run_tests.sh toolchain-field pr developer_dir)"
           package_matrix="$(scripts/ci/run_tests.sh matrix pr swift-package)"

@@ -16,9 +16,13 @@ extension View {
     /// hosting SwiftUI content (NSPopover presenters).
     func sumiNativeSurfaceColorScheme(
         _ scheme: ColorScheme,
-        themeContext: ResolvedThemeContext
+        themeContext: ResolvedThemeContext,
+        settings: SumiSettingsService
     ) -> some View {
-        environment(\.resolvedThemeContext, themeContext)
+        sumiChromeThemeScope(
+            context: themeContext.nativeSurfaceThemeContext,
+            settings: settings
+        )
             .environment(\.colorScheme, scheme)
             .preferredColorScheme(scheme)
     }
@@ -26,11 +30,15 @@ extension View {
 
 private struct SumiNativeSurfaceColorSchemeModifier: ViewModifier {
     @Environment(\.resolvedThemeContext) private var themeContext
+    @Environment(\.sumiSettings) private var settings
 
     func body(content: Content) -> some View {
         let scheme = themeContext.nativeSurfaceColorScheme
         content
-            .environment(\.resolvedThemeContext, themeContext.nativeSurfaceThemeContext)
+            .sumiChromeThemeScope(
+                context: themeContext.nativeSurfaceThemeContext,
+                settings: settings
+            )
             .environment(\.colorScheme, scheme)
             .preferredColorScheme(scheme)
     }

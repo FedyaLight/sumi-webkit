@@ -123,7 +123,11 @@ final class FolderSearchPopoverPresenter: NSObject, NSPopoverDelegate {
             )
             .environment(windowState)
             .environment(\.sumiSettings, presentationContext.settings)
-            .sumiNativeSurfaceColorScheme(surfaceColorScheme, themeContext: surfaceThemeContext)
+            .sumiNativeSurfaceColorScheme(
+                surfaceColorScheme,
+                themeContext: surfaceThemeContext,
+                settings: presentationContext.settings
+            )
         )
 
         let token = source.coordinator?.beginSession(

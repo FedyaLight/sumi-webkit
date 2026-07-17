@@ -303,7 +303,8 @@ final class DownloadsPopoverPresenter: NSObject, NSPopoverDelegate {
                 .environment(\.sumiSettings, registration.settings)
                 .sumiNativeSurfaceColorScheme(
                     colorScheme,
-                    themeContext: popoverThemeContext(for: registration, colorScheme: colorScheme)
+                    themeContext: popoverThemeContext(for: registration, colorScheme: colorScheme),
+                    settings: registration.settings
                 )
                 .frame(width: Metrics.width, height: contentSize.height)
         )

@@ -295,7 +295,8 @@ final class SidebarDropCoordinatorBoundaryTests: XCTestCase {
         browserManager.windowRegistry.register(windowState)
         let context = WindowSidebarContext.make(
             browserManager: browserManager,
-            updaterService: SumiUpdaterService(backendFactory: { _ in nil })
+            updaterService: SumiUpdaterService(backendFactory: { _ in nil }),
+            nowPlayingController: SumiNativeNowPlayingController()
         )
 
         XCTAssertTrue(

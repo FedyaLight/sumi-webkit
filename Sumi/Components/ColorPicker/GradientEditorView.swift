@@ -110,7 +110,8 @@ struct GradientEditorView: View {
         .accessibilityIdentifier("workspace-theme-picker-panel")
         .sumiNativeSurfaceColorScheme(
             pickerThemeContext.globalColorScheme,
-            themeContext: pickerThemeContext
+            themeContext: pickerThemeContext,
+            settings: sumiSettings
         )
         .onAppear {
             syncEditorState(with: workspaceTheme)

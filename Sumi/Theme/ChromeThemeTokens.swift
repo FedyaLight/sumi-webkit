@@ -175,64 +175,153 @@ enum ChromePageLoadingIndicatorStyle {
     }
 }
 
-private struct ChromeThemeTokenRecipeKey: Equatable {
-    let context: ResolvedThemeContext
+enum ChromeThemeColorSchemeKey: Hashable {
+    case light
+    case dark
+    case unknown
+
+    init(_ colorScheme: ColorScheme) {
+        switch colorScheme {
+        case .light: self = .light
+        case .dark: self = .dark
+        @unknown default: self = .unknown
+        }
+    }
+}
+
+struct ChromeThemeRecipeKey: Hashable {
+    let sourceWorkspaceTheme: WorkspaceTheme
+    let targetWorkspaceTheme: WorkspaceTheme
+    let sourceColorScheme: ChromeThemeColorSchemeKey
+    let targetColorScheme: ChromeThemeColorSchemeKey
     let settingsFingerprint: Int
 
-    static func == (lhs: ChromeThemeTokenRecipeKey, rhs: ChromeThemeTokenRecipeKey) -> Bool {
-        lhs.context == rhs.context
-            && lhs.settingsFingerprint == rhs.settingsFingerprint
+    init(context: ResolvedThemeContext, settingsFingerprint: Int) {
+        sourceWorkspaceTheme = context.sourceWorkspaceTheme
+        targetWorkspaceTheme = context.targetWorkspaceTheme
+        sourceColorScheme = ChromeThemeColorSchemeKey(context.sourceChromeColorScheme)
+        targetColorScheme = ChromeThemeColorSchemeKey(context.targetChromeColorScheme)
+        self.settingsFingerprint = settingsFingerprint
     }
+}
+
+@MainActor
+private enum ChromeThemeRecipeMemo {
+    private struct Entry {
+        var recipe: ChromeThemeRecipe
+        var lastAccess: UInt64
+    }
+
+    private static let capacity = 32
+    private static var entries: [ChromeThemeRecipeKey: Entry] = [:]
+    private static var accessCounter: UInt64 = 0
+
+    static func recipe(for key: ChromeThemeRecipeKey) -> ChromeThemeRecipe? {
+        guard var entry = entries[key] else { return nil }
+        accessCounter &+= 1
+        entry.lastAccess = accessCounter
+        entries[key] = entry
+        return entry.recipe
+    }
+
+    static func store(_ recipe: ChromeThemeRecipe, for key: ChromeThemeRecipeKey) {
+        accessCounter &+= 1
+        entries[key] = Entry(recipe: recipe, lastAccess: accessCounter)
+        guard entries.count > capacity,
+              let leastRecentKey = entries.min(by: { $0.value.lastAccess < $1.value.lastAccess })?.key
+        else { return }
+        entries.removeValue(forKey: leastRecentKey)
+    }
+
+    #if DEBUG
+        static func resetForTests() {
+            entries.removeAll()
+            accessCounter = 0
+        }
+    #endif
 }
 
 @MainActor
 private enum ChromeThemeTokenMemo {
-    private struct Entry {
-        var key: ChromeThemeTokenRecipeKey
-        var tokens: ChromeThemeTokens
+    private static var context: ResolvedThemeContext?
+    private static var settingsFingerprint: Int?
+    private static var tokens: ChromeThemeTokens?
+
+    static func value(
+        context candidateContext: ResolvedThemeContext,
+        settingsFingerprint candidateFingerprint: Int
+    ) -> ChromeThemeTokens? {
+        guard context == candidateContext,
+              settingsFingerprint == candidateFingerprint
+        else { return nil }
+        return tokens
     }
 
-    private static let capacity = 8
-    private static var entries: [Entry] = []
-
-    static func tokens(for key: ChromeThemeTokenRecipeKey) -> ChromeThemeTokens? {
-        guard let index = entries.firstIndex(where: { $0.key == key }) else {
-            return nil
-        }
-
-        let entry = entries.remove(at: index)
-        entries.insert(entry, at: 0)
-        return entry.tokens
+    static func store(
+        _ candidateTokens: ChromeThemeTokens,
+        context candidateContext: ResolvedThemeContext,
+        settingsFingerprint candidateFingerprint: Int
+    ) {
+        context = candidateContext
+        settingsFingerprint = candidateFingerprint
+        tokens = candidateTokens
     }
 
-    static func store(_ tokens: ChromeThemeTokens, for key: ChromeThemeTokenRecipeKey) {
-        if let index = entries.firstIndex(where: { $0.key == key }) {
-            entries.remove(at: index)
+    #if DEBUG
+        static func resetForTests() {
+            context = nil
+            settingsFingerprint = nil
+            tokens = nil
         }
-
-        entries.insert(Entry(key: key, tokens: tokens), at: 0)
-        if entries.count > capacity {
-            entries.removeLast(entries.count - capacity)
-        }
-    }
+    #endif
 }
+
+#if DEBUG
+    @MainActor
+    enum ChromeThemeCacheDiagnostics {
+        static func resetForTests() {
+            ChromeThemeRecipeMemo.resetForTests()
+            ChromeThemeTokenMemo.resetForTests()
+            ThemeChromeRecipeBuilder.recipeBuildCountForTests = 0
+        }
+    }
+#endif
 
 @MainActor
 extension ResolvedThemeContext {
     func tokens(settings: SumiSettingsService) -> ChromeThemeTokens {
-        let key = ChromeThemeTokenRecipeKey(
+        let fingerprint = settings.chromeTokenRecipeFingerprint
+        if let tokens = ChromeThemeTokenMemo.value(
             context: self,
-            settingsFingerprint: settings.chromeTokenRecipeFingerprint
-        )
-        if let tokens = ChromeThemeTokenMemo.tokens(for: key) {
+            settingsFingerprint: fingerprint
+        ) {
             return tokens
         }
 
-        let tokens = ThemeChromeRecipeBuilder.makeTokens(
+        let recipeKey = ChromeThemeRecipeKey(
             context: self,
-            settings: settings
+            settingsFingerprint: fingerprint
         )
-        ChromeThemeTokenMemo.store(tokens, for: key)
+        let recipe: ChromeThemeRecipe
+        if let cachedRecipe = ChromeThemeRecipeMemo.recipe(for: recipeKey) {
+            recipe = cachedRecipe
+        } else {
+            recipe = ThemeChromeRecipeBuilder.makeRecipe(context: self, settings: settings)
+            ChromeThemeRecipeMemo.store(recipe, for: recipeKey)
+        }
+
+        let usesTransition = sourceChromeColorScheme != targetChromeColorScheme
+            || sourceWorkspaceTheme != targetWorkspaceTheme
+            || transitionProgress < 1
+        let tokens = recipe.tokens(
+            progress: transitionProgress,
+            usesTransition: usesTransition
+        )
+        ChromeThemeTokenMemo.store(
+            tokens,
+            context: self,
+            settingsFingerprint: fingerprint
+        )
         return tokens
     }
 
@@ -265,6 +354,28 @@ extension ResolvedThemeContext {
         @unknown default:
             return Color.primary.opacity(0.12)
         }
+    }
+}
+
+private struct ChromeThemeTokensKey: EnvironmentKey {
+    static let defaultValue: ChromeThemeTokens? = nil
+}
+
+extension EnvironmentValues {
+    var chromeThemeTokens: ChromeThemeTokens? {
+        get { self[ChromeThemeTokensKey.self] }
+        set { self[ChromeThemeTokensKey.self] = newValue }
+    }
+}
+
+@MainActor
+extension View {
+    func sumiChromeThemeScope(
+        context: ResolvedThemeContext,
+        settings: SumiSettingsService
+    ) -> some View {
+        environment(\.resolvedThemeContext, context)
+            .environment(\.chromeThemeTokens, context.tokens(settings: settings))
     }
 }
 

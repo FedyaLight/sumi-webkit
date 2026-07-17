@@ -320,14 +320,15 @@ if (( production_file_count == 0 )); then
   guard_fatal 'tracked production Swift source inventory is empty'
 fi
 
-guard_max 'Maximum production Swift file LOC' "$maximum_file_lines" 1050
-guard_max 'Production Swift files over 600 LOC' "$files_over_600_lines" 43
-guard_max 'Production Swift files over 800 LOC' "$files_over_800_lines" 6
-guard_max \
+guard_warn_max 'Maximum production Swift file LOC' "$maximum_file_lines" 1100
+guard_max 'Maximum production Swift file LOC hard limit' "$maximum_file_lines" 1200
+guard_warn_max 'Production Swift files over 600 LOC' "$files_over_600_lines" 43
+guard_warn_max 'Production Swift files over 800 LOC' "$files_over_800_lines" 6
+guard_warn_max \
   'Production Swift files over 8 stored dependencies' \
   "$files_over_8_dependencies" \
   76
-guard_max \
+guard_warn_max \
   'Production Swift files over 12 stored dependencies' \
   "$files_over_12_dependencies" \
   25

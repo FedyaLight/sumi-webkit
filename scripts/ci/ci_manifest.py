@@ -93,8 +93,13 @@ def _validate_toolchains(toolchains):
         _expect_keys(toolchain, required, context)
         for field in required:
             _expect_string(toolchain[field], f"{context}.{field}")
-        if not re.fullmatch(r"macos-[0-9]+(?:-arm64)?", toolchain["runner"]):
-            raise ManifestError(f"{context}.runner must be an explicit macOS runner label")
+        if not re.fullmatch(
+            r"(?:macos-[0-9]+(?:-arm64)?|xcode-[0-9]+)",
+            toolchain["runner"],
+        ):
+            raise ManifestError(
+                f"{context}.runner must be an explicit GitHub macOS or Xcode runner label"
+            )
         if not re.fullmatch(r"[0-9]+\.[0-9]+(?:\.[0-9]+)?", toolchain["xcode_version"]):
             raise ManifestError(f"{context}.xcode_version must be a dotted version")
         expected_dir = f"/Applications/Xcode_{toolchain['xcode_version']}.app/Contents/Developer"

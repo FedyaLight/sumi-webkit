@@ -250,6 +250,7 @@ final class SidebarDragGeometryRepository {
         generation: Int
     ) {
         guard renderMode == .interactive else { return }
+        let frame = frame.map { normalizedFrame($0, for: generation) }
         mutateGeometryStore(for: generation) { store in
             if let frame {
                 return upsertPageGeometry(
@@ -275,6 +276,7 @@ final class SidebarDragGeometryRepository {
         frame: CGRect?,
         generation: Int
     ) {
+        let frame = frame.map { normalizedFrame($0, for: generation) }
         mutateGeometryStore(for: generation) { store in
             let key = SidebarSectionGeometryKey(spaceId: spaceId, section: section)
             if let frame {
@@ -290,6 +292,8 @@ final class SidebarDragGeometryRepository {
     }
 
     func applyFolderDropTarget(_ update: SidebarFolderDropTargetUpdate, generation: Int) {
+        var update = update
+        update.frame = update.frame.map { normalizedFrame($0, for: generation) }
         mutateGeometryStore(for: generation) { store in
             guard let metrics = update.metrics, let frame = update.frame else {
                 guard var target = store.folderDropTargets[update.folderId] else { return false }
@@ -332,6 +336,11 @@ final class SidebarDragGeometryRepository {
     }
 
     func applyTopLevelPinnedItemTarget(_ update: SidebarTopLevelPinnedItemTargetUpdate, generation: Int) {
+        var update = update
+        if var metrics = update.metrics {
+            metrics.frame = normalizedFrame(metrics.frame, for: generation)
+            update.metrics = metrics
+        }
         mutateGeometryStore(for: generation) { store in
             guard let metrics = update.metrics else {
                 guard store.topLevelPinnedItemTargets[update.itemId] != nil else { return false }
@@ -346,6 +355,11 @@ final class SidebarDragGeometryRepository {
     }
 
     func applyFolderChildDropTarget(_ update: SidebarFolderChildDropTargetUpdate, generation: Int) {
+        var update = update
+        if var metrics = update.metrics {
+            metrics.frame = normalizedFrame(metrics.frame, for: generation)
+            update.metrics = metrics
+        }
         mutateGeometryStore(for: generation) { store in
             guard let metrics = update.metrics else {
                 guard store.folderChildDropTargets[update.childId] != nil else { return false }
@@ -365,6 +379,7 @@ final class SidebarDragGeometryRepository {
         itemCount: Int,
         generation: Int
     ) {
+        let frame = frame.map { normalizedFrame($0, for: generation) }
         mutateGeometryStore(for: generation) { store in
             if let frame {
                 let target = SidebarRegularListHitMetrics(
@@ -383,6 +398,17 @@ final class SidebarDragGeometryRepository {
     }
 
     func applyEssentialsLayoutMetrics(_ update: SidebarEssentialsLayoutUpdate, generation: Int) {
+        var update = update
+        if var input = update.input {
+            input.frame = normalizedFrame(input.frame, for: generation)
+            input.dropFrame = normalizedFrame(input.dropFrame, for: generation)
+            input.dropSlotFrames = input.dropSlotFrames.map { slot in
+                var slot = slot
+                slot.frame = normalizedFrame(slot.frame, for: generation)
+                return slot
+            }
+            update.input = input
+        }
         mutateGeometryStore(for: generation) { store in
             guard let input = update.input else {
                 guard store.essentialsLayoutMetricsBySpace[update.spaceId] != nil else { return false }
@@ -399,71 +425,17 @@ final class SidebarDragGeometryRepository {
 
     func adjustGeometryStoreScrollDelta(deltaY: CGFloat) {
         guard abs(deltaY) > 0.5 else { return }
-
-        for (id, metrics) in activeGeometryStore.topLevelPinnedItemTargets {
-            var updated = metrics
-            updated.frame.origin.y -= deltaY
-            activeGeometryStore.topLevelPinnedItemTargets[id] = updated
-        }
-
-        for (id, metrics) in activeGeometryStore.folderDropTargets {
-            var updated = metrics
-            if let headerFrame = updated.headerFrame {
-                var newHeaderFrame = headerFrame
-                newHeaderFrame.origin.y -= deltaY
-                updated.headerFrame = newHeaderFrame
-            }
-            if let bodyFrame = updated.bodyFrame {
-                var newBodyFrame = bodyFrame
-                newBodyFrame.origin.y -= deltaY
-                updated.bodyFrame = newBodyFrame
-            }
-            if let afterFrame = updated.afterFrame {
-                var newAfterFrame = afterFrame
-                newAfterFrame.origin.y -= deltaY
-                updated.afterFrame = newAfterFrame
-            }
-            activeGeometryStore.folderDropTargets[id] = updated
-        }
-
-        for (id, metrics) in activeGeometryStore.folderChildDropTargets {
-            var updated = metrics
-            updated.frame.origin.y -= deltaY
-            activeGeometryStore.folderChildDropTargets[id] = updated
-        }
-
-        for (key, rect) in activeGeometryStore.sectionFramesBySpace {
-            var updated = rect
-            updated.origin.y -= deltaY
-            activeGeometryStore.sectionFramesBySpace[key] = updated
-        }
-
-        for (id, metrics) in activeGeometryStore.regularListHitTargets {
-            var updated = metrics
-            updated.frame.origin.y -= deltaY
-            activeGeometryStore.regularListHitTargets[id] = updated
-        }
-
-        for (spaceId, metrics) in activeGeometryStore.essentialsLayoutMetricsBySpace {
-            var updated = metrics
-            updated.frame.origin.y -= deltaY
-            updated.dropFrame.origin.y -= deltaY
-            updated.dropSlotFrames = updated.dropSlotFrames.map { slot in
-                var updatedSlot = slot
-                updatedSlot.frame.origin.y -= deltaY
-                return updatedSlot
-            }
-            activeGeometryStore.essentialsLayoutMetricsBySpace[spaceId] = updated
-        }
-
-        for (key, metrics) in activeGeometryStore.pageGeometryByKey {
-            var updated = metrics
-            updated.frame.origin.y -= deltaY
-            activeGeometryStore.pageGeometryByKey[key] = updated
-        }
-
+        activeGeometryStore.cumulativeScrollDeltaY += deltaY
+        activeGeometryStore.scrollRevision &+= 1
         setGeometrySnapshot(Self.snapshot(from: activeGeometryStore))
         setGeometryRevision(geometryRevision &+ 1)
+    }
+
+    private func normalizedFrame(_ frame: CGRect, for generation: Int) -> CGRect {
+        guard generation == activeGeometryGeneration else { return frame }
+        var normalized = frame
+        normalized.origin.y += activeGeometryStore.cumulativeScrollDeltaY
+        return normalized
     }
 
     private func enqueueDeferredGeometryMutation(
@@ -574,7 +546,11 @@ final class SidebarDragGeometryRepository {
                 gridSpacing: input.gridSpacing,
                 maxDropRowCount: resolvedMaxDropRowCount
             )
-            : input.dropSlotFrames
+            : input.dropSlotFrames.sorted { lhs, rhs in
+                if lhs.slot != rhs.slot { return lhs.slot < rhs.slot }
+                if lhs.frame.minY != rhs.frame.minY { return lhs.frame.minY < rhs.frame.minY }
+                return lhs.frame.minX < rhs.frame.minX
+            }
 
         return SidebarEssentialsLayoutMetrics(
             profileId: input.profileId,
@@ -591,8 +567,18 @@ final class SidebarDragGeometryRepository {
     }
 
     private func publishActiveGeometryStore() {
+        activeGeometryStore.structuralRevision &+= 1
+        rebuildIndices(in: &activeGeometryStore)
         pendingGeometrySnapshotPublishRequested = true
         scheduleMainRunLoopGeometryDrain()
+    }
+
+    private func rebuildIndices(in store: inout SidebarRuntimeGeometryStore) {
+        store.hitTestIndex = SidebarGeometryHitTestIndex(
+            topLevelPinnedItemTargets: store.topLevelPinnedItemTargets,
+            folderDropTargets: store.folderDropTargets,
+            folderChildDropTargets: store.folderChildDropTargets
+        )
     }
 
     private func scheduleMainRunLoopGeometryDrain() {
@@ -651,13 +637,17 @@ final class SidebarDragGeometryRepository {
 
     private static func snapshot(from store: SidebarRuntimeGeometryStore) -> SidebarGeometrySnapshot {
         SidebarGeometrySnapshot(
+            cumulativeScrollDeltaY: store.cumulativeScrollDeltaY,
+            structuralRevision: store.structuralRevision,
+            scrollRevision: store.scrollRevision,
             pageGeometryByKey: store.pageGeometryByKey,
             sectionFramesBySpace: store.sectionFramesBySpace,
             topLevelPinnedItemTargets: store.topLevelPinnedItemTargets,
             folderDropTargets: store.folderDropTargets,
             folderChildDropTargets: store.folderChildDropTargets,
             regularListHitTargets: store.regularListHitTargets,
-            essentialsLayoutMetricsBySpace: store.essentialsLayoutMetricsBySpace
+            essentialsLayoutMetricsBySpace: store.essentialsLayoutMetricsBySpace,
+            hitTestIndex: store.hitTestIndex
         )
     }
 

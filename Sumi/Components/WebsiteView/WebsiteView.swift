@@ -13,6 +13,7 @@ struct LinkStatusBar: View {
     let hoveredLink: String?
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
+    @Environment(\.chromeThemeTokens) private var scopedChromeTokens
     @State private var shouldShow: Bool = false
     @State private var hoverTask: Task<Void, Never>?
     @State private var displayedLink: String? = nil
@@ -114,7 +115,7 @@ struct LinkStatusBar: View {
     }
 
     private var tokens: ChromeThemeTokens {
-        themeContext.tokens(settings: sumiSettings)
+        scopedChromeTokens ?? themeContext.tokens(settings: sumiSettings)
     }
 }
 
@@ -305,7 +306,7 @@ struct WebsiteView: View {
         case .history:
             nativeSurfaceRootBuilders.history(windowState)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .environment(\.resolvedThemeContext, currentTabThemeContext)
+            .sumiChromeThemeScope(context: currentTabThemeContext, settings: sumiSettings)
             .browserContentSurface(
                 geometry: chromeGeometry,
                 background: contentBackground
@@ -314,7 +315,7 @@ struct WebsiteView: View {
         case .bookmarks:
             nativeSurfaceRootBuilders.bookmarks(windowState)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .environment(\.resolvedThemeContext, currentTabThemeContext)
+            .sumiChromeThemeScope(context: currentTabThemeContext, settings: sumiSettings)
             .browserContentSurface(
                 geometry: chromeGeometry,
                 background: contentBackground
@@ -324,7 +325,7 @@ struct WebsiteView: View {
             nativeSurfaceRootBuilders.settings(windowState)
             .environment(keyboardShortcutManager)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .environment(\.resolvedThemeContext, currentTabThemeContext)
+            .sumiChromeThemeScope(context: currentTabThemeContext, settings: sumiSettings)
             .browserContentSurface(
                 geometry: chromeGeometry,
                 background: contentBackground
@@ -343,6 +344,7 @@ private struct SplitPreviewOverlay: View {
     let previewState: SplitPreviewSession.WindowState
     @Environment(\.resolvedThemeContext) private var themeContext
     @Environment(\.sumiSettings) private var sumiSettings
+    @Environment(\.chromeThemeTokens) private var scopedChromeTokens
     @State private var renderedZone: SplitPreviewZone?
     @State private var renderedOpacity: Double = 0
     @State private var renderGeneration: UInt = 0
@@ -385,7 +387,7 @@ private struct SplitPreviewOverlay: View {
     }
 
     private var tokens: ChromeThemeTokens {
-        themeContext.tokens(settings: sumiSettings)
+        scopedChromeTokens ?? themeContext.tokens(settings: sumiSettings)
     }
 
     private var previewAnimation: Animation {

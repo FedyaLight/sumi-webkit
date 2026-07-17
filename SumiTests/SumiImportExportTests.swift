@@ -307,7 +307,7 @@ final class SumiImportExportTests: XCTestCase {
     }
 
     @MainActor
-    func testDetectedZenProfilesUsesInjectedRootAndSkipsNonProfiles() throws {
+    func testDetectedZenProfilesUsesInjectedRootAndSkipsNonProfiles() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("ZenProfiles-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -327,8 +327,9 @@ final class SumiImportExportTests: XCTestCase {
             zenProfilesRootProvider: { root }
         )
 
+        let profileNames = await service.detectedZenProfiles().map(\.lastPathComponent)
         XCTAssertEqual(
-            service.detectedZenProfiles().map(\.lastPathComponent),
+            profileNames,
             ["Alpha.default", "Beta.default"]
         )
     }
@@ -505,7 +506,7 @@ final class SumiImportExportTests: XCTestCase {
     }
 
     @MainActor
-    func testPreviewFileImportReportsNewerSumiBackupInsteadOfFallingBackToBrowser2Zen() throws {
+    func testPreviewFileImportReportsNewerSumiBackupInsteadOfFallingBackToBrowser2Zen() async throws {
         var archive = SumiPortableArchive(
             includedCategories: [.profiles],
             data: SumiPortableData(
@@ -519,7 +520,10 @@ final class SumiImportExportTests: XCTestCase {
         try encodeBackup(archive).write(to: url)
         defer { try? FileManager.default.removeItem(at: url) }
 
-        XCTAssertThrowsError(try SumiBrowserImportService().previewFileImport(fileURL: url)) { error in
+        do {
+            _ = try await SumiBrowserImportService().previewFileImport(fileURL: url)
+            XCTFail("Expected unsupported Sumi backup error")
+        } catch {
             guard case SumiImportExportError.unsupportedFile(let message) = error else {
                 XCTFail("Expected unsupported Sumi backup error, got \(error)")
                 return
@@ -529,12 +533,15 @@ final class SumiImportExportTests: XCTestCase {
     }
 
     @MainActor
-    func testPreviewFileImportReportsCorruptSumiBackupInsteadOfFallingBackToBrowser2Zen() throws {
+    func testPreviewFileImportReportsCorruptSumiBackupInsteadOfFallingBackToBrowser2Zen() async throws {
         let url = temporaryImportFile(named: "corrupt-\(UUID().uuidString).sumibackup")
         try Data("{".utf8).write(to: url)
         defer { try? FileManager.default.removeItem(at: url) }
 
-        XCTAssertThrowsError(try SumiBrowserImportService().previewFileImport(fileURL: url)) { error in
+        do {
+            _ = try await SumiBrowserImportService().previewFileImport(fileURL: url)
+            XCTFail("Expected corrupt Sumi backup error")
+        } catch {
             guard case SumiImportExportError.unsupportedFile(let message) = error else {
                 XCTFail("Expected unsupported Sumi backup error, got \(error)")
                 return
@@ -547,7 +554,7 @@ final class SumiImportExportTests: XCTestCase {
     }
 
     @MainActor
-    func testPreviewFileImportRecognizesRenamedSumiBackupByFormat() throws {
+    func testPreviewFileImportRecognizesRenamedSumiBackupByFormat() async throws {
         let archive = SumiPortableArchive(
             includedCategories: [.profiles],
             warnings: ["logical only"],
@@ -561,7 +568,7 @@ final class SumiImportExportTests: XCTestCase {
         try encodeBackup(archive).write(to: url)
         defer { try? FileManager.default.removeItem(at: url) }
 
-        let preview = try SumiBrowserImportService().previewFileImport(fileURL: url)
+        let preview = try await SumiBrowserImportService().previewFileImport(fileURL: url)
 
         XCTAssertEqual(preview.sourceKind, .sumiBackup)
         XCTAssertEqual(preview.defaultMode, .replace)
@@ -570,7 +577,7 @@ final class SumiImportExportTests: XCTestCase {
     }
 
     @MainActor
-    func testPreviewFileImportKeepsBrowser2ZenFallbackForNonBackupJSON() throws {
+    func testPreviewFileImportKeepsBrowser2ZenFallbackForNonBackupJSON() async throws {
         let document = SumiBrowser2ZenDocument(
             source: "arc",
             totalSpaces: 1,
@@ -606,7 +613,7 @@ final class SumiImportExportTests: XCTestCase {
         try JSONEncoder().encode(document).write(to: url)
         defer { try? FileManager.default.removeItem(at: url) }
 
-        let preview = try SumiBrowserImportService().previewFileImport(fileURL: url)
+        let preview = try await SumiBrowserImportService().previewFileImport(fileURL: url)
 
         XCTAssertEqual(preview.sourceKind, .browser2zen)
         XCTAssertEqual(preview.defaultMode, .merge)

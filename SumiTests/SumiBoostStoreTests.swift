@@ -57,7 +57,7 @@ final class SumiBoostStoreTests: XCTestCase {
         XCTAssertNil(store.activeBoost(for: url, profileId: profileId))
     }
 
-    func testCustomCSSPersistsInSplitFileAndLoadsBack() throws {
+    func testCustomCSSPersistsInSplitFileAndLoadsBack() async throws {
         let directory = temporaryDirectory()
         let store = SumiBoostStore(rootDirectory: directory)
         let profileId = UUID()
@@ -75,7 +75,7 @@ final class SumiBoostStoreTests: XCTestCase {
 
         // updateBoost debounces disk writes (editor edits can fire many times
         // per second); flush so the on-disk state is observable synchronously.
-        store.flushPendingWrites()
+        await store.flushPendingWrites()
 
         let json = try String(
             contentsOf: directory.appendingPathComponent("boosts.json"),
@@ -112,7 +112,69 @@ final class SumiBoostStoreTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: unreadableURL), corruptPayload)
     }
 
-    func testExportImportKeepsBoostDataAndActivatesImportedBoost() throws {
+    func testFlushPersistsOnlyLatestEditorRevision() async throws {
+        let directory = temporaryDirectory()
+        let store = SumiBoostStore(rootDirectory: directory)
+        let profileId = UUID()
+        let url = URL(string: "https://example.test/")!
+        let boost = try store.createDraft(for: url, profileId: profileId, isEphemeral: false)
+
+        for name in ["First", "Second", "Final"] {
+            _ = try store.updateBoost(
+                id: boost.id,
+                profileId: profileId,
+                host: "example.test",
+                isEphemeral: false,
+                mutate: { $0.boostName = name }
+            )
+        }
+        await store.flushPendingWrites()
+
+        let reloaded = SumiBoostStore(rootDirectory: directory)
+        XCTAssertEqual(
+            reloaded.activeBoost(for: url, profileId: profileId)?.data.boostName,
+            "Final"
+        )
+    }
+
+    func testRemovingCustomCSSCommitsJSONBeforeCleaningStaleFile() async throws {
+        let directory = temporaryDirectory()
+        let store = SumiBoostStore(rootDirectory: directory)
+        let profileId = UUID()
+        let url = URL(string: "https://example.test/")!
+        let boost = try store.createDraft(for: url, profileId: profileId, isEphemeral: false)
+        _ = try store.updateBoost(
+            id: boost.id,
+            profileId: profileId,
+            host: "example.test",
+            isEphemeral: false,
+            mutate: { $0.customCSS = "body { color: red; }" }
+        )
+        await store.flushPendingWrites()
+
+        let cssURL = directory
+            .appendingPathComponent("css", isDirectory: true)
+            .appendingPathComponent("\(boost.id.uuidString.lowercased()).css")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: cssURL.path))
+
+        _ = try store.updateBoost(
+            id: boost.id,
+            profileId: profileId,
+            host: "example.test",
+            isEphemeral: false,
+            mutate: { $0.customCSS = "" }
+        )
+        await store.flushPendingWrites()
+
+        let json = try String(
+            contentsOf: directory.appendingPathComponent("boosts.json"),
+            encoding: .utf8
+        )
+        XCTAssertFalse(json.contains(cssURL.lastPathComponent))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: cssURL.path))
+    }
+
+    func testExportImportKeepsBoostDataAndActivatesImportedBoost() async throws {
         let sourceStore = SumiBoostStore(rootDirectory: temporaryDirectory())
         let targetStore = SumiBoostStore(rootDirectory: temporaryDirectory())
         let profileId = UUID()
@@ -129,8 +191,9 @@ final class SumiBoostStoreTests: XCTestCase {
             }
         )
 
-        let imported = try targetStore.importBoost(
-            from: sourceStore.exportData(for: updated),
+        let exported = try await sourceStore.exportData(for: updated)
+        let imported = try await targetStore.importBoost(
+            from: exported,
             for: url,
             profileId: profileId,
             isEphemeral: false
@@ -141,7 +204,7 @@ final class SumiBoostStoreTests: XCTestCase {
         XCTAssertEqual(targetStore.activeBoost(for: url, profileId: profileId)?.id, imported.id)
     }
 
-    func testImportAcceptsLegacyBoostDataPayload() throws {
+    func testImportAcceptsLegacyBoostDataPayload() async throws {
         let store = SumiBoostStore(rootDirectory: temporaryDirectory())
         let profileId = UUID()
         let url = URL(string: "https://example.test/")!
@@ -149,7 +212,7 @@ final class SumiBoostStoreTests: XCTestCase {
         legacyData.customCSS = "main { color: blue; }"
         let payload = try JSONEncoder().encode(legacyData)
 
-        let imported = try store.importBoost(
+        let imported = try await store.importBoost(
             from: payload,
             for: url,
             profileId: profileId,
@@ -161,7 +224,7 @@ final class SumiBoostStoreTests: XCTestCase {
         XCTAssertTrue(imported.data.changeWasMade)
     }
 
-    func testImportAcceptsLegacyBoostPayload() throws {
+    func testImportAcceptsLegacyBoostPayload() async throws {
         let store = SumiBoostStore(rootDirectory: temporaryDirectory())
         let profileId = UUID()
         let url = URL(string: "https://example.test/")!
@@ -178,7 +241,7 @@ final class SumiBoostStoreTests: XCTestCase {
         encoder.dateEncodingStrategy = .iso8601
         let payload = try encoder.encode(legacyBoost)
 
-        let imported = try store.importBoost(
+        let imported = try await store.importBoost(
             from: payload,
             for: url,
             profileId: profileId,
@@ -192,19 +255,20 @@ final class SumiBoostStoreTests: XCTestCase {
         XCTAssertTrue(imported.data.changeWasMade)
     }
 
-    func testInvalidImportThrowsTypedErrorWithoutCreatingBoost() throws {
+    func testInvalidImportThrowsTypedErrorWithoutCreatingBoost() async throws {
         let store = SumiBoostStore(rootDirectory: temporaryDirectory())
         let profileId = UUID()
         let url = URL(string: "https://example.test/")!
 
-        XCTAssertThrowsError(
-            try store.importBoost(
+        do {
+            _ = try await store.importBoost(
                 from: Data("{ not a boost".utf8),
                 for: url,
                 profileId: profileId,
                 isEphemeral: false
             )
-        ) { error in
+            XCTFail("Expected invalidImport")
+        } catch {
             XCTAssertEqual(error as? SumiBoostStoreError, .invalidImport)
         }
         XCTAssertTrue(store.boosts(for: url, profileId: profileId).isEmpty)

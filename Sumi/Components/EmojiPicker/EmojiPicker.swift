@@ -179,7 +179,8 @@ private struct EmojiPickerPanelHost: View {
                 .environment(\.sumiSettings, settings)
                 .sumiNativeSurfaceColorScheme(
                     themeContext.nativeSurfaceColorScheme,
-                    themeContext: themeContext
+                    themeContext: themeContext,
+                    settings: settings
                 )
         } else if let settings {
             panel.environment(\.sumiSettings, settings)

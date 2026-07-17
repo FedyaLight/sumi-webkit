@@ -82,7 +82,10 @@ struct SidebarColumnHostedRootView: View {
             )
             .environment(environmentContext.windowState)
             .environment(\.sumiSettings, environmentContext.sumiSettings)
-            .environment(\.resolvedThemeContext, environmentContext.chromeBackgroundResolvedThemeContext)
+            .sumiChromeThemeScope(
+                context: environmentContext.chromeBackgroundResolvedThemeContext,
+                settings: environmentContext.sumiSettings
+            )
         } else if accessibilityReduceTransparency {
             chromeTokens.windowBackground
         } else {

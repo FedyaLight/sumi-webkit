@@ -4,7 +4,8 @@ import Foundation
 @MainActor
 extension BrowserManager {
     func composeWindowSidebarContext(
-        updaterService: SumiUpdaterService
+        updaterService: SumiUpdaterService,
+        nowPlayingController: SumiNativeNowPlayingController
     ) -> WindowSidebarContext {
         let shell = shellRuntime
         let profileAuthority = currentProfileAuthority
@@ -122,6 +123,7 @@ extension BrowserManager {
         let themeEditor = chromeBundle.workspaceThemeEditorOwner
 
         return WindowSidebarContext(
+            nowPlayingController: nowPlayingController,
             browserContext: composeSidebarBrowserContext(
                 spaceLifecycle: spaceLifecycle
             ),

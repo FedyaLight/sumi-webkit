@@ -132,6 +132,9 @@ extension View {
             .environmentObject(context.sidebarDragState.activityState)
             .environment(\.sidebarDragStateHandle, context.sidebarDragState)
             .environment(\.sumiSettings, context.sumiSettings)
-            .environment(\.resolvedThemeContext, context.resolvedThemeContext)
+            .sumiChromeThemeScope(
+                context: context.resolvedThemeContext,
+                settings: context.sumiSettings
+            )
     }
 }

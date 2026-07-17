@@ -63,7 +63,6 @@ class SearchManager {
     private var webSuggestionRequestGeneration: UInt64 = 0
     private var activeWebSuggestionGeneration: UInt64 = 0
     private var webSuggestionCache = WebSuggestionCache()
-    private let suggestionEngine = SumiSuggestionEngine()
     // Zen inherits Firefox's browser.urlbar.maxRichResults default.
     private let maxVisibleSuggestions = 10
 
@@ -226,6 +225,8 @@ class SearchManager {
 
         historySuggestionTask = Task { @MainActor [weak self] in
             guard let self else { return }
+            let queryInterval = PerformanceTrace.beginInterval("Omnibox.queryToPublish")
+            defer { PerformanceTrace.endInterval("Omnibox.queryToPublish", queryInterval) }
             let historyEntries = await self.searchHistoryEntries(for: normalizedQuery)
             guard !Task.isCancelled,
                   generation == self.activeWebSuggestionGeneration
@@ -235,31 +236,39 @@ class SearchManager {
                 store: storeContext
             )
 
-            let localResult = self.suggestionEngine.result(
-                for: normalizedQuery,
-                history: queryContext.historyItems,
-                bookmarks: queryContext.store.bookmarkItems,
-                openTabs: queryContext.store.tabItems,
-                apiSuggestions: []
-            )
-            let localSuggestions = self.makeSuggestions(from: localResult, query: normalizedQuery, context: queryContext)
-
-            if !localSuggestions.isEmpty {
-                self.updateSuggestionsIfNeeded(localSuggestions)
-            }
-
             if let cachedSuggestions = self.webSuggestionCache.suggestions(for: normalizedQuery) {
-                let combinedResult = self.suggestionEngine.result(
+                guard let combinedResult = try? await SuggestionScoringWorker.result(
                     for: normalizedQuery,
                     history: queryContext.historyItems,
                     bookmarks: queryContext.store.bookmarkItems,
                     openTabs: queryContext.store.tabItems,
-                    apiSuggestions: cachedSuggestions
-                )
+                    apiSuggestions: cachedSuggestions,
+                    intervalName: "Omnibox.combinedScore"
+                ), !Task.isCancelled,
+                   generation == self.activeWebSuggestionGeneration else { return }
                 let combinedSuggestions = self.makeSuggestions(from: combinedResult, query: normalizedQuery, context: queryContext)
                 self.updateSuggestionsIfNeeded(combinedSuggestions)
                 self.isLoadingSuggestions = false
                 return
+            }
+
+            guard let localResult = try? await SuggestionScoringWorker.result(
+                for: normalizedQuery,
+                history: queryContext.historyItems,
+                bookmarks: queryContext.store.bookmarkItems,
+                openTabs: queryContext.store.tabItems,
+                apiSuggestions: [],
+                intervalName: "Omnibox.localScore"
+            ), !Task.isCancelled,
+               generation == self.activeWebSuggestionGeneration else { return }
+            let localSuggestions = self.makeSuggestions(
+                from: localResult,
+                query: normalizedQuery,
+                context: queryContext
+            )
+
+            if !localSuggestions.isEmpty {
+                self.updateSuggestionsIfNeeded(localSuggestions)
             }
 
             self.fetchWebSuggestions(
@@ -298,7 +307,7 @@ class SearchManager {
                 let data = try await self.suggestionDataProvider.data(for: query)
                 guard !Task.isCancelled else { return }
                 do {
-                    webSuggestionItems = try JSONDecoder().decode([SumiSuggestionEngine.APISuggestion].self, from: data)
+                    webSuggestionItems = try await SuggestionScoringWorker.decodeAPIResponse(data)
                 } catch {
                     RuntimeDiagnostics.emit("JSON parsing error: \(error.localizedDescription)")
                     webSuggestionItems = nil
@@ -313,13 +322,15 @@ class SearchManager {
 
             if let webSuggestionItems {
                 self.webSuggestionCache.store(webSuggestionItems, for: query)
-                let result = self.suggestionEngine.result(
+                guard let result = try? await SuggestionScoringWorker.result(
                     for: query,
                     history: context.historyItems,
                     bookmarks: context.store.bookmarkItems,
                     openTabs: context.store.tabItems,
-                    apiSuggestions: webSuggestionItems
-                )
+                    apiSuggestions: webSuggestionItems,
+                    intervalName: "Omnibox.combinedScore"
+                ), !Task.isCancelled,
+                   generation == self.activeWebSuggestionGeneration else { return }
                 let combinedSuggestions = self.makeSuggestions(from: result, query: query, context: context)
                 self.updateSuggestionsIfNeeded(combinedSuggestions)
             }

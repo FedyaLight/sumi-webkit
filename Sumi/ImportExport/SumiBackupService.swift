@@ -6,7 +6,6 @@ protocol SumiImportBackupWriting: AnyObject {
     func writeAutomaticPreRestoreBackup(data: SumiPortableData) throws -> URL
 }
 
-@MainActor
 final class SumiBackupService {
     private static let maxAutomaticPreRestoreBackups = 5
     private static let log = Logger.sumi(category: "ImportExport")

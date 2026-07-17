@@ -141,6 +141,86 @@ final class BitwardenNativeMessagingCPUTeardownTests: XCTestCase {
         XCTAssertEqual(snapshot.contextUnloadCount, 1)
     }
 
+    func testProcessTransportEOFResolvesPendingHandshakeOnce() async throws {
+        let fixture = try makeProxyScript("exit 0")
+        defer { try? FileManager.default.removeItem(at: fixture.directory) }
+        let transport = BitwardenDesktopProxyProcessTransport()
+
+        do {
+            try await transport.start(
+                proxyExecutableURL: fixture.executable,
+                handshakeTimeout: .seconds(1)
+            )
+            XCTFail("Expected desktopNotRunning")
+        } catch {
+            XCTAssertEqual(error as? BitwardenDesktopProxyTransportError, .desktopNotRunning)
+        }
+        transport.shutdown()
+    }
+
+    func testProcessTransportProtocolErrorBeatsTimeout() async throws {
+        let malformedFrame = try BitwardenDesktopProxyFraming.encode(["unexpected": true])
+        let fixture = try makeProxyScript(output: malformedFrame, delayBeforeExit: 1)
+        defer { try? FileManager.default.removeItem(at: fixture.directory) }
+        let transport = BitwardenDesktopProxyProcessTransport()
+
+        do {
+            try await transport.start(
+                proxyExecutableURL: fixture.executable,
+                handshakeTimeout: .seconds(1)
+            )
+            XCTFail("Expected protocolMismatch")
+        } catch {
+            XCTAssertEqual(error as? BitwardenDesktopProxyTransportError, .protocolMismatch)
+        }
+        transport.shutdown()
+    }
+
+    func testProcessTransportTimeoutIgnoresLateHandshake() async throws {
+        let connectedFrame = try BitwardenDesktopProxyFraming.encode(["command": "connected"])
+        let fixture = try makeProxyScript(
+            output: connectedFrame,
+            delayBeforeOutput: 0.08,
+            delayBeforeExit: 1
+        )
+        defer { try? FileManager.default.removeItem(at: fixture.directory) }
+        let transport = BitwardenDesktopProxyProcessTransport()
+
+        do {
+            try await transport.start(
+                proxyExecutableURL: fixture.executable,
+                handshakeTimeout: .milliseconds(20)
+            )
+            XCTFail("Expected timeout")
+        } catch {
+            XCTAssertEqual(error as? BitwardenDesktopProxyTransportError, .timeout)
+        }
+        try await Task.sleep(for: .milliseconds(120))
+        XCTAssertFalse(transport.isConnected)
+        transport.shutdown()
+    }
+
+    func testProcessTransportShutdownResolvesPendingHandshake() async throws {
+        let fixture = try makeProxyScript("sleep 1")
+        defer { try? FileManager.default.removeItem(at: fixture.directory) }
+        let transport = BitwardenDesktopProxyProcessTransport()
+        let startTask = Task { @MainActor in
+            try await transport.start(
+                proxyExecutableURL: fixture.executable,
+                handshakeTimeout: .seconds(1)
+            )
+        }
+        try await Task.sleep(for: .milliseconds(30))
+        transport.shutdown()
+
+        do {
+            try await startTask.value
+            XCTFail("Expected portDisconnected")
+        } catch {
+            XCTAssertEqual(error as? BitwardenDesktopProxyTransportError, .portDisconnected)
+        }
+    }
+
     // MARK: - Helpers
 
     private func makeLauncherWithProxy() -> MockHostLauncher {
@@ -160,6 +240,27 @@ final class BitwardenNativeMessagingCPUTeardownTests: XCTestCase {
         )
         launcher.bundleURLs["com.bitwarden.desktop"] = root.appendingPathComponent("Bitwarden.app")
         return launcher
+    }
+
+    private func makeProxyScript(_ body: String) throws -> (directory: URL, executable: URL) {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("BitwardenProcessTransport.\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let executable = directory.appendingPathComponent("desktop_proxy")
+        try Data("#!/bin/zsh\n\(body)\n".utf8).write(to: executable, options: .atomic)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable.path)
+        return (directory, executable)
+    }
+
+    private func makeProxyScript(
+        output: Data,
+        delayBeforeOutput: Double = 0,
+        delayBeforeExit: Double
+    ) throws -> (directory: URL, executable: URL) {
+        let encoded = output.base64EncodedString()
+        return try makeProxyScript(
+            "sleep \(delayBeforeOutput)\nprint -rn -- '\(encoded)' | /usr/bin/base64 -D\nsleep \(delayBeforeExit)"
+        )
     }
 
     private func makeSession(

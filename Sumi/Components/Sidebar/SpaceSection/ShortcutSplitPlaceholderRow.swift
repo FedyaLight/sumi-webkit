@@ -16,6 +16,7 @@ struct ShortcutSplitPlaceholderRow: View {
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
+    @Environment(\.chromeThemeTokens) private var scopedChromeTokens
     @State private var isRowHovered = false
 
     var body: some View {
@@ -84,6 +85,6 @@ struct ShortcutSplitPlaceholderRow: View {
     }
 
     private var tokens: ChromeThemeTokens {
-        themeContext.tokens(settings: sumiSettings)
+        scopedChromeTokens ?? themeContext.tokens(settings: sumiSettings)
     }
 }

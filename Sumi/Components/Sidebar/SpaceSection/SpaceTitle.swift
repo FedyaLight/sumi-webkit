@@ -127,6 +127,7 @@ struct SpaceTitle: View {
     @Environment(WindowRegistry.self) private var windowRegistry
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
+    @Environment(\.chromeThemeTokens) private var scopedChromeTokens
 
     let space: Space
     let actions: SpaceTitleActions
@@ -258,7 +259,7 @@ struct SpaceTitle: View {
     }
 
     private var tokens: ChromeThemeTokens {
-        themeContext.tokens(settings: sumiSettings)
+        scopedChromeTokens ?? themeContext.tokens(settings: sumiSettings)
     }
 
     private var titleCornerRadius: CGFloat {

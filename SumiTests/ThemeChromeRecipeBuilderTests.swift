@@ -5,6 +5,32 @@ import XCTest
 
 @MainActor
 final class ThemeChromeRecipeBuilderTests: XCTestCase {
+    func testTransitionProgressValuesReuseSingleRecipeBuild() {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        ChromeThemeCacheDiagnostics.resetForTests()
+
+        let settings = SumiSettingsService(userDefaults: harness.defaults)
+        var context = ResolvedThemeContext.default
+        context.sourceChromeColorScheme = .dark
+        context.targetChromeColorScheme = .light
+        context.chromeColorScheme = .light
+        context.isInteractiveTransition = true
+
+        context.transitionProgress = 0
+        let source = context.tokens(settings: settings).primaryText.sRGBComponents
+        context.transitionProgress = 0.5
+        let midpoint = context.tokens(settings: settings).primaryText.sRGBComponents
+        context.transitionProgress = 1
+        let target = context.tokens(settings: settings).primaryText.sRGBComponents
+
+        XCTAssertEqual(ThemeChromeRecipeBuilder.recipeBuildCountForTests, 1)
+        XCTAssertEqual(midpoint.red, source.red + ((target.red - source.red) * 0.5), accuracy: 0.0001)
+        XCTAssertEqual(midpoint.green, source.green + ((target.green - source.green) * 0.5), accuracy: 0.0001)
+        XCTAssertEqual(midpoint.blue, source.blue + ((target.blue - source.blue) * 0.5), accuracy: 0.0001)
+        XCTAssertEqual(midpoint.alpha, source.alpha + ((target.alpha - source.alpha) * 0.5), accuracy: 0.0001)
+    }
+
     func testFloatingBarSolidBackgroundLightIsOpaqueWhite() {
         let color = ThemeChromeRecipeBuilder.floatingBarSolidBackground(scheme: .light)
         let c = color.sRGBComponents

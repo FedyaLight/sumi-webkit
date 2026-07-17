@@ -66,12 +66,12 @@ final class SumiBoostEditorPanelController: NSObject, NSWindowDelegate {
             )
             panel.contentViewController = NSHostingController(
                 rootView: SumiBoostEditorView(session: session)
-                    .environment(
-                        \.resolvedThemeContext,
-                        windowState.nativeSurfaceThemeContext(
+                    .sumiChromeThemeScope(
+                        context: windowState.nativeSurfaceThemeContext(
                             settings: settings,
                             in: windowRegistry
-                        )
+                        ),
+                        settings: settings
                     )
                     .environment(\.sumiSettings, settings)
             )

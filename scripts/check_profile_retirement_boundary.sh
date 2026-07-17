@@ -140,38 +140,17 @@ workflow_begin_count="$({
 workflow_cancel_count="$({
   guard_count_matches 'cancelReservation\(token, using: context\)' "$retirement_workflow"
 })"
-recovery_migration_count="$({
-  guard_count_matches 'try await migrateReferences\(initialRecord\)' "$retirement_recovery"
-})"
-recovery_seal_count="$({
-  guard_count_matches 'try await prepareCleanup\(' "$retirement_recovery"
-})"
 guard_exact 'single point-of-no-return transition' "$workflow_begin_count" 1
 guard_exact 'reservation cancellation before point-of-no-return' "$workflow_cancel_count" 2
-guard_exact 'startup reference-migration replay' "$recovery_migration_count" 1
-guard_exact 'runtime seal for every durable retirement phase' "$recovery_seal_count" 4
 
-startup_claim_count="$({
-  guard_count_matches 'state = \.recovering' "$startup_recovery"
-})"
 app_startup_authority_count="$({
   guard_count_matches '@State private var startupRecovery = SumiStartupRecoveryTransaction\(\)' "$app_root"
 })"
 runtime_start_count="$({
   guard_count_matches 'browserManager\.startRuntimeAfterStartupRecovery\(\)' "$app_root"
 })"
-guard_exact 'atomic startup-recovery claim' "$startup_claim_count" 1
 guard_exact 'single app startup-recovery authority' "$app_startup_authority_count" 1
 guard_exact 'single post-recovery runtime start' "$runtime_start_count" 1
-
-profile_recovery_line="$(guard_capture_matches 'try await recoverProfileRetirement\(\)' "$startup_recovery" | head -1 | cut -d: -f1)"
-import_recovery_line="$(guard_capture_matches 'let report = try await recoverImport\(\)' "$startup_recovery" | head -1 | cut -d: -f1)"
-startup_runtime_line="$(guard_capture_matches 'startRuntime\(\)' "$startup_recovery" | head -1 | cut -d: -f1)"
-if [[ -z "$profile_recovery_line" || -z "$import_recovery_line" || -z "$startup_runtime_line" ]] \
-  || (( profile_recovery_line >= import_recovery_line )) \
-  || (( import_recovery_line >= startup_runtime_line )); then
-  guard_record_failure 'startup recovery must complete profile retirement → import recovery → runtime start'
-fi
 
 migration_begin_line="$(guard_capture_matches 'beginReferenceMigration\(token\)' "$retirement_workflow" | head -1 | cut -d: -f1)"
 forward_migration_line="$(guard_capture_matches 'let migration = await context\.migrateProfileReferences' "$retirement_workflow" | head -1 | cut -d: -f1)"

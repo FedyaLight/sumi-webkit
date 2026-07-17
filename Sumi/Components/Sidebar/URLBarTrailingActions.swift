@@ -158,6 +158,7 @@ extension URLBarView {
 struct URLBarButtonStyle: ButtonStyle {
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
+    @Environment(\.chromeThemeTokens) private var scopedChromeTokens
     @Environment(\.isEnabled) var isEnabled
     @State private var isHovering = false
 
@@ -165,7 +166,7 @@ struct URLBarButtonStyle: ButtonStyle {
     private let size: CGFloat = 28
 
     private var tokens: ChromeThemeTokens {
-        themeContext.tokens(settings: sumiSettings)
+        scopedChromeTokens ?? themeContext.tokens(settings: sumiSettings)
     }
 
     func makeBody(configuration: Configuration) -> some View {

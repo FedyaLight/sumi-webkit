@@ -39,6 +39,7 @@ struct NativeChromeMaterialBackground: View {
     @Environment(\.accessibilityReduceTransparency) private var accessibilityReduceTransparency
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
+    @Environment(\.chromeThemeTokens) private var scopedChromeTokens
 
     @ViewBuilder
     var body: some View {
@@ -54,7 +55,7 @@ struct NativeChromeMaterialBackground: View {
     }
 
     private var opaqueFallbackColor: Color {
-        let tokens = themeContext.tokens(settings: sumiSettings)
+        let tokens = scopedChromeTokens ?? themeContext.tokens(settings: sumiSettings)
         switch role {
         case .popover:
             return tokens.floatingBarBackground

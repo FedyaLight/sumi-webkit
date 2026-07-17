@@ -9,13 +9,14 @@ import SwiftUI
 struct EmptyWebsiteView: View {
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
+    @Environment(\.chromeThemeTokens) private var scopedChromeTokens
 
     private var chromeGeometry: BrowserChromeGeometry {
         BrowserChromeGeometry(settings: sumiSettings)
     }
 
     private var backgroundColor: Color {
-        themeContext.tokens(settings: sumiSettings).windowBackground
+        (scopedChromeTokens ?? themeContext.tokens(settings: sumiSettings)).windowBackground
     }
 
     var body: some View {

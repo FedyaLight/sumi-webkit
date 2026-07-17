@@ -23,7 +23,6 @@ private enum WindowTransientChromeZIndex {
 /// Main window view that orchestrates the browser UI layout
 struct WindowView: View {
     @EnvironmentObject private var glanceManager: GlanceManager
-    @EnvironmentObject private var nowPlayingController: SumiNativeNowPlayingController
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(WindowRegistry.self) private var windowRegistry
     @Environment(\.sumiSettings) var sumiSettings
@@ -116,6 +115,7 @@ struct WindowView: View {
                             hostActions: sidebarContext.hostActions,
                             sidebarDragState: sidebarDragState
                         )
+                            .environmentObject(sidebarContext.nowPlayingController)
                             .environmentObject(hoverSidebarManager)
                             .environment(windowState)
                             .zIndex(WindowTransientChromeZIndex.collapsedSidebar)
@@ -237,7 +237,7 @@ struct WindowView: View {
         }
         .environmentObject(glanceManager)
         .environmentObject(hoverSidebarManager)
-        .environment(\.resolvedThemeContext, resolvedThemeContext)
+        .sumiChromeThemeScope(context: resolvedThemeContext, settings: sumiSettings)
         .coordinateSpace(name: "WindowSpace")
         .onPreferenceChange(URLBarFramePreferenceKey.self) { frame in
             Task { @MainActor in
@@ -390,7 +390,7 @@ struct WindowView: View {
             windowState: windowState,
             windowRegistry: windowRegistry,
             sumiSettings: sumiSettings,
-            nowPlayingController: nowPlayingController,
+            nowPlayingController: sidebarContext.nowPlayingController,
             resolvedThemeContext: resolvedThemeContext,
             chromeBackgroundResolvedThemeContext: resolvedThemeContext,
             windowChromeSize: windowChromeSize,
@@ -644,6 +644,6 @@ struct WindowView: View {
         @ViewBuilder _ content: () -> Content
     ) -> some View {
         content()
-            .environment(\.resolvedThemeContext, resolvedThemeContext)
+            .sumiChromeThemeScope(context: resolvedThemeContext, settings: sumiSettings)
     }
 }

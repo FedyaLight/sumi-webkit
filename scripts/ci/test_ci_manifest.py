@@ -16,6 +16,7 @@ RUNNER = REPO_ROOT / "scripts/ci/run_tests.sh"
 MANIFEST = REPO_ROOT / "scripts/ci/test-manifest.json"
 PR_WORKFLOW = REPO_ROOT / ".github/workflows/sumi-ci.yml"
 NIGHTLY_WORKFLOW = REPO_ROOT / ".github/workflows/sumi-nightly.yml"
+ARCHITECTURE_WORKFLOW = REPO_ROOT / ".github/workflows/architecture-guardrails.yml"
 SPEC = importlib.util.spec_from_file_location("ci_manifest", MODULE_PATH)
 ci_manifest = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(ci_manifest)
@@ -79,10 +80,10 @@ class ManifestTests(unittest.TestCase):
             "version": 2,
             "toolchains": {
                 "production": {
-                    "name": "Xcode 26.6 on macOS 26",
-                    "runner": "macos-26",
-                    "developer_dir": "/Applications/Xcode_26.6.app/Contents/Developer",
-                    "xcode_version": "26.6",
+                    "name": "Xcode 27 preview",
+                    "runner": "xcode-27",
+                    "developer_dir": "/Applications/Xcode_27.0.app/Contents/Developer",
+                    "xcode_version": "27.0",
                     "selection_note": "Pinned explicitly.",
                 }
             },
@@ -193,6 +194,12 @@ class ManifestTests(unittest.TestCase):
         value = copy.deepcopy(self.manifest)
         value["suites"][0]["kind"] = "mystery"
         with self.assertRaisesRegex(ci_manifest.ManifestError, "unknown kind"):
+            self.load(value)
+
+    def test_unrecognized_runner_label_fails_closed(self):
+        value = copy.deepcopy(self.manifest)
+        value["toolchains"]["production"]["runner"] = "latest-macos"
+        with self.assertRaisesRegex(ci_manifest.ManifestError, "explicit GitHub macOS or Xcode"):
             self.load(value)
 
     def test_unknown_suite_entry_fails_closed(self):
@@ -342,7 +349,7 @@ class RepositoryContractTests(unittest.TestCase):
                     self.data, self.suites, "pr", "xcode-test"
                 )
             ),
-            22,
+            23,
         )
         for matrix in (pr, nightly):
             self.assertEqual(len({item["role"] for item in matrix}), len(matrix))
@@ -378,6 +385,7 @@ class RepositoryContractTests(unittest.TestCase):
     def test_workflows_derive_matrices_and_enforce_parallel_job_policy(self):
         for workflow, profile in ((PR_WORKFLOW, "pr"), (NIGHTLY_WORKFLOW, "nightly")):
             text = workflow.read_text()
+            self.assertIn("scripts/ci/preflight.sh fast", text)
             self.assertIn(f"matrix {profile} swift-package", text)
             self.assertIn(f"matrix {profile} xcode-test", text)
             self.assertIn(f"run {profile} \"${{{{ matrix.suite }}}}\"", text)
@@ -403,6 +411,10 @@ class RepositoryContractTests(unittest.TestCase):
             ],
             check=True,
         )
+
+        architecture_text = ARCHITECTURE_WORKFLOW.read_text()
+        self.assertIn("scripts/ci/preflight.sh portable", architecture_text)
+        self.assertNotIn("run: scripts/check_architecture_guardrails.sh", architecture_text)
 
     def test_item_49_baseline_remains_attributable_to_webkit_shard(self):
         self.assertIn(
@@ -443,6 +455,11 @@ class RunnerWorkingDirectoryTests(unittest.TestCase):
             environment["SUMI_CI_RESULT_BUNDLE"] = str(
                 temporary_path / "test.xcresult"
             )
+            localization_catalog = temporary_path / "Localizable.xcstrings"
+            localization_catalog.write_text(
+                '{"sourceLanguage":"en","strings":{},"version":"1.0"}\n'
+            )
+            environment["SUMI_CI_LOCALIZATION_CATALOG"] = str(localization_catalog)
 
             validation = subprocess.run(
                 [RUNNER, "validate"],
@@ -476,6 +493,50 @@ class RunnerWorkingDirectoryTests(unittest.TestCase):
                 self.assertIn("arg=-parallel-testing-enabled\narg=NO\n", invocation)
             self.assertIn(f"arg={temporary_path / 'build.xcresult'}\n", build)
             self.assertIn(f"arg={temporary_path / 'test.xcresult'}\n", test)
+
+    def test_xcode_suite_fails_when_build_changes_localization_catalog(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_path = Path(temporary_directory)
+            stub_bin = temporary_path / "bin"
+            stub_bin.mkdir()
+
+            fake_xcodebuild = stub_bin / "xcodebuild"
+            fake_xcodebuild.write_text(
+                "#!/usr/bin/env bash\n"
+                "set -euo pipefail\n"
+                "if [[ \" $* \" == *\" build-for-testing \"* ]]; then\n"
+                "  printf '\\n' >> \"$SUMI_CI_LOCALIZATION_CATALOG\"\n"
+                "fi\n"
+            )
+            fake_xcodebuild.chmod(0o755)
+
+            localization_catalog = temporary_path / "Localizable.xcstrings"
+            localization_catalog.write_text(
+                '{"sourceLanguage":"en","strings":{},"version":"1.0"}\n'
+            )
+            environment = os.environ.copy()
+            environment["PATH"] = f"{stub_bin}{os.pathsep}{environment['PATH']}"
+            environment["SUMI_CI_LOCALIZATION_CATALOG"] = str(localization_catalog)
+            environment["SUMI_CI_DERIVED_DATA"] = str(temporary_path / "derived-data")
+            environment["SUMI_CI_BUILD_RESULT_BUNDLE"] = str(
+                temporary_path / "build.xcresult"
+            )
+            environment["SUMI_CI_RESULT_BUNDLE"] = str(
+                temporary_path / "test.xcresult"
+            )
+
+            result = subprocess.run(
+                [RUNNER, "run", "pr", "app-pure-policy"],
+                env=environment,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 1)
+            self.assertIn(
+                "Xcode localization extraction changed Localizable.xcstrings",
+                result.stderr,
+            )
 
 
 if __name__ == "__main__":

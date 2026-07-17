@@ -36,6 +36,7 @@ struct PinnedTabView: View {
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sumiSettings) var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
+    @Environment(\.chromeThemeTokens) private var scopedChromeTokens
     @State private var isTileHovered = false
     @State private var isActionHovered = false
 
@@ -166,7 +167,7 @@ struct PinnedTabView: View {
         }
     }
     private var tokens: ChromeThemeTokens {
-        themeContext.tokens(settings: sumiSettings)
+        scopedChromeTokens ?? themeContext.tokens(settings: sumiSettings)
     }
 
     private var shouldShowActionButton: Bool {
@@ -229,6 +230,7 @@ struct PinnedTileVisual: View {
 
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
+    @Environment(\.chromeThemeTokens) private var scopedChromeTokens
     @State private var loadedSelectionAccentColor: Color?
     @State private var accentCacheRefreshID = UUID()
 
@@ -322,7 +324,7 @@ struct PinnedTileVisual: View {
     }
 
     private var tokens: ChromeThemeTokens {
-        themeContext.tokens(settings: sumiSettings)
+        scopedChromeTokens ?? themeContext.tokens(settings: sumiSettings)
     }
 
     private var drawsAccentChrome: Bool {

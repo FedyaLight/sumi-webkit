@@ -27,6 +27,7 @@ struct SplitGroupSidebarRow: View {
     @Environment(\.accessibilityReduceMotion) var reduceMotion
     @Environment(\.sumiSettings) var sumiSettings
     @Environment(\.resolvedThemeContext) var themeContext
+    @Environment(\.chromeThemeTokens) var scopedChromeTokens
     @State var isRowHovered = false
     @State var displayedItems: [SplitGroupSidebarItem] = []
     @State var departingItemIds = Set<SplitMemberID>()

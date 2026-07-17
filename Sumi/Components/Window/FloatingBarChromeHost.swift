@@ -14,7 +14,10 @@ struct FloatingBarChromeHost: View {
                 FloatingBarView(browserContext: browserContext)
                     .environment(windowState)
                     .environment(\.sumiSettings, sumiSettings)
-                    .environment(\.resolvedThemeContext, resolvedThemeContext)
+                    .sumiChromeThemeScope(
+                        context: resolvedThemeContext,
+                        settings: sumiSettings
+                    )
                     .environment(\.colorScheme, colorScheme)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {

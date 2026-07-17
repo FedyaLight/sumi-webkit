@@ -223,6 +223,26 @@ guard_max() {
   fi
 }
 
+guard_warn_max() {
+  if (( $# != 3 )); then
+    guard_fatal 'guard_warn_max expects a label, actual value and warning threshold'
+    return
+  fi
+  local label="$1"
+  local actual="$2"
+  local threshold="$3"
+  if [[ ! "$actual" =~ ^[0-9]+$ || ! "$threshold" =~ ^[0-9]+$ ]]; then
+    guard_fatal "non-numeric warning check: $label ($actual / $threshold)"
+    return
+  fi
+
+  printf '%-56s %5d ~ %5d\n' "$label" "$actual" "$threshold"
+  if (( actual > threshold )); then
+    printf 'warning: %s crossed its refactor warning threshold (%d > %d)\n' \
+      "$label" "$actual" "$threshold" >&2
+  fi
+}
+
 guard_exact() {
   if (( $# != 3 )); then
     guard_fatal 'guard_exact expects a label, actual value and expected value'

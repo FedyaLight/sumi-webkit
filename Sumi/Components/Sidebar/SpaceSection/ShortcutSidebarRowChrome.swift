@@ -27,6 +27,7 @@ struct ShortcutSidebarRowChrome: View {
     @EnvironmentObject var glanceManager: GlanceManager
     @Environment(\.sumiSettings) var sumiSettings
     @Environment(\.resolvedThemeContext) var themeContext
+    @Environment(\.chromeThemeTokens) var scopedChromeTokens
     @State var isRowHovered = false
     @State var isActionHovered = false
     @State var isGlanceCloseHovered = false

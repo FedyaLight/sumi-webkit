@@ -520,6 +520,7 @@ struct ExtensionActionButton: View {
     @StateObject private var actionModel: BrowserExtensionActionButtonModel
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
+    @Environment(\.chromeThemeTokens) private var scopedChromeTokens
     @State private var isHovering: Bool = false
     @State private var isPressed = false
 
@@ -749,7 +750,7 @@ struct ExtensionActionButton: View {
     }
 
     private var tokens: ChromeThemeTokens {
-        themeContext.tokens(settings: sumiSettings)
+        scopedChromeTokens ?? themeContext.tokens(settings: sumiSettings)
     }
 
     private var hubButtonScale: CGFloat {

@@ -222,8 +222,10 @@ struct SpaceTab: View {
         }
     }
 
+    @Environment(\.chromeThemeTokens) private var scopedChromeTokens
+
     private var tokens: ChromeThemeTokens {
-        themeContext.tokens(settings: settings)
+        scopedChromeTokens ?? themeContext.tokens(settings: settings)
     }
 
     private var freezesHoverState: Bool {

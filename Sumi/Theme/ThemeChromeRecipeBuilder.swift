@@ -215,7 +215,7 @@ enum ThemeContrastResolver {
 }
 
 @MainActor
-private struct ThemeChromePalette {
+struct ThemeChromePalette {
     let background: Color
     let fieldBackground: Color
     let fieldBackgroundHover: Color
@@ -463,50 +463,67 @@ private struct ThemeChromePalette {
 }
 
 @MainActor
+struct ChromeThemeRecipe {
+    let sourceAccent: Color
+    let targetAccent: Color
+    let sourcePalette: ThemeChromePalette
+    let targetPalette: ThemeChromePalette
+
+    func tokens(progress: Double, usesTransition: Bool) -> ChromeThemeTokens {
+        guard usesTransition else {
+            return targetPalette.resolve(accent: targetAccent)
+        }
+
+        let clampedProgress = min(max(progress, 0), 1)
+        return sourcePalette
+            .interpolated(to: targetPalette, progress: clampedProgress)
+            .resolve(
+                accent: sourceAccent.mixed(
+                    with: targetAccent,
+                    amount: CGFloat(clampedProgress)
+                )
+            )
+    }
+}
+
+@MainActor
 enum ThemeChromeRecipeBuilder {
-    static func makeTokens(
+    #if DEBUG
+        static var recipeBuildCountForTests = 0
+    #endif
+
+    static func makeRecipe(
         context: ResolvedThemeContext,
         settings: SumiSettingsService
-    ) -> ChromeThemeTokens {
-        let sourceAccent = ZenWorkspaceThemeResolver.primaryColor(
-            theme: context.sourceWorkspaceTheme,
-            settings: settings
-        )
-        let targetAccent = ZenWorkspaceThemeResolver.primaryColor(
-            theme: context.targetWorkspaceTheme,
-            settings: settings
-        )
-
-        let sourcePalette = ThemeChromePalette.make(
-            scheme: context.sourceChromeColorScheme,
-            accent: sourceAccent,
-            settings: settings
-        )
-        let targetPalette = ThemeChromePalette.make(
-            scheme: context.targetChromeColorScheme,
-            accent: targetAccent,
-            settings: settings
-        )
-
-        let needsInterpolation =
-            context.sourceChromeColorScheme != context.targetChromeColorScheme
-            || context.sourceWorkspaceTheme != context.targetWorkspaceTheme
-            || context.transitionProgress < 1.0
-
-        let accent = needsInterpolation
-            ? sourceAccent.mixed(
-                with: targetAccent,
-                amount: CGFloat(context.transitionProgress)
+    ) -> ChromeThemeRecipe {
+        #if DEBUG
+            recipeBuildCountForTests += 1
+        #endif
+        return PerformanceTrace.withInterval("Theme.chromeRecipeBuild") {
+            let sourceAccent = ZenWorkspaceThemeResolver.primaryColor(
+                theme: context.sourceWorkspaceTheme,
+                settings: settings
             )
-            : targetAccent
-        let palette = needsInterpolation
-            ? sourcePalette.interpolated(
-                to: targetPalette,
-                progress: context.transitionProgress
+            let targetAccent = ZenWorkspaceThemeResolver.primaryColor(
+                theme: context.targetWorkspaceTheme,
+                settings: settings
             )
-            : targetPalette
 
-        return palette.resolve(accent: accent)
+            return ChromeThemeRecipe(
+                sourceAccent: sourceAccent,
+                targetAccent: targetAccent,
+                sourcePalette: ThemeChromePalette.make(
+                    scheme: context.sourceChromeColorScheme,
+                    accent: sourceAccent,
+                    settings: settings
+                ),
+                targetPalette: ThemeChromePalette.make(
+                    scheme: context.targetChromeColorScheme,
+                    accent: targetAccent,
+                    settings: settings
+                )
+            )
+        }
     }
 
     /// Sidebar / toolbox chrome base without user-accent tint (Zen branding neutrals).

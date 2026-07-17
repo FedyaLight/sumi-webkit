@@ -15,9 +15,10 @@ struct SidebarTabFaviconView: View {
 
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
+    @Environment(\.chromeThemeTokens) private var scopedChromeTokens
 
     private var tokens: ChromeThemeTokens {
-        themeContext.tokens(settings: sumiSettings)
+        scopedChromeTokens ?? themeContext.tokens(settings: sumiSettings)
     }
 
     /// Fresh `Image(systemName:)` so SF Symbol rendering mode is not "baked in" from `Tab.favicon` storage.
@@ -56,6 +57,7 @@ struct SidebarUnloadedRegularTabFaviconIndicator<Icon: View>: View {
 
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
+    @Environment(\.chromeThemeTokens) private var scopedChromeTokens
 
     init(
         size: CGFloat,
@@ -89,6 +91,6 @@ struct SidebarUnloadedRegularTabFaviconIndicator<Icon: View>: View {
     }
 
     private var indicatorColor: Color {
-        themeContext.tokens(settings: sumiSettings).secondaryText.opacity(0.72)
+        (scopedChromeTokens ?? themeContext.tokens(settings: sumiSettings)).secondaryText.opacity(0.72)
     }
 }

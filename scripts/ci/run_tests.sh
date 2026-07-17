@@ -34,6 +34,7 @@ Environment:
   SUMI_CI_DERIVED_DATA  DerivedData path
   SUMI_CI_BUILD_RESULT_BUNDLE build-for-testing .xcresult output path
   SUMI_CI_RESULT_BUNDLE .xcresult output path
+  SUMI_CI_LOCALIZATION_CATALOG String Catalog path override for runner tests
 USAGE
 }
 
@@ -49,6 +50,9 @@ run_xcode_suite() {
   local derived_data="${SUMI_CI_DERIVED_DATA:-$repo_root/build/ci-derived-data/$stem}"
   local build_result_bundle="${SUMI_CI_BUILD_RESULT_BUNDLE:-$repo_root/build/BuildResults/${stem}-build.xcresult}"
   local result_bundle="${SUMI_CI_RESULT_BUNDLE:-$repo_root/build/BuildResults/${stem}.xcresult}"
+  local localization_catalog="${SUMI_CI_LOCALIZATION_CATALOG:-$repo_root/Sumi/Resources/Localizable.xcstrings}"
+  local localization_hash_before
+  local localization_hash_after
   local -a common_arguments=()
   local -a selectors=()
   local selector_output
@@ -57,6 +61,7 @@ run_xcode_suite() {
   scheme="$(manifest suite-field "$suite" scheme)"
   configuration="$(manifest suite-field "$suite" configuration)"
   selector_output="$(manifest selectors "$suite" "$profile")"
+  localization_hash_before="$(git hash-object "$localization_catalog")"
   while IFS= read -r selector; do
     [[ -n "$selector" ]] && selectors+=("-only-testing:$selector")
   done <<< "$selector_output"
@@ -77,6 +82,13 @@ run_xcode_suite() {
     "${common_arguments[@]}" \
     -resultBundlePath "$build_result_bundle" \
     build-for-testing
+  localization_hash_after="$(git hash-object "$localization_catalog")"
+  if [[ "$localization_hash_after" != "$localization_hash_before" ]]; then
+    echo 'error: Xcode localization extraction changed Localizable.xcstrings' >&2
+    echo 'review and commit the generated catalog update before running tests' >&2
+    git diff -- "$localization_catalog" >&2 || true
+    exit 1
+  fi
   xcodebuild \
     "${common_arguments[@]}" \
     -resultBundlePath "$result_bundle" \
@@ -136,13 +148,15 @@ verify_toolchain() {
   local profile="$1"
   local expected_version
   local actual_version
+  local xcode_version_output
   expected_version="$(manifest toolchain-field "$profile" xcode_version)"
-  actual_version="$(xcodebuild -version | awk '/^Xcode / { print $2; exit }')"
+  xcode_version_output="$(xcodebuild -version)"
+  actual_version="$(awk '/^Xcode / { print $2; exit }' <<< "$xcode_version_output")"
   if [[ "$actual_version" != "$expected_version" ]]; then
     echo "error: profile $profile requires Xcode $expected_version; active version is ${actual_version:-unknown}" >&2
     exit 1
   fi
-  xcodebuild -version
+  printf '%s\n' "$xcode_version_output"
   swift --version
   xcodebuild -showsdks | sed -n '/macOS SDKs:/,/iOS SDKs:/p'
 }

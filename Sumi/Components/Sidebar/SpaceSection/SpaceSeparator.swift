@@ -56,7 +56,9 @@ struct SpaceSeparator: View {
         }
     }
 
+    @Environment(\.chromeThemeTokens) private var scopedChromeTokens
+
     private var tokens: ChromeThemeTokens {
-        themeContext.tokens(settings: sumiSettings)
+        scopedChromeTokens ?? themeContext.tokens(settings: sumiSettings)
     }
 }

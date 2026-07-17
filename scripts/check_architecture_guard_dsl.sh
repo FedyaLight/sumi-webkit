@@ -99,6 +99,8 @@ fi
 
 guard_failures=0
 guard_max 'passing maximum' 1 1 >/dev/null
+guard_warn_max 'passing warning' 1 1 >/dev/null
+guard_warn_max 'crossed warning' 2 1 >/dev/null 2>&1
 guard_exact 'passing exact value' 1 1 >/dev/null
 guard_expect_no_matches 'passing absence' 'absent' "$fixture" >/dev/null
 guard_finish 'passing primitive settlement' >/dev/null

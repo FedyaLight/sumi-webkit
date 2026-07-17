@@ -234,7 +234,11 @@ final class FolderEditorPopoverPresenter: NSObject, NSPopoverDelegate {
             )
             .environment(windowState)
             .environment(\.sumiSettings, presentationContext.settings)
-            .sumiNativeSurfaceColorScheme(surfaceColorScheme, themeContext: surfaceThemeContext)
+            .sumiNativeSurfaceColorScheme(
+                surfaceColorScheme,
+                themeContext: surfaceThemeContext,
+                settings: presentationContext.settings
+            )
             .frame(
                 width: Self.Metrics.contentSize.width,
                 height: Self.Metrics.contentSize.height

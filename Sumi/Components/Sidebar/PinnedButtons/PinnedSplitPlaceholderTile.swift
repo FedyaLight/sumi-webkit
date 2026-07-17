@@ -17,6 +17,7 @@ struct PinnedSplitPlaceholderTile: View {
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
+    @Environment(\.chromeThemeTokens) private var scopedChromeTokens
     @State private var isTileHovered = false
     @StateObject private var storedFaviconLoader = SidebarStoredFaviconLoader()
 
@@ -94,7 +95,7 @@ struct PinnedSplitPlaceholderTile: View {
     }
 
     private var tokens: ChromeThemeTokens {
-        themeContext.tokens(settings: sumiSettings)
+        scopedChromeTokens ?? themeContext.tokens(settings: sumiSettings)
     }
 
     @MainActor

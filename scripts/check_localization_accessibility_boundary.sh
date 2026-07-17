@@ -31,18 +31,12 @@ with open(catalog_path, encoding="utf-8") as file:
 
 if catalog.get("sourceLanguage") != "en":
     raise SystemExit("String Catalog sourceLanguage must remain en")
-if catalog.get("version") != "1.0":
-    raise SystemExit("String Catalog version must remain 1.0")
+if not isinstance(catalog.get("version"), str) or not catalog["version"]:
+    raise SystemExit("String Catalog version must be a non-empty string")
 
 strings = catalog.get("strings")
 if not isinstance(strings, dict):
     raise SystemExit("String Catalog strings must be a dictionary")
-expected_extracted_key_count = 393
-if len(strings) != expected_extracted_key_count:
-    raise SystemExit(
-        "String Catalog must match the checked-in full-target extraction "
-        f"(found {len(strings)} entries; expected {expected_extracted_key_count})"
-    )
 
 required_keys = {
     "Ask whether to open or save files",

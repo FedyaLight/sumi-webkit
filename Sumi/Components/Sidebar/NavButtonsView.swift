@@ -78,6 +78,7 @@ struct NavButtonsView: View {
     let browserContext: NavigationToolbarBrowserContext
 
     @Environment(\.resolvedThemeContext) private var themeContext
+    @Environment(\.chromeThemeTokens) private var scopedChromeTokens
     @Environment(\.sumiSettings) private var sumiSettings
     @StateObject private var tabWrapper = ObservableTabWrapper()
 
@@ -85,7 +86,7 @@ struct NavButtonsView: View {
         SumiNavigationToolbarControls(
             state: navigationControlState,
             theme: SumiNavigationToolbarTheme(
-                tokens: themeContext.tokens(settings: sumiSettings)
+                tokens: scopedChromeTokens ?? themeContext.tokens(settings: sumiSettings)
             ),
             historyContext: browserContext.historyContext,
             tab: tabWrapper.tab,

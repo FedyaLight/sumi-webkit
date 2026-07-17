@@ -26,6 +26,7 @@ struct FloatingChromeSurfaceFill: View {
 
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
+    @Environment(\.chromeThemeTokens) private var scopedChromeTokens
 
     init(
         _ role: FloatingChromeSurfaceRole = .panel,
@@ -41,6 +42,6 @@ struct FloatingChromeSurfaceFill: View {
     }
 
     private var tokens: ChromeThemeTokens {
-        themeContext.tokens(settings: sumiSettings)
+        scopedChromeTokens ?? themeContext.tokens(settings: sumiSettings)
     }
 }

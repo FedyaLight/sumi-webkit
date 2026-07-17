@@ -35,8 +35,10 @@ struct TabFolderHeaderView: View {
     @Environment(\.sidebarPresentationContext) private var sidebarPresentationContext
     @Environment(\.nativeSurfaceHoverUpdatesEnabled) private var nativeSurfaceHoverUpdatesEnabled
 
+    @Environment(\.chromeThemeTokens) private var scopedChromeTokens
+
     private var tokens: ChromeThemeTokens {
-        themeContext.tokens(settings: sumiSettings)
+        scopedChromeTokens ?? themeContext.tokens(settings: sumiSettings)
     }
 
     private var folderShellPalette: SumiFolderGlyphPalette {

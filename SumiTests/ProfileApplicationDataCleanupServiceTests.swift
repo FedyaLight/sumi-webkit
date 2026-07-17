@@ -202,7 +202,7 @@ final class ProfileApplicationDataCleanupServiceTests: XCTestCase {
                     try zoomManager.deletePreferences(profileID: profileID)
                 },
                 clearBoosts: { profileID in
-                    try boostStore.deleteProfileData(profileID: profileID)
+                    try await boostStore.deleteProfileData(profileID: profileID)
                 },
                 clearAdblockZapperRules: { profileID in
                     try zapperStore.deleteProfileData(profileID: profileID)
@@ -334,7 +334,7 @@ final class ProfileApplicationDataCleanupServiceTests: XCTestCase {
     }
 
     func testReconstructedBoostAndZapperStoresShareRetirementAdmission()
-        throws {
+        async throws {
         let container = try makeInMemoryStartupModelContainer()
         let target = Profile(name: "Target")
         let fallback = Profile(name: "Fallback")
@@ -398,7 +398,7 @@ final class ProfileApplicationDataCleanupServiceTests: XCTestCase {
         )
 
         _ = try admission.reserve(profile: target, fallbackID: fallback.id)
-        try boostStore.deleteProfileData(profileID: target.id)
+        try await boostStore.deleteProfileData(profileID: target.id)
         try zapperStore.deleteProfileData(profileID: target.id)
 
         let reconstructedBoostStore = SumiBoostStore(
@@ -451,7 +451,7 @@ final class ProfileApplicationDataCleanupServiceTests: XCTestCase {
         withExtendedLifetime(container) {}
     }
 
-    func testCorruptProfileStoresFailClosedWithoutOverwritingPayloads() throws {
+    func testCorruptProfileStoresFailClosedWithoutOverwritingPayloads() async throws {
         let profileID = UUID()
         let defaultsSuite = "ProfileApplicationDataCorruptionTests-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: defaultsSuite))
@@ -509,9 +509,10 @@ final class ProfileApplicationDataCleanupServiceTests: XCTestCase {
         let boostURL = boostDirectory.appendingPathComponent("boosts.json")
         try corruptData.write(to: boostURL)
         let boostStore = SumiBoostStore(rootDirectory: boostDirectory)
-        XCTAssertThrowsError(
-            try boostStore.deleteProfileData(profileID: profileID)
-        ) { error in
+        do {
+            try await boostStore.deleteProfileData(profileID: profileID)
+            XCTFail("Expected unreadable Boost store failure")
+        } catch {
             XCTAssertEqual(
                 error as? SumiBoostStoreError,
                 .profileCleanupStoreUnreadable

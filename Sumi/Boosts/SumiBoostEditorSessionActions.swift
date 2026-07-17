@@ -92,24 +92,27 @@ final class SumiBoostEditorSessionActions {
         onError: @escaping @MainActor (String) -> Void
     ) {
         guard let module else { return }
-        do {
-            let data = try module.exportData(for: boost)
-            let savePanel = NSSavePanel()
-            savePanel.allowedContentTypes = [.json]
-            savePanel.nameFieldStringValue = "\(boost.data.boostName).sumi-boost.json"
-            savePanel.begin { [weak self] response in
-                guard response == .OK, let url = savePanel.url else { return }
-                do {
-                    try data.write(to: url, options: [.atomic])
-                } catch {
-                    Task { @MainActor [weak self] in
-                        guard self != nil else { return }
-                        onError(error.localizedDescription)
+        Task { @MainActor in
+            do {
+                let data = try await module.exportData(for: boost)
+                let savePanel = NSSavePanel()
+                savePanel.allowedContentTypes = [.json]
+                savePanel.nameFieldStringValue = "\(boost.data.boostName).sumi-boost.json"
+                savePanel.begin { response in
+                    guard response == .OK, let url = savePanel.url else { return }
+                    Task {
+                        do {
+                            try await Task.detached(priority: .userInitiated) {
+                                try data.write(to: url, options: [.atomic])
+                            }.value
+                        } catch {
+                            onError(error.localizedDescription)
+                        }
                     }
                 }
+            } catch {
+                onError(error.localizedDescription)
             }
-        } catch {
-            onError(error.localizedDescription)
         }
     }
 
@@ -126,21 +129,16 @@ final class SumiBoostEditorSessionActions {
             guard response == .OK, let url = openPanel.url else {
                 return
             }
-            do {
-                let data = try Data(contentsOf: url)
-                Task { @MainActor [weak self] in
+            Task { @MainActor [weak self] in
+                do {
+                    let data = try await Task.detached(priority: .userInitiated) {
+                        try Data(contentsOf: url)
+                    }.value
                     guard let self else { return }
-                    do {
-                        let imported = try module.importBoost(from: data, tab: tab, profile: self.profile)
-                        onImported(imported)
-                    } catch {
-                        onError(error.localizedDescription)
-                    }
-                }
-            } catch {
-                let message = error.localizedDescription
-                Task { @MainActor in
-                    onError(message)
+                    let imported = try await module.importBoost(from: data, tab: tab, profile: self.profile)
+                    onImported(imported)
+                } catch {
+                    onError(error.localizedDescription)
                 }
             }
         }

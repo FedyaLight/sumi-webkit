@@ -58,6 +58,7 @@ final class WindowSplitContext {
 /// Stable sidebar capabilities shared by docked and collapsed presentations.
 @MainActor
 final class WindowSidebarContext {
+    let nowPlayingController: SumiNativeNowPlayingController
     let browserContext: SidebarBrowserContext
     let spaceCatalog: SidebarSpaceCatalogProjection
     let inventory: SidebarSpaceInventoryProjection
@@ -83,6 +84,7 @@ final class WindowSidebarContext {
     private let hoverSidebarRuntime: HoverSidebarRuntime
 
     init(
+        nowPlayingController: SumiNativeNowPlayingController,
         browserContext: SidebarBrowserContext,
         spaceCatalog: SidebarSpaceCatalogProjection,
         inventory: SidebarSpaceInventoryProjection,
@@ -106,6 +108,7 @@ final class WindowSidebarContext {
         currentProfileID: @escaping () -> UUID?,
         hoverSidebarRuntime: HoverSidebarRuntime
     ) {
+        self.nowPlayingController = nowPlayingController
         self.browserContext = browserContext
         self.spaceCatalog = spaceCatalog
         self.inventory = inventory

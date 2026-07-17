@@ -197,13 +197,16 @@
       "name": "Boost definitions and CSS",
       "classification": "authoritative",
       "technology": "Unversioned Codable JSON index plus CSS resource files",
-      "versionOwner": "SumiBoostStore.DiskState is the shipped unversioned schema owner",
+      "versionOwner": "SumiBoostDiskWorker.DiskState is the shipped unversioned schema owner",
       "locationPolicy": "<Application Support>/Sumi/Boosts/boosts.json with sibling CSS resources",
       "backupRestorePolicy": "Boost import/export is per boost; the global logical browser backup does not promise a raw Boosts directory copy",
       "corruptionRecoveryPolicy": "Malformed JSON loads no boosts, retains the source bytes, and writes an adjacent unreadable diagnostic copy. It is not silently overwritten during load.",
       "legacySources": "The current unversioned shipped DiskState shape",
-      "productionTypes": ["SumiBoostStore"],
-      "semanticSources": ["Sumi/Boosts/SumiBoostStore.swift"],
+      "productionTypes": ["SumiBoostStore", "SumiBoostDiskWorker"],
+      "semanticSources": [
+        "Sumi/Boosts/SumiBoostStore.swift",
+        "Sumi/Boosts/SumiBoostDiskWorker.swift"
+      ],
       "fixtures": [
         "SumiTests/Fixtures/Persistence/boosts/boosts-malformed.json",
         "SumiTests/Fixtures/Persistence/boosts/boosts-shipped-unversioned.json"
@@ -567,7 +570,7 @@
     {
       "owner": "boosts-files",
       "kind": "file_write",
-      "paths": ["Sumi/Boosts/SumiBoostStore.swift"]
+      "paths": ["Sumi/Boosts/SumiBoostDiskWorker.swift"]
     },
     {
       "owner": "live-folders-json",

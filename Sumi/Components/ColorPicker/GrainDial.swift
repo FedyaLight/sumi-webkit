@@ -8,6 +8,7 @@ struct GrainDial: View {
 
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
+    @Environment(\.chromeThemeTokens) private var scopedChromeTokens
 
     @State private var isDragging = false
     @State private var isHoveringHandle = false
@@ -16,7 +17,7 @@ struct GrainDial: View {
     private let size: CGFloat = 76
 
     private var tokens: ChromeThemeTokens {
-        themeContext.tokens(settings: sumiSettings)
+        scopedChromeTokens ?? themeContext.tokens(settings: sumiSettings)
     }
 
     private var quantizedValue: Double {

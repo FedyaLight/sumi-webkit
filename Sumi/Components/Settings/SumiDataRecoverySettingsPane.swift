@@ -24,6 +24,8 @@ struct SumiDataRecoverySettingsPane: View {
     @State private var applyMode: SumiImportApplyMode = .merge
     @State private var statusMessage: String?
     @State private var isWorking = false
+    @State private var previewTask: Task<Void, Never>?
+    @State private var previewGeneration: UInt64 = 0
 
     private let importService = SumiBrowserImportService()
 
@@ -40,7 +42,7 @@ struct SumiDataRecoverySettingsPane: View {
                         systemImage: "square.stack.3d.up",
                         buttonTitle: "Import"
                     ) {
-                        loadPreview { try importService.previewArcImport() }
+                        loadPreview { try await importService.previewArcImport() }
                     }
                     .disabled(isWorking)
 
@@ -141,6 +143,12 @@ struct SumiDataRecoverySettingsPane: View {
                 .sumiNativeSurfaceColorScheme()
             }
         }
+        .onDisappear {
+            previewGeneration &+= 1
+            previewTask?.cancel()
+            previewTask = nil
+            isWorking = false
+        }
     }
 
     private var previewPresented: Binding<Bool> {
@@ -154,35 +162,64 @@ struct SumiDataRecoverySettingsPane: View {
         )
     }
 
-    private func loadPreview(_ operation: () throws -> SumiImportPreview) {
-        do {
-            let preview = try operation()
-            importPreview = preview
-            selectedCategories = preview.suggestedCategories
-            applyMode = preview.defaultMode
-            statusMessage = nil
-        } catch {
-            statusMessage = error.localizedDescription
+    private func loadPreview(
+        _ operation: @escaping @MainActor @Sendable () async throws -> SumiImportPreview
+    ) {
+        previewTask?.cancel()
+        previewGeneration &+= 1
+        let generation = previewGeneration
+        isWorking = true
+        statusMessage = nil
+        previewTask = Task { @MainActor in
+            defer {
+                if previewGeneration == generation {
+                    isWorking = false
+                    previewTask = nil
+                }
+            }
+            do {
+                let preview = try await operation()
+                guard !Task.isCancelled, previewGeneration == generation else { return }
+                importPreview = preview
+                selectedCategories = preview.suggestedCategories
+                applyMode = preview.defaultMode
+            } catch is CancellationError {
+                return
+            } catch {
+                guard previewGeneration == generation else { return }
+                statusMessage = error.localizedDescription
+            }
         }
     }
 
     private func importZen() {
-        let profiles = importService.detectedZenProfiles()
-        if profiles.count == 1, let profile = profiles.first {
-            loadPreview { try importService.previewZenImport(profileURL: profile) }
-            return
+        loadPreview {
+            let profiles = await importService.detectedZenProfiles()
+            try Task.checkCancellation()
+            let profileURL: URL
+            if profiles.count == 1, let profile = profiles.first {
+                profileURL = profile
+            } else {
+                let panel = NSOpenPanel()
+                panel.canChooseDirectories = true
+                panel.canChooseFiles = false
+                panel.allowsMultipleSelection = false
+                panel.prompt = "Import Zen"
+                if let root = FileManager.default.urls(
+                    for: .applicationSupportDirectory,
+                    in: .userDomainMask
+                ).first {
+                    panel.directoryURL = root.appendingPathComponent("zen/Profiles", isDirectory: true)
+                }
+                guard panel.runModal() == .OK, let url = panel.url else {
+                    throw CancellationError()
+                }
+                profileURL = url
+            }
+            return try await withSecurityScoped(profileURL) {
+                try await importService.previewZenImport(profileURL: profileURL)
+            }
         }
-
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.allowsMultipleSelection = false
-        panel.prompt = "Import Zen"
-        if let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
-            panel.directoryURL = root.appendingPathComponent("zen/Profiles", isDirectory: true)
-        }
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        loadPreview { try importService.previewZenImport(profileURL: url) }
     }
 
     private func importFromFile() {
@@ -194,8 +231,8 @@ struct SumiDataRecoverySettingsPane: View {
         panel.prompt = "Open"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         loadPreview {
-            try withSecurityScoped(url) {
-                try importService.previewFileImport(fileURL: url)
+            try await withSecurityScoped(url) {
+                try await importService.previewFileImport(fileURL: url)
             }
         }
     }
@@ -285,6 +322,19 @@ struct SumiDataRecoverySettingsPane: View {
             }
         }
         return try operation()
+    }
+
+    private func withSecurityScoped<T: Sendable>(
+        _ url: URL,
+        operation: () async throws -> T
+    ) async rethrows -> T {
+        let didAccess = url.startAccessingSecurityScopedResource()
+        defer {
+            if didAccess {
+                url.stopAccessingSecurityScopedResource()
+            }
+        }
+        return try await operation()
     }
 
     private static func backupDateStamp() -> String {

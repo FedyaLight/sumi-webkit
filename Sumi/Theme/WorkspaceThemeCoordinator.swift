@@ -1,5 +1,6 @@
 import SumiDomain
 import SwiftUI
+import OSLog
 
 private enum WorkspaceThemeTransitionUpdatePolicy {
     /// Keeps sub-pixel trackpad noise from invalidating the whole themed chrome tree.
@@ -8,6 +9,7 @@ private enum WorkspaceThemeTransitionUpdatePolicy {
 
 @MainActor
 final class WorkspaceThemeCoordinator {
+    private var transitionIntervals: [UUID: OSSignpostIntervalState] = [:]
     func restore(
         _ theme: WorkspaceTheme,
         in windowState: BrowserWindowState
@@ -119,6 +121,7 @@ final class WorkspaceThemeCoordinator {
         guard windowState.isInteractiveSpaceTransition else { return }
         guard windowState.windowThemeState.matchesInteractiveSpaceTransition(identity) else { return }
         windowState.windowThemeState.cancel()
+        endTransitionInterval(for: windowState.id)
     }
 
     func finishInteractiveTransition(
@@ -129,6 +132,7 @@ final class WorkspaceThemeCoordinator {
         guard windowState.isInteractiveSpaceTransition else { return }
         guard windowState.windowThemeState.matchesInteractiveSpaceTransition(identity) else { return }
         restore(destinationTheme, in: windowState)
+        endTransitionInterval(for: windowState.id)
     }
 
     private func beginNewInteractiveTransition(
@@ -147,11 +151,19 @@ final class WorkspaceThemeCoordinator {
             return nil
         }
 
+        endTransitionInterval(for: windowState.id)
+        transitionIntervals[windowState.id] = PerformanceTrace.beginInterval("SpaceTransition.total")
+
         return windowState.windowThemeState.beginInteractive(
             identity: identity,
             from: sourceSpace.workspaceTheme,
             to: destinationSpace.workspaceTheme,
             initialProgress: initialProgress
         )
+    }
+
+    private func endTransitionInterval(for windowID: UUID) {
+        guard let interval = transitionIntervals.removeValue(forKey: windowID) else { return }
+        PerformanceTrace.endInterval("SpaceTransition.total", interval)
     }
 }

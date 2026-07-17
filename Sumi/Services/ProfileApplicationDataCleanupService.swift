@@ -9,7 +9,7 @@ final class ProfileApplicationDataCleanupService {
         let clearBasicAuthCredentials: @MainActor (UUID) throws -> Void
         let clearSiteDataPolicies: @MainActor (UUID) throws -> Void
         let clearZoomPreferences: @MainActor (UUID) throws -> Void
-        let clearBoosts: @MainActor (UUID) throws -> Void
+        let clearBoosts: @MainActor (UUID) async throws -> Void
         let clearAdblockZapperRules: @MainActor (UUID) throws -> Void
         let clearExtensionPrivateData: @MainActor (UUID) throws -> Void
     }
@@ -25,7 +25,7 @@ final class ProfileApplicationDataCleanupService {
         try operations.clearBasicAuthCredentials(profileID)
         try operations.clearSiteDataPolicies(profileID)
         try operations.clearZoomPreferences(profileID)
-        try operations.clearBoosts(profileID)
+        try await operations.clearBoosts(profileID)
         try operations.clearAdblockZapperRules(profileID)
         try operations.clearExtensionPrivateData(profileID)
     }
@@ -61,7 +61,7 @@ enum ProfileApplicationDataCleanupComposition {
                     try zoomManager.deletePreferences(profileID: profileID)
                 },
                 clearBoosts: { profileID in
-                    try boostsModule.deleteProfileData(profileID: profileID)
+                    try await boostsModule.deleteProfileData(profileID: profileID)
                 },
                 clearAdblockZapperRules: { profileID in
                     try adblockZapperStore.deleteProfileData(

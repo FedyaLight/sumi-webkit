@@ -50,4 +50,4 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y ripgrep
 
       - name: Run architecture guardrails
-        run: scripts/check_architecture_guardrails.sh
+        run: scripts/ci/preflight.sh portable

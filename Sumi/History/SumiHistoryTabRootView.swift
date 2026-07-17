@@ -9,6 +9,7 @@ struct SumiHistoryTabRootView: View {
     @State private var nativeModalInvalidationGeneration: UInt = 0
     private let browserContext: HistoryPageBrowserContext
     private let windowState: BrowserWindowState?
+    private let rowActions: HistoryRowActions
 
     private enum Layout {
         static let sidebarWidth: CGFloat = 220
@@ -22,12 +23,12 @@ struct SumiHistoryTabRootView: View {
     init(browserContext: HistoryPageBrowserContext, windowState: BrowserWindowState?) {
         self.browserContext = browserContext
         self.windowState = windowState
-        _viewModel = StateObject(
-            wrappedValue: HistoryPageViewModel(
-                browserContext: browserContext,
-                windowState: windowState
-            )
+        let viewModel = HistoryPageViewModel(
+            browserContext: browserContext,
+            windowState: windowState
         )
+        _viewModel = StateObject(wrappedValue: viewModel)
+        rowActions = HistoryRowActions(viewModel: viewModel)
     }
 
     var body: some View {
@@ -39,7 +40,7 @@ struct SumiHistoryTabRootView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(tokens.windowBackground)
-        .environment(\.resolvedThemeContext, surfaceThemeContext)
+        .sumiChromeThemeScope(context: surfaceThemeContext, settings: sumiSettings)
         .environment(\.colorScheme, surfaceThemeContext.chromeColorScheme)
         .environment(\.nativeSurfaceHoverUpdatesEnabled, nativeSurfaceHoverUpdatesEnabled)
         .onAppear {
@@ -256,7 +257,17 @@ struct SumiHistoryTabRootView: View {
             ForEach(viewModel.sections) { section in
                 Section {
                     ForEach(section.items) { item in
-                        HistoryRow(item: item, viewModel: viewModel)
+                        HistoryRow(
+                            presentation: HistoryRowPresentation(
+                                item: item,
+                                isSelected: viewModel.isSelected(item),
+                                faviconPartition: viewModel.faviconPartition,
+                                themeContext: surfaceThemeContext,
+                                settingsFingerprint: sumiSettings.chromeTokenRecipeFingerprint
+                            ),
+                            faviconImageReader: viewModel.faviconImageReader,
+                            actions: rowActions
+                        )
                             .onAppear {
                                 viewModel.loadNextPageIfNeeded(after: item)
                             }
@@ -310,28 +321,57 @@ struct SumiHistoryTabRootView: View {
     }
 }
 
-private struct HistoryRow: View {
-    let item: HistoryListItem
-    @ObservedObject var viewModel: HistoryPageViewModel
-    @Environment(\.sumiSettings) private var sumiSettings
-    @Environment(\.resolvedThemeContext) private var themeContext
-    @Environment(\.nativeSurfaceHoverUpdatesEnabled) private var hoverUpdatesEnabled
+@MainActor
+final class HistoryRowActions {
+    private weak var viewModel: HistoryPageViewModel?
 
-    private enum RowLayout {
-        static let selectionWidth: CGFloat = 22
-        static let timeWidth: CGFloat = 56
-        static let faviconSize: CGFloat = 20
-        static let menuWidth: CGFloat = 32
+    init(viewModel: HistoryPageViewModel) {
+        self.viewModel = viewModel
     }
 
+    func open(_ item: HistoryListItem, mode: HistoryOpenMode) {
+        viewModel?.open(item, mode: mode)
+    }
+
+    func openFromRow(_ item: HistoryListItem) { viewModel?.openFromRow(item) }
+    func showAllHistory(from item: HistoryListItem) { viewModel?.showAllHistory(from: item) }
+    func copyLink(_ item: HistoryListItem) { viewModel?.copyLink(item) }
+    func delete(_ item: HistoryListItem) { viewModel?.delete(item) }
+    func toggleSelection(_ item: HistoryListItem) { viewModel?.toggleSelection(item) }
+}
+
+struct HistoryRowPresentation: Equatable {
+    let item: HistoryListItem
+    let isSelected: Bool
+    let faviconPartition: SumiFaviconPartition
+    let themeContext: ResolvedThemeContext
+    let settingsFingerprint: Int
+}
+
+private enum HistoryRowLayout {
+    static let selectionWidth: CGFloat = 22
+    static let timeWidth: CGFloat = 56
+    static let faviconSize: CGFloat = 20
+    static let menuWidth: CGFloat = 32
+}
+
+private struct HistoryRow: View {
+    let presentation: HistoryRowPresentation
+    let faviconImageReader: any BrowserFaviconImageReading
+    let actions: HistoryRowActions
+    @Environment(\.sumiSettings) private var sumiSettings
+    @Environment(\.resolvedThemeContext) private var themeContext
+    @Environment(\.chromeThemeTokens) private var scopedChromeTokens
+    @Environment(\.nativeSurfaceHoverUpdatesEnabled) private var hoverUpdatesEnabled
+
     private var tokens: ChromeThemeTokens {
-        themeContext.tokens(settings: sumiSettings)
+        scopedChromeTokens ?? themeContext.tokens(settings: sumiSettings)
     }
 
     var body: some View {
         HStack(spacing: 12) {
             selectionControl
-                .frame(width: RowLayout.selectionWidth, alignment: .center)
+                .frame(width: HistoryRowLayout.selectionWidth, alignment: .center)
 
             rowOpenButton
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -344,12 +384,12 @@ private struct HistoryRow: View {
                     .font(SumiHistoryTabTypography.rowMenuIcon)
                     .rotationEffect(.degrees(90))
                     .foregroundStyle(tokens.primaryText)
-                    .frame(width: RowLayout.menuWidth, height: 28)
+                    .frame(width: HistoryRowLayout.menuWidth, height: 28)
                     .contentShape(Rectangle())
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
-            .frame(width: RowLayout.menuWidth, alignment: .center)
+            .frame(width: HistoryRowLayout.menuWidth, alignment: .center)
             .help("More")
             .chromeCursor(.pointingHand, isEnabled: hoverUpdatesEnabled)
         }
@@ -369,48 +409,43 @@ private struct HistoryRow: View {
     @ViewBuilder
     private var rowMenuContent: some View {
         Button("Open") {
-            viewModel.open(item, mode: .currentTab)
+            actions.open(presentation.item, mode: .currentTab)
         }
         Button("Open in New Tab") {
-            viewModel.open(item, mode: .newTab)
+            actions.open(presentation.item, mode: .newTab)
         }
         Button("Open in New Window") {
-            viewModel.open(item, mode: .newWindow)
+            actions.open(presentation.item, mode: .newWindow)
         }
         Divider()
         Button("Show All History From This Site") {
-            viewModel.showAllHistory(from: item)
+            actions.showAllHistory(from: presentation.item)
         }
         Button("Copy Link") {
-            viewModel.copyLink(item)
+            actions.copyLink(presentation.item)
         }
         Divider()
-        Button(item.isSiteAggregate ? "Delete Site History" : "Delete") {
-            viewModel.delete(item)
+        Button(presentation.item.isSiteAggregate ? "Delete Site History" : "Delete") {
+            actions.delete(presentation.item)
         }
     }
 
     private var rowOpenButton: some View {
         Button {
-            viewModel.openFromRow(item)
+            actions.openFromRow(presentation.item)
         } label: {
-            rowContent
+            HistoryRowContent(
+                presentation: presentation,
+                faviconImageReader: faviconImageReader
+            )
+                .equatable()
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .frame(maxWidth: .infinity, alignment: .leading)
         .layoutPriority(1)
-        .accessibilityLabel(item.displayTitle)
-    }
-
-    private var favicon: some View {
-        HistoryFaviconView(
-            url: item.url,
-            partition: viewModel.faviconPartition,
-            imageReader: viewModel.faviconImageReader
-        )
-            .frame(width: RowLayout.faviconSize, height: RowLayout.faviconSize)
+        .accessibilityLabel(presentation.item.displayTitle)
     }
 
     private var selectionControl: some View {
@@ -418,11 +453,11 @@ private struct HistoryRow: View {
             "",
             isOn: Binding(
                 get: {
-                    viewModel.isSelected(item)
+                    presentation.isSelected
                 },
                 set: { isSelected in
-                    guard isSelected != viewModel.isSelected(item) else { return }
-                    viewModel.toggleSelection(item)
+                    guard isSelected != presentation.isSelected else { return }
+                    actions.toggleSelection(presentation.item)
                 }
             )
         )
@@ -433,31 +468,58 @@ private struct HistoryRow: View {
         .accessibilityLabel("Select")
     }
 
-    private var rowContent: some View {
+    private var rowBackgroundColor: Color {
+        if presentation.isSelected {
+            return presentation.themeContext.nativeSurfaceSelectionBackground
+        }
+        return SumiHistoryTabColors.transparent
+    }
+}
+
+struct HistoryRowContent: View, @MainActor Equatable {
+    let presentation: HistoryRowPresentation
+    let faviconImageReader: any BrowserFaviconImageReading
+    @Environment(\.sumiSettings) private var sumiSettings
+    @Environment(\.chromeThemeTokens) private var scopedChromeTokens
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.presentation == rhs.presentation
+    }
+
+    private var tokens: ChromeThemeTokens {
+        scopedChromeTokens ?? presentation.themeContext.tokens(settings: sumiSettings)
+    }
+
+    var body: some View {
         HStack(spacing: 14) {
-            Text(item.isSiteAggregate ? "" : item.timeText)
+            Text(presentation.item.isSiteAggregate ? "" : presentation.item.timeText)
                 .font(.callout)
                 .foregroundStyle(tokens.secondaryText)
-                .frame(width: RowLayout.timeWidth, alignment: .leading)
+                .frame(width: HistoryRowLayout.timeWidth, alignment: .leading)
 
-            favicon
+            HistoryFaviconView(
+                url: presentation.item.url,
+                partition: presentation.faviconPartition,
+                imageReader: faviconImageReader
+            )
+                .frame(width: HistoryRowLayout.faviconSize, height: HistoryRowLayout.faviconSize)
 
             HStack(spacing: 8) {
-                Text(item.displayTitle)
+                Text(presentation.item.displayTitle)
                     .font(SumiHistoryTabTypography.rowTitle)
                     .lineLimit(1)
                     .foregroundStyle(tokens.primaryText)
                     .layoutPriority(2)
 
-                Text(item.domain)
+                Text(presentation.item.domain)
                     .font(.callout)
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .foregroundStyle(tokens.secondaryText)
                     .layoutPriority(-1)
 
-                if item.isSiteAggregate, item.visitCount > 0 {
-                    Text("\(item.visitCount)")
+                if presentation.item.isSiteAggregate, presentation.item.visitCount > 0 {
+                    Text("\(presentation.item.visitCount)")
                         .font(.caption)
                         .foregroundStyle(tokens.secondaryText)
                         .padding(.horizontal, 6)
@@ -470,13 +532,6 @@ private struct HistoryRow: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
-
-    private var rowBackgroundColor: Color {
-        if viewModel.isSelected(item) {
-            return themeContext.nativeSurfaceSelectionBackground
-        }
-        return SumiHistoryTabColors.transparent
-    }
 }
 
 private struct HistoryFaviconView: View {
@@ -485,10 +540,11 @@ private struct HistoryFaviconView: View {
     let imageReader: any BrowserFaviconImageReading
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
+    @Environment(\.chromeThemeTokens) private var scopedChromeTokens
     @State private var image: NSImage?
 
     private var tokens: ChromeThemeTokens {
-        themeContext.tokens(settings: sumiSettings)
+        scopedChromeTokens ?? themeContext.tokens(settings: sumiSettings)
     }
 
     var body: some View {

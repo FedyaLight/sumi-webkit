@@ -33,9 +33,13 @@ extension WindowSplitContext {
 extension WindowSidebarContext {
     static func make(
         browserManager: BrowserManager,
-        updaterService: SumiUpdaterService
+        updaterService: SumiUpdaterService,
+        nowPlayingController: SumiNativeNowPlayingController
     ) -> WindowSidebarContext {
-        browserManager.composeWindowSidebarContext(updaterService: updaterService)
+        browserManager.composeWindowSidebarContext(
+            updaterService: updaterService,
+            nowPlayingController: nowPlayingController
+        )
     }
 }
 

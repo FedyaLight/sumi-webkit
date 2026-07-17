@@ -531,7 +531,11 @@ struct URLBarHubPopoverRootView: View {
             .environment(windowState)
             .environment(windowRegistry)
             .environment(\.sumiSettings, settings)
-            .sumiNativeSurfaceColorScheme(colorScheme, themeContext: themeContext)
+            .sumiNativeSurfaceColorScheme(
+                colorScheme,
+                themeContext: themeContext,
+                settings: settings
+            )
         } else {
             EmptyView()
         }

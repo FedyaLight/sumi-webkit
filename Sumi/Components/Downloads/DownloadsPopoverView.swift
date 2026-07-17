@@ -4,10 +4,11 @@ struct DownloadsPopoverView: View {
     @ObservedObject var downloadManager: DownloadManager
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
+    @Environment(\.chromeThemeTokens) private var scopedChromeTokens
     @Environment(\.displayScale) private var displayScale
 
     private var tokens: ChromeThemeTokens {
-        themeContext.tokens(settings: sumiSettings)
+        scopedChromeTokens ?? themeContext.tokens(settings: sumiSettings)
     }
 
     private var separatorHeight: CGFloat {

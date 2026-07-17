@@ -25,19 +25,18 @@ final class TabRuntimeAttachmentBootstrap {
     }
 
     func run(using lease: TabRuntimePortLease) -> Result {
+        let trace = PerformanceTrace.beginInterval("Startup.tabRuntimeAttachment")
+        defer { PerformanceTrace.endInterval("Startup.tabRuntimeAttachment", trace) }
         guard connection.accepts(lease), let runtime = lease.registry else {
             return .superseded
         }
-        var preparedTabs: Set<ObjectIdentifier> = []
-        while let tab = membership.allTabs().first(where: {
-            preparedTabs.contains(ObjectIdentifier($0)) == false
-        }) {
+        let tabs = membership.allTabs()
+        for tab in tabs {
             guard connection.accepts(lease) else { return .superseded }
-            preparedTabs.insert(ObjectIdentifier(tab))
             guard runtimePreparation.prepare(tab, using: lease) == .completed else {
                 return .superseded
             }
-            if membership.allTabs().contains(where: { $0 === tab }) == false {
+            if membership.tab(for: tab.id) !== tab {
                 runtime.webViewLifecycle.unloadTab(tab)
                 guard connection.accepts(lease) else { return .superseded }
             }

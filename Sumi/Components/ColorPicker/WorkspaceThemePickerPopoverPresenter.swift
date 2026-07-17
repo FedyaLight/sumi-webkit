@@ -517,7 +517,8 @@ private struct WorkspaceThemePickerPopoverContent: View {
         )
         .sumiNativeSurfaceColorScheme(
             surfaceThemeContext.chromeColorScheme,
-            themeContext: surfaceThemeContext
+            themeContext: surfaceThemeContext,
+            settings: sumiSettings
         )
     }
 

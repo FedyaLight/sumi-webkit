@@ -1,8 +1,7 @@
 import Combine
 import Foundation
-import OSLog
 
-enum SumiBoostStoreError: LocalizedError, Equatable {
+enum SumiBoostStoreError: LocalizedError, Equatable, Sendable {
     case unboostableURL
     case missingProfile
     case missingBoost
@@ -33,34 +32,8 @@ enum SumiBoostStoreError: LocalizedError, Equatable {
 
 @MainActor
 final class SumiBoostStore: ObservableObject {
-    private static let log = Logger.sumi(category: "BoostStore")
-
-    private struct DiskState: Codable {
-        var domains: [DiskDomainEntry]
-    }
-
-    private struct DiskDomainEntry: Codable {
-        var profileId: UUID
-        var host: String
-        var activeBoostId: UUID?
-        var boosts: [DiskBoost]
-    }
-
-    private struct DiskBoost: Codable {
-        var id: UUID
-        var profileId: UUID
-        var host: String
-        var data: SumiBoostData
-        var customCSSFileName: String?
-        var createdAt: Date
-        var updatedAt: Date
-    }
-
-    private let rootDirectory: URL
-    private let fileManager: FileManager
-    private let jsonEncoder: JSONEncoder
-    private let jsonDecoder: JSONDecoder
     private let profileReferenceAdmission: ProfileReferenceAdmissionLedger
+    private let diskWorker: SumiBoostDiskWorker
     private var entries: [SumiBoostDomainKey: SumiBoostDomainEntry] = [:]
     private var didLoad = false
     private var loadFailure: SumiBoostStoreError?
@@ -72,10 +45,15 @@ final class SumiBoostStore: ObservableObject {
     // burst of edits into a single disk write. Lifecycle events (create,
     // delete, import, discard, flush) bypass the debounce and write now.
     private var pendingWriteTask: Task<Void, Never>?
+    private var persistenceRevision: UInt64 = 0
     private static let writeDebounceNanoseconds: UInt64 = 300_000_000
 
     var changesPublisher: AnyPublisher<Void, Never> {
         changesSubject.eraseToAnyPublisher()
+    }
+
+    func beginPrefetch() {
+        diskWorker.prefetch()
     }
 
     init(
@@ -83,14 +61,13 @@ final class SumiBoostStore: ObservableObject {
         fileManager: FileManager = .default,
         profileReferenceAdmission: ProfileReferenceAdmissionLedger
     ) {
-        self.rootDirectory = rootDirectory ?? Self.defaultRootDirectory(fileManager: fileManager)
-        self.fileManager = fileManager
+        let rootDirectory = rootDirectory
+            ?? SumiBoostDiskWorker.defaultRootDirectory(fileManager: fileManager)
+        diskWorker = SumiBoostDiskWorker(
+            rootDirectory: rootDirectory,
+            fileManager: fileManager
+        )
         self.profileReferenceAdmission = profileReferenceAdmission
-        self.jsonEncoder = JSONEncoder()
-        self.jsonDecoder = JSONDecoder()
-        self.jsonEncoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        self.jsonEncoder.dateEncodingStrategy = .iso8601
-        self.jsonDecoder.dateDecodingStrategy = .iso8601
     }
 
     func boosts(for url: URL?, profileId: UUID?) -> [SumiBoost] {
@@ -221,7 +198,6 @@ final class SumiBoostStore: ObservableObject {
         } else {
             entries[key] = entry
         }
-        removeCSSFile(for: boost.id)
         persistImmediately(isEphemeral: entry.isEphemeral)
         notifyChanged()
     }
@@ -231,7 +207,7 @@ final class SumiBoostStore: ObservableObject {
         deleteBoost(boost, isEphemeral: false)
     }
 
-    func deleteProfileData(profileID: UUID) throws {
+    func deleteProfileData(profileID: UUID) async throws {
         retiredProfileIDs.insert(profileID)
         loadIfNeeded()
         if let loadFailure { throw loadFailure }
@@ -241,18 +217,14 @@ final class SumiBoostStore: ObservableObject {
 
         pendingWriteTask?.cancel()
         pendingWriteTask = nil
-        for boost in targetEntries.values.flatMap(\.boosts) {
-            try removeCSSFileThrowing(for: boost.id)
-        }
-
         let retainedEntries = entries.filter { $0.key.profileId != profileID }
-        try persistEntries(retainedEntries)
         entries = retainedEntries
+        try await diskWorker.commit(retainedEntries)
         notifyChanged()
     }
 
-    func exportData(for boost: SumiBoost) throws -> Data {
-        try jsonEncoder.encode(SumiBoostExportPackage(boost: boost))
+    func exportData(for boost: SumiBoost) async throws -> Data {
+        try await diskWorker.exportData(for: boost)
     }
 
     @discardableResult
@@ -261,7 +233,7 @@ final class SumiBoostStore: ObservableObject {
         for url: URL?,
         profileId: UUID?,
         isEphemeral: Bool
-    ) throws -> SumiBoost {
+    ) async throws -> SumiBoost {
         guard let key = SumiBoostURLPolicy.key(for: url, profileId: profileId) else {
             throw profileId == nil ? SumiBoostStoreError.missingProfile : SumiBoostStoreError.unboostableURL
         }
@@ -269,7 +241,7 @@ final class SumiBoostStore: ObservableObject {
             throw SumiBoostStoreError.profileRetired
         }
 
-        let importedData = try decodeImportedBoostData(from: data)
+        let importedData = try await diskWorker.decodeImportedBoostData(from: data)
 
         loadIfNeeded()
         var data = importedData
@@ -295,126 +267,14 @@ final class SumiBoostStore: ObservableObject {
         return boost
     }
 
-    private func decodeImportedBoostData(from data: Data) throws -> SumiBoostData {
-        var failures: [String] = []
-
-        do {
-            return try jsonDecoder.decode(SumiBoostExportPackage.self, from: data).data
-        } catch {
-            failures.append("SumiBoostExportPackage: \(error.localizedDescription)")
-        }
-
-        do {
-            return try jsonDecoder.decode(SumiBoostData.self, from: data)
-        } catch {
-            failures.append("SumiBoostData: \(error.localizedDescription)")
-        }
-
-        do {
-            return try jsonDecoder.decode(SumiBoost.self, from: data).data
-        } catch {
-            failures.append("SumiBoost: \(error.localizedDescription)")
-        }
-
-        // Payload bytes are not logged; only attempted type names, failure
-        // descriptions, and payload size are recorded for diagnostics.
-        Self.log.error(
-            "Boost import rejected (bytes=\(data.count, privacy: .public)): \(failures.joined(separator: "; "), privacy: .public)"
-        )
-        throw SumiBoostStoreError.invalidImport
-    }
-
     private func loadIfNeeded() {
         guard !didLoad else { return }
         didLoad = true
-        do {
-            let data = try Data(contentsOf: jsonURL)
-            let diskState: DiskState
-            do {
-                diskState = try jsonDecoder.decode(DiskState.self, from: data)
-            } catch {
-                // A corrupt/truncated boosts.json used to be silently treated as
-                // empty, losing every Boost with no signal. Preserve the bytes
-                // for recovery and log the failure (description only, no payload).
-                preserveUnreadableBoostsPayload(data)
-                Self.log.error(
-                    "Failed to decode boosts store: \(error.localizedDescription, privacy: .public)"
-                )
-                loadFailure = .profileCleanupStoreUnreadable
-                return
-            }
-
-            entries = Dictionary(
-                uniqueKeysWithValues: diskState.domains.map { diskEntry in
-                    let key = SumiBoostDomainKey(
-                        profileId: diskEntry.profileId,
-                        host: normalizedHost(diskEntry.host)
-                    )
-                    let boosts = diskEntry.boosts.map(loadBoost)
-                    return (
-                        key,
-                        SumiBoostDomainEntry(
-                            profileId: diskEntry.profileId,
-                            host: key.host,
-                            activeBoostId: diskEntry.activeBoostId,
-                            boosts: boosts,
-                            isEphemeral: false
-                        )
-                    )
-                }
-            )
-        } catch {
-            // A missing file on first launch is expected; only log non-missing
-            // read failures (description only, no payload contents).
-            if (error as NSError).code != NSFileReadNoSuchFileError {
-                loadFailure = .profileCleanupStoreUnreadable
-                Self.log.error(
-                    "Failed to read boosts store: \(error.localizedDescription, privacy: .public)"
-                )
-            }
-        }
-    }
-
-    /// Preserves the unreadable bytes of a corrupt boosts.json alongside the
-    /// store so they can be recovered manually. Diagnostic only — contents are
-    /// not logged or otherwise surfaced.
-    private func preserveUnreadableBoostsPayload(_ data: Data) {
-        let backupURL = jsonURL.appendingPathExtension("unreadable")
-        guard !FileManager.default.fileExists(atPath: backupURL.path) else { return }
-        do {
-            try data.write(to: backupURL, options: [.atomic])
-        } catch {
-            Self.log.error(
-                "Failed to preserve unreadable boosts payload: \(error.localizedDescription, privacy: .public)"
-            )
-        }
-    }
-
-    private func loadBoost(_ diskBoost: DiskBoost) -> SumiBoost {
-        var data = diskBoost.data
-        if let customCSSFileName = diskBoost.customCSSFileName {
-            do {
-                data.customCSS = try String(
-                    contentsOf: cssDirectory.appendingPathComponent(customCSSFileName),
-                    encoding: .utf8
-                )
-            } catch {
-                // A per-boost custom CSS file that fails to read used to silently
-                // drop the CSS. Log the failure (filename + description only).
-                Self.log.error(
-                    "Failed to read custom CSS '\(customCSSFileName, privacy: .public)' for boost: \(error.localizedDescription, privacy: .public)"
-                )
-            }
-        }
-
-        return SumiBoost(
-            id: diskBoost.id,
-            profileId: diskBoost.profileId,
-            host: normalizedHost(diskBoost.host),
-            data: data,
-            createdAt: diskBoost.createdAt,
-            updatedAt: diskBoost.updatedAt
-        )
+        let interval = PerformanceTrace.beginInterval("Boost.load")
+        let result = diskWorker.loadedResult()
+        PerformanceTrace.endInterval("Boost.load", interval)
+        entries = result.entries
+        loadFailure = result.failure
     }
 
     /// Schedules a debounced disk write. Coalesces a burst of editor edits
@@ -425,7 +285,7 @@ final class SumiBoostStore: ObservableObject {
         schedulePersist()
     }
 
-    /// Writes immediately, cancelling any debounced write. Call from lifecycle
+    /// Enqueues immediately, cancelling any debounced write. Call from lifecycle
     /// events (create/delete/import/discard) and when the editor closes, so a
     /// draft or final state is durable without waiting for the debounce.
     private func persistImmediately(isEphemeral: Bool) {
@@ -437,11 +297,11 @@ final class SumiBoostStore: ObservableObject {
 
     /// Public flush hook for the module: ensures any debounced write lands on
     /// disk now (used when the editor closes).
-    func flushPendingWrites() {
-        guard pendingWriteTask != nil else { return }
+    func flushPendingWrites() async {
         pendingWriteTask?.cancel()
         pendingWriteTask = nil
         persist()
+        await diskWorker.flush()
     }
 
     private func schedulePersist() {
@@ -461,94 +321,9 @@ final class SumiBoostStore: ObservableObject {
     }
 
     private func persist() {
-        do {
-            try persistEntries(entries)
-        } catch {
-            RuntimeDiagnostics.debug(
-                "Boost store persistence failed: \(error.localizedDescription)",
-                category: "Boosts"
-            )
-        }
-    }
-
-    private func persistEntries(
-        _ source: [SumiBoostDomainKey: SumiBoostDomainEntry]
-    ) throws {
-        try fileManager.createDirectory(
-            at: rootDirectory,
-            withIntermediateDirectories: true
-        )
-        try fileManager.createDirectory(
-            at: cssDirectory,
-            withIntermediateDirectories: true
-        )
-        let diskState = DiskState(
-            domains: try source.values
-                .filter { !$0.isEphemeral }
-                .sorted { $0.id < $1.id }
-                .map(makeDiskDomainEntry)
-        )
-        let data = try jsonEncoder.encode(diskState)
-        try data.write(to: jsonURL, options: [.atomic])
-    }
-
-    private func makeDiskDomainEntry(
-        _ entry: SumiBoostDomainEntry
-    ) throws -> DiskDomainEntry {
-        try DiskDomainEntry(
-            profileId: entry.profileId,
-            host: entry.host,
-            activeBoostId: entry.activeBoostId,
-            boosts: entry.boosts
-                .sorted { $0.createdAt < $1.createdAt }
-                .map(makeDiskBoost)
-        )
-    }
-
-    private func makeDiskBoost(_ boost: SumiBoost) throws -> DiskBoost {
-        var data = boost.data
-        let trimmedCSS = data.customCSS
-        var fileName: String?
-        if trimmedCSS.isEmpty {
-            try removeCSSFileThrowing(for: boost.id)
-            fileName = nil
-        } else {
-            let cssFileName = "\(boost.id.uuidString.lowercased()).css"
-            fileName = cssFileName
-            try trimmedCSS.write(
-                to: cssDirectory.appendingPathComponent(cssFileName),
-                atomically: true,
-                encoding: .utf8
-            )
-            data.customCSS = ""
-        }
-
-        return DiskBoost(
-            id: boost.id,
-            profileId: boost.profileId,
-            host: boost.host,
-            data: data,
-            customCSSFileName: fileName,
-            createdAt: boost.createdAt,
-            updatedAt: boost.updatedAt
-        )
-    }
-
-    private func removeCSSFile(for boostId: UUID) {
-        do {
-            try removeCSSFileThrowing(for: boostId)
-        } catch {
-            Self.log.error(
-                "Failed to remove boost CSS for \(boostId.uuidString, privacy: .public): \(error.localizedDescription, privacy: .public)"
-            )
-        }
-    }
-
-    private func removeCSSFileThrowing(for boostId: UUID) throws {
-        let fileName = "\(boostId.uuidString.lowercased()).css"
-        let url = cssDirectory.appendingPathComponent(fileName)
-        guard fileManager.fileExists(atPath: url.path) else { return }
-        try fileManager.removeItem(at: url)
+        let source = entries
+        persistenceRevision &+= 1
+        diskWorker.enqueuePersist(source, revision: persistenceRevision)
     }
 
     private func notifyChanged() {
@@ -556,6 +331,10 @@ final class SumiBoostStore: ObservableObject {
     }
 
     private func normalizedHost(_ host: String) -> String {
+        Self.normalizedHostValue(host)
+    }
+
+    nonisolated private static func normalizedHostValue(_ host: String) -> String {
         host
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .trimmingCharacters(in: CharacterSet(charactersIn: "."))
@@ -567,21 +346,4 @@ final class SumiBoostStore: ObservableObject {
             && profileReferenceAdmission.isReferenceAllowed(profileID)
     }
 
-    private var jsonURL: URL {
-        rootDirectory.appendingPathComponent("boosts.json")
-    }
-
-    private var cssDirectory: URL {
-        rootDirectory.appendingPathComponent("css", isDirectory: true)
-    }
-
-    private static func defaultRootDirectory(fileManager: FileManager) -> URL {
-        let applicationSupport = fileManager.urls(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask
-        ).first ?? fileManager.homeDirectoryForCurrentUser
-        return applicationSupport
-            .appendingPathComponent("Sumi", isDirectory: true)
-            .appendingPathComponent("Boosts", isDirectory: true)
-    }
 }

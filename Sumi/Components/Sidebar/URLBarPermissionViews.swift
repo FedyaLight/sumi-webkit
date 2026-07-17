@@ -261,9 +261,10 @@ private struct SumiPermissionIndicatorActionPopover: View {
 
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
+    @Environment(\.chromeThemeTokens) private var scopedChromeTokens
 
     private var tokens: ChromeThemeTokens {
-        themeContext.tokens(settings: sumiSettings)
+        scopedChromeTokens ?? themeContext.tokens(settings: sumiSettings)
     }
 
     var body: some View {
@@ -336,11 +337,12 @@ private struct SumiPermissionIndicatorActionPopover: View {
 private struct SumiPermissionIndicatorFooterButtonStyle: ButtonStyle {
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
+    @Environment(\.chromeThemeTokens) private var scopedChromeTokens
     @Environment(\.isEnabled) private var isEnabled
     @State private var isHovered = false
 
     private var tokens: ChromeThemeTokens {
-        themeContext.tokens(settings: sumiSettings)
+        scopedChromeTokens ?? themeContext.tokens(settings: sumiSettings)
     }
 
     func makeBody(configuration: Configuration) -> some View {
@@ -375,9 +377,10 @@ private struct SumiPermissionIndicatorButton: View {
 
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
+    @Environment(\.chromeThemeTokens) private var scopedChromeTokens
 
     private var tokens: ChromeThemeTokens {
-        themeContext.tokens(settings: sumiSettings)
+        scopedChromeTokens ?? themeContext.tokens(settings: sumiSettings)
     }
 
     var body: some View {
@@ -469,13 +472,14 @@ private struct SumiPermissionIndicatorButton: View {
 private struct URLBarPermissionIndicatorButtonStyle: ButtonStyle {
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
+    @Environment(\.chromeThemeTokens) private var scopedChromeTokens
     @Environment(\.isEnabled) private var isEnabled
     @State private var isHovering = false
 
     let visualStyle: SumiPermissionIndicatorVisualStyle
 
     private var tokens: ChromeThemeTokens {
-        themeContext.tokens(settings: sumiSettings)
+        scopedChromeTokens ?? themeContext.tokens(settings: sumiSettings)
     }
 
     func makeBody(configuration: Configuration) -> some View {

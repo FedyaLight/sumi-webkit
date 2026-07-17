@@ -175,7 +175,6 @@ struct SumiBrowser2ZenFolder: Codable, Sendable {
     }
 }
 
-@MainActor
 final class SumiTransferExportService {
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder

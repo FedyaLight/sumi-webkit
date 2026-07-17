@@ -13,6 +13,7 @@ struct GradientCanvasEditor: View {
 
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
+    @Environment(\.chromeThemeTokens) private var scopedChromeTokens
     @EnvironmentObject private var gradientColorManager: WorkspaceThemeEditorPreview
 
     @State private var isDraggingPrimary = false
@@ -24,7 +25,7 @@ struct GradientCanvasEditor: View {
     private let canvasCoordinateSpaceName = "zen-theme-picker-canvas"
 
     private var tokens: ChromeThemeTokens {
-        themeContext.tokens(settings: sumiSettings)
+        scopedChromeTokens ?? themeContext.tokens(settings: sumiSettings)
     }
 
     private var colors: [WorkspaceThemeColor] {

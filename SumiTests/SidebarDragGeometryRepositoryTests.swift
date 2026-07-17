@@ -191,8 +191,13 @@ final class SidebarDragGeometryRepositoryTests: XCTestCase {
         XCTAssertEqual(repository.geometrySnapshot.regularListHitTargets[spaceId]?.itemCount, 6)
     }
 
-    func testScrollDeltaMutatesActiveSnapshotAndRevisionImmediately() {
-        let repository = SidebarDragGeometryRepository()
+    func testScrollDeltaKeepsBaseFramesAndPublishesOneSnapshotAndRevision() {
+        var snapshotPublishCount = 0
+        var revisionPublishCount = 0
+        let repository = SidebarDragGeometryRepository(
+            publishSnapshot: { _ in snapshotPublishCount += 1 },
+            publishRevision: { _ in revisionPublishCount += 1 }
+        )
         let spaceId = UUID()
         let itemId = UUID()
         let generation = repository.activeGeometryGeneration
@@ -217,11 +222,43 @@ final class SidebarDragGeometryRepositoryTests: XCTestCase {
         repository.flushDeferredGeometryForDragStart()
 
         let revisionBeforeScroll = repository.geometryRevision
+        let structuralRevisionBeforeScroll = repository.geometrySnapshot.structuralRevision
+        snapshotPublishCount = 0
+        revisionPublishCount = 0
         repository.adjustGeometryStoreScrollDelta(deltaY: 12)
 
-        XCTAssertEqual(repository.geometrySnapshot.topLevelPinnedItemTargets[itemId]?.frame.origin.y, 38)
-        XCTAssertEqual(repository.geometrySnapshot.regularListHitTargets[spaceId]?.frame.origin.y, 108)
+        XCTAssertEqual(repository.geometrySnapshot.topLevelPinnedItemTargets[itemId]?.frame.origin.y, 50)
+        XCTAssertEqual(repository.geometrySnapshot.regularListHitTargets[spaceId]?.frame.origin.y, 120)
+        XCTAssertEqual(repository.geometrySnapshot.cumulativeScrollDeltaY, 12)
+        XCTAssertEqual(repository.geometrySnapshot.structuralRevision, structuralRevisionBeforeScroll)
+        XCTAssertEqual(repository.geometrySnapshot.scrollRevision, 1)
         XCTAssertEqual(repository.geometryRevision, revisionBeforeScroll + 1)
+        XCTAssertEqual(snapshotPublishCount, 1)
+        XCTAssertEqual(revisionPublishCount, 1)
+
+        repository.applyTopLevelPinnedItemTarget(
+            SidebarTopLevelPinnedItemTargetUpdate(
+                metrics: SidebarTopLevelPinnedItemMetrics(
+                    itemId: itemId,
+                    spaceId: spaceId,
+                    topLevelIndex: 0,
+                    frame: CGRect(x: 0, y: 38, width: 220, height: 36)
+                )
+            ),
+            generation: generation
+        )
+        repository.flushDeferredGeometryForDragStart()
+        XCTAssertEqual(repository.geometrySnapshot.topLevelPinnedItemTargets[itemId]?.frame.origin.y, 50)
+        XCTAssertEqual(repository.geometrySnapshot.structuralRevision, structuralRevisionBeforeScroll)
+
+        repository.adjustGeometryStoreScrollDelta(deltaY: -7)
+        repository.adjustGeometryStoreScrollDelta(deltaY: -5)
+
+        XCTAssertEqual(repository.geometrySnapshot.cumulativeScrollDeltaY, 0)
+        XCTAssertEqual(repository.geometrySnapshot.structuralRevision, structuralRevisionBeforeScroll)
+        XCTAssertEqual(repository.geometrySnapshot.scrollRevision, 3)
+        XCTAssertEqual(repository.geometrySnapshot.topLevelPinnedItemTargets[itemId]?.frame.origin.y, 50)
+        XCTAssertEqual(repository.geometrySnapshot.regularListHitTargets[spaceId]?.frame.origin.y, 120)
     }
 }
 

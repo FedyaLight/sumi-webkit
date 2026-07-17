@@ -83,6 +83,9 @@ final class SumiBoostsModule: ObservableObject {
     func attach(runtime: Runtime) {
         self.runtime = runtime
         hasAttachedRuntime = true
+        if isEnabled {
+            loadStore().beginPrefetch()
+        }
     }
 
     func setEnabled(_ isEnabled: Bool) {
@@ -275,8 +278,8 @@ final class SumiBoostsModule: ObservableObject {
         reinstallUserScripts(profileId: boost.profileId, host: boost.host)
     }
 
-    func deleteProfileData(profileID: UUID) throws {
-        try loadStore().deleteProfileData(profileID: profileID)
+    func deleteProfileData(profileID: UUID) async throws {
+        try await loadStore().deleteProfileData(profileID: profileID)
     }
 
     @discardableResult
@@ -284,13 +287,13 @@ final class SumiBoostsModule: ObservableObject {
         from data: Data,
         tab: Tab,
         profile: Profile?
-    ) throws -> SumiBoost {
+    ) async throws -> SumiBoost {
         guard let store = storeIfEnabled() else {
             throw SumiBoostStoreError.moduleDisabled
         }
 
         let resolvedProfile = profile ?? tab.resolveProfile()
-        let boost = try store.importBoost(
+        let boost = try await store.importBoost(
             from: data,
             for: tab.url,
             profileId: resolvedProfile?.id,
@@ -301,12 +304,12 @@ final class SumiBoostsModule: ObservableObject {
         return boost
     }
 
-    func exportData(for boost: SumiBoost) throws -> Data {
+    func exportData(for boost: SumiBoost) async throws -> Data {
         guard let store = storeIfEnabled() else {
             throw SumiBoostStoreError.moduleDisabled
         }
 
-        return try store.exportData(for: boost)
+        return try await store.exportData(for: boost)
     }
 
     @discardableResult
@@ -411,7 +414,9 @@ final class SumiBoostsModule: ObservableObject {
     /// the final boost state is applied on the next navigation, and flushes
     /// any debounced disk writes so the edit is durable immediately.
     func reinstallUserScriptsAfterEdit(profileId: UUID, host: String) {
-        loadedStore?.flushPendingWrites()
+        if let loadedStore {
+            Task { await loadedStore.flushPendingWrites() }
+        }
         reinstallUserScripts(profileId: profileId, host: host)
     }
 
@@ -483,7 +488,9 @@ final class SumiBoostsModule: ObservableObject {
     private func closeLoadedEditorBeforeDisable() {
         stopZapSelection()
         editorPresenter?.close()
-        loadedStore?.flushPendingWrites()
+        if let loadedStore {
+            Task { await loadedStore.flushPendingWrites() }
+        }
     }
 
     private func removeBoostsFromLivePages() {

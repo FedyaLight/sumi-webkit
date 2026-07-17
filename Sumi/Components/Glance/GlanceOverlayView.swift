@@ -13,6 +13,7 @@ struct GlanceOverlayView: NSViewRepresentable {
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
+    @Environment(\.chromeThemeTokens) private var scopedChromeTokens
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func makeCoordinator() -> Coordinator {
@@ -26,7 +27,7 @@ struct GlanceOverlayView: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: GlanceOverlayRootView, context: Context) {
-        let tokens = themeContext.tokens(settings: sumiSettings)
+        let tokens = scopedChromeTokens ?? themeContext.tokens(settings: sumiSettings)
         let browserChromeGeometry = BrowserChromeGeometry(settings: sumiSettings)
         let configuration = GlanceOverlayConfiguration(
             isVisible: glanceManager.presentedSession(for: windowState) != nil,
