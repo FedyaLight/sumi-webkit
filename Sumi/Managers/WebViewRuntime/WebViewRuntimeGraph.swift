@@ -193,7 +193,7 @@ final class WebViewRuntimeGraph {
         visibleRuntime: visibleWebViewRuntimeOwner
     )
 
-    fileprivate lazy var shutdownRuntime = WebViewShutdownRuntimeProvider(
+    fileprivate lazy var shutdownRuntime = SumiWebViewShutdown.NormalTabRuntime(
         removeWebViewFromContainers: { [weak self] webView in
             self?.compositorRuntime.removeWebViewFromContainers(webView)
         }

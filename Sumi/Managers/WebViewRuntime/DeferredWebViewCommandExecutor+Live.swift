@@ -11,7 +11,7 @@ extension DeferredWebViewCleanupExecutor {
         runtimeTabs: WebViewRuntimeTabRegistry,
         materialization: TabWebViewMaterializationService,
         processRecovery: WebContentProcessRecoveryService,
-        shutdownRuntime: WebViewShutdownRuntimeProvider
+        shutdownRuntime: SumiWebViewShutdown.NormalTabRuntime
     ) -> DeferredWebViewCleanupExecutor {
         DeferredWebViewCleanupExecutor(
             sessions: sessions,
@@ -37,7 +37,7 @@ extension DeferredWebViewCleanupExecutor {
                 processRecovery.cancel(webView)
                 SumiWebViewShutdown.perform(
                     on: webView,
-                    runtime: shutdownRuntime.runtime()
+                    runtime: shutdownRuntime
                 )
             },
             finishRetirementIfDrained: { tabID in

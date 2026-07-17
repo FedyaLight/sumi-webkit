@@ -26,7 +26,7 @@ final class WebViewLifecycleService {
     private let windowCleanup: WebViewWindowCleanupOwner
     private let trackedRegistration: WebViewTrackedRegistrationOwner
     private let physicalCleanup: WebViewPhysicalCleanupService
-    private let shutdownRuntime: WebViewShutdownRuntimeProvider
+    private let shutdownRuntime: SumiWebViewShutdown.NormalTabRuntime
 
     init(
         webViewSessions: WebViewSessionRepository,
@@ -45,7 +45,7 @@ final class WebViewLifecycleService {
         windowCleanup: WebViewWindowCleanupOwner,
         trackedRegistration: WebViewTrackedRegistrationOwner,
         physicalCleanup: WebViewPhysicalCleanupService,
-        shutdownRuntime: WebViewShutdownRuntimeProvider
+        shutdownRuntime: SumiWebViewShutdown.NormalTabRuntime
     ) {
         self.webViewSessions = webViewSessions
         self.runtimeTabs = runtimeTabs
@@ -211,7 +211,6 @@ final class WebViewLifecycleService {
         websiteDataCleanup.resetForTerminalShutdown()
 
         if entries.isEmpty == false {
-            let shutdownRuntime = shutdownRuntime.runtime()
             for entry in entries {
                 SumiWebViewShutdown.performTerminalShutdown(
                     on: entry.webView,

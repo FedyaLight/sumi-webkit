@@ -10,14 +10,14 @@ final class WebViewPhysicalCleanupService {
     private let processRecovery: WebContentProcessRecoveryService
     private let mediaProtection: WebViewMediaProtectionOwner
     private let protectedCommands: DeferredProtectedCommandAdmissionService
-    private let shutdownRuntime: WebViewShutdownRuntimeProvider
+    private let shutdownRuntime: SumiWebViewShutdown.NormalTabRuntime
 
     init(
         webViewSessions: WebViewSessionRepository,
         processRecovery: WebContentProcessRecoveryService,
         mediaProtection: WebViewMediaProtectionOwner,
         protectedCommands: DeferredProtectedCommandAdmissionService,
-        shutdownRuntime: WebViewShutdownRuntimeProvider
+        shutdownRuntime: SumiWebViewShutdown.NormalTabRuntime
     ) {
         self.webViewSessions = webViewSessions
         self.processRecovery = processRecovery
@@ -77,7 +77,7 @@ final class WebViewPhysicalCleanupService {
         }
         SumiWebViewShutdown.perform(
             on: webView,
-            runtime: shutdownRuntime.runtime()
+            runtime: shutdownRuntime
         )
     }
 }

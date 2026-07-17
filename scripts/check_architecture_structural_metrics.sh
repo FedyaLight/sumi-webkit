@@ -179,6 +179,7 @@ stored_state_budgets=(
 )
 
 production_source_exclusions=(
+  -g '!build/**'
   -g '!Vendor/**'
   -g '!SumiTests/**'
   -g '!SumiUITests/**'
@@ -289,6 +290,7 @@ production_file_list="$(mktemp "${TMPDIR:-/tmp}/sumi-production-swift-files.XXXX
 trap 'rm -f "$production_file_list"' EXIT
 if ! find . \( \
       -path './.git' -o \
+      -path './build' -o \
       -path './Vendor' -o \
       -path './SumiTests' -o \
       -path './SumiUITests' -o \

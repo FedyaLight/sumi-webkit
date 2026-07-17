@@ -19,7 +19,6 @@ close_request_broker_file="Sumi/Managers/WebViewRuntime/BrowserWebViewCloseReque
 runtime_lifecycle_file="Sumi/Managers/WebViewRuntime/WebViewLifecycleService.swift"
 visible_runtime_provider_file="Sumi/Managers/WebViewRuntime/VisibleWebViewRuntimeProvider.swift"
 hidden_clone_eviction_file="Sumi/Managers/WebViewRuntime/HiddenCloneEvictionService.swift"
-shutdown_runtime_provider_file="Sumi/Managers/WebViewRuntime/WebViewShutdownRuntimeProvider.swift"
 deferred_command_admission_file="Sumi/Managers/WebViewRuntime/DeferredProtectedCommandAdmissionService.swift"
 deferred_command_processor_file="Sumi/Managers/WebViewRuntime/DeferredProtectedCommandProcessor.swift"
 deferred_executor_live_file="Sumi/Managers/WebViewRuntime/DeferredWebViewCommandExecutor+Live.swift"
@@ -105,6 +104,7 @@ retired_paths=(
   "Sumi/Managers/WebViewRuntime/WebViewCoordinator.swift"
   "Sumi/Managers/WebViewRuntime/WebViewRuntimeAssembler.swift"
   "Sumi/Managers/WebViewRuntime/DeferredProtectedCommandScheduler.swift"
+  "Sumi/Managers/WebViewRuntime/WebViewShutdownRuntimeProvider.swift"
   "Sumi/Managers/BrowserManager/BrowserManagerWebViewRuntimeFactory.swift"
   "Sumi/Managers/BrowserManager/BrowserManagerWebViewCoordinatorRuntimeFactory.swift"
   "Packages/SumiWebRuntime/Sources/SumiWebRuntime/Context/WebViewCoordinatorBrowserRuntimeContext.swift"
@@ -168,7 +168,6 @@ fail_matches \
 runtime_role_files=(
   "$visible_runtime_provider_file"
   "$hidden_clone_eviction_file"
-  "$shutdown_runtime_provider_file"
   "$deferred_command_admission_file"
   "$deferred_command_processor_file"
   "$deferred_executor_live_file"
@@ -186,10 +185,24 @@ guard_expect_no_matches \
   '\bWebViewRuntimeAssembler\b|\bwebViewRuntimeAssembler\b' \
   -g '*.swift' -g '!**/.build/**' "${all_swift_roots[@]}"
 
+guard_expect_no_matches \
+  'retired WebView shutdown runtime provider reintroduced' \
+  '\bWebViewShutdownRuntimeProvider\b' \
+  -g '*.swift' -g '!**/.build/**' "${all_swift_roots[@]}"
+
+shutdown_runtime_construction_count="$(
+  guard_count_matches \
+    'SumiWebViewShutdown\.NormalTabRuntime\(' \
+    "$graph_file"
+)"
+guard_exact \
+  'single WebView shutdown runtime construction' \
+  "$shutdown_runtime_construction_count" \
+  1
+
 role_limits=(
   "$visible_runtime_provider_file:55:3"
   "$hidden_clone_eviction_file:55:4"
-  "$shutdown_runtime_provider_file:20:1"
   "$deferred_command_admission_file:90:5"
   "$deferred_command_processor_file:220:7"
   "$deferred_executor_live_file:90:0"
