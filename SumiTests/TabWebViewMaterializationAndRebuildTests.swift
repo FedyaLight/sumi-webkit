@@ -796,7 +796,10 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
 
     func testDetachedProfileAssignmentRejectsGenerationChangeDuringProvisioning() {
         let repository = WebViewSessionRepository()
-        let graph = makeTestWebViewRuntimeGraph(webViewSessions: repository)
+        let graph = makeTestWebViewRuntimeGraph(
+            webViewSessions: repository,
+            profileReferenceAdmission: .testingAllowingReferences()
+        )
         let oldProfile = Profile(name: "Old")
         let targetProfile = Profile(name: "Target")
         let tab = Tab(
@@ -2107,7 +2110,8 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
                 needsInitialDocumentExtensionContextLoad: { _ in false },
                 ensureInitialExtensionContextsLoaded: { _ in },
                 refreshCompositorForWindow: { _ in }
-            )
+            ),
+            profileReferenceAdmission: .testingAllowingReferences()
         )
     }
 

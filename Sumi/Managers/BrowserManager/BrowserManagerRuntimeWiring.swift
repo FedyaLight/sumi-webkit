@@ -27,16 +27,16 @@ enum BrowserManagerRuntimeWiring {
             visuals: browserManager.shellRuntime.windowVisuals,
             closeRouter: browserManager.webViewCloseRouter
         )
-        let runtimePortRegistry = BrowserTabManagerRuntimePortsFactory.registry(
-            for: browserManager,
-            splitQuery: splitQuery
-        )
+        let runtimePortRegistry = browserManager.runtimePortConnection.current
+            ?? BrowserTabManagerRuntimePortsFactory.registry(
+                for: browserManager,
+                splitQuery: splitQuery
+            )
         precondition(
             browserManager.tabRuntimeLifecycle.start(with: runtimePortRegistry)
                 == .attached,
             "Browser tab runtime ports must attach exactly once"
         )
-        startPersistedStateLoadIfShellReady(browserManager)
         // Live Folders runtime attaches only when the module is enabled (W4/R9),
         // via OptionalModuleHost.attachEnabled.
         precondition(
@@ -142,7 +142,6 @@ enum BrowserManagerRuntimeWiring {
             reason: "window-registry-attached"
         )
         browserManager.reconcileStartupSessionIfPossible()
-        startPersistedStateLoadIfShellReady(browserManager)
     }
 
     private static func attachTabResourceRuntimes(
@@ -207,13 +206,6 @@ enum BrowserManagerRuntimeWiring {
             backgroundMediaRuntime: backgroundMediaRuntime,
             structuralObserver: structuralObserver
         )
-    }
-
-    private static func startPersistedStateLoadIfShellReady(
-        _ browserManager: BrowserManager
-    ) {
-        browserManager.tabRuntimeLifecycle
-            .startPersistedStateRestoreIfNeeded()
     }
 
     static func nativeNowPlayingRuntimeContext(

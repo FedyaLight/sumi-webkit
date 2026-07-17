@@ -30,6 +30,7 @@ final class GlanceTabAdoptionCommitter {
         in space: Space?
     ) -> Tab? {
         let sourceProfileID = tab.profileId
+        let sourceSpaceID = tab.spaceId
         let sourceURL = tab.url
         return creationPlacement.withAdmittedCreationPlacement(
             preferred: space,
@@ -42,6 +43,7 @@ final class GlanceTabAdoptionCommitter {
                 return profileID.map(profileAdmissions.isReferenceAllowed) == true
             }
         ) { [regularTabs, runtimeConnection, publication] placement in
+            tab.spaceId = placement.space.id
             if tab.profileId == nil {
                 tab.profileId = placement.temporaryProfileOverrideId
             }
@@ -60,6 +62,7 @@ final class GlanceTabAdoptionCommitter {
                 admissionProfileIDs: placement.admissionProfileIDs
             ) else {
                 tab.profileId = sourceProfileID
+                tab.spaceId = sourceSpaceID
                 tab.url = sourceURL
                 return nil
             }

@@ -41,7 +41,9 @@ extension BrowserManager {
         externalAppResolver: any SumiExternalAppResolving = SumiNSWorkspaceExternalAppResolver(),
         externalSchemeSessionStore: SumiExternalSchemeSessionStore? = nil,
         permissionBridgeOverrides: BrowserPermissionBridgeRegistry.Overrides = .init(),
-        sidebarHostRecoveryCoordinator: SidebarHostRecoveryHandling = SidebarHostRecoveryCoordinator()
+        sidebarHostRecoveryCoordinator: SidebarHostRecoveryHandling = SidebarHostRecoveryCoordinator(),
+        initialTabRuntimePorts: RuntimePortRegistry? = nil,
+        automaticallyStartPersistedStateLoad: Bool = true
     ) {
         let startupTrace = StartupPerformanceTrace.browserManagerInitStarted()
         defer { StartupPerformanceTrace.browserManagerInitFinished(startupTrace) }
@@ -79,7 +81,10 @@ extension BrowserManager {
                 externalAppResolver: externalAppResolver,
                 externalSchemeSessionStore: externalSchemeSessionStore,
                 permissionBridgeOverrides: permissionBridgeOverrides,
-                sidebarHostRecoveryCoordinator: sidebarHostRecoveryCoordinator
+                sidebarHostRecoveryCoordinator: sidebarHostRecoveryCoordinator,
+                initialTabRuntimePorts: initialTabRuntimePorts,
+                automaticallyStartPersistedStateLoad:
+                    automaticallyStartPersistedStateLoad
             )
         )
     }

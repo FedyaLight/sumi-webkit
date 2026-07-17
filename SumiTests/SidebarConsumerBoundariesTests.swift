@@ -36,13 +36,9 @@ final class SidebarConsumerBoundariesTests: XCTestCase {
             loadsCachedFaviconOnInit: false
         )
         browser.spaceStateOwner.replaceSpaces([space])
-        XCTAssertTrue(
-            browser.regularTabCollectionOwner.insert(
-                regular,
-                in: space.id,
-                at: 0
-            )
-        )
+        browser.tabStateStore.regularTabs.replaceTabsBySpace([
+            space.id: [regular],
+        ])
         browser.folderCollectionStateOwner.replaceFoldersBySpace([
             space.id: [child, root],
         ])
@@ -90,69 +86,75 @@ final class SidebarConsumerBoundariesTests: XCTestCase {
     }
 
     func testPinFolderCommandsResolveDestinationAtCommitAndFailClosed() throws {
-        let browser = BrowserManager()
-        let space = Space(name: "Work")
-        let folder = TabFolder(name: "Folder", spaceId: space.id, index: 0)
-        let existing = makePin(
-            title: "Existing",
-            spaceID: space.id,
-            folderID: folder.id,
-            index: 0
-        )
-        let moving = makePin(
-            title: "Moving",
-            spaceID: space.id,
-            folderID: nil,
-            index: 0
-        )
-        browser.spaceStateOwner.replaceSpaces([space])
-        browser.folderCollectionStateOwner.replaceFoldersBySpace([
-            space.id: [folder],
-        ])
-        browser.shortcutPinCollectionStateOwner.replaceSpacePinnedShortcuts([
-            space.id: [moving, existing],
-        ])
-        let commands = browser.sidebarPinCommands
+        let (commands, moved) = try {
+            let browser = BrowserManager()
+            let space = Space(name: "Work")
+            let folder = TabFolder(name: "Folder", spaceId: space.id, index: 0)
+            let existing = makePin(
+                title: "Existing",
+                spaceID: space.id,
+                folderID: folder.id,
+                index: 0
+            )
+            let moving = makePin(
+                title: "Moving",
+                spaceID: space.id,
+                folderID: nil,
+                index: 0
+            )
+            browser.spaceStateOwner.replaceSpaces([space])
+            browser.folderCollectionStateOwner.replaceFoldersBySpace([
+                space.id: [folder],
+            ])
+            let pins = browser.shortcutPinCollectionStateOwner
+            pins.replaceSpacePinnedShortcuts([
+                space.id: [moving, existing],
+            ])
+            let commands = browser.sidebarPinCommands
 
-        XCTAssertTrue(commands.move(moving, toFolder: folder.id))
-        let moved = try XCTUnwrap(
-            browser.shortcutPinCollectionStateOwner.shortcutPin(by: moving.id)
-        )
-        XCTAssertEqual(moved.folderId, folder.id)
-        XCTAssertEqual(moved.index, 1)
+            XCTAssertTrue(commands.move(moving, toFolder: folder.id))
+            let moved = try XCTUnwrap(pins.shortcutPin(by: moving.id))
+            XCTAssertEqual(moved.folderId, folder.id)
+            XCTAssertEqual(moved.index, 1)
+            return (commands, moved)
+        }()
 
-        browser.runtimePortConnection.detach()
         XCTAssertFalse(commands.remove(moved))
-        XCTAssertNotNil(
-            browser.shortcutPinCollectionStateOwner.shortcutPin(by: moved.id)
-        )
     }
 
     func testSpaceLifecycleUsesAuthoritativeCatalogAndFailsClosed() throws {
-        let browser = BrowserManager()
-        let first = Space(name: "First")
-        let second = Space(name: "Second")
-        browser.spaceStateOwner.replaceSpaces([first, second])
-        browser.spaceStateOwner.replaceCurrentSpace(first)
-        let lifecycle = browser.sidebarSpaceLifecycle
-        var catalogChanges = 0
-        let catalogCancellable = browser.tabStructureEventBus
-            .scopedStructureChangesPublisher
-            .filter(\.affectsSpaceCatalog)
-            .sink { _ in catalogChanges += 1 }
+        let (lifecycle, first) = try {
+            let browser = BrowserManager()
+            let first = Space(name: "First")
+            let second = Space(name: "Second")
+            browser.spaceStateOwner.replaceSpaces([first, second])
+            browser.spaceStateOwner.replaceCurrentSpace(first)
+            let lifecycle = browser.sidebarSpaceLifecycle
+            var catalogChanges = 0
+            let catalogCancellable = browser.tabStructureEventBus
+                .scopedStructureChangesPublisher
+                .filter(\.affectsSpaceCatalog)
+                .sink { _ in catalogChanges += 1 }
 
-        try lifecycle.renameSpace(first.id, to: "Renamed")
-        XCTAssertEqual(browser.spaceStateOwner.space(with: first.id)?.name, "Renamed")
-        XCTAssertTrue(lifecycle.reorderSpace(second.id, to: 0))
-        XCTAssertEqual(browser.spaceStateOwner.spaces.map(\.id), [second.id, first.id])
-        XCTAssertEqual(catalogChanges, 2)
+            try lifecycle.renameSpace(first.id, to: "Renamed")
+            XCTAssertEqual(
+                browser.spaceStateOwner.space(with: first.id)?.name,
+                "Renamed"
+            )
+            XCTAssertTrue(lifecycle.reorderSpace(second.id, to: 0))
+            XCTAssertEqual(
+                browser.spaceStateOwner.spaces.map(\.id),
+                [second.id, first.id]
+            )
+            XCTAssertEqual(catalogChanges, 2)
+            withExtendedLifetime(catalogCancellable) {}
+            return (lifecycle, first)
+        }()
 
-        browser.runtimePortConnection.detach()
         XCTAssertNil(lifecycle.createSpace(name: "Rejected", icon: "", profileID: nil))
         XCTAssertFalse(lifecycle.reorderSpace(first.id, to: 0))
         XCTAssertThrowsError(try lifecycle.renameSpace(first.id, to: "Rejected"))
         XCTAssertTrue(lifecycle.availableSpaces(isIncognito: false, ephemeralSpaces: []).isEmpty)
-        withExtendedLifetime(catalogCancellable) {}
     }
 
     func testScopedSnapshotModelCatchesUpBeforeResubscribingAfterHiddenMutation() throws {

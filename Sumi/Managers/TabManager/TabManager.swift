@@ -29,6 +29,7 @@ class TabManager: ObservableObject {
         context: ModelContext,
         webViewSessions: WebViewSessionRepository,
         profileReferenceAdmission: ProfileReferenceAdmissionLedger,
+        initialRuntimePorts: RuntimePortRegistry? = nil,
         loadPersistedState: Bool = true,
         automaticallyStartPersistedStateLoad: Bool = true,
         tabStructureEventBus: TabStructureEventBus? = nil,
@@ -36,7 +37,7 @@ class TabManager: ObservableObject {
         faviconCapabilities: BrowserFaviconCapabilities = TabDependencyIsolationDefaults.faviconCapabilities,
         visitedLinkStore: any BrowserVisitedLinkStoreManaging = TabDependencyIsolationDefaults.visitedLinkStore
     ) {
-        self.runtimePortConnection = TabRuntimePortConnection()
+        self.runtimePortConnection = TabRuntimePortConnection(initialRuntimePorts)
         self.context = context
         self.profileReferenceAdmission = profileReferenceAdmission
         let stateStore = TabStateStore()

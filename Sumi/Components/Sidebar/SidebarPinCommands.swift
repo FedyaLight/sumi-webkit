@@ -2,12 +2,14 @@ import Foundation
 
 @MainActor
 final class SidebarPinCommands {
+    private let runtime: TabRuntimePortConnection
     private let placement: SidebarPinPlacementCommands
     private let lifecycle: SidebarPinLifecycleCommands
     private let essentialCopy: ShortcutPinEssentialCopyTransaction
     private let essentialPinning: RegularTabEssentialPinningService
 
     init(
+        runtime: TabRuntimePortConnection,
         windows: SidebarWindowIdentityQuery,
         pins: ShortcutPinCollectionStateOwner,
         folders: TabFolderCollectionStateOwner,
@@ -19,6 +21,7 @@ final class SidebarPinCommands {
         livePages: ShortcutPinLivePageMutationService,
         metadata: ShortcutPinMetadataMutationService
     ) {
+        self.runtime = runtime
         self.placement = SidebarPinPlacementCommands(
             pins: pins,
             folders: folders,
@@ -41,7 +44,8 @@ final class SidebarPinCommands {
         in windowState: BrowserWindowState,
         preserveCurrentPage: Bool
     ) -> Bool {
-        lifecycle.resetToLaunchURL(
+        guard runtime.current != nil else { return false }
+        return lifecycle.resetToLaunchURL(
             pin,
             in: windowState,
             preserveCurrentPage: preserveCurrentPage
@@ -52,19 +56,23 @@ final class SidebarPinCommands {
         _ pin: ShortcutPin,
         in windowState: BrowserWindowState
     ) -> Bool {
-        lifecycle.replaceSavedURLWithCurrent(pin, in: windowState)
+        guard runtime.current != nil else { return false }
+        return lifecycle.replaceSavedURLWithCurrent(pin, in: windowState)
     }
 
     func remove(_ pin: ShortcutPin) -> Bool {
-        lifecycle.remove(pin)
+        guard runtime.current != nil else { return false }
+        return lifecycle.remove(pin)
     }
 
     func move(_ pin: ShortcutPin, toFolder folderID: UUID) -> Bool {
-        placement.move(pin, toFolder: folderID)
+        guard runtime.current != nil else { return false }
+        return placement.move(pin, toFolder: folderID)
     }
 
     func move(_ pin: ShortcutPin, toSpace spaceID: UUID) -> Bool {
-        placement.move(pin, toSpace: spaceID)
+        guard runtime.current != nil else { return false }
+        return placement.move(pin, toSpace: spaceID)
     }
 
     func copyToEssentials(
@@ -72,13 +80,15 @@ final class SidebarPinCommands {
         title: String,
         context: EssentialsShortcutPlacementOwner.TargetContext?
     ) -> ShortcutPin? {
-        essentialCopy.copy(pin, title: title, context: context)
+        guard runtime.current != nil else { return nil }
+        return essentialCopy.copy(pin, title: title, context: context)
     }
 
     func pinTab(
         _ tab: Tab,
         context: EssentialsShortcutPlacementOwner.TargetContext?
     ) {
+        guard runtime.current != nil else { return }
         essentialPinning.pin(tab, context: context)
     }
 
@@ -88,7 +98,8 @@ final class SidebarPinCommands {
         launchURL: URL,
         iconAsset: String?
     ) -> ShortcutPin? {
-        lifecycle.update(
+        guard runtime.current != nil else { return nil }
+        return lifecycle.update(
             pin,
             title: title,
             launchURL: launchURL,

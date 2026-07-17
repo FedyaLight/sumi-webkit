@@ -9,7 +9,11 @@ import XCTest
 @MainActor
 final class BrowserManagerLifecycleWiringTests: XCTestCase {
     func testInitializationAttachesRuntimeGraphButDefersLifecycleUntilRecoveryGate() throws {
+        let moduleRegistry = SumiModuleRegistry.unavailable()
+        SumiProtectionSettings(userDefaults: moduleRegistry.userDefaults)
+            .setAppliedLevel(.protection)
         let browserManager = BrowserManager(
+            moduleRegistry: moduleRegistry,
             startupPersistence: BrowserManagerStartupPersistence(
                 container: try makeInMemoryStartupContainer()
             )

@@ -127,14 +127,11 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
         let tabManager = BrowserManager(
             startupPersistence: BrowserManagerStartupPersistence(
                 container: container
-            )
+            ),
+            automaticallyStartPersistedStateLoad: false
         )
         let webViewSessions = tabManager.webViewSessions
         let runtimeLifecycle = tabManager.tabRuntimeLifecycle
-        XCTAssertEqual(
-            runtimeLifecycle.start(with: TestRuntimePorts.inactive),
-            .attached
-        )
 
         let liveSpace = try makeSpace(
             in: tabManager,
@@ -171,10 +168,10 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
         let tabManager = BrowserManager(
             startupPersistence: BrowserManagerStartupPersistence(
                 container: container
-            )
+            ),
+            automaticallyStartPersistedStateLoad: false
         )
         let webViewSessions = tabManager.webViewSessions
-        tabManager.runtimePortConnection.attach(TestRuntimePorts.inactive)
         let payloadApplier = TabRestorePayloadApplyService(
             tabFactory: tabManager.tabFactory,
             structuralInstaller: tabManager.structuralInstallOwner,
@@ -272,15 +269,14 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
         let tabManager = BrowserManager(
             startupPersistence: BrowserManagerStartupPersistence(
                 container: container
-            )
-        )
-        tabManager.runtimePortConnection.attach(
-            TestRuntimePorts.make(
+            ),
+            runtimePorts: TestRuntimePorts.make(
                 currentProfileId: { profile.id },
                 defaultProfileId: { profile.id },
                 profile: { $0 == profile.id ? profile : nil },
                 webViewLifecycle: transition.makeLifecycle()
-            )
+            ),
+            automaticallyStartPersistedStateLoad: false
         )
         let space = Space(name: "Unassigned")
         tabManager.spaceStateOwner.replaceSpaces([space])
@@ -1450,12 +1446,12 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
         let tabManager = BrowserManager(
             startupPersistence: BrowserManagerStartupPersistence(
                 container: context.container
-            )
+            ),
+            runtimePorts: webViewLifecycle.map {
+                TestRuntimePorts.make(webViewLifecycle: $0)
+            } ?? TestRuntimePorts.inactive,
+            automaticallyStartPersistedStateLoad: false
         )
-        let runtime = webViewLifecycle.map {
-            TestRuntimePorts.make(webViewLifecycle: $0)
-        } ?? TestRuntimePorts.inactive
-        tabManager.runtimePortConnection.attach(runtime)
         return tabManager
     }
 

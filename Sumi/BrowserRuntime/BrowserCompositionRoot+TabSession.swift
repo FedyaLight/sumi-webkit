@@ -38,6 +38,7 @@ extension BrowserCompositionRoot {
         browsingDataCleanupService: SumiBrowsingDataCleanupService,
         nativeNowPlayingController: any SumiNativeNowPlayingRuntimeControlling,
         permissionRuntime: BrowserManagerPermissionRuntime,
+        initialTabRuntimePorts: RuntimePortRegistry?,
         loadPersistedState: Bool,
         automaticallyStartPersistedStateLoad: Bool
     ) -> BrowserKernelGraph {
@@ -45,9 +46,9 @@ extension BrowserCompositionRoot {
             context: modelContext,
             webViewSessions: webViewSessions,
             profileReferenceAdmission: profileReferenceAdmission,
+            initialRuntimePorts: initialTabRuntimePorts,
             loadPersistedState: loadPersistedState,
-            automaticallyStartPersistedStateLoad:
-                automaticallyStartPersistedStateLoad,
+            automaticallyStartPersistedStateLoad: automaticallyStartPersistedStateLoad,
             tabStructureEventBus: tabStructureEventBus,
             faviconService: dataServices.faviconService,
             faviconCapabilities: dataServices.faviconCapabilities,
@@ -56,7 +57,6 @@ extension BrowserCompositionRoot {
         let state = tabManager.stateStore
         let runtimeConnection = tabManager.runtimePortConnection
         let structuralPersistence = tabManager.structuralPersistence
-
         let runtimePreparationOwner = TabRuntimePreparationOwner(
             runtimeConnection: runtimeConnection
         )
@@ -700,6 +700,7 @@ extension BrowserCompositionRoot {
             )
         )
         let sidebarPinCommands = SidebarPinCommands(
+            runtime: runtimeConnection,
             windows: SidebarWindowIdentityQuery(registry: windowRegistry),
             pins: state.shortcutPins,
             folders: state.folders,

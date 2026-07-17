@@ -212,7 +212,9 @@ enum BrowserCompositionRoot {
         externalAppResolver: any SumiExternalAppResolving,
         externalSchemeSessionStore: SumiExternalSchemeSessionStore?,
         permissionBridgeOverrides: BrowserPermissionBridgeRegistry.Overrides,
-        sidebarHostRecoveryCoordinator: SidebarHostRecoveryHandling
+        sidebarHostRecoveryCoordinator: SidebarHostRecoveryHandling,
+        initialTabRuntimePorts: RuntimePortRegistry?,
+        automaticallyStartPersistedStateLoad: Bool
     ) -> BrowserKernelGraph {
         let resolvedDataServices = browsingDataCleanupService.map {
             dataServices.replacing(browsingDataCleanupService: $0)
@@ -362,8 +364,10 @@ enum BrowserCompositionRoot {
                     permissionBridgeOverrides: permissionBridgeOverrides
                 )
             ),
+            initialTabRuntimePorts: initialTabRuntimePorts,
             loadPersistedState: true,
-            automaticallyStartPersistedStateLoad: false
+            automaticallyStartPersistedStateLoad:
+                automaticallyStartPersistedStateLoad
         )
     }
 }
