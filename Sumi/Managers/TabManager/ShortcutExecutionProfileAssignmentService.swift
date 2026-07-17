@@ -2,11 +2,17 @@ import Foundation
 
 @MainActor
 final class ShortcutExecutionProfileAssignmentService {
-    private unowned let tabManager: TabManager
+    private let pins: ShortcutPinCollectionStateOwner
+    private let mutations: ShortcutPinMetadataMutationService
     private let policy: ProfileAssignmentPolicy
 
-    init(tabManager: TabManager, policy: ProfileAssignmentPolicy) {
-        self.tabManager = tabManager
+    init(
+        pins: ShortcutPinCollectionStateOwner,
+        mutations: ShortcutPinMetadataMutationService,
+        policy: ProfileAssignmentPolicy
+    ) {
+        self.pins = pins
+        self.mutations = mutations
         self.policy = policy
     }
 
@@ -21,11 +27,11 @@ final class ShortcutExecutionProfileAssignmentService {
             )
             return nil
         }
-        let current = tabManager.shortcutPinCollectionStateOwner.shortcutPin(
-            by: pin.id
-        ) ?? pin
+        guard let current = pins.shortcutPin(by: pin.id),
+              current === pin
+        else { return nil }
         guard current.executionProfileId != profileID else { return current }
-        return tabManager.shortcutPinCommandOwner.updateShortcutPin(
+        return mutations.update(
             current,
             executionProfileId: .some(profileID)
         )

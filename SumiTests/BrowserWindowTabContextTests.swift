@@ -1,3 +1,5 @@
+import SumiDomain
+import WebKit
 import XCTest
 
 @testable import Sumi
@@ -169,12 +171,9 @@ final class BrowserWindowTabContextTests: XCTestCase {
 
 @MainActor
 private final class BrowserWindowTabContextHarness {
-    let selectionService = ShellSelectionService { _ in [] }
+    let browser = BrowserManager()
     let tabStore: FakeWindowTabContextStore
-    let windows: [BrowserWindowState]
-    let liveShortcutTabsByWindowId: [UUID: [Tab]]
-    let visibleSplitTabIdsByWindowId: [UUID: Set<UUID>]
-    let trackedTabIdsByWindowId: [UUID: Set<UUID>]
+    private var trackedTabs: [Tab] = []
 
     init(
         spaces: [Space] = [],
@@ -191,27 +190,105 @@ private final class BrowserWindowTabContextHarness {
             tabsBySpace: tabsBySpace,
             liveShortcutTabsByWindowId: liveShortcutTabsByWindowId
         )
-        self.windows = windows
-        self.liveShortcutTabsByWindowId = liveShortcutTabsByWindowId
-        self.visibleSplitTabIdsByWindowId = visibleSplitTabIdsByWindowId
-        self.trackedTabIdsByWindowId = trackedTabIdsByWindowId
+        windows.forEach { browser.windowRegistry.register($0) }
+        installSplitProjections(
+            visibleSplitTabIdsByWindowId,
+            tabs: allTabs,
+            windows: windows
+        )
+        installTrackedResidences(trackedTabIdsByWindowId)
     }
 
     func makeOwner() -> BrowserWindowTabContext {
         BrowserWindowTabContext(
-            selectionService: { [weak self] in self?.selectionService },
-            tabStore: { [weak self] in self?.tabStore },
-            windows: { [weak self] in self?.windows ?? [] },
-            liveShortcutTabs: { [weak self] windowId in
-                self?.liveShortcutTabsByWindowId[windowId] ?? []
-            },
-            visibleSplitTabIds: { [weak self] windowId in
-                self?.visibleSplitTabIdsByWindowId[windowId] ?? []
-            },
-            trackedTabIds: { [weak self] windowId in
-                self?.trackedTabIdsByWindowId[windowId] ?? []
-            }
+            selectionService: ShellSelectionService(splitQuery: browser.splitQuery),
+            tabStore: tabStore,
+            windows: browser.windowRegistry,
+            splitQuery: browser.splitQuery,
+            webViewSessions: browser.webViewSessions
         )
+    }
+
+    private func installSplitProjections(
+        _ tabIDsByWindowID: [UUID: Set<UUID>],
+        tabs: [Tab],
+        windows: [BrowserWindowState]
+    ) {
+        guard !tabIDsByWindowID.isEmpty else { return }
+        let splitSpace = Space(name: "Split fixture")
+        let tabsByID = Dictionary(uniqueKeysWithValues: tabs.map { ($0.id, $0) })
+        var regularTabs: [Tab] = []
+        var groups: [SplitGroup] = []
+
+        for window in windows {
+            guard let projectedIDs = tabIDsByWindowID[window.id],
+                  let firstID = projectedIDs.first else {
+                continue
+            }
+            var members = projectedIDs.map { id -> SplitMember in
+                let tab = tabsByID[id] ?? Tab(
+                    id: id,
+                    spaceId: splitSpace.id,
+                    webViewSessions: browser.webViewSessions,
+                    loadsCachedFaviconOnInit: false
+                )
+                tab.spaceId = splitSpace.id
+                regularTabs.append(tab)
+                return .regularTab(id)
+            }
+            if members.count == 1 {
+                let companion = Tab(
+                    spaceId: splitSpace.id,
+                    webViewSessions: browser.webViewSessions,
+                    loadsCachedFaviconOnInit: false
+                )
+                regularTabs.append(companion)
+                members.append(.regularTab(companion.id))
+            }
+            guard let group = SplitGroup.make(
+                members: members,
+                layoutKind: .horizontal,
+                container: .regularTabs(spaceId: splitSpace.id)
+            ) else {
+                continue
+            }
+            groups.append(group)
+            window.splitSelection = WindowSplitSelection(
+                groupID: group.id,
+                activeMemberID: .regularTab(firstID)
+            )
+        }
+
+        browser.spaceStateOwner.replaceSpaces([splitSpace])
+        browser.tabStateStore.regularTabs.replaceTabsBySpace([
+            splitSpace.id: regularTabs,
+        ])
+        browser.splitGroupStore.replaceAll(with: groups)
+    }
+
+    private func installTrackedResidences(
+        _ tabIDsByWindowID: [UUID: Set<UUID>]
+    ) {
+        for (windowID, tabIDs) in tabIDsByWindowID {
+            for tabID in tabIDs {
+                let tab = Tab(
+                    id: tabID,
+                    webViewSessions: browser.webViewSessions,
+                    loadsCachedFaviconOnInit: false
+                )
+                let webView = FocusableWKWebView()
+                webView.owningTab = tab
+                trackedTabs.append(tab)
+                XCTAssertTrue(
+                    browser.webViewRuntime.trackedWebViewAdmission
+                        .registerAuxiliaryTrackedWebView(
+                            webView,
+                            for: tab,
+                            in: windowID
+                        ).isAccepted
+                )
+            }
+        }
     }
 }
 

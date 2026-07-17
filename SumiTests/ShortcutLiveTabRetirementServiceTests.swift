@@ -1,4 +1,5 @@
 import Combine
+import SumiDomain
 import SumiWebRuntime
 import WebKit
 import XCTest
@@ -9,38 +10,92 @@ import XCTest
 final class ShortcutLiveTabRetirementServiceTests: XCTestCase {
     func testMissingRuntimeLeavesLiveRegistryUnchanged() throws {
         let container = try makeInMemoryStartupModelContainer()
+        let webViewSessions = WebViewSessionRepository()
         let tabManager = TabManager(
             context: container.mainContext,
-            webViewSessions: WebViewSessionRepository(),
+            webViewSessions: webViewSessions,
             loadPersistedState: false
         )
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Space")
+        let state = tabManager.stateStore
+        let structuralLookup = TabStructuralLookupCoordinator(
+            eventBus: tabManager.tabStructureEventBus,
+            stateStore: state
+        )
+        let membership = TabCollectionMembershipOwner(
+            structuralLookupOwner: structuralLookup.lookupOwner,
+            state: state,
+            runtimePreparation: TabRuntimePreparationOwner(
+                runtimeConnection: tabManager.runtimePortConnection
+            ),
+            runtimeConnection: tabManager.runtimePortConnection
+        )
+        let registry = LiveShortcutTabRegistry(
+            storage: state.transientTabs,
+            structuralLookup: structuralLookup
+        )
+        let retirement = ShortcutLiveTabRetirementService(
+            registry: registry,
+            structuralLookup: structuralLookup,
+            runtimeConnection: tabManager.runtimePortConnection,
+            runtimeTeardown: TabRuntimeTeardownService(
+                persistence: tabManager.structuralPersistence,
+                membership: membership,
+                webViewSessions: webViewSessions
+            ),
+            windowMutations: BrowserWindowShortcutMutationOwner(),
+            splitGroups: state.splitGroups,
+            splitMutations: SplitGroupMutationService(
+                store: state.splitGroups,
+                publication: TabStructuralMutationPublisher(
+                    persistence: tabManager.structuralPersistence,
+                    faviconService: tabManager.faviconService,
+                    lookup: structuralLookup,
+                    changes: tabManager.objectWillChange,
+                    regularTabs: state.regularTabs
+                )
+            )
+        )
+        let space = Space(name: "Space")
+        state.spaces.replaceSpaces([space])
         let pin = makePin(spaceId: space.id)
         let windowId = UUID()
-        let liveTab = tabManager.shortcutTabMaterializer.materialize(
-            pin,
+        let liveTab = tabManager.tabFactory.makeTab(
+            url: pin.launchURL,
+            spaceId: space.id
+        )
+        liveTab.bindToShortcutPin(pin)
+        membership.attach(liveTab)
+        XCTAssertTrue(registry.register(
+            liveTab,
+            for: pin.id,
             in: windowId,
-            currentSpaceId: space.id
-        )!
+            presentationPage: LiveShortcutPresentationPageReceipt(
+                windowID: windowId,
+                spaceID: space.id,
+                profileID: nil
+            )
+        ))
 
-        tabManager.tabClosureService.removeTab(liveTab.id)
+        let result = retirement.retire(pinId: pin.id, in: windowId)
 
+        XCTAssertFalse(result.didRetire)
         XCTAssertIdentical(
-            tabManager.liveShortcutTabs.tab(for: pin.id, in: windowId),
+            registry.tab(for: pin.id, in: windowId),
             liveTab
         )
+        XCTAssertIdentical(membership.tab(for: liveTab.id), liveTab)
     }
 
     func testBlockedPhysicalCleanupLeavesShortcutStructurallyLive() throws {
         let windowState = BrowserWindowState()
         let probe = RetirementProbe()
-        let tabManager = try makeTabManager(
+        let tabManager = try makeFixture(
             windows: [windowState],
             probe: probe
         )
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Space")
+        let space = try makeSpace(in: tabManager)
         let pin = makePin(spaceId: space.id)
-        let liveTab = tabManager.shortcutTabMaterializer.materialize(
+        let liveTab = tabManager.makeLiveTab(
             pin,
             in: windowState.id,
             currentSpaceId: space.id
@@ -49,21 +104,21 @@ final class ShortcutLiveTabRetirementServiceTests: XCTestCase {
         windowState.currentTabId = liveTab.id
         windowState.currentShortcutPinId = pin.id
 
-        let retirement = tabManager.shortcutLiveTabRetirement.retire(
+        let retirement = tabManager.retirement.retire(
             pinId: pin.id,
             in: windowState.id
         )
 
         XCTAssertFalse(retirement.didRetire)
         XCTAssertIdentical(
-            tabManager.liveShortcutTabs.tab(
+            tabManager.registry.tab(
                 for: pin.id,
                 in: windowState.id
             ),
             liveTab
         )
         XCTAssertIdentical(
-            tabManager.tabCollectionMembershipOwner.tab(for: liveTab.id),
+            tabManager.membership.tab(for: liveTab.id),
             liveTab
         )
         XCTAssertEqual(windowState.currentTabId, liveTab.id)
@@ -76,18 +131,18 @@ final class ShortcutLiveTabRetirementServiceTests: XCTestCase {
     func testGenericTabRemovalDelegatesLiveShortcutToCanonicalRetirementOnce() throws {
         let windowState = BrowserWindowState()
         let probe = RetirementProbe()
-        let tabManager = try makeTabManager(windows: [windowState], probe: probe)
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Space")
+        let tabManager = try makeFixture(windows: [windowState], probe: probe)
+        let space = try makeSpace(in: tabManager)
         let pin = makePin(spaceId: space.id)
-        let liveTab = tabManager.shortcutTabMaterializer.materialize(
+        let liveTab = tabManager.makeLiveTab(
             pin,
             in: windowState.id,
             currentSpaceId: space.id
         )!
 
-        tabManager.tabClosureService.removeTab(liveTab.id)
+        _ = tabManager.retirement.retire(tabId: liveTab.id)
 
-        XCTAssertNil(tabManager.liveShortcutTabs.entry(tabId: liveTab.id))
+        XCTAssertNil(tabManager.registry.entry(tabId: liveTab.id))
         XCTAssertTrue(probe.tabClosureBatches.isEmpty)
         XCTAssertTrue(probe.unloadedTabIds.isEmpty)
         XCTAssertEqual(probe.extensionClosedTabIds, [liveTab.id])
@@ -96,13 +151,13 @@ final class ShortcutLiveTabRetirementServiceTests: XCTestCase {
     func testGenericRemovalValidatesClearedSelectedShortcut() throws {
         let windowState = BrowserWindowState()
         let probe = RetirementProbe()
-        let tabManager = try makeTabManager(
+        let tabManager = try makeFixture(
             windows: [windowState],
             probe: probe
         )
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Space")
+        let space = try makeSpace(in: tabManager)
         let pin = makePin(spaceId: space.id)
-        let liveTab = tabManager.shortcutTabMaterializer.materialize(
+        let liveTab = tabManager.makeLiveTab(
             pin,
             in: windowState.id,
             currentSpaceId: space.id
@@ -112,7 +167,7 @@ final class ShortcutLiveTabRetirementServiceTests: XCTestCase {
         windowState.currentShortcutPinId = pin.id
         windowState.currentShortcutPinRole = pin.role
 
-        tabManager.tabClosureService.removeTab(liveTab.id)
+        _ = tabManager.retirement.retire(tabId: liveTab.id)
 
         XCTAssertNil(windowState.currentTabId)
         XCTAssertNil(windowState.currentShortcutPinId)
@@ -122,13 +177,15 @@ final class ShortcutLiveTabRetirementServiceTests: XCTestCase {
     func testValidationAttachmentReplacementSuppressesStalePersistence() throws {
         let windowState = BrowserWindowState()
         let probe = RetirementProbe()
-        let tabManager = try makeTabManager(
+        var runtimeAttachment: TabRuntimePortConnection!
+        let tabManager = try makeFixture(
             windows: [windowState],
-            probe: probe
+            probe: probe,
+            receiveRuntimeAttachment: { runtimeAttachment = $0 }
         )
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Space")
+        let space = try makeSpace(in: tabManager)
         let pin = makePin(spaceId: space.id)
-        let liveTab = tabManager.shortcutTabMaterializer.materialize(
+        let liveTab = tabManager.makeLiveTab(
             pin,
             in: windowState.id,
             currentSpaceId: space.id
@@ -139,62 +196,63 @@ final class ShortcutLiveTabRetirementServiceTests: XCTestCase {
         windowState.currentShortcutPinRole = pin.role
         var replacementPersistenceCount = 0
         probe.validationAction = { [weak tabManager] in
-            guard let tabManager else {
-                XCTFail("Tab manager deallocated during validation")
+            guard tabManager != nil else {
+                XCTFail("Retirement fixture deallocated during validation")
                 return
             }
-            XCTAssertTrue(tabManager.runtimePortsAttachmentOwner.detach())
-            XCTAssertEqual(
-                tabManager.runtimePortsAttachmentOwner.attach(
-                    TestRuntimePorts.make(
-                        windowState: { id in
-                            id == windowState.id ? windowState : nil
-                        },
-                        windows: { [(windowState.id, windowState)] },
-                        windowStates: { [windowState] },
-                        persistWindowSession: { _ in
-                            replacementPersistenceCount += 1
-                        }
-                    )
-                ),
-                .attached
-            )
+            runtimeAttachment.detach()
+            runtimeAttachment.attach(TestRuntimePorts.make(
+                windowState: { id in
+                    id == windowState.id ? windowState : nil
+                },
+                windows: { [(windowState.id, windowState)] },
+                windowStates: { [windowState] },
+                persistWindowSession: { _ in
+                    replacementPersistenceCount += 1
+                }
+            ))
         }
 
-        tabManager.tabClosureService.removeTab(liveTab.id)
+        _ = tabManager.retirement.retire(tabId: liveTab.id)
 
         XCTAssertEqual(probe.validationCount, 1)
         XCTAssertTrue(probe.persistedWindowIds.isEmpty)
         XCTAssertEqual(replacementPersistenceCount, 0)
-        XCTAssertNotNil(tabManager.runtimePorts)
+        XCTAssertNotNil(tabManager.runtimeConnection.current)
     }
 
     func testPreparedRuntimeLeaseSurvivesDetachFromStructuralSubscriber() throws {
         let windowState = BrowserWindowState()
         let probe = RetirementProbe()
-        let tabManager = try makeTabManager(
+        var runtimeAttachment: TabRuntimePortConnection!
+        let tabManager = try makeFixture(
             windows: [windowState],
-            probe: probe
+            probe: probe,
+            receiveRuntimeAttachment: { runtimeAttachment = $0 }
         )
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Space")
+        let space = try makeSpace(in: tabManager)
         let pin = makePin(spaceId: space.id)
-        let liveTab = tabManager.shortcutTabMaterializer.materialize(
-            pin,
-            in: windowState.id,
-            currentSpaceId: space.id
-        )!
-        let cancellable = tabManager.tabStructureEventBus
+        XCTAssertNotNil(
+            tabManager.makeLiveTab(
+                pin,
+                in: windowState.id,
+                currentSpaceId: space.id
+            )
+        )
+        let cancellable = tabManager.tabManager.tabStructureEventBus
             .structureChangedPublisher.sink { [weak tabManager] _ in
-                tabManager?.detachBrowserRuntime()
+                if tabManager != nil {
+                    runtimeAttachment.detach()
+                }
             }
 
-        let result = tabManager.shortcutLiveTabRetirement.retire(
+        let result = tabManager.retirement.retire(
             pinId: pin.id,
             in: windowState.id
         )
 
         XCTAssertTrue(result.didRetire)
-        XCTAssertNil(tabManager.runtimePorts)
+        XCTAssertNil(tabManager.runtimeConnection.current)
         XCTAssertTrue(probe.unloadedTabIds.isEmpty)
         _ = cancellable
     }
@@ -215,16 +273,16 @@ final class ShortcutLiveTabRetirementServiceTests: XCTestCase {
                 XCTFail("Committed retirement must use normal destruction")
             }
         )
-        let tabManager = try makeTabManager(
+        let tabManager = try makeFixture(
             windows: [windowState],
             probe: probe,
             retirement: runtimeRetirement
         )
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Space")
+        let space = try makeSpace(in: tabManager)
         let pin = makePin(spaceId: space.id)
-        tabManager.structuralCollectionMutationOwner
+        tabManager.structuralMutations
             .setSpacePinnedShortcuts([pin], for: space.id)
-        let liveTab = tabManager.shortcutTabMaterializer.materialize(
+        let liveTab = tabManager.makeLiveTab(
             pin,
             in: windowState.id,
             currentSpaceId: space.id
@@ -238,11 +296,11 @@ final class ShortcutLiveTabRetirementServiceTests: XCTestCase {
         ]
         let lifecycle = TabLifecycleNotificationRecorder(tab: liveTab)
 
-        let retirement = tabManager.shortcutLiveTabRetirement.retire(
+        let retirement = tabManager.retirement.retire(
             pinId: pin.id,
             in: windowState.id
         )
-        let repeatedRetirement = tabManager.shortcutLiveTabRetirement.retire(
+        let repeatedRetirement = tabManager.retirement.retire(
             pinId: pin.id,
             in: windowState.id
         )
@@ -263,12 +321,12 @@ final class ShortcutLiveTabRetirementServiceTests: XCTestCase {
             [.shortcutPin(pin.id)]
         )
         XCTAssertNil(
-            tabManager.shortcutPresentationOwner.shortcutLiveTab(
+            tabManager.registry.tab(
                 for: pin.id,
                 in: windowState.id
             )
         )
-        XCTAssertNil(tabManager.tabCollectionMembershipOwner.tab(for: liveTab.id))
+        XCTAssertNil(tabManager.membership.tab(for: liveTab.id))
         XCTAssertTrue(probe.tabClosureBatches.isEmpty)
         XCTAssertEqual(probe.extensionClosedTabIds, [liveTab.id])
         XCTAssertTrue(probe.unloadedTabIds.isEmpty)
@@ -282,17 +340,17 @@ final class ShortcutLiveTabRetirementServiceTests: XCTestCase {
         let proxyWindow = BrowserWindowState()
         let windows = [firstWindow, secondWindow, proxyWindow]
         let probe = RetirementProbe()
-        let tabManager = try makeTabManager(windows: windows, probe: probe)
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Space")
+        let tabManager = try makeFixture(windows: windows, probe: probe)
+        let space = try makeSpace(in: tabManager)
         let pin = makePin(spaceId: space.id)
-        tabManager.structuralCollectionMutationOwner
+        tabManager.structuralMutations
             .setSpacePinnedShortcuts([pin], for: space.id)
-        let firstLiveTab = tabManager.shortcutTabMaterializer.materialize(
+        let firstLiveTab = tabManager.makeLiveTab(
             pin,
             in: firstWindow.id,
             currentSpaceId: space.id
         )!
-        let secondLiveTab = tabManager.shortcutTabMaterializer.materialize(
+        let secondLiveTab = tabManager.makeLiveTab(
             pin,
             in: secondWindow.id,
             currentSpaceId: space.id
@@ -315,16 +373,16 @@ final class ShortcutLiveTabRetirementServiceTests: XCTestCase {
         }
         let preservedSecondSelection = secondWindow.currentTabId
 
-        tabManager.shortcutPinCommandOwner.removeShortcutPin(pin)
+        XCTAssertTrue(tabManager.retireDeletedPin(pin.id))
 
         XCTAssertNil(
-            tabManager.shortcutPresentationOwner.shortcutLiveTab(
+            tabManager.registry.tab(
                 for: pin.id,
                 in: firstWindow.id
             )
         )
         XCTAssertNil(
-            tabManager.shortcutPresentationOwner.shortcutLiveTab(
+            tabManager.registry.tab(
                 for: pin.id,
                 in: secondWindow.id
             )
@@ -382,41 +440,22 @@ final class ShortcutLiveTabRetirementServiceTests: XCTestCase {
         let selectedWindow = BrowserWindowState()
         let metadataOnlyWindow = BrowserWindowState()
         let windows = [selectedWindow, metadataOnlyWindow]
-        let tabManager = try makeInMemoryTabManager()
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Space")
-        let fallback = tabManager.regularTabLifecycleOwner.createNewTab(
-            url: "https://fallback.example",
-            in: space,
-            activate: false
+        let probe = RetirementProbe()
+        let tabManager = try makeFixture(windows: windows, probe: probe)
+        let space = try makeSpace(in: tabManager)
+        let fallback = tabManager.tabManager.tabFactory.makeTab(
+            url: URL(string: "https://fallback.example")!,
+            spaceId: space.id
         )
+        tabManager.membership.attach(fallback)
         let pin = makePin(spaceId: space.id)
-        tabManager.structuralCollectionMutationOwner
+        tabManager.structuralMutations
             .setSpacePinnedShortcuts([pin], for: space.id)
         windows.forEach {
-            $0.tabManager = tabManager
             $0.currentSpaceId = space.id
         }
 
-        var persistedWindowIds: [UUID] = []
-        let validator = makeWindowStateReconciler(
-            tabManager: tabManager,
-            windows: windows,
-            persist: { persistedWindowIds.append($0.id) }
-        )
-        let statesById = Dictionary(
-            uniqueKeysWithValues: windows.map { ($0.id, $0) }
-        )
-        tabManager.runtimePortsAttachmentOwner.detach()
-        tabManager.runtimePortsAttachmentOwner.attach(
-            TestRuntimePorts.make(
-                windowState: { statesById[$0] },
-                windows: { windows.map { ($0.id, $0) } },
-                windowStates: { windows },
-                validateWindowStates: validator.validateWindowStates,
-                persistWindowSession: { persistedWindowIds.append($0.id) }
-            )
-        )
-        let liveTab = tabManager.shortcutTabMaterializer.materialize(
+        let liveTab = tabManager.makeLiveTab(
             pin,
             in: selectedWindow.id,
             currentSpaceId: space.id
@@ -428,22 +467,33 @@ final class ShortcutLiveTabRetirementServiceTests: XCTestCase {
         metadataOnlyWindow.currentShortcutPinId = pin.id
         metadataOnlyWindow.currentShortcutPinRole = pin.role
 
-        tabManager.shortcutPinCommandOwner.removeShortcutPin(pin)
+        probe.validationAction = {
+            selectedWindow.currentTabId = fallback.id
+            probe.validatorPersistedWindowIds.append(selectedWindow.id)
+        }
+        probe.validatedWindowIds = [selectedWindow.id]
+
+        XCTAssertTrue(tabManager.retireDeletedPin(pin.id))
 
         XCTAssertEqual(selectedWindow.currentTabId, fallback.id)
         XCTAssertNil(metadataOnlyWindow.currentShortcutPinId)
         XCTAssertEqual(
-            Dictionary(grouping: persistedWindowIds, by: { $0 })
+            Dictionary(
+                grouping: probe.persistedWindowIds
+                    + probe.validatorPersistedWindowIds,
+                by: { $0 }
+            )
                 .mapValues(\.count),
             [selectedWindow.id: 1, metadataOnlyWindow.id: 1]
         )
     }
 
-    private func makeTabManager(
+    private func makeFixture(
         windows: [BrowserWindowState],
         probe: RetirementProbe,
-        retirement: TestRuntimePorts.RetirementCapabilities = .rejecting
-    ) throws -> TabManager {
+        retirement: TestRuntimePorts.RetirementCapabilities = .rejecting,
+        receiveRuntimeAttachment: ((TabRuntimePortConnection) -> Void)? = nil
+    ) throws -> RetirementFixture {
         let runtime = TestRuntimePorts.make(
             windowState: { windowId in
                 windows.first { $0.id == windowId }
@@ -464,61 +514,15 @@ final class ShortcutLiveTabRetirementServiceTests: XCTestCase {
             validateWindowStates: {
                 probe.validationCount += 1
                 probe.validationAction?()
-                return []
+                return probe.validatedWindowIds
             },
             persistWindowSession: {
                 probe.persistedWindowIds.append($0.id)
             }
         )
-        let container = try makeInMemoryStartupModelContainer()
-        let tabManager = TabManager(
-            runtimePorts: runtime,
-            context: container.mainContext,
-            webViewSessions: WebViewSessionRepository(),
-            loadPersistedState: false
-        )
-        windows.forEach { $0.tabManager = tabManager }
-        return tabManager
-    }
-
-    private func makeWindowStateReconciler(
-        tabManager: TabManager,
-        windows: [BrowserWindowState],
-        persist: @escaping (BrowserWindowState) -> Void
-    ) -> BrowserWindowStateReconciler {
-        let spaceContext = BrowserWindowSpaceContextReconciler(
-            tabManager: tabManager,
-            commitWorkspaceTheme: { _, _ in /* No-op. */ }
-        )
-        let selectionRepair = BrowserWindowSelectionRepairService(
-            tabManager: tabManager,
-            selection: ShellSelectionService(splitTabsForWindow: { _ in [] }),
-            synchronizeShortcutSelection: { _ in /* No-op. */ },
-            applyTabSelection: { tab, windowState in
-                _ = WindowTabSelectionStateApplicator.apply(
-                    tab,
-                    to: windowState,
-                    updateSpaceFromTab: false,
-                    rememberSelection: false
-                )
-            },
-            showEmptyState: { windowState in
-                windowState.currentTabId = nil
-                windowState.isShowingEmptyState = true
-            }
-        )
-        return BrowserWindowStateReconciler(
-            windows: { windows },
-            spaceContext: spaceContext,
-            selectionRepair: selectionRepair,
-            focusedRuntime: FocusedSpaceRuntimeStateSynchronizer(
-                activeWindow: { windows.first },
-                windowContext: spaceContext,
-                runtimeState: tabManager.profileRuntimeState
-            ),
-            persistWindowSession: persist,
-            refreshCompositor: { _ in /* No-op. */ }
-        )
+        let fixture = try RetirementFixture(runtime: runtime)
+        receiveRuntimeAttachment?(fixture.runtimeConnection)
+        return fixture
     }
 
     private func makePin(spaceId: UUID) -> ShortcutPin {
@@ -531,6 +535,124 @@ final class ShortcutLiveTabRetirementServiceTests: XCTestCase {
             title: "Retirement"
         )
     }
+
+    private func makeSpace(in fixture: RetirementFixture) throws -> Space {
+        let space = Space(name: "Space")
+        fixture.tabManager.stateStore.spaces.replaceSpaces([space])
+        return space
+    }
+}
+
+@MainActor
+private final class RetirementFixture {
+    let tabManager: TabManager
+    let structuralLookup: TabStructuralLookupCoordinator
+    let structuralMutations: TabStructuralCollectionMutationOwner
+    let membership: TabCollectionMembershipOwner
+    let registry: LiveShortcutTabRegistry
+    let retirement: ShortcutLiveTabRetirementService
+
+    var runtimeConnection: TabRuntimePortConnection {
+        tabManager.runtimePortConnection
+    }
+
+    init(runtime: RuntimePortRegistry) throws {
+        let container = try makeInMemoryStartupModelContainer()
+        let webViewSessions = WebViewSessionRepository()
+        tabManager = TabManager(
+            runtimePorts: runtime,
+            context: container.mainContext,
+            webViewSessions: webViewSessions,
+            loadPersistedState: false
+        )
+        let state = tabManager.stateStore
+        structuralLookup = TabStructuralLookupCoordinator(
+            eventBus: tabManager.tabStructureEventBus,
+            stateStore: state
+        )
+        let publisher = TabStructuralMutationPublisher(
+            persistence: tabManager.structuralPersistence,
+            faviconService: tabManager.faviconService,
+            lookup: structuralLookup,
+            changes: tabManager.objectWillChange,
+            regularTabs: state.regularTabs
+        )
+        structuralMutations = TabStructuralCollectionMutationOwner(
+            store: TabStructuralCollectionStore(
+                regularTabs: state.regularTabs,
+                folders: state.folders,
+                shortcutPins: state.shortcutPins
+            ),
+            snapshots: TabStructuralCollectionSnapshotStore(
+                regularTabs: state.regularTabs,
+                folders: state.folders,
+                shortcutPins: state.shortcutPins
+            ),
+            publisher: publisher
+        )
+        membership = TabCollectionMembershipOwner(
+            structuralLookupOwner: structuralLookup.lookupOwner,
+            state: state,
+            runtimePreparation: TabRuntimePreparationOwner(
+                runtimeConnection: tabManager.runtimePortConnection
+            ),
+            runtimeConnection: tabManager.runtimePortConnection
+        )
+        registry = LiveShortcutTabRegistry(
+            storage: state.transientTabs,
+            structuralLookup: structuralLookup
+        )
+        retirement = ShortcutLiveTabRetirementService(
+            registry: registry,
+            structuralLookup: structuralLookup,
+            runtimeConnection: tabManager.runtimePortConnection,
+            runtimeTeardown: TabRuntimeTeardownService(
+                persistence: tabManager.structuralPersistence,
+                membership: membership,
+                webViewSessions: webViewSessions
+            ),
+            windowMutations: BrowserWindowShortcutMutationOwner(),
+            splitGroups: state.splitGroups,
+            splitMutations: SplitGroupMutationService(
+                store: state.splitGroups,
+                publication: publisher
+            )
+        )
+    }
+
+    func makeLiveTab(
+        _ pin: ShortcutPin,
+        in windowID: UUID,
+        currentSpaceId: UUID
+    ) -> Tab? {
+        let tab = tabManager.tabFactory.makeTab(
+            url: pin.launchURL,
+            spaceId: currentSpaceId
+        )
+        tab.bindToShortcutPin(pin)
+        membership.attach(tab)
+        guard registry.register(
+            tab,
+            for: pin.id,
+            in: windowID,
+            presentationPage: LiveShortcutPresentationPageReceipt(
+                windowID: windowID,
+                spaceID: currentSpaceId,
+                profileID: nil
+            )
+        ) else {
+            membership.detach(tab)
+            return nil
+        }
+        return tab
+    }
+
+    func retireDeletedPin(_ pinID: UUID) -> Bool {
+        guard let prepared = retirement.prepareDeletedPinRetirement(pinID)
+        else { return false }
+        _ = retirement.finish(prepared)
+        return true
+    }
 }
 
 @MainActor
@@ -540,6 +662,8 @@ private final class RetirementProbe {
     var unloadedTabIds: [UUID] = []
     var destroyedGenerationTabIDs: [[UUID]] = []
     var persistedWindowIds: [UUID] = []
+    var validatorPersistedWindowIds: [UUID] = []
+    var validatedWindowIds = Set<UUID>()
     var validationCount = 0
     var validationAction: (() -> Void)?
 }

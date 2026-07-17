@@ -7,17 +7,17 @@ import SumiDomain
 @MainActor
 struct SplitGroupMembershipQuery {
     private let store: SplitGroupStore
-    private let tab: (UUID) -> Tab?
-    private let shortcutPinExists: (UUID) -> Bool
+    private let tabs: TabCollectionMembershipOwner
+    private let pins: ShortcutPinCollectionStateOwner
 
     init(
         store: SplitGroupStore,
-        tab: @escaping (UUID) -> Tab?,
-        shortcutPinExists: @escaping (UUID) -> Bool
+        tabs: TabCollectionMembershipOwner,
+        pins: ShortcutPinCollectionStateOwner
     ) {
         self.store = store
-        self.tab = tab
-        self.shortcutPinExists = shortcutPinExists
+        self.tabs = tabs
+        self.pins = pins
     }
 
     func memberID(for tab: Tab) -> SplitMemberID {
@@ -26,10 +26,10 @@ struct SplitGroupMembershipQuery {
     }
 
     func memberID(forLookupID id: UUID) -> SplitMemberID? {
-        if shortcutPinExists(id) {
+        if pins.shortcutPin(by: id) != nil {
             return .shortcutPin(id)
         }
-        guard let tab = tab(id) else { return nil }
+        guard let tab = tabs.tab(for: id) else { return nil }
         return memberID(for: tab)
     }
 
@@ -45,20 +45,5 @@ struct SplitGroupMembershipQuery {
         memberID(forLookupID: id).flatMap {
             store.group(containing: $0)
         }
-    }
-}
-
-extension SplitGroupMembershipQuery {
-    init(tabManager: TabManager) {
-        self.init(
-            store: tabManager.splitGroupStore,
-            tab: { [weak tabManager] in
-                tabManager?.tabCollectionMembershipOwner.tab(for: $0)
-            },
-            shortcutPinExists: { [weak tabManager] in
-                tabManager?.shortcutPinCollectionStateOwner
-                    .shortcutPin(by: $0) != nil
-            }
-        )
     }
 }

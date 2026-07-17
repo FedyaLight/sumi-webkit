@@ -23,7 +23,7 @@ enum TabBrowserNavigationRuntimeFactory {
         return .make(
             ephemeralProfileForTab: { [weak browserManager] tabId, profileId in
                 guard let browserManager else { return nil }
-                if let tracked = browserManager.windowRegistry?.windows.values.first(where: { window in
+                if let tracked = browserManager.windowRegistry.windows.values.first(where: { window in
                     window.ephemeralTabs.contains(where: { $0.id == tabId })
                 })?.ephemeralProfile,
                    tracked.id == profileId {
@@ -37,7 +37,7 @@ enum TabBrowserNavigationRuntimeFactory {
             },
             spaceProfile: { [weak browserManager] spaceId in
                 guard let browserManager,
-                      let space = browserManager.tabManager.spaceStateOwner.spaces.first(where: { $0.id == spaceId }),
+                      let space = browserManager.spaceStateOwner.spaces.first(where: { $0.id == spaceId }),
                       let profileId = space.profileId
                 else {
                     return nil

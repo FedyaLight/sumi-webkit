@@ -15,13 +15,20 @@ final class SumiProfileMaintenanceService {
             UUID,
             UUID
         ) async -> ProfileDeletionMigrationOutcome
+        var persistProfileReferences: @MainActor () async -> Bool
+        var migrateBrowserProfileReferences: @MainActor (
+            UUID,
+            Profile
+        ) async -> Bool
+        var hasProfileReferences: @MainActor (UUID) -> Bool
+        var sealProfileRuntime: @MainActor (UUID) async -> Bool
         var browsingDataCleanupService: SumiBrowsingDataCleanupService
         var websiteDataCleanupService: any SumiWebsiteDataCleanupServicing
         var faviconService: any BrowserFaviconServicing
         var visitedLinkStore: any BrowserVisitedLinkStoreManaging
         var permissionCleanupService: SumiPermissionCleanupService?
+        var applicationDataCleanupService: ProfileApplicationDataCleanupService
         var showNotice: @MainActor (Notice) -> Void
-        var switchToProfile: @MainActor (Profile) async -> Void
     }
 
     func deleteProfile(_ profile: Profile, using context: Context) {
@@ -41,63 +48,142 @@ final class SumiProfileMaintenanceService {
                 return
             }
 
+            guard let cleanup = makeDeletionCleanupOrchestrator(
+                for: profile,
+                using: context
+            ) else {
+                showDeletionFailure(
+                    profile,
+                    message: "Required profile cleanup services are unavailable.",
+                    using: context
+                )
+                return
+            }
+
+            let token: ProfileRetirementToken
+            do {
+                token = try context.profileManager.profileReferenceAdmission.reserve(
+                    profile: profile,
+                    fallbackID: replacement.id
+                )
+            } catch {
+                showDeletionFailure(
+                    profile,
+                    message: "The profile could not be reserved for safe deletion.",
+                    using: context
+                )
+                return
+            }
+
+            let preflightAccepted = await context.browsingDataCleanupService
+                .performDestructiveWebsiteDataCleanup(
+                    profileIDs: [profile.id],
+                    deletion: {}
+                )
+            guard preflightAccepted else {
+                cancelReservation(token, using: context)
+                showDeletionFailure(
+                    profile,
+                    message: "The browser could not prepare profile data for safe deletion.",
+                    using: context
+                )
+                return
+            }
+
+            do {
+                guard try context.profileManager.beginReferenceMigration(token)
+                else {
+                    throw ProfileDeletionCleanupFailure.staleRetirement
+                }
+            } catch {
+                cancelReservation(token, using: context)
+                showDeletionFailure(
+                    profile,
+                    message: "The profile could not begin safe reference migration.",
+                    using: context
+                )
+                return
+            }
+
             let migration = await context.migrateProfileReferences(
                 profile.id,
                 replacement.id
             )
             guard migration == .committed else {
-                context.showNotice(
-                    Notice(
-                        title: "Couldn't Delete Profile",
-                        subtitle: profile.name,
-                        message: "Open tabs could not be migrated safely. Please try again."
-                    )
-                )
+                showMigrationPending(profile, using: context)
                 return
             }
 
-            if context.currentProfile()?.id == profile.id {
-                await context.switchToProfile(replacement)
-                guard context.currentProfile()?.id != profile.id else {
-                    context.showNotice(
-                        Notice(
-                            title: "Couldn't Delete Profile",
-                            subtitle: profile.name,
-                            message: "The browser could not leave this profile safely. Please try again."
-                        )
-                    )
-                    return
-                }
+            guard await context.persistProfileReferences() else {
+                showMigrationPending(profile, using: context)
+                return
+            }
+
+            guard await context.migrateBrowserProfileReferences(
+                profile.id,
+                replacement
+            ) else {
+                showMigrationPending(profile, using: context)
+                return
+            }
+
+            guard context.currentProfile()?.id != profile.id,
+                  context.hasProfileReferences(profile.id) == false,
+                  context.profileManager.profileReferenceAdmission.validate(token)
+            else {
+                showMigrationPending(profile, using: context)
+                return
             }
 
             do {
-                try await makeDeletionCleanupOrchestrator(for: profile, using: context)
-                    .cleanup(profileId: profile.id)
+                guard try context.profileManager.commitLogicalDeletion(token) else {
+                    showMigrationPending(profile, using: context)
+                    return
+                }
             } catch {
-                context.showNotice(
-                    Notice(
-                        title: "Couldn't Delete Profile",
-                        subtitle: profile.name,
-                        message: "Cleanup failed before deletion. Please try again."
-                    )
-                )
+                showMigrationPending(profile, using: context)
                 return
             }
 
-            let deleted = context.profileManager.deleteProfile(profile)
-            if deleted == false {
-                context.showNotice(
-                    Notice(
-                        title: "Couldn't Delete Profile",
-                        subtitle: profile.name,
-                        message: "An error occurred while saving changes. Please try again."
-                    )
+            guard await context.sealProfileRuntime(profile.id) else {
+                showCleanupPending(profile, using: context)
+                return
+            }
+
+            do {
+                guard try context.profileManager.profileReferenceAdmission
+                    .beginCleaning(token) else {
+                    throw ProfileDeletionCleanupFailure.staleRetirement
+                }
+            } catch {
+                showCleanupPending(profile, using: context)
+                return
+            }
+
+            do {
+                guard let record = context.profileManager.profileReferenceAdmission
+                    .record(for: token) else {
+                    throw ProfileDeletionCleanupFailure.staleRetirement
+                }
+                try await cleanup.cleanup(
+                    profileId: profile.id,
+                    startingAt: record.nextCleanupStep,
+                    checkpoint: { completedStep in
+                        guard try context.profileManager.profileReferenceAdmission
+                            .completeCleanupStep(
+                                completedStep,
+                                using: token
+                            ) else {
+                            throw ProfileDeletionCleanupFailure.staleRetirement
+                        }
+                    }
                 )
-            } else {
-                _ = await profile.removePersistentDataStore(
-                    cleanupService: context.websiteDataCleanupService
-                )
-                context.visitedLinkStore.discardStore(for: profile.id)
+                guard try context.profileManager.profileReferenceAdmission
+                    .markRetired(token) else {
+                    throw ProfileDeletionCleanupFailure.staleRetirement
+                }
+            } catch {
+                showCleanupPending(profile, using: context)
             }
         }
     }
@@ -106,39 +192,75 @@ final class SumiProfileMaintenanceService {
     private func makeDeletionCleanupOrchestrator(
         for profile: Profile,
         using context: Context
-    ) -> ProfileDeletionCleanupOrchestrator {
-        var participants: [any ProfileCleanupParticipant] = [
-            BrowsingDataProfileCleanupParticipant { profileId in
-                guard profile.id == profileId else { return }
-                guard await profile.clearAllData(
-                    browsingDataCleanupService: context.browsingDataCleanupService,
-                    websiteDataCleanupService: context.websiteDataCleanupService
-                ) else {
-                    throw ProfileDeletionCleanupError.websiteDataQuiesceFailed
-                }
-            },
-            FaviconProfileCleanupParticipant { profileId in
-                guard profile.id == profileId else { return }
-                context.faviconService.clearFaviconPartition(for: profile)
-            },
-        ]
-
-        if let permissionCleanupService = context.permissionCleanupService {
-            participants.append(
-                PermissionProfileCleanupParticipant { profileId in
-                    try await permissionCleanupService.deleteAllDecisions(
-                        profilePartitionId: profileId.uuidString
-                    )
-                }
-            )
-        } else {
-            participants.append(StubProfileCleanupParticipant(name: "permissions"))
+    ) -> ProfileDeletionCleanupOrchestrator? {
+        guard let permissionCleanupService = context.permissionCleanupService else {
+            return nil
         }
+        return ProfileRetirementCleanupComposition.make(
+            profile: profile,
+            dependencies: ProfileRetirementCleanupDependencies(
+                browsingDataCleanupService: context.browsingDataCleanupService,
+                websiteDataCleanupService: context.websiteDataCleanupService,
+                faviconService: context.faviconService,
+                visitedLinkStore: context.visitedLinkStore,
+                permissionCleanupService: permissionCleanupService,
+                applicationDataCleanupService: context
+                    .applicationDataCleanupService
+            )
+        )
+    }
 
-        return ProfileDeletionCleanupOrchestrator(participants: participants)
+    private func cancelReservation(
+        _ token: ProfileRetirementToken,
+        using context: Context
+    ) {
+        do {
+            _ = try context.profileManager.profileReferenceAdmission.cancel(token)
+        } catch {
+            RuntimeDiagnostics.emit(
+                "[ProfileRetirement] Failed to cancel reservation: \(error)"
+            )
+        }
+    }
+
+    private func showDeletionFailure(
+        _ profile: Profile,
+        message: String,
+        using context: Context
+    ) {
+        context.showNotice(
+            Notice(
+                title: "Couldn't Delete Profile",
+                subtitle: profile.name,
+                message: message
+            )
+        )
+    }
+
+    private func showCleanupPending(_ profile: Profile, using context: Context) {
+        context.showNotice(
+            Notice(
+                title: "Profile Deleted",
+                subtitle: profile.name,
+                message: "Private data cleanup is pending and will resume automatically."
+            )
+        )
+    }
+
+    private func showMigrationPending(
+        _ profile: Profile,
+        using context: Context
+    ) {
+        context.showNotice(
+            Notice(
+                title: "Profile Deletion Pending",
+                subtitle: profile.name,
+                message: "Reference migration is pending and will resume automatically."
+            )
+        )
     }
 }
 
-private enum ProfileDeletionCleanupError: Error {
-    case websiteDataQuiesceFailed
+private enum ProfileDeletionCleanupFailure: Error {
+    case staleRetirement
 }

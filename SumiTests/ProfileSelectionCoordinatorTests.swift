@@ -7,23 +7,24 @@ final class ProfileSelectionCoordinatorTests: XCTestCase {
     func testVisibleSelectionOnlyRefreshesVisibility() throws {
         var visibilityUpdates = 0
         let profileID = UUID()
-        let tabManager = try makeInMemoryTabManager(
+        let tabManager = BrowserManager()
+        tabManager.runtimePortConnection.attach(TestRuntimePorts.make(
             currentProfileId: { profileID },
             updateTabVisibility: { visibilityUpdates += 1 }
-        )
+        ))
         let space = Space(name: "Work", profileId: profileID)
         let tab = Tab()
         tab.spaceId = space.id
         tabManager.spaceStateOwner.replaceSpaces([space])
         tabManager.spaceStateOwner.replaceCurrentSpace(space)
-        tabManager.regularTabCollectionStateOwner.replaceTabsBySpace([
+        tabManager.tabStateStore.regularTabs.replaceTabsBySpace([
             space.id: [tab],
         ])
-        tabManager.selectionStateOwner.replaceCurrentTab(tab)
+        tabManager.tabStateStore.selection.replaceCurrentTab(tab)
 
         makeSelectionCoordinator(tabManager).handleProfileSwitch()
 
-        XCTAssertIdentical(tabManager.selectionStateOwner.currentTab, tab)
+        XCTAssertIdentical(tabManager.tabStateStore.selection.currentTab, tab)
         XCTAssertEqual(visibilityUpdates, 1)
         XCTAssertNil(tabManager.structuralPersistence.selectionPersistTask)
     }
@@ -31,24 +32,25 @@ final class ProfileSelectionCoordinatorTests: XCTestCase {
     func testInvisibleSelectionChoosesFirstVisibleTabAndPersists() async throws {
         var visibilityUpdates = 0
         let profileID = UUID()
-        let tabManager = try makeInMemoryTabManager(
+        let tabManager = BrowserManager()
+        tabManager.runtimePortConnection.attach(TestRuntimePorts.make(
             currentProfileId: { profileID },
             updateTabVisibility: { visibilityUpdates += 1 }
-        )
+        ))
         let space = Space(name: "Work", profileId: profileID)
         let stale = Tab()
         let visible = Tab()
         visible.spaceId = space.id
         tabManager.spaceStateOwner.replaceSpaces([space])
         tabManager.spaceStateOwner.replaceCurrentSpace(space)
-        tabManager.regularTabCollectionStateOwner.replaceTabsBySpace([
+        tabManager.tabStateStore.regularTabs.replaceTabsBySpace([
             space.id: [visible],
         ])
-        tabManager.selectionStateOwner.replaceCurrentTab(stale)
+        tabManager.tabStateStore.selection.replaceCurrentTab(stale)
 
         makeSelectionCoordinator(tabManager).handleProfileSwitch()
 
-        XCTAssertIdentical(tabManager.selectionStateOwner.currentTab, visible)
+        XCTAssertIdentical(tabManager.tabStateStore.selection.currentTab, visible)
         XCTAssertEqual(visibilityUpdates, 1)
         let persistenceTask = try XCTUnwrap(
             tabManager.structuralPersistence.selectionPersistTask
@@ -57,7 +59,8 @@ final class ProfileSelectionCoordinatorTests: XCTestCase {
     }
 
     func testSpaceReconciliationWithoutDefaultProfileIsInert() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let tabManager = BrowserManager()
+        tabManager.runtimePortConnection.attach(TestRuntimePorts.make())
         let space = Space(name: "Work", profileId: nil)
         tabManager.spaceStateOwner.replaceSpaces([space])
         tabManager.structuralPersistence.resetDirtySet()
@@ -81,10 +84,11 @@ final class ProfileSelectionCoordinatorTests: XCTestCase {
     func testSpaceReconciliationAssignsNilProfileAndSchedulesPersistence() throws {
         let profileID = UUID()
         let profile = Profile(id: profileID, name: "Default")
-        let tabManager = try makeInMemoryTabManager(
+        let tabManager = BrowserManager()
+        tabManager.runtimePortConnection.attach(TestRuntimePorts.make(
             defaultProfileId: { profileID },
             profile: { $0 == profileID ? profile : nil }
-        )
+        ))
         let space = Space(name: "Work", profileId: nil)
         tabManager.spaceStateOwner.replaceSpaces([space])
         tabManager.structuralPersistence.resetDirtySet()
@@ -110,7 +114,7 @@ final class ProfileSelectionCoordinatorTests: XCTestCase {
     }
 
     private func makeSelectionCoordinator(
-        _ tabManager: TabManager
+        _ tabManager: BrowserManager
     ) -> ProfileSelectionCoordinator {
         ProfileSelectionCoordinator(
             selectionContext: TabSelectionContextProjection(
@@ -119,7 +123,7 @@ final class ProfileSelectionCoordinatorTests: XCTestCase {
                 regularTabs: tabManager.regularTabCollectionOwner,
                 shortcutPresentation: tabManager.shortcutPresentationOwner
             ),
-            selection: tabManager.selectionStateOwner,
+            selection: tabManager.tabStateStore.selection,
             pins: tabManager.shortcutPinCollectionStateOwner,
             runtimeConnection: tabManager.runtimePortConnection,
             persistence: tabManager.structuralPersistence
@@ -127,13 +131,13 @@ final class ProfileSelectionCoordinatorTests: XCTestCase {
     }
 
     private func makeSpaceReconciliationService(
-        _ tabManager: TabManager
+        _ tabManager: BrowserManager
     ) -> SpaceProfileReconciliationService {
         SpaceProfileReconciliationService(
             spaces: tabManager.spaceStateOwner,
             runtimeConnection: tabManager.runtimePortConnection,
-            spaceTransitions: tabManager.profileAssignments.spaces,
-            transitionLifecycle: tabManager.profileAssignments.spaceLifecycle
+            spaceTransitions: tabManager.spaceProfileTransitions,
+            transitionLifecycle: tabManager.spaceProfileTransitions.lifecycle
         )
     }
 }

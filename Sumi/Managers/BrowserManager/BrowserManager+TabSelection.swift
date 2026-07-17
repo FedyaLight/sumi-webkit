@@ -1,14 +1,10 @@
 import Foundation
 
 extension BrowserManager {
-    private var tabSelectionActions: BrowserTabSelectionOwner.Actions {
-        BrowserTabSelectionOwner.liveActions(for: self)
-    }
-
     /// Select a tab in the active window (convenience method for sidebar clicks)
     @discardableResult
     func selectTab(_ tab: Tab) -> BrowserTabSelectionOutcome {
-        guard let activeWindow = windowRegistry?.activeWindow else {
+        guard let activeWindow = windowRegistry.activeWindow else {
             RuntimeDiagnostics.emit {
                 "⚠️ [BrowserManager] No active window for tab selection"
             }
@@ -24,11 +20,10 @@ extension BrowserManager {
         in windowState: BrowserWindowState,
         loadPolicy: TabSelectionLoadPolicy = .immediate
     ) -> BrowserTabSelectionOutcome {
-        tabLifecycleService.selection.selectTab(
+        browserTabSelection.selectTab(
             tab,
             in: windowState,
-            loadPolicy: loadPolicy,
-            actions: tabSelectionActions
+            loadPolicy: loadPolicy
         )
     }
 
@@ -37,11 +32,10 @@ extension BrowserManager {
         in windowState: BrowserWindowState,
         loadPolicy: TabSelectionLoadPolicy = .immediate
     ) {
-        _ = tabLifecycleService.selection.requestUserTabActivation(
+        _ = browserTabSelection.requestUserTabActivation(
             tab,
             in: windowState,
-            loadPolicy: loadPolicy,
-            actions: tabSelectionActions
+            loadPolicy: loadPolicy
         )
     }
 
@@ -73,15 +67,14 @@ extension BrowserManager {
         persistSelection: Bool = true,
         loadPolicy: TabSelectionLoadPolicy
     ) {
-        _ = tabLifecycleService.selection.applyTabSelection(
+        _ = browserTabSelection.applyTabSelection(
             tab,
             in: windowState,
             updateSpaceFromTab: updateSpaceFromTab,
             updateTheme: updateTheme,
             rememberSelection: rememberSelection,
             persistSelection: persistSelection,
-            loadPolicy: loadPolicy,
-            actions: tabSelectionActions
+            loadPolicy: loadPolicy
         )
     }
 
@@ -89,10 +82,9 @@ extension BrowserManager {
         _ tab: Tab,
         in windowState: BrowserWindowState
     ) {
-        tabLifecycleService.selection.materializeVisibleTabWebViewIfNeeded(
+        browserTabSelection.materializeVisibleTabWebViewIfNeeded(
             tab,
-            in: windowState,
-            actions: tabSelectionActions
+            in: windowState
         )
     }
 
@@ -102,19 +94,17 @@ extension BrowserManager {
         previousTabID: UUID?,
         previousSpaceID: UUID?
     ) {
-        _ = tabLifecycleService.selection.publishPreparedSelectionEffects(
+        _ = browserTabSelection.publishPreparedSelectionEffects(
             tab,
             in: windowState,
             previousTabID: previousTabID,
-            previousSpaceID: previousSpaceID,
-            actions: tabSelectionActions
+            previousSpaceID: previousSpaceID
         )
     }
 
     func syncShortcutSelectionState(for windowState: BrowserWindowState) {
-        tabLifecycleService.selection.syncShortcutSelectionState(
-            for: windowState,
-            actions: tabSelectionActions
+        browserTabSelection.syncShortcutSelectionState(
+            for: windowState
         )
     }
 
@@ -122,10 +112,9 @@ extension BrowserManager {
         in windowState: BrowserWindowState,
         presentNewTabFloatingBar: Bool = false
     ) {
-        tabLifecycleService.selection.showEmptyState(
+        browserTabSelection.showEmptyState(
             in: windowState,
-            persistSelection: true,
-            actions: tabSelectionActions
+            persistSelection: true
         )
 
         if presentNewTabFloatingBar && windowState.isShowingEmptyState {
@@ -136,10 +125,9 @@ extension BrowserManager {
     func showEmptyStateWithoutPersistence(
         in windowState: BrowserWindowState
     ) {
-        tabLifecycleService.selection.showEmptyState(
+        browserTabSelection.showEmptyState(
             in: windowState,
-            persistSelection: false,
-            actions: tabSelectionActions
+            persistSelection: false
         )
     }
 }

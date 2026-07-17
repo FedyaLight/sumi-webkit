@@ -1,3 +1,4 @@
+import SumiWebRuntime
 import XCTest
 
 @testable import Sumi
@@ -5,7 +6,7 @@ import XCTest
 @MainActor
 final class ShortcutSplitLauncherMoveTransactionTests: XCTestCase {
     func testRejectedBatchDoesNotCreateSidebarSideEffect() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let folderOpenState = try makeFolderOpenState()
         let pin = makePin()
         var receivedIDs: [UUID] = []
         let batches = TestShortcutSplitLauncherMoveBatchPreparer(
@@ -34,7 +35,7 @@ final class ShortcutSplitLauncherMoveTransactionTests: XCTestCase {
         let transaction = ShortcutSplitLauncherMoveTransaction(
             batches: batches,
             windowMutations: BrowserWindowShortcutMutationOwner(),
-            folderOpenState: tabManager.folderOpenState
+            folderOpenState: folderOpenState
         )
 
         XCTAssertNil(transaction.stage([restoration(for: pin)]))
@@ -42,7 +43,7 @@ final class ShortcutSplitLauncherMoveTransactionTests: XCTestCase {
     }
 
     func testPreparedBatchSettlesBeforeTerminalPublication() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let folderOpenState = try makeFolderOpenState()
         let pin = makePin()
         var effects: [String] = []
         let batch = TestShortcutSplitLauncherMoveBatchParticipant(
@@ -76,7 +77,7 @@ final class ShortcutSplitLauncherMoveTransactionTests: XCTestCase {
                 }
             ),
             windowMutations: BrowserWindowShortcutMutationOwner(),
-            folderOpenState: tabManager.folderOpenState
+            folderOpenState: folderOpenState
         )
 
         let sideEffect = try XCTUnwrap(
@@ -90,7 +91,7 @@ final class ShortcutSplitLauncherMoveTransactionTests: XCTestCase {
     }
 
     func testComposedResidenceStageUsesItsDedicatedBatchPreparation() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let folderOpenState = try makeFolderOpenState()
         let pin = makePin()
         var ordinaryPreparationCount = 0
         var composedPreparationCount = 0
@@ -125,7 +126,7 @@ final class ShortcutSplitLauncherMoveTransactionTests: XCTestCase {
                 }
             ),
             windowMutations: BrowserWindowShortcutMutationOwner(),
-            folderOpenState: tabManager.folderOpenState
+            folderOpenState: folderOpenState
         )
 
         XCTAssertNotNil(
@@ -145,6 +146,26 @@ final class ShortcutSplitLauncherMoveTransactionTests: XCTestCase {
             index: 0,
             launchURL: URL(string: "https://launcher.example")!,
             title: "Launcher"
+        )
+    }
+
+    private func makeFolderOpenState() throws -> TabFolderOpenStateService {
+        let container = try makeInMemoryStartupModelContainer()
+        let manager = TabManager(
+            context: container.mainContext,
+            webViewSessions: WebViewSessionRepository(),
+            profileReferenceAdmission: try ProfileReferenceAdmissionLedger(
+                context: container.mainContext
+            ),
+            loadPersistedState: false
+        )
+        return TabFolderOpenStateService(
+            folders: manager.stateStore.folders,
+            structuralLookup: TabStructuralLookupCoordinator(
+                eventBus: manager.tabStructureEventBus,
+                stateStore: manager.stateStore
+            ),
+            persistence: manager.structuralPersistence
         )
     }
 

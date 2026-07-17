@@ -19,11 +19,7 @@ final class ProfileTransitionService {
     struct Runtime {
         let webViewSessions: WebViewSessionRepository
         let admissionIsBlocked: (UUID) -> Bool
-        let deferAdmission: (
-            UUID,
-            WebsiteDataMutationGate.DeferredAdmissionKey,
-            @escaping @MainActor () -> Void
-        ) -> Bool
+        let deferAdmission: WebsiteDataMutationGate.OrdinaryAdmissionDeferral
         let isProtected: (WKWebView) -> Bool
         let deferProtectedCommand: (
             DeferredWebViewCommand,
@@ -33,6 +29,7 @@ final class ProfileTransitionService {
         let provisioning: ProfileReplacementProvisioning
         let pipeline: WebViewReplacementPipeline
         let activation: ReplacementNavigationActivation
+        let profileAdmissions: ProfileReferenceAdmissionLedger
     }
 
     typealias Settlement = @MainActor (ProfileTransitionSettlement) -> Void
@@ -98,16 +95,27 @@ final class ProfileTransitionService {
         intent: DeferredWebViewProfileAssignmentIntent,
         settlement: @escaping Settlement
     ) -> TabProfileAssignmentExecutionOutcome {
-        execute(
+        guard let profileAdmission = runtime.profileAdmissions.admitReference(
+            to: targetProfile.id
+        ) else {
+            settlement(.rejected(.stale))
+            return .stale
+        }
+        let model = TabProfileAssignmentModelTransaction(
+            tab: tab,
+            targetProfileID: targetProfile.id,
+            intent: intent
+        )
+        return execute(
             Request(
                 targetProfile: targetProfile,
                 tabs: [tab],
                 intentsByTabID: [tab.id: intent],
                 model: .transaction(ProfileTransitionModelParticipant(
-                    model: TabProfileAssignmentModelTransaction(
-                        tab: tab,
-                        targetProfileID: targetProfile.id,
-                        intent: intent
+                    model: ProfileReferenceAdmittedModelTransaction(
+                        model: model,
+                        admissions: runtime.profileAdmissions,
+                        receipt: profileAdmission
                     ),
                     tabs: [tab]
                 )),
@@ -134,6 +142,12 @@ final class ProfileTransitionService {
             settlement(.rejected(.stale))
             return .stale
         }
+        guard let profileAdmission = runtime.profileAdmissions.admitReference(
+            to: targetProfile.id
+        ) else {
+            settlement(.rejected(.stale))
+            return .stale
+        }
         return execute(
             Request(
                 targetProfile: targetProfile,
@@ -144,7 +158,11 @@ final class ProfileTransitionService {
                     }
                 ),
                 model: .transaction(ProfileTransitionModelParticipant(
-                    model: model,
+                    model: ProfileReferenceAdmittedModelTransaction(
+                        model: model,
+                        admissions: runtime.profileAdmissions,
+                        receipt: profileAdmission
+                    ),
                     tabs: tabs
                 )),
                 kind: .space(intent)

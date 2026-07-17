@@ -257,6 +257,14 @@ final class SumiBrowsingDataCleanupService {
         )
     }
 
+    func deleteBasicAuthCredentialsForProfileRetirement(
+        _ profileID: UUID
+    ) throws {
+        try localCleanupOwner.deleteBasicAuthCredentialsForProfileRetirement(
+            profileID
+        )
+    }
+
     func summary(
         range: SumiBrowsingDataTimeRange,
         historyManager: HistoryManager,

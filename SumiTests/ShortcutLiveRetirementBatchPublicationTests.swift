@@ -1,3 +1,4 @@
+import AppKit
 import Combine
 import Observation
 import SumiDomain
@@ -9,7 +10,7 @@ import XCTest
 final class ShortcutLiveRetirementBatchPublicationTests: XCTestCase {
     func testFixtureWindowQueriesShareExactIdentity() throws {
         let fixture = try PublicationFixture(pinCount: 2)
-        let runtime = fixture.tabManager.requireRuntimePorts()
+        let runtime = fixture.browser.runtimePortConnection.requireLease()
         var enumerated: [BrowserWindowState] = []
 
         runtime.forEachWindowState { enumerated.append($0) }
@@ -28,7 +29,7 @@ final class ShortcutLiveRetirementBatchPublicationTests: XCTestCase {
             fixture.group.removingMember(.shortcutPin(removedPin.id))
         )
         let oracle = PublicationOracle()
-        let cancellable = fixture.tabManager.tabStructureEventBus
+        let cancellable = fixture.browser.tabStructureEventBus
             .structureChangedPublisher.sink { _ in
                 oracle.structuralCallbacks += 1
                 oracle.assertTerminal(
@@ -37,7 +38,7 @@ final class ShortcutLiveRetirementBatchPublicationTests: XCTestCase {
                     removedTab: removedTab,
                     remaining: remaining
                 )
-                let repeated = fixture.tabManager.shortcutLiveTabRetirement
+                let repeated = fixture.browser.shortcutLiveTabRetirement
                     .retire(pinId: removedPin.id, in: fixture.window.id)
                 XCTAssertFalse(repeated.didRetire)
             }
@@ -57,8 +58,7 @@ final class ShortcutLiveRetirementBatchPublicationTests: XCTestCase {
             }
         }
 
-        fixture.tabManager.shortcutPinCommandOwner
-            .removeShortcutPin(removedPin)
+        XCTAssertTrue(fixture.browser.sidebarPinCommands.remove(removedPin))
 
         XCTAssertEqual(oracle.windowCallbacks, 1)
         XCTAssertEqual(oracle.structuralCallbacks, 1)
@@ -71,8 +71,9 @@ final class ShortcutLiveRetirementBatchPublicationTests: XCTestCase {
         let window = BrowserWindowState()
         var events: [String] = []
         var replacement: Tab?
-        var tabManager: TabManager!
-        tabManager = try makeInMemoryTabManager(
+        var tabManager: BrowserManager!
+        tabManager = BrowserManager()
+        tabManager.runtimePortConnection.attach(TestRuntimePorts.make(
             windowState: { $0 == window.id ? window : nil },
             windows: { [(window.id, window)] },
             notifyTabClosedIfLoaded: { tab in
@@ -83,9 +84,8 @@ final class ShortcutLiveRetirementBatchPublicationTests: XCTestCase {
                 events.append("extension")
             },
             persistWindowSession: { _ in events.append("persist") }
-        )
-        window.tabManager = tabManager
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Space")
+        ))
+        let space = try makeSpace(in: tabManager)
         let pin = try XCTUnwrap(tabManager.shortcutPinStoreOwner.insert(
             PublicationFixture.makePin(index: 0, spaceID: space.id), at: 0
         ))
@@ -151,21 +151,21 @@ final class ShortcutLiveRetirementBatchPublicationTests: XCTestCase {
             MainActor.assumeIsolated {
                 oracle.windowCallbacks += 1
                 XCTAssertNil(
-                    fixture.tabManager.folderCollectionStateOwner.folder(
+                    fixture.browser.folderCollectionStateOwner.folder(
                         by: folder.id
                     )
                 )
                 XCTAssertTrue(fixture.pins.allSatisfy {
-                    fixture.tabManager.shortcutPinCollectionStateOwner
+                    fixture.browser.shortcutPinCollectionStateOwner
                         .shortcutPin(by: $0.id) == nil
                 })
                 XCTAssertTrue(fixture.liveTabs.allSatisfy {
-                    fixture.tabManager.liveShortcutTabs.entry(tabId: $0.id)
+                    fixture.browser.liveShortcutTabs.entry(tabId: $0.id)
                         == nil
-                        && fixture.tabManager.tabCollectionMembershipOwner
+                        && fixture.browser.tabCollectionMembershipOwner
                             .tab(for: $0.id) == nil
                 })
-                XCTAssertNil(fixture.tabManager.splitGroupStore.group(
+                XCTAssertNil(fixture.browser.splitGroupStore.group(
                     id: fixture.group.id
                 ))
                 XCTAssertNil(fixture.window.splitSelection)
@@ -173,32 +173,44 @@ final class ShortcutLiveRetirementBatchPublicationTests: XCTestCase {
                     fixture.window.currentShortcutPinId,
                     removedPin.id
                 )
-                XCTAssertNil(fixture.tabManager.liveShortcutTabs.entry(
+                XCTAssertNil(fixture.browser.liveShortcutTabs.entry(
                     tabId: removedTab.id
                 ))
             }
         }
 
-        fixture.tabManager.folderMutationOwner.deleteFolder(folder.id)
+        XCTAssertTrue(fixture.browser.sidebarFolderCommands.deleteFolder(folder.id))
 
         XCTAssertEqual(oracle.windowCallbacks, 1)
     }
 
     func testHostedSplitFirstWindowCallbackSeesTerminalEmptyPresentation()
-        throws {
+        async throws {
         let fixture = try PublicationFixture(
             pinCount: 2,
             hostedSplit: true
         )
         var handoffCount = 0
-        var compositorRefreshCount = 0
+        let tabs = fixture.browser
+        tabs.webViewRuntime.compositorRuntime.registerContainer(
+            NSView(),
+            for: fixture.window.id,
+            immediateVisualHandoffHandler: {
+                handoffCount += 1
+                return true
+            }
+        )
+        let compositorVersion = fixture.window.compositorInvalidation
+            .compositorVersion
         let service = ShortcutHostedSplitUnloadService(
-            runtimeLease: { [weak tabManager = fixture.tabManager] in
-                guard let tabManager else { return nil }
-                return SplitShortcutRuntimeLease(tabManager: tabManager)
-            },
-            performImmediateVisualHandoff: { _ in handoffCount += 1 },
-            refreshCompositor: { _ in compositorRefreshCount += 1 }
+            runtimeConnection: tabs.runtimePortConnection,
+            splitGroups: tabs.splitGroupStore,
+            retirement: tabs.shortcutLiveTabRetirement,
+            fallback: ShortcutHostedSplitFallbackQuery(
+                spaces: tabs.spaceStateOwner,
+                regularTabs: tabs.regularTabCollectionOwner
+            ),
+            visuals: tabs.shellRuntime.windowVisuals
         )
         let oracle = PublicationOracle()
         withObservationTracking {
@@ -214,13 +226,13 @@ final class ShortcutLiveRetirementBatchPublicationTests: XCTestCase {
                     && fixture.window.splitSelection == nil
                     && fixture.window.isShowingEmptyState
                     && fixture.liveTabs.allSatisfy { tab in
-                        fixture.tabManager.liveShortcutTabs.entry(
+                        fixture.browser.liveShortcutTabs.entry(
                             tabId: tab.id
                         ) == nil
-                            && fixture.tabManager.tabCollectionMembershipOwner
+                            && fixture.browser.tabCollectionMembershipOwner
                                 .tab(for: tab.id) == nil
                     }
-                    && fixture.tabManager.splitGroupStore.group(
+                    && fixture.browser.splitGroupStore.group(
                         id: fixture.group.id
                     ) == fixture.group
                 if isTerminal == false { oracle.failures += 1 }
@@ -240,12 +252,17 @@ final class ShortcutLiveRetirementBatchPublicationTests: XCTestCase {
         XCTAssertEqual(oracle.windowCallbacks, 1)
         XCTAssertEqual(oracle.failures, 0)
         XCTAssertEqual(handoffCount, 1)
-        XCTAssertEqual(compositorRefreshCount, 1)
+        await Task.yield()
+        XCTAssertEqual(
+            fixture.window.compositorInvalidation.compositorVersion,
+            compositorVersion + 1
+        )
     }
 
     func testTopologyOnlyDeletionCommitsWithExactDetachedRuntime() throws {
-        let tabManager = try makeInMemoryTabManager()
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Space")
+        let tabManager = BrowserManager()
+        tabManager.runtimePortConnection.attach(TestRuntimePorts.make())
+        let space = try makeSpace(in: tabManager)
         let pins = try (0..<3).map { index in
             try XCTUnwrap(tabManager.shortcutPinStoreOwner.insert(
                 PublicationFixture.makePin(index: index, spaceID: space.id),
@@ -272,9 +289,9 @@ final class ShortcutLiveRetirementBatchPublicationTests: XCTestCase {
         let remaining = try XCTUnwrap(
             group.removingMember(.shortcutPin(pins[0].id))
         )
-        tabManager.detachBrowserRuntime()
+        tabManager.runtimePortConnection.detach()
 
-        tabManager.shortcutPinCommandOwner.removeShortcutPin(pins[0])
+        XCTAssertTrue(tabManager.sidebarPinCommands.remove(pins[0]))
 
         XCTAssertNil(tabManager.shortcutPinCollectionStateOwner.shortcutPin(
             by: pins[0].id
@@ -288,28 +305,36 @@ final class ShortcutLiveRetirementBatchPublicationTests: XCTestCase {
     func testEmptyDeletedPinBatchPublishesNoModelOrRuntimeEffect() throws {
         let fixture = try PublicationFixture(pinCount: 3)
         var structuralEvents = 0
-        let cancellable = fixture.tabManager.tabStructureEventBus
+        let cancellable = fixture.browser.tabStructureEventBus
             .structureChangedPublisher.sink { _ in structuralEvents += 1 }
         let sourceGroup = fixture.group
         let sourceWindow = fixture.window.unpublishedShortcutMutationState
 
-        let prepared = try XCTUnwrap(fixture.tabManager
+        let prepared = try XCTUnwrap(fixture.browser
             .shortcutLiveTabRetirement.prepareDeletedPinRetirements([]))
-        _ = fixture.tabManager.shortcutLiveTabRetirement.finish(prepared)
-        _ = fixture.tabManager.shortcutLiveTabRetirement.finish(prepared)
+        _ = fixture.browser.shortcutLiveTabRetirement.finish(prepared)
+        _ = fixture.browser.shortcutLiveTabRetirement.finish(prepared)
 
         XCTAssertEqual(structuralEvents, 0)
         XCTAssertEqual(
-            fixture.tabManager.splitGroupStore.group(id: sourceGroup.id),
+            fixture.browser.splitGroupStore.group(id: sourceGroup.id),
             sourceGroup
         )
         XCTAssertEqual(
             fixture.window.unpublishedShortcutMutationState,
             sourceWindow
         )
-        XCTAssertEqual(fixture.tabManager.liveShortcutTabs.entries(
+        XCTAssertEqual(fixture.browser.liveShortcutTabs.entries(
             for: fixture.pins[0].id
         ).count, 1)
         _ = cancellable
+    }
+
+    private func makeSpace(in browser: BrowserManager) throws -> Space {
+        try XCTUnwrap(browser.sidebarSpaceLifecycle.createSpace(
+            name: "Space",
+            icon: SumiPersistentGlyph.spaceDefaultIconValue,
+            profileID: nil
+        ))
     }
 }

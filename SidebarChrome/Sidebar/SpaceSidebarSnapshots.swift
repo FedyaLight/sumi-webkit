@@ -222,7 +222,8 @@ enum SpaceSidebarTransitionSnapshotBuilder {
         sourceSpace: Space,
         destinationSpace: Space,
         browserContext: SidebarBrowserContext,
-        inventory: SidebarInventoryProjection,
+        spaceCatalog: SidebarSpaceCatalogProjection,
+        inventory: SidebarSpaceInventoryProjection,
         selection: SidebarWindowSelectionQuery,
         pinProjection: SidebarPinFolderProjection,
         windowState: BrowserWindowState,
@@ -248,6 +249,7 @@ enum SpaceSidebarTransitionSnapshotBuilder {
             for: sourceSpace,
             profileId: sourceProfileId,
             browserContext: browserContext,
+            spaceCatalog: spaceCatalog,
             inventory: inventory,
             selection: selection,
             pinProjection: pinProjection,
@@ -259,6 +261,7 @@ enum SpaceSidebarTransitionSnapshotBuilder {
             for: destinationSpace,
             profileId: destinationProfileId,
             browserContext: browserContext,
+            spaceCatalog: spaceCatalog,
             inventory: inventory,
             selection: selection,
             pinProjection: pinProjection,
@@ -269,7 +272,7 @@ enum SpaceSidebarTransitionSnapshotBuilder {
         let stationaryEssentials = sharedEssentials && !windowState.isIncognito
             ? essentialsSnapshot(
                 profileId: sourceProfileId,
-                inventory: inventory,
+                spaceCatalog: spaceCatalog,
                 spaceInventory: inventory.snapshot(for: sourceSpace.id),
                 selection: selection,
                 pinProjection: pinProjection,
@@ -289,7 +292,8 @@ enum SpaceSidebarTransitionSnapshotBuilder {
         for space: Space,
         profileId: UUID?,
         browserContext: SidebarBrowserContext,
-        inventory: SidebarInventoryProjection,
+        spaceCatalog: SidebarSpaceCatalogProjection,
+        inventory: SidebarSpaceInventoryProjection,
         selection: SidebarWindowSelectionQuery,
         pinProjection: SidebarPinFolderProjection,
         windowState: BrowserWindowState,
@@ -319,7 +323,7 @@ enum SpaceSidebarTransitionSnapshotBuilder {
                 ? nil
                 : essentialsSnapshot(
                     profileId: profileId,
-                    inventory: inventory,
+                    spaceCatalog: spaceCatalog,
                     spaceInventory: projection,
                     selection: selection,
                     pinProjection: pinProjection,
@@ -346,9 +350,9 @@ enum SpaceSidebarTransitionSnapshotBuilder {
         browserContext: SidebarBrowserContext
     ) -> ExtensionActionGridSnapshot? {
         let surfaceStore = browserContext.extensionSurfaceStore
-        let slots = browserContext.extensionToolbarSlots(
-            surfaceStore.toolbarDisplaySnapshot.enabledExtensions,
-            profileId
+        let slots = browserContext.extensionToolbarActions.orderedPinnedToolbarSlots(
+            enabledExtensions: surfaceStore.toolbarDisplaySnapshot.enabledExtensions,
+            profileID: profileId
         )
         guard ExtensionActionPlacement.resolve(totalActions: slots.count) == .sidebarGrid else {
             return nil
@@ -395,12 +399,14 @@ enum SpaceSidebarTransitionSnapshotBuilder {
         browserContext: SidebarBrowserContext,
         windowState: BrowserWindowState
     ) -> UUID? {
-        space?.profileId ?? windowState.currentProfileId ?? browserContext.currentProfile()?.id
+        space?.profileId
+            ?? windowState.currentProfileId
+            ?? browserContext.profileAuthority.currentProfile?.id
     }
 
     private static func essentialsSnapshot(
         profileId: UUID?,
-        inventory: SidebarInventoryProjection,
+        spaceCatalog: SidebarSpaceCatalogProjection,
         spaceInventory: SidebarSpaceInventorySnapshot?,
         selection: SidebarWindowSelectionQuery,
         pinProjection: SidebarPinFolderProjection,
@@ -410,7 +416,7 @@ enum SpaceSidebarTransitionSnapshotBuilder {
         EssentialsSnapshot(
             items: profileId == nil
                 ? []
-                : inventory.essentialPins(profileID: profileId).map {
+                : spaceCatalog.essentialPins(profileID: profileId).map {
                     shortcutSnapshot(
                         for: $0,
                         liveTab: selection.liveTab(for: $0.id, in: windowState),

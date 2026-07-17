@@ -268,7 +268,7 @@ final class TabPermissionSurfaceTests: XCTestCase {
             selecting: tab
         )
         let secondWindow = BrowserWindowState()
-        secondWindow.tabManager = browserManager.tabManager
+        browserManager.tabResidenceAuthority.establishResidenceSession(on: secondWindow)
         secondWindow.currentSpaceId = firstWindow.currentSpaceId
         secondWindow.currentProfileId = firstWindow.currentProfileId
         secondWindow.currentTabId = tab.id
@@ -344,7 +344,7 @@ final class TabPermissionSurfaceTests: XCTestCase {
             selecting: tab
         )
         let secondWindow = BrowserWindowState()
-        secondWindow.tabManager = browserManager.tabManager
+        browserManager.tabResidenceAuthority.establishResidenceSession(on: secondWindow)
         secondWindow.currentSpaceId = firstWindow.currentSpaceId
         secondWindow.currentProfileId = firstWindow.currentProfileId
         secondWindow.currentTabId = tab.id
@@ -536,7 +536,7 @@ final class TabPermissionSurfaceTests: XCTestCase {
 
     private func makeTab(browserManager: BrowserManager? = nil) -> Tab {
         if let browserManager {
-            let tab = browserManager.tabManager.tabFactory.makeTab(
+            let tab = browserManager.tabFactory.makeTab(
                 url: URL(string: "https://example.com/page")!,
                 name: "Example",
                 loadsCachedFaviconOnInit: false
@@ -552,9 +552,12 @@ final class TabPermissionSurfaceTests: XCTestCase {
     }
 
     private func makeManagedTab(in browserManager: BrowserManager) -> Tab {
-        let space = browserManager.tabManager.spaceStateOwner.currentSpace
-            ?? browserManager.tabManager.spaceServices.catalog.createSpace(name: "Permission Surface Tests")
-        return browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
+        let space = browserManager.spaceStateOwner.currentSpace
+            ?? installTestSpace(
+                in: browserManager.spaceStateOwner,
+                name: "Permission Surface Tests"
+            )
+        return browserManager.regularTabLifecycleOwner.createNewTab(
             url: "https://example.com/page",
             in: space,
             activate: true
@@ -650,11 +653,10 @@ final class TabPermissionSurfaceTests: XCTestCase {
         in browserManager: BrowserManager,
         selecting tab: Tab
     ) -> (WindowRegistry, BrowserWindowState) {
-        let windowRegistry = browserManager.windowRegistry ?? WindowRegistry()
-        browserManager.windowRegistry = windowRegistry
+        let windowRegistry = browserManager.windowRegistry
 
         let windowState = BrowserWindowState()
-        windowState.tabManager = browserManager.tabManager
+        browserManager.tabResidenceAuthority.establishResidenceSession(on: windowState)
         windowState.currentSpaceId = tab.spaceId
         windowState.currentProfileId = tab.resolveProfile()?.id
         windowState.currentTabId = tab.id

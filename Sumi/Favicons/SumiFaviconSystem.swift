@@ -100,8 +100,8 @@ final class SumiFaviconSystem {
         )
     }
 
-    func clearFaviconPartition(for profile: Profile) {
-        runtime.maintenance.clearPartition(partition(profile: profile))
+    func clearFaviconPartition(for profile: Profile) throws {
+        try runtime.maintenance.clearPartition(partition(profile: profile))
     }
 
     func burnAfterHistoryClear(savedLogins: Set<String>) async {

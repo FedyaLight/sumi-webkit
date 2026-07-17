@@ -165,6 +165,63 @@ final class SumiAutoplayPermissionStoreTests: XCTestCase {
         XCTAssertEqual(harness.adapter.effectivePolicy(for: url, profile: profile), .default)
     }
 
+    func testProfileSealDrainsAdmittedWriteAndRejectsLateRecreation() async throws {
+        let store = SuspendingAutoplayPermissionStore()
+        let admission = SumiPermissionProfileAdmission()
+        let adapter = SumiAutoplayPolicyStoreAdapter(
+            persistentStore: store,
+            profileAdmission: admission
+        )
+        let targetKey = autoplayKey(
+            profileID: "target-profile",
+            host: "target.example"
+        )
+        let retainedKey = autoplayKey(
+            profileID: "retained-profile",
+            host: "retained.example"
+        )
+        let admittedWrite = Task { @MainActor in
+            try await adapter.setPolicy(.blockAll, for: targetKey)
+        }
+        await store.waitUntilWriteIsSuspended()
+
+        let profileID = await adapter.sealProfile("target-profile")
+        let drainCompletion = AutoplayRetirementCompletionProbe()
+        let drain = Task { @MainActor in
+            await adapter.waitForProfileDrain(profileID)
+            await drainCompletion.markCompleted()
+        }
+        for _ in 0..<20 {
+            await Task.yield()
+        }
+        let completedBeforeWriteDrain = await drainCompletion.isCompleted()
+        XCTAssertFalse(completedBeforeWriteDrain)
+
+        await store.resumeWrite()
+        try await admittedWrite.value
+        await drain.value
+        await store.resetDecision(for: targetKey)
+
+        do {
+            try await adapter.setPolicy(.allowAll, for: targetKey)
+            XCTFail("Retired autoplay profile accepted a late write")
+        } catch SumiPermissionSiteDecisionError.unavailable {
+            // Expected fail-closed behavior.
+        }
+        try await adapter.setPolicy(.allowAll, for: retainedKey)
+
+        let targetRecords = await store.listDecisions(
+            profilePartitionId: "target-profile"
+        )
+        let retainedRecords = await store.listDecisions(
+            profilePartitionId: "retained-profile"
+        )
+        XCTAssertTrue(targetRecords.isEmpty)
+        XCTAssertEqual(retainedRecords.count, 1)
+        XCTAssertNil(adapter.explicitPolicy(for: targetKey))
+        XCTAssertEqual(adapter.explicitPolicy(for: retainedKey), .allowAll)
+    }
+
     private func makeHarness() throws -> (
         container: ModelContainer,
         store: SwiftDataPermissionStore,
@@ -181,5 +238,84 @@ final class SumiAutoplayPermissionStoreTests: XCTestCase {
 
     private func makeProfile(_ id: String) -> Profile {
         Profile(id: UUID(uuidString: id)!, name: "Profile", icon: "person")
+    }
+
+    private func autoplayKey(
+        profileID: String,
+        host: String
+    ) -> SumiPermissionKey {
+        let origin = SumiPermissionOrigin(string: "https://\(host)")
+        return SumiPermissionKey(
+            requestingOrigin: origin,
+            topOrigin: origin,
+            permissionType: .autoplay,
+            profilePartitionId: profileID
+        )
+    }
+}
+
+private actor AutoplayRetirementCompletionProbe {
+    private var completed = false
+
+    func markCompleted() {
+        completed = true
+    }
+
+    func isCompleted() -> Bool {
+        completed
+    }
+}
+
+private actor SuspendingAutoplayPermissionStore: SumiPermissionStore {
+    private var records: [String: SumiPermissionStoreRecord] = [:]
+    private var suspendedWrite: CheckedContinuation<Void, Never>?
+    private var shouldSuspendNextWrite = true
+
+    func getDecision(for key: SumiPermissionKey) async -> SumiPermissionStoreRecord? {
+        records[key.persistentIdentity]
+    }
+
+    func setDecision(
+        for key: SumiPermissionKey,
+        decision: SumiPermissionDecision
+    ) async {
+        if shouldSuspendNextWrite {
+            shouldSuspendNextWrite = false
+            await withCheckedContinuation { continuation in
+                suspendedWrite = continuation
+            }
+        }
+        records[key.persistentIdentity] = SumiPermissionStoreRecord(
+            key: key,
+            decision: decision
+        )
+    }
+
+    func resetDecision(for key: SumiPermissionKey) async {
+        records.removeValue(forKey: key.persistentIdentity)
+    }
+
+    func listDecisions(
+        profilePartitionId: String
+    ) async -> [SumiPermissionStoreRecord] {
+        let profileID = SumiPermissionKey.normalizedProfilePartitionId(
+            profilePartitionId
+        )
+        return records.values.filter {
+            $0.key.profilePartitionId == profileID
+        }
+    }
+
+    func recordLastUsed(for _: SumiPermissionKey, at _: Date) async {}
+
+    func waitUntilWriteIsSuspended() async {
+        while suspendedWrite == nil {
+            await Task.yield()
+        }
+    }
+
+    func resumeWrite() {
+        suspendedWrite?.resume()
+        suspendedWrite = nil
     }
 }

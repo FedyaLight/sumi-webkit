@@ -9,12 +9,12 @@ import Foundation
 final class BrowserSessionRecoveryCommands {
     private let itemReopen: RecentlyClosedItemReopenService
     private let lastSessionRestore: LastSessionWindowsRestoreService
-    private let windowReopen: any WindowSessionReopening
+    let windowReopen: WindowSessionReopenService
 
     init(
         itemReopen: RecentlyClosedItemReopenService,
         lastSessionRestore: LastSessionWindowsRestoreService,
-        windowReopen: any WindowSessionReopening
+        windowReopen: WindowSessionReopenService
     ) {
         self.itemReopen = itemReopen
         self.lastSessionRestore = lastSessionRestore

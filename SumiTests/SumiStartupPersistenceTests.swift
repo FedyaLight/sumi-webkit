@@ -1,4 +1,5 @@
 import CryptoKit
+import SumiDomain
 import SwiftData
 import XCTest
 
@@ -11,12 +12,14 @@ final class SumiStartupPersistenceTests: XCTestCase {
             configuration: ModelConfiguration(isStoredInMemoryOnly: true)
         )
 
-        XCTAssertEqual(SumiStartupPersistence.schema.version, Schema.Version(1, 0, 0))
+        XCTAssertEqual(SumiStartupPersistence.schema.version, Schema.Version(2, 0, 0))
         XCTAssertEqual(SumiStartupSchemaV1.versionIdentifier, Schema.Version(1, 0, 0))
-        let schemaModelNames = SumiStartupSchemaV1.models.map { String(describing: $0) }
+        XCTAssertEqual(SumiStartupSchemaV2.versionIdentifier, Schema.Version(2, 0, 0))
+        let schemaModelNames = SumiStartupSchemaV2.models.map { String(describing: $0) }
         let expectedSchemaModelNames = [
             "SpaceEntity",
             "ProfileEntity",
+            "ProfileRetirementEntity",
             "TabEntity",
             "FolderEntity",
             "TabsStateEntity",
@@ -32,9 +35,9 @@ final class SumiStartupPersistenceTests: XCTestCase {
             // Xcode 27 beta crashes compiling a key path through this existential.
             // swiftlint:disable:next prefer_key_path
             SumiStartupMigrationPlan.schemas.map { $0.versionIdentifier },
-            [Schema.Version(1, 0, 0)]
+            [Schema.Version(1, 0, 0), Schema.Version(2, 0, 0)]
         )
-        XCTAssertTrue(SumiStartupMigrationPlan.stages.isEmpty)
+        XCTAssertEqual(SumiStartupMigrationPlan.stages.count, 1)
         XCTAssertNotNil(container.migrationPlan)
     }
 
@@ -55,6 +58,145 @@ final class SumiStartupPersistenceTests: XCTestCase {
             migrationOrSchemaMismatch startup path and the app refuses to launch.
             """
         )
+    }
+
+    func testOnDiskV1StoreMigratesProfilesAndCreatesEmptyRetirementJournal()
+        throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(
+                "SumiStartupV1Migration-\(UUID().uuidString)",
+                isDirectory: true
+            )
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let storeURL = directory.appendingPathComponent("default.store")
+        let profileID = UUID()
+        let spaceID = UUID()
+        let tabID = UUID()
+        let historyEntryID = UUID()
+        let historyVisitID = UUID()
+        let permissionKey = SumiPermissionKey(
+            requestingOrigin: SumiPermissionOrigin(
+                identity: "https://migration.example"
+            ),
+            topOrigin: SumiPermissionOrigin(
+                identity: "https://migration.example"
+            ),
+            permissionType: .notifications,
+            profilePartitionId: profileID.uuidString
+        )
+
+        do {
+            let legacyContainer = try ModelContainer(
+                for: Schema(versionedSchema: SumiStartupSchemaV1.self),
+                configurations: [ModelConfiguration(url: storeURL)]
+            )
+            let legacyContext = legacyContainer.mainContext
+            legacyContext.insert(
+                ProfileEntity(
+                    id: profileID,
+                    name: "Migrated Profile",
+                    icon: "person",
+                    index: 0
+                )
+            )
+            legacyContext.insert(
+                SpaceEntity(
+                    id: spaceID,
+                    name: "Migrated Space",
+                    icon: "square.grid.2x2",
+                    index: 0,
+                    profileId: profileID
+                )
+            )
+            legacyContext.insert(
+                TabEntity(
+                    id: tabID,
+                    urlString: "https://migration.example",
+                    name: "Migrated Tab",
+                    isPinned: false,
+                    index: 0,
+                    spaceId: spaceID,
+                    profileId: profileID
+                )
+            )
+            legacyContext.insert(
+                HistoryEntryEntity(
+                    id: historyEntryID,
+                    urlKey: "migration.example/",
+                    urlString: "https://migration.example",
+                    title: "Migrated History",
+                    domain: "migration.example",
+                    siteDomain: "migration.example",
+                    numberOfTotalVisits: 1,
+                    lastVisit: Date(timeIntervalSince1970: 1_000),
+                    profileId: profileID
+                )
+            )
+            legacyContext.insert(
+                HistoryVisitEntity(
+                    id: historyVisitID,
+                    entryID: historyEntryID,
+                    visitedAt: Date(timeIntervalSince1970: 1_000),
+                    profileId: profileID,
+                    tabId: tabID
+                )
+            )
+            legacyContext.insert(
+                try PermissionDecisionEntity(
+                    record: SumiPermissionStoreRecord(
+                        key: permissionKey,
+                        decision: SumiPermissionDecision(
+                            state: .allow,
+                            persistence: .persistent,
+                            source: .user
+                        ),
+                        displayDomain: "migration.example"
+                    )
+                )
+            )
+            try legacyContext.save()
+        }
+
+        let migrated = try SumiStartupPersistence.makeContainer(
+            configuration: ModelConfiguration(url: storeURL)
+        )
+        let profiles = try migrated.mainContext.fetch(
+            FetchDescriptor<ProfileEntity>()
+        )
+        let retirementRecords = try migrated.mainContext.fetch(
+            FetchDescriptor<ProfileRetirementEntity>()
+        )
+        let spaces = try migrated.mainContext.fetch(FetchDescriptor<SpaceEntity>())
+        let tabs = try migrated.mainContext.fetch(FetchDescriptor<TabEntity>())
+        let historyEntries = try migrated.mainContext.fetch(
+            FetchDescriptor<HistoryEntryEntity>()
+        )
+        let historyVisits = try migrated.mainContext.fetch(
+            FetchDescriptor<HistoryVisitEntity>()
+        )
+        let permissionDecisions = try migrated.mainContext.fetch(
+            FetchDescriptor<PermissionDecisionEntity>()
+        )
+
+        XCTAssertEqual(profiles.map(\.id), [profileID])
+        XCTAssertEqual(profiles.map(\.name), ["Migrated Profile"])
+        XCTAssertEqual(spaces.map(\.id), [spaceID])
+        XCTAssertEqual(spaces.map(\.profileId), [profileID])
+        XCTAssertEqual(tabs.map(\.id), [tabID])
+        XCTAssertEqual(tabs.map(\.profileId), [profileID])
+        XCTAssertEqual(historyEntries.map(\.id), [historyEntryID])
+        XCTAssertEqual(historyEntries.map(\.profileId), [profileID])
+        XCTAssertEqual(historyVisits.map(\.id), [historyVisitID])
+        XCTAssertEqual(historyVisits.map(\.profileId), [profileID])
+        XCTAssertEqual(
+            permissionDecisions.map(\.persistentIdentity),
+            [permissionKey.persistentIdentity]
+        )
+        XCTAssertTrue(retirementRecords.isEmpty)
     }
 
     func testStructuredSQLiteCorruptionClassifiesAsReplacementAuthority() {

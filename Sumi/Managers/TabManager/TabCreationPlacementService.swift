@@ -3,6 +3,11 @@ import Foundation
 struct TabCreationPlacement {
     let space: Space
     let temporaryProfileOverrideId: UUID?
+    let effectiveProfileId: UUID?
+
+    var admissionProfileIDs: Set<UUID> {
+        effectiveProfileId.map { [$0] } ?? []
+    }
 }
 
 /// Resolves and provisions the Space before a nil-profile backfill starts.
@@ -11,9 +16,7 @@ struct TabCreationPlacement {
 /// commit. Installation always precedes deferred WebView work.
 @MainActor
 final class TabCreationPlacementService {
-    private let spaces: TabSpaceCollectionStateOwner
-    private let catalog: SpaceCatalogCommands
-    private let profilePolicy: ProfileAssignmentPolicy
+    private let spaceResolver: TabCreationSpaceResolver
     private let profileTransitions: SpaceProfileTransitionService
     private let membership: TabCollectionMembershipOwner
 
@@ -24,45 +27,49 @@ final class TabCreationPlacementService {
         profileTransitions: SpaceProfileTransitionService,
         membership: TabCollectionMembershipOwner
     ) {
-        self.spaces = spaces
-        self.catalog = catalog
-        self.profilePolicy = profilePolicy
+        self.spaceResolver = TabCreationSpaceResolver(
+            spaces: spaces,
+            catalog: catalog,
+            profilePolicy: profilePolicy
+        )
         self.profileTransitions = profileTransitions
         self.membership = membership
     }
 
-    private func resolveTargetSpace(
-        preferred space: Space?,
-        fallbackSpaceId: UUID? = nil
-    ) -> Space {
-        space.flatMap { spaces.space(with: $0.id) }
-            ?? fallbackSpaceId.flatMap { spaces.space(with: $0) }
-            ?? ensureDefaultSpaceIfNeeded()
-    }
-
-    func withCreationPlacement(
+    func withAdmittedCreationPlacement(
         preferred space: Space?,
         fallbackSpaceId: UUID? = nil,
         bootstrapProfileId: UUID? = nil,
         inheritsSpaceProfile: Bool = true,
-        install: (TabCreationPlacement) -> Tab
-    ) -> Tab {
-        let targetSpace = resolveTargetSpace(
+        admission: (TabCreationPlacement) -> Bool,
+        install: (TabCreationPlacement) -> Tab?
+    ) -> Tab? {
+        guard let resolution = spaceResolver.resolve(
             preferred: space,
-            fallbackSpaceId: fallbackSpaceId
-        )
+            fallbackSpaceID: fallbackSpaceId
+        ) else { return nil }
+        let defaultProfileId = resolution.defaultProfileID
+        let targetSpace = resolution.space
         let existingProfileId = targetSpace.profileId
         let inFlightProfileId = profileTransitions.lifecycle.inFlightProfileID(
             for: targetSpace.id
         )
-        let tab = install(
-            TabCreationPlacement(
-                space: targetSpace,
-                temporaryProfileOverrideId: inheritsSpaceProfile
-                    ? inFlightProfileId
-                    : nil
-            )
+        let desiredBootstrapProfileId = bootstrapProfileId ?? defaultProfileId
+        let effectiveProfileId = inheritsSpaceProfile
+            ? inFlightProfileId
+                ?? existingProfileId
+                ?? desiredBootstrapProfileId
+            : bootstrapProfileId
+        let placement = TabCreationPlacement(
+            space: targetSpace,
+            temporaryProfileOverrideId: inheritsSpaceProfile
+                ? inFlightProfileId
+                : nil,
+            effectiveProfileId: effectiveProfileId
         )
+        guard admission(placement), let tab = install(placement) else {
+            return nil
+        }
         precondition(
             membership.allTabs().contains { candidate in
                 candidate === tab && candidate.spaceId == targetSpace.id
@@ -88,9 +95,8 @@ final class TabCreationPlacementService {
             return tab
         }
 
-        let desiredProfileId = bootstrapProfileId
-            ?? defaultProfileIDForSpaceBootstrap
-        guard existingProfileId == nil, let desiredProfileId else {
+        guard existingProfileId == nil,
+              let desiredProfileId = desiredBootstrapProfileId else {
             return tab
         }
 
@@ -99,36 +105,5 @@ final class TabCreationPlacementService {
             profileID: desiredProfileId
         )
         return tab
-    }
-
-    private var defaultProfileIDForSpaceBootstrap: UUID? {
-        let profileIDs = profilePolicy.placementProfileIDs()
-        return profileIDs.current ?? profileIDs.default
-    }
-
-    private func ensureDefaultSpaceIfNeeded() -> Space {
-        let profileID = defaultProfileIDForSpaceBootstrap
-        if let profileID,
-           let profileSpace = spaces.first(where: { $0.profileId == profileID }) {
-            return profileSpace
-        }
-
-        if profileID != nil,
-           let unassignedSpace = spaces.first(where: { $0.profileId == nil }) {
-            return unassignedSpace
-        }
-
-        if profileID == nil,
-           let firstSpace = spaces.firstSpace {
-            return firstSpace
-        }
-
-        precondition(spaces.count == 0, "Personal Space provisioning requires an empty catalog")
-        return catalog.createSpace(
-            name: "Personal",
-            icon: SumiPersistentGlyph.spaceDefaultIconValue,
-            workspaceTheme: .default,
-            profileId: profileID
-        )
     }
 }

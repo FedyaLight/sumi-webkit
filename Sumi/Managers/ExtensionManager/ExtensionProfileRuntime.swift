@@ -6,23 +6,48 @@ import WebKit
 final class ExtensionProfileRuntime {
     private var state = ExtensionProfileRuntimeState()
     private let websiteDataStoreCache: ExtensionProfileWebsiteDataStoreCache
+    private let profileReferenceAdmission: ProfileReferenceAdmissionLedger
     private var knownProfilesByID: [UUID: Profile]
     var currentProfileId: UUID?
 
     init(
         initialProfileId: UUID?,
         initialProfile: Profile? = nil,
+        profileReferenceAdmission: ProfileReferenceAdmissionLedger,
         websiteDataStoreCache: ExtensionProfileWebsiteDataStoreCache =
             ExtensionProfileWebsiteDataStoreCache()
     ) {
-        self.currentProfileId = initialProfileId
+        self.profileReferenceAdmission = profileReferenceAdmission
+        if let initialProfileId,
+           profileReferenceAdmission.isReferenceAllowed(initialProfileId) {
+            currentProfileId = initialProfileId
+        } else {
+            currentProfileId = nil
+        }
         self.websiteDataStoreCache = websiteDataStoreCache
-        if let initialProfile {
+        if let initialProfile,
+           profileReferenceAdmission.isReferenceAllowed(initialProfile.id) {
             knownProfilesByID = [initialProfile.id: initialProfile]
         } else {
             knownProfilesByID = [:]
         }
     }
+
+    #if DEBUG
+        convenience init(
+            initialProfileId: UUID?,
+            initialProfile: Profile? = nil,
+            websiteDataStoreCache: ExtensionProfileWebsiteDataStoreCache =
+                ExtensionProfileWebsiteDataStoreCache()
+        ) {
+            self.init(
+                initialProfileId: initialProfileId,
+                initialProfile: initialProfile,
+                profileReferenceAdmission: .testingAllowingReferences(),
+                websiteDataStoreCache: websiteDataStoreCache
+            )
+        }
+    #endif
 
     var controllersByProfile: [UUID: WKWebExtensionController] {
         state.controllersByProfile
@@ -36,16 +61,75 @@ final class ExtensionProfileRuntime {
         state.contextBindingGenerationByProfile
     }
 
+    func isProfileReferenceAllowed(_ profileID: UUID) -> Bool {
+        profileReferenceAdmission.isReferenceAllowed(profileID)
+    }
+
+    func admitProfileReference(
+        to profileID: UUID
+    ) -> ProfileReferenceAdmissionReceipt? {
+        profileReferenceAdmission.admitReference(to: profileID)
+    }
+
+    func validateProfileReference(
+        _ receipt: ProfileReferenceAdmissionReceipt
+    ) -> Bool {
+        profileReferenceAdmission.validate(receipt)
+    }
+
+    func beginProfileReferenceMutation(
+        to profileID: UUID
+    ) -> ProfileReferenceMutationLease? {
+        do {
+            return try profileReferenceAdmission.beginReferenceMutation(
+                to: [profileID]
+            )
+        } catch {
+            return nil
+        }
+    }
+
+    func beginProfileRetirementMigration(
+        to fallbackProfileID: UUID
+    ) -> ProfileReferenceMutationLease? {
+        do {
+            return try profileReferenceAdmission
+                .beginRetirementReferenceMigration(to: [fallbackProfileID])
+        } catch {
+            return nil
+        }
+    }
+
+    func validateProfileReferenceMutation(
+        _ lease: ProfileReferenceMutationLease,
+        profileID: UUID
+    ) -> Bool {
+        profileReferenceAdmission.validate(lease, covers: [profileID])
+    }
+
+    @discardableResult
+    func endProfileReferenceMutation(
+        _ lease: ProfileReferenceMutationLease
+    ) -> Bool {
+        profileReferenceAdmission.endReferenceMutation(lease)
+    }
+
     func replaceControllers(_ controllers: [UUID: WKWebExtensionController]) {
-        state.replaceControllers(controllers)
+        state.replaceControllers(controllers.filter {
+            profileReferenceAdmission.isReferenceAllowed($0.key)
+        })
     }
 
     func replaceContexts(_ contexts: [UUID: [String: WKWebExtensionContext]]) {
-        state.replaceContexts(contexts)
+        state.replaceContexts(contexts.filter {
+            profileReferenceAdmission.isReferenceAllowed($0.key)
+        })
     }
 
     func replaceContextBindingGenerations(_ generations: [UUID: UInt64]) {
-        state.replaceContextBindingGenerations(generations)
+        state.replaceContextBindingGenerations(generations.filter {
+            profileReferenceAdmission.isReferenceAllowed($0.key)
+        })
     }
 
     func controller(for profileId: UUID) -> WKWebExtensionController? {
@@ -70,7 +154,8 @@ final class ExtensionProfileRuntime {
     }
 
     func isCurrent(_ snapshot: ExtensionControllerBindingSnapshot) -> Bool {
-        state.controller(for: snapshot.profileID) === snapshot.controller
+        isProfileReferenceAllowed(snapshot.profileID)
+            && state.controller(for: snapshot.profileID) === snapshot.controller
             && state.controllerBindingRevision(for: snapshot.profileID)
                 == snapshot.revision
     }
@@ -81,10 +166,17 @@ final class ExtensionProfileRuntime {
     }
 
     @discardableResult
-    func setController(
+    func publishControllerIfAdmitted(
         _ controller: WKWebExtensionController,
-        for profileId: UUID
-    ) -> ExtensionControllerBindingSnapshot {
+        for profileId: UUID,
+        mutationLease: ProfileReferenceMutationLease
+    ) -> ExtensionControllerBindingSnapshot? {
+        guard profileReferenceAdmission.validate(
+            mutationLease,
+            covers: [profileId]
+        ) else {
+            return nil
+        }
         state.setController(controller, for: profileId)
         return ExtensionControllerBindingSnapshot(
             profileID: profileId,
@@ -92,6 +184,29 @@ final class ExtensionProfileRuntime {
             revision: state.controllerBindingRevision(for: profileId)
         )
     }
+
+    #if DEBUG
+        @discardableResult
+        func setController(
+            _ controller: WKWebExtensionController,
+            for profileId: UUID
+        ) -> ExtensionControllerBindingSnapshot {
+            guard let mutationLease = beginProfileReferenceMutation(
+                to: profileId
+            ) else {
+                preconditionFailure("Test could not admit a profile controller")
+            }
+            defer { _ = endProfileReferenceMutation(mutationLease) }
+            guard let receipt = publishControllerIfAdmitted(
+                controller,
+                for: profileId,
+                mutationLease: mutationLease
+            ) else {
+                preconditionFailure("Test published a blocked profile controller")
+            }
+            return receipt
+        }
+    #endif
 
     func contextsForCurrentProfile() -> [String: WKWebExtensionContext] {
         guard let currentProfileId else { return [:] }
@@ -103,17 +218,43 @@ final class ExtensionProfileRuntime {
     }
 
     @discardableResult
-    func setContext(
+    func publishContextIfAdmitted(
         _ context: WKWebExtensionContext,
         extensionId: String,
-        profileId: UUID
-    ) -> ExtensionContextBindingReceipt {
-        state.setContext(
+        profileId: UUID,
+        admission: ProfileReferenceAdmissionReceipt
+    ) -> ExtensionContextBindingReceipt? {
+        guard admission.profileID == profileId,
+              profileReferenceAdmission.validate(admission)
+        else {
+            return nil
+        }
+        return state.setContext(
             context,
             extensionId: extensionId,
             profileId: profileId
         )
     }
+
+    #if DEBUG
+        @discardableResult
+        func setContext(
+            _ context: WKWebExtensionContext,
+            extensionId: String,
+            profileId: UUID
+        ) -> ExtensionContextBindingReceipt {
+            guard let admission = admitProfileReference(to: profileId),
+                  let receipt = publishContextIfAdmitted(
+                context,
+                extensionId: extensionId,
+                profileId: profileId,
+                admission: admission
+            ) else {
+                preconditionFailure("Test published a blocked profile context")
+            }
+            return receipt
+        }
+    #endif
 
     func removeContext(
         extensionId: String,
@@ -133,7 +274,8 @@ final class ExtensionProfileRuntime {
     }
 
     func isCurrent(_ receipt: ExtensionContextBindingReceipt) -> Bool {
-        state.isCurrent(receipt)
+        isProfileReferenceAllowed(receipt.key.profileId)
+            && state.isCurrent(receipt)
     }
 
     func context(
@@ -225,27 +367,73 @@ final class ExtensionProfileRuntime {
         )
     }
 
-    func activateProfile(
+    func activateProfileIfAdmitted(
         _ profileId: UUID,
         hasExtensionDemand: Bool,
-        runtimeIsReadyOrLoading: Bool
-    ) -> Bool {
+        runtimeIsReadyOrLoading: Bool,
+        mutationLease: ProfileReferenceMutationLease
+    ) -> Bool? {
+        guard profileReferenceAdmission.validate(
+            mutationLease,
+            covers: [profileId]
+        ) else {
+            return nil
+        }
         currentProfileId = profileId
         return controllersByProfile.isEmpty == false
             || hasExtensionDemand
             || runtimeIsReadyOrLoading
     }
 
-    func websiteDataStore(for profileId: UUID) -> WKWebsiteDataStore {
-        websiteDataStoreCache.store(
+    #if DEBUG
+        @discardableResult
+        func activateProfile(
+            _ profileId: UUID,
+            hasExtensionDemand: Bool,
+            runtimeIsReadyOrLoading: Bool
+        ) -> Bool {
+            guard let mutationLease = beginProfileReferenceMutation(
+                to: profileId
+            ) else {
+                preconditionFailure("Test could not admit a profile transition")
+            }
+            defer { _ = endProfileReferenceMutation(mutationLease) }
+            guard let runtimeInitialized = activateProfileIfAdmitted(
+                profileId,
+                hasExtensionDemand: hasExtensionDemand,
+                runtimeIsReadyOrLoading: runtimeIsReadyOrLoading,
+                mutationLease: mutationLease
+            ) else {
+                preconditionFailure("Test activated a blocked extension profile")
+            }
+            return runtimeInitialized
+        }
+    #endif
+
+    func websiteDataStoreIfAdmitted(
+        for profileId: UUID,
+        mutationLease: ProfileReferenceMutationLease
+    ) -> WKWebsiteDataStore? {
+        guard profileReferenceAdmission.validate(
+            mutationLease,
+            covers: [profileId]
+        ) else {
+            return nil
+        }
+        return websiteDataStoreCache.store(
             for: profileId,
             activeProfile: knownProfilesByID[profileId],
             currentProfileId: currentProfileId
         )
     }
 
-    func rememberProfile(_ profile: Profile) {
+    @discardableResult
+    func rememberProfile(_ profile: Profile) -> Bool {
+        guard profileReferenceAdmission.isReferenceAllowed(profile.id) else {
+            return false
+        }
         knownProfilesByID[profile.id] = profile
+        return true
     }
 
     func rememberedProfile(for profileID: UUID) -> Profile? {
@@ -257,7 +445,7 @@ final class ExtensionProfileRuntime {
     }
 
     func rememberPrivateRuntimeProfileIfNeeded(_ profile: Profile) {
-        rememberProfile(profile)
+        guard rememberProfile(profile) else { return }
         websiteDataStoreCache.rememberPrivateRuntimeProfileIfNeeded(profile)
     }
 
@@ -267,5 +455,44 @@ final class ExtensionProfileRuntime {
 
     func removeAllWebsiteDataStores() {
         websiteDataStoreCache.removeAll()
+    }
+
+    func canRetireProfile(
+        _ profileID: UUID,
+        fallbackProfileID: UUID
+    ) -> Bool {
+        profileID != fallbackProfileID
+            && profileReferenceAdmission.isReferenceAllowed(fallbackProfileID)
+    }
+
+    @discardableResult
+    func retireProfile(
+        _ profileID: UUID,
+        fallbackProfileID: UUID,
+        mutationLease: ProfileReferenceMutationLease
+    ) -> Bool {
+        guard canRetireProfile(
+            profileID,
+            fallbackProfileID: fallbackProfileID
+        ), validateProfileReferenceMutation(
+            mutationLease,
+            profileID: fallbackProfileID
+        ), contexts(for: profileID).isEmpty
+        else { return false }
+
+        state.removeProfileBindings(for: profileID)
+        knownProfilesByID.removeValue(forKey: profileID)
+        websiteDataStoreCache.remove(profileID: profileID)
+        if currentProfileId == profileID {
+            currentProfileId = fallbackProfileID
+        }
+        return containsProfileReference(to: profileID) == false
+    }
+
+    func containsProfileReference(to profileID: UUID) -> Bool {
+        currentProfileId == profileID
+            || knownProfilesByID[profileID] != nil
+            || state.containsProfileReference(to: profileID)
+            || websiteDataStoreCache.containsProfileReference(to: profileID)
     }
 }

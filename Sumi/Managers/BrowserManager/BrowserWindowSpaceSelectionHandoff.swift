@@ -1,8 +1,5 @@
 import Foundation
 
-/// Resolves and presents the selection belonging to a Space in one exact
-/// browser window. Resolution is deliberately separated from presentation so
-/// the process-wide Space activation can use the same preferred tab first.
 @MainActor
 final class BrowserWindowSpaceSelectionHandoff {
     enum Target {
@@ -16,20 +13,17 @@ final class BrowserWindowSpaceSelectionHandoff {
     }
 
     private let tabContext: BrowserWindowTabContext
-    private let applyTabSelection: (Tab, BrowserWindowState) -> Void
-    private let performImmediateVisualHandoff: (BrowserWindowState) -> Void
-    private let showEmptyState: (BrowserWindowState) -> Void
+    private let selection: BrowserTabSelectionOwner
+    private let visuals: BrowserWindowVisualCoordinator
 
     init(
         tabContext: BrowserWindowTabContext,
-        applyTabSelection: @escaping (Tab, BrowserWindowState) -> Void,
-        performImmediateVisualHandoff: @escaping (BrowserWindowState) -> Void,
-        showEmptyState: @escaping (BrowserWindowState) -> Void
+        selection: BrowserTabSelectionOwner,
+        visuals: BrowserWindowVisualCoordinator
     ) {
         self.tabContext = tabContext
-        self.applyTabSelection = applyTabSelection
-        self.performImmediateVisualHandoff = performImmediateVisualHandoff
-        self.showEmptyState = showEmptyState
+        self.selection = selection
+        self.visuals = visuals
     }
 
     func canPreserveCurrentSelection(in windowState: BrowserWindowState) -> Bool {
@@ -50,10 +44,20 @@ final class BrowserWindowSpaceSelectionHandoff {
     func present(_ target: Target, in windowState: BrowserWindowState) {
         switch target {
         case .tab(let tab):
-            applyTabSelection(tab, windowState)
-            performImmediateVisualHandoff(windowState)
+            _ = selection.applyTabSelection(
+                tab,
+                in: windowState,
+                updateSpaceFromTab: false,
+                updateTheme: false,
+                rememberSelection: true,
+                persistSelection: false,
+                loadPolicy: .immediate
+            )
+            _ = visuals.performImmediateVisualHandoffIfPossible(
+                in: windowState
+            )
         case .empty:
-            showEmptyState(windowState)
+            selection.showEmptyState(in: windowState)
         }
     }
 }

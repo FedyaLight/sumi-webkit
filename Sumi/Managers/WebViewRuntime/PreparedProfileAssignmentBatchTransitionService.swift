@@ -13,6 +13,7 @@ final class PreparedProfileAssignmentBatchTransitionService {
         let provisioning: ProfileReplacementProvisioning
         let pipeline: WebViewReplacementPipeline
         let activation: ReplacementNavigationActivation
+        let profileAdmissions: ProfileReferenceAdmissionLedger
     }
 
     private let runtime: Runtime
@@ -31,10 +32,26 @@ final class PreparedProfileAssignmentBatchTransitionService {
               assignments.allSatisfy({ $0.isCurrent() }) else {
             return .rejectedUnstaged(.stale)
         }
-        let model = PreparedProfileAssignmentBatchModelTransaction(
+        let targetProfileIDs = Set(assignments.map { $0.targetProfile.id })
+        let receipts = targetProfileIDs.compactMap {
+            runtime.profileAdmissions.admitReference(to: $0)
+        }
+        guard receipts.count == targetProfileIDs.count else {
+            return .rejectedUnstaged(.stale)
+        }
+        let preparedModel = PreparedProfileAssignmentBatchModelTransaction(
             assignments: assignments,
             binding: bindingModel
         )
+        let model = receipts.reduce(
+            preparedModel as any WebViewReplacementModelTransaction
+        ) { model, receipt in
+            ProfileReferenceAdmittedModelTransaction(
+                model: model,
+                admissions: runtime.profileAdmissions,
+                receipt: receipt
+            )
+        }
         guard model.validateForStaging() else {
             return .rejectedUnstaged(.stale)
         }
@@ -93,7 +110,7 @@ final class PreparedProfileAssignmentBatchTransitionService {
     private func begin(
         _ prepared: [PreparedWebViewReplacement],
         profileIDs: Set<UUID>,
-        model: PreparedProfileAssignmentBatchModelTransaction,
+        model: any WebViewReplacementModelTransaction,
         settlement: @escaping ProfileTransitionService.Settlement
     ) -> PreparedProfileAssignmentBatchTransitionOutcome {
         let start = runtime.pipeline.begin(
@@ -143,7 +160,7 @@ final class PreparedProfileAssignmentBatchTransitionService {
     }
 
     private func executeModelOnly(
-        _ model: PreparedProfileAssignmentBatchModelTransaction,
+        _ model: any WebViewReplacementModelTransaction,
         settlement: @escaping ProfileTransitionService.Settlement
     ) -> PreparedProfileAssignmentBatchTransitionOutcome {
         let outcome = ProfileTransitionModelOnlySettlement.execute(

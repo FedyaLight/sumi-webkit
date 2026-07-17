@@ -8,17 +8,20 @@ final class ShortcutURLInsertionTransaction {
     private let activation: any ShortcutPresentationActivating
     private let structuralMutations: TabStructuralCollectionMutationOwner
     private let structuralLookup: TabStructuralLookupCoordinator
+    private let folderOpenState: TabFolderOpenStateService
 
     init(
         store: ShortcutPinStoreOwner,
         activation: any ShortcutPresentationActivating,
         structuralMutations: TabStructuralCollectionMutationOwner,
-        structuralLookup: TabStructuralLookupCoordinator
+        structuralLookup: TabStructuralLookupCoordinator,
+        folderOpenState: TabFolderOpenStateService
     ) {
         self.store = store
         self.activation = activation
         self.structuralMutations = structuralMutations
         self.structuralLookup = structuralLookup
+        self.folderOpenState = folderOpenState
     }
 
     func insert(
@@ -28,11 +31,11 @@ final class ShortcutURLInsertionTransaction {
         activate: @escaping @MainActor (Tab) -> Void
     ) -> Bool {
         structuralLookup.withTransaction {
-            structuralMutations.withReversibleSideEffects {
+            let committed = structuralMutations.withReversibleSideEffects {
                 guard let pin = store.insert(
                     proposedPin,
                     at: placement.index,
-                    openTargetFolder: placement.openTargetFolder
+                    openTargetFolder: false
                 ) else { return false }
                 var preparedTab: Tab?
                 let accepted = activation.withActivation(
@@ -56,6 +59,12 @@ final class ShortcutURLInsertionTransaction {
                 }
                 return true
             }
+            if committed,
+               placement.openTargetFolder,
+               let folderID = placement.folderID {
+                folderOpenState.openFolderIfNeeded(folderID)
+            }
+            return committed
         }
     }
 }

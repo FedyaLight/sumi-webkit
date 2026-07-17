@@ -4,16 +4,14 @@ import Foundation
 /// fall back to the browser's exact tab-selection transaction.
 @MainActor
 final class FloatingBarTabTargetCommitter {
-    private let splitPlaceholders:
-        @MainActor () -> (any FloatingBarSplitPlaceholderHandling)?
+    private let splitPlaceholders: EmptySplitService
     private let selectTab: @MainActor (
         Tab,
         BrowserWindowState
     ) -> BrowserTabSelectionOutcome
 
     init(
-        splitPlaceholders: @escaping @MainActor
-            () -> (any FloatingBarSplitPlaceholderHandling)?,
+        splitPlaceholders: EmptySplitService,
         selectTab: @escaping @MainActor (
             Tab,
             BrowserWindowState
@@ -24,13 +22,13 @@ final class FloatingBarTabTargetCommitter {
     }
 
     func select(_ tab: Tab, in windowState: BrowserWindowState) -> Bool {
-        if splitPlaceholders()?.replace(with: tab, in: windowState) == true {
+        if splitPlaceholders.replace(with: tab, in: windowState) {
             return true
         }
         return selectTab(tab, windowState).wasCommitted
     }
 
     func commitPlaceholder(for tab: Tab, in windowID: UUID) {
-        splitPlaceholders()?.commit(tab, in: windowID)
+        splitPlaceholders.commit(tab, in: windowID)
     }
 }

@@ -3,7 +3,10 @@ import SumiDomain
 
 @MainActor
 struct WindowSessionSplitRestorer {
-    let tabManager: TabManager
+    let groups: SplitGroupStore
+    let mutations: SplitGroupMutationService
+    let membership: TabCollectionMembershipOwner
+    let startupRestore: TabStartupRestoreLifecycle
     let focus: any WindowSessionSplitFocusing
 
     func restorePendingSelectionIfNeeded(
@@ -13,8 +16,8 @@ struct WindowSessionSplitRestorer {
         guard let pending = windowState.restorationState.pendingSplitSelection else {
             return
         }
-        guard let group = tabManager.splitGroupStore.group(id: pending.groupID) else {
-            if tabManager.startupRestoreLifecycle.hasLoadedInitialData {
+        guard let group = groups.group(id: pending.groupID) else {
+            if startupRestore.hasLoadedInitialData {
                 windowState.restorationState.pendingSplitSelection = nil
             }
             return
@@ -36,13 +39,13 @@ struct WindowSessionSplitRestorer {
         in windowState: BrowserWindowState
     ) {
         guard let group = windowState.restorationState.pendingLegacySplitGroup,
-              tabManager.startupRestoreLifecycle.hasLoadedInitialData else {
+              startupRestore.hasLoadedInitialData else {
             return
         }
 
         guard group.memberIDs.allSatisfy({ memberID in
             guard case .regularTab(let tabID) = memberID else { return false }
-            return tabManager.tabCollectionMembershipOwner.tab(for: tabID) != nil
+            return membership.tab(for: tabID) != nil
         }) else {
             windowState.restorationState.pendingLegacySplitGroup = nil
             if windowState.restorationState.pendingSplitSelection?.groupID == group.id {
@@ -51,9 +54,9 @@ struct WindowSessionSplitRestorer {
             return
         }
 
-        guard tabManager.splitGroupMutations.insert(group) else {
+        guard mutations.insert(group) else {
             windowState.restorationState.pendingLegacySplitGroup = nil
-            if tabManager.splitGroupStore.group(id: group.id) == nil,
+            if groups.group(id: group.id) == nil,
                windowState.restorationState.pendingSplitSelection?.groupID == group.id {
                 windowState.restorationState.pendingSplitSelection = nil
             }

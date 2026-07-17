@@ -22,7 +22,10 @@ struct SidebarBottomBar: View {
                 downloadManager: browserContext.downloadManager,
                 popoverPresenter: browserContext.downloadsPopoverPresenter,
                 action: {
-                    browserContext.commands.toggleDownloadsPopover(windowState)
+                    browserContext.downloadsPopoverPresenter.toggle(
+                        in: windowState,
+                        downloadManager: browserContext.downloadManager
+                    )
                 }
             )
                 .environment(windowState)
@@ -149,18 +152,26 @@ struct SidebarBottomBar: View {
     }
 
     private func createFolderInCurrentSpace() {
-        browserContext.commands.createFolderInCurrentSpace(windowState)
+        browserContext.folderActions.createFolderInCurrentSpace(
+            in: windowState
+        )
     }
 
     private func createRSSLiveFolderInCurrentSpace() {
-        browserContext.commands.createRSSLiveFolderInCurrentSpace(windowState)
+        browserContext.folderActions.createRSSLiveFolderInCurrentSpace(
+            in: windowState
+        )
     }
 
     private func createGitHubPRFolderInCurrentSpace() {
-        browserContext.commands.createGitHubPRFolderInCurrentSpace(windowState)
+        browserContext.folderActions.createGitHubPRFolderInCurrentSpace(
+            in: windowState
+        )
     }
 
     private func createGitHubIssuesFolderInCurrentSpace() {
-        browserContext.commands.createGitHubIssuesFolderInCurrentSpace(windowState)
+        browserContext.folderActions.createGitHubIssuesFolderInCurrentSpace(
+            in: windowState
+        )
     }
 }

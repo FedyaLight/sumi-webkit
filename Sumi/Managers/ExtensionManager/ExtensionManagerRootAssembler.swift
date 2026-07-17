@@ -26,6 +26,7 @@ enum ExtensionManagerRootAssembler {
         browserConfiguration: BrowserConfiguration,
         moduleRegistry: SumiModuleRegistry,
         extensionPreferences: UserDefaults,
+        profileReferenceAdmission: ProfileReferenceAdmissionLedger,
         assemblySeams: ExtensionManagerAssemblySeams
     ) -> ExtensionManagerRootGraphs {
         let runtimeLoadStatus = ExtensionRuntimeLoadStatusAuthority()
@@ -42,7 +43,8 @@ enum ExtensionManagerRootAssembler {
         )
         let profileRuntime = ExtensionProfileRuntime(
             initialProfileId: initialProfile?.id,
-            initialProfile: initialProfile
+            initialProfile: initialProfile,
+            profileReferenceAdmission: profileReferenceAdmission
         )
         let diagnostics = ExtensionRuntimeDiagnostics()
         let loadRevisions = ExtensionLoadRevisionAuthority()

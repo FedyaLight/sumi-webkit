@@ -1,5 +1,4 @@
 import AppKit
-import SwiftData
 import XCTest
 
 @testable import Sumi
@@ -362,8 +361,8 @@ final class BrowserWindowChromeTests: XCTestCase {
         wait(for: [willClose], timeout: 0.1)
     }
 
-    func testContentViewCanBeConstructedWithWindowLifecycleHandlerProtocol() throws {
-        let handler = try FakeWindowLifecycleHandler()
+    func testContentViewCanBeConstructedWithWindowLifecycleHandlerProtocol() {
+        let handler = FakeWindowLifecycleHandler()
         let lifecycleHandler: any BrowserWindowLifecycleHandling = handler
         let browserManager = BrowserManager()
         let updaterService = SumiUpdaterService(backendFactory: { _ in nil })
@@ -402,8 +401,8 @@ final class BrowserWindowChromeTests: XCTestCase {
         XCTAssertNil(nativeModalContext.presentation)
 
         let space = Space(name: "Live window context")
-        browserManager.tabManager.spaceStateOwner.replaceSpaces([space])
-        browserManager.tabManager.spaceStateOwner.replaceCurrentSpace(space)
+        browserManager.spaceStateOwner.replaceSpaces([space])
+        browserManager.spaceStateOwner.replaceCurrentSpace(space)
 
         let presentation = BrowserNativeModalPresentation(
             windowID: UUID(),
@@ -412,7 +411,7 @@ final class BrowserWindowChromeTests: XCTestCase {
             source: nil,
             transientSessionToken: nil
         )
-        browserManager.nativeModalPresentation = presentation
+        browserManager.nativeModalPresentationState.replace(with: presentation)
 
         XCTAssertTrue(themeContext.hasCurrentSpace)
         XCTAssertEqual(
@@ -422,8 +421,8 @@ final class BrowserWindowChromeTests: XCTestCase {
         XCTAssertIdentical(nativeModalContext.presentation, presentation)
         XCTAssertTrue(nativeModalContext.isPresented(in: presentation.windowID))
 
-        browserManager.tabManager.spaceStateOwner.replaceCurrentSpace(nil)
-        browserManager.nativeModalPresentation = nil
+        browserManager.spaceStateOwner.replaceCurrentSpace(nil)
+        browserManager.nativeModalPresentationState.replace(with: nil)
 
         XCTAssertFalse(themeContext.hasCurrentSpace)
         XCTAssertNil(nativeModalContext.presentation)
@@ -481,18 +480,7 @@ private final class WindowShouldCloseDelegate: NSObject, NSWindowDelegate {
 
 @MainActor
 private final class FakeWindowLifecycleHandler: BrowserWindowLifecycleHandling {
-    private let container: ModelContainer
-    let tabManager: TabManager
     private(set) var persistedWindowIds: [UUID] = []
-
-    init() throws {
-        let container = try ModelContainer(
-            for: SumiStartupPersistence.schema,
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
-        self.container = container
-        tabManager = TabManager(context: container.mainContext, loadPersistedState: false)
-    }
 
     func persistWindowSession(for windowState: BrowserWindowState) {
         persistedWindowIds.append(windowState.id)

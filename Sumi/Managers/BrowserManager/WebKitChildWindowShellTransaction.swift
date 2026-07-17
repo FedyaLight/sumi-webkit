@@ -8,18 +8,18 @@ final class WebKitChildWindowShellTransaction {
     private weak var commands: BrowserWindowCommands?
     private weak var restoration: WindowSessionRestoreService?
     private weak var profiles: ProfileManager?
-    private weak var tabs: TabManager?
+    private let spaces: TabSpaceCollectionStateOwner
 
     init(
         commands: BrowserWindowCommands,
         restoration: WindowSessionRestoreService,
         profiles: ProfileManager,
-        tabs: TabManager
+        spaces: TabSpaceCollectionStateOwner
     ) {
         self.commands = commands
         self.restoration = restoration
         self.profiles = profiles
-        self.tabs = tabs
+        self.spaces = spaces
     }
 
     func create(
@@ -31,7 +31,7 @@ final class WebKitChildWindowShellTransaction {
         ) -> Bool,
         discardChild: @escaping @MainActor (BrowserWindowState) -> Void
     ) -> BrowserWindowState? {
-        guard let commands, let restoration, let profiles, let tabs else {
+        guard let commands, let restoration, let profiles else {
             return nil
         }
         let isPrivate = source.residence == .privateEphemeral
@@ -49,7 +49,7 @@ final class WebKitChildWindowShellTransaction {
                     == source.presentationSpace.id,
                   source.window.currentProfileId
                     == source.presentationProfile.id,
-                  tabs.spaceStateOwner.space(
+                  spaces.space(
                       with: source.presentationSpace.id
                   ) === source.presentationSpace,
                   source.presentationSpace.profileId
@@ -72,8 +72,7 @@ final class WebKitChildWindowShellTransaction {
                     sharedPrivateProfile = profile
                     Self.preparePrivateWindow(
                         target,
-                        profile: profile,
-                        tabs: tabs
+                        profile: profile
                     )
                 } else {
                     guard restoration.prepareContextualWindowWithInitialTab(
@@ -111,8 +110,7 @@ final class WebKitChildWindowShellTransaction {
 
     private static func preparePrivateWindow(
         _ window: BrowserWindowState,
-        profile: Profile,
-        tabs: TabManager
+        profile: Profile
     ) {
         window.isIncognito = true
         window.ephemeralProfile = profile
@@ -126,6 +124,5 @@ final class WebKitChildWindowShellTransaction {
         space.isEphemeral = true
         window.replaceEphemeralSpaces([space])
         window.currentSpaceId = space.id
-        window.tabManager = tabs
     }
 }

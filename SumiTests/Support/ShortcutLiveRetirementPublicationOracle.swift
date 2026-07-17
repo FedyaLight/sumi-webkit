@@ -5,7 +5,7 @@ import XCTest
 
 @MainActor
 final class PublicationFixture {
-    let tabManager: TabManager
+    let browser: BrowserManager
     let window: BrowserWindowState
     let pins: [ShortcutPin]
     let liveTabs: [Tab]
@@ -19,21 +19,25 @@ final class PublicationFixture {
     ) throws {
         let window = BrowserWindowState()
         self.window = window
-        var manager: TabManager!
-        manager = try makeInMemoryTabManager(
-            windowState: { [window] id in id == window.id ? window : nil },
-            windows: { [window] in [(window.id, window)] }
-        )
-        tabManager = manager
-        window.tabManager = manager
-        let space = manager.spaceServices.catalog.createSpace(name: "Space")
+        let browser = BrowserManager()
+        self.browser = browser
+        let registry = browser.windowRegistry
+        registry.register(window)
+        let space = try XCTUnwrap(browser.sidebarSpaceLifecycle.createSpace(
+            name: "Space",
+            icon: SumiPersistentGlyph.spaceDefaultIconValue,
+            profileID: nil
+        ))
         window.currentSpaceId = space.id
         let createdFolder = foldered
-            ? manager.folderMutationOwner.createFolder(for: space.id)
+            ? browser.sidebarFolderCommands.createFolder(
+                in: space.id,
+                name: "Folder"
+            )
             : nil
         folder = createdFolder
         let createdPins = try (0..<pinCount).map { index in
-            try XCTUnwrap(manager.shortcutPinStoreOwner.insert(
+            try XCTUnwrap(browser.shortcutPinStoreOwner.insert(
                 Self.makePin(
                     index: index,
                     spaceID: space.id,
@@ -44,7 +48,7 @@ final class PublicationFixture {
         }
         pins = createdPins
         let createdLiveTabs = try createdPins.map { pin in
-            try XCTUnwrap(manager.shortcutTabMaterializer.materialize(
+            try XCTUnwrap(browser.shortcutTabMaterializer.materialize(
                 pin, in: window.id, currentSpaceId: space.id
             ))
         }
@@ -71,7 +75,7 @@ final class PublicationFixture {
                 : .regularTabs(spaceId: space.id)
         ))
         group = createdGroup
-        XCTAssertTrue(manager.splitGroupMutations.insert(
+        XCTAssertTrue(browser.splitGroupMutations.insert(
             createdGroup, persist: false
         ))
         window.currentTabId = createdLiveTabs[0].id
@@ -109,13 +113,13 @@ final class PublicationOracle {
         removedTab: Tab,
         remaining: SplitGroup
     ) {
-        let isTerminal = fixture.tabManager.shortcutPinCollectionStateOwner
+        let isTerminal = fixture.browser.shortcutPinCollectionStateOwner
             .shortcutPin(by: removedPin.id) == nil
-            && fixture.tabManager.liveShortcutTabs
+            && fixture.browser.liveShortcutTabs
                 .entries(for: removedPin.id).isEmpty
-            && fixture.tabManager.tabCollectionMembershipOwner
+            && fixture.browser.tabCollectionMembershipOwner
                 .tab(for: removedTab.id) == nil
-            && fixture.tabManager.splitGroupStore.group(id: remaining.id)
+            && fixture.browser.splitGroupStore.group(id: remaining.id)
                 == remaining
             && fixture.window.splitSelection?.groupID == remaining.id
             && fixture.window.currentShortcutPinId != removedPin.id

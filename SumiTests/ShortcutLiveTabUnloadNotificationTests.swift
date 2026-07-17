@@ -1,3 +1,4 @@
+import SumiDomain
 import XCTest
 
 @testable import Sumi
@@ -31,9 +32,13 @@ final class ShortcutLiveTabUnloadNotificationTests: XCTestCase {
         XCTAssertEqual(spy.presentTabUnloadedNotificationCalls.map(\.windowState?.id), [windowState.id])
     }
 
-    func testShortcutLiveTabCloseServicePresentsTabUnloadedNotificationOnMainPath() throws {
-        let tabManager = try makeInMemoryTabManager()
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Workspace")
+    func testShortcutLiveTabClosePublicationPresentsTabUnloadedNotification() throws {
+        let tabManager = BrowserManager()
+        let space = try XCTUnwrap(tabManager.sidebarSpaceLifecycle.createSpace(
+            name: "Workspace",
+            icon: SumiPersistentGlyph.spaceDefaultIconValue,
+            profileID: nil
+        ))
         let pin = ShortcutPin(
             id: UUID(),
             role: .spacePinned,
@@ -45,17 +50,13 @@ final class ShortcutLiveTabUnloadNotificationTests: XCTestCase {
         tabManager.structuralCollectionMutationOwner.setSpacePinnedShortcuts([pin], for: space.id)
 
         let windowState = BrowserWindowState()
-        windowState.tabManager = tabManager
         windowState.currentSpaceId = space.id
-        tabManager.runtimePortsAttachmentOwner.detach()
-        tabManager.runtimePortsAttachmentOwner.attach(
-            TestRuntimePorts.make(
-                windowState: { [windowState] windowId in
-                    windowId == windowState.id ? windowState : nil
-                },
-                windows: { [(windowState.id, windowState)] }
-            )
-        )
+        tabManager.runtimePortConnection.attach(TestRuntimePorts.make(
+            windowState: { [windowState] windowId in
+                windowId == windowState.id ? windowState : nil
+            },
+            windows: { [(windowState.id, windowState)] }
+        ))
 
         let liveTab = tabManager.shortcutTabMaterializer.materialize(
             pin,
@@ -67,20 +68,14 @@ final class ShortcutLiveTabUnloadNotificationTests: XCTestCase {
         windowState.currentShortcutPinRole = pin.role
 
         let spy = NotificationPresentingSpy()
-        let service = ShortcutLiveTabCloseService(
-            tabManager: { tabManager },
-            recentlyClosedManager: { RecentlyClosedManager() },
-            fallbackPlanner: {
-                BrowserTabCloseFallbackPlanner(
-                    selectionService: ShellSelectionService { _ in [] }
-                )
-            },
-            performImmediateVisualHandoffIfPossible: { _ in /* No-op. */ },
-            splitShortcuts: { nil },
-            notifications: { spy }
+        let publication = ShortcutLiveTabClosePublication(
+            pins: tabManager.shortcutPinCollectionStateOwner,
+            recentlyClosed: RecentlyClosedManager(),
+            notifications: spy
         )
 
-        service.close(liveTab, in: windowState)
+        publication.captureHistory(for: liveTab, in: windowState)
+        publication.notifyClose(in: windowState)
 
         XCTAssertEqual(spy.presentTabUnloadedNotificationCalls.map(\.count), [1])
         XCTAssertEqual(spy.presentTabUnloadedNotificationCalls.map(\.windowState?.id), [windowState.id])

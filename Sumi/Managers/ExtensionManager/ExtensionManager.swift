@@ -41,6 +41,7 @@ final class ExtensionManager: NSObject {
     convenience init(
         context: ModelContext,
         initialProfile: Profile?,
+        profileReferenceAdmission: ProfileReferenceAdmissionLedger,
         browserConfiguration: BrowserConfiguration? = nil,
         moduleRegistry: SumiModuleRegistry = .unavailable(),
         extensionPreferences: UserDefaults = .standard
@@ -48,6 +49,7 @@ final class ExtensionManager: NSObject {
         self.init(
             context: context,
             initialProfile: initialProfile,
+            profileReferenceAdmission: profileReferenceAdmission,
             browserConfiguration: browserConfiguration,
             moduleRegistry: moduleRegistry,
             extensionPreferences: extensionPreferences,
@@ -56,6 +58,24 @@ final class ExtensionManager: NSObject {
     }
 
     #if DEBUG
+        convenience init(
+            context: ModelContext,
+            initialProfile: Profile?,
+            browserConfiguration: BrowserConfiguration? = nil,
+            moduleRegistry: SumiModuleRegistry = .unavailable(),
+            extensionPreferences: UserDefaults = .standard
+        ) {
+            self.init(
+                context: context,
+                initialProfile: initialProfile,
+                profileReferenceAdmission: .testingAllowingReferences(),
+                browserConfiguration: browserConfiguration,
+                moduleRegistry: moduleRegistry,
+                extensionPreferences: extensionPreferences,
+                assemblySeams: .production
+            )
+        }
+
         convenience init(
             context: ModelContext,
             initialProfile: Profile?,
@@ -72,6 +92,7 @@ final class ExtensionManager: NSObject {
             self.init(
                 context: context,
                 initialProfile: initialProfile,
+                profileReferenceAdmission: .testingAllowingReferences(),
                 browserConfiguration: browserConfiguration,
                 moduleRegistry: moduleRegistry,
                 extensionPreferences: extensionPreferences,
@@ -97,6 +118,7 @@ final class ExtensionManager: NSObject {
             self.init(
                 context: context,
                 initialProfile: initialProfile,
+                profileReferenceAdmission: .testingAllowingReferences(),
                 browserConfiguration: browserConfiguration,
                 moduleRegistry: moduleRegistry,
                 extensionPreferences: extensionPreferences,
@@ -120,6 +142,7 @@ final class ExtensionManager: NSObject {
             self.init(
                 context: context,
                 initialProfile: initialProfile,
+                profileReferenceAdmission: .testingAllowingReferences(),
                 browserConfiguration: browserConfiguration,
                 moduleRegistry: moduleRegistry,
                 extensionPreferences: extensionPreferences,
@@ -135,6 +158,7 @@ final class ExtensionManager: NSObject {
     private init(
         context: ModelContext,
         initialProfile: Profile?,
+        profileReferenceAdmission: ProfileReferenceAdmissionLedger,
         browserConfiguration: BrowserConfiguration?,
         moduleRegistry: SumiModuleRegistry,
         extensionPreferences: UserDefaults,
@@ -164,6 +188,7 @@ final class ExtensionManager: NSObject {
             browserConfiguration: browserConfiguration ?? .shared,
             moduleRegistry: moduleRegistry,
             extensionPreferences: extensionPreferences,
+            profileReferenceAdmission: profileReferenceAdmission,
             assemblySeams: assemblySeams
         )
         controllerGraph = graphs.controller
@@ -179,6 +204,7 @@ final class ExtensionManager: NSObject {
             surfaceBinding: graphs.actions.surfaceBinding,
             lifetimeControl: graphs.contexts.control,
             websiteDataQuiescence: graphs.contexts.websiteDataQuiescence,
+            profileRetirement: graphs.contexts.profileRetirement,
             settingsCatalog: graphs.installation.settingsCatalog,
             toolbarRuntime: graphs.actions.toolbarRuntime,
             autofillRuntime: graphs.actions.autofillRuntime,

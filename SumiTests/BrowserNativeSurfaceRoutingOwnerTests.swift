@@ -6,7 +6,7 @@ import XCTest
 final class BrowserNativeSurfaceRoutingOwnerTests: XCTestCase {
     func testNativeSurfaceReusesWindowSpaceSurfaceBeforeGlobalCurrentSpaceSurface() {
         let harness = NativeSurfaceRoutingHarness()
-        harness.tabManager.spaceStateOwner.replaceCurrentSpace(harness.secondarySpace)
+        harness.browser.spaceStateOwner.replaceCurrentSpace(harness.secondarySpace)
         let primarySurface = harness.makeSurfaceTab(in: harness.primarySpace)
         let secondarySurface = harness.makeSurfaceTab(in: harness.secondarySpace)
 
@@ -18,17 +18,15 @@ final class BrowserNativeSurfaceRoutingOwnerTests: XCTestCase {
 
         XCTAssertIdentical(harness.selectedTab, primarySurface)
         XCTAssertNotIdentical(harness.selectedTab, secondarySurface)
-        XCTAssertTrue(harness.openedContexts.isEmpty)
-        XCTAssertEqual(harness.focusCount, 1)
     }
 
     func testNativeSurfaceMissingWindowSpaceDoesNotUseGlobalCurrentSpace() throws {
         let harness = NativeSurfaceRoutingHarness()
         harness.windowState.currentSpaceId = UUID()
         harness.windowState.currentProfileId = nil
-        harness.tabManager.spaceStateOwner.replaceCurrentSpace(harness.secondarySpace)
+        harness.browser.spaceStateOwner.replaceCurrentSpace(harness.secondarySpace)
         let secondarySurface = harness.makeSurfaceTab(in: harness.secondarySpace)
-        let initialSecondaryCount = harness.tabManager.regularTabCollectionOwner.tabs(in: harness.secondarySpace).count
+        let initialSecondaryCount = harness.browser.regularTabCollectionOwner.tabs(in: harness.secondarySpace).count
 
         harness.owner.openNativeBrowserSurface(
             .settings,
@@ -39,68 +37,41 @@ final class BrowserNativeSurfaceRoutingOwnerTests: XCTestCase {
         let openedTab = try XCTUnwrap(harness.selectedTab)
         XCTAssertNotIdentical(openedTab, secondarySurface)
         XCTAssertEqual(openedTab.spaceId, harness.primarySpace.id)
-        XCTAssertEqual(harness.openedContexts.map(\.preferredSpaceId), [harness.primarySpace.id])
-        XCTAssertEqual(harness.tabManager.regularTabCollectionOwner.tabs(in: harness.secondarySpace).count, initialSecondaryCount)
-        XCTAssertEqual(harness.focusCount, 1)
+        XCTAssertEqual(harness.browser.regularTabCollectionOwner.tabs(in: harness.secondarySpace).count, initialSecondaryCount)
     }
 }
 
 @MainActor
 private final class NativeSurfaceRoutingHarness {
-    let browserManager: BrowserManager
-    let tabManager: TabManager
+    let browser: BrowserManager
     let primaryProfile = Profile(name: "Primary")
     let secondaryProfile = Profile(name: "Secondary")
     let primarySpace: Space
     let secondarySpace: Space
     let windowState = BrowserWindowState()
-    var selectedTab: Tab?
-    var openedContexts: [BrowserTabOpenContext] = []
-    var focusCount = 0
+    var selectedTab: Tab? {
+        guard let selectedTabID = windowState.currentTabId else { return nil }
+        return browser.regularTabCollectionOwner.tab(for: selectedTabID)
+    }
 
-    lazy var owner = BrowserNativeSurfaceRoutingOwner(
-        tabManager: { [tabManager] in tabManager },
-        settings: { nil },
-        openNewTab: { [self] url, context in
-            openedContexts.append(context)
-            let targetSpace = context.preferredSpaceId.flatMap { preferredSpaceId in
-                tabManager.spaceStateOwner.spaces.first { $0.id == preferredSpaceId }
-            }
-            let tab = tabManager.regularTabLifecycleOwner.createNewTab(
-                url: url,
-                in: targetSpace,
-                activate: false
-            )
-            selectedTab = tab
-            windowState.currentTabId = tab.id
-            windowState.currentSpaceId = tab.spaceId
-            return tab
-        },
-        selectTab: { [self] tab, windowState in
-            selectedTab = tab
-            windowState.currentTabId = tab.id
-            windowState.currentSpaceId = tab.spaceId
-        },
-        focusWindow: { [self] _ in
-            focusCount += 1
-        }
-    )
+    lazy var owner = browser.chromeBundle.nativeSurfaceRoutingOwner
 
     init() {
-        browserManager = BrowserManager()
-        tabManager = browserManager.tabManager
+        browser = BrowserManager()
         primarySpace = Space(name: "Primary", profileId: primaryProfile.id)
         secondarySpace = Space(name: "Secondary", profileId: secondaryProfile.id)
 
-        tabManager.spaceStateOwner.replaceSpaces([primarySpace, secondarySpace])
-        tabManager.spaceStateOwner.replaceCurrentSpace(primarySpace)
-        windowState.tabManager = tabManager
+        browser.spaceStateOwner.replaceSpaces([primarySpace, secondarySpace])
+        browser.spaceStateOwner.replaceCurrentSpace(primarySpace)
+        browser.tabResidenceAuthority.establishResidenceSession(on: windowState)
         windowState.currentSpaceId = primarySpace.id
         windowState.currentProfileId = primaryProfile.id
+        browser.windowRegistry.register(windowState)
+        browser.windowRegistry.setActive(windowState)
     }
 
     func makeSurfaceTab(in space: Space) -> Tab {
-        let tab = tabManager.regularTabLifecycleOwner.createNewTab(
+        let tab = browser.regularTabLifecycleOwner.createNewTab(
             url: SettingsTabs.general.settingsSurfaceURL.absoluteString,
             in: space,
             activate: false

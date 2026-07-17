@@ -468,9 +468,10 @@ private final class ControllerProvisioningProbe:
         self.profileRuntime = profileRuntime
     }
 
-    func ensureExtensionController(
-        for profileId: UUID
-    ) -> WKWebExtensionController {
+    func controllerIfAdmitted(
+        for profileId: UUID,
+        mutationLease: ProfileReferenceMutationLease?
+    ) -> WKWebExtensionController? {
         ensureCount += 1
         if let existing = controllersByProfile[profileId] {
             return existing
@@ -480,7 +481,18 @@ private final class ControllerProvisioningProbe:
         )
         let controller = WKWebExtensionController(configuration: configuration)
         controllersByProfile[profileId] = controller
-        profileRuntime.setController(controller, for: profileId)
+        let lease = mutationLease
+            ?? profileRuntime.beginProfileReferenceMutation(to: profileId)
+        guard let lease,
+              profileRuntime.publishControllerIfAdmitted(
+                  controller,
+                  for: profileId,
+                  mutationLease: lease
+              ) != nil
+        else { return nil }
+        if mutationLease == nil {
+            _ = profileRuntime.endProfileReferenceMutation(lease)
+        }
         return controller
     }
 }

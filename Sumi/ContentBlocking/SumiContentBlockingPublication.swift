@@ -10,8 +10,6 @@ final class SumiContentBlockingPublication {
         CurrentValueSubject<SumiContentBlockerRulesUpdate?, Never>
     private let retirement: SumiCompiledContentRuleListRetirement
     private let materializer: SumiContentRuleListMaterializer
-    private var profileSubjects:
-        [String: CurrentValueSubject<SumiContentBlockerRulesUpdate?, Never>] = [:]
 
     private(set) var latestUpdate: SumiContentBlockerRulesUpdate?
 
@@ -34,29 +32,10 @@ final class SumiContentBlockingPublication {
         latestUpdate?.rules.map(\.storeIdentifier).sorted() ?? []
     }
 
-    var activeProfileIDs: [UUID] {
-        profileSubjects.keys.compactMap(UUID.init(uuidString:))
-    }
-
     func userContentPublisher(
         scriptsProvider: SumiNormalTabUserScripts
     ) -> AnyPublisher<SumiNormalTabUserContent, Never> {
         updatesPublisher
-            .map { update in
-                SumiNormalTabUserContent(
-                    contentBlockingUpdate: Self.normalTabUpdate(for: update),
-                    sourceProvider: scriptsProvider
-                )
-            }
-            .eraseToAnyPublisher()
-    }
-
-    func profileUserContentPublisher(
-        profileId: UUID,
-        scriptsProvider: SumiNormalTabUserScripts
-    ) -> AnyPublisher<SumiNormalTabUserContent, Never> {
-        profileSubject(for: profileId)
-            .compactMap { $0 }
             .map { update in
                 SumiNormalTabUserContent(
                     contentBlockingUpdate: Self.normalTabUpdate(for: update),
@@ -89,23 +68,6 @@ final class SumiContentBlockingPublication {
         retireRules(replacing: previousUpdate, with: update)
     }
 
-    func publishProfile(
-        _ update: SumiContentBlockerRulesUpdate,
-        profileId: UUID
-    ) {
-        let subject = profileSubject(for: profileId)
-        let previousUpdate = subject.value
-        subject.send(update)
-        retireRules(replacing: previousUpdate, with: update)
-    }
-
-    func publishEmptyProfileIfUninitialized(profileId: UUID) {
-        let subject = profileSubject(for: profileId)
-        if subject.value == nil {
-            subject.send(Self.emptyUpdate())
-        }
-    }
-
     static func emptyUpdate() -> SumiContentBlockerRulesUpdate {
         SumiContentBlockerRulesUpdate(
             rules: [],
@@ -115,18 +77,6 @@ final class SumiContentBlockingPublication {
             lookupFailedIdentifiers: [],
             ruleListLookupDuration: nil
         )
-    }
-
-    private func profileSubject(
-        for profileId: UUID
-    ) -> CurrentValueSubject<SumiContentBlockerRulesUpdate?, Never> {
-        let key = profileId.uuidString.lowercased()
-        if let subject = profileSubjects[key] {
-            return subject
-        }
-        let subject = CurrentValueSubject<SumiContentBlockerRulesUpdate?, Never>(nil)
-        profileSubjects[key] = subject
-        return subject
     }
 
     private func retireRules(

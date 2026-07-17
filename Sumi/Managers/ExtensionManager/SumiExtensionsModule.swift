@@ -26,31 +26,35 @@ final class SumiExtensionsModule {
         context: ModelContext? = nil,
         browserConfiguration: BrowserConfiguration? = nil,
         initialProfileProvider: @escaping @MainActor () -> Profile? = { nil },
+        profileReferenceAdmission: ProfileReferenceAdmissionLedger = .failClosed(),
         safariExtensionImportStore: any SafariExtensionImportStoring & SafariExtensionImportRecordProviding = SafariExtensionImportStore.process,
-        managerFactory: @escaping @MainActor (
+        managerFactory: (@MainActor (
             ModelContext,
             Profile?,
             BrowserConfiguration,
             SumiModuleRegistry
-        ) -> ExtensionManager = {
-            ExtensionManager(
-                context: $0,
-                initialProfile: $1,
-                browserConfiguration: $2,
-                moduleRegistry: $3
-            )
-        },
+        ) -> ExtensionManager)? = nil,
         surfaceStore: BrowserExtensionSurfaceStore? = nil
     ) {
         let resolvedSurfaceStore = surfaceStore ?? BrowserExtensionSurfaceStore(
             binding: nil
         )
+        let resolvedManagerFactory = managerFactory ?? {
+            ExtensionManager(
+                context: $0,
+                initialProfile: $1,
+                profileReferenceAdmission: profileReferenceAdmission,
+                browserConfiguration: $2,
+                moduleRegistry: $3,
+                extensionPreferences: $3.userDefaults
+            )
+        }
         let managerLifetime = SumiExtensionManagerLifetime(
             moduleRegistry: moduleRegistry,
             context: context,
             browserConfiguration: browserConfiguration ?? .shared,
             initialProfileProvider: initialProfileProvider,
-            managerFactory: managerFactory,
+            managerFactory: resolvedManagerFactory,
             surfaceStore: resolvedSurfaceStore
         )
         let contentBlocking = SumiExtensionContentBlockingSurface(
@@ -105,6 +109,24 @@ final class SumiExtensionsModule {
 
     func quiesceForWebsiteDataMutation(profileIDs: Set<UUID>) -> Bool {
         demand.quiesceForWebsiteDataMutation(profileIDs: profileIDs)
+    }
+
+    func retireProfileRuntimeIfLoaded(
+        profileID: UUID,
+        fallbackProfileID: UUID
+    ) -> Bool {
+        managerLifetime.retireProfileRuntimeIfLoaded(
+            profileID: profileID,
+            fallbackProfileID: fallbackProfileID
+        )
+    }
+
+    func retireBrowserAttachmentIfLoaded() {
+        managerLifetime.retireBrowserAttachmentIfLoaded()
+    }
+
+    func containsProfileRuntimeReference(to profileID: UUID) -> Bool {
+        managerLifetime.containsProfileRuntimeReference(to: profileID)
     }
 
     #if DEBUG

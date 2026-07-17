@@ -25,8 +25,9 @@ final class ExtensionRuntimeAccess {
         explicitProfileId ?? profileRuntime.currentProfileId
     }
 
-    func ensureExtensionController(_ profileId: UUID) {
-        _ = controllerProvisioningOwner.ensureExtensionController(for: profileId)
+    @discardableResult
+    func ensureExtensionController(_ profileId: UUID) -> Bool {
+        controllerProvisioningOwner.controllerIfAdmitted(for: profileId) != nil
     }
 
     func getExtensionContext(

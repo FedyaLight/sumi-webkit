@@ -49,14 +49,10 @@ struct SumiNormalTabContentBlockingAssetSource {
 
     static func enabled(
         contentBlockingServices: [SumiContentBlockingService],
-        scriptsProvider: SumiNormalTabUserScripts,
-        profileId: UUID?
+        scriptsProvider: SumiNormalTabUserScripts
     ) -> SumiNormalTabContentBlockingAssetSource {
         let publishers = contentBlockingServices.map {
-            $0.userContentPublisher(
-                for: scriptsProvider,
-                profileId: profileId
-            )
+            $0.userContentPublisher(for: scriptsProvider)
         }
         let privacyConfigurationManager = contentBlockingServices.count == 1
             ? contentBlockingServices[0].privacyConfigurationManager
@@ -425,8 +421,7 @@ enum SumiNormalTabUserContentControllerFactory {
     static func makeController(
         scriptsProvider: SumiNormalTabUserScripts? = nil,
         contentBlockingService: SumiContentBlockingService? = nil,
-        contentBlockingServices: [SumiContentBlockingService] = [],
-        profileId: UUID? = nil
+        contentBlockingServices: [SumiContentBlockingService] = []
     ) -> WKUserContentController {
         let scriptsProvider = scriptsProvider ?? SumiNormalTabUserScripts()
         let services = ([contentBlockingService].compactMap { $0 } + contentBlockingServices)
@@ -434,8 +429,7 @@ enum SumiNormalTabUserContentControllerFactory {
         if !services.isEmpty {
             assetSource = .enabled(
                 contentBlockingServices: services,
-                scriptsProvider: scriptsProvider,
-                profileId: profileId
+                scriptsProvider: scriptsProvider
             )
         } else {
             assetSource = .disabledEmpty(

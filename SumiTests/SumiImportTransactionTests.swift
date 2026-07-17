@@ -1,5 +1,5 @@
-import XCTest
 import SumiDomain
+import XCTest
 
 @testable import Sumi
 
@@ -52,7 +52,7 @@ final class SumiImportTransactionTests: XCTestCase {
         let browserManager = BrowserManager()
         let profile = Profile(name: "Existing", icon: "person")
         let space = Space(name: "Existing Space", icon: "circle", profileId: profile.id)
-        let tab = browserManager.tabManager.tabFactory.makeTab(
+        let tab = browserManager.tabFactory.makeTab(
             url: URL(string: "https://existing.example")!,
             name: "Existing Tab",
             spaceId: space.id,
@@ -73,7 +73,7 @@ final class SumiImportTransactionTests: XCTestCase {
             currentTab: tab
         )
         let baseline = SumiPortableData(
-            profiles: [portableProfile(id: profile.id.uuidString, name: profile.name)],
+            profiles: [portableProfile(id: profile.id.uuidString, name: "Stale Profile Snapshot")],
             spaces: [SumiPortableSpace(
                 id: space.id.uuidString,
                 name: space.name,
@@ -95,14 +95,16 @@ final class SumiImportTransactionTests: XCTestCase {
         )
         let request = SumiImportRequest(
             sourceKind: .arc,
-            data: SumiPortableData(profiles: [portableProfile(id: "new", name: "New")]),
+            data: SumiPortableData(profiles: [
+                portableProfile(id: profile.id.uuidString, name: profile.name),
+            ]),
             categories: [.profiles],
-            mode: .merge
+            mode: .replace
         )
         let plan = SumiImportPlanBuilder().makePlan(request: request, baseline: baseline)
 
         let materialized = try SumiImportRuntimeMaterializer(
-            tabFactory: browserManager.tabManager.tabFactory,
+            tabFactory: browserManager.tabFactory,
             tabBrowserRuntime: .inactive
         ).materialize(plan, preserving: checkpoint)
 
@@ -110,6 +112,48 @@ final class SumiImportTransactionTests: XCTestCase {
         XCTAssertIdentical(materialized.spaces.first { $0.id == space.id }, space)
         XCTAssertIdentical(materialized.tabsBySpace[space.id]?.first, tab)
         XCTAssertIdentical(materialized.currentTab, tab)
+    }
+
+    func testMaterializationRejectsProfileIdentityReplacementBeforeRuntimeMutation() throws {
+        let browserManager = BrowserManager()
+        let profile = Profile(name: "Existing")
+        let checkpoint = SumiImportRuntimeState(
+            profiles: [profile],
+            currentProfile: profile,
+            spaces: [],
+            tabsBySpace: [:],
+            foldersBySpace: [:],
+            pinnedByProfile: [:],
+            spacePinnedShortcuts: [:],
+            pendingPinnedWithoutProfile: [],
+            splitGroups: [],
+            currentSpace: nil,
+            currentTab: nil
+        )
+        let plan = SumiImportPlan(
+            baseline: SumiPortableData(profiles: [
+                portableProfile(id: profile.id.uuidString, name: profile.name),
+            ]),
+            targetRuntimeData: SumiPortableData(profiles: [
+                portableProfile(id: UUID().uuidString, name: "Replacement"),
+            ]),
+            bookmarkMutation: .none,
+            categories: [.profiles],
+            mode: .replace,
+            warnings: []
+        )
+
+        XCTAssertThrowsError(
+            try SumiImportRuntimeMaterializer(
+                tabFactory: browserManager.tabFactory,
+                tabBrowserRuntime: .inactive
+            ).materialize(plan, preserving: checkpoint)
+        ) { error in
+            XCTAssertEqual(
+                error as? SumiImportMaterializationError,
+                .profileIdentityMutationRequiresRetirement
+            )
+        }
     }
 
     func testMaterializationUsesCheckedWorkspaceThemeBytesBeforeStructuredFallback() throws {
@@ -156,7 +200,7 @@ final class SumiImportTransactionTests: XCTestCase {
         )
 
         let materialized = try SumiImportRuntimeMaterializer(
-            tabFactory: browserManager.tabManager.tabFactory,
+            tabFactory: browserManager.tabFactory,
             tabBrowserRuntime: .inactive
         ).materialize(plan, preserving: checkpoint)
 
@@ -258,6 +302,17 @@ final class SumiImportTransactionTests: XCTestCase {
         )
         XCTAssertEqual(fixture.bookmarks.storedNames, ["Before", "Example"])
         XCTAssertEqual(report.bookmarkSummary?.successful, 1)
+    }
+
+    func testRuntimeMutationSessionSpansBookmarkCommitAndClosesAfterCommit() async throws {
+        let fixture = makeTransactionFixture()
+        fixture.bookmarks.onCommit = {
+            XCTAssertTrue(fixture.runtime.isMutationActive)
+        }
+
+        _ = try await fixture.transaction.commit(mutatingPlan())
+
+        XCTAssertFalse(fixture.runtime.isMutationActive)
     }
 
     func testRuntimePersistenceFailureRollsBackBeforeBookmarkMutation() async {
@@ -1134,13 +1189,13 @@ final class SumiImportTransactionTests: XCTestCase {
         let firstProfile = Profile(name: "First", icon: "person")
         let selectedProfile = Profile(name: "Selected", icon: "person.2")
         let space = Space(name: "Baseline Space", icon: "circle", profileId: selectedProfile.id)
-        let firstTab = browserManager.tabManager.tabFactory.makeTab(
+        let firstTab = browserManager.tabFactory.makeTab(
             url: URL(string: "https://first.example")!,
             name: "First",
             spaceId: space.id,
             loadsCachedFaviconOnInit: false
         )
-        let selectedTab = browserManager.tabManager.tabFactory.makeTab(
+        let selectedTab = browserManager.tabFactory.makeTab(
             url: URL(string: "https://selected.example")!,
             name: "Selected",
             spaceId: space.id,
@@ -1594,6 +1649,7 @@ private final class PlanStateImportMaterializer: SumiImportRuntimeMaterializing 
 @MainActor
 private final class StateTrackingImportRuntime: SumiImportRuntimeMutating {
     private(set) var state: SumiImportRuntimeState
+    private var activeSession: SumiImportRuntimeMutationSession?
 
     init(state: SumiImportRuntimeState) {
         self.state = state
@@ -1603,12 +1659,36 @@ private final class StateTrackingImportRuntime: SumiImportRuntimeMutating {
         state
     }
 
-    func install(_ state: SumiImportRuntimeState) async throws {
+    func beginMutation(
+        covering candidates: [SumiImportRuntimeState]
+    ) throws -> SumiImportRuntimeMutationSession {
+        _ = candidates
+        precondition(activeSession == nil)
+        let session = SumiImportRuntimeMutationSession()
+        activeSession = session
+        return session
+    }
+
+    func install(
+        _ state: SumiImportRuntimeState,
+        in session: SumiImportRuntimeMutationSession
+    ) async throws {
+        precondition(activeSession == session)
         self.state = state
     }
 
-    func restore(_ checkpoint: SumiImportRuntimeState) async throws {
+    func restore(
+        _ checkpoint: SumiImportRuntimeState,
+        in session: SumiImportRuntimeMutationSession
+    ) async throws {
+        precondition(activeSession == session)
         state = checkpoint
+    }
+
+    func endMutation(_ session: SumiImportRuntimeMutationSession) -> Bool {
+        guard activeSession == session else { return false }
+        activeSession = nil
+        return true
     }
 }
 
@@ -1620,6 +1700,11 @@ private final class RecordingImportRuntime: SumiImportRuntimeMutating {
     var restoreError: Error?
     private var suspendedInstall: CheckedContinuation<Void, Never>?
     private var onInstallSuspended: (() -> Void)?
+    private var activeSession: SumiImportRuntimeMutationSession?
+
+    var isMutationActive: Bool {
+        activeSession != nil
+    }
 
     init(checkpoint: SumiImportRuntimeState) {
         savedCheckpoint = checkpoint
@@ -1630,7 +1715,21 @@ private final class RecordingImportRuntime: SumiImportRuntimeMutating {
         return savedCheckpoint
     }
 
-    func install(_ state: SumiImportRuntimeState) async throws {
+    func beginMutation(
+        covering candidates: [SumiImportRuntimeState]
+    ) throws -> SumiImportRuntimeMutationSession {
+        _ = candidates
+        precondition(activeSession == nil)
+        let session = SumiImportRuntimeMutationSession()
+        activeSession = session
+        return session
+    }
+
+    func install(
+        _ state: SumiImportRuntimeState,
+        in session: SumiImportRuntimeMutationSession
+    ) async throws {
+        precondition(activeSession == session)
         events.append("install")
         if let onInstallSuspended {
             self.onInstallSuspended = nil
@@ -1645,9 +1744,19 @@ private final class RecordingImportRuntime: SumiImportRuntimeMutating {
         }
     }
 
-    func restore(_ checkpoint: SumiImportRuntimeState) async throws {
+    func restore(
+        _ checkpoint: SumiImportRuntimeState,
+        in session: SumiImportRuntimeMutationSession
+    ) async throws {
+        precondition(activeSession == session)
         events.append("restore")
         if let restoreError { throw restoreError }
+    }
+
+    func endMutation(_ session: SumiImportRuntimeMutationSession) -> Bool {
+        guard activeSession == session else { return false }
+        activeSession = nil
+        return true
     }
 
     func suspendNextInstall(_ onSuspended: @escaping () -> Void) {
@@ -1664,6 +1773,7 @@ private final class RecordingImportRuntime: SumiImportRuntimeMutating {
 private final class RecordingImportBookmarks: SumiImportBookmarkMutating {
     var failuresRemaining = 0
     var restoreError: Error?
+    var onCommit: (() -> Void)?
     private(set) var commitCount = 0
     private(set) var events: [String] = []
     private(set) var storedNames = ["Before"]
@@ -1703,6 +1813,7 @@ private final class RecordingImportBookmarks: SumiImportBookmarkMutating {
     }
 
     func commit(_ mutation: SumiImportBookmarkMutation) throws -> SumiBookmarksImportSummary? {
+        onCommit?()
         events.append("commit")
         commitCount += 1
         switch mutation {

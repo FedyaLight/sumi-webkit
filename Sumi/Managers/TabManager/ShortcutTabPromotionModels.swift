@@ -16,6 +16,7 @@ struct ShortcutTabPromotionPlan {
     let targetSpaceID: UUID
     let targetIndex: Int?
     let runtime: RuntimePortRegistry?
+    let placement: PreparedRegularTabPlacement
 }
 
 @MainActor

@@ -13,16 +13,13 @@ final class BrowserWindowSourceContextTests: XCTestCase {
         let window = BrowserWindowState()
         window.currentProfileId = profileID
         window.currentSpaceId = space.id
-        let tabs = try makeInMemoryTabManager()
-        tabs.spaceStateOwner.replaceSpaces([space])
-        tabs.regularTabLifecycleOwner.addTab(tab)
+        let fixture = Fixture(space: space, tab: tab)
 
         XCTAssertEqual(
-            BrowserWindowSourceContextResolver.resolve(
+            fixture.resolver.resolve(
                 tab: tab,
-                window: window,
-                tabs: tabs
-            ),
+                window: window
+            )?.context,
             BrowserWindowSourceContext(
                 profileID: profileID,
                 spaceID: space.id
@@ -38,16 +35,13 @@ final class BrowserWindowSourceContextTests: XCTestCase {
         let window = BrowserWindowState()
         window.currentProfileId = profileID
         window.currentSpaceId = space.id
-        let tabs = try makeInMemoryTabManager()
-        tabs.spaceStateOwner.replaceSpaces([space])
-        tabs.regularTabLifecycleOwner.addTab(tab)
+        let fixture = Fixture(space: space, tab: tab)
 
         XCTAssertEqual(
-            BrowserWindowSourceContextResolver.resolve(
+            fixture.resolver.resolve(
                 tab: tab,
-                window: window,
-                tabs: tabs
-            ),
+                window: window
+            )?.context,
             BrowserWindowSourceContext(
                 profileID: profileID,
                 spaceID: space.id
@@ -65,14 +59,11 @@ final class BrowserWindowSourceContextTests: XCTestCase {
         let window = BrowserWindowState()
         window.currentProfileId = profileID
         window.currentSpaceId = windowSpace.id
-        let tabs = try makeInMemoryTabManager()
-        tabs.spaceStateOwner.replaceSpaces([tabSpace, windowSpace])
-        tabs.regularTabLifecycleOwner.addTab(tab)
+        let fixture = Fixture(spaces: [tabSpace, windowSpace], tab: tab)
 
-        XCTAssertNil(BrowserWindowSourceContextResolver.resolve(
+        XCTAssertNil(fixture.resolver.resolve(
             tab: tab,
-            window: window,
-            tabs: tabs
+            window: window
         ))
     }
 
@@ -85,14 +76,11 @@ final class BrowserWindowSourceContextTests: XCTestCase {
         let window = BrowserWindowState()
         window.currentProfileId = profileID
         window.currentSpaceId = space.id
-        let tabs = try makeInMemoryTabManager()
-        tabs.spaceStateOwner.replaceSpaces([space])
-        tabs.regularTabLifecycleOwner.addTab(tab)
+        let fixture = Fixture(space: space, tab: tab)
 
-        XCTAssertNil(BrowserWindowSourceContextResolver.resolve(
+        XCTAssertNil(fixture.resolver.resolve(
             tab: tab,
-            window: window,
-            tabs: tabs
+            window: window
         ))
     }
 
@@ -105,14 +93,38 @@ final class BrowserWindowSourceContextTests: XCTestCase {
         let window = BrowserWindowState()
         window.currentProfileId = UUID()
         window.currentSpaceId = space.id
-        let tabs = try makeInMemoryTabManager()
-        tabs.spaceStateOwner.replaceSpaces([space])
-        tabs.regularTabLifecycleOwner.addTab(tab)
+        let fixture = Fixture(space: space, tab: tab)
 
-        XCTAssertNil(BrowserWindowSourceContextResolver.resolve(
+        XCTAssertNil(fixture.resolver.resolve(
             tab: tab,
-            window: window,
-            tabs: tabs
+            window: window
         ))
+    }
+
+    @MainActor
+    private final class Fixture {
+        private let browserManager: BrowserManager
+        let resolver: BrowserWindowSourceContextResolver
+
+        convenience init(space: Space, tab: Tab) {
+            self.init(spaces: [space], tab: tab)
+        }
+
+        init(spaces: [Space], tab: Tab) {
+            let browserManager = BrowserManager()
+            browserManager.spaceStateOwner.replaceSpaces(spaces)
+            if let spaceID = tab.spaceId {
+                browserManager.structuralCollectionMutationOwner.setTabs(
+                    [tab],
+                    for: spaceID
+                )
+            }
+            self.browserManager = browserManager
+            resolver = BrowserWindowSourceContextResolver(
+                spaces: browserManager.spaceStateOwner,
+                regularTabs: browserManager.regularTabCollectionOwner,
+                shortcutTabs: browserManager.liveShortcutTabs
+            )
+        }
     }
 }

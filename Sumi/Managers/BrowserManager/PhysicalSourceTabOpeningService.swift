@@ -4,7 +4,9 @@ import Foundation
 /// an explicit execution-profile override before any WebView is materialized.
 @MainActor
 final class PhysicalSourceTabOpeningService {
-    private weak var tabs: TabManager?
+    private let spaces: TabSpaceCollectionStateOwner
+    private let regularTabs: RegularTabCollectionOwner
+    private let regularLifecycle: TabRegularLifecycleOwner
     private weak var opening: BrowserTabOpeningOwner?
     private let select: @MainActor (
         Tab,
@@ -13,7 +15,9 @@ final class PhysicalSourceTabOpeningService {
     ) -> Void
 
     init(
-        tabs: TabManager,
+        spaces: TabSpaceCollectionStateOwner,
+        regularTabs: RegularTabCollectionOwner,
+        regularLifecycle: TabRegularLifecycleOwner,
         opening: BrowserTabOpeningOwner,
         select: @escaping @MainActor (
             Tab,
@@ -21,7 +25,9 @@ final class PhysicalSourceTabOpeningService {
             TabSelectionLoadPolicy
         ) -> Void
     ) {
-        self.tabs = tabs
+        self.spaces = spaces
+        self.regularTabs = regularTabs
+        self.regularLifecycle = regularLifecycle
         self.opening = opening
         self.select = select
     }
@@ -32,7 +38,8 @@ final class PhysicalSourceTabOpeningService {
         selected: Bool,
         foregroundLoadPolicy: TabSelectionLoadPolicy = .deferred
     ) -> Tab? {
-        guard let tabs, let opening else { return nil }
+        guard let opening else { return nil }
+
         if source.residence == .privateEphemeral {
             guard source.window.ephemeralProfile === source.executionProfile,
                   source.presentationProfile === source.executionProfile
@@ -63,19 +70,18 @@ final class PhysicalSourceTabOpeningService {
                 == source.presentationProfile.id,
               source.presentationSpace.profileId
                 == source.presentationProfile.id,
-              tabs.spaceStateOwner.space(
+              spaces.space(
                   with: source.presentationSpace.id
               ) === source.presentationSpace
         else {
             return nil
         }
 
-        let insertionIndex = tabs.regularTabCollectionOwner
-            .childInsertionIndex(
-                openedFrom: source.tab,
-                in: source.presentationSpace
-            )
-        let child = tabs.regularTabLifecycleOwner.createNewTab(
+        let insertionIndex = regularTabs.childInsertionIndex(
+            openedFrom: source.tab,
+            in: source.presentationSpace
+        )
+        let child = regularLifecycle.createNewTab(
             url: url.absoluteString,
             in: source.presentationSpace,
             activate: false,

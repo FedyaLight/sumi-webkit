@@ -86,6 +86,8 @@ enum BrowserBoostRuntimeFactory {
         ownershipQuery: WebViewOwnershipQuery,
         tabMatches: (Tab) -> Bool
     ) -> [SumiBoostsModule.LivePage] {
+        let membership = browserManager
+            .tabCollectionMembershipOwner
         var visited = Set<ObjectIdentifier>()
         var pages: [SumiBoostsModule.LivePage] = []
 
@@ -95,7 +97,7 @@ enum BrowserBoostRuntimeFactory {
             pages.append(SumiBoostsModule.LivePage(tab: tab, webView: webView))
         }
 
-        for windowState in browserManager.windowRegistry?.allWindows ?? [] {
+        for windowState in browserManager.windowRegistry.allWindows {
             for tab in browserManager.shellRuntime.windowTabs.tabsForDisplay(in: windowState) where tabMatches(tab) {
                 if let webView = routing.windowOwnedWebView(
                     for: tab,
@@ -106,7 +108,7 @@ enum BrowserBoostRuntimeFactory {
             }
         }
 
-        for tab in browserManager.tabManager.tabCollectionMembershipOwner.allTabs() where tabMatches(tab) {
+        for tab in membership.allTabs() where tabMatches(tab) {
             for webView in ownershipQuery.trackedWebViews(for: tab.id) {
                 visit(tab, webView)
             }

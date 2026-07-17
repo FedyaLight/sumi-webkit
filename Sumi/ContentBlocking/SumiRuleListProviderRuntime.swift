@@ -84,9 +84,7 @@ final class SumiRuleListProviderRuntime {
             else { return }
 
             do {
-                let definitions = try self.provider.ruleListSet(
-                    profileId: nil
-                ).allDefinitions
+                let definitions = try self.provider.ruleListSet().allDefinitions
                 guard self.isCurrent(generation) else { return }
                 self.updateTarget?.applyGlobalRuleListDefinitions(
                     definitions,

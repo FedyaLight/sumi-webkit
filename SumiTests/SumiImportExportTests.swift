@@ -401,11 +401,18 @@ final class SumiImportExportTests: XCTestCase {
             launchURL: URL(string: "https://nested.example.com")!,
             title: "Nested"
         )
-        browserManager.tabManager.spaceStateOwner.replaceSpaces([space])
-        browserManager.tabManager.structuralCollectionMutationOwner.setFolders([parent, child], for: space.id)
-        browserManager.tabManager.structuralCollectionMutationOwner.setSpacePinnedShortcuts([pin], for: space.id)
+        browserManager.spaceStateOwner.replaceSpaces([space])
+        browserManager.structuralCollectionMutationOwner.setFolders([parent, child], for: space.id)
+        browserManager.structuralCollectionMutationOwner.setSpacePinnedShortcuts([pin], for: space.id)
 
-        let payload = try SumiTransferExportService().exportBrowser2ZenDocument(from: browserManager)
+        let portableData = SumiImportExportSnapshot.makeData(
+            profiles: browserManager.profileManager.profiles,
+            state: browserManager.tabStateStore,
+            bookmarks: browserManager.bookmarkManager
+                .snapshot(sortMode: .manual).root.children
+        )
+        let payload = try SumiTransferExportService()
+            .exportBrowser2ZenDocument(from: portableData)
         let document = try JSONDecoder().decode(SumiBrowser2ZenDocument.self, from: payload)
         let exportedSpace = try XCTUnwrap(document.spaces.first)
         let exportedChild = try XCTUnwrap(exportedSpace.folders.first(where: { $0.folderId == child.id.uuidString }))

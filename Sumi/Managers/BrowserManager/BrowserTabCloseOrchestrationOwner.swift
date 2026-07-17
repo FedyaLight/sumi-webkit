@@ -2,43 +2,25 @@ import Foundation
 
 @MainActor
 final class BrowserTabCloseOrchestrationOwner {
-    private let activeWindow: () -> BrowserWindowState?
-    private let currentTab: (BrowserWindowState) -> Tab?
-    private let glanceManager: GlanceManager
-    private let tabManager: () -> TabManager?
-    private let fallbackPlanner: () -> BrowserTabCloseFallbackPlanner
-    private let shortcutLiveTabCloseService: () -> ShortcutLiveTabCloseService
-    private let selectTab: (Tab, BrowserWindowState) -> Void
-    private let performImmediateVisualHandoffIfPossible: (BrowserWindowState) -> Void
-    private let showEmptyState: (BrowserWindowState) -> Void
-    private let persistWindowSession: (BrowserWindowState) -> Void
+    private let context: BrowserCurrentTabCloseContext
+    private let glanceInterception: GlanceTabCloseInterception
+    private let routing: BrowserTabCloseRouting
+    private let residences: BrowserTabResidenceAuthority
 
     init(
-        activeWindow: @escaping () -> BrowserWindowState?,
-        currentTab: @escaping (BrowserWindowState) -> Tab?,
-        glanceManager: GlanceManager,
-        tabManager: @escaping () -> TabManager?,
-        fallbackPlanner: @escaping () -> BrowserTabCloseFallbackPlanner,
-        shortcutLiveTabCloseService: @escaping () -> ShortcutLiveTabCloseService,
-        selectTab: @escaping (Tab, BrowserWindowState) -> Void,
-        performImmediateVisualHandoffIfPossible: @escaping (BrowserWindowState) -> Void,
-        showEmptyState: @escaping (BrowserWindowState) -> Void,
-        persistWindowSession: @escaping (BrowserWindowState) -> Void
+        context: BrowserCurrentTabCloseContext,
+        glanceInterception: GlanceTabCloseInterception,
+        routing: BrowserTabCloseRouting,
+        residences: BrowserTabResidenceAuthority
     ) {
-        self.activeWindow = activeWindow
-        self.currentTab = currentTab
-        self.glanceManager = glanceManager
-        self.tabManager = tabManager
-        self.fallbackPlanner = fallbackPlanner
-        self.shortcutLiveTabCloseService = shortcutLiveTabCloseService
-        self.selectTab = selectTab
-        self.performImmediateVisualHandoffIfPossible = performImmediateVisualHandoffIfPossible
-        self.showEmptyState = showEmptyState
-        self.persistWindowSession = persistWindowSession
+        self.context = context
+        self.glanceInterception = glanceInterception
+        self.routing = routing
+        self.residences = residences
     }
 
     func closeCurrentTab() {
-        guard let activeWindow = activeWindow() else {
+        guard let activeWindow = context.activeWindow else {
             return
         }
 
@@ -50,13 +32,12 @@ final class BrowserTabCloseOrchestrationOwner {
             return
         }
 
-        if glanceManager.activePreviewTab(for: windowState) != nil {
-            glanceManager.dismissGlance()
+        if glanceInterception.interceptCurrentClose(in: windowState) {
             return
         }
 
-        guard let currentTab = currentTab(windowState) else {
-            showEmptyState(windowState)
+        guard let currentTab = context.currentTab(in: windowState) else {
+            routing.showEmptyState(in: windowState)
             return
         }
 
@@ -64,58 +45,10 @@ final class BrowserTabCloseOrchestrationOwner {
     }
 
     func closeTab(_ tab: Tab, in windowState: BrowserWindowState) {
-        if glanceManager.currentSession?.sourceTab?.id == tab.id {
-            glanceManager.dismissGlance()
-        }
-
-        if windowState.isIncognito {
-            closeIncognitoTab(tab, in: windowState)
+        guard residences.containsExact(tab, in: windowState) else {
             return
         }
-
-        if tab.isShortcutLiveInstance {
-            shortcutLiveTabCloseService().close(tab, in: windowState)
-            return
-        }
-
-        closeRegularTab(tab, in: windowState)
-    }
-
-    private func closeRegularTab(_ tab: Tab, in windowState: BrowserWindowState) {
-        guard let tabManager = tabManager() else { return }
-        let wasCurrent = windowState.currentTabId == tab.id
-        let fallback = wasCurrent
-            ? fallbackPlanner().fallbackAfterClosingRegularTab(
-                tab,
-                in: windowState,
-                tabStore: tabManager.runtimeStore
-            )
-            : nil
-        if let fallback {
-            selectTab(fallback, windowState)
-            performImmediateVisualHandoffIfPossible(windowState)
-        }
-        tabManager.tabClosureService.removeTab(tab.id)
-        windowState.selectionHistory.removeFromRegularTabHistory(tab.id)
-
-        if wasCurrent {
-            if fallback == nil {
-                showEmptyState(windowState)
-            }
-        } else {
-            persistWindowSession(windowState)
-        }
-    }
-
-    private func closeIncognitoTab(_ tab: Tab, in windowState: BrowserWindowState) {
-        tab.performComprehensiveWebViewCleanup()
-
-        windowState.removeEphemeralTab(id: tab.id)
-
-        if let nextTab = windowState.ephemeralTabs.last {
-            selectTab(nextTab, windowState)
-        } else {
-            showEmptyState(windowState)
-        }
+        glanceInterception.interceptSourceClose(tab)
+        routing.close(tab, in: windowState)
     }
 }

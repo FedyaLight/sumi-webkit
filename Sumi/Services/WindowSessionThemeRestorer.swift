@@ -2,7 +2,7 @@ import Foundation
 
 @MainActor
 struct WindowSessionThemeRestorer {
-    let tabManager: TabManager
+    let startupRestore: TabStartupRestoreLifecycle
     let spaceResolver: WindowSessionSpaceResolver
     let themeCommitter: any WindowSessionThemeCommitting
 
@@ -20,7 +20,7 @@ struct WindowSessionThemeRestorer {
         }
 
         if let spaceId = windowState.currentSpaceId,
-           tabManager.startupRestoreLifecycle.hasLoadedInitialData == false {
+           startupRestore.hasLoadedInitialData == false {
             RuntimeDiagnostics.debug(
                 "Preserving bootstrap workspace theme for window \(windowState.id.uuidString) while waiting for initial TabManager data; source=\(source) currentSpace=\(spaceId.uuidString)",
                 category: "WindowSessionRestore"

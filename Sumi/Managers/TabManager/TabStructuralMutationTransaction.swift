@@ -79,6 +79,20 @@ final class TabStructuralMutationTransaction {
         case rolledBack(Snapshot)
     }
 
+    static func applyFolderPlacements(
+        _ placements: [UUID: TabFolderPlacement],
+        to folders: [TabFolder]
+    ) -> Bool {
+        var didChange = false
+        for folder in folders {
+            guard let placement = placements[folder.id],
+                  folder.placementSnapshot != placement else { continue }
+            folder.installPlacement(placement)
+            didChange = true
+        }
+        return didChange
+    }
+
     private let snapshot: Snapshot
     private var effects: [Effect] = []
     private var didMutate = false

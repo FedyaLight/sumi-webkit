@@ -12,6 +12,7 @@ final class SumiPermissionCleanupService {
     private let store: any SumiPermissionStore
     private let recentActivityStore: SumiPermissionRecentActivityStore
     private let antiAbuseStore: (any SumiPermissionAntiAbuseStoring)?
+    private let siteActivityStore: SumiPermissionSiteActivityStore?
     private let userDefaults: UserDefaults
     private let now: () -> Date
 
@@ -19,12 +20,14 @@ final class SumiPermissionCleanupService {
         store: any SumiPermissionStore,
         recentActivityStore: SumiPermissionRecentActivityStore,
         antiAbuseStore: (any SumiPermissionAntiAbuseStoring)? = nil,
+        siteActivityStore: SumiPermissionSiteActivityStore? = nil,
         userDefaults: UserDefaults = .standard,
         now: @escaping () -> Date = Date.init
     ) {
         self.store = store
         self.recentActivityStore = recentActivityStore
         self.antiAbuseStore = antiAbuseStore
+        self.siteActivityStore = siteActivityStore
         self.userDefaults = userDefaults
         self.now = now
     }
@@ -70,6 +73,20 @@ final class SumiPermissionCleanupService {
         let records = try await store.listDecisions(profilePartitionId: profileId)
         for record in records {
             try await store.resetDecision(for: record.key)
+        }
+        recentActivityStore.deleteProfileData(profilePartitionId: profileId)
+        guard let siteActivityStore else {
+            throw SumiPermissionCleanupError.missingProfileDataAuthority
+        }
+        try await siteActivityStore.persistenceAuthority.deleteProfileData(
+            profilePartitionId: profileId
+        )
+        userDefaults.removeObject(forKey: lastRunKey(profileId))
+        userDefaults.removeObject(forKey: lastRemovedKey(profileId))
+        guard userDefaults.object(forKey: lastRunKey(profileId)) == nil,
+              userDefaults.object(forKey: lastRemovedKey(profileId)) == nil
+        else {
+            throw SumiPermissionCleanupError.metricsDeletionFailed
         }
     }
 
@@ -170,4 +187,9 @@ final class SumiPermissionCleanupService {
     private func lastRemovedKey(_ profilePartitionId: String) -> String {
         "\(Constants.lastRemovedPrefix).\(SumiPermissionKey.normalizedProfilePartitionId(profilePartitionId))"
     }
+}
+
+enum SumiPermissionCleanupError: Error, Equatable {
+    case missingProfileDataAuthority
+    case metricsDeletionFailed
 }

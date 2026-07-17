@@ -22,12 +22,7 @@ final class SumiBackupService {
         decoder.dateDecodingStrategy = .iso8601
     }
 
-    func backupData(from browserManager: BrowserManager) -> SumiPortableArchive {
-        let data = SumiImportExportSnapshot.makeData(from: browserManager)
-        return backupData(data: data)
-    }
-
-    private func backupData(data: SumiPortableData) -> SumiPortableArchive {
+    func backupData(data: SumiPortableData) -> SumiPortableArchive {
         SumiPortableArchive(
             includedCategories: Array(data.nonEmptyCategories).sorted { $0.rawValue < $1.rawValue },
             warnings: [SumiBackupV1Scope.warning],
@@ -36,8 +31,8 @@ final class SumiBackupService {
         )
     }
 
-    func writeBackup(from browserManager: BrowserManager, to destination: URL) throws {
-        let archive = backupData(from: browserManager)
+    func writeBackup(data: SumiPortableData, to destination: URL) throws {
+        let archive = backupData(data: data)
         let payload = try encoder.encode(archive)
         try payload.write(to: destination, options: .atomic)
     }
@@ -63,12 +58,6 @@ final class SumiBackupService {
             throw SumiImportExportError.unsupportedFile("This Sumi backup was created by a newer version of Sumi.")
         }
         return archive
-    }
-
-    func writeAutomaticPreRestoreBackup(from browserManager: BrowserManager) throws -> URL {
-        try writeAutomaticPreRestoreBackup(
-            data: SumiImportExportSnapshot.makeData(from: browserManager)
-        )
     }
 
     func writeAutomaticPreRestoreBackup(data: SumiPortableData) throws -> URL {

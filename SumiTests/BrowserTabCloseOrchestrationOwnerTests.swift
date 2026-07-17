@@ -4,39 +4,57 @@ import XCTest
 
 @MainActor
 final class BrowserTabCloseOrchestrationOwnerTests: XCTestCase {
-    func testCloseCurrentTabInExplicitWindowIgnoresDifferentActiveWindow() {
-        let explicitWindow = BrowserWindowState()
-        let activeWindow = BrowserWindowState()
-        let glanceManager = GlanceManager()
-        var currentTabWindowIds: [UUID] = []
-        var emptyStateWindowIds: [UUID] = []
-        let owner = BrowserTabCloseOrchestrationOwner(
-            activeWindow: { activeWindow },
-            currentTab: { windowState in
-                currentTabWindowIds.append(windowState.id)
-                return nil
-            },
-            glanceManager: glanceManager,
-            tabManager: { fatalError("tabManager should not be used") },
-            fallbackPlanner: { fatalError("fallbackPlanner should not be used") },
-            shortcutLiveTabCloseService: {
-                fatalError("shortcutLiveTabCloseService should not be used")
-            },
-            selectTab: { _, _ in fatalError("selectTab should not be used") },
-            performImmediateVisualHandoffIfPossible: { _ in
-                fatalError("visual handoff should not be used")
-            },
-            showEmptyState: { windowState in
-                emptyStateWindowIds.append(windowState.id)
-            },
-            persistWindowSession: { _ in
-                fatalError("persistWindowSession should not be used")
-            }
+    func testStaleSameIDTabCannotCloseCanonicalRegularTab() throws {
+        let browser = BrowserManager()
+        let profile = Profile(name: "Profile")
+        let space = Space(name: "Space", profileId: profile.id)
+        let window = BrowserWindowState()
+        browser.profileManager.profiles = [profile]
+        browser.currentProfile = profile
+        browser.spaceStateOwner.replaceSpaces([space])
+        browser.spaceStateOwner.replaceCurrentSpace(space)
+        browser.tabResidenceAuthority.establishResidenceSession(on: window)
+        window.currentSpaceId = space.id
+        window.currentProfileId = profile.id
+        XCTAssertEqual(browser.windowRegistry.register(window), .registered)
+
+        let canonical = browser.regularTabLifecycleOwner.createNewTab(
+            in: space,
+            activate: false
+        )
+        let stale = Tab(
+            id: canonical.id,
+            url: canonical.url,
+            spaceId: space.id,
+            loadsCachedFaviconOnInit: false
         )
 
-        owner.closeCurrentTab(in: explicitWindow)
+        browser.tabCloseOrchestration.closeTab(stale, in: window)
 
-        XCTAssertEqual(currentTabWindowIds, [explicitWindow.id])
-        XCTAssertEqual(emptyStateWindowIds, [explicitWindow.id])
+        XCTAssertIdentical(
+            browser.regularTabCollectionOwner.tab(for: canonical.id),
+            canonical
+        )
+        XCTAssertTrue(
+            browser.tabCollectionMembershipOwner.lookupContainsExact(canonical)
+        )
+    }
+
+    func testCloseCurrentTabInExplicitWindowIgnoresDifferentActiveWindow() throws {
+        let explicitWindow = BrowserWindowState()
+        let activeWindow = BrowserWindowState()
+        let browser = BrowserManager()
+        let explicitTabID = UUID()
+        let activeTabID = UUID()
+        explicitWindow.currentTabId = explicitTabID
+        activeWindow.currentTabId = activeTabID
+        XCTAssertEqual(browser.windowRegistry.register(activeWindow), .registered)
+        browser.windowRegistry.setActive(activeWindow)
+
+        browser.tabCloseOrchestration.closeCurrentTab(in: explicitWindow)
+
+        XCTAssertNil(explicitWindow.currentTabId)
+        XCTAssertEqual(activeWindow.currentTabId, activeTabID)
+        XCTAssertIdentical(browser.windowRegistry.activeWindow, activeWindow)
     }
 }

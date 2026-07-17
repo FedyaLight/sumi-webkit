@@ -781,13 +781,9 @@ struct ExtensionActionButton: View {
 #Preview {
     ExtensionActionView(
         extensions: [],
-        browserContext: ExtensionActionBrowserContext(
+        browserContext: ExtensionActionBrowserContext.unavailable(
             extensionsModule: SumiExtensionsModule(),
-            windowState: BrowserWindowState(),
-            currentTab: { nil },
-            currentProfileID: { nil },
-            openSettingsTab: { _ in /* No-op. */ },
-            showExtensionUnavailableAlert: { _, _ in /* No-op. */ }
+            windowState: BrowserWindowState()
         )
     )
 }

@@ -6,10 +6,10 @@ import XCTest
 @MainActor
 final class WindowSessionRestoreTransactionTests: XCTestCase {
     func testCancelledPreparationCannotBeConsumedByReplacementObject() throws {
-        let tabManager = try makeInMemoryTabManager(loadPersistedState: false)
+        let tabManager = BrowserManager()
         let sessionKey = "SumiTests.windowSession.\(UUID().uuidString)"
         defer { UserDefaults.standard.removeObject(forKey: sessionKey) }
-        let delegate = TestWindowSessionDelegate(tabManager: tabManager)
+        let delegate = TestWindowSessionDelegate(runtime: tabManager)
         let service = delegate.makeRestoreService(
             lastWindowSessionKey: sessionKey
         )

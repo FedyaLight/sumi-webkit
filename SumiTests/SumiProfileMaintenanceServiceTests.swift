@@ -5,12 +5,92 @@ import XCTest
 
 @MainActor
 final class SumiProfileMaintenanceServiceTests: XCTestCase {
-    func testRejectedWebKitQuiescePreventsProfileAndStoreDeletion() async {
+    func testRuntimeSealFailureKeepsLogicalDeletionRecoveryHandoff() async throws {
         let browserManager = BrowserManager()
-        let deleted = Profile(name: "Deleted")
-        let fallback = Profile(name: "Fallback")
-        browserManager.profileManager.profiles = [deleted, fallback]
+        let deleted = try XCTUnwrap(browserManager.currentProfile)
+        let fallback = try browserManager.profileManager.createProfile(
+            name: "Fallback"
+        )
         browserManager.currentProfile = fallback
+        let permissionHarness = try SiteSettingsRepositoryHarness(
+            profile: deleted
+        )
+        let cleanupSpy = ProfileMaintenanceWebsiteDataCleanupSpy()
+        browserManager.browsingDataCleanupService.destructiveCleanupPreparer =
+            AcceptingProfileDeletionCleanupPreparer()
+        var profileExistedWhenRuntimeSealBegan = true
+        var notices: [SumiProfileMaintenanceService.Notice] = []
+        let noticePublished = expectation(description: "cleanup pending notice")
+
+        SumiProfileMaintenanceService().deleteProfile(
+            deleted,
+            using: .init(
+                currentProfile: { browserManager.currentProfile },
+                profileManager: browserManager.profileManager,
+                migrateProfileReferences: { _, _ in .committed },
+                persistProfileReferences: { true },
+                migrateBrowserProfileReferences: { _, _ in true },
+                hasProfileReferences: { _ in false },
+                sealProfileRuntime: { profileID in
+                    profileExistedWhenRuntimeSealBegan = browserManager
+                        .profileManager.profiles.contains {
+                            $0.id == profileID
+                        }
+                    return false
+                },
+                browsingDataCleanupService: browserManager
+                    .browsingDataCleanupService,
+                websiteDataCleanupService: cleanupSpy,
+                faviconService: browserManager.dataServices.faviconService,
+                visitedLinkStore: browserManager.dataServices.visitedLinkStore,
+                permissionCleanupService: permissionHarness
+                    .permissionCleanupService,
+                applicationDataCleanupService:
+                    ProfileApplicationDataCleanupService(
+                        operations: .init(
+                            clearHistory: { _ in },
+                            clearBasicAuthCredentials: { _ in },
+                            clearSiteDataPolicies: { _ in },
+                            clearZoomPreferences: { _ in },
+                            clearBoosts: { _ in },
+                            clearAdblockZapperRules: { _ in },
+                            clearExtensionPrivateData: { _ in }
+                        )
+                    ),
+                showNotice: {
+                    notices.append($0)
+                    noticePublished.fulfill()
+                }
+            )
+        )
+
+        await fulfillment(of: [noticePublished], timeout: 2)
+
+        XCTAssertFalse(profileExistedWhenRuntimeSealBegan)
+        XCTAssertFalse(
+            browserManager.profileManager.profiles.contains {
+                $0.id == deleted.id
+            }
+        )
+        let record = try XCTUnwrap(
+            browserManager.profileReferenceAdmission.records().first {
+                $0.snapshot.id == deleted.id
+            }
+        )
+        XCTAssertEqual(record.phase, .logicallyDeleted)
+        XCTAssertEqual(cleanupSpy.clearAllProfileDataCallCount, 0)
+        XCTAssertEqual(cleanupSpy.removePersistentStoreCallCount, 0)
+        XCTAssertEqual(notices.last?.title, "Profile Deleted")
+    }
+
+    func testRejectedWebKitQuiescePreventsProfileAndStoreDeletion() async throws {
+        let browserManager = BrowserManager()
+        let deleted = try XCTUnwrap(browserManager.currentProfile)
+        let fallback = try browserManager.profileManager.createProfile(
+            name: "Fallback"
+        )
+        browserManager.currentProfile = fallback
+        let permissionHarness = try SiteSettingsRepositoryHarness(profile: deleted)
 
         let cleanupSpy = ProfileMaintenanceWebsiteDataCleanupSpy()
         let preparer = RejectingProfileDeletionCleanupPreparer()
@@ -25,14 +105,29 @@ final class SumiProfileMaintenanceServiceTests: XCTestCase {
                 currentProfile: { browserManager.currentProfile },
                 profileManager: browserManager.profileManager,
                 migrateProfileReferences: { _, _ in .committed },
+                persistProfileReferences: { true },
+                migrateBrowserProfileReferences: { _, _ in true },
+                hasProfileReferences: { _ in false },
+                sealProfileRuntime: { _ in true },
                 browsingDataCleanupService:
                     browserManager.browsingDataCleanupService,
                 websiteDataCleanupService: cleanupSpy,
                 faviconService: browserManager.dataServices.faviconService,
                 visitedLinkStore: browserManager.dataServices.visitedLinkStore,
-                permissionCleanupService: nil,
-                showNotice: { notices.append($0) },
-                switchToProfile: { _ in }
+                permissionCleanupService: permissionHarness.permissionCleanupService,
+                applicationDataCleanupService:
+                    ProfileApplicationDataCleanupService(
+                        operations: .init(
+                            clearHistory: { _ in },
+                            clearBasicAuthCredentials: { _ in },
+                            clearSiteDataPolicies: { _ in },
+                            clearZoomPreferences: { _ in },
+                            clearBoosts: { _ in },
+                            clearAdblockZapperRules: { _ in },
+                            clearExtensionPrivateData: { _ in }
+                        )
+                    ),
+                showNotice: { notices.append($0) }
             )
         )
         for _ in 0..<20 {
@@ -62,6 +157,19 @@ private final class RejectingProfileDeletionCleanupPreparer:
     ) async -> Bool {
         callCount += 1
         return false
+    }
+}
+
+@MainActor
+private final class AcceptingProfileDeletionCleanupPreparer:
+    SumiDestructiveBrowsingDataCleanupPreparing {
+    func performDestructiveDataCleanup(
+        profileIDs: Set<UUID>,
+        deletion: @escaping @MainActor () async -> Void
+    ) async -> Bool {
+        _ = profileIDs
+        await deletion()
+        return true
     }
 }
 

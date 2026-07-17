@@ -123,9 +123,10 @@ final class SafariExtensionInstalledInternalPageRenderTests: XCTestCase {
             profile: profile,
             windowRegistry: windowRegistry
         )
-        let space = browserManager.tabManager.spaceServices.catalog.createSpace(
+        let space = installTestSpace(
+            in: browserManager.spaceStateOwner,
             name: "Installed 1Password",
-            profileId: profile.id
+            profileID: profile.id
         )
         let windowState = BrowserWindowState()
         windowState.currentProfileId = profile.id
@@ -350,7 +351,7 @@ final class SafariExtensionInstalledInternalPageRenderTests: XCTestCase {
         XCTAssertIdentical(tab.webExtensionContextOverride, extensionContext)
         defer {
             tab.performComprehensiveWebViewCleanup()
-            browserManager.tabManager.tabClosureService.removeTab(tab.id)
+            browserManager.tabClosureService.removeTab(tab.id)
         }
         XCTAssertFalse(
             tab.isUnloaded,

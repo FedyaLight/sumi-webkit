@@ -1,6 +1,6 @@
 import Foundation
-import SumiDomain
 import OSLog
+import SumiDomain
 import WebKit
 
 @MainActor
@@ -38,11 +38,20 @@ final class SumiAdblockZapperStore {
     }
 
     private let userDefaults: UserDefaults
+    private let profileReferenceAdmission: ProfileReferenceAdmissionLedger
     private var statesByScopeAndHost: [String: [String: State]]
+    private let persistentStateWasReadable: Bool
+    private var retiredPersistentProfileIDs: Set<String> = []
 
-    init(userDefaults: UserDefaults = .standard) {
+    init(
+        userDefaults: UserDefaults = .standard,
+        profileReferenceAdmission: ProfileReferenceAdmissionLedger
+    ) {
         self.userDefaults = userDefaults
-        self.statesByScopeAndHost = Self.loadPersistentStates(from: userDefaults)
+        self.profileReferenceAdmission = profileReferenceAdmission
+        let loaded = Self.loadPersistentStates(from: userDefaults)
+        self.statesByScopeAndHost = loaded.states
+        self.persistentStateWasReadable = loaded.wasReadable
     }
 
     func state(
@@ -56,6 +65,10 @@ final class SumiAdblockZapperStore {
         ) else {
             return .empty
         }
+        guard acceptsReference(
+            profilePartitionId: profilePartitionId,
+            isEphemeralProfile: isEphemeralProfile
+        ) else { return .empty }
 
         let normalizedHost = normalizedHost(host)
         guard !normalizedHost.isEmpty else { return .empty }
@@ -110,6 +123,25 @@ final class SumiAdblockZapperStore {
         }
     }
 
+    func deleteProfileData(profileID: UUID) throws {
+        retiredPersistentProfileIDs.insert(
+            SumiPermissionKey.normalizedProfilePartitionId(profileID.uuidString)
+        )
+        guard persistentStateWasReadable else {
+            throw SumiAdblockZapperStoreError.unreadablePersistentState
+        }
+        guard let scope = Scope(
+            profilePartitionId: profileID.uuidString,
+            isEphemeralProfile: false
+        ), statesByScopeAndHost[scope.storageKey] != nil else {
+            return
+        }
+        var candidate = statesByScopeAndHost
+        candidate.removeValue(forKey: scope.storageKey)
+        try persistForProfileCleanup(candidate)
+        statesByScopeAndHost = candidate
+    }
+
     private func updateState(
         forHost host: String,
         profilePartitionId: String,
@@ -120,6 +152,16 @@ final class SumiAdblockZapperStore {
             profilePartitionId: profilePartitionId,
             isEphemeralProfile: isEphemeralProfile
         ) else {
+            return
+        }
+        guard acceptsReference(
+            profilePartitionId: profilePartitionId,
+            isEphemeralProfile: isEphemeralProfile
+        ) else { return }
+        guard scope.isEphemeral || persistentStateWasReadable else {
+            Self.log.error(
+                "Rejected persistent Zapper mutation because the stored baseline is unreadable."
+            )
             return
         }
 
@@ -150,6 +192,21 @@ final class SumiAdblockZapperStore {
             .lowercased()
     }
 
+    private func acceptsReference(
+        profilePartitionId: String,
+        isEphemeralProfile: Bool
+    ) -> Bool {
+        guard isEphemeralProfile == false else { return true }
+        let profileID = SumiPermissionKey.normalizedProfilePartitionId(
+            profilePartitionId
+        )
+        guard retiredPersistentProfileIDs.contains(profileID) == false else {
+            return false
+        }
+        guard let uuid = UUID(uuidString: profileID) else { return false }
+        return profileReferenceAdmission.isReferenceAllowed(uuid)
+    }
+
     private func savePersistentStates() {
         let persistentStates = statesByScopeAndHost.filter { scopeKey, _ in
             scopeKey.hasPrefix(Scope.persistentPrefix)
@@ -168,20 +225,51 @@ final class SumiAdblockZapperStore {
         userDefaults.set(data, forKey: DefaultsKey.statesByPersistentProfileAndHost)
     }
 
-    private static func loadPersistentStates(from userDefaults: UserDefaults) -> [String: [String: State]] {
+    private func persistForProfileCleanup(
+        _ candidate: [String: [String: State]]
+    ) throws {
+        let persistentStates = candidate.filter { scopeKey, _ in
+            scopeKey.hasPrefix(Scope.persistentPrefix)
+        }
+        if persistentStates.isEmpty {
+            userDefaults.removeObject(
+                forKey: DefaultsKey.statesByPersistentProfileAndHost
+            )
+            guard userDefaults.data(
+                forKey: DefaultsKey.statesByPersistentProfileAndHost
+            ) == nil else {
+                throw SumiAdblockZapperStoreError.persistenceVerificationFailed
+            }
+            return
+        }
+        let data = try JSONEncoder().encode(persistentStates)
+        userDefaults.set(
+            data,
+            forKey: DefaultsKey.statesByPersistentProfileAndHost
+        )
+        guard userDefaults.data(
+            forKey: DefaultsKey.statesByPersistentProfileAndHost
+        ) == data else {
+            throw SumiAdblockZapperStoreError.persistenceVerificationFailed
+        }
+    }
+
+    private static func loadPersistentStates(
+        from userDefaults: UserDefaults
+    ) -> (states: [String: [String: State]], wasReadable: Bool) {
         guard let data = userDefaults.data(forKey: DefaultsKey.statesByPersistentProfileAndHost) else {
-            return [:]
+            return ([:], true)
         }
         let decoded: [String: [String: State]]
         do {
             decoded = try JSONDecoder().decode([String: [String: State]].self, from: data)
         } catch {
             log.error("Failed to decode adblock zapper state: \(error.localizedDescription, privacy: .public)")
-            return [:]
+            return ([:], false)
         }
-        return decoded.filter { scopeKey, _ in
+        return (decoded.filter { scopeKey, _ in
             scopeKey.hasPrefix(Scope.persistentPrefix)
-        }
+        }, true)
     }
 
     private static func normalizedRules(_ rules: [String]) -> [String] {
@@ -196,6 +284,11 @@ final class SumiAdblockZapperStore {
             return trimmedRule
         }
     }
+}
+
+enum SumiAdblockZapperStoreError: Error, Equatable {
+    case unreadablePersistentState
+    case persistenceVerificationFailed
 }
 
 @MainActor

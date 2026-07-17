@@ -1,53 +1,53 @@
 import Foundation
+
 /// Repairs registered window state and commits only actual changes.
 @MainActor
 final class BrowserWindowStateReconciler {
-    private let windows: () -> [BrowserWindowState]
-    private let spaceContext: BrowserWindowSpaceContextReconciler
+    private let windows: WindowRegistry
+    private let spaceContext: BrowserWindowSpaceContextSynchronizer
     private let selectionRepair: BrowserWindowSelectionRepairService
-    private let focusedRuntime: FocusedSpaceRuntimeStateSynchronizer
-    private let persistWindowSession: (BrowserWindowState) -> Void
-    private let refreshCompositor: (BrowserWindowState) -> Void
+    private let publication: BrowserWindowStateRepairPublication
+    private let workspaceThemes: BrowserWorkspaceThemeTransitionOwner
 
     init(
-        windows: @escaping () -> [BrowserWindowState],
-        spaceContext: BrowserWindowSpaceContextReconciler,
+        windows: WindowRegistry,
+        spaceContext: BrowserWindowSpaceContextSynchronizer,
         selectionRepair: BrowserWindowSelectionRepairService,
-        focusedRuntime: FocusedSpaceRuntimeStateSynchronizer,
-        persistWindowSession: @escaping (BrowserWindowState) -> Void,
-        refreshCompositor: @escaping (BrowserWindowState) -> Void
+        publication: BrowserWindowStateRepairPublication,
+        workspaceThemes: BrowserWorkspaceThemeTransitionOwner
     ) {
         self.windows = windows
         self.spaceContext = spaceContext
         self.selectionRepair = selectionRepair
-        self.focusedRuntime = focusedRuntime
-        self.persistWindowSession = persistWindowSession
-        self.refreshCompositor = refreshCompositor
+        self.publication = publication
+        self.workspaceThemes = workspaceThemes
     }
 
     @discardableResult
     func validateWindowStates() -> Set<UUID> {
         var persistedWindowIds = Set<UUID>()
-        for windowState in windows() {
+        for windowState in windows.allWindows {
             let didChangeSpaceContext = spaceContext.reconcile(windowState)
+            workspaceThemes.commitWorkspaceTheme(
+                spaceContext.workspaceTheme(for: windowState),
+                for: windowState
+            )
             let didRepairSelection = selectionRepair.reconcile(windowState)
             guard didChangeSpaceContext || didRepairSelection else { continue }
 
-            refreshCompositor(windowState)
-            persistWindowSession(windowState)
+            publication.publish(windowState)
             persistedWindowIds.insert(windowState.id)
         }
 
-        focusedRuntime.synchronizeActiveWindow()
+        spaceContext.synchronizeActiveWindow()
         return persistedWindowIds
     }
 
     func synchronizeSpaceContext(in windowState: BrowserWindowState) {
         spaceContext.synchronize(windowState)
-        focusedRuntime.synchronizeActiveWindow()
     }
 
     func synchronizeFocusedSpaceContext(in windowState: BrowserWindowState) {
-        focusedRuntime.synchronize(windowState)
+        spaceContext.synchronizeFocusedWindow(windowState)
     }
 }

@@ -152,5 +152,9 @@ extension ExtensionBrowserAttachmentAuthority {
             retireAttachment()
             return executions
         }
+
+        func retireBrowserAttachment() {
+            retireAttachment()
+        }
     }
 }

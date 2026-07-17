@@ -6,7 +6,7 @@ extension WindowExtensionPublicationTransaction {
         browserManager: BrowserManager,
         webViewOwnership: WebViewOwnershipQuery
     ) -> WindowExtensionPublicationTransaction {
-        return WindowExtensionPublicationTransaction(
+        WindowExtensionPublicationTransaction(
             preparation: browserManager.optionalModules.extensions,
             publication: browserManager.optionalModules.extensions,
             resolveInitialTab: {

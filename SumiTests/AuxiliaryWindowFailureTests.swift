@@ -11,10 +11,10 @@ final class AuxiliaryWindowFailureTests: XCTestCase {
         let space = Space(name: "Auxiliary failure", profileId: profile.id)
         browser.profileManager.profiles = [profile]
         browser.currentProfile = profile
-        browser.tabManager.spaceStateOwner.replaceSpaces([space])
-        browser.tabManager.spaceStateOwner.replaceCurrentSpace(space)
+        browser.spaceStateOwner.replaceSpaces([space])
+        browser.spaceStateOwner.replaceCurrentSpace(space)
 
-        let opener = browser.tabManager.regularTabLifecycleOwner.createNewTab(
+        let opener = browser.regularTabLifecycleOwner.createNewTab(
             url: "https://example.test/opener",
             in: space,
             activate: true
@@ -31,8 +31,8 @@ final class AuxiliaryWindowFailureTests: XCTestCase {
             )
         )
         XCTAssertTrue(
-            browser.tabManager.transientTabRegistryOwner
-                .auxiliaryMiniWindowTabsByID.isEmpty
+            browser.tabCollectionMembershipOwner.allIdentityWitnesses()
+                .allSatisfy { $0.isAuxiliaryMiniWindow == false }
         )
         XCTAssertTrue(browser.auxiliaryWindows.sessions.sessionsSnapshot().isEmpty)
     }

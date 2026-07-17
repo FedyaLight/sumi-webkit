@@ -11,7 +11,11 @@ struct SpaceRegularTabsListView: View {
     let space: Space
     let inventory: SidebarSpaceInventorySnapshot
     let selection: SidebarWindowSelectionQuery
-    let regularTabs: any SidebarRegularTabsControlling
+    let regularTabCatalog: SidebarRegularTabCatalog
+    let regularTabTargets: SidebarRegularTabTargetQuery
+    let regularTabLifecycleCommands: SidebarRegularTabLifecycleCommands
+    let regularTabShortcutCommands: SidebarRegularTabShortcutCommands
+    let regularTabPlacementCommands: SidebarRegularTabPlacementCommands
     let browserContext: SidebarBrowserContext
     let isInteractive: Bool
     let innerWidth: CGFloat
@@ -55,7 +59,8 @@ struct SpaceRegularTabsListView: View {
                                 tabByID: tabByID,
                                 inventory: inventory,
                                 selection: selection,
-                                regularTabs: regularTabs,
+                                regularTabCatalog: regularTabCatalog,
+                                regularTabTargets: regularTabTargets,
                                 browserContext: browserContext,
                                 isInteractive: isInteractive,
                                 contentMutationAnimation: contentMutationAnimation,
@@ -69,7 +74,7 @@ struct SpaceRegularTabsListView: View {
                         } else if let tab = tabByID[tabID]
                             ?? interactionSession.listAnimation.resolvedTab(
                                 for: tabID,
-                                liveTab: { regularTabs.tab(for: $0) }
+                                liveTab: { regularTabCatalog.tab(for: $0) }
                             ) {
                             animatedTabRow(tab)
                         }
@@ -99,7 +104,7 @@ struct SpaceRegularTabsListView: View {
                 interactionSession.listAnimation.preserveSnapshots(
                     from: oldValue,
                     to: newValue,
-                    liveTab: { regularTabs.tab(for: $0) }
+                    liveTab: { regularTabCatalog.tab(for: $0) }
                 )
                 interactionSession.listAnimation.cacheTabs(tabs)
                 animateRenderedTabsChange(from: oldValue, to: newValue)
@@ -114,7 +119,7 @@ struct SpaceRegularTabsListView: View {
         splitResolver.visibleSplitGroups(
             currentTabs: tabs,
             isDragging: dragSnapshot.isDragging,
-            splitGroup: { regularTabs.splitGroup(containing: $0) }
+            splitGroup: { regularTabTargets.splitGroup(containing: $0) }
         )
     }
 
@@ -137,7 +142,11 @@ struct SpaceRegularTabsListView: View {
     private var tabActionOwner: SpaceRegularTabActionOwner {
         SpaceRegularTabActionOwner(
             space: space,
-            regularTabs: regularTabs,
+            catalog: regularTabCatalog,
+            targets: regularTabTargets,
+            lifecycleCommands: regularTabLifecycleCommands,
+            shortcutCommands: regularTabShortcutCommands,
+            placementCommands: regularTabPlacementCommands,
             browserContext: browserContext,
             windowState: windowState,
             firstTabID: tabs.first?.id,
@@ -195,7 +204,7 @@ struct SpaceRegularTabsListView: View {
             guard interactionSession.listAnimation.containsRenderedTab(removedID),
                   let tab = interactionSession.listAnimation.resolvedTab(
                     for: removedID,
-                    liveTab: { regularTabs.tab(for: $0) }
+                    liveTab: { regularTabCatalog.tab(for: $0) }
                   ) else {
                 syncRenderedTabsWithoutAnimation(to: newIDs)
                 return
@@ -217,7 +226,7 @@ struct SpaceRegularTabsListView: View {
     ) {
         SidebarMotionTransaction.withoutAnimation {
             interactionSession.listAnimation.beginInsertion(insertedIDs) {
-                regularTabs.tab(for: $0)
+                regularTabCatalog.tab(for: $0)
             }
         }
         withAnimation(animation) {

@@ -1,6 +1,6 @@
 import Foundation
-import SwiftData
 import SumiWebRuntime
+import SwiftData
 
 @testable import Sumi
 
@@ -19,11 +19,10 @@ extension BrowserManager {
     }
 
     convenience init(
+        windowRegistry: WindowRegistry = WindowRegistry(),
         moduleRegistry: SumiModuleRegistry = .unavailable(),
-        startupPersistence: BrowserManagerStartupPersistence = .production,
-        windowSessionSnapshotStore: WindowSessionSnapshotStore = WindowSessionSnapshotStore(
-            key: BrowserManager.lastWindowSessionKey
-        ),
+        startupPersistence: BrowserManagerStartupPersistence? = nil,
+        windowSessionSnapshotStore: WindowSessionSnapshotStore? = nil,
         browserConfiguration: BrowserConfiguration? = nil,
         adBlockingModule: SumiAdBlockingModule? = nil,
         protectionCoordinator: SumiProtectionCoordinator? = nil,
@@ -49,8 +48,13 @@ extension BrowserManager {
         permissionBridgeOverrides: BrowserPermissionBridgeRegistry.Overrides = .init(),
         sidebarHostRecoveryCoordinator: SidebarHostRecoveryHandling = SidebarHostRecoveryCoordinator()
     ) {
+        let startupPersistence = startupPersistence
+            ?? Self.makeIsolatedTestStartupPersistence()
+        let windowSessionSnapshotStore = windowSessionSnapshotStore
+            ?? Self.makeIsolatedTestWindowSessionSnapshotStore()
         self.init(
             webViewSessions: WebViewSessionRepository(),
+            windowRegistry: windowRegistry,
             moduleRegistry: moduleRegistry,
             startupPersistence: startupPersistence,
             windowSessionSnapshotStore: windowSessionSnapshotStore,
@@ -80,10 +84,73 @@ extension BrowserManager {
             sidebarHostRecoveryCoordinator: sidebarHostRecoveryCoordinator
         )
     }
+
+    private static func makeIsolatedTestStartupPersistence()
+        -> BrowserManagerStartupPersistence {
+        do {
+            return BrowserManagerStartupPersistence(
+                container: try makeInMemoryStartupModelContainer()
+            )
+        } catch {
+            preconditionFailure(
+                "Could not construct isolated BrowserManager test persistence: \(error)"
+            )
+        }
+    }
+
+    private static func makeIsolatedTestWindowSessionSnapshotStore()
+        -> WindowSessionSnapshotStore {
+        let userDefaults = TestOwnedWindowSessionUserDefaults()
+        return WindowSessionSnapshotStore(
+            key: "SumiTests.window-session.\(UUID().uuidString)",
+            userDefaults: userDefaults,
+            environment: { [:] }
+        )
+    }
+}
+
+final class TestOwnedWindowSessionUserDefaults: UserDefaults {
+    let ownedSuiteName: String
+
+    init() {
+        ownedSuiteName = "SumiTests.window-session.\(UUID().uuidString)"
+        super.init(suiteName: ownedSuiteName)!
+    }
+
+    deinit {
+        removePersistentDomain(forName: ownedSuiteName)
+    }
 }
 
 @MainActor
 extension TabManager {
+    convenience init(
+        runtimePorts: RuntimePortRegistry? = nil,
+        context: ModelContext,
+        webViewSessions: WebViewSessionRepository,
+        loadPersistedState: Bool = true,
+        automaticallyStartPersistedStateLoad: Bool = true,
+        tabStructureEventBus: TabStructureEventBus? = nil,
+        faviconService: any BrowserFaviconServicing = TabDependencyIsolationDefaults.faviconService,
+        faviconCapabilities: BrowserFaviconCapabilities = TabDependencyIsolationDefaults.faviconCapabilities,
+        visitedLinkStore: any BrowserVisitedLinkStoreManaging = TabDependencyIsolationDefaults.visitedLinkStore
+    ) {
+        self.init(
+            context: context,
+            webViewSessions: webViewSessions,
+            profileReferenceAdmission: .testingAllowingReferences(),
+            loadPersistedState: loadPersistedState,
+            automaticallyStartPersistedStateLoad: automaticallyStartPersistedStateLoad,
+            tabStructureEventBus: tabStructureEventBus,
+            faviconService: faviconService,
+            faviconCapabilities: faviconCapabilities,
+            visitedLinkStore: visitedLinkStore
+        )
+        if let runtimePorts {
+            runtimePortConnection.attach(runtimePorts)
+        }
+    }
+
     convenience init(
         runtimePorts: RuntimePortRegistry? = nil,
         context: ModelContext,

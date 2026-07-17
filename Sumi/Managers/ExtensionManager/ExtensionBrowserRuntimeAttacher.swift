@@ -47,7 +47,8 @@ final class ExtensionBrowserRuntimeAttacher {
         profiles.rememberProfiles(in: bridge)
         let assembly = runtimeAssembler.assemble(
             browserIdentity: browserIdentity,
-            bridge: bridge
+            bridge: bridge,
+            browserRoutes: routeInstaller
         )
         guard routeInstaller.install(
             requestedTabs: assembly.requestedTabs,

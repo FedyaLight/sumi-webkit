@@ -144,12 +144,11 @@ final class SafariExtensionRuntimeDataStoreTests: XCTestCase {
         )
         let persistentProfile = Profile(name: "Regular Profile")
         let ephemeralProfile = Profile.createEphemeral()
-        let browserManager = BrowserManager()
         let windowRegistry = WindowRegistry()
+        let browserManager = BrowserManager(windowRegistry: windowRegistry)
         let privateWindow = BrowserWindowState()
         privateWindow.isIncognito = true
         privateWindow.ephemeralProfile = ephemeralProfile
-        browserManager.windowRegistry = windowRegistry
         browserManager.profileManager.profiles = [persistentProfile]
         windowRegistry.register(privateWindow)
         windowRegistry.setActive(privateWindow)
@@ -194,12 +193,11 @@ final class SafariExtensionRuntimeDataStoreTests: XCTestCase {
         )
         let persistentProfile = Profile(name: "Regular Profile")
         let ephemeralProfile = Profile.createEphemeral()
-        let browserManager = BrowserManager()
         let windowRegistry = WindowRegistry()
+        let browserManager = BrowserManager(windowRegistry: windowRegistry)
         let privateWindow = BrowserWindowState()
         privateWindow.isIncognito = true
         privateWindow.ephemeralProfile = ephemeralProfile
-        browserManager.windowRegistry = windowRegistry
         browserManager.profileManager.profiles = [persistentProfile]
         windowRegistry.register(privateWindow)
 

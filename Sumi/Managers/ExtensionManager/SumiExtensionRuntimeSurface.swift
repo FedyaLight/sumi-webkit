@@ -96,9 +96,12 @@ final class SumiExtensionRuntimeSurface {
             .focusWindow(windowState)
     }
 
-    func switchProfile(_ profile: Profile) {
+    func switchProfile(
+        _ profile: Profile,
+        mutationLease: ProfileReferenceMutationLease? = nil
+    ) {
         lifetime.loadedBrowserRuntimeIfEnabled()?.publication
-            .switchProfile(profile)
+            .switchProfile(profile, mutationLease: mutationLease)
     }
 
     func notifyTabActivated(newTab: Tab, previous: Tab?) {

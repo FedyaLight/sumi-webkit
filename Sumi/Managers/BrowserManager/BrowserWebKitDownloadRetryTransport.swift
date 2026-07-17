@@ -3,8 +3,7 @@ import WebKit
 
 @MainActor
 final class BrowserWebKitDownloadRetryTransport:
-    DownloadRetryTransportStarting
-{
+    DownloadRetryTransportStarting {
     private weak var shellRuntime: BrowserShellRuntime?
     private weak var webViewRouting: BrowserWebViewRoutingService?
     private let transportFactory: any DownloadWebKitTransportAdapting
@@ -26,7 +25,7 @@ final class BrowserWebKitDownloadRetryTransport:
     ) -> Bool {
         guard let shellRuntime,
               let webViewRouting,
-              let activeWindow = shellRuntime.windowRegistry?.activeWindow,
+              let activeWindow = shellRuntime.windowRegistry.activeWindow,
               let currentTab = shellRuntime.windowTabs.currentTab(
                 for: activeWindow
               ),

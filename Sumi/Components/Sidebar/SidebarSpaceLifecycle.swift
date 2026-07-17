@@ -14,17 +14,20 @@ final class SidebarSpaceLifecycle {
     }
 
     private let runtimeIsAlive: @MainActor () -> Bool
-    private let inventory: SidebarInventoryProjection
+    private let spaces: SidebarSpaceCatalogProjection
+    private let inventory: SidebarSpaceInventoryProjection
     private let catalog: SpaceCatalogCommands
     private let removal: SpaceRemovalService
 
     init(
         runtimeIsAlive: @escaping @MainActor () -> Bool,
-        inventory: SidebarInventoryProjection,
+        spaces: SidebarSpaceCatalogProjection,
+        inventory: SidebarSpaceInventoryProjection,
         catalog: SpaceCatalogCommands,
         removal: SpaceRemovalService
     ) {
         self.runtimeIsAlive = runtimeIsAlive
+        self.spaces = spaces
         self.inventory = inventory
         self.catalog = catalog
         self.removal = removal
@@ -34,23 +37,23 @@ final class SidebarSpaceLifecycle {
         isIncognito: Bool,
         ephemeralSpaces: [Space]
     ) -> [Space] {
-        inventory.availableSpaces(
+        spaces.availableSpaces(
             isIncognito: isIncognito,
             ephemeralSpaces: ephemeralSpaces
         )
     }
 
     func currentSpace() -> Space? {
-        inventory.currentSpace()
+        spaces.currentSpace()
     }
 
     func space(id: UUID) -> Space? {
-        inventory.space(id: id)
+        spaces.space(id: id)
     }
 
     func canDeleteSpace() -> Bool {
         runtimeIsAlive()
-            && inventory.availableSpaces(
+            && spaces.availableSpaces(
                 isIncognito: false,
                 ephemeralSpaces: []
             ).count > 1
@@ -67,7 +70,7 @@ final class SidebarSpaceLifecycle {
         profileID: UUID?
     ) -> Space? {
         guard runtimeIsAlive() else { return nil }
-        return catalog.createSpace(
+        return catalog.createSpaceIfAdmitted(
             name: name,
             icon: icon,
             profileId: profileID

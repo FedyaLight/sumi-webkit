@@ -40,11 +40,11 @@ final class SumiFaviconMutationGate: @unchecked Sendable {
 
     func performPartitionCleanup(
         _ partition: SumiFaviconPartition,
-        _ body: () -> Void
-    ) {
-        queue.sync {
+        _ body: () throws -> Void
+    ) rethrows {
+        try queue.sync {
             partitionGenerations[partition, default: 0] &+= 1
-            body()
+            try body()
         }
     }
 

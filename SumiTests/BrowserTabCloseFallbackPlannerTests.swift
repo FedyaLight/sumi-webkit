@@ -24,13 +24,13 @@ final class BrowserTabCloseFallbackPlannerTests: XCTestCase {
             liveShortcutTabsByPin: [shortcutPin.id: shortcutLiveTab]
         )
         let planner = BrowserTabCloseFallbackPlanner(
-            selectionService: ShellSelectionService { _ in [] }
+            selectionService: ShellSelectionService(splitQuery: BrowserManager().splitQuery),
+            tabStore: store
         )
 
         let fallback = planner.fallbackAfterClosingRegularTab(
             closing,
-            in: windowState,
-            tabStore: store
+            in: windowState
         )
 
         XCTAssertEqual(fallback?.id, shortcutLiveTab.id)
@@ -50,13 +50,13 @@ final class BrowserTabCloseFallbackPlannerTests: XCTestCase {
             tabsBySpace: [space.id: [first, closing, next]]
         )
         let planner = BrowserTabCloseFallbackPlanner(
-            selectionService: ShellSelectionService { _ in [] }
+            selectionService: ShellSelectionService(splitQuery: BrowserManager().splitQuery),
+            tabStore: store
         )
 
         let fallback = planner.fallbackAfterClosingRegularTab(
             closing,
-            in: windowState,
-            tabStore: store
+            in: windowState
         )
 
         XCTAssertEqual(fallback?.id, next.id)
@@ -79,13 +79,13 @@ final class BrowserTabCloseFallbackPlannerTests: XCTestCase {
             liveShortcutTabsByPin: [shortcutPin.id: shortcutLiveTab]
         )
         let planner = BrowserTabCloseFallbackPlanner(
-            selectionService: ShellSelectionService { _ in [] }
+            selectionService: ShellSelectionService(splitQuery: BrowserManager().splitQuery),
+            tabStore: store
         )
 
         let fallback = planner.fallbackAfterClosingShortcutLiveTab(
             shortcutLiveTab,
-            in: windowState,
-            tabStore: store
+            in: windowState
         )
 
         XCTAssertEqual(fallback?.id, recent.id)
@@ -106,13 +106,13 @@ final class BrowserTabCloseFallbackPlannerTests: XCTestCase {
             liveShortcutTabsByPin: [shortcutPin.id: shortcutLiveTab]
         )
         let planner = BrowserTabCloseFallbackPlanner(
-            selectionService: ShellSelectionService { _ in [] }
+            selectionService: ShellSelectionService(splitQuery: BrowserManager().splitQuery),
+            tabStore: store
         )
 
         let fallback = planner.fallbackAfterClosingShortcutLiveTab(
             shortcutLiveTab,
-            in: windowState,
-            tabStore: store
+            in: windowState
         )
 
         XCTAssertEqual(fallback?.id, remembered.id)

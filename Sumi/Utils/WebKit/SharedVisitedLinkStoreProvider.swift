@@ -82,11 +82,13 @@ final class SharedVisitedLinkStoreProvider {
         replayPendingVisitedLinks(for: profileId, on: store)
     }
 
-    /// Releases only Sumi's in-memory reference to the SPI store object.
+    /// Clears and releases Sumi's in-memory visited-link state for one profile.
     /// This does not delete browser history, website data, cookies, profile
     /// records, or files.
     func discardStore(for profileId: UUID) {
-        storesByProfileId.removeValue(forKey: profileId)
+        storesByProfileId.removeValue(forKey: profileId)?
+            .sumiRemoveAllVisitedLinks()
+        pendingVisitedLinksByProfileId.removeValue(forKey: profileId)
     }
 
 #if DEBUG

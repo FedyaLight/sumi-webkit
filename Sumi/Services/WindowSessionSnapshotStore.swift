@@ -147,8 +147,65 @@ final class WindowSessionSnapshotStore {
         return true
     }
 
+    /// Migrates the browser-owned UserDefaults snapshot. An override file is
+    /// external test input and remains immutable; restore admission validates it.
+    func migrateDurableWindowProfileReference(
+        from deletedProfileID: UUID,
+        to fallbackProfileID: UUID
+    ) -> Bool {
+        switch loadUserDefaultsResult() {
+        case .missing:
+            return true
+        case .failed:
+            return false
+        case .loaded(var snapshot, _):
+            guard snapshot.currentProfileId == deletedProfileID else {
+                return true
+            }
+            snapshot.currentProfileId = fallbackProfileID
+            return persistAndVerify(snapshot)
+        }
+    }
+
+    func containsDurableWindowProfileReference(to profileID: UUID) -> Bool {
+        switch loadUserDefaultsResult() {
+        case .missing:
+            return false
+        case .failed:
+            return true
+        case .loaded(let snapshot, _):
+            return ProfileReferenceInventory(windowSnapshot: snapshot)
+                .contains(profileID)
+        }
+    }
+
     func resetCycleCache() {
         cachedPersistedData = nil
+    }
+
+    private func loadUserDefaultsResult() -> WindowSessionSnapshotLoadResult {
+        guard let data = userDefaults.data(forKey: key) else {
+            return .missing
+        }
+        return codec.decode(data, source: .userDefaultsKey(key))
+    }
+
+    private func persistAndVerify(_ snapshot: WindowSessionSnapshot) -> Bool {
+        let data: Data
+        do {
+            data = try codec.encode(snapshot)
+        } catch {
+            lastPersistFailure = error.localizedDescription
+            return false
+        }
+        userDefaults.set(data, forKey: key)
+        guard userDefaults.data(forKey: key) == data else {
+            lastPersistFailure = "UserDefaults rejected the window session write"
+            return false
+        }
+        cachedPersistedData = data
+        lastPersistFailure = nil
+        return true
     }
 
     private func loadOverrideResult() -> WindowSessionSnapshotLoadResult? {

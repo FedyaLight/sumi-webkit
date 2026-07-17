@@ -60,6 +60,7 @@ final class DisplayedShortcutResidenceContributionTests: XCTestCase {
     }
 
     func testSplitDropProjectionIncludesOnlyWindowsOnTheMovingMember() throws {
+        let tabManager = BrowserManager()
         let caller = BrowserWindowState()
         let matching = BrowserWindowState()
         let otherMember = BrowserWindowState()
@@ -119,16 +120,11 @@ final class DisplayedShortcutResidenceContributionTests: XCTestCase {
             activeMemberID: activatedID
         )
         let windows = [caller, matching, otherMember, otherGroup]
-        let synchronizer = WindowSplitPresentationSynchronizer(
-            tabManager: { nil },
-            windows: { windows },
-            selectTabWithoutPersistence: { _, _ in },
-            publishPreparedSelectionEffects: { _, _, _, _ in },
-            publishWindowChange: { _ in },
-            refreshCompositor: { _ in },
-            scheduleWindowSession: { _ in },
-            persistWindowSession: { _ in }
-        )
+        windows.forEach { XCTAssertEqual(
+            tabManager.windowRegistry.register($0),
+            .registered
+        ) }
+        let synchronizer = tabManager.splitPresentations
         let effect = SplitDropCommitEffect.resolving(
             callerWindowID: caller.id,
             sourceGroup: source,
@@ -166,19 +162,24 @@ final class DisplayedShortcutResidenceContributionTests: XCTestCase {
         let secondary = BrowserWindowState()
         let profile = Profile(name: "Runtime")
         let windows = [primary.id: primary, secondary.id: secondary]
-        let tabManager = try makeInMemoryTabManager(
+        let tabManager = BrowserManager()
+        tabManager.runtimePortConnection.attach(TestRuntimePorts.make(
             currentProfileId: { profile.id },
             defaultProfileId: { profile.id },
             profile: { $0 == profile.id ? profile : nil },
             windowState: { windows[$0] },
             windows: { windows.map { ($0.key, $0.value) } },
-            primaryTrackedWindowId: { _ in primary.id }
-        )
-        primary.tabManager = tabManager
-        secondary.tabManager = tabManager
-        let space = tabManager.spaceServices.catalog.createSpace(
-            name: "Space",
-            profileId: profile.id
+            webViewLifecycle: TestRuntimePorts.webViewLifecycle(
+                retirement: .rejecting,
+                primaryTrackedWindowId: { _ in primary.id }
+            )
+        ))
+        let space = try XCTUnwrap(
+            tabManager.sidebarSpaceLifecycle.createSpace(
+                name: "Space",
+                icon: SumiPersistentGlyph.spaceDefaultIconValue,
+                profileID: profile.id
+            )
         )
         let source = tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://contributed-residence.example/source",
@@ -198,7 +199,9 @@ final class DisplayedShortcutResidenceContributionTests: XCTestCase {
         }
         let authorization = try XCTUnwrap(
             TabShortcutConversionAuthorizer(
-                windows: tabManager.shortcutTabWindowQuery
+                windows: ShortcutTabWindowQuery(
+                    runtimeConnection: tabManager.runtimePortConnection
+                )
             ).authorize(plan, for: source)
         )
         let candidate = tabManager.shortcutPinRuntimeResolutionOwner
@@ -217,18 +220,36 @@ final class DisplayedShortcutResidenceContributionTests: XCTestCase {
             runtimeConnection: tabManager.runtimePortConnection,
             runtimeAttachment: plan.runtimeAttachment,
             windowMutations: tabManager.shortcutWindowMutationOwner,
-            profiles: tabManager.profileAssignments.tabs,
+            profiles: tabManager.tabProfileTransitions,
             persistence: ShortcutSplitLauncherWindowPersistence(
                 structuralLookup: tabManager.structuralLookupCoordinator
             ),
             structuralLookup: tabManager.structuralLookupCoordinator
+        )
+        let bindingTargets = ShortcutTabBindingTargetMutationService(
+            resolution: tabManager.shortcutPinRuntimeResolutionOwner,
+            profiles: tabManager.tabProfileTransitions
+        )
+        let bindings = ShortcutTabBindingSynchronizer(
+            presentationRefreshes: tabManager.liveShortcutPresentationRefreshes,
+            runtimeMutations: ShortcutTabBindingRuntimeMutation(
+                registry: tabManager.liveShortcutTabs,
+                targets: bindingTargets,
+                runtimeConnection: tabManager.runtimePortConnection,
+                windowMutations: tabManager.shortcutWindowMutationOwner,
+                structuralLookup: tabManager.structuralLookupCoordinator
+            ),
+            targets: bindingTargets
         )
         let preflight = try XCTUnwrap(
             DisplayedTabShortcutBindingPreparer(
                 registry: tabManager.liveShortcutTabs,
                 membership: tabManager.tabCollectionMembershipOwner,
                 resolution: tabManager.shortcutPinRuntimeResolutionOwner,
-                freshTabs: ShortcutFreshTabFactory(tabManager: tabManager)
+                freshTabs: ShortcutFreshTabFactory(
+                    tabFactory: tabManager.tabFactory,
+                    bindings: bindings
+                )
             ).preflight(
                 pin: insertion.insertedPin,
                 authorization: authorization,
@@ -271,7 +292,7 @@ final class DisplayedShortcutResidenceContributionTests: XCTestCase {
 
 @MainActor
 private struct Fixture {
-    let tabManager: TabManager
+    let tabManager: BrowserManager
     let windowID: UUID
     let pinID: UUID
     let contributedTab: Tab

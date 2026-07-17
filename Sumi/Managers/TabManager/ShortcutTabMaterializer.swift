@@ -15,19 +15,6 @@ final class ShortcutTabMaterializer {
         self.committer = committer
     }
 
-    convenience init(tabManager: TabManager) {
-        self.init(
-            resolution: tabManager.shortcutPinRuntimeResolutionOwner,
-            committer: ShortcutTabMaterializationCommitter(
-                registry: tabManager.liveShortcutTabs,
-                bindings: tabManager.shortcutTabBindings,
-                freshTabs: ShortcutFreshTabFactory(tabManager: tabManager),
-                membership: tabManager.tabCollectionMembershipOwner,
-                structuralLookup: tabManager.structuralLookupCoordinator
-            )
-        )
-    }
-
     func materialize(
         _ pin: ShortcutPin,
         in windowID: UUID,
@@ -59,5 +46,4 @@ final class ShortcutTabMaterializer {
             presentationPage: presentationPage
         )
     }
-
 }

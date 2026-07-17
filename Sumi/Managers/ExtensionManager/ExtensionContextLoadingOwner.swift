@@ -32,7 +32,9 @@ final class ExtensionContextLoadingOwner {
         profileID: UUID
     ) async throws -> WKWebExtensionContext? {
         guard runtimeIsEnabled() else { return nil }
-        runtimeAccess.ensureExtensionController(profileID)
+        guard runtimeAccess.ensureExtensionController(profileID) else {
+            return nil
+        }
         if let context = runtimeAccess.getExtensionContext(extensionID, profileID),
            context.isLoaded {
             retain(extensionID: extensionID, profileID: profileID)
@@ -55,7 +57,7 @@ final class ExtensionContextLoadingOwner {
 
     func ensureEnabledExtensionsLoaded(profileID: UUID) async {
         guard runtimeIsEnabled() else { return }
-        runtimeAccess.ensureExtensionController(profileID)
+        guard runtimeAccess.ensureExtensionController(profileID) else { return }
         for record in installedExtensions.records where record.isEnabled {
             guard runtimeAccess.getExtensionContext(record.id, profileID) == nil
             else { continue }

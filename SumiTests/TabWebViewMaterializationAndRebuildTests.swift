@@ -34,7 +34,7 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
     func testCreatePrimaryForFileURLInvokesInitialDocumentHandoff() throws {
         let browserManager = BrowserManager()
         let repository = browserManager.webViewSessions
-        let tab = browserManager.tabManager.tabFactory.makeTab(
+        let tab = browserManager.tabFactory.makeTab(
             url: URL(fileURLWithPath: "/tmp/sumi-create-primary/index.html"),
             loadsCachedFaviconOnInit: false
         )
@@ -96,7 +96,7 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
         let replacementService = webViewRuntime.extensionTabWebViewReplacement
         let untrackedInstallation =
             webViewRuntime.untrackedWebViewInstallationService
-        let tab = browserManager.tabManager.tabFactory.makeTab(
+        let tab = browserManager.tabFactory.makeTab(
             url: URL(string: "https://example.com/extension-replacement")!,
             loadsCachedFaviconOnInit: false
         )
@@ -134,7 +134,7 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
         let runtime = browserManager.testWebViewRuntime()
         let trackedAdmission = runtime.trackedWebViewAdmission
         let replacementService = runtime.extensionTabWebViewReplacement
-        let tab = browserManager.tabManager.tabFactory.makeTab(
+        let tab = browserManager.tabFactory.makeTab(
             url: URL(string: "https://example.com/tracked-extension-replacement")!,
             loadsCachedFaviconOnInit: false
         )
@@ -177,7 +177,7 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
         let browserManager = makeIsolatedOwnershipBrowserManager()
         let repository = browserManager.webViewSessions
         let trackedAdmission = browserManager.testWebViewRuntime().trackedWebViewAdmission
-        let tab = browserManager.tabManager.tabFactory.makeTab(
+        let tab = browserManager.tabFactory.makeTab(
             loadsCachedFaviconOnInit: false
         )
         let configuration = WKWebViewConfiguration()
@@ -207,10 +207,10 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
         let browserManager = makeIsolatedOwnershipBrowserManager()
         let repository = browserManager.webViewSessions
         let trackedAdmission = browserManager.testWebViewRuntime().trackedWebViewAdmission
-        let preparingTab = browserManager.tabManager.tabFactory.makeTab(
+        let preparingTab = browserManager.tabFactory.makeTab(
             loadsCachedFaviconOnInit: false
         )
-        let receivingTab = browserManager.tabManager.tabFactory.makeTab(
+        let receivingTab = browserManager.tabFactory.makeTab(
             loadsCachedFaviconOnInit: false
         )
         let profileID = try XCTUnwrap(browserManager.currentProfile?.id)
@@ -250,7 +250,7 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
         let browserManager = makeIsolatedOwnershipBrowserManager()
         let runtime = browserManager.testWebViewRuntime()
         let repository = browserManager.webViewSessions
-        let tab = browserManager.tabManager.tabFactory.makeTab(
+        let tab = browserManager.tabFactory.makeTab(
             loadsCachedFaviconOnInit: false
         )
         let sourceWindowID = UUID()
@@ -295,7 +295,7 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
         let browserManager = makeIsolatedOwnershipBrowserManager()
         let runtime = browserManager.testWebViewRuntime()
         let repository = browserManager.webViewSessions
-        let tab = browserManager.tabManager.tabFactory.makeTab(
+        let tab = browserManager.tabFactory.makeTab(
             url: URL(string: "https://example.com/protected-placement")!,
             loadsCachedFaviconOnInit: false
         )
@@ -355,7 +355,7 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
         let browserManager = makeIsolatedOwnershipBrowserManager()
         let runtime = browserManager.testWebViewRuntime()
         let repository = browserManager.webViewSessions
-        let tab = browserManager.tabManager.tabFactory.makeTab(
+        let tab = browserManager.tabFactory.makeTab(
             loadsCachedFaviconOnInit: false
         )
         let sourceWindowID = UUID()
@@ -401,7 +401,7 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
         let browserManager = makeIsolatedOwnershipBrowserManager()
         let repository = browserManager.webViewSessions
         let trackedAdmission = browserManager.testWebViewRuntime().trackedWebViewAdmission
-        let tab = browserManager.tabManager.tabFactory.makeTab(
+        let tab = browserManager.tabFactory.makeTab(
             url: URL(string: "https://example.com/clone-placement")!,
             loadsCachedFaviconOnInit: false
         )
@@ -441,7 +441,7 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
         let detachedReplacement = webViewRuntime.detachedWebViewReplacement
         let untrackedInstallation =
             webViewRuntime.untrackedWebViewInstallationService
-        let tab = browserManager.tabManager.tabFactory.makeTab(
+        let tab = browserManager.tabFactory.makeTab(
             url: URL(string: "https://example.com/detached-rollback")!,
             loadsCachedFaviconOnInit: false
         )
@@ -561,10 +561,10 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
         let detachedReplacement = webViewRuntime.detachedWebViewReplacement
         let untrackedInstallation =
             webViewRuntime.untrackedWebViewInstallationService
-        let receivingTab = browserManager.tabManager.tabFactory.makeTab(
+        let receivingTab = browserManager.tabFactory.makeTab(
             loadsCachedFaviconOnInit: false
         )
-        let foreignTab = browserManager.tabManager.tabFactory.makeTab(
+        let foreignTab = browserManager.tabFactory.makeTab(
             loadsCachedFaviconOnInit: false
         )
         let previous = WKWebView()

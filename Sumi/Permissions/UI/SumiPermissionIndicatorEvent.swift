@@ -112,11 +112,14 @@ final class SumiPermissionIndicatorEventStore: ObservableObject {
     @Published private(set) var recordsByPageId: [String: [SumiPermissionIndicatorEventRecord]] = [:]
 
     private var duplicateIndexByPageId: [String: [String: String]] = [:]
+    private var retiredProfileIDs: Set<String> = []
 
     @discardableResult
     func record(
         _ record: SumiPermissionIndicatorEventRecord
     ) -> SumiPermissionIndicatorEventRecord {
+        guard retiredProfileIDs.contains(record.profilePartitionId) == false
+        else { return record }
         pruneExpired(now: Date())
 
         let pageId = normalizedId(record.pageId)
@@ -174,6 +177,32 @@ final class SumiPermissionIndicatorEventStore: ObservableObject {
             removed += clear(pageId: pageId)
         }
         return removed
+    }
+
+    @discardableResult
+    func clear(profilePartitionId: String) -> Int {
+        let profileID = SumiPermissionKey.normalizedProfilePartitionId(
+            profilePartitionId
+        )
+        var removed = 0
+        for pageID in Array(recordsByPageId.keys) {
+            guard var records = recordsByPageId[pageID] else { continue }
+            let originalCount = records.count
+            records.removeAll { $0.profilePartitionId == profileID }
+            removed += originalCount - records.count
+            recordsByPageId[pageID] = records.isEmpty ? nil : records
+            rebuildDuplicateIndex(forPageId: pageID)
+        }
+        return removed
+    }
+
+    @discardableResult
+    func retireProfile(_ profilePartitionId: String) -> Int {
+        let profileID = SumiPermissionKey.normalizedProfilePartitionId(
+            profilePartitionId
+        )
+        retiredProfileIDs.insert(profileID)
+        return clear(profilePartitionId: profileID)
     }
 
     @discardableResult

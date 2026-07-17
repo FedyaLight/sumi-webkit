@@ -4,47 +4,49 @@ import XCTest
 @MainActor
 final class SidebarShortcutPromotionOwnerTests: XCTestCase {
     func testPinShortcutGloballyCopiesShortcutWithLiveShortcutTitle() throws {
-        let spy = Spy()
-        let owner = makeOwner(spy: spy)
-        let windowState = BrowserWindowState()
-        let spaceId = UUID()
-        let pin = try makeShortcutPin(title: "Saved Title")
+        let harness = makePromotionHarness()
+        let pin = try makeShortcutPin(
+            title: "Saved Title",
+            spaceId: harness.space.id
+        )
         let liveTab = makeTab(name: "  Live Title  ")
+        harness.browserManager.structuralCollectionMutationOwner
+            .setSpacePinnedShortcuts([pin], for: harness.space.id)
 
-        owner.pinShortcutGlobally(pin, in: windowState, spaceId: spaceId, liveTab: liveTab)
+        pinShortcutGlobally(
+            pin,
+            harness: harness,
+            liveTab: liveTab
+        )
 
         XCTAssertEqual(
-            spy.events,
-            [
-                .copyShortcutPinToEssentials(
-                    pin.id,
-                    "Live Title",
-                    windowState.id,
-                    spaceId
-                ),
-            ]
+            harness.browserManager.shortcutPinCollectionStateOwner
+                .essentialPins(for: harness.profile.id)
+                .first?.title,
+            "Live Title"
         )
     }
 
     func testPinShortcutGloballyFallsBackToPinTitle() throws {
-        let spy = Spy()
-        let owner = makeOwner(spy: spy)
-        let windowState = BrowserWindowState()
-        let spaceId = UUID()
-        let pin = try makeShortcutPin(title: "Saved Title")
+        let harness = makePromotionHarness()
+        let pin = try makeShortcutPin(
+            title: "Saved Title",
+            spaceId: harness.space.id
+        )
+        harness.browserManager.structuralCollectionMutationOwner
+            .setSpacePinnedShortcuts([pin], for: harness.space.id)
 
-        owner.pinShortcutGlobally(pin, in: windowState, spaceId: spaceId, liveTab: nil)
+        pinShortcutGlobally(
+            pin,
+            harness: harness,
+            liveTab: nil
+        )
 
         XCTAssertEqual(
-            spy.events,
-            [
-                .copyShortcutPinToEssentials(
-                    pin.id,
-                    "Saved Title",
-                    windowState.id,
-                    spaceId
-                ),
-            ]
+            harness.browserManager.shortcutPinCollectionStateOwner
+                .essentialPins(for: harness.profile.id)
+                .first?.title,
+            "Saved Title"
         )
     }
 
@@ -57,18 +59,17 @@ final class SidebarShortcutPromotionOwnerTests: XCTestCase {
             executionProfileId: executionProfileId,
             iconAsset: "star"
         )
-        harness.browserManager.tabManager.structuralCollectionMutationOwner.setSpacePinnedShortcuts([sourcePin], for: harness.space.id)
+        harness.browserManager.structuralCollectionMutationOwner.setSpacePinnedShortcuts([sourcePin], for: harness.space.id)
 
-        harness.browserManager.sidebarCommandService.shortcutPromotion.pinShortcutGlobally(
+        pinShortcutGlobally(
             sourcePin,
-            in: harness.windowState,
-            spaceId: harness.space.id,
+            harness: harness,
             liveTab: nil
         )
 
-        XCTAssertEqual(harness.browserManager.tabManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: harness.space.id).map(\.id), [sourcePin.id])
+        XCTAssertEqual(harness.browserManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: harness.space.id).map(\.id), [sourcePin.id])
         let essential = try XCTUnwrap(
-            harness.browserManager.tabManager.shortcutPinCollectionStateOwner.essentialPins(for: harness.profile.id).first
+            harness.browserManager.shortcutPinCollectionStateOwner.essentialPins(for: harness.profile.id).first
         )
         XCTAssertNotEqual(essential.id, sourcePin.id)
         XCTAssertEqual(essential.role, .essential)
@@ -92,36 +93,20 @@ final class SidebarShortcutPromotionOwnerTests: XCTestCase {
             launchURL: sourcePin.launchURL,
             title: "Existing"
         )
-        harness.browserManager.tabManager.structuralCollectionMutationOwner.setSpacePinnedShortcuts([sourcePin], for: harness.space.id)
-        harness.browserManager.tabManager.structuralCollectionMutationOwner.setPinnedTabs([existingEssential], for: harness.profile.id)
+        harness.browserManager.structuralCollectionMutationOwner.setSpacePinnedShortcuts([sourcePin], for: harness.space.id)
+        harness.browserManager.structuralCollectionMutationOwner.setPinnedTabs([existingEssential], for: harness.profile.id)
 
-        harness.browserManager.sidebarCommandService.shortcutPromotion.pinShortcutGlobally(
+        pinShortcutGlobally(
             sourcePin,
-            in: harness.windowState,
-            spaceId: harness.space.id,
+            harness: harness,
             liveTab: nil
         )
 
         XCTAssertEqual(
-            harness.browserManager.tabManager.shortcutPinCollectionStateOwner.essentialPins(for: harness.profile.id).map(\.id),
+            harness.browserManager.shortcutPinCollectionStateOwner.essentialPins(for: harness.profile.id).map(\.id),
             [existingEssential.id]
         )
-        XCTAssertEqual(harness.browserManager.tabManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: harness.space.id).map(\.id), [sourcePin.id])
-    }
-
-    private func makeOwner(spy: Spy) -> BrowserSidebarShortcutPromotionOwner {
-        BrowserSidebarShortcutPromotionOwner(
-            copyShortcutPinToEssentials: { pin, title, context in
-                spy.events.append(
-                    .copyShortcutPinToEssentials(
-                        pin.id,
-                        title,
-                        context.windowState?.id,
-                        context.spaceId
-                    )
-                )
-            }
-        )
+        XCTAssertEqual(harness.browserManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: harness.space.id).map(\.id), [sourcePin.id])
     }
 
     private func makeShortcutPin(
@@ -142,6 +127,22 @@ final class SidebarShortcutPromotionOwnerTests: XCTestCase {
         )
     }
 
+    private func pinShortcutGlobally(
+        _ pin: ShortcutPin,
+        harness: PromotionHarness,
+        liveTab: Tab?
+    ) {
+        _ = harness.browserManager.sidebarPinCommands
+            .copyToEssentials(
+                pin,
+                title: pin.resolvedDisplayTitle(liveTab: liveTab),
+                context: EssentialsShortcutPlacementOwner.TargetContext(
+                    windowState: harness.windowState,
+                    spaceId: harness.space.id
+                )
+            )
+    }
+
     private func makeTab(name: String) -> Tab {
         Tab(
             url: URL(string: "https://example.com/live")!,
@@ -159,10 +160,10 @@ final class SidebarShortcutPromotionOwnerTests: XCTestCase {
 
         browserManager.profileManager.profiles = [profile]
         browserManager.currentProfile = profile
-        browserManager.tabManager.spaceStateOwner.replaceSpaces([space])
-        browserManager.tabManager.spaceStateOwner.replaceCurrentSpace(space)
+        browserManager.spaceStateOwner.replaceSpaces([space])
+        browserManager.spaceStateOwner.replaceCurrentSpace(space)
 
-        windowState.tabManager = browserManager.tabManager
+        browserManager.tabResidenceAuthority.establishResidenceSession(on: windowState)
         windowState.currentSpaceId = space.id
         windowState.currentProfileId = profile.id
 
@@ -172,16 +173,6 @@ final class SidebarShortcutPromotionOwnerTests: XCTestCase {
             space: space,
             windowState: windowState
         )
-    }
-}
-
-private final class Spy {
-    var events: [SidebarShortcutPromotionOwnerTests.Event] = []
-}
-
-extension SidebarShortcutPromotionOwnerTests {
-    enum Event: Equatable {
-        case copyShortcutPinToEssentials(UUID, String, UUID?, UUID?)
     }
 }
 

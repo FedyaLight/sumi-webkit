@@ -322,6 +322,7 @@ struct SiteSettingsRepositoryHarness {
             store: store,
             recentActivityStore: recentStore,
             antiAbuseStore: SumiPermissionAntiAbuseStore(userDefaults: nil),
+            siteActivityStore: siteActivityStore,
             userDefaults: userDefaults,
             now: { Date(timeIntervalSince1970: 1_800_000_000) }
         )

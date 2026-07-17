@@ -33,13 +33,38 @@ enum SumiStartupSchemaV1: VersionedSchema {
     }
 }
 
+enum SumiStartupSchemaV2: VersionedSchema {
+    static let versionIdentifier = Schema.Version(2, 0, 0)
+
+    static var models: [any PersistentModel.Type] {
+        [
+            SpaceEntity.self,
+            ProfileEntity.self,
+            ProfileRetirementEntity.self,
+            TabEntity.self,
+            FolderEntity.self,
+            TabsStateEntity.self,
+            HistoryEntryEntity.self,
+            HistoryVisitEntity.self,
+            ExtensionEntity.self,
+            SafariContentBlockerEntity.self,
+            PermissionDecisionEntity.self,
+        ]
+    }
+}
+
 enum SumiStartupMigrationPlan: SchemaMigrationPlan {
     static var schemas: [any VersionedSchema.Type] {
-        [SumiStartupSchemaV1.self]
+        [SumiStartupSchemaV1.self, SumiStartupSchemaV2.self]
     }
 
     static var stages: [MigrationStage] {
-        []
+        [
+            .lightweight(
+                fromVersion: SumiStartupSchemaV1.self,
+                toVersion: SumiStartupSchemaV2.self
+            ),
+        ]
     }
 }
 
@@ -62,7 +87,7 @@ final class SumiStartupPersistence {
     nonisolated private static let storeFileName = "default.store"
     nonisolated private static let quarantineDirectoryName = "StartupPersistenceQuarantine"
 
-    static let schema = Schema(versionedSchema: SumiStartupSchemaV1.self)
+    static let schema = Schema(versionedSchema: SumiStartupSchemaV2.self)
     static let migrationPlan: (any SchemaMigrationPlan.Type) = SumiStartupMigrationPlan.self
 
     // MARK: - URLs
@@ -465,7 +490,7 @@ final class SumiStartupPersistence {
 extension BrowserManager.ProfileSwitchContext {
     var shouldProvideFeedback: Bool {
         switch self {
-        case .windowActivation:
+        case .windowActivation, .profileRetirement:
             return false
         case .spaceChange, .userInitiated, .recovery:
             return true
@@ -474,7 +499,7 @@ extension BrowserManager.ProfileSwitchContext {
 
     var shouldAnimateTransition: Bool {
         switch self {
-        case .windowActivation:
+        case .windowActivation, .profileRetirement:
             return false
         case .spaceChange, .userInitiated, .recovery:
             return true

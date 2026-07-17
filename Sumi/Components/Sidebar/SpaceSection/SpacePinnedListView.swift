@@ -12,7 +12,9 @@ struct SpacePinnedListView: View {
     let inventory: SidebarSpaceInventorySnapshot
     let selection: SidebarWindowSelectionQuery
     let pinProjection: SidebarPinFolderProjection
-    let pinCommands: SidebarPinFolderCommands
+    let pinCommands: SidebarPinCommands
+    let pinExecution: SidebarPinExecutionCommands
+    let folderCommands: SidebarFolderCommands
     let spaceLifecycle: SidebarSpaceLifecycle
     let browserContext: SidebarBrowserContext
     let isInteractive: Bool
@@ -70,6 +72,8 @@ struct SpacePinnedListView: View {
                                 selection: selection,
                                 pinProjection: pinProjection,
                                 pinCommands: pinCommands,
+                                pinExecution: pinExecution,
+                                folderCommands: folderCommands,
                                 spaceLifecycle: spaceLifecycle,
                                 browserContext: browserContext,
                                 shortcutRestoreSession: $shortcutRestoreSession,
@@ -218,5 +222,4 @@ struct SpacePinnedListView: View {
                 in: windowState
             )
     }
-
 }

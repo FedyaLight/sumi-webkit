@@ -33,8 +33,19 @@ final class TabStructuralMutationPublisher {
         }
     }
 
+    func schedulePersistence() {
+        persistence.scheduleStructuralPersistence()
+    }
+
+    func publishSplitGroupChange(scope: TabStructureChangeScope) {
+        persistence.markSplitGroupsStructurallyDirty()
+        lookup.requestPublish(scope: scope)
+    }
+
     @discardableResult
-    func withTransaction<T>(_ operation: () throws -> T) rethrows -> T {
+    func withTransaction<T>(
+        _ operation: @MainActor @Sendable () throws -> T
+    ) rethrows -> T {
         try lookup.withTransaction(operation)
     }
 

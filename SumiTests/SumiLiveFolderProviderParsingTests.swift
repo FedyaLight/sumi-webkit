@@ -66,7 +66,6 @@ final class SumiLiveFolderProviderParsingTests: XCTestCase {
         let source = SumiLiveFolderSource(
             folderId: UUID(),
             spaceId: UUID(),
-            profileId: nil,
             kind: .githubIssues
         )
         let html = """
@@ -106,7 +105,6 @@ final class SumiLiveFolderProviderParsingTests: XCTestCase {
         let source = SumiLiveFolderSource(
             folderId: UUID(),
             spaceId: UUID(),
-            profileId: nil,
             kind: .githubPullRequests
         )
         let html = """

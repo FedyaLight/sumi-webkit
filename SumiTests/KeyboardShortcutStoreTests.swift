@@ -1,3 +1,4 @@
+import AppKit
 import XCTest
 
 @testable import Sumi
@@ -49,5 +50,30 @@ final class KeyboardShortcutStoreTests: XCTestCase {
 
         let notification = BrowserNotification.tabClosure(count: 1, undoShortcut: "⌥⌘Z", action: nil)
         XCTAssertEqual(notification.subtitle, "Press ⌥⌘Z to reopen")
+    }
+
+    @MainActor
+    func testRegisteredShortcutPassesThroughWhenActionRouterIsDetached() throws {
+        let suiteName = "KeyboardShortcutStoreTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let shortcutManager = KeyboardShortcutManager(
+            userDefaults: defaults,
+            installEventMonitor: false
+        )
+        let event = try XCTUnwrap(NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: [.command],
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            characters: "t",
+            charactersIgnoringModifiers: "t",
+            isARepeat: false,
+            keyCode: 17
+        ))
+
+        XCTAssertFalse(shortcutManager.executeShortcut(event))
     }
 }

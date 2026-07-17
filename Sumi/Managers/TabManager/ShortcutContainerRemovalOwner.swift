@@ -4,46 +4,45 @@ import Foundation
 /// essentials/space-pinned shortcut array or a space's regular-tab list.
 @MainActor
 final class ShortcutContainerRemovalOwner {
-    private let pinnedByProfile: @MainActor () -> [UUID: [ShortcutPin]]
-    private let setPinnedTabs: @MainActor ([ShortcutPin], UUID) -> Void
-    private let removeRegularTab: @MainActor (UUID, UUID, UUID?) -> Void
-    private let containsRegularTab: @MainActor (Tab, UUID) -> Bool
-    private let currentSpaceId: @MainActor () -> UUID?
+    private let pins: ShortcutPinCollectionStateOwner
+    private let structuralMutations: TabStructuralCollectionMutationOwner
+    private let regularTabs: RegularTabCollectionOwner
+    private let spaces: TabSpaceCollectionStateOwner
 
     init(
-        pinnedByProfile: @escaping @MainActor () -> [UUID: [ShortcutPin]],
-        setPinnedTabs: @escaping @MainActor ([ShortcutPin], UUID) -> Void,
-        removeRegularTab: @escaping @MainActor (UUID, UUID, UUID?) -> Void,
-        containsRegularTab: @escaping @MainActor (Tab, UUID) -> Bool,
-        currentSpaceId: @escaping @MainActor () -> UUID?
+        pins: ShortcutPinCollectionStateOwner,
+        structuralMutations: TabStructuralCollectionMutationOwner,
+        regularTabs: RegularTabCollectionOwner,
+        spaces: TabSpaceCollectionStateOwner
     ) {
-        self.pinnedByProfile = pinnedByProfile
-        self.setPinnedTabs = setPinnedTabs
-        self.removeRegularTab = removeRegularTab
-        self.containsRegularTab = containsRegularTab
-        self.currentSpaceId = currentSpaceId
+        self.pins = pins
+        self.structuralMutations = structuralMutations
+        self.regularTabs = regularTabs
+        self.spaces = spaces
     }
 
-    func removeFromCurrentContainer(_ tab: Tab) {
-        for (profileId, pins) in pinnedByProfile() {
-            if let index = pins.firstIndex(where: { $0.id == tab.id }) {
-                var copy = pins
+    @discardableResult
+    func removeFromCurrentContainer(_ tab: Tab) -> Bool {
+        for (profileId, profilePins) in pins.pinnedByProfileSnapshot() {
+            if let index = profilePins.firstIndex(where: { $0.id == tab.id }) {
+                var copy = profilePins
                 if index < copy.count { copy.remove(at: index) }
-                setPinnedTabs(copy, profileId)
-                return
+                structuralMutations.setPinnedTabs(copy, for: profileId)
+                return true
             }
         }
 
         if let spaceId = tab.spaceId {
-            removeRegularTab(
-                tab.id,
-                spaceId,
-                currentSpaceId()
-            )
+            return regularTabs.remove(
+                ifIdentical: tab,
+                from: spaceId,
+                currentSpaceId: spaces.currentSpace?.id
+            ) != nil
         }
+        return false
     }
 
     func containsIdenticalRegularTab(_ tab: Tab, in spaceID: UUID) -> Bool {
-        containsRegularTab(tab, spaceID)
+        regularTabs.containsIdentical(tab, in: spaceID)
     }
 }

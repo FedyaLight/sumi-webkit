@@ -29,8 +29,7 @@ final class PersistenceFixtureTests: XCTestCase {
     }
 
     func testPreVersionedStartupStoreFixtureMigratesWithoutQuarantine()
-        throws
-    {
+        throws {
         let directory = try makeTemporaryDirectory()
         let storeURL = directory.appendingPathComponent("default.store")
         let quarantineURL = directory.appendingPathComponent(
@@ -68,8 +67,7 @@ final class PersistenceFixtureTests: XCTestCase {
     }
 
     func testBookmarkV2SQLiteFixtureLightweightMigratesToCurrentModel()
-        throws
-    {
+        throws {
         let directory = try makeTemporaryDirectory()
         try copyFixture(
             "bookmarks/SumiBookmarks-v2.sqlite",
@@ -167,8 +165,7 @@ final class PersistenceFixtureTests: XCTestCase {
     }
 
     func testPermissionCanonicalFixtureLoadsAndFutureAndMalformedFailClosed()
-        async throws
-    {
+        async throws {
         let loadedDirectory = try makeTemporaryDirectory()
         try copyFixture(
             "permissions/canonical-v1.json",
@@ -289,8 +286,7 @@ final class PersistenceFixtureTests: XCTestCase {
 
     @MainActor
     func testLogicalBackupFixturesReadV1AndRejectFutureAndMalformed()
-        throws
-    {
+        throws {
         let service = SumiBackupService()
         let archive = try service.readBackup(
             from: fixtureData("backups/logical-backup-v1.sumibackup")
@@ -311,8 +307,7 @@ final class PersistenceFixtureTests: XCTestCase {
     }
 
     func testImportJournalFixturesReadV1AndRejectFutureAndMalformed()
-        async throws
-    {
+        async throws {
         let directory = try makeTemporaryDirectory()
         let journalURL = directory.appendingPathComponent(
             "ImportTransaction.json"
@@ -340,8 +335,7 @@ final class PersistenceFixtureTests: XCTestCase {
     }
 
     func testFaviconMetadataFixturesReadV2AndRejectFutureAndMalformed()
-        throws
-    {
+        throws {
         let codec = SumiFaviconMetadataCodec()
         XCTAssertEqual(
             try codec.decode(
@@ -368,8 +362,7 @@ final class PersistenceFixtureTests: XCTestCase {
 
     @MainActor
     func testBoostFixturesReadShippedStoreAndPreserveMalformedBytes()
-        throws
-    {
+        throws {
         let loadedDirectory = try makeTemporaryDirectory()
         try copyFixture(
             "boosts/boosts-shipped-unversioned.json",
@@ -412,8 +405,7 @@ final class PersistenceFixtureTests: XCTestCase {
     }
 
     func testLiveFolderFixturesReadShippedStoreAndFailClosedMalformed()
-        async throws
-    {
+        async throws {
         let directory = try makeTemporaryDirectory()
         let storeURL = directory.appendingPathComponent("live-folders.json")
         try copyFixture(
@@ -421,7 +413,7 @@ final class PersistenceFixtureTests: XCTestCase {
             to: storeURL
         )
         let store = SumiLiveFolderStore(fileURL: storeURL)
-        let loaded = await store.load()
+        let loaded = try await store.load()
         XCTAssertEqual(
             loaded.sources.map(\.id),
             [UUID(uuidString: "00000000-0000-0000-0000-000000000700")!]
@@ -436,14 +428,50 @@ final class PersistenceFixtureTests: XCTestCase {
             to: storeURL
         )
         let malformed = try Data(contentsOf: storeURL)
-        let failedClosed = await store.load()
-        XCTAssertEqual(failedClosed, .empty)
+        do {
+            _ = try await store.load()
+            XCTFail("Malformed Live Folder state must fail closed")
+        } catch {}
+        do {
+            try await store.normalizeLegacyProfileReferences()
+            XCTFail("Retirement normalization must reject malformed state")
+        } catch {}
         XCTAssertEqual(try Data(contentsOf: storeURL), malformed)
     }
 
+    func testLiveFolderRetirementNormalizationRemovesLegacyProfileIdentity()
+        async throws {
+        let directory = try makeTemporaryDirectory()
+        let storeURL = directory.appendingPathComponent("live-folders.json")
+        try copyFixture(
+            "live-folders/live-folders-shipped-unversioned.json",
+            to: storeURL
+        )
+        let legacyProfileID = UUID()
+        let data = try Data(contentsOf: storeURL)
+        var object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: data) as? [String: Any]
+        )
+        var sources = try XCTUnwrap(object["sources"] as? [[String: Any]])
+        sources[0]["profileId"] = legacyProfileID.uuidString
+        object["sources"] = sources
+        try JSONSerialization.data(withJSONObject: object)
+            .write(to: storeURL, options: [.atomic])
+        let store = SumiLiveFolderStore(fileURL: storeURL)
+
+        try await store.normalizeLegacyProfileReferences()
+
+        let normalized = try Data(contentsOf: storeURL)
+        XCTAssertFalse(
+            String(decoding: normalized, as: UTF8.self)
+                .contains(legacyProfileID.uuidString)
+        )
+        let normalizedState = try await store.load()
+        XCTAssertEqual(normalizedState.sources.count, 1)
+    }
+
     func testAdblockManifestFixturesReadV1AndRejectFutureAndTamper()
-        async throws
-    {
+        async throws {
         let directory = try makeTemporaryDirectory()
         let activeURL = directory.appendingPathComponent(
             "active-generation.json"

@@ -29,23 +29,26 @@ final class SidebarDragMultiwindowSplitConversionTests: XCTestCase {
         var visibleSplitIdsByWindow: [UUID: [UUID]] = [:]
         var primaryTrackedTabId: UUID?
         var persistedWindowIds: [UUID] = []
-        let tabManager = try makeInMemoryTabManager(
+        let tabManager = BrowserManager()
+        tabManager.runtimePortConnection.attach(TestRuntimePorts.make(
             windowState: { states[$0] },
             windows: { states.map { ($0.key, $0.value) } },
+            webViewLifecycle: TestRuntimePorts.webViewLifecycle(
+                retirement: .rejecting,
+                primaryTrackedWindowId: { tabId in
+                    tabId == primaryTrackedTabId ? primaryWindow.id : nil
+                }
+            ),
             visibleSplitTabIds: { visibleSplitIdsByWindow[$0] ?? [] },
-            primaryTrackedWindowId: { tabId in
-                tabId == primaryTrackedTabId ? primaryWindow.id : nil
-            },
             persistWindowSession: { persistedWindowIds.append($0.id) }
-        )
-        primaryWindow.tabManager = tabManager
-        secondaryWindow.tabManager = tabManager
-        uninvolvedWindow.tabManager = tabManager
+        ))
+        states.values.forEach { tabManager.windowRegistry.register($0) }
         let profileId = UUID()
-        let space = tabManager.spaceServices.catalog.createSpace(
+        let space = try XCTUnwrap(tabManager.sidebarSpaceLifecycle.createSpace(
             name: "Work",
-            profileId: profileId
-        )
+            icon: SumiPersistentGlyph.spaceDefaultIconValue,
+            profileID: profileId
+        ))
         let companion = tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://example.com/current",
             in: space

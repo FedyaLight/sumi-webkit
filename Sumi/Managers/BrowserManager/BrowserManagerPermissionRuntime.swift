@@ -1,5 +1,5 @@
-import SwiftData
 import SumiDomain
+import SwiftData
 
 @MainActor
 final class BrowserManagerPermissionRuntime {
@@ -58,6 +58,7 @@ final class BrowserManagerPermissionRuntime {
     let systemPermissionService: any SumiSystemPermissionService
     let permissionCoordinator: any SumiPermissionCoordinating
     let geolocationProvider: (any SumiGeolocationProviding)?
+    let notificationService: any SumiNotificationServicing
     let runtimePermissionController: any SumiRuntimePermissionControlling
     let autoplayStore: SumiAutoplayPolicyStoreAdapter
     let permissionRecentActivityStore: SumiPermissionRecentActivityStore
@@ -121,7 +122,8 @@ final class BrowserManagerPermissionRuntime {
                 ),
                 persistentStore: persistentPermissionStore,
                 antiAbuseStore: antiAbuseStore,
-                sessionOwnerId: "browser"
+                sessionOwnerId: "browser",
+                profileAdmission: autoplayStore.profileAdmission
             )
         let geolocationProvider = dependencies.geolocationProvider
             ?? SumiLazyGeolocationProvider {
@@ -140,7 +142,8 @@ final class BrowserManagerPermissionRuntime {
             ?? SumiPermissionCleanupService(
                 store: persistentPermissionStore,
                 recentActivityStore: permissionRecentActivityStore,
-                antiAbuseStore: antiAbuseStore
+                antiAbuseStore: antiAbuseStore,
+                siteActivityStore: dependencies.permissionSiteActivityStore
             )
         let blockedPopupStore = dependencies.blockedPopupStore ?? SumiBlockedPopupStore()
         let externalSchemeSessionStore = dependencies.externalSchemeSessionStore
@@ -149,6 +152,7 @@ final class BrowserManagerPermissionRuntime {
         self.systemPermissionService = systemPermissionService
         self.permissionCoordinator = permissionCoordinator
         self.geolocationProvider = geolocationProvider
+        self.notificationService = notificationService
         self.runtimePermissionController = runtimePermissionController
         self.autoplayStore = autoplayStore
         self.permissionRecentActivityStore = permissionRecentActivityStore
@@ -214,9 +218,19 @@ final class BrowserManagerPermissionRuntime {
         await permissionSiteActivityStore.persistenceAuthority.flushPendingWrites()
     }
 
+    func prepareForProfileRetirement(profilePartitionId: String) async -> Bool {
+        let profileID = await autoplayStore.sealProfile(profilePartitionId)
+        let notificationRetired = await notificationService.retireProfile(
+            profilePartitionId: profileID
+        )
+        let permissionRuntimeRetired = await permissionLifecycleController.prepareForProfileRetirement(
+            profilePartitionId: profileID
+        )
+        await autoplayStore.waitForProfileDrain(profileID)
+        return notificationRetired && permissionRuntimeRetired
+    }
+
     isolated deinit {
         permissionEventOwner?.cancel()
     }
 }
-
-extension BrowserManagerPermissionRuntime: BrowserPermissionObservationManaging {}

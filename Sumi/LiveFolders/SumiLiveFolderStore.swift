@@ -1,8 +1,6 @@
 import Foundation
-import OSLog
 
 actor SumiLiveFolderStore {
-    private static let log = Logger.sumi(category: "LiveFolders")
     private let fileURL: URL
     private let fileManager: FileManager
 
@@ -14,30 +12,39 @@ actor SumiLiveFolderStore {
         self.fileManager = fileManager
     }
 
-    func load() -> SumiLiveFolderDiskState {
+    enum StoreError: Error {
+        case verificationFailed
+    }
+
+    func load() throws -> SumiLiveFolderDiskState {
         guard fileManager.fileExists(atPath: fileURL.path) else {
             return .empty
         }
+        let data = try Data(contentsOf: fileURL)
+        return try JSONDecoder.sumiLiveFolders.decode(
+            SumiLiveFolderDiskState.self,
+            from: data
+        )
+    }
 
-        do {
-            let data = try Data(contentsOf: fileURL)
-            return try JSONDecoder.sumiLiveFolders.decode(SumiLiveFolderDiskState.self, from: data)
-        } catch {
-            Self.log.error("Failed to read live folders state: \(String(describing: error), privacy: .public)")
-            return .empty
+    func save(_ state: SumiLiveFolderDiskState) throws {
+        try fileManager.createDirectory(
+            at: fileURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        let data = try JSONEncoder.sumiLiveFolders.encode(state)
+        try data.write(to: fileURL, options: [.atomic])
+        guard try Data(contentsOf: fileURL) == data else {
+            throw StoreError.verificationFailed
         }
     }
 
-    func save(_ state: SumiLiveFolderDiskState) {
-        do {
-            try fileManager.createDirectory(
-                at: fileURL.deletingLastPathComponent(),
-                withIntermediateDirectories: true
-            )
-            let data = try JSONEncoder.sumiLiveFolders.encode(state)
-            try data.write(to: fileURL, options: [.atomic])
-        } catch {
-            Self.log.error("Failed to write live folders state: \(String(describing: error), privacy: .public)")
+    func normalizeLegacyProfileReferences() throws {
+        guard fileManager.fileExists(atPath: fileURL.path) else { return }
+        let state = try load()
+        try save(state)
+        guard try load() == state else {
+            throw StoreError.verificationFailed
         }
     }
 

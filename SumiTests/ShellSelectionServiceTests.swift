@@ -12,7 +12,7 @@ final class ShellSelectionServiceTests: XCTestCase {
     }
 
     func testCurrentTabRejectsLegacyPinnedSelectionWithoutRepairFallback() {
-        let service = ShellSelectionService { _ in [] }
+        let service = ShellSelectionService(splitQuery: BrowserManager().splitQuery)
         let space = Space(name: "Personal")
         let legacyPinned = Tab(url: URL(string: "https://legacy.example")!, name: "Legacy", spaceId: space.id, index: 0)
         legacyPinned.isSpacePinned = true
@@ -38,7 +38,7 @@ final class ShellSelectionServiceTests: XCTestCase {
     }
 
     func testCurrentTabDoesNotRepairStaleSelectionToPreferredSpaceTab() {
-        let service = ShellSelectionService { _ in [] }
+        let service = ShellSelectionService(splitQuery: BrowserManager().splitQuery)
         let space = Space(name: "Personal")
         let preferred = Tab(url: URL(string: "https://preferred.example")!, name: "Preferred", spaceId: space.id, index: 0)
         space.activeTabId = preferred.id
@@ -60,7 +60,7 @@ final class ShellSelectionServiceTests: XCTestCase {
     }
 
     func testPreferredTabForSpaceSkipsLegacyPinnedActiveTabId() {
-        let service = ShellSelectionService { _ in [] }
+        let service = ShellSelectionService(splitQuery: BrowserManager().splitQuery)
         let space = Space(name: "Work")
         let legacyPinned = Tab(url: URL(string: "https://legacy.example")!, name: "Legacy", spaceId: space.id, index: 0)
         legacyPinned.isSpacePinned = true
@@ -81,7 +81,7 @@ final class ShellSelectionServiceTests: XCTestCase {
     }
 
     func testPreferredTabForSpaceUsesRecentRegularHistoryOrder() {
-        let service = ShellSelectionService { _ in [] }
+        let service = ShellSelectionService(splitQuery: BrowserManager().splitQuery)
         let space = Space(name: "Research")
         let first = Tab(url: URL(string: "https://first.example")!, name: "First", spaceId: space.id, index: 0)
         let second = Tab(url: URL(string: "https://second.example")!, name: "Second", spaceId: space.id, index: 1)
@@ -101,7 +101,7 @@ final class ShellSelectionServiceTests: XCTestCase {
     }
 
     func testSelectionTargetForSpaceActivationPreservesCurrentEssentialShortcutAcrossSpaceChange() {
-        let service = ShellSelectionService { _ in [] }
+        let service = ShellSelectionService(splitQuery: BrowserManager().splitQuery)
         let currentSpace = Space(name: "Current")
         let targetSpace = Space(name: "Target")
         let essentialPin = ShortcutPin(
@@ -165,7 +165,7 @@ final class ShellSelectionServiceTests: XCTestCase {
     }
 
     func testSelectionTargetForSpaceActivationUsesPreferredSpaceOrderingAfterCurrentSelectionGuards() {
-        let service = ShellSelectionService { _ in [] }
+        let service = ShellSelectionService(splitQuery: BrowserManager().splitQuery)
         let currentSpace = Space(name: "Current")
         let targetSpace = Space(name: "Target")
         let staleCurrent = Tab(
@@ -234,7 +234,7 @@ final class ShellSelectionServiceTests: XCTestCase {
     }
 
     func testSelectionTargetForSpaceActivationSkipsSameSpaceCurrentTabDuringInitialSessionResolution() {
-        let service = ShellSelectionService { _ in [] }
+        let service = ShellSelectionService(splitQuery: BrowserManager().splitQuery)
         let space = Space(name: "Startup")
         let staleCurrent = Tab(
             url: URL(string: "https://stale-current.example")!,
@@ -279,7 +279,7 @@ final class ShellSelectionServiceTests: XCTestCase {
     }
 
     func testTabsForDisplayExcludesLegacyPinnedTabs() {
-        let service = ShellSelectionService { _ in [] }
+        let service = ShellSelectionService(splitQuery: BrowserManager().splitQuery)
         let space = Space(name: "Docs")
         let legacyPinned = Tab(url: URL(string: "https://legacy.example")!, name: "Legacy", spaceId: space.id, index: 0)
         legacyPinned.isSpacePinned = true
@@ -299,7 +299,7 @@ final class ShellSelectionServiceTests: XCTestCase {
     }
 
     func testTabsForWebExtensionWindowIncludesCurrentTabWhenDisplayListMissesIt() {
-        let service = ShellSelectionService { _ in [] }
+        let service = ShellSelectionService(splitQuery: BrowserManager().splitQuery)
         let space = Space(name: "Video")
         let staleRegular = Tab(
             url: URL(string: "https://stale.example")!,
@@ -332,7 +332,7 @@ final class ShellSelectionServiceTests: XCTestCase {
         XCTAssertEqual(displayed.map(\.id), [staleRegular.id, current.id])
     }
 
-    func testTabsForWebExtensionWindowIncludesSplitTabsOutsideCurrentSpace() {
+    func testTabsForWebExtensionWindowIncludesSplitTabsOutsideCurrentSpace() throws {
         let leftSpace = Space(name: "Left")
         let rightSpace = Space(name: "Right")
         let leftTab = Tab(
@@ -348,9 +348,6 @@ final class ShellSelectionServiceTests: XCTestCase {
             index: 0
         )
 
-        let service = ShellSelectionService { _ in
-            [leftTab.id, splitTab.id]
-        }
         let store = FakeShellSelectionTabStore(
             spaces: [leftSpace, rightSpace],
             allTabs: [leftTab, splitTab],
@@ -363,6 +360,24 @@ final class ShellSelectionServiceTests: XCTestCase {
         let windowState = BrowserWindowState()
         windowState.currentSpaceId = leftSpace.id
         windowState.currentTabId = leftTab.id
+        let browser = BrowserManager()
+        browser.spaceStateOwner.replaceSpaces([leftSpace, rightSpace])
+        browser.tabStateStore.regularTabs.replaceTabsBySpace([
+            leftSpace.id: [leftTab],
+            rightSpace.id: [splitTab],
+        ])
+        let group = try XCTUnwrap(SplitGroup.make(
+            members: [.regularTab(leftTab.id), .regularTab(splitTab.id)],
+            layoutKind: .horizontal,
+            container: .regularTabs(spaceId: leftSpace.id)
+        ))
+        browser.splitGroupStore.replaceAll(with: [group])
+        windowState.splitSelection = WindowSplitSelection(
+            groupID: group.id,
+            activeMemberID: .regularTab(leftTab.id)
+        )
+        browser.windowRegistry.register(windowState)
+        let service = ShellSelectionService(splitQuery: browser.splitQuery)
 
         let displayed = service.tabsForWebExtensionWindow(
             in: windowState,
@@ -373,7 +388,7 @@ final class ShellSelectionServiceTests: XCTestCase {
     }
 
     func testPreferredTabForWindowDoesNotActivateMissingShortcutOrUseGlobalFallbackDuringRead() {
-        let service = ShellSelectionService { _ in [] }
+        let service = ShellSelectionService(splitQuery: BrowserManager().splitQuery)
         let fallback = Tab(
             url: URL(string: "https://fallback.example")!,
             name: "Fallback",
@@ -403,7 +418,7 @@ final class ShellSelectionServiceTests: XCTestCase {
     }
 
     func testPreferredRegularTabForWindowRequiresCurrentWindowSpace() {
-        let service = ShellSelectionService { _ in [] }
+        let service = ShellSelectionService(splitQuery: BrowserManager().splitQuery)
         let otherSpace = Space(name: "Other")
         let otherTab = Tab(
             url: URL(string: "https://other.example")!,
@@ -423,7 +438,7 @@ final class ShellSelectionServiceTests: XCTestCase {
     }
 
     func testPreferredTabForWindowReturnsExistingShortcutLiveTabWithoutActivating() {
-        let service = ShellSelectionService { _ in [] }
+        let service = ShellSelectionService(splitQuery: BrowserManager().splitQuery)
         let pin = ShortcutPin(
             id: UUID(),
             role: .essential,

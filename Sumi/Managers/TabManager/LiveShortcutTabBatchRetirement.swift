@@ -15,13 +15,6 @@ final class LiveShortcutTabBatchRetirement {
         self.structuralLookup = structuralLookup
     }
 
-    convenience init(tabManager: TabManager) {
-        self.init(
-            storage: tabManager.transientTabRegistryOwner,
-            structuralLookup: tabManager.structuralLookupCoordinator
-        )
-    }
-
     func remove(pinIDs: Set<UUID>) -> [LiveShortcutTabEntry] {
         remove { pinIDs.contains($0.pinId) }
     }

@@ -10,6 +10,12 @@
 import Foundation
 import OSLog
 
+enum WebExtensionStorageCleanupError: Error, Equatable {
+    case storageRootUnavailable
+    case removalFailed(String)
+    case removalVerificationFailed(String)
+}
+
 struct WebExtensionStorageCleanupStore {
     typealias StorageSnapshot = WebExtensionStorageCleanupPlanner.StorageSnapshot
 
@@ -74,6 +80,24 @@ struct WebExtensionStorageCleanupStore {
             .appendingPathComponent(SumiAppIdentity.runtimeBundleIdentifier, isDirectory: true)
             .appendingPathComponent("WebExtensions", isDirectory: true)
             .appendingPathComponent(controllerStorageId.uuidString.uppercased(), isDirectory: true)
+    }
+
+    func deleteControllerStorageDirectory() throws {
+        guard let storageRoot = storageRootDirectory() else {
+            throw WebExtensionStorageCleanupError.storageRootUnavailable
+        }
+        guard fileManager.fileExists(atPath: storageRoot.path) else { return }
+
+        do {
+            try fileManager.removeItem(at: storageRoot)
+        } catch {
+            throw WebExtensionStorageCleanupError.removalFailed(storageRoot.path)
+        }
+        guard fileManager.fileExists(atPath: storageRoot.path) == false else {
+            throw WebExtensionStorageCleanupError.removalVerificationFailed(
+                storageRoot.path
+            )
+        }
     }
 
     /// One-time adoption of a legacy storage directory after the WebKit-facing

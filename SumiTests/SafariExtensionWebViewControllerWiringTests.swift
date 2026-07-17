@@ -69,15 +69,16 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         let manager = managerFixture.manager
         let inspection = managerFixture.inspection
         let attachedRuntime = managerFixture.attachedRuntime
-        let browserManager = makeBrowserManager(
-            profile: profile
-        )
         let windowRegistry = WindowRegistry()
+        let browserManager = makeBrowserManager(
+            profile: profile,
+            windowRegistry: windowRegistry
+        )
         let trackedAdmission = browserManager.webViewRuntime.trackedWebViewAdmission
-        browserManager.windowRegistry = windowRegistry
-        let space = browserManager.tabManager.spaceServices.catalog.createSpace(
+        let space = installTestSpace(
+            in: browserManager.spaceStateOwner,
             name: "Work",
-            profileId: profile.id
+            profileID: profile.id
         )
         let windowState = BrowserWindowState()
         windowState.currentProfileId = profile.id
@@ -444,9 +445,9 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         let browserManager = makeBrowserManager(profile: profile)
         manager.attach(browserManager: browserManager)
 
-        let tab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
+        let tab = browserManager.regularTabLifecycleOwner.createNewTab(
             url: "https://example.com",
-            in: browserManager.tabManager.spaceStateOwner.currentSpace,
+            in: browserManager.spaceStateOwner.currentSpace,
             activate: false
         )
         tab.profileId = profile.id
@@ -512,9 +513,9 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         _ = try await inspection.installation.lifecycle.enable(installed.id)
         inspection.actionSurfaces.publication.markRuntimePublicationReady()
 
-        let tab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
+        let tab = browserManager.regularTabLifecycleOwner.createNewTab(
             url: "about:blank",
-            in: browserManager.tabManager.spaceStateOwner.currentSpace,
+            in: browserManager.spaceStateOwner.currentSpace,
             activate: false
         )
         tab.profileId = profile.id
@@ -555,9 +556,10 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             profile: profile
         )
         extensionsModule.attach(runtime: BrowserExtensionsModuleRuntimeFactory.runtime(for: browserManager))
-        let space = browserManager.tabManager.spaceServices.catalog.createSpace(
+        let space = installTestSpace(
+            in: browserManager.spaceStateOwner,
             name: "Work",
-            profileId: profile.id
+            profileID: profile.id
         )
 
         let scratchDirectory = try makeScratchDirectory()
@@ -580,7 +582,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         )
 
         let pageURL = URL(string: "https://example.com/login")!
-        let tab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
+        let tab = browserManager.regularTabLifecycleOwner.createNewTab(
             url: pageURL.absoluteString,
             in: space,
             activate: false
@@ -663,16 +665,17 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             initialProfileProvider: { profile },
             managerFactory: { _, _, _, _ in manager }
         )
+        let windowRegistry = WindowRegistry()
         let browserManager = makeBrowserManager(
             moduleRegistry: registry,
             extensionsModule: extensionsModule,
-            profile: profile
+            profile: profile,
+            windowRegistry: windowRegistry
         )
-        let windowRegistry = WindowRegistry()
-        browserManager.windowRegistry = windowRegistry
-        let space = browserManager.tabManager.spaceServices.catalog.createSpace(
+        let space = installTestSpace(
+            in: browserManager.spaceStateOwner,
             name: "Work",
-            profileId: profile.id
+            profileID: profile.id
         )
         let windowState = BrowserWindowState()
         windowState.currentProfileId = profile.id
@@ -706,7 +709,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         }
 
         let pageURL = URL(string: "https://example.com/login")!
-        let tab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
+        let tab = browserManager.regularTabLifecycleOwner.createNewTab(
             url: pageURL.absoluteString,
             in: space,
             activate: false
@@ -785,9 +788,10 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             extensionsModule: extensionsModule,
             profile: profile
         )
-        let space = browserManager.tabManager.spaceServices.catalog.createSpace(
+        let space = installTestSpace(
+            in: browserManager.spaceStateOwner,
             name: "Work",
-            profileId: profile.id
+            profileID: profile.id
         )
         manager.attach(browserManager: browserManager)
 
@@ -842,10 +846,10 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             "Extension-created internal tabs must keep the matching context for WebKit page configuration"
         )
         XCTAssertFalse(
-            browserManager.tabManager.structuralPersistence.shouldPersistRegularTab(tab),
+            browserManager.structuralPersistence.shouldPersistRegularTab(tab),
             "Extension-created internal tabs are runtime-owned, not browser session tabs"
         )
-        XCTAssertNil(browserManager.tabManager.structuralPersistence.persistableCurrentTabID())
+        XCTAssertNil(browserManager.structuralPersistence.persistableCurrentTabID())
     }
 
     func testExtensionRequestedBackgroundInternalTabMaterializesWithContext() async throws {
@@ -878,9 +882,10 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             extensionsModule: extensionsModule,
             profile: profile
         )
-        let space = browserManager.tabManager.spaceServices.catalog.createSpace(
+        let space = installTestSpace(
+            in: browserManager.spaceStateOwner,
             name: "Work",
-            profileId: profile.id
+            profileID: profile.id
         )
         manager.attach(browserManager: browserManager)
 
@@ -915,10 +920,10 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         )
 
         XCTAssertIdentical(tab.webExtensionContextOverride, extensionContext)
-        XCTAssertTrue(browserManager.tabManager.transientWebKitTabLifecycleOwner.isTransientExtensionTab(tab))
-        XCTAssertIdentical(browserManager.tabManager.tabCollectionMembershipOwner.tab(for: tab.id), tab)
+        XCTAssertTrue(browserManager.extensionTabCommands.containsTransient(tab))
+        XCTAssertIdentical(browserManager.tabCollectionMembershipOwner.tab(for: tab.id), tab)
         XCTAssertFalse(
-            browserManager.tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[space.id]?.contains(where: { $0.id == tab.id }) ?? false,
+            browserManager.tabStateStore.regularTabs.tabsBySpaceSnapshot()[space.id]?.contains(where: { $0.id == tab.id }) ?? false,
             "Inactive internal extension pages should not appear in the visible regular tab list"
         )
         XCTAssertFalse(
@@ -934,7 +939,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         XCTAssertGreaterThan(metrics.elementCount, 0, metrics.debugSummary)
         XCTAssertGreaterThan(metrics.scriptCount, 0, metrics.debugSummary)
         XCTAssertEqual(metrics.marker, "rendered", metrics.debugSummary)
-        XCTAssertFalse(browserManager.tabManager.structuralPersistence.shouldPersistRegularTab(tab))
+        XCTAssertFalse(browserManager.structuralPersistence.shouldPersistRegularTab(tab))
 
         let adapter = try XCTUnwrap(
             managerFixture.attachedRuntime.runtime.adapters.stableAdapter(
@@ -949,10 +954,10 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         }
         await fulfillment(of: [closed], timeout: 1.0)
         XCTAssertNil(closeError)
-        XCTAssertNil(browserManager.tabManager.tabCollectionMembershipOwner.tab(for: tab.id))
-        XCTAssertFalse(browserManager.tabManager.transientWebKitTabLifecycleOwner.isTransientExtensionTab(tab))
+        XCTAssertNil(browserManager.tabCollectionMembershipOwner.tab(for: tab.id))
+        XCTAssertFalse(browserManager.extensionTabCommands.containsTransient(tab))
         XCTAssertFalse(
-            browserManager.tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[space.id]?.contains(where: { $0.id == tab.id }) ?? false
+            browserManager.tabStateStore.regularTabs.tabsBySpaceSnapshot()[space.id]?.contains(where: { $0.id == tab.id }) ?? false
         )
     }
 
@@ -974,24 +979,26 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         _ = inspection.controller.provisioning.ensureExtensionController(for: profile.id)
         inspection.actionSurfaces.publication.markRuntimePublicationReady()
 
+        let windowRegistry = WindowRegistry()
         let browserManager = makeBrowserManager(
-            profile: profile
+            profile: profile,
+            windowRegistry: windowRegistry
         )
-        let visibleSpace = browserManager.tabManager.spaceServices.catalog.createSpace(
+        let visibleSpace = installTestSpace(
+            in: browserManager.spaceStateOwner,
             name: "Visible",
-            profileId: profile.id
+            profileID: profile.id
         )
-        let hiddenSpace = browserManager.tabManager.spaceServices.catalog.createSpace(
+        let hiddenSpace = installTestSpace(
+            in: browserManager.spaceStateOwner,
             name: "Hidden",
-            profileId: profile.id
+            profileID: profile.id
         )
-        let selectedTab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
+        let selectedTab = browserManager.regularTabLifecycleOwner.createNewTab(
             url: "https://example.com/selected",
             in: visibleSpace,
             activate: true
         )
-        let windowRegistry = WindowRegistry()
-        browserManager.windowRegistry = windowRegistry
         let windowState = BrowserWindowState()
         windowState.currentProfileId = profile.id
         windowState.currentSpaceId = visibleSpace.id
@@ -1005,9 +1012,9 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             inspection: inspection,
             profile: profile
         )
-        let targetTab = browserManager.tabManager.transientWebKitTabLifecycleOwner
-            .createTransientExtensionTab(
-                url: "safari-web-extension://activation-error/hidden.html",
+        let targetTab = browserManager.extensionTabCommands
+            .createTransient(
+                url: try XCTUnwrap(URL(string: "safari-web-extension://activation-error/hidden.html")),
                 in: hiddenSpace,
                 webExtensionContextOverride: extensionContext
             )
@@ -1034,7 +1041,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             "No browser window is available for this tab"
         )
         XCTAssertEqual(windowState.currentTabId, selectedTab.id)
-        XCTAssertEqual(browserManager.tabManager.selectionStateOwner.currentTab?.id, selectedTab.id)
+        XCTAssertEqual(browserManager.tabStateStore.selection.currentTab?.id, selectedTab.id)
     }
 
     func testExtensionTabAdapterReloadCreatesTabOwnedSemanticCommand() async throws {
@@ -1067,9 +1074,10 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             extensionsModule: extensionsModule,
             profile: profile
         )
-        _ = browserManager.tabManager.spaceServices.catalog.createSpace(
+        _ = installTestSpace(
+            in: browserManager.spaceStateOwner,
             name: "Work",
-            profileId: profile.id
+            profileID: profile.id
         )
         manager.attach(browserManager: browserManager)
 
@@ -1163,9 +1171,10 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             extensionsModule: extensionsModule,
             profile: profile
         )
-        _ = browserManager.tabManager.spaceServices.catalog.createSpace(
+        _ = installTestSpace(
+            in: browserManager.spaceStateOwner,
             name: "Work",
-            profileId: profile.id
+            profileID: profile.id
         )
         manager.attach(browserManager: browserManager)
         XCTAssertIdentical(extensionsModule.managerForTesting(), manager)
@@ -1221,7 +1230,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             extensionContext,
             "Safari-public extension URLs must be loaded through the matching WebKit context"
         )
-        XCTAssertFalse(browserManager.tabManager.structuralPersistence.shouldPersistRegularTab(tab))
+        XCTAssertFalse(browserManager.structuralPersistence.shouldPersistRegularTab(tab))
     }
 
     func testExtensionRequestedWindowPublishesExactTabBeforeFocusAndCompletion() async throws {
@@ -1249,31 +1258,30 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             initialProfileProvider: { profile },
             managerFactory: { _, _, _, _ in manager }
         )
+        let windowRegistry = WindowRegistry()
         let browserManager = makeBrowserManager(
             moduleRegistry: registry,
             extensionsModule: extensionsModule,
-            profile: profile
+            profile: profile,
+            windowRegistry: windowRegistry
         )
         browserManager.windowShellContentViewFactory = { _, _ in NSView() }
-        let windowRegistry = WindowRegistry()
-        browserManager.windowRegistry = windowRegistry
         let windowSessions = browserManager.windowSessionBundle
         BrowserWindowRegistryBinding.install(
             registration: windowSessions.restoration,
             closing: BrowserWindowCloseWorkflow(
                 browserRuntime: browserManager,
                 recorder: windowSessions.history.recorder,
-                persistence: windowSessions.persistence,
+                persistence: browserManager.windowSessionPersistenceCoordinator,
                 extensions: browserManager.optionalModules.extensions,
                 webViews: browserManager.webViewRuntime.lifecycleService,
-                emptySplitPlaceholders: browserManager.splitComposition
-                    .emptyPlaceholders,
-                splitPreviews: browserManager.splitComposition.previews,
+                emptySplitPlaceholders: browserManager.splitEmptyPlaceholders,
+                splitPreviews: browserManager.splitWindowContext.previews,
                 backgroundMedia: browserManager
                     .backgroundMediaOptimizationService,
                 commands: browserManager.windowCommands
             ),
-            activity: windowSessions.activation,
+            activity: browserManager.windowActivation,
             allWindowsClosed: BrowserAllWindowsClosedWorkflow(
                 browserRuntime: browserManager,
                 sessionRestore: windowSessions.restoreService,
@@ -1283,9 +1291,10 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             ),
             on: windowRegistry
         )
-        let space = browserManager.tabManager.spaceServices.catalog.createSpace(
+        let space = installTestSpace(
+            in: browserManager.spaceStateOwner,
             name: "Work",
-            profileId: profile.id
+            profileID: profile.id
         )
         manager.attach(browserManager: browserManager)
         XCTAssertIdentical(extensionsModule.managerForTesting(), manager)
@@ -1356,7 +1365,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         XCTAssertTrue(windowWasFocusedBeforeCompletion)
 
         let tab = try XCTUnwrap(
-            browserManager.tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[space.id]?.first(where: {
+            browserManager.tabStateStore.regularTabs.tabsBySpaceSnapshot()[space.id]?.first(where: {
                 $0.url == extensionURL
             })
         )
@@ -1395,7 +1404,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         XCTAssertTrue(
             windowRegistry.appKitWindow(for: window)?.isVisible == true
         )
-        XCTAssertFalse(browserManager.tabManager.structuralPersistence.shouldPersistRegularTab(tab))
+        XCTAssertFalse(browserManager.structuralPersistence.shouldPersistRegularTab(tab))
         let appKitWindow = windowRegistry.appKitWindow(for: window)
         windowRegistry.unregister(window.id)
         appKitWindow?.close()
@@ -1426,16 +1435,17 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             initialProfileProvider: { profile },
             managerFactory: { _, _, _, _ in manager }
         )
+        let windowRegistry = WindowRegistry()
         let browserManager = makeBrowserManager(
             moduleRegistry: registry,
             extensionsModule: extensionsModule,
-            profile: profile
+            profile: profile,
+            windowRegistry: windowRegistry
         )
-        let windowRegistry = WindowRegistry()
-        browserManager.windowRegistry = windowRegistry
-        let space = browserManager.tabManager.spaceServices.catalog.createSpace(
+        let space = installTestSpace(
+            in: browserManager.spaceStateOwner,
             name: "Work",
-            profileId: profile.id
+            profileID: profile.id
         )
         manager.attach(browserManager: browserManager)
         let controller = inspection.controller.provisioning.ensureExtensionController(for: profile.id)
@@ -1450,7 +1460,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         )
         let originalWindowIDs = Set(windowRegistry.windows.keys)
         let originalTabIDs = Set(
-            browserManager.tabManager.tabCollectionMembershipOwner
+            browserManager.tabCollectionMembershipOwner
                 .allTabs().map(\.id)
         )
         let completed = expectation(description: "missing adapter rejected")
@@ -1483,7 +1493,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         XCTAssertEqual(Set(windowRegistry.windows.keys), originalWindowIDs)
         XCTAssertEqual(
             Set(
-                browserManager.tabManager.tabCollectionMembershipOwner
+                browserManager.tabCollectionMembershipOwner
                     .allTabs().map(\.id)
             ),
             originalTabIDs
@@ -1653,9 +1663,10 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             extensionsModule: extensionsModule,
             profile: profile
         )
-        _ = browserManager.tabManager.spaceServices.catalog.createSpace(
+        _ = installTestSpace(
+            in: browserManager.spaceStateOwner,
             name: "Work",
-            profileId: profile.id
+            profileID: profile.id
         )
         manager.attach(browserManager: browserManager)
 
@@ -1750,9 +1761,10 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             extensionsModule: extensionsModule,
             profile: profile
         )
-        _ = browserManager.tabManager.spaceServices.catalog.createSpace(
+        _ = installTestSpace(
+            in: browserManager.spaceStateOwner,
             name: "Work",
-            profileId: profile.id
+            profileID: profile.id
         )
         manager.attach(browserManager: browserManager)
         XCTAssertIdentical(extensionsModule.managerForTesting(), manager)
@@ -1789,7 +1801,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
 
         var didOpenCount = 0
         manager.testHooks.didOpenTab = { tabID in
-            if browserManager.tabManager.tabCollectionMembershipOwner.tab(for: tabID)?.url == extensionURL {
+            if browserManager.tabCollectionMembershipOwner.tab(for: tabID)?.url == extensionURL {
                 didOpenCount += 1
             }
         }

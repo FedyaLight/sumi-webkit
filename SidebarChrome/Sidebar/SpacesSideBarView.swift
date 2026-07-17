@@ -38,12 +38,19 @@ struct SpacesSideBarView: View {
     @State var transitionCoordinator = SpaceSidebarTransitionCoordinator()
     @StateObject var scrollHoverCoordinator = NativeSurfaceScrollHoverCoordinator()
     let browserContext: SidebarBrowserContext
-    let inventory: SidebarInventoryProjection
+    let spaceCatalog: SidebarSpaceCatalogProjection
+    let inventory: SidebarSpaceInventoryProjection
     let selection: SidebarWindowSelectionQuery
     let pinProjection: SidebarPinFolderProjection
-    let pinCommands: SidebarPinFolderCommands
+    let pinCommands: SidebarPinCommands
+    let pinExecution: SidebarPinExecutionCommands
+    let folderCommands: SidebarFolderCommands
     let spaceLifecycle: SidebarSpaceLifecycle
-    let regularTabs: any SidebarRegularTabsControlling
+    let regularTabCatalog: SidebarRegularTabCatalog
+    let regularTabTargets: SidebarRegularTabTargetQuery
+    let regularTabLifecycleCommands: SidebarRegularTabLifecycleCommands
+    let regularTabShortcutCommands: SidebarRegularTabShortcutCommands
+    let regularTabPlacementCommands: SidebarRegularTabPlacementCommands
     let dragTransactions: SidebarDragTransactionPort
     let inventoryUpdates: SidebarInventoryUpdates
     let profileUpdates: SidebarProfileUpdates
@@ -52,12 +59,19 @@ struct SpacesSideBarView: View {
 
     init(
         browserContext: SidebarBrowserContext,
-        inventory: SidebarInventoryProjection,
+        spaceCatalog: SidebarSpaceCatalogProjection,
+        inventory: SidebarSpaceInventoryProjection,
         selection: SidebarWindowSelectionQuery,
         pinProjection: SidebarPinFolderProjection,
-        pinCommands: SidebarPinFolderCommands,
+        pinCommands: SidebarPinCommands,
+        pinExecution: SidebarPinExecutionCommands,
+        folderCommands: SidebarFolderCommands,
         spaceLifecycle: SidebarSpaceLifecycle,
-        regularTabs: any SidebarRegularTabsControlling,
+        regularTabCatalog: SidebarRegularTabCatalog,
+        regularTabTargets: SidebarRegularTabTargetQuery,
+        regularTabLifecycleCommands: SidebarRegularTabLifecycleCommands,
+        regularTabShortcutCommands: SidebarRegularTabShortcutCommands,
+        regularTabPlacementCommands: SidebarRegularTabPlacementCommands,
         dragTransactions: SidebarDragTransactionPort,
         inventoryUpdates: SidebarInventoryUpdates,
         profileUpdates: SidebarProfileUpdates,
@@ -65,12 +79,19 @@ struct SpacesSideBarView: View {
         updaterService: SumiUpdaterService
     ) {
         self.browserContext = browserContext
+        self.spaceCatalog = spaceCatalog
         self.inventory = inventory
         self.selection = selection
         self.pinProjection = pinProjection
         self.pinCommands = pinCommands
+        self.pinExecution = pinExecution
+        self.folderCommands = folderCommands
         self.spaceLifecycle = spaceLifecycle
-        self.regularTabs = regularTabs
+        self.regularTabCatalog = regularTabCatalog
+        self.regularTabTargets = regularTabTargets
+        self.regularTabLifecycleCommands = regularTabLifecycleCommands
+        self.regularTabShortcutCommands = regularTabShortcutCommands
+        self.regularTabPlacementCommands = regularTabPlacementCommands
         self.dragTransactions = dragTransactions
         self.inventoryUpdates = inventoryUpdates
         self.profileUpdates = profileUpdates
@@ -134,7 +155,10 @@ struct SpacesSideBarView: View {
 
     var mainSidebarContent: some View {
         VStack(spacing: 8) {
-            SidebarHeader(browserContext: browserContext.headerContext(windowState))
+            SidebarHeader(
+                browserContext: browserContext.headerContextOwner
+                    .sidebarHeaderContext(for: windowState)
+            )
                 .environment(windowState)
 
             if let creationSession = windowState.spaceCreationSession.activeSession {
@@ -143,7 +167,9 @@ struct SpacesSideBarView: View {
                     currentProfiles: { browserContext.profileManager.profiles },
                     profileUpdates: profileUpdates,
                     isActive: allowsSidebarInteractiveWork,
-                    currentProfileID: { browserContext.currentProfile()?.id },
+                    currentProfileID: {
+                        browserContext.profileAuthority.currentProfile?.id
+                    },
                     onCreate: { commitSpaceCreationSession(creationSession) },
                     onCancel: { cancelSpaceCreationSession(creationSession) }
                 )
@@ -202,7 +228,7 @@ struct SpacesSideBarView: View {
                     SpaceSidebarMiniPlayer(
                         nowPlayingController: nowPlayingController,
                         faviconImageReader: browserContext.faviconImageReader,
-                        configureMediaStore: browserContext.configureMediaStore
+                        mediaStoreConfiguration: browserContext.mediaStoreConfiguration
                     )
                 }
 
@@ -279,6 +305,7 @@ struct SpacesSideBarView: View {
             },
             windowState: windowState,
             browserContext: browserContext,
+            spaceCatalog: spaceCatalog,
             inventory: inventory,
             selection: selection,
             pinProjection: pinProjection,
@@ -297,8 +324,8 @@ struct SpacesSideBarView: View {
 
         if windowState.currentSpaceId == request.targetSpaceID {
             browserContext.spaceTransitions.completePendingSplitGroupFocusIfReady(
-                windowState,
-                request.targetSpaceID
+                in: windowState,
+                spaceID: request.targetSpaceID
             )
             return
         }
@@ -330,7 +357,7 @@ struct SpacesSideBarView: View {
 
     func handleSidebarContextMenuVisibility(_ presented: Bool) {
         if presented {
-            browserContext.commands.closeDownloadsPopover(windowState)
+            browserContext.downloadsPopoverPresenter.close(in: windowState)
         }
     }
 

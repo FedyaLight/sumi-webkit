@@ -16,14 +16,8 @@ final class StartupWindowRestoreService {
     private let startupRestore: any BrowserStartupSessionRestoreProviding
     private let archive: LastSessionWindowArchive
     private let openWindows: OpenWindowSessionCatalog
-    private let startupWindow: @MainActor () -> BrowserWindowState?
-    private let applySnapshot: @MainActor (
-        LastSessionWindowSnapshot,
-        BrowserWindowState
-    ) -> Void
-    private let reopenWindow: @MainActor (
-        LastSessionWindowSnapshot
-    ) async -> Bool
+    private let restoration: WindowSessionRestoreService
+    private let windowReopen: any WindowSessionReopening
     private var pendingRestore: PendingRestore?
 
     var pendingRestoreTask: Task<Void, Never>? {
@@ -34,21 +28,14 @@ final class StartupWindowRestoreService {
         startupRestore: any BrowserStartupSessionRestoreProviding,
         archive: LastSessionWindowArchive,
         openWindows: OpenWindowSessionCatalog,
-        startupWindow: @escaping @MainActor () -> BrowserWindowState?,
-        applySnapshot: @escaping @MainActor (
-            LastSessionWindowSnapshot,
-            BrowserWindowState
-        ) -> Void,
-        reopenWindow: @escaping @MainActor (
-            LastSessionWindowSnapshot
-        ) async -> Bool
+        restoration: WindowSessionRestoreService,
+        windowReopen: any WindowSessionReopening
     ) {
         self.startupRestore = startupRestore
         self.archive = archive
         self.openWindows = openWindows
-        self.startupWindow = startupWindow
-        self.applySnapshot = applySnapshot
-        self.reopenWindow = reopenWindow
+        self.restoration = restoration
+        self.windowReopen = windowReopen
     }
 
     isolated deinit {
@@ -59,15 +46,15 @@ final class StartupWindowRestoreService {
         guard pendingRestore == nil else { return }
         let sourceSnapshots = startupRestore.windowSnapshots
         guard sourceSnapshots.isEmpty == false else { return }
-        let launchWindow = startupWindow()
+        let launchWindow = openWindows.deterministicRegularWindow()
         let immediateArchiveAttempt = archive.beginRestoreAttempt()
 
         let operationID = UUID()
         let startupRestore = startupRestore
         let archive = archive
         let openWindows = openWindows
-        let applySnapshot = applySnapshot
-        let reopenWindow = reopenWindow
+        let restoration = restoration
+        let windowReopen = windowReopen
         let task = Task { @MainActor [weak self] in
             let archiveAttempt = if let immediateArchiveAttempt {
                 immediateArchiveAttempt
@@ -85,8 +72,8 @@ final class StartupWindowRestoreService {
                 sourceSnapshots: sourceSnapshots,
                 openWindows: openWindows,
                 launchWindow: launchWindow,
-                applySnapshot: applySnapshot,
-                reopenWindow: reopenWindow
+                restoration: restoration,
+                windowReopen: windowReopen
             )
             if didComplete {
                 startupRestore.markRestoreOfferConsumed()
@@ -100,13 +87,8 @@ final class StartupWindowRestoreService {
         sourceSnapshots: [LastSessionWindowSnapshot],
         openWindows: OpenWindowSessionCatalog,
         launchWindow: BrowserWindowState?,
-        applySnapshot: @MainActor (
-            LastSessionWindowSnapshot,
-            BrowserWindowState
-        ) -> Void,
-        reopenWindow: @MainActor (
-            LastSessionWindowSnapshot
-        ) async -> Bool
+        restoration: WindowSessionRestoreService,
+        windowReopen: any WindowSessionReopening
     ) async -> Bool {
         guard Task.isCancelled == false else { return false }
 
@@ -126,7 +108,13 @@ final class StartupWindowRestoreService {
         if let liveLaunchWindow,
            let primarySnapshot = restorationPlan.primarySnapshotForStartupWindow {
             liveLaunchWindow.restorationState.restoredSessionWindowID = primarySnapshot.id
-            applySnapshot(primarySnapshot, liveLaunchWindow)
+            guard restoration.applyWindowSessionSnapshot(
+                primarySnapshot.session,
+                to: liveLaunchWindow
+            ) else {
+                liveLaunchWindow.restorationState.restoredSessionWindowID = nil
+                return false
+            }
         }
 
         let refreshedWindowIDs = Set(
@@ -137,7 +125,7 @@ final class StartupWindowRestoreService {
         }
         for snapshot in unresolvedSnapshots {
             guard Task.isCancelled == false,
-                  await reopenWindow(snapshot) else {
+                  await windowReopen.reopenWindow(from: snapshot) else {
                 return false
             }
         }

@@ -12,13 +12,12 @@ final class ShortcutTabPromotionServiceTests: XCTestCase {
         let first = BrowserWindowState()
         let second = BrowserWindowState()
         let probe = PromotionProbe()
-        let tabManager = try makeTabManager(
+        let harness = makeHarness(
             windows: [first, second],
             probe: probe
         )
-        first.tabManager = tabManager
-        second.tabManager = tabManager
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Space")
+        let tabManager = harness.browser
+        let space = makeSpace(in: tabManager, name: "Space")
         let companion = tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://promotion.example/companion",
             in: space,
@@ -60,9 +59,9 @@ final class ShortcutTabPromotionServiceTests: XCTestCase {
         }
 
         XCTAssertTrue(
-            tabManager.shortcutPinCommandOwner.convertShortcutPinToRegularTab(
+            harness.pinToRegular.convert(
                 pin,
-                in: space.id,
+                into: space.id,
                 at: 0,
                 preferredWindowId: second.id
             )
@@ -97,13 +96,12 @@ final class ShortcutTabPromotionServiceTests: XCTestCase {
             UUID(uuidString: "00000000-0000-0000-0000-000000000002")
         ))
         let probe = PromotionProbe()
-        let tabManager = try makeTabManager(
+        let harness = makeHarness(
             windows: [first, preferred],
             probe: probe
         )
-        first.tabManager = tabManager
-        preferred.tabManager = tabManager
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Space")
+        let tabManager = harness.browser
+        let space = makeSpace(in: tabManager, name: "Space")
         let pin = makePin(spaceId: space.id)
         tabManager.structuralCollectionMutationOwner
             .setSpacePinnedShortcuts([pin], for: space.id)
@@ -128,9 +126,9 @@ final class ShortcutTabPromotionServiceTests: XCTestCase {
         probe.structuralEvents = 0
 
         let didPromote = tabManager.structuralLookupCoordinator.withTransaction {
-            tabManager.shortcutPinCommandOwner.convertShortcutPinToRegularTab(
+            harness.pinToRegular.convert(
                 pin,
-                in: space.id,
+                into: space.id,
                 at: 0,
                 preferredWindowId: preferred.id
             )
@@ -172,13 +170,12 @@ final class ShortcutTabPromotionServiceTests: XCTestCase {
             UUID(uuidString: "FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF")
         ))
         let probe = PromotionProbe()
-        let tabManager = try makeTabManager(
+        let harness = makeHarness(
             windows: [higher, lower],
             probe: probe
         )
-        lower.tabManager = tabManager
-        higher.tabManager = tabManager
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Space")
+        let tabManager = harness.browser
+        let space = makeSpace(in: tabManager, name: "Space")
         let pin = makePin(spaceId: space.id)
         let lowerLive = tabManager.shortcutTabMaterializer.materialize(
             pin,
@@ -192,7 +189,7 @@ final class ShortcutTabPromotionServiceTests: XCTestCase {
         )!
 
         let result = try XCTUnwrap(
-            tabManager.shortcutTabPromotion.promote(pin, into: space.id)
+            harness.promotion.promote(pin, into: space.id)
         )
 
         XCTAssertIdentical(result.tab, lowerLive)
@@ -203,9 +200,9 @@ final class ShortcutTabPromotionServiceTests: XCTestCase {
     func testInvalidTargetDoesNotConsumeLiveInstanceAndNoLivePromotionCreatesRegularTab() throws {
         let window = BrowserWindowState()
         let probe = PromotionProbe()
-        let tabManager = try makeTabManager(windows: [window], probe: probe)
-        window.tabManager = tabManager
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Space")
+        let harness = makeHarness(windows: [window], probe: probe)
+        let tabManager = harness.browser
+        let space = makeSpace(in: tabManager, name: "Space")
         let pin = makePin(spaceId: space.id)
         let liveTab = tabManager.shortcutTabMaterializer.materialize(
             pin,
@@ -214,7 +211,7 @@ final class ShortcutTabPromotionServiceTests: XCTestCase {
         )!
 
         XCTAssertNil(
-            tabManager.shortcutTabPromotion.promote(pin, into: UUID())
+            harness.promotion.promote(pin, into: UUID())
         )
         XCTAssertIdentical(
             tabManager.liveShortcutTabs.tab(for: pin.id, in: window.id),
@@ -227,7 +224,7 @@ final class ShortcutTabPromotionServiceTests: XCTestCase {
         )
         let freshPin = makePin(spaceId: space.id)
         let result = try XCTUnwrap(
-            tabManager.shortcutTabPromotion.promote(freshPin, into: space.id)
+            harness.promotion.promote(freshPin, into: space.id)
         )
         XCTAssertEqual(result.tab.url, freshPin.launchURL)
         XCTAssertFalse(result.tab.isShortcutLiveInstance)
@@ -235,13 +232,10 @@ final class ShortcutTabPromotionServiceTests: XCTestCase {
     }
 
     func testMissingRuntimeFailsBeforeConsumingAnyLiveRegistryEntry() throws {
-        let container = try makeInMemoryStartupModelContainer()
-        let tabManager = TabManager(
-            context: container.mainContext,
-            webViewSessions: WebViewSessionRepository(),
-            loadPersistedState: false
-        )
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Space")
+        let tabManager = BrowserManager()
+        tabManager.runtimePortConnection.detach()
+        let promotion = makePromotion(in: tabManager)
+        let space = makeSpace(in: tabManager, name: "Space")
         let pin = makePin(spaceId: space.id)
         let windowId = UUID()
         let liveTab = tabManager.shortcutTabMaterializer.materialize(
@@ -251,7 +245,7 @@ final class ShortcutTabPromotionServiceTests: XCTestCase {
         )!
 
         XCTAssertNil(
-            tabManager.shortcutTabPromotion.promote(pin, into: space.id)
+            promotion.promote(pin, into: space.id)
         )
         XCTAssertIdentical(
             tabManager.liveShortcutTabs.tab(for: pin.id, in: windowId),
@@ -264,11 +258,11 @@ final class ShortcutTabPromotionServiceTests: XCTestCase {
     func testStaleShortcutMetadataDoesNotSelectPromotedTabOrSwitchSpace() throws {
         let window = BrowserWindowState()
         let probe = PromotionProbe()
-        let tabManager = try makeTabManager(windows: [window], probe: probe)
-        window.tabManager = tabManager
-        let sourceSpace = tabManager.spaceServices.catalog.createSpace(name: "Source")
-        let visibleSpace = tabManager.spaceServices.catalog.createSpace(name: "Visible")
-        let targetSpace = tabManager.spaceServices.catalog.createSpace(name: "Target")
+        let harness = makeHarness(windows: [window], probe: probe)
+        let tabManager = harness.browser
+        let sourceSpace = makeSpace(in: tabManager, name: "Source")
+        let visibleSpace = makeSpace(in: tabManager, name: "Visible")
+        let targetSpace = makeSpace(in: tabManager, name: "Target")
         let pin = makePin(spaceId: sourceSpace.id)
         let liveTab = tabManager.shortcutTabMaterializer.materialize(
             pin,
@@ -282,7 +276,7 @@ final class ShortcutTabPromotionServiceTests: XCTestCase {
         window.currentShortcutPinRole = pin.role
 
         let result = try XCTUnwrap(
-            tabManager.shortcutTabPromotion.promote(
+            harness.promotion.promote(
                 pin,
                 into: targetSpace.id,
                 preferredWindowId: window.id
@@ -295,10 +289,10 @@ final class ShortcutTabPromotionServiceTests: XCTestCase {
         XCTAssertNil(window.currentShortcutPinId)
     }
 
-    private func makeTabManager(
+    private func makeHarness(
         windows: [BrowserWindowState],
         probe: PromotionProbe
-    ) throws -> TabManager {
+    ) -> PromotionHarness {
         let states = Dictionary(uniqueKeysWithValues: windows.map { ($0.id, $0) })
         let runtime = TestRuntimePorts.make(
             windowState: { states[$0] },
@@ -314,13 +308,51 @@ final class ShortcutTabPromotionServiceTests: XCTestCase {
             handleTabClosures: { probe.closedTabBatches.append($0) },
             persistWindowSession: { probe.persistedWindowIds.append($0.id) }
         )
-        let container = try makeInMemoryStartupModelContainer()
-        return TabManager(
-            runtimePorts: runtime,
-            context: container.mainContext,
-            webViewSessions: WebViewSessionRepository(),
-            loadPersistedState: false
+        let browser = BrowserManager()
+        browser.runtimePortConnection.attach(runtime)
+        windows.forEach { _ = browser.windowRegistry.register($0) }
+        let promotion = makePromotion(in: browser)
+        return PromotionHarness(
+            browser: browser,
+            promotion: promotion,
+            pinToRegular: ShortcutPinToRegularTabService.compose(
+                promotion: promotion,
+                splitGroups: browser.splitGroupStore,
+                splitMutations: browser.splitGroupMutations,
+                pinStore: browser.shortcutPinStoreOwner,
+                pins: browser.shortcutPinCollectionStateOwner,
+                persistence: browser.structuralPersistence,
+                structuralLookup: browser.structuralLookupCoordinator
+            )
         )
+    }
+
+    private func makePromotion(
+        in browser: BrowserManager
+    ) -> ShortcutTabPromotionService {
+        ShortcutTabPromotionService.compose(
+            registry: browser.liveShortcutTabs,
+            spaces: browser.spaceStateOwner,
+            splitGroups: browser.splitGroupStore,
+            tabFactory: browser.tabFactory,
+            regularTabs: browser.regularTabCollectionOwner,
+            runtimeConnection: browser.runtimePortConnection,
+            retirement: browser.shortcutLiveTabRetirement,
+            membership: browser.tabCollectionMembershipOwner,
+            structuralLookup: browser.structuralLookupCoordinator
+        )
+    }
+
+    private func makeSpace(
+        in browser: BrowserManager,
+        name: String
+    ) -> Space {
+        let space = Space(
+            name: name,
+            icon: SumiPersistentGlyph.spaceDefaultIconValue
+        )
+        browser.spaceStateOwner.append(space)
+        return space
     }
 
     private func makePin(spaceId: UUID) -> ShortcutPin {
@@ -333,6 +365,13 @@ final class ShortcutTabPromotionServiceTests: XCTestCase {
             title: "Promotion"
         )
     }
+}
+
+@MainActor
+private struct PromotionHarness {
+    let browser: BrowserManager
+    let promotion: ShortcutTabPromotionService
+    let pinToRegular: ShortcutPinToRegularTabService
 }
 
 @MainActor

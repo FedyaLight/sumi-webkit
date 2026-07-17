@@ -4,6 +4,8 @@ import Foundation
 enum BrowserExtensionsModuleRuntimeFactory {
     static func runtime(for browserManager: BrowserManager) -> SumiExtensionsModuleRuntime {
         let currentProfileAuthority = browserManager.currentProfileAuthority
+        let membership = browserManager
+            .tabCollectionMembershipOwner
         return SumiExtensionsModuleRuntime(
             currentProfile: { [currentProfileAuthority] in
                 currentProfileAuthority.currentProfile
@@ -12,8 +14,8 @@ enum BrowserExtensionsModuleRuntimeFactory {
                 guard let browserManager else { return }
                 attachment.attach(to: browserManager)
             },
-            liveTabs: { [weak browserManager] in
-                browserManager?.tabManager.tabCollectionMembershipOwner.allTabs() ?? []
+            liveTabs: { [membership] in
+                membership.allTabs()
             }
         )
     }

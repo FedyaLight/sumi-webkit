@@ -5,36 +5,34 @@ import Foundation
 /// and selects the restored tab in the destination window.
 @MainActor
 final class ClosedTabRestoreService {
-    private let tabManager: @MainActor () -> TabManager?
-    private let activeWindow: @MainActor () -> BrowserWindowState?
-    private let selectRestoredTab: @MainActor (Tab, BrowserWindowState) -> Void
+    private let regularLifecycle: TabRegularLifecycleOwner
+    private let destinations: ClosedTabDestinationResolver
+    private let publication: ClosedTabRestorePublication
 
     init(
-        tabManager: @escaping @MainActor () -> TabManager?,
-        activeWindow: @escaping @MainActor () -> BrowserWindowState?,
-        selectRestoredTab: @escaping @MainActor (Tab, BrowserWindowState) -> Void
+        regularLifecycle: TabRegularLifecycleOwner,
+        destinations: ClosedTabDestinationResolver,
+        publication: ClosedTabRestorePublication
     ) {
-        self.tabManager = tabManager
-        self.activeWindow = activeWindow
-        self.selectRestoredTab = selectRestoredTab
+        self.regularLifecycle = regularLifecycle
+        self.destinations = destinations
+        self.publication = publication
     }
 
     /// Returns `false` when no destination space can be resolved; the caller
     /// must then keep the recently-closed history item.
     func restore(_ tabState: RecentlyClosedTabState) -> Bool {
-        guard let tabManager = tabManager() else { return false }
-        let targetWindow = activeWindow()
-        guard let targetSpace = destinationSpace(
-            sourceSpaceId: tabState.sourceSpaceId,
-            sourceProfileId: tabState.profileId,
-            fallbackWindow: targetWindow,
-            tabManager: tabManager
+        let targetWindow = destinations.activeWindow
+        guard let targetSpace = destinations.destinationSpace(
+            sourceSpaceID: tabState.sourceSpaceId,
+            sourceProfileID: tabState.profileId,
+            fallbackWindow: targetWindow
         ) else {
             return false
         }
 
         let restoredURL = tabState.currentURL ?? tabState.url
-        let restoredTab = tabManager.regularTabLifecycleOwner.createNewTab(
+        let restoredTab = regularLifecycle.createNewTab(
             url: restoredURL.absoluteString,
             in: targetSpace,
             activate: false
@@ -45,43 +43,7 @@ final class ClosedTabRestoreService {
         restoredTab.restoredCanGoForward = tabState.canGoForward
         restoredTab.applyRestoredNavigationPresentation()
 
-        if let targetWindow {
-            selectRestoredTab(restoredTab, targetWindow)
-        } else {
-            tabManager.activeSelectionOwner.setActiveTab(restoredTab)
-        }
+        publication.publish(restoredTab, in: targetWindow)
         return true
-    }
-
-    private func destinationSpace(
-        sourceSpaceId: UUID?,
-        sourceProfileId: UUID?,
-        fallbackWindow: BrowserWindowState?,
-        tabManager: TabManager
-    ) -> Space? {
-        if let sourceSpaceId,
-           let sourceSpace = tabManager.spaceStateOwner.space(with: sourceSpaceId) {
-            return sourceSpace
-        }
-        if let spaceId = fallbackWindow?.currentSpaceId,
-           let windowSpace = tabManager.spaceStateOwner.space(with: spaceId) {
-            return windowSpace
-        }
-        if let sourceProfileId,
-           let profileSpace = firstSpace(for: sourceProfileId, tabManager: tabManager) {
-            return profileSpace
-        }
-        if let profileId = fallbackWindow?.currentProfileId,
-           let profileSpace = firstSpace(for: profileId, tabManager: tabManager) {
-            return profileSpace
-        }
-        return nil
-    }
-
-    private func firstSpace(
-        for profileId: UUID,
-        tabManager: TabManager
-    ) -> Space? {
-        tabManager.spaceStateOwner.spaces.first(where: { $0.profileId == profileId })
     }
 }

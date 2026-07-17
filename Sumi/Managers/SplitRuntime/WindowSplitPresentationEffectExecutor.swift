@@ -31,47 +31,36 @@ typealias WindowSplitPresentationTerminalParticipants = [
 /// callback is followed by a fresh exact-witness check before the next effect.
 @MainActor
 final class WindowSplitPresentationEffectExecutor {
-    private let publishPreparedSelectionEffects: @MainActor (
-        Tab,
-        BrowserWindowState,
-        UUID?,
-        UUID?
-    ) -> Void
-    private let publishWindowChangeAction: @MainActor (UUID) -> Void
-    private let refreshCompositorAction: @MainActor (
-        BrowserWindowState
-    ) -> Void
-    private let scheduleWindowSession: @MainActor (
-        BrowserWindowState
-    ) -> Void
-    private let persistWindowSession: @MainActor (
-        BrowserWindowState
-    ) -> Void
+    private let selection: BrowserTabSelectionOwner
+    private let updates: SplitWindowUpdateStream.Channel
+    private let visuals: BrowserWindowVisualCoordinator
+    private let persistence: WindowSessionPersistenceCoordinator
 
     init(
-        publishPreparedSelectionEffects: @escaping @MainActor (
-            Tab,
-            BrowserWindowState,
-            UUID?,
-            UUID?
-        ) -> Void,
-        publishWindowChange: @escaping @MainActor (UUID) -> Void,
-        refreshCompositor: @escaping @MainActor (
-            BrowserWindowState
-        ) -> Void,
-        scheduleWindowSession: @escaping @MainActor (
-            BrowserWindowState
-        ) -> Void,
-        persistWindowSession: @escaping @MainActor (
-            BrowserWindowState
-        ) -> Void
+        selection: BrowserTabSelectionOwner,
+        updates: SplitWindowUpdateStream.Channel,
+        visuals: BrowserWindowVisualCoordinator,
+        persistence: WindowSessionPersistenceCoordinator
     ) {
-        self.publishPreparedSelectionEffects =
-            publishPreparedSelectionEffects
-        publishWindowChangeAction = publishWindowChange
-        refreshCompositorAction = refreshCompositor
-        self.scheduleWindowSession = scheduleWindowSession
-        self.persistWindowSession = persistWindowSession
+        self.selection = selection
+        self.updates = updates
+        self.visuals = visuals
+        self.persistence = persistence
+    }
+
+    func selectWithoutPersistence(
+        _ tab: Tab,
+        in window: BrowserWindowState
+    ) {
+        _ = selection.applyTabSelection(
+            tab,
+            in: window,
+            updateSpaceFromTab: true,
+            updateTheme: true,
+            rememberSelection: true,
+            persistSelection: false,
+            loadPolicy: .immediate
+        )
     }
 
     func publishSynchronizedWindow(
@@ -79,16 +68,16 @@ final class WindowSplitPresentationEffectExecutor {
         previousState: WindowSplitPresentationPersistedState,
         urgency: WindowSplitSessionWriteUrgency
     ) {
-        publishWindowChangeAction(window.id)
-        refreshCompositorAction(window)
+        updates.publish(windowID: window.id)
+        visuals.refreshCompositor(for: window)
         if previousState != WindowSplitPresentationPersistedState(window) {
             writeSession(for: window, urgency: urgency)
         }
     }
 
     func refreshPresentation(_ window: BrowserWindowState) {
-        publishWindowChangeAction(window.id)
-        refreshCompositorAction(window)
+        updates.publish(windowID: window.id)
+        visuals.refreshCompositor(for: window)
     }
 
     func publishTerminalEffects(
@@ -101,21 +90,21 @@ final class WindowSplitPresentationEffectExecutor {
                 continue
             }
             if let activeTab = windowPlan.activeTab {
-                publishPreparedSelectionEffects(
+                _ = selection.publishPreparedSelectionEffects(
                     activeTab,
-                    windowPlan.window,
-                    windowPlan.expectedWindowState.currentTabId,
-                    windowPlan.expectedWindowState.currentSpaceId
+                    in: windowPlan.window,
+                    previousTabID: windowPlan.expectedWindowState.currentTabId,
+                    previousSpaceID: windowPlan.expectedWindowState.currentSpaceId
                 )
             }
             guard witness.isCurrent(windowPlan) else {
                 continue
             }
-            publishWindowChangeAction(windowPlan.window.id)
+            updates.publish(windowID: windowPlan.window.id)
             guard witness.isCurrent(windowPlan) else {
                 continue
             }
-            refreshCompositorAction(windowPlan.window)
+            visuals.refreshCompositor(for: windowPlan.window)
             guard witness.isCurrent(windowPlan) else {
                 continue
             }
@@ -148,9 +137,9 @@ final class WindowSplitPresentationEffectExecutor {
     ) {
         switch urgency {
         case .scheduled:
-            scheduleWindowSession(window)
+            persistence.schedule(window)
         case .immediate:
-            persistWindowSession(window)
+            persistence.persist(window)
         }
     }
 }

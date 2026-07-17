@@ -14,18 +14,26 @@ import SumiDomain
 @MainActor
 struct SpaceRegularTabActionOwner {
     let space: Space
-    let regularTabs: any SidebarRegularTabsControlling
+    let catalog: SidebarRegularTabCatalog
+    let targets: SidebarRegularTabTargetQuery
+    let lifecycleCommands: SidebarRegularTabLifecycleCommands
+    let shortcutCommands: SidebarRegularTabShortcutCommands
+    let placementCommands: SidebarRegularTabPlacementCommands
     let browserContext: SidebarBrowserContext
     let windowState: BrowserWindowState
     let firstTabID: UUID?
     let lastTabID: UUID?
 
     func activate(_ tab: Tab) {
-        browserContext.commands.requestUserTabActivation(tab, windowState)
+        browserContext.tabSelection.requestUserTabActivation(
+            tab,
+            in: windowState,
+            loadPolicy: .immediate
+        )
     }
 
     func close(_ tab: Tab) {
-        browserContext.commands.closeTab(tab, windowState)
+        browserContext.tabClose.closeTab(tab, in: windowState)
     }
 
     func contextMenuEntries(
@@ -33,10 +41,10 @@ struct SpaceRegularTabActionOwner {
         close: @escaping () -> Void
     ) -> [SidebarContextMenuEntry] {
         let folderChoices = makeSidebarContextMenuFolderChoices(
-            folders: regularTabs.userFolders(for: space.id)
+            folders: targets.userFolders(for: space.id)
         )
         let spaceChoices = makeSidebarContextMenuSpaceChoices(
-            spaces: regularTabs.spaces,
+            spaces: catalog.allSpaces,
             selectedSpaceId: tab.spaceId
         )
         let profileChoices = makeSidebarContextMenuProfileChoices(
@@ -45,52 +53,67 @@ struct SpaceRegularTabActionOwner {
         )
         let moveUpAction: (() -> Void)? = firstTabID == tab.id
             ? nil
-            : { browserContext.commands.moveTabUp(tab.id) }
+            : { browserContext.regularTabs.moveTabUp(tab.id) }
         let moveDownAction: (() -> Void)? = lastTabID == tab.id
             ? nil
-            : { browserContext.commands.moveTabDown(tab.id) }
+            : { browserContext.regularTabs.moveTabDown(tab.id) }
         let pinToSpaceAction: (() -> Void)? = tab.isPinned || tab.isSpacePinned
             ? nil
-            : { regularTabs.pinTabToSpace(tab, spaceId: space.id) }
-        let addToEssentialsAction: (() -> Void)? = regularTabs.canAddToEssentials(
+            : { shortcutCommands.pinTabToSpace(tab, spaceID: space.id) }
+        let addToEssentialsAction: (() -> Void)? = targets.canAddToEssentials(
             tab,
             in: space,
             windowState: windowState
         )
-            ? { regularTabs.addTabToEssentials(tab, in: space, windowState: windowState) }
+            ? {
+                shortcutCommands.addTabToEssentials(
+                    tab,
+                    in: space,
+                    windowState: windowState
+                )
+            }
             : nil
         let closeTabsBelowAction: (() -> Void)? = !tab.isPinned
             && !tab.isSpacePinned
             && tab.spaceId != nil
-            ? { regularTabs.closeAllTabsBelow(tab) }
+            ? { lifecycleCommands.closeAllTabsBelow(tab) }
             : nil
 
         return makeSidebarTabContextMenuEntries(
             role: .regularTab,
             actions: .init(
-                duplicate: { browserContext.commands.duplicateTab(tab, windowState) },
+                duplicate: {
+                    browserContext.tabOpening.duplicateTab(
+                        tab,
+                        in: windowState
+                    )
+                },
                 copyLink: { SidebarLinkActions.copyLink(tab.url) },
                 share: {
                     SidebarLinkActions.presentSharePicker(
                         for: tab.url,
-                        source: windowState.resolveSidebarPresentationSource(
-                            in: browserContext.windowRegistry()
+                        source: browserContext.windows.presentationSource(
+                            for: windowState
                         ),
-                        presentationActions: browserContext.presentationActions
+                        presentation: browserContext.sharingPresentation
                     )
                 },
                 rename: { tab.startRenaming() },
                 folderTarget: .init(
                     choices: folderChoices,
-                    onSelect: { regularTabs.moveTabToFolder(tab, folderId: $0) }
+                    onSelect: {
+                        placementCommands.moveTabToFolder(tab, folderID: $0)
+                    }
                 ),
                 moveToSpace: .init(
                     choices: spaceChoices,
-                    onSelect: { regularTabs.moveTab(tab.id, to: $0) }
+                    onSelect: { placementCommands.moveTab(tab.id, to: $0) }
                 ),
                 profileTarget: .init(
                     choices: profileChoices,
-                    onSelect: { regularTabs.assign(tab, toProfile: $0) }
+                    onSelect: {
+                        placementCommands.assign(tab, toProfile: $0)
+                    }
                 ),
                 moveUp: moveUpAction,
                 moveDown: moveDownAction,

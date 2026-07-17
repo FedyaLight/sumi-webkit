@@ -7,7 +7,7 @@ import XCTest
 @MainActor
 final class SplitLayoutWeightMutationServiceTests: XCTestCase {
     func testWeightUpdateUsesLayoutOnlyStoreAndPresentationChannels() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let tabManager = BrowserManager()
         let original = try makeGroup()
         tabManager.splitGroupStore.replaceAll(with: [original])
         tabManager.structuralPersistence.resetDirtySet()
@@ -22,11 +22,17 @@ final class SplitLayoutWeightMutationServiceTests: XCTestCase {
         )
         let windows = [firstWindow, secondWindow, unrelatedWindow]
         let probe = LayoutChannelProbe()
-        let service = makeLayoutService(
-            tabManager: tabManager,
-            windows: windows,
-            probe: probe
-        )
+        windows.forEach { tabManager.windowRegistry.register($0) }
+        let firstCompositorVersion = firstWindow.compositorInvalidation.compositorVersion
+        let secondCompositorVersion = secondWindow.compositorInvalidation.compositorVersion
+        let unrelatedCompositorVersion = unrelatedWindow.compositorInvalidation.compositorVersion
+        let firstUpdate = tabManager.splitUpdateChannel.stream
+            .updates(for: firstWindow.id).sink { probe.publishedWindowIDs.append(firstWindow.id) }
+        let secondUpdate = tabManager.splitUpdateChannel.stream
+            .updates(for: secondWindow.id).sink { probe.publishedWindowIDs.append(secondWindow.id) }
+        let unrelatedUpdate = tabManager.splitUpdateChannel.stream
+            .updates(for: unrelatedWindow.id).sink { probe.publishedWindowIDs.append(unrelatedWindow.id) }
+        let service = makeLayoutService(tabManager: tabManager)
         let eventObservation = tabManager.tabStructureEventBus
             .structureChangedPublisher.sink {
                 probe.structureEvents += 1
@@ -56,16 +62,14 @@ final class SplitLayoutWeightMutationServiceTests: XCTestCase {
             )
         }
         XCTAssertEqual(probe.structureEvents, 0)
-        XCTAssertEqual(probe.windowSessionWrites, 0)
-        XCTAssertEqual(probe.selectionWrites, 0)
+        XCTAssertEqual(tabManager.windowSessionPersistenceCoordinator.flush(), 0)
         XCTAssertEqual(
             Set(probe.publishedWindowIDs),
             Set([firstWindow.id, secondWindow.id])
         )
-        XCTAssertEqual(
-            Set(probe.refreshedWindowIDs),
-            Set([firstWindow.id, secondWindow.id])
-        )
+        XCTAssertEqual(firstWindow.compositorInvalidation.compositorVersion, firstCompositorVersion + 1)
+        XCTAssertEqual(secondWindow.compositorInvalidation.compositorVersion, secondCompositorVersion + 1)
+        XCTAssertEqual(unrelatedWindow.compositorInvalidation.compositorVersion, unrelatedCompositorVersion)
         XCTAssertTrue(
             tabManager.structuralPersistence.dirtySet.splitGroupsDirty
         )
@@ -76,14 +80,16 @@ final class SplitLayoutWeightMutationServiceTests: XCTestCase {
         XCTAssertEqual(secondWindow.splitSelection?.groupID, original.id)
         tabManager.structuralPersistence.cancelPendingPersistence()
         _ = eventObservation
+        _ = [firstUpdate, secondUpdate, unrelatedUpdate]
     }
 
     func testStaleWeightSnapshotIsRejectedWithoutDirtyingOrRefreshing() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let tabManager = BrowserManager()
         let original = try makeGroup()
         tabManager.splitGroupStore.replaceAll(with: [original])
         let mutation = SplitLayoutWeightMutationService(
-            tabManager: { tabManager }
+            splitGroups: tabManager.splitGroupStore,
+            persistence: tabManager.structuralPersistence
         )
         XCTAssertTrue(mutation.update(
             expectedGroup: original,
@@ -132,55 +138,35 @@ final class SplitLayoutWeightMutationServiceTests: XCTestCase {
     }
 
     private func makeLayoutService(
-        tabManager: TabManager,
-        windows: [BrowserWindowState],
-        probe: LayoutChannelProbe
+        tabManager: BrowserManager
     ) -> SplitLayoutService {
-        let windowsByID = Dictionary(
-            uniqueKeysWithValues: windows.map { ($0.id, $0) }
-        )
-        let presentations = WindowSplitPresentationSynchronizer(
-            tabManager: { tabManager },
-            windows: { windows },
-            selectTabWithoutPersistence: { _, _ in
-                probe.selectionWrites += 1
-            },
-            publishPreparedSelectionEffects: { _, _, _, _ in
-                /* This layout fixture does not publish prepared selection. */
-            },
-            publishWindowChange: {
-                probe.publishedWindowIDs.append($0)
-            },
-            refreshCompositor: {
-                probe.refreshedWindowIDs.append($0.id)
-            },
-            scheduleWindowSession: { _ in
-                probe.windowSessionWrites += 1
-            },
-            persistWindowSession: { _ in
-                probe.windowSessionWrites += 1
-            }
-        )
-        let launcherPlacement = ShortcutSplitLauncherPlacementService(
-            tabManager: tabManager
-        )
+        let launcherPlacement = tabManager.splitLauncherPlacement
         return SplitLayoutService(
-            tabManager: { tabManager },
+            topology: SplitLayoutTopologyTransaction(
+                splitGroups: tabManager.splitGroupStore,
+                mutations: tabManager.splitGroupMutations,
+                regularTabs: tabManager.regularTabCollectionOwner,
+                launcherPlacement: launcherPlacement
+            ),
             query: WindowSplitQuery(
-                tabManager: { tabManager },
-                windowState: { windowsByID[$0] },
+                splitGroups: tabManager.splitGroupStore,
+                regularTabs: tabManager.regularTabCollectionOwner,
+                pins: tabManager.shortcutPinCollectionStateOwner,
+                liveShortcuts: tabManager.liveShortcutTabs,
+                windows: tabManager.windowRegistry,
                 previewIsActive: { _ in false }
             ),
             weightMutations: SplitLayoutWeightMutationService(
-                tabManager: { tabManager }
+                splitGroups: tabManager.splitGroupStore,
+                persistence: tabManager.structuralPersistence
             ),
-            presentations: presentations,
+            presentations: tabManager.splitPresentations,
             dissolution: SplitGroupDissolutionService(
-                tabManager: { tabManager },
+                splitGroups: tabManager.splitGroupStore,
+                mutations: tabManager.splitGroupMutations,
                 launcherPlacement: launcherPlacement,
-                presentations: presentations
+                presentations: tabManager.splitPresentations
             ),
-            launcherPlacement: launcherPlacement,
             restoreShortcutMember: { _, _, _ in false }
         )
     }
@@ -189,8 +175,5 @@ final class SplitLayoutWeightMutationServiceTests: XCTestCase {
 @MainActor
 private final class LayoutChannelProbe {
     var structureEvents = 0
-    var selectionWrites = 0
-    var windowSessionWrites = 0
     var publishedWindowIDs: [UUID] = []
-    var refreshedWindowIDs: [UUID] = []
 }

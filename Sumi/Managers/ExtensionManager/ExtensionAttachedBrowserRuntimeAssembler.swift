@@ -39,7 +39,8 @@ final class ExtensionAttachedBrowserRuntimeAssembler {
 
     func assemble(
         browserIdentity: ObjectIdentifier,
-        bridge: BrowserExtensionBridgeComposition
+        bridge: BrowserExtensionBridgeComposition,
+        browserRoutes: ExtensionControllerBrowserRouteInstaller
     ) -> Result {
         let controller = controllers.assemble(bridge: bridge)
         let windowPublication = windows.assemble(
@@ -81,7 +82,8 @@ final class ExtensionAttachedBrowserRuntimeAssembler {
             requestedTabs: requestedSurface.services,
             optionsComposer: requestedSurface.optionsComposer,
             profileQuery: bridge.profiles,
-            websiteDataAdmission: bridge.websiteDataAdmission
+            websiteDataAdmission: bridge.websiteDataAdmission,
+            browserRoutes: browserRoutes
         )
         return Result(
             runtime: runtime,

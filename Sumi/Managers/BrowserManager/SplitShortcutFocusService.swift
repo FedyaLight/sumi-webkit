@@ -5,21 +5,21 @@ import SumiDomain
 /// member. Focus never mutates the shared split structure.
 @MainActor
 final class SplitShortcutFocusService {
-    private let runtimeLease: () -> SplitShortcutRuntimeLease?
-    private let selectTabWithoutPersistence: (Tab, BrowserWindowState) -> Void
-    private let refreshCompositor: (BrowserWindowState) -> Void
-    private let persistWindowSession: (BrowserWindowState) -> Void
+    private let runtimeConnection: TabRuntimePortConnection
+    private let splitGroups: SplitGroupStore
+    private let materialization: WindowSplitMaterializationService
+    private let presentation: SplitShortcutFocusPresentationService
 
     init(
-        runtimeLease: @escaping () -> SplitShortcutRuntimeLease?,
-        selectTabWithoutPersistence: @escaping (Tab, BrowserWindowState) -> Void,
-        refreshCompositor: @escaping (BrowserWindowState) -> Void,
-        persistWindowSession: @escaping (BrowserWindowState) -> Void
+        runtimeConnection: TabRuntimePortConnection,
+        splitGroups: SplitGroupStore,
+        materialization: WindowSplitMaterializationService,
+        presentation: SplitShortcutFocusPresentationService
     ) {
-        self.runtimeLease = runtimeLease
-        self.selectTabWithoutPersistence = selectTabWithoutPersistence
-        self.refreshCompositor = refreshCompositor
-        self.persistWindowSession = persistWindowSession
+        self.runtimeConnection = runtimeConnection
+        self.splitGroups = splitGroups
+        self.materialization = materialization
+        self.presentation = presentation
     }
 
     func focusSplitGroup(
@@ -27,7 +27,7 @@ final class SplitShortcutFocusService {
         preferredMemberID: SplitMemberID? = nil,
         in windowState: BrowserWindowState
     ) {
-        guard let runtime = runtimeLease() else { return }
+        guard runtimeConnection.current != nil else { return }
         guard canFocus(group, in: windowState) else {
             queueFocus(
                 group,
@@ -36,53 +36,47 @@ final class SplitShortcutFocusService {
             )
             return
         }
-        guard applyFocusWithinRuntimeLease(
+        guard applyFocus(
             group,
             preferredMemberID: preferredMemberID,
-            in: windowState,
-            runtime: runtime
+            in: windowState
         ) else {
             return
         }
-        persistWindowSession(windowState)
+        presentation.persist(windowState)
     }
 
     func completePendingSplitGroupFocusIfReady(
         in windowState: BrowserWindowState,
         spaceId: UUID
     ) {
-        guard let runtime = runtimeLease(),
+        guard runtimeConnection.current != nil,
               let request = windowState.presentationState.pendingSplitGroupFocusRequest,
               request.targetSpaceID == spaceId else {
             return
         }
 
         windowState.presentationState.pendingSplitGroupFocusRequest = nil
-        guard let group = runtime.tabManager.splitGroupStore.group(
+        guard let group = splitGroups.group(
             id: request.groupID
-        ), applyFocusWithinRuntimeLease(
+        ), applyFocus(
             group,
             preferredMemberID: request.preferredMemberID,
-            in: windowState,
-            runtime: runtime
+            in: windowState
         ) else {
-            refreshCompositor(windowState)
+            presentation.refresh(windowState)
             return
         }
-        persistWindowSession(windowState)
+        presentation.persist(windowState)
     }
 
-    /// Used by a larger operation that already holds the runtime lease and
-    /// owns the final session write.
     @discardableResult
-    func applyFocusWithinRuntimeLease(
+    private func applyFocus(
         _ group: SumiDomain.SplitGroup,
         preferredMemberID: SplitMemberID? = nil,
-        in windowState: BrowserWindowState,
-        runtime: SplitShortcutRuntimeLease
+        in windowState: BrowserWindowState
     ) -> Bool {
         guard canFocus(group, in: windowState) else { return false }
-        let tabManager = runtime.tabManager
         let activeMemberID = resolvedActiveMemberID(
             preferredMemberID,
             in: group,
@@ -93,27 +87,21 @@ final class SplitShortcutFocusService {
             groupID: group.id,
             activeMemberID: activeMemberID
         )
-        guard WindowSplitMaterializationService()
+        guard materialization
             .withMaterialization(
                 group,
                 selection: selection,
                 in: windowState,
-                tabManager: tabManager,
                 finalizing: { materialized in
-                selectTabWithoutPersistence(
-                    materialized.activeTab,
-                    windowState
-                )
-                windowState.splitSelection = materialized.presentation.selection
+                presentation.apply(materialized, in: windowState)
             }) else {
             return false
         }
-        refreshCompositor(windowState)
         return true
     }
 
     func refreshPresentation(in windowState: BrowserWindowState) {
-        refreshCompositor(windowState)
+        presentation.refresh(windowState)
     }
 
     private func canFocus(

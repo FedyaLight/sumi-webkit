@@ -1,34 +1,26 @@
-import Combine
 import Foundation
 import SumiDomain
 
 @MainActor
 final class TabStructuralInstallOwner {
-    struct Dependencies {
-        let withStructuralUpdateTransaction: @MainActor (@MainActor () -> Void) -> Void
-        let objectWillChange: @MainActor () -> Void
-        let replaceSpaces: @MainActor ([Space]) -> Void
-        let replaceTabsBySpace: @MainActor ([UUID: [Tab]]) -> Void
-        let replaceFoldersBySpace: @MainActor ([UUID: [TabFolder]]) -> Void
-        let replaceSplitGroups: @MainActor ([SplitGroup]) -> Void
-        let replaceShortcutPins: @MainActor (
-            _ pinnedByProfile: [UUID: [ShortcutPin]],
-            _ spacePinnedShortcuts: [UUID: [ShortcutPin]],
-            _ pendingPinnedWithoutProfile: [ShortcutPin]
-        ) -> Void
-        let replaceCurrentSpace: @MainActor (Space?) -> Void
-        let replaceCurrentTab: @MainActor (Tab?) -> Void
-        let syncShortcutPins: @MainActor ([ShortcutPin]) -> Void
-        let rebuildTabLookup: @MainActor () -> Void
-        let markSnapshotCacheDirty: @MainActor () -> Void
-        let resetStructuralDirtySet: @MainActor () -> Void
-        let requestStructuralPublish: @MainActor () -> Void
-    }
+    private let state: TabStateStore
+    private let structuralLookup: TabStructuralLookupCoordinator
+    private let persistence: TabStructuralPersistenceService
+    private let publication: TabStructuralInstallPublication
+    private let profileReferenceAdmission: ProfileReferenceAdmissionLedger
 
-    private let dependencies: Dependencies
-
-    init(dependencies: Dependencies) {
-        self.dependencies = dependencies
+    init(
+        state: TabStateStore,
+        structuralLookup: TabStructuralLookupCoordinator,
+        persistence: TabStructuralPersistenceService,
+        publication: TabStructuralInstallPublication,
+        profileReferenceAdmission: ProfileReferenceAdmissionLedger
+    ) {
+        self.state = state
+        self.structuralLookup = structuralLookup
+        self.persistence = persistence
+        self.publication = publication
+        self.profileReferenceAdmission = profileReferenceAdmission
     }
 
     @discardableResult
@@ -40,7 +32,25 @@ final class TabStructuralInstallOwner {
         admitted: @escaping @MainActor () -> Bool,
         onInstalled: @escaping @MainActor () -> Void
     ) -> Bool {
-        installCore(
+        let lease: ProfileReferenceMutationLease
+        do {
+            lease = try profileReferenceAdmission.beginReferenceMutation(
+                to: ProfileReferenceInventory(
+                    spaces: restoredState.spaces,
+                    tabsBySpace: restoredState.tabsBySpace,
+                    pinnedByProfile: restoredState.pinnedByProfile,
+                    spacePinnedShortcuts: restoredState.spacePinnedShortcuts,
+                    pendingPinnedWithoutProfile: restoredState.pendingPinnedWithoutProfile,
+                    splitGroups: splitGroups,
+                    currentSpace: currentSpace,
+                    currentTab: currentTab
+                ).profileIDs
+            )
+        } catch {
+            return false
+        }
+        defer { endReferenceMutation(lease) }
+        return installCore(
             spaces: restoredState.spaces,
             tabsBySpace: restoredState.tabsBySpace,
             foldersBySpace: restoredState.foldersBySpace,
@@ -51,6 +61,7 @@ final class TabStructuralInstallOwner {
             currentSpace: currentSpace,
             currentTab: currentTab,
             resetDirtyState: false,
+            referenceMutationLease: lease,
             admitted: admitted,
             onInstalled: onInstalled
         )
@@ -70,6 +81,56 @@ final class TabStructuralInstallOwner {
         resetDirtyState: Bool = true,
         admitted: @escaping @MainActor () -> Bool = { true }
     ) -> Bool {
+        let inventory = ProfileReferenceInventory(
+            spaces: spaces,
+            tabsBySpace: tabsBySpace,
+            pinnedByProfile: pinnedByProfile,
+            spacePinnedShortcuts: spacePinnedShortcuts,
+            pendingPinnedWithoutProfile: pendingPinnedWithoutProfile,
+            splitGroups: splitGroups,
+            currentSpace: currentSpace,
+            currentTab: currentTab
+        )
+        let lease: ProfileReferenceMutationLease
+        do {
+            lease = try profileReferenceAdmission.beginReferenceMutation(
+                to: inventory.profileIDs
+            )
+        } catch {
+            return false
+        }
+        defer { endReferenceMutation(lease) }
+        return installCore(
+            spaces: spaces,
+            tabsBySpace: tabsBySpace,
+            foldersBySpace: foldersBySpace,
+            pinnedByProfile: pinnedByProfile,
+            spacePinnedShortcuts: spacePinnedShortcuts,
+            pendingPinnedWithoutProfile: pendingPinnedWithoutProfile,
+            splitGroups: splitGroups,
+            currentSpace: currentSpace,
+            currentTab: currentTab,
+            resetDirtyState: resetDirtyState,
+            referenceMutationLease: lease,
+            admitted: admitted,
+            onInstalled: {}
+        )
+    }
+
+    @discardableResult
+    func install(
+        spaces: [Space],
+        tabsBySpace: [UUID: [Tab]],
+        foldersBySpace: [UUID: [TabFolder]],
+        pinnedByProfile: [UUID: [ShortcutPin]],
+        spacePinnedShortcuts: [UUID: [ShortcutPin]],
+        pendingPinnedWithoutProfile: [ShortcutPin],
+        splitGroups: [SplitGroup],
+        currentSpace: Space?,
+        currentTab: Tab?,
+        resetDirtyState: Bool = true,
+        referenceMutationLease: ProfileReferenceMutationLease
+    ) -> Bool {
         installCore(
             spaces: spaces,
             tabsBySpace: tabsBySpace,
@@ -81,7 +142,8 @@ final class TabStructuralInstallOwner {
             currentSpace: currentSpace,
             currentTab: currentTab,
             resetDirtyState: resetDirtyState,
-            admitted: admitted,
+            referenceMutationLease: referenceMutationLease,
+            admitted: { true },
             onInstalled: {}
         )
     }
@@ -97,95 +159,68 @@ final class TabStructuralInstallOwner {
         currentSpace: Space?,
         currentTab: Tab?,
         resetDirtyState: Bool,
+        referenceMutationLease: ProfileReferenceMutationLease,
         admitted: @escaping @MainActor () -> Bool,
         onInstalled: @escaping @MainActor () -> Void
     ) -> Bool {
+        let inventory = ProfileReferenceInventory(
+            spaces: spaces,
+            tabsBySpace: tabsBySpace,
+            pinnedByProfile: pinnedByProfile,
+            spacePinnedShortcuts: spacePinnedShortcuts,
+            pendingPinnedWithoutProfile: pendingPinnedWithoutProfile,
+            splitGroups: splitGroups,
+            currentSpace: currentSpace,
+            currentTab: currentTab
+        )
+        guard profileReferenceAdmission.validate(
+            referenceMutationLease,
+            covers: inventory.profileIDs
+        ) else {
+            return false
+        }
         var didInstall = false
-        dependencies.withStructuralUpdateTransaction {
-            guard admitted() else { return }
-            dependencies.objectWillChange()
-            guard admitted() else { return }
-            dependencies.replaceSpaces(spaces)
-            dependencies.replaceTabsBySpace(tabsBySpace)
-            dependencies.replaceFoldersBySpace(foldersBySpace)
-            dependencies.replaceSplitGroups(splitGroups)
-            dependencies.replaceShortcutPins(
-                pinnedByProfile,
-                spacePinnedShortcuts,
-                pendingPinnedWithoutProfile
+        structuralLookup.withTransaction {
+            guard admitted(), profileReferenceAdmission.validate(
+                referenceMutationLease,
+                covers: inventory.profileIDs
+            ) else { return }
+            publication.willInstallState()
+            guard admitted(), profileReferenceAdmission.validate(
+                referenceMutationLease,
+                covers: inventory.profileIDs
+            ) else { return }
+            state.spaces.replaceSpaces(spaces)
+            state.regularTabs.replaceTabsBySpace(tabsBySpace)
+            state.folders.replaceFoldersBySpace(foldersBySpace)
+            state.splitGroups.replaceAll(with: splitGroups)
+            state.shortcutPins.replaceAll(
+                pinnedByProfile: pinnedByProfile,
+                spacePinnedShortcuts: spacePinnedShortcuts,
+                pendingPinnedWithoutProfile: pendingPinnedWithoutProfile
             )
-            dependencies.replaceCurrentSpace(currentSpace)
-            dependencies.replaceCurrentTab(currentTab)
-            dependencies.rebuildTabLookup()
-            dependencies.markSnapshotCacheDirty()
+            state.spaces.replaceCurrentSpace(currentSpace)
+            state.selection.replaceCurrentTab(currentTab)
+            structuralLookup.rebuild()
+            persistence.markSnapshotCacheDirty()
             if resetDirtyState {
-                dependencies.resetStructuralDirtySet()
+                persistence.resetDirtySet()
             }
-            dependencies.requestStructuralPublish()
+            structuralLookup.requestPublish()
             onInstalled()
             didInstall = true
-            dependencies.syncShortcutPins(
-                Array(pinnedByProfile.values.joined()) + Array(spacePinnedShortcuts.values.joined())
+            publication.didInstallShortcuts(
+                pinnedByProfile: pinnedByProfile,
+                spacePinnedShortcuts: spacePinnedShortcuts
             )
         }
         return didInstall
     }
-}
 
-extension TabStructuralInstallOwner.Dependencies {
-    @MainActor
-    static func live(tabManager: TabManager) -> Self {
-        Self(
-            withStructuralUpdateTransaction: { [weak tabManager] operation in
-                guard let tabManager else {
-                    operation()
-                    return
-                }
-                tabManager.structuralLookupCoordinator.withTransaction(operation)
-            },
-            objectWillChange: { [weak tabManager] in
-                tabManager?.objectWillChange.send()
-            },
-            replaceSpaces: { [weak tabManager] spaces in
-                tabManager?.spaceStateOwner.replaceSpaces(spaces)
-            },
-            replaceTabsBySpace: { [weak tabManager] tabsBySpace in
-                tabManager?.regularTabCollectionStateOwner.replaceTabsBySpace(tabsBySpace)
-            },
-            replaceFoldersBySpace: { [weak tabManager] foldersBySpace in
-                tabManager?.folderCollectionStateOwner.replaceFoldersBySpace(foldersBySpace)
-            },
-            replaceSplitGroups: { [weak tabManager] splitGroups in
-                tabManager?.splitGroupStore.replaceAll(with: splitGroups)
-            },
-            replaceShortcutPins: { [weak tabManager] pinnedByProfile, spacePinnedShortcuts, pendingPinnedWithoutProfile in
-                tabManager?.shortcutPinCollectionStateOwner.replaceAll(
-                    pinnedByProfile: pinnedByProfile,
-                    spacePinnedShortcuts: spacePinnedShortcuts,
-                    pendingPinnedWithoutProfile: pendingPinnedWithoutProfile
-                )
-            },
-            replaceCurrentSpace: { [weak tabManager] space in
-                tabManager?.spaceStateOwner.replaceCurrentSpace(space)
-            },
-            replaceCurrentTab: { [weak tabManager] tab in
-                tabManager?.selectionStateOwner.replaceCurrentTab(tab)
-            },
-            syncShortcutPins: { [weak tabManager] shortcutPins in
-                tabManager?.faviconService.syncShortcutPins(shortcutPins)
-            },
-            rebuildTabLookup: { [weak tabManager] in
-                tabManager?.structuralLookupCoordinator.rebuild()
-            },
-            markSnapshotCacheDirty: { [weak tabManager] in
-                tabManager?.structuralPersistence.markSnapshotCacheDirty()
-            },
-            resetStructuralDirtySet: { [weak tabManager] in
-                tabManager?.structuralPersistence.resetDirtySet()
-            },
-            requestStructuralPublish: { [weak tabManager] in
-                tabManager?.structuralLookupCoordinator.requestPublish()
-            }
+    private func endReferenceMutation(_ lease: ProfileReferenceMutationLease) {
+        precondition(
+            profileReferenceAdmission.endReferenceMutation(lease),
+            "Tab structural install lost its exact profile-reference mutation lease"
         )
     }
 }

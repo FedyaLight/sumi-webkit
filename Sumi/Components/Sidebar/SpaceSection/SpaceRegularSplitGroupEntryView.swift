@@ -15,7 +15,8 @@ struct SpaceRegularSplitGroupEntryView: View {
     let tabByID: [UUID: Tab]
     let inventory: SidebarSpaceInventorySnapshot
     let selection: SidebarWindowSelectionQuery
-    let regularTabs: any SidebarRegularTabsControlling
+    let regularTabCatalog: SidebarRegularTabCatalog
+    let regularTabTargets: SidebarRegularTabTargetQuery
     let browserContext: SidebarBrowserContext
     let isInteractive: Bool
     let contentMutationAnimation: Animation?
@@ -34,9 +35,9 @@ struct SpaceRegularSplitGroupEntryView: View {
         splitResolver.splitGroupItems(
             for: group,
             tabByID: tabByID,
-            regularTab: { regularTabs.tab(for: $0) },
+            regularTab: { regularTabCatalog.tab(for: $0) },
             shortcutLiveTab: { selection.liveTab(for: $0, in: windowState) },
-            shortcutPin: { regularTabs.shortcutPin(by: $0) }
+            shortcutPin: { regularTabTargets.shortcutPin(by: $0) }
         )
     }
 
@@ -75,9 +76,13 @@ struct SpaceRegularSplitGroupEntryView: View {
             for: item,
             in: group,
             faviconImageReader: browserContext.faviconImageReader,
-            shortcutPin: { regularTabs.shortcutPin(by: $0) },
+            shortcutPin: { regularTabTargets.shortcutPin(by: $0) },
             onActivateMember: {
-                browserContext.commands.focusSplitGroup(group.id, item.id, windowState.id)
+                browserContext.splitFocusCommands.focusGroup(
+                    group.id,
+                    item.id,
+                    windowState.id
+                )
             }
         )
     }
@@ -90,7 +95,11 @@ struct SpaceRegularSplitGroupEntryView: View {
     }
 
     private func activateMember(_ memberID: SplitMemberID) {
-        browserContext.commands.focusSplitGroup(group.id, memberID, windowState.id)
+        browserContext.splitFocusCommands.focusGroup(
+            group.id,
+            memberID,
+            windowState.id
+        )
     }
 
     private func prepareSegmentActionAnimation(_ memberID: SplitMemberID) {
@@ -102,7 +111,7 @@ struct SpaceRegularSplitGroupEntryView: View {
         if case .shortcutPin = memberID {
             performShortcutRestoreWithPreparedGap(memberID: memberID) {
                 SidebarMotionTransaction.withoutAnimation {
-                    browserContext.commands.restoreShortcutSplitMember(
+                    browserContext.splitFocusCommands.restoreMember(
                         group.id,
                         memberID,
                         windowState.id
@@ -115,7 +124,11 @@ struct SpaceRegularSplitGroupEntryView: View {
         guard case .regularTab(let tabID) = memberID else { return }
         SidebarMotionTransaction.withoutAnimation {
             splitSegmentRemovalIDs.insert(tabID)
-            browserContext.commands.closeSplitMember(group.id, memberID, windowState.id)
+            browserContext.splitCloseCommand.closeMember(
+                group.id,
+                memberID,
+                windowState.id
+            )
         }
     }
 
@@ -124,7 +137,11 @@ struct SpaceRegularSplitGroupEntryView: View {
             if case .regularTab(let tabID) = memberID {
                 splitSegmentRemovalIDs.insert(tabID)
             }
-            browserContext.commands.closeSplitMember(group.id, memberID, windowState.id)
+            browserContext.splitCloseCommand.closeMember(
+                group.id,
+                memberID,
+                windowState.id
+            )
         }
     }
 

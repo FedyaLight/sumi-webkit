@@ -5,421 +5,394 @@ import SumiDomain
 
 @MainActor
 final class BrowserTabSelectionOwnerTests: XCTestCase {
-    func testAlreadyCurrentSelectionDoesNotRunSelectionSideEffects() {
-        let owner = BrowserTabSelectionOwner()
-        let spaceId = UUID()
-        let tab = makeTab(spaceId: spaceId)
-        let windowState = BrowserWindowState()
-        windowState.currentTabId = tab.id
-        windowState.currentSpaceId = spaceId
-        windowState.isShowingEmptyState = false
-        windowState.activeTabForSpace[spaceId] = tab.id
-        windowState.selectionHistory.recentRegularTabIdsBySpace[spaceId] = [tab.id]
-        windowState.selectionHistory.recentSelectionItemsBySpace[spaceId] = [.regularTab(tab.id)]
-        let probe = ActionProbe(activeWindowId: windowState.id)
+    func testAlreadyCurrentSelectionIsUnchangedAndPublishesNothing() throws {
+        let harness = try makeHarness()
+        let tab = makeTab(in: harness.space, manager: harness.manager)
+        installSelection(tab, in: harness.window)
+        let compositorVersion = harness.window.compositorInvalidation
+            .compositorVersion
 
-        owner.applyTabSelection(
+        let outcome = harness.owner.applyTabSelection(
             tab,
-            in: windowState,
+            in: harness.window,
             updateSpaceFromTab: true,
             updateTheme: true,
             rememberSelection: true,
             persistSelection: true,
-            loadPolicy: .immediate,
-            actions: makeActions(probe: probe)
+            loadPolicy: .immediate
         )
 
-        XCTAssertTrue(probe.events.isEmpty)
-        XCTAssertEqual(windowState.currentTabId, tab.id)
-        XCTAssertEqual(windowState.currentSpaceId, spaceId)
-        XCTAssertFalse(windowState.isShowingEmptyState)
-    }
-
-    func testRegularSelectionCoordinatesBrowserSideEffectsAndPersistence() {
-        let owner = BrowserTabSelectionOwner()
-        let space = Space(id: UUID(), name: "Work")
-        let previousTab = makeTab(spaceId: space.id)
-        let selectedTab = makeTab(spaceId: space.id)
-        let windowState = BrowserWindowState()
-        windowState.currentTabId = previousTab.id
-        let probe = ActionProbe(activeWindowId: windowState.id)
-
-        owner.applyTabSelection(
-            selectedTab,
-            in: windowState,
-            updateSpaceFromTab: true,
-            updateTheme: true,
-            rememberSelection: true,
-            persistSelection: true,
-            loadPolicy: .immediate,
-            actions: makeActions(
-                probe: probe,
-                space: space,
-                tabsById: [previousTab.id: previousTab]
-            )
-        )
-
-        XCTAssertEqual(windowState.currentTabId, selectedTab.id)
-        XCTAssertEqual(windowState.currentSpaceId, space.id)
-        XCTAssertEqual(windowState.activeTabForSpace[space.id], selectedTab.id)
-        XCTAssertEqual(windowState.selectionHistory.recentRegularTabIdsBySpace[space.id], [selectedTab.id])
+        XCTAssertEqual(outcome, .unchanged)
         XCTAssertEqual(
-            probe.events,
-            [
-                "nowPlayingActivated",
-                "dismissFloatingBar",
-                "splitSelection",
-                "syncSpaceContext",
-                "workspaceTheme:true",
-                "fetchFavicon",
-                "nowPlayingRefresh",
-                "updateFind",
-                "prepareVisibleWebViews",
-                "refreshCompositor",
-                "notifyActivated:\(previousTab.id.uuidString)",
-                "tabSuspension:tab-selection-changed",
-                "backgroundMedia:tab-selection-changed",
-                "updateActiveTabState",
-                "persistWindowSession",
-            ]
+            harness.window.compositorInvalidation.compositorVersion,
+            compositorVersion
+        )
+        XCTAssertNil(harness.snapshotStore.loadSnapshot())
+    }
+
+    func testRegularSelectionCommitsWindowGlobalAndDurableState() throws {
+        let harness = try makeHarness()
+        let previousTab = makeTab(in: harness.space, manager: harness.manager)
+        let selectedTab = makeTab(in: harness.space, manager: harness.manager)
+        installSelection(previousTab, in: harness.window)
+        harness.window.presentationState.isFloatingBarVisible = true
+        harness.window.floatingBarPresentationReason = .keyboard
+
+        let outcome = harness.owner.applyTabSelection(
+            selectedTab,
+            in: harness.window,
+            updateSpaceFromTab: true,
+            updateTheme: true,
+            rememberSelection: true,
+            persistSelection: true,
+            loadPolicy: .immediate
+        )
+
+        XCTAssertEqual(outcome, .committed)
+        XCTAssertEqual(harness.window.currentTabId, selectedTab.id)
+        XCTAssertEqual(harness.window.currentSpaceId, harness.space.id)
+        XCTAssertEqual(
+            harness.window.activeTabForSpace[harness.space.id],
+            selectedTab.id
+        )
+        XCTAssertIdentical(
+            harness.manager.tabStateStore.selection.currentTab,
+            selectedTab
+        )
+        XCTAssertFalse(harness.window.presentationState.isFloatingBarVisible)
+        XCTAssertEqual(
+            harness.snapshotStore.loadSnapshot()?.snapshot.currentTabId,
+            selectedTab.id
         )
     }
 
-    func testSelectionWithinInteractiveSourceSkipsWorkspaceThemeUpdate() {
-        let owner = BrowserTabSelectionOwner()
-        let sourceSpace = Space(id: UUID(), name: "Source", workspaceTheme: WorkspaceTheme(gradientTheme: .default))
-        let destinationSpace = Space(id: UUID(), name: "Destination", workspaceTheme: WorkspaceTheme(gradientTheme: .incognito))
-        let previousTab = makeTab(spaceId: sourceSpace.id)
-        let selectedTab = makeTab(spaceId: sourceSpace.id)
-        let windowState = BrowserWindowState()
-        windowState.currentSpaceId = sourceSpace.id
-        windowState.currentTabId = previousTab.id
-        windowState.windowThemeState.beginInteractive(
-            sourceSpaceId: sourceSpace.id,
-            destinationSpaceId: destinationSpace.id,
-            from: sourceSpace.workspaceTheme,
-            to: destinationSpace.workspaceTheme,
+    func testSelectionWithinInteractiveSourcePreservesInteractiveTheme() throws {
+        let harness = try makeHarness()
+        let destination = makeSpace(
+            name: "Destination",
+            theme: WorkspaceTheme(gradientTheme: .incognito),
+            manager: harness.manager
+        )
+        let previousTab = makeTab(in: harness.space, manager: harness.manager)
+        let selectedTab = makeTab(in: harness.space, manager: harness.manager)
+        installSelection(previousTab, in: harness.window)
+        let identity = harness.window.windowThemeState.beginInteractive(
+            sourceSpaceId: harness.space.id,
+            destinationSpaceId: destination.id,
+            from: harness.space.workspaceTheme,
+            to: destination.workspaceTheme,
             initialProgress: 0.2
         )
-        let probe = ActionProbe(activeWindowId: windowState.id)
 
-        owner.applyTabSelection(
+        _ = harness.owner.applyTabSelection(
             selectedTab,
-            in: windowState,
+            in: harness.window,
             updateSpaceFromTab: true,
             updateTheme: true,
             rememberSelection: true,
             persistSelection: true,
-            loadPolicy: .immediate,
-            actions: makeActions(
-                probe: probe,
-                space: sourceSpace,
-                tabsById: [previousTab.id: previousTab]
-            )
+            loadPolicy: .immediate
         )
 
-        XCTAssertEqual(windowState.currentSpaceId, sourceSpace.id)
-        XCTAssertFalse(probe.events.contains { $0.hasPrefix("workspaceTheme:") })
+        XCTAssertEqual(harness.window.currentSpaceId, harness.space.id)
+        XCTAssertTrue(
+            harness.window.windowThemeState
+                .matchesInteractiveSpaceTransition(identity)
+        )
     }
 
-    func testSelectionToDifferentSpaceDuringInteractiveUpdatesWorkspaceTheme() {
-        let owner = BrowserTabSelectionOwner()
-        let sourceSpace = Space(id: UUID(), name: "Source", workspaceTheme: WorkspaceTheme(gradientTheme: .default))
-        let transitionDestination = Space(
-            id: UUID(),
+    func testSelectionAcrossInteractiveBoundaryPublishesDestinationTheme() throws {
+        let harness = try makeHarness()
+        let transitionDestination = makeSpace(
             name: "Transition Destination",
-            workspaceTheme: WorkspaceTheme(gradientTheme: .incognito)
+            theme: WorkspaceTheme(gradientTheme: .incognito),
+            manager: harness.manager
         )
-        let committedDestination = Space(
-            id: UUID(),
-            name: "Committed",
-            workspaceTheme: WorkspaceTheme(
+        let committedDestination = makeSpace(
+            name: "Committed Destination",
+            theme: WorkspaceTheme(
                 gradientTheme: WorkspaceGradientTheme(
                     colors: [
-                        WorkspaceThemeColor(hex: "#0A84FF", isPrimary: true, position: .topLeft),
-                        WorkspaceThemeColor(hex: "#FFD60A", position: .bottom),
+                        WorkspaceThemeColor(
+                            hex: "#0A84FF",
+                            isPrimary: true,
+                            position: .topLeft
+                        ),
+                        WorkspaceThemeColor(
+                            hex: "#FFD60A",
+                            position: .bottom
+                        ),
                     ],
                     opacity: 0.72,
                     texture: 0.1
                 )
-            )
+            ),
+            manager: harness.manager
         )
-        let previousTab = makeTab(spaceId: sourceSpace.id)
-        let selectedTab = makeTab(spaceId: committedDestination.id)
-        let windowState = BrowserWindowState()
-        windowState.currentSpaceId = sourceSpace.id
-        windowState.currentTabId = previousTab.id
-        windowState.windowThemeState.beginInteractive(
-            sourceSpaceId: sourceSpace.id,
+        let previousTab = makeTab(in: harness.space, manager: harness.manager)
+        let selectedTab = makeTab(
+            in: committedDestination,
+            manager: harness.manager
+        )
+        installSelection(previousTab, in: harness.window)
+        harness.window.windowThemeState.beginInteractive(
+            sourceSpaceId: harness.space.id,
             destinationSpaceId: transitionDestination.id,
-            from: sourceSpace.workspaceTheme,
+            from: harness.space.workspaceTheme,
             to: transitionDestination.workspaceTheme,
             initialProgress: 0.2
         )
-        let probe = ActionProbe(activeWindowId: windowState.id)
 
-        owner.applyTabSelection(
+        _ = harness.owner.applyTabSelection(
             selectedTab,
-            in: windowState,
+            in: harness.window,
             updateSpaceFromTab: true,
             updateTheme: true,
             rememberSelection: true,
             persistSelection: true,
-            loadPolicy: .immediate,
-            actions: makeActions(
-                probe: probe,
-                space: committedDestination,
-                tabsById: [previousTab.id: previousTab]
-            )
+            loadPolicy: .immediate
         )
 
-        XCTAssertEqual(windowState.currentSpaceId, committedDestination.id)
-        XCTAssertTrue(probe.events.contains("workspaceTheme:true"))
+        XCTAssertEqual(
+            harness.window.currentSpaceId,
+            committedDestination.id
+        )
+        XCTAssertEqual(
+            harness.window.windowThemeState.targetTheme,
+            committedDestination.workspaceTheme
+        )
     }
 
-    func testPreparedSelectionPublishesOnlyTerminalEffects() {
-        let owner = BrowserTabSelectionOwner()
-        let previousSpaceID = UUID()
-        let space = Space(id: UUID(), name: "Prepared")
-        let previousTab = makeTab(spaceId: previousSpaceID)
-        let selectedTab = makeTab(spaceId: space.id)
-        let windowState = BrowserWindowState()
-        windowState.currentTabId = selectedTab.id
-        windowState.currentSpaceId = space.id
-        let probe = ActionProbe(activeWindowId: windowState.id)
+    func testPreparedSelectionPublishesEffectsWithoutRewritingTopologyOrPersistence() throws {
+        let harness = try makeHarness()
+        let previousTab = makeTab(in: harness.space, manager: harness.manager)
+        let selectedTab = makeTab(in: harness.space, manager: harness.manager)
+        let preparedSplitSelection = WindowSplitSelection(
+            groupID: UUID(),
+            activeMemberID: .regularTab(selectedTab.id)
+        )
+        harness.window.currentTabId = selectedTab.id
+        harness.window.currentSpaceId = harness.space.id
+        harness.window.splitSelection = preparedSplitSelection
 
-        let outcome = owner.publishPreparedSelectionEffects(
+        let outcome = harness.owner.publishPreparedSelectionEffects(
             selectedTab,
-            in: windowState,
+            in: harness.window,
             previousTabID: previousTab.id,
-            previousSpaceID: previousSpaceID,
-            actions: makeActions(
-                probe: probe,
-                space: space,
-                tabsById: [
-                    previousTab.id: previousTab,
-                    selectedTab.id: selectedTab,
-                ]
-            )
+            previousSpaceID: UUID()
         )
 
         XCTAssertEqual(outcome, .committed)
-        XCTAssertFalse(probe.events.contains("splitSelection"))
-        XCTAssertFalse(probe.events.contains("persistWindowSession"))
-        XCTAssertTrue(probe.events.contains("workspaceTheme:true"))
-        XCTAssertTrue(probe.events.contains("refreshCompositor"))
-        XCTAssertTrue(
-            probe.events.contains(
-                "notifyActivated:\(previousTab.id.uuidString)"
-            )
+        XCTAssertEqual(harness.window.splitSelection, preparedSplitSelection)
+        XCTAssertNil(harness.snapshotStore.loadSnapshot())
+        XCTAssertGreaterThan(
+            harness.window.compositorInvalidation.compositorVersion,
+            0
         )
     }
 
-    func testPreparedSelectionRejectsStalePhysicalTabWitness() {
-        let owner = BrowserTabSelectionOwner()
-        let tabID = UUID()
-        let staleTab = makeTab(id: tabID, spaceId: nil)
-        let currentTab = makeTab(id: tabID, spaceId: nil)
-        let windowState = BrowserWindowState()
-        windowState.currentTabId = tabID
-        let probe = ActionProbe(activeWindowId: windowState.id)
+    func testPreparedSelectionRejectsStalePhysicalTabWitness() throws {
+        let harness = try makeHarness()
+        let currentTab = makeTab(in: harness.space, manager: harness.manager)
+        let staleTab = Tab(
+            id: currentTab.id,
+            url: currentTab.url,
+            name: currentTab.name,
+            spaceId: currentTab.spaceId,
+            loadsCachedFaviconOnInit: false
+        )
+        harness.window.currentTabId = currentTab.id
+        harness.window.currentSpaceId = harness.space.id
 
-        let outcome = owner.publishPreparedSelectionEffects(
+        let outcome = harness.owner.publishPreparedSelectionEffects(
             staleTab,
-            in: windowState,
+            in: harness.window,
             previousTabID: nil,
-            previousSpaceID: nil,
-            actions: makeActions(
-                probe: probe,
-                tabsById: [tabID: currentTab]
-            )
+            previousSpaceID: nil
         )
 
         XCTAssertEqual(outcome, .rejected)
-        XCTAssertTrue(probe.events.isEmpty)
+        XCTAssertNil(harness.snapshotStore.loadSnapshot())
     }
 
-    func testShortcutSyncTracksCurrentLiveShortcutTab() {
-        let owner = BrowserTabSelectionOwner()
-        let spaceId = UUID()
+    func testShortcutSyncUsesExactWindowResidence() throws {
+        let harness = try makeHarness()
         let pin = ShortcutPin(
             id: UUID(),
             role: .spacePinned,
-            spaceId: spaceId,
+            spaceId: harness.space.id,
             index: 0,
             launchURL: URL(string: "https://example.com/pinned")!,
             title: "Pinned"
         )
-        let liveTab = makeTab(spaceId: spaceId)
+        harness.manager.structuralCollectionMutationOwner
+            .setSpacePinnedShortcuts([pin], for: harness.space.id)
+        let liveTab = harness.manager.tabFactory.makeTab(
+            url: pin.launchURL,
+            name: pin.title,
+            spaceId: harness.space.id,
+            loadsCachedFaviconOnInit: false
+        )
         liveTab.bindToShortcutPin(pin)
-        let windowState = BrowserWindowState()
-        windowState.currentTabId = liveTab.id
-
-        owner.syncShortcutSelectionState(
-            for: windowState,
-            actions: makeActions(
-                probe: ActionProbe(activeWindowId: windowState.id),
-                liveShortcutTabs: [liveTab]
+        XCTAssertTrue(
+            harness.manager.liveShortcutTabs.register(
+                liveTab,
+                for: pin.id,
+                in: harness.window.id,
+                presentationPage: LiveShortcutPresentationPageReceipt(
+                    windowID: harness.window.id,
+                    spaceID: harness.space.id,
+                    profileID: harness.space.profileId
+                )
             )
         )
+        harness.window.currentTabId = liveTab.id
 
-        XCTAssertEqual(windowState.currentShortcutPinId, pin.id)
-        XCTAssertEqual(windowState.currentShortcutPinRole, .spacePinned)
+        harness.owner.syncShortcutSelectionState(for: harness.window)
+
+        XCTAssertEqual(harness.window.currentShortcutPinId, pin.id)
+        XCTAssertEqual(harness.window.currentShortcutPinRole, .spacePinned)
     }
 
-    func testEmptyStateClearsSelectionWithoutShowingFloatingBarWhenNoFallbackExists() {
-        let owner = BrowserTabSelectionOwner()
-        let space = Space(id: UUID(), name: "Empty")
-        let windowState = BrowserWindowState()
-        windowState.currentSpaceId = space.id
-        windowState.currentTabId = UUID()
-        windowState.currentShortcutPinId = UUID()
-        windowState.currentShortcutPinRole = .spacePinned
-        windowState.isShowingEmptyState = false
-        let probe = ActionProbe(activeWindowId: windowState.id)
+    func testEmptyStateClearsSelectionAndPersistsWithoutOpeningFloatingBar() throws {
+        let harness = try makeHarness()
+        harness.window.currentSpaceId = harness.space.id
+        harness.window.currentTabId = UUID()
+        harness.window.currentShortcutPinId = UUID()
+        harness.window.currentShortcutPinRole = .spacePinned
+        harness.window.isShowingEmptyState = false
 
-        owner.showEmptyState(
-            in: windowState,
-            actions: makeActions(probe: probe, space: space)
-        )
+        harness.owner.showEmptyState(in: harness.window)
 
-        XCTAssertNil(windowState.currentTabId)
-        XCTAssertNil(windowState.currentShortcutPinId)
-        XCTAssertNil(windowState.currentShortcutPinRole)
-        XCTAssertTrue(windowState.isShowingEmptyState)
-        XCTAssertFalse(windowState.presentationState.isFloatingBarVisible)
-        XCTAssertEqual(windowState.floatingBarPresentationReason, .none)
-        XCTAssertEqual(
-            probe.events,
-            [
-                "syncSpaceContext",
-                "clearFind",
-                "refreshCompositor",
-                "persistWindowSession",
-            ]
+        XCTAssertNil(harness.window.currentTabId)
+        XCTAssertNil(harness.window.currentShortcutPinId)
+        XCTAssertNil(harness.window.currentShortcutPinRole)
+        XCTAssertTrue(harness.window.isShowingEmptyState)
+        XCTAssertFalse(harness.window.presentationState.isFloatingBarVisible)
+        XCTAssertEqual(harness.window.floatingBarPresentationReason, .none)
+        XCTAssertNil(
+            harness.snapshotStore.loadSnapshot()?.snapshot.currentTabId
         )
     }
 
-    func testUserTabActivationCoalescesBeforeApplyingSelection() async {
-        let owner = BrowserTabSelectionOwner()
-        let space = Space(id: UUID(), name: "Work")
-        let firstTab = makeTab(spaceId: space.id)
-        let secondTab = makeTab(spaceId: space.id)
-        let windowState = BrowserWindowState()
-        windowState.currentSpaceId = space.id
-        let probe = ActionProbe(activeWindowId: windowState.id)
+    func testUserTabActivationCoalescesBeforeApplyingSelection() async throws {
+        let harness = try makeHarness()
+        let firstTab = makeTab(in: harness.space, manager: harness.manager)
+        let secondTab = makeTab(in: harness.space, manager: harness.manager)
 
-        owner.requestUserTabActivation(
+        _ = harness.owner.requestUserTabActivation(
             firstTab,
-            in: windowState,
-            loadPolicy: .immediate,
-            actions: makeActions(
-                probe: probe,
-                windowState: windowState,
-                space: space,
-                tabsById: [
-                    firstTab.id: firstTab,
-                    secondTab.id: secondTab,
-                ]
-            )
+            in: harness.window,
+            loadPolicy: .immediate
         )
-        owner.requestUserTabActivation(
+        _ = harness.owner.requestUserTabActivation(
             secondTab,
-            in: windowState,
-            loadPolicy: .deferred,
-            actions: makeActions(
-                probe: probe,
-                windowState: windowState,
-                space: space,
-                tabsById: [
-                    firstTab.id: firstTab,
-                    secondTab.id: secondTab,
-                ],
-                currentTab: secondTab
-            )
+            in: harness.window,
+            loadPolicy: .deferred
         )
 
         await drainScheduledActivationWork()
 
-        XCTAssertEqual(windowState.currentTabId, secondTab.id)
-        XCTAssertEqual(windowState.currentSpaceId, space.id)
-        XCTAssertEqual(windowState.activeTabForSpace[space.id], secondTab.id)
+        XCTAssertEqual(harness.window.currentTabId, secondTab.id)
+        XCTAssertEqual(harness.window.currentSpaceId, harness.space.id)
         XCTAssertEqual(
-            probe.events.filter { $0 == "persistWindowSession" }.count,
-            1
+            harness.window.activeTabForSpace[harness.space.id],
+            secondTab.id
         )
-        XCTAssertFalse(
-            probe.events.contains { event in
-                event == "notifyActivated:\(firstTab.id.uuidString)"
-            }
+        XCTAssertEqual(
+            harness.snapshotStore.loadSnapshot()?.snapshot.currentTabId,
+            secondTab.id
         )
     }
 
-    private final class ActionProbe {
-        let activeWindowId: UUID?
-        var events: [String] = []
+    private struct Harness {
+        let manager: BrowserManager
+        let owner: BrowserTabSelectionOwner
+        let windowRegistry: WindowRegistry
+        let window: BrowserWindowState
+        let space: Space
+        let snapshotStore: WindowSessionSnapshotStore
+    }
 
-        init(activeWindowId: UUID?) {
-            self.activeWindowId = activeWindowId
+    private func makeHarness() throws -> Harness {
+        let snapshotStore = WindowSessionSnapshotStore(
+            key: "SumiTests.tab-selection.\(UUID().uuidString)",
+            userDefaults: TestOwnedWindowSessionUserDefaults(),
+            environment: { [:] }
+        )
+        let windowRegistry = WindowRegistry()
+        let manager = BrowserManager(
+            windowRegistry: windowRegistry,
+            windowSessionSnapshotStore: snapshotStore
+        )
+        let profile = try XCTUnwrap(
+            manager.currentProfileAuthority.currentProfile
+        )
+        let space = makeSpace(
+            name: "Selection",
+            theme: .default,
+            profileID: profile.id,
+            manager: manager
+        )
+        let window = BrowserWindowState()
+        manager.tabResidenceAuthority.establishResidenceSession(on: window)
+        window.currentProfileId = profile.id
+        window.currentSpaceId = space.id
+        XCTAssertEqual(windowRegistry.register(window), .registered)
+        windowRegistry.setActive(window)
+        return Harness(
+            manager: manager,
+            owner: manager.browserTabSelection,
+            windowRegistry: windowRegistry,
+            window: window,
+            space: space,
+            snapshotStore: snapshotStore
+        )
+    }
+
+    private func makeSpace(
+        name: String,
+        theme: WorkspaceTheme,
+        profileID: UUID? = nil,
+        manager: BrowserManager
+    ) -> Space {
+        let profileID = profileID
+            ?? manager.currentProfileAuthority.currentProfile?.id
+        let space = Space(
+            name: name,
+            workspaceTheme: theme,
+            profileId: profileID
+        )
+        manager.spaceStateOwner.append(space)
+        return space
+    }
+
+    private func makeTab(
+        in space: Space,
+        manager: BrowserManager
+    ) -> Tab {
+        manager.regularTabLifecycleOwner.createNewTab(
+            in: space,
+            activate: false
+        )
+    }
+
+    private func installSelection(
+        _ tab: Tab,
+        in windowState: BrowserWindowState
+    ) {
+        windowState.currentTabId = tab.id
+        windowState.currentSpaceId = tab.spaceId
+        windowState.isShowingEmptyState = false
+        if let spaceID = tab.spaceId {
+            windowState.activeTabForSpace[spaceID] = tab.id
+            windowState.selectionHistory.recentRegularTabIdsBySpace[spaceID] = [
+                tab.id,
+            ]
+            windowState.selectionHistory.recentSelectionItemsBySpace[spaceID] = [
+                .regularTab(tab.id),
+            ]
         }
-    }
-
-    private func makeActions(
-        probe: ActionProbe,
-        windowState: BrowserWindowState? = nil,
-        space: Space? = nil,
-        tabsById: [UUID: Tab] = [:],
-        ephemeralTabsById: [UUID: Tab] = [:],
-        currentTab: Tab? = nil,
-        liveShortcutTabs: [Tab] = [],
-        selectionTarget: Tab? = nil
-    ) -> BrowserTabSelectionOwner.Actions {
-        BrowserTabSelectionOwner.Actions(
-            activeWindowId: { probe.activeWindowId },
-            window: { windowId in
-                guard let windowState, windowState.id == windowId else { return nil }
-                return windowState
-            },
-            tab: { tabsById[$0] },
-            ephemeralTab: { tabId, _ in ephemeralTabsById[tabId] },
-            currentTab: { _ in currentTab },
-            liveShortcutTabs: { _ in liveShortcutTabs },
-            reconcileSplitSelection: { _, _ in
-                probe.events.append("splitSelection")
-            },
-            syncWindowSpaceContext: { _ in probe.events.append("syncSpaceContext") },
-            space: { spaceId in
-                guard let space, space.id == spaceId else { return nil }
-                return space
-            },
-            updateWorkspaceTheme: { _, _, animate in
-                probe.events.append("workspaceTheme:\(animate)")
-            },
-            applySettingsSurfaceNavigation: { _ in probe.events.append("settingsNavigation") },
-            canMaterializeWebViewDuringStartup: { _ in true },
-            markTabAccessed: { _ in probe.events.append("markTabAccessed") },
-            ensureVisibleWebView: { _, _ in },
-            handleNativeNowPlayingTabActivated: { _ in probe.events.append("nowPlayingActivated") },
-            scheduleNativeNowPlayingRefresh: { _ in probe.events.append("nowPlayingRefresh") },
-            fetchVisibleFavicon: { _ in probe.events.append("fetchFavicon") },
-            dismissFloatingBarAfterSelection: { _ in probe.events.append("dismissFloatingBar") },
-            updateFindManagerCurrentTab: { probe.events.append("updateFind") },
-            clearFindManagerCurrentTab: { probe.events.append("clearFind") },
-            schedulePrepareVisibleWebViews: { _ in probe.events.append("prepareVisibleWebViews") },
-            refreshCompositor: { _ in probe.events.append("refreshCompositor") },
-            runtimeNotifications: BrowserTabSelectionOwner.RuntimeNotifications(
-                tabActivated: { _, previousTab in
-                    probe.events.append("notifyActivated:\(previousTab?.id.uuidString ?? "nil")")
-                },
-                tabSelectionChanged: { reason in
-                    probe.events.append("tabSuspension:\(reason)")
-                    probe.events.append("backgroundMedia:\(reason)")
-                }
-            ),
-            updateActiveTabState: { _ in probe.events.append("updateActiveTabState") },
-            persistWindowSession: { _ in probe.events.append("persistWindowSession") },
-            selectionTargetForSpaceActivation: { _, _ in selectionTarget }
-        )
     }
 
     private func drainScheduledActivationWork() async {
@@ -429,18 +402,5 @@ final class BrowserTabSelectionOwnerTests: XCTestCase {
             }
         }
         await Task.yield()
-    }
-
-    private func makeTab(
-        id: UUID = UUID(),
-        spaceId: UUID?
-    ) -> Tab {
-        Tab(
-            id: id,
-            url: SumiSurface.emptyTabURL,
-            name: "Tab",
-            spaceId: spaceId,
-            loadsCachedFaviconOnInit: false
-        )
     }
 }

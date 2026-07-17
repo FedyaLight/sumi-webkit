@@ -17,7 +17,7 @@ final class BrowserWindowShellService {
         let windowRegistry: WindowRegistry
         let permissionLifecycleController: SumiPermissionGrantLifecycleController
         let profileManager: ProfileManager
-        let tabManager: TabManager
+        let tabResidences: BrowserTabResidenceAuthority
         let makeContentView: ContentViewFactory
         let showEmptyState: EmptyStatePresenter
         let sidebarHostRecoveryCoordinator: SidebarHostRecoveryHandling
@@ -54,7 +54,7 @@ final class BrowserWindowShellService {
         let windowState = BrowserWindowState(
             sidebarRecoveryCoordinator: context.sidebarHostRecoveryCoordinator
         )
-        windowState.tabManager = context.tabManager
+        context.tabResidences.establishResidenceSession(on: windowState)
         guard context.windowRegistry.windows[windowState.id] == nil else {
             compensateRejectedRegistration(windowState)
             return nil
@@ -164,7 +164,7 @@ final class BrowserWindowShellService {
         ephemeralSpace.isEphemeral = true
         windowState.appendEphemeralSpace(ephemeralSpace)
         windowState.currentSpaceId = ephemeralSpace.id
-        windowState.tabManager = context.tabManager
+        context.tabResidences.establishResidenceSession(on: windowState)
 
         let newWindow = makeWindow(
             title: "Incognito - Sumi",

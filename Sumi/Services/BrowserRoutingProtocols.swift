@@ -26,7 +26,6 @@ protocol WindowCommandRouting: AnyObject {
 
 @MainActor
 protocol BrowserWindowLifecycleHandling: AnyObject {
-    var tabManager: TabManager { get }
     func persistWindowSession(for windowState: BrowserWindowState)
 }
 

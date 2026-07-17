@@ -17,12 +17,13 @@ final class ClosedShortcutRestoreServiceTests: XCTestCase {
         XCTAssertTrue(harness.service.restoreLiveInstance(shortcutState))
 
         let restored = try XCTUnwrap(
-            harness.tabManager.shortcutPresentationOwner.shortcutLiveTab(for: pin.id, in: sourceWindow.id)
+            harness.browserManager.shortcutPresentationOwner
+                .shortcutLiveTab(for: pin.id, in: sourceWindow.id)
         )
         XCTAssertEqual(restored.name, shortcutState.title)
         XCTAssertTrue(try XCTUnwrap(restored.restoredCanGoBack))
         XCTAssertTrue(try XCTUnwrap(restored.restoredCanGoForward))
-        XCTAssertIdentical(harness.selectedTabs.first?.window, sourceWindow)
+        XCTAssertEqual(sourceWindow.currentTabId, restored.id)
     }
 
     func testRestoreLiveInstanceFallsBackToActiveWindowWhenSourceWindowIsGone() throws {
@@ -35,9 +36,13 @@ final class ClosedShortcutRestoreServiceTests: XCTestCase {
         XCTAssertTrue(harness.service.restoreLiveInstance(shortcutState))
 
         XCTAssertNotNil(
-            harness.tabManager.shortcutPresentationOwner.shortcutLiveTab(for: pin.id, in: activeWindow.id)
+            harness.browserManager.shortcutPresentationOwner
+                .shortcutLiveTab(for: pin.id, in: activeWindow.id)
         )
-        XCTAssertIdentical(harness.selectedTabs.first?.window, activeWindow)
+        XCTAssertEqual(
+            activeWindow.currentShortcutPinId,
+            pin.id
+        )
     }
 
     func testRestoreLiveInstanceRestoresMissingLauncherInsteadOfLiveTab() throws {
@@ -57,11 +62,13 @@ final class ClosedShortcutRestoreServiceTests: XCTestCase {
         XCTAssertTrue(harness.service.restoreLiveInstance(shortcutState))
 
         let restoredPin = try XCTUnwrap(
-            harness.tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: deletedPin.id)
+            harness.browserManager.shortcutPinCollectionStateOwner
+                .shortcutPin(by: deletedPin.id)
         )
         XCTAssertEqual(restoredPin.spaceId, harness.space.id)
         XCTAssertNil(
-            harness.tabManager.shortcutPresentationOwner.shortcutLiveTab(for: deletedPin.id, in: targetWindow.id)
+            harness.browserManager.shortcutPresentationOwner
+                .shortcutLiveTab(for: deletedPin.id, in: targetWindow.id)
         )
     }
 
@@ -80,7 +87,10 @@ final class ClosedShortcutRestoreServiceTests: XCTestCase {
 
         XCTAssertFalse(harness.service.restoreLauncher(from: RecentlyClosedShortcutPinState(pin: pin)))
 
-        XCTAssertNil(harness.tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: pin.id))
+        XCTAssertNil(
+            harness.browserManager.shortcutPinCollectionStateOwner
+                .shortcutPin(by: pin.id)
+        )
     }
 
     func testRestoreEssentialLauncherWithExistingProfileSucceeds() throws {
@@ -96,7 +106,10 @@ final class ClosedShortcutRestoreServiceTests: XCTestCase {
 
         XCTAssertTrue(harness.service.restoreLauncher(from: RecentlyClosedShortcutPinState(pin: pin)))
 
-        let restored = try XCTUnwrap(harness.tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: pin.id))
+        let restored = try XCTUnwrap(
+            harness.browserManager.shortcutPinCollectionStateOwner
+                .shortcutPin(by: pin.id)
+        )
         XCTAssertEqual(restored.role, .essential)
         XCTAssertEqual(restored.profileId, harness.profile.id)
     }
@@ -114,14 +127,19 @@ final class ClosedShortcutRestoreServiceTests: XCTestCase {
 
         XCTAssertTrue(harness.service.restoreLauncher(from: RecentlyClosedShortcutPinState(pin: pin)))
 
-        let restored = try XCTUnwrap(harness.tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: pin.id))
+        let restored = try XCTUnwrap(
+            harness.browserManager.shortcutPinCollectionStateOwner
+                .shortcutPin(by: pin.id)
+        )
         XCTAssertEqual(restored.spaceId, harness.space.id)
         XCTAssertEqual(
-            harness.tabManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: harness.space.id).map(\.id),
+            harness.browserManager.shortcutPinCollectionStateOwner
+                .spacePinnedPins(for: harness.space.id).map(\.id),
             [pin.id]
         )
         XCTAssertTrue(
-            harness.tabManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: harness.otherSpace.id).isEmpty
+            harness.browserManager.shortcutPinCollectionStateOwner
+                .spacePinnedPins(for: harness.otherSpace.id).isEmpty
         )
     }
 
@@ -138,17 +156,23 @@ final class ClosedShortcutRestoreServiceTests: XCTestCase {
 
         XCTAssertFalse(harness.service.restoreLauncher(from: RecentlyClosedShortcutPinState(pin: pin)))
 
-        XCTAssertNil(harness.tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: pin.id))
+        XCTAssertNil(
+            harness.browserManager.shortcutPinCollectionStateOwner
+                .shortcutPin(by: pin.id)
+        )
         XCTAssertTrue(
-            harness.tabManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: harness.space.id).isEmpty
+            harness.browserManager.shortcutPinCollectionStateOwner
+                .spacePinnedPins(for: harness.space.id).isEmpty
         )
     }
 
     func testRestoreSpacePinnedLauncherDropsFolderBelongingToAnotherSpace() throws {
         let harness = makeHarness()
-        let foreignFolder = harness.tabManager.folderMutationOwner.createFolder(
-            for: harness.otherSpace.id,
-            name: "Foreign"
+        let foreignFolder = try XCTUnwrap(
+            harness.browserManager.sidebarFolderCommands.createFolder(
+                in: harness.otherSpace.id,
+                name: "Foreign"
+            )
         )
         let pin = ShortcutPin(
             id: UUID(),
@@ -162,16 +186,21 @@ final class ClosedShortcutRestoreServiceTests: XCTestCase {
 
         XCTAssertTrue(harness.service.restoreLauncher(from: RecentlyClosedShortcutPinState(pin: pin)))
 
-        let restored = try XCTUnwrap(harness.tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: pin.id))
+        let restored = try XCTUnwrap(
+            harness.browserManager.shortcutPinCollectionStateOwner
+                .shortcutPin(by: pin.id)
+        )
         XCTAssertEqual(restored.spaceId, harness.space.id)
         XCTAssertNil(restored.folderId)
     }
 
     func testRestoreSpacePinnedLauncherKeepsFolderBelongingToResolvedSpace() throws {
         let harness = makeHarness()
-        let folder = harness.tabManager.folderMutationOwner.createFolder(
-            for: harness.space.id,
-            name: "Local"
+        let folder = try XCTUnwrap(
+            harness.browserManager.sidebarFolderCommands.createFolder(
+                in: harness.space.id,
+                name: "Local"
+            )
         )
         let pin = ShortcutPin(
             id: UUID(),
@@ -185,18 +214,23 @@ final class ClosedShortcutRestoreServiceTests: XCTestCase {
 
         XCTAssertTrue(harness.service.restoreLauncher(from: RecentlyClosedShortcutPinState(pin: pin)))
 
-        let restored = try XCTUnwrap(harness.tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: pin.id))
+        let restored = try XCTUnwrap(
+            harness.browserManager.shortcutPinCollectionStateOwner
+                .shortcutPin(by: pin.id)
+        )
         XCTAssertEqual(restored.folderId, folder.id)
     }
 
     func testRestoreSpacePinnedLauncherMovesOutOfFolderThatBecameLive() throws {
         let harness = makeHarness()
-        let folder = harness.tabManager.folderMutationOwner.createFolder(
-            for: harness.space.id,
-            name: "Now Live"
+        let folder = try XCTUnwrap(
+            harness.browserManager.sidebarFolderCommands.createFolder(
+                in: harness.space.id,
+                name: "Now Live"
+            )
         )
-        harness.tabManager.runtimePortsAttachmentOwner.detach()
-        harness.tabManager.runtimePortsAttachmentOwner.attach(
+        harness.browserManager.tabRuntimeLifecycle.shutdown()
+        harness.browserManager.runtimePortConnection.attach(
             TestRuntimePorts.make(isLiveFolder: { $0 == folder.id })
         )
         let pin = ShortcutPin(
@@ -216,13 +250,13 @@ final class ClosedShortcutRestoreServiceTests: XCTestCase {
         )
 
         let restored = try XCTUnwrap(
-            harness.tabManager.shortcutPinCollectionStateOwner
+            harness.browserManager.shortcutPinCollectionStateOwner
                 .shortcutPin(by: pin.id)
         )
         XCTAssertEqual(restored.spaceId, harness.space.id)
         XCTAssertNil(restored.folderId)
         XCTAssertEqual(
-            harness.tabManager.spacePinnedStructureOwner
+            harness.browserManager.spacePinnedStructureOwner
                 .topLevelSpacePinnedItems(for: harness.space.id)
                 .compactMap { item -> UUID? in
                     guard case .shortcut(let pin) = item else { return nil }
@@ -231,7 +265,7 @@ final class ClosedShortcutRestoreServiceTests: XCTestCase {
             [pin.id]
         )
         XCTAssertTrue(
-            harness.tabManager.shortcutPinCollectionStateOwner
+            harness.browserManager.shortcutPinCollectionStateOwner
                 .folderPinnedPins(for: folder.id, in: harness.space.id)
                 .isEmpty
         )
@@ -256,57 +290,58 @@ final class ClosedShortcutRestoreServiceTests: XCTestCase {
 
     private func makeHarness() -> Harness {
         let browserManager = BrowserManager()
-        let windowRegistry = WindowRegistry()
+        let windowRegistry = browserManager.windowRegistry
         let profile = Profile(name: "Primary")
         let space = Space(name: "Primary", profileId: profile.id)
         let otherSpace = Space(name: "Other", profileId: profile.id)
 
         browserManager.profileManager.profiles = [profile]
         browserManager.currentProfile = profile
-        browserManager.windowRegistry = windowRegistry
-        browserManager.tabManager.spaceStateOwner.replaceSpaces([space, otherSpace])
-        browserManager.tabManager.spaceStateOwner.replaceCurrentSpace(space)
+        browserManager.spaceStateOwner.replaceSpaces([space, otherSpace])
+        browserManager.spaceStateOwner.replaceCurrentSpace(space)
 
-        let selectionRecorder = TabSelectionRecorder()
+        let launcherRestore = ClosedShortcutLauncherRestoreTransaction(
+            pins: browserManager.shortcutPinCollectionStateOwner,
+            pinStore: browserManager.shortcutPinStoreOwner,
+            persistence: browserManager.structuralPersistence,
+            destinations: ClosedShortcutLauncherDestinationResolver(
+                folders: browserManager.folderCollectionStateOwner,
+                runtimeConnection: browserManager.runtimePortConnection,
+                spaces: browserManager.spaceStateOwner,
+                profiles: browserManager.profileManager
+            )
+        )
         let service = ClosedShortcutRestoreService(
-            tabManager: { browserManager.tabManager },
-            profileManager: { browserManager.profileManager },
-            activeWindow: { windowRegistry.activeWindow },
-            windowState: { windowRegistry.windows[$0] },
-            selectRestoredTab: { tab, windowState in
-                selectionRecorder.selected.append((tab, windowState))
-            }
+            liveInstances: ClosedShortcutLiveRestoreTransaction(
+                pins: browserManager.shortcutPinCollectionStateOwner,
+                activation: browserManager.shortcutPresentationActivation,
+                windows: ClosedShortcutWindowQuery(windows: windowRegistry),
+                selection: browserManager.browserTabSelection,
+                launchers: launcherRestore
+            ),
+            launchers: launcherRestore
         )
         return Harness(
             browserManager: browserManager,
-            tabManager: browserManager.tabManager,
             windowRegistry: windowRegistry,
             profile: profile,
             space: space,
             otherSpace: otherSpace,
-            service: service,
-            selectionRecorder: selectionRecorder
+            service: service
         )
     }
 
     @MainActor
     private struct Harness {
         let browserManager: BrowserManager
-        let tabManager: TabManager
         let windowRegistry: WindowRegistry
         let profile: Profile
         let space: Space
         let otherSpace: Space
         let service: ClosedShortcutRestoreService
-        let selectionRecorder: TabSelectionRecorder
-
-        var selectedTabs: [(tab: Tab, window: BrowserWindowState)] {
-            selectionRecorder.selected
-        }
 
         func addWindow(spaceId: UUID, profileId: UUID) -> BrowserWindowState {
             let windowState = BrowserWindowState()
-            windowState.tabManager = tabManager
             windowState.currentSpaceId = spaceId
             windowState.currentProfileId = profileId
             windowRegistry.register(windowState)
@@ -322,7 +357,9 @@ final class ClosedShortcutRestoreServiceTests: XCTestCase {
                 launchURL: try XCTUnwrap(URL(string: "https://pinned.example/launch")),
                 title: "Pinned"
             )
-            return try XCTUnwrap(tabManager.shortcutPinStoreOwner.insert(pin, at: 0))
+            return try XCTUnwrap(
+                browserManager.shortcutPinStoreOwner.insert(pin, at: 0)
+            )
         }
     }
 }

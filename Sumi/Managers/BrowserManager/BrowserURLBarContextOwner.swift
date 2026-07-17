@@ -1,351 +1,105 @@
 import SumiDomain
-import SwiftUI
-import WebKit
 
 @MainActor
 final class BrowserURLBarContextOwner {
-    struct HubPresentationCapabilities {
-        let hubPopoverPresenter: URLBarHubPopoverPresenter
-        let closeURLBarHubPopover: @MainActor (BrowserWindowState) -> Void
-        let presentURLBarHubPopover: @MainActor (BrowserWindowState, URLBarHubBrowserContext) -> Void
-        let toggleURLBarHubPopover: @MainActor (BrowserWindowState, URLBarHubBrowserContext) -> Void
-        let isURLBarHubPopoverPresented: @MainActor (BrowserWindowState) -> Bool
-    }
-
-    struct PageChromeCapabilities {
-        let activePage: @MainActor (BrowserWindowState) -> ActivePageResolution?
-        let webView: @MainActor (Tab, BrowserWindowState) -> WKWebView?
-        let profiles: @MainActor () -> [Profile]
-        let currentProfile: @MainActor () -> Profile?
-        let siteControlsSnapshot: @MainActor (URL?, Profile?, Bool, Bool) -> SiteControlsSnapshot
-        let focusFloatingBar: @MainActor (BrowserWindowState, String, Bool) -> Void
-        let reloadPage: @MainActor (ActivePageResolution, String) -> Bool
-        let copyURLToClipboard: @MainActor (String, BrowserWindowState) -> Void
-        let toggleSidebar: @MainActor (BrowserWindowState) -> Void
-        let bookmarkEditorPresentationRequest: @MainActor () -> SumiBookmarkEditorPresentationRequest?
-    }
-
-    private let zoomManager: ZoomManager
-    private weak var browserManager: BrowserManager?
-    private let permissionContextOwner: BrowserURLBarPermissionContextOwner
-    private let hubContextOwner: BrowserURLBarHubContextOwner
-    private let navigationToolbarContextOwner: BrowserNavigationToolbarContextOwner
-    private let extensionActionContext: @MainActor () -> URLBarExtensionActionContext
-    private let hubPresentation: HubPresentationCapabilities
-    private let pageChrome: PageChromeCapabilities
+    private let hub: BrowserURLBarHubContextOwner
+    private let navigation: BrowserNavigationToolbarContextOwner
+    private let pageCommands: BrowserURLBarPageCommandOwner
+    private let zoom: BrowserURLBarZoomContextOwner
+    private let hubPresentation: BrowserURLBarHubPresentationOwner
 
     init(
-        browserManager: BrowserManager,
-        zoomManager: ZoomManager,
-        permissionContextOwner: BrowserURLBarPermissionContextOwner,
-        hubContextOwner: BrowserURLBarHubContextOwner,
-        navigationToolbarContextOwner: BrowserNavigationToolbarContextOwner,
-        extensionActionContext: @escaping @MainActor () -> URLBarExtensionActionContext,
-        hubPresentation: HubPresentationCapabilities,
-        pageChrome: PageChromeCapabilities
+        hub: BrowserURLBarHubContextOwner,
+        navigation: BrowserNavigationToolbarContextOwner,
+        pageCommands: BrowserURLBarPageCommandOwner,
+        zoom: BrowserURLBarZoomContextOwner,
+        hubPresentation: BrowserURLBarHubPresentationOwner
     ) {
-        self.browserManager = browserManager
-        self.zoomManager = zoomManager
-        self.permissionContextOwner = permissionContextOwner
-        self.hubContextOwner = hubContextOwner
-        self.navigationToolbarContextOwner = navigationToolbarContextOwner
-        self.extensionActionContext = extensionActionContext
+        self.hub = hub
+        self.navigation = navigation
+        self.pageCommands = pageCommands
+        self.zoom = zoom
         self.hubPresentation = hubPresentation
-        self.pageChrome = pageChrome
     }
 
-    convenience init(
-        browserManager: BrowserManager,
-        clipboard: BrowserURLClipboardService,
-        settingsNavigation: BrowserSettingsNavigationService
-    ) {
-        let dataServices = browserManager.dataServices
-        let extensionsModule = browserManager.optionalModules.extensions
-        let protectionCoordinator = browserManager.protectionCoordinator
-        let urlBarHubPopoverPresenter = browserManager.chromeBundle.commands.urlBarHubPopoverPresenter
-        let webViewRoutingService = browserManager.webViewRoutingService
-        let zoomManager = browserManager.zoomManager
-        let currentProfileAuthority = browserManager.currentProfileAuthority
-        let permissionContextOwner = BrowserURLBarPermissionContextOwner(
-            browserManager: browserManager
-        )
-        let navigationToolbarContextOwner = BrowserNavigationToolbarContextOwner(
-            currentTab: { [weak browserManager] windowState in
-                browserManager?.shellRuntime.windowTabs.currentTab(for: windowState)
-            },
-            webView: { tab, windowState in
-                webViewRoutingService.windowOwnedWebView(for: tab, in: windowState.id)
-            },
-            faviconService: {
-                dataServices.faviconService
-            },
-            faviconImageReader: {
-                dataServices.faviconCapabilities.images
-            },
-            openURLInCurrentTab: { [weak browserManager] url, windowState in
-                browserManager?.historyBundle.historyNavigationOwner.openHistoryURL(
-                    url,
-                    in: windowState,
-                    preferredOpenMode: .currentTab
-                )
-            },
-            openNewTab: { [weak browserManager] urlString, context in
-                browserManager?.tabLifecycleService.opening.openNewTab(url: urlString, context: context)
-            },
-            openHistoryURLsInNewWindow: { [weak browserManager] urls in
-                browserManager?.historyBundle.historyNavigationOwner.openHistoryURLsInNewWindow(urls)
-            },
-            goBack: { [weak browserManager] windowState in
-                browserManager?.historyBundle.historyNavigationOwner.goBack(in: windowState)
-            },
-            goForward: { [weak browserManager] windowState in
-                browserManager?.historyBundle.historyNavigationOwner.goForward(in: windowState)
-            },
-            reload: { [weak browserManager] tab, windowState in
-                browserManager?.webViewRoutingService.refreshPage(
-                    for: tab,
-                    in: windowState,
-                    reason: "NavigationToolbar.reload"
-                )
-            }
-        )
-        let extensionActionContext: @MainActor () -> URLBarExtensionActionContext = { [weak browserManager] in
-            BrowserURLBarContextOwner.makeExtensionActionContext(
-                browserManager: browserManager,
-                extensionsModule: extensionsModule
-            )
-        }
-        let siteControlsSnapshot: @MainActor (
-            URL?,
-            Profile?,
-            Bool,
-            Bool
-        ) -> SiteControlsSnapshot = { url, profile, protectionReloadRequired, contentBlockerReloadRequired in
-            BrowserURLBarContextOwner.siteControlsSnapshot(
-                url: url,
-                profile: profile,
-                protectionCoordinator: protectionCoordinator,
-                extensionsModule: extensionsModule,
-                protectionReloadRequired: protectionReloadRequired,
-                contentBlockerReloadRequired: contentBlockerReloadRequired
-            )
-        }
-        let hubContextOwner = BrowserURLBarHubContextOwner(
-            browserManager: browserManager,
-            permissionContextOwner: permissionContextOwner,
-            extensionActionContext: extensionActionContext,
-            siteControlsSnapshot: siteControlsSnapshot,
-            settingsNavigation: settingsNavigation
-        )
-        self.init(
-            browserManager: browserManager,
-            zoomManager: zoomManager,
-            permissionContextOwner: permissionContextOwner,
-            hubContextOwner: hubContextOwner,
-            navigationToolbarContextOwner: navigationToolbarContextOwner,
-            extensionActionContext: extensionActionContext,
-            hubPresentation: HubPresentationCapabilities(
-                hubPopoverPresenter: urlBarHubPopoverPresenter,
-                closeURLBarHubPopover: { [weak browserManager] windowState in
-                    browserManager?.chromeBundle.commands.urlBarHubPopoverPresenter.close(in: windowState)
-                },
-                presentURLBarHubPopover: { [weak browserManager] windowState, context in
-                    browserManager?.chromeBundle.commands.urlBarHubPopoverPresenter.present(
-                        in: windowState,
-                        browserContext: context
-                    )
-                },
-                toggleURLBarHubPopover: { [weak browserManager] windowState, context in
-                    browserManager?.chromeBundle.commands.urlBarHubPopoverPresenter.toggle(
-                        in: windowState,
-                        browserContext: context
-                    )
-                },
-                isURLBarHubPopoverPresented: { [weak browserManager] windowState in
-                    browserManager?.chromeBundle.commands.urlBarHubPopoverPresenter.isPresented(in: windowState) ?? false
-                }
-            ),
-            pageChrome: PageChromeCapabilities(
-                activePage: { [weak browserManager] windowState in
-                    browserManager?.shellRuntime.activePageResolver.resolve(in: windowState)
-                },
-                webView: { [weak browserManager] tab, windowState in
-                    browserManager?.webViewRoutingService.windowOwnedWebView(for: tab, in: windowState.id)
-                },
-                profiles: { [weak browserManager] in
-                    browserManager?.profileManager.profiles ?? []
-                },
-                currentProfile: { [currentProfileAuthority] in
-                    currentProfileAuthority.currentProfile
-                },
-                siteControlsSnapshot: siteControlsSnapshot,
-                focusFloatingBar: { [weak browserManager] windowState, prefill, navigateCurrentTab in
-                    browserManager?.urlBarBundle.floatingBar.presentation.focus(
-                        in: windowState,
-                        prefill: prefill,
-                        navigateCurrentTab: navigateCurrentTab,
-                        reason: .keyboard
-                    )
-                },
-                reloadPage: { [weak browserManager] page, reason in
-                    guard let commands = browserManager?.chromeBundle.activePageCommands else {
-                        return false
-                    }
-                    return commands.reload(page, reason: reason) != .failed
-                },
-                copyURLToClipboard: { [clipboard] urlString, windowState in
-                    _ = clipboard.copy(urlString, in: windowState)
-                },
-                toggleSidebar: { [weak browserManager] windowState in
-                    browserManager?.chromeBundle.sidebarPresentationOwner.toggleSidebar(for: windowState)
-                },
-                bookmarkEditorPresentationRequest: { [weak browserManager] in
-                    browserManager?.bookmarkEditorPresentationRequest
-                }
-            )
-        )
-    }
-
-    func sidebarHeaderContext(for windowState: BrowserWindowState) -> SidebarHeaderBrowserContext {
+    func sidebarHeaderContext(
+        for windowState: BrowserWindowState
+    ) -> SidebarHeaderBrowserContext {
         SidebarHeaderBrowserContext(
             navigationToolbarContext: navigationToolbarContext(for: windowState),
             urlBarBrowserContext: urlBarContext,
-            toggleSidebar: { [weak self, weak windowState] in
-                guard let self, let windowState else { return }
-                self.pageChrome.toggleSidebar(windowState)
+            toggleSidebar: { [pageCommands, weak windowState] in
+                guard let windowState else { return }
+                pageCommands.toggleSidebar(in: windowState)
             }
         )
     }
 
     var urlBarContext: URLBarBrowserContext {
         URLBarBrowserContext(
-            zoom: makeZoomContext(),
-            permission: permissionContextOwner.context,
-            hub: urlBarHubContext,
-            hubPopoverPresenter: hubPresentation.hubPopoverPresenter,
-            bookmarkEditorPresentationRequest: pageChrome.bookmarkEditorPresentationRequest(),
-            activePage: pageChrome.activePage,
-            webView: pageChrome.webView,
-            profiles: pageChrome.profiles,
-            currentProfile: pageChrome.currentProfile,
-            siteControlsSnapshot: pageChrome.siteControlsSnapshot,
-            focusFloatingBar: pageChrome.focusFloatingBar,
-            reloadPage: pageChrome.reloadPage,
-            closeURLBarHubPopover: hubPresentation.closeURLBarHubPopover,
-            presentURLBarHubPopover: { [weak self] windowState in
-                guard let self else { return }
-                self.hubPresentation.presentURLBarHubPopover(windowState, self.urlBarHubContext)
+            zoom: zoom.context,
+            permission: hub.permissionContext,
+            hub: hub.context,
+            hubPopoverPresenter: hubPresentation.presenter,
+            bookmarkEditorPresentationRequest: hub.bookmarkPresentationRequest,
+            activePage: { [pageCommands] windowState in
+                pageCommands.activePage(in: windowState)
             },
-            toggleURLBarHubPopover: { [weak self] windowState in
-                guard let self else { return }
-                self.hubPresentation.toggleURLBarHubPopover(windowState, self.urlBarHubContext)
+            webView: { [hub] tab, windowState in
+                hub.webView(for: tab, in: windowState)
             },
-            isURLBarHubPopoverPresented: hubPresentation.isURLBarHubPopoverPresented,
-            copyURLToClipboard: pageChrome.copyURLToClipboard,
-            extensionActions: extensionActionContext()
+            profiles: { [hub] in hub.profiles },
+            currentProfile: { [hub] in hub.currentProfile },
+            siteControlsSnapshot: { [hub] url, profile, protectionReload, blockerReload in
+                hub.siteControlsSnapshot(
+                    url: url,
+                    profile: profile,
+                    protectionReloadRequired: protectionReload,
+                    contentBlockerReloadRequired: blockerReload
+                )
+            },
+            focusFloatingBar: { [pageCommands] windowState, prefill, navigateCurrentTab in
+                pageCommands.focusFloatingBar(
+                    in: windowState,
+                    prefill: prefill,
+                    navigateCurrentTab: navigateCurrentTab
+                )
+            },
+            reloadPage: { [pageCommands] page, reason in
+                pageCommands.reload(page, reason: reason)
+            },
+            closeURLBarHubPopover: { [hubPresentation] windowState in
+                hubPresentation.close(in: windowState)
+            },
+            presentURLBarHubPopover: { [hub, hubPresentation] windowState in
+                hubPresentation.present(in: windowState, context: hub.context)
+            },
+            toggleURLBarHubPopover: { [hub, hubPresentation] windowState in
+                hubPresentation.toggle(in: windowState, context: hub.context)
+            },
+            isURLBarHubPopoverPresented: { [hubPresentation] windowState in
+                hubPresentation.isPresented(in: windowState)
+            },
+            copyURLToClipboard: { [pageCommands] urlString, windowState in
+                pageCommands.copyURL(urlString, in: windowState)
+            },
+            extensionActions: hub.extensionActionContext
         )
     }
 
     var urlBarHubContext: URLBarHubBrowserContext {
-        hubContextOwner.context
+        hub.context
     }
 
     func navigationToolbarContext(
         for windowState: BrowserWindowState
     ) -> NavigationToolbarBrowserContext {
-        navigationToolbarContextOwner.navigationToolbarContext(for: windowState)
+        navigation.navigationToolbarContext(for: windowState)
     }
 
     func navigationHistoryContext(
         for windowState: BrowserWindowState
     ) -> SumiNavigationHistoryContext {
-        navigationToolbarContextOwner.navigationHistoryContext(for: windowState)
-    }
-
-    private func makeZoomContext() -> URLBarZoomContext {
-        URLBarZoomContext(
-            manager: zoomManager,
-            stateRevision: browserManager?.zoomStateRevision ?? 0,
-            resetCurrentTab: { [weak browserManager] windowState in
-                browserManager?.chromeBundle.zoomCommandOwner.resetZoomCurrentTab(in: windowState)
-            },
-            zoomOutCurrentTab: { [weak browserManager] windowState in
-                browserManager?.chromeBundle.zoomCommandOwner.zoomOutCurrentTab(in: windowState)
-            },
-            zoomInCurrentTab: { [weak browserManager] windowState in
-                browserManager?.chromeBundle.zoomCommandOwner.zoomInCurrentTab(in: windowState)
-            }
-        )
-    }
-}
-
-private extension BrowserURLBarContextOwner {
-    static func makeExtensionActionContext(
-        browserManager: BrowserManager?,
-        extensionsModule: SumiExtensionsModule
-    ) -> URLBarExtensionActionContext {
-        URLBarExtensionActionContext(
-            moduleEnabledChanges: extensionsModule.enabledChanges,
-            toolbarPresentationSnapshot: { profileID in
-                extensionsModule.toolbarPresentationSnapshot(
-                    profileID: profileID
-                )
-            },
-            toolbarPresentationSnapshots: { profileID in
-                extensionsModule.toolbarPresentationSnapshots(
-                    profileID: profileID
-                )
-            },
-            compactStrip: { [weak browserManager] extensions, windowState, profileID in
-                guard let browserManager else { return AnyView(EmptyView()) }
-                return AnyView(
-                    ExtensionActionView(
-                        extensions: extensions,
-                        layout: .compactStrip,
-                        profileId: profileID,
-                        browserContext: ExtensionActionBrowserContext.live(
-                            browserManager: browserManager,
-                            windowState: windowState
-                        )
-                    )
-                )
-            },
-            hubTiles: { [weak browserManager] extensions, windowState, profileID in
-                guard let browserManager else { return AnyView(EmptyView()) }
-                return AnyView(
-                    ExtensionActionView(
-                        extensions: extensions,
-                        layout: .hubTiles,
-                        profileId: profileID,
-                        browserContext: ExtensionActionBrowserContext.live(
-                            browserManager: browserManager,
-                            windowState: windowState
-                        )
-                    )
-                )
-            },
-            ensureActionMetadataLoadedIfNeeded: {
-                extensionsModule.ensureActionMetadataLoadedIfNeeded()
-            }
-        )
-    }
-
-    static func siteControlsSnapshot(
-        url: URL?,
-        profile: Profile?,
-        protectionCoordinator: SumiProtectionCoordinator,
-        extensionsModule: SumiExtensionsModule,
-        protectionReloadRequired: Bool,
-        contentBlockerReloadRequired: Bool
-    ) -> SiteControlsSnapshot {
-        SiteControlsSnapshot.resolve(
-            url: url,
-            profile: profile,
-            protectionCoordinator: protectionCoordinator,
-            protectionBrowserRestartRequired: protectionCoordinator.settings.browserRestartRequired,
-            protectionReloadRequired: protectionReloadRequired,
-            extensionsModule: extensionsModule,
-            safariContentBlockerReloadRequired: contentBlockerReloadRequired
-        )
+        navigation.navigationHistoryContext(for: windowState)
     }
 }

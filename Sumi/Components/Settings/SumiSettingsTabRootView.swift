@@ -32,7 +32,9 @@ struct SumiSettingsTabRootView: View {
         self.updaterService = updaterService
         self.defaultBrowserService = defaultBrowserService
         self.windowState = windowState
-        _currentProfileID = State(initialValue: browserContext.currentProfile()?.id)
+        _currentProfileID = State(
+            initialValue: browserContext.currentProfile()?.id
+        )
     }
 
     private enum Layout {
@@ -341,7 +343,7 @@ struct SumiSettingsTabRootView: View {
         case .profiles:
             SumiProfilesSettingsPane(
                 profileManager: browserContext.profileManager,
-                tabManager: browserContext.tabManager,
+                profileInventory: browserContext.profileInventory,
                 deleteProfile: browserContext.deleteProfile
             )
         case .shortcuts:

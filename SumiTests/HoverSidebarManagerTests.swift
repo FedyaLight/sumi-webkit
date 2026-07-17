@@ -241,17 +241,16 @@ final class HoverSidebarManagerTests: XCTestCase {
             inactiveHostRetentionDelay: 0.03,
             delayedActions: delayedActions.scheduler
         )
-        let browserManager = BrowserManager()
         let windowRegistry = WindowRegistry()
+        let browserManager = BrowserManager(windowRegistry: windowRegistry)
         let hostedWindow = BrowserWindowState()
         let otherWindow = BrowserWindowState()
 
-        hostedWindow.tabManager = browserManager.tabManager
+        browserManager.tabResidenceAuthority.establishResidenceSession(on: hostedWindow)
         hostedWindow.isSidebarVisible = false
-        otherWindow.tabManager = browserManager.tabManager
+        browserManager.tabResidenceAuthority.establishResidenceSession(on: otherWindow)
         otherWindow.isSidebarVisible = false
 
-        browserManager.windowRegistry = windowRegistry
         manager.windowRegistry = windowRegistry
         manager.attach(runtime: BrowserHoverSidebarRuntimeFactory.runtime(for: browserManager), windowState: hostedWindow)
 
@@ -286,14 +285,13 @@ final class HoverSidebarManagerTests: XCTestCase {
             inactiveHostRetentionDelay: 0.03,
             delayedActions: delayedActions.scheduler
         )
-        let browserManager = BrowserManager()
         let windowRegistry = WindowRegistry()
+        let browserManager = BrowserManager(windowRegistry: windowRegistry)
         let hostedWindow = BrowserWindowState()
 
-        hostedWindow.tabManager = browserManager.tabManager
+        browserManager.tabResidenceAuthority.establishResidenceSession(on: hostedWindow)
         hostedWindow.isSidebarVisible = false
 
-        browserManager.windowRegistry = windowRegistry
         manager.windowRegistry = windowRegistry
         manager.attach(runtime: BrowserHoverSidebarRuntimeFactory.runtime(for: browserManager), windowState: hostedWindow)
 
@@ -331,17 +329,16 @@ final class HoverSidebarManagerTests: XCTestCase {
             inactiveHostRetentionDelay: 0.03,
             delayedActions: delayedActions.scheduler
         )
-        let browserManager = BrowserManager()
         let windowRegistry = WindowRegistry()
+        let browserManager = BrowserManager(windowRegistry: windowRegistry)
         let hostedWindow = BrowserWindowState()
         let otherWindow = BrowserWindowState()
 
-        hostedWindow.tabManager = browserManager.tabManager
+        browserManager.tabResidenceAuthority.establishResidenceSession(on: hostedWindow)
         hostedWindow.isSidebarVisible = false
-        otherWindow.tabManager = browserManager.tabManager
+        browserManager.tabResidenceAuthority.establishResidenceSession(on: otherWindow)
         otherWindow.isSidebarVisible = false
 
-        browserManager.windowRegistry = windowRegistry
         manager.windowRegistry = windowRegistry
         manager.attach(runtime: BrowserHoverSidebarRuntimeFactory.runtime(for: browserManager), windowState: hostedWindow)
 
@@ -471,11 +468,11 @@ final class HoverSidebarManagerTests: XCTestCase {
             eventMonitors: recorder.client,
             mouseLocationProvider: { .zero }
         )
-        let browserManager = BrowserManager()
         let windowRegistry = WindowRegistry()
+        let browserManager = BrowserManager(windowRegistry: windowRegistry)
         let windowState = BrowserWindowState()
 
-        windowState.tabManager = browserManager.tabManager
+        browserManager.tabResidenceAuthority.establishResidenceSession(on: windowState)
         windowRegistry.bindAppKitWindow(
             NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
@@ -487,7 +484,6 @@ final class HoverSidebarManagerTests: XCTestCase {
         )
         windowState.isSidebarVisible = false
 
-        browserManager.windowRegistry = windowRegistry
         manager.windowRegistry = windowRegistry
         manager.attach(runtime: BrowserHoverSidebarRuntimeFactory.runtime(for: browserManager), windowState: windowState)
 
@@ -517,17 +513,16 @@ final class HoverSidebarManagerTests: XCTestCase {
             eventMonitors: recorder.client,
             mouseLocationProvider: { .zero }
         )
-        let browserManager = BrowserManager()
         let windowRegistry = WindowRegistry()
+        let browserManager = BrowserManager(windowRegistry: windowRegistry)
         let hostedWindow = BrowserWindowState()
         let otherWindow = BrowserWindowState()
 
-        hostedWindow.tabManager = browserManager.tabManager
+        browserManager.tabResidenceAuthority.establishResidenceSession(on: hostedWindow)
         hostedWindow.isSidebarVisible = false
-        otherWindow.tabManager = browserManager.tabManager
+        browserManager.tabResidenceAuthority.establishResidenceSession(on: otherWindow)
         otherWindow.isSidebarVisible = false
 
-        browserManager.windowRegistry = windowRegistry
         manager.windowRegistry = windowRegistry
         manager.attach(runtime: BrowserHoverSidebarRuntimeFactory.runtime(for: browserManager), windowState: hostedWindow)
 
@@ -575,8 +570,8 @@ private func makePointerRevealHarness(
         inactiveHostRetentionDelay: 0,
         delayedActions: delayedActions.scheduler
     )
-    let browserManager = BrowserManager()
     let windowRegistry = WindowRegistry()
+    let browserManager = BrowserManager(windowRegistry: windowRegistry)
     let windowState = BrowserWindowState()
     let appKitWindow = NSWindow(
         contentRect: NSRect(x: 100, y: 100, width: 800, height: 600),
@@ -584,11 +579,10 @@ private func makePointerRevealHarness(
         backing: .buffered,
         defer: false
     )
-    windowState.tabManager = browserManager.tabManager
+    browserManager.tabResidenceAuthority.establishResidenceSession(on: windowState)
     windowRegistry.bindAppKitWindow(appKitWindow, to: windowState)
     windowState.isSidebarVisible = false
 
-    browserManager.windowRegistry = windowRegistry
     manager.windowRegistry = windowRegistry
     manager.attach(runtime: BrowserHoverSidebarRuntimeFactory.runtime(for: browserManager), windowState: windowState)
 

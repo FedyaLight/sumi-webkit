@@ -7,8 +7,14 @@ import Foundation
 @MainActor
 final class SplitWindowUpdateStream {
     @MainActor
-    struct Emitter {
-        fileprivate let subject: PassthroughSubject<UUID, Never>
+    final class Channel {
+        let stream: SplitWindowUpdateStream
+        private let subject: PassthroughSubject<UUID, Never>
+
+        fileprivate init(subject: PassthroughSubject<UUID, Never>) {
+            self.subject = subject
+            self.stream = SplitWindowUpdateStream(subject: subject)
+        }
 
         func publish(windowID: UUID) {
             subject.send(windowID)
@@ -21,12 +27,8 @@ final class SplitWindowUpdateStream {
         self.subject = subject
     }
 
-    static func makeChannel() -> (stream: SplitWindowUpdateStream, emitter: Emitter) {
-        let subject = PassthroughSubject<UUID, Never>()
-        return (
-            SplitWindowUpdateStream(subject: subject),
-            Emitter(subject: subject)
-        )
+    static func makeChannel() -> Channel {
+        Channel(subject: PassthroughSubject<UUID, Never>())
     }
 
     func updates(for windowID: UUID) -> AnyPublisher<Void, Never> {

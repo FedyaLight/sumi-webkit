@@ -103,6 +103,14 @@ protocol SumiPermissionCancelling: Sendable {
     ) async -> SumiPermissionCoordinatorDecision
 
     @discardableResult
+    func retireProfile(
+        profilePartitionId: String,
+        reason: String
+    ) async -> SumiPermissionCoordinatorDecision
+
+    func isProfileRetired(_ profilePartitionId: String) async -> Bool
+
+    @discardableResult
     func cancelSession(
         ownerId: String,
         reason: String
@@ -357,6 +365,22 @@ extension SumiPermissionCancelling {
     ) async -> SumiPermissionCoordinatorDecision {
         _ = profilePartitionId
         return SumiPermissionCoordinatorIgnoredSettlement.decision(reason: reason)
+    }
+
+    @discardableResult
+    func retireProfile(
+        profilePartitionId: String,
+        reason: String
+    ) async -> SumiPermissionCoordinatorDecision {
+        await cancelProfile(
+            profilePartitionId: profilePartitionId,
+            reason: reason
+        )
+    }
+
+    func isProfileRetired(_ profilePartitionId: String) async -> Bool {
+        _ = profilePartitionId
+        return false
     }
 
     @discardableResult

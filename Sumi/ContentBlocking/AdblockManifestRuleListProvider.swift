@@ -27,7 +27,6 @@ final class AdblockManifestRuleListProvider: SumiContentRuleListSetProviding {
     }
 
     var changesPublisher: AnyPublisher<Void, Never> { changesSubject.eraseToAnyPublisher() }
-    var hasProfileSpecificRuleLists: Bool { false }
     var activeManifest: AdblockCompiledGenerationManifest? { manifest }
 
     func updateManifest(
@@ -43,7 +42,7 @@ final class AdblockManifestRuleListProvider: SumiContentRuleListSetProviding {
         changesSubject.send(())
     }
 
-    func ruleListSet(profileId _: UUID?) throws -> SumiContentRuleListSet {
+    func ruleListSet() throws -> SumiContentRuleListSet {
         guard let manifest else { return SumiContentRuleListSet() }
         let definitions = try manifest.networkShards.map { shard in
             if let definition = compiledDefinitionsByIdentifier[shard.webKitIdentifier] {

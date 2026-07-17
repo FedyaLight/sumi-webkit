@@ -11,7 +11,7 @@ final class LastSessionWindowsRestoreService {
     private let startupRestore: any BrowserStartupSessionRestoreProviding
     private let archive: LastSessionWindowArchive
     private let openWindows: OpenWindowSessionCatalog
-    private let mergeLastSessionTabSnapshot: @MainActor (TabPersistenceSnapshot) -> Void
+    private let tabMerge: TabLastSessionMergeMaterializer
     private let windowReopen: any WindowSessionReopening
 
     /// Restore-in-flight handle; exposed so callers/tests can await the
@@ -26,13 +26,13 @@ final class LastSessionWindowsRestoreService {
         startupRestore: any BrowserStartupSessionRestoreProviding,
         archive: LastSessionWindowArchive,
         openWindows: OpenWindowSessionCatalog,
-        mergeLastSessionTabSnapshot: @escaping @MainActor (TabPersistenceSnapshot) -> Void,
+        tabMerge: TabLastSessionMergeMaterializer,
         windowReopen: any WindowSessionReopening
     ) {
         self.startupRestore = startupRestore
         self.archive = archive
         self.openWindows = openWindows
-        self.mergeLastSessionTabSnapshot = mergeLastSessionTabSnapshot
+        self.tabMerge = tabMerge
         self.windowReopen = windowReopen
     }
 
@@ -69,14 +69,16 @@ final class LastSessionWindowsRestoreService {
         }
         guard let restoreAttempt = archive.beginRestoreAttempt() else { return }
 
-        pendingRestoreTask = Task { @MainActor [windowReopen, mergeLastSessionTabSnapshot, archive, weak self] in
+        pendingRestoreTask = Task { @MainActor [windowReopen, tabMerge, archive, weak self] in
             var outcome = LastSessionWindowArchive.RestoreAttemptOutcome.interrupted
             defer {
                 archive.finishRestoreAttempt(restoreAttempt, outcome: outcome)
                 self?.pendingRestoreTask = nil
             }
             if let sourceTabSnapshot {
-                mergeLastSessionTabSnapshot(sourceTabSnapshot)
+                guard tabMerge.merge(sourceTabSnapshot) else {
+                    return
+                }
             }
             var restoredEveryWindow = true
             for snapshot in snapshotsToRestore {

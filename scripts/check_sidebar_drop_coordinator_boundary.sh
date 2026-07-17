@@ -17,11 +17,34 @@ inventory='Sumi/Components/DragDrop/SidebarDragSourceInventory.swift'
 executing='Sumi/Components/DragDrop/SidebarDragOperationExecuting.swift'
 projection='Sumi/Components/DragDrop/SidebarDropProjection.swift'
 port='Sumi/Components/DragDrop/SidebarDragTransactionPort.swift'
-composition='Sumi/Managers/BrowserManager/BrowserWindowViewContextComposition.swift'
+composition='Sumi/Managers/BrowserManager/BrowserManager+WindowSidebarComposition.swift'
 router='Sumi/Managers/TabManager/SidebarDragOperationRouter.swift'
+router_roles=(
+  Sumi/Managers/TabManager/SidebarDragPayloadResolver.swift
+  Sumi/Managers/TabManager/SidebarDragContextValidationService.swift
+  Sumi/Managers/TabManager/SidebarDragPlanExecutor.swift
+  Sumi/Managers/TabManager/SidebarDragOperationTransaction.swift
+  Sumi/Managers/TabManager/SidebarExplicitTabMoveTransaction.swift
+  "$router"
+)
 
-for file in "$coordinator" "$inventory" "$executing" "$projection" "$port" "$composition"; do
+for file in "$coordinator" "$inventory" "$executing" "$projection" "$port" "$composition" "${router_roles[@]}"; do
   guard_require_file "$file"
+done
+for role_file in "${router_roles[@]}"; do
+  role="$(basename "$role_file" .swift)"
+  guard_exact \
+    "$role stays in its role-exact file" \
+    "$(guard_count_matches "^final[[:space:]]+class[[:space:]]+${role}\\b" "$role_file")" \
+    1
+  guard_exact \
+    "$role file owns one top-level role" \
+    "$(guard_count_matches '^final[[:space:]]+class[[:space:]]+' "$role_file")" \
+    1
+  guard_max \
+    "$role stored collaborators" \
+    "$(guard_count_matches '^[[:space:]]*private[[:space:]]+(let|weak[[:space:]]+var)[[:space:]]' "$role_file")" \
+    5
 done
 
 # Coordinator must not accept or mention manager roots.
@@ -44,12 +67,17 @@ fi
 
 closure_bag_hits="$(
   guard_capture_matches '\bstruct[[:space:]]+Dependencies\b|\bstruct[[:space:]]+Actions\b' \
-    "$coordinator" "$inventory" "$executing" "$projection"
+    "$coordinator" "$inventory" "$executing" "$projection" "${router_roles[@]}"
 )"
 if [[ -n "$closure_bag_hits" ]]; then
   guard_record_failure "sidebar drop boundary grew a Dependencies/Actions closure bag:
 $closure_bag_hits"
 fi
+
+guard_expect_no_matches \
+  'sidebar drag roles store no callback dependencies' \
+  '^[[:space:]]*private[[:space:]]+(let|var)[[:space:]].*->[[:space:]]*' \
+  "${router_roles[@]}"
 
 # Coordinator must not take raw structure owners back as collaborators.
 owner_reach_hits="$(
@@ -68,7 +96,7 @@ required_contracts=(
   "$executing|protocol[[:space:]]+SidebarDragOperationExecuting|SidebarDragOperationExecuting protocol missing"
   "$executing|extension[[:space:]]+SidebarDragOperationRouter:[[:space:]]*SidebarDragOperationExecuting|SidebarDragOperationRouter must remain the live operation authority"
   "$composition|SidebarDragSourceInventory\\(|window-view composition must build SidebarDragSourceInventory"
-  "$composition|dragOperations:[[:space:]]*tabManager\\.sidebarDragRouter|window-view composition must resolve sidebarDragRouter once"
+  "$composition|dragOperations:[[:space:]]*(self\\.)?sidebarDragRouter|window-sidebar composition must pass the eager sidebarDragRouter"
   "$composition|dragTransactions:[[:space:]]*dragTransactions|window-view composition must pass the exact transaction port"
   "$port|windows\\.contains\\(windowState\\)|SidebarDragTransactionPort must validate exact window identity"
 )
@@ -123,19 +151,13 @@ if (( executing_lines > 40 )); then
   status=1
 fi
 
-# Existing router Dependencies bag must not grow as the escape hatch.
-router_dependency_lets="$(
-  awk '
-    /struct Dependencies \{/ { in_deps = 1; next }
-    in_deps && /^[[:space:]]*\}/ { in_deps = 0 }
-    in_deps && /^[[:space:]]*let[[:space:]]+/ { count++ }
-    END { print count + 0 }
-  ' "$router"
+composition_manager_recovery="$(
+  guard_capture_matches '\btabManager\b|let[[:space:]]+tabs[[:space:]]*=[[:space:]]*(tabManager|self)' \
+    "$composition"
 )"
-if (( router_dependency_lets > 17 )); then
-  printf 'error: SidebarDragOperationRouter.Dependencies grew (%s > 17 lets)\n' \
-    "$router_dependency_lets" >&2
-  status=1
+if [[ -n "$composition_manager_recovery" ]]; then
+  guard_record_failure "window-sidebar drag composition recovered exact roles through TabManager:
+$composition_manager_recovery"
 fi
 
 if (( status != 0 || guard_failures != 0 )); then

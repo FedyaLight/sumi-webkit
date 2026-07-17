@@ -44,4 +44,8 @@ final class ExtensionControllerBrowserRouteInstaller {
         )
         return delegateBridge.installBrowserRoutes(routes) != nil
     }
+
+    func retire() {
+        delegateBridge.retireBrowserRoutes()
+    }
 }

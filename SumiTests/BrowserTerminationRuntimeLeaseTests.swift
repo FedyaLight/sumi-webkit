@@ -93,10 +93,11 @@ final class BrowserTerminationRuntimeLeaseTests: XCTestCase {
         )
         let profile = Profile(name: "Termination")
         browserManager.profileManager.profiles = [profile]
-        let space = browserManager.tabManager.spaceServices.catalog.createSpace(
+        let space = installTestSpace(
+            in: browserManager.spaceStateOwner,
             name: "Termination"
         )
-        let sourceTab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
+        let sourceTab = browserManager.regularTabLifecycleOwner.createNewTab(
             url: "https://source.example/page",
             in: space,
             activate: true
@@ -136,10 +137,9 @@ final class BrowserTerminationRuntimeLeaseTests: XCTestCase {
     }
 
     func testCoordinatorPreparationDismissesFloatingBarAndPreservesDraft() throws {
-        let browserManager = try makeBrowserManager()
         let registry = WindowRegistry()
+        let browserManager = try makeBrowserManager(windowRegistry: registry)
         let windowState = BrowserWindowState()
-        browserManager.windowRegistry = registry
         registry.register(windowState)
         registry.setActive(windowState)
         browserManager.urlBarBundle.floatingBar.presentation.focus(
@@ -165,21 +165,23 @@ final class BrowserTerminationRuntimeLeaseTests: XCTestCase {
             browserRuntime: try XCTUnwrap(browserManager)
         )
         weak let releasedBrowserManager = browserManager
-        weak let releasedTabManager = browserManager?.tabManager
+        weak let releasedRuntimeConnection = browserManager?.runtimePortConnection
         weak let releasedProfileManager = browserManager?.profileManager
 
         browserManager = nil
 
         XCTAssertNil(releasedBrowserManager)
-        XCTAssertNil(releasedTabManager)
+        XCTAssertNil(releasedRuntimeConnection)
         XCTAssertNil(releasedProfileManager)
         XCTAssertNil(coordinator.acquireFinalizationLease())
     }
 
     func testAcquiredLeaseKeepsRuntimeAliveThroughCleanupAndClosesAuxiliaryWindows() async throws {
-        var browserManager: BrowserManager? = try makeBrowserManager()
-        weak let releasedBrowserManager = browserManager
         let windowRegistry = WindowRegistry()
+        var browserManager: BrowserManager? = try makeBrowserManager(
+            windowRegistry: windowRegistry
+        )
+        weak let releasedBrowserManager = browserManager
         let browserWindow = makeBrowserWindow()
         var lease: BrowserTerminationRuntimeLease?
         var auxiliarySessions: AuxiliaryWindowSessionRegistry?
@@ -187,7 +189,6 @@ final class BrowserTerminationRuntimeLeaseTests: XCTestCase {
 
         do {
             let browserManager = try XCTUnwrap(browserManager)
-            browserManager.windowRegistry = windowRegistry
             let sourceTab = configureAuxiliaryWindowSource(
                 browserManager: browserManager,
                 windowRegistry: windowRegistry,
@@ -222,16 +223,17 @@ final class BrowserTerminationRuntimeLeaseTests: XCTestCase {
     }
 
     func testBrowserRuntimeDeinitPerformsTerminalAuxiliaryCleanupWithoutLease() async throws {
-        var browserManager: BrowserManager? = try makeBrowserManager()
-        weak let releasedBrowserManager = browserManager
         let windowRegistry = WindowRegistry()
+        var browserManager: BrowserManager? = try makeBrowserManager(
+            windowRegistry: windowRegistry
+        )
+        weak let releasedBrowserManager = browserManager
         let browserWindow = makeBrowserWindow()
         var auxiliarySessions: AuxiliaryWindowSessionRegistry?
         var popupWebView: WKWebView?
 
         do {
             let browserManager = try XCTUnwrap(browserManager)
-            browserManager.windowRegistry = windowRegistry
             let sourceTab = configureAuxiliaryWindowSource(
                 browserManager: browserManager,
                 windowRegistry: windowRegistry,
@@ -267,8 +269,8 @@ final class BrowserTerminationRuntimeLeaseTests: XCTestCase {
         BrowserTerminationRuntimeLease(
             browserRuntime: browserManager,
             modelContext: browserManager.modelContext,
-            tabManager: browserManager.tabManager,
-            windowPersistence: browserManager.windowSessionBundle.persistence,
+            tabPersistence: browserManager.structuralPersistence,
+            windowPersistence: browserManager.windowSessionPersistenceCoordinator,
             backgroundMediaOptimization: browserManager.backgroundMediaOptimizationService,
             cleanup: browserManager.shutdownCleanupService,
             siteDataPolicy: siteDataPolicy
@@ -286,18 +288,18 @@ final class BrowserTerminationRuntimeLeaseTests: XCTestCase {
         let space = Space(name: "Auxiliary termination", profileId: profile.id)
         browserManager.profileManager.profiles = [profile]
         browserManager.currentProfile = profile
-        browserManager.tabManager.spaceStateOwner.replaceSpaces([space])
-        browserManager.tabManager.spaceStateOwner.replaceCurrentSpace(space)
+        browserManager.spaceStateOwner.replaceSpaces([space])
+        browserManager.spaceStateOwner.replaceCurrentSpace(space)
 
         let windowState = BrowserWindowState()
-        windowState.tabManager = browserManager.tabManager
+        browserManager.tabResidenceAuthority.establishResidenceSession(on: windowState)
         windowState.currentSpaceId = space.id
         windowState.currentProfileId = profile.id
         windowRegistry.bindAppKitWindow(browserWindow, to: windowState)
         windowRegistry.register(windowState)
         windowRegistry.setActive(windowState)
 
-        let sourceTab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
+        let sourceTab = browserManager.regularTabLifecycleOwner.createNewTab(
             url: "https://source.example/page",
             in: space,
             activate: true
@@ -316,9 +318,11 @@ final class BrowserTerminationRuntimeLeaseTests: XCTestCase {
     }
 
     private func makeBrowserManager(
+        windowRegistry: WindowRegistry = WindowRegistry(),
         permissionSiteActivityStore: SumiPermissionSiteActivityStore? = nil
     ) throws -> BrowserManager {
         BrowserManager(
+            windowRegistry: windowRegistry,
             startupPersistence: BrowserManagerStartupPersistence(
                 container: try ModelContainer(
                     for: SumiStartupPersistence.schema,

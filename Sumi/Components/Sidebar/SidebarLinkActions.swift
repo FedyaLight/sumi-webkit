@@ -10,10 +10,10 @@ enum SidebarLinkActions {
     static func presentSharePicker(
         for url: URL,
         source: SidebarTransientPresentationSource?,
-        presentationActions: SidebarBrowserPresentationActions
+        presentation: BrowserNativeDialogPresentationOwner
     ) {
         if let source {
-            presentationActions.presentSharingServicePicker([url], source)
+            presentation.presentSharingServicePicker([url], source: source)
             return
         }
 

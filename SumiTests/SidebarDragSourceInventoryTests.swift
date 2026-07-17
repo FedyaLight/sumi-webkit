@@ -7,7 +7,7 @@ import XCTest
 @MainActor
 final class SidebarDragSourceInventoryTests: XCTestCase {
     func testRetainedInventoryDoesNotRetainTabManager() throws {
-        var tabManager: TabManager? = try makeInMemoryTabManager()
+        var tabManager: BrowserManager? = BrowserManager()
         let inventory = makeInventory(from: try XCTUnwrap(tabManager))
         weak let releasedTabManager = tabManager
 
@@ -18,9 +18,9 @@ final class SidebarDragSourceInventoryTests: XCTestCase {
     }
 
     func testEssentialsSourceIndexAndItemCount() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let tabManager = BrowserManager()
         let profileId = UUID()
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Work", profileId: profileId)
+        let space = makeSpace(tabManager, profileId: profileId)
         let first = try makeEssentialPin(tabManager, in: space, profileId: profileId, url: "https://a.example", index: 0)
         let second = try makeEssentialPin(tabManager, in: space, profileId: profileId, url: "https://b.example", index: 1)
         let third = try makeEssentialPin(tabManager, in: space, profileId: profileId, url: "https://c.example", index: 2)
@@ -44,9 +44,9 @@ final class SidebarDragSourceInventoryTests: XCTestCase {
     }
 
     func testSpacePinnedSourceProjection() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let tabManager = BrowserManager()
         let profileId = UUID()
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Work", profileId: profileId)
+        let space = makeSpace(tabManager, profileId: profileId)
         let first = try makeSpacePinnedPin(tabManager, in: space, url: "https://a.example", index: 0)
         let second = try makeSpacePinnedPin(tabManager, in: space, url: "https://b.example", index: 1)
         let inventory = makeInventory(from: tabManager)
@@ -66,11 +66,11 @@ final class SidebarDragSourceInventoryTests: XCTestCase {
     }
 
     func testRegularTabSourceProjection() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let tabManager = BrowserManager()
         let profileId = UUID()
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Work", profileId: profileId)
-        let first = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://a.example", in: space, activate: false)
-        let second = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://b.example", in: space, activate: false)
+        let space = makeSpace(tabManager, profileId: profileId)
+        let first = makeRegularTab(tabManager, in: space, url: "https://a.example", index: 0)
+        let second = makeRegularTab(tabManager, in: space, url: "https://b.example", index: 1)
         let inventory = makeInventory(from: tabManager)
         let scope = makeScope(
             spaceId: space.id,
@@ -88,10 +88,13 @@ final class SidebarDragSourceInventoryTests: XCTestCase {
     }
 
     func testFolderChildSourceProjection() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let tabManager = BrowserManager()
         let profileId = UUID()
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Work", profileId: profileId)
-        let folder = tabManager.folderMutationOwner.createFolder(for: space.id, name: "Docs")
+        let space = makeSpace(tabManager, profileId: profileId)
+        let folder = TabFolder(name: "Docs", spaceId: space.id)
+        tabManager.folderCollectionStateOwner.replaceFoldersBySpace([
+            space.id: [folder],
+        ])
         let first = try makeFolderPin(
             tabManager,
             in: space,
@@ -184,7 +187,7 @@ final class SidebarDragSourceInventoryTests: XCTestCase {
     }
 
     func testStaleFolderScopeReturnsNilInventory() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let tabManager = BrowserManager()
         let inventory = makeInventory(from: tabManager)
         let scope = makeScope(
             spaceId: UUID(),
@@ -212,7 +215,7 @@ final class SidebarDragSourceInventoryTests: XCTestCase {
         )
     }
 
-    private func makeInventory(from tabManager: TabManager) -> SidebarDragSourceInventory {
+    private func makeInventory(from tabManager: BrowserManager) -> SidebarDragSourceInventory {
         SidebarDragSourceInventory(
             essentialPins: tabManager.shortcutPinCollectionStateOwner,
             splitOrdering: tabManager.splitGroupSidebarOrdering,
@@ -239,62 +242,97 @@ final class SidebarDragSourceInventoryTests: XCTestCase {
     }
 
     private func makeSpacePinnedPin(
-        _ tabManager: TabManager,
+        _ tabManager: BrowserManager,
         in space: Space,
         url: String,
         index: Int
     ) throws -> ShortcutPin {
-        let tab = tabManager.regularTabLifecycleOwner.createNewTab(url: url, in: space, activate: false)
-        return try XCTUnwrap(
-            tabManager.shortcutPinCommandOwner.convertTabToShortcutPin(
-                tab,
-                role: .spacePinned,
-                profileId: nil,
-                spaceId: space.id,
-                folderId: nil,
-                at: index
-            )
+        let pin = ShortcutPin(
+            id: UUID(),
+            role: .spacePinned,
+            spaceId: space.id,
+            index: index,
+            launchURL: try XCTUnwrap(URL(string: url)),
+            title: url
         )
+        var pins = tabManager.shortcutPinCollectionStateOwner
+            .spacePinnedShortcutsSnapshot()
+        pins[space.id, default: []].append(pin)
+        tabManager.shortcutPinCollectionStateOwner
+            .replaceSpacePinnedShortcuts(pins)
+        return pin
     }
 
     private func makeFolderPin(
-        _ tabManager: TabManager,
+        _ tabManager: BrowserManager,
         in space: Space,
         folderId: UUID,
         url: String,
         index: Int
     ) throws -> ShortcutPin {
-        let tab = tabManager.regularTabLifecycleOwner.createNewTab(url: url, in: space, activate: false)
-        return try XCTUnwrap(
-            tabManager.shortcutPinCommandOwner.convertTabToShortcutPin(
-                tab,
-                role: .spacePinned,
-                profileId: nil,
-                spaceId: space.id,
-                folderId: folderId,
-                at: index,
-                openTargetFolder: false
-            )
+        let pin = ShortcutPin(
+            id: UUID(),
+            role: .spacePinned,
+            spaceId: space.id,
+            index: index,
+            folderId: folderId,
+            launchURL: try XCTUnwrap(URL(string: url)),
+            title: url
         )
+        var pins = tabManager.shortcutPinCollectionStateOwner
+            .spacePinnedShortcutsSnapshot()
+        pins[space.id, default: []].append(pin)
+        tabManager.shortcutPinCollectionStateOwner
+            .replaceSpacePinnedShortcuts(pins)
+        return pin
     }
 
     private func makeEssentialPin(
-        _ tabManager: TabManager,
+        _ tabManager: BrowserManager,
         in space: Space,
         profileId: UUID,
         url: String,
         index: Int
     ) throws -> ShortcutPin {
-        let tab = tabManager.regularTabLifecycleOwner.createNewTab(url: url, in: space, activate: false)
-        return try XCTUnwrap(
-            tabManager.shortcutPinCommandOwner.convertTabToShortcutPin(
-                tab,
-                role: .essential,
-                profileId: profileId,
-                spaceId: nil,
-                folderId: nil,
-                at: index
-            )
+        let pin = ShortcutPin(
+            id: UUID(),
+            role: .essential,
+            profileId: profileId,
+            index: index,
+            launchURL: try XCTUnwrap(URL(string: url)),
+            title: url
         )
+        var pins = tabManager.shortcutPinCollectionStateOwner
+            .pinnedByProfileSnapshot()
+        pins[profileId, default: []].append(pin)
+        tabManager.shortcutPinCollectionStateOwner.replacePinnedByProfile(pins)
+        return pin
+    }
+
+    private func makeSpace(
+        _ tabManager: BrowserManager,
+        profileId: UUID
+    ) -> Space {
+        let space = Space(name: "Work", profileId: profileId)
+        tabManager.spaceStateOwner.append(space)
+        return space
+    }
+
+    private func makeRegularTab(
+        _ tabManager: BrowserManager,
+        in space: Space,
+        url: String,
+        index: Int
+    ) -> Tab {
+        let tab = Tab(
+            url: URL(string: url)!,
+            spaceId: space.id,
+            index: index,
+            loadsCachedFaviconOnInit: false
+        )
+        var tabs = tabManager.tabStateStore.regularTabs.tabsBySpaceSnapshot()
+        tabs[space.id, default: []].append(tab)
+        tabManager.tabStateStore.regularTabs.replaceTabsBySpace(tabs)
+        return tab
     }
 }

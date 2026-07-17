@@ -23,6 +23,7 @@ final class SumiFilePickerPermissionBridge {
         let requestId: String
         let tabId: String
         let pageId: String
+        let profilePartitionId: String
         let indicatorEventId: String?
         let completionHandler: SumiFilePickerCompletionHandler
     }
@@ -32,6 +33,7 @@ final class SumiFilePickerPermissionBridge {
     private let now: @Sendable () -> Date
     private let indicatorEventStore: SumiPermissionIndicatorEventStore?
     private var pendingByRequestId: [String: PendingFilePicker] = [:]
+    private var retiredProfileIDs: Set<String> = []
 
     init(
         coordinator: any SumiPermissionCoordinating,
@@ -53,7 +55,11 @@ final class SumiFilePickerPermissionBridge {
         completionHandler: @escaping ([URL]?) -> Void
     ) {
         let once = SumiFilePickerCompletionHandler(completionHandler)
+        let profileID = SumiPermissionKey.normalizedProfilePartitionId(
+            tabContext.profilePartitionId
+        )
         guard webView != nil,
+              retiredProfileIDs.contains(profileID) == false,
               tabContext.isCurrentPage(),
               currentPageId() == tabContext.pageId else {
             once.resolve(nil)
@@ -69,6 +75,7 @@ final class SumiFilePickerPermissionBridge {
 
             let decision = await self.coordinator.queryPermissionState(context)
             guard webView != nil,
+                  self.retiredProfileIDs.contains(profileID) == false,
                   tabContext.isCurrentPage(),
                   currentPageId() == tabContext.pageId else {
                 once.resolve(nil)
@@ -131,6 +138,39 @@ final class SumiFilePickerPermissionBridge {
         resolvePending(requestIds: requestIds, result: .cancelled)
     }
 
+    func cancel(
+        profilePartitionId: String,
+        reason _: String = "file-picker-profile-cancelled"
+    ) {
+        let profileID = SumiPermissionKey.normalizedProfilePartitionId(
+            profilePartitionId
+        )
+        let requestIDs = pendingByRequestId.values
+            .filter { $0.profilePartitionId == profileID }
+            .map(\.requestId)
+        resolvePending(requestIds: requestIDs, result: .cancelled)
+    }
+
+    func retireProfile(
+        profilePartitionId: String,
+        reason: String = "file-picker-profile-retired"
+    ) {
+        let profileID = SumiPermissionKey.normalizedProfilePartitionId(
+            profilePartitionId
+        )
+        retiredProfileIDs.insert(profileID)
+        cancel(profilePartitionId: profileID, reason: reason)
+    }
+
+    func containsPendingRequest(profilePartitionId: String) -> Bool {
+        let profileID = SumiPermissionKey.normalizedProfilePartitionId(
+            profilePartitionId
+        )
+        return pendingByRequestId.values.contains {
+            $0.profilePartitionId == profileID
+        }
+    }
+
     private func presentPanel(
         for request: SumiFilePickerPermissionRequest,
         tabContext: SumiFilePickerPermissionTabContext,
@@ -162,6 +202,7 @@ final class SumiFilePickerPermissionBridge {
             requestId: request.id,
             tabId: tabContext.tabId,
             pageId: tabContext.pageId,
+            profilePartitionId: tabContext.profilePartitionId,
             indicatorEventId: indicatorEventId,
             completionHandler: completionHandler
         )

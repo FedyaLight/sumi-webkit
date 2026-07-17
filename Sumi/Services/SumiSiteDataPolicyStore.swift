@@ -23,6 +23,11 @@ struct SumiSiteDataPolicyStoreDiagnostics: Equatable, Sendable {
     var lastPersistFailure: String?
 }
 
+enum SumiSiteDataPolicyStoreError: Error, Equatable {
+    case unreadablePayload
+    case persistenceVerificationFailed
+}
+
 @MainActor
 final class SumiSiteDataPolicyStore {
     private static let log = Logger.sumi(category: "SiteDataPolicyStore")
@@ -103,6 +108,26 @@ final class SumiSiteDataPolicyStore {
     func hostsWithPolicies(profileId: UUID?) -> Set<String> {
         guard let profileKey = normalizedProfileKey(profileId) else { return [] }
         return Set((policies[profileKey] ?? [:]).keys)
+    }
+
+    func deletePolicies(profileId: UUID) throws {
+        guard case .failedDecode = diagnostics.loadOutcome else {
+            let profileKey = profileId.uuidString.lowercased()
+            guard policies[profileKey] != nil else { return }
+
+            var candidate = policies
+            candidate.removeValue(forKey: profileKey)
+            let data = try JSONEncoder().encode(candidate)
+            userDefaults.set(data, forKey: storageKey)
+            guard userDefaults.data(forKey: storageKey) == data else {
+                throw SumiSiteDataPolicyStoreError.persistenceVerificationFailed
+            }
+            policies = candidate
+            diagnostics.lastPersistFailure = nil
+            changesSubject.send(())
+            return
+        }
+        throw SumiSiteDataPolicyStoreError.unreadablePayload
     }
 
     private func update(

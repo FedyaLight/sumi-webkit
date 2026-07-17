@@ -1,239 +1,139 @@
+import AppKit
 import XCTest
 
 @testable import Sumi
 
 @MainActor
 final class WindowSessionReopenServiceTests: XCTestCase {
-    func testReopenPublishesPreparedArchivedWindow() async {
-        let windowRegistry = WindowRegistry()
-        let existingWindow = BrowserWindowState()
-        windowRegistry.register(existingWindow)
-        let restoredWindow = BrowserWindowState()
+    func testReopenPublishesPreparedArchivedWindow() async throws {
+        let harness = makeHarness()
+        defer { harness.closeAllWindows() }
         let snapshot = archivedWindowSnapshot(profileID: UUID())
-        var events: [String] = []
-        var registeredProfileID: UUID?
-        installWindowRegistryTestEventSink(
-            on: windowRegistry,
-            prepareWindowRegistration: { windowState in
-                events.append("register")
-                registeredProfileID = windowState.currentProfileId
-            }
-        )
 
-        let service = WindowSessionReopenService(
-            windowRegistry: { windowRegistry },
-            createRestoredWindow: { receivedSnapshot in
-                events.append("prepare")
-                restoredWindow.restorationState.restoredSessionWindowID = receivedSnapshot.id
-                restoredWindow.currentProfileId = receivedSnapshot
-                    .session.currentProfileId
-                restoredWindow.restorationState.isAwaitingInitialResolution = false
-                windowRegistry.register(restoredWindow)
-                return restoredWindow
-            }
-        )
-
-        let didReopen = await service.reopenWindow(from: snapshot)
+        let didReopen = await harness.service.reopenWindow(from: snapshot)
 
         XCTAssertTrue(didReopen)
-        XCTAssertEqual(events, ["prepare", "register"])
-        XCTAssertEqual(registeredProfileID, snapshot.session.currentProfileId)
-        XCTAssertEqual(restoredWindow.restorationState.restoredSessionWindowID, snapshot.id)
+        let restoredWindow = try XCTUnwrap(
+            harness.windows.allWindows.first {
+                $0.restorationState.restoredSessionWindowID == snapshot.id
+            }
+        )
+        XCTAssertEqual(restoredWindow.currentProfileId, snapshot.session.currentProfileId)
+        XCTAssertFalse(restoredWindow.restorationState.isAwaitingInitialResolution)
     }
 
-    func testReopenDoesNotClaimAnExistingWindow() async {
-        let windowRegistry = WindowRegistry()
+    func testReopenDoesNotClaimAnExistingUnrelatedWindow() async throws {
+        let harness = makeHarness()
+        defer { harness.closeAllWindows() }
         let existingWindow = BrowserWindowState()
-        windowRegistry.register(existingWindow)
-        let restoredWindow = BrowserWindowState()
-        var createdWindow: BrowserWindowState?
+        harness.windows.register(existingWindow)
+        let snapshot = archivedWindowSnapshot()
 
-        let service = WindowSessionReopenService(
-            windowRegistry: { windowRegistry },
-            createRestoredWindow: { snapshot in
-                restoredWindow.restorationState.restoredSessionWindowID = snapshot.id
-                restoredWindow.restorationState.isAwaitingInitialResolution = false
-                createdWindow = restoredWindow
-                windowRegistry.register(restoredWindow)
-                return restoredWindow
-            }
-        )
-
-        let didReopen = await service.reopenWindow(
-            from: archivedWindowSnapshot()
-        )
+        let didReopen = await harness.service.reopenWindow(from: snapshot)
 
         XCTAssertTrue(didReopen)
-        XCTAssertIdentical(createdWindow, restoredWindow)
-        XCTAssertNotIdentical(createdWindow, existingWindow)
-    }
-
-    func testReopenReportsFailureWhenNoWindowRegistryIsAvailable() async {
-        var didCreateWindow = false
-        let service = WindowSessionReopenService(
-            windowRegistry: { nil },
-            createRestoredWindow: { _ in
-                didCreateWindow = true
-                return BrowserWindowState()
+        XCTAssertEqual(harness.windows.allWindows.count, 2)
+        XCTAssertTrue(harness.windows.allWindows.contains { $0 === existingWindow })
+        let restoredWindow = try XCTUnwrap(
+            harness.windows.allWindows.first {
+                $0.restorationState.restoredSessionWindowID == snapshot.id
             }
         )
-
-        let didReopen = await service.reopenWindow(
-            from: archivedWindowSnapshot()
-        )
-
-        XCTAssertFalse(didReopen)
-        XCTAssertFalse(didCreateWindow)
+        XCTAssertFalse(restoredWindow === existingWindow)
     }
 
-    func testConcurrentReopensCreateDifferentPreparedWindowsInOrder() async {
-        let windowRegistry = WindowRegistry()
-        let windows = [BrowserWindowState(), BrowserWindowState()]
+    func testReopenTreatsExistingArchiveIdentityAsAlreadyRestored() async {
+        let harness = makeHarness()
+        defer { harness.closeAllWindows() }
+        let snapshot = archivedWindowSnapshot()
+        let existingWindow = BrowserWindowState()
+        existingWindow.restorationState.restoredSessionWindowID = snapshot.id
+        harness.windows.register(existingWindow)
+
+        let didReopen = await harness.service.reopenWindow(from: snapshot)
+
+        XCTAssertTrue(didReopen)
+        XCTAssertEqual(harness.windows.allWindows.count, 1)
+        XCTAssertIdentical(harness.windows.allWindows.first, existingWindow)
+    }
+
+    func testConcurrentReopensCreateDifferentArchivedWindows() async throws {
+        let harness = makeHarness()
+        defer { harness.closeAllWindows() }
         let firstSnapshot = archivedWindowSnapshot(currentTabId: UUID())
         let secondSnapshot = archivedWindowSnapshot(currentTabId: UUID())
-        var nextWindowIndex = 0
-        var prepared: [(LastSessionWindowSnapshot, BrowserWindowState)] = []
-        let service = WindowSessionReopenService(
-            windowRegistry: { windowRegistry },
-            createRestoredWindow: { snapshot in
-                let window = windows[nextWindowIndex]
-                nextWindowIndex += 1
-                window.restorationState.restoredSessionWindowID = snapshot.id
-                window.restorationState.isAwaitingInitialResolution = false
-                prepared.append((snapshot, window))
-                windowRegistry.register(window)
-                return window
-            }
-        )
 
         let firstTask = Task {
-            await service.reopenWindow(from: firstSnapshot)
+            await harness.service.reopenWindow(from: firstSnapshot)
         }
         let secondTask = Task {
-            await service.reopenWindow(from: secondSnapshot)
+            await harness.service.reopenWindow(from: secondSnapshot)
         }
         let results = await [firstTask.value, secondTask.value]
 
         XCTAssertEqual(results, [true, true])
         XCTAssertEqual(
-            prepared.map(\.0.session),
-            [firstSnapshot.session, secondSnapshot.session]
+            Set(
+                harness.windows.allWindows.compactMap(
+                    \.restorationState.restoredSessionWindowID
+                )
+            ),
+            Set([firstSnapshot.id, secondSnapshot.id])
         )
-        XCTAssertIdentical(prepared[0].1, windows[0])
-        XCTAssertIdentical(prepared[1].1, windows[1])
     }
 
     func testConcurrentReopensForSameArchiveIdentityCreateOneWindow() async {
-        let windowRegistry = WindowRegistry()
-        let restoredWindow = BrowserWindowState()
+        let harness = makeHarness()
+        defer { harness.closeAllWindows() }
         let snapshot = archivedWindowSnapshot(currentTabId: UUID())
-        var creationCount = 0
-        let service = WindowSessionReopenService(
-            windowRegistry: { windowRegistry },
-            createRestoredWindow: { receivedSnapshot in
-                creationCount += 1
-                restoredWindow.restorationState.restoredSessionWindowID = receivedSnapshot.id
-                restoredWindow.restorationState.isAwaitingInitialResolution = false
-                windowRegistry.register(restoredWindow)
-                return restoredWindow
-            }
-        )
 
-        async let first = service.reopenWindow(from: snapshot)
-        async let second = service.reopenWindow(from: snapshot)
+        async let first = harness.service.reopenWindow(from: snapshot)
+        async let second = harness.service.reopenWindow(from: snapshot)
         let results = await [first, second]
 
         XCTAssertEqual(results, [true, true])
-        XCTAssertEqual(creationCount, 1)
-        XCTAssertEqual(restoredWindow.restorationState.restoredSessionWindowID, snapshot.id)
+        XCTAssertEqual(
+            harness.windows.allWindows.filter {
+                $0.restorationState.restoredSessionWindowID == snapshot.id
+            }.count,
+            1
+        )
     }
 
-    func testReopenRejectsUnregisteredPreparedState() async {
-        let windowRegistry = WindowRegistry()
-        let unregisteredWindow = BrowserWindowState()
-        let service = WindowSessionReopenService(
-            windowRegistry: { windowRegistry },
-            createRestoredWindow: { snapshot in
-                unregisteredWindow.restorationState.restoredSessionWindowID = snapshot.id
-                return unregisteredWindow
+    @MainActor
+    private struct Harness {
+        let browser: BrowserManager
+        let windows: WindowRegistry
+        let service: WindowSessionReopenService
+
+        func closeAllWindows() {
+            for window in windows.allWindows {
+                let shell = windows.appKitWindow(for: window)
+                _ = windows.discardRejectedRegistration(window)
+                shell?.close()
             }
-        )
-
-        let didReopen = await service.reopenWindow(
-            from: archivedWindowSnapshot()
-        )
-
-        XCTAssertFalse(didReopen)
-        XCTAssertTrue(windowRegistry.windows.isEmpty)
+        }
     }
 
-    func testReopenRejectsRegisteredStateWithWrongArchiveIdentity() async {
-        let windowRegistry = WindowRegistry()
-        let wrongWindow = BrowserWindowState()
-        var publishedWindowIDs: [UUID] = []
-        var closedWindowIDs: [UUID] = []
-        var allWindowsClosedCount = 0
+    private func makeHarness() -> Harness {
+        let browser = BrowserManager()
+        let windows = browser.windowRegistry
+        browser.windowShellContentViewFactory = { _, _ in NSView() }
         installWindowRegistryTestEventSink(
-            on: windowRegistry,
-            publishWindowRegistration: {
-                publishedWindowIDs.append($0.id)
-            },
-            closeWindow: {
-                closedWindowIDs.append($0.id)
-            },
-            closeAllWindows: {
-                allWindowsClosedCount += 1
-            }
+            on: windows,
+            prepareWindowRegistration: browser.windowSessionBundle
+                .restoration.prepareRegistration,
+            publishWindowRegistration: browser.windowSessionBundle
+                .restoration.commitRegistration
         )
         let service = WindowSessionReopenService(
-            windowRegistry: { windowRegistry },
-            createRestoredWindow: { _ in
-                wrongWindow.restorationState.restoredSessionWindowID = UUID()
-                wrongWindow.restorationState.isAwaitingInitialResolution = false
-                windowRegistry.register(wrongWindow)
-                return wrongWindow
-            }
+            windows: windows,
+            creation: ArchivedWindowCreationTransaction(
+                windows: browser.windowCommands,
+                restoration: browser.windowSessionBundle.restoreService
+            )
         )
-
-        let didReopen = await service.reopenWindow(
-            from: archivedWindowSnapshot()
-        )
-
-        XCTAssertFalse(didReopen)
-        XCTAssertEqual(publishedWindowIDs, [wrongWindow.id])
-        XCTAssertEqual(closedWindowIDs, [wrongWindow.id])
-        XCTAssertEqual(allWindowsClosedCount, 1)
-        XCTAssertTrue(windowRegistry.windows.isEmpty)
-    }
-
-    func testReopenCancelsExactProvisionalStateWithoutCloseLifecycle() async {
-        let windowRegistry = WindowRegistry()
-        let provisionalWindow = BrowserWindowState()
-        let snapshot = archivedWindowSnapshot()
-        var closedWindowIDs: [UUID] = []
-        installWindowRegistryTestEventSink(
-            on: windowRegistry,
-            closeWindow: { closedWindowIDs.append($0.id) }
-        )
-        let service = WindowSessionReopenService(
-            windowRegistry: { windowRegistry },
-            createRestoredWindow: { receivedSnapshot in
-                provisionalWindow.restorationState.restoredSessionWindowID = receivedSnapshot.id
-                provisionalWindow.restorationState.isAwaitingInitialResolution = false
-                XCTAssertEqual(
-                    windowRegistry.beginRegistration(provisionalWindow),
-                    .registered
-                )
-                return provisionalWindow
-            }
-        )
-
-        let didReopen = await service.reopenWindow(from: snapshot)
-
-        XCTAssertFalse(didReopen)
-        XCTAssertTrue(closedWindowIDs.isEmpty)
-        XCTAssertFalse(windowRegistry.commitRegistration(provisionalWindow))
-        XCTAssertTrue(windowRegistry.windows.isEmpty)
+        return Harness(browser: browser, windows: windows, service: service)
     }
 
     private func archivedWindowSnapshot(

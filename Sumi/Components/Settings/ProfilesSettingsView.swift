@@ -4,20 +4,20 @@
 //
 
 import AppKit
-import SwiftUI
 import SumiDomain
+import SwiftUI
 
 /// Profile management (also used in the in-tab settings surface).
 struct SumiProfilesSettingsPane: View {
     @ObservedObject var profileManager: ProfileManager
-    @ObservedObject var tabManager: TabManager
+    let profileInventory: ProfileSettingsInventory
     let deleteProfile: (Profile) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             ProfilesSettingsView(
                 profileManager: profileManager,
-                tabManager: tabManager,
+                profileInventory: profileInventory,
                 deleteProfile: deleteProfile
             )
         }
@@ -40,10 +40,12 @@ struct ProfilesSettingsView: View {
     }
 
     @ObservedObject var profileManager: ProfileManager
-    @ObservedObject var tabManager: TabManager
+    let profileInventory: ProfileSettingsInventory
     let deleteProfile: (Profile) -> Void
     @Environment(\.resolvedThemeContext) private var themeContext
     @State private var profileEditorPresentation: ProfileEditorPresentation?
+    @State private var profileCreationFailed = false
+    @State private var inventoryRevision = 0
 
     var body: some View {
         SettingsSection(
@@ -73,6 +75,14 @@ struct ProfilesSettingsView: View {
         .sheet(item: $profileEditorPresentation) { presentation in
             profileEditorSheet(for: presentation)
                 .sumiNativeSurfaceColorScheme()
+        }
+        .alert("Couldn't Create Profile", isPresented: $profileCreationFailed) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("The profile couldn't be saved. No profile was created.")
+        }
+        .onReceive(profileInventory.updates) { _ in
+            inventoryRevision &+= 1
         }
     }
 
@@ -114,20 +124,13 @@ struct ProfilesSettingsView: View {
     }
 
     private func spacesCount(for profile: Profile) -> Int {
-        tabManager.spaceStateOwner.spaces.filter { $0.profileId == profile.id }
-            .count
+        _ = inventoryRevision
+        return profileInventory.spacesCount(profile.id)
     }
 
     private func tabsCount(for profile: Profile) -> Int {
-        let spaceIds = Set(
-            tabManager.spaceStateOwner.spaces.filter {
-                $0.profileId == profile.id
-            }.map { $0.id }
-        )
-        return tabManager.tabCollectionMembershipOwner.allTabs().filter { tab in
-            if let sid = tab.spaceId { return spaceIds.contains(sid) }
-            return false
-        }.count
+        _ = inventoryRevision
+        return profileInventory.tabsCount(profile.id)
     }
 
     // MARK: - Actions
@@ -203,11 +206,18 @@ struct ProfilesSettingsView: View {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, isProfileNameAvailable(trimmed) else { return }
 
-        let _ = profileManager.createProfile(
-            name: trimmed,
-            icon: SumiProfileIcon.storedValue(icon)
-        )
-        profileEditorPresentation = nil
+        do {
+            try profileManager.createProfile(
+                name: trimmed,
+                icon: SumiProfileIcon.storedValue(icon)
+            )
+            profileEditorPresentation = nil
+        } catch {
+            RuntimeDiagnostics.emit(
+                "[ProfileManager] Profile creation failed: \(error)"
+            )
+            profileCreationFailed = true
+        }
     }
 
     private func updateProfile(_ profile: Profile, name: String, icon: String) {

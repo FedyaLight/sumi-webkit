@@ -13,11 +13,16 @@ final class WindowSessionRestoreService {
     private struct PreparedRegistration {
         let windowIdentity: ObjectIdentifier
         let kind: PreparedRegistrationKind
+        let profileReferenceMutationLease: ProfileReferenceMutationLease
+        let coveredProfileIDs: Set<UUID>
     }
 
     private let snapshotStore: WindowSessionSnapshotStore
+    private let profileReferenceAdmission: ProfileReferenceAdmissionLedger
     private let persistence: WindowSessionPersistenceCoordinator
-    private let tabManager: TabManager
+    private let membership: TabCollectionMembershipOwner
+    private let startupRestore: TabStartupRestoreLifecycle
+    private let tabStore: any ShellSelectionTabStore
     private let glanceManager: GlanceManager
     private let cycle: WindowSessionRestoreCycle
     private let spaceResolver: WindowSessionSpaceResolver
@@ -33,34 +38,32 @@ final class WindowSessionRestoreService {
     init(
         snapshotStore: WindowSessionSnapshotStore,
         persistence: WindowSessionPersistenceCoordinator,
-        tabManager: TabManager,
+        profileReferenceAdmission: ProfileReferenceAdmissionLedger,
+        membership: TabCollectionMembershipOwner,
+        startupRestore: TabStartupRestoreLifecycle,
+        tabStore: any ShellSelectionTabStore,
         glanceManager: GlanceManager,
+        spaceResolver: WindowSessionSpaceResolver,
+        shortcutRestorer: WindowSessionShortcutRestorer,
+        splitRestorer: WindowSessionSplitRestorer,
+        themeRestorer: WindowSessionThemeRestorer,
         selectionService: ShellSelectionService,
         selection: any WindowSessionSelectionApplying,
         floatingBarSanitizer: any WindowSessionFloatingBarSanitizing,
-        themeCommitter: any WindowSessionThemeCommitting,
-        splitFocus: any WindowSessionSplitFocusing,
         cycle: WindowSessionRestoreCycle = WindowSessionRestoreCycle()
     ) {
-        let spaceResolver = WindowSessionSpaceResolver(tabManager: tabManager)
         self.snapshotStore = snapshotStore
+        self.profileReferenceAdmission = profileReferenceAdmission
         self.persistence = persistence
-        self.tabManager = tabManager
+        self.membership = membership
+        self.startupRestore = startupRestore
+        self.tabStore = tabStore
         self.glanceManager = glanceManager
         self.cycle = cycle
         self.spaceResolver = spaceResolver
-        self.shortcutRestorer = WindowSessionShortcutRestorer(
-            tabManager: tabManager
-        )
-        self.splitRestorer = WindowSessionSplitRestorer(
-            tabManager: tabManager,
-            focus: splitFocus
-        )
-        self.themeRestorer = WindowSessionThemeRestorer(
-            tabManager: tabManager,
-            spaceResolver: spaceResolver,
-            themeCommitter: themeCommitter
-        )
+        self.shortcutRestorer = shortcutRestorer
+        self.splitRestorer = splitRestorer
+        self.themeRestorer = themeRestorer
         self.snapshotApplier = WindowSessionSnapshotApplier(
             glanceManager: glanceManager
         )
@@ -105,10 +108,6 @@ final class WindowSessionRestoreService {
                 )
             }
 
-            SidebarUITestShortcutDriftOverride.applyIfNeeded(
-                to: windowState,
-                tabManager: tabManager
-            )
             selectionReconciler.resolveMissingSelectionAfterInitialDataLoad(
                 windowState
             )
@@ -136,26 +135,36 @@ final class WindowSessionRestoreService {
         currentProfile: Profile?,
         persistsWindowSession: Bool = true
     ) {
-        windowState.tabManager = tabManager
-
         let restored: Bool
         if let snapshot = cycle.claimSnapshot(
             from: snapshotStore,
             for: windowState
         ) {
-            snapshotApplier.apply(snapshot, to: windowState)
-            restored = true
+            restored = withProfileReferenceMutation(for: snapshot) {
+                snapshotApplier.apply(snapshot, to: windowState)
+            }
         } else {
-            let activeProfileId = currentProfile?.id
-            windowState.currentProfileId = activeProfileId
-            windowState.currentSpaceId = spaceResolver.resolve(
-                for: windowState,
-                seededProfileId: activeProfileId
-            )
             restored = false
         }
 
-        if restored && tabManager.startupRestoreLifecycle.hasLoadedInitialData == false {
+        if restored == false {
+            let activeProfileId = currentProfile?.id
+            let didSeedFallback = withProfileReferenceMutation(
+                to: Set(optional: activeProfileId)
+            ) {
+                windowState.currentProfileId = activeProfileId
+                windowState.currentSpaceId = spaceResolver.resolve(
+                    for: windowState,
+                    seededProfileId: activeProfileId
+                )
+            }
+            if didSeedFallback == false {
+                windowState.currentProfileId = nil
+                windowState.currentSpaceId = nil
+            }
+        }
+
+        if restored && startupRestore.hasLoadedInitialData == false {
             windowState.restorationState.isAwaitingInitialResolution = true
             floatingBarSanitizer.sanitize(in: windowState)
             themeRestorer.restore(
@@ -174,25 +183,47 @@ final class WindowSessionRestoreService {
 
     /// Stamps an archived identity and its persisted fields before the shell
     /// can register, activate, notify extensions, or become visible.
+    @discardableResult
     func prepareArchivedWindow(
         _ snapshot: LastSessionWindowSnapshot,
         forRegistration windowState: BrowserWindowState
-    ) {
+    ) -> Bool {
         precondition(
             preparedRegistrationsByWindowID[windowState.id] == nil,
             "A browser window cannot prepare two archived sessions"
         )
-        windowState.tabManager = tabManager
+        let coveredProfileIDs = profileIDs(in: snapshot.session)
+        let lease: ProfileReferenceMutationLease
+        do {
+            lease = try profileReferenceAdmission.beginReferenceMutation(
+                to: coveredProfileIDs
+            )
+        } catch {
+            return false
+        }
         windowState.restorationState.restoredSessionWindowID = snapshot.id
         windowState.restorationState.isAwaitingInitialResolution = true
-        preparedRegistrationsByWindowID[windowState.id] = PreparedRegistration(
-            windowIdentity: ObjectIdentifier(windowState),
-            kind: .archived(glanceSession: snapshot.session.glanceSession)
-        )
         snapshotApplier.prepareForRegistration(
             snapshot.session,
             to: windowState
         )
+        guard profileReferenceAdmission.validate(
+            lease,
+            covers: coveredProfileIDs
+        ) else {
+            precondition(
+                profileReferenceAdmission.endReferenceMutation(lease),
+                "Archived window preparation lost its profile-reference mutation lease"
+            )
+            return false
+        }
+        preparedRegistrationsByWindowID[windowState.id] = PreparedRegistration(
+            windowIdentity: ObjectIdentifier(windowState),
+            kind: .archived(glanceSession: snapshot.session.glanceSession),
+            profileReferenceMutationLease: lease,
+            coveredProfileIDs: coveredProfileIDs
+        )
+        return true
     }
 
     /// A WebKit child window arrives with a concrete configuration that must
@@ -214,15 +245,35 @@ final class WindowSessionRestoreService {
         else {
             return false
         }
-        windowState.tabManager = tabManager
+        let coveredProfileIDs = Set([profileID, initialTabExecutionProfileID])
+        let lease: ProfileReferenceMutationLease
+        do {
+            lease = try profileReferenceAdmission.beginReferenceMutation(
+                to: coveredProfileIDs
+            )
+        } catch {
+            return false
+        }
         windowState.restorationState.isAwaitingInitialResolution = true
         windowState.currentProfileId = profileID
         windowState.currentSpaceId = space.id
+        guard profileReferenceAdmission.validate(
+            lease,
+            covers: coveredProfileIDs
+        ) else {
+            precondition(
+                profileReferenceAdmission.endReferenceMutation(lease),
+                "Contextual window preparation lost its profile-reference mutation lease"
+            )
+            return false
+        }
         preparedRegistrationsByWindowID[windowState.id] = PreparedRegistration(
             windowIdentity: ObjectIdentifier(windowState),
             kind: .contextualWindowWithInitialTab(
                 executionProfileID: initialTabExecutionProfileID
-            )
+            ),
+            profileReferenceMutationLease: lease,
+            coveredProfileIDs: coveredProfileIDs
         )
         return true
     }
@@ -239,6 +290,12 @@ final class WindowSessionRestoreService {
             return false
         }
         preparedRegistrationsByWindowID.removeValue(forKey: windowState.id)
+        precondition(
+            profileReferenceAdmission.endReferenceMutation(
+                prepared.profileReferenceMutationLease
+            ),
+            "Prepared window cancellation lost its profile-reference mutation lease"
+        )
         return true
     }
 
@@ -261,6 +318,26 @@ final class WindowSessionRestoreService {
             prepared.windowIdentity == ObjectIdentifier(windowState),
             "A different window object attempted to consume a prepared session"
         )
+        guard profileReferenceAdmission.validate(
+            prepared.profileReferenceMutationLease,
+            covers: prepared.coveredProfileIDs
+        ) else {
+            precondition(
+                profileReferenceAdmission.endReferenceMutation(
+                    prepared.profileReferenceMutationLease
+                ),
+                "Prepared window restore lost its profile-reference mutation lease"
+            )
+            return
+        }
+        defer {
+            precondition(
+                profileReferenceAdmission.endReferenceMutation(
+                    prepared.profileReferenceMutationLease
+                ),
+                "Prepared window restore lost its profile-reference mutation lease"
+            )
+        }
         switch prepared.kind {
         case .archived(let glanceSession):
             precondition(
@@ -291,16 +368,18 @@ final class WindowSessionRestoreService {
         }
     }
 
+    @discardableResult
     func applyWindowSessionSnapshot(
         _ snapshot: WindowSessionSnapshot,
         to windowState: BrowserWindowState
-    ) {
-        windowState.tabManager = tabManager
-        snapshotApplier.apply(snapshot, to: windowState)
-        finalizeWindowStateRestore(
-            windowState,
-            source: "applyWindowSessionSnapshot"
-        )
+    ) -> Bool {
+        withProfileReferenceMutation(for: snapshot) {
+            snapshotApplier.apply(snapshot, to: windowState)
+            finalizeWindowStateRestore(
+                windowState,
+                source: "applyWindowSessionSnapshot"
+            )
+        }
     }
 
     private func finalizeWindowStateRestore(
@@ -334,15 +413,13 @@ final class WindowSessionRestoreService {
         executionProfileID: UUID
     ) -> Bool {
         guard let tabID = windowState.currentTabId,
-              let tab = tabManager.tabCollectionMembershipOwner.tab(for: tabID)
+              let tab = membership.tab(for: tabID)
         else {
             return false
         }
         guard let spaceID = windowState.currentSpaceId,
               tab.spaceId == spaceID,
-              let spaceProfileID = tabManager.spaceStateOwner.profileId(
-                  for: spaceID
-              ),
+              let spaceProfileID = spaceResolver.space(for: spaceID)?.profileId,
               spaceProfileID == windowState.currentProfileId,
               (tab.profileId ?? spaceProfileID) == executionProfileID
         else {
@@ -363,7 +440,8 @@ final class WindowSessionRestoreService {
         selection: any WindowSessionSelectionApplying
     ) -> WindowSessionSelectionReconciler {
         WindowSessionSelectionReconciler(
-            tabManager: tabManager,
+            membership: membership,
+            tabStore: tabStore,
             selectionService: selectionService,
             selection: selection,
             spaceResolver: spaceResolver
@@ -379,11 +457,64 @@ final class WindowSessionRestoreService {
         return selection
     }
 
+    private func withProfileReferenceMutation(
+        for snapshot: WindowSessionSnapshot,
+        _ mutation: () -> Void
+    ) -> Bool {
+        withProfileReferenceMutation(
+            to: profileIDs(in: snapshot),
+            mutation
+        )
+    }
+
+    private func withProfileReferenceMutation(
+        to coveredProfileIDs: Set<UUID>,
+        _ mutation: () -> Void
+    ) -> Bool {
+        let lease: ProfileReferenceMutationLease
+        do {
+            lease = try profileReferenceAdmission.beginReferenceMutation(
+                to: coveredProfileIDs
+            )
+        } catch {
+            return false
+        }
+        defer {
+            precondition(
+                profileReferenceAdmission.endReferenceMutation(lease),
+                "Window snapshot restore lost its profile-reference mutation lease"
+            )
+        }
+        guard profileReferenceAdmission.validate(
+            lease,
+            covers: coveredProfileIDs
+        ) else {
+            return false
+        }
+        mutation()
+        return profileReferenceAdmission.validate(
+            lease,
+            covers: coveredProfileIDs
+        )
+    }
+
+    private func profileIDs(
+        in snapshot: WindowSessionSnapshot
+    ) -> Set<UUID> {
+        ProfileReferenceInventory(windowSnapshot: snapshot).profileIDs
+    }
+
     private func completeInitialResolution(
         for windowState: BrowserWindowState
     ) {
         windowState.restorationState.isAwaitingInitialResolution = false
         StartupPerformanceTrace.firstSelectedTabResolved()
         StartupPerformanceTrace.firstTabsClickable()
+    }
+}
+
+private extension Set where Element == UUID {
+    init(optional element: UUID?) {
+        self = element.map { [$0] } ?? []
     }
 }

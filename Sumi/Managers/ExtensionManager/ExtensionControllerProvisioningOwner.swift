@@ -13,18 +13,39 @@ import WebKit
 @available(macOS 15.5, *)
 @MainActor
 protocol ExtensionControllerProvisioning: AnyObject {
-    func ensureExtensionController(
-        for profileID: UUID
-    ) -> WKWebExtensionController
+    func controllerIfAdmitted(
+        for profileID: UUID,
+        mutationLease: ProfileReferenceMutationLease?
+    ) -> WKWebExtensionController?
 }
 
 @available(macOS 15.5, *)
 @MainActor
 protocol ExtensionWebViewConfigurationProvisioning: AnyObject {
-    func ensureExtensionController(
-        for profileId: UUID
-    ) -> WKWebExtensionController
-    func websiteDataStore(for profileId: UUID) -> WKWebsiteDataStore
+    func controllerIfAdmitted(
+        for profileId: UUID,
+        mutationLease: ProfileReferenceMutationLease?
+    ) -> WKWebExtensionController?
+    func websiteDataStoreIfAdmitted(
+        for profileId: UUID,
+        mutationLease: ProfileReferenceMutationLease?
+    ) -> WKWebsiteDataStore?
+}
+
+@available(macOS 15.5, *)
+@MainActor
+extension ExtensionControllerProvisioningOwner {
+    func controllerIfAdmitted(
+        for profileID: UUID
+    ) -> WKWebExtensionController? {
+        controllerIfAdmitted(for: profileID, mutationLease: nil)
+    }
+
+    func websiteDataStoreIfAdmitted(
+        for profileID: UUID
+    ) -> WKWebsiteDataStore? {
+        websiteDataStoreIfAdmitted(for: profileID, mutationLease: nil)
+    }
 }
 
 @available(macOS 15.5, *)
@@ -53,6 +74,14 @@ final class ExtensionControllerProvisioningOwner:
         self.dependencies = dependencies
     }
 
+    nonisolated static func persistentControllerIdentifier(
+        for profileId: UUID
+    ) -> UUID {
+        var uuid = profileId.uuid
+        uuid.15 ^= 0xA5
+        return UUID(uuid: uuid)
+    }
+
     static func extensionControllerIdentifier(for profileId: UUID) -> UUID {
         #if DEBUG
             // Test processes are hosted inside Sumi.app and share the real
@@ -64,9 +93,7 @@ final class ExtensionControllerProvisioningOwner:
                 return testScopedControllerIdentifier(for: profileId)
             }
         #endif
-        var uuid = profileId.uuid
-        uuid.15 ^= 0xA5
-        return UUID(uuid: uuid)
+        return persistentControllerIdentifier(for: profileId)
     }
 
     #if DEBUG
@@ -91,7 +118,33 @@ final class ExtensionControllerProvisioningOwner:
     #endif
 
     @discardableResult
-    func ensureExtensionController(for profileId: UUID) -> WKWebExtensionController {
+    func controllerIfAdmitted(
+        for profileId: UUID,
+        mutationLease suppliedLease: ProfileReferenceMutationLease?
+    ) -> WKWebExtensionController? {
+        let mutationLease: ProfileReferenceMutationLease
+        let ownsMutationLease: Bool
+        if let suppliedLease {
+            mutationLease = suppliedLease
+            ownsMutationLease = false
+        } else {
+            guard let acquired = dependencies.profileRuntime
+                .beginProfileReferenceMutation(to: profileId)
+            else { return nil }
+            mutationLease = acquired
+            ownsMutationLease = true
+        }
+        defer {
+            if ownsMutationLease {
+                _ = dependencies.profileRuntime.endProfileReferenceMutation(
+                    mutationLease
+                )
+            }
+        }
+        guard dependencies.profileRuntime.validateProfileReferenceMutation(
+            mutationLease,
+            profileID: profileId
+        ) else { return nil }
         if let existing = dependencies.profileRuntime.controller(for: profileId) {
             return existing
         }
@@ -106,15 +159,20 @@ final class ExtensionControllerProvisioningOwner:
             )
         }
 
-        let defaultDataStore = websiteDataStore(for: profileId)
+        guard let defaultDataStore = websiteDataStoreIfAdmitted(
+            for: profileId,
+            mutationLease: mutationLease
+        ) else { return nil }
         let controller = makeExtensionController(
             defaultDataStore: defaultDataStore,
             profileId: profileId
         )
-        let controllerBinding = dependencies.profileRuntime.setController(
+        guard let controllerBinding = dependencies.profileRuntime
+            .publishControllerIfAdmitted(
             controller,
-            for: profileId
-        )
+            for: profileId,
+            mutationLease: mutationLease
+        ) else { return nil }
         dependencies.controllerDelegateReadiness.controllerInstalled(
             controllerBinding
         )
@@ -131,12 +189,77 @@ final class ExtensionControllerProvisioningOwner:
         return controller
     }
 
-    func websiteDataStore(for profileId: UUID) -> WKWebsiteDataStore {
-        dependencies.profileRuntime.websiteDataStore(for: profileId)
+    func websiteDataStoreIfAdmitted(
+        for profileId: UUID,
+        mutationLease suppliedLease: ProfileReferenceMutationLease?
+    ) -> WKWebsiteDataStore? {
+        let mutationLease: ProfileReferenceMutationLease
+        let ownsMutationLease: Bool
+        if let suppliedLease {
+            mutationLease = suppliedLease
+            ownsMutationLease = false
+        } else {
+            guard let acquired = dependencies.profileRuntime
+                .beginProfileReferenceMutation(to: profileId)
+            else { return nil }
+            mutationLease = acquired
+            ownsMutationLease = true
+        }
+        defer {
+            if ownsMutationLease {
+                _ = dependencies.profileRuntime.endProfileReferenceMutation(
+                    mutationLease
+                )
+            }
+        }
+        return dependencies.profileRuntime.websiteDataStoreIfAdmitted(
+            for: profileId,
+            mutationLease: mutationLease
+        )
     }
+
+    #if DEBUG
+        func ensureExtensionController(
+            for profileId: UUID
+        ) -> WKWebExtensionController {
+            guard let controller = controllerIfAdmitted(for: profileId) else {
+                preconditionFailure("Test provisioned a blocked profile controller")
+            }
+            return controller
+        }
+
+        func websiteDataStore(for profileId: UUID) -> WKWebsiteDataStore {
+            guard let store = websiteDataStoreIfAdmitted(for: profileId) else {
+                preconditionFailure("Test requested a blocked profile data store")
+            }
+            return store
+        }
+    #endif
 
     func removeAllExtensionPageUserContentControllers() {
         extensionPageUserContentControllersByProfile.removeAll()
+    }
+
+    func retireProfileController(
+        profileID: UUID,
+        fallbackProfileID: UUID
+    ) {
+        let retiredController = dependencies.profileRuntime.controller(
+            for: profileID
+        )
+        extensionPageUserContentControllersByProfile.removeValue(
+            forKey: profileID
+        )
+        let runtimeConfiguration = dependencies.browserConfiguration
+            .webViewConfiguration
+        if runtimeConfiguration.webExtensionController === retiredController {
+            runtimeConfiguration.webExtensionController = dependencies
+                .profileRuntime.controller(for: fallbackProfileID)
+        }
+    }
+
+    func containsProfileReference(to profileID: UUID) -> Bool {
+        extensionPageUserContentControllersByProfile[profileID] != nil
     }
 
     var hasExtensionPageUserContentControllers: Bool {

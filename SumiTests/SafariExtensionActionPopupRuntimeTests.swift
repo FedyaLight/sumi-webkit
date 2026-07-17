@@ -575,11 +575,12 @@ final class SafariExtensionActionPopupRuntimeTests: XCTestCase {
         profile: Profile,
         fixture: AttachedBrowserFixture
     ) -> Tab {
-        let tabManager = fixture.browserManager.tabManager
+        let tabManager = fixture.browserManager
         let space = tabManager.spaceStateOwner.firstSpace(forProfile: profile.id)
-            ?? tabManager.spaceServices.catalog.createSpace(
+            ?? installTestSpace(
+                in: tabManager.spaceStateOwner,
                 name: "Action Popup",
-                profileId: profile.id
+                profileID: profile.id
             )
         let tab = tabManager.tabFactory.makeTab(
             url: url,
@@ -605,7 +606,6 @@ final class SafariExtensionActionPopupRuntimeTests: XCTestCase {
         tab.replaceUntrackedWebView(webView)
 
         let window = BrowserWindowState()
-        window.tabManager = tabManager
         window.currentProfileId = profile.id
         window.currentSpaceId = space.id
         window.currentTabId = tab.id

@@ -253,14 +253,14 @@ final class ExtensionInitialTabPublicationReceiptTests:
         let context = try XCTUnwrap(loadedContext)
 
         let space = Space(name: "Primary", profileId: profile.id)
-        browserManager.tabManager.spaceStateOwner.replaceSpaces([space])
-        browserManager.tabManager.spaceStateOwner.replaceCurrentSpace(space)
+        browserManager.spaceStateOwner.replaceSpaces([space])
+        browserManager.spaceStateOwner.replaceCurrentSpace(space)
 
         let window = BrowserWindowState()
-        window.tabManager = browserManager.tabManager
+        browserManager.tabResidenceAuthority.establishResidenceSession(on: window)
         window.currentProfileId = profile.id
         window.currentSpaceId = space.id
-        let tab = browserManager.tabManager.regularTabLifecycleOwner
+        let tab = browserManager.regularTabLifecycleOwner
             .createNewTab(
                 url: "https://initial.example/page",
                 in: space,

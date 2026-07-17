@@ -8,9 +8,14 @@ final class FakeSumiGeolocationProvider: SumiGeolocationProviding {
         didSet { emitStateChange() }
     }
     var providerAvailable: Bool
-    private(set) var registeredRequests: [(pageId: String, tabId: String?)] = []
+    private(set) var registeredRequests: [(
+        pageId: String,
+        tabId: String?,
+        profilePartitionId: String
+    )] = []
     private(set) var cancelledPageIds: [String] = []
     private(set) var cancelledTabIds: [String] = []
+    private(set) var cancelledProfilePartitionIds: [String] = []
     private(set) var pauseCallCount = 0
     private(set) var resumeCallCount = 0
     private(set) var revokeCallCount = 0
@@ -29,8 +34,12 @@ final class FakeSumiGeolocationProvider: SumiGeolocationProviding {
         providerAvailable && currentState != .unavailable
     }
 
-    func registerAllowedRequest(pageId: String, tabId: String?) {
-        registeredRequests.append((pageId, tabId))
+    func registerAllowedRequest(
+        pageId: String,
+        tabId: String?,
+        profilePartitionId: String
+    ) {
+        registeredRequests.append((pageId, tabId, profilePartitionId))
         if currentState == .revoked {
             currentState = .inactive
         }
@@ -43,6 +52,12 @@ final class FakeSumiGeolocationProvider: SumiGeolocationProviding {
         let normalizedPageId = pageId.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         return registeredRequests.contains {
             $0.pageId.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == normalizedPageId
+        }
+    }
+
+    func containsAllowedRequest(profilePartitionId: String) -> Bool {
+        registeredRequests.contains {
+            $0.profilePartitionId == profilePartitionId
         }
     }
 
@@ -59,6 +74,16 @@ final class FakeSumiGeolocationProvider: SumiGeolocationProviding {
     func cancelAllowedRequests(tabId: String) {
         cancelledTabIds.append(tabId)
         registeredRequests.removeAll { $0.tabId == tabId }
+        if registeredRequests.isEmpty {
+            _ = stop()
+        }
+    }
+
+    func retireProfile(profilePartitionId: String) {
+        cancelledProfilePartitionIds.append(profilePartitionId)
+        registeredRequests.removeAll { request in
+            request.profilePartitionId == profilePartitionId
+        }
         if registeredRequests.isEmpty {
             _ = stop()
         }

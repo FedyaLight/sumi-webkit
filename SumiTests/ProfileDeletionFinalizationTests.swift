@@ -1,10 +1,238 @@
+import SumiDomain
 import SumiWebRuntime
+import SwiftData
 import XCTest
 
 @testable import Sumi
 
 @MainActor
 final class ProfileDeletionFinalizationTests: XCTestCase {
+    func testFinalizationMigratesPendingAndLiveSplitReferencesUnderRetirementLease()
+        async throws {
+        let deletedProfile = Profile(name: "Deleted")
+        let fallbackProfile = Profile(name: "Fallback")
+        let profiles = [
+            deletedProfile.id: deletedProfile,
+            fallbackProfile.id: fallbackProfile,
+        ]
+        let fixture = try makeProfileDeletionFixture(
+            currentProfileId: { fallbackProfile.id },
+            defaultProfileId: { fallbackProfile.id },
+            profileExists: { profiles[$0] != nil },
+            profile: { profiles[$0] }
+        )
+        let tabManager = fixture.browser
+        try persistProfiles(
+            [deletedProfile, fallbackProfile],
+            in: tabManager.modelContext
+        )
+
+        let deletedPin = makeEssentialPin(
+            profileID: deletedProfile.id,
+            title: "Deleted"
+        )
+        let firstFallbackPin = makeEssentialPin(
+            profileID: fallbackProfile.id,
+            title: "First fallback"
+        )
+        let secondFallbackPin = makeEssentialPin(
+            profileID: fallbackProfile.id,
+            title: "Second fallback"
+        )
+        let pendingPin = ShortcutPin(
+            id: UUID(),
+            role: .essential,
+            profileId: deletedProfile.id,
+            executionProfileId: deletedProfile.id,
+            index: 0,
+            launchURL: URL(string: "https://pending.example")!,
+            title: "Pending"
+        )
+        tabManager.shortcutPinCollectionStateOwner.replaceAll(
+            pinnedByProfile: [
+                deletedProfile.id: [deletedPin],
+                fallbackProfile.id: [firstFallbackPin, secondFallbackPin],
+            ],
+            spacePinnedShortcuts: [:],
+            pendingPinnedWithoutProfile: [pendingPin]
+        )
+
+        let group = try XCTUnwrap(
+            SumiDomain.SplitGroup.make(
+                members: [deletedPin, firstFallbackPin, secondFallbackPin]
+                    .map {
+                        .shortcutPin(
+                            $0.id,
+                            returnPlacement: .essential(
+                                profileId: deletedProfile.id,
+                                index: $0.index
+                            )
+                        )
+                    },
+                layoutKind: .grid,
+                container: .shortcutSidebar(
+                    spaceId: UUID(),
+                    profileId: deletedProfile.id,
+                    folderId: nil,
+                    index: 0
+                )
+            )
+        )
+        XCTAssertTrue(tabManager.splitGroupMutations.insert(group))
+        let token = try fixture.admission.reserve(
+            profile: deletedProfile,
+            fallbackID: fallbackProfile.id
+        )
+        XCTAssertTrue(
+            try fixture.admission
+                .beginReferenceMigration(token)
+        )
+
+        let outcome = await tabManager.profileDeletion.migrate(
+            deletedProfileID: deletedProfile.id,
+            fallbackProfileID: fallbackProfile.id
+        )
+
+        XCTAssertEqual(outcome, .committed)
+        XCTAssertTrue(
+            tabManager.shortcutPinCollectionStateOwner
+                .pendingPinnedWithoutProfileSnapshot().isEmpty
+        )
+        XCTAssertNil(
+            tabManager.shortcutPinCollectionStateOwner
+                .pinnedByProfileSnapshot()[deletedProfile.id]
+        )
+        let fallbackPins = tabManager.shortcutPinCollectionStateOwner
+            .essentialPins(for: fallbackProfile.id)
+        XCTAssertEqual(
+            fallbackPins.map(\.id),
+            [firstFallbackPin.id, secondFallbackPin.id, pendingPin.id]
+        )
+        XCTAssertTrue(fallbackPins.allSatisfy {
+            $0.profileId == fallbackProfile.id
+                && $0.executionProfileId != deletedProfile.id
+        })
+        let migratedGroup = try XCTUnwrap(tabManager.splitGroupStore.groups.first)
+        XCTAssertEqual(
+            migratedGroup.memberIDs,
+            [
+                .shortcutPin(firstFallbackPin.id),
+                .shortcutPin(secondFallbackPin.id),
+            ]
+        )
+        guard case .shortcutSidebar(_, let ownerProfileID, _, _)
+                = migratedGroup.container else {
+            return XCTFail("The live shortcut container must remain typed")
+        }
+        XCTAssertEqual(ownerProfileID, fallbackProfile.id)
+        XCTAssertTrue(migratedGroup.members.allSatisfy {
+            guard case .essential(let profileID, _) = $0.returnPlacement else {
+                return false
+            }
+            return profileID == fallbackProfile.id
+        })
+        XCTAssertFalse(
+            tabManager.profileDeletion.containsReference(
+                to: deletedProfile.id
+            )
+        )
+        XCTAssertTrue(
+            try fixture.admission.cancel(token)
+        )
+        tabManager.structuralPersistence.cancelPendingPersistence()
+    }
+
+    func testFinalizationRejectsReentrantOldProfileSplitPublication()
+        async throws {
+        let deletedProfile = Profile(name: "Deleted")
+        let fallbackProfile = Profile(name: "Fallback")
+        let profiles = [
+            deletedProfile.id: deletedProfile,
+            fallbackProfile.id: fallbackProfile,
+        ]
+        let fixture = try makeProfileDeletionFixture(
+            currentProfileId: { fallbackProfile.id },
+            defaultProfileId: { fallbackProfile.id },
+            profileExists: { profiles[$0] != nil },
+            profile: { profiles[$0] }
+        )
+        let tabManager = fixture.browser
+        try persistProfiles(
+            [deletedProfile, fallbackProfile],
+            in: tabManager.modelContext
+        )
+        let pins = [
+            makeEssentialPin(
+                profileID: fallbackProfile.id,
+                title: "First"
+            ),
+            makeEssentialPin(
+                profileID: fallbackProfile.id,
+                title: "Second"
+            ),
+        ]
+        tabManager.shortcutPinCollectionStateOwner.replacePinnedByProfile(
+            [fallbackProfile.id: pins]
+        )
+        let staleGroup = try XCTUnwrap(
+            SumiDomain.SplitGroup.make(
+                members: pins.map {
+                    .shortcutPin(
+                        $0.id,
+                        returnPlacement: .essential(
+                            profileId: deletedProfile.id,
+                            index: $0.index
+                        )
+                    )
+                },
+                layoutKind: .horizontal,
+                container: .shortcutSidebar(
+                    spaceId: UUID(),
+                    profileId: deletedProfile.id,
+                    folderId: nil,
+                    index: 0
+                )
+            )
+        )
+        XCTAssertTrue(tabManager.splitGroupMutations.insert(staleGroup))
+        let token = try fixture.admission.reserve(
+            profile: deletedProfile,
+            fallbackID: fallbackProfile.id
+        )
+        XCTAssertTrue(
+            try fixture.admission
+                .beginReferenceMigration(token)
+        )
+        var didPublishReentrantReference = false
+        let observation = tabManager.objectWillChange.sink {
+            guard didPublishReentrantReference == false,
+                  let migrated = tabManager.splitGroupStore.groups.first,
+                  let reentrant = migrated.changingContainer(
+                      to: staleGroup.container
+                  ) else { return }
+            didPublishReentrantReference = tabManager.splitGroupMutations
+                .replace(migrated, with: reentrant)
+        }
+
+        let outcome = await tabManager.profileDeletion.migrate(
+            deletedProfileID: deletedProfile.id,
+            fallbackProfileID: fallbackProfile.id
+        )
+
+        XCTAssertEqual(outcome, .rejected)
+        XCTAssertTrue(didPublishReentrantReference)
+        XCTAssertTrue(
+            tabManager.profileDeletion.containsReference(
+                to: deletedProfile.id
+            )
+        )
+        XCTAssertTrue(
+            try fixture.admission.cancel(token)
+        )
+        withExtendedLifetime(observation) {}
+        tabManager.structuralPersistence.cancelPendingPersistence()
+    }
+
     func testShortcutReferenceChangesPublishAsOneTerminalSnapshot()
         async throws {
         let deletedProfileID = UUID()
@@ -25,11 +253,12 @@ final class ProfileDeletionFinalizationTests: XCTestCase {
                 name: "Owner"
             ),
         ]
-        let tabManager = try makeInMemoryTabManager(
+        let fixture = try makeProfileDeletionFixture(
             currentProfileId: { fallbackProfileID },
             profileExists: { profiles[$0] != nil },
             profile: { profiles[$0] }
         )
+        let tabManager = fixture.browser
         let deletedPin = ShortcutPin(
             id: UUID(),
             role: .essential,
@@ -82,7 +311,7 @@ final class ProfileDeletionFinalizationTests: XCTestCase {
             )
         }
 
-        let outcome = await tabManager.profileAssignments.deletion.migrate(
+        let outcome = await tabManager.profileDeletion.migrate(
             deletedProfileID: deletedProfileID,
             fallbackProfileID: fallbackProfileID
         )
@@ -101,14 +330,16 @@ final class ProfileDeletionFinalizationTests: XCTestCase {
             fallbackProfile.id: fallbackProfile,
         ]
         let transition = DeferredSpaceProfileTransition()
-        let tabManager = try makeInMemoryTabManager(
+        let fixture = try makeProfileDeletionFixture(
             currentProfileId: { fallbackProfile.id },
             defaultProfileId: { fallbackProfile.id },
             profileExists: { profiles[$0] != nil },
             profile: { profiles[$0] },
             webViewLifecycle: transition.makeLifecycle()
         )
-        let deletedSpace = tabManager.spaceServices.catalog.createSpace(
+        let tabManager = fixture.browser
+        let deletedSpace = try makeSpace(
+            in: tabManager,
             name: "Deleted",
             profileId: deletedProfile.id
         )
@@ -125,7 +356,7 @@ final class ProfileDeletionFinalizationTests: XCTestCase {
             for: deletedProfile.id
         )
         let migration = Task { @MainActor in
-            await tabManager.profileAssignments.deletion.migrate(
+            await tabManager.profileDeletion.migrate(
                 deletedProfileID: deletedProfile.id,
                 fallbackProfileID: fallbackProfile.id
             )
@@ -165,26 +396,29 @@ final class ProfileDeletionFinalizationTests: XCTestCase {
             fallbackProfile.id: fallbackProfile,
         ]
         let transition = DeferredSpaceProfileTransition()
-        let tabManager = try makeInMemoryTabManager(
+        let fixture = try makeProfileDeletionFixture(
             currentProfileId: { fallbackProfile.id },
             defaultProfileId: { fallbackProfile.id },
             profileExists: { profiles[$0] != nil },
             profile: { profiles[$0] },
             webViewLifecycle: transition.makeLifecycle()
         )
-        let originalSpace = tabManager.spaceServices.catalog.createSpace(
+        let tabManager = fixture.browser
+        let originalSpace = try makeSpace(
+            in: tabManager,
             name: "Original",
             profileId: deletedProfile.id
         )
         let migration = Task { @MainActor in
-            await tabManager.profileAssignments.deletion.migrate(
+            await tabManager.profileDeletion.migrate(
                 deletedProfileID: deletedProfile.id,
                 fallbackProfileID: fallbackProfile.id
             )
         }
         await Task.yield()
 
-        let lateSpace = tabManager.spaceServices.catalog.createSpace(
+        let lateSpace = try makeSpace(
+            in: tabManager,
             name: "Late",
             profileId: deletedProfile.id
         )
@@ -207,12 +441,13 @@ final class ProfileDeletionFinalizationTests: XCTestCase {
             deletedProfile.id: deletedProfile,
             fallbackProfile.id: fallbackProfile,
         ]
-        let tabManager = try makeInMemoryTabManager(
+        let fixture = try makeProfileDeletionFixture(
             currentProfileId: { fallbackProfile.id },
             defaultProfileId: { fallbackProfile.id },
             profileExists: { profiles[$0] != nil },
             profile: { profiles[$0] }
         )
+        let tabManager = fixture.browser
         let original = ShortcutPin(
             id: UUID(),
             role: .essential,
@@ -243,7 +478,7 @@ final class ProfileDeletionFinalizationTests: XCTestCase {
             )
         }
 
-        let outcome = await tabManager.profileAssignments.deletion.migrate(
+        let outcome = await tabManager.profileDeletion.migrate(
             deletedProfileID: deletedProfile.id,
             fallbackProfileID: fallbackProfile.id
         )
@@ -266,18 +501,19 @@ final class ProfileDeletionFinalizationTests: XCTestCase {
             fallbackProfile.id: fallbackProfile,
         ]
         let transition = DeferredSpaceProfileTransition()
-        let tabManager = try makeInMemoryTabManager(
+        let fixture = try makeProfileDeletionFixture(
             currentProfileId: { fallbackProfile.id },
             defaultProfileId: { fallbackProfile.id },
             profileExists: { profiles[$0] != nil },
             profile: { profiles[$0] },
             webViewLifecycle: transition.makeLifecycle()
         )
+        let tabManager = fixture.browser
         let tab = Tab()
-        tabManager.transientTabRegistryOwner.registerAuxiliaryMiniWindowTab(tab)
+        tabManager.tabStateStore.transientTabs.registerAuxiliaryMiniWindowTab(tab)
         var tabIntent: DeferredWebViewProfileAssignmentIntent?
         XCTAssertEqual(
-            tabManager.profileAssignments.tabs.start(
+            tabManager.tabProfileTransitions.start(
                 desiredProfileID: deletedProfile.id,
                 tab: tab,
                 requiresStructuralPersistence: false,
@@ -285,13 +521,14 @@ final class ProfileDeletionFinalizationTests: XCTestCase {
             ),
             .deferred
         )
-        let space = tabManager.spaceServices.catalog.createSpace(
+        let space = try makeSpace(
+            in: tabManager,
             name: "Fallback",
             profileId: fallbackProfile.id
         )
         var spaceIntent: DeferredWebViewSpaceProfileAssignmentIntent?
         XCTAssertEqual(
-            tabManager.profileAssignments.spaces.start(
+            tabManager.spaceProfileTransitions.start(
                 spaceID: space.id,
                 profileID: deletedProfile.id,
                 capturingIntent: { spaceIntent = $0 }
@@ -299,18 +536,100 @@ final class ProfileDeletionFinalizationTests: XCTestCase {
             .deferred
         )
 
-        let outcome = await tabManager.profileAssignments.deletion.migrate(
+        let outcome = await tabManager.profileDeletion.migrate(
             deletedProfileID: deletedProfile.id,
             fallbackProfileID: fallbackProfile.id
         )
 
         XCTAssertEqual(outcome, .rejected)
-        tabManager.profileAssignments.tabs.cancelPendingDeletionIntent(
+        tabManager.tabProfileTransitions.cancelPendingDeletionIntent(
             tab: tab,
             intent: try XCTUnwrap(tabIntent)
         )
-        tabManager.profileAssignments.spaceLifecycle.cancelPending(
+        tabManager.spaceProfileTransitions.lifecycle.cancelPending(
             try XCTUnwrap(spaceIntent)
         )
     }
+
+    private func makeProfileDeletionFixture(
+        currentProfileId: @escaping () -> UUID?,
+        defaultProfileId: @escaping () -> UUID? = { nil },
+        profileExists: @escaping (UUID) -> Bool,
+        profile: @escaping (UUID) -> Profile?,
+        webViewLifecycle: TabManagerWebViewLifecycleService? = nil
+    ) throws -> ProfileDeletionFixture {
+        let container = try makeInMemoryStartupModelContainer()
+        let browser = BrowserManager(
+            startupPersistence: BrowserManagerStartupPersistence(
+                container: container
+            )
+        )
+        browser.runtimePortConnection.attach(
+            TestRuntimePorts.make(
+                currentProfileId: currentProfileId,
+                defaultProfileId: defaultProfileId,
+                profileExists: profileExists,
+                profile: profile,
+                webViewLifecycle: webViewLifecycle
+                    ?? TestRuntimePorts.webViewLifecycle(
+                        retirement: .rejecting
+                    )
+            )
+        )
+        return ProfileDeletionFixture(
+            browser: browser,
+            admission: browser.profileReferenceAdmission
+        )
+    }
+
+    private func makeSpace(
+        in browser: BrowserManager,
+        name: String,
+        profileId: UUID
+    ) throws -> Space {
+        try XCTUnwrap(
+            browser.sidebarSpaceLifecycle.createSpace(
+                name: name,
+                icon: SumiPersistentGlyph.spaceDefaultIconValue,
+                profileID: profileId
+            )
+        )
+    }
+
+    private func persistProfiles(
+        _ profiles: [Profile],
+        in context: ModelContext
+    ) throws {
+        for (index, profile) in profiles.enumerated() {
+            context.insert(
+                ProfileEntity(
+                    id: profile.id,
+                    name: profile.name,
+                    icon: profile.icon,
+                    index: index
+                )
+            )
+        }
+        try context.save()
+    }
+
+    private func makeEssentialPin(
+        profileID: UUID,
+        title: String
+    ) -> ShortcutPin {
+        ShortcutPin(
+            id: UUID(),
+            role: .essential,
+            profileId: profileID,
+            index: 0,
+            launchURL: URL(string: "https://essential.example")!,
+            title: title
+        )
+    }
+}
+
+@MainActor
+private struct ProfileDeletionFixture {
+    let browser: BrowserManager
+    let admission: ProfileReferenceAdmissionLedger
 }

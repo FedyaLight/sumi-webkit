@@ -116,30 +116,77 @@ final class ProfileAssignmentPolicy {
         return profileIDs
     }
 
+    func regularInsertionProfileIDs(
+        tab: Tab,
+        targetSpaceID: UUID
+    ) -> Set<UUID> {
+        if let explicitProfileID = tab.profileId {
+            return [explicitProfileID]
+        }
+        if let transition = profileIDsForSpaceTransition(
+            tab: tab,
+            targetSpaceID: targetSpaceID,
+            desiredProfileID: nil
+        ) {
+            return [transition.current, transition.target]
+        }
+        guard let inheritedProfileID = spaces.profileId(
+            for: targetSpaceID
+        ) else { return [] }
+        return [inheritedProfileID]
+    }
+
     func profileIDsForSpaceTransition(
         tab: Tab,
         targetSpaceID: UUID?,
         desiredProfileID: UUID?,
         using lease: TabRuntimePortLease
     ) -> (current: UUID, target: UUID)? {
-        guard lease.registry != nil,
-              runtimeConnection.acceptsExactAttachment(lease),
-              tab.spaceId != targetSpaceID,
-              tab.profileId == nil,
-              let current = tab.spaceId.flatMap(
-                  spaces.profileId(for:)
-              ) ?? lease.currentProfileID
-                  ?? lease.defaultProfileID,
-              let target = desiredProfileID
-                  ?? targetSpaceID.flatMap(
-                      spaces.profileId(for:)
-                  )
-                  ?? lease.currentProfileID
-                  ?? lease.defaultProfileID,
-              current != target else {
+        guard case .transition(let current, let target) =
+            spaceTransitionProfileResolution(
+                tab: tab,
+                targetSpaceID: targetSpaceID,
+                desiredProfileID: desiredProfileID,
+                using: lease
+            ) else {
             return nil
         }
         return (current, target)
+    }
+
+    func spaceTransitionProfileResolution(
+        tab: Tab,
+        targetSpaceID: UUID?,
+        desiredProfileID: UUID?,
+        using lease: TabRuntimePortLease
+    ) -> TabSpaceProfileResolution {
+        guard tab.spaceId != targetSpaceID, tab.profileId == nil else {
+            return .unchanged
+        }
+        let sourceSpaceProfileID = tab.spaceId.flatMap(spaces.profileId(for:))
+        let targetSpaceProfileID = desiredProfileID
+            ?? targetSpaceID.flatMap(spaces.profileId(for:))
+        if let sourceSpaceProfileID,
+           sourceSpaceProfileID == targetSpaceProfileID {
+            return .unchanged
+        }
+        guard lease.registry != nil,
+              runtimeConnection.acceptsExactAttachment(lease) else {
+            return .unavailable
+        }
+        guard let current = sourceSpaceProfileID ?? lease.currentProfileID
+            ?? lease.defaultProfileID,
+            let target = targetSpaceProfileID
+            ?? lease.currentProfileID
+            ?? lease.defaultProfileID else {
+            return .unavailable
+        }
+        guard runtimeConnection.acceptsExactAttachment(lease) else {
+            return .unavailable
+        }
+        return current == target
+            ? .unchanged
+            : .transition(current: current, target: target)
     }
 
     func deletionAssignment(

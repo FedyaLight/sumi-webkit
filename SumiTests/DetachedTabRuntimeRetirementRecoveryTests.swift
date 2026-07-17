@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import SumiDomain
 import SumiWebRuntime
@@ -35,14 +36,22 @@ final class DetachedTabRuntimeRetirementRecoveryTests: XCTestCase {
                 )
             )
         )
-        let container = try makeInMemoryStartupModelContainer()
-        let tabManager = TabManager(
-            runtimePorts: runtime,
-            context: container.mainContext,
+        let tabManager = BrowserManager(
             webViewSessions: repository,
-            loadPersistedState: false
+            windowRegistry: WindowRegistry(),
+            startupPersistence: BrowserManagerStartupPersistence(
+                container: try makeInMemoryStartupModelContainer()
+            ),
+            dataServices: .unavailable()
         )
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Space")
+        tabManager.runtimePortConnection.attach(runtime)
+        let space = try XCTUnwrap(
+            tabManager.sidebarSpaceLifecycle.createSpace(
+                name: "Space",
+                icon: "square",
+                profileID: nil
+            )
+        )
         let retiredWebView = WKWebView()
         let source = tabManager.tabFactory.makeTab(
             spaceId: space.id,
@@ -54,25 +63,30 @@ final class DetachedTabRuntimeRetirementRecoveryTests: XCTestCase {
             url: URL(string: "https://foreign-durable.example")!,
             loadsCachedFaviconOnInit: false
         )
-        var witnessedSourceResidence = true
-        let containerRemoval = ShortcutContainerRemovalOwner(
-            pinnedByProfile: { [:] },
-            setPinnedTabs: { _, _ in },
-            removeRegularTab: { _, _, _ in
-                witnessedSourceResidence = false
-                tabManager.selectionStateOwner.replaceCurrentTab(replacement)
-            },
-            containsRegularTab: { tab, _ in
-                witnessedSourceResidence && tab === source
-            },
-            currentSpaceId: { space.id }
-        )
+        var injectConflict = true
+        let structuralPublication = tabManager.tabStructureEventBus
+            .structureChangedPublisher.sink { _ in
+                guard injectConflict else { return }
+                injectConflict = false
+                tabManager.regularTabCollectionOwner.insert(
+                    source,
+                    in: space.id,
+                    at: 0
+                )
+                tabManager.tabStateStore.selection.replaceCurrentTab(replacement)
+            }
         let sourceModel = try XCTUnwrap(
             DetachedTabShortcutSourceModelTransaction(
                 tab: source,
-                container: containerRemoval,
+                container: ShortcutContainerRemovalOwner(
+                    pins: tabManager.shortcutPinCollectionStateOwner,
+                    structuralMutations: tabManager
+                        .structuralCollectionMutationOwner,
+                    regularTabs: tabManager.regularTabCollectionOwner,
+                    spaces: tabManager.spaceStateOwner
+                ),
                 membership: tabManager.tabCollectionMembershipOwner,
-                selection: tabManager.selectionStateOwner
+                selection: tabManager.tabStateStore.selection
             )
         )
         let attachment = TabRuntimeAttachmentWitness(
@@ -82,13 +96,19 @@ final class DetachedTabRuntimeRetirementRecoveryTests: XCTestCase {
         let exposure = try XCTUnwrap(DetachedTabRuntimeExposureWitness(
             tab: source,
             attachment: attachment,
-            windows: tabManager.shortcutTabWindowQuery
+            windows: ShortcutTabWindowQuery(
+                runtimeConnection: tabManager.runtimePortConnection
+            )
         ))
         let terminal = try XCTUnwrap(DetachedTabTerminalRetirementPublisher(
             tab: source,
             source: sourceModel,
             exposure: exposure,
-            teardown: tabManager.runtimeTeardown
+            teardown: TabRuntimeTeardownService(
+                persistence: tabManager.structuralPersistence,
+                membership: tabManager.tabCollectionMembershipOwner,
+                webViewSessions: repository
+            )
         ))
         let observer = NotificationCenter.default.addObserver(
             forName: .sumiTabLifecycleDidChange,
@@ -137,12 +157,16 @@ final class DetachedTabRuntimeRetirementRecoveryTests: XCTestCase {
         XCTAssertTrue(try XCTUnwrap(replacementAttachment).isCurrent())
         XCTAssertEqual(lifecycleCount.value, 0)
         XCTAssertNil(repository.residence(of: retiredWebView))
-        XCTAssertIdentical(tabManager.selectionStateOwner.currentTab, replacement)
+        XCTAssertIdentical(
+            tabManager.tabStateStore.selection.currentTab,
+            replacement
+        )
         XCTAssertIdentical(
             tabManager.tabCollectionMembershipOwner.tab(for: source.id),
             source
         )
         XCTAssertTrue(tabManager.regularTabCollectionOwner.contains(source))
+        _ = structuralPublication
     }
 
     func testPostCommitTopologyDriftPreservesForeignStateAndDrainsGeneration()
@@ -171,14 +195,24 @@ final class DetachedTabRuntimeRetirementRecoveryTests: XCTestCase {
                 destroyAfterTerminalDrain: { _ in drainDestroyCount += 1 }
             )
         )
-        let container = try makeInMemoryStartupModelContainer()
-        let tabManager = TabManager(
-            runtimePorts: TestRuntimePorts.make(webViewLifecycle: lifecycle),
-            context: container.mainContext,
+        let tabManager = BrowserManager(
             webViewSessions: repository,
-            loadPersistedState: false
+            windowRegistry: WindowRegistry(),
+            startupPersistence: BrowserManagerStartupPersistence(
+                container: try makeInMemoryStartupModelContainer()
+            ),
+            dataServices: .unavailable()
         )
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Space")
+        tabManager.runtimePortConnection.attach(
+            TestRuntimePorts.make(webViewLifecycle: lifecycle)
+        )
+        let space = try XCTUnwrap(
+            tabManager.sidebarSpaceLifecycle.createSpace(
+                name: "Space",
+                icon: "square",
+                profileID: nil
+            )
+        )
         let retiredWebView = WKWebView()
         let source = tabManager.tabFactory.makeTab(
             spaceId: space.id,
@@ -212,9 +246,15 @@ final class DetachedTabRuntimeRetirementRecoveryTests: XCTestCase {
         let sourceModel = try XCTUnwrap(
             DetachedTabShortcutSourceModelTransaction(
                 tab: source,
-                container: tabManager.shortcutContainerRemovalOwner,
+                container: ShortcutContainerRemovalOwner(
+                    pins: tabManager.shortcutPinCollectionStateOwner,
+                    structuralMutations: tabManager
+                        .structuralCollectionMutationOwner,
+                    regularTabs: tabManager.regularTabCollectionOwner,
+                    spaces: tabManager.spaceStateOwner
+                ),
                 membership: tabManager.tabCollectionMembershipOwner,
-                selection: tabManager.selectionStateOwner
+                selection: tabManager.tabStateStore.selection
             )
         )
         let attachment = TabRuntimeAttachmentWitness(
@@ -224,13 +264,19 @@ final class DetachedTabRuntimeRetirementRecoveryTests: XCTestCase {
         let exposure = try XCTUnwrap(DetachedTabRuntimeExposureWitness(
             tab: source,
             attachment: attachment,
-            windows: tabManager.shortcutTabWindowQuery
+            windows: ShortcutTabWindowQuery(
+                runtimeConnection: tabManager.runtimePortConnection
+            )
         ))
         let terminal = try XCTUnwrap(DetachedTabTerminalRetirementPublisher(
             tab: source,
             source: sourceModel,
             exposure: exposure,
-            teardown: tabManager.runtimeTeardown
+            teardown: TabRuntimeTeardownService(
+                persistence: tabManager.structuralPersistence,
+                membership: tabManager.tabCollectionMembershipOwner,
+                webViewSessions: repository
+            )
         ))
         let retirement = DetachedTabRuntimeRetirementParticipant(
             source: sourceModel,

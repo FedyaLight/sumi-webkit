@@ -18,6 +18,7 @@ struct ExtensionContextLifecycleGraph {
     let publicationLifetime: ExtensionContextPublicationLifetime
     let control: ExtensionManagerLifetimeControl
     let websiteDataQuiescence: ExtensionWebsiteDataRuntimeQuiescence
+    let profileRetirement: ExtensionProfileRuntimeRetirement
     #if DEBUG
         let testTaskDrain: ExtensionRuntimeTaskDrain
     #endif

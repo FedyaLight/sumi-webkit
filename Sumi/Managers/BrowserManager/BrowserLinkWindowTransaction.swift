@@ -21,7 +21,10 @@ final class BrowserLinkWindowTransaction {
     private weak var extensionPublication:
         WindowExtensionPublicationTransaction?
     private weak var profiles: ProfileManager?
-    private weak var tabs: TabManager?
+    private let spaces: TabSpaceCollectionStateOwner
+    private let regularLifecycle: TabRegularLifecycleOwner
+    private let ephemeralLifecycle: TabEphemeralLifecycleOwner
+    private let residences: BrowserTabResidenceAuthority
     private let persistWindow: @MainActor (BrowserWindowState) -> Void
     private let materialize: @MainActor (
         Tab,
@@ -33,7 +36,10 @@ final class BrowserLinkWindowTransaction {
         restoration: WindowSessionRestoreService,
         extensionPublication: WindowExtensionPublicationTransaction,
         profiles: ProfileManager,
-        tabs: TabManager,
+        spaces: TabSpaceCollectionStateOwner,
+        regularLifecycle: TabRegularLifecycleOwner,
+        ephemeralLifecycle: TabEphemeralLifecycleOwner,
+        residences: BrowserTabResidenceAuthority,
         persistWindow: @escaping @MainActor (BrowserWindowState) -> Void,
         materialize: @escaping @MainActor (
             Tab,
@@ -44,7 +50,10 @@ final class BrowserLinkWindowTransaction {
         self.restoration = restoration
         self.extensionPublication = extensionPublication
         self.profiles = profiles
-        self.tabs = tabs
+        self.spaces = spaces
+        self.regularLifecycle = regularLifecycle
+        self.ephemeralLifecycle = ephemeralLifecycle
+        self.residences = residences
         self.persistWindow = persistWindow
         self.materialize = materialize
     }
@@ -54,9 +63,13 @@ final class BrowserLinkWindowTransaction {
         from source: PhysicalWebViewSourceReceipt,
         activate: Bool
     ) -> BrowserWindowState? {
-        guard let commands, let restoration, let profiles, let tabs else {
+        guard let commands, let restoration, let profiles else {
             return nil
         }
+        let spaces = self.spaces
+        let regularLifecycle = self.regularLifecycle
+        let ephemeralLifecycle = self.ephemeralLifecycle
+        let residences = self.residences
 
         let regularSource: PhysicalWebViewSourceReceipt?
         if source.residence == .privateEphemeral {
@@ -96,14 +109,14 @@ final class BrowserLinkWindowTransaction {
         let targetWindow = commands.createPreparedWindow(
             initialize: { target in
                 if let regularSource {
-                    guard let space = tabs.spaceStateOwner.space(
+                    guard let space = spaces.space(
                         with: regularSource.presentationSpace.id
                     ), space === regularSource.presentationSpace,
                     space.profileId
                     == regularSource.presentationProfile.id else {
                         return
                     }
-                    let tab = tabs.regularTabLifecycleOwner.createNewTab(
+                    let tab = regularLifecycle.createNewTab(
                         url: url.absoluteString,
                         in: space,
                         activate: false,
@@ -140,10 +153,9 @@ final class BrowserLinkWindowTransaction {
                     let profile = profiles.createEphemeralProfile(for: target.id)
                     let space = Self.preparePrivateWindow(
                         target,
-                        profile: profile,
-                        tabs: tabs
+                        profile: profile
                     )
-                    let tab = tabs.ephemeralLifecycleOwner.createEphemeralTab(
+                    let tab = ephemeralLifecycle.createEphemeralTab(
                         url: url,
                         in: target,
                         profile: profile
@@ -155,7 +167,7 @@ final class BrowserLinkWindowTransaction {
                             profile: profile,
                             space: space,
                             tab: tab,
-                            tabs: tabs
+                            residences: residences
                         )
                     )
                 }
@@ -166,7 +178,8 @@ final class BrowserLinkWindowTransaction {
                     initialTab,
                     residence: residence,
                     in: target,
-                    tabs: tabs,
+                    spaces: spaces,
+                    residences: residences,
                     profiles: profiles
                 )
             },
@@ -181,7 +194,8 @@ final class BrowserLinkWindowTransaction {
                     initialTab,
                     residence: residence,
                     in: target,
-                    tabs: tabs,
+                    spaces: spaces,
+                    residences: residences,
                     profiles: profiles
                 ) else {
                     return false
@@ -238,8 +252,7 @@ final class BrowserLinkWindowTransaction {
 
     private static func preparePrivateWindow(
         _ window: BrowserWindowState,
-        profile: Profile,
-        tabs: TabManager
+        profile: Profile
     ) -> Space {
         window.isIncognito = true
         window.ephemeralProfile = profile
@@ -253,7 +266,6 @@ final class BrowserLinkWindowTransaction {
         space.isEphemeral = true
         window.replaceEphemeralSpaces([space])
         window.currentSpaceId = space.id
-        window.tabManager = tabs
         return space
     }
 
@@ -261,7 +273,8 @@ final class BrowserLinkWindowTransaction {
         _ tab: Tab,
         residence: Residence,
         in window: BrowserWindowState,
-        tabs: TabManager,
+        spaces: TabSpaceCollectionStateOwner,
+        residences: BrowserTabResidenceAuthority,
         profiles: ProfileManager
     ) -> Bool {
         guard window.currentTabId == tab.id else { return false }
@@ -275,8 +288,8 @@ final class BrowserLinkWindowTransaction {
             guard window.isIncognito == false,
                   tab.spaceId == spaceID,
                   window.currentSpaceId == spaceID,
-                  let profileID = tabs.spaceStateOwner.profileId(for: spaceID),
-                  profileID == presentationProfileID,
+                  let space = spaces.space(with: spaceID),
+                  space.profileId == presentationProfileID,
                   window.currentProfileId == presentationProfileID,
                   (tab.profileId ?? presentationProfileID)
                   == executionProfileID,
@@ -284,14 +297,11 @@ final class BrowserLinkWindowTransaction {
             else {
                 return false
             }
-            return tabs.regularTabCollectionOwner
-                .tabs(in: spaceID)
-                .contains(where: { $0 === tab })
+            return residences.containsExact(tab, in: window)
         case .ephemeral(let receipt):
             return receipt.tab === tab
                 && receipt.admits(
                     window,
-                    tabs: tabs,
                     profiles: profiles
                 )
         }
@@ -302,35 +312,35 @@ final class BrowserLinkWindowTransaction {
         residence: Residence,
         from window: BrowserWindowState
     ) {
-        guard let tabs, let profiles else { return }
+        guard let profiles else { return }
         switch residence {
         case .regular(let spaceID, _, _, _):
-            guard let admission = ExactTabResidenceAdmission.regular(
-                tab,
-                in: spaceID,
-                tabs: tabs
+            guard tab.spaceId == spaceID,
+                  let admission = residences.admitRemoval(
+                      of: tab,
+                      from: window
             ) else { return }
-            tabs.structuralPersistence.cancelRuntimeStatePersistence(for: tab.id)
             tab.performComprehensiveWebViewCleanup()
-            guard admission.remove(
-                tabs: tabs,
+            guard residences.commitRemoval(
+                admission,
                 currentSpaceID: window.currentSpaceId
             ) else { return }
             if window.currentTabId == tab.id {
                 window.currentTabId = nil
             }
-            tabs.tabCollectionMembershipOwner.detach(tab)
-            tabs.structuralPersistence.scheduleStructuralPersistence()
             restoration?.cancelPreparedWindowRegistration(window)
         case .ephemeral(let receipt):
             guard receipt.tab === tab,
-                  receipt.admits(window, tabs: tabs, profiles: profiles)
+                  receipt.admits(window, profiles: profiles),
+                  let admission = residences.admitRemoval(
+                      of: tab,
+                      from: window
+                  )
             else { return }
-            tabs.structuralPersistence.cancelRuntimeStatePersistence(for: tab.id)
             tab.performComprehensiveWebViewCleanup()
-            guard receipt.commitRollbackAggregate(
+            guard residences.prepareEphemeralAggregateRemoval(admission),
+                  receipt.commitRollbackAggregate(
                 in: window,
-                tabs: tabs,
                 profiles: profiles
             ) else {
                 return

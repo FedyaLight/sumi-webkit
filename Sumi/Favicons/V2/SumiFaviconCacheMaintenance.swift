@@ -36,12 +36,12 @@ final class SumiFaviconCacheMaintenance: @unchecked Sendable {
         updatePublisher.publish(domain: domain, partition: partition, revision: nil)
     }
 
-    func clearPartition(_ partition: SumiFaviconPartition) {
-        mutationGate.performPartitionCleanup(partition) {
-            blobMaintenance.clearPartition(partition)
+    func clearPartition(_ partition: SumiFaviconPartition) throws {
+        defer { coldFetches.cancel(partition: partition) }
+        try mutationGate.performPartitionCleanup(partition) {
+            try blobMaintenance.clearPartition(partition)
             preparedPipeline.invalidate(partition: partition)
         }
-        coldFetches.cancel(partition: partition)
     }
 
     func burnAfterHistoryClear(

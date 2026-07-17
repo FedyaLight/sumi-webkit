@@ -14,14 +14,22 @@ final class EmptySplitSessionTests: XCTestCase {
         let session = makeSession(recorder)
         session.register(placeholder, in: windowState.id)
 
-        XCTAssertTrue(session.replace(with: incoming, in: windowState))
+        let receipt = makeReplacementReceipt(
+            session: session,
+            recorder: recorder,
+            incoming: incoming,
+            placeholder: placeholder,
+            windowState: windowState
+        )
+        XCTAssertTrue(receipt.commitModel())
+        receipt.publish()
 
         XCTAssertEqual(recorder.replacements.count, 1)
         XCTAssertIdentical(recorder.replacements[0].tab, incoming)
         XCTAssertIdentical(recorder.replacements[0].placeholder, placeholder)
         XCTAssertIdentical(recorder.replacements[0].windowState, windowState)
         XCTAssertEqual(recorder.removedTabIDs, [placeholderID])
-        XCTAssertFalse(session.replace(with: incoming, in: windowState))
+        XCTAssertFalse(session.accepts(placeholder, in: windowState.id))
     }
 
     func testFailedReplacementKeepsRegistrationForRetry() {
@@ -34,8 +42,24 @@ final class EmptySplitSessionTests: XCTestCase {
         let session = makeSession(recorder)
         session.register(placeholder, in: windowState.id)
 
-        XCTAssertFalse(session.replace(with: incoming, in: windowState))
-        XCTAssertTrue(session.replace(with: incoming, in: windowState))
+        let rejected = makeReplacementReceipt(
+            session: session,
+            recorder: recorder,
+            incoming: incoming,
+            placeholder: placeholder,
+            windowState: windowState
+        )
+        XCTAssertFalse(rejected.commitModel())
+        rejected.rollback()
+        let accepted = makeReplacementReceipt(
+            session: session,
+            recorder: recorder,
+            incoming: incoming,
+            placeholder: placeholder,
+            windowState: windowState
+        )
+        XCTAssertTrue(accepted.commitModel())
+        accepted.publish()
 
         XCTAssertEqual(recorder.replacements.count, 2)
         XCTAssertEqual(recorder.removedTabIDs, [placeholderID])
@@ -48,7 +72,15 @@ final class EmptySplitSessionTests: XCTestCase {
         let session = makeSession(recorder)
         session.register(tab, in: windowState.id)
 
-        XCTAssertTrue(session.replace(with: tab, in: windowState))
+        let receipt = makeReplacementReceipt(
+            session: session,
+            recorder: recorder,
+            incoming: tab,
+            placeholder: tab,
+            windowState: windowState
+        )
+        XCTAssertTrue(receipt.commitModel())
+        receipt.publish()
         XCTAssertTrue(recorder.removedTabIDs.isEmpty)
     }
 
@@ -60,10 +92,13 @@ final class EmptySplitSessionTests: XCTestCase {
         let recorder = Recorder()
         let session = makeSession(recorder)
         session.register(placeholder, in: windowState.id)
-        let receipt = try XCTUnwrap(session.prepareReplacement(
-            with: incoming,
-            in: windowState
-        ))
+        let receipt = makeReplacementReceipt(
+            session: session,
+            recorder: recorder,
+            incoming: incoming,
+            placeholder: placeholder,
+            windowState: windowState
+        )
 
         XCTAssertTrue(receipt.isCurrent())
         XCTAssertTrue(receipt.commitModel())
@@ -88,10 +123,13 @@ final class EmptySplitSessionTests: XCTestCase {
         let recorder = Recorder()
         let session = makeSession(recorder)
         session.register(placeholder, in: windowState.id)
-        let receipt = try XCTUnwrap(session.prepareReplacement(
-            with: incoming,
-            in: windowState
-        ))
+        let receipt = makeReplacementReceipt(
+            session: session,
+            recorder: recorder,
+            incoming: incoming,
+            placeholder: placeholder,
+            windowState: windowState
+        )
 
         receipt.rollback()
         receipt.rollback()
@@ -100,7 +138,15 @@ final class EmptySplitSessionTests: XCTestCase {
         XCTAssertEqual(recorder.rolledBackReplacementCount, 1)
         XCTAssertEqual(recorder.publishedReplacementCount, 0)
         XCTAssertTrue(recorder.removedTabIDs.isEmpty)
-        XCTAssertTrue(session.replace(with: incoming, in: windowState))
+        let retry = makeReplacementReceipt(
+            session: session,
+            recorder: recorder,
+            incoming: incoming,
+            placeholder: placeholder,
+            windowState: windowState
+        )
+        XCTAssertTrue(retry.commitModel())
+        retry.publish()
         XCTAssertEqual(recorder.publishedReplacementCount, 1)
         XCTAssertEqual(recorder.removedTabIDs, [placeholderID])
     }
@@ -116,12 +162,15 @@ final class EmptySplitSessionTests: XCTestCase {
 
         session.commit(sameIDReplacement, in: windowID)
         let windowState = BrowserWindowState(id: windowID)
-        XCTAssertTrue(
-            session.replace(
-                with: Tab(url: URL(string: "https://retry.example")!),
-                in: windowState
-            )
+        let retry = makeReplacementReceipt(
+            session: session,
+            recorder: recorder,
+            incoming: Tab(url: URL(string: "https://retry.example")!),
+            placeholder: placeholder,
+            windowState: windowState
         )
+        XCTAssertTrue(retry.commitModel())
+        retry.publish()
 
         session.register(placeholder, in: windowID)
         session.commit(placeholder, in: windowID)
@@ -168,18 +217,19 @@ final class EmptySplitSessionTests: XCTestCase {
         XCTAssertTrue(session.accepts(placeholder, in: windowState.id))
         XCTAssertFalse(session.accepts(replacement, in: windowState.id))
         XCTAssertFalse(session.cancel(in: windowState))
-        XCTAssertNil(session.prepareReplacement(
-            with: incoming,
-            in: windowState
-        ))
+        let receipt = makeReplacementReceipt(
+            session: session,
+            recorder: recorder,
+            incoming: incoming,
+            placeholder: placeholder,
+            windowState: windowState
+        )
+        XCTAssertFalse(receipt.isCurrent())
         XCTAssertTrue(recorder.removedTabs.isEmpty)
     }
 
     private func makeSession(_ recorder: Recorder) -> EmptySplitSession {
         EmptySplitSession(
-            replacements: TestSplitPlaceholderReplacementPreparer(
-                recorder: recorder
-            ),
             structuralTransactions:
                 TestEmptySplitStructuralTransactionAuthority(),
             terminalMutations: TestEmptySplitTerminalMutationAuthority(),
@@ -188,35 +238,25 @@ final class EmptySplitSessionTests: XCTestCase {
             )
         )
     }
-}
 
-@MainActor
-private final class TestSplitPlaceholderReplacementPreparer:
-    SplitPlaceholderReplacementPreparing {
-    private let recorder: Recorder
-
-    init(recorder: Recorder) {
-        self.recorder = recorder
-    }
-
-    func preparePlaceholderReplacement(
-        with tab: Tab,
+    private func makeReplacementReceipt(
+        session: EmptySplitSession,
+        recorder: Recorder,
+        incoming: Tab,
         placeholder: Tab,
-        in windowState: BrowserWindowState
-    ) -> (any SplitPlaceholderReplacementMutation)? {
-        recorder.replacements.append((tab, placeholder, windowState))
-        if let canonicalPlaceholder = recorder.canonicalPlaceholder,
-           canonicalPlaceholder !== placeholder {
-            return nil
-        }
-        let accepted = recorder.replacementResults.isEmpty
-            ? true
-            : recorder.replacementResults.removeFirst()
-        guard accepted else { return nil }
-        return TestSplitPlaceholderReplacementMutation(
-            recorder: recorder,
-            incoming: tab,
-            placeholder: placeholder
+        windowState: BrowserWindowState
+    ) -> EmptySplitReplacementReceipt {
+        recorder.replacements.append((incoming, placeholder, windowState))
+        return EmptySplitReplacementReceipt(
+            session: session,
+            terminalMutations: TestEmptySplitTerminalMutationAuthority(),
+            replacement: TestSplitPlaceholderReplacementMutation(
+                recorder: recorder,
+                incoming: incoming,
+                placeholder: placeholder
+            ),
+            placeholder: placeholder,
+            windowID: windowState.id
         )
     }
 }
@@ -238,12 +278,16 @@ private final class TestSplitPlaceholderReplacementMutation:
     }
 
     func isCurrent() -> Bool {
-        if case .prepared = state { return true }
-        return false
+        guard case .prepared = state else { return false }
+        return recorder.canonicalPlaceholder.map { $0 === placeholder } ?? true
     }
 
     func commitModel() -> Bool {
         guard isCurrent() else { return false }
+        let accepted = recorder.replacementResults.isEmpty
+            ? true
+            : recorder.replacementResults.removeFirst()
+        guard accepted else { return false }
         state = .committed
         recorder.committedTopologyCount += 1
         if placeholder !== incoming {
@@ -281,7 +325,9 @@ private final class TestEmptySplitTerminalMutationAuthority:
 @MainActor
 private final class TestEmptySplitStructuralTransactionAuthority:
     EmptySplitStructuralTransactionAuthority {
-    func withTransaction<T>(_ operation: () throws -> T) rethrows -> T {
+    func withTransaction<T>(
+        _ operation: @MainActor @Sendable () throws -> T
+    ) rethrows -> T {
         try operation()
     }
 }

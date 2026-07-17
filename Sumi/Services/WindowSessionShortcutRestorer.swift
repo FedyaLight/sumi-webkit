@@ -2,15 +2,15 @@ import Foundation
 
 @MainActor
 struct WindowSessionShortcutRestorer {
-    let tabManager: TabManager
+    let pins: ShortcutPinCollectionStateOwner
+    let activation: ShortcutPresentationActivationService
 
     @discardableResult
     func materializeSelectionIfNeeded(
         in windowState: BrowserWindowState
     ) -> Bool {
         if let shortcutPinId = windowState.currentShortcutPinId,
-           let pin = tabManager.shortcutPinCollectionStateOwner
-            .shortcutPin(by: shortcutPinId),
+           let pin = pins.shortcutPin(by: shortcutPinId),
            pin.role == .essential || pin.spaceId == windowState.currentSpaceId {
             return materialize(pin, in: windowState)
         }
@@ -31,8 +31,7 @@ struct WindowSessionShortcutRestorer {
         guard let currentSpaceId = windowState.currentSpaceId,
               let shortcutPinId = windowState
                 .selectedShortcutPinForSpace[currentSpaceId],
-              let pin = tabManager.shortcutPinCollectionStateOwner
-                .shortcutPin(by: shortcutPinId),
+              let pin = pins.shortcutPin(by: shortcutPinId),
               pin.role == .spacePinned,
               pin.spaceId == currentSpaceId else {
             if let currentSpaceId = windowState.currentSpaceId {
@@ -48,7 +47,7 @@ struct WindowSessionShortcutRestorer {
         _ pin: ShortcutPin,
         in windowState: BrowserWindowState
     ) -> Bool {
-        tabManager.shortcutPresentationActivation.commitActivation(
+        activation.commitActivation(
             pin,
             in: windowState.id,
             presentationSpaceID: pin.spaceId ?? windowState.currentSpaceId

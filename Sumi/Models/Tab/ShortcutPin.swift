@@ -163,18 +163,20 @@ final class ShortcutPin: NSObject, ObservableObject, Identifiable {
         title: String? = nil,
         launchURL: URL? = nil,
         iconAsset: String?? = nil,
+        profileId: UUID?? = nil,
         executionProfileId: UUID?? = nil,
         index: Int? = nil,
         folderId: UUID?? = nil
     ) -> ShortcutPin {
         let resolvedLaunchURL = launchURL ?? self.launchURL
         let resolvedFolderId = folderId ?? self.folderId
+        let resolvedProfileId = profileId ?? self.profileId
         let resolvedExecutionProfileId = executionProfileId ?? self.executionProfileId
 
         return ShortcutPin(
             id: id,
             role: role,
-            profileId: profileId,
+            profileId: resolvedProfileId,
             executionProfileId: resolvedExecutionProfileId,
             spaceId: spaceId,
             index: index ?? self.index,

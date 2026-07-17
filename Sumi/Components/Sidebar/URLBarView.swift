@@ -194,7 +194,8 @@ struct URLBarView: View {
     }
 
     var effectiveProfileId: UUID? {
-        windowState.currentProfileId ?? browserContext.currentProfile()?.id
+        windowState.currentProfileId
+            ?? browserContext.currentProfile()?.id
     }
 
     var effectiveProfile: Profile? {

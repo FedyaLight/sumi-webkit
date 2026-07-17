@@ -6,12 +6,9 @@ import XCTest
 @MainActor
 final class ShortcutURLInsertionServiceTests: XCTestCase {
     func testOneOuterPublishContainsPinLiveTabAndFinalSelectionBeforeActivation() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let tabManager = BrowserManager()
         let profileID = UUID()
-        let space = tabManager.spaceServices.catalog.createSpace(
-            name: "Drop",
-            profileId: profileID
-        )
+        let space = makeSpace(tabManager, profileID: profileID)
         let window = BrowserWindowState()
         window.currentSpaceId = space.id
         let recorder = ShortcutURLInsertionRecorder()
@@ -53,12 +50,9 @@ final class ShortcutURLInsertionServiceTests: XCTestCase {
     }
 
     func testFailedActivationPreflightPublishesAndMutatesNothing() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let tabManager = BrowserManager()
         let profileID = UUID()
-        let space = tabManager.spaceServices.catalog.createSpace(
-            name: "Drop",
-            profileId: profileID
-        )
+        let space = makeSpace(tabManager, profileID: profileID)
         let window = BrowserWindowState()
         window.currentSpaceId = space.id
         var publishCount = 0
@@ -88,13 +82,10 @@ final class ShortcutURLInsertionServiceTests: XCTestCase {
     }
 
     func testLatePresentationRejectionRollsBackInsertedPinWithoutEffects() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let tabManager = BrowserManager()
         let spaceProfileID = UUID()
         let mismatchedProfileID = UUID()
-        let space = tabManager.spaceServices.catalog.createSpace(
-            name: "Drop",
-            profileId: spaceProfileID
-        )
+        let space = makeSpace(tabManager, profileID: spaceProfileID)
         let window = BrowserWindowState()
         window.currentSpaceId = space.id
         var publishCount = 0
@@ -146,12 +137,9 @@ final class ShortcutURLInsertionServiceTests: XCTestCase {
     }
 
     func testLateActivationSettlementRejectionDoesNotSelectOrQueueActivation() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let tabManager = BrowserManager()
         let profileID = UUID()
-        let space = tabManager.spaceServices.catalog.createSpace(
-            name: "Drop",
-            profileId: profileID
-        )
+        let space = makeSpace(tabManager, profileID: profileID)
         let window = BrowserWindowState()
         window.currentSpaceId = space.id
         let stagedTab = Tab(loadsCachedFaviconOnInit: false)
@@ -193,8 +181,55 @@ final class ShortcutURLInsertionServiceTests: XCTestCase {
         )
     }
 
+    func testRejectedFolderInsertionDoesNotOpenOrPersistFolder() throws {
+        let tabManager = BrowserManager()
+        let profileID = UUID()
+        let space = makeSpace(tabManager, profileID: profileID)
+        let folder = TabFolder(name: "Folder", spaceId: space.id)
+        tabManager.folderCollectionStateOwner.replaceFoldersBySpace([
+            space.id: [folder],
+        ])
+        let window = BrowserWindowState()
+        window.currentSpaceId = space.id
+        let service = makeService(
+            tabManager: tabManager,
+            activation: LateRejectingShortcutActivation(
+                tab: Tab(loadsCachedFaviconOnInit: false)
+            )
+        ) { _ in
+            { _ in /* no-op */ }
+        }
+        let persistenceRevision = tabManager.structuralPersistence
+            .schedulingRevision
+
+        XCTAssertFalse(
+            service.insert(
+                URL(string: "https://rejected-folder.example")!,
+                placement: ShortcutURLPlacement(
+                    role: .spacePinned,
+                    profileID: nil,
+                    executionProfileID: profileID,
+                    spaceID: space.id,
+                    folderID: folder.id,
+                    index: 0,
+                    openTargetFolder: true
+                ),
+                in: window
+            )
+        )
+        XCTAssertFalse(folder.isOpen)
+        XCTAssertTrue(
+            tabManager.shortcutPinCollectionStateOwner
+                .spacePinnedPins(for: space.id).isEmpty
+        )
+        XCTAssertEqual(
+            tabManager.structuralPersistence.schedulingRevision,
+            persistenceRevision
+        )
+    }
+
     private func makeService(
-        tabManager: TabManager,
+        tabManager: BrowserManager,
         activation: (any ShortcutPresentationActivating)? = nil,
         prepareActivation: @escaping @MainActor @Sendable (
             BrowserWindowState
@@ -206,7 +241,8 @@ final class ShortcutURLInsertionServiceTests: XCTestCase {
                 activation: activation
                     ?? tabManager.shortcutPresentationActivation,
                 structuralMutations: tabManager.structuralCollectionMutationOwner,
-                structuralLookup: tabManager.structuralLookupCoordinator
+                structuralLookup: tabManager.structuralLookupCoordinator,
+                folderOpenState: tabManager.folderOpenState
             ),
             prepareActivation: prepareActivation,
             schedulePersistence: {}
@@ -226,6 +262,15 @@ final class ShortcutURLInsertionServiceTests: XCTestCase {
             index: 0,
             openTargetFolder: true
         )
+    }
+
+    private func makeSpace(
+        _ browser: BrowserManager,
+        profileID: UUID
+    ) -> Space {
+        let space = Space(name: "Drop", profileId: profileID)
+        browser.spaceStateOwner.append(space)
+        return space
     }
 }
 

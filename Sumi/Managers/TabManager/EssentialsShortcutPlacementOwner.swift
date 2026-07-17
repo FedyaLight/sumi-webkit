@@ -49,24 +49,24 @@ final class EssentialsShortcutPlacementOwner {
         let resolution: TargetResolution
     }
 
-    private let spaces: @MainActor () -> [Space]
-    private let runtimePorts: @MainActor () -> RuntimePortRegistry?
-    private let essentialPins: @MainActor (UUID?) -> [ShortcutPin]
+    private let spaces: TabSpaceCollectionStateOwner
+    private let runtimeConnection: TabRuntimePortConnection
+    private let pins: ShortcutPinCollectionStateOwner
 
     init(
-        spaces: @escaping @MainActor () -> [Space],
-        runtimePorts: @escaping @MainActor () -> RuntimePortRegistry?,
-        essentialPins: @escaping @MainActor (UUID?) -> [ShortcutPin]
+        spaces: TabSpaceCollectionStateOwner,
+        runtimeConnection: TabRuntimePortConnection,
+        pins: ShortcutPinCollectionStateOwner
     ) {
         self.spaces = spaces
-        self.runtimePorts = runtimePorts
-        self.essentialPins = essentialPins
+        self.runtimeConnection = runtimeConnection
+        self.pins = pins
     }
 
     func resolveTarget(using context: TargetContext? = nil) -> TargetResolution {
         let resolvedSpaceId = context?.spaceId ?? context?.windowState?.currentSpaceId
         if let resolvedSpaceId,
-           let profileId = spaces().first(where: { $0.id == resolvedSpaceId })?.profileId {
+           let profileId = spaces.space(with: resolvedSpaceId)?.profileId {
             return TargetResolution(profileId: profileId, source: .space)
         }
 
@@ -78,7 +78,7 @@ final class EssentialsShortcutPlacementOwner {
             return TargetResolution(profileId: profileId, source: .explicitProfile)
         }
 
-        if let profileId = runtimePorts()?.currentProfileId {
+        if let profileId = runtimeConnection.current?.currentProfileId {
             return TargetResolution(profileId: profileId, source: .globalFallback)
         }
 
@@ -91,24 +91,29 @@ final class EssentialsShortcutPlacementOwner {
 
     func canAddURL(_ url: URL, using context: TargetContext? = nil) -> Bool {
         guard let profileId = resolvedProfileId(using: context) else { return false }
-        let pins = essentialPins(profileId)
-        guard pins.count < CapacityPolicy.maxItems else { return false }
-        return pins.contains { $0.launchURL == url } == false
+        let profilePins = pins.essentialPins(for: profileId)
+        guard profilePins.count < CapacityPolicy.maxItems else { return false }
+        return profilePins.contains { $0.launchURL == url } == false
     }
 
     func resolveInsertion(using context: InsertionContext) -> InsertionPlan? {
         let resolution = resolveTarget(using: context.target)
         guard let profileId = resolution.profileId else { return nil }
 
-        var pins = essentialPins(profileId)
+        var profilePins = pins.essentialPins(for: profileId)
         if let movingPinId = context.movingPinId,
-           let existingIndex = pins.firstIndex(where: { $0.id == movingPinId }) {
-            pins.remove(at: existingIndex)
+           let existingIndex = profilePins.firstIndex(where: {
+               $0.id == movingPinId
+           }) {
+            profilePins.remove(at: existingIndex)
         }
 
-        guard pins.count < CapacityPolicy.maxItems else { return nil }
+        guard profilePins.count < CapacityPolicy.maxItems else { return nil }
 
-        let targetIndex = max(0, min(context.targetIndex ?? pins.count, pins.count))
+        let targetIndex = max(
+            0,
+            min(context.targetIndex ?? profilePins.count, profilePins.count)
+        )
         return InsertionPlan(
             profileId: profileId,
             index: targetIndex,

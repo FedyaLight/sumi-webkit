@@ -5,8 +5,14 @@ import XCTest
 @MainActor
 final class WindowSessionShortcutRestorerTests: XCTestCase {
     func testMaterializedPinCanonicalizesMismatchedSavedRole() throws {
-        let tabManager = try makeInMemoryTabManager()
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Space")
+        let browser = BrowserManager()
+        let space = try XCTUnwrap(
+            browser.sidebarSpaceLifecycle.createSpace(
+                name: "Space",
+                icon: "square",
+                profileID: nil
+            )
+        )
         let pin = ShortcutPin(
             id: UUID(),
             role: .spacePinned,
@@ -15,7 +21,7 @@ final class WindowSessionShortcutRestorerTests: XCTestCase {
             launchURL: try XCTUnwrap(URL(string: "https://restore.example")),
             title: "Restore"
         )
-        tabManager.structuralCollectionMutationOwner.setSpacePinnedShortcuts(
+        browser.structuralCollectionMutationOwner.setSpacePinnedShortcuts(
             [pin],
             for: space.id
         )
@@ -25,14 +31,15 @@ final class WindowSessionShortcutRestorerTests: XCTestCase {
         windowState.currentShortcutPinRole = .essential
 
         let didMaterialize = WindowSessionShortcutRestorer(
-            tabManager: tabManager
+            pins: browser.shortcutPinCollectionStateOwner,
+            activation: browser.shortcutPresentationActivation
         ).materializeSelectionIfNeeded(in: windowState)
 
         XCTAssertTrue(didMaterialize)
         XCTAssertEqual(windowState.currentShortcutPinId, pin.id)
         XCTAssertEqual(windowState.currentShortcutPinRole, .spacePinned)
         XCTAssertNotNil(
-            tabManager.liveShortcutTabs.tab(
+            browser.liveShortcutTabs.tab(
                 for: pin.id,
                 in: windowState.id
             )
@@ -40,14 +47,21 @@ final class WindowSessionShortcutRestorerTests: XCTestCase {
     }
 
     func testRoleWithoutPinIdentityIsCleared() throws {
-        let tabManager = try makeInMemoryTabManager()
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Space")
+        let browser = BrowserManager()
+        let space = try XCTUnwrap(
+            browser.sidebarSpaceLifecycle.createSpace(
+                name: "Space",
+                icon: "square",
+                profileID: nil
+            )
+        )
         let windowState = BrowserWindowState()
         windowState.currentSpaceId = space.id
         windowState.currentShortcutPinRole = .essential
 
         let didMaterialize = WindowSessionShortcutRestorer(
-            tabManager: tabManager
+            pins: browser.shortcutPinCollectionStateOwner,
+            activation: browser.shortcutPresentationActivation
         ).materializeSelectionIfNeeded(in: windowState)
 
         XCTAssertFalse(didMaterialize)

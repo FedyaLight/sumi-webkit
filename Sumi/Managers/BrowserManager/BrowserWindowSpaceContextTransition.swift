@@ -7,43 +7,28 @@ import SumiDomain
 @MainActor
 final class BrowserWindowSpaceContextTransition {
     private let contextReconciler: BrowserWindowSpaceContextReconciler
-    private let sanitizeFloatingBarState: (BrowserWindowState) -> Void
-    private let syncShortcutSelectionState: (BrowserWindowState) -> Void
-    private let updateWorkspaceTheme: (BrowserWindowState, WorkspaceTheme, Bool) -> Void
-    private let finishInteractiveTransition: (
-        Space,
-        BrowserWindowState,
-        SpaceTransitionIdentity
-    ) -> Void
+    private let floatingBar: FloatingBarPresentationService
+    private let selection: BrowserTabSelectionOwner
+    private let workspaceThemes: BrowserWorkspaceThemeTransitionOwner
 
     init(
         contextReconciler: BrowserWindowSpaceContextReconciler,
-        sanitizeFloatingBarState: @escaping (BrowserWindowState) -> Void,
-        syncShortcutSelectionState: @escaping (BrowserWindowState) -> Void,
-        updateWorkspaceTheme: @escaping (
-            BrowserWindowState,
-            WorkspaceTheme,
-            Bool
-        ) -> Void,
-        finishInteractiveTransition: @escaping (
-            Space,
-            BrowserWindowState,
-            SpaceTransitionIdentity
-        ) -> Void
+        floatingBar: FloatingBarPresentationService,
+        selection: BrowserTabSelectionOwner,
+        workspaceThemes: BrowserWorkspaceThemeTransitionOwner
     ) {
         self.contextReconciler = contextReconciler
-        self.sanitizeFloatingBarState = sanitizeFloatingBarState
-        self.syncShortcutSelectionState = syncShortcutSelectionState
-        self.updateWorkspaceTheme = updateWorkspaceTheme
-        self.finishInteractiveTransition = finishInteractiveTransition
+        self.floatingBar = floatingBar
+        self.selection = selection
+        self.workspaceThemes = workspaceThemes
     }
 
     func sanitizePreservedSelection(in windowState: BrowserWindowState) {
-        sanitizeFloatingBarState(windowState)
+        floatingBar.sanitize(in: windowState)
     }
 
     func completePreservedSelectionRefresh(in windowState: BrowserWindowState) {
-        syncShortcutSelectionState(windowState)
+        selection.syncShortcutSelectionState(for: windowState)
     }
 
     func commitContext(
@@ -59,9 +44,17 @@ final class BrowserWindowSpaceContextTransition {
         identity: SpaceTransitionIdentity?
     ) {
         if let identity {
-            finishInteractiveTransition(space, windowState, identity)
+            workspaceThemes.finishInteractiveSpaceTransition(
+                to: space,
+                in: windowState,
+                identity: identity
+            )
         } else {
-            updateWorkspaceTheme(windowState, space.workspaceTheme, true)
+            workspaceThemes.updateWorkspaceTheme(
+                for: windowState,
+                to: space.workspaceTheme,
+                animate: true
+            )
         }
     }
 

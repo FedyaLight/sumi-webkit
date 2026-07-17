@@ -41,8 +41,8 @@ final class SafariExtension1PasswordRuntimeTests: XCTestCase {
             inspectionCapture: inspection
         )
         let browserManager = makeSafariExtensionTestBrowserManager(profile: profile)
+        browserManager.startupRestoreLifecycle.markLoadFinished()
         manager.attach(browserManager: browserManager)
-        await browserManager.tabManager.storeRestore.startupRestoreTask?.value
 
         // Real import path for a Safari app extension: validates the signed
         // bundle, copies resources for persistence, loads the runtime.
@@ -121,9 +121,9 @@ final class SafariExtension1PasswordRuntimeTests: XCTestCase {
             profileId: profile.id,
             reason: "SafariExtension1PasswordRuntimeTests"
         )
-        let tab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
+        let tab = browserManager.regularTabLifecycleOwner.createNewTab(
             url: server.loginBasicURL.absoluteString,
-            in: browserManager.tabManager.spaceStateOwner.currentSpace,
+            in: browserManager.spaceStateOwner.currentSpace,
             activate: false,
             webViewConfigurationOverride: configuration
         )

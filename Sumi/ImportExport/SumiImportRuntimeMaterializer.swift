@@ -2,9 +2,10 @@ import AppKit
 import Foundation
 import SumiDomain
 
-enum SumiImportMaterializationError: LocalizedError {
+enum SumiImportMaterializationError: LocalizedError, Equatable {
     case invalidIdentifier(String)
     case invalidURL(String)
+    case profileIdentityMutationRequiresRetirement
 
     var errorDescription: String? {
         switch self {
@@ -12,6 +13,8 @@ enum SumiImportMaterializationError: LocalizedError {
             return "The import plan contains an invalid identifier: \(value)."
         case .invalidURL(let value):
             return "The import plan contains an invalid URL: \(value)."
+        case .profileIdentityMutationRequiresRetirement:
+            return "Importing profile identities requires the durable profile retirement workflow."
         }
     }
 }
@@ -46,6 +49,16 @@ final class SumiImportRuntimeMaterializer: SumiImportRuntimeMaterializing {
         let profiles = try profilesChanged
             ? makeProfiles(data.profiles, checkpoint: checkpoint)
             : checkpoint.profiles
+        if profilesChanged {
+            let checkpointIDs = checkpoint.profiles.map(\.id)
+            let importedIDs = profiles.map(\.id)
+            guard checkpointIDs.count == importedIDs.count,
+                  Set(checkpointIDs) == Set(importedIDs)
+            else {
+                throw SumiImportMaterializationError
+                    .profileIdentityMutationRequiresRetirement
+            }
+        }
         let currentProfile = profilesChanged
             ? checkpoint.currentProfile.flatMap { current in
                 profiles.first { $0.id == current.id }

@@ -8,12 +8,12 @@ import Foundation
 final class SpaceProfileRuntimeStateService {
     private let spaces: TabSpaceCollectionStateOwner
     private let regularTabs: RegularTabCollectionStateOwner
-    private let liveShortcutTabs: @MainActor () -> [Tab]
+    private let liveShortcutTabs: TabTransientTabRegistryOwner
 
     init(
         spaces: TabSpaceCollectionStateOwner,
         regularTabs: RegularTabCollectionStateOwner,
-        liveShortcutTabs: @escaping @MainActor () -> [Tab]
+        liveShortcutTabs: TabTransientTabRegistryOwner
     ) {
         self.spaces = spaces
         self.regularTabs = regularTabs
@@ -25,7 +25,7 @@ final class SpaceProfileRuntimeStateService {
         selectedShortcutSpaceIds: Set<UUID> = []
     ) {
         let materializedShortcutSpaceIds: Set<UUID> = Set(
-            liveShortcutTabs().compactMap { tab in
+            liveShortcutTabs.transientShortcutTabs.compactMap { tab in
                 guard tab.shortcutPinRole != .essential else { return nil }
                 return tab.spaceId
             }

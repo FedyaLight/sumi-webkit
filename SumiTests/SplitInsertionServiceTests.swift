@@ -540,8 +540,8 @@ final class SplitInsertionServiceTests: XCTestCase {
         var runtimeWindowPersistenceCount = 0
         var profileExecutionCount = 0
         let profile = Profile(id: scenario.profileID, name: "Profile")
-        fixture.manager.runtimePortsAttachmentOwner.detach()
-        fixture.manager.runtimePortsAttachmentOwner.attach(
+        fixture.runtimeAttachment.detach()
+        fixture.runtimeAttachment.attach(
             TestRuntimePorts.make(
                 currentProfileId: { scenario.profileID },
                 defaultProfileId: { scenario.profileID },
@@ -716,7 +716,8 @@ private final class EmptySplitLifecycleNotificationRecorder:
 @MainActor
 private extension SplitInsertionServiceTests {
     struct Fixture {
-        let manager: TabManager
+        let manager: BrowserManager
+        let runtimeAttachment: TabRuntimePortConnection
         let window: BrowserWindowState
         let space: Space
         let currentTab: Tab
@@ -740,13 +741,22 @@ private extension SplitInsertionServiceTests {
 
     func makeFixture() throws -> Fixture {
         let window = BrowserWindowState()
-        let manager = try makeInMemoryTabManager(
+        let manager = BrowserManager()
+        manager.runtimePortConnection.attach(TestRuntimePorts.make(
             windowState: { $0 == window.id ? window : nil },
             windows: { [(window.id, window)] },
-            primaryTrackedWindowId: { _ in window.id }
-        )
-        window.tabManager = manager
-        let space = manager.spaceServices.catalog.createSpace(name: "Space")
+            webViewLifecycle: TestRuntimePorts.webViewLifecycle(
+                retirement: .rejecting,
+                primaryTrackedWindowId: { _ in window.id }
+            )
+        ))
+        let runtimeAttachment = manager.runtimePortConnection
+        manager.windowRegistry.register(window)
+        let space = try XCTUnwrap(manager.sidebarSpaceLifecycle.createSpace(
+            name: "Space",
+            icon: SumiPersistentGlyph.spaceDefaultIconValue,
+            profileID: nil
+        ))
         let currentTab = manager.regularTabLifecycleOwner.createNewTab(
             url: "https://current.example",
             in: space,
@@ -760,64 +770,54 @@ private extension SplitInsertionServiceTests {
         window.currentSpaceId = space.id
         window.currentTabId = currentTab.id
 
-        let tabManager: @MainActor () -> TabManager? = { manager }
         let currentTabInWindow: @MainActor (BrowserWindowState) -> Tab? = {
             state in
             state.currentTabId.flatMap {
                 manager.tabCollectionMembershipOwner.tab(for: $0)
             }
         }
-        let members = SplitRuntimeMemberResolver(tabManager: tabManager)
-        let launcherPlacement = ShortcutSplitLauncherPlacementService(
-            tabManager: manager
+        let members = makeTestSplitRuntimeMemberResolver(manager)
+        let launcherPlacement = makeTestShortcutSplitLauncherPlacement(manager)
+        let presentations = makeTestWindowSplitPresentationSynchronizer(
+            browser: manager,
+            windows: { [window] }
         )
-        let updateChannel = SplitWindowUpdateStream.makeChannel()
-        let presentations = WindowSplitPresentationSynchronizer(
-            tabManager: tabManager,
-            windows: { [window] },
-            selectTabWithoutPersistence: { tab, state in
-                _ = WindowTabSelectionStateApplicator.apply(
-                    tab,
-                    to: state,
-                    updateSpaceFromTab: true,
-                    rememberSelection: true
-                )
-            },
-            publishPreparedSelectionEffects: { _, _, _, _ in
-                /* The fixture observes its structural update channel. */
-            },
-            publishWindowChange: { [emitter = updateChannel.emitter] windowID in
-                emitter.publish(windowID: windowID)
-            },
-            refreshCompositor: { _ in },
-            scheduleWindowSession: { _ in },
-            persistWindowSession: { _ in }
-        )
+        let windowRegistry = WindowRegistry()
+        windowRegistry.register(window)
         let query = WindowSplitQuery(
-            tabManager: tabManager,
-            windowState: { $0 == window.id ? window : nil },
+            splitGroups: manager.splitGroupStore,
+            regularTabs: manager.regularTabCollectionOwner,
+            pins: manager.shortcutPinCollectionStateOwner,
+            liveShortcuts: manager.liveShortcutTabs,
+            windows: windowRegistry,
             previewIsActive: { _ in false }
         )
         let dropTargets = SplitDropTargetService(
-            tabManager: tabManager,
+            splitGroups: manager.splitGroupStore,
             windowState: { $0 == window.id ? window : nil },
             currentTab: currentTabInWindow,
             query: query,
             memberResolver: members
         )
         let layout = SplitLayoutService(
-            tabManager: tabManager,
+            topology: SplitLayoutTopologyTransaction(
+                splitGroups: manager.splitGroupStore,
+                mutations: manager.splitGroupMutations,
+                regularTabs: manager.regularTabCollectionOwner,
+                launcherPlacement: launcherPlacement
+            ),
             query: query,
             weightMutations: SplitLayoutWeightMutationService(
-                tabManager: tabManager
+                splitGroups: manager.splitGroupStore,
+                persistence: manager.structuralPersistence
             ),
             presentations: presentations,
             dissolution: SplitGroupDissolutionService(
-                tabManager: tabManager,
+                splitGroups: manager.splitGroupStore,
+                mutations: manager.splitGroupMutations,
                 launcherPlacement: launcherPlacement,
                 presentations: presentations
             ),
-            launcherPlacement: launcherPlacement,
             restoreShortcutMember: { _, _, _ in false }
         )
         let tabClosures = SplitTabClosureService(
@@ -826,7 +826,6 @@ private extension SplitInsertionServiceTests {
         )
         let placeholderRetirement = EmptySplitPlaceholderRetirementService(
             regularTabs: manager.regularTabCollectionOwner,
-            selection: manager.selectionStateOwner,
             structuralLookup: manager.structuralLookupCoordinator,
             persistence: manager.structuralPersistence,
             runtimeConnection: manager.runtimePortConnection,
@@ -843,17 +842,29 @@ private extension SplitInsertionServiceTests {
                 members: members
             ),
             launcherRelease: ShortcutSplitLauncherReleasePlanner(
-                tabManager: manager
+                pins: manager.shortcutPinCollectionStateOwner,
+                destinationResolver:
+                    makeTestShortcutSplitLauncherDestinationResolver(manager)
             ),
             splitMutations: manager.splitGroupMutations,
             retirement: placeholderRetirement,
             presentations: presentations
         )
         let drops = SplitDropService(
-            tabManager: tabManager,
+            topology: SplitDropTopologyTransaction(
+                structuralLookup: manager.structuralLookupCoordinator,
+                membership: manager.splitGroupMembership,
+                splitGroups: manager.splitGroupStore,
+                mutations: manager.splitGroupMutations,
+                launcherPlacement: launcherPlacement
+            ),
             memberResolver: members,
-            launcherPlacement: launcherPlacement,
-            placeholderReplacements: placeholderReplacements,
+            regularShortcutSidebarDrop:
+                RegularTabShortcutSidebarDropTransaction(
+                    conversion: manager.regularTabShortcutConversion,
+                    launcherPlacement: launcherPlacement,
+                    presentations: presentations
+                ),
             presentations: presentations,
             notifyLimit: { _ in }
         )
@@ -865,6 +876,11 @@ private extension SplitInsertionServiceTests {
             members: members,
             drops: drops
         )
+        let emptySplitSession = EmptySplitSession(
+            structuralTransactions: manager.structuralLookupCoordinator,
+            terminalMutations: manager.structuralCollectionMutationOwner,
+            placeholderRetirement: placeholderRetirement
+        )
         let emptyPlaceholders = EmptySplitService(
             placeholders: EmptySplitPlaceholderFactory(
                 spaces: manager.spaceStateOwner,
@@ -875,15 +891,15 @@ private extension SplitInsertionServiceTests {
             ),
             insertion: insertion,
             activations: manager.shortcutPresentationActivation,
-            session: EmptySplitSession(
-                replacements: drops,
-                structuralTransactions: manager.structuralLookupCoordinator,
-                terminalMutations: manager.structuralCollectionMutationOwner,
-                placeholderRetirement: placeholderRetirement
+            session: emptySplitSession,
+            replacements: EmptySplitReplacementService(
+                replacements: placeholderReplacements,
+                session: emptySplitSession,
+                terminalMutations: manager.structuralCollectionMutationOwner
             )
         )
-        manager.runtimePortsAttachmentOwner.detach()
-        manager.runtimePortsAttachmentOwner.attach(TestRuntimePorts.make(
+        runtimeAttachment.detach()
+        runtimeAttachment.attach(TestRuntimePorts.make(
             windowState: { $0 == window.id ? window : nil },
             windows: { [(window.id, window)] },
             webViewLifecycle: TestRuntimePorts.webViewLifecycle(
@@ -897,13 +913,14 @@ private extension SplitInsertionServiceTests {
         ))
         return Fixture(
             manager: manager,
+            runtimeAttachment: runtimeAttachment,
             window: window,
             space: space,
             currentTab: currentTab,
             incomingTab: incomingTab,
             insertion: insertion,
             emptyPlaceholders: emptyPlaceholders,
-            splitUpdates: updateChannel.stream
+            splitUpdates: manager.splitUpdateChannel.stream
         )
     }
 
@@ -911,14 +928,16 @@ private extension SplitInsertionServiceTests {
         -> ShortcutPlaceholderFixture {
         let fixture = try makeFixture()
         let profileID = UUID()
-        let sourceSpace = fixture.manager.spaceServices.catalog.createSpace(
+        let sourceSpace = try XCTUnwrap(fixture.manager.sidebarSpaceLifecycle.createSpace(
             name: "Source",
-            profileId: profileID
-        )
-        let targetSpace = fixture.manager.spaceServices.catalog.createSpace(
+            icon: SumiPersistentGlyph.spaceDefaultIconValue,
+            profileID: profileID
+        ))
+        let targetSpace = try XCTUnwrap(fixture.manager.sidebarSpaceLifecycle.createSpace(
             name: "Target",
-            profileId: profileID
-        )
+            icon: SumiPersistentGlyph.spaceDefaultIconValue,
+            profileID: profileID
+        ))
         let targetRegularTab = fixture.manager.regularTabLifecycleOwner
             .createNewTab(
                 url: "https://target.example",

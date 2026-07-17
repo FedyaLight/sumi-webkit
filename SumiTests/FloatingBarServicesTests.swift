@@ -5,31 +5,39 @@ import XCTest
 @MainActor
 final class FloatingBarServicesTests: XCTestCase {
     func testRetainedServicesDoNotRetainBrowserKernel() {
-        var browserManager: BrowserManager? = BrowserManager()
+        var browserManager: BrowserManager? = BrowserManager(
+            windowRegistry: WindowRegistry()
+        )
         weak var releasedBrowserManager = browserManager
-        weak var releasedTabManager = browserManager?.tabManager
         weak var releasedEmptySplitPlaceholders =
-            browserManager?.splitComposition.emptyPlaceholders
-        let retainedServices = browserManager?.urlBarBundle.floatingBar
+            browserManager?.splitEmptyPlaceholders
+        var retainedServices = browserManager?.urlBarBundle.floatingBar
 
         browserManager = nil
 
         XCTAssertNil(releasedBrowserManager)
-        XCTAssertNil(releasedTabManager)
+        XCTAssertNotNil(releasedEmptySplitPlaceholders)
+
+        retainedServices = nil
+
         XCTAssertNil(releasedEmptySplitPlaceholders)
-        withExtendedLifetime(retainedServices) { /* prove retained capabilities are harmless */ }
     }
 
     func testPresentationPreservesDraftAndPersistsEachStateActionOnce() {
         let persistence = FloatingBarPersistenceSpy()
         let split = FloatingBarSplitPlaceholderSpy()
         var themeDismissCount = 0
+        let windowState = BrowserWindowState()
+        let splitCancellation = makeSplitCancellation(
+            recorder: split,
+            windowID: windowState.id
+        )
+        splitCancellation.register(Tab(), in: windowState.id)
         let presentation = makePresentation(
-            split: split,
+            splitCancellation: splitCancellation,
             persistence: persistence,
             dismissThemePicker: { themeDismissCount += 1 }
         )
-        let windowState = BrowserWindowState()
         windowState.floatingBarDraftText = "preserved"
 
         presentation.focus(
@@ -106,17 +114,20 @@ final class FloatingBarServicesTests: XCTestCase {
         windowState.floatingBarDraftNavigatesCurrentTab = true
         windowState.presentationState.isFloatingBarVisible = true
         let persistence = FloatingBarPersistenceSpy()
-        let split = FloatingBarSplitPlaceholderSpy()
+        let splitBrowser = BrowserManager()
+        splitBrowser.emptySplitSession.register(
+            pageTab,
+            in: windowState.id
+        )
         let opening = FloatingBarTabOpeningSpy()
         var loadedPages: [FloatingBarLoadedPage] = []
         let presentation = makePresentation(
-            split: split,
             persistence: persistence
         )
         let commit = makeCommit(
             presentation: presentation,
             opening: opening,
-            split: split,
+            split: splitBrowser.splitEmptyPlaceholders,
             activePageTab: { _ in pageTab },
             loadPage: { url, tab, window in
                 loadedPages.append(.init(
@@ -134,9 +145,12 @@ final class FloatingBarServicesTests: XCTestCase {
 
         XCTAssertFalse(windowState.floatingBarDraftNavigatesCurrentTab)
         XCTAssertEqual(persistence.persistedWindowIDs, [windowState.id])
-        XCTAssertEqual(split.committed, [
-            .init(tabID: pageTab.id, windowID: windowState.id),
-        ])
+        XCTAssertFalse(
+            splitBrowser.emptySplitSession.accepts(
+                pageTab,
+                in: windowState.id
+            )
+        )
         XCTAssertEqual(loadedPages.first?.url.absoluteString, "https://target.example/")
         XCTAssertEqual(loadedPages.first?.tabID, pageTab.id)
         XCTAssertEqual(loadedPages.first?.windowID, windowState.id)
@@ -212,14 +226,15 @@ final class FloatingBarServicesTests: XCTestCase {
 
     private func makePresentation(
         registry: WindowRegistry? = nil,
-        split: FloatingBarSplitPlaceholderSpy = .init(),
+        splitCancellation: EmptySplitSession? = nil,
         persistence: FloatingBarPersistenceSpy = .init(),
         dismissThemePicker: @escaping @MainActor () -> Void = { /* no-op */ }
     ) -> FloatingBarPresentationService {
-        FloatingBarPresentationService(
+        let splitCancellation = splitCancellation ?? makeSplitCancellation()
+        return FloatingBarPresentationService(
             windowRegistry: { registry },
             hasValidCurrentSelection: { _ in false },
-            splitPlaceholders: { split },
+            splitCancellation: splitCancellation,
             dismissThemePickerDiscardingIfNeeded: dismissThemePicker,
             persistence: { persistence }
         )
@@ -228,7 +243,7 @@ final class FloatingBarServicesTests: XCTestCase {
     private func makeCommit(
         presentation: FloatingBarPresentationService,
         opening: FloatingBarTabOpeningSpy = .init(),
-        split: FloatingBarSplitPlaceholderSpy = .init(),
+        split: EmptySplitService? = nil,
         activePageTab: @escaping @MainActor (BrowserWindowState) -> Tab? = { _ in nil },
         settings: SumiSettingsService? = nil,
         selectTab: @escaping @MainActor (
@@ -237,17 +252,33 @@ final class FloatingBarServicesTests: XCTestCase {
         ) -> BrowserTabSelectionOutcome = { _, _ in .committed },
         loadPage: @escaping @MainActor (URL, Tab, BrowserWindowState) -> Void = { _, _, _ in /* no-op */ }
     ) -> FloatingBarCommitService {
-        FloatingBarCommitService(
+        let split = split ?? BrowserManager().splitEmptyPlaceholders
+        return FloatingBarCommitService(
             presentation: presentation,
             tabOpening: { opening },
             tabTargets: FloatingBarTabTargetCommitter(
-                splitPlaceholders: { split },
+                splitPlaceholders: split,
                 selectTab: selectTab
             ),
             activePageTab: activePageTab,
             pageNavigation: FloatingBarPageNavigationService(
                 settings: { settings },
                 loadPage: loadPage
+            )
+        )
+    }
+
+    private func makeSplitCancellation(
+        recorder: FloatingBarSplitPlaceholderSpy? = nil,
+        windowID: UUID = UUID()
+    ) -> EmptySplitSession {
+        EmptySplitSession(
+            structuralTransactions:
+                FloatingBarEmptySplitStructuralTransactions(),
+            terminalMutations: FloatingBarEmptySplitTerminalMutations(),
+            placeholderRetirement: FloatingBarEmptySplitRetirementPreparer(
+                recorder: recorder,
+                windowID: windowID
             )
         )
     }
@@ -276,27 +307,91 @@ private final class FloatingBarPersistenceSpy: FloatingBarStatePersisting {
 }
 
 @MainActor
-private final class FloatingBarSplitPlaceholderSpy:
-    FloatingBarSplitPlaceholderHandling {
-    struct Commit: Equatable {
-        let tabID: UUID
-        let windowID: UUID
+private final class FloatingBarSplitPlaceholderSpy {
+    var cancelledWindowIDs: [UUID] = []
+}
+
+@MainActor
+private final class FloatingBarEmptySplitStructuralTransactions:
+    EmptySplitStructuralTransactionAuthority {
+    func withTransaction<T>(
+        _ operation: @MainActor @Sendable () throws -> T
+    ) rethrows -> T {
+        try operation()
+    }
+}
+
+@MainActor
+private final class FloatingBarEmptySplitTerminalMutations:
+    EmptySplitTerminalMutationAuthority {
+    func withReversibleSideEffects(_ operation: () -> Bool) -> Bool {
+        operation()
+    }
+}
+
+@MainActor
+private final class FloatingBarEmptySplitRetirementPreparer:
+    EmptySplitPlaceholderRetirementPreparing {
+    private let recorder: FloatingBarSplitPlaceholderSpy?
+    private let windowID: UUID
+
+    init(recorder: FloatingBarSplitPlaceholderSpy?, windowID: UUID) {
+        self.recorder = recorder
+        self.windowID = windowID
     }
 
-    var cancelledWindowIDs: [UUID] = []
-    var committed: [Commit] = []
+    func prepareRetirement(
+        _ placeholder: Tab
+    ) -> (any EmptySplitPlaceholderRetirementMutation)? {
+        FloatingBarEmptySplitRetirementMutation(
+            placeholder: placeholder,
+            recorder: recorder,
+            windowID: windowID
+        )
+    }
+}
 
-    func cancel(in windowState: BrowserWindowState) -> Bool {
-        cancelledWindowIDs.append(windowState.id)
+@MainActor
+private final class FloatingBarEmptySplitRetirementMutation:
+    EmptySplitPlaceholderRetirementMutation {
+    private enum State { case prepared, committed, published, cancelled }
+
+    private let placeholder: Tab
+    private let recorder: FloatingBarSplitPlaceholderSpy?
+    private let windowID: UUID
+    private var state = State.prepared
+
+    init(
+        placeholder: Tab,
+        recorder: FloatingBarSplitPlaceholderSpy?,
+        windowID: UUID
+    ) {
+        self.placeholder = placeholder
+        self.recorder = recorder
+        self.windowID = windowID
+    }
+
+    func isCurrent() -> Bool {
+        if case .prepared = state { return true }
+        return false
+    }
+
+    func commitModel() -> Bool {
+        guard isCurrent() else { return false }
+        _ = placeholder
+        state = .committed
+        recorder?.cancelledWindowIDs.append(windowID)
         return true
     }
 
-    func commit(_ placeholder: Tab, in windowID: UUID) {
-        committed.append(.init(tabID: placeholder.id, windowID: windowID))
+    func publish() {
+        guard case .committed = state else { return }
+        state = .published
     }
 
-    func replace(with _: Tab, in _: BrowserWindowState) -> Bool {
-        false
+    func rollback() {
+        guard case .prepared = state else { return }
+        state = .cancelled
     }
 }
 

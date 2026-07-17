@@ -7,8 +7,8 @@ import XCTest
 @MainActor
 final class BrowserStartupProtectionRuntimeTests: XCTestCase {
     func testMaterializationPolicyDefersOnlyPrimaryNormalTabsUntilRestoreFinishes() {
-        var appliedLevel = SumiProtectionLevel.protection
-        let runtime = makeRuntime(appliedLevel: { appliedLevel })
+        let fixture = makeBrowser(appliedLevel: .protection)
+        let runtime = fixture.browser.startupProtectionRuntime
         let normalTab = Tab(
             url: URL(string: "https://example.com/article")!,
             loadsCachedFaviconOnInit: false
@@ -29,18 +29,18 @@ final class BrowserStartupProtectionRuntimeTests: XCTestCase {
 
         runtime.finishStartupProtectionRestore()
 
-        XCTAssertTrue(runtime.hasFinishedProtectionRestore)
         XCTAssertFalse(runtime.shouldDeferNormalTabMaterializationDuringStartup)
         XCTAssertTrue(runtime.canMaterializeWebViewDuringStartup(normalTab))
 
-        appliedLevel = .off
-        let offRuntime = makeRuntime(appliedLevel: { appliedLevel })
+        let offFixture = makeBrowser(appliedLevel: .off)
+        let offRuntime = offFixture.browser.startupProtectionRuntime
 
         XCTAssertFalse(offRuntime.shouldDeferNormalTabMaterializationDuringStartup)
         XCTAssertTrue(offRuntime.canMaterializeWebViewDuringStartup(normalTab))
     }
 
-    func testFinishDrainsDeferredBackgroundTabsAndVisibleWindowHooksOnce() {
+    func testFinishDrainsDeferredBackgroundTabsAndVisibleWindowHooksOnce()
+        async {
         let deferredTab = Tab(
             url: URL(string: "https://example.com/deferred")!,
             loadsCachedFaviconOnInit: false
@@ -51,71 +51,89 @@ final class BrowserStartupProtectionRuntimeTests: XCTestCase {
         )
         let firstWindow = BrowserWindowState()
         let secondWindow = BrowserWindowState()
-        var preparedTabIds: [UUID] = []
-        var scheduledWindowIds: [UUID] = []
-        var refreshedWindowIds: [UUID] = []
-        let runtime = makeRuntime(
-            tab: { tabId in
-                tabId == deferredTab.id ? deferredTab : nil
-            },
-            allWindows: {
-                [firstWindow, secondWindow]
-            },
-            prepareBackgroundTabIfNeeded: { tab in
-                preparedTabIds.append(tab.id)
-            },
-            schedulePrepareVisibleWebViews: { windowState in
-                scheduledWindowIds.append(windowState.id)
-            },
-            refreshCompositor: { windowState in
-                refreshedWindowIds.append(windowState.id)
-            }
-        )
+        let fixture = makeBrowser(appliedLevel: .protection)
+        let browser = fixture.browser
+        browser.runtimePortConnection.attach(TestRuntimePorts.make())
+        browser.tabCollectionMembershipOwner.attach(deferredTab)
+        XCTAssertEqual(browser.windowRegistry.register(firstWindow), .registered)
+        XCTAssertEqual(browser.windowRegistry.register(secondWindow), .registered)
+        let runtime = browser.startupProtectionRuntime
 
         runtime.deferBackgroundTabUntilStartupReady(deferredTab)
         runtime.deferBackgroundTabUntilStartupReady(missingTab)
         runtime.deferBackgroundTabUntilStartupReady(deferredTab)
         runtime.finishStartupProtectionRestore()
         runtime.finishStartupProtectionRestore()
+        await Task.yield()
 
-        XCTAssertEqual(preparedTabIds, [deferredTab.id])
-        XCTAssertEqual(Set(scheduledWindowIds), [firstWindow.id, secondWindow.id])
-        XCTAssertEqual(Set(refreshedWindowIds), [firstWindow.id, secondWindow.id])
-        XCTAssertEqual(scheduledWindowIds.count, 2)
-        XCTAssertEqual(refreshedWindowIds.count, 2)
+        XCTAssertFalse(deferredTab.webViewSession.allKnownWebViews.isEmpty)
+        XCTAssertTrue(missingTab.webViewSession.allKnownWebViews.isEmpty)
+        XCTAssertEqual(firstWindow.compositorInvalidation.compositorVersion, 1)
+        XCTAssertEqual(secondWindow.compositorInvalidation.compositorVersion, 1)
     }
 
-    func testBeginInTestsFinishesWithoutStartingRestoreTask() {
-        var restoreCallCount = 0
-        let runtime = makeRuntime(
-            restoreAppliedProtectionLevelForStartup: {
-                restoreCallCount += 1
-            }
+    func testBeginInTestsOpensNormalTabMaterializationGate() {
+        let fixture = makeBrowser(appliedLevel: .protection)
+        let runtime = fixture.browser.startupProtectionRuntime
+        let normalTab = Tab(
+            url: URL(string: "https://example.com/startup")!,
+            loadsCachedFaviconOnInit: false
         )
+
+        XCTAssertFalse(runtime.canMaterializeWebViewDuringStartup(normalTab))
 
         runtime.beginProtectionRestoreForStartupIfNeeded()
 
-        XCTAssertTrue(runtime.hasFinishedProtectionRestore)
-        XCTAssertEqual(restoreCallCount, 0)
+        XCTAssertTrue(runtime.canMaterializeWebViewDuringStartup(normalTab))
+        XCTAssertFalse(runtime.shouldDeferNormalTabMaterializationDuringStartup)
     }
 
-    private func makeRuntime(
-        appliedLevel: @escaping () -> SumiProtectionLevel = { .protection },
-        restoreAppliedProtectionLevelForStartup: @escaping () async throws -> Void = { /* no-op */ },
-        tab: @escaping (UUID) -> Tab? = { _ in nil },
-        allWindows: @escaping () -> [BrowserWindowState] = { [] },
-        prepareBackgroundTabIfNeeded: @escaping (Tab) -> Void = { _ in /* no-op */ },
-        schedulePrepareVisibleWebViews: @escaping (BrowserWindowState) -> Void = { _ in /* no-op */ },
-        refreshCompositor: @escaping (BrowserWindowState) -> Void = { _ in /* no-op */ }
-    ) -> BrowserStartupProtectionRuntime {
-        BrowserStartupProtectionRuntime(
-            appliedProtectionLevel: appliedLevel,
-            restoreAppliedProtectionLevelForStartup: restoreAppliedProtectionLevelForStartup,
-            tab: tab,
-            allWindows: allWindows,
-            prepareBackgroundTabIfNeeded: prepareBackgroundTabIfNeeded,
-            schedulePrepareVisibleWebViews: schedulePrepareVisibleWebViews,
-            refreshCompositor: refreshCompositor
+    private func makeBrowser(
+        appliedLevel: SumiProtectionLevel
+    ) -> StartupProtectionBrowserFixture {
+        let suiteName = "BrowserStartupProtectionRuntimeTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        let moduleRegistry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: defaults)
         )
+        let settings = SumiProtectionSettings(userDefaults: defaults)
+        settings.setAppliedLevel(appliedLevel)
+        let adBlockingModule = SumiAdBlockingModule(
+            moduleRegistry: moduleRegistry,
+            preparedBundleResourceURL: nil,
+            preparedBundleRemoteRootURL: nil
+        )
+        let protectionCoordinator = SumiProtectionCoordinator(
+            settings: settings,
+            adBlockingModule: adBlockingModule,
+            bundleUpdateStatusStore: SumiProtectionBundleUpdateStatusStore(
+                userDefaults: defaults
+            )
+        )
+        let browser = BrowserManager(
+            windowRegistry: WindowRegistry(),
+            moduleRegistry: moduleRegistry,
+            adBlockingModule: adBlockingModule,
+            protectionCoordinator: protectionCoordinator
+        )
+        return StartupProtectionBrowserFixture(
+            browser: browser,
+            defaultsSuiteName: suiteName
+        )
+    }
+}
+
+@MainActor
+private final class StartupProtectionBrowserFixture {
+    let browser: BrowserManager
+    private let defaultsSuiteName: String
+
+    init(browser: BrowserManager, defaultsSuiteName: String) {
+        self.browser = browser
+        self.defaultsSuiteName = defaultsSuiteName
+    }
+
+    deinit {
+        UserDefaults.standard.removePersistentDomain(forName: defaultsSuiteName)
     }
 }

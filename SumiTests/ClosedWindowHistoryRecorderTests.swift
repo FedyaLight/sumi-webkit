@@ -5,16 +5,25 @@ import XCTest
 @MainActor
 final class ClosedWindowHistoryRecorderTests: XCTestCase {
     func testMeaningfulRegularWindowIsRecordedWithResolvedTitleAndExactSnapshot() {
+        let browser = BrowserManager()
         let recentlyClosed = RecentlyClosedManager()
         let closingWindow = BrowserWindowState()
         let restoredSessionWindowId = UUID()
         closingWindow.restorationState.restoredSessionWindowID = restoredSessionWindowId
-        let closingSession = makeSessionRecoveryWindowSession(currentTabId: UUID())
+        let space = installTestSpace(
+            in: browser.spaceStateOwner,
+            name: "Closed Window Space"
+        )
+        let tab = browser.regularTabLifecycleOwner.createNewTab(
+            url: "https://closed.example",
+            in: space,
+            activate: false
+        )
+        tab.name = "Closed Window"
+        closingWindow.currentSpaceId = space.id
+        closingWindow.currentTabId = tab.id
         let recorder = makeRecorder(
-            sessions: [closingWindow.id: closingSession],
-            title: { windowState in
-                windowState.id == closingWindow.id ? "Closed Window" : "Other"
-            },
+            browser: browser,
             recentlyClosed: recentlyClosed
         )
 
@@ -26,18 +35,20 @@ final class ClosedWindowHistoryRecorderTests: XCTestCase {
         XCTAssertEqual(closedItem.sessionWindowId, restoredSessionWindowId)
         XCTAssertNotEqual(closedItem.id, restoredSessionWindowId)
         XCTAssertEqual(closedItem.title, "Closed Window")
-        XCTAssertEqual(closedItem.session, closingSession)
+        XCTAssertEqual(
+            closedItem.session,
+            WindowSessionSnapshotFactory(
+                glanceManager: browser.glanceManager
+            ).make(for: closingWindow)
+        )
     }
 
     func testFullyEmptyWindowIsNotRecorded() {
         let recentlyClosed = RecentlyClosedManager()
         let emptyWindow = BrowserWindowState()
-        let emptySession = makeSessionRecoveryWindowSession(
-            currentTabId: nil,
-            isShowingEmptyState: true
-        )
+        emptyWindow.isShowingEmptyState = true
         let recorder = makeRecorder(
-            sessions: [emptyWindow.id: emptySession],
+            browser: BrowserManager(),
             recentlyClosed: recentlyClosed
         )
 
@@ -50,10 +61,9 @@ final class ClosedWindowHistoryRecorderTests: XCTestCase {
         let recentlyClosed = RecentlyClosedManager()
         let incognitoWindow = BrowserWindowState()
         incognitoWindow.isIncognito = true
+        incognitoWindow.currentTabId = UUID()
         let recorder = makeRecorder(
-            sessions: [
-                incognitoWindow.id: makeSessionRecoveryWindowSession(currentTabId: UUID()),
-            ],
+            browser: BrowserManager(),
             recentlyClosed: recentlyClosed
         )
 
@@ -62,31 +72,40 @@ final class ClosedWindowHistoryRecorderTests: XCTestCase {
         XCTAssertTrue(recentlyClosed.items.isEmpty)
     }
 
-    func testMissingSnapshotDoesNotCreateHistoryItem() {
+    func testRestoredArchiveIdentityIsNotReplacedByRuntimeWindowID() {
+        let browser = BrowserManager()
         let recentlyClosed = RecentlyClosedManager()
-        let unmappableWindow = BrowserWindowState()
+        let window = BrowserWindowState()
+        let archiveID = UUID()
+        window.restorationState.restoredSessionWindowID = archiveID
+        window.currentTabId = UUID()
         let recorder = makeRecorder(
-            sessions: [:],
+            browser: browser,
             recentlyClosed: recentlyClosed
         )
 
-        recorder.recordWindowWillClose(unmappableWindow)
+        recorder.recordWindowWillClose(window)
 
-        XCTAssertTrue(recentlyClosed.items.isEmpty)
+        guard case .window(let closedItem)? = recentlyClosed.items.first else {
+            return XCTFail("Expected restored window history")
+        }
+        XCTAssertEqual(closedItem.sessionWindowId, archiveID)
+        XCTAssertNotEqual(closedItem.sessionWindowId, window.id)
     }
 
     private func makeRecorder(
-        sessions: [UUID: WindowSessionSnapshot],
-        title: @escaping @MainActor (BrowserWindowState) -> String = { _ in "Window" },
+        browser: BrowserManager,
         recentlyClosed: RecentlyClosedManager
     ) -> ClosedWindowHistoryRecorder {
         ClosedWindowHistoryRecorder(
-            openWindows: OpenWindowSessionCatalog(
-                allWindows: { [] },
-                makeWindowSessionSnapshot: { sessions[$0.id] }
+            snapshots: WindowSessionSnapshotFactory(
+                glanceManager: browser.glanceManager
             ),
-            windowDisplayTitle: title,
-            recentlyClosedManager: { recentlyClosed }
+            titles: ClosedWindowDisplayTitleProjection(
+                windowTabs: browser.windowTabContext,
+                spaces: browser.spaceStateOwner
+            ),
+            recentlyClosedManager: recentlyClosed
         )
     }
 }

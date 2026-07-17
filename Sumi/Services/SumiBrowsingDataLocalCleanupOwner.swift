@@ -27,6 +27,19 @@ final class SumiBrowsingDataLocalCleanupOwner {
         self.visitedLinkStore = visitedLinkStore
     }
 
+    func deleteBasicAuthCredentialsForProfileRetirement(
+        _ profileID: UUID
+    ) throws {
+        guard basicAuthCredentialStore.deleteCredentials(
+            profilePartitionId: profileID,
+            isEphemeralProfile: false
+        ) else {
+            throw SumiBrowsingDataLocalCleanupError.basicAuthDeletionFailed(
+                profileID
+            )
+        }
+    }
+
     func clearHistory(_ request: SumiBrowsingHistoryCleanupRequest) async {
         let query = request.query
         let range = request.range
@@ -187,4 +200,8 @@ final class SumiBrowsingDataLocalCleanupOwner {
         let urls = try await historyManager.store.fetchVisitedURLs(profileId: profileId)
         visitedLinkStore.replaceVisitedLinks(urls, for: profileId)
     }
+}
+
+enum SumiBrowsingDataLocalCleanupError: Error, Equatable {
+    case basicAuthDeletionFailed(UUID)
 }

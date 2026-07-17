@@ -1,12 +1,12 @@
 import Foundation
-import SumiDomain
 @testable import Sumi
+import SumiDomain
 import XCTest
 
 @MainActor
 final class BrowserWindowSpaceContextTransitionTests: XCTestCase {
     func testProgrammaticChangeCommitsContextBeforeThemeUpdate() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let tabManager = BrowserManager()
         let source = Space(name: "Source", profileId: UUID())
         let destination = Space(
             name: "Destination",
@@ -15,23 +15,13 @@ final class BrowserWindowSpaceContextTransitionTests: XCTestCase {
         )
         tabManager.spaceStateOwner.replaceSpaces([source, destination])
         let windowState = BrowserWindowState()
+        tabManager.tabResidenceAuthority.establishResidenceSession(
+            on: windowState
+        )
+        tabManager.windowRegistry.register(windowState)
         windowState.currentSpaceId = source.id
         windowState.currentProfileId = source.profileId
-        var events: [String] = []
-        var observedCommittedContext = false
-        let transition = makeTransition(
-            tabManager: tabManager,
-            sanitize: { _ in events.append("sanitize") },
-            syncShortcuts: { _ in events.append("shortcut-sync") },
-            updateTheme: { updatedWindow, theme, animate in
-                observedCommittedContext = updatedWindow.currentSpaceId == destination.id
-                    && updatedWindow.currentProfileId == destination.profileId
-                XCTAssertEqual(theme, destination.workspaceTheme)
-                XCTAssertTrue(animate)
-                events.append("theme")
-            },
-            finishInteractive: { _, _, _ in events.append("finish") }
-        )
+        let transition = makeTransition(tabManager: tabManager)
 
         transition.commitContext(destination, to: windowState)
         transition.completeVisualTransition(
@@ -40,12 +30,16 @@ final class BrowserWindowSpaceContextTransitionTests: XCTestCase {
             identity: nil
         )
 
-        XCTAssertTrue(observedCommittedContext)
-        XCTAssertEqual(events, ["theme"])
+        XCTAssertEqual(windowState.currentSpaceId, destination.id)
+        XCTAssertEqual(windowState.currentProfileId, destination.profileId)
+        XCTAssertEqual(
+            windowState.windowThemeState.targetTheme,
+            destination.workspaceTheme
+        )
     }
 
     func testInteractiveChangeFinishesOnlyMatchingVisualTransition() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let tabManager = BrowserManager()
         let source = Space(name: "Source", profileId: UUID())
         let destination = Space(
             name: "Destination",
@@ -54,6 +48,10 @@ final class BrowserWindowSpaceContextTransitionTests: XCTestCase {
         )
         tabManager.spaceStateOwner.replaceSpaces([source, destination])
         let windowState = BrowserWindowState()
+        tabManager.tabResidenceAuthority.establishResidenceSession(
+            on: windowState
+        )
+        tabManager.windowRegistry.register(windowState)
         windowState.currentSpaceId = source.id
         let identity = SpaceTransitionIdentity(
             sourceSpaceId: source.id,
@@ -65,20 +63,7 @@ final class BrowserWindowSpaceContextTransitionTests: XCTestCase {
             to: destination.workspaceTheme,
             initialProgress: 0.6
         )
-        var events: [String] = []
-        var finishedIdentity: SpaceTransitionIdentity?
-        let transition = makeTransition(
-            tabManager: tabManager,
-            sanitize: { _ in events.append("sanitize") },
-            syncShortcuts: { _ in events.append("shortcut-sync") },
-            updateTheme: { _, _, _ in events.append("theme") },
-            finishInteractive: { finishedSpace, updatedWindow, finished in
-                XCTAssertIdentical(finishedSpace, destination)
-                XCTAssertEqual(updatedWindow.currentSpaceId, destination.id)
-                finishedIdentity = finished
-                events.append("finish")
-            }
-        )
+        let transition = makeTransition(tabManager: tabManager)
 
         transition.commitContext(destination, to: windowState)
         transition.completeVisualTransition(
@@ -87,59 +72,46 @@ final class BrowserWindowSpaceContextTransitionTests: XCTestCase {
             identity: identity
         )
 
-        XCTAssertEqual(finishedIdentity, identity)
-        XCTAssertEqual(events, ["finish"])
+        XCTAssertEqual(windowState.currentSpaceId, destination.id)
+        XCTAssertEqual(
+            windowState.windowThemeState.committedTheme,
+            destination.workspaceTheme
+        )
+        XCTAssertNil(
+            windowState.windowThemeState.interactiveSpaceTransitionIdentity
+        )
     }
 
     func testPreservedSelectionRefreshSanitizesBeforeContextAndShortcutSync() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let tabManager = BrowserManager()
         let space = Space(name: "Current", profileId: UUID())
         tabManager.spaceStateOwner.replaceSpaces([space])
         let windowState = BrowserWindowState()
-        windowState.currentSpaceId = space.id
-        var events: [String] = []
-        var profileAtShortcutSync: UUID?
-        let transition = makeTransition(
-            tabManager: tabManager,
-            sanitize: { _ in events.append("sanitize") },
-            syncShortcuts: { updatedWindow in
-                profileAtShortcutSync = updatedWindow.currentProfileId
-                events.append("shortcut-sync")
-            },
-            updateTheme: { _, _, _ in events.append("theme") },
-            finishInteractive: { _, _, _ in events.append("finish") }
+        tabManager.tabResidenceAuthority.establishResidenceSession(
+            on: windowState
         )
+        tabManager.windowRegistry.register(windowState)
+        windowState.currentSpaceId = space.id
+        let transition = makeTransition(tabManager: tabManager)
 
         transition.sanitizePreservedSelection(in: windowState)
         transition.commitContext(space, to: windowState)
         transition.completePreservedSelectionRefresh(in: windowState)
 
-        XCTAssertEqual(profileAtShortcutSync, space.profileId)
-        XCTAssertEqual(events, ["sanitize", "shortcut-sync"])
+        XCTAssertEqual(windowState.currentProfileId, space.profileId)
     }
 
     private func makeTransition(
-        tabManager: TabManager,
-        sanitize: @escaping (BrowserWindowState) -> Void,
-        syncShortcuts: @escaping (BrowserWindowState) -> Void,
-        updateTheme: @escaping (BrowserWindowState, WorkspaceTheme, Bool) -> Void,
-        finishInteractive: @escaping (
-            Space,
-            BrowserWindowState,
-            SpaceTransitionIdentity
-        ) -> Void
+        tabManager: BrowserManager
     ) -> BrowserWindowSpaceContextTransition {
         BrowserWindowSpaceContextTransition(
             contextReconciler: BrowserWindowSpaceContextReconciler(
-                tabManager: tabManager,
-                commitWorkspaceTheme: { _, _ in
-                    XCTFail("Context synchronization must not commit a second theme")
-                }
+                membership: tabManager.tabCollectionMembershipOwner,
+                spaces: tabManager.spaceStateOwner
             ),
-            sanitizeFloatingBarState: sanitize,
-            syncShortcutSelectionState: syncShortcuts,
-            updateWorkspaceTheme: updateTheme,
-            finishInteractiveTransition: finishInteractive
+            floatingBar: tabManager.floatingBarPresentation,
+            selection: tabManager.browserTabSelection,
+            workspaceThemes: tabManager.workspaceThemeTransitionOwner
         )
     }
 }

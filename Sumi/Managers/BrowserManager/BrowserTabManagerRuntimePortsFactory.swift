@@ -14,12 +14,12 @@ enum BrowserTabManagerRuntimePortsFactory {
                 shellRuntime: browserManager.shellRuntime,
                 compositor: browserManager.compositorManager,
                 windowStateReconciler: browserManager.windowStateReconciler,
-                persistence: browserManager.windowSessionBundle.persistence,
+                persistence: browserManager.windowSessionPersistenceCoordinator,
                 workspaceThemes: browserManager.chromeBundle.workspaceThemeTransitionOwner
             ),
             splitCoordination: LiveTabSplitCoordinationPort(
-                tabClosures: browserManager.splitComposition.tabClosures,
-                query: browserManager.splitComposition.query
+                tabClosures: browserManager.splitTabClosures,
+                query: browserManager.splitQuery
             ),
             extensionLifecycle: LiveTabExtensionLifecyclePort(
                 extensions: browserManager.optionalModules.extensions.runtimeSurface

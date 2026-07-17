@@ -3,29 +3,19 @@ import Foundation
 /// Owns the exact tab lookup index and coalesced structural publication batch.
 @MainActor
 final class TabStructuralLookupCoordinator {
-    private let tabsBySpace: @MainActor () -> [UUID: [Tab]]
-    private let transientShortcutTabsByWindow: @MainActor () -> [UUID: [UUID: Tab]]
-    private let transientExtensionTabsByID: @MainActor () -> [UUID: Tab]
-    private let auxiliaryMiniWindowTabsByID: @MainActor () -> [UUID: Tab]
+    private let stateStore: TabStateStore
 
-    /// Exposed so `TabManager` can hand the same lookup index to
-    /// `TabCollectionMembershipOwner` and tear it down in `deinit`.
+    /// Shared by membership queries and deterministic session teardown.
     let lookupOwner: TabStructuralLookupOwner
     private let publishOwner: TabStructuralPublishOwner
 
     init(
         eventBus: TabStructureEventBus,
-        tabsBySpace: @escaping @MainActor () -> [UUID: [Tab]],
-        transientShortcutTabsByWindow: @escaping @MainActor () -> [UUID: [UUID: Tab]],
-        transientExtensionTabsByID: @escaping @MainActor () -> [UUID: Tab],
-        auxiliaryMiniWindowTabsByID: @escaping @MainActor () -> [UUID: Tab]
+        stateStore: TabStateStore
     ) {
         self.lookupOwner = TabStructuralLookupOwner()
         self.publishOwner = TabStructuralPublishOwner(eventBus: eventBus)
-        self.tabsBySpace = tabsBySpace
-        self.transientShortcutTabsByWindow = transientShortcutTabsByWindow
-        self.transientExtensionTabsByID = transientExtensionTabsByID
-        self.auxiliaryMiniWindowTabsByID = auxiliaryMiniWindowTabsByID
+        self.stateStore = stateStore
     }
 
     var batchFlushCount: Int { lookupOwner.batchFlushCount }
@@ -34,10 +24,13 @@ final class TabStructuralLookupCoordinator {
 
     private var structuralLookupSnapshot: TabStructuralLookupSnapshot {
         TabStructuralLookupSnapshot(
-            tabsBySpace: tabsBySpace(),
-            transientShortcutTabsByWindow: transientShortcutTabsByWindow(),
-            transientExtensionTabsByID: transientExtensionTabsByID(),
-            auxiliaryMiniWindowTabsByID: auxiliaryMiniWindowTabsByID()
+            tabsBySpace: stateStore.regularTabs.tabsBySpaceSnapshot(),
+            transientShortcutTabsByWindow:
+                stateStore.transientTabs.transientShortcutTabsByWindow,
+            transientExtensionTabsByID:
+                stateStore.transientTabs.transientExtensionTabsByID,
+            auxiliaryMiniWindowTabsByID:
+                stateStore.transientTabs.auxiliaryMiniWindowTabsByID
         )
     }
 
@@ -46,7 +39,9 @@ final class TabStructuralLookupCoordinator {
     }
 
     @discardableResult
-    func withTransaction<T>(_ operation: () throws -> T) rethrows -> T {
+    func withTransaction<T>(
+        _ operation: @MainActor @Sendable () throws -> T
+    ) rethrows -> T {
         try publishOwner.withTransaction(
             flushPendingLookupBatch: { self.flushPendingBatchIfNeeded() },
             operation

@@ -4,25 +4,22 @@ import Foundation
 /// preparation, and mutations deferred by a back/forward gesture.
 @MainActor
 final class BrowserWindowVisualCoordinator {
-    private let hasActiveHistorySwipe: @MainActor (UUID) -> Bool
-    private let currentTab: @MainActor (BrowserWindowState) -> Tab?
-    private let performImmediateVisualHandoff: @MainActor (UUID) -> Bool
-    private let prepareVisibleWebViewsHandler: @MainActor (BrowserWindowState) -> Bool
-    private let schedulePrepareVisibleWebViewsHandler: @MainActor (BrowserWindowState) -> Void
+    private let protection: WebViewProtectionRuntime
+    private let windowTabs: BrowserWindowTabContext
+    private let compositor: WebViewCompositorRuntime
+    private let visiblePreparation: WebViewVisiblePreparationService
     private let historySwipeMutations = HistorySwipeWindowMutationFlushOwner()
 
     init(
-        hasActiveHistorySwipe: @escaping @MainActor (UUID) -> Bool,
-        currentTab: @escaping @MainActor (BrowserWindowState) -> Tab?,
-        performImmediateVisualHandoffIfPossible: @escaping @MainActor (UUID) -> Bool,
-        prepareVisibleWebViews: @escaping @MainActor (BrowserWindowState) -> Bool,
-        schedulePrepareVisibleWebViews: @escaping @MainActor (BrowserWindowState) -> Void
+        protection: WebViewProtectionRuntime,
+        windowTabs: BrowserWindowTabContext,
+        compositor: WebViewCompositorRuntime,
+        visiblePreparation: WebViewVisiblePreparationService
     ) {
-        self.hasActiveHistorySwipe = hasActiveHistorySwipe
-        self.currentTab = currentTab
-        self.performImmediateVisualHandoff = performImmediateVisualHandoffIfPossible
-        self.prepareVisibleWebViewsHandler = prepareVisibleWebViews
-        self.schedulePrepareVisibleWebViewsHandler = schedulePrepareVisibleWebViews
+        self.protection = protection
+        self.windowTabs = windowTabs
+        self.compositor = compositor
+        self.visiblePreparation = visiblePreparation
     }
 
     func refreshCompositor(for windowState: BrowserWindowState) {
@@ -41,12 +38,14 @@ final class BrowserWindowVisualCoordinator {
         in windowState: BrowserWindowState
     ) -> Bool {
         guard !isBackForwardGestureActive(in: windowState) else { return false }
-        return performImmediateVisualHandoff(windowState.id)
+        return compositor.performImmediateVisualHandoffIfPossible(
+            in: windowState.id
+        )
     }
 
     @discardableResult
     func prepareVisibleWebViews(for windowState: BrowserWindowState) -> Bool {
-        prepareVisibleWebViewsHandler(windowState)
+        visiblePreparation.prepare(for: windowState)
     }
 
     func schedulePrepareVisibleWebViews(for windowState: BrowserWindowState) {
@@ -57,7 +56,7 @@ final class BrowserWindowVisualCoordinator {
             )
             return
         }
-        schedulePrepareVisibleWebViewsHandler(windowState)
+        visiblePreparation.schedule(for: windowState)
     }
 
     func enqueueWindowMutationDuringHistorySwipe(
@@ -70,8 +69,8 @@ final class BrowserWindowVisualCoordinator {
     func flushWindowMutationsAfterHistorySwipe(in windowId: UUID) {
         historySwipeMutations.flushPendingMutations(
             in: windowId,
-            prepareVisibleWebViews: { [prepareVisibleWebViewsHandler] windowState in
-                prepareVisibleWebViewsHandler(windowState)
+            prepareVisibleWebViews: { [visiblePreparation] windowState in
+                visiblePreparation.prepare(for: windowState)
             },
             refreshCompositor: { windowState in
                 windowState.compositorInvalidation.refresh()
@@ -86,10 +85,12 @@ final class BrowserWindowVisualCoordinator {
     private func isBackForwardGestureActive(
         in windowState: BrowserWindowState
     ) -> Bool {
-        if hasActiveHistorySwipe(windowState.id) {
+        if protection.hasActiveHistorySwipe(in: windowState.id) {
             return true
         }
-        guard let currentTab = currentTab(windowState) else { return false }
+        guard let currentTab = windowTabs.currentTab(for: windowState) else {
+            return false
+        }
         let navigation = currentTab.navigationRuntime.navigationTransactionOwner
         return navigation.pendingMainFrameNavigationKind == .backForward
             || navigation.isFreezingNavDuringBackForwardGesture

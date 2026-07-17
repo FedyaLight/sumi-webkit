@@ -114,16 +114,22 @@ final class TabLastSessionMergeTests: XCTestCase {
     }
 
     func testMaterializerCommitsOneStructuralTransactionWithCanonicalTabOrder() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let fixture = try LastSessionFixture()
+        let tabManager = fixture.manager
         let profileId = UUID()
-        let existingSpace = tabManager.spaceServices.catalog.createSpace(
+        let existingSpace = Space(
             name: "Existing",
             profileId: profileId
         )
-        let existingTab = tabManager.regularTabLifecycleOwner.createNewTab(
-            url: "https://example.com/existing",
-            in: existingSpace
+        let existingTab = tabManager.tabFactory.makeTab(
+            url: URL(string: "https://example.com/existing")!,
+            spaceId: existingSpace.id
         )
+        tabManager.stateStore.spaces.replaceSpaces([existingSpace])
+        tabManager.stateStore.regularTabs.replaceTabsBySpace([
+            existingSpace.id: [existingTab],
+        ])
+        fixture.membership.attach(existingTab)
         let restoredSpaceId = UUID()
         let restoredProfileId = UUID()
         let firstRestoredTabId = UUID()
@@ -132,7 +138,7 @@ final class TabLastSessionMergeTests: XCTestCase {
         let cancellable = tabManager.tabStructureEventBus.structureChangedPublisher.sink { _ in
             structuralEventCount += 1
         }
-        let batchFlushesBefore = tabManager.structuralLookupCoordinator.batchFlushCount
+        let batchFlushesBefore = fixture.structuralLookup.batchFlushCount
         structuralEventCount = 0
 
         let snapshot = TabPersistenceSnapshot(
@@ -171,50 +177,94 @@ final class TabLastSessionMergeTests: XCTestCase {
             )
         )
 
-        tabManager.lastSessionMergeMaterializer.merge(snapshot)
+        fixture.merge.merge(snapshot)
 
         XCTAssertEqual(structuralEventCount, 1)
-        XCTAssertEqual(tabManager.structuralLookupCoordinator.batchFlushCount, batchFlushesBefore + 1)
-        XCTAssertEqual(tabManager.spaceStateOwner.spaces.map(\.id), [restoredSpaceId, existingSpace.id])
-        XCTAssertTrue(tabManager.spaceStateOwner.spaces.last === existingSpace)
+        XCTAssertEqual(fixture.structuralLookup.batchFlushCount, batchFlushesBefore + 1)
+        XCTAssertEqual(tabManager.stateStore.spaces.spaces.map(\.id), [restoredSpaceId, existingSpace.id])
+        XCTAssertTrue(tabManager.stateStore.spaces.spaces.last === existingSpace)
         XCTAssertEqual(existingSpace.name, "Existing Updated")
         XCTAssertEqual(
-            tabManager.regularTabCollectionStateOwner.tabs(in: restoredSpaceId).map(\.id),
+            tabManager.stateStore.regularTabs.tabs(in: restoredSpaceId).map(\.id),
             [firstRestoredTabId, secondRestoredTabId]
         )
         XCTAssertEqual(
-            tabManager.regularTabCollectionStateOwner.tabs(in: restoredSpaceId).map(\.index),
+            tabManager.stateStore.regularTabs.tabs(in: restoredSpaceId).map(\.index),
             [0, 1]
         )
         XCTAssertEqual(
-            tabManager.regularTabCollectionStateOwner.tabs(in: restoredSpaceId).map(\.profileId),
+            tabManager.stateStore.regularTabs.tabs(in: restoredSpaceId).map(\.profileId),
             [restoredProfileId, restoredProfileId]
         )
         XCTAssertTrue(
-            tabManager.regularTabCollectionStateOwner.tabs(in: existingSpace.id).first === existingTab
+            tabManager.stateStore.regularTabs.tabs(in: existingSpace.id).first === existingTab
         )
-        XCTAssertEqual(tabManager.spaceStateOwner.currentSpaceId, restoredSpaceId)
-        XCTAssertEqual(tabManager.selectionStateOwner.currentTabId, secondRestoredTabId)
+        XCTAssertEqual(tabManager.stateStore.spaces.currentSpaceId, restoredSpaceId)
+        XCTAssertEqual(tabManager.stateStore.selection.currentTabId, secondRestoredTabId)
         XCTAssertEqual(
-            tabManager.tabCollectionMembershipOwner.tab(for: firstRestoredTabId)?.spaceId,
+            fixture.membership.tab(for: firstRestoredTabId)?.spaceId,
             restoredSpaceId
         )
         withExtendedLifetime(cancellable) {}
     }
 
+    func testMaterializerRejectsUnavailableAdmissionBeforeFirstMutation() throws {
+        let fixture = try LastSessionFixture(
+            profileReferenceAdmission: .failClosed()
+        )
+        let tabManager = fixture.manager
+        let profileID = UUID()
+        let spaceID = UUID()
+        let revisionBefore = fixture.structuralLookup.mutationRevision
+        let snapshot = TabPersistenceSnapshot(
+            spaces: [space(
+                id: spaceID,
+                name: "Blocked",
+                index: 0,
+                profileId: profileID
+            )],
+            tabs: [regularTab(
+                id: UUID(),
+                spaceId: spaceID,
+                index: 0,
+                profileId: profileID
+            )],
+            folders: [],
+            state: .init(currentTabID: nil, currentSpaceID: spaceID)
+        )
+
+        XCTAssertFalse(fixture.merge.merge(snapshot))
+        XCTAssertTrue(tabManager.stateStore.spaces.spaces.isEmpty)
+        XCTAssertTrue(
+            tabManager.stateStore.regularTabs
+                .tabsBySpaceSnapshot()
+                .isEmpty
+        )
+        XCTAssertEqual(
+            fixture.structuralLookup.mutationRevision,
+            revisionBefore
+        )
+    }
+
     func testStartupResetRetiresEveryRegularTabAndClearsSelection() throws {
         var retiredTabIds = Set<UUID>()
-        let tabManager = try makeInMemoryTabManager()
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Space", profileId: UUID())
-        let first = tabManager.regularTabLifecycleOwner.createNewTab(
-            url: "https://example.com/one",
-            in: space
+        let fixture = try LastSessionFixture()
+        let tabManager = fixture.manager
+        let space = Space(name: "Space", profileId: UUID())
+        let first = tabManager.tabFactory.makeTab(
+            url: URL(string: "https://example.com/one")!,
+            spaceId: space.id
         )
-        let second = tabManager.regularTabLifecycleOwner.createNewTab(
-            url: "https://example.com/two",
-            in: space,
-            activate: false
+        let second = tabManager.tabFactory.makeTab(
+            url: URL(string: "https://example.com/two")!,
+            spaceId: space.id
         )
+        tabManager.stateStore.spaces.replaceSpaces([space])
+        tabManager.stateStore.regularTabs.replaceTabsBySpace([
+            space.id: [first, second],
+        ])
+        fixture.membership.attach(first)
+        fixture.membership.attach(second)
         for tab in [first, second] {
             var cleanupRuntime = TabWebViewCleanupRuntime.inactive
             cleanupRuntime.removeAllWebViews = {
@@ -234,27 +284,33 @@ final class TabLastSessionMergeTests: XCTestCase {
             tab.navigationRuntime.webViewCleanupRuntime = cleanupRuntime
         }
         space.activeTabId = first.id
-        tabManager.selectionStateOwner.replaceCurrentTab(first)
+        tabManager.stateStore.selection.replaceCurrentTab(first)
 
-        tabManager.startupStateReset.resetRegularTabsAndShortcutLiveInstances()
+        fixture.startupReset.resetRegularTabsAndShortcutLiveInstances()
 
         XCTAssertEqual(retiredTabIds, [first.id, second.id])
-        XCTAssertTrue(tabManager.regularTabCollectionStateOwner.tabs(in: space.id).isEmpty)
-        XCTAssertNil(tabManager.selectionStateOwner.currentTab)
+        XCTAssertTrue(tabManager.stateStore.regularTabs.tabs(in: space.id).isEmpty)
+        XCTAssertNil(tabManager.stateStore.selection.currentTab)
         XCTAssertNil(space.activeTabId)
-        XCTAssertNil(tabManager.tabCollectionMembershipOwner.tab(for: first.id))
-        XCTAssertNil(tabManager.tabCollectionMembershipOwner.tab(for: second.id))
+        XCTAssertNil(fixture.membership.tab(for: first.id))
+        XCTAssertNil(fixture.membership.tab(for: second.id))
     }
 
     func testStartupResetDoesNotCommitWhenPhysicalCleanupIsBlocked() throws {
-        let tabManager = try makeInMemoryTabManager()
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Space")
-        let tab = tabManager.regularTabLifecycleOwner.createNewTab(
-            url: "https://example.com/blocked",
-            in: space
+        let fixture = try LastSessionFixture()
+        let tabManager = fixture.manager
+        let space = Space(name: "Space")
+        let tab = tabManager.tabFactory.makeTab(
+            url: URL(string: "https://example.com/blocked")!,
+            spaceId: space.id
         )
+        tabManager.stateStore.spaces.replaceSpaces([space])
+        tabManager.stateStore.regularTabs.replaceTabsBySpace([
+            space.id: [tab],
+        ])
+        fixture.membership.attach(tab)
         space.activeTabId = tab.id
-        tabManager.selectionStateOwner.replaceCurrentTab(tab)
+        tabManager.stateStore.selection.replaceCurrentTab(tab)
         var cleanupRuntime = TabWebViewCleanupRuntime.inactive
         cleanupRuntime.removeAllWebViews = { _, _, _ in
             WebViewTabTeardownResult(
@@ -267,18 +323,183 @@ final class TabLastSessionMergeTests: XCTestCase {
         }
         tab.navigationRuntime.webViewCleanupRuntime = cleanupRuntime
 
-        tabManager.startupStateReset.resetRegularTabsAndShortcutLiveInstances()
+        fixture.startupReset.resetRegularTabsAndShortcutLiveInstances()
 
         XCTAssertEqual(
-            tabManager.regularTabCollectionStateOwner.tabs(in: space.id).map(\.id),
+            tabManager.stateStore.regularTabs.tabs(in: space.id).map(\.id),
             [tab.id]
         )
-        XCTAssertIdentical(tabManager.selectionStateOwner.currentTab, tab)
+        XCTAssertIdentical(tabManager.stateStore.selection.currentTab, tab)
         XCTAssertEqual(space.activeTabId, tab.id)
         XCTAssertIdentical(
-            tabManager.tabCollectionMembershipOwner.tab(for: tab.id),
+            fixture.membership.tab(for: tab.id),
             tab
         )
+    }
+}
+
+@MainActor
+private final class LastSessionFixture {
+    let manager: TabManager
+    let merge: TabLastSessionMergeMaterializer
+    let startupReset: TabStartupStateReset
+    let membership: TabCollectionMembershipOwner
+    let structuralLookup: TabStructuralLookupCoordinator
+
+    init(
+        profileReferenceAdmission: ProfileReferenceAdmissionLedger? = nil
+    ) throws {
+        let container = try makeInMemoryStartupModelContainer()
+        let eventBus = TabStructureEventBus()
+        let manager = TabManager(
+            context: container.mainContext,
+            webViewSessions: WebViewSessionRepository(),
+            profileReferenceAdmission: try profileReferenceAdmission
+                ?? ProfileReferenceAdmissionLedger(context: container.mainContext),
+            loadPersistedState: false,
+            tabStructureEventBus: eventBus
+        )
+        let state = manager.stateStore
+        let connection = manager.runtimePortConnection
+        let runtimePreparation = TabRuntimePreparationOwner(
+            runtimeConnection: connection
+        )
+        let structuralLookup = TabStructuralLookupCoordinator(
+            eventBus: eventBus,
+            stateStore: state
+        )
+        let membership = TabCollectionMembershipOwner(
+            structuralLookupOwner: structuralLookup.lookupOwner,
+            state: state,
+            runtimePreparation: runtimePreparation,
+            runtimeConnection: connection
+        )
+        let mutationPublisher = TabStructuralMutationPublisher(
+            persistence: manager.structuralPersistence,
+            faviconService: manager.faviconService,
+            lookup: structuralLookup,
+            changes: manager.objectWillChange,
+            regularTabs: state.regularTabs
+        )
+        let structuralMutations = TabStructuralCollectionMutationOwner(
+            store: TabStructuralCollectionStore(
+                regularTabs: state.regularTabs,
+                folders: state.folders,
+                shortcutPins: state.shortcutPins
+            ),
+            snapshots: TabStructuralCollectionSnapshotStore(
+                regularTabs: state.regularTabs,
+                folders: state.folders,
+                shortcutPins: state.shortcutPins
+            ),
+            publisher: mutationPublisher
+        )
+        let lazyRestore = TabLazyRestoreCoordinator(
+            spaces: state.spaces,
+            regularTabs: state.regularTabs,
+            membership: membership
+        )
+        let spacePinnedOrder = SpacePinnedOrderTransaction(
+            folders: state.folders,
+            pins: state.shortcutPins,
+            mutations: structuralMutations
+        )
+        let spacePinnedStructure = SpacePinnedStructureOwner(
+            folders: state.folders,
+            pins: state.shortcutPins,
+            splitGroups: state.splitGroups,
+            orderTransaction: spacePinnedOrder
+        )
+        let runtimeTeardown = TabRuntimeTeardownService(
+            persistence: manager.structuralPersistence,
+            membership: membership,
+            webViewSessions: manager.tabFactory.webViewSessions
+        )
+        let liveShortcutTabs = LiveShortcutTabRegistry(
+            storage: state.transientTabs,
+            structuralLookup: structuralLookup
+        )
+        let liveShortcutRetirement = LiveShortcutTabBatchRetirement(
+            storage: state.transientTabs,
+            structuralLookup: structuralLookup
+        )
+        let splitMutations = SplitGroupMutationService(
+            store: state.splitGroups,
+            publication: mutationPublisher
+        )
+
+        let merge = TabLastSessionMergeMaterializer(
+            planning: TabLastSessionMergePlanningService(
+                planner: TabLastSessionMergePlanner(),
+                snapshotter: TabLastSessionLiveStateSnapshotter(
+                    spaces: state.spaces,
+                    folders: state.folders,
+                    shortcutPins: state.shortcutPins,
+                    regularTabs: state.regularTabs
+                )
+            ),
+            profileAdmission: TabLastSessionProfileAdmissionTransaction(
+                ledger: manager.profileReferenceAdmission
+            ),
+            structuralLookup: structuralLookup,
+            commitTransaction: TabLastSessionMergeCommitTransaction(
+                spaces: TabLastSessionSpaceMaterializer(
+                    spaces: state.spaces,
+                    persistence: manager.structuralPersistence,
+                    changes: manager.objectWillChange
+                ),
+                folders: TabLastSessionFolderMaterializer(
+                    structuralMutations: structuralMutations
+                ),
+                shortcuts: TabLastSessionShortcutMaterializer(
+                    structuralMutations: structuralMutations,
+                    spacePinnedStructure: spacePinnedStructure
+                ),
+                regularTabs: TabLastSessionRegularTabMaterializer(
+                    structuralMutations: structuralMutations,
+                    membership: membership,
+                    tabFactory: manager.tabFactory
+                ),
+                selection: TabLastSessionSelectionMaterializer(
+                    spaces: state.spaces,
+                    selection: state.selection
+                )
+            ),
+            settlement: TabLastSessionMergeSettlement(
+                lazyRestore: lazyRestore,
+                persistence: manager.structuralPersistence
+            )
+        )
+
+        let startupReset = TabStartupStateReset(
+            structuralLookup: structuralLookup,
+            runtimeReset: TabStartupRuntimeResetTransaction(
+                state: state,
+                liveShortcutTabs: liveShortcutTabs,
+                runtimeConnection: connection,
+                runtimeTeardown: runtimeTeardown
+            ),
+            splitGroupReset: TabStartupSplitGroupResetTransaction(
+                store: state.splitGroups,
+                mutations: splitMutations
+            ),
+            regularCollectionReset: TabStartupRegularCollectionResetTransaction(
+                state: state,
+                structuralMutations: structuralMutations,
+                persistence: manager.structuralPersistence
+            ),
+            transientStateReset: TabStartupTransientStateResetTransaction(
+                lazyRestore: lazyRestore,
+                liveShortcutRetirement: liveShortcutRetirement
+            )
+        )
+
+        self.manager = manager
+        self.merge = merge
+        self.startupReset = startupReset
+        self.membership = membership
+        self.structuralLookup = structuralLookup
+        connection.attach(TestRuntimePorts.inactive)
     }
 }
 

@@ -6,7 +6,7 @@ import Foundation
 /// restore offer).
 @MainActor
 final class RecentlyClosedItemReopenService {
-    private let recentlyClosedItems: @MainActor () -> RecentlyClosedManager
+    private let recentlyClosedItems: RecentlyClosedManager
     private let startupRestore: any BrowserStartupSessionRestoreProviding
     private let tabRestore: ClosedTabRestoreService
     private let shortcutRestore: ClosedShortcutRestoreService
@@ -21,7 +21,7 @@ final class RecentlyClosedItemReopenService {
     }
 
     init(
-        recentlyClosedItems: @escaping @MainActor () -> RecentlyClosedManager,
+        recentlyClosedItems: RecentlyClosedManager,
         startupRestore: any BrowserStartupSessionRestoreProviding,
         tabRestore: ClosedTabRestoreService,
         shortcutRestore: ClosedShortcutRestoreService,
@@ -35,7 +35,7 @@ final class RecentlyClosedItemReopenService {
     }
 
     func reopenMostRecentItem() {
-        guard let item = recentlyClosedItems().mostRecentItem else { return }
+        guard let item = recentlyClosedItems.mostRecentItem else { return }
         reopen(item)
     }
 
@@ -71,7 +71,7 @@ final class RecentlyClosedItemReopenService {
 
     private func finalizeIfRestored(_ didRestore: Bool, item: RecentlyClosedItem) {
         guard didRestore else { return }
-        recentlyClosedItems().remove(item)
+        recentlyClosedItems.remove(item)
         startupRestore.markRestoreOfferConsumed()
     }
 }

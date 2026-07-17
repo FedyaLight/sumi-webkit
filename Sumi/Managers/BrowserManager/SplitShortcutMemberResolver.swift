@@ -12,12 +12,11 @@ enum SplitShortcutMemberResolver {
         memberID: SplitMemberID,
         in group: SumiDomain.SplitGroup,
         windowState: BrowserWindowState,
-        tabManager: TabManager
+        pins: ShortcutPinCollectionStateOwner
     ) -> SplitShortcutMemberResolution? {
         guard case .shortcutPin(let pinID) = memberID,
               let member = group.member(for: memberID),
-              tabManager.shortcutPinCollectionStateOwner
-                .shortcutPin(by: pinID) != nil else {
+              pins.shortcutPin(by: pinID) != nil else {
             return nil
         }
         return SplitShortcutMemberResolution(member: member)

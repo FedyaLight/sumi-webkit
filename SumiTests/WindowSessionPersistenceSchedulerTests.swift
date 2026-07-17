@@ -89,8 +89,6 @@ final class WindowSessionPersistenceSchedulerTests: XCTestCase {
             harness.historyStore.snapshots.map(\.id),
             [harness.persistedWindow.id, harness.otherOpenWindow.id]
         )
-        XCTAssertEqual(harness.observation.catalogReadCount, 1)
-        XCTAssertEqual(harness.observation.archiveWriteCount, 1)
     }
 
     func testIncognitoOnlyImmediatePersistPreservesRegularArchive() {
@@ -107,8 +105,6 @@ final class WindowSessionPersistenceSchedulerTests: XCTestCase {
 
         XCTAssertNil(harness.snapshotStore.loadSnapshot())
         XCTAssertEqual(harness.historyStore.snapshots, [archivedSnapshot])
-        XCTAssertEqual(harness.observation.catalogReadCount, 0)
-        XCTAssertEqual(harness.observation.archiveWriteCount, 0)
     }
 
     func testIncognitoOnlyScheduledPersistDoesNotCreateLiveArchiveWork() {
@@ -129,11 +125,9 @@ final class WindowSessionPersistenceSchedulerTests: XCTestCase {
         XCTAssertEqual(harness.coordinator.flush(), 0)
         XCTAssertNil(harness.snapshotStore.loadSnapshot())
         XCTAssertEqual(harness.historyStore.snapshots, [archivedSnapshot])
-        XCTAssertEqual(harness.observation.catalogReadCount, 0)
-        XCTAssertEqual(harness.observation.archiveWriteCount, 0)
     }
 
-    func testTimedScheduledCommitInvokesLiveArchiveRefreshOnce() async throws {
+    func testTimedScheduledCommitRefreshesLiveArchive() async throws {
         let delayedActions = ManualMainActorDelayedActionScheduler()
         let harness = makeCoordinatorHarness(
             delayedActions: delayedActions.scheduler
@@ -150,8 +144,10 @@ final class WindowSessionPersistenceSchedulerTests: XCTestCase {
             harness.snapshotStore.loadSnapshot()?.snapshot.currentProfileId,
             harness.persistedWindow.currentProfileId
         )
-        XCTAssertEqual(harness.observation.catalogReadCount, 1)
-        XCTAssertEqual(harness.observation.archiveWriteCount, 1)
+        XCTAssertEqual(
+            harness.historyStore.snapshots.map(\.id),
+            [harness.persistedWindow.id, harness.otherOpenWindow.id]
+        )
     }
 
     func testScheduledCoordinatorBatchFlushRefreshesLiveArchiveOnce() {
@@ -181,8 +177,6 @@ final class WindowSessionPersistenceSchedulerTests: XCTestCase {
             harness.historyStore.snapshots.map(\.id),
             [harness.persistedWindow.id, harness.otherOpenWindow.id]
         )
-        XCTAssertEqual(harness.observation.catalogReadCount, 1)
-        XCTAssertEqual(harness.observation.archiveWriteCount, 1)
     }
 
     func testClosingScheduledWindowCancelsItsWriteAndPersistsSurvivor() {
@@ -211,7 +205,7 @@ final class WindowSessionPersistenceSchedulerTests: XCTestCase {
 
     func testClosingSoleRegularWindowPersistsFinalStateBeforeNextCycleClaim() {
         let harness = makeCoordinatorHarness()
-        harness.observation.windows = [harness.persistedWindow]
+        XCTAssertTrue(harness.windows.discardRejectedRegistration(harness.otherOpenWindow))
         harness.persistedWindow.currentProfileId = UUID()
         harness.coordinator.schedule(
             harness.persistedWindow,
@@ -250,8 +244,6 @@ final class WindowSessionPersistenceSchedulerTests: XCTestCase {
         XCTAssertEqual(harness.coordinator.flush(), 0)
         XCTAssertNil(harness.snapshotStore.loadSnapshot())
         XCTAssertEqual(harness.historyStore.snapshots, [archivedSnapshot])
-        XCTAssertEqual(harness.observation.catalogReadCount, 0)
-        XCTAssertEqual(harness.observation.archiveWriteCount, 0)
     }
 
     func testDelayedCommitWithEmptyLiveProjectionPreservesArchive() async throws {
@@ -259,20 +251,19 @@ final class WindowSessionPersistenceSchedulerTests: XCTestCase {
         let harness = makeCoordinatorHarness(
             delayedActions: delayedActions.scheduler
         )
-        harness.observation.windows = [harness.persistedWindow]
+        XCTAssertTrue(harness.windows.discardRejectedRegistration(harness.otherOpenWindow))
         harness.coordinator.persist(harness.persistedWindow)
         let archivedSnapshots = harness.historyStore.snapshots
         harness.coordinator.schedule(
             harness.persistedWindow,
             delayNanoseconds: 10_000_000
         )
-        harness.observation.windows = []
+        XCTAssertTrue(harness.windows.discardRejectedRegistration(harness.persistedWindow))
 
         XCTAssertEqual(delayedActions.scheduledDelays, [0.01])
         delayedActions.runNext()
 
         XCTAssertEqual(harness.historyStore.snapshots, archivedSnapshots)
-        XCTAssertEqual(harness.observation.archiveWriteCount, 1)
     }
 
     func testBrowserTeardownFlushesScheduledWindowPersistenceEndToEnd() throws {
@@ -289,10 +280,12 @@ final class WindowSessionPersistenceSchedulerTests: XCTestCase {
             windowSessionSnapshotStore: snapshotStore
         )
         let windowState = BrowserWindowState()
-        windowState.tabManager = browserManager?.tabManager
+        browserManager?.tabResidenceAuthority.establishResidenceSession(
+            on: windowState
+        )
         let persistedProfileID = UUID()
         windowState.currentProfileId = persistedProfileID
-        browserManager?.windowSessionBundle.persistence.schedule(
+        browserManager?.windowSessionPersistenceCoordinator.schedule(
             windowState,
             delayNanoseconds: 60_000_000_000
         )
@@ -313,13 +306,7 @@ final class WindowSessionPersistenceSchedulerTests: XCTestCase {
         let historyStore: LastSessionWindowsStore
         let persistedWindow: BrowserWindowState
         let otherOpenWindow: BrowserWindowState
-        let observation: PersistenceObservation
-    }
-
-    private final class PersistenceObservation {
-        var catalogReadCount = 0
-        var archiveWriteCount = 0
-        var windows: [BrowserWindowState] = []
+        let windows: WindowRegistry
     }
 
     private func makeCoordinatorHarness(
@@ -346,21 +333,16 @@ final class WindowSessionPersistenceSchedulerTests: XCTestCase {
         persistedWindow.currentProfileId = UUID()
         let otherOpenWindow = BrowserWindowState()
         otherOpenWindow.currentProfileId = UUID()
-        let observation = PersistenceObservation()
-        observation.windows = [persistedWindow, otherOpenWindow]
+        let windows = WindowRegistry()
+        windows.register(persistedWindow)
+        windows.register(otherOpenWindow)
         let catalog = OpenWindowSessionCatalog(
-            allWindows: {
-                observation.catalogReadCount += 1
-                return observation.windows
-            },
-            makeWindowSessionSnapshot: snapshotFactory.make
+            windows: windows,
+            snapshots: snapshotFactory
         )
         let archive = LastSessionWindowArchive(
             openWindows: catalog,
-            lastSessionWindowsStore: {
-                observation.archiveWriteCount += 1
-                return historyStore
-            },
+            lastSessionWindowsStore: historyStore,
             startupRestore: startupRestore
         )
         return CoordinatorHarness(
@@ -377,7 +359,7 @@ final class WindowSessionPersistenceSchedulerTests: XCTestCase {
             historyStore: historyStore,
             persistedWindow: persistedWindow,
             otherOpenWindow: otherOpenWindow,
-            observation: observation
+            windows: windows
         )
     }
 

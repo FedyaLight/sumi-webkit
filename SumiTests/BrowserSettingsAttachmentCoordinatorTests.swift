@@ -73,12 +73,11 @@ final class BrowserSettingsAttachmentCoordinatorTests: XCTestCase {
         coordinator.attach(harness.settings)
         await waitUntil {
             harness.backgroundMediaEnergySaverReadCount == 1
-                && harness.automaticCleanupRetentionReadCount == 1
+                && harness.automaticCleanupScheduleCount == 1
         }
 
         XCTAssertEqual(harness.backgroundMediaEnergySaverReadCount, 1)
-        XCTAssertEqual(harness.appliedStartupModes, [.nothing])
-        XCTAssertEqual(harness.automaticCleanupRetentionReadCount, 1)
+        XCTAssertEqual(harness.automaticCleanupScheduleCount, 1)
     }
 
     func testAttachNilStillRunsReconciliationSideEffects() async throws {
@@ -87,34 +86,35 @@ final class BrowserSettingsAttachmentCoordinatorTests: XCTestCase {
         coordinator.attach(harness.settings)
         await waitUntil {
             harness.backgroundMediaEnergySaverReadCount == 1
-                && harness.automaticCleanupRetentionReadCount == 1
+                && harness.automaticCleanupScheduleCount == 1
         }
 
         coordinator.attach(nil)
         await waitUntil {
             harness.backgroundMediaEnergySaverReadCount == 2
-                && harness.automaticCleanupRetentionReadCount == 2
+                && harness.automaticCleanupScheduleCount == 1
         }
 
         XCTAssertNil(harness.downloadManager.settings)
         XCTAssertEqual(harness.backgroundMediaEnergySaverReadCount, 2)
-        XCTAssertEqual(harness.automaticCleanupRetentionReadCount, 2)
-        // Startup policy intentionally applies at most once per process.
-        XCTAssertEqual(harness.appliedStartupModes, [.nothing])
+        XCTAssertEqual(harness.automaticCleanupScheduleCount, 1)
     }
 
     @MainActor
     private final class Harness {
-        let downloadManager = DownloadManager.unavailable()
-        let tabSuspension = TabSuspensionController(memoryMonitor: nil)
-        let backgroundMedia = SumiBackgroundMediaOptimizationService()
-        let startupSessionRestore: BrowserStartupSessionRestoreOwner
+        let browserManager: BrowserManager
         let settings: SumiSettingsService
-        private let startupWindowState = BrowserWindowState()
+        private let automaticCleanup = RecordingBrowsingDataCleanupScheduler()
         private var defaultsSuiteNames: [String] = []
         private(set) var backgroundMediaEnergySaverReadCount = 0
-        private(set) var appliedStartupModes: [SumiStartupMode] = []
-        private(set) var automaticCleanupRetentionReadCount = 0
+
+        var downloadManager: DownloadManager { browserManager.downloadManager }
+        var tabSuspension: TabSuspensionController {
+            browserManager.tabSuspensionController
+        }
+        var automaticCleanupScheduleCount: Int {
+            automaticCleanup.requests.count
+        }
 
         init() throws {
             let defaults = try Self.makeDefaults(
@@ -122,10 +122,24 @@ final class BrowserSettingsAttachmentCoordinatorTests: XCTestCase {
                 register: &defaultsSuiteNames
             )
             self.settings = SumiSettingsService(userDefaults: defaults)
-            self.startupSessionRestore = BrowserStartupSessionRestoreOwner(
-                lastSessionWindowsStore: LastSessionWindowsStore(userDefaults: defaults)
+            let unavailable = BrowserManagerDataServices.unavailable()
+            self.browserManager = BrowserManager(
+                dataServices: BrowserManagerDataServices(
+                    websiteDataCleanupService: unavailable.websiteDataCleanupService,
+                    browsingDataCleanupService: unavailable.browsingDataCleanupService,
+                    automaticBrowsingDataCleanupService: automaticCleanup,
+                    siteDataPolicyStore: unavailable.siteDataPolicyStore,
+                    siteDataPolicyEnforcementService: unavailable.siteDataPolicyEnforcementService,
+                    faviconService: unavailable.faviconService,
+                    faviconCapabilities: unavailable.faviconCapabilities,
+                    visitedLinkStore: unavailable.visitedLinkStore,
+                    historyFaviconCleaner: unavailable.historyFaviconCleaner,
+                    historyVisitedLinkStore: unavailable.historyVisitedLinkStore,
+                    privacyService: unavailable.privacyService,
+                    profileWebsiteDataMutationService: unavailable.profileWebsiteDataMutationService
+                )
             )
-            backgroundMedia.attach(
+            browserManager.backgroundMediaOptimizationService.attach(
                 runtime: SumiBackgroundMediaOptimizationRuntime(
                     liveWebViewEntries: { _ in [] },
                     energySaverActive: { [weak self] in
@@ -145,34 +159,7 @@ final class BrowserSettingsAttachmentCoordinatorTests: XCTestCase {
         }
 
         func makeCoordinator() -> BrowserSettingsAttachmentCoordinator {
-            let startupSessionRestore = startupSessionRestore
-            let startupWindowState = startupWindowState
-            return BrowserSettingsAttachmentCoordinator(
-                downloadManager: downloadManager,
-                tabSuspension: tabSuspension,
-                backgroundMedia: backgroundMedia,
-                reconcileStartupSession: { [weak self] in
-                    startupSessionRestore.reconcileIfReady(
-                        hasLoadedInitialTabData: { true },
-                        startupMode: { .nothing },
-                        startupWindow: { [startupWindowState] in startupWindowState },
-                        applyStartupPolicy: { mode in
-                            self?.appliedStartupModes.append(mode)
-                        }
-                    )
-                },
-                automaticDataCleanup: BrowserAutomaticDataCleanupOwner(
-                    permissionRuntime: { nil },
-                    dataServices: { nil },
-                    retentionPeriod: { [weak self] in
-                        self?.automaticCleanupRetentionReadCount += 1
-                        return nil
-                    },
-                    historyManager: { nil },
-                    profiles: { [] },
-                    currentProfileId: { nil }
-                )
-            )
+            browserManager.settingsAttachment
         }
 
         func makeReplacementSettings() throws -> SumiSettingsService {
@@ -190,6 +177,20 @@ final class BrowserSettingsAttachmentCoordinatorTests: XCTestCase {
             let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
             register.append(suiteName)
             return defaults
+        }
+    }
+
+    @MainActor
+    private final class RecordingBrowsingDataCleanupScheduler:
+        BrowsingDataCleanupScheduling {
+        private(set) var requests: [SumiBrowsingDataCleanupScheduleRequest] = []
+
+        func attachDestructiveCleanupPreparer(
+            _: (any SumiDestructiveBrowsingDataCleanupPreparing)?
+        ) {}
+
+        func scheduleIfNeeded(_ request: SumiBrowsingDataCleanupScheduleRequest) {
+            requests.append(request)
         }
     }
 

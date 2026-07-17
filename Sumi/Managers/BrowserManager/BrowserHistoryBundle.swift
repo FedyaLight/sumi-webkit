@@ -18,7 +18,7 @@ final class BrowserHistoryBundle {
 
     init(browserManager: BrowserManager) {
         self.historyNavigationOwner = BrowserHistoryNavigationOwner(
-            activeWindow: { [weak browserManager] in browserManager?.windowRegistry?.activeWindow },
+            activeWindow: { [weak browserManager] in browserManager?.windowRegistry.activeWindow },
             activePage: { [weak browserManager] windowState in
                 browserManager?.shellRuntime.activePageResolver
                     .resolve(in: windowState)
@@ -32,7 +32,7 @@ final class BrowserHistoryBundle {
                 )
             },
             openNewTab: { [weak browserManager] url, context in
-                browserManager?.tabLifecycleService.opening.openNewTab(url: url, context: context)
+                browserManager?.tabOpening.openNewTab(url: url, context: context)
             },
             loadCurrentPageURL: { [weak browserManager] tab, windowState, url in
                 browserManager?.webViewRoutingService.loadPage(
@@ -43,18 +43,18 @@ final class BrowserHistoryBundle {
                 )
             },
             windowIds: { [weak browserManager] in
-                browserManager?.windowRegistry.map { Array($0.windows.keys) } ?? []
+                browserManager.map { Array($0.windowRegistry.windows.keys) } ?? []
             },
             createNewWindow: { [weak browserManager] in
                 browserManager?.windowCommands.createNewWindow()
             },
             awaitNextRegisteredWindow: { [weak browserManager] existingWindowIDs in
-                await browserManager?.windowRegistry?.awaitNextRegisteredWindow(
+                await browserManager?.windowRegistry.awaitNextRegisteredWindow(
                     excluding: existingWindowIDs
                 )
             },
             scheduleRuntimeStatePersistence: { [weak browserManager] tab in
-                browserManager?.tabManager.structuralPersistence.scheduleRuntimeStatePersistence(for: tab)
+                browserManager?.structuralPersistence.scheduleRuntimeStatePersistence(for: tab)
             },
             schedulePrepareVisibleWebViews: { [weak browserManager] windowState in
                 browserManager?.shellRuntime.windowVisuals.schedulePrepareVisibleWebViews(for: windowState)

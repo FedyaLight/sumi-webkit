@@ -7,13 +7,13 @@ extension BrowserSettingsAttachmentCoordinator {
     @MainActor
     static func live(browserManager: BrowserManager) -> BrowserSettingsAttachmentCoordinator {
         BrowserSettingsAttachmentCoordinator(
+            settingsState: browserManager.settingsState,
             downloadManager: browserManager.downloadManager,
             tabSuspension: browserManager.tabSuspensionController,
             backgroundMedia: browserManager.backgroundMediaOptimizationService,
-            reconcileStartupSession: { [weak browserManager] in
-                browserManager?.reconcileStartupSessionIfPossible()
-            },
-            automaticDataCleanup: browserManager.privacyBundle.automaticDataCleanupOwner
+            startupReconciliation: browserManager.startupSessionReconciliation,
+            automaticDataCleanup: browserManager.privacyBundle
+                .automaticBrowsingDataCleanup
         )
     }
 }

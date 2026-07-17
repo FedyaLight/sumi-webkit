@@ -12,38 +12,34 @@ enum WebKitChildTabResidence {
 enum WebKitChildTabRollback {
     static func discard(
         _ tab: Tab,
-        webView: WKWebView,
+        webView: WKWebView?,
         residence: WebKitChildTabResidence,
         sourceWindow: BrowserWindowState,
-        tabs: TabManager
+        residences: BrowserTabResidenceAuthority
     ) {
-        let admission: ExactTabResidenceAdmission?
         switch residence {
         case .regular(let spaceID):
-            admission = ExactTabResidenceAdmission.regular(
-                tab,
-                in: spaceID,
-                tabs: tabs
-            )
+            guard sourceWindow.isIncognito == false,
+                  tab.spaceId == spaceID else { return }
         case .ephemeral:
-            admission = ExactTabResidenceAdmission.ephemeral(
-                tab,
-                in: sourceWindow
-            )
+            guard sourceWindow.isIncognito else { return }
         }
-        guard let admission else { return }
+        guard let admission = residences.admitRemoval(
+            of: tab,
+            from: sourceWindow
+        ) else { return }
 
-        tabs.structuralPersistence.cancelRuntimeStatePersistence(for: tab.id)
-        tab.cleanupCloneWebView(webView)
-        guard admission.remove(
-            tabs: tabs,
+        if let webView {
+            tab.cleanupCloneWebView(webView)
+        }
+        guard residences.commitRemoval(
+            admission,
             currentSpaceID: sourceWindow.currentSpaceId
         ) else { return }
 
         switch residence {
         case .regular:
-            tabs.tabCollectionMembershipOwner.detach(tab)
-            tabs.structuralPersistence.scheduleStructuralPersistence()
+            break
         case .ephemeral(let previousTabID):
             if sourceWindow.currentTabId == tab.id {
                 sourceWindow.currentTabId = previousTabID

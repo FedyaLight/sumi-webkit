@@ -10,7 +10,7 @@ struct BrowserLinkPrivateWindowRollbackReceipt {
     let profile: Profile
     let space: Space
     let tab: Tab
-    let tabManagerIdentifier: ObjectIdentifier
+    let residences: BrowserTabResidenceAuthority
     let childWindowIdentity: WebKitChildWindowIdentity?
 
     init(
@@ -18,27 +18,25 @@ struct BrowserLinkPrivateWindowRollbackReceipt {
         profile: Profile,
         space: Space,
         tab: Tab,
-        tabs: TabManager
+        residences: BrowserTabResidenceAuthority
     ) {
         self.window = window
         windowID = window.id
         self.profile = profile
         self.space = space
         self.tab = tab
-        tabManagerIdentifier = ObjectIdentifier(tabs)
+        self.residences = residences
         childWindowIdentity = window.webKitChildWindowIdentity
     }
 
     func admits(
         _ candidateWindow: BrowserWindowState,
-        tabs: TabManager,
         profiles: ProfileManager
     ) -> Bool {
         candidateWindow === window
             && candidateWindow.id == windowID
             && candidateWindow.isIncognito
-            && candidateWindow.tabManager === tabs
-            && ObjectIdentifier(tabs) == tabManagerIdentifier
+            && residences.owns(candidateWindow)
             && profiles.hasEphemeralProfileLease(
                 profile,
                 forWindowID: windowID
@@ -62,17 +60,16 @@ struct BrowserLinkPrivateWindowRollbackReceipt {
     @discardableResult
     func commitRollbackAggregate(
         in candidateWindow: BrowserWindowState,
-        tabs: TabManager,
         profiles: ProfileManager
     ) -> Bool {
-        guard admits(candidateWindow, tabs: tabs, profiles: profiles) else {
+        guard admits(candidateWindow, profiles: profiles) else {
             return false
         }
-        return candidateWindow.rollbackUnpublishedPrivateAggregate(
+        return residences.rollbackUnpublishedPrivateAggregate(
+            in: candidateWindow,
             expectedProfile: profile,
             expectedSpace: space,
             expectedTab: tab,
-            expectedTabManager: tabs,
             expectedChildWindowIdentity: childWindowIdentity
         )
     }

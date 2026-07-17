@@ -33,7 +33,7 @@ final class BrowserHistoryClearCommand {
                 alert.addButton(withTitle: "Cancel")
                 if let keyWindow = NSApp.keyWindow {
                     alert.sumiApplyNativeSurfaceAppearance(
-                        windowState: browserManager?.windowRegistry?.windowState(
+                        windowState: browserManager?.windowRegistry.windowState(
                             containing: keyWindow
                         ),
                         settings: browserManager?.sumiSettings

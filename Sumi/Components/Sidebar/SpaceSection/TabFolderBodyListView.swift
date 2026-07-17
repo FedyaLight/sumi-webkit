@@ -20,7 +20,9 @@ struct TabFolderBodyListView: View {
     let inventory: SidebarSpaceInventorySnapshot
     let selection: SidebarWindowSelectionQuery
     let pinProjection: SidebarPinFolderProjection
-    let pinCommands: SidebarPinFolderCommands
+    let pinCommands: SidebarPinCommands
+    let pinExecution: SidebarPinExecutionCommands
+    let folderCommands: SidebarFolderCommands
     let spaceLifecycle: SidebarSpaceLifecycle
     @Binding var shortcutRestoreSession: SpaceShortcutRestoreInteractionSession
     let elevatedFolderIds: Set<UUID>
@@ -65,6 +67,8 @@ struct TabFolderBodyListView: View {
                                 selection: selection,
                                 pinProjection: pinProjection,
                                 pinCommands: pinCommands,
+                                pinExecution: pinExecution,
+                                folderCommands: folderCommands,
                                 spaceLifecycle: spaceLifecycle,
                                 shortcutRestoreSession: $shortcutRestoreSession,
                                 elevatedFolderIDs: elevatedFolderIds,
@@ -245,5 +249,4 @@ struct TabFolderBodyListView: View {
                 in: windowState
             )
     }
-
 }

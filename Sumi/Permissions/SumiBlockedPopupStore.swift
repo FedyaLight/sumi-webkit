@@ -98,9 +98,12 @@ final class SumiBlockedPopupStore: ObservableObject {
     @Published private(set) var recordsByPageId: [String: [SumiBlockedPopupRecord]] = [:]
 
     private var duplicateIndexByPageId: [String: [String: String]] = [:]
+    private var retiredProfileIDs: Set<String> = []
 
     @discardableResult
     func record(_ record: SumiBlockedPopupRecord) -> SumiBlockedPopupRecord {
+        guard retiredProfileIDs.contains(record.profilePartitionId) == false
+        else { return record }
         let pageId = normalizedId(record.pageId)
         let duplicateIdentity = record.duplicateIdentity
         if let existingId = duplicateIndexByPageId[pageId]?[duplicateIdentity],
@@ -149,6 +152,44 @@ final class SumiBlockedPopupStore: ObservableObject {
             removed += clear(pageId: pageId)
         }
         return removed
+    }
+
+    @discardableResult
+    func clear(profilePartitionId: String) -> Int {
+        let profileID = SumiPermissionKey.normalizedProfilePartitionId(
+            profilePartitionId
+        )
+        var removed = 0
+        for pageID in Array(recordsByPageId.keys) {
+            guard var records = recordsByPageId[pageID] else { continue }
+            let originalCount = records.count
+            records.removeAll { $0.profilePartitionId == profileID }
+            removed += originalCount - records.count
+            recordsByPageId[pageID] = records.isEmpty ? nil : records
+            rebuildDuplicateIndex(forPageId: pageID)
+        }
+        return removed
+    }
+
+    @discardableResult
+    func retireProfile(_ profilePartitionId: String) -> Int {
+        let profileID = SumiPermissionKey.normalizedProfilePartitionId(
+            profilePartitionId
+        )
+        retiredProfileIDs.insert(profileID)
+        return clear(profilePartitionId: profileID)
+    }
+
+    private func rebuildDuplicateIndex(forPageId pageID: String) {
+        guard let records = recordsByPageId[pageID] else {
+            duplicateIndexByPageId.removeValue(forKey: pageID)
+            return
+        }
+        duplicateIndexByPageId[pageID] = Dictionary(
+            uniqueKeysWithValues: records.map {
+                ($0.duplicateIdentity, $0.id)
+            }
+        )
     }
 
     private func normalizedId(_ value: String) -> String {

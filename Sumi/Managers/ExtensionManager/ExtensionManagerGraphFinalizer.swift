@@ -171,6 +171,12 @@ enum ExtensionManagerGraphFinalizer {
                 control: lifetimeControl,
                 websiteDataQuiescence:
                     assembled.contexts.websiteDataQuiescence,
+                profileRetirement: ExtensionProfileRuntimeRetirement(
+                    profileRuntime: f.runtime.profileRuntime,
+                    websiteDataQuiescence:
+                        assembled.contexts.websiteDataQuiescence,
+                    controllerProvisioning: assembled.controller.provisioning
+                ),
                 testTaskDrain: ExtensionRuntimeTaskDrain(
                     deferredRuntimeOwners:
                         assembled.normalTabs.deferredRuntimeOwners,
@@ -199,7 +205,13 @@ enum ExtensionManagerGraphFinalizer {
                 publicationLifetime: assembled.contexts.publicationLifetime,
                 control: lifetimeControl,
                 websiteDataQuiescence:
-                    assembled.contexts.websiteDataQuiescence
+                    assembled.contexts.websiteDataQuiescence,
+                profileRetirement: ExtensionProfileRuntimeRetirement(
+                    profileRuntime: f.runtime.profileRuntime,
+                    websiteDataQuiescence:
+                        assembled.contexts.websiteDataQuiescence,
+                    controllerProvisioning: assembled.controller.provisioning
+                )
             )
             let actionGraph = ExtensionActionUIGraph(
                 surfaceLifetime: assembled.actions.surfaceLifetime,

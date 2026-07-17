@@ -11,12 +11,14 @@ enum BrowserNativeNowPlayingRuntimeFactory {
     private static func runtime(
         for browserManager: BrowserManager
     ) -> SumiNativeNowPlayingBrowserRuntime {
-        SumiNativeNowPlayingBrowserRuntime(
+        let membership = browserManager
+            .tabCollectionMembershipOwner
+        return SumiNativeNowPlayingBrowserRuntime(
             windowStates: { [weak browserManager] in
-                browserManager?.windowRegistry.map { Array($0.windows.values) } ?? []
+                browserManager.map { Array($0.windowRegistry.windows.values) } ?? []
             },
             windowState: { [weak browserManager] windowId in
-                browserManager?.windowRegistry?.windows[windowId]
+                browserManager?.windowRegistry.windows[windowId]
             },
             windowRegistry: { [weak browserManager] in
                 browserManager?.windowRegistry
@@ -27,8 +29,8 @@ enum BrowserNativeNowPlayingRuntimeFactory {
             mediaCandidateTabs: { [weak browserManager] windowState in
                 browserManager?.shellRuntime.windowTabs.windowScopedMediaCandidateTabs(in: windowState) ?? []
             },
-            tab: { [weak browserManager] tabId in
-                browserManager?.tabManager.tabCollectionMembershipOwner.tab(for: tabId)
+            tab: { [membership] tabId in
+                membership.tab(for: tabId)
             },
             resolvedNowPlayingWebView: { [weak browserManager] tab, windowState in
                 guard let browserManager else { return nil }

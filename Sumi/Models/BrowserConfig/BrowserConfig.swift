@@ -6,9 +6,9 @@
 
 import AppKit
 import ObjectiveC.runtime
+import SumiWebRuntime
 import SwiftUI
 import WebKit
-import SumiWebRuntime
 
 enum BrowserConfigurationAuxiliarySurface: String, CaseIterable {
     case glance
@@ -145,8 +145,7 @@ class BrowserConfiguration {
             .makeController(
                 scriptsProvider: userScriptsProvider,
                 contentBlockingService: contentBlockingService,
-                contentBlockingServices: additionalContentBlockingServices,
-                profileId: profile.id
+                contentBlockingServices: additionalContentBlockingServices
             )
         applyAutoplayPolicy(
             autoplayPolicy ?? resolvedAutoplayPolicy(for: url, profile: profile),

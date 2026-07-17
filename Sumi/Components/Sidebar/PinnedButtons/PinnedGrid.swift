@@ -38,7 +38,8 @@ struct PinnedGrid: View {
     let items: [ShortcutPin]
     let selection: SidebarWindowSelectionQuery
     let pinProjection: SidebarPinFolderProjection
-    let pinCommands: SidebarPinFolderCommands
+    let pinCommands: SidebarPinCommands
+    let pinExecution: SidebarPinExecutionCommands
     let spaceLifecycle: SidebarSpaceLifecycle
     let spaceId: UUID?
     let profileId: UUID?
@@ -59,7 +60,8 @@ struct PinnedGrid: View {
         items: [ShortcutPin],
         selection: SidebarWindowSelectionQuery,
         pinProjection: SidebarPinFolderProjection,
-        pinCommands: SidebarPinFolderCommands,
+        pinCommands: SidebarPinCommands,
+        pinExecution: SidebarPinExecutionCommands,
         spaceLifecycle: SidebarSpaceLifecycle,
         spaceId: UUID? = nil,
         profileId: UUID? = nil,
@@ -75,6 +77,7 @@ struct PinnedGrid: View {
         self.selection = selection
         self.pinProjection = pinProjection
         self.pinCommands = pinCommands
+        self.pinExecution = pinExecution
         self.spaceLifecycle = spaceLifecycle
         self.spaceId = spaceId
         self.profileId = profileId
@@ -88,7 +91,9 @@ struct PinnedGrid: View {
         let shouldReduceMotion = reduceMotion || sumiSettings.shouldReduceChromeMotion
 
         // Use profile-filtered essentials
-        let effectiveProfileId = profileId ?? windowState.currentProfileId ?? browserContext.currentProfile()?.id
+        let effectiveProfileId = profileId
+            ?? windowState.currentProfileId
+            ?? browserContext.profileAuthority.currentProfile?.id
         let layout = PinnedGridLayoutModel(
             width: width,
             items: items,
@@ -215,7 +220,7 @@ struct PinnedGrid: View {
                 accessibilityID: "essential-split-placeholder-\(pin.id.uuidString)",
                 isAppKitInteractionEnabled: isAppKitInteractionEnabled,
                 onActivate: {
-                    browserContext.commands.focusSplitGroup(
+                    browserContext.splitFocusCommands.focusGroup(
                         placeholderGroup.id,
                         .shortcutPin(pin.id),
                         windowState.id
@@ -310,14 +315,15 @@ struct PinnedGrid: View {
     }
 
     private func activate(_ pin: ShortcutPin) {
-        guard let tab = pinCommands.materialize(
+        guard let tab = pinExecution.materialize(
             pin,
             in: windowState,
             currentSpaceID: windowState.currentSpaceId
         ) else { return }
-        browserContext.commands.requestUserTabActivation(
+        browserContext.tabSelection.requestUserTabActivation(
             tab,
-            windowState
+            in: windowState,
+            loadPolicy: .immediate
         )
     }
 
@@ -328,6 +334,7 @@ struct PinnedGrid: View {
             selection: selection,
             pinProjection: pinProjection,
             pinCommands: pinCommands,
+            pinExecution: pinExecution,
             spaceLifecycle: spaceLifecycle,
             windowState: windowState,
             themeContext: themeContext,

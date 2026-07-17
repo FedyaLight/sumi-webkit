@@ -34,7 +34,22 @@ required_files=(
   Sumi/Managers/TabManager/TabLastSessionMergePlan.swift
   Sumi/Managers/TabManager/TabLastSessionMergePlanner.swift
   Sumi/Managers/TabManager/TabLastSessionMergeMaterializer.swift
+  Sumi/Managers/TabManager/TabLastSessionLiveStateSnapshotter.swift
+  Sumi/Managers/TabManager/TabLastSessionMergePlanningService.swift
+  Sumi/Managers/TabManager/TabLastSessionProfileAdmissionTransaction.swift
+  Sumi/Managers/TabManager/TabLastSessionSpaceMaterializer.swift
+  Sumi/Managers/TabManager/TabLastSessionFolderMaterializer.swift
+  Sumi/Managers/TabManager/TabLastSessionShortcutMaterializer.swift
+  Sumi/Managers/TabManager/TabLastSessionRegularTabMaterializer.swift
+  Sumi/Managers/TabManager/TabLastSessionSelectionMaterializer.swift
+  Sumi/Managers/TabManager/TabLastSessionMergeCommitTransaction.swift
+  Sumi/Managers/TabManager/TabLastSessionMergeSettlement.swift
   Sumi/Managers/TabManager/TabStartupStateReset.swift
+  Sumi/Managers/TabManager/PreparedTabStartupRuntimeReset.swift
+  Sumi/Managers/TabManager/TabStartupRuntimeResetTransaction.swift
+  Sumi/Managers/TabManager/TabStartupSplitGroupResetTransaction.swift
+  Sumi/Managers/TabManager/TabStartupRegularCollectionResetTransaction.swift
+  Sumi/Managers/TabManager/TabStartupTransientStateResetTransaction.swift
 )
 
 for file in "${required_files[@]}"; do
@@ -42,6 +57,7 @@ for file in "${required_files[@]}"; do
 done
 
 legacy_files=(
+  Sumi/Managers/TabManager/TabManager+OwnerAccessors.swift
   Sumi/Managers/TabManager/TabSnapshotRepository.swift
   Sumi/Managers/TabManager/TabStructuralPersistenceOwner.swift
   Sumi/Managers/TabManager/TabStoreRestoreOwner.swift
@@ -82,13 +98,6 @@ runtime_store_manager_init_hits="$(
 )"
 fail_matches "runtime tab store recovered a TabManager service-locator initializer" "$runtime_store_manager_init_hits"
 
-persistence_forwarder_hits="$(
-  guard_capture_matches \
-    'var (runtimeStore|structuralPersistence|storeRestore):' \
-    Sumi/Managers/TabManager/TabManager+OwnerAccessors.swift
-)"
-fail_matches "persistence component hidden behind a forwarding accessor" "$persistence_forwarder_hits"
-
 startup_restore_forwarder_hits="$(
   guard_capture_matches \
     '\b(var|func) (hasLoadedInitialData|didStartPersistedStateLoad|markInitialDataLoadStarted|markInitialDataLoadFinished|startPersistedStateLoadIfNeeded|startPersistedStateLoadAfterRuntimeAttachmentIfConfigured)\b' \
@@ -96,21 +105,33 @@ startup_restore_forwarder_hits="$(
 )"
 fail_matches "startup restore lifecycle leaked back onto TabManager" "$startup_restore_forwarder_hits"
 
-direct_component_patterns=(
-  'lazy var runtimeStore([:]|[[:space:]])'
-  'let structuralPersistence:'
-  'lazy var storeRestore([:]|[[:space:]])'
-  'lazy var startupStateReset([:]|[[:space:]])'
-  'lazy var lastSessionMergeMaterializer([:]|[[:space:]])'
-)
+tab_manager_persistence_surface_hits="$(
+  guard_capture_matches \
+    '(lazy[[:space:]]+var|let|var)[[:space:]]+(runtimeStore|storeRestore|startupStateReset|lastSessionMergeMaterializer)\b' \
+    Sumi/Managers/TabManager/TabManager.swift
+)"
+fail_matches "assembled persistence behavior returned to TabManager" "$tab_manager_persistence_surface_hits"
 
-for pattern in "${direct_component_patterns[@]}"; do
-  if (( $(
-    guard_count_matches \
-      "$pattern" \
-      Sumi/Managers/TabManager/TabManager.swift
-  ) == 0 )); then
-    guard_record_failure "direct TabManager persistence component missing: $pattern"
+if (( $(
+  guard_count_matches \
+    'let structuralPersistence:' \
+    Sumi/Managers/TabManager/TabManager.swift
+) != 1 )); then
+  guard_record_failure "TabManager must retain exactly one base structural persistence mechanism"
+fi
+
+composition_root='Sumi/BrowserRuntime/BrowserCompositionRoot+TabSession.swift'
+guard_require_file "$composition_root"
+eager_persistence_contracts=(
+  'let runtimeStore = DefaultTabRuntimeStore\('
+  'let storeRestore = TabStoreRestoreService\('
+  'let startupStateReset = TabStartupStateReset\('
+  'let lastSessionMergeMaterializer = TabLastSessionMergeMaterializer\('
+)
+for pattern in "${eager_persistence_contracts[@]}"; do
+  count="$(guard_count_matches "$pattern" "$composition_root")"
+  if (( count != 1 )); then
+    guard_record_failure "eager persistence composition changed: $pattern ($count != 1)"
   fi
 done
 
@@ -182,8 +203,23 @@ bounded_files=(
   Sumi/Managers/TabManager/TabStartupRestoreLifecycle.swift:100
   Sumi/Managers/TabManager/TabLastSessionMergePlan.swift:160
   Sumi/Managers/TabManager/TabLastSessionMergePlanner.swift:340
-  Sumi/Managers/TabManager/TabLastSessionMergeMaterializer.swift:360
-  Sumi/Managers/TabManager/TabStartupStateReset.swift:120
+  Sumi/Managers/TabManager/TabLastSessionMergeMaterializer.swift:100
+  Sumi/Managers/TabManager/TabLastSessionLiveStateSnapshotter.swift:140
+  Sumi/Managers/TabManager/TabLastSessionMergePlanningService.swift:50
+  Sumi/Managers/TabManager/TabLastSessionProfileAdmissionTransaction.swift:60
+  Sumi/Managers/TabManager/TabLastSessionSpaceMaterializer.swift:100
+  Sumi/Managers/TabManager/TabLastSessionFolderMaterializer.swift:100
+  Sumi/Managers/TabManager/TabLastSessionShortcutMaterializer.swift:100
+  Sumi/Managers/TabManager/TabLastSessionRegularTabMaterializer.swift:120
+  Sumi/Managers/TabManager/TabLastSessionSelectionMaterializer.swift:60
+  Sumi/Managers/TabManager/TabLastSessionMergeCommitTransaction.swift:80
+  Sumi/Managers/TabManager/TabLastSessionMergeSettlement.swift:50
+  Sumi/Managers/TabManager/TabStartupStateReset.swift:100
+  Sumi/Managers/TabManager/PreparedTabStartupRuntimeReset.swift:20
+  Sumi/Managers/TabManager/TabStartupRuntimeResetTransaction.swift:100
+  Sumi/Managers/TabManager/TabStartupSplitGroupResetTransaction.swift:100
+  Sumi/Managers/TabManager/TabStartupRegularCollectionResetTransaction.swift:80
+  Sumi/Managers/TabManager/TabStartupTransientStateResetTransaction.swift:60
   Sumi/Managers/TabManager/TabManager.swift:220
 )
 

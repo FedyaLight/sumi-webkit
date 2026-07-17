@@ -87,7 +87,7 @@ private final class SumiCommandsBrowserManagerAdapter:
     }
 
     func hasCustomizableSpaceForCommands() -> Bool {
-        browserManager?.tabManager.spaceStateOwner.currentSpace != nil
+        browserManager?.spaceStateOwner.currentSpace != nil
     }
 
     func openSettingsTab(selecting pane: SettingsTabs, in windowState: BrowserWindowState?) {
@@ -117,11 +117,11 @@ private final class SumiCommandsBrowserManagerAdapter:
     }
 
     func closeCurrentTab() {
-        browserManager?.tabLifecycleService.closeOrchestration.closeCurrentTab()
+        browserManager?.tabCloseOrchestration.closeCurrentTab()
     }
 
     func closeCurrentTab(in windowState: BrowserWindowState) {
-        browserManager?.tabLifecycleService.closeOrchestration.closeCurrentTab(in: windowState)
+        browserManager?.tabCloseOrchestration.closeCurrentTab(in: windowState)
     }
 
     func closeActiveWindow() {
@@ -137,9 +137,7 @@ private final class SumiCommandsBrowserManagerAdapter:
     }
 
     func openNewTabSurfaceInActiveWindow() {
-        // Menu "new tab" executes through the same shortcut-action routing
-        // surface as the keyboard shortcut, which owns the command handler.
-        browserManager?.shortcutActionRouter.openNewTabSurfaceInActiveWindow()
+        browserManager?.shortcutActionRouter.execute(.newTab)
     }
 
     func createNewWindow() {

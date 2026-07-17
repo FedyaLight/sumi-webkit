@@ -6,21 +6,21 @@ import Foundation
 final class ShortcutPinRegularConversionTransaction {
     private let promotion: ShortcutTabPromotionService
     private let splitMutations: SplitGroupMutationService
-    private let removePin: (ShortcutPin) -> Void
-    private let schedulePersistence: () -> Void
+    private let pinStore: ShortcutPinStoreOwner
+    private let persistence: TabStructuralPersistenceService
     private let structuralLookup: TabStructuralLookupCoordinator
 
     init(
         promotion: ShortcutTabPromotionService,
         splitMutations: SplitGroupMutationService,
-        removePin: @escaping (ShortcutPin) -> Void,
-        schedulePersistence: @escaping () -> Void,
+        pinStore: ShortcutPinStoreOwner,
+        persistence: TabStructuralPersistenceService,
         structuralLookup: TabStructuralLookupCoordinator
     ) {
         self.promotion = promotion
         self.splitMutations = splitMutations
-        self.removePin = removePin
-        self.schedulePersistence = schedulePersistence
+        self.pinStore = pinStore
+        self.persistence = persistence
         self.structuralLookup = structuralLookup
     }
 
@@ -30,37 +30,42 @@ final class ShortcutPinRegularConversionTransaction {
         split: ShortcutPinRegularSplitTransition?
     ) -> Bool {
         var prepared: PreparedShortcutTabPromotion?
-        let applyPromotion: @MainActor () -> Void = { [self] in
-            prepared = promotion.commit(
+        let applyPromotion: @MainActor () -> Bool = { [self] in
+            guard let committedPromotion = promotion.commit(
                 plan,
                 splitTransition: split?.windows ?? .none
-            )
-            removePin(pin)
+            ) else { return false }
+            prepared = committedPromotion
+            pinStore.removeFromContainers(pin)
+            return true
         }
 
         let committed: Bool
         switch split?.mutation {
         case .replace(let expected, let replacement):
-            committed = splitMutations.replace(
+            committed = splitMutations.replaceAtomically(
                 expected,
                 with: replacement,
                 persist: false,
-                alongside: applyPromotion
+                applying: applyPromotion
             )
         case .remove(let expected):
-            committed = splitMutations.remove(
+            committed = splitMutations.removeAtomically(
                 expected,
                 persist: false,
-                alongside: applyPromotion
+                applying: applyPromotion
             )
         case nil:
-            structuralLookup.withTransaction(applyPromotion)
-            committed = prepared != nil
+            committed = structuralLookup.withTransaction(applyPromotion)
         }
 
-        guard committed, let prepared else { return false }
+        guard committed else {
+            _ = plan.placement.cancel()
+            return false
+        }
+        guard let prepared else { return false }
         _ = promotion.finish(prepared)
-        schedulePersistence()
+        persistence.scheduleStructuralPersistence()
         return true
     }
 }

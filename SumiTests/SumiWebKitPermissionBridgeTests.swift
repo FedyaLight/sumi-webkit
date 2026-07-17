@@ -574,7 +574,7 @@ final class SumiWebKitPermissionBridgeTests: XCTestCase {
                 webKitPermissionBridge: bridge
             )
         )
-        let tab = browserManager.tabManager.tabFactory.makeTab(
+        let tab = browserManager.tabFactory.makeTab(
             url: URL(string: "https://top.example/path")!,
             loadsCachedFaviconOnInit: false
         )

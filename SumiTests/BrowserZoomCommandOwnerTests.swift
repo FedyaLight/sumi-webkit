@@ -5,146 +5,300 @@ import XCTest
 
 @MainActor
 final class BrowserZoomCommandOwnerTests: XCTestCase {
-    func testZoomInActiveTabSavesProfileScopedBaseZoomAppliesBoostAndPresentsNotification() {
+    func testZoomInActiveTabSavesProfileScopedBaseZoomAppliesBoostAndPresentsNotification()
+        throws {
         let zoomManager = makeZoomManager()
-        let profileId = UUID()
-        let tab = makeTab(url: "https://example.com/page", profileId: profileId)
-        let webView = WKWebView()
-        let windowState = BrowserWindowState()
-        var revision = 0
-        let spy = NotificationPresentingSpy()
-        var boostRequest: (url: URL, profileId: UUID?)?
-
-        let owner = makeOwner(
+        let profileID = UUID()
+        let url = try XCTUnwrap(URL(string: "https://example.com/page"))
+        let boosts = try makeBoostsModule(
+            sizeOverride: 2,
+            url: url,
+            profileID: profileID
+        )
+        let fixture = makeOwner(
             zoomManager: zoomManager,
-            activeWindow: { windowState },
-            activePageTab: { _ in tab },
-            activePresentationWebView: { _ in webView },
-            sizeOverride: { url, profileId in
-                boostRequest = (url, profileId)
-                return 2.0
-            },
-            incrementZoomStateRevision: {
-                revision += 1
-            },
-            notifications: { spy }
+            boosts: boosts
+        )
+        let page = installPage(
+            in: fixture,
+            url: url,
+            profileID: profileID,
+            makeActive: true
         )
 
-        owner.zoomInCurrentTab()
+        fixture.owner.zoomInCurrentTab()
 
-        XCTAssertEqual(zoomManager.getZoomLevel(for: "example.com", profileId: profileId), 1.15, accuracy: 0.001)
-        XCTAssertEqual(webView.pageZoom, 2.3, accuracy: 0.001)
-        XCTAssertEqual(zoomManager.getZoomLevel(for: tab.id), 2.3, accuracy: 0.001)
-        XCTAssertEqual(revision, 1)
-        XCTAssertEqual(spy.presentNotificationCalls.count, 1)
-        XCTAssertEqual(spy.presentNotificationCalls.first?.0.messageKey, "zoom")
-        XCTAssertEqual(spy.presentNotificationCalls.first?.0.title, "Zoom")
-        XCTAssertEqual(spy.presentNotificationCalls.first?.0.controls?.count, 3)
-        XCTAssertEqual(spy.presentNotificationCalls.first?.1?.id, windowState.id)
-        XCTAssertEqual(boostRequest?.url, tab.url)
-        XCTAssertEqual(boostRequest?.profileId, profileId)
+        XCTAssertEqual(
+            zoomManager.getZoomLevel(
+                for: "example.com",
+                profileId: profileID
+            ),
+            1.15,
+            accuracy: 0.001
+        )
+        XCTAssertEqual(page.webView.pageZoom, 2.3, accuracy: 0.001)
+        XCTAssertEqual(
+            zoomManager.getZoomLevel(for: page.tab.id),
+            2.3,
+            accuracy: 0.001
+        )
+        XCTAssertEqual(fixture.revision.revision, 1)
+        XCTAssertEqual(fixture.notifications.presentNotificationCalls.count, 1)
+        XCTAssertEqual(
+            fixture.notifications.presentNotificationCalls.first?.0.messageKey,
+            "zoom"
+        )
+        XCTAssertEqual(
+            fixture.notifications.presentNotificationCalls.first?.0.title,
+            "Zoom"
+        )
+        XCTAssertEqual(
+            fixture.notifications.presentNotificationCalls.first?.0.controls?
+                .count,
+            3
+        )
+        XCTAssertEqual(
+            fixture.notifications.presentNotificationCalls.first?.1?.id,
+            page.window.id
+        )
     }
 
-    func testLoadZoomForTabUsesContainingWindowBeforeActiveWindowAndDoesNotPresentNotification() {
+    func testLoadZoomForTabUsesContainingWindowBeforeActiveWindowAndDoesNotPresentNotification()
+        throws {
         let zoomManager = makeZoomManager()
-        let profileId = UUID()
-        let tab = makeTab(url: "https://example.com/page", profileId: profileId)
-        let webView = WKWebView()
-        let activeWindow = BrowserWindowState()
-        let containingWindow = BrowserWindowState()
-        var requestedWebViewWindowId: UUID?
-        var revision = 0
-        let spy = NotificationPresentingSpy()
-
-        zoomManager.saveZoomLevel(1.5, for: "example.com", profileId: profileId)
-
-        let owner = makeOwner(
-            zoomManager: zoomManager,
-            activeWindow: { activeWindow },
-            tab: { requestedTabId in
-                requestedTabId == tab.id ? tab : nil
-            },
-            windowStateContainingTab: { _ in containingWindow },
-            webView: { requestedTabId, windowId in
-                requestedWebViewWindowId = windowId
-                return requestedTabId == tab.id && windowId == containingWindow.id ? webView : nil
-            },
-            incrementZoomStateRevision: {
-                revision += 1
-            },
-            notifications: { spy }
+        let profileID = UUID()
+        let fixture = makeOwner(zoomManager: zoomManager)
+        let activePage = installPage(
+            in: fixture,
+            url: try XCTUnwrap(URL(string: "https://active.example/page")),
+            profileID: profileID,
+            makeActive: true
+        )
+        let targetPage = installPage(
+            in: fixture,
+            url: try XCTUnwrap(URL(string: "https://example.com/page")),
+            profileID: profileID,
+            makeActive: false
+        )
+        zoomManager.saveZoomLevel(
+            1.5,
+            for: "example.com",
+            profileId: profileID
         )
 
-        owner.loadZoomForTab(tab.id)
+        fixture.owner.loadZoomForTab(targetPage.tab.id)
 
-        XCTAssertEqual(requestedWebViewWindowId, containingWindow.id)
-        XCTAssertEqual(webView.pageZoom, 1.5, accuracy: 0.001)
-        XCTAssertEqual(zoomManager.getZoomLevel(for: tab.id), 1.5, accuracy: 0.001)
-        XCTAssertEqual(revision, 1)
-        XCTAssertTrue(spy.presentNotificationCalls.isEmpty)
+        XCTAssertEqual(targetPage.webView.pageZoom, 1.5, accuracy: 0.001)
+        XCTAssertEqual(activePage.webView.pageZoom, 1, accuracy: 0.001)
+        XCTAssertEqual(
+            zoomManager.getZoomLevel(for: targetPage.tab.id),
+            1.5,
+            accuracy: 0.001
+        )
+        XCTAssertEqual(fixture.revision.revision, 1)
+        XCTAssertTrue(fixture.notifications.presentNotificationCalls.isEmpty)
     }
 
-    func testZoomTargetsReaderPresentationWithoutMutatingHiddenCanonicalWebView() {
+    func testZoomTargetsReaderPresentationWithoutMutatingHiddenCanonicalWebView()
+        throws {
         let zoomManager = makeZoomManager()
-        let tab = makeTab(url: "https://example.com/article", profileId: nil)
-        let canonicalWebView = WKWebView()
-        canonicalWebView.pageZoom = 1
-        let host = SumiWebViewContainerView(tabID: tab.id, webView: canonicalWebView)
+        let fixture = makeOwner(zoomManager: zoomManager)
+        let page = installPage(
+            in: fixture,
+            url: try XCTUnwrap(URL(string: "https://example.com/article")),
+            profileID: nil,
+            makeActive: true
+        )
+        let host = SumiWebViewContainerView(
+            tabID: page.tab.id,
+            webView: page.webView
+        )
         let lease = TabMainFrameDocumentLease(
             revision: 1,
             documentGeneration: 1,
-            webViewID: ObjectIdentifier(canonicalWebView),
+            webViewID: ObjectIdentifier(page.webView),
             participantID: UUID(),
-            committedURL: tab.url,
-            presentationURL: tab.url,
+            committedURL: page.tab.url,
+            presentationURL: page.tab.url,
             isPDF: false,
             isAuthority: true
         )
-        XCTAssertTrue(host.presentReader(
-            html: "<html><body><article>Reader</article></body></html>",
-            sourceDocument: SumiReaderSourceDocument(
-                webView: canonicalWebView,
-                lease: lease,
-                sourceURL: tab.url,
-                remoteResourcePolicy: .denyRemoteResources,
-                currentLease: { lease },
-                routeWebLink: { _, _ in false },
-                routeExternalLink: { _ in }
+        XCTAssertTrue(
+            host.presentReader(
+                html: "<html><body><article>Reader</article></body></html>",
+                sourceDocument: SumiReaderSourceDocument(
+                    webView: page.webView,
+                    lease: lease,
+                    sourceURL: page.tab.url,
+                    remoteResourcePolicy: .denyRemoteResources,
+                    currentLease: { lease },
+                    routeWebLink: { _, _ in false },
+                    routeExternalLink: { _ in }
+                )
             )
-        ))
-        let windowState = BrowserWindowState()
-        let owner = makeOwner(
-            zoomManager: zoomManager,
-            activeWindow: { windowState },
-            activePageTab: { _ in tab },
-            activePresentationWebView: { _ in canonicalWebView.sumiActivePresentationWebView }
         )
 
-        owner.zoomInCurrentTab()
+        fixture.owner.zoomInCurrentTab()
 
-        XCTAssertEqual(host.activePresentationWebView.pageZoom, 1.15, accuracy: 0.001)
-        XCTAssertEqual(canonicalWebView.pageZoom, 1, accuracy: 0.001)
+        XCTAssertEqual(
+            host.activePresentationWebView.pageZoom,
+            1.15,
+            accuracy: 0.001
+        )
+        XCTAssertEqual(page.webView.pageZoom, 1, accuracy: 0.001)
     }
 
-    func testCleanupRemovesTabZoomAndBumpsRevision() {
+    func testCleanupRemovesTabZoomAndPublishesRevision() {
         let zoomManager = makeZoomManager()
-        let tabId = UUID()
+        let fixture = makeOwner(zoomManager: zoomManager)
+        let tabID = UUID()
         let webView = WKWebView()
-        var revision = 0
-
-        zoomManager.applyTransientZoom(1.5, to: webView, domain: "example.com", tabId: tabId)
-
-        let owner = makeOwner(
-            zoomManager: zoomManager,
-            incrementZoomStateRevision: {
-                revision += 1
-            }
+        zoomManager.applyTransientZoom(
+            1.5,
+            to: webView,
+            domain: "example.com",
+            tabId: tabID
         )
 
-        owner.cleanupZoomForTab(tabId)
+        fixture.owner.cleanupZoomForTab(tabID)
 
-        XCTAssertEqual(zoomManager.getZoomLevel(for: tabId), 1.0, accuracy: 0.001)
-        XCTAssertEqual(revision, 1)
+        XCTAssertEqual(
+            zoomManager.getZoomLevel(for: tabID),
+            1,
+            accuracy: 0.001
+        )
+        XCTAssertEqual(fixture.revision.revision, 1)
+    }
+
+    private func makeOwner(
+        zoomManager: ZoomManager,
+        boosts: SumiBoostsModule? = nil
+    ) -> ZoomOwnerFixture {
+        let windows = WindowRegistry()
+        let browser = BrowserManager(windowRegistry: windows)
+        let revision = BrowserZoomRevisionState()
+        let notifications = NotificationPresentingSpy()
+        let owner = BrowserZoomCommandOwner(
+            windows: windows,
+            targets: BrowserZoomTargetResolver(
+                activePages: browser.shellRuntime.activePageResolver,
+                tabs: browser.tabCollectionMembershipOwner,
+                windowTabs: browser.shellRuntime.windowTabs,
+                webViews: browser.webViewRoutingService
+            ),
+            policy: BrowserZoomPolicy(
+                manager: zoomManager,
+                boosts: boosts ?? makeDisabledBoostsModule()
+            ),
+            publication: BrowserZoomPublication(
+                revision: revision,
+                notifications: notifications
+            )
+        )
+        return ZoomOwnerFixture(
+            browser: browser,
+            windows: windows,
+            revision: revision,
+            notifications: notifications,
+            owner: owner
+        )
+    }
+
+    private func installPage(
+        in fixture: ZoomOwnerFixture,
+        url: URL,
+        profileID: UUID?,
+        makeActive: Bool
+    ) -> ZoomPageFixture {
+        let space = installTestSpace(
+            in: fixture.browser.spaceStateOwner,
+            name: "Zoom",
+            profileID: profileID
+        )
+        let tab = fixture.browser.regularTabLifecycleOwner.createNewTab(
+            url: url.absoluteString,
+            in: space,
+            activate: false
+        )
+        tab.profileId = profileID
+        let window = BrowserWindowState()
+        fixture.browser.tabResidenceAuthority.establishResidenceSession(
+            on: window
+        )
+        window.currentProfileId = profileID
+        window.currentSpaceId = space.id
+        window.currentTabId = tab.id
+        fixture.windows.register(window)
+        if makeActive {
+            fixture.windows.setActive(window)
+        }
+        let webView = FocusableWKWebView()
+        webView.owningTab = tab
+        let admission = fixture.browser.webViewRuntime.trackedWebViewAdmission
+            .attemptAssignment(
+                webView,
+                to: tab,
+                in: window.id,
+                replaySemanticOperation: {
+                    XCTFail("Unexpected WebView placement deferral")
+                }
+            )
+        XCTAssertTrue(admission.isAccepted)
+        return ZoomPageFixture(
+            tab: tab,
+            webView: webView,
+            window: window
+        )
+    }
+
+    private func makeBoostsModule(
+        sizeOverride: Double,
+        url: URL,
+        profileID: UUID
+    ) throws -> SumiBoostsModule {
+        let defaults = TestDefaultsHarness()
+        addTeardownBlock { defaults.reset() }
+        let modules = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(
+                userDefaults: defaults.defaults
+            )
+        )
+        modules.enable(.boosts)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(
+                "BrowserZoomCommandOwnerTests-\(UUID().uuidString)",
+                isDirectory: true
+            )
+        addTeardownBlock {
+            try? FileManager.default.removeItem(at: root)
+        }
+        let store = SumiBoostStore(rootDirectory: root)
+        let boost = try store.createDraft(
+            for: url,
+            profileId: profileID,
+            isEphemeral: true
+        )
+        _ = try store.updateBoost(
+            id: boost.id,
+            profileId: profileID,
+            host: boost.host,
+            isEphemeral: true
+        ) { data in
+            data.sizeOverride = sizeOverride
+        }
+        return SumiBoostsModule(
+            moduleRegistry: modules,
+            storeFactory: { store }
+        )
+    }
+
+    private func makeDisabledBoostsModule() -> SumiBoostsModule {
+        SumiBoostsModule(
+            moduleRegistry: .unavailable(),
+            storeFactory: {
+                preconditionFailure("Disabled boosts must remain zero-cost")
+            }
+        )
     }
 
     private func makeZoomManager(function: String = #function) -> ZoomManager {
@@ -156,40 +310,20 @@ final class BrowserZoomCommandOwnerTests: XCTestCase {
         }
         return ZoomManager(userDefaults: defaults)
     }
+}
 
-    private func makeOwner(
-        zoomManager: ZoomManager,
-        activeWindow: @escaping @MainActor () -> BrowserWindowState? = { nil },
-        activePageTab: @escaping @MainActor (BrowserWindowState) -> Tab? = { _ in nil },
-        activePresentationWebView: @escaping @MainActor (BrowserWindowState) -> WKWebView? = { _ in nil },
-        tab: @escaping @MainActor (UUID) -> Tab? = { _ in nil },
-        windowStateContainingTab: @escaping @MainActor (Tab) -> BrowserWindowState? = { _ in nil },
-        webView: @escaping @MainActor (UUID, UUID) -> WKWebView? = { _, _ in nil },
-        sizeOverride: @escaping @MainActor (URL, UUID?) -> Double = { _, _ in 1.0 },
-        incrementZoomStateRevision: @escaping @MainActor () -> Void = { /* No-op. */ },
-        notifications: @escaping @MainActor () -> (any BrowserNotificationPresenting)? = { nil }
-    ) -> BrowserZoomCommandOwner {
-        BrowserZoomCommandOwner(
-            activeWindow: activeWindow,
-            activePageTab: activePageTab,
-            activePresentationWebView: activePresentationWebView,
-            tab: tab,
-            windowStateContainingTab: windowStateContainingTab,
-            webView: webView,
-            zoomManager: { zoomManager },
-            sizeOverride: sizeOverride,
-            incrementZoomStateRevision: incrementZoomStateRevision,
-            notifications: notifications
-        )
-    }
+@MainActor
+private struct ZoomOwnerFixture {
+    let browser: BrowserManager
+    let windows: WindowRegistry
+    let revision: BrowserZoomRevisionState
+    let notifications: NotificationPresentingSpy
+    let owner: BrowserZoomCommandOwner
+}
 
-    private func makeTab(url: String, profileId: UUID?) -> Tab {
-        let tab = Tab(
-            url: URL(string: url)!,
-            name: "Test",
-            loadsCachedFaviconOnInit: false
-        )
-        tab.profileId = profileId
-        return tab
-    }
+@MainActor
+private struct ZoomPageFixture {
+    let tab: Tab
+    let webView: FocusableWKWebView
+    let window: BrowserWindowState
 }

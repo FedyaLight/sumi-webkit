@@ -95,7 +95,7 @@ extension ExtensionRequestedTabServicesTests {
             adapter
         )
 
-        let staleSameUUID = harness.browserManager.tabManager.tabFactory.makeTab(
+        let staleSameUUID = harness.browserManager.tabFactory.makeTab(
             id: tab.id,
             url: URL(string: "https://stale.example/same-id")!,
             name: "Stale same UUID",
@@ -409,13 +409,14 @@ extension ExtensionRequestedTabServicesTests {
         manager?.attach(browserManager: browserManager)
         let composition = attachedRuntime.runtime.normalTabs
         let materializer = composition.requestedTabWebViewMaterializer
-        let space = browserManager.tabManager.spaceStateOwner.firstSpace(
+        let space = browserManager.spaceStateOwner.firstSpace(
             forProfile: profile.id
-        ) ?? browserManager.tabManager.spaceServices.catalog.createSpace(
+        ) ?? installTestSpace(
+            in: browserManager.spaceStateOwner,
             name: "Released manager materializer",
-            profileId: profile.id
+            profileID: profile.id
         )
-        let materializerProbe = browserManager.tabManager
+        let materializerProbe = browserManager
             .regularTabLifecycleOwner.createNewTab(
                 url: "https://released-materializer.example",
                 in: space,

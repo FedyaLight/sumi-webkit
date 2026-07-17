@@ -155,6 +155,22 @@ final class SumiExtensionsModuleResidentDemandTests: XCTestCase {
         )
     }
 
+    func testTerminalBrowserAttachmentRetirementReleasesWindowRegistry()
+        throws {
+        let fixture = try makeFixture(hasEnabledExtension: true)
+        var browser: BrowserManager? = BrowserManager()
+        var windows: WindowRegistry? = browser?.windowRegistry
+        fixture.browserAttachment.attach(to: try XCTUnwrap(browser))
+        weak var releasedWindows = windows
+
+        fixture.module.retireBrowserAttachmentIfLoaded()
+        browser = nil
+        windows = nil
+
+        XCTAssertNil(releasedWindows)
+        XCTAssertFalse(fixture.module.hasAttachedRuntime)
+    }
+
     func testDisabledModuleRetriesShutdownAfterIrreversibleMutationFinishes()
         async throws {
         let fixture = try makeFixture(hasEnabledExtension: true)
@@ -192,7 +208,8 @@ final class SumiExtensionsModuleResidentDemandTests: XCTestCase {
         module: SumiExtensionsModule,
         manager: ExtensionManager,
         inspection: ExtensionManagerTestInspection,
-        profile: Profile
+        profile: Profile,
+        browserAttachment: ExtensionManagerBrowserAttachment
     ) {
         let container = try ModelContainer(
             for: SumiStartupPersistence.schema,
@@ -238,7 +255,14 @@ final class SumiExtensionsModuleResidentDemandTests: XCTestCase {
         )
         module.pinToToolbar("missing-extension", profileId: profile.id)
         XCTAssertEqual(browserAttachments.count, 1)
-        return (container, module, manager, inspection, profile)
+        return (
+            container,
+            module,
+            manager,
+            inspection,
+            profile,
+            try XCTUnwrap(browserAttachments.first)
+        )
     }
 
     private func makeInstalledExtension(isEnabled: Bool) -> InstalledExtension {

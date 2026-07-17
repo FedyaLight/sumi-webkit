@@ -13,7 +13,9 @@ final class SpaceProfileReconciliationLeaseTests: XCTestCase {
             id: replacementProfileID,
             name: "Replacement"
         )
-        let tabManager = try makeInMemoryTabManager(attachRuntimePorts: false)
+        let tabManager = BrowserManager()
+        tabManager.tabRuntimeLifecycle.shutdown()
+        let attachment = makeRuntimeAttachment(for: tabManager)
         let space = Space(name: "Current", profileId: nil)
         tabManager.spaceStateOwner.replaceSpaces([space])
 
@@ -70,8 +72,8 @@ final class SpaceProfileReconciliationLeaseTests: XCTestCase {
                     return profileID == firstProfileID
                 }
                 didReenter = true
-                XCTAssertTrue(tabManager.runtimePortsAttachmentOwner.detach())
-                replacementOutcome = tabManager.runtimePortsAttachmentOwner
+                XCTAssertTrue(attachment.detach())
+                replacementOutcome = attachment
                     .attach(replacement)
                 return profileID == firstProfileID
             },
@@ -85,7 +87,7 @@ final class SpaceProfileReconciliationLeaseTests: XCTestCase {
             )
         )
 
-        let firstOutcome = tabManager.runtimePortsAttachmentOwner.attach(first)
+        let firstOutcome = attachment.attach(first)
 
         XCTAssertEqual(firstOutcome, .superseded)
         XCTAssertEqual(replacementOutcome, .attached)
@@ -100,5 +102,59 @@ final class SpaceProfileReconciliationLeaseTests: XCTestCase {
             replacementProfile
         )
         tabManager.structuralPersistence.cancelPendingPersistence()
+    }
+
+    private func makeRuntimeAttachment(
+        for browser: BrowserManager
+    ) -> TabRuntimePortsAttachmentOwner {
+        let runtimeTeardown = TabRuntimeTeardownService(
+            persistence: browser.structuralPersistence,
+            membership: browser.tabCollectionMembershipOwner,
+            webViewSessions: browser.webViewSessions
+        )
+        let profileGraph = SpaceProfileTransitionService.compose(
+            spaces: browser.spaceStateOwner,
+            pins: browser.shortcutPinCollectionStateOwner,
+            registry: browser.liveShortcutTabs,
+            runtimeConnection: browser.runtimePortConnection,
+            runtimeTeardown: runtimeTeardown,
+            structuralLookup: browser.structuralLookupCoordinator,
+            membership: browser.tabCollectionMembershipOwner,
+            persistence: browser.structuralPersistence,
+            pendingInheritance: PendingTabProfileInheritance(),
+            changes: browser.objectWillChange
+        )
+        let deferredWork = TabRuntimeAttachmentDeferredWorkOwner(
+            connection: browser.runtimePortConnection,
+            spaceProfiles: SpaceProfileReconciliationService(
+                spaces: browser.spaceStateOwner,
+                runtimeConnection: browser.runtimePortConnection,
+                spaceTransitions: profileGraph.service,
+                transitionLifecycle: profileGraph.lifecycle
+            ),
+            spaceAvailability: profileGraph.availability,
+            pendingPins: PendingShortcutPinAdopter(
+                pins: browser.shortcutPinCollectionStateOwner,
+                structuralMutations: browser.structuralCollectionMutationOwner,
+                profileReferenceAdmission: browser.profileReferenceAdmission
+            )
+        )
+        return TabRuntimePortsAttachmentOwner(
+            connection: browser.runtimePortConnection,
+            bootstrap: TabRuntimeAttachmentBootstrap(
+                connection: browser.runtimePortConnection,
+                membership: browser.tabCollectionMembershipOwner,
+                runtimePreparation: TabRuntimePreparationOwner(
+                    runtimeConnection: browser.runtimePortConnection
+                ),
+                selection: browser.tabStateStore.selection
+            ),
+            settlement: TabRuntimeAttachmentSettlement(
+                connection: browser.runtimePortConnection,
+                spaces: browser.spaceStateOwner,
+                deferredWork: deferredWork,
+                restoreStarter: nil
+            )
+        )
     }
 }

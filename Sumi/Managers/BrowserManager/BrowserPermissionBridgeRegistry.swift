@@ -137,7 +137,8 @@ final class BrowserPermissionBridgeRegistry {
             filePickerBridge: filePickerPermissionBridge,
             indicatorEventStore: dependencies.permissionIndicatorEventStore,
             blockedPopupStore: dependencies.blockedPopupStore,
-            externalSchemeSessionStore: dependencies.externalSchemeSessionStore
+            externalSchemeSessionStore: dependencies.externalSchemeSessionStore,
+            siteActivityStore: dependencies.permissionSiteActivityStore
         )
     }
 }

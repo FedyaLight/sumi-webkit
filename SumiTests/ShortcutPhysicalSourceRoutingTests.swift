@@ -22,7 +22,7 @@ final class ShortcutPhysicalSourceRoutingTests: XCTestCase {
         let harness = try makeHarness(role: .spacePinned)
         defer { closePublishedShells(in: harness.registry) }
         let secondWindow = BrowserWindowState()
-        secondWindow.tabManager = harness.browser.tabManager
+        harness.browser.tabResidenceAuthority.establishResidenceSession(on: secondWindow)
         secondWindow.currentProfileId = harness.presentationProfile.id
         secondWindow.currentSpaceId = harness.space.id
         secondWindow.currentTabId = harness.sourceTab.id
@@ -78,7 +78,7 @@ final class ShortcutPhysicalSourceRoutingTests: XCTestCase {
                 disposition: .newTab(selected: false)
             ))
             let linkTab = try XCTUnwrap(
-                harness.browser.tabManager.regularTabCollectionOwner
+                harness.browser.regularTabCollectionOwner
                     .tabs(in: harness.space)
                     .first(where: { $0.url == tabURL })
             )
@@ -101,7 +101,7 @@ final class ShortcutPhysicalSourceRoutingTests: XCTestCase {
             )
             let childTabID = try XCTUnwrap(childWindow.currentTabId)
             let windowTab = try XCTUnwrap(
-                harness.browser.tabManager.tabCollectionMembershipOwner
+                harness.browser.tabCollectionMembershipOwner
                     .tab(for: childTabID)
             )
             XCTAssertEqual(childWindow.currentProfileId, harness.presentationProfile.id)
@@ -140,7 +140,7 @@ final class ShortcutPhysicalSourceRoutingTests: XCTestCase {
         defer { closePublishedShells(in: harness.registry) }
         let existingWindowIDs = Set(harness.registry.windows.keys)
         let existingTabIDs = Set(
-            harness.browser.tabManager.regularTabCollectionStateOwner
+            harness.browser.tabStateStore.regularTabs
                 .allTabsSnapshot().map(\.id)
         )
         let configuration = WKWebViewConfiguration()
@@ -161,7 +161,7 @@ final class ShortcutPhysicalSourceRoutingTests: XCTestCase {
         XCTAssertEqual(Set(harness.registry.windows.keys), existingWindowIDs)
         XCTAssertEqual(
             Set(
-                harness.browser.tabManager.regularTabCollectionStateOwner
+                harness.browser.tabStateStore.regularTabs
                     .allTabsSnapshot().map(\.id)
             ),
             existingTabIDs
@@ -176,7 +176,9 @@ final class ShortcutPhysicalSourceRoutingTests: XCTestCase {
         role: ShortcutPinRole,
         sourceDataStore: WKWebsiteDataStore? = nil
     ) throws -> Harness {
+        let registry = WindowRegistry()
         let browser = BrowserManager(
+            windowRegistry: registry,
             startupPersistence: BrowserManagerStartupPersistence(
                 container: try ModelContainer(
                     for: SumiStartupPersistence.schema,
@@ -189,7 +191,6 @@ final class ShortcutPhysicalSourceRoutingTests: XCTestCase {
         let settings = SumiSettingsService(
             userDefaults: TestDefaultsHarness().defaults
         )
-        let registry = WindowRegistry()
         let presentationProfile = Profile(name: "Presentation")
         let executionProfile = Profile(name: "Execution")
         let space = Space(
@@ -204,11 +205,10 @@ final class ShortcutPhysicalSourceRoutingTests: XCTestCase {
             executionProfile,
         ]
         browser.currentProfile = presentationProfile
-        browser.windowRegistry = registry
         browser.windowShellContentViewFactory = { _, _ in NSView() }
-        browser.tabManager.spaceStateOwner.replaceSpaces([space])
-        browser.tabManager.spaceStateOwner.replaceCurrentSpace(space)
-        sourceWindow.tabManager = browser.tabManager
+        browser.spaceStateOwner.replaceSpaces([space])
+        browser.spaceStateOwner.replaceCurrentSpace(space)
+        browser.tabResidenceAuthority.establishResidenceSession(on: sourceWindow)
         sourceWindow.currentProfileId = presentationProfile.id
         sourceWindow.currentSpaceId = space.id
         registry.register(sourceWindow)
@@ -226,9 +226,9 @@ final class ShortcutPhysicalSourceRoutingTests: XCTestCase {
             title: "Source"
         )
         let canonicalPin = try XCTUnwrap(
-            browser.tabManager.shortcutPinStoreOwner.insert(pin, at: 0)
+            browser.shortcutPinStoreOwner.insert(pin, at: 0)
         )
-        let sourceTab = browser.tabManager.shortcutTabMaterializer.materialize(
+        let sourceTab = browser.shortcutTabMaterializer.materialize(
             canonicalPin,
             in: sourceWindow.id,
             currentSpaceId: space.id
@@ -250,7 +250,13 @@ final class ShortcutPhysicalSourceRoutingTests: XCTestCase {
         )
         let resolver = PhysicalWebViewSourceResolver(
             ownership: browser.testWebViewRuntime().ownershipQuery,
-            tabs: browser.tabManager,
+            sourceContexts: BrowserWindowSourceContextResolver(
+                spaces: browser.spaceStateOwner,
+                regularTabs: browser.regularTabCollectionOwner,
+                shortcutTabs: browser.liveShortcutTabs
+            ),
+            pins: browser.shortcutPinCollectionStateOwner,
+            shortcutResolution: browser.shortcutPinRuntimeResolutionOwner,
             profiles: browser.profileManager,
             registry: { [weak registry] in registry }
         )

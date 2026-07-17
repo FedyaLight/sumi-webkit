@@ -59,12 +59,19 @@ final class WindowSplitContext {
 @MainActor
 final class WindowSidebarContext {
     let browserContext: SidebarBrowserContext
-    let inventory: SidebarInventoryProjection
+    let spaceCatalog: SidebarSpaceCatalogProjection
+    let inventory: SidebarSpaceInventoryProjection
     let selection: SidebarWindowSelectionQuery
     let pinProjection: SidebarPinFolderProjection
-    let pinCommands: SidebarPinFolderCommands
+    let pinCommands: SidebarPinCommands
+    let pinExecution: SidebarPinExecutionCommands
+    let folderCommands: SidebarFolderCommands
     let spaceLifecycle: SidebarSpaceLifecycle
-    let regularTabs: any SidebarRegularTabsControlling
+    let regularTabCatalog: SidebarRegularTabCatalog
+    let regularTabTargets: SidebarRegularTabTargetQuery
+    let regularTabLifecycleCommands: SidebarRegularTabLifecycleCommands
+    let regularTabShortcutCommands: SidebarRegularTabShortcutCommands
+    let regularTabPlacementCommands: SidebarRegularTabPlacementCommands
     let dragTransactions: SidebarDragTransactionPort
     let inventoryUpdates: SidebarInventoryUpdates
     let profileUpdates: SidebarProfileUpdates
@@ -73,17 +80,23 @@ final class WindowSidebarContext {
     let updaterService: SumiUpdaterService
 
     private let currentProfileIDQuery: () -> UUID?
-    private let essentialPins: ShortcutPinCollectionStateOwner
     private let hoverSidebarRuntime: HoverSidebarRuntime
 
     init(
         browserContext: SidebarBrowserContext,
-        inventory: SidebarInventoryProjection,
+        spaceCatalog: SidebarSpaceCatalogProjection,
+        inventory: SidebarSpaceInventoryProjection,
         selection: SidebarWindowSelectionQuery,
         pinProjection: SidebarPinFolderProjection,
-        pinCommands: SidebarPinFolderCommands,
+        pinCommands: SidebarPinCommands,
+        pinExecution: SidebarPinExecutionCommands,
+        folderCommands: SidebarFolderCommands,
         spaceLifecycle: SidebarSpaceLifecycle,
-        regularTabs: any SidebarRegularTabsControlling,
+        regularTabCatalog: SidebarRegularTabCatalog,
+        regularTabTargets: SidebarRegularTabTargetQuery,
+        regularTabLifecycleCommands: SidebarRegularTabLifecycleCommands,
+        regularTabShortcutCommands: SidebarRegularTabShortcutCommands,
+        regularTabPlacementCommands: SidebarRegularTabPlacementCommands,
         dragTransactions: SidebarDragTransactionPort,
         inventoryUpdates: SidebarInventoryUpdates,
         profileUpdates: SidebarProfileUpdates,
@@ -91,16 +104,22 @@ final class WindowSidebarContext {
         hostRecoveryCoordinator: SidebarHostRecoveryHandling,
         updaterService: SumiUpdaterService,
         currentProfileID: @escaping () -> UUID?,
-        essentialPins: ShortcutPinCollectionStateOwner,
         hoverSidebarRuntime: HoverSidebarRuntime
     ) {
         self.browserContext = browserContext
+        self.spaceCatalog = spaceCatalog
         self.inventory = inventory
         self.selection = selection
         self.pinProjection = pinProjection
         self.pinCommands = pinCommands
+        self.pinExecution = pinExecution
+        self.folderCommands = folderCommands
         self.spaceLifecycle = spaceLifecycle
-        self.regularTabs = regularTabs
+        self.regularTabCatalog = regularTabCatalog
+        self.regularTabTargets = regularTabTargets
+        self.regularTabLifecycleCommands = regularTabLifecycleCommands
+        self.regularTabShortcutCommands = regularTabShortcutCommands
+        self.regularTabPlacementCommands = regularTabPlacementCommands
         self.dragTransactions = dragTransactions
         self.inventoryUpdates = inventoryUpdates
         self.profileUpdates = profileUpdates
@@ -108,7 +127,6 @@ final class WindowSidebarContext {
         self.hostRecoveryCoordinator = hostRecoveryCoordinator
         self.updaterService = updaterService
         self.currentProfileIDQuery = currentProfileID
-        self.essentialPins = essentialPins
         self.hoverSidebarRuntime = hoverSidebarRuntime
     }
 
@@ -117,7 +135,7 @@ final class WindowSidebarContext {
     }
 
     func essentialPins(profileID: UUID?) -> [ShortcutPin] {
-        essentialPins.essentialPins(for: profileID)
+        spaceCatalog.essentialPins(profileID: profileID)
     }
 
     func attachHoverSidebar(

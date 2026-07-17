@@ -17,7 +17,9 @@ struct TabFolderContentView: View {
     let inventory: SidebarSpaceInventorySnapshot
     let selection: SidebarWindowSelectionQuery
     let pinProjection: SidebarPinFolderProjection
-    let pinCommands: SidebarPinFolderCommands
+    let pinCommands: SidebarPinCommands
+    let pinExecution: SidebarPinExecutionCommands
+    let folderCommands: SidebarFolderCommands
     let spaceLifecycle: SidebarSpaceLifecycle
     @Binding var shortcutRestoreSession: SpaceShortcutRestoreInteractionSession
     @Binding var displayedCollapsedProjectionIDs: [UUID]
@@ -56,7 +58,8 @@ struct TabFolderContentView: View {
     private var mutationActions: TabFolderMutationActions {
         TabFolderMutationActions(
             browserContext: browserContext,
-            pinCommands: pinCommands,
+            pinExecution: pinExecution,
+            folderCommands: folderCommands,
             windowState: windowState,
             windowRegistry: windowRegistry,
             themeContext: themeContext,
@@ -66,7 +69,7 @@ struct TabFolderContentView: View {
     }
 
     private var contextMenuActionOwner: TabFolderContextMenuActionOwner {
-        return TabFolderContextMenuActionOwner(
+        TabFolderContextMenuActionOwner(
             folder: folder,
             space: space,
             childFoldersByParentId: inventory.childFoldersByParentID,
@@ -76,6 +79,8 @@ struct TabFolderContentView: View {
             selection: selection,
             pinProjection: pinProjection,
             pinCommands: pinCommands,
+            pinExecution: pinExecution,
+            folderCommands: folderCommands,
             spaceLifecycle: spaceLifecycle,
             windowState: windowState,
             themeContext: themeContext,
@@ -229,6 +234,8 @@ struct TabFolderContentView: View {
             selection: selection,
             pinProjection: pinProjection,
             pinCommands: pinCommands,
+            pinExecution: pinExecution,
+            folderCommands: folderCommands,
             spaceLifecycle: spaceLifecycle,
             shortcutRestoreSession: $shortcutRestoreSession,
             elevatedFolderIds: elevatedFolderIds,

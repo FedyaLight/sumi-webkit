@@ -16,6 +16,25 @@ context_menu_script="Sumi/UserScripts/SumiWebPageContextMenuUserScript.swift"
 link_presentation_commands="Sumi/Models/Tab/TabLinkPresentationCommands.swift"
 link_presentation_factory="Sumi/Managers/BrowserManager/TabLinkPresentationCommandsFactory.swift"
 physical_source_receipt="Sumi/Managers/BrowserManager/PhysicalWebViewSourceReceipt.swift"
+physical_source_context="Sumi/Managers/BrowserManager/BrowserWindowSourceContext.swift"
+host_services_runtime="Sumi/Managers/BrowserManager/TabBrowserHostServicesRuntimeFactory.swift"
+window_state="Sumi/Models/BrowserWindowState.swift"
+tab_residence_authority="Sumi/Managers/BrowserManager/BrowserTabResidenceAuthority.swift"
+retired_residence_admission="Sumi/Managers/BrowserManager/ExactTabResidenceAdmission.swift"
+manager_free_window_transactions=(
+  Sumi/Managers/BrowserManager/PhysicalSourceTabOpeningService.swift
+  Sumi/Managers/BrowserManager/WebKitChildTabOpeningService.swift
+  Sumi/Managers/BrowserManager/WebKitChildTabRollback.swift
+  Sumi/Managers/BrowserManager/WebKitChildWindowOpeningService.swift
+  Sumi/Managers/BrowserManager/WebKitChildWindowShellTransaction.swift
+  Sumi/Managers/BrowserManager/WebKitChildWindowCloseTransaction.swift
+  Sumi/Managers/BrowserManager/BrowserLinkWindowTransaction.swift
+  Sumi/Managers/BrowserManager/BrowserLinkPrivateWindowRollbackReceipt.swift
+  Sumi/Managers/BrowserManager/BrowserExtensionRequestedWindowTransaction.swift
+  Sumi/Managers/ExtensionManager/ExtensionInitialTabResidenceAdmission.swift
+  Sumi/Managers/ExtensionManager/ExtensionInitialTabPublicationValidator.swift
+  Sumi/Managers/ExtensionManager/ExtensionActionPresentationTarget.swift
+)
 child_window_transaction="Sumi/Managers/BrowserManager/WebKitChildWindowOpeningService.swift"
 child_shell_transaction="Sumi/Managers/BrowserManager/WebKitChildWindowShellTransaction.swift"
 retired_tab_state="Sumi/Models/Tab/TabWebViewInteractionStateOwner.swift"
@@ -37,12 +56,35 @@ for required in \
   "$link_presentation_commands" \
   "$link_presentation_factory" \
   "$physical_source_receipt" \
+  "$physical_source_context" \
+  "$host_services_runtime" \
+  "$window_state" \
+  "$tab_residence_authority" \
+  "${manager_free_window_transactions[@]}" \
   "$child_window_transaction" \
   "$child_shell_transaction" \
   "$link_glance_routing" \
   "$child_surface_router"; do
   guard_require_file "$required"
 done
+
+guard_expect_no_matches \
+  'physical source and host runtime manager reachback' \
+  '\b(BrowserManager|TabManager|browserManager|tabManager)\b' \
+  "$physical_source_receipt" \
+  "$physical_source_context" \
+  "$host_services_runtime"
+
+guard_expect_no_matches \
+  'window residence and WebKit transaction manager reachback' \
+  '\b(TabManager|tabManager)\b' \
+  "$window_state" \
+  "$tab_residence_authority" \
+  "${manager_free_window_transactions[@]}"
+
+if [[ -e "$retired_residence_admission" ]]; then
+  guard_record_failure "manager-fed exact residence admission reintroduced: $retired_residence_admission"
+fi
 
 if [[ -e "$retired_tab_state" ]]; then
   printf 'error: retired Tab interaction-state path reintroduced: %s\n' \

@@ -148,7 +148,7 @@ final class HistoryTabRecorderTests: XCTestCase {
     func testEphemeralAndNonHTTPURLsAreNotRecorded() async throws {
         let harness = try makeHarness()
         let ephemeralProfile = Profile.createEphemeral()
-        let ephemeralTab = harness.browserManager.tabManager.tabFactory.makeTab(
+        let ephemeralTab = harness.browserManager.tabFactory.makeTab(
             url: URL(string: "https://private.example.com")!
         )
         ephemeralTab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: harness.browserManager))
@@ -198,7 +198,7 @@ final class HistoryTabRecorderTests: XCTestCase {
             visitedLinkStore: TabDependencyIsolationDefaults.historyVisitedLinkStore,
             delayedActions: delayedActions.scheduler
         )
-        let tab = browserManager.tabManager.tabFactory.makeTab(
+        let tab = browserManager.tabFactory.makeTab(
             url: URL(string: "https://example.com")!,
             name: "Example"
         )

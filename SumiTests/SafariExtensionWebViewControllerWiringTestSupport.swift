@@ -38,12 +38,14 @@ class SafariExtensionWebViewControllerWiringTestCase: XCTestCase {
     func makeBrowserManager(
         moduleRegistry: SumiModuleRegistry? = nil,
         extensionsModule: SumiExtensionsModule? = nil,
-        profile: Profile? = nil
+        profile: Profile? = nil,
+        windowRegistry: WindowRegistry? = nil
     ) -> BrowserManager {
         let browserManager = makeSafariExtensionTestBrowserManager(
             moduleRegistry: moduleRegistry,
             extensionsModule: extensionsModule,
-            profile: profile
+            profile: profile,
+            windowRegistry: windowRegistry
         )
         return browserManager
     }
@@ -97,11 +99,12 @@ class SafariExtensionWebViewControllerWiringTestCase: XCTestCase {
     }
 
     func makeTab(profileId: UUID, url: URL, browserManager: BrowserManager) -> Tab {
-        let tabs = browserManager.tabManager
+        let tabs = browserManager
         let space = tabs.spaceStateOwner.firstSpace(forProfile: profileId)
-            ?? tabs.spaceServices.catalog.createSpace(
+            ?? installTestSpace(
+                in: tabs.spaceStateOwner,
                 name: "Test Space",
-                profileId: profileId
+                profileID: profileId
             )
         let tab = tabs.tabFactory.makeTab(
             url: url,
@@ -120,10 +123,9 @@ class SafariExtensionWebViewControllerWiringTestCase: XCTestCase {
         profileId: UUID,
         browserManager: BrowserManager
     ) -> BrowserWindowState {
-        let registry = browserManager.windowRegistry ?? WindowRegistry()
-        browserManager.windowRegistry = registry
+        let registry = browserManager.windowRegistry
         let window = BrowserWindowState()
-        window.tabManager = browserManager.tabManager
+        browserManager.tabResidenceAuthority.establishResidenceSession(on: window)
         window.currentProfileId = profileId
         window.currentSpaceId = tab.spaceId
         window.currentTabId = tab.id

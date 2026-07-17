@@ -8,6 +8,7 @@ import Foundation
 final class LastSessionWindowArchive {
     struct RestoreAttempt: Equatable {
         fileprivate let id: UUID
+        fileprivate let sourceWindowOrder: [UUID]
     }
 
     enum RestoreAttemptOutcome {
@@ -16,14 +17,14 @@ final class LastSessionWindowArchive {
     }
 
     private let openWindows: OpenWindowSessionCatalog
-    private let lastSessionWindowsStore: @MainActor () -> LastSessionWindowsStore
+    private let lastSessionWindowsStore: LastSessionWindowsStore
     private let startupRestore: any BrowserStartupSessionRestoreProviding
     private var activeRestoreAttempt: RestoreAttempt?
     private var restoreAttemptWaiters: [CheckedContinuation<RestoreAttempt, Never>] = []
 
     init(
         openWindows: OpenWindowSessionCatalog,
-        lastSessionWindowsStore: @escaping @MainActor () -> LastSessionWindowsStore,
+        lastSessionWindowsStore: LastSessionWindowsStore,
         startupRestore: any BrowserStartupSessionRestoreProviding
     ) {
         self.openWindows = openWindows
@@ -32,15 +33,15 @@ final class LastSessionWindowArchive {
     }
 
     var canRestoreLastSession: Bool {
-        lastSessionWindowsStore().canRestoreLastSession
+        lastSessionWindowsStore.canRestoreLastSession
     }
 
     var archivedWindowSnapshots: [LastSessionWindowSnapshot] {
-        lastSessionWindowsStore().snapshots
+        lastSessionWindowsStore.snapshots
     }
 
     var archivedTabSnapshot: TabPersistenceSnapshot? {
-        lastSessionWindowsStore().tabSnapshot
+        lastSessionWindowsStore.tabSnapshot
     }
 
     /// Freezes the retry source while a multi-window restore is in flight.
@@ -48,7 +49,10 @@ final class LastSessionWindowArchive {
     /// they cannot replace the source archive before the batch outcome is known.
     func beginRestoreAttempt() -> RestoreAttempt? {
         guard activeRestoreAttempt == nil else { return nil }
-        let attempt = RestoreAttempt(id: UUID())
+        let attempt = RestoreAttempt(
+            id: UUID(),
+            sourceWindowOrder: lastSessionWindowsStore.snapshots.map(\.id)
+        )
         activeRestoreAttempt = attempt
         return attempt
     }
@@ -75,7 +79,10 @@ final class LastSessionWindowArchive {
         )
         activeRestoreAttempt = nil
         if case .completed = outcome {
-            refreshNow(excludingWindowID: nil)
+            refreshNow(
+                excludingWindowID: nil,
+                preservingWindowOrder: attempt.sourceWindowOrder
+            )
         }
         resumeNextRestoreAttemptIfNeeded()
     }
@@ -85,9 +92,12 @@ final class LastSessionWindowArchive {
         refreshNow(excludingWindowID: excludingWindowID)
     }
 
-    private func refreshNow(excludingWindowID: UUID?) {
+    private func refreshNow(
+        excludingWindowID: UUID?,
+        preservingWindowOrder: [UUID] = []
+    ) {
         if startupRestore.canOfferRestoreShortcut {
-            lastSessionWindowsStore().updateSnapshots(
+            lastSessionWindowsStore.updateSnapshots(
                 startupRestore.windowSnapshots,
                 tabSnapshot: startupRestore.tabSnapshot
             )
@@ -109,7 +119,26 @@ final class LastSessionWindowArchive {
         // can arrive after the final registry removal, and must not turn that
         // temporary absence into an explicit archive deletion.
         guard snapshots.isEmpty == false else { return }
-        lastSessionWindowsStore().updateSnapshots(snapshots)
+        if preservingWindowOrder.isEmpty == false {
+            let sourceRank = Dictionary(
+                uniqueKeysWithValues: preservingWindowOrder.enumerated().map {
+                    ($0.element, $0.offset)
+                }
+            )
+            snapshots.sort { lhs, rhs in
+                switch (sourceRank[lhs.id], sourceRank[rhs.id]) {
+                case let (.some(lhsRank), .some(rhsRank)):
+                    lhsRank < rhsRank
+                case (.some, .none):
+                    true
+                case (.none, .some):
+                    false
+                case (.none, .none):
+                    lhs.id.uuidString < rhs.id.uuidString
+                }
+            }
+        }
+        lastSessionWindowsStore.updateSnapshots(snapshots)
     }
 
     private func resumeNextRestoreAttemptIfNeeded() {
@@ -118,7 +147,10 @@ final class LastSessionWindowArchive {
             return
         }
         let continuation = restoreAttemptWaiters.removeFirst()
-        let attempt = RestoreAttempt(id: UUID())
+        let attempt = RestoreAttempt(
+            id: UUID(),
+            sourceWindowOrder: lastSessionWindowsStore.snapshots.map(\.id)
+        )
         activeRestoreAttempt = attempt
         continuation.resume(returning: attempt)
     }

@@ -4,22 +4,50 @@ import Foundation
 /// Implementations should be idempotent and fail closed (throw on hard errors).
 @MainActor
 protocol ProfileCleanupParticipant {
-    var name: String { get }
+    var step: ProfileRetirementCleanupStep { get }
     func cleanup(profileId: UUID) async throws
 }
 
-/// Runs profile-deletion cleanup participants in registration order.
+enum ProfileDeletionCleanupError: Error, Equatable {
+    case missingParticipant(ProfileRetirementCleanupStep)
+    case invalidStartingStep(ProfileRetirementCleanupStep)
+}
+
+/// Runs idempotent cleanup steps from the durable retirement checkpoint.
 @MainActor
 final class ProfileDeletionCleanupOrchestrator {
-    private let participants: [any ProfileCleanupParticipant]
+    typealias Checkpoint = @MainActor (ProfileRetirementCleanupStep) async throws -> Void
+
+    private let participantsByStep: [
+        ProfileRetirementCleanupStep: any ProfileCleanupParticipant
+    ]
 
     init(participants: [any ProfileCleanupParticipant]) {
-        self.participants = participants
+        participantsByStep = Dictionary(
+            uniqueKeysWithValues: participants.map { ($0.step, $0) }
+        )
     }
 
-    func cleanup(profileId: UUID) async throws {
-        for participant in participants {
+    func cleanup(
+        profileId: UUID,
+        startingAt startingStep: ProfileRetirementCleanupStep,
+        checkpoint: Checkpoint
+    ) async throws {
+        guard startingStep != .completed,
+              let startIndex = ProfileRetirementCleanupStep.ordered.firstIndex(
+                  of: startingStep
+              ) else {
+            if startingStep == .completed { return }
+            throw ProfileDeletionCleanupError.invalidStartingStep(startingStep)
+        }
+
+        for index in startIndex..<ProfileRetirementCleanupStep.ordered.count {
+            let step = ProfileRetirementCleanupStep.ordered[index]
+            guard let participant = participantsByStep[step] else {
+                throw ProfileDeletionCleanupError.missingParticipant(step)
+            }
             try await participant.cleanup(profileId: profileId)
+            try await checkpoint(step)
         }
     }
 }
@@ -29,7 +57,7 @@ final class ProfileDeletionCleanupOrchestrator {
 /// Clears browsing / website data for the deleted profile via injected closures.
 @MainActor
 final class BrowsingDataProfileCleanupParticipant: ProfileCleanupParticipant {
-    let name = "browsingData"
+    let step = ProfileRetirementCleanupStep.websiteData
     private let clearAllData: @MainActor (UUID) async throws -> Void
 
     init(clearAllData: @escaping @MainActor (UUID) async throws -> Void) {
@@ -41,25 +69,40 @@ final class BrowsingDataProfileCleanupParticipant: ProfileCleanupParticipant {
     }
 }
 
+/// Removes browser-owned private data that is keyed by the retired profile.
+@MainActor
+final class ApplicationDataProfileCleanupParticipant: ProfileCleanupParticipant {
+    let step = ProfileRetirementCleanupStep.applicationData
+    private let clearApplicationData: @MainActor (UUID) async throws -> Void
+
+    init(clearApplicationData: @escaping @MainActor (UUID) async throws -> Void) {
+        self.clearApplicationData = clearApplicationData
+    }
+
+    func cleanup(profileId: UUID) async throws {
+        try await clearApplicationData(profileId)
+    }
+}
+
 /// Clears favicon partition for the deleted profile.
 @MainActor
 final class FaviconProfileCleanupParticipant: ProfileCleanupParticipant {
-    let name = "favicon"
-    private let clearFaviconPartition: @MainActor (UUID) -> Void
+    let step = ProfileRetirementCleanupStep.favicons
+    private let clearFaviconPartition: @MainActor (UUID) throws -> Void
 
-    init(clearFaviconPartition: @escaping @MainActor (UUID) -> Void) {
+    init(clearFaviconPartition: @escaping @MainActor (UUID) throws -> Void) {
         self.clearFaviconPartition = clearFaviconPartition
     }
 
     func cleanup(profileId: UUID) async throws {
-        clearFaviconPartition(profileId)
+        try clearFaviconPartition(profileId)
     }
 }
 
 /// Removes persisted permission decisions for the deleted profile partition.
 @MainActor
 final class PermissionProfileCleanupParticipant: ProfileCleanupParticipant {
-    let name = "permissions"
+    let step = ProfileRetirementCleanupStep.permissions
     private let resetAllDecisions: @MainActor (UUID) async throws -> Void
 
     init(resetAllDecisions: @escaping @MainActor (UUID) async throws -> Void) {
@@ -71,12 +114,30 @@ final class PermissionProfileCleanupParticipant: ProfileCleanupParticipant {
     }
 }
 
-/// No-op stub when a cleanup service is not wired yet.
 @MainActor
-struct StubProfileCleanupParticipant: ProfileCleanupParticipant {
-    let name: String
+final class VisitedLinksProfileCleanupParticipant: ProfileCleanupParticipant {
+    let step = ProfileRetirementCleanupStep.visitedLinks
+    private let discardStore: @MainActor (UUID) -> Void
+
+    init(discardStore: @escaping @MainActor (UUID) -> Void) {
+        self.discardStore = discardStore
+    }
 
     func cleanup(profileId: UUID) async throws {
-        _ = profileId
+        discardStore(profileId)
+    }
+}
+
+@MainActor
+final class PersistentWebsiteDataStoreCleanupParticipant: ProfileCleanupParticipant {
+    let step = ProfileRetirementCleanupStep.persistentDataStore
+    private let removeDataStore: @MainActor (UUID) async throws -> Void
+
+    init(removeDataStore: @escaping @MainActor (UUID) async throws -> Void) {
+        self.removeDataStore = removeDataStore
+    }
+
+    func cleanup(profileId: UUID) async throws {
+        try await removeDataStore(profileId)
     }
 }

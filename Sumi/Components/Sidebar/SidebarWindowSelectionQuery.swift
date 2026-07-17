@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import SumiDomain
 
@@ -5,14 +6,32 @@ import SumiDomain
 /// registered window object, not merely a retained object with the same UUID.
 @MainActor
 final class SidebarWindowIdentityQuery {
-    private let registry: @MainActor () -> WindowRegistry?
+    private weak var registry: WindowRegistry?
 
-    init(registry: @escaping @MainActor () -> WindowRegistry?) {
+    init(registry: WindowRegistry?) {
         self.registry = registry
     }
 
     func contains(_ windowState: BrowserWindowState) -> Bool {
-        registry()?.windows[windowState.id] === windowState
+        registry?.windows[windowState.id] === windowState
+    }
+
+    func window(id: UUID) -> BrowserWindowState? {
+        registry?.windows[id]
+    }
+
+    func shellWindow(for windowState: BrowserWindowState) -> NSWindow? {
+        windowState.shellWindow(in: registry)
+    }
+
+    func presentationSource(
+        for windowState: BrowserWindowState,
+        ownerView: NSView? = nil
+    ) -> SidebarTransientPresentationSource {
+        windowState.resolveSidebarPresentationSource(
+            ownerView: ownerView,
+            in: registry
+        )
     }
 }
 

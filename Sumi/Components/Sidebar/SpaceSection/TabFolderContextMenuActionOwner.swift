@@ -16,7 +16,9 @@ struct TabFolderContextMenuActionOwner {
     let inventory: SidebarSpaceInventorySnapshot
     let selection: SidebarWindowSelectionQuery
     let pinProjection: SidebarPinFolderProjection
-    let pinCommands: SidebarPinFolderCommands
+    let pinCommands: SidebarPinCommands
+    let pinExecution: SidebarPinExecutionCommands
+    let folderCommands: SidebarFolderCommands
     let spaceLifecycle: SidebarSpaceLifecycle
     let windowState: BrowserWindowState
     let themeContext: ResolvedThemeContext
@@ -68,14 +70,18 @@ struct TabFolderContextMenuActionOwner {
                 share: {
                     SidebarLinkActions.presentSharePicker(
                         for: pin.launchURL,
-                        source: windowState.resolveSidebarPresentationSource(in: browserContext.windowRegistry()),
-                        presentationActions: browserContext.presentationActions
+                        source: browserContext.windows.presentationSource(
+                            for: windowState
+                        ),
+                        presentation: browserContext.sharingPresentation
                     )
                 },
                 edit: {
                     presentShortcutLinkEditor(
                         for: pin,
-                        source: windowState.resolveSidebarPresentationSource(in: browserContext.windowRegistry())
+                        source: browserContext.windows.presentationSource(
+                            for: windowState
+                        )
                     )
                 },
                 folderTarget: .init(
@@ -89,7 +95,7 @@ struct TabFolderContextMenuActionOwner {
                 profileTarget: .init(
                     choices: profileChoices,
                     onSelect: { profileId in
-                        _ = pinCommands.assignExecutionProfile(pin, profileID: profileId)
+                        _ = pinExecution.assignExecutionProfile(pin, profileID: profileId)
                     }
                 ),
                 addToEssentials: addToEssentialsAction,
@@ -117,8 +123,10 @@ struct TabFolderContextMenuActionOwner {
                     .action(.init(title: "Share…", systemImage: "square.and.arrow.up", classification: .presentationOnly) {
                         SidebarLinkActions.presentSharePicker(
                             for: url,
-                            source: windowState.resolveSidebarPresentationSource(in: browserContext.windowRegistry()),
-                            presentationActions: browserContext.presentationActions
+                            source: browserContext.windows.presentationSource(
+                                for: windowState
+                            ),
+                            presentation: browserContext.sharingPresentation
                         )
                     }),
                 ],
@@ -146,11 +154,13 @@ struct TabFolderContextMenuActionOwner {
         return makeFolderHeaderContextMenuEntries(
             actions: .init(
                 edit: {
-                    browserContext.presentationActions.showFolderEditor(
-                        folder,
-                        windowState,
-                        themeContext,
-                        windowState.resolveSidebarPresentationSource(in: browserContext.windowRegistry())
+                    browserContext.folderEditorPresentation.show(
+                        folder: folder,
+                        in: windowState,
+                        themeContext: themeContext,
+                        source: browserContext.windows.presentationSource(
+                            for: windowState
+                        )
                     )
                 },
                 alphabetize: alphabetizeTabs,
@@ -170,7 +180,10 @@ struct TabFolderContextMenuActionOwner {
     }
 
     func unloadShortcutPin(_ pin: ShortcutPin) {
-        browserContext.commands.unloadShortcutPin(pin, windowState)
+        browserContext.shortcutPinUnload.unloadShortcutPin(
+            pin,
+            in: windowState
+        )
     }
 
     func removeShortcutPin(_ pin: ShortcutPin) {
@@ -204,7 +217,13 @@ struct TabFolderContextMenuActionOwner {
            source?.kind == .githubPullRequests || source?.kind == .githubIssues {
             githubLoginSection = [
                 .action(.init(title: "Sign in to GitHub", systemImage: "person.crop.circle.badge.exclamationmark", classification: .presentationOnly) {
-                    _ = browserContext.commands.openForegroundTab("https://github.com/login", windowState, space.id)
+                    _ = browserContext.tabOpening.openNewTab(
+                        url: "https://github.com/login",
+                        context: .foreground(
+                            windowState: windowState,
+                            preferredSpaceId: space.id
+                        )
+                    )
                 }),
             ]
         } else {
@@ -268,11 +287,13 @@ struct TabFolderContextMenuActionOwner {
         for pin: ShortcutPin,
         source: SidebarTransientPresentationSource? = nil
     ) {
-        browserContext.presentationActions.showShortcutEditor(
-            pin,
-            windowState,
-            themeContext,
-            source ?? windowState.resolveSidebarPresentationSource(in: browserContext.windowRegistry())
+        browserContext.shortcutEditorPresentation.show(
+            pin: pin,
+            in: windowState,
+            themeContext: themeContext,
+            source: source ?? browserContext.windows.presentationSource(
+                for: windowState
+            )
         )
     }
 
@@ -282,7 +303,7 @@ struct TabFolderContextMenuActionOwner {
 
     private func alphabetizeTabs() {
         withAnimation(folderLayoutAnimation) {
-            _ = pinCommands.alphabetizeFolder(folder.id, in: space.id)
+            _ = folderCommands.alphabetizeFolder(folder.id, in: space.id)
         }
     }
 
@@ -299,7 +320,7 @@ struct TabFolderContextMenuActionOwner {
             kind: .pinnedTab,
             title: pin.preferredDisplayTitle,
             url: pin.launchURL,
-            window: windowState.shellWindow(in: browserContext.windowRegistry()),
+            window: browserContext.windows.shellWindow(for: windowState),
             themeContext: themeContext,
             onDelete: { removeShortcutPin(pin) }
         )
@@ -314,7 +335,13 @@ struct TabFolderContextMenuActionOwner {
     }
 
     private func duplicateShortcutPin(_ pin: ShortcutPin) {
-        _ = browserContext.commands.openForegroundTab(pin.launchURL.absoluteString, windowState, space.id)
+        _ = browserContext.tabOpening.openNewTab(
+            url: pin.launchURL.absoluteString,
+            context: .foreground(
+                windowState: windowState,
+                preferredSpaceId: space.id
+            )
+        )
     }
 
     private func moveShortcutPin(_ pin: ShortcutPin, toFolder folderId: UUID) {
@@ -330,7 +357,14 @@ struct TabFolderContextMenuActionOwner {
     }
 
     private func pinShortcutGlobally(_ pin: ShortcutPin) {
-        browserContext.commands.pinShortcutGlobally(pin, windowState, space.id, activeShortcutTab(for: pin))
+        _ = browserContext.shortcutCopy.copyToEssentials(
+            pin,
+            title: pin.resolvedDisplayTitle(liveTab: activeShortcutTab(for: pin)),
+            context: EssentialsShortcutPlacementOwner.TargetContext(
+                windowState: windowState,
+                spaceId: space.id
+            )
+        )
     }
 
     private var folderHasLiveSavedTabs: Bool {
@@ -369,6 +403,9 @@ struct TabFolderContextMenuActionOwner {
     }
 
     private func unloadActiveFolderTabs() {
-        browserContext.commands.unloadShortcutPins(descendantShortcutPins, windowState)
+        browserContext.shortcutPinUnload.unloadShortcutPins(
+            descendantShortcutPins,
+            in: windowState
+        )
     }
 }

@@ -54,7 +54,10 @@ final class BrowserAppOrchestrationOwner {
         appDelegate.shortcutManager = keyboardShortcutManager
         appDelegate.fallbackPersistenceSave = dependencies.fallbackPersistenceSave
 
-        browserManager.windowRegistry = windowRegistry
+        precondition(
+            browserManager.windowRegistry === windowRegistry,
+            "App orchestration must use the browser kernel's WindowRegistry"
+        )
         browserManager.sumiSettings = settingsManager
         browserManager.keyboardShortcutManager = keyboardShortcutManager
         browserManager.windowShellContentViewFactory = dependencies.windowShellContentViewFactory
@@ -73,7 +76,7 @@ final class BrowserAppOrchestrationOwner {
         let windowSession = browserManager.windowSessionBundle
         let externalURLTabOpening = ExternalURLTabOpeningService(
             windowRegistry: windowRegistry,
-            tabOpening: browserManager.tabLifecycleService.opening
+            tabOpening: browserManager.tabOpening
         )
         let terminationCoordinator = BrowserTerminationCoordinator(
             browserRuntime: browserManager
@@ -82,7 +85,7 @@ final class BrowserAppOrchestrationOwner {
         self.externalURLTabOpening = externalURLTabOpening
 
         appDelegate.mouseButtonRouter = mouseCommandRouter
-        appDelegate.tabCommandRouter = browserManager.tabLifecycleService.closeOrchestration
+        appDelegate.tabCommandRouter = browserManager.tabCloseOrchestration
         appDelegate.windowRouter = browserManager.windowCommands
         appDelegate.externalURLHandler = externalURLTabOpening
         appDelegate.terminationCoordinator = terminationCoordinator
@@ -94,22 +97,18 @@ final class BrowserAppOrchestrationOwner {
         dependencies.startUpdater()
         keyboardShortcutManager.attach(
             actionRouter: browserManager.shortcutActionRouter,
-            chromeRouter: browserManager.shortcutActionRouter,
             windowRegistry: windowRegistry,
-            extensionCommandHandler: { [weak browserManager] event in
-                browserManager?.optionalModules.extensions.performExtensionKeyboardCommandIfLoaded(for: event) ?? false
-            }
+            extensionsModule: browserManager.optionalModules.extensions
         )
 
         let windowCloseWorkflow = BrowserWindowCloseWorkflow(
             browserRuntime: browserManager,
             recorder: windowSession.history.recorder,
-            persistence: windowSession.persistence,
+            persistence: browserManager.windowSessionPersistenceCoordinator,
             extensions: browserManager.optionalModules.extensions,
             webViews: dependencies.webViewLifecycle,
-            emptySplitPlaceholders: browserManager.splitComposition
-                .emptyPlaceholders,
-            splitPreviews: browserManager.splitComposition.previews,
+            emptySplitPlaceholders: browserManager.splitEmptyPlaceholders,
+            splitPreviews: browserManager.splitPreviews,
             backgroundMedia: browserManager.backgroundMediaOptimizationService,
             commands: browserManager.windowCommands
         )
@@ -122,7 +121,7 @@ final class BrowserAppOrchestrationOwner {
         let eventSinkReceipt = BrowserWindowRegistryBinding.install(
             registration: windowSession.restoration,
             closing: windowCloseWorkflow,
-            activity: windowSession.activation,
+            activity: browserManager.windowActivation,
             allWindowsClosed: allWindowsClosedWorkflow,
             on: windowRegistry
         )
@@ -133,12 +132,11 @@ final class BrowserAppOrchestrationOwner {
         )
         windowRegistryEventSinkReceipt = eventSinkReceipt
 
-        let automaticDataCleanup = browserManager.privacyBundle.automaticDataCleanupOwner
+        let automaticPermissionCleanup = browserManager.privacyBundle
+            .automaticPermissionCleanup
         let currentProfile = browserManager.currentProfile
-        Task { @MainActor [automaticDataCleanup, currentProfile] in
-            await automaticDataCleanup.runAutomaticPermissionCleanupIfNeeded(
-                for: currentProfile
-            )
+        Task { @MainActor [automaticPermissionCleanup, currentProfile] in
+            await automaticPermissionCleanup.runIfNeeded(for: currentProfile)
         }
 
         return true

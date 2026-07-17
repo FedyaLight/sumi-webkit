@@ -67,12 +67,13 @@ final class ExternalURLTabOpeningServiceTests: XCTestCase {
     }
 
     func testRetainedHandlerDoesNotKeepRuntimeGraphAliveAndNoOpsAfterRelease() throws {
+        var registry: WindowRegistry? = WindowRegistry()
         var browserManager: BrowserManager? = BrowserManager(
+            windowRegistry: try XCTUnwrap(registry),
             startupPersistence: BrowserManagerStartupPersistence(
                 container: try makeInMemoryStartupModelContainer()
             )
         )
-        var registry: WindowRegistry? = WindowRegistry()
         let retainedService: ExternalURLTabOpeningService
         weak let releasedBrowserManager = browserManager
         weak let releasedRegistry = registry
@@ -81,11 +82,13 @@ final class ExternalURLTabOpeningServiceTests: XCTestCase {
         do {
             let browserManager = try XCTUnwrap(browserManager)
             let registry = try XCTUnwrap(registry)
-            browserManager.windowRegistry = registry
             let window = BrowserWindowState()
+            browserManager.tabResidenceAuthority.establishResidenceSession(
+                on: window
+            )
             registry.register(window)
             registry.setActive(window)
-            let opening = browserManager.tabLifecycleService.opening
+            let opening = browserManager.tabOpening
             releasedOpening = opening
             retainedService = ExternalURLTabOpeningService(
                 windowRegistry: registry,

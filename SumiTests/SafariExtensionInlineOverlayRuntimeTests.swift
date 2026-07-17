@@ -29,8 +29,8 @@ final class SafariExtensionInlineOverlayRuntimeTests: XCTestCase {
             profile: profile,
             windowRegistry: windowRegistry
         )
+        browserManager.startupRestoreLifecycle.markLoadFinished()
         manager.attach(browserManager: browserManager)
-        await browserManager.tabManager.storeRestore.startupRestoreTask?.value
 
         let installed = try await installSafariStyleInlineOverlayProbeExtension(
             inspection: inspection,
@@ -59,9 +59,9 @@ final class SafariExtensionInlineOverlayRuntimeTests: XCTestCase {
             reason: "SafariExtensionInlineOverlayRuntimeTests"
         )
 
-        let tab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
+        let tab = browserManager.regularTabLifecycleOwner.createNewTab(
             url: server.loginBasicURL.absoluteString,
-            in: browserManager.tabManager.spaceStateOwner.currentSpace,
+            in: browserManager.spaceStateOwner.currentSpace,
             activate: false,
             webViewConfigurationOverride: configuration
         )
@@ -69,7 +69,7 @@ final class SafariExtensionInlineOverlayRuntimeTests: XCTestCase {
         tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
 
         let windowState = BrowserWindowState()
-        windowState.tabManager = browserManager.tabManager
+        browserManager.tabResidenceAuthority.establishResidenceSession(on: windowState)
         windowState.currentProfileId = profile.id
         windowState.currentSpaceId = tab.spaceId
         windowState.currentTabId = tab.id

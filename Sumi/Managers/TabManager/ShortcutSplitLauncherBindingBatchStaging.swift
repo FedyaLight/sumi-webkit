@@ -7,21 +7,11 @@ final class ShortcutSplitLauncherBindingBatchStaging {
     init(
         refreshes: LiveShortcutPresentationRefreshService,
         resolution: ShortcutPinRuntimeResolutionOwner,
-        runtimeConnection: TabRuntimePortConnection,
-        windowMutations: BrowserWindowShortcutMutationOwner,
-        profiles: TabProfileTransitionService,
-        persistence: ShortcutSplitLauncherWindowPersistence,
-        structuralLookup: TabStructuralLookupCoordinator
+        builder: ShortcutTabBindingBatchBuilder
     ) {
         self.refreshes = refreshes
         self.resolution = resolution
-        builder = ShortcutTabBindingBatchBuilder(
-            runtimeConnection: runtimeConnection,
-            windowMutations: windowMutations,
-            profiles: profiles,
-            persistence: persistence,
-            structuralLookup: structuralLookup
-        )
+        self.builder = builder
     }
 
     func admission(

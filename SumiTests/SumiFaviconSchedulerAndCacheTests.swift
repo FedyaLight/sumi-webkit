@@ -373,10 +373,47 @@ final class SumiFaviconV2SchedulerAndCacheTests: XCTestCase {
             failureKind: .notFound,
             ttl: 60
         )
-        storage.maintenance.clearPartition(partition)
+        try storage.maintenance.clearPartition(partition)
         storage.maintenance.flushPendingPersists()
 
         XCTAssertFalse(FileManager.default.fileExists(atPath: partitionDirectory.path))
+    }
+
+    func testClearingPartitionPropagatesDiskFailureAndKeepsCacheRetryable() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(
+                "SumiFaviconV2FailedClear-\(UUID().uuidString)",
+                isDirectory: true
+            )
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let fileManager = FailingFaviconPartitionRemovalFileManager()
+        let storage = SumiFaviconBlobStorage(
+            rootDirectory: directory,
+            fileManager: fileManager,
+            persistCoalesceInterval: 0
+        )
+        let partition = SumiFaviconPartition.regular(UUID())
+        let pageURL = try XCTUnwrap(URL(string: "https://failed-clear.example/"))
+
+        storage.writer.recordNoIconFound(for: pageURL, partition: partition)
+        fileManager.rejectRemoval = true
+
+        XCTAssertThrowsError(try storage.maintenance.clearPartition(partition))
+        XCTAssertTrue(storage.reader.isNoIconFresh(for: pageURL, partition: partition))
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: directory.appendingPathComponent(
+                    partition.storageComponent,
+                    isDirectory: true
+                ).path
+            )
+        )
+
+        fileManager.rejectRemoval = false
+        try storage.maintenance.clearPartition(partition)
+
+        XCTAssertFalse(storage.reader.isNoIconFresh(for: pageURL, partition: partition))
     }
 
     func testSessionCookieMatchingUsesOnlyCandidateOriginCookies() throws {
@@ -459,6 +496,18 @@ final class SumiFaviconV2SchedulerAndCacheTests: XCTestCase {
 
         XCTAssertEqual(cookies.map(\.name), ["session"])
         XCTAssertEqual(HTTPCookie.requestHeaderFields(with: cookies)["Cookie"], "session=same-site")
+    }
+}
+
+private final class FailingFaviconPartitionRemovalFileManager: FileManager,
+    @unchecked Sendable {
+    var rejectRemoval = false
+
+    override func removeItem(at URL: URL) throws {
+        if rejectRemoval {
+            throw CocoaError(.fileWriteNoPermission)
+        }
+        try super.removeItem(at: URL)
     }
 }
 

@@ -118,5 +118,4 @@ struct SumiStagedContentBlockingPublication {
     let compilationGeneration: Int
     let updateEvent: SumiContentBlockerRulesUpdate
     let previousUpdate: SumiContentBlockerRulesUpdate?
-    let refreshProfileSubjects: Bool
 }

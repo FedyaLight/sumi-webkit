@@ -14,7 +14,6 @@ final class SumiContentBlockingService {
 
     private let ruleListMaterializer: SumiContentRuleListMaterializer
     private let publication: SumiContentBlockingPublication
-    private let profileRuntime: SumiProfileContentBlockingRuntime?
     private let taskRegistry = ContentBlockingTaskRegistry<TaskKey>()
     private let stateMachine: SumiContentBlockingStateMachine
     private var ruleListProviderRuntime: SumiRuleListProviderRuntime?
@@ -99,19 +98,6 @@ final class SumiContentBlockingService {
             materializer: ruleListMaterializer
         )
         self.publication = publication
-        if let ruleListProvider,
-           ruleListProvider.hasProfileSpecificRuleLists {
-            profileRuntime = SumiProfileContentBlockingRuntime(
-                ruleListProvider: ruleListProvider,
-                materializer: ruleListMaterializer,
-                publication: publication,
-                privacyConfigurationManager: privacyConfigurationManager,
-                globalState: stateMachine
-            )
-        } else {
-            profileRuntime = nil
-        }
-
         if let ruleListProvider {
             ruleListProviderRuntime = SumiRuleListProviderRuntime(
                 provider: ruleListProvider,
@@ -129,7 +115,6 @@ final class SumiContentBlockingService {
     isolated deinit {
         taskRegistry.cancelAll()
         ruleListProviderRuntime?.stop()
-        profileRuntime?.stop()
     }
 
     var updatesPublisher: AnyPublisher<SumiContentBlockerRulesUpdate, Never> {
@@ -140,22 +125,6 @@ final class SumiContentBlockingService {
         for scriptsProvider: SumiNormalTabUserScripts
     ) -> AnyPublisher<SumiNormalTabUserContent, Never> {
         publication.userContentPublisher(scriptsProvider: scriptsProvider)
-    }
-
-    func userContentPublisher(
-        for scriptsProvider: SumiNormalTabUserScripts,
-        profileId: UUID?
-    ) -> AnyPublisher<SumiNormalTabUserContent, Never> {
-        guard let profileId, let profileRuntime
-        else {
-            return publication.userContentPublisher(
-                scriptsProvider: scriptsProvider
-            )
-        }
-        return profileRuntime.userContentPublisher(
-            scriptsProvider: scriptsProvider,
-            profileId: profileId
-        )
     }
 
     func setPolicy(_ policy: SumiContentBlockingPolicy) {
@@ -216,19 +185,15 @@ final class SumiContentBlockingService {
     }
 
     func commitPreparedContentBlockingUpdate(
-        _ preparedUpdate: SumiPreparedContentBlockingUpdate,
-        refreshProfileSubjects: Bool = true
+        _ preparedUpdate: SumiPreparedContentBlockingUpdate
     ) {
-        guard let staged = stagePreparedContentBlockingUpdate(
-            preparedUpdate,
-            refreshProfileSubjects: refreshProfileSubjects
-        ) else { return }
+        guard let staged = stagePreparedContentBlockingUpdate(preparedUpdate)
+        else { return }
         publishStagedContentBlockingUpdate(staged)
     }
 
     func stagePreparedContentBlockingUpdate(
-        _ preparedUpdate: SumiPreparedContentBlockingUpdate,
-        refreshProfileSubjects: Bool = true
+        _ preparedUpdate: SumiPreparedContentBlockingUpdate
     ) -> SumiStagedContentBlockingPublication? {
         guard let generation = stateMachine.stagePreparedPolicy(
             preparedUpdate.policy
@@ -240,8 +205,7 @@ final class SumiContentBlockingService {
         return SumiStagedContentBlockingPublication(
             compilationGeneration: generation,
             updateEvent: preparedUpdate.updateEvent,
-            previousUpdate: publication.stage(preparedUpdate.updateEvent),
-            refreshProfileSubjects: refreshProfileSubjects
+            previousUpdate: publication.stage(preparedUpdate.updateEvent)
         )
     }
 
@@ -255,23 +219,18 @@ final class SumiContentBlockingService {
             staged.updateEvent,
             replacing: staged.previousUpdate
         )
-        if staged.refreshProfileSubjects {
-            profileRuntime?.scheduleActiveRefreshes(delayNanoseconds: 0)
-        }
     }
 
     func stopRuntime() {
         guard stateMachine.stop() else { return }
         ruleListProviderRuntime?.stop()
         taskRegistry.cancelAll()
-        profileRuntime?.stop()
     }
 
     #if DEBUG
         func drainScheduledTasksForTests(cancel: Bool = false) async {
             await taskRegistry.drainTasksForTests(cancel: cancel)
             await ruleListProviderRuntime?.drainTasksForTests(cancel: cancel)
-            await profileRuntime?.drainTasksForTests(cancel: cancel)
         }
     #endif
 
@@ -328,17 +287,13 @@ extension SumiContentBlockingService: SumiRuleListProviderUpdateApplying {
                 ? .disabled
                 : .enabled(ruleLists: definitions)
         )
-        if refreshProfiles {
-            profileRuntime?.scheduleActiveRefreshes(delayNanoseconds: 0)
-        }
+        _ = refreshProfiles
     }
 
     func handleGlobalRuleListProviderFailure(refreshProfiles: Bool) {
         if latestUpdate == nil {
             setPolicy(.disabled)
         }
-        if refreshProfiles {
-            profileRuntime?.scheduleActiveRefreshes(delayNanoseconds: 0)
-        }
+        _ = refreshProfiles
     }
 }

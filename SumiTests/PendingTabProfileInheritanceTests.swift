@@ -26,7 +26,7 @@ final class PendingTabProfileInheritanceTests: XCTestCase {
         )
 
         XCTAssertEqual(
-            tabManager.profileAssignments.spaces.start(
+            tabManager.spaceProfileTransitions.start(
                 spaceID: space.id,
                 profileID: pendingProfile.id
             ),
@@ -38,7 +38,7 @@ final class PendingTabProfileInheritanceTests: XCTestCase {
             activate: false
         )
         XCTAssertTrue(
-            tabManager.profileAssignments.tabs.assign(
+            tabManager.tabProfileTransitions.assign(
                 follower,
                 toProfile: rejectedProfile.id
             )
@@ -91,7 +91,7 @@ final class PendingTabProfileInheritanceTests: XCTestCase {
         tabManager.spaceStateOwner.replaceSpaces([space])
 
         XCTAssertEqual(
-            tabManager.profileAssignments.spaces.start(
+            tabManager.spaceProfileTransitions.start(
                 spaceID: space.id,
                 profileID: pendingProfile.id
             ),
@@ -103,7 +103,7 @@ final class PendingTabProfileInheritanceTests: XCTestCase {
             activate: false
         )
         XCTAssertTrue(
-            tabManager.profileAssignments.tabs.assign(
+            tabManager.tabProfileTransitions.assign(
                 follower,
                 toProfile: cancelledProfile.id
             )
@@ -115,7 +115,7 @@ final class PendingTabProfileInheritanceTests: XCTestCase {
         try XCTUnwrap(transition.finishModel)()
         try XCTUnwrap(transition.settlement)(.committed)
 
-        tabManager.profileAssignments.tabs.cancelPendingDeletionIntent(
+        tabManager.tabProfileTransitions.cancelPendingDeletionIntent(
             tab: follower,
             intent: tabIntent
         )
@@ -143,7 +143,7 @@ final class PendingTabProfileInheritanceTests: XCTestCase {
         tabManager.spaceStateOwner.replaceSpaces([space])
 
         XCTAssertEqual(
-            tabManager.profileAssignments.spaces.start(
+            tabManager.spaceProfileTransitions.start(
                 spaceID: space.id,
                 profileID: pendingProfile.id
             ),
@@ -155,7 +155,7 @@ final class PendingTabProfileInheritanceTests: XCTestCase {
             activate: false
         )
         XCTAssertTrue(
-            tabManager.profileAssignments.tabs.assign(
+            tabManager.tabProfileTransitions.assign(
                 follower,
                 toProfile: overriddenProfile.id
             )
@@ -167,7 +167,7 @@ final class PendingTabProfileInheritanceTests: XCTestCase {
         try XCTUnwrap(transition.settlement)(.committed)
 
         XCTAssertTrue(
-            tabManager.profileAssignments.tabs.assign(
+            tabManager.tabProfileTransitions.assign(
                 follower,
                 toProfile: pendingProfile.id
             )
@@ -198,7 +198,7 @@ final class PendingTabProfileInheritanceTests: XCTestCase {
         tabManager.spaceStateOwner.replaceSpaces([space])
 
         XCTAssertEqual(
-            tabManager.profileAssignments.spaces.start(
+            tabManager.spaceProfileTransitions.start(
                 spaceID: space.id,
                 profileID: pendingProfile.id
             ),
@@ -210,7 +210,7 @@ final class PendingTabProfileInheritanceTests: XCTestCase {
             activate: false
         )
         XCTAssertTrue(
-            tabManager.profileAssignments.tabs.assign(
+            tabManager.tabProfileTransitions.assign(
                 follower,
                 toProfile: firstOverride.id
             )
@@ -225,7 +225,7 @@ final class PendingTabProfileInheritanceTests: XCTestCase {
 
         follower.profileAssignment.abort(firstIntent)
         XCTAssertTrue(
-            tabManager.profileAssignments.tabs.assign(
+            tabManager.tabProfileTransitions.assign(
                 follower,
                 toProfile: secondOverride.id
             )
@@ -263,7 +263,7 @@ final class PendingTabProfileInheritanceTests: XCTestCase {
         tabManager.spaceStateOwner.replaceSpaces([space])
 
         XCTAssertEqual(
-            tabManager.profileAssignments.spaces.start(
+            tabManager.spaceProfileTransitions.start(
                 spaceID: space.id,
                 profileID: pendingProfile.id
             ),
@@ -275,7 +275,7 @@ final class PendingTabProfileInheritanceTests: XCTestCase {
             activate: false
         )
         XCTAssertTrue(
-            tabManager.profileAssignments.tabs.assign(
+            tabManager.tabProfileTransitions.assign(
                 follower,
                 toProfile: rolledBackProfile.id
             )
@@ -324,14 +324,76 @@ final class PendingTabProfileInheritanceTests: XCTestCase {
         XCTAssertNil(releasedTab)
     }
 
+    func testRolledBackPlacementKeepsCreationFollowerProvenance() throws {
+        let existingProfile = Profile(name: "Existing")
+        let pendingProfile = Profile(name: "Pending")
+        let pinnedSourceProfile = Profile(name: "Pinned source")
+        let transition = DeferredSpaceProfileTransition()
+        let tabManager = try makeDeferredTabManager(
+            profiles: [
+                existingProfile.id: existingProfile,
+                pendingProfile.id: pendingProfile,
+                pinnedSourceProfile.id: pinnedSourceProfile,
+            ],
+            currentProfileID: { pendingProfile.id },
+            transition: transition
+        )
+        let source = Space(name: "Source", profileId: existingProfile.id)
+        let target = Space(name: "Target", profileId: pendingProfile.id)
+        tabManager.spaceStateOwner.replaceSpaces([source, target])
+        XCTAssertEqual(
+            tabManager.spaceProfileTransitions.start(
+                spaceID: source.id,
+                profileID: pendingProfile.id
+            ),
+            .deferred
+        )
+        let follower = tabManager.regularTabLifecycleOwner.createNewTab(
+            in: source,
+            activate: false
+        )
+        let preparation = TabSpaceProfileTransitionPreparation(
+            tabID: follower.id,
+            sourceSpaceID: source.id,
+            targetSpaceID: target.id,
+            sourceProfileID: pendingProfile.id,
+            sourceAssignmentRevision:
+                follower.profileAssignment.changeRevision,
+            pinnedProfileID: pinnedSourceProfile.id
+        )
+
+        XCTAssertTrue(
+            tabManager.tabProfileTransitions.stageSpaceTransition(
+                preparation,
+                for: follower
+            )
+        )
+        follower.spaceId = target.id
+        follower.spaceId = source.id
+        XCTAssertTrue(
+            tabManager.tabProfileTransitions.rollbackStagedSpaceTransition(
+                preparation,
+                for: follower
+            )
+        )
+        XCTAssertEqual(follower.profileId, pendingProfile.id)
+
+        XCTAssertTrue(try XCTUnwrap(transition.validateModel)())
+        XCTAssertTrue(try XCTUnwrap(transition.stageModel)())
+        try XCTUnwrap(transition.finishModel)()
+        try XCTUnwrap(transition.settlement)(.committed)
+
+        XCTAssertNil(follower.profileId)
+        XCTAssertEqual(source.profileId, pendingProfile.id)
+    }
+
     private func makeDeferredTabManager(
         profiles: [UUID: Profile],
         currentProfileID: @escaping @MainActor () -> UUID?,
         transition: DeferredSpaceProfileTransition
-    ) throws -> TabManager {
-        let tabManager = try makeInMemoryTabManager()
-        tabManager.runtimePortsAttachmentOwner.detach()
-        tabManager.runtimePortsAttachmentOwner.attach(
+    ) throws -> BrowserManager {
+        let tabManager = BrowserManager()
+        tabManager.runtimePortConnection.attach(
             TestRuntimePorts.make(
                 currentProfileId: currentProfileID,
                 defaultProfileId: currentProfileID,
@@ -348,7 +410,7 @@ private final class ProfileStructuralEventRecorder {
     private var cancellable: AnyCancellable?
     private(set) var count = 0
 
-    init(tabManager: TabManager) {
+    init(tabManager: BrowserManager) {
         cancellable = tabManager.tabStructureEventBus
             .structureChangedPublisher.sink { [weak self] _ in
                 self?.count += 1

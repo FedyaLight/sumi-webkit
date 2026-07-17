@@ -1,15 +1,6 @@
 import Foundation
 
 @MainActor
-protocol FloatingBarSplitPlaceholderHandling: AnyObject {
-    func cancel(in windowState: BrowserWindowState) -> Bool
-    func commit(_ placeholder: Tab, in windowID: UUID)
-    func replace(with tab: Tab, in windowState: BrowserWindowState) -> Bool
-}
-
-extension EmptySplitService: FloatingBarSplitPlaceholderHandling {}
-
-@MainActor
 protocol FloatingBarStatePersisting: AnyObject {
     func persist(_ windowState: BrowserWindowState)
     func schedule(_ windowState: BrowserWindowState, delayNanoseconds: UInt64)
@@ -24,22 +15,20 @@ extension WindowSessionPersistenceCoordinator: FloatingBarStatePersisting {}
 final class FloatingBarPresentationService {
     private let windowRegistry: @MainActor () -> WindowRegistry?
     private let hasValidCurrentSelection: @MainActor (BrowserWindowState) -> Bool
-    private let splitPlaceholders:
-        @MainActor () -> (any FloatingBarSplitPlaceholderHandling)?
+    private let splitCancellation: EmptySplitSession
     private let dismissThemePickerDiscardingIfNeeded: @MainActor () -> Void
     private let persistence: @MainActor () -> (any FloatingBarStatePersisting)?
 
     init(
         windowRegistry: @escaping @MainActor () -> WindowRegistry?,
         hasValidCurrentSelection: @escaping @MainActor (BrowserWindowState) -> Bool,
-        splitPlaceholders: @escaping @MainActor
-            () -> (any FloatingBarSplitPlaceholderHandling)?,
+        splitCancellation: EmptySplitSession,
         dismissThemePickerDiscardingIfNeeded: @escaping @MainActor () -> Void,
         persistence: @escaping @MainActor () -> (any FloatingBarStatePersisting)?
     ) {
         self.windowRegistry = windowRegistry
         self.hasValidCurrentSelection = hasValidCurrentSelection
-        self.splitPlaceholders = splitPlaceholders
+        self.splitCancellation = splitCancellation
         self.dismissThemePickerDiscardingIfNeeded = dismissThemePickerDiscardingIfNeeded
         self.persistence = persistence
     }
@@ -98,7 +87,7 @@ final class FloatingBarPresentationService {
         cancelEmptySplitPlaceholder: Bool = true
     ) {
         if cancelEmptySplitPlaceholder {
-            _ = splitPlaceholders()?.cancel(in: windowState)
+            _ = splitCancellation.cancel(in: windowState)
         }
         windowState.floatingBarPresentationReason = .none
         windowState.presentationState.isFloatingBarVisible = false

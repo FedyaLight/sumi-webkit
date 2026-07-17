@@ -82,12 +82,15 @@ final class SumiPermissionRecentActivityStore: ObservableObject {
     @Published private(set) var records: [SumiPermissionRecentActivityRecord] = []
 
     private let limit: Int
+    private var retiredProfileIDs: Set<String> = []
 
     init(limit: Int = 100) {
         self.limit = max(10, limit)
     }
 
     func record(_ record: SumiPermissionRecentActivityRecord) {
+        guard retiredProfileIDs.contains(record.profilePartitionId) == false
+        else { return }
         records.insert(record, at: 0)
         if records.count > limit {
             records.removeLast(records.count - limit)
@@ -186,6 +189,15 @@ final class SumiPermissionRecentActivityStore: ObservableObject {
             }
             .prefix(max(0, requestedLimit))
             .map { $0 }
+    }
+
+    func deleteProfileData(profilePartitionId: String) {
+        let normalizedProfileID = SumiPermissionKey
+            .normalizedProfilePartitionId(profilePartitionId)
+        retiredProfileIDs.insert(normalizedProfileID)
+        records.removeAll {
+            $0.profilePartitionId == normalizedProfileID
+        }
     }
 
     private func record(

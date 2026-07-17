@@ -27,6 +27,11 @@ struct SumiPermissionPersistenceEnvelope: Codable, Sendable {
     var siteActivityRecords: [SumiPermissionSiteActivityRecord]
 }
 
+enum SumiPermissionProfileDataCleanupError: Error, Equatable {
+    case persistenceStateUnreadable
+    case publicationFailed
+}
+
 private final class SumiPermissionLoadedStateBox: @unchecked Sendable {
     var value: SumiPermissionPersistenceLoadedState?
 }
@@ -74,6 +79,7 @@ final class SumiPermissionPersistenceAuthority: @unchecked Sendable {
     private var generation: UInt64
     private var antiAbuseEvents: [SumiPermissionAntiAbuseEvent]
     private var siteActivityRecordsById: [String: SumiPermissionSiteActivityRecord]
+    private var retiredProfileIDs: Set<String>
     private var diagnostics: SumiPermissionPersistenceDiagnostics
     private var isDirty: Bool
     private var shouldRetireLegacyPersistence: Bool
@@ -123,6 +129,7 @@ final class SumiPermissionPersistenceAuthority: @unchecked Sendable {
         generation = loaded.generation
         antiAbuseEvents = loaded.antiAbuseEvents
         siteActivityRecordsById = loaded.siteActivityRecordsById
+        retiredProfileIDs = []
         diagnostics = SumiPermissionPersistenceDiagnostics(loadOutcome: loaded.outcome)
         isDirty = loaded.needsCanonicalWrite && publisher != nil
         shouldRetireLegacyPersistence = loaded.shouldRetireLegacyPersistence
@@ -176,6 +183,9 @@ final class SumiPermissionPersistenceAuthority: @unchecked Sendable {
         withStateLock {
             let before = persistentAntiAbuseEvents()
             let result = mutation(&antiAbuseEvents)
+            antiAbuseEvents.removeAll {
+                retiredProfileIDs.contains($0.key.profilePartitionId)
+            }
             if persistentAntiAbuseEvents() != before {
                 markDirtyLocked()
             }
@@ -192,10 +202,58 @@ final class SumiPermissionPersistenceAuthority: @unchecked Sendable {
     ) {
         withStateLock {
             let before = persistentSiteActivityRecords()
-            siteActivityRecordsById = records
+            siteActivityRecordsById = records.filter {
+                retiredProfileIDs.contains($0.value.profilePartitionId) == false
+            }
             if persistentSiteActivityRecords() != before {
                 markDirtyLocked()
             }
+        }
+    }
+
+    func sealProfile(_ profilePartitionId: String) {
+        let profileID = SumiPermissionKey.normalizedProfilePartitionId(
+            profilePartitionId
+        )
+        _ = withStateLock {
+            retiredProfileIDs.insert(profileID)
+        }
+    }
+
+    func deleteProfileData(profilePartitionId: String) async throws {
+        let normalizedProfileID = SumiPermissionKey
+            .normalizedProfilePartitionId(profilePartitionId)
+        let accepted = withStateLock { () -> Bool in
+            retiredProfileIDs.insert(normalizedProfileID)
+            switch diagnostics.loadOutcome {
+            case .missing, .loadedFile, .loadedLegacySnapshots,
+                 .loadedLegacyUserDefaults:
+                break
+            case .notLoaded, .failedFileRead, .failedFileDecode,
+                 .failedLegacyUserDefaultsDecode, .unsupportedFileVersion:
+                return false
+            }
+
+            let previousAntiAbuseEvents = persistentAntiAbuseEvents()
+            let previousSiteActivityRecords = persistentSiteActivityRecords()
+            antiAbuseEvents.removeAll {
+                $0.key.profilePartitionId == normalizedProfileID
+            }
+            siteActivityRecordsById = siteActivityRecordsById.filter {
+                $0.value.profilePartitionId != normalizedProfileID
+            }
+            if persistentAntiAbuseEvents() != previousAntiAbuseEvents
+                || persistentSiteActivityRecords() != previousSiteActivityRecords {
+                markDirtyLocked()
+            }
+            return true
+        }
+        guard accepted else {
+            throw SumiPermissionProfileDataCleanupError
+                .persistenceStateUnreadable
+        }
+        guard await flushPendingWrites() else {
+            throw SumiPermissionProfileDataCleanupError.publicationFailed
         }
     }
 

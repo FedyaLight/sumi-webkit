@@ -146,7 +146,11 @@ struct SpaceRegularTabsView: View {
     let space: Space
     let inventory: SidebarSpaceInventorySnapshot
     let selection: SidebarWindowSelectionQuery
-    let regularTabs: any SidebarRegularTabsControlling
+    let regularTabCatalog: SidebarRegularTabCatalog
+    let regularTabTargets: SidebarRegularTabTargetQuery
+    let regularTabLifecycleCommands: SidebarRegularTabLifecycleCommands
+    let regularTabShortcutCommands: SidebarRegularTabShortcutCommands
+    let regularTabPlacementCommands: SidebarRegularTabPlacementCommands
     let browserContext: SidebarBrowserContext
     let isInteractive: Bool
     let innerWidth: CGFloat
@@ -157,7 +161,7 @@ struct SpaceRegularTabsView: View {
     @Environment(BrowserWindowState.self) private var windowState
 
     private var tabs: [Tab] {
-        regularTabs.tabs(in: space, windowState: windowState)
+        regularTabCatalog.tabs(in: space, windowState: windowState)
     }
 
     var body: some View {
@@ -166,7 +170,11 @@ struct SpaceRegularTabsView: View {
                 space: space,
                 inventory: inventory,
                 selection: selection,
-                regularTabs: regularTabs,
+                regularTabCatalog: regularTabCatalog,
+                regularTabTargets: regularTabTargets,
+                regularTabLifecycleCommands: regularTabLifecycleCommands,
+                regularTabShortcutCommands: regularTabShortcutCommands,
+                regularTabPlacementCommands: regularTabPlacementCommands,
                 browserContext: browserContext,
                 isInteractive: isInteractive,
                 innerWidth: innerWidth,
@@ -184,7 +192,11 @@ private struct SpaceRegularTabsContentView: View {
     let space: Space
     let inventory: SidebarSpaceInventorySnapshot
     let selection: SidebarWindowSelectionQuery
-    let regularTabs: any SidebarRegularTabsControlling
+    let regularTabCatalog: SidebarRegularTabCatalog
+    let regularTabTargets: SidebarRegularTabTargetQuery
+    let regularTabLifecycleCommands: SidebarRegularTabLifecycleCommands
+    let regularTabShortcutCommands: SidebarRegularTabShortcutCommands
+    let regularTabPlacementCommands: SidebarRegularTabPlacementCommands
     let browserContext: SidebarBrowserContext
     let isInteractive: Bool
     let innerWidth: CGFloat
@@ -228,10 +240,10 @@ private struct SpaceRegularTabsContentView: View {
             }
 
             SpaceSeparator(
-                hasTabs: regularTabs.hasPersistedTabs(in: space),
+                hasTabs: regularTabCatalog.hasPersistedTabs(in: space),
                 isHovering: $isSidebarHovered
             ) {
-                regularTabs.clearRegularTabs(for: space.id)
+                regularTabLifecycleCommands.clearRegularTabs(for: space.id)
             }
             .padding(.horizontal, 8)
 
@@ -249,7 +261,11 @@ private struct SpaceRegularTabsContentView: View {
                     space: space,
                     inventory: inventory,
                     selection: selection,
-                    regularTabs: regularTabs,
+                    regularTabCatalog: regularTabCatalog,
+                    regularTabTargets: regularTabTargets,
+                    regularTabLifecycleCommands: regularTabLifecycleCommands,
+                    regularTabShortcutCommands: regularTabShortcutCommands,
+                    regularTabPlacementCommands: regularTabPlacementCommands,
                     browserContext: browserContext,
                     isInteractive: isInteractive,
                     innerWidth: innerWidth,
@@ -374,6 +390,6 @@ private struct SpaceRegularNewTabRow: View {
 
     private func openNewTab() {
         guard isInteractive else { return }
-        browserContext.commands.openNewTabOrFloatingBar(windowState)
+        browserContext.floatingBarCommit.openNewTabSurface(in: windowState)
     }
 }

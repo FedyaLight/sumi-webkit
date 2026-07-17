@@ -5,16 +5,16 @@ import SumiDomain
 /// derived from the candidate's exact snapshot before pin insertion.
 @MainActor
 final class RegularTabShortcutSidebarDropTransaction {
-    private let tabManager: @MainActor () -> TabManager?
+    private let conversion: RegularTabShortcutConversionService
     private let launcherPlacement: ShortcutSplitLauncherPlacementService
     private let presentations: any SplitDropPresentationReconciling
 
     init(
-        tabManager: @escaping @MainActor () -> TabManager?,
+        conversion: RegularTabShortcutConversionService,
         launcherPlacement: ShortcutSplitLauncherPlacementService,
         presentations: any SplitDropPresentationReconciling
     ) {
-        self.tabManager = tabManager
+        self.conversion = conversion
         self.launcherPlacement = launcherPlacement
         self.presentations = presentations
     }
@@ -26,9 +26,7 @@ final class RegularTabShortcutSidebarDropTransaction {
         target: SplitDropTarget,
         windowState: BrowserWindowState
     ) -> Bool {
-        guard let tabManager = tabManager(),
-              let prepared = tabManager.regularTabShortcutConversion
-                .prepareShortcutSidebarDrop(
+        guard let prepared = conversion.prepareShortcutSidebarDrop(
                     tab,
                     into: targetGroup,
                     preferredWindowId: windowState.id
@@ -76,8 +74,7 @@ final class RegularTabShortcutSidebarDropTransaction {
             replacementGroups: replacement,
             requiredWindow: windowState
         )
-        guard tabManager.regularTabShortcutConversion
-            .commitShortcutSidebarDrop(
+        guard conversion.commitShortcutSidebarDrop(
                 prepared,
                 replacingSplitGroupsWith: replacement,
                 sidebarMutation: sidebarMutation,

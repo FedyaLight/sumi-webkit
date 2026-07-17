@@ -39,16 +39,18 @@ final class ExtensionWebViewConfigurationPreparation:
         else { return }
 
         requestRuntime(resolvedProfileID)
-        let controller = provisioning.ensureExtensionController(
-            for: resolvedProfileID
-        )
+        guard let controller = provisioning.controllerIfAdmitted(
+            for: resolvedProfileID,
+            mutationLease: nil
+        ), let websiteDataStore = provisioning.websiteDataStoreIfAdmitted(
+            for: resolvedProfileID,
+            mutationLease: nil
+        ) else { return }
         let existing = configuration.webExtensionController
         if existing !== controller {
             configuration.webExtensionController = controller
         }
-        configuration.websiteDataStore = provisioning.websiteDataStore(
-            for: resolvedProfileID
-        )
+        configuration.websiteDataStore = websiteDataStore
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
         preludes?.installPreludes(
             into: configuration.userContentController,

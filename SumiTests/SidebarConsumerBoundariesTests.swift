@@ -8,7 +8,7 @@ import XCTest
 @MainActor
 final class SidebarConsumerBoundariesTests: XCTestCase {
     func testInventorySnapshotPreservesCanonicalNestedOrdering() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let browser = BrowserManager()
         let space = Space(name: "Work")
         let root = TabFolder(name: "Root", spaceId: space.id, index: 0)
         let child = TabFolder(
@@ -35,20 +35,23 @@ final class SidebarConsumerBoundariesTests: XCTestCase {
             index: 0,
             loadsCachedFaviconOnInit: false
         )
-        tabManager.spaceStateOwner.replaceSpaces([space])
-        tabManager.regularTabCollectionStateOwner.replaceTabsBySpace([
-            space.id: [regular],
-        ])
-        tabManager.folderCollectionStateOwner.replaceFoldersBySpace([
+        browser.spaceStateOwner.replaceSpaces([space])
+        XCTAssertTrue(
+            browser.regularTabCollectionOwner.insert(
+                regular,
+                in: space.id,
+                at: 0
+            )
+        )
+        browser.folderCollectionStateOwner.replaceFoldersBySpace([
             space.id: [child, root],
         ])
-        tabManager.shortcutPinCollectionStateOwner.replaceSpacePinnedShortcuts([
+        browser.shortcutPinCollectionStateOwner.replaceSpacePinnedShortcuts([
             space.id: [topPin, nestedPin],
         ])
 
         let snapshot = try XCTUnwrap(
-            SidebarConsumerTestSupport.roles(tabManager: tabManager)
-                .inventory.snapshot(for: space.id)
+            makeInventory(browser: browser).snapshot(for: space.id)
         )
 
         XCTAssertEqual(snapshot.regularTabs.map(\.id), [regular.id])
@@ -61,29 +64,19 @@ final class SidebarConsumerBoundariesTests: XCTestCase {
     }
 
     func testWindowSelectionRejectsReplacedWindowObjectWithSameIdentity() throws {
-        let tabManager = try makeInMemoryTabManager()
-        let registry = WindowRegistry()
+        let browser = BrowserManager()
+        let registry = browser.windowRegistry
         let windowID = UUID()
         let original = BrowserWindowState(id: windowID)
         let replacement = BrowserWindowState(id: windowID)
         registry.register(original)
-        let identity = SidebarWindowIdentityQuery(registry: { registry })
-        let splitQuery = WindowSplitQuery(
-            tabManager: { tabManager },
-            windowState: { registry.windows[$0] },
-            previewIsActive: { _ in false }
-        )
+        let identity = SidebarWindowIdentityQuery(registry: registry)
+        let splitQuery = browser.splitQuery
         let selection = SidebarWindowSelectionQuery(
             runtimeIsAlive: { true },
             windows: identity,
-            windowTabs: BrowserWindowTabContext(
-                selectionService: { nil },
-                tabStore: { nil },
-                windows: { Array(registry.windows.values) },
-                liveShortcutTabs: { _ in [] },
-                visibleSplitTabIds: { _ in [] }
-            ),
-            shortcutPresentation: tabManager.shortcutPresentationOwner,
+            windowTabs: browser.windowTabContext,
+            shortcutPresentation: browser.shortcutPresentationOwner,
             splitQuery: splitQuery
         )
 
@@ -97,7 +90,7 @@ final class SidebarConsumerBoundariesTests: XCTestCase {
     }
 
     func testPinFolderCommandsResolveDestinationAtCommitAndFailClosed() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let browser = BrowserManager()
         let space = Space(name: "Work")
         let folder = TabFolder(name: "Folder", spaceId: space.id, index: 0)
         let existing = makePin(
@@ -112,57 +105,49 @@ final class SidebarConsumerBoundariesTests: XCTestCase {
             folderID: nil,
             index: 0
         )
-        tabManager.spaceStateOwner.replaceSpaces([space])
-        tabManager.folderCollectionStateOwner.replaceFoldersBySpace([
+        browser.spaceStateOwner.replaceSpaces([space])
+        browser.folderCollectionStateOwner.replaceFoldersBySpace([
             space.id: [folder],
         ])
-        tabManager.shortcutPinCollectionStateOwner.replaceSpacePinnedShortcuts([
+        browser.shortcutPinCollectionStateOwner.replaceSpacePinnedShortcuts([
             space.id: [moving, existing],
         ])
-        let runtime = SidebarRuntimeAvailabilityOracle()
-        let roles = SidebarConsumerTestSupport.roles(
-            tabManager: tabManager,
-            runtimeIsAlive: { runtime.isAlive }
-        )
+        let commands = browser.sidebarPinCommands
 
-        XCTAssertTrue(roles.pinCommands.move(moving, toFolder: folder.id))
+        XCTAssertTrue(commands.move(moving, toFolder: folder.id))
         let moved = try XCTUnwrap(
-            tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: moving.id)
+            browser.shortcutPinCollectionStateOwner.shortcutPin(by: moving.id)
         )
         XCTAssertEqual(moved.folderId, folder.id)
         XCTAssertEqual(moved.index, 1)
 
-        runtime.isAlive = false
-        XCTAssertFalse(roles.pinCommands.remove(moved))
+        browser.runtimePortConnection.detach()
+        XCTAssertFalse(commands.remove(moved))
         XCTAssertNotNil(
-            tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: moved.id)
+            browser.shortcutPinCollectionStateOwner.shortcutPin(by: moved.id)
         )
     }
 
     func testSpaceLifecycleUsesAuthoritativeCatalogAndFailsClosed() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let browser = BrowserManager()
         let first = Space(name: "First")
         let second = Space(name: "Second")
-        tabManager.spaceStateOwner.replaceSpaces([first, second])
-        tabManager.spaceStateOwner.replaceCurrentSpace(first)
-        let runtime = SidebarRuntimeAvailabilityOracle()
-        let lifecycle = SidebarConsumerTestSupport.roles(
-            tabManager: tabManager,
-            runtimeIsAlive: { runtime.isAlive }
-        ).lifecycle
+        browser.spaceStateOwner.replaceSpaces([first, second])
+        browser.spaceStateOwner.replaceCurrentSpace(first)
+        let lifecycle = browser.sidebarSpaceLifecycle
         var catalogChanges = 0
-        let catalogCancellable = tabManager.tabStructureEventBus
+        let catalogCancellable = browser.tabStructureEventBus
             .scopedStructureChangesPublisher
             .filter(\.affectsSpaceCatalog)
             .sink { _ in catalogChanges += 1 }
 
         try lifecycle.renameSpace(first.id, to: "Renamed")
-        XCTAssertEqual(tabManager.spaceStateOwner.space(with: first.id)?.name, "Renamed")
+        XCTAssertEqual(browser.spaceStateOwner.space(with: first.id)?.name, "Renamed")
         XCTAssertTrue(lifecycle.reorderSpace(second.id, to: 0))
-        XCTAssertEqual(tabManager.spaceStateOwner.spaces.map(\.id), [second.id, first.id])
+        XCTAssertEqual(browser.spaceStateOwner.spaces.map(\.id), [second.id, first.id])
         XCTAssertEqual(catalogChanges, 2)
 
-        runtime.isAlive = false
+        browser.runtimePortConnection.detach()
         XCTAssertNil(lifecycle.createSpace(name: "Rejected", icon: "", profileID: nil))
         XCTAssertFalse(lifecycle.reorderSpace(first.id, to: 0))
         XCTAssertThrowsError(try lifecycle.renameSpace(first.id, to: "Rejected"))
@@ -331,12 +316,15 @@ final class SidebarConsumerBoundariesTests: XCTestCase {
             loadsCachedFaviconOnInit: false
         )
         windowState.currentTabId = replacementTab.id
-        let tabs = try makeInMemoryTabManager()
+        let tabs = BrowserManager()
+        tabs.tabResidenceAuthority.establishResidenceSession(on: windowState)
         tabs.spaceStateOwner.replaceSpaces([space])
-        tabs.regularTabCollectionStateOwner.replaceTabsBySpace([
+        tabs.tabStateStore.regularTabs.replaceTabsBySpace([
             space.id: [replacementTab],
         ])
-        tabs.runtimeStateCoalescer.enqueue(runtimeState(for: replacementTab))
+        tabs.structuralPersistence.scheduleRuntimeStatePersistence(
+            for: replacementTab
+        )
         let webView = WKWebView()
         let navigationDelegate = WebViewNavigationDelegateProbe()
         webView.navigationDelegate = navigationDelegate
@@ -346,7 +334,7 @@ final class SidebarConsumerBoundariesTests: XCTestCase {
             webView: webView,
             residence: .regular(spaceID: space.id),
             sourceWindow: windowState,
-            tabs: tabs
+            residences: tabs.tabResidenceAuthority
         )
 
         XCTAssertTrue(
@@ -356,7 +344,8 @@ final class SidebarConsumerBoundariesTests: XCTestCase {
         XCTAssertEqual(windowState.currentTabId, replacementTab.id)
         XCTAssertTrue(webView.navigationDelegate === navigationDelegate)
         let flushedRuntimeStateCount =
-            await tabs.runtimeStateCoalescer.flushImmediately()
+            await tabs.structuralPersistence
+                .flushRuntimeStatePersistenceAwaitingResult()
         XCTAssertEqual(flushedRuntimeStateCount, 1)
     }
 
@@ -376,8 +365,13 @@ final class SidebarConsumerBoundariesTests: XCTestCase {
         )
         windowState.replaceEphemeralTabs([replacementTab])
         windowState.currentTabId = replacementTab.id
-        let tabs = try makeInMemoryTabManager()
-        tabs.runtimeStateCoalescer.enqueue(runtimeState(for: replacementTab))
+        let tabs = BrowserManager()
+        tabs.tabResidenceAuthority.establishResidenceSession(on: windowState)
+        replacementTab.spaceId = UUID()
+        tabs.structuralPersistence.scheduleRuntimeStatePersistence(
+            for: replacementTab
+        )
+        replacementTab.spaceId = nil
         let webView = WKWebView()
         let navigationDelegate = WebViewNavigationDelegateProbe()
         webView.navigationDelegate = navigationDelegate
@@ -387,14 +381,15 @@ final class SidebarConsumerBoundariesTests: XCTestCase {
             webView: webView,
             residence: .ephemeral(previousTabID: nil),
             sourceWindow: windowState,
-            tabs: tabs
+            residences: tabs.tabResidenceAuthority
         )
 
         XCTAssertTrue(windowState.ephemeralTabs.first === replacementTab)
         XCTAssertEqual(windowState.currentTabId, replacementTab.id)
         XCTAssertTrue(webView.navigationDelegate === navigationDelegate)
         let flushedRuntimeStateCount =
-            await tabs.runtimeStateCoalescer.flushImmediately()
+            await tabs.structuralPersistence
+                .flushRuntimeStatePersistenceAwaitingResult()
         XCTAssertEqual(flushedRuntimeStateCount, 1)
         XCTAssertTrue(windowState.removeEphemeralTab(ifIdentical: replacementTab))
         XCTAssertTrue(windowState.ephemeralTabs.isEmpty)
@@ -507,6 +502,22 @@ final class SidebarConsumerBoundariesTests: XCTestCase {
         withExtendedLifetime((cancellable, catalogCancellable)) {}
     }
 
+    private func makeInventory(
+        browser: BrowserManager
+    ) -> SidebarSpaceInventoryProjection {
+        SidebarSpaceInventoryProjection(
+            runtime: browser.runtimePortConnection,
+            spaces: browser.spaceStateOwner,
+            regularTabs: browser.regularTabCollectionOwner,
+            pinned: SidebarPinnedInventoryProjection(
+                folders: browser.folderCollectionStateOwner,
+                pins: browser.shortcutPinCollectionStateOwner,
+                splitGroups: browser.splitGroupStore,
+                splitOrdering: browser.splitGroupSidebarOrdering
+            )
+        )
+    }
+
     private func makePin(
         title: String,
         spaceID: UUID,
@@ -546,11 +557,6 @@ final class SidebarConsumerBoundariesTests: XCTestCase {
             canGoForward: false
         )
     }
-}
-
-@MainActor
-private final class SidebarRuntimeAvailabilityOracle {
-    var isAlive = true
 }
 
 @MainActor

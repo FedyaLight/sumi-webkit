@@ -5,25 +5,34 @@ import SumiDomain
 /// split chrome. No query mutates durable or window-local state.
 @MainActor
 final class WindowSplitQuery {
-    private let tabManager: @MainActor () -> TabManager?
-    private let windowState: @MainActor (UUID) -> BrowserWindowState?
+    private let splitGroups: SplitGroupStore
+    private let regularTabs: RegularTabCollectionOwner
+    private let pins: ShortcutPinCollectionStateOwner
+    private let liveShortcuts: LiveShortcutTabRegistry
+    private let windows: WindowRegistry
     private let previewIsActive: @MainActor (UUID) -> Bool
 
     init(
-        tabManager: @escaping @MainActor () -> TabManager?,
-        windowState: @escaping @MainActor (UUID) -> BrowserWindowState?,
+        splitGroups: SplitGroupStore,
+        regularTabs: RegularTabCollectionOwner,
+        pins: ShortcutPinCollectionStateOwner,
+        liveShortcuts: LiveShortcutTabRegistry,
+        windows: WindowRegistry,
         previewIsActive: @escaping @MainActor (UUID) -> Bool
     ) {
-        self.tabManager = tabManager
-        self.windowState = windowState
+        self.splitGroups = splitGroups
+        self.regularTabs = regularTabs
+        self.pins = pins
+        self.liveShortcuts = liveShortcuts
+        self.windows = windows
         self.previewIsActive = previewIsActive
     }
 
     func group(in windowID: UUID) -> SumiDomain.SplitGroup? {
-        guard let selection = windowState(windowID)?.splitSelection else {
+        guard let selection = windows.windows[windowID]?.splitSelection else {
             return nil
         }
-        guard let group = tabManager()?.splitGroupStore.group(
+        guard let group = splitGroups.group(
             id: selection.groupID
         ), group.contains(selection.activeMemberID) else {
             return nil
@@ -32,21 +41,19 @@ final class WindowSplitQuery {
     }
 
     func resolution(in windowID: UUID) -> WindowSplitResolution {
-        guard let windowState = windowState(windowID),
-              let tabManager = tabManager() else {
+        guard let windowState = windows.windows[windowID] else {
             return .inactive
         }
         return WindowSplitProjection(
-            group: { tabManager.splitGroupStore.group(id: $0) },
-            regularTabExists: {
-                tabManager.regularTabCollectionOwner.tab(for: $0) != nil
+            group: { [splitGroups] in splitGroups.group(id: $0) },
+            regularTabExists: { [regularTabs] in
+                regularTabs.tab(for: $0) != nil
             },
-            shortcutPinExists: {
-                tabManager.shortcutPinCollectionStateOwner
-                    .shortcutPin(by: $0) != nil
+            shortcutPinExists: { [pins] in
+                pins.shortcutPin(by: $0) != nil
             },
-            shortcutLiveTabID: { pinID, windowID in
-                tabManager.liveShortcutTabs.tab(
+            shortcutLiveTabID: { [liveShortcuts] pinID, windowID in
+                liveShortcuts.tab(
                     for: pinID,
                     in: windowID
                 )?.id
@@ -59,7 +66,7 @@ final class WindowSplitQuery {
 
     func visibleTabIDs(in windowID: UUID) -> [UUID] {
         if previewIsActive(windowID) {
-            return windowState(windowID)?.currentTabId.map { [$0] } ?? []
+            return windows.windows[windowID]?.currentTabId.map { [$0] } ?? []
         }
         return resolution(in: windowID).presentation?.visibleTabIDs ?? []
     }

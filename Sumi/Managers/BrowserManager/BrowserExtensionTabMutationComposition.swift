@@ -1,106 +1,146 @@
 import Foundation
+import WebKit
 
-/// Assembles the browser-side WebExtension Tab mutation capability. The
-/// factory stores no browser root; returned callbacks retain it weakly and the
-/// discard path is a concrete transaction service.
+@available(macOS 15.5, *)
+@MainActor
+final class BrowserTransientExtensionTabCommands {
+    private let creation: TransientExtensionTabCreationTransaction
+    private let residence: TransientExtensionTabResidenceQuery
+    private let promotion: TransientExtensionTabPromotionTransaction
+    private let spaces: TabSpaceCollectionStateOwner
+
+    init(
+        creation: TransientExtensionTabCreationTransaction,
+        residence: TransientExtensionTabResidenceQuery,
+        promotion: TransientExtensionTabPromotionTransaction,
+        spaces: TabSpaceCollectionStateOwner
+    ) {
+        self.creation = creation
+        self.residence = residence
+        self.promotion = promotion
+        self.spaces = spaces
+    }
+
+    func create(
+        url: URL,
+        in space: Space?,
+        webExtensionContextOverride: WKWebExtensionContext?
+    ) -> Tab {
+        creation.create(
+            url: url.absoluteString,
+            in: space,
+            webExtensionContextOverride: webExtensionContextOverride
+        )
+    }
+
+    func containsExact(_ tab: Tab) -> Bool {
+        residence.containsExact(tab)
+    }
+
+    func promote(_ tab: Tab) -> Bool {
+        guard residence.containsExact(tab),
+              let targetSpace = tab.spaceId.flatMap({ spaceID in
+                  spaces.spaces.first { $0.id == spaceID }
+              }) else {
+            return false
+        }
+        return promotion.promote(tab, in: targetSpace, activate: false)
+    }
+}
+
+/// Browser-owned WebExtension tab commands. This is a behavior boundary, not
+/// a dependency catalog: callers can only perform extension tab mutations.
+@available(macOS 15.5, *)
+@MainActor
+final class BrowserExtensionTabCommands {
+    private let regularTabs: TabRegularLifecycleOwner
+    private let transientTabs: BrowserTransientExtensionTabCommands
+    private let pinning: SidebarPinCommands
+    private let requestedDiscard: ExtensionRequestedTabDiscardService
+
+    init(
+        regularTabs: TabRegularLifecycleOwner,
+        transientTabs: BrowserTransientExtensionTabCommands,
+        pinning: SidebarPinCommands,
+        requestedDiscard: ExtensionRequestedTabDiscardService
+    ) {
+        self.regularTabs = regularTabs
+        self.transientTabs = transientTabs
+        self.pinning = pinning
+        self.requestedDiscard = requestedDiscard
+    }
+
+    func create(
+        url: URL?,
+        in space: Space?,
+        activate: Bool,
+        webExtensionContextOverride: WKWebExtensionContext?
+    ) -> Tab {
+        if let url {
+            return regularTabs.createNewTab(
+                url: url.absoluteString,
+                in: space,
+                activate: activate,
+                webExtensionContextOverride: webExtensionContextOverride
+            )
+        }
+        return regularTabs.createNewTab(
+            in: space,
+            activate: activate,
+            webExtensionContextOverride: webExtensionContextOverride
+        )
+    }
+
+    func createTransient(
+        url: URL,
+        in space: Space?,
+        webExtensionContextOverride: WKWebExtensionContext?
+    ) -> Tab {
+        transientTabs.create(
+            url: url,
+            in: space,
+            webExtensionContextOverride: webExtensionContextOverride
+        )
+    }
+
+    func containsTransient(_ tab: Tab) -> Bool {
+        transientTabs.containsExact(tab)
+    }
+
+    func pin(
+        _ tab: Tab,
+        targetWindow: BrowserWindowState?,
+        targetSpace: Space?
+    ) -> Bool {
+        pinning.pinTab(
+            tab,
+            context: .init(
+                windowState: targetWindow,
+                spaceId: targetSpace?.id ?? tab.spaceId
+            )
+        )
+        return tab.shortcutPinId != nil
+    }
+
+    func discard(_ tab: Tab, restoringSelectionTo tabID: UUID?) -> Bool {
+        requestedDiscard.discard(tab, restoringSelectionTo: tabID)
+    }
+
+    func promoteTransient(_ tab: Tab) -> Bool {
+        transientTabs.promote(tab)
+    }
+}
+
 @available(macOS 15.5, *)
 @MainActor
 enum BrowserExtensionTabMutationComposition {
     static func make(
-        browserManager: BrowserManager
+        commands: BrowserExtensionTabCommands,
+        selection: BrowserTabSelectionOwner
     ) -> BrowserExtensionTabMutationAdapter {
-        let tabs = browserManager.tabManager
-        let discard = ExtensionRequestedTabDiscardService(
-            transactions: tabs.structuralLookupCoordinator,
-            persistence: tabs.structuralPersistence,
-            membership: tabs.tabCollectionMembershipOwner,
-            transientTabs: tabs.transientWebKitTabLifecycleOwner,
-            regularTabs: tabs.regularTabCollectionOwner,
-            spaces: tabs.spaceStateOwner,
-            selection: tabs.selectionStateOwner,
-            runtimePorts: { [weak browserManager] in
-                guard let browserManager else {
-                    preconditionFailure(
-                        "Browser runtime released before requested Tab discard."
-                    )
-                }
-                return browserManager.tabManager.requireRuntimePorts()
-            }
-        )
-
-        return BrowserExtensionTabMutationAdapter(
-            createTab: { [weak browserManager] url, space, activate, context in
-                guard let tabs = browserManager?.tabManager else {
-                    preconditionFailure(
-                        "Browser runtime released before extension Tab creation."
-                    )
-                }
-                if let url {
-                    return tabs.regularTabLifecycleOwner.createNewTab(
-                        url: url.absoluteString,
-                        in: space,
-                        activate: activate,
-                        webExtensionContextOverride: context
-                    )
-                }
-                return tabs.regularTabLifecycleOwner.createNewTab(
-                    in: space,
-                    activate: activate,
-                    webExtensionContextOverride: context
-                )
-            },
-            createTransientTab: {
-                [weak browserManager] url, space, context in
-                guard let tabs = browserManager?.tabManager else {
-                    preconditionFailure(
-                        "Browser runtime released before transient Tab creation."
-                    )
-                }
-                return tabs.transientWebKitTabLifecycleOwner
-                    .createTransientExtensionTab(
-                        url: url.absoluteString,
-                        in: space,
-                        webExtensionContextOverride: context
-                    )
-            },
-            pinTab: { [weak browserManager] tab, window, space in
-                let targetSpaceID = space?.id ?? tab.spaceId
-                browserManager?.tabManager.shortcutPinCommandOwner.pinTab(
-                    tab,
-                    context: .init(
-                        windowState: window,
-                        spaceId: targetSpaceID
-                    )
-                )
-                let committed = tab.shortcutPinId != nil
-                return committed
-            },
-            selectTab: { [weak browserManager] tab, window in
-                browserManager?.selectTab(tab, in: window)
-            },
-            placeTab: { tab, window in
-                window.markWebKitChildWindowAdopted(by: tab.id)
-            },
-            requestedTabDiscard: discard,
-            promoteTransientTab: { [weak browserManager] tab in
-                guard let tabs = browserManager?.tabManager,
-                      tabs.transientWebKitTabLifecycleOwner
-                        .isTransientExtensionTab(tab),
-                      let targetSpace = tab.spaceId.flatMap({ spaceID in
-                          tabs.spaceStateOwner.spaces.first {
-                              $0.id == spaceID
-                          }
-                      })
-                else {
-                    return false
-                }
-                return tabs.transientWebKitTabLifecycleOwner
-                    .promoteTransientExtensionTab(
-                        tab,
-                        in: targetSpace,
-                        activate: false
-                    )
-            }
+        BrowserExtensionTabMutationAdapter(
+            commands: commands,
+            selection: selection
         )
     }
 }

@@ -31,6 +31,7 @@ final class WebViewRuntimeGraph {
     fileprivate let deferredServices: DeferredWebViewServices
     fileprivate let visibleContext: WebViewVisibleRuntimeContext
     fileprivate let initialDocumentContext: InitialDocumentWebViewRuntimeContext
+    fileprivate let profileReferenceAdmission: ProfileReferenceAdmissionLedger
 
     let runtimeTabs: WebViewRuntimeTabRegistry
 
@@ -43,7 +44,8 @@ final class WebViewRuntimeGraph {
         windowServices: WebViewWindowServices,
         deferredServices: DeferredWebViewServices,
         visibleContext: WebViewVisibleRuntimeContext,
-        initialDocumentContext: InitialDocumentWebViewRuntimeContext
+        initialDocumentContext: InitialDocumentWebViewRuntimeContext,
+        profileReferenceAdmission: ProfileReferenceAdmissionLedger
     ) {
         self.webViewSessions = webViewSessions
         self.resolveRuntimeTab = resolveRuntimeTab
@@ -52,6 +54,7 @@ final class WebViewRuntimeGraph {
         self.deferredServices = deferredServices
         self.visibleContext = visibleContext
         self.initialDocumentContext = initialDocumentContext
+        self.profileReferenceAdmission = profileReferenceAdmission
         let runtimeTabs = WebViewRuntimeTabRegistry(
             webViewSessions: webViewSessions
         )
@@ -596,7 +599,8 @@ final class WebViewRuntimeGraph {
                     for: webView,
                     reason: reason
                 ) ?? .invalidTarget
-            }
+            },
+            profileReferenceAdmission: profileReferenceAdmission
         )
 
     private(set) lazy var websiteDataCleanupService: WebsiteDataCleanupService = WebsiteDataCleanupService(

@@ -1,38 +1,76 @@
 extension RegularTabShortcutCommitTransaction {
-    static func live(tabManager: TabManager) -> Self {
+    static func compose(
+        pinStore: ShortcutPinStoreOwner,
+        pins: ShortcutPinCollectionStateOwner,
+        splitMutations: SplitGroupMutationService,
+        structuralMutations: TabStructuralCollectionMutationOwner,
+        persistence: TabStructuralPersistenceService,
+        folders: TabFolderOpenStateService,
+        registry: LiveShortcutTabRegistry,
+        membership: TabCollectionMembershipOwner,
+        resolution: ShortcutPinRuntimeResolutionOwner,
+        tabFactory: TabFactory,
+        bindings: ShortcutTabBindingSynchronizer,
+        runtimeConnection: TabRuntimePortConnection,
+        windowMutations: BrowserWindowShortcutMutationOwner,
+        profiles: TabProfileTransitionService,
+        structuralLookup: TabStructuralLookupCoordinator,
+        windows: ShortcutTabWindowQuery,
+        containerRemoval: ShortcutContainerRemovalOwner,
+        selection: TabSelectionStateOwner,
+        runtimeTeardown: TabRuntimeTeardownService,
+        regularTabs: RegularTabCollectionOwner
+    ) -> Self {
         let structure = RegularTabShortcutCommitStructurePreparer(
             catalog: ShortcutSplitLauncherCatalogTransaction(
-                pinStore: tabManager.shortcutPinStoreOwner,
-                pins: tabManager.shortcutPinCollectionStateOwner
+                pinStore: pinStore,
+                pins: pins
             ),
-            topology: tabManager.splitGroupMutations,
-            structural: tabManager.structuralCollectionMutationOwner
+            topology: splitMutations,
+            structural: structuralMutations
         )
         let terminal = RegularTabShortcutTerminalEffectsFactory(
-            persistence: tabManager.structuralPersistence,
-            folders: tabManager.folderOpenState
+            persistence: persistence,
+            folders: folders
+        )
+        let batches = ShortcutTabBindingBatchFactory(
+            runtimeConnection: runtimeConnection,
+            windowMutations: windowMutations,
+            profiles: profiles,
+            persistence: ShortcutSplitLauncherWindowPersistence(
+                structuralLookup: structuralLookup
+            ),
+            structuralLookup: structuralLookup
         )
         let displayedTransition = DisplayedTabShortcutConversionCommitter(
             bindings: DisplayedTabShortcutBindingPreparer(
-                registry: tabManager.liveShortcutTabs,
-                membership: tabManager.tabCollectionMembershipOwner,
-                resolution: tabManager.shortcutPinRuntimeResolutionOwner,
-                freshTabs: ShortcutFreshTabFactory(tabManager: tabManager)
+                registry: registry,
+                membership: membership,
+                resolution: resolution,
+                freshTabs: ShortcutFreshTabFactory(
+                    tabFactory: tabFactory,
+                    bindings: bindings
+                )
             ),
-            batches: ShortcutTabBindingBatchFactory(
-                runtimeConnection: tabManager.runtimePortConnection,
-                windowMutations: tabManager.shortcutWindowMutationOwner,
-                profiles: tabManager.profileAssignments.tabs,
-                persistence: ShortcutSplitLauncherWindowPersistence(
-                    structuralLookup: tabManager.structuralLookupCoordinator
-                ),
-                structuralLookup: tabManager.structuralLookupCoordinator
-            ),
+            batches: batches,
             runtime: DisplayedTabShortcutRuntimePreparer(
-                membership: tabManager.tabCollectionMembershipOwner,
-                containerRemoval: tabManager.shortcutContainerRemovalOwner,
-                regularTabs: tabManager.regularTabCollectionOwner,
-                structuralLookup: tabManager.structuralLookupCoordinator
+                membership: membership,
+                containerRemoval: containerRemoval,
+                regularTabs: regularTabs,
+                structuralLookup: structuralLookup
+            )
+        )
+        let detachedTransition = DetachedTabShortcutConverter(
+            batches: batches,
+            source: DetachedTabShortcutSourcePreparer(
+                windows: windows,
+                containerRemoval: containerRemoval,
+                membership: membership,
+                selection: selection,
+                runtimeTeardown: runtimeTeardown
+            ),
+            windowReconciler: RegularTabShortcutWindowReconciler(
+                regularTabs: regularTabs
             )
         )
         return Self(
@@ -40,15 +78,13 @@ extension RegularTabShortcutCommitTransaction {
                 structure: structure,
                 transition: displayedTransition,
                 terminal: terminal,
-                structuralLookup: tabManager.structuralLookupCoordinator
+                structuralLookup: structuralLookup
             ),
             detached: RegularTabShortcutDetachedCommitter(
                 structure: structure,
-                transition: DetachedTabShortcutConverter(
-                    tabManager: tabManager
-                ),
+                transition: detachedTransition,
                 terminal: terminal,
-                structuralLookup: tabManager.structuralLookupCoordinator
+                structuralLookup: structuralLookup
             )
         )
     }

@@ -14,7 +14,9 @@ struct TabFolderNestedFolderEntryView: View {
     let inventory: SidebarSpaceInventorySnapshot
     let selection: SidebarWindowSelectionQuery
     let pinProjection: SidebarPinFolderProjection
-    let pinCommands: SidebarPinFolderCommands
+    let pinCommands: SidebarPinCommands
+    let pinExecution: SidebarPinExecutionCommands
+    let folderCommands: SidebarFolderCommands
     let spaceLifecycle: SidebarSpaceLifecycle
     @Binding var shortcutRestoreSession: SpaceShortcutRestoreInteractionSession
     let elevatedFolderIDs: Set<UUID>
@@ -32,6 +34,8 @@ struct TabFolderNestedFolderEntryView: View {
             selection: selection,
             pinProjection: pinProjection,
             pinCommands: pinCommands,
+            pinExecution: pinExecution,
+            folderCommands: folderCommands,
             spaceLifecycle: spaceLifecycle,
             shortcutRestoreSession: $shortcutRestoreSession,
             elevatedFolderIds: elevatedFolderIDs,
@@ -144,13 +148,25 @@ struct TabFolderSplitGroupEntryView: View {
                 faviconImageReader: browserContext.faviconImageReader,
                 accessibilityID: "folder-shortcut-host-split-row-\(group.id.uuidString)",
                 onActivateMember: { memberID in
-                    browserContext.commands.focusSplitGroup(group.id, memberID, windowState.id)
+                    browserContext.splitFocusCommands.focusGroup(
+                        group.id,
+                        memberID,
+                        windowState.id
+                    )
                 },
                 onRestoreShortcutMember: { memberID in
-                    browserContext.commands.restoreShortcutSplitMember(group.id, memberID, windowState.id)
+                    browserContext.splitFocusCommands.restoreMember(
+                        group.id,
+                        memberID,
+                        windowState.id
+                    )
                 },
                 onCloseMember: { memberID in
-                    browserContext.commands.closeSplitMember(group.id, memberID, windowState.id)
+                    browserContext.splitCloseCommand.closeMember(
+                        group.id,
+                        memberID,
+                        windowState.id
+                    )
                 },
                 onPrepareShortcutRestoreGap: prepareShortcutRestoreGap,
                 onPerformShortcutRestoreWithPreparedGap: performShortcutRestoreWithPreparedGap

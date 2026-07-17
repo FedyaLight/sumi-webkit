@@ -31,9 +31,78 @@ protocol ProtonPassSafariCompanionStore: AnyObject {
     func clearState(profileId: UUID?, extensionId: String) throws
 }
 
+enum ProtonPassSafariProfileRetirementError: Error, Equatable {
+    case accountEnumerationFailed(OSStatus)
+    case malformedAccountEnumeration
+    case accountDeletionFailed(String, OSStatus)
+    case deletionVerificationFailed
+}
+
 final class KeychainProtonPassSafariCompanionStore: ProtonPassSafariCompanionStore {
+    struct ProfileRetirementOperations {
+        let accountsForService: (String) throws -> [String]
+        let deleteAccount: (String, String) throws -> Void
+
+        static var live: ProfileRetirementOperations {
+            ProfileRetirementOperations(
+                accountsForService: { service in
+                let query: [String: Any] = [
+                    kSecClass as String: kSecClassGenericPassword,
+                    kSecAttrService as String: service,
+                    kSecReturnAttributes as String: true,
+                    kSecMatchLimit as String: kSecMatchLimitAll,
+                ]
+                var result: CFTypeRef?
+                let status = SecItemCopyMatching(
+                    query as CFDictionary,
+                    &result
+                )
+                if status == errSecItemNotFound {
+                    return []
+                }
+                guard status == errSecSuccess else {
+                    throw ProtonPassSafariProfileRetirementError
+                        .accountEnumerationFailed(status)
+                }
+                guard let attributes = result as? [[String: Any]] else {
+                    throw ProtonPassSafariProfileRetirementError
+                        .malformedAccountEnumeration
+                }
+                return try attributes.map { item in
+                    guard let account = item[kSecAttrAccount as String] as? String else {
+                        throw ProtonPassSafariProfileRetirementError
+                            .malformedAccountEnumeration
+                    }
+                    return account
+                }
+                },
+                deleteAccount: { service, account in
+                let query: [String: Any] = [
+                    kSecClass as String: kSecClassGenericPassword,
+                    kSecAttrService as String: service,
+                    kSecAttrAccount as String: account,
+                ]
+                let status = SecItemDelete(query as CFDictionary)
+                guard status == errSecSuccess || status == errSecItemNotFound else {
+                    throw ProtonPassSafariProfileRetirementError
+                        .accountDeletionFailed(account, status)
+                }
+                }
+            )
+        }
+    }
+
     private static let logger = Logger.sumi(category: "ProtonCompanion")
-    private let service = "\(SumiAppIdentity.bundleIdentifier).proton-pass-safari-companion"
+    private let service: String
+    private let profileRetirementOperations: ProfileRetirementOperations
+
+    init(
+        service: String = "\(SumiAppIdentity.bundleIdentifier).proton-pass-safari-companion",
+        profileRetirementOperations: ProfileRetirementOperations = .live
+    ) {
+        self.service = service
+        self.profileRetirementOperations = profileRetirementOperations
+    }
 
     /// Keychain items are protected by the writing binary's code signature.
     /// Debug builds are ad-hoc signed, so every rebuild orphans the previous
@@ -143,6 +212,23 @@ final class KeychainProtonPassSafariCompanionStore: ProtonPassSafariCompanionSto
                 "Proton companion keychain delete failed (status \(status, privacy: .public))"
             )
             throw CompanionApplicationMessageError.secureStoreFailure
+        }
+    }
+
+    func deleteProfileData(profileID: UUID) throws {
+        let prefix = "\(profileID.uuidString.lowercased()):"
+        let accounts = try profileRetirementOperations.accountsForService(
+            service
+        )
+        for account in accounts where account.hasPrefix(prefix) {
+            try profileRetirementOperations.deleteAccount(service, account)
+        }
+
+        let remainingAccounts = try profileRetirementOperations
+            .accountsForService(service)
+        guard remainingAccounts.contains(where: { $0.hasPrefix(prefix) }) == false else {
+            throw ProtonPassSafariProfileRetirementError
+                .deletionVerificationFailed
         }
     }
 

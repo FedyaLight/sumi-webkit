@@ -1,3 +1,4 @@
+import SumiWebRuntime
 import WebKit
 import XCTest
 
@@ -6,230 +7,285 @@ import XCTest
 @MainActor
 final class NavigationToolbarContextOwnerTests: XCTestCase {
     func testToolbarContextUsesBoundWindowForCurrentTabAndWebView() {
-        let windowState = BrowserWindowState()
-        let tab = makeTab("https://toolbar.example")
+        let harness = NavigationToolbarContextHarness()
         let webView = WKWebView()
-        let owner = makeOwner(
-            currentTab: { requestedWindow in
-                requestedWindow === windowState ? tab : nil
-            },
-            webView: { requestedTab, requestedWindow in
-                requestedTab === tab && requestedWindow === windowState ? webView : nil
-            }
+        harness.register(webView, for: harness.tab)
+
+        let context = harness.owner.navigationToolbarContext(
+            for: harness.windowState
         )
 
-        let context = owner.navigationToolbarContext(for: windowState)
-
-        XCTAssertIdentical(context.currentTab(), tab)
-        XCTAssertIdentical(context.webView(tab), webView)
+        XCTAssertIdentical(context.currentTab(), harness.tab)
+        XCTAssertIdentical(context.webView(harness.tab), webView)
     }
 
     func testNavigationHistorySelectedURLOpensForegroundInWindowSpace() {
-        let windowState = BrowserWindowState()
-        let spaceId = UUID()
-        windowState.currentSpaceId = spaceId
-        let sourceTab = makeTab("https://source.example")
+        let harness = NavigationToolbarContextHarness()
         let targetURL = URL(string: "https://selected.example/path")!
-        var openedURL: String?
-        var openedContext: BrowserTabOpenContext?
-        let owner = makeOwner(
-            openNewTab: { urlString, context in
-                openedURL = urlString
-                openedContext = context
-            }
-        )
 
-        owner
-            .navigationHistoryContext(for: windowState)
-            .openURLInNewTab(targetURL, true, sourceTab)
+        harness.owner
+            .navigationHistoryContext(for: harness.windowState)
+            .openURLInNewTab(targetURL, true, harness.tab)
 
-        XCTAssertEqual(openedURL, targetURL.absoluteString)
-        guard let openedContext else {
-            XCTFail("Expected selected navigation history URL to open a tab")
-            return
-        }
-        XCTAssertIdentical(openedContext.windowState, windowState)
-        XCTAssertIdentical(openedContext.sourceTab, sourceTab)
-        XCTAssertEqual(openedContext.preferredSpaceId, spaceId)
-        guard case .foreground(let activationWindow, let loadPolicy) = openedContext.activationPolicy else {
-            XCTFail("Expected foreground activation for selected history URL")
-            return
-        }
-        XCTAssertIdentical(activationWindow, windowState)
-        XCTAssertEqual(loadPolicy, .deferred)
+        let opened = harness.tabs.first { $0.id != harness.tab.id }
+        XCTAssertEqual(opened?.url, targetURL)
+        XCTAssertEqual(opened?.spaceId, harness.space.id)
+        XCTAssertEqual(harness.windowState.currentTabId, opened?.id)
     }
 
     func testNavigationHistoryBackgroundURLOpensInWindowSpaceWithoutForegroundActivation() {
-        let windowState = BrowserWindowState()
-        let spaceId = UUID()
-        windowState.currentSpaceId = spaceId
-        let sourceTab = makeTab("https://source.example")
+        let harness = NavigationToolbarContextHarness()
         let targetURL = URL(string: "https://background.example/path")!
-        var openedContext: BrowserTabOpenContext?
-        let owner = makeOwner(
-            openNewTab: { _, context in
-                openedContext = context
-            }
-        )
 
-        owner
-            .navigationHistoryContext(for: windowState)
-            .openURLInNewTab(targetURL, false, sourceTab)
+        harness.owner
+            .navigationHistoryContext(for: harness.windowState)
+            .openURLInNewTab(targetURL, false, harness.tab)
 
-        guard let openedContext else {
-            XCTFail("Expected background navigation history URL to open a tab")
-            return
-        }
-        XCTAssertIdentical(openedContext.windowState, windowState)
-        XCTAssertIdentical(openedContext.sourceTab, sourceTab)
-        XCTAssertEqual(openedContext.preferredSpaceId, spaceId)
-        guard case .background = openedContext.activationPolicy else {
-            XCTFail("Expected background activation for unselected history URL")
-            return
-        }
+        let opened = harness.tabs.first { $0.id != harness.tab.id }
+        XCTAssertEqual(opened?.url, targetURL)
+        XCTAssertEqual(opened?.spaceId, harness.space.id)
+        XCTAssertEqual(harness.windowState.currentTabId, harness.tab.id)
     }
 
     func testNavigationHistoryCurrentURLUsesBoundWindowScopedAction() {
-        let windowState = BrowserWindowState()
+        let harness = NavigationToolbarContextHarness()
         let targetURL = URL(string: "https://current.example/path")!
-        var openedURL: URL?
-        weak var openedWindow: BrowserWindowState?
-        let owner = makeOwner(
-            openURLInCurrentTab: { url, windowState in
-                openedURL = url
-                openedWindow = windowState
-            }
+        let history = NavigationToolbarHistoryRecorder()
+        history.activePagesByWindowID[harness.windowState.id] = ActivePageResolution(
+            source: .selectedTab,
+            windowState: harness.windowState,
+            tab: harness.tab,
+            url: harness.tab.url,
+            canonicalWebView: nil
         )
+        let owner = harness.makeOwner(history: history.owner)
 
-        owner
-            .navigationHistoryContext(for: windowState)
+        owner.navigationHistoryContext(for: harness.windowState)
             .openURLInCurrentTab(targetURL, nil)
 
-        XCTAssertEqual(openedURL, targetURL)
-        XCTAssertIdentical(openedWindow, windowState)
+        XCTAssertEqual(history.loadedURLs, [targetURL])
+        XCTAssertIdentical(history.loadedWindows.first, harness.windowState)
     }
 
     func testNavigationHistoryDeadBoundWindowDoesNotRetargetToAnotherWindow() {
+        let browserManager = BrowserManager()
+        let history = NavigationToolbarHistoryRecorder()
         var boundWindow: BrowserWindowState? = BrowserWindowState()
-        weak var releasedBoundWindow: BrowserWindowState?
-        releasedBoundWindow = boundWindow
-        let targetURL = URL(string: "https://stale.example/path")!
-        var openedCurrentURL: URL?
-        var openedNewTabURL: String?
-        let owner = makeOwner(
-            openURLInCurrentTab: { url, _ in
-                openedCurrentURL = url
-            },
-            openNewTab: { urlString, _ in
-                openedNewTabURL = urlString
-            }
+        weak var releasedBoundWindow = boundWindow
+        let owner = NavigationToolbarContextHarness.makeOwner(
+            browserManager: browserManager,
+            history: history.owner
         )
-
         let context = owner.navigationHistoryContext(for: boundWindow!)
         boundWindow = nil
 
         XCTAssertNil(releasedBoundWindow)
 
+        let targetURL = URL(string: "https://stale.example/path")!
         context.openURLInNewTab(targetURL, true, nil)
         context.openURLInCurrentTab(targetURL, nil)
 
-        XCTAssertNil(openedNewTabURL)
-        XCTAssertNil(openedCurrentURL)
+        XCTAssertTrue(
+            browserManager.regularTabCollectionOwner.allTabs(
+                in: browserManager.spaceStateOwner.spaces
+            ).isEmpty
+        )
+        XCTAssertTrue(history.loadedURLs.isEmpty)
     }
 
-    func testNavigationHistoryNewWindowDelegatesURLs() {
-        let windowState = BrowserWindowState()
+    func testNavigationHistoryNewWindowDelegatesURLs() async {
+        let harness = NavigationToolbarContextHarness()
+        let history = NavigationToolbarHistoryRecorder()
+        history.registeredWindow = BrowserWindowState()
+        let owner = harness.makeOwner(history: history.owner)
         let urls = [
             URL(string: "https://first.example")!,
             URL(string: "https://second.example")!,
         ]
-        var delegatedURLs: [URL] = []
-        let owner = makeOwner(
-            openHistoryURLsInNewWindow: { urls in
-                delegatedURLs = urls
-            }
-        )
 
-        owner
-            .navigationHistoryContext(for: windowState)
+        owner.navigationHistoryContext(for: harness.windowState)
             .openURLsInNewWindow(urls)
 
-        XCTAssertEqual(delegatedURLs, urls)
+        for _ in 0..<20 where history.openedURLs.count != urls.count {
+            await Task.yield()
+        }
+
+        XCTAssertEqual(history.createdWindowCount, 1)
+        XCTAssertEqual(history.openedURLs, urls)
     }
 
     func testToolbarBackForwardActionsUseBoundWindow() {
-        let windowState = BrowserWindowState()
-        var backWindow: BrowserWindowState?
-        var forwardWindow: BrowserWindowState?
-        let owner = makeOwner(
-            goBack: { windowState in
-                backWindow = windowState
-            },
-            goForward: { windowState in
-                forwardWindow = windowState
-            }
+        let harness = NavigationToolbarContextHarness()
+        let history = NavigationToolbarHistoryRecorder()
+        let webView = WKWebView()
+        history.activePagesByWindowID[harness.windowState.id] = ActivePageResolution(
+            source: .selectedTab,
+            windowState: harness.windowState,
+            tab: harness.tab,
+            url: harness.tab.url,
+            canonicalWebView: webView
         )
+        let context = harness.makeOwner(history: history.owner)
+            .navigationToolbarContext(for: harness.windowState)
 
-        let context = owner.navigationToolbarContext(for: windowState)
         context.goBack()
         context.goForward()
 
-        XCTAssertIdentical(backWindow, windowState)
-        XCTAssertIdentical(forwardWindow, windowState)
+        XCTAssertEqual(history.backwardWebViews, [ObjectIdentifier(webView)])
+        XCTAssertEqual(history.forwardWebViews, [ObjectIdentifier(webView)])
     }
 
     func testToolbarReloadActionUsesBoundWindow() {
-        let windowState = BrowserWindowState()
-        let tab = makeTab("https://reload.example")
-        var reloadedTabId: UUID?
-        var reloadedWindowId: UUID?
-        let owner = makeOwner(
-            reload: { tab, windowState in
-                reloadedTabId = tab.id
-                reloadedWindowId = windowState.id
-            }
+        let harness = NavigationToolbarContextHarness()
+        let webView = NavigationToolbarReloadRecordingWebView()
+        harness.register(webView, for: harness.tab)
+        let context = harness.owner.navigationToolbarContext(
+            for: harness.windowState
         )
 
-        let context = owner.navigationToolbarContext(for: windowState)
-        context.reload(tab)
+        context.reload(harness.tab)
 
-        XCTAssertEqual(reloadedTabId, tab.id)
-        XCTAssertEqual(reloadedWindowId, windowState.id)
+        XCTAssertEqual(webView.loadedURLs, [harness.tab.url])
+    }
+}
+
+@MainActor
+private final class NavigationToolbarContextHarness {
+    let browserManager: BrowserManager
+    let windowState: BrowserWindowState
+    let space: Space
+    let tab: Tab
+
+    init() {
+        browserManager = BrowserManager()
+        let profile = Profile(name: "Toolbar")
+        space = Space(name: "Toolbar", profileId: profile.id)
+        windowState = BrowserWindowState()
+
+        browserManager.profileManager.profiles = [profile]
+        browserManager.currentProfile = profile
+        browserManager.spaceStateOwner.replaceSpaces([space])
+        browserManager.spaceStateOwner.replaceCurrentSpace(space)
+        browserManager.tabResidenceAuthority.establishResidenceSession(
+            on: windowState
+        )
+        windowState.currentSpaceId = space.id
+        windowState.currentProfileId = profile.id
+        browserManager.windowRegistry.register(windowState)
+        browserManager.windowRegistry.setActive(windowState)
+
+        tab = browserManager.regularTabLifecycleOwner.createNewTab(
+            url: "https://toolbar.example",
+            in: space,
+            activate: false
+        )
+        windowState.currentTabId = tab.id
     }
 
-    private func makeOwner(
-        currentTab: @escaping @MainActor (BrowserWindowState) -> Tab? = { _ in nil },
-        webView: @escaping @MainActor (Tab, BrowserWindowState) -> WKWebView? = { _, _ in nil },
-        openURLInCurrentTab: @escaping @MainActor (URL, BrowserWindowState) -> Void = { _, _ in /* No-op. */ },
-        openNewTab: @escaping @MainActor (String, BrowserTabOpenContext) -> Void = { _, _ in /* No-op. */ },
-        openHistoryURLsInNewWindow: @escaping @MainActor ([URL]) -> Void = { _ in /* No-op. */ },
-        goBack: @escaping @MainActor (BrowserWindowState) -> Void = { _ in /* No-op. */ },
-        goForward: @escaping @MainActor (BrowserWindowState) -> Void = { _ in /* No-op. */ },
-        reload: @escaping @MainActor (Tab, BrowserWindowState) -> Void = { _, _ in /* No-op. */ }
+    var tabs: [Tab] {
+        browserManager.regularTabCollectionOwner.tabs(in: space)
+    }
+
+    var owner: BrowserNavigationToolbarContextOwner {
+        makeOwner(history: browserManager.historyBundle.historyNavigationOwner)
+    }
+
+    func makeOwner(
+        history: BrowserHistoryNavigationOwner
+    ) -> BrowserNavigationToolbarContextOwner {
+        Self.makeOwner(browserManager: browserManager, history: history)
+    }
+
+    static func makeOwner(
+        browserManager: BrowserManager,
+        history: BrowserHistoryNavigationOwner
     ) -> BrowserNavigationToolbarContextOwner {
         BrowserNavigationToolbarContextOwner(
-            currentTab: currentTab,
-            webView: webView,
-            faviconService: {
-                TabDependencyIsolationDefaults.faviconService
-            },
-            faviconImageReader: {
-                TabDependencyIsolationDefaults.faviconCapabilities.images
-            },
-            openURLInCurrentTab: openURLInCurrentTab,
-            openNewTab: openNewTab,
-            openHistoryURLsInNewWindow: openHistoryURLsInNewWindow,
-            goBack: goBack,
-            goForward: goForward,
-            reload: reload
+            windowTabs: browserManager.shellRuntime.windowTabs,
+            webViews: browserManager.webViewRoutingService,
+            dataServices: browserManager.dataServices,
+            history: history,
+            tabOpening: browserManager.tabOpening
         )
     }
 
-    private func makeTab(_ url: String) -> Tab {
-        Tab(
-            url: URL(string: url)!,
-            name: url,
-            loadsCachedFaviconOnInit: false
+    func register(_ webView: WKWebView, for tab: Tab) {
+        WebViewTrackingLifecycleOwner().registerTrackedWebView(
+            webView,
+            for: TrackedWebViewOwner(
+                tabID: tab.id,
+                windowID: windowState.id
+            ),
+            in: browserManager.webViewSessions,
+            removeFromContainers: { _ in },
+            installRuntimeObservations: { _ in },
+            uninstallRuntimeObservationsIfUntracked: { _ in },
+            pruneInvalidDeferredCommands: { _ in },
+            canDisplaceWebView: { _ in true },
+            removeRecentVisibility: { _ in },
+            cleanupDisplacedWebView: { _, _ in }
         )
+    }
+}
+
+@MainActor
+private final class NavigationToolbarHistoryRecorder {
+    var activePagesByWindowID: [UUID: ActivePageResolution] = [:]
+    var registeredWindow: BrowserWindowState?
+    private(set) var loadedURLs: [URL] = []
+    private(set) var loadedWindows: [BrowserWindowState] = []
+    private(set) var openedURLs: [URL] = []
+    private(set) var createdWindowCount = 0
+    private(set) var backwardWebViews: [ObjectIdentifier] = []
+    private(set) var forwardWebViews: [ObjectIdentifier] = []
+
+    var owner: BrowserHistoryNavigationOwner {
+        BrowserHistoryNavigationOwner(
+            activeWindow: { nil },
+            activePage: { [weak self] window in
+                self?.activePagesByWindowID[window.id]
+            },
+            openNativeBrowserSurface: { _, _, _, _ in },
+            openNewTab: { [weak self] url, context in
+                self?.openedURLs.append(URL(string: url)!)
+                return Tab(
+                    url: URL(string: url)!,
+                    spaceId: context.preferredSpaceId,
+                    loadsCachedFaviconOnInit: false
+                )
+            },
+            loadCurrentPageURL: { [weak self] _, window, url in
+                self?.loadedURLs.append(url)
+                self?.loadedWindows.append(window)
+            },
+            windowIds: { [] },
+            createNewWindow: { [weak self] in
+                self?.createdWindowCount += 1
+            },
+            awaitNextRegisteredWindow: { [weak self] _ in
+                self?.registeredWindow
+            },
+            scheduleRuntimeStatePersistence: { _ in },
+            schedulePrepareVisibleWebViews: { _ in },
+            refreshCompositor: { _ in },
+            navigateBack: { [weak self] webView in
+                self?.backwardWebViews.append(ObjectIdentifier(webView))
+            },
+            navigateForward: { [weak self] webView in
+                self?.forwardWebViews.append(ObjectIdentifier(webView))
+            }
+        )
+    }
+}
+
+@MainActor
+private final class NavigationToolbarReloadRecordingWebView: WKWebView {
+    private(set) var loadedURLs: [URL] = []
+
+    override func load(_ request: URLRequest) -> WKNavigation? {
+        if let url = request.url {
+            loadedURLs.append(url)
+        }
+        return nil
     }
 }

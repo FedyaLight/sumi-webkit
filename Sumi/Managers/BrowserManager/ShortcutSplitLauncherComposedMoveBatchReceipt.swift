@@ -87,8 +87,7 @@ final class ShortcutSplitLauncherComposedMoveBatchReceipt:
         let participants = SplitShortcutMemberRestoreParticipants(
             presentation: presentation,
             retirement: retirement,
-            topology: topology,
-            retirementService: retirementService
+            topology: topology
         )
         let aggregate = SplitShortcutMemberRestoreAggregateTransaction(
             binding: binding,

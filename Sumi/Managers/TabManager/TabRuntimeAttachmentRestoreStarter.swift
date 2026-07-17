@@ -4,6 +4,7 @@ import Foundation
 @MainActor
 final class TabRuntimeAttachmentRestoreStarter {
     private struct PendingStart {
+        let revision: UInt64
         let attempt: TabStartupRestoreAttempt
         let task: Task<Void, Never>
     }
@@ -13,6 +14,7 @@ final class TabRuntimeAttachmentRestoreStarter {
     private let lifecycle: TabStartupRestoreLifecycle
     private let restore: TabStoreRestoreService
     private var pendingStart: PendingStart?
+    private var startRevision: UInt64 = 0
 
     init(
         connection: TabRuntimePortConnection,
@@ -54,19 +56,27 @@ final class TabRuntimeAttachmentRestoreStarter {
             revision: policy.requestedStructuralRevision,
             using: runtimeAttachment
         ) else { return }
+        startRevision &+= 1
+        let revision = startRevision
         let task = Task { @MainActor [weak self] in
             guard let self else { return }
-            activatePending(attempt)
+            activatePending(revision: revision)
         }
-        pendingStart = PendingStart(attempt: attempt, task: task)
+        pendingStart = PendingStart(
+            revision: revision,
+            attempt: attempt,
+            task: task
+        )
     }
 
-    private func activatePending(_ attempt: TabStartupRestoreAttempt) {
+    private func activatePending(revision: UInt64) {
         guard Task.isCancelled == false,
-              pendingStart?.attempt.matches(attempt) == true else {
+              let pendingStart,
+              pendingStart.revision == revision else {
             return
         }
-        pendingStart = nil
+        self.pendingStart = nil
+        let attempt = pendingStart.attempt
         guard lifecycle.activate(attempt) else { return }
         restore.loadFromStore(attempt)
     }

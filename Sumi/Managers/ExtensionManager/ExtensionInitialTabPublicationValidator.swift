@@ -16,6 +16,7 @@ final class ExtensionInitialTabPublicationValidator {
     private let windowRegistry: any ExtensionWindowQuery
     private let windowPublications: ExtensionWindowPublicationQuery
     private let adapters: ExtensionCreatedTabAdapterPublication
+    private let residences: BrowserTabResidenceAuthority
     private let extensionsLoaded: @MainActor () -> Bool
 
     init(
@@ -28,6 +29,7 @@ final class ExtensionInitialTabPublicationValidator {
         windowRegistry: any ExtensionWindowQuery,
         windowPublications: ExtensionWindowPublicationQuery,
         adapters: ExtensionCreatedTabAdapterPublication,
+        residences: BrowserTabResidenceAuthority,
         extensionsLoaded: @escaping @MainActor () -> Bool
     ) {
         self.runtimePublicationEvidence = runtimePublicationEvidence
@@ -38,6 +40,7 @@ final class ExtensionInitialTabPublicationValidator {
         self.windowRegistry = windowRegistry
         self.windowPublications = windowPublications
         self.adapters = adapters
+        self.residences = residences
         self.extensionsLoaded = extensionsLoaded
     }
 
@@ -222,9 +225,10 @@ final class ExtensionInitialTabPublicationValidator {
         guard evidence.window.isIncognito == false,
               evidence.window.currentTabId == evidence.tab.id,
               evidence.webView.owningTab === evidence.tab,
-              evidence.window.tabManager?.tabCollectionMembershipOwner.tab(
-                  for: evidence.tab.id
-              ) === evidence.tab,
+              residences.containsExact(
+                  evidence.tab,
+                  in: evidence.window
+              ),
               case .window(let trackedOwner) = evidence.tab.webViewSession
                 .residence(of: evidence.webView)
         else {

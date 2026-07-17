@@ -19,16 +19,16 @@ final class TabStructuralCollectionMutationOwnerTests: XCTestCase {
         let owner = harness.makeOwner()
         var callbackCount = 0
         var callbackSawTerminalLookup = false
-        let callback = harness.manager.objectWillChange.sink { _ in
+        let callback = harness.changes.sink { _ in
             callbackCount += 1
             callbackSawTerminalLookup =
-                harness.manager.tabCollectionMembershipOwner.tab(
+                harness.membership.tab(
                     for: previousTab.id
                 ) == nil
-                && harness.manager.tabCollectionMembershipOwner.tab(
+                && harness.membership.tab(
                     for: earlierTab.id
                 ) === earlierTab
-                && harness.manager.tabCollectionMembershipOwner.tab(
+                && harness.membership.tab(
                     for: laterTab.id
                 ) === laterTab
         }
@@ -42,14 +42,14 @@ final class TabStructuralCollectionMutationOwnerTests: XCTestCase {
         )
         XCTAssertEqual(harness.dirtySet.deletedTabIds, [previousTab.id])
         XCTAssertNil(
-            harness.manager.tabCollectionMembershipOwner.tab(for: previousTab.id)
+            harness.membership.tab(for: previousTab.id)
         )
         XCTAssertIdentical(
-            harness.manager.tabCollectionMembershipOwner.tab(for: earlierTab.id),
+            harness.membership.tab(for: earlierTab.id),
             earlierTab
         )
         XCTAssertIdentical(
-            harness.manager.tabCollectionMembershipOwner.tab(for: laterTab.id),
+            harness.membership.tab(for: laterTab.id),
             laterTab
         )
         XCTAssertEqual(callbackCount, 1)
@@ -247,13 +247,13 @@ final class TabStructuralCollectionMutationOwnerTests: XCTestCase {
 
         var callbackCount = 0
         var callbackSawTerminalState = false
-        let callback = harness.manager.objectWillChange.sink { _ in
+        let callback = harness.changes.sink { _ in
             callbackCount += 1
             callbackSawTerminalState =
-                harness.manager.tabCollectionMembershipOwner.tab(
+                harness.membership.tab(
                     for: targetTab.id
                 ) === targetTab
-                && harness.manager.tabCollectionMembershipOwner.tab(
+                && harness.membership.tab(
                     for: sourceTab.id
                 ) == nil
                 && harness.foldersBySpace[spaceID]?.first === targetFolder
@@ -535,8 +535,13 @@ final class TabStructuralCollectionMutationOwnerTests: XCTestCase {
 
     @MainActor
     private final class Harness {
-        let manager: TabManager
-        private let retainedModelContainer: AnyObject?
+        let changes: ObservableObjectPublisher
+        let membership: TabCollectionMembershipOwner
+        private let state: TabStateStore
+        private let lookup: TabStructuralLookupCoordinator
+        private let persistence: TabStructuralPersistenceService
+        private let owner: TabStructuralCollectionMutationOwner
+        private let retainedModelContainer: AnyObject
         private var cancellables = Set<AnyCancellable>()
         private(set) var announceCount = 0
         private(set) var tabsSnapshotPublishCount = 0
@@ -544,66 +549,99 @@ final class TabStructuralCollectionMutationOwnerTests: XCTestCase {
         init(
             faviconService: (any BrowserFaviconServicing)? = nil
         ) throws {
-            if let faviconService {
-                let container = try makeInMemoryStartupModelContainer()
-                retainedModelContainer = container
-                manager = TabManager(
-                    runtimePorts: nil,
-                    context: container.mainContext,
-                    webViewSessions: WebViewSessionRepository(),
-                    loadPersistedState: false,
-                    faviconService: faviconService
-                )
-            } else {
-                retainedModelContainer = nil
-                manager = try makeInMemoryTabManager(
-                    attachRuntimePorts: false
-                )
-            }
-            manager.objectWillChange.sink { [weak self] _ in
+            let container = try makeInMemoryStartupModelContainer()
+            retainedModelContainer = container
+            let state = TabStateStore()
+            self.state = state
+            let lookup = TabStructuralLookupCoordinator(
+                eventBus: TabStructureEventBus(),
+                stateStore: state
+            )
+            self.lookup = lookup
+            let writes = TabStoreWriteExecutor(container: container)
+            let persistence = TabStructuralPersistenceService(
+                structuralStore: TabStructuralSnapshotStore(writes: writes),
+                selectionStore: TabSelectionStore(writes: writes),
+                runtimeStateCoalescer: RuntimeStateCoalescer { _ in },
+                state: state
+            )
+            self.persistence = persistence
+            let changes = ObservableObjectPublisher()
+            self.changes = changes
+            let publisher = TabStructuralMutationPublisher(
+                persistence: persistence,
+                faviconService: faviconService
+                    ?? TabDependencyIsolationDefaults.faviconService,
+                lookup: lookup,
+                changes: changes,
+                regularTabs: state.regularTabs
+            )
+            owner = TabStructuralCollectionMutationOwner(
+                store: TabStructuralCollectionStore(
+                    regularTabs: state.regularTabs,
+                    folders: state.folders,
+                    shortcutPins: state.shortcutPins
+                ),
+                snapshots: TabStructuralCollectionSnapshotStore(
+                    regularTabs: state.regularTabs,
+                    folders: state.folders,
+                    shortcutPins: state.shortcutPins
+                ),
+                publisher: publisher
+            )
+            let runtimeConnection = TabRuntimePortConnection()
+            membership = TabCollectionMembershipOwner(
+                structuralLookupOwner: lookup.lookupOwner,
+                state: state,
+                runtimePreparation: TabRuntimePreparationOwner(
+                    runtimeConnection: runtimeConnection
+                ),
+                runtimeConnection: runtimeConnection
+            )
+            changes.sink { [weak self] _ in
                 self?.announceCount += 1
             }.store(in: &cancellables)
-            manager.regularTabCollectionStateOwner.tabsBySpacePublisher.sink {
+            state.regularTabs.tabsBySpacePublisher.sink {
                 [weak self] _ in self?.tabsSnapshotPublishCount += 1
             }.store(in: &cancellables)
         }
 
         var tabsBySpace: [UUID: [Tab]] {
-            get { manager.regularTabCollectionStateOwner.tabsBySpaceSnapshot() }
+            get { state.regularTabs.tabsBySpaceSnapshot() }
             set {
-                manager.regularTabCollectionStateOwner.replaceTabsBySpace(
+                state.regularTabs.replaceTabsBySpace(
                     newValue,
                     publish: false
                 )
-                manager.structuralLookupCoordinator.rebuild()
+                lookup.rebuild()
             }
         }
 
         var foldersBySpace: [UUID: [TabFolder]] {
-            get { manager.folderCollectionStateOwner.foldersBySpaceSnapshot() }
-            set { manager.folderCollectionStateOwner.replaceFoldersBySpace(newValue) }
+            get { state.folders.foldersBySpaceSnapshot() }
+            set { state.folders.replaceFoldersBySpace(newValue) }
         }
 
         var pinnedByProfile: [UUID: [ShortcutPin]] {
-            get { manager.shortcutPinCollectionStateOwner.pinnedByProfileSnapshot() }
-            set { manager.shortcutPinCollectionStateOwner.replacePinnedByProfile(newValue) }
+            get { state.shortcutPins.pinnedByProfileSnapshot() }
+            set { state.shortcutPins.replacePinnedByProfile(newValue) }
         }
 
         var spacePinnedShortcuts: [UUID: [ShortcutPin]] {
-            get { manager.shortcutPinCollectionStateOwner.spacePinnedShortcutsSnapshot() }
-            set { manager.shortcutPinCollectionStateOwner.replaceSpacePinnedShortcuts(newValue) }
+            get { state.shortcutPins.spacePinnedShortcutsSnapshot() }
+            set { state.shortcutPins.replaceSpacePinnedShortcuts(newValue) }
         }
 
         var dirtySet: TabStructuralDirtySet {
-            manager.structuralPersistence.dirtySet
+            persistence.dirtySet
         }
 
         var publishCount: UInt64 {
-            manager.structuralLookupCoordinator.mutationRevision
+            lookup.mutationRevision
         }
 
         func makeOwner() -> TabStructuralCollectionMutationOwner {
-            manager.structuralCollectionMutationOwner
+            owner
         }
     }
 }
@@ -642,8 +680,11 @@ private final class StructuralMutationFaviconOracle: BrowserFaviconServicing {
 @MainActor
 final class TabStructuralInstallOwnerTests: XCTestCase {
     func testInstallReplacesAllCollectionsAndRunsSingleStructuralSideEffectPass() throws {
-        let harness = Harness()
+        let harness = try Harness(
+            profileReferenceAdmission: try makeAdmissionLedger()
+        )
         let owner = harness.makeOwner()
+        harness.persistence.markSplitGroupsStructurallyDirty()
         let space = Space(name: "Workspace")
         let tab = Self.makeTab(index: 0, spaceId: space.id)
         let siblingTabId = UUID()
@@ -671,7 +712,6 @@ final class TabStructuralInstallOwnerTests: XCTestCase {
             currentTab: tab
         )
 
-        XCTAssertEqual(harness.transactionCount, 1)
         XCTAssertEqual(harness.objectWillChangeCount, 1)
         XCTAssertEqual(harness.spaces.map(\.id), [space.id])
         XCTAssertEqual(harness.tabsBySpace[space.id]?.map(\.id), [tab.id])
@@ -682,16 +722,20 @@ final class TabStructuralInstallOwnerTests: XCTestCase {
         XCTAssertEqual(harness.pendingPinnedWithoutProfile.map(\.id), [pendingPin.id])
         XCTAssertEqual(harness.currentSpace?.id, space.id)
         XCTAssertEqual(harness.currentTab?.id, tab.id)
-        XCTAssertEqual(harness.syncedShortcutPinIds, [[essentialPin.id, spacePin.id]])
-        XCTAssertEqual(harness.rebuildTabLookupCount, 1)
-        XCTAssertEqual(harness.markSnapshotCacheDirtyCount, 1)
-        XCTAssertEqual(harness.resetStructuralDirtySetCount, 1)
+        XCTAssertEqual(harness.favicon.syncedPinIDs, [[essentialPin.id, spacePin.id]])
+        XCTAssertTrue(
+            harness.lookup.lookupOwner.containsExact(tab)
+        )
+        XCTAssertTrue(harness.persistence.dirtySet.isEmpty)
         XCTAssertEqual(harness.publishCount, 1)
     }
 
-    func testInstallRestoredCollectionsDoesNotResetStructuralDirtyState() {
-        let harness = Harness()
+    func testInstallRestoredCollectionsDoesNotResetStructuralDirtyState() throws {
+        let harness = try Harness(
+            profileReferenceAdmission: try makeAdmissionLedger()
+        )
         let owner = harness.makeOwner()
+        harness.persistence.markSplitGroupsStructurallyDirty()
         let space = Space(name: "Restored")
         let restoredState = TabRestoreRuntimeState(
             spaces: [space],
@@ -712,11 +756,68 @@ final class TabStructuralInstallOwnerTests: XCTestCase {
             onInstalled: {}
         )
 
-        XCTAssertEqual(harness.transactionCount, 1)
         XCTAssertEqual(harness.spaces.map(\.id), [space.id])
         XCTAssertEqual(harness.currentSpace?.id, space.id)
-        XCTAssertEqual(harness.resetStructuralDirtySetCount, 0)
+        XCTAssertFalse(harness.persistence.dirtySet.isEmpty)
         XCTAssertEqual(harness.publishCount, 1)
+    }
+
+    func testUnavailableAdmissionRejectsInstallBeforeStructuralTransaction() throws {
+        let harness = try Harness(
+            profileReferenceAdmission: .failClosed()
+        )
+        let owner = harness.makeOwner()
+        let profileID = UUID()
+        let space = Space(name: "Blocked", profileId: profileID)
+        let tab = Self.makeTab(index: 0, spaceId: space.id)
+        tab.profileId = profileID
+
+        XCTAssertFalse(owner.install(
+            spaces: [space],
+            tabsBySpace: [space.id: [tab]],
+            foldersBySpace: [:],
+            pinnedByProfile: [:],
+            spacePinnedShortcuts: [:],
+            pendingPinnedWithoutProfile: [],
+            splitGroups: [],
+            currentSpace: space,
+            currentTab: tab
+        ))
+        XCTAssertEqual(harness.objectWillChangeCount, 0)
+        XCTAssertTrue(harness.spaces.isEmpty)
+        XCTAssertTrue(harness.tabsBySpace.isEmpty)
+        XCTAssertEqual(harness.publishCount, 0)
+    }
+
+    func testExternalLeaseMustCoverEveryCandidateProfileBeforeMutation() throws {
+        let admission = try makeAdmissionLedger()
+        let harness = try Harness(profileReferenceAdmission: admission)
+        let owner = harness.makeOwner()
+        let profileID = UUID()
+        let space = Space(name: "Uncovered", profileId: profileID)
+        let lease = try admission.beginReferenceMutation(to: [])
+        defer { XCTAssertTrue(admission.endReferenceMutation(lease)) }
+
+        XCTAssertFalse(owner.install(
+            spaces: [space],
+            tabsBySpace: [:],
+            foldersBySpace: [:],
+            pinnedByProfile: [:],
+            spacePinnedShortcuts: [:],
+            pendingPinnedWithoutProfile: [],
+            splitGroups: [],
+            currentSpace: space,
+            currentTab: nil,
+            referenceMutationLease: lease
+        ))
+        XCTAssertEqual(harness.objectWillChangeCount, 0)
+        XCTAssertTrue(harness.spaces.isEmpty)
+        XCTAssertEqual(harness.publishCount, 0)
+    }
+
+    private func makeAdmissionLedger() throws -> ProfileReferenceAdmissionLedger {
+        let container = try makeInMemoryStartupModelContainer()
+        return try ProfileReferenceAdmissionLedger(context: container.mainContext)
     }
 
     private static func makeTab(index: Int, spaceId: UUID) -> Tab {
@@ -748,73 +849,78 @@ final class TabStructuralInstallOwnerTests: XCTestCase {
 
     @MainActor
     private final class Harness {
-        var transactionCount = 0
+        let state: TabStateStore
+        let lookup: TabStructuralLookupCoordinator
+        let persistence: TabStructuralPersistenceService
+        let favicon: StructuralMutationFaviconOracle
+        let profileReferenceAdmission: ProfileReferenceAdmissionLedger
+        private let container: AnyObject
+        private let changes: ObservableObjectPublisher
+        private let owner: TabStructuralInstallOwner
+        private var cancellables = Set<AnyCancellable>()
         var objectWillChangeCount = 0
-        var spaces: [Space] = []
-        var tabsBySpace: [UUID: [Tab]] = [:]
-        var foldersBySpace: [UUID: [TabFolder]] = [:]
-        var splitGroups: [SplitGroup] = []
-        var pinnedByProfile: [UUID: [ShortcutPin]] = [:]
-        var spacePinnedShortcuts: [UUID: [ShortcutPin]] = [:]
-        var pendingPinnedWithoutProfile: [ShortcutPin] = []
-        var currentSpace: Space?
-        var currentTab: Tab?
-        var syncedShortcutPinIds: [[UUID]] = []
-        var rebuildTabLookupCount = 0
-        var markSnapshotCacheDirtyCount = 0
-        var resetStructuralDirtySetCount = 0
-        var publishCount = 0
+
+        init(profileReferenceAdmission: ProfileReferenceAdmissionLedger) throws {
+            let container = try makeInMemoryStartupModelContainer()
+            self.container = container
+            self.profileReferenceAdmission = profileReferenceAdmission
+            let favicon = StructuralMutationFaviconOracle()
+            self.favicon = favicon
+            let changes = ObservableObjectPublisher()
+            self.changes = changes
+            let state = TabStateStore()
+            self.state = state
+            let lookup = TabStructuralLookupCoordinator(
+                eventBus: TabStructureEventBus(),
+                stateStore: state
+            )
+            self.lookup = lookup
+            let writes = TabStoreWriteExecutor(container: container)
+            let persistence = TabStructuralPersistenceService(
+                structuralStore: TabStructuralSnapshotStore(writes: writes),
+                selectionStore: TabSelectionStore(writes: writes),
+                runtimeStateCoalescer: RuntimeStateCoalescer { _ in },
+                state: state
+            )
+            self.persistence = persistence
+            owner = TabStructuralInstallOwner(
+                state: state,
+                structuralLookup: lookup,
+                persistence: persistence,
+                publication: TabStructuralInstallPublication(
+                    changes: changes,
+                    faviconService: favicon
+                ),
+                profileReferenceAdmission: profileReferenceAdmission
+            )
+            changes.sink { [weak self] _ in
+                self?.objectWillChangeCount += 1
+            }.store(in: &cancellables)
+        }
 
         func makeOwner() -> TabStructuralInstallOwner {
-            TabStructuralInstallOwner(
-                dependencies: TabStructuralInstallOwner.Dependencies(
-                    withStructuralUpdateTransaction: {
-                        self.transactionCount += 1
-                        $0()
-                    },
-                    objectWillChange: {
-                        self.objectWillChangeCount += 1
-                    },
-                    replaceSpaces: {
-                        self.spaces = $0
-                    },
-                    replaceTabsBySpace: {
-                        self.tabsBySpace = $0
-                    },
-                    replaceFoldersBySpace: {
-                        self.foldersBySpace = $0
-                    },
-                    replaceSplitGroups: {
-                        self.splitGroups = $0
-                    },
-                    replaceShortcutPins: {
-                        self.pinnedByProfile = $0
-                        self.spacePinnedShortcuts = $1
-                        self.pendingPinnedWithoutProfile = $2
-                    },
-                    replaceCurrentSpace: {
-                        self.currentSpace = $0
-                    },
-                    replaceCurrentTab: {
-                        self.currentTab = $0
-                    },
-                    syncShortcutPins: {
-                        self.syncedShortcutPinIds.append($0.map(\.id))
-                    },
-                    rebuildTabLookup: {
-                        self.rebuildTabLookupCount += 1
-                    },
-                    markSnapshotCacheDirty: {
-                        self.markSnapshotCacheDirtyCount += 1
-                    },
-                    resetStructuralDirtySet: {
-                        self.resetStructuralDirtySetCount += 1
-                    },
-                    requestStructuralPublish: {
-                        self.publishCount += 1
-                    }
-                )
-            )
+            owner
         }
+
+        var spaces: [Space] { state.spaces.spaces }
+        var tabsBySpace: [UUID: [Tab]] {
+            state.regularTabs.tabsBySpaceSnapshot()
+        }
+        var foldersBySpace: [UUID: [TabFolder]] {
+            state.folders.foldersBySpaceSnapshot()
+        }
+        var splitGroups: [SplitGroup] { state.splitGroups.groups }
+        var pinnedByProfile: [UUID: [ShortcutPin]] {
+            state.shortcutPins.pinnedByProfileSnapshot()
+        }
+        var spacePinnedShortcuts: [UUID: [ShortcutPin]] {
+            state.shortcutPins.spacePinnedShortcutsSnapshot()
+        }
+        var pendingPinnedWithoutProfile: [ShortcutPin] {
+            state.shortcutPins.pendingPinnedWithoutProfileSnapshot()
+        }
+        var currentSpace: Space? { state.spaces.currentSpace }
+        var currentTab: Tab? { state.selection.currentTab }
+        var publishCount: UInt64 { lookup.mutationRevision }
     }
 }

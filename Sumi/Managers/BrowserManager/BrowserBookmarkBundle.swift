@@ -14,18 +14,28 @@ final class BrowserBookmarkBundle {
     let bookmarkCommandOwner: BrowserBookmarkCommandOwner
 
     init(browserManager: BrowserManager) {
+        let spaces = browserManager.spaceStateOwner
+        let regularTabs = browserManager
+            .regularTabCollectionOwner
+        let membership = browserManager
+            .tabCollectionMembershipOwner
+        let presentation = browserManager.bookmarkEditorPresentationState
         self.bookmarkCommandOwner = BrowserBookmarkCommandOwner(
-            activeWindow: { [weak browserManager] in browserManager?.windowRegistry?.activeWindow },
+            activeWindow: { [weak browserManager] in browserManager?.windowRegistry.activeWindow },
             activePageTab: { [weak browserManager] windowState in
                 browserManager?.shellRuntime.activePageResolver
                     .resolve(in: windowState)?.tab
             },
             bookmarkManager: { [weak browserManager] in browserManager?.bookmarkManager },
-            bookmarkEditorPresentationRequest: { [weak browserManager] in
-                browserManager?.bookmarkEditorPresentationRequest
+            bookmarkEditorPresentationRequest: { [presentation] in
+                presentation.request
             },
-            setBookmarkEditorPresentationRequest: { [weak browserManager] request in
-                browserManager?.bookmarkEditorPresentationRequest = request
+            setBookmarkEditorPresentationRequest: { [presentation] request in
+                if let request {
+                    presentation.present(request)
+                } else if let current = presentation.request {
+                    presentation.clear(current)
+                }
             },
             openNativeBrowserSurface: { [weak browserManager] kind, url, windowState, preferredSpaceId in
                 browserManager?.chromeBundle.nativeSurfaceRoutingOwner.openNativeBrowserSurface(
@@ -46,26 +56,24 @@ final class BrowserBookmarkBundle {
                 browserManager?.historyBundle.historyNavigationOwner.openHistoryURLsInNewWindow(urls)
             },
             windowIds: { [weak browserManager] in
-                browserManager?.windowRegistry.map { Array($0.windows.keys) } ?? []
+                browserManager.map { Array($0.windowRegistry.windows.keys) } ?? []
             },
             createNewWindow: { [weak browserManager] in
                 browserManager?.windowCommands.createNewWindow()
             },
             awaitNextRegisteredWindow: { [weak browserManager] existingWindowIDs in
-                await browserManager?.windowRegistry?.awaitNextRegisteredWindow(
+                await browserManager?.windowRegistry.awaitNextRegisteredWindow(
                     excluding: existingWindowIDs
                 )
             },
-            space: { [weak browserManager] spaceId in
-                spaceId.flatMap {
-                    browserManager?.tabManager.spaceStateOwner.space(with: $0)
-                }
+            space: { [spaces] spaceId in
+                spaceId.flatMap(spaces.space(with:))
             },
-            tabsInSpace: { [weak browserManager] space in
-                browserManager?.tabManager.regularTabCollectionOwner.tabs(in: space) ?? []
+            tabsInSpace: { [regularTabs] space in
+                regularTabs.tabs(in: space)
             },
-            allTabs: { [weak browserManager] in
-                browserManager?.tabManager.tabCollectionMembershipOwner.allTabs() ?? []
+            allTabs: { [membership] in
+                membership.allTabs()
             },
             detectedImportSources: {
                 SumiBookmarkImportSource.detectedBrowserSources()
@@ -80,7 +88,7 @@ final class BrowserBookmarkBundle {
                 nativeSurfaceAppearance: { [weak browserManager] in
                     guard let browserManager,
                           let settings = browserManager.sumiSettings,
-                          let windowState = browserManager.windowRegistry?.activeWindow
+                          let windowState = browserManager.windowRegistry.activeWindow
                     else { return nil }
                     return windowState.nativeSurfaceAppearance(
                         settings: settings,

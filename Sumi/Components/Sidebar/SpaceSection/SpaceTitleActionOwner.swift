@@ -40,23 +40,27 @@ struct SpaceTitleActionOwner {
                 }
             },
             editSpace: {
-                browserContext.presentationActions.showSpaceEditor(
-                    space,
-                    windowState,
-                    themeContext,
-                    windowState.resolveSidebarPresentationSource(in: windowRegistry)
+                browserContext.spaceEditorPresentation.show(
+                    space: space,
+                    in: windowState,
+                    themeContext: themeContext,
+                    source: windowState.resolveSidebarPresentationSource(
+                        in: windowRegistry
+                    )
                 )
             },
             changeTheme: {
-                browserContext.presentationActions.showGradientEditorForSpace(
-                    space,
-                    windowState.resolveSidebarPresentationSource(in: windowRegistry)
+                browserContext.workspaceThemeEditor.showGradientEditor(
+                    for: space,
+                    source: windowState.resolveSidebarPresentationSource(
+                        in: windowRegistry
+                    )
                 )
             },
             deleteSpace: {
-                browserContext.presentationActions.confirmDeleteSpace(
+                browserContext.spaceDeletionPresentation.confirmDelete(
                     space,
-                    windowState
+                    in: windowState
                 )
             }
         )

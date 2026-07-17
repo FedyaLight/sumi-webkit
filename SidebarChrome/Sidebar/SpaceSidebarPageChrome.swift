@@ -98,8 +98,14 @@ extension SpacesSideBarView {
             selection: selection,
             pinProjection: pinProjection,
             pinCommands: pinCommands,
+            pinExecution: pinExecution,
+            folderCommands: folderCommands,
             spaceLifecycle: spaceLifecycle,
-            regularTabs: regularTabs,
+            regularTabCatalog: regularTabCatalog,
+            regularTabTargets: regularTabTargets,
+            regularTabLifecycleCommands: regularTabLifecycleCommands,
+            regularTabShortcutCommands: regularTabShortcutCommands,
+            regularTabPlacementCommands: regularTabPlacementCommands,
             renderMode: renderMode,
             allowsInteraction: allowsInteraction,
             scrollHoverCoordinator: scrollHoverCoordinator,
@@ -125,8 +131,8 @@ extension SpacesSideBarView {
         SidebarScopedSnapshotReader(
             current: {
                 SidebarProfileRuntimeSnapshot(
-                    currentProfileID: browserContext.currentProfile()?.id,
-                    isTransitioning: browserContext.isTransitioningProfile()
+                    currentProfileID: browserContext.profileAuthority.currentProfile?.id,
+                    isTransitioning: browserContext.profileAuthority.isTransitioning
                 )
             },
             changes: profileUpdates.runtime,
@@ -181,7 +187,7 @@ extension SpacesSideBarView {
                                 regularTabs: []
                             ),
                     essentialPins: pageProfileId.map {
-                        inventory.essentialPins(profileID: $0)
+                        spaceCatalog.essentialPins(profileID: $0)
                     } ?? []
                 )
             }
@@ -305,6 +311,7 @@ extension SpacesSideBarView {
             selection: selection,
             pinProjection: pinProjection,
             pinCommands: pinCommands,
+            pinExecution: pinExecution,
             spaceLifecycle: spaceLifecycle,
             spaceId: spaceId,
             profileId: profileId,
@@ -333,7 +340,7 @@ extension SpacesSideBarView {
                         regularTabs: []
                     ),
             essentialPins: profileID.map {
-                inventory.essentialPins(profileID: $0)
+                spaceCatalog.essentialPins(profileID: $0)
             } ?? []
         )
     }
@@ -345,7 +352,10 @@ extension SpacesSideBarView {
             .toolbarDisplaySnapshot.enabledExtensions
         return SidebarExtensionGridSnapshot(
             enabledExtensions: enabledExtensions,
-            slotCount: browserContext.extensionToolbarSlots(enabledExtensions, profileID).count
+            slotCount: browserContext.extensionToolbarActions.orderedPinnedToolbarSlots(
+                enabledExtensions: enabledExtensions,
+                profileID: profileID
+            ).count
         )
     }
 }
@@ -365,7 +375,13 @@ private struct SpaceSidebarExtensionGridContent: View {
                 extensions: enabledExtensions,
                 layout: .sidebarGrid,
                 profileId: profileId,
-                browserContext: browserContext.extensionActionBrowserContext(windowState)
+                browserContext: ExtensionActionBrowserContext(
+                    extensionsModule: browserContext.extensionsModule,
+                    windowState: windowState,
+                    tabs: browserContext.extensionActionTabs,
+                    profileAuthority: browserContext.profileAuthority,
+                    settingsNavigation: browserContext.extensionSettingsNavigation
+                )
             )
             .environment(windowState)
             .padding(.horizontal, 8)

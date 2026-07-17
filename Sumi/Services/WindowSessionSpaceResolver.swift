@@ -2,7 +2,8 @@ import Foundation
 
 @MainActor
 struct WindowSessionSpaceResolver {
-    let tabManager: TabManager
+    let spaces: TabSpaceCollectionStateOwner
+    let membership: TabCollectionMembershipOwner
 
     func resolve(
         for windowState: BrowserWindowState,
@@ -33,15 +34,14 @@ struct WindowSessionSpaceResolver {
 
     func space(for spaceId: UUID?) -> Space? {
         guard let spaceId else { return nil }
-        return tabManager.spaceStateOwner.spaces.first { $0.id == spaceId }
+        return spaces.space(with: spaceId)
     }
 
     private func currentTabSpaceId(
         for windowState: BrowserWindowState
     ) -> UUID? {
         guard let currentTabId = windowState.currentTabId,
-              let spaceId = tabManager.tabCollectionMembershipOwner
-                .tab(for: currentTabId)?.spaceId,
+              let spaceId = membership.tab(for: currentTabId)?.spaceId,
               containsSpace(spaceId) else {
             return nil
         }
@@ -49,11 +49,10 @@ struct WindowSessionSpaceResolver {
     }
 
     private func firstSpaceId(for profileId: UUID) -> UUID? {
-        tabManager.spaceStateOwner.spaces
-            .first(where: { $0.profileId == profileId })?.id
+        spaces.firstSpace(forProfile: profileId)?.id
     }
 
     private func containsSpace(_ spaceId: UUID) -> Bool {
-        tabManager.spaceStateOwner.spaces.contains { $0.id == spaceId }
+        spaces.contains(spaceId: spaceId)
     }
 }

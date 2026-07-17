@@ -4,14 +4,14 @@ import Foundation
 struct PlannedSpaceContentRetirement {
     let spaceId: UUID
     let tabs: [Tab]
-    let runtime: RuntimePortRegistry
+    let runtime: TabRuntimePortLease
     let runtimeTeardown: PreparedTabRuntimeTeardown
 }
 
 @MainActor
 struct PreparedSpaceContentRetirement {
     let footprint: SpaceRemovalFootprint
-    let runtime: RuntimePortRegistry
+    let runtime: TabRuntimePortLease
     let runtimeTeardown: PreparedTabRuntimeTeardown
 }
 
@@ -40,12 +40,13 @@ final class SpaceContentRetirementService {
 
     func plan(
         spaceId: UUID,
-        using runtime: RuntimePortRegistry
+        using runtime: TabRuntimePortLease
     ) -> PlannedSpaceContentRetirement? {
         let inventory = transaction.inventory(spaceId: spaceId)
+        guard let runtimePorts = runtime.registry else { return nil }
         guard let teardown = runtimeTeardown.preparation.prepare(
             inventory.all,
-            using: runtime
+            using: runtimePorts
         ) else { return nil }
         return PlannedSpaceContentRetirement(
             spaceId: spaceId,

@@ -76,6 +76,29 @@ final class SumiImportTransaction {
             throw commitFailure(error, rollbackErrors: [], backupURL: nil)
         }
 
+        let runtimeMutationSession: SumiImportRuntimeMutationSession?
+        do {
+            runtimeMutationSession = try importedState.map { importedState in
+                try runtime.beginMutation(
+                    covering: [importedState] + (runtimeCheckpoint.map { [$0] } ?? [])
+                )
+            }
+        } catch {
+            throw commitFailure(
+                error,
+                rollbackErrors: [],
+                backupURL: preRestoreBackupURL
+            )
+        }
+        defer {
+            if let runtimeMutationSession {
+                precondition(
+                    runtime.endMutation(runtimeMutationSession),
+                    "Import transaction lost its exact runtime mutation session"
+                )
+            }
+        }
+
         var record = SumiImportTransactionJournalRecord(
             phase: .prepared,
             baseline: plan.baseline,
@@ -95,8 +118,11 @@ final class SumiImportTransaction {
 
         let bookmarkSummary: SumiBookmarksImportSummary?
         do {
-            if let importedState {
-                try await runtime.install(importedState)
+            if let importedState, let runtimeMutationSession {
+                try await runtime.install(
+                    importedState,
+                    in: runtimeMutationSession
+                )
                 try interruptIfRequested(at: .runtimeInstalled)
             }
             record = try await transition(record, to: .runtimeCommitted)
@@ -114,7 +140,8 @@ final class SumiImportTransaction {
             let rollbackErrors = try await compensate(
                 record: record,
                 runtimeCheckpoint: runtimeCheckpoint,
-                bookmarkCheckpoint: bookmarkCheckpoint
+                bookmarkCheckpoint: bookmarkCheckpoint,
+                runtimeMutationSession: runtimeMutationSession
             )
             throw commitFailure(
                 importError,
@@ -180,17 +207,10 @@ final class SumiImportTransaction {
             }
         }
 
-        if let bookmarkCheckpoint = record.bookmarkCheckpoint {
-            do {
-                try bookmarks.restore(bookmarkCheckpoint.makeSnapshot())
-                try interruptIfRequested(at: .bookmarksCompensated)
-            } catch is SumiImportTransactionInterruption {
-                throw SumiImportTransactionInterruption()
-            } catch {
-                recoveryErrors.append(error)
-            }
-        }
-
+        var runtimeRecovery: (
+            checkpoint: SumiImportRuntimeState,
+            session: SumiImportRuntimeMutationSession
+        )?
         if let durableCheckpoint = record.runtimeCheckpoint {
             do {
                 let currentState = runtime.checkpoint()
@@ -206,7 +226,41 @@ final class SumiImportTransaction {
                     rollbackPlan,
                     preserving: currentState
                 )
-                try await runtime.restore(durableCheckpoint.applying(to: materializedState))
+                let checkpoint = durableCheckpoint.applying(to: materializedState)
+                let session = try runtime.beginMutation(
+                    covering: [currentState, checkpoint]
+                )
+                runtimeRecovery = (checkpoint, session)
+            } catch {
+                recoveryErrors.append(error)
+            }
+        }
+        defer {
+            if let runtimeRecovery {
+                precondition(
+                    runtime.endMutation(runtimeRecovery.session),
+                    "Import recovery lost its exact runtime mutation session"
+                )
+            }
+        }
+
+        if let bookmarkCheckpoint = record.bookmarkCheckpoint {
+            do {
+                try bookmarks.restore(bookmarkCheckpoint.makeSnapshot())
+                try interruptIfRequested(at: .bookmarksCompensated)
+            } catch is SumiImportTransactionInterruption {
+                throw SumiImportTransactionInterruption()
+            } catch {
+                recoveryErrors.append(error)
+            }
+        }
+
+        if let runtimeRecovery {
+            do {
+                try await runtime.restore(
+                    runtimeRecovery.checkpoint,
+                    in: runtimeRecovery.session
+                )
                 try interruptIfRequested(at: .runtimeCompensated)
             } catch is SumiImportTransactionInterruption {
                 throw SumiImportTransactionInterruption()
@@ -243,7 +297,8 @@ final class SumiImportTransaction {
     private func compensate(
         record: SumiImportTransactionJournalRecord,
         runtimeCheckpoint: SumiImportRuntimeState?,
-        bookmarkCheckpoint: SumiBookmarksSnapshot?
+        bookmarkCheckpoint: SumiBookmarksSnapshot?,
+        runtimeMutationSession: SumiImportRuntimeMutationSession?
     ) async throws -> [Error] {
         var record = record
         var rollbackErrors: [Error] = []
@@ -266,9 +321,12 @@ final class SumiImportTransaction {
             }
         }
 
-        if let runtimeCheckpoint {
+        if let runtimeCheckpoint, let runtimeMutationSession {
             do {
-                try await runtime.restore(runtimeCheckpoint)
+                try await runtime.restore(
+                    runtimeCheckpoint,
+                    in: runtimeMutationSession
+                )
                 try interruptIfRequested(at: .runtimeCompensated)
             } catch is SumiImportTransactionInterruption {
                 throw SumiImportTransactionInterruption()

@@ -16,6 +16,10 @@ struct SumiImportRuntimeState {
     let currentTab: Tab?
 }
 
+struct SumiImportRuntimeMutationSession: Equatable, Hashable {
+    let id = UUID()
+}
+
 @MainActor
 protocol SumiImportRuntimeMaterializing: AnyObject {
     func materialize(
@@ -27,8 +31,18 @@ protocol SumiImportRuntimeMaterializing: AnyObject {
 @MainActor
 protocol SumiImportRuntimeMutating: AnyObject {
     func checkpoint() -> SumiImportRuntimeState
-    func install(_ state: SumiImportRuntimeState) async throws
-    func restore(_ checkpoint: SumiImportRuntimeState) async throws
+    func beginMutation(
+        covering candidates: [SumiImportRuntimeState]
+    ) throws -> SumiImportRuntimeMutationSession
+    func install(
+        _ state: SumiImportRuntimeState,
+        in session: SumiImportRuntimeMutationSession
+    ) async throws
+    func restore(
+        _ checkpoint: SumiImportRuntimeState,
+        in session: SumiImportRuntimeMutationSession
+    ) async throws
+    func endMutation(_ session: SumiImportRuntimeMutationSession) -> Bool
 }
 
 @MainActor

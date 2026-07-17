@@ -97,7 +97,8 @@ final class ExtensionRequestedTabCoreFactory {
                 browserProfiles: bridge.profiles,
                 tabProfiles: controller.profiles,
                 windowProfileID: windows.profileIDForWindow,
-                webViews: controller.webViews
+                webViews: controller.webViews,
+                residences: bridge.tabResidences
             ),
             runtimeAdmission: ExtensionInitialTabRuntimeAdmission(
                 profileRuntime: profileRuntime,
@@ -116,6 +117,7 @@ final class ExtensionRequestedTabCoreFactory {
                 windowRegistry: bridge.windows,
                 windowPublications: windows.windows.query,
                 adapters: initialTabAdapters,
+                residences: bridge.tabResidences,
                 extensionsLoaded: initialExtensionsLoaded
             ),
             retirement: ExtensionInitialTabPublicationRetirement(

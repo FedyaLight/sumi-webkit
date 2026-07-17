@@ -13,44 +13,88 @@ import WebKit
 struct ExtensionActionBrowserContext {
     let extensionsModule: SumiExtensionsModule
     let windowState: BrowserWindowState
-    let currentTab: () -> Tab?
-    let currentProfileID: () -> UUID?
-    let openSettingsTab: (SettingsTabs) -> Void
-    let showExtensionUnavailableAlert: (_ extensionName: String, _ message: String) -> Void
+    private let tabs: SidebarExtensionActionTabQuery?
+    private let profileAuthority: BrowserCurrentProfileAuthority?
+    private let settingsNavigation: BrowserSettingsNavigationService?
+
+    init(
+        extensionsModule: SumiExtensionsModule,
+        windowState: BrowserWindowState,
+        tabs: SidebarExtensionActionTabQuery,
+        profileAuthority: BrowserCurrentProfileAuthority,
+        settingsNavigation: BrowserSettingsNavigationService
+    ) {
+        self.extensionsModule = extensionsModule
+        self.windowState = windowState
+        self.tabs = tabs
+        self.profileAuthority = profileAuthority
+        self.settingsNavigation = settingsNavigation
+    }
+
+    static func unavailable(
+        extensionsModule: SumiExtensionsModule,
+        windowState: BrowserWindowState
+    ) -> Self {
+        Self(
+            extensionsModule: extensionsModule,
+            windowState: windowState,
+            tabs: nil,
+            profileAuthority: nil,
+            settingsNavigation: nil
+        )
+    }
+
+    private init(
+        extensionsModule: SumiExtensionsModule,
+        windowState: BrowserWindowState,
+        tabs: SidebarExtensionActionTabQuery?,
+        profileAuthority: BrowserCurrentProfileAuthority?,
+        settingsNavigation: BrowserSettingsNavigationService?
+    ) {
+        self.extensionsModule = extensionsModule
+        self.windowState = windowState
+        self.tabs = tabs
+        self.profileAuthority = profileAuthority
+        self.settingsNavigation = settingsNavigation
+    }
 
     static func live(
         browserManager: BrowserManager,
         windowState: BrowserWindowState
     ) -> ExtensionActionBrowserContext {
-        let currentProfileAuthority = browserManager.currentProfileAuthority
-        return ExtensionActionBrowserContext(
+        ExtensionActionBrowserContext(
             extensionsModule: browserManager.optionalModules.extensions,
             windowState: windowState,
-            currentTab: { [weak browserManager, weak windowState] in
-                guard let browserManager, let windowState else { return nil }
-                return browserManager.shellRuntime.windowTabs.currentTab(for: windowState)
-                    ?? windowState.currentTabId.flatMap { browserManager.tabManager.tabCollectionMembershipOwner.tab(for: $0) }
-                    ?? browserManager.shellRuntime.windowSelection.currentTab(
-                        for: windowState,
-                        tabStore: browserManager.tabManager.runtimeStore
-                    )
-            },
-            currentProfileID: { [currentProfileAuthority] in
-                currentProfileAuthority.currentProfile?.id
-            },
-            openSettingsTab: { [weak browserManager, weak windowState] tab in
-                guard let browserManager, let windowState else { return }
-                browserManager.urlBarBundle.settingsNavigation.openSettings(
-                    selecting: tab,
-                    in: windowState
-                )
-            },
-            showExtensionUnavailableAlert: { extensionName, message in
-                BrowserExtensionUnavailableAlert.present(
-                    extensionName: extensionName,
-                    informativeText: message
-                )
-            }
+            tabs: SidebarExtensionActionTabQuery(
+                windowTabs: browserManager.shellRuntime.windowTabs,
+                membership: browserManager.tabCollectionMembershipOwner,
+                selection: browserManager.shellRuntime.windowSelection,
+                tabStore: browserManager.runtimeStore
+            ),
+            profileAuthority: browserManager.currentProfileAuthority,
+            settingsNavigation: browserManager.urlBarBundle.settingsNavigation
+        )
+    }
+
+    func currentTab() -> Tab? {
+        tabs?.currentTab(in: windowState)
+    }
+
+    func currentProfileID() -> UUID? {
+        profileAuthority?.currentProfile?.id
+    }
+
+    func openSettingsTab(_ tab: SettingsTabs) {
+        settingsNavigation?.openSettings(selecting: tab, in: windowState)
+    }
+
+    func showExtensionUnavailableAlert(
+        _ extensionName: String,
+        _ message: String
+    ) {
+        BrowserExtensionUnavailableAlert.present(
+            extensionName: extensionName,
+            informativeText: message
         )
     }
 }

@@ -156,6 +156,7 @@ struct ExtensionManagerTestInspection {
         }
 
         struct BrowserPublicationRoles {
+            let attachment: ExtensionBrowserAttachmentAuthority
             let events: ExtensionBrowserAttachmentAuthority.BrowserEvents
             let reloads: ExtensionBrowserAttachmentAuthority.Reloads
         }

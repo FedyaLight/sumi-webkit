@@ -125,6 +125,7 @@
                         sessions: services.nativeMessagingSessions
                     ),
                     browserPublication: .init(
+                        attachment: f.browser.attachment,
                         events: f.browser.events,
                         reloads: f.browser.reloads
                     )

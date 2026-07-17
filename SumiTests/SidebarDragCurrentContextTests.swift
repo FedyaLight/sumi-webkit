@@ -83,9 +83,10 @@ final class SidebarDragCurrentContextTests: XCTestCase {
     }
 
     func testStandaloneShortcutPayloadResolvesByTypedPinIdentity() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let tabManager = BrowserManager()
         let profileID = UUID()
-        let space = tabManager.spaceServices.catalog.createSpace(
+        let space = try makeSpace(
+            tabManager,
             name: "Work",
             profileId: profileID
         )
@@ -114,9 +115,10 @@ final class SidebarDragCurrentContextTests: XCTestCase {
     }
 
     func testStaleSplitMemberPayloadDoesNotFallBackToRawUUID() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let tabManager = BrowserManager()
         let profileID = UUID()
-        let space = tabManager.spaceServices.catalog.createSpace(
+        let space = try makeSpace(
+            tabManager,
             name: "Work",
             profileId: profileID
         )
@@ -279,9 +281,9 @@ final class SidebarDragCurrentContextTests: XCTestCase {
     }
 
     func testRegularTabReorderStaysInsideCurrentSpace() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let tabManager = BrowserManager()
         let profileId = UUID()
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Work", profileId: profileId)
+        let space = try makeSpace(tabManager, name: "Work", profileId: profileId)
         let first = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/one", in: space)
         let second = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/two", in: space, activate: false)
         let third = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/three", in: space, activate: false)
@@ -303,14 +305,14 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         )
 
         XCTAssertTrue(didMove)
-        XCTAssertEqual(tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[space.id]?.map(\.id), [second.id, third.id, first.id])
+        XCTAssertEqual(tabManager.regularTabCollectionOwner.tabs(in: space.id).map(\.id), [second.id, third.id, first.id])
         XCTAssertTrue(tabManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: space.id).isEmpty)
     }
 
     func testRegularTabDropIntoSpacePinnedCreatesLauncherAndRemovesRegularEntry() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let tabManager = BrowserManager()
         let profileId = UUID()
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Work", profileId: profileId)
+        let space = try makeSpace(tabManager, name: "Work", profileId: profileId)
         let tab = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/pin", in: space)
         let scope = try makeScope(
             spaceId: space.id,
@@ -330,7 +332,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         )
 
         XCTAssertTrue(didMove)
-        XCTAssertTrue(tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[space.id]?.isEmpty ?? false)
+        XCTAssertTrue(tabManager.regularTabCollectionOwner.tabs(in: space.id).isEmpty)
         let pin = try XCTUnwrap(tabManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: space.id).first)
         XCTAssertEqual(pin.role, .spacePinned)
         XCTAssertEqual(pin.spaceId, space.id)
@@ -339,10 +341,10 @@ final class SidebarDragCurrentContextTests: XCTestCase {
     }
 
     func testRegularTabDropIntoFolderCreatesFolderLauncher() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let tabManager = BrowserManager()
         let profileId = UUID()
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Work", profileId: profileId)
-        let folder = tabManager.folderMutationOwner.createFolder(for: space.id, name: "Docs")
+        let space = try makeSpace(tabManager, name: "Work", profileId: profileId)
+        let folder = try makeFolder(tabManager, in: space.id, name: "Docs")
         let tab = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/folder", in: space)
         let scope = try makeScope(
             spaceId: space.id,
@@ -362,7 +364,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         )
 
         XCTAssertTrue(didMove)
-        XCTAssertTrue(tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[space.id]?.isEmpty ?? false)
+        XCTAssertTrue(tabManager.regularTabCollectionOwner.tabs(in: space.id).isEmpty)
         let pin = try XCTUnwrap(tabManager.shortcutPinCollectionStateOwner.folderPinnedPins(for: folder.id, in: space.id).first)
         XCTAssertEqual(pin.role, .spacePinned)
         XCTAssertEqual(pin.spaceId, space.id)
@@ -371,10 +373,10 @@ final class SidebarDragCurrentContextTests: XCTestCase {
     }
 
     func testRegularTabDropIntoClosedFolderKeepsFolderClosed() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let tabManager = BrowserManager()
         let profileId = UUID()
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Work", profileId: profileId)
-        let folder = tabManager.folderMutationOwner.createFolder(for: space.id, name: "Docs")
+        let space = try makeSpace(tabManager, name: "Work", profileId: profileId)
+        let folder = try makeFolder(tabManager, in: space.id, name: "Docs")
         let tab = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/closed-folder", in: space)
         let scope = try makeScope(
             spaceId: space.id,
@@ -402,9 +404,9 @@ final class SidebarDragCurrentContextTests: XCTestCase {
     }
 
     func testRegularTabDropIntoEssentialsCreatesProfileLauncher() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let tabManager = BrowserManager()
         let profileId = UUID()
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Work", profileId: profileId)
+        let space = try makeSpace(tabManager, name: "Work", profileId: profileId)
         let tab = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/essential", in: space)
         let scope = try makeScope(
             spaceId: space.id,
@@ -424,7 +426,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         )
 
         XCTAssertTrue(didMove)
-        XCTAssertTrue(tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[space.id]?.isEmpty ?? false)
+        XCTAssertTrue(tabManager.regularTabCollectionOwner.tabs(in: space.id).isEmpty)
         let pin = try XCTUnwrap(tabManager.shortcutPinCollectionStateOwner.essentialPins(for: profileId).first)
         XCTAssertEqual(pin.role, .essential)
         XCTAssertEqual(pin.profileId, profileId)
@@ -433,11 +435,40 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         XCTAssertEqual(pin.launchURL, tab.url)
     }
 
+    func testSplitRetirementUsesCurrentRuntimeAttachmentGeneration() {
+        let window = BrowserWindowState()
+        let tab = Tab(loadsCachedFaviconOnInit: false)
+        var retiredByInitialRuntime: [UUID] = []
+        var retiredByReplacementRuntime: [UUID] = []
+        let connection = TabRuntimePortConnection(
+            TestRuntimePorts.make(
+                windows: { [(window.id, window)] },
+                handleTabClosure: { retiredByInitialRuntime.append($0) },
+                visibleSplitTabIds: { _ in [tab.id] }
+            )
+        )
+        let transaction = SidebarDraggedTabSplitRetirementTransaction(
+            runtimeConnection: connection
+        )
+        connection.attach(
+            TestRuntimePorts.make(
+                windows: { [(window.id, window)] },
+                handleTabClosure: { retiredByReplacementRuntime.append($0) },
+                visibleSplitTabIds: { _ in [tab.id] }
+            )
+        )
+
+        transaction.dissolveActiveSplitIfNeeded(for: tab)
+
+        XCTAssertTrue(retiredByInitialRuntime.isEmpty)
+        XCTAssertEqual(retiredByReplacementRuntime, [tab.id])
+    }
+
     func testDisplayedRegularTabDropIntoSpacePinnedPreservesTabAsLiveShortcut() throws {
         let harness = try makeLiveWindowHarness()
         let tabManager = harness.tabManager
         let profileId = UUID()
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Work", profileId: profileId)
+        let space = try makeSpace(tabManager, name: "Work", profileId: profileId)
         let tab = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/live-pin", in: space)
         harness.windowState.currentSpaceId = space.id
         harness.windowState.currentProfileId = profileId
@@ -460,7 +491,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         )
 
         XCTAssertTrue(didMove)
-        XCTAssertTrue(tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[space.id]?.isEmpty ?? false)
+        XCTAssertTrue(tabManager.regularTabCollectionOwner.tabs(in: space.id).isEmpty)
         let pin = try XCTUnwrap(tabManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: space.id).first)
         let liveTab = try XCTUnwrap(tabManager.shortcutPresentationOwner.shortcutLiveTab(for: pin.id, in: harness.windowState.id))
         XCTAssertIdentical(liveTab, tab)
@@ -478,8 +509,8 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         let harness = try makeLiveWindowHarness()
         let tabManager = harness.tabManager
         let profileId = UUID()
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Work", profileId: profileId)
-        let folder = tabManager.folderMutationOwner.createFolder(for: space.id, name: "Docs")
+        let space = try makeSpace(tabManager, name: "Work", profileId: profileId)
+        let folder = try makeFolder(tabManager, in: space.id, name: "Docs")
         let tab = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/live-folder", in: space)
         harness.windowState.currentSpaceId = space.id
         harness.windowState.currentProfileId = profileId
@@ -502,7 +533,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         )
 
         XCTAssertTrue(didMove)
-        XCTAssertTrue(tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[space.id]?.isEmpty ?? false)
+        XCTAssertTrue(tabManager.regularTabCollectionOwner.tabs(in: space.id).isEmpty)
         let pin = try XCTUnwrap(tabManager.shortcutPinCollectionStateOwner.folderPinnedPins(for: folder.id, in: space.id).first)
         let liveTab = try XCTUnwrap(tabManager.shortcutPresentationOwner.shortcutLiveTab(for: pin.id, in: harness.windowState.id))
         XCTAssertIdentical(liveTab, tab)
@@ -520,7 +551,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         let harness = try makeLiveWindowHarness()
         let tabManager = harness.tabManager
         let profileId = UUID()
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Work", profileId: profileId)
+        let space = try makeSpace(tabManager, name: "Work", profileId: profileId)
         let tab = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/live-essential", in: space)
         harness.windowState.currentSpaceId = space.id
         harness.windowState.currentProfileId = profileId
@@ -543,7 +574,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         )
 
         XCTAssertTrue(didMove)
-        XCTAssertTrue(tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[space.id]?.isEmpty ?? false)
+        XCTAssertTrue(tabManager.regularTabCollectionOwner.tabs(in: space.id).isEmpty)
         let pin = try XCTUnwrap(tabManager.shortcutPinCollectionStateOwner.essentialPins(for: profileId).first)
         let liveTab = try XCTUnwrap(tabManager.shortcutPresentationOwner.shortcutLiveTab(for: pin.id, in: harness.windowState.id))
         XCTAssertIdentical(liveTab, tab)
@@ -561,7 +592,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         let harness = try makeLiveWindowHarness()
         let tabManager = harness.tabManager
         let profileId = UUID()
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Work", profileId: profileId)
+        let space = try makeSpace(tabManager, name: "Work", profileId: profileId)
         let currentTab = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/current", in: space)
         let draggedTab = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/split-pin", in: space, activate: false)
         harness.windowState.currentSpaceId = space.id
@@ -592,7 +623,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
             in: harness.windowState
         )
         XCTAssertEqual(
-            tabManager.runtimePorts?.webViewLifecycle
+            tabManager.runtimePortConnection.current?.webViewLifecycle
                 .primaryTrackedWindowId(for: draggedTab.id),
             harness.windowState.id
         )
@@ -614,7 +645,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         )
 
         XCTAssertTrue(didMove)
-        XCTAssertEqual(tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[space.id]?.map(\.id), [currentTab.id])
+        XCTAssertEqual(tabManager.regularTabCollectionOwner.tabs(in: space.id).map(\.id), [currentTab.id])
         let pin = try XCTUnwrap(tabManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: space.id).first)
         let liveTab = try XCTUnwrap(tabManager.shortcutPresentationOwner.shortcutLiveTab(for: pin.id, in: harness.windowState.id))
         XCTAssertIdentical(liveTab, draggedTab)
@@ -641,10 +672,10 @@ final class SidebarDragCurrentContextTests: XCTestCase {
             )
         )
         XCTAssertNotNil(
-            harness.browserManager.splitComposition.query.group(in: harness.windowState.id)
+            harness.browserManager.splitWindowContext.query.group(in: harness.windowState.id)
         )
         XCTAssertEqual(
-            harness.browserManager.splitComposition.query.visibleTabIDs(
+            harness.browserManager.splitWindowContext.query.visibleTabIDs(
                 in: harness.windowState.id
             ),
             [currentTab.id, draggedTab.id]
@@ -655,7 +686,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         let harness = try makeLiveWindowHarness()
         let tabManager = harness.tabManager
         let profileId = UUID()
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Work", profileId: profileId)
+        let space = try makeSpace(tabManager, name: "Work", profileId: profileId)
         let currentTab = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/current", in: space)
         let draggedTab = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/split-essential", in: space, activate: false)
         harness.windowState.currentSpaceId = space.id
@@ -686,7 +717,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
             in: harness.windowState
         )
         XCTAssertEqual(
-            tabManager.runtimePorts?.webViewLifecycle
+            tabManager.runtimePortConnection.current?.webViewLifecycle
                 .primaryTrackedWindowId(for: draggedTab.id),
             harness.windowState.id
         )
@@ -708,7 +739,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         )
 
         XCTAssertTrue(didMove)
-        XCTAssertEqual(tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[space.id]?.map(\.id), [currentTab.id])
+        XCTAssertEqual(tabManager.regularTabCollectionOwner.tabs(in: space.id).map(\.id), [currentTab.id])
         let pin = try XCTUnwrap(tabManager.shortcutPinCollectionStateOwner.essentialPins(for: profileId).first)
         let liveTab = try XCTUnwrap(tabManager.shortcutPresentationOwner.shortcutLiveTab(for: pin.id, in: harness.windowState.id))
         XCTAssertIdentical(liveTab, draggedTab)
@@ -735,10 +766,10 @@ final class SidebarDragCurrentContextTests: XCTestCase {
             )
         )
         XCTAssertNotNil(
-            harness.browserManager.splitComposition.query.group(in: harness.windowState.id)
+            harness.browserManager.splitWindowContext.query.group(in: harness.windowState.id)
         )
         XCTAssertEqual(
-            harness.browserManager.splitComposition.query.visibleTabIDs(
+            harness.browserManager.splitWindowContext.query.visibleTabIDs(
                 in: harness.windowState.id
             ),
             [currentTab.id, draggedTab.id]
@@ -752,9 +783,9 @@ final class SidebarDragCurrentContextTests: XCTestCase {
     }
 
     func testSpacePinnedReorderMovesLauncherWithinSameSpace() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let tabManager = BrowserManager()
         let profileId = UUID()
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Work", profileId: profileId)
+        let space = try makeSpace(tabManager, name: "Work", profileId: profileId)
         let first = try makeSpacePinnedPin(
             tabManager,
             in: space,
@@ -797,9 +828,9 @@ final class SidebarDragCurrentContextTests: XCTestCase {
     }
 
     func testEssentialsReorderMovesLauncherWithinSameProfile() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let tabManager = BrowserManager()
         let profileId = UUID()
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Work", profileId: profileId)
+        let space = try makeSpace(tabManager, name: "Work", profileId: profileId)
         let first = try makeEssentialPin(
             tabManager,
             in: space,
@@ -845,10 +876,10 @@ final class SidebarDragCurrentContextTests: XCTestCase {
     }
 
     func testFolderChildReorderMovesLauncherWithinSameFolder() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let tabManager = BrowserManager()
         let profileId = UUID()
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Work", profileId: profileId)
-        let folder = tabManager.folderMutationOwner.createFolder(for: space.id, name: "Docs")
+        let space = try makeSpace(tabManager, name: "Work", profileId: profileId)
+        let folder = try makeFolder(tabManager, in: space.id, name: "Docs")
         let first = try makeFolderPin(
             tabManager,
             in: space,
@@ -894,11 +925,11 @@ final class SidebarDragCurrentContextTests: XCTestCase {
     }
 
     func testFolderHeaderReorderMovesFolderWithinTopLevelPinnedSection() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let tabManager = BrowserManager()
         let profileId = UUID()
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Work", profileId: profileId)
-        let first = tabManager.folderMutationOwner.createFolder(for: space.id, name: "One")
-        let second = tabManager.folderMutationOwner.createFolder(for: space.id, name: "Two")
+        let space = try makeSpace(tabManager, name: "Work", profileId: profileId)
+        let first = try makeFolder(tabManager, in: space.id, name: "One")
+        let second = try makeFolder(tabManager, in: space.id, name: "Two")
         let scope = try makeScope(
             spaceId: space.id,
             profileId: profileId,
@@ -921,12 +952,129 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         XCTAssertEqual(tabManager.folderCollectionStateOwner.folders(for: space.id).map(\.index), [0, 1])
     }
 
+    func testFolderPlacementRejectsNoncanonicalInstanceWithMatchingID() throws {
+        let tabManager = BrowserManager()
+        let space = try makeSpace(tabManager, name: "Work")
+        let canonical = try makeFolder(
+            tabManager,
+            in: space.id,
+            name: "Canonical"
+        )
+        let sibling = try makeFolder(
+            tabManager,
+            in: space.id,
+            name: "Sibling"
+        )
+        let stale = TabFolder(
+            id: canonical.id,
+            name: canonical.name,
+            spaceId: canonical.spaceId,
+            index: canonical.index
+        )
+        let persistenceRevision = tabManager.structuralPersistence
+            .schedulingRevision
+        let publicationRevision = tabManager.structuralLookupCoordinator
+            .mutationRevision
+
+        let scope = try makeScope(
+            spaceId: space.id,
+            profileId: UUID(),
+            sourceZone: .spacePinned(space.id),
+            item: dragItem(stale)
+        )
+        let didMove = tabManager.sidebarDragRouter.performSidebarDragOperation(
+            DragOperation(
+                payload: .folder(stale),
+                scope: scope,
+                fromContainer: .spacePinned(space.id),
+                toContainer: .spacePinned(space.id),
+                toIndex: 2
+            )
+        )
+
+        XCTAssertFalse(didMove)
+        XCTAssertEqual(
+            tabManager.structuralPersistence.schedulingRevision,
+            persistenceRevision
+        )
+        XCTAssertEqual(
+            tabManager.structuralLookupCoordinator.mutationRevision,
+            publicationRevision
+        )
+        XCTAssertEqual(
+            topLevelPinnedItemIDs(tabManager, in: space.id),
+            [canonical.id, sibling.id]
+        )
+    }
+
+    func testDragRouterRejectsNoncanonicalRegularTabInstanceWithMatchingID() throws {
+        let tabManager = BrowserManager()
+        let profileID = UUID()
+        let space = try makeSpace(
+            tabManager,
+            name: "Work",
+            profileId: profileID
+        )
+        let canonical = tabManager.regularTabLifecycleOwner.createNewTab(
+            url: "https://example.com/canonical",
+            in: space,
+            activate: false
+        )
+        let sibling = tabManager.regularTabLifecycleOwner.createNewTab(
+            url: "https://example.com/sibling",
+            in: space,
+            activate: false
+        )
+        let stale = Tab(
+            id: canonical.id,
+            url: canonical.url,
+            name: canonical.name,
+            spaceId: space.id,
+            index: canonical.index,
+            loadsCachedFaviconOnInit: false
+        )
+        stale.profileId = canonical.profileId
+        let scope = try makeScope(
+            spaceId: space.id,
+            profileId: profileID,
+            sourceZone: .spaceRegular(space.id),
+            item: dragItem(canonical)
+        )
+        let persistenceRevision = tabManager.structuralPersistence
+            .schedulingRevision
+        let publicationRevision = tabManager.structuralLookupCoordinator
+            .mutationRevision
+
+        let didMove = tabManager.sidebarDragRouter.performSidebarDragOperation(
+            DragOperation(
+                payload: .tab(stale),
+                scope: scope,
+                fromContainer: .spaceRegular(space.id),
+                toContainer: .spaceRegular(space.id),
+                toIndex: 2
+            )
+        )
+
+        XCTAssertFalse(didMove)
+        let tabs = tabManager.regularTabCollectionOwner.tabs(in: space)
+        XCTAssertEqual(tabs.map(\.id), [canonical.id, sibling.id])
+        XCTAssertTrue(tabs.first === canonical)
+        XCTAssertEqual(
+            tabManager.structuralPersistence.schedulingRevision,
+            persistenceRevision
+        )
+        XCTAssertEqual(
+            tabManager.structuralLookupCoordinator.mutationRevision,
+            publicationRevision
+        )
+    }
+
     func testFolderDropIntoFolderCreatesNestedFolder() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let tabManager = BrowserManager()
         let profileId = UUID()
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Work", profileId: profileId)
-        let target = tabManager.folderMutationOwner.createFolder(for: space.id, name: "Target")
-        let moving = tabManager.folderMutationOwner.createFolder(for: space.id, name: "Moving")
+        let space = try makeSpace(tabManager, name: "Work", profileId: profileId)
+        let target = try makeFolder(tabManager, in: space.id, name: "Target")
+        let moving = try makeFolder(tabManager, in: space.id, name: "Moving")
         let scope = try makeScope(
             spaceId: space.id,
             profileId: profileId,
@@ -951,11 +1099,16 @@ final class SidebarDragCurrentContextTests: XCTestCase {
     }
 
     func testFolderDropIntoDescendantIsRejected() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let tabManager = BrowserManager()
         let profileId = UUID()
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Work", profileId: profileId)
-        let parent = tabManager.folderMutationOwner.createFolder(for: space.id, name: "Parent")
-        let child = try XCTUnwrap(tabManager.folderMutationOwner.createFolder(for: space.id, parentFolderId: parent.id, name: "Child"))
+        let space = try makeSpace(tabManager, name: "Work", profileId: profileId)
+        let parent = try makeFolder(tabManager, in: space.id, name: "Parent")
+        let child = try makeFolder(
+            tabManager,
+            in: space.id,
+            parentFolderId: parent.id,
+            name: "Child"
+        )
         let scope = try makeScope(
             spaceId: space.id,
             profileId: profileId,
@@ -979,12 +1132,22 @@ final class SidebarDragCurrentContextTests: XCTestCase {
     }
 
     func testUngroupFolderLiftsDirectChildrenOneLevel() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let tabManager = BrowserManager()
         let profileId = UUID()
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Work", profileId: profileId)
-        let root = tabManager.folderMutationOwner.createFolder(for: space.id, name: "Root")
-        let nested = try XCTUnwrap(tabManager.folderMutationOwner.createFolder(for: space.id, parentFolderId: root.id, name: "Nested"))
-        let childFolder = try XCTUnwrap(tabManager.folderMutationOwner.createFolder(for: space.id, parentFolderId: nested.id, name: "Child"))
+        let space = try makeSpace(tabManager, name: "Work", profileId: profileId)
+        let root = try makeFolder(tabManager, in: space.id, name: "Root")
+        let nested = try makeFolder(
+            tabManager,
+            in: space.id,
+            parentFolderId: root.id,
+            name: "Nested"
+        )
+        let childFolder = try makeFolder(
+            tabManager,
+            in: space.id,
+            parentFolderId: nested.id,
+            name: "Child"
+        )
         let pin = try makeFolderPin(
             tabManager,
             in: space,
@@ -996,7 +1159,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         liveTab.isSpacePinned = true
         liveTab.folderId = nested.id
 
-        tabManager.folderMutationOwner.ungroupFolder(nested.id)
+        XCTAssertTrue(tabManager.sidebarFolderCommands.ungroupFolder(nested.id))
 
         XCTAssertNil(tabManager.folderCollectionStateOwner.folder(by: nested.id))
         XCTAssertEqual(childFolder.parentFolderId, root.id)
@@ -1011,12 +1174,22 @@ final class SidebarDragCurrentContextTests: XCTestCase {
     }
 
     func testDeleteFolderRemovesDescendantChildren() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let tabManager = BrowserManager()
         let profileId = UUID()
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Work", profileId: profileId)
-        let root = tabManager.folderMutationOwner.createFolder(for: space.id, name: "Root")
-        let nested = try XCTUnwrap(tabManager.folderMutationOwner.createFolder(for: space.id, parentFolderId: root.id, name: "Nested"))
-        let childFolder = try XCTUnwrap(tabManager.folderMutationOwner.createFolder(for: space.id, parentFolderId: nested.id, name: "Child"))
+        let space = try makeSpace(tabManager, name: "Work", profileId: profileId)
+        let root = try makeFolder(tabManager, in: space.id, name: "Root")
+        let nested = try makeFolder(
+            tabManager,
+            in: space.id,
+            parentFolderId: root.id,
+            name: "Nested"
+        )
+        let childFolder = try makeFolder(
+            tabManager,
+            in: space.id,
+            parentFolderId: nested.id,
+            name: "Child"
+        )
         let nestedPin = try makeFolderPin(
             tabManager,
             in: space,
@@ -1037,7 +1210,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
 
         XCTAssertEqual(tabManager.spacePinnedStructureOwner.folderRecursiveChildCount(for: nested.id, in: space.id), 3)
 
-        tabManager.folderMutationOwner.deleteFolder(nested.id)
+        XCTAssertTrue(tabManager.sidebarFolderCommands.deleteFolder(nested.id))
 
         XCTAssertNotNil(tabManager.folderCollectionStateOwner.folder(by: root.id))
         XCTAssertNil(tabManager.folderCollectionStateOwner.folder(by: nested.id))
@@ -1049,10 +1222,10 @@ final class SidebarDragCurrentContextTests: XCTestCase {
     }
 
     func testSpacePinnedDropIntoFolderPreservesLauncherAndMovesOwnership() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let tabManager = BrowserManager()
         let profileId = UUID()
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Work", profileId: profileId)
-        let folder = tabManager.folderMutationOwner.createFolder(for: space.id, name: "Docs")
+        let space = try makeSpace(tabManager, name: "Work", profileId: profileId)
+        let folder = try makeFolder(tabManager, in: space.id, name: "Docs")
         let existingFolderPin = try makeFolderPin(
             tabManager,
             in: space,
@@ -1092,13 +1265,13 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         XCTAssertEqual(moved.spaceId, space.id)
         XCTAssertEqual(moved.folderId, folder.id)
         XCTAssertEqual(moved.launchURL, pin.launchURL)
-        XCTAssertTrue(tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[space.id]?.isEmpty ?? false)
+        XCTAssertTrue(tabManager.regularTabCollectionOwner.tabs(in: space.id).isEmpty)
     }
 
     func testSpacePinnedDropIntoEssentialsPreservesLauncherAndMovesOwnership() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let tabManager = BrowserManager()
         let profileId = UUID()
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Work", profileId: profileId)
+        let space = try makeSpace(tabManager, name: "Work", profileId: profileId)
         let existingEssential = try makeEssentialPin(
             tabManager,
             in: space,
@@ -1139,14 +1312,14 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         XCTAssertNil(moved.spaceId)
         XCTAssertNil(moved.folderId)
         XCTAssertEqual(moved.launchURL, pin.launchURL)
-        XCTAssertTrue(tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[space.id]?.isEmpty ?? false)
+        XCTAssertTrue(tabManager.regularTabCollectionOwner.tabs(in: space.id).isEmpty)
     }
 
     func testFolderChildDropIntoSpacePinnedPreservesLauncherAndMovesOwnership() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let tabManager = BrowserManager()
         let profileId = UUID()
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Work", profileId: profileId)
-        let folder = tabManager.folderMutationOwner.createFolder(for: space.id, name: "Docs")
+        let space = try makeSpace(tabManager, name: "Work", profileId: profileId)
+        let folder = try makeFolder(tabManager, in: space.id, name: "Docs")
         let pin = try makeFolderPin(
             tabManager,
             in: space,
@@ -1185,14 +1358,14 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         XCTAssertEqual(moved.spaceId, space.id)
         XCTAssertNil(moved.folderId)
         XCTAssertEqual(moved.launchURL, pin.launchURL)
-        XCTAssertTrue(tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[space.id]?.isEmpty ?? false)
+        XCTAssertTrue(tabManager.regularTabCollectionOwner.tabs(in: space.id).isEmpty)
     }
 
     func testFolderChildDropIntoEssentialsPreservesLauncherAndMovesOwnership() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let tabManager = BrowserManager()
         let profileId = UUID()
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Work", profileId: profileId)
-        let folder = tabManager.folderMutationOwner.createFolder(for: space.id, name: "Docs")
+        let space = try makeSpace(tabManager, name: "Work", profileId: profileId)
+        let folder = try makeFolder(tabManager, in: space.id, name: "Docs")
         let existingEssential = try makeEssentialPin(
             tabManager,
             in: space,
@@ -1234,14 +1407,14 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         XCTAssertNil(moved.spaceId)
         XCTAssertNil(moved.folderId)
         XCTAssertEqual(moved.launchURL, pin.launchURL)
-        XCTAssertTrue(tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[space.id]?.isEmpty ?? false)
+        XCTAssertTrue(tabManager.regularTabCollectionOwner.tabs(in: space.id).isEmpty)
     }
 
     func testEssentialDropIntoSpacePinnedPreservesLauncherAndMovesOwnership() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let tabManager = BrowserManager()
         let profileId = UUID()
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Work", profileId: profileId)
-        let folder = tabManager.folderMutationOwner.createFolder(for: space.id, name: "Docs")
+        let space = try makeSpace(tabManager, name: "Work", profileId: profileId)
+        let folder = try makeFolder(tabManager, in: space.id, name: "Docs")
         let existingTopLevelPin = try makeSpacePinnedPin(
             tabManager,
             in: space,
@@ -1281,14 +1454,14 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         XCTAssertNil(moved.profileId)
         XCTAssertNil(moved.folderId)
         XCTAssertEqual(moved.launchURL, pin.launchURL)
-        XCTAssertTrue(tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[space.id]?.isEmpty ?? false)
+        XCTAssertTrue(tabManager.regularTabCollectionOwner.tabs(in: space.id).isEmpty)
     }
 
     func testEssentialDropIntoFolderPreservesLauncherAndMovesOwnership() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let tabManager = BrowserManager()
         let profileId = UUID()
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Work", profileId: profileId)
-        let folder = tabManager.folderMutationOwner.createFolder(for: space.id, name: "Docs")
+        let space = try makeSpace(tabManager, name: "Work", profileId: profileId)
+        let folder = try makeFolder(tabManager, in: space.id, name: "Docs")
         let existingFolderPin = try makeFolderPin(
             tabManager,
             in: space,
@@ -1330,15 +1503,15 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         XCTAssertNil(moved.profileId)
         XCTAssertEqual(moved.folderId, folder.id)
         XCTAssertEqual(moved.launchURL, pin.launchURL)
-        XCTAssertTrue(tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[space.id]?.isEmpty ?? false)
+        XCTAssertTrue(tabManager.regularTabCollectionOwner.tabs(in: space.id).isEmpty)
     }
 
     func testFolderChildDropIntoDifferentFolderPreservesLauncherAndMovesOwnership() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let tabManager = BrowserManager()
         let profileId = UUID()
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Work", profileId: profileId)
-        let sourceFolder = tabManager.folderMutationOwner.createFolder(for: space.id, name: "Source")
-        let targetFolder = tabManager.folderMutationOwner.createFolder(for: space.id, name: "Target")
+        let space = try makeSpace(tabManager, name: "Work", profileId: profileId)
+        let sourceFolder = try makeFolder(tabManager, in: space.id, name: "Source")
+        let targetFolder = try makeFolder(tabManager, in: space.id, name: "Target")
         let pin = try makeFolderPin(
             tabManager,
             in: space,
@@ -1379,13 +1552,13 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         XCTAssertEqual(moved.spaceId, space.id)
         XCTAssertEqual(moved.folderId, targetFolder.id)
         XCTAssertEqual(moved.launchURL, pin.launchURL)
-        XCTAssertTrue(tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[space.id]?.isEmpty ?? false)
+        XCTAssertTrue(tabManager.regularTabCollectionOwner.tabs(in: space.id).isEmpty)
     }
 
     func testSpacePinnedDropIntoRegularCreatesRegularTabAndRemovesLauncherOwnership() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let tabManager = BrowserManager()
         let profileId = UUID()
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Work", profileId: profileId)
+        let space = try makeSpace(tabManager, name: "Work", profileId: profileId)
         let pin = try makeSpacePinnedPin(
             tabManager,
             in: space,
@@ -1411,17 +1584,17 @@ final class SidebarDragCurrentContextTests: XCTestCase {
 
         XCTAssertTrue(didMove)
         XCTAssertTrue(tabManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: space.id).isEmpty)
-        let converted = try XCTUnwrap(tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[space.id]?.first)
+        let converted = try XCTUnwrap(tabManager.regularTabCollectionOwner.tabs(in: space.id).first)
         XCTAssertEqual(converted.url, pin.launchURL)
         XCTAssertNil(converted.shortcutPinId)
         XCTAssertFalse(converted.isShortcutLiveInstance)
     }
 
     func testFolderChildDropIntoRegularCreatesRegularTabAndRemovesFolderOwnership() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let tabManager = BrowserManager()
         let profileId = UUID()
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Work", profileId: profileId)
-        let folder = tabManager.folderMutationOwner.createFolder(for: space.id, name: "Docs")
+        let space = try makeSpace(tabManager, name: "Work", profileId: profileId)
+        let folder = try makeFolder(tabManager, in: space.id, name: "Docs")
         let pin = try makeFolderPin(
             tabManager,
             in: space,
@@ -1448,7 +1621,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
 
         XCTAssertTrue(didMove)
         XCTAssertTrue(tabManager.shortcutPinCollectionStateOwner.folderPinnedPins(for: folder.id, in: space.id).isEmpty)
-        let converted = try XCTUnwrap(tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[space.id]?.first)
+        let converted = try XCTUnwrap(tabManager.regularTabCollectionOwner.tabs(in: space.id).first)
         XCTAssertEqual(converted.url, pin.launchURL)
         XCTAssertNil(converted.folderId)
         XCTAssertNil(converted.shortcutPinId)
@@ -1456,9 +1629,9 @@ final class SidebarDragCurrentContextTests: XCTestCase {
     }
 
     func testEssentialDropIntoRegularCreatesRegularTabAndRemovesEssentialOwnership() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let tabManager = BrowserManager()
         let profileId = UUID()
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Work", profileId: profileId)
+        let space = try makeSpace(tabManager, name: "Work", profileId: profileId)
         let pin = try makeEssentialPin(
             tabManager,
             in: space,
@@ -1485,7 +1658,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
 
         XCTAssertTrue(didMove)
         XCTAssertTrue(tabManager.shortcutPinCollectionStateOwner.essentialPins(for: profileId).isEmpty)
-        let converted = try XCTUnwrap(tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[space.id]?.first)
+        let converted = try XCTUnwrap(tabManager.regularTabCollectionOwner.tabs(in: space.id).first)
         XCTAssertEqual(converted.url, pin.launchURL)
         XCTAssertNil(converted.shortcutPinId)
         XCTAssertFalse(converted.isShortcutLiveInstance)
@@ -1516,10 +1689,10 @@ final class SidebarDragCurrentContextTests: XCTestCase {
     }
 
     func testWrongProfileScopeIsRejectedEvenWhenSpaceMatches() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let tabManager = BrowserManager()
         let profileId = UUID()
         let wrongProfileId = UUID()
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Work", profileId: profileId)
+        let space = try makeSpace(tabManager, name: "Work", profileId: profileId)
         let tab = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/source", in: space)
         let scope = try makeScope(
             spaceId: space.id,
@@ -1539,14 +1712,14 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         )
 
         XCTAssertFalse(didMove)
-        XCTAssertEqual(tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[space.id]?.map(\.id), [tab.id])
+        XCTAssertEqual(tabManager.regularTabCollectionOwner.tabs(in: space.id).map(\.id), [tab.id])
         XCTAssertTrue(tabManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: space.id).isEmpty)
     }
 
     func testMismatchedSourceContainerIsRejectedEvenWhenTargetIsCurrentSpace() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let tabManager = BrowserManager()
         let profileId = UUID()
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Work", profileId: profileId)
+        let space = try makeSpace(tabManager, name: "Work", profileId: profileId)
         let tab = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/source", in: space)
         let scope = try makeScope(
             spaceId: space.id,
@@ -1566,15 +1739,15 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         )
 
         XCTAssertFalse(didMove)
-        XCTAssertEqual(tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[space.id]?.map(\.id), [tab.id])
+        XCTAssertEqual(tabManager.regularTabCollectionOwner.tabs(in: space.id).map(\.id), [tab.id])
         XCTAssertTrue(tabManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: space.id).isEmpty)
     }
 
     func testCrossSpaceDropTargetIsRejected() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let tabManager = BrowserManager()
         let profileId = UUID()
-        let sourceSpace = tabManager.spaceServices.catalog.createSpace(name: "Source", profileId: profileId)
-        let targetSpace = tabManager.spaceServices.catalog.createSpace(name: "Target", profileId: profileId)
+        let sourceSpace = try makeSpace(tabManager, name: "Source", profileId: profileId)
+        let targetSpace = try makeSpace(tabManager, name: "Target", profileId: profileId)
         let tab = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/source", in: sourceSpace)
         let scope = try makeScope(
             spaceId: sourceSpace.id,
@@ -1594,15 +1767,15 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         )
 
         XCTAssertFalse(didMove)
-        XCTAssertEqual(tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[sourceSpace.id]?.map(\.id), [tab.id])
-        XCTAssertTrue(tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[targetSpace.id]?.isEmpty ?? true)
+        XCTAssertEqual(tabManager.regularTabCollectionOwner.tabs(in: sourceSpace.id).map(\.id), [tab.id])
+        XCTAssertTrue(tabManager.regularTabCollectionOwner.tabs(in: targetSpace.id).isEmpty)
     }
 
     func testPayloadFromDifferentSpaceIsRejectedEvenWhenSourceScopeNamesCurrentSpace() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let tabManager = BrowserManager()
         let profileId = UUID()
-        let sourceSpace = tabManager.spaceServices.catalog.createSpace(name: "Source", profileId: profileId)
-        let otherSpace = tabManager.spaceServices.catalog.createSpace(name: "Other", profileId: profileId)
+        let sourceSpace = try makeSpace(tabManager, name: "Source", profileId: profileId)
+        let otherSpace = try makeSpace(tabManager, name: "Other", profileId: profileId)
         let sourceTab = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/source", in: sourceSpace)
         let otherTab = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/other", in: otherSpace)
         let scope = try makeScope(
@@ -1623,8 +1796,8 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         )
 
         XCTAssertFalse(didMove)
-        XCTAssertEqual(tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[sourceSpace.id]?.map(\.id), [sourceTab.id])
-        XCTAssertEqual(tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[otherSpace.id]?.map(\.id), [otherTab.id])
+        XCTAssertEqual(tabManager.regularTabCollectionOwner.tabs(in: sourceSpace.id).map(\.id), [sourceTab.id])
+        XCTAssertEqual(tabManager.regularTabCollectionOwner.tabs(in: otherSpace.id).map(\.id), [otherTab.id])
         XCTAssertTrue(tabManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: sourceSpace.id).isEmpty)
     }
 
@@ -1635,16 +1808,13 @@ final class SidebarDragCurrentContextTests: XCTestCase {
                 container: container
             )
         )
-        let tabManager = browserManager.tabManager
-        let windowRegistry = WindowRegistry()
+        let windowRegistry = browserManager.windowRegistry
         let windowState = BrowserWindowState()
-        windowState.tabManager = tabManager
-        browserManager.windowRegistry = windowRegistry
         windowRegistry.register(windowState)
         windowRegistry.setActive(windowState)
         return LiveWindowHarness(
             browserManager: browserManager,
-            tabManager: tabManager,
+            tabManager: browserManager,
             windowRegistry: windowRegistry,
             windowState: windowState
         )
@@ -1689,27 +1859,59 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         SumiDragItem.folder(folderId: folder.id, title: folder.name)
     }
 
+    private func makeSpace(
+        _ browser: BrowserManager,
+        name: String,
+        profileId: UUID? = nil
+    ) throws -> Space {
+        try XCTUnwrap(
+            browser.sidebarSpaceLifecycle.createSpace(
+                name: name,
+                icon: "square",
+                profileID: profileId
+            )
+        )
+    }
+
+    private func makeFolder(
+        _ browser: BrowserManager,
+        in spaceId: UUID,
+        parentFolderId: UUID? = nil,
+        name: String
+    ) throws -> TabFolder {
+        try XCTUnwrap(
+            browser.sidebarFolderCommands.createFolder(
+                in: spaceId,
+                parentFolderID: parentFolderId,
+                name: name
+            )
+        )
+    }
+
     private func makeSpacePinnedPin(
-        _ tabManager: TabManager,
+        _ tabManager: BrowserManager,
         in space: Space,
         url: String,
         index: Int
     ) throws -> ShortcutPin {
         let tab = tabManager.regularTabLifecycleOwner.createNewTab(url: url, in: space, activate: false)
         return try XCTUnwrap(
-            tabManager.shortcutPinCommandOwner.convertTabToShortcutPin(
+            tabManager.regularTabShortcutConversion.convert(
                 tab,
-                role: .spacePinned,
-                profileId: nil,
-                spaceId: space.id,
-                folderId: nil,
-                at: index
+                destination: TabShortcutPinDestination(
+                    role: .spacePinned,
+                    profileId: nil,
+                    spaceId: space.id,
+                    folderId: nil,
+                    index: index,
+                    opensFolder: false
+                )
             )
         )
     }
 
     private func makeFolderPin(
-        _ tabManager: TabManager,
+        _ tabManager: BrowserManager,
         in space: Space,
         folderId: UUID,
         url: String,
@@ -1717,20 +1919,22 @@ final class SidebarDragCurrentContextTests: XCTestCase {
     ) throws -> ShortcutPin {
         let tab = tabManager.regularTabLifecycleOwner.createNewTab(url: url, in: space, activate: false)
         return try XCTUnwrap(
-            tabManager.shortcutPinCommandOwner.convertTabToShortcutPin(
+            tabManager.regularTabShortcutConversion.convert(
                 tab,
-                role: .spacePinned,
-                profileId: nil,
-                spaceId: space.id,
-                folderId: folderId,
-                at: index,
-                openTargetFolder: false
+                destination: TabShortcutPinDestination(
+                    role: .spacePinned,
+                    profileId: nil,
+                    spaceId: space.id,
+                    folderId: folderId,
+                    index: index,
+                    opensFolder: false
+                )
             )
         )
     }
 
     private func makeEssentialPin(
-        _ tabManager: TabManager,
+        _ tabManager: BrowserManager,
         in space: Space,
         profileId: UUID,
         url: String,
@@ -1738,18 +1942,21 @@ final class SidebarDragCurrentContextTests: XCTestCase {
     ) throws -> ShortcutPin {
         let tab = tabManager.regularTabLifecycleOwner.createNewTab(url: url, in: space, activate: false)
         return try XCTUnwrap(
-            tabManager.shortcutPinCommandOwner.convertTabToShortcutPin(
+            tabManager.regularTabShortcutConversion.convert(
                 tab,
-                role: .essential,
-                profileId: profileId,
-                spaceId: nil,
-                folderId: nil,
-                at: index
+                destination: TabShortcutPinDestination(
+                    role: .essential,
+                    profileId: profileId,
+                    spaceId: nil,
+                    folderId: nil,
+                    index: index,
+                    opensFolder: false
+                )
             )
         )
     }
 
-    private func topLevelPinnedItemIDs(_ tabManager: TabManager, in spaceId: UUID) -> [UUID] {
+    private func topLevelPinnedItemIDs(_ tabManager: BrowserManager, in spaceId: UUID) -> [UUID] {
         tabManager.spacePinnedStructureOwner.topLevelSpacePinnedItems(for: spaceId).map(\.id)
     }
 
@@ -1759,8 +1966,8 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         let harness = try makeLiveWindowHarness()
         let tabManager = harness.tabManager
         let profileId = UUID()
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Work", profileId: profileId)
-        let folder = tabManager.folderMutationOwner.createFolder(for: space.id, name: "Docs")
+        let space = try makeSpace(tabManager, name: "Work", profileId: profileId)
+        let folder = try makeFolder(tabManager, in: space.id, name: "Docs")
         let tab = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/non-displayed-\(target.pathComponent)", in: space)
         harness.windowState.currentSpaceId = space.id
         harness.windowState.currentProfileId = profileId
@@ -1784,7 +1991,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         )
 
         XCTAssertTrue(didMove)
-        XCTAssertTrue(tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[space.id]?.isEmpty ?? false)
+        XCTAssertTrue(tabManager.regularTabCollectionOwner.tabs(in: space.id).isEmpty)
         XCTAssertNil(tabManager.tabCollectionMembershipOwner.tab(for: tab.id))
         let pin = try XCTUnwrap(shortcutPin(for: target, tabManager: tabManager, profileId: profileId, space: space, folder: folder))
         XCTAssertEqual(pin.launchURL, tab.url)
@@ -1797,8 +2004,8 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         let harness = try makeLiveWindowHarness()
         let tabManager = harness.tabManager
         let profileId = UUID()
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Work", profileId: profileId)
-        let folder = tabManager.folderMutationOwner.createFolder(for: space.id, name: "Docs")
+        let space = try makeSpace(tabManager, name: "Work", profileId: profileId)
+        let folder = try makeFolder(tabManager, in: space.id, name: "Docs")
         let pin = try makePin(
             source,
             tabManager: tabManager,
@@ -1833,7 +2040,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         XCTAssertTrue(didMove)
         XCTAssertNil(shortcutPin(for: source, tabManager: tabManager, profileId: profileId, space: space, folder: folder))
         XCTAssertNil(tabManager.shortcutPresentationOwner.shortcutLiveTab(for: pin.id, in: harness.windowState.id))
-        let converted = try XCTUnwrap(tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[space.id]?.first)
+        let converted = try XCTUnwrap(tabManager.regularTabCollectionOwner.tabs(in: space.id).first)
         XCTAssertIdentical(converted, liveTab)
         XCTAssertEqual(converted.id, liveTab.id)
         XCTAssertNil(converted.shortcutPinId)
@@ -1853,8 +2060,8 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         let harness = try makeLiveWindowHarness()
         let tabManager = harness.tabManager
         let profileId = UUID()
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Work", profileId: profileId)
-        let folder = tabManager.folderMutationOwner.createFolder(for: space.id, name: "Docs")
+        let space = try makeSpace(tabManager, name: "Work", profileId: profileId)
+        let folder = try makeFolder(tabManager, in: space.id, name: "Docs")
         let pin = try makePin(
             source,
             tabManager: tabManager,
@@ -1885,7 +2092,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         XCTAssertTrue(didMove)
         XCTAssertNil(shortcutPin(for: source, tabManager: tabManager, profileId: profileId, space: space, folder: folder))
         XCTAssertNil(tabManager.shortcutPresentationOwner.shortcutLiveTab(for: pin.id, in: harness.windowState.id))
-        let converted = try XCTUnwrap(tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[space.id]?.first)
+        let converted = try XCTUnwrap(tabManager.regularTabCollectionOwner.tabs(in: space.id).first)
         XCTAssertNotEqual(converted.id, pin.id)
         XCTAssertEqual(converted.url, pin.launchURL)
         XCTAssertNil(converted.shortcutPinId)
@@ -1901,9 +2108,9 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         let harness = try makeLiveWindowHarness()
         let tabManager = harness.tabManager
         let profileId = UUID()
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Work", profileId: profileId)
-        let sourceFolder = tabManager.folderMutationOwner.createFolder(for: space.id, name: "Source")
-        let destinationFolder = tabManager.folderMutationOwner.createFolder(for: space.id, name: "Destination")
+        let space = try makeSpace(tabManager, name: "Work", profileId: profileId)
+        let sourceFolder = try makeFolder(tabManager, in: space.id, name: "Source")
+        let destinationFolder = try makeFolder(tabManager, in: space.id, name: "Destination")
         let pin = try makePin(
             source,
             tabManager: tabManager,
@@ -1952,7 +2159,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
 
     private func makePin(
         _ target: ShortcutSectionTarget,
-        tabManager: TabManager,
+        tabManager: BrowserManager,
         space: Space,
         folderId: UUID,
         profileId: UUID,
@@ -1993,7 +2200,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
 
     private func shortcutPin(
         for target: ShortcutSectionTarget,
-        tabManager: TabManager,
+        tabManager: BrowserManager,
         profileId: UUID,
         space: Space,
         folder: TabFolder
@@ -2039,7 +2246,7 @@ private enum ShortcutSectionTarget: Equatable {
 
 private struct LiveWindowHarness {
     let browserManager: BrowserManager
-    let tabManager: TabManager
+    let tabManager: BrowserManager
     let windowRegistry: WindowRegistry
     let windowState: BrowserWindowState
 }

@@ -177,8 +177,8 @@ require_matches '\.miniaturizable' "$compact_window"
 require_matches -F '$0.performMiniaturize(nil)' "$state_coordinator"
 require_matches -U 'trackedOwner\([[:space:]]+containing: webView[[:space:]]+\)[[:space:]]+\{' \
   "$permission_runtime"
-require_matches -F 'isAuxiliaryMiniWindowTab(sourceTab)' "$permission_runtime"
-require_matches -F 'webViewRoutingService.ownsLiveWebView' "$permission_runtime"
+require_matches -F 'auxiliaryTabs.containsExact(sourceTab)' "$permission_runtime"
+require_matches -F 'routing.ownsLiveWebView' "$permission_runtime"
 require_matches -F 'let profileID = sourceTab.profileId' "$permission_runtime"
 require_matches -F 'profile.id == profileID' "$permission_runtime"
 require_matches -F 'sumiIsNormalTabWebViewConfiguration == false' "$permission_runtime"
@@ -255,8 +255,14 @@ if scan_has_matches 'auxiliaryContains|teardownAuxiliaryWebView|auxiliaryWindowS
   echo 'error: generic WebView close routing regained auxiliary WebView authority' >&2
   exit 1
 fi
-require_matches 'teardownAuxiliarySessionForTab' "$close_router"
+require_matches -F 'func closeAuxiliaryMiniWindow(' "$close_router"
+require_matches -F 'guard auxiliaryTabs.containsExact(tab) else' \
+  "$close_router"
 require_matches -U 'session\.tab === tab,[[:space:]]+let receipt = auxiliaryWindows\.sessions\.receipt' \
+  "$close_router"
+require_matches -F 'auxiliaryWindows.teardown.teardown(receipt, reason: reason)' \
+  "$close_router"
+require_matches -U 'auxiliaryTabs\.remove\(tab\)[[:space:]]+extensions\.notifyTabClosedIfLoaded\(tab\)' \
   "$close_router"
 atomic_load_line="$(capture_matches 'let load = loadResolver\.resolve' "$window_router" | tail -1 | cut -d: -f1)"
 atomic_reject_line="$(capture_matches 'load\.hasUnresolvedExtensionOwnership == false' "$window_router" | tail -2 | head -1 | cut -d: -f1)"

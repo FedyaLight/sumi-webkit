@@ -15,17 +15,20 @@ final class ExtensionInitialTabResidenceAdmission {
     private let tabProfiles: any ExtensionTabProfileResolving
     private let windowProfileID: @MainActor (BrowserWindowState) -> UUID?
     private let webViews: ExtensionExactTabWebViewQuery
+    private let residences: BrowserTabResidenceAuthority
 
     init(
         browserProfiles: ExtensionBrowserProfileQuery,
         tabProfiles: any ExtensionTabProfileResolving,
         windowProfileID: @escaping @MainActor (BrowserWindowState) -> UUID?,
-        webViews: ExtensionExactTabWebViewQuery
+        webViews: ExtensionExactTabWebViewQuery,
+        residences: BrowserTabResidenceAuthority
     ) {
         self.browserProfiles = browserProfiles
         self.tabProfiles = tabProfiles
         self.windowProfileID = windowProfileID
         self.webViews = webViews
+        self.residences = residences
     }
 
     func admit(
@@ -42,9 +45,7 @@ final class ExtensionInitialTabResidenceAdmission {
               webViews.liveWebView(for: tab) === webView,
               window.currentTabId == tab.id,
               webView.owningTab === tab,
-              window.tabManager?.tabCollectionMembershipOwner.tab(
-                  for: tab.id
-              ) === tab,
+              residences.containsExact(tab, in: window),
               case .window(let owner) = tab.webViewSession.residence(of: webView),
               owner == TrackedWebViewOwner(tabID: tab.id, windowID: window.id)
         else { return nil }

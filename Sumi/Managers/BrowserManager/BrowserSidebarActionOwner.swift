@@ -3,24 +3,26 @@ import Foundation
 
 @MainActor
 final class BrowserSidebarActionOwner {
-    private let tabManager: @MainActor @Sendable () -> TabManager?
-    private let liveFolderManager: @MainActor @Sendable () -> SumiLiveFolderManager?
-    private let sumiSettings: @MainActor () -> SumiSettingsService?
+    private let spaces: TabSpaceCollectionStateOwner
+    private let folderCommands: SidebarFolderCommands
+    private let liveFolderManager: SumiLiveFolderManager
+    private let settings: BrowserSettingsState
 
     init(
-        tabManager: @escaping @MainActor @Sendable () -> TabManager?,
-        liveFolderManager: @escaping @MainActor @Sendable () -> SumiLiveFolderManager?,
-        sumiSettings: @escaping @MainActor () -> SumiSettingsService?
+        spaces: TabSpaceCollectionStateOwner,
+        folderCommands: SidebarFolderCommands,
+        liveFolderManager: SumiLiveFolderManager,
+        settings: BrowserSettingsState
     ) {
-        self.tabManager = tabManager
+        self.spaces = spaces
+        self.folderCommands = folderCommands
         self.liveFolderManager = liveFolderManager
-        self.sumiSettings = sumiSettings
+        self.settings = settings
     }
 
     func spaceForSidebarActions(in windowState: BrowserWindowState) -> Space? {
-        guard let tabManager = tabManager() else { return nil }
         if let windowSpaceId = windowState.currentSpaceId,
-           let windowSpace = tabManager.spaceStateOwner.spaces.first(where: { $0.id == windowSpaceId }) {
+           let windowSpace = spaces.spaces.first(where: { $0.id == windowSpaceId }) {
             return windowSpace
         }
 
@@ -29,7 +31,14 @@ final class BrowserSidebarActionOwner {
 
     func createFolderInCurrentSpace(in windowState: BrowserWindowState) {
         guard let space = spaceForSidebarActions(in: windowState) else { return }
-        _ = tabManager()?.folderMutationOwner.createFolder(for: space.id)
+        _ = folderCommands.createFolder(
+            in: space.id,
+            name: "New Folder"
+        )
+    }
+
+    func canCreateFolderInCurrentSpace(in windowState: BrowserWindowState) -> Bool {
+        spaceForSidebarActions(in: windowState) != nil
     }
 
     func createRSSLiveFolderInCurrentSpace(in windowState: BrowserWindowState) {
@@ -38,17 +47,17 @@ final class BrowserSidebarActionOwner {
         else {
             return
         }
-        liveFolderManager()?.createRSSFolder(in: space.id, feedURLString: feedURLString)
+        liveFolderManager.createRSSFolder(in: space.id, feedURLString: feedURLString)
     }
 
     func createGitHubPRFolderInCurrentSpace(in windowState: BrowserWindowState) {
         guard let space = spaceForSidebarActions(in: windowState) else { return }
-        liveFolderManager()?.createGitHubFolder(in: space.id, kind: .githubPullRequests)
+        liveFolderManager.createGitHubFolder(in: space.id, kind: .githubPullRequests)
     }
 
     func createGitHubIssuesFolderInCurrentSpace(in windowState: BrowserWindowState) {
         guard let space = spaceForSidebarActions(in: windowState) else { return }
-        liveFolderManager()?.createGitHubFolder(in: space.id, kind: .githubIssues)
+        liveFolderManager.createGitHubFolder(in: space.id, kind: .githubIssues)
     }
 
     private func promptForLiveFolderFeedURL(in windowState: BrowserWindowState) -> String? {
@@ -64,7 +73,7 @@ final class BrowserSidebarActionOwner {
         alert.accessoryView = field
         alert.sumiApplyNativeSurfaceAppearance(
             windowState: windowState,
-            settings: sumiSettings()
+            settings: settings.settings
         )
 
         guard alert.runModal() == .alertFirstButtonReturn else {

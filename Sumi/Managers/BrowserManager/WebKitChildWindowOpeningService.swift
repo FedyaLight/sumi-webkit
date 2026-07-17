@@ -19,7 +19,10 @@ final class WebKitChildWindowOpeningService: WebKitChildWindowOpening {
     }
 
     private let windowTransaction: WebKitChildWindowShellTransaction
-    private weak var tabs: TabManager?
+    private let regularTabs: RegularTabCollectionOwner
+    private let regularLifecycle: TabRegularLifecycleOwner
+    private let ephemeralLifecycle: TabEphemeralLifecycleOwner
+    private let residences: BrowserTabResidenceAuthority
     private weak var placement: (any AuxiliaryTrackedWebViewPlacing)?
     private weak var ownershipQuery: WebViewOwnershipQuery?
     private let sourceResolver: PhysicalWebViewSourceResolver
@@ -30,7 +33,10 @@ final class WebKitChildWindowOpeningService: WebKitChildWindowOpening {
 
     init(
         windowTransaction: WebKitChildWindowShellTransaction,
-        tabs: TabManager,
+        regularTabs: RegularTabCollectionOwner,
+        regularLifecycle: TabRegularLifecycleOwner,
+        ephemeralLifecycle: TabEphemeralLifecycleOwner,
+        residences: BrowserTabResidenceAuthority,
         placement: any AuxiliaryTrackedWebViewPlacing,
         ownershipQuery: WebViewOwnershipQuery,
         sourceResolver: PhysicalWebViewSourceResolver,
@@ -41,7 +47,10 @@ final class WebKitChildWindowOpeningService: WebKitChildWindowOpening {
         ) -> Void
     ) {
         self.windowTransaction = windowTransaction
-        self.tabs = tabs
+        self.regularTabs = regularTabs
+        self.regularLifecycle = regularLifecycle
+        self.ephemeralLifecycle = ephemeralLifecycle
+        self.residences = residences
         self.placement = placement
         self.ownershipQuery = ownershipQuery
         self.sourceResolver = sourceResolver
@@ -181,7 +190,7 @@ final class WebKitChildWindowOpeningService: WebKitChildWindowOpening {
         targetWindow: BrowserWindowState,
         isExtensionOriginated: Bool
     ) -> Child? {
-        guard let tabs, let placement else { return nil }
+        guard let placement else { return nil }
         let childTab: Tab
         let residence: ChildResidence
         if source.residence == .privateEphemeral {
@@ -193,7 +202,7 @@ final class WebKitChildWindowOpeningService: WebKitChildWindowOpening {
             else {
                 return nil
             }
-            childTab = tabs.ephemeralLifecycleOwner.createEphemeralTab(
+            childTab = ephemeralLifecycle.createEphemeralTab(
                 url: requestURL ?? blankURL,
                 in: targetWindow,
                 profile: source.executionProfile
@@ -210,12 +219,11 @@ final class WebKitChildWindowOpeningService: WebKitChildWindowOpening {
             else {
                 return nil
             }
-            let insertionIndex = tabs.regularTabCollectionOwner
-                .childInsertionIndex(
-                    openedFrom: source.tab,
-                    in: source.presentationSpace
-                )
-            childTab = tabs.regularTabLifecycleOwner.createPopupTab(
+            let insertionIndex = regularTabs.childInsertionIndex(
+                openedFrom: source.tab,
+                in: source.presentationSpace
+            )
+            childTab = regularLifecycle.createPopupTab(
                 in: source.presentationSpace,
                 activate: false,
                 executionProfileID: source.executionProfile.id,
@@ -249,7 +257,7 @@ final class WebKitChildWindowOpeningService: WebKitChildWindowOpening {
             in: targetWindow.id
         )
         guard placementOutcome.isAccepted else {
-            discardUnplaced(child, from: targetWindow, tabs: tabs)
+            discardUnplaced(child, from: targetWindow)
             return nil
         }
         _ = WindowTabSelectionStateApplicator.apply(
@@ -306,15 +314,13 @@ final class WebKitChildWindowOpeningService: WebKitChildWindowOpening {
         from targetWindow: BrowserWindowState,
         extensionPublication: WindowExtensionPublicationTransaction
     ) {
-        guard let lifecycle, let tabs else { return }
+        guard let lifecycle else { return }
         guard let admission = rollbackAdmission(
             for: child,
-            in: targetWindow,
-            tabs: tabs
+            in: targetWindow
         ) else {
             return
         }
-        tabs.structuralPersistence.cancelRuntimeStatePersistence(for: child.tab.id)
         extensionPublication.discardRegistration(targetWindow)
         lifecycle.cleanupTrackedWebView(
             child.webView,
@@ -326,49 +332,41 @@ final class WebKitChildWindowOpeningService: WebKitChildWindowOpening {
         discardModel(
             child,
             admission: admission,
-            from: targetWindow,
-            tabs: tabs
+            from: targetWindow
         )
     }
 
     private func discardUnplaced(
         _ child: Child,
-        from targetWindow: BrowserWindowState,
-        tabs: TabManager
+        from targetWindow: BrowserWindowState
     ) {
         guard let admission = rollbackAdmission(
             for: child,
-            in: targetWindow,
-            tabs: tabs
+            in: targetWindow
         ) else {
             return
         }
-        tabs.structuralPersistence.cancelRuntimeStatePersistence(for: child.tab.id)
         child.tab.cleanupCloneWebView(child.webView)
         discardModel(
             child,
             admission: admission,
-            from: targetWindow,
-            tabs: tabs
+            from: targetWindow
         )
     }
 
     private func discardModel(
         _ child: Child,
-        admission: ExactTabResidenceAdmission,
-        from targetWindow: BrowserWindowState,
-        tabs: TabManager
+        admission: BrowserTabResidenceAuthority.RemovalAdmission,
+        from targetWindow: BrowserWindowState
     ) {
-        guard admission.remove(
-            tabs: tabs,
+        guard residences.commitRemoval(
+            admission,
             currentSpaceID: targetWindow.currentSpaceId
         ) else { return }
 
         switch child.residence {
         case .regular:
             clearChildWindowIdentity(child.tab, in: targetWindow)
-            tabs.tabCollectionMembershipOwner.detach(child.tab)
-            tabs.structuralPersistence.scheduleStructuralPersistence()
         case .ephemeral:
             clearChildWindowIdentity(child.tab, in: targetWindow)
         }
@@ -376,22 +374,15 @@ final class WebKitChildWindowOpeningService: WebKitChildWindowOpening {
 
     private func rollbackAdmission(
         for child: Child,
-        in targetWindow: BrowserWindowState,
-        tabs: TabManager
-    ) -> ExactTabResidenceAdmission? {
+        in targetWindow: BrowserWindowState
+    ) -> BrowserTabResidenceAuthority.RemovalAdmission? {
         switch child.residence {
         case .regular(let spaceID):
-            ExactTabResidenceAdmission.regular(
-                child.tab,
-                in: spaceID,
-                tabs: tabs
-            )
+            guard child.tab.spaceId == spaceID else { return nil }
         case .ephemeral:
-            ExactTabResidenceAdmission.ephemeral(
-                child.tab,
-                in: targetWindow
-            )
+            guard child.tab.spaceId == nil else { return nil }
         }
+        return residences.admitRemoval(of: child.tab, from: targetWindow)
     }
 
     private func clearChildWindowIdentity(

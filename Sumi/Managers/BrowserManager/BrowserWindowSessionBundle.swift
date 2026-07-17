@@ -13,50 +13,55 @@ import Foundation
 final class BrowserWindowSessionBundle {
     let restoreService: WindowSessionRestoreService
     let restoration: BrowserWindowSessionRestorationService
-    let activation: BrowserWindowActivationService
-    let persistence: WindowSessionPersistenceCoordinator
     let history: WindowSessionHistoryServices
     let sessionRecovery: BrowserSessionRecoveryCommands
 
     init(
         browserManager: BrowserManager,
-        startupSessionRestoreOwner: BrowserStartupSessionRestoreOwner
+        startupSessionRestoreOwner: BrowserStartupSessionRestoreOwner,
+        splitFocus: SplitShortcutFocusService,
+        history: WindowSessionHistoryServices,
+        persistence: WindowSessionPersistenceCoordinator
     ) {
-        let snapshotFactory = WindowSessionSnapshotFactory(
-            glanceManager: browserManager.glanceManager
-        )
         let persistenceRuntime = browserManager.windowSessionPersistence
-        let persistenceScheduler = persistenceRuntime.scheduler
-        let persistenceService = WindowSessionPersistenceService(
-            store: persistenceRuntime.snapshotStore,
-            snapshotFactory: snapshotFactory
-        )
-        let history = WindowSessionHistoryServices.live(
-            browserManager: browserManager,
-            snapshotFactory: snapshotFactory,
-            startupRestore: startupSessionRestoreOwner
-        )
         self.history = history
-        let persistence = WindowSessionPersistenceCoordinator(
-            persistence: persistenceService,
-            scheduler: persistenceScheduler,
-            openWindows: history.catalog,
-            archive: history.archive
+        let spaceResolver = WindowSessionSpaceResolver(
+            spaces: browserManager.spaceStateOwner,
+            membership: browserManager.tabCollectionMembershipOwner
         )
-        self.persistence = persistence
+        let shortcutRestorer = WindowSessionShortcutRestorer(
+            pins: browserManager.shortcutPinCollectionStateOwner,
+            activation: browserManager.shortcutPresentationActivation
+        )
+        let splitRestorer = WindowSessionSplitRestorer(
+            groups: browserManager.splitGroupStore,
+            mutations: browserManager.splitGroupMutations,
+            membership: browserManager.tabCollectionMembershipOwner,
+            startupRestore: browserManager.startupRestoreLifecycle,
+            focus: splitFocus
+        )
+        let themeRestorer = WindowSessionThemeRestorer(
+            startupRestore: browserManager.startupRestoreLifecycle,
+            spaceResolver: spaceResolver,
+            themeCommitter: browserManager.chromeBundle
+                .workspaceThemeTransitionOwner
+        )
         let restoreService = WindowSessionRestoreService(
             snapshotStore: persistenceRuntime.snapshotStore,
             persistence: persistence,
-            tabManager: browserManager.tabManager,
+            profileReferenceAdmission: browserManager.profileReferenceAdmission,
+            membership: browserManager.tabCollectionMembershipOwner,
+            startupRestore: browserManager.startupRestoreLifecycle,
+            tabStore: browserManager.runtimeStore,
             glanceManager: browserManager.glanceManager,
+            spaceResolver: spaceResolver,
+            shortcutRestorer: shortcutRestorer,
+            splitRestorer: splitRestorer,
+            themeRestorer: themeRestorer,
             selectionService: browserManager.shellRuntime.windowSelection,
             selection: browserManager,
             floatingBarSanitizer: browserManager.urlBarBundle
-                .floatingBar.presentation,
-            themeCommitter: browserManager.chromeBundle
-                .workspaceThemeTransitionOwner,
-            splitFocus: browserManager.sidebarCommandService
-                .splitShortcuts.focus
+                .floatingBar.presentation
         )
         self.restoreService = restoreService
         self.sessionRecovery = BrowserSessionRecoveryCommands.live(
@@ -64,34 +69,34 @@ final class BrowserWindowSessionBundle {
             startupRestore: startupSessionRestoreOwner,
             sessionRestore: restoreService,
             openWindows: history.catalog,
-            archive: history.archive
+            archive: history.archive,
+            shortcutActivation: browserManager.shortcutPresentationActivation,
+            shortcutPinStore: browserManager.shortcutPinStoreOwner
         )
 
         self.restoration = BrowserWindowSessionRestorationService(
             restoration: restoreService,
             extensionPublication: browserManager.windowExtensionPublication,
-            profileSupport: browserManager,
+            currentProfile: browserManager.currentProfileAuthority,
             startupSessions: browserManager
         )
-        self.activation = BrowserWindowActivationService(
-            sidebarPresentation: browserManager.chromeBundle
-                .sidebarPresentationOwner,
-            persistence: persistence,
-            activePageResolver: browserManager.shellRuntime.activePageResolver,
-            findManager: browserManager.findManager,
-            extensions: browserManager.optionalModules.extensions,
-            synchronizeFocusedContext: { [weak browserManager] windowState in
-                guard let browserManager else { return }
-                browserManager.windowStateReconciler
-                    .synchronizeFocusedSpaceContext(in: windowState)
-                guard !windowState.isIncognito else { return }
-                browserManager.adoptProfileIfNeeded(
-                    for: windowState,
-                    context: .windowActivation
-                )
-            },
-            nowPlaying: browserManager.nativeNowPlayingController,
-            backgroundMedia: browserManager.backgroundMediaOptimizationService
+    }
+}
+
+extension BrowserManager {
+    func composeWindowActivation() -> BrowserWindowActivationService {
+        BrowserWindowActivationService(
+            sidebarPresentation: chromeBundle.sidebarPresentationOwner,
+            persistence: windowSessionPersistenceCoordinator,
+            activePageResolver: shellRuntime.activePageResolver,
+            findManager: findManager,
+            extensions: optionalModules.extensions,
+            focusedContext: BrowserWindowFocusedContextSynchronizer(
+                windowState: windowStateReconciler,
+                profileAdoption: profileAdoption
+            ),
+            nowPlaying: nativeNowPlayingController,
+            backgroundMedia: backgroundMediaOptimizationService
         )
     }
 }

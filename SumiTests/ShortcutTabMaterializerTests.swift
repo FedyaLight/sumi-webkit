@@ -7,7 +7,7 @@ import XCTest
 final class ShortcutTabMaterializerTests: XCTestCase {
     func testPresentationActivationRelocatesOnlyCanonicalExistingBinding() throws {
         let profileID = UUID()
-        let tabManager = try makeInMemoryTabManager()
+        let tabManager = BrowserManager()
         let sourceSpace = Space(name: "Source", profileId: profileID)
         let targetSpace = Space(name: "Target", profileId: profileID)
         tabManager.spaceStateOwner.replaceSpaces([sourceSpace, targetSpace])
@@ -58,7 +58,7 @@ final class ShortcutTabMaterializerTests: XCTestCase {
 
     func testPresentationActivationRejectsStalePhysicalProfileWithoutRelocation() throws {
         let profileID = UUID()
-        let tabManager = try makeInMemoryTabManager()
+        let tabManager = BrowserManager()
         let sourceSpace = Space(name: "Source", profileId: profileID)
         let targetSpace = Space(name: "Target", profileId: profileID)
         tabManager.spaceStateOwner.replaceSpaces([sourceSpace, targetSpace])
@@ -103,7 +103,7 @@ final class ShortcutTabMaterializerTests: XCTestCase {
 
     func testPresentationBatchRejectsBeforeRelocatingAnyEarlierResidence() throws {
         let profileID = UUID()
-        let tabManager = try makeInMemoryTabManager()
+        let tabManager = BrowserManager()
         let sourceSpace = Space(name: "Source", profileId: profileID)
         let targetSpace = Space(name: "Target", profileId: profileID)
         tabManager.spaceStateOwner.replaceSpaces([sourceSpace, targetSpace])
@@ -155,7 +155,7 @@ final class ShortcutTabMaterializerTests: XCTestCase {
 
     func testRejectedFreshActivationRollsBackWithoutPublishing() throws {
         let profileID = UUID()
-        let tabManager = try makeInMemoryTabManager()
+        let tabManager = BrowserManager()
         let space = Space(name: "Target", profileId: profileID)
         tabManager.spaceStateOwner.replaceSpaces([space])
         let pin = ShortcutPin(
@@ -220,7 +220,7 @@ final class ShortcutTabMaterializerTests: XCTestCase {
 
     func testPostDownstreamPinDriftRejectsAndRemovesFreshStageWithoutEffects() throws {
         let profileID = UUID()
-        let tabManager = try makeInMemoryTabManager()
+        let tabManager = BrowserManager()
         let space = Space(name: "Target", profileId: profileID)
         tabManager.spaceStateOwner.replaceSpaces([space])
         let pin = ShortcutPin(
@@ -270,7 +270,7 @@ final class ShortcutTabMaterializerTests: XCTestCase {
 
     func testFreshResidenceDriftRejectsWithoutLeakingMembership() throws {
         let profileID = UUID()
-        let tabManager = try makeInMemoryTabManager()
+        let tabManager = BrowserManager()
         let space = Space(name: "Target", profileId: profileID)
         tabManager.spaceStateOwner.replaceSpaces([space])
         let pin = ShortcutPin(
@@ -311,7 +311,7 @@ final class ShortcutTabMaterializerTests: XCTestCase {
 
     func testReentrantResidenceDriftRejectsWithoutCrashingRollback() throws {
         let profileID = UUID()
-        let tabManager = try makeInMemoryTabManager()
+        let tabManager = BrowserManager()
         let sourceSpace = Space(name: "Source", profileId: profileID)
         let targetSpace = Space(name: "Target", profileId: profileID)
         tabManager.spaceStateOwner.replaceSpaces([sourceSpace, targetSpace])
@@ -380,7 +380,7 @@ final class ShortcutTabMaterializerTests: XCTestCase {
 
     func testRejectedRelocationRestoresSourcePageWithoutPublishing() throws {
         let profileID = UUID()
-        let tabManager = try makeInMemoryTabManager()
+        let tabManager = BrowserManager()
         let sourceSpace = Space(name: "Source", profileId: profileID)
         let targetSpace = Space(name: "Target", profileId: profileID)
         tabManager.spaceStateOwner.replaceSpaces([sourceSpace, targetSpace])
@@ -443,13 +443,15 @@ final class ShortcutTabMaterializerTests: XCTestCase {
         let ownerProfileId = UUID()
         let executionProfile = Profile(name: "Execution")
         let executionProfileId = executionProfile.id
-        let tabManager = try makeInMemoryTabManager(
+        let tabManager = BrowserManager()
+        tabManager.runtimePortConnection.attach(TestRuntimePorts.make(
             profile: { $0 == executionProfileId ? executionProfile : nil }
-        )
-        let presentationSpace = tabManager.spaceServices.catalog.createSpace(
+        ))
+        let presentationSpace = Space(
             name: "Presentation",
             profileId: ownerProfileId
         )
+        tabManager.spaceStateOwner.append(presentationSpace)
         let ignoredSpaceId = UUID()
         let ignoredFolderId = UUID()
         let pin = ShortcutPin(
@@ -509,13 +511,15 @@ final class ShortcutTabMaterializerTests: XCTestCase {
     func testSpacePinnedMaterializationInheritsMetadataAndRebindsOnce() throws {
         let spaceProfile = Profile(name: "Space")
         let spaceProfileId = spaceProfile.id
-        let tabManager = try makeInMemoryTabManager(
+        let tabManager = BrowserManager()
+        tabManager.runtimePortConnection.attach(TestRuntimePorts.make(
             profile: { $0 == spaceProfileId ? spaceProfile : nil }
-        )
-        let space = tabManager.spaceServices.catalog.createSpace(
+        ))
+        let space = Space(
             name: "Workspace",
             profileId: spaceProfileId
         )
+        tabManager.spaceStateOwner.append(space)
         let firstFolderId = UUID()
         let secondFolderId = UUID()
         let windowId = UUID()

@@ -67,7 +67,7 @@ struct WindowSplitPresentationWindowPlan {
 
 /// Immutable evidence produced before the aggregate transaction begins. It
 /// retains exact windows, Tabs and model snapshots, but no phase owner or
-/// ambient TabManager lookup surface.
+/// ambient composition-root lookup surface.
 @MainActor
 struct WindowSplitPresentationSettlementPlan {
     let expectedGroups: [SumiDomain.SplitGroup]

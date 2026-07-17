@@ -5,38 +5,38 @@ import WebKit
 /// Dedicated WebKit child shells are handled by their own transaction.
 @MainActor
 final class BrowserWebKitCloseCommands: BrowserWebKitCloseCommanding {
-    private weak var lifecycle: WebViewLifecycleService?
-    private weak var tabClose: BrowserTabCloseOrchestrationOwner?
-    private weak var tabs: TabManager?
+    private let lifecycle: WebViewLifecycleService
+    private let tabClose: BrowserTabCloseOrchestrationOwner
+    private let tabClosure: TabClosureService
 
     init(
         lifecycle: WebViewLifecycleService,
         tabClose: BrowserTabCloseOrchestrationOwner,
-        tabs: TabManager
+        tabClosure: TabClosureService
     ) {
         self.lifecycle = lifecycle
         self.tabClose = tabClose
-        self.tabs = tabs
+        self.tabClosure = tabClosure
     }
 
     func closeTrackedTab(_ target: TrackedWebKitCloseTarget) {
-        tabClose?.closeTab(target.tab, in: target.window)
+        tabClose.closeTab(target.tab, in: target.window)
     }
 
     func closeUntrackedTab(_ target: UntrackedWebKitCloseTarget) {
         if let window = target.window {
-            tabClose?.closeTab(target.tab, in: window)
+            tabClose.closeTab(target.tab, in: window)
             return
         }
         target.tab.performComprehensiveWebViewCleanup()
-        tabs?.tabClosureService.removeTab(target.tab.id)
+        tabClosure.removeTab(target.tab.id)
     }
 
     func discardStaleTrackedWebView(
         _ webView: WKWebView,
         owner: TrackedWebViewOwner
     ) {
-        lifecycle?.cleanupTrackedWebViewAfterWebKitClose(
+        lifecycle.cleanupTrackedWebViewAfterWebKitClose(
             webView,
             owner: owner
         )

@@ -2,49 +2,59 @@ import Foundation
 import SumiDomain
 
 @MainActor
-final class TabShortcutPresentationOwner {
-    private let transientShortcutTabsByWindow: @MainActor () -> [UUID: [UUID: Tab]]
-    private let windowState: @MainActor (UUID) -> BrowserWindowState?
-    private let shortcutPin: @MainActor (UUID) -> ShortcutPin?
-    private let resolvedExecutionProfileId: @MainActor (ShortcutPin, UUID?) -> UUID?
+final class ShortcutDragProxyFactory {
+    private let resolution: ShortcutPinRuntimeResolutionOwner
     private let tabFactory: TabFactory
-    private let prepareTabForRuntime: @MainActor (Tab) -> Void
+    private let runtimePreparation: TabRuntimePreparationOwner
 
     init(
-        transientShortcutTabsByWindow: @escaping @MainActor () -> [UUID: [UUID: Tab]],
-        windowState: @escaping @MainActor (UUID) -> BrowserWindowState?,
-        shortcutPin: @escaping @MainActor (UUID) -> ShortcutPin?,
-        resolvedExecutionProfileId: @escaping @MainActor (ShortcutPin, UUID?) -> UUID?,
+        resolution: ShortcutPinRuntimeResolutionOwner,
         tabFactory: TabFactory,
-        prepareTabForRuntime: @escaping @MainActor (Tab) -> Void
+        runtimePreparation: TabRuntimePreparationOwner
     ) {
-        self.transientShortcutTabsByWindow = transientShortcutTabsByWindow
-        self.windowState = windowState
-        self.shortcutPin = shortcutPin
-        self.resolvedExecutionProfileId = resolvedExecutionProfileId
+        self.resolution = resolution
         self.tabFactory = tabFactory
-        self.prepareTabForRuntime = prepareTabForRuntime
+        self.runtimePreparation = runtimePreparation
     }
 
-    convenience init(tabManager: TabManager) {
-        self.init(
-            transientShortcutTabsByWindow: { [weak tabManager] in
-                tabManager?.transientTabRegistryOwner.transientShortcutTabsByWindow ?? [:]
-            },
-            windowState: { [weak tabManager] windowId in
-                tabManager?.runtimePorts?.windowState(for: windowId)
-            },
-            shortcutPin: { [weak tabManager] pinId in
-                tabManager?.shortcutPinCollectionStateOwner.shortcutPin(by: pinId)
-            },
-            resolvedExecutionProfileId: { [weak tabManager] pin, currentSpaceId in
-                tabManager?.shortcutPinRuntimeResolutionOwner.resolvedExecutionProfileId(for: pin, currentSpaceId: currentSpaceId)
-            },
-            tabFactory: tabManager.tabFactory,
-            prepareTabForRuntime: { [weak tabManager] tab in
-                tabManager?.runtimePreparationOwner.prepare(tab)
-            }
+    func make(for pin: ShortcutPin) -> Tab {
+        let tab = tabFactory.makeTab(
+            id: pin.id,
+            url: pin.launchURL,
+            name: pin.title,
+            favicon: SumiPersistentGlyph.launcherSystemImageFallback,
+            spaceId: pin.role == .essential ? nil : pin.spaceId,
+            index: pin.index
         )
+        tab.bindToShortcutPin(pin)
+        tab.profileId = resolution.resolvedExecutionProfileId(
+            for: pin,
+            currentSpaceId: pin.spaceId
+        )
+        tab.folderId = pin.folderId
+        _ = tab.applyCachedFaviconOrPlaceholder(for: pin.launchURL)
+        runtimePreparation.prepare(tab)
+        return tab
+    }
+}
+
+@MainActor
+final class TabShortcutPresentationOwner {
+    private let transientTabs: TabTransientTabRegistryOwner
+    private let runtimeConnection: TabRuntimePortConnection
+    private let pins: ShortcutPinCollectionStateOwner
+    private let dragProxyFactory: ShortcutDragProxyFactory
+
+    init(
+        transientTabs: TabTransientTabRegistryOwner,
+        runtimeConnection: TabRuntimePortConnection,
+        pins: ShortcutPinCollectionStateOwner,
+        dragProxyFactory: ShortcutDragProxyFactory
+    ) {
+        self.transientTabs = transientTabs
+        self.runtimeConnection = runtimeConnection
+        self.pins = pins
+        self.dragProxyFactory = dragProxyFactory
     }
 
     func shortcutHasDrifted(
@@ -123,35 +133,23 @@ final class TabShortcutPresentationOwner {
     }
 
     func dragProxyTab(for pin: ShortcutPin) -> Tab {
-        let tab = tabFactory.makeTab(
-            id: pin.id,
-            url: pin.launchURL,
-            name: pin.title,
-            favicon: SumiPersistentGlyph.launcherSystemImageFallback,
-            spaceId: pin.role == .essential ? nil : pin.spaceId,
-            index: pin.index
-        )
-        tab.bindToShortcutPin(pin)
-        tab.profileId = resolvedExecutionProfileId(pin, pin.spaceId)
-        tab.folderId = pin.folderId
-        _ = tab.applyCachedFaviconOrPlaceholder(for: pin.launchURL)
-        prepareTabForRuntime(tab)
-        return tab
+        dragProxyFactory.make(for: pin)
     }
 
     func activeShortcutTab(for windowId: UUID) -> Tab? {
-        let liveTabsByWindow = transientShortcutTabsByWindow()
+        let liveTabsByWindow = transientTabs.transientShortcutTabsByWindow
         guard let liveTabs = liveTabsByWindow[windowId], !liveTabs.isEmpty else {
             return nil
         }
-        if let currentTabId = windowState(windowId)?.currentTabId,
+        let windowState = runtimeConnection.captureLease().windowState(for: windowId)
+        if let currentTabId = windowState?.currentTabId,
            let current = liveTabs.values.first(where: { $0.id == currentTabId }) {
             return current
         }
-        if windowState(windowId)?.currentTabId != nil {
+        if windowState?.currentTabId != nil {
             return nil
         }
-        if let currentShortcutPinId = windowState(windowId)?.currentShortcutPinId,
+        if let currentShortcutPinId = windowState?.currentShortcutPinId,
            let current = liveTabs[currentShortcutPinId] {
             return current
         }
@@ -159,7 +157,7 @@ final class TabShortcutPresentationOwner {
     }
 
     func liveShortcutTabs(in windowId: UUID) -> [Tab] {
-        guard let liveTabs = transientShortcutTabsByWindow()[windowId] else { return [] }
+        guard let liveTabs = transientTabs.transientShortcutTabsByWindow[windowId] else { return [] }
         return Array(liveTabs.values).sorted { lhs, rhs in
             if lhs.index != rhs.index { return lhs.index < rhs.index }
             return lhs.id.uuidString < rhs.id.uuidString
@@ -167,7 +165,7 @@ final class TabShortcutPresentationOwner {
     }
 
     func shortcutLiveTab(for pinId: UUID, in windowId: UUID) -> Tab? {
-        transientShortcutTabsByWindow()[windowId]?[pinId]
+        transientTabs.transientShortcutTabsByWindow[windowId]?[pinId]
     }
 
     func shortcutPresentationState(
@@ -190,7 +188,7 @@ final class TabShortcutPresentationOwner {
     }
 
     func activeShortcutTabs(role: ShortcutPinRole? = nil) -> [Tab] {
-        transientShortcutTabsByWindow().values
+        transientTabs.transientShortcutTabsByWindow.values
             .flatMap(\.values)
             .filter { role == nil || $0.shortcutPinRole == role }
     }
@@ -199,7 +197,7 @@ final class TabShortcutPresentationOwner {
         guard let profileId else { return [] }
         return activeShortcutTabs(role: .essential).filter { tab in
             guard let shortcutId = tab.shortcutPinId,
-                  let pin = shortcutPin(shortcutId) else { return false }
+                  let pin = pins.shortcutPin(by: shortcutId) else { return false }
             return pin.profileId == profileId
         }
     }
@@ -208,8 +206,8 @@ final class TabShortcutPresentationOwner {
         activeShortcutTabs(role: .spacePinned)
             .filter { $0.spaceId == spaceId }
             .sorted { lhs, rhs in
-                let lhsIndex = lhs.shortcutPinId.flatMap { shortcutPin($0)?.index } ?? lhs.index
-                let rhsIndex = rhs.shortcutPinId.flatMap { shortcutPin($0)?.index } ?? rhs.index
+                let lhsIndex = lhs.shortcutPinId.flatMap { pins.shortcutPin(by: $0)?.index } ?? lhs.index
+                let rhsIndex = rhs.shortcutPinId.flatMap { pins.shortcutPin(by: $0)?.index } ?? rhs.index
                 if lhsIndex != rhsIndex { return lhsIndex < rhsIndex }
                 return lhs.id.uuidString < rhs.id.uuidString
             }

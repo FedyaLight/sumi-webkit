@@ -35,7 +35,6 @@ final class SumiLiveFolderManagerTests: XCTestCase {
         let source = try XCTUnwrap(manager.source(for: spy.folderId))
         XCTAssertEqual(source.kind, .githubIssues)
         XCTAssertEqual(source.spaceId, spy.spaceId)
-        XCTAssertEqual(source.profileId, spy.profileId)
     }
 
     func testOpenItemUsesInjectedRuntimePreferredSpace() throws {
@@ -65,6 +64,23 @@ final class SumiLiveFolderManagerTests: XCTestCase {
         XCTAssertEqual(spy.openedTabs[0].urlString, item.urlString)
         XCTAssertIdentical(spy.openedTabs[0].windowState, windowState)
         XCTAssertEqual(spy.openedTabs[0].preferredSpaceId, spy.spaceId)
+    }
+
+    func testRefreshDerivesProfileFromOwningSpace() async {
+        let spy = LiveFolderRuntimeSpy()
+        let manager = makeManager(runtime: spy.runtime())
+
+        manager.createGitHubFolder(
+            in: spy.spaceId,
+            kind: .githubIssues
+        )
+        for _ in 0..<20 where spy.profileRequests.isEmpty {
+            await Task.yield()
+        }
+
+        XCTAssertEqual(spy.profileRequests.count, 1)
+        XCTAssertNil(spy.profileRequests.first?.explicitProfileID)
+        XCTAssertEqual(spy.profileRequests.first?.spaceID, spy.spaceId)
     }
 
     func testFolderContentChangesCoverMutationsWithoutUnrelatedFolderWork() throws {
@@ -184,6 +200,10 @@ private final class LiveFolderRuntimeSpy {
     var createdFolders: [(spaceId: UUID, name: String)] = []
     var iconUpdates: [(folderId: UUID, icon: String)] = []
     var openedTabs: [LiveFolderOpenedTab] = []
+    var profileRequests: [(
+        explicitProfileID: UUID?,
+        spaceID: UUID
+    )] = []
 
     func runtime() -> SumiLiveFolderRuntime {
         let spaceId = spaceId
@@ -211,7 +231,10 @@ private final class LiveFolderRuntimeSpy {
                     preferredSpaceId: preferredSpaceId
                 ))
             },
-            profile: { _, _ in nil },
+            profile: { [weak self] explicitProfileID, spaceID in
+                self?.profileRequests.append((explicitProfileID, spaceID))
+                return nil
+            },
             folderIds: { [] }
         )
     }

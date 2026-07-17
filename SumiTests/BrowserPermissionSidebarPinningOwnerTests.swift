@@ -6,34 +6,47 @@ import SumiDomain
 @MainActor
 final class PermissionSidebarPinningOwnerTests: XCTestCase {
     func testReconcilePinsFromPermissionSnapshotAndWindowResolver() async {
+        let coordinator = PermissionSidebarPinningCoordinator()
+        let browserManager = BrowserManager(permissionCoordinator: coordinator)
         let windowState = BrowserWindowState()
-        let query = Self.permissionQuery()
-        var snapshot = SumiPermissionCoordinatorState(
-            activeQueriesByPageId: [query.pageId: query]
+        let profile = Profile(name: "Permission")
+        let space = Space(name: "Permission", profileId: profile.id)
+        browserManager.profileManager.profiles = [profile]
+        browserManager.currentProfile = profile
+        browserManager.spaceStateOwner.replaceSpaces([space])
+        browserManager.spaceStateOwner.replaceCurrentSpace(space)
+        browserManager.tabResidenceAuthority.establishResidenceSession(
+            on: windowState
         )
-        var requestedPageIds: [String] = []
+        windowState.currentProfileId = profile.id
+        windowState.currentSpaceId = space.id
+        browserManager.windowRegistry.register(windowState)
+        browserManager.windowRegistry.setActive(windowState)
+        let tab = browserManager.regularTabLifecycleOwner.createNewTab(
+            url: "https://example.com",
+            in: space,
+            activate: false
+        )
+        windowState.currentTabId = tab.id
+        let query = Self.permissionQuery(pageId: tab.currentPermissionPageId())
+        await coordinator.replaceState(
+            SumiPermissionCoordinatorState(
+                activeQueriesByPageId: [query.pageId: query]
+            )
+        )
         let owner = BrowserPermissionSidebarPinningOwner(
-            permissionStateSnapshot: {
-                snapshot
-            },
-            windowForPermissionPageId: { pageId in
-                requestedPageIds.append(pageId)
-                return pageId == query.pageId ? windowState : nil
-            },
-            windowRegistry: { nil },
+            permissionRuntime: browserManager.permissionRuntime,
+            windows: browserManager.windowRegistry,
+            windowTabs: browserManager.shellRuntime.windowTabs,
             pinningController: SumiPermissionSidebarPinningController()
         )
 
         await owner.reconcile(reason: "test")
 
-        XCTAssertEqual(requestedPageIds, [query.pageId])
         XCTAssertTrue(windowState.sidebarTransientSessionCoordinator.hasPinnedTransientUI(for: windowState.id))
 
-        snapshot = SumiPermissionCoordinatorState(
-            activeQueriesByPageId: [:],
-            queueCountByPageId: [:],
-            latestEvent: nil,
-            latestSystemBlockedEvent: nil
+        await coordinator.replaceState(
+            SumiPermissionCoordinatorState()
         )
         await owner.reconcile(reason: "test")
 
@@ -63,5 +76,48 @@ final class PermissionSidebarPinningOwnerTests: XCTestCase {
             shouldOfferSystemSettings: false,
             disablesPersistentAllow: false
         )
+    }
+}
+
+private actor PermissionSidebarPinningCoordinator: SumiPermissionCoordinating {
+    private var state = SumiPermissionCoordinatorState()
+
+    func replaceState(_ state: SumiPermissionCoordinatorState) {
+        self.state = state
+    }
+
+    func requestPermission(
+        _ context: SumiPermissionSecurityContext
+    ) async -> SumiPermissionCoordinatorDecision {
+        SumiPermissionCoordinatorDecision(
+            outcome: .promptRequired,
+            state: .ask,
+            persistence: nil,
+            source: .defaultSetting,
+            reason: "permission-sidebar-pinning-test",
+            permissionTypes: context.request.permissionTypes
+        )
+    }
+
+    func queryPermissionState(
+        _ context: SumiPermissionSecurityContext
+    ) async -> SumiPermissionCoordinatorDecision {
+        await requestPermission(context)
+    }
+
+    func activeQuery(
+        forPageId pageId: String
+    ) async -> SumiPermissionAuthorizationQuery? {
+        state.activeQueriesByPageId[pageId]
+    }
+
+    func stateSnapshot() async -> SumiPermissionCoordinatorState {
+        state
+    }
+
+    func events() async -> AsyncStream<SumiPermissionCoordinatorEvent> {
+        AsyncStream { continuation in
+            continuation.finish()
+        }
     }
 }

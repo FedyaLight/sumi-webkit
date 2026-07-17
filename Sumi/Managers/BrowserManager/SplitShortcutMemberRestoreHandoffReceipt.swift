@@ -10,21 +10,21 @@ final class SplitShortcutMemberRestoreHandoffReceipt:
     }
 
     let targetWindow: BrowserWindowState
-    private let publish: (BrowserWindowState) -> Void
+    private let visuals: BrowserWindowVisualCoordinator
     private var state = State.prepared
 
     init(
         window: BrowserWindowState,
-        publish: @escaping (BrowserWindowState) -> Void
+        visuals: BrowserWindowVisualCoordinator
     ) {
         targetWindow = window
-        self.publish = publish
+        self.visuals = visuals
     }
 
     func publish(after receipt: WindowSplitPresentationTerminalWindowReceipt) {
         guard case .prepared = state,
               receipt.matches(targetWindow) else { return }
         state = .settled
-        publish(targetWindow)
+        _ = visuals.performImmediateVisualHandoffIfPossible(in: targetWindow)
     }
 }

@@ -314,7 +314,11 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
         )
 
         XCTAssertNil(adapter)
-        XCTAssertTrue(harness.browserManager.tabManager.transientTabRegistryOwner.auxiliaryMiniWindowTabsByID.isEmpty)
+        XCTAssertTrue(
+            harness.browserManager.tabCollectionMembershipOwner
+                .allIdentityWitnesses()
+                .allSatisfy { $0.isAuxiliaryMiniWindow == false }
+        )
         XCTAssertTrue(
             harness.inspection.normalTabs.adapters.miniWindowAdaptersSnapshot()
                 .isEmpty
@@ -798,8 +802,9 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
             replacementContext
         )
         XCTAssertTrue(
-            harness.browserManager.tabManager.transientTabRegistryOwner
-                .auxiliaryMiniWindowTabsByID.isEmpty
+            harness.browserManager.tabCollectionMembershipOwner
+                .allIdentityWitnesses()
+                .allSatisfy { $0.isAuxiliaryMiniWindow == false }
         )
         XCTAssertTrue(
             harness.inspection.normalTabs.adapters
@@ -812,7 +817,7 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
             ownerExtensionID: "private-window-owner",
             allowNormalTabRuntimeWithoutInstalledExtensions: false
         )
-        let initialRegularTabCount = harness.browserManager.tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot().values
+        let initialRegularTabCount = harness.browserManager.tabStateStore.regularTabs.tabsBySpaceSnapshot().values
             .flatMap(\.self)
             .filter { $0.isAuxiliaryMiniWindow == false }
             .count
@@ -841,9 +846,13 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
 
         XCTAssertNil(completionWindow)
         XCTAssertNotNil(completionError)
-        XCTAssertTrue(harness.browserManager.tabManager.transientTabRegistryOwner.auxiliaryMiniWindowTabsByID.isEmpty)
+        XCTAssertTrue(
+            harness.browserManager.tabCollectionMembershipOwner
+                .allIdentityWitnesses()
+                .allSatisfy { $0.isAuxiliaryMiniWindow == false }
+        )
         XCTAssertEqual(
-            harness.browserManager.tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot().values
+            harness.browserManager.tabStateStore.regularTabs.tabsBySpaceSnapshot().values
                 .flatMap { $0 }
                 .filter { $0.isAuxiliaryMiniWindow == false }
                 .count,
@@ -921,11 +930,12 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
                 .miniWindowAdaptersSnapshot().isEmpty
         )
         let auxiliaryTab = try XCTUnwrap(
-            harness.browserManager.tabManager.transientTabRegistryOwner
-                .auxiliaryMiniWindowTabsByID.values.first
+            harness.browserManager.tabCollectionMembershipOwner
+                .allIdentityWitnesses()
+                .first { $0.isAuxiliaryMiniWindow }
         )
 
-        harness.browserManager.tabManager.tabClosureService.removeTab(
+        harness.browserManager.tabClosureService.removeTab(
             auxiliaryTab.id
         )
 
@@ -939,8 +949,8 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
                 .miniWindowAdaptersSnapshot().isEmpty
         )
         XCTAssertNil(
-            harness.browserManager.tabManager.transientTabRegistryOwner
-                .auxiliaryMiniWindowTabsByID[auxiliaryTab.id]
+            harness.browserManager.tabCollectionMembershipOwner
+                .auxiliaryMiniWindowTab(for: auxiliaryTab.id)
         )
     }
 
@@ -961,12 +971,12 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
             auxiliaryInstalledExtension(id: "owner-b"),
             durability: .volatileExactRuntime
         )
-        let ownerBTab = harness.browserManager.tabManager
+        let ownerBTab = harness.browserManager
             .regularTabLifecycleOwner.createNewTab(
                 url: ownerBContext.baseURL.appendingPathComponent(
                     "popup.html"
                 ).absoluteString,
-                in: harness.browserManager.tabManager.spaceStateOwner
+                in: harness.browserManager.spaceStateOwner
                     .currentSpace,
                 activate: false,
                 webExtensionContextOverride: ownerBContext,
@@ -1315,8 +1325,8 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
         let harness = try await makeExtensionHarness(ownerExtensionID: "adapter-owner")
         let mainWindow = try XCTUnwrap(harness.windowRegistry.appKitWindow(for: harness.windowState))
         let originalMainFrame = mainWindow.frame
-        let initialRegularTabCount = harness.browserManager.tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[
-            harness.browserManager.tabManager.spaceStateOwner.currentSpace!.id
+        let initialRegularTabCount = harness.browserManager.tabStateStore.regularTabs.tabsBySpaceSnapshot()[
+            harness.browserManager.spaceStateOwner.currentSpace!.id
         ]?.count ?? 0
 
         let sourcePopupWebView = try XCTUnwrap(
@@ -1340,7 +1350,7 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
         XCTAssertEqual(sourceSession.tab.profileId, harness.profile.id)
         XCTAssertEqual(
             sourceSession.tab.spaceId,
-            harness.browserManager.tabManager.spaceStateOwner.currentSpace?.id
+            harness.browserManager.spaceStateOwner.currentSpace?.id
         )
 
         let sourceMiniWindow = try XCTUnwrap(
@@ -1375,16 +1385,19 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
         )
 
         XCTAssertTrue(harness.browserManager.auxiliaryWindows.sessions.contains(sourcePopupWebView))
-        XCTAssertFalse(harness.browserManager.tabManager.transientWebKitTabLifecycleOwner.isAuxiliaryMiniWindowTab(authTab))
+        XCTAssertFalse(
+            harness.browserManager.auxiliaryMiniWindowTabs
+                .containsExact(authTab)
+        )
         XCTAssertFalse(authTab.isAuxiliaryMiniWindow)
         XCTAssertFalse(authTab.isPopupHost)
         XCTAssertNil(authTab.profileId)
         XCTAssertIdentical(authTab.resolveProfile(), harness.profile)
-        XCTAssertEqual(authTab.spaceId, harness.browserManager.tabManager.spaceStateOwner.currentSpace?.id)
+        XCTAssertEqual(authTab.spaceId, harness.browserManager.spaceStateOwner.currentSpace?.id)
         XCTAssertEqual(mainWindow.frame, originalMainFrame)
         XCTAssertEqual(
-            harness.browserManager.tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[
-                harness.browserManager.tabManager.spaceStateOwner.currentSpace!.id
+            harness.browserManager.tabStateStore.regularTabs.tabsBySpaceSnapshot()[
+                harness.browserManager.spaceStateOwner.currentSpace!.id
             ]?.count,
             initialRegularTabCount + 1
         )
@@ -1441,8 +1454,8 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
         )
         let mainWindow = try XCTUnwrap(harness.windowRegistry.appKitWindow(for: harness.windowState))
         let originalMainFrame = mainWindow.frame
-        let initialRegularTabCount = harness.browserManager.tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[
-            harness.browserManager.tabManager.spaceStateOwner.currentSpace!.id
+        let initialRegularTabCount = harness.browserManager.tabStateStore.regularTabs.tabsBySpaceSnapshot()[
+            harness.browserManager.spaceStateOwner.currentSpace!.id
         ]?.count ?? 0
         let openedWindow = expectation(description: "extension external tab opened")
         let openedTab = expectation(description: "extension external tab published")
@@ -1486,12 +1499,12 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
         XCTAssertEqual(window.windowId, harness.windowState.id)
         XCTAssertEqual(mainWindow.frame, originalMainFrame)
         let authTab = try XCTUnwrap(
-            harness.browserManager.tabManager.tabCollectionMembershipOwner
+            harness.browserManager.tabCollectionMembershipOwner
                 .tab(for: try XCTUnwrap(openedTabID))
         )
         let authSpaceId = try XCTUnwrap(authTab.spaceId)
         XCTAssertEqual(
-            harness.browserManager.tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[authSpaceId]?.count,
+            harness.browserManager.tabStateStore.regularTabs.tabsBySpaceSnapshot()[authSpaceId]?.count,
             initialRegularTabCount + 1
         )
         XCTAssertEqual(authTab.url, authURL)
@@ -1573,7 +1586,7 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
         let harness = makeHarness()
         let privateProfile = Profile.createEphemeral()
         let privateWindow = BrowserWindowState()
-        privateWindow.tabManager = harness.browserManager.tabManager
+        harness.browserManager.tabResidenceAuthority.establishResidenceSession(on: privateWindow)
         privateWindow.isIncognito = true
         privateWindow.ephemeralProfile = privateProfile
         harness.windowRegistry.bindAppKitWindow(
@@ -1587,17 +1600,17 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
         )
         harness.windowRegistry.register(privateWindow)
 
-        let sourceTab = harness.browserManager.tabManager.ephemeralLifecycleOwner.createEphemeralTab(
+        let sourceTab = harness.browserManager.ephemeralLifecycleOwner.createEphemeralTab(
             url: URL(string: "https://private.example/source")!,
             in: privateWindow,
             profile: privateProfile
         )
-        let regularTabCount = harness.browserManager.tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot().values
+        let regularTabCount = harness.browserManager.tabStateStore.regularTabs.tabsBySpaceSnapshot().values
             .flatMap(\.self)
             .count
 
         let popupTab = try XCTUnwrap(
-            harness.browserManager.tabLifecycleService.opening.createPopupTab(
+            harness.browserManager.tabOpening.createPopupTab(
                 from: sourceTab,
                 activate: false
             )
@@ -1610,16 +1623,16 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
         XCTAssertTrue(privateWindow.ephemeralTabs.contains { $0.id == popupTab.id })
         XCTAssertEqual(privateWindow.currentTabId, sourceTab.id)
         XCTAssertEqual(
-            harness.browserManager.tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot().values.flatMap { $0 }.count,
+            harness.browserManager.tabStateStore.regularTabs.tabsBySpaceSnapshot().values.flatMap { $0 }.count,
             regularTabCount
         )
-        XCTAssertFalse(harness.browserManager.tabManager.structuralPersistence.shouldPersistRegularTab(popupTab))
+        XCTAssertFalse(harness.browserManager.structuralPersistence.shouldPersistRegularTab(popupTab))
     }
 
     private func makeHarness() -> Harness {
         let settings = SumiSettingsService(userDefaults: TestDefaultsHarness().defaults)
-        let browserManager = BrowserManager()
         let windowRegistry = WindowRegistry()
+        let browserManager = BrowserManager(windowRegistry: windowRegistry)
         let profile = Profile(name: "Primary")
         let space = Space(name: "Primary", profileId: profile.id)
         let windowState = BrowserWindowState()
@@ -1627,11 +1640,10 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
         browserManager.sumiSettings = settings
         browserManager.profileManager.profiles = [profile]
         browserManager.currentProfile = profile
-        browserManager.windowRegistry = windowRegistry
-        browserManager.tabManager.spaceStateOwner.replaceSpaces([space])
-        browserManager.tabManager.spaceStateOwner.replaceCurrentSpace(space)
+        browserManager.spaceStateOwner.replaceSpaces([space])
+        browserManager.spaceStateOwner.replaceCurrentSpace(space)
 
-        windowState.tabManager = browserManager.tabManager
+        browserManager.tabResidenceAuthority.establishResidenceSession(on: windowState)
         windowState.currentSpaceId = space.id
         windowState.currentProfileId = profile.id
         windowRegistry.bindAppKitWindow(
@@ -1646,7 +1658,7 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
         windowRegistry.register(windowState)
         windowRegistry.setActive(windowState)
 
-        let sourceTab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
+        let sourceTab = browserManager.regularTabLifecycleOwner.createNewTab(
             url: "https://source.example/page",
             in: space,
             activate: true
@@ -1698,9 +1710,9 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
             profile: profile,
             windowRegistry: windowRegistry
         )
+        browserManager.startupRestoreLifecycle.markLoadFinished()
         extensionsModule.attach(runtime: BrowserExtensionsModuleRuntimeFactory.runtime(for: browserManager))
         extensionManager.attach(browserManager: browserManager)
-        await browserManager.tabManager.storeRestore.startupRestoreTask?.value
         XCTAssertIdentical(extensionsModule.managerForTesting(), extensionManager)
         if allowNormalTabRuntimeWithoutInstalledExtensions {
             inspection.inspection.runtimeAuthorities.demand
@@ -1710,11 +1722,11 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
             .markRuntimePublicationReady()
 
         let space = Space(name: "Primary", profileId: profile.id)
-        browserManager.tabManager.spaceStateOwner.replaceSpaces([space])
-        browserManager.tabManager.spaceStateOwner.replaceCurrentSpace(space)
+        browserManager.spaceStateOwner.replaceSpaces([space])
+        browserManager.spaceStateOwner.replaceCurrentSpace(space)
 
         let windowState = BrowserWindowState()
-        windowState.tabManager = browserManager.tabManager
+        browserManager.tabResidenceAuthority.establishResidenceSession(on: windowState)
         windowState.currentSpaceId = space.id
         windowState.currentProfileId = profile.id
         let appKitWindow = NSWindow(
@@ -1745,7 +1757,7 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
             durability: .volatileExactRuntime
         )
 
-        let sourceTab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
+        let sourceTab = browserManager.regularTabLifecycleOwner.createNewTab(
             url: extensionContext.baseURL.appendingPathComponent(
                 "popup.html"
             ).absoluteString,

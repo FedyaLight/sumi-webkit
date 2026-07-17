@@ -21,6 +21,10 @@ final class TabStructuralCollectionMutationOwner {
         availabilityObservation != nil
     }
 
+    var hasOpenAggregate: Bool {
+        transaction != nil
+    }
+
     init(
         store: TabStructuralCollectionStore,
         snapshots: TabStructuralCollectionSnapshotStore,
@@ -61,6 +65,10 @@ final class TabStructuralCollectionMutationOwner {
     func cancelAvailabilityObservation(_ id: UUID) {
         guard availabilityObservation?.id == id else { return }
         availabilityObservation = nil
+    }
+
+    func schedulePersistence() {
+        publisher.schedulePersistence()
     }
 
     private func openAggregate() -> PreparedAggregate {
@@ -108,6 +116,31 @@ final class TabStructuralCollectionMutationOwner {
         mutate {
             let previous = store.folders(for: spaceId)
             willMutate()
+            store.replaceFolders(items, for: spaceId)
+            record(.folders(
+                spaceId,
+                previous: previous,
+                current: items
+            ))
+        }
+    }
+
+    func setFolderPlacements(
+        _ placements: [UUID: TabFolderPlacement],
+        in items: [TabFolder],
+        for spaceId: UUID
+    ) {
+        mutate {
+            let previous = store.folders(for: spaceId)
+            guard items.contains(where: { folder in
+                guard let placement = placements[folder.id] else { return false }
+                return folder.placementSnapshot != placement
+            }) else { return }
+            willMutate()
+            precondition(TabStructuralMutationTransaction.applyFolderPlacements(
+                placements,
+                to: items
+            ))
             store.replaceFolders(items, for: spaceId)
             record(.folders(
                 spaceId,
@@ -262,13 +295,15 @@ final class TabStructuralCollectionMutationOwner {
         if transaction == nil { publisher.announceStateChange() }
     }
 
-    private func mutate(_ operation: () -> Void) {
+    private func mutate(_ operation: @MainActor @Sendable () -> Void) {
         if transaction != nil {
             operation()
             return
         }
         beginForeignMutation()
-        publisher.withTransaction(operation)
+        publisher.withTransaction {
+            operation()
+        }
         endForeignMutation()
     }
 

@@ -34,18 +34,18 @@ struct LiveTabWindowQueryPort: TabWindowQueryPort {
     }
 
     func windowState(for windowId: UUID) -> BrowserWindowState? {
-        shellRuntime.windowRegistry?.windows[windowId]
+        shellRuntime.windowRegistry.windows[windowId]
     }
 
     func forEachWindow(_ body: (UUID, BrowserWindowState) -> Void) {
-        let windows = shellRuntime.windowRegistry?.windows.map { ($0.key, $0.value) } ?? []
+        let windows = shellRuntime.windowRegistry.windows.map { ($0.key, $0.value) }
         for (windowId, windowState) in windows {
             body(windowId, windowState)
         }
     }
 
     func forEachWindowState(_ body: (BrowserWindowState) -> Void) {
-        let windowStates = shellRuntime.windowRegistry?.allWindows ?? []
+        let windowStates = shellRuntime.windowRegistry.allWindows
         for windowState in windowStates {
             body(windowState)
         }

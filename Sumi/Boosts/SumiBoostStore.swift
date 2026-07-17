@@ -8,6 +8,8 @@ enum SumiBoostStoreError: LocalizedError, Equatable {
     case missingBoost
     case invalidImport
     case moduleDisabled
+    case profileCleanupStoreUnreadable
+    case profileRetired
 
     var errorDescription: String? {
         switch self {
@@ -21,6 +23,10 @@ enum SumiBoostStoreError: LocalizedError, Equatable {
             return "The selected file is not a valid Sumi Boost."
         case .moduleDisabled:
             return "Boosts are disabled."
+        case .profileCleanupStoreUnreadable:
+            return "Stored Boost data could not be read safely for profile cleanup."
+        case .profileRetired:
+            return "The browsing profile has been retired."
         }
     }
 }
@@ -54,8 +60,11 @@ final class SumiBoostStore: ObservableObject {
     private let fileManager: FileManager
     private let jsonEncoder: JSONEncoder
     private let jsonDecoder: JSONDecoder
+    private let profileReferenceAdmission: ProfileReferenceAdmissionLedger
     private var entries: [SumiBoostDomainKey: SumiBoostDomainEntry] = [:]
     private var didLoad = false
+    private var loadFailure: SumiBoostStoreError?
+    private var retiredProfileIDs: Set<UUID> = []
     private let changesSubject = PassthroughSubject<Void, Never>()
     // Debounced persistence: editor edits (dot drag, sliders) mutate the store
     // many times per second; writing the entire boosts.json on every tick is
@@ -71,10 +80,12 @@ final class SumiBoostStore: ObservableObject {
 
     init(
         rootDirectory: URL? = nil,
-        fileManager: FileManager = .default
+        fileManager: FileManager = .default,
+        profileReferenceAdmission: ProfileReferenceAdmissionLedger
     ) {
         self.rootDirectory = rootDirectory ?? Self.defaultRootDirectory(fileManager: fileManager)
         self.fileManager = fileManager
+        self.profileReferenceAdmission = profileReferenceAdmission
         self.jsonEncoder = JSONEncoder()
         self.jsonDecoder = JSONDecoder()
         self.jsonEncoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -84,6 +95,7 @@ final class SumiBoostStore: ObservableObject {
 
     func boosts(for url: URL?, profileId: UUID?) -> [SumiBoost] {
         guard let key = SumiBoostURLPolicy.key(for: url, profileId: profileId) else { return [] }
+        guard acceptsReference(to: key.profileId) else { return [] }
         loadIfNeeded()
         return entries[key]?.boosts ?? []
     }
@@ -96,6 +108,7 @@ final class SumiBoostStore: ObservableObject {
 
     func activeBoost(for url: URL?, profileId: UUID?) -> SumiBoost? {
         guard let key = SumiBoostURLPolicy.key(for: url, profileId: profileId) else { return nil }
+        guard acceptsReference(to: key.profileId) else { return nil }
         loadIfNeeded()
         guard let entry = entries[key],
               let activeBoostId = entry.activeBoostId
@@ -107,6 +120,7 @@ final class SumiBoostStore: ObservableObject {
 
     func activeBoostId(for url: URL?, profileId: UUID?) -> UUID? {
         guard let key = SumiBoostURLPolicy.key(for: url, profileId: profileId) else { return nil }
+        guard acceptsReference(to: key.profileId) else { return nil }
         loadIfNeeded()
         return entries[key]?.activeBoostId
     }
@@ -119,6 +133,9 @@ final class SumiBoostStore: ObservableObject {
     ) throws -> SumiBoost {
         guard let key = SumiBoostURLPolicy.key(for: url, profileId: profileId) else {
             throw profileId == nil ? SumiBoostStoreError.missingProfile : SumiBoostStoreError.unboostableURL
+        }
+        guard acceptsReference(to: key.profileId) else {
+            throw SumiBoostStoreError.profileRetired
         }
 
         loadIfNeeded()
@@ -148,6 +165,9 @@ final class SumiBoostStore: ObservableObject {
         markChanged: Bool = true,
         mutate: (inout SumiBoostData) -> Void
     ) throws -> SumiBoost {
+        guard acceptsReference(to: profileId) else {
+            throw SumiBoostStoreError.profileRetired
+        }
         let key = SumiBoostDomainKey(profileId: profileId, host: normalizedHost(host))
         loadIfNeeded()
         guard var entry = entries[key],
@@ -172,6 +192,7 @@ final class SumiBoostStore: ObservableObject {
         _ boost: SumiBoost,
         isEphemeral: Bool
     ) {
+        guard acceptsReference(to: boost.profileId) else { return }
         let key = SumiBoostDomainKey(profileId: boost.profileId, host: normalizedHost(boost.host))
         loadIfNeeded()
         guard var entry = entries[key] else { return }
@@ -186,6 +207,7 @@ final class SumiBoostStore: ObservableObject {
         _ boost: SumiBoost,
         isEphemeral: Bool
     ) {
+        guard acceptsReference(to: boost.profileId) else { return }
         let key = SumiBoostDomainKey(profileId: boost.profileId, host: normalizedHost(boost.host))
         loadIfNeeded()
         guard var entry = entries[key] else { return }
@@ -209,6 +231,26 @@ final class SumiBoostStore: ObservableObject {
         deleteBoost(boost, isEphemeral: false)
     }
 
+    func deleteProfileData(profileID: UUID) throws {
+        retiredProfileIDs.insert(profileID)
+        loadIfNeeded()
+        if let loadFailure { throw loadFailure }
+
+        let targetEntries = entries.filter { $0.key.profileId == profileID }
+        guard !targetEntries.isEmpty else { return }
+
+        pendingWriteTask?.cancel()
+        pendingWriteTask = nil
+        for boost in targetEntries.values.flatMap(\.boosts) {
+            try removeCSSFileThrowing(for: boost.id)
+        }
+
+        let retainedEntries = entries.filter { $0.key.profileId != profileID }
+        try persistEntries(retainedEntries)
+        entries = retainedEntries
+        notifyChanged()
+    }
+
     func exportData(for boost: SumiBoost) throws -> Data {
         try jsonEncoder.encode(SumiBoostExportPackage(boost: boost))
     }
@@ -222,6 +264,9 @@ final class SumiBoostStore: ObservableObject {
     ) throws -> SumiBoost {
         guard let key = SumiBoostURLPolicy.key(for: url, profileId: profileId) else {
             throw profileId == nil ? SumiBoostStoreError.missingProfile : SumiBoostStoreError.unboostableURL
+        }
+        guard acceptsReference(to: key.profileId) else {
+            throw SumiBoostStoreError.profileRetired
         }
 
         let importedData = try decodeImportedBoostData(from: data)
@@ -295,6 +340,7 @@ final class SumiBoostStore: ObservableObject {
                 Self.log.error(
                     "Failed to decode boosts store: \(error.localizedDescription, privacy: .public)"
                 )
+                loadFailure = .profileCleanupStoreUnreadable
                 return
             }
 
@@ -321,6 +367,7 @@ final class SumiBoostStore: ObservableObject {
             // A missing file on first launch is expected; only log non-missing
             // read failures (description only, no payload contents).
             if (error as NSError).code != NSFileReadNoSuchFileError {
+                loadFailure = .profileCleanupStoreUnreadable
                 Self.log.error(
                     "Failed to read boosts store: \(error.localizedDescription, privacy: .public)"
                 )
@@ -415,16 +462,7 @@ final class SumiBoostStore: ObservableObject {
 
     private func persist() {
         do {
-            try fileManager.createDirectory(at: rootDirectory, withIntermediateDirectories: true)
-            try fileManager.createDirectory(at: cssDirectory, withIntermediateDirectories: true)
-            let diskState = DiskState(
-                domains: entries.values
-                    .filter { !$0.isEphemeral }
-                    .sorted { $0.id < $1.id }
-                    .map(makeDiskDomainEntry)
-            )
-            let data = try jsonEncoder.encode(diskState)
-            try data.write(to: jsonURL, options: [.atomic])
+            try persistEntries(entries)
         } catch {
             RuntimeDiagnostics.debug(
                 "Boost store persistence failed: \(error.localizedDescription)",
@@ -433,8 +471,31 @@ final class SumiBoostStore: ObservableObject {
         }
     }
 
-    private func makeDiskDomainEntry(_ entry: SumiBoostDomainEntry) -> DiskDomainEntry {
-        DiskDomainEntry(
+    private func persistEntries(
+        _ source: [SumiBoostDomainKey: SumiBoostDomainEntry]
+    ) throws {
+        try fileManager.createDirectory(
+            at: rootDirectory,
+            withIntermediateDirectories: true
+        )
+        try fileManager.createDirectory(
+            at: cssDirectory,
+            withIntermediateDirectories: true
+        )
+        let diskState = DiskState(
+            domains: try source.values
+                .filter { !$0.isEphemeral }
+                .sorted { $0.id < $1.id }
+                .map(makeDiskDomainEntry)
+        )
+        let data = try jsonEncoder.encode(diskState)
+        try data.write(to: jsonURL, options: [.atomic])
+    }
+
+    private func makeDiskDomainEntry(
+        _ entry: SumiBoostDomainEntry
+    ) throws -> DiskDomainEntry {
+        try DiskDomainEntry(
             profileId: entry.profileId,
             host: entry.host,
             activeBoostId: entry.activeBoostId,
@@ -444,29 +505,22 @@ final class SumiBoostStore: ObservableObject {
         )
     }
 
-    private func makeDiskBoost(_ boost: SumiBoost) -> DiskBoost {
+    private func makeDiskBoost(_ boost: SumiBoost) throws -> DiskBoost {
         var data = boost.data
         let trimmedCSS = data.customCSS
         var fileName: String?
         if trimmedCSS.isEmpty {
-            removeCSSFile(for: boost.id)
+            try removeCSSFileThrowing(for: boost.id)
             fileName = nil
         } else {
-            fileName = "\(boost.id.uuidString.lowercased()).css"
-            do {
-                try trimmedCSS.write(
-                    to: cssDirectory.appendingPathComponent(fileName!),
-                    atomically: true,
-                    encoding: .utf8
-                )
-                data.customCSS = ""
-            } catch {
-                RuntimeDiagnostics.debug(
-                    "Boost CSS persistence failed: \(error.localizedDescription)",
-                    category: "Boosts"
-                )
-                fileName = nil
-            }
+            let cssFileName = "\(boost.id.uuidString.lowercased()).css"
+            fileName = cssFileName
+            try trimmedCSS.write(
+                to: cssDirectory.appendingPathComponent(cssFileName),
+                atomically: true,
+                encoding: .utf8
+            )
+            data.customCSS = ""
         }
 
         return DiskBoost(
@@ -481,16 +535,20 @@ final class SumiBoostStore: ObservableObject {
     }
 
     private func removeCSSFile(for boostId: UUID) {
+        do {
+            try removeCSSFileThrowing(for: boostId)
+        } catch {
+            Self.log.error(
+                "Failed to remove boost CSS for \(boostId.uuidString, privacy: .public): \(error.localizedDescription, privacy: .public)"
+            )
+        }
+    }
+
+    private func removeCSSFileThrowing(for boostId: UUID) throws {
         let fileName = "\(boostId.uuidString.lowercased()).css"
         let url = cssDirectory.appendingPathComponent(fileName)
         guard fileManager.fileExists(atPath: url.path) else { return }
-        do {
-            try fileManager.removeItem(at: url)
-        } catch {
-            Self.log.error(
-                "Failed to remove boost CSS file '\(fileName, privacy: .public)': \(error.localizedDescription, privacy: .public)"
-            )
-        }
+        try fileManager.removeItem(at: url)
     }
 
     private func notifyChanged() {
@@ -502,6 +560,11 @@ final class SumiBoostStore: ObservableObject {
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .trimmingCharacters(in: CharacterSet(charactersIn: "."))
             .lowercased()
+    }
+
+    private func acceptsReference(to profileID: UUID) -> Bool {
+        retiredProfileIDs.contains(profileID) == false
+            && profileReferenceAdmission.isReferenceAllowed(profileID)
     }
 
     private var jsonURL: URL {

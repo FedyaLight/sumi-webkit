@@ -32,16 +32,17 @@ extension SafariExtensionWebViewControllerWiringTests {
             initialProfileProvider: { profile },
             managerFactory: { _, _, _, _ in manager }
         )
+        let windowRegistry = WindowRegistry()
         let browserManager = makeBrowserManager(
             moduleRegistry: registry,
             extensionsModule: extensionsModule,
-            profile: profile
+            profile: profile,
+            windowRegistry: windowRegistry
         )
-        let windowRegistry = WindowRegistry()
-        browserManager.windowRegistry = windowRegistry
-        _ = browserManager.tabManager.spaceServices.catalog.createSpace(
+        _ = installTestSpace(
+            in: browserManager.spaceStateOwner,
             name: "Work",
-            profileId: profile.id
+            profileID: profile.id
         )
         manager.attach(browserManager: browserManager)
         let controller = inspection.controller.provisioning
@@ -56,7 +57,7 @@ extension SafariExtensionWebViewControllerWiringTests {
         )
         let originalWindowIDs = Set(windowRegistry.windows.keys)
         let originalTabIDs = Set(
-            browserManager.tabManager.tabCollectionMembershipOwner
+            browserManager.tabCollectionMembershipOwner
                 .allTabs().map(\.id)
         )
         let completed = expectation(
@@ -93,7 +94,7 @@ extension SafariExtensionWebViewControllerWiringTests {
         XCTAssertEqual(Set(windowRegistry.windows.keys), originalWindowIDs)
         XCTAssertEqual(
             Set(
-                browserManager.tabManager.tabCollectionMembershipOwner
+                browserManager.tabCollectionMembershipOwner
                     .allTabs().map(\.id)
             ),
             originalTabIDs

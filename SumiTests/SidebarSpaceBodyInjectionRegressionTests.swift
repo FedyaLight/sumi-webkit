@@ -38,12 +38,12 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
         browserManager.currentProfile = Profile(name: "Sidebar Runtime")
         XCTAssertEqual(invalidationCount, initialInvalidationCount + 3)
 
-        browserManager.tabManager.tabStructureEventBus.publishStructureChanged(
+        browserManager.tabStructureEventBus.publishStructureChanged(
             scope: .space(unrelatedSpaceID)
         )
         XCTAssertEqual(invalidationCount, initialInvalidationCount + 3)
 
-        browserManager.tabManager.tabStructureEventBus.publishStructureChanged(
+        browserManager.tabStructureEventBus.publishStructureChanged(
             scope: .space(targetSpaceID)
         )
         XCTAssertEqual(invalidationCount, initialInvalidationCount + 4)
@@ -54,18 +54,18 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
 
     func testMountedPageTracksUnselectedLiveShortcutRegisterRekeyAndRetirement()
         async throws {
-        let browserManager = BrowserManager()
         let registry = WindowRegistry()
-        browserManager.windowRegistry = registry
+        let browserManager = BrowserManager(windowRegistry: registry)
         let window = BrowserWindowState()
-        window.tabManager = browserManager.tabManager
-        let space = browserManager.tabManager.spaceStateOwner.currentSpace
-            ?? browserManager.tabManager.spaceServices.catalog.createSpace(
+        browserManager.tabResidenceAuthority.establishResidenceSession(on: window)
+        let space = browserManager.spaceStateOwner.currentSpace
+            ?? installTestSpace(
+                in: browserManager.spaceStateOwner,
                 name: "Mounted Live Shortcut"
             )
         window.currentSpaceId = space.id
         window.currentProfileId = space.profileId
-        let selectedTab = browserManager.tabManager.regularTabLifecycleOwner
+        let selectedTab = browserManager.regularTabLifecycleOwner
             .createNewTab(
                 url: "about:blank",
                 in: space,
@@ -110,12 +110,12 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
         XCTAssertEqual(model.snapshot, [])
 
         let unrelatedWindow = BrowserWindowState()
-        unrelatedWindow.tabManager = browserManager.tabManager
+        browserManager.tabResidenceAuthority.establishResidenceSession(on: unrelatedWindow)
         unrelatedWindow.currentSpaceId = space.id
         unrelatedWindow.currentProfileId = space.profileId
         XCTAssertEqual(registry.register(unrelatedWindow), .registered)
         let unrelatedLiveTab = try XCTUnwrap(
-            browserManager.tabManager.shortcutTabMaterializer.materialize(
+            browserManager.shortcutTabMaterializer.materialize(
                 sourcePin,
                 in: unrelatedWindow.id,
                 currentSpaceId: space.id
@@ -123,12 +123,12 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
         )
         await drainMainActorTurns()
         XCTAssertEqual(model.snapshot, [])
-        browserManager.tabManager.tabClosureService.removeTab(
+        browserManager.tabClosureService.removeTab(
             unrelatedLiveTab.id
         )
         registry.unregister(unrelatedWindow.id)
 
-        let liveTab = browserManager.tabManager.shortcutTabMaterializer.materialize(
+        let liveTab = browserManager.shortcutTabMaterializer.materialize(
             sourcePin,
             in: window.id,
             currentSpaceId: space.id
@@ -138,7 +138,7 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
         XCTAssertEqual(window.currentTabId, unchangedSelection)
 
         XCTAssertTrue(
-            browserManager.tabManager.shortcutTabBindings.rebind(
+            shortcutBindings(for: browserManager).rebind(
                 liveTab,
                 from: sourcePin,
                 to: targetPin
@@ -148,39 +148,42 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
         XCTAssertEqual(model.snapshot, [targetPin.id])
         XCTAssertEqual(window.currentTabId, unchangedSelection)
 
-        browserManager.tabManager.tabClosureService.removeTab(liveTab.id)
+        browserManager.tabClosureService.removeTab(liveTab.id)
         await drainMainActorTurns()
         XCTAssertEqual(model.snapshot, [])
         XCTAssertEqual(window.currentTabId, unchangedSelection)
     }
 
     func testLiveShortcutEventsRetainAndRelocateExactPresentationPage()
-        async {
-        let browserManager = BrowserManager()
-        let tabManager = browserManager.tabManager
-        let presentationProfile = browserManager.profileManager.createProfile(
+        async throws {
+        let windowRegistry = WindowRegistry()
+        let browserManager = BrowserManager(windowRegistry: windowRegistry)
+        let tabManager = browserManager
+        let presentationProfile = try browserManager.profileManager.createProfile(
             name: "Presentation"
         )
-        let executionProfile = browserManager.profileManager.createProfile(
+        let executionProfile = try browserManager.profileManager.createProfile(
             name: "Execution"
         )
         let presentationProfileID = presentationProfile.id
         let executionProfileID = executionProfile.id
-        let firstSameProfileSpace = tabManager.spaceServices.catalog.createSpace(
+        let firstSameProfileSpace = installTestSpace(
+            in: tabManager.spaceStateOwner,
             name: "Same Profile A",
-            profileId: presentationProfileID
+            profileID: presentationProfileID
         )
-        let presentationSpace = tabManager.spaceServices.catalog.createSpace(
+        let presentationSpace = installTestSpace(
+            in: tabManager.spaceStateOwner,
             name: "Presentation B",
-            profileId: presentationProfileID
+            profileID: presentationProfileID
         )
-        let executionSpace = tabManager.spaceServices.catalog.createSpace(
+        let executionSpace = installTestSpace(
+            in: tabManager.spaceStateOwner,
             name: "Execution C",
-            profileId: executionProfileID
+            profileID: executionProfileID
         )
         tabManager.spaceStateOwner.replaceCurrentSpace(presentationSpace)
         let window = BrowserWindowState()
-        window.tabManager = tabManager
         window.currentSpaceId = presentationSpace.id
         window.currentProfileId = presentationProfileID
         let selectedTab = tabManager.regularTabLifecycleOwner.createNewTab(
@@ -189,12 +192,9 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
             activate: false
         )
         window.currentTabId = selectedTab.id
-        let windowRegistry = WindowRegistry()
-        browserManager.windowRegistry = windowRegistry
         XCTAssertEqual(windowRegistry.register(window), .registered)
         defer {
             windowRegistry.unregister(window.id)
-            browserManager.windowRegistry = nil
         }
         let unrelatedWindowID = UUID()
         var firstSameProfileChanges = 0
@@ -264,7 +264,7 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
         XCTAssertEqual(essentialTab.profileId, executionProfileID)
         XCTAssertEqual(firstSameProfileChanges, 0)
         XCTAssertEqual(presentationChanges, 1)
-        XCTAssertTrue(tabManager.shortcutTabBindings.rebind(
+        XCTAssertTrue(shortcutBindings(for: tabManager).rebind(
             essentialTab,
             from: sourceEssential,
             to: targetEssential
@@ -984,11 +984,13 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
     func testSidebarColumnHostedRootCarriesInjectedDragState() throws {
         let nowPlayingController = SumiNativeNowPlayingController()
         let updaterService = SumiUpdaterService(backendFactory: { _ in nil })
-        let browserManager = BrowserManager(nowPlayingController: nowPlayingController)
-        let windowState = BrowserWindowState()
         let windowRegistry = WindowRegistry()
+        let browserManager = BrowserManager(
+            windowRegistry: windowRegistry,
+            nowPlayingController: nowPlayingController
+        )
+        let windowState = BrowserWindowState()
         windowRegistry.register(windowState)
-        browserManager.windowRegistry = windowRegistry
         let viewContext = WindowSidebarContext.make(
             browserManager: browserManager,
             updaterService: updaterService
@@ -1017,15 +1019,28 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
             windowChromeSize: CGSize(width: 320, height: 640),
             sidebarDragState: dragState
         )
+        let presentationContext: SidebarPresentationContext = .docked(
+            sidebarWidth: 280
+        )
         let root = SidebarColumnHostedRoot.view(
             environmentContext: environmentContext,
-            presentationContext: .docked(sidebarWidth: 280),
+            presentationContext: presentationContext,
+            spaceCatalog: viewContext.spaceCatalog,
             inventory: viewContext.inventory,
             selection: viewContext.selection,
             pinProjection: viewContext.pinProjection,
             pinCommands: viewContext.pinCommands,
+            pinExecution: viewContext.pinExecution,
+            folderCommands: viewContext.folderCommands,
             spaceLifecycle: viewContext.spaceLifecycle,
-            regularTabs: viewContext.regularTabs,
+            regularTabCatalog: viewContext.regularTabCatalog,
+            regularTabTargets: viewContext.regularTabTargets,
+            regularTabLifecycleCommands:
+                viewContext.regularTabLifecycleCommands,
+            regularTabShortcutCommands:
+                viewContext.regularTabShortcutCommands,
+            regularTabPlacementCommands:
+                viewContext.regularTabPlacementCommands,
             dragTransactions: viewContext.dragTransactions,
             inventoryUpdates: viewContext.inventoryUpdates,
             profileUpdates: viewContext.profileUpdates
@@ -1039,7 +1054,27 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
             root.environmentContext.browserContext.extensionSurfaceStore,
             browserManager.optionalModules.extensions.surfaceStore
         )
-        XCTAssertEqual(root.presentationContext, .docked(sidebarWidth: 280))
+        XCTAssertEqual(root.presentationContext, presentationContext)
+    }
+
+    private func shortcutBindings(
+        for browser: BrowserManager
+    ) -> ShortcutTabBindingSynchronizer {
+        let targets = ShortcutTabBindingTargetMutationService(
+            resolution: browser.shortcutPinRuntimeResolutionOwner,
+            profiles: browser.tabProfileTransitions
+        )
+        return ShortcutTabBindingSynchronizer(
+            presentationRefreshes: browser.liveShortcutPresentationRefreshes,
+            runtimeMutations: ShortcutTabBindingRuntimeMutation(
+                registry: browser.liveShortcutTabs,
+                targets: targets,
+                runtimeConnection: browser.runtimePortConnection,
+                windowMutations: browser.shortcutWindowMutationOwner,
+                structuralLookup: browser.structuralLookupCoordinator
+            ),
+            targets: targets
+        )
     }
 
     private func drainMainActorTurns() async {

@@ -6,16 +6,19 @@ import SumiDomain
 /// reconciled only after that commit succeeds.
 @MainActor
 final class SplitGroupDissolutionService {
-    private let tabManager: @MainActor () -> TabManager?
+    private let splitGroups: SplitGroupStore
+    private let mutations: SplitGroupMutationService
     private let launcherPlacement: ShortcutSplitLauncherPlacementService
     private let presentations: WindowSplitPresentationSynchronizer
 
     init(
-        tabManager: @escaping @MainActor () -> TabManager?,
+        splitGroups: SplitGroupStore,
+        mutations: SplitGroupMutationService,
         launcherPlacement: ShortcutSplitLauncherPlacementService,
         presentations: WindowSplitPresentationSynchronizer
     ) {
-        self.tabManager = tabManager
+        self.splitGroups = splitGroups
+        self.mutations = mutations
         self.launcherPlacement = launcherPlacement
         self.presentations = presentations
     }
@@ -25,11 +28,10 @@ final class SplitGroupDissolutionService {
         _ group: SumiDomain.SplitGroup,
         standaloneMembers: [UUID: SplitMemberID] = [:]
     ) -> Bool {
-        guard let tabManager = tabManager(),
-              tabManager.splitGroupStore.group(id: group.id) == group,
+        guard splitGroups.group(id: group.id) == group,
               let restorations = launcherPlacement.prepareRestorations(
                   for: group.members
-                  ), tabManager.splitGroupMutations.removeAtomically(
+                  ), mutations.removeAtomically(
                   group,
                   applying: {
                       restorations.applyAndCommit()

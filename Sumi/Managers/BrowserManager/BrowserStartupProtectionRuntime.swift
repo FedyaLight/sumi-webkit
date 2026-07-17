@@ -12,72 +12,28 @@ enum StartupNormalTabMaterializationPolicy {
 
 @MainActor
 final class BrowserStartupProtectionRuntime {
-    private let appliedProtectionLevelAction: () -> SumiProtectionLevel
-    private let restoreAppliedProtectionLevelForStartupAction: () async throws -> Void
-    private let tabAction: (UUID) -> Tab?
-    private let allWindowsAction: () -> [BrowserWindowState]
-    private let prepareBackgroundTabIfNeededAction: (Tab) -> Void
-    private let schedulePrepareVisibleWebViewsAction: (BrowserWindowState) -> Void
-    private let refreshCompositorAction: (BrowserWindowState) -> Void
+    private let materializationGate: BrowserStartupMaterializationGate
+    private let deferredTabs: BrowserStartupDeferredTabMaterialization
+    private let visibleWindows: BrowserStartupVisibleWindowSettlement
 
     private var startupProtectionRestoreTask: Task<Void, Never>?
-    private(set) var hasFinishedProtectionRestore = false
-    private var deferredBackgroundTabIds: Set<UUID> = []
 
     init(
-        appliedProtectionLevel: @escaping () -> SumiProtectionLevel,
-        restoreAppliedProtectionLevelForStartup: @escaping () async throws -> Void,
-        tab: @escaping (UUID) -> Tab?,
-        allWindows: @escaping () -> [BrowserWindowState],
-        prepareBackgroundTabIfNeeded: @escaping (Tab) -> Void,
-        schedulePrepareVisibleWebViews: @escaping (BrowserWindowState) -> Void,
-        refreshCompositor: @escaping (BrowserWindowState) -> Void
+        materializationGate: BrowserStartupMaterializationGate,
+        deferredTabs: BrowserStartupDeferredTabMaterialization,
+        visibleWindows: BrowserStartupVisibleWindowSettlement
     ) {
-        self.appliedProtectionLevelAction = appliedProtectionLevel
-        self.restoreAppliedProtectionLevelForStartupAction = restoreAppliedProtectionLevelForStartup
-        self.tabAction = tab
-        self.allWindowsAction = allWindows
-        self.prepareBackgroundTabIfNeededAction = prepareBackgroundTabIfNeeded
-        self.schedulePrepareVisibleWebViewsAction = schedulePrepareVisibleWebViews
-        self.refreshCompositorAction = refreshCompositor
-    }
-
-    convenience init(browserManager: BrowserManager) {
-        self.init(
-            appliedProtectionLevel: { [weak browserManager] in
-                browserManager?.protectionCoordinator.settings.appliedLevel ?? .off
-            },
-            restoreAppliedProtectionLevelForStartup: { [weak browserManager] in
-                guard let browserManager else { return }
-                _ = try await browserManager.protectionCoordinator.restoreAppliedLevelForStartup()
-            },
-            tab: { [weak browserManager] tabId in
-                browserManager?.tabManager.tabCollectionMembershipOwner.tab(for: tabId)
-            },
-            allWindows: { [weak browserManager] in
-                browserManager?.windowRegistry?.allWindows ?? []
-            },
-            prepareBackgroundTabIfNeeded: { [weak browserManager] tab in
-                browserManager?.tabLifecycleService.opening.prepareBackgroundTabIfNeeded(tab, in: nil)
-            },
-            schedulePrepareVisibleWebViews: { [weak browserManager] windowState in
-                browserManager?.shellRuntime.windowVisuals.schedulePrepareVisibleWebViews(for: windowState)
-            },
-            refreshCompositor: { [weak browserManager] windowState in
-                browserManager?.shellRuntime.windowVisuals.refreshCompositor(for: windowState)
-            }
-        )
+        self.materializationGate = materializationGate
+        self.deferredTabs = deferredTabs
+        self.visibleWindows = visibleWindows
     }
 
     var shouldDeferNormalTabMaterializationDuringStartup: Bool {
-        StartupNormalTabMaterializationPolicy.shouldDefer(
-            appliedProtectionLevel: appliedProtectionLevelAction(),
-            hasFinishedStartupProtectionRestore: hasFinishedProtectionRestore
-        )
+        materializationGate.shouldDeferNormalTabMaterialization
     }
 
     func beginProtectionRestoreForStartupIfNeeded() {
-        guard !hasFinishedProtectionRestore else { return }
+        guard !materializationGate.hasFinishedProtectionRestore else { return }
         guard startupProtectionRestoreTask == nil else { return }
         guard !RuntimeDiagnostics.isRunningTests else {
             finishStartupProtectionRestore()
@@ -90,14 +46,11 @@ final class BrowserStartupProtectionRuntime {
     }
 
     func canMaterializeWebViewDuringStartup(_ tab: Tab) -> Bool {
-        if ExtensionURLIdentity.isOwned(tab.url) || tab.webExtensionContextOverride != nil {
-            return true
-        }
-        return !tab.requiresPrimaryWebView || !shouldDeferNormalTabMaterializationDuringStartup
+        materializationGate.canMaterialize(tab)
     }
 
     func deferBackgroundTabUntilStartupReady(_ tab: Tab) {
-        deferredBackgroundTabIds.insert(tab.id)
+        deferredTabs.deferTab(tab)
     }
 
     func cancelProtectionRestoreTask() {
@@ -113,7 +66,8 @@ final class BrowserStartupProtectionRuntime {
         }
 
         do {
-            try await restoreAppliedProtectionLevelForStartupAction()
+            try await materializationGate
+                .restoreAppliedProtectionLevelForStartup()
         } catch {
             RuntimeDiagnostics.debug(
                 "Protection startup restore failed: \(error.localizedDescription)",
@@ -123,20 +77,9 @@ final class BrowserStartupProtectionRuntime {
     }
 
     func finishStartupProtectionRestore() {
-        guard !hasFinishedProtectionRestore else { return }
-        hasFinishedProtectionRestore = true
-
-        let deferredBackgroundTabs = deferredBackgroundTabIds
-        deferredBackgroundTabIds.removeAll()
-        for tabId in deferredBackgroundTabs {
-            guard let tab = tabAction(tabId) else { continue }
-            prepareBackgroundTabIfNeededAction(tab)
-        }
-
-        for windowState in allWindowsAction() {
-            schedulePrepareVisibleWebViewsAction(windowState)
-            refreshCompositorAction(windowState)
-        }
+        guard materializationGate.finishProtectionRestore() else { return }
+        deferredTabs.materializeDeferredTabs()
+        visibleWindows.settleVisibleWindows()
 
 #if DEBUG
         Task { @MainActor in
@@ -158,5 +101,3 @@ final class BrowserStartupProtectionRuntime {
     }
 #endif
 }
-
-extension BrowserStartupProtectionRuntime: BrowserStartupProtectionRestoring {}

@@ -31,7 +31,9 @@ final class ExtensionEnabledRuntimeActivation {
         activation: ExtensionLoadedContextFinalizer.Activation,
         mutationLease: ExtensionRuntimeMutationLease?
     ) async throws -> InstalledExtension? {
-        runtimeAccess.ensureExtensionController(profileID)
+        guard runtimeAccess.ensureExtensionController(profileID) else {
+            throw CancellationError()
+        }
         guard runtimeAccess.getExtensionContext(entity.id, profileID) != nil
         else {
             return try await loader.loadEnabled(
@@ -61,7 +63,9 @@ final class ExtensionEnabledRuntimeActivation {
         profileID: UUID,
         mutationLease: ExtensionRuntimeMutationLease
     ) async throws {
-        runtimeAccess.ensureExtensionController(profileID)
+        guard runtimeAccess.ensureExtensionController(profileID) else {
+            throw CancellationError()
+        }
         guard runtimeAccess.getExtensionContext(entity.id, profileID) != nil
         else {
             try await loader.restoreEnabledRuntime(

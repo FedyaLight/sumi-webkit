@@ -66,29 +66,44 @@ final class BrowserAppCommandServicesTests: XCTestCase {
         XCTAssertEqual(events, ["back", "forward"])
     }
 
-    func testWindowLifecycleServiceExposesTabManagerAndPersistsExactWindow() {
-        let tabManager = BrowserManager().tabManager
-        var persistedWindows: [BrowserWindowState] = []
-        let service = BrowserWindowLifecycleService(
-            tabManager: tabManager,
-            persist: { persistedWindows.append($0) }
+    func testWindowLifecycleServicePersistsExactWindow() throws {
+        let suiteName = "BrowserAppCommandServicesTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let snapshotStore = WindowSessionSnapshotStore(
+            key: "window-session",
+            userDefaults: defaults,
+            environment: { [:] }
         )
+        let currentTabID = UUID()
         let windowState = BrowserWindowState()
+        windowState.currentTabId = currentTabID
+        let windows = WindowRegistry()
+        windows.register(windowState)
+        let persistence = WindowSessionPersistenceTestComposition(
+            snapshotStore: snapshotStore,
+            scheduler: WindowSessionPersistenceScheduler(),
+            snapshotFactory: WindowSessionSnapshotFactory(
+                glanceManager: GlanceManager()
+            ),
+            windows: windows
+        )
+        let service = BrowserWindowLifecycleService(
+            persistence: persistence.coordinator
+        )
 
         service.persistWindowSession(for: windowState)
 
-        XCTAssertIdentical(service.tabManager, tabManager)
-        XCTAssertEqual(persistedWindows.count, 1)
-        XCTAssertIdentical(persistedWindows.first, windowState)
+        XCTAssertEqual(
+            snapshotStore.loadSnapshot()?.snapshot.currentTabId,
+            currentTabID
+        )
     }
 
     func testWindowLifecycleServiceDoesNotRetainBrowserManagerRoot() {
         var browserManager: BrowserManager? = BrowserManager()
         let service = BrowserWindowLifecycleService(
-            tabManager: browserManager!.tabManager,
-            persist: { [weak browserManager] windowState in
-                browserManager?.windowSessionBundle.persistence.persist(windowState)
-            }
+            persistence: browserManager!.windowSessionPersistenceCoordinator
         )
         weak let releasedBrowserManager = browserManager
 

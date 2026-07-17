@@ -130,9 +130,9 @@ enum TabLazyRestorePlanner {
 final class TabLazyRestoreCoordinator {
     let policy: TabLazyRestorePolicy
 
-    private let spaces: () -> [Space]
-    private let tabsBySpaceSnapshot: () -> [UUID: [Tab]]
-    private let resolveTab: (UUID) -> Tab?
+    private let spaces: TabSpaceCollectionStateOwner
+    private let regularTabs: RegularTabCollectionStateOwner
+    private let membership: TabCollectionMembershipOwner
     private var eligibleTabIDs: Set<UUID> = []
     private var queuedTabIDs: [UUID] = []
     private var inFlightTabIDs: Set<UUID> = []
@@ -140,14 +140,14 @@ final class TabLazyRestoreCoordinator {
     private var loadingObserver: NSObjectProtocol?
 
     init(
-        spaces: @escaping () -> [Space],
-        tabsBySpaceSnapshot: @escaping () -> [UUID: [Tab]],
-        resolveTab: @escaping (UUID) -> Tab?,
+        spaces: TabSpaceCollectionStateOwner,
+        regularTabs: RegularTabCollectionStateOwner,
+        membership: TabCollectionMembershipOwner,
         policy: TabLazyRestorePolicy = .default
     ) {
         self.spaces = spaces
-        self.tabsBySpaceSnapshot = tabsBySpaceSnapshot
-        self.resolveTab = resolveTab
+        self.regularTabs = regularTabs
+        self.membership = membership
         self.policy = policy
         self.loadingObserver = NotificationCenter.default.addObserver(
             forName: .sumiTabLoadingStateDidChange,
@@ -193,12 +193,12 @@ final class TabLazyRestoreCoordinator {
         }
 
         let remainingBudget = max(0, policy.maxTotalOpportunisticTabs - startedTabIDs.count)
-        let tabsBySpace = tabsBySpaceSnapshot()
+        let tabsBySpace = regularTabs.tabsBySpaceSnapshot()
         queuedTabIDs = TabLazyRestorePlanner.plan(
             anchors: anchors,
             tabsBySpace: tabsBySpace,
             fallbackAnchorTabIDsBySpace: lazyRestoreFallbackAnchorTabIDsBySpace(
-                spaces: spaces(),
+                spaces: spaces.spaces,
                 tabsBySpace: tabsBySpace
             ),
             eligibleTabIDs: eligibleTabIDs,
@@ -213,11 +213,11 @@ final class TabLazyRestoreCoordinator {
 
     private func pruneEligibility() {
         eligibleTabIDs = eligibleTabIDs.filter { tabID in
-            guard let tab = resolveTab(tabID) else { return false }
+            guard let tab = membership.tab(for: tabID) else { return false }
             return tab.requiresPrimaryWebView && (tab.suspensionState.isSuspended || tab.isUnloaded)
         }
-        inFlightTabIDs = inFlightTabIDs.filter { resolveTab($0) != nil }
-        queuedTabIDs.removeAll { resolveTab($0) == nil }
+        inFlightTabIDs = inFlightTabIDs.filter { membership.tab(for: $0) != nil }
+        queuedTabIDs.removeAll { membership.tab(for: $0) == nil }
     }
 
     private func startQueuedLoadsIfNeeded() {
@@ -225,7 +225,7 @@ final class TabLazyRestoreCoordinator {
               let nextTabID = queuedTabIDs.first {
             queuedTabIDs.removeFirst()
             guard startedTabIDs.insert(nextTabID).inserted else { continue }
-            guard let tab = resolveTab(nextTabID) else {
+            guard let tab = membership.tab(for: nextTabID) else {
                 continue
             }
 
@@ -267,8 +267,8 @@ final class TabLazyRestoreCoordinator {
         let spaceId = currentTab?.spaceId ?? windowState.currentSpaceId
         guard let spaceId else { return nil }
 
-        let tabsBySpace = tabsBySpaceSnapshot()
-        let spaces = spaces()
+        let tabsBySpace = regularTabs.tabsBySpaceSnapshot()
+        let spaces = spaces.spaces
 
         let regularTabId: UUID?
         if let currentTab, currentTab.spaceId == spaceId {

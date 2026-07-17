@@ -9,7 +9,10 @@ import SumiDomain
 final class BrowserURLBarPermissionContextOwnerTests: XCTestCase {
     func testPermissionContextUsesInjectedRuntimeStores() throws {
         let harness = try makeHarness()
-        let owner = BrowserURLBarPermissionContextOwner(browserManager: harness.browserManager)
+        let owner = BrowserURLBarPermissionContextOwner(
+            runtime: harness.browserManager.permissionRuntime,
+            webViews: harness.browserManager.webViewRoutingService
+        )
 
         let context = owner.context
         let loadDependencies = owner.loadDependencies
@@ -31,7 +34,10 @@ final class BrowserURLBarPermissionContextOwnerTests: XCTestCase {
 
     func testPermissionContextSiteActivityRevisionIsFresh() throws {
         let harness = try makeHarness()
-        let owner = BrowserURLBarPermissionContextOwner(browserManager: harness.browserManager)
+        let owner = BrowserURLBarPermissionContextOwner(
+            runtime: harness.browserManager.permissionRuntime,
+            webViews: harness.browserManager.webViewRoutingService
+        )
         let context = owner.context
 
         XCTAssertEqual(context.siteActivityRevision(), 0)
@@ -48,7 +54,10 @@ final class BrowserURLBarPermissionContextOwnerTests: XCTestCase {
 
     func testPermissionChangePublishersForwardRuntimeStoreChanges() throws {
         let harness = try makeHarness()
-        let owner = BrowserURLBarPermissionContextOwner(browserManager: harness.browserManager)
+        let owner = BrowserURLBarPermissionContextOwner(
+            runtime: harness.browserManager.permissionRuntime,
+            webViews: harness.browserManager.webViewRoutingService
+        )
         var cancellables = Set<AnyCancellable>()
         var blockedPopupChangeCount = 0
         var externalSchemeChangeCount = 0

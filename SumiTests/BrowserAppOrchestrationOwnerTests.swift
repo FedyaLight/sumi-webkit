@@ -17,7 +17,7 @@ final class BrowserAppOrchestrationOwnerTests: XCTestCase {
         XCTAssertNotNil(harness.appDelegate.mouseButtonRouter)
         XCTAssertIdentical(
             harness.appDelegate.tabCommandRouter,
-            harness.browserManager.tabLifecycleService.closeOrchestration
+            harness.browserManager.tabCloseOrchestration
         )
         XCTAssertIdentical(
             harness.appDelegate.windowRouter,
@@ -42,7 +42,7 @@ final class BrowserAppOrchestrationOwnerTests: XCTestCase {
             harness.keyboardShortcutManager
         )
         XCTAssertIdentical(
-            harness.browserManager.tabManager.runtimePorts?.settings,
+            harness.browserManager.runtimePortConnection.current?.settings,
             harness.settingsManager
         )
         XCTAssertNotNil(harness.browserManager.windowShellContentViewFactory)
@@ -78,18 +78,26 @@ final class BrowserAppOrchestrationOwnerTests: XCTestCase {
         harness.owner.setupIfNeeded(dependencies: harness.dependencies)
         harness.windowRegistry.register(futureWindow)
 
-        XCTAssertIdentical(existingWindow.tabManager, harness.browserManager.tabManager)
-        XCTAssertIdentical(futureWindow.tabManager, harness.browserManager.tabManager)
+        XCTAssertTrue(
+            harness.browserManager.tabResidenceAuthority.owns(existingWindow)
+        )
+        XCTAssertTrue(
+            harness.browserManager.tabResidenceAuthority.owns(futureWindow)
+        )
     }
 
-    func testSetupReplacesShortcutManagerExtensionHandlerWithBrowserRuntimeHandler() throws {
+    func testSetupAttachesExactExtensionCommandSurface() throws {
         let harness = makeHarness()
-        harness.keyboardShortcutManager.extensionCommandHandler = { _ in true }
 
         harness.owner.setupIfNeeded(dependencies: harness.dependencies)
 
-        let event = try XCTUnwrap(Self.makeKeyDownEvent())
-        XCTAssertFalse(harness.keyboardShortcutManager.extensionCommandHandler(event))
+        XCTAssertIdentical(
+            harness.keyboardShortcutManager.extensionsModule,
+            harness.browserManager.optionalModules.extensions
+        )
+        XCTAssertFalse(
+            harness.browserManager.optionalModules.extensions.hasLoadedRuntime
+        )
     }
 
     func testFullSetupGraphReleasesBrowserManagerAndDisablesLateMouseCommands() async throws {
@@ -107,15 +115,13 @@ final class BrowserAppOrchestrationOwnerTests: XCTestCase {
         weak var releasedActivationService: BrowserWindowActivationService?
         weak var releasedWindowExtensionPublication:
             WindowExtensionPublicationTransaction?
-        weak var releasedTabManager: TabManager?
         weak var releasedProfileManager: ProfileManager?
 
         do {
             let browserManager = try XCTUnwrap(browserManager)
-            releasedTabManager = browserManager.tabManager
             releasedProfileManager = browserManager.profileManager
             releasedRestorationService = browserManager.windowSessionBundle.restoration
-            releasedActivationService = browserManager.windowSessionBundle.activation
+            releasedActivationService = browserManager.windowActivation
             releasedWindowExtensionPublication =
                 browserManager.windowExtensionPublication
             let contentFactory: BrowserWindowShellService.ContentViewFactory = { [weak browserManager] _, _ in
@@ -144,7 +150,6 @@ final class BrowserAppOrchestrationOwnerTests: XCTestCase {
         XCTAssertNil(releasedRestorationService)
         XCTAssertNil(releasedActivationService)
         XCTAssertNil(releasedWindowExtensionPublication)
-        XCTAssertNil(releasedTabManager)
         XCTAssertNil(releasedProfileManager)
         XCTAssertNotNil(appDelegate.terminationCoordinator)
         XCTAssertNil(appDelegate.terminationCoordinator?.acquireFinalizationLease())
@@ -282,7 +287,6 @@ private struct Harness {
 @MainActor
 private final class DetachedBrowserCommandSurfaces {
     weak var browserManager: BrowserManager?
-    weak var tabManager: TabManager?
     weak var profileManager: ProfileManager?
     weak var zoomManager: ZoomManager?
     weak var liveFolderManager: SumiLiveFolderManager?
@@ -300,7 +304,6 @@ private final class DetachedBrowserCommandSurfaces {
 
     var hasReleasedLiveKernel: Bool {
         browserManager == nil
-            && tabManager == nil
             && profileManager == nil
             && zoomManager == nil
             && liveFolderManager == nil
@@ -309,7 +312,6 @@ private final class DetachedBrowserCommandSurfaces {
 
     init(browserManager: BrowserManager) {
         self.browserManager = browserManager
-        self.tabManager = browserManager.tabManager
         self.profileManager = browserManager.profileManager
         self.zoomManager = browserManager.zoomManager
         self.liveFolderManager = browserManager.liveFolderManager
@@ -318,9 +320,9 @@ private final class DetachedBrowserCommandSurfaces {
         self.sidebarActions = browserManager.chromeBundle.sidebarActionOwner
         self.nativeSurfaces = browserManager.chromeBundle.nativeSurfaceRoutingOwner
         self.zoom = browserManager.chromeBundle.zoomCommandOwner
-        self.tabOpening = browserManager.tabLifecycleService.opening
-        self.tabClosing = browserManager.tabLifecycleService.closeOrchestration
-        self.splitFocus = browserManager.sidebarCommandService.splitShortcuts.focus
+        self.tabOpening = browserManager.tabOpening
+        self.tabClosing = browserManager.tabCloseOrchestration
+        self.splitFocus = browserManager.splitShortcutFocus
         self.sessionRecovery = browserManager.windowSessionBundle.sessionRecovery
         self.recentlyClosed = browserManager.recentlyClosedManager
 

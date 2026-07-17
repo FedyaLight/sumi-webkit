@@ -5,7 +5,7 @@ import XCTest
 @MainActor
 final class WindowSessionArchiveRestoreTests: XCTestCase {
     func testApplyingExactSnapshotRefreshesLiveLastSessionArchive() throws {
-        let tabManager = try makeInMemoryTabManager(loadPersistedState: false)
+        let tabManager = BrowserManager()
         let profileID = UUID()
         let space = Space(name: "Restored", profileId: profileID)
         tabManager.spaceStateOwner.replaceSpaces([space])
@@ -24,9 +24,11 @@ final class WindowSessionArchiveRestoreTests: XCTestCase {
             for: 337
         )
 
-        let delegate = TestWindowSessionDelegate(tabManager: tabManager)
         let registry = WindowRegistry()
-        delegate.windowRegistry = registry
+        let delegate = TestWindowSessionDelegate(
+            runtime: tabManager,
+            windowRegistry: registry
+        )
         let sessionKey = "SumiTests.windowSession.exactApply.\(UUID().uuidString)"
         defer { UserDefaults.standard.removeObject(forKey: sessionKey) }
         let service = delegate.makeRestoreService(

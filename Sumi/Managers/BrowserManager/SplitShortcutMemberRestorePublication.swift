@@ -1,55 +1,70 @@
+import Foundation
+import SumiDomain
+
+/// Prepares and executes the window-local settlement paired with one shortcut
+/// member restoration. The topology coordinator remains outside this role.
 @MainActor
 final class SplitShortcutMemberRestorePublication {
-    private enum State { case prepared, claimed, observablePublished, terminal }
-
-    private let presentation: PreparedWindowSplitPresentationSettlement
-    private let retirement: ReversibleShortcutLiveTabRetirement?
-    private let topology: SplitGroupReplacementReceipt
-    private let retirementService: ShortcutLiveTabRetirementService
-    private var retirementEffect: PreparedShortcutLiveTabRetirementTerminalEffect?
-    private var state = State.prepared
+    private let presentations: WindowSplitPresentationSynchronizer
+    private let folderOpenState: TabFolderOpenStateService
+    private let visuals: BrowserWindowVisualCoordinator
 
     init(
+        presentations: WindowSplitPresentationSynchronizer,
+        folderOpenState: TabFolderOpenStateService,
+        visuals: BrowserWindowVisualCoordinator
+    ) {
+        self.presentations = presentations
+        self.folderOpenState = folderOpenState
+        self.visuals = visuals
+    }
+
+    func prepare(
+        _ prepared: SplitShortcutMemberRestorePreparation,
+        memberID: SplitMemberID,
+        sourceGroup: SumiDomain.SplitGroup,
+        windowState: BrowserWindowState,
+        preserveLiveInstance: Bool
+    ) -> PreparedWindowSplitPresentationSettlement? {
+        let targetPresentsGroup = windowState.splitSelection?.groupID
+            == sourceGroup.id
+        let settlesTargetWindow = preserveLiveInstance || targetPresentsGroup
+        let terminalParticipants: WindowSplitPresentationTerminalParticipants =
+            settlesTargetWindow
+                ? [SplitShortcutMemberRestoreHandoffReceipt(
+                    window: windowState,
+                    visuals: visuals
+                )]
+                : []
+        return presentations.prepareSettlementAgainstSource(
+            previousGroups: [sourceGroup],
+            sourceGroups: prepared.sourceGroups,
+            replacementGroups: prepared.replacementGroups,
+            affectedGroupIDs: [sourceGroup.id],
+            standaloneMembers: preserveLiveInstance
+                ? [windowState.id: memberID] : [:],
+            unavailableMembers: preserveLiveInstance || !targetPresentsGroup
+                ? [:] : [windowState.id: [memberID]],
+            requiredWindows: settlesTargetWindow
+                ? [windowState.id: windowState] : [:],
+            terminalParticipants: terminalParticipants,
+            sessionWriteUrgency: .immediate
+        )
+    }
+
+    func execute(
+        _ move: any ShortcutSplitLauncherComposedMoveBatchParticipant,
         presentation: PreparedWindowSplitPresentationSettlement,
         retirement: ReversibleShortcutLiveTabRetirement?,
         topology: SplitGroupReplacementReceipt,
         retirementService: ShortcutLiveTabRetirementService
-    ) {
-        self.presentation = presentation
-        self.retirement = retirement
-        self.topology = topology
-        self.retirementService = retirementService
-    }
-
-    func claim() -> Bool {
-        guard case .prepared = state else { return false }
-        if let retirement {
-            retirement.publishAdmittedModel()
-            guard let effect = retirementService.prepareTerminalEffect(
-                retirement.takePreparedResult()
-            ) else { return false }
-            retirementEffect = effect
-        }
-        state = .claimed
-        return true
-    }
-
-    func publishObservableModel() {
-        guard case .claimed = state else {
-            preconditionFailure("Split restore publication was not claimed")
-        }
-        state = .observablePublished
-        topology.publish()
-        presentation.publishAdmittedModel()
-        retirementEffect?.queueResidencePublication()
-    }
-
-    func publishTerminalEffects() {
-        guard case .observablePublished = state else {
-            preconditionFailure("Split restore model was not published")
-        }
-        state = .terminal
-        presentation.publishTerminalEffects()
-        retirementEffect?.publishLifecycleAndPhysical()
+    ) -> PreparedProfileAssignmentBatchTransitionOutcome? {
+        move.executeRestore(
+            presentation: presentation,
+            retirement: retirement,
+            topology: topology,
+            retirementService: retirementService,
+            folderOpenState: folderOpenState
+        )
     }
 }

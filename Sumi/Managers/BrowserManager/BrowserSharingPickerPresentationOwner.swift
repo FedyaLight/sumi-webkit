@@ -60,30 +60,10 @@ private final class SidebarSharingServicePickerBridge: NSObject, @preconcurrency
 /// AppKit sharing-service picker presentation for sidebar / URL-bar share actions.
 @MainActor
 final class BrowserSharingPickerPresentationOwner {
-    private let windowRegistry: @MainActor @Sendable () -> WindowRegistry?
-    private let keyWindow: @MainActor @Sendable () -> NSWindow?
-    private let mainWindow: @MainActor @Sendable () -> NSWindow?
+    private let windows: WindowRegistry
 
-    init(
-        windowRegistry: @escaping @MainActor @Sendable () -> WindowRegistry?,
-        keyWindow: @escaping @MainActor @Sendable () -> NSWindow?,
-        mainWindow: @escaping @MainActor @Sendable () -> NSWindow?
-    ) {
-        self.windowRegistry = windowRegistry
-        self.keyWindow = keyWindow
-        self.mainWindow = mainWindow
-    }
-
-    convenience init(browserManager: BrowserManager) {
-        self.init(
-            windowRegistry: { [weak browserManager] in browserManager?.windowRegistry },
-            keyWindow: {
-                NSApp.keyWindow
-            },
-            mainWindow: {
-                NSApp.mainWindow
-            }
-        )
+    init(windows: WindowRegistry) {
+        self.windows = windows
     }
 
     func presentSharingServicePicker(
@@ -100,7 +80,7 @@ final class BrowserSharingPickerPresentationOwner {
                 token: $0.beginSession(
                     kind: .sharingPicker,
                     source: source,
-                    path: "BrowserManager.presentSharingServicePicker"
+                    path: "BrowserSharingPickerPresentationOwner.present"
                 ),
                 coordinator: $0
             )
@@ -134,8 +114,8 @@ final class BrowserSharingPickerPresentationOwner {
     ) -> NSWindow? {
         source?.window?.parent
             ?? source?.window
-            ?? windowRegistry()?.activeWindow.flatMap { windowRegistry()?.appKitWindow(for: $0) }
-            ?? keyWindow()
-            ?? mainWindow()
+            ?? windows.activeWindow.flatMap { windows.appKitWindow(for: $0) }
+            ?? NSApp.keyWindow
+            ?? NSApp.mainWindow
     }
 }

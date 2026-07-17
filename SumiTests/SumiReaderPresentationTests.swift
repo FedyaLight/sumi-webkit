@@ -1,6 +1,6 @@
 import AppKit
-import class SwiftUI.NSHostingController
 import struct SwiftUI.Binding
+import class SwiftUI.NSHostingController
 import WebKit
 import XCTest
 
@@ -1162,11 +1162,11 @@ final class SumiReaderPresentationTests: XCTestCase {
         TabCompositorWrapper(
             browserContext: browserContext,
             resolveDragTab: { _ in nil },
-            splitQuery: browserManager.splitComposition.query,
-            splitPreviews: browserManager.splitComposition.previews,
-            splitLayout: browserManager.splitComposition.layout,
-            splitDrops: browserManager.splitComposition.drops,
-            splitDropTargets: browserManager.splitComposition.dropTargets,
+            splitQuery: browserManager.splitWindowContext.query,
+            splitPreviews: browserManager.splitWindowContext.previews,
+            splitLayout: browserManager.splitWindowContext.layout,
+            splitDrops: browserManager.splitWindowContext.drops,
+            splitDropTargets: browserManager.splitWindowContext.dropTargets,
             sidebarDragState: browserContext.sidebarDragState,
             webViewOwnershipQuery: webViewRuntime.ownershipQuery,
             trackedWebViewAdmission: webViewRuntime.trackedWebViewAdmission,

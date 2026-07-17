@@ -361,7 +361,7 @@ extension AuxiliaryWindowLifecycleTests {
         var hooks = harness.extensionManager.testHooks
         hooks.didCloseAuxiliaryWindow = { sessionID in
             guard sessionID == original.id, replacement == nil else { return }
-            let membership = harness.browserManager.tabManager
+            let membership = harness.browserManager
                 .tabCollectionMembershipOwner
             membership.attach(original.tab)
             membership.registerAuxiliaryMiniWindowTab(original.tab)
@@ -401,8 +401,8 @@ extension AuxiliaryWindowLifecycleTests {
         )
         XCTAssertTrue(original.tab.hasBrowserRuntime)
         XCTAssertTrue(
-            harness.browserManager.tabManager.transientWebKitTabLifecycleOwner
-                .isAuxiliaryMiniWindowTab(original.tab)
+            harness.browserManager.auxiliaryMiniWindowTabs
+                .containsExact(original.tab)
         )
         XCTAssertIdentical(
             original.tab.resolvedAssignedWebView()
@@ -766,12 +766,14 @@ extension AuxiliaryWindowLifecycleTests {
             auxiliaryWindows.sessions.sessionsSnapshot().map(\.id)
         )
         let originalTabIDs = Set(
-            harness.browserManager.tabManager.tabCollectionMembershipOwner
+            harness.browserManager.tabCollectionMembershipOwner
                 .allTabs().map(\.id)
         )
         let originalAuxiliaryTabIDs = Set(
-            harness.browserManager.tabManager.transientTabRegistryOwner
-                .auxiliaryMiniWindowTabsByID.keys
+            harness.browserManager.tabCollectionMembershipOwner
+                .allIdentityWitnesses()
+                .filter { $0.isAuxiliaryMiniWindow }
+                .map(\.id)
         )
         let originalAdapterIDs = Set(
             harness.inspection.normalTabs.adapters
@@ -827,15 +829,17 @@ extension AuxiliaryWindowLifecycleTests {
         )
         XCTAssertEqual(
             Set(
-                harness.browserManager.tabManager
+                harness.browserManager
                     .tabCollectionMembershipOwner.allTabs().map(\.id)
             ),
             originalTabIDs
         )
         XCTAssertEqual(
             Set(
-                harness.browserManager.tabManager.transientTabRegistryOwner
-                    .auxiliaryMiniWindowTabsByID.keys
+                harness.browserManager.tabCollectionMembershipOwner
+                    .allIdentityWitnesses()
+                    .filter { $0.isAuxiliaryMiniWindow }
+                    .map(\.id)
             ),
             originalAuxiliaryTabIDs
         )
@@ -868,13 +872,16 @@ extension AuxiliaryWindowLifecycleTests {
     private func makeReceiptTestTab(
         in harness: ExtensionHarness
     ) -> Tab {
-        harness.browserManager.tabManager.transientWebKitTabLifecycleOwner
-            .createAuxiliaryMiniWindowTab(
+        guard let tab = harness.browserManager.auxiliaryMiniWindowTabs.create(
                 openerTab: harness.sourceTab,
-                profileId: harness.profile.id,
+                profileID: harness.profile.id,
                 urlString: "about:blank",
                 webExtensionContextOverride: nil
             )
+        else {
+            preconditionFailure("Receipt fixture requires an admitted auxiliary Tab")
+        }
+        return tab
     }
 
     private func makeReceiptTestWebView(
@@ -892,10 +899,9 @@ extension AuxiliaryWindowLifecycleTests {
         _ tab: Tab,
         from harness: ExtensionHarness
     ) {
-        let lifecycle = harness.browserManager.tabManager
-            .transientWebKitTabLifecycleOwner
-        if lifecycle.isAuxiliaryMiniWindowTab(tab) {
-            lifecycle.removeAuxiliaryMiniWindowTab(tab)
+        let lifecycle = harness.browserManager.auxiliaryMiniWindowTabs
+        if lifecycle.containsExact(tab) {
+            lifecycle.remove(tab)
         }
     }
 

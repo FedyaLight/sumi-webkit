@@ -457,20 +457,12 @@ private final class LiveShortcutRegistryHarness {
     private var pageSpaceByWindow: [UUID: UUID] = [:]
 
     init() {
-        let storage = TabTransientTabRegistryOwner()
+        let stateStore = TabStateStore()
+        let storage = stateStore.transientTabs
         let eventBus = TabStructureEventBus()
         let coordinator = TabStructuralLookupCoordinator(
             eventBus: eventBus,
-            tabsBySpace: { [:] },
-            transientShortcutTabsByWindow: {
-                storage.transientShortcutTabsByWindow
-            },
-            transientExtensionTabsByID: {
-                storage.transientExtensionTabsByID
-            },
-            auxiliaryMiniWindowTabsByID: {
-                storage.auxiliaryMiniWindowTabsByID
-            }
+            stateStore: stateStore
         )
         self.storage = storage
         self.eventBus = eventBus

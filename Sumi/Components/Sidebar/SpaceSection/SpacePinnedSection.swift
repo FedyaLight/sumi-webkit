@@ -12,7 +12,9 @@ struct SpacePinnedSectionView: View {
     let inventory: SidebarSpaceInventorySnapshot
     let selection: SidebarWindowSelectionQuery
     let pinProjection: SidebarPinFolderProjection
-    let pinCommands: SidebarPinFolderCommands
+    let pinCommands: SidebarPinCommands
+    let pinExecution: SidebarPinExecutionCommands
+    let folderCommands: SidebarFolderCommands
     let spaceLifecycle: SidebarSpaceLifecycle
     let browserContext: SidebarBrowserContext
     let isInteractive: Bool
@@ -42,6 +44,8 @@ struct SpacePinnedSectionView: View {
                 selection: selection,
                 pinProjection: pinProjection,
                 pinCommands: pinCommands,
+                pinExecution: pinExecution,
+                folderCommands: folderCommands,
                 spaceLifecycle: spaceLifecycle,
                 browserContext: browserContext,
                 isInteractive: isInteractive,
@@ -133,7 +137,9 @@ private struct SpacePinnedSectionContentView: View {
     let inventory: SidebarSpaceInventorySnapshot
     let selection: SidebarWindowSelectionQuery
     let pinProjection: SidebarPinFolderProjection
-    let pinCommands: SidebarPinFolderCommands
+    let pinCommands: SidebarPinCommands
+    let pinExecution: SidebarPinExecutionCommands
+    let folderCommands: SidebarFolderCommands
     let spaceLifecycle: SidebarSpaceLifecycle
     let browserContext: SidebarBrowserContext
     let isInteractive: Bool
@@ -176,6 +182,8 @@ private struct SpacePinnedSectionContentView: View {
             selection: selection,
             pinProjection: pinProjection,
             pinCommands: pinCommands,
+            pinExecution: pinExecution,
+            folderCommands: folderCommands,
             spaceLifecycle: spaceLifecycle,
             windowState: windowState,
             themeContext: themeContext,
@@ -192,6 +200,8 @@ private struct SpacePinnedSectionContentView: View {
                     selection: selection,
                     pinProjection: pinProjection,
                     pinCommands: pinCommands,
+                    pinExecution: pinExecution,
+                    folderCommands: folderCommands,
                     spaceLifecycle: spaceLifecycle,
                     browserContext: browserContext,
                     isInteractive: isInteractive,

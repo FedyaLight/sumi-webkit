@@ -11,7 +11,7 @@ final class HistoryNavigationTests: XCTestCase {
 
         browserManager.historyBundle.historyNavigationOwner.openHistoryTab(in: windowState)
 
-        let historyTabs = browserManager.tabManager.regularTabCollectionOwner.tabs(in: space).filter(\.representsSumiHistorySurface)
+        let historyTabs = browserManager.regularTabCollectionOwner.tabs(in: space).filter(\.representsSumiHistorySurface)
         XCTAssertEqual(historyTabs.count, 1)
         XCTAssertEqual(
             historyTabs.first?.url,
@@ -40,12 +40,12 @@ final class HistoryNavigationTests: XCTestCase {
 
         browserManager.historyBundle.historyNavigationOwner.openHistoryTab(in: windowState)
         let firstHistoryTab = try XCTUnwrap(
-            browserManager.tabManager.regularTabCollectionOwner.tabs(in: space).first(where: \.representsSumiHistorySurface)
+            browserManager.regularTabCollectionOwner.tabs(in: space).first(where: \.representsSumiHistorySurface)
         )
 
         browserManager.historyBundle.historyNavigationOwner.openHistoryTab(selecting: .older, in: windowState)
 
-        let historyTabs = browserManager.tabManager.regularTabCollectionOwner.tabs(in: space).filter(\.representsSumiHistorySurface)
+        let historyTabs = browserManager.regularTabCollectionOwner.tabs(in: space).filter(\.representsSumiHistorySurface)
         XCTAssertEqual(historyTabs.count, 1)
         XCTAssertEqual(historyTabs.first?.id, firstHistoryTab.id)
         XCTAssertEqual(
@@ -141,8 +141,8 @@ final class HistoryNavigationTests: XCTestCase {
     }
 
     private func makeHarness() -> (BrowserManager, WindowRegistry, BrowserWindowState, Space) {
-        let browserManager = BrowserManager()
         let windowRegistry = WindowRegistry()
+        let browserManager = BrowserManager(windowRegistry: windowRegistry)
         let profile = Profile(name: "Primary")
         let space = Space(name: "Primary", profileId: profile.id)
         let windowState = BrowserWindowState()
@@ -150,11 +150,12 @@ final class HistoryNavigationTests: XCTestCase {
         browserManager.profileManager.profiles = [profile]
         browserManager.currentProfile = profile
         browserManager.historyManager.switchProfile(profile.id)
-        browserManager.windowRegistry = windowRegistry
-        browserManager.tabManager.spaceStateOwner.replaceSpaces([space])
-        browserManager.tabManager.spaceStateOwner.replaceCurrentSpace(space)
+        browserManager.spaceStateOwner.replaceSpaces([space])
+        browserManager.spaceStateOwner.replaceCurrentSpace(space)
 
-        windowState.tabManager = browserManager.tabManager
+        browserManager.tabResidenceAuthority.establishResidenceSession(
+            on: windowState
+        )
         windowState.currentSpaceId = space.id
         windowState.currentProfileId = profile.id
 

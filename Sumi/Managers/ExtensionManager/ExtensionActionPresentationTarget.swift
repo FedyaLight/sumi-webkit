@@ -63,6 +63,24 @@ struct ExtensionActionPresentationChange: Equatable {
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionActionPresentationQuery {
+    private enum ResidenceSource {
+        case attachment(ExtensionBrowserAttachmentAuthority)
+        case exact(BrowserTabResidenceAuthority)
+
+        @MainActor
+        func containsExact(
+            _ tab: Tab,
+            in window: BrowserWindowState
+        ) -> Bool {
+            switch self {
+            case .attachment(let attachment):
+                attachment.containsExactResidence(tab, in: window)
+            case .exact(let residences):
+                residences.containsExact(tab, in: window)
+            }
+        }
+    }
+
     struct ContextBinding {
         let context: WKWebExtensionContext
         let receipt: ExtensionContextBindingReceipt
@@ -89,6 +107,7 @@ final class ExtensionActionPresentationQuery {
     private let windowRegistrationReceipt: WindowRegistrationReceipt
     private let registeredWindow: RegisteredWindow
     private let allWindows: AllWindows
+    private let residenceSource: ResidenceSource
 
     init(
         contextBindings: @escaping ContextBindings,
@@ -96,7 +115,8 @@ final class ExtensionActionPresentationQuery {
         stableAdapter: @escaping StableAdapter,
         windowRegistrationReceipt: @escaping WindowRegistrationReceipt,
         registeredWindow: @escaping RegisteredWindow,
-        allWindows: @escaping AllWindows
+        allWindows: @escaping AllWindows,
+        attachment: ExtensionBrowserAttachmentAuthority
     ) {
         self.contextBindings = contextBindings
         self.currentContext = currentContext
@@ -104,7 +124,28 @@ final class ExtensionActionPresentationQuery {
         self.windowRegistrationReceipt = windowRegistrationReceipt
         self.registeredWindow = registeredWindow
         self.allWindows = allWindows
+        residenceSource = .attachment(attachment)
     }
+
+    #if DEBUG
+        init(
+            contextBindings: @escaping ContextBindings,
+            currentContext: @escaping CurrentContext,
+            stableAdapter: @escaping StableAdapter,
+            windowRegistrationReceipt: @escaping WindowRegistrationReceipt,
+            registeredWindow: @escaping RegisteredWindow,
+            allWindows: @escaping AllWindows,
+            residences: BrowserTabResidenceAuthority
+        ) {
+            self.contextBindings = contextBindings
+            self.currentContext = currentContext
+            self.stableAdapter = stableAdapter
+            self.windowRegistrationReceipt = windowRegistrationReceipt
+            self.registeredWindow = registeredWindow
+            self.allWindows = allWindows
+            residenceSource = .exact(residences)
+        }
+    #endif
 
     func target(
         extensionID: String,
@@ -193,20 +234,7 @@ final class ExtensionActionPresentationQuery {
                   window.currentTabId == tab.id
             else { return false }
 
-            if window.isIncognito {
-                return window.containsEphemeralTab(ifIdentical: tab)
-            }
-            if let entry = window.tabManager?.liveShortcutTabs.entry(containing: tab) {
-                return entry.windowId == window.id
-            }
-            guard let spaceID = tab.spaceId,
-                  window.currentSpaceId == spaceID,
-                  let tabs = window.tabManager
-            else { return false }
-            return tabs.regularTabCollectionOwner.containsIdentical(
-                tab,
-                in: spaceID
-            )
+            return residenceSource.containsExact(tab, in: window)
         }
         return claimingWindows.count == 1 && claimingWindows[0] === targetWindow
     }

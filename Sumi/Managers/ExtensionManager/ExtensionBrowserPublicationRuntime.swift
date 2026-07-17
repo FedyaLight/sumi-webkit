@@ -23,8 +23,14 @@ struct ExtensionBrowserPublicationRuntime {
     func closeWindow(_ window: BrowserWindowState) { events.closeWindow(window) }
     func focusWindow(_ window: BrowserWindowState) { _ = events.focus(window) }
 
-    func switchProfile(_ profile: Profile) {
-        profiles.switchProfile(profileID: profile.id)
+    func switchProfile(
+        _ profile: Profile,
+        mutationLease: ProfileReferenceMutationLease? = nil
+    ) {
+        profiles.switchProfile(
+            profileID: profile.id,
+            mutationLease: mutationLease
+        )
     }
 
     func activateTab(_ tab: Tab, previous: Tab?) {

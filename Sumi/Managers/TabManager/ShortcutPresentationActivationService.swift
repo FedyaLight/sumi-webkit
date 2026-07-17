@@ -45,25 +45,6 @@ final class ShortcutPresentationActivationService: ShortcutPresentationActivatin
         self.structuralLookup = structuralLookup
     }
 
-    convenience init(tabManager: TabManager) {
-        let registry = tabManager.liveShortcutTabs
-        let membership = tabManager.tabCollectionMembershipOwner
-        self.init(
-            planner: ShortcutPresentationActivationPlanner(
-                pins: tabManager.shortcutPinCollectionStateOwner,
-                registry: registry,
-                resolution: tabManager.shortcutPinRuntimeResolutionOwner,
-                freshTabs: ShortcutFreshTabFactory(tabManager: tabManager),
-                membership: membership
-            ),
-            committer: ShortcutPresentationActivationCommitter(
-                registry: registry,
-                membership: membership
-            ),
-            structuralLookup: tabManager.structuralLookupCoordinator
-        )
-    }
-
     func activate(
         pinID: UUID,
         in windowID: UUID,

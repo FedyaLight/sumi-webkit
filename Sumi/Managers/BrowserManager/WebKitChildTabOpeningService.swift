@@ -6,26 +6,17 @@ import WebKit
 @MainActor
 final class WebKitChildTabOpeningService: WebKitChildTabOpening {
     private let sources: PhysicalWebViewSourceResolver
-    private weak var tabs: TabManager?
-    private weak var placement: (any AuxiliaryTrackedWebViewPlacing)?
-    private let selection: BrowserTabSelectionCommand
-    private weak var notifications: (any BackgroundTabOpenedNotifying)?
-    private weak var extensionTabs: (any ExtensionCreatedTabRegistering)?
+    private let creation: WebKitChildTabCreationTransaction
+    private let settlement: WebKitChildTabSettlementTransaction
 
     init(
         sources: PhysicalWebViewSourceResolver,
-        tabs: TabManager,
-        placement: any AuxiliaryTrackedWebViewPlacing,
-        selection: BrowserTabSelectionCommand,
-        notifications: any BackgroundTabOpenedNotifying,
-        extensionTabs: any ExtensionCreatedTabRegistering
+        creation: WebKitChildTabCreationTransaction,
+        settlement: WebKitChildTabSettlementTransaction
     ) {
         self.sources = sources
-        self.tabs = tabs
-        self.placement = placement
-        self.selection = selection
-        self.notifications = notifications
-        self.extensionTabs = extensionTabs
+        self.creation = creation
+        self.settlement = settlement
     }
 
     func open(
@@ -37,105 +28,25 @@ final class WebKitChildTabOpeningService: WebKitChildTabOpening {
     ) -> WKWebView? {
         guard let source = sources.resolve(sourceWebView),
               configuration.websiteDataStore === source.dataStore,
-              let tabs,
-              let placement,
-              isExtensionOriginated == false || extensionTabs != nil
+              let admission = settlement.admit(
+                  isExtensionOriginated: isExtensionOriginated
+              ),
+              let prepared = creation.prepare(
+                  from: source,
+                  requestURL: requestURL,
+                  selected: selected
+              )
         else {
             return nil
         }
-
-        let child: Tab
-        let residence: WebKitChildTabResidence
-        if source.residence == .privateEphemeral {
-            guard source.window.isIncognito,
-                  source.window.ephemeralProfile === source.executionProfile,
-                  let blankURL = URL(string: "about:blank")
-            else {
-                return nil
-            }
-            let previousTabID = source.window.currentTabId
-            child = tabs.ephemeralLifecycleOwner.createEphemeralTab(
-                url: requestURL ?? blankURL,
-                in: source.window,
-                profile: source.executionProfile
-            )
-            child.isPopupHost = true
-            residence = .ephemeral(previousTabID: previousTabID)
-            if selected == false {
-                source.window.currentTabId = previousTabID
-            }
-        } else {
-            guard source.window.isIncognito == false,
-                  source.window.currentSpaceId == source.presentationSpace.id,
-                  source.window.currentProfileId
-                    == source.presentationProfile.id,
-                  source.presentationSpace.profileId
-                    == source.presentationProfile.id,
-                  tabs.spaceStateOwner.space(
-                      with: source.presentationSpace.id
-                  ) === source.presentationSpace
-            else {
-                return nil
-            }
-            let insertionIndex = tabs.regularTabCollectionOwner
-                .childInsertionIndex(
-                    openedFrom: source.tab,
-                    in: source.presentationSpace
-                )
-            child = tabs.regularTabLifecycleOwner.createPopupTab(
-                in: source.presentationSpace,
-                activate: false,
-                executionProfileID: source.executionProfile.id,
-                regularInsertionIndex: insertionIndex
-            )
-            residence = .regular(spaceID: source.presentationSpace.id)
-        }
-
-        if source.residence == .privateEphemeral {
-            child.profileId = source.executionProfile.id
-        }
-        child.visitedLinkStore.applyStore(
-            to: configuration,
-            for: source.executionProfile
+        return settlement.commit(
+            prepared,
+            admission: admission,
+            configuration: configuration,
+            requestURL: requestURL,
+            source: source,
+            selected: selected,
+            isExtensionOriginated: isExtensionOriginated
         )
-        let childWebView = child.createPopupWebViewFromWebKitConfiguration(
-            configuration,
-            currentURL: requestURL,
-            isExtensionOriginated: isExtensionOriginated,
-            reason: "WebKitChildTabOpeningService.open"
-        )
-        let placementOutcome = placement.registerAuxiliaryTrackedWebView(
-            childWebView,
-            for: child,
-            in: source.window.id
-        )
-        guard placementOutcome.isAccepted else {
-            WebKitChildTabRollback.discard(
-                child,
-                webView: childWebView,
-                residence: residence,
-                sourceWindow: source.window,
-                tabs: tabs
-            )
-            return nil
-        }
-
-        source.window.markWebKitChildWindowAdopted(by: child.id)
-
-        if selected {
-            selection.select(child, in: source.window, loadPolicy: .immediate)
-        } else if isExtensionOriginated == false {
-            notifications?.presentBackgroundTabOpenedNotification(
-                tabId: child.id,
-                in: source.window
-            )
-        }
-        if isExtensionOriginated {
-            extensionTabs?.registerExtensionCreatedTabWithExtensionRuntimeIfLoaded(
-                child,
-                reason: "WebKitChildTabOpeningService.open"
-            )
-        }
-        return childWebView
     }
 }

@@ -4,8 +4,8 @@ import SumiWebRuntime
 import WebKit
 
 /// The single construction seam for browser-owned tabs. Every tab created by
-/// a production `TabManager` starts on the same WebView session repository as
-/// the browser kernel; runtime attachment is no longer responsible for moving
+/// the production tab session starts on the same WebView session repository
+/// as the browser kernel; runtime attachment is no longer responsible for moving
 /// ownership out of a tab-local bootstrap repository.
 @MainActor
 struct TabFactory {

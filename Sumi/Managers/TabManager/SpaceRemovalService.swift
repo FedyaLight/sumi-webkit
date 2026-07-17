@@ -4,55 +4,42 @@ import Foundation
 /// structural collections disappear, and window-local references are repaired.
 @MainActor
 final class SpaceRemovalService {
-    private let state: TabStateStore
-    private let persistence: TabStructuralPersistenceService
     private let transactions: TabStructuralLookupCoordinator
     private let contentRetirement: SpaceContentRetirementService
     private let windowStates: DeletedSpaceWindowStateReconciler
-    private let announceChange: @MainActor () -> Void
+    private let catalog: SpaceRemovalCatalogCommitter
 
     init(
-        state: TabStateStore,
-        persistence: TabStructuralPersistenceService,
         transactions: TabStructuralLookupCoordinator,
         contentRetirement: SpaceContentRetirementService,
         windowStates: DeletedSpaceWindowStateReconciler,
-        announceChange: @escaping @MainActor () -> Void
+        catalog: SpaceRemovalCatalogCommitter
     ) {
-        self.state = state
-        self.persistence = persistence
         self.transactions = transactions
         self.contentRetirement = contentRetirement
         self.windowStates = windowStates
-        self.announceChange = announceChange
+        self.catalog = catalog
     }
 
     func removeSpace(_ spaceId: UUID) {
         var preparedRetirement: PreparedSpaceContentRetirement?
         var changedWindows: [BrowserWindowState] = []
         transactions.withTransaction {
-            guard state.spaces.count > 1,
-                  let index = state.spaces.index(of: spaceId) else {
+            guard let index = catalog.removalIndex(for: spaceId) else {
                 return
             }
 
-            let runtime = windowStates.runtimeLease()
-            guard let plan = contentRetirement.plan(
+            guard let runtime = windowStates.runtimeLease(),
+                  let plan = contentRetirement.plan(
                 spaceId: spaceId,
                 using: runtime
-            ), let retirement = contentRetirement.commit(plan) else { return }
-            preparedRetirement = retirement
-            persistence.markSpaceStructurallyDeleted(spaceId)
-
-            announceChange()
-            _ = state.spaces.remove(at: index)
-            persistence.markAllSpacesStructurallyDirty()
-            if state.spaces.currentSpaceId == spaceId {
-                state.spaces.replaceCurrentSpace(state.spaces.firstSpace)
+            ), windowStates.accepts(runtime),
+                  let retirement = contentRetirement.commit(plan) else {
+                return
             }
-
+            preparedRetirement = retirement
+            catalog.commitRemoval(spaceID: spaceId, at: index)
             transactions.requestPublish(scope: .space(spaceId, catalog: true))
-            persistence.scheduleStructuralPersistence()
             changedWindows = windowStates.reconcile(
                 retirement.footprint,
                 using: runtime

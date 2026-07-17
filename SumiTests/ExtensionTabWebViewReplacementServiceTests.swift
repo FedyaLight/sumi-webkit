@@ -286,7 +286,7 @@ final class ExtensionTabWebViewReplacementServiceTests: XCTestCase {
     ) {
         let manager = BrowserManager()
         let runtime = manager.testWebViewRuntime()
-        let tab = manager.tabManager.tabFactory.makeTab(
+        let tab = manager.tabFactory.makeTab(
             url: URL(string: "https://example.com/replacement")!,
             loadsCachedFaviconOnInit: false
         )

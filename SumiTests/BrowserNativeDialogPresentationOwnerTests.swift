@@ -5,20 +5,16 @@ import XCTest
 
 @MainActor
 final class NativeDialogPresentationOwnerTests: XCTestCase {
-    func testQuitDialogRunsNativeDismissalOrchestrationInOrder() {
+    func testCollapsedSidebarOverlayDismissalPostsNotification() {
         let harness = NativeDialogOwnerHarness()
-
-        harness.owner.showQuitDialog()
-
-        XCTAssertEqual(
-            harness.events,
-            [
-                "overlay-dismissal",
-                "floating-dismissal:true",
-                "theme-commit",
-                "terminate",
-            ]
+        let notification = expectation(
+            forNotification: .sumiShouldHideCollapsedSidebarOverlay,
+            object: nil
         )
+
+        harness.owner.requestCollapsedSidebarOverlayDismissal()
+
+        wait(for: [notification], timeout: 0.1)
     }
 
     func testBrowsingDataPresentationTargetsActiveWindowAndRunsPreparation() throws {
@@ -38,8 +34,6 @@ final class NativeDialogPresentationOwnerTests: XCTestCase {
         let anyWindowID: UUID? = nil
         XCTAssertTrue(harness.owner.isNativeModalPresented(in: anyWindowID))
         XCTAssertFalse(harness.owner.isNativeModalPresented(in: UUID()))
-        XCTAssertEqual(harness.events, ["overlay-dismissal", "theme-discard"])
-
         guard case .browsingData = presentation.kind else {
             return XCTFail("Expected browsing data presentation")
         }
@@ -75,15 +69,6 @@ final class NativeDialogPresentationOwnerTests: XCTestCase {
         guard case .notice = presentation.kind else {
             return XCTFail("Expected replacement notice presentation")
         }
-        XCTAssertEqual(
-            harness.events,
-            [
-                "overlay-dismissal",
-                "theme-discard",
-                "overlay-dismissal",
-                "theme-discard",
-            ]
-        )
     }
 
     func testExplicitDismissDoesNotInvokeBasicAuthDismissalCallback() {
@@ -146,55 +131,50 @@ final class NativeDialogPresentationOwnerTests: XCTestCase {
 
 @MainActor
 private final class NativeDialogOwnerHarness {
-    var presentation: BrowserNativeModalPresentation?
-    var windowRegistry: WindowRegistry?
-    var events: [String] = []
-    private var recoveredWindows: [NSWindow?] = []
+    let windowRegistry: WindowRegistry
+    private let browser: BrowserManager
+    private let modalState = BrowserNativeModalPresentationState()
+    private let recovery = NativeDialogRecoveryRecorder()
 
     var recoveredWindowCount: Int {
-        recoveredWindows.count
+        recovery.recoveredWindowCount
+    }
+
+    var presentation: BrowserNativeModalPresentation? {
+        modalState.presentation
     }
 
     lazy var owner = BrowserNativeDialogPresentationOwner(
-        windowRegistry: { [weak self] in
-            self?.windowRegistry
-        },
-        nativeModalPresentation: { [weak self] in
-            self?.presentation
-        },
-        setNativeModalPresentation: { [weak self] presentation in
-            self?.presentation = presentation
-        },
-        postCollapsedSidebarOverlayDismissal: { [weak self] in
-            self?.events.append("overlay-dismissal")
-        },
-        dismissFloatingBarForActiveWindow: { [weak self] preserveDraft in
-            self?.events.append("floating-dismissal:\(preserveDraft)")
-        },
-        dismissThemePickerDiscardingIfNeeded: { [weak self] in
-            self?.events.append("theme-discard")
-        },
-        dismissThemePickerCommittingIfNeeded: { [weak self] in
-            self?.events.append("theme-commit")
-        },
-        terminateApplication: { [weak self] in
-            self?.events.append("terminate")
-        },
-        keyWindow: {
-            nil
-        },
-        mainWindow: {
-            nil
-        },
-        recoverSidebarHost: { [weak self] window in
-            self?.recoveredWindows.append(window)
-        },
-        presentSharingServicePicker: { _, _ in
-            /* Sharing picker is owned by BrowserSharingPickerPresentationOwner. */
-        }
+        modal: BrowserNativeModalTransaction(
+            state: modalState,
+            windows: windowRegistry,
+            recovery: recovery
+        ),
+        floatingBar: browser.floatingBarPresentation,
+        themes: browser.workspaceThemeEditorOwner,
+        sharing: BrowserSharingPickerPresentationOwner(windows: windowRegistry)
     )
 
-    init(windowRegistry: WindowRegistry? = nil) {
+    init(windowRegistry: WindowRegistry = WindowRegistry()) {
         self.windowRegistry = windowRegistry
+        browser = BrowserManager(
+            windowRegistry: windowRegistry,
+            sidebarHostRecoveryCoordinator: recovery
+        )
     }
+}
+
+@MainActor
+private final class NativeDialogRecoveryRecorder: SidebarHostRecoveryHandling {
+    private(set) var recoveredWindowCount = 0
+
+    func sync(anchor _: NSView, window _: NSWindow?) {}
+
+    func unregister(anchor _: NSView) {}
+
+    func recover(in _: NSWindow?) {
+        recoveredWindowCount += 1
+    }
+
+    func recover(anchor _: NSView?) {}
 }

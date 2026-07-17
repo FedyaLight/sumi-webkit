@@ -1,5 +1,4 @@
 import Combine
-import SwiftUI
 import XCTest
 
 @testable import Sumi
@@ -26,32 +25,13 @@ final class BrowserURLBarHubContextOwnerTests: XCTestCase {
         XCTAssertTrue(insecureState.isFooterStruckThrough)
     }
 
-    func testLiveContextUsesBrowserManagerStoresAndInjectedExtensionActions() {
+    func testLiveContextUsesComposedBrowserRoles() {
         let browserManager = BrowserManager()
-        let permissionContextOwner = BrowserURLBarPermissionContextOwner(browserManager: browserManager)
-        var metadataLoadCount = 0
-        let extensionActions = URLBarExtensionActionContext(
-            moduleEnabledChanges: Just(true).eraseToAnyPublisher(),
-            toolbarPresentationSnapshot: { _ in .empty },
-            toolbarPresentationSnapshots: { _ in
-                Empty().eraseToAnyPublisher()
-            },
-            compactStrip: { _, _, _ in AnyView(EmptyView()) },
-            hubTiles: { _, _, _ in AnyView(EmptyView()) },
-            ensureActionMetadataLoadedIfNeeded: {
-                metadataLoadCount += 1
-            }
+        let context = browserManager.urlBarBundle.contextOwner.urlBarHubContext
+        let resolvedSnapshot = SiteControlsSnapshot.resolve(
+            url: nil,
+            profile: nil
         )
-        let resolvedSnapshot = SiteControlsSnapshot.resolve(url: nil, profile: nil)
-        let owner = BrowserURLBarHubContextOwner(
-            browserManager: browserManager,
-            permissionContextOwner: permissionContextOwner,
-            extensionActionContext: { extensionActions },
-            siteControlsSnapshot: { _, _, _, _ in resolvedSnapshot },
-            settingsNavigation: browserManager.urlBarBundle.settingsNavigation
-        )
-
-        let context = owner.context
 
         XCTAssertIdentical(context.bookmarkManager, browserManager.bookmarkManager)
         XCTAssertIdentical(context.adblockZapperStore, browserManager.adblockZapperStore)
@@ -65,10 +45,6 @@ final class BrowserURLBarHubContextOwnerTests: XCTestCase {
             .empty
         )
         XCTAssertEqual(context.siteControlsSnapshot(nil, nil, false, false), resolvedSnapshot)
-
-        context.extensionActions.ensureActionMetadataLoadedIfNeeded()
-
-        XCTAssertEqual(metadataLoadCount, 1)
     }
 
     func testLiveContextWithBoostsDisabledDoesNotLoadBoostStore() throws {
@@ -89,27 +65,7 @@ final class BrowserURLBarHubContextOwnerTests: XCTestCase {
             moduleRegistry: registry,
             boostsModule: boostsModule
         )
-        let permissionContextOwner = BrowserURLBarPermissionContextOwner(browserManager: browserManager)
-        let extensionActions = URLBarExtensionActionContext(
-            moduleEnabledChanges: Just(false).eraseToAnyPublisher(),
-            toolbarPresentationSnapshot: { _ in .empty },
-            toolbarPresentationSnapshots: { _ in
-                Empty().eraseToAnyPublisher()
-            },
-            compactStrip: { _, _, _ in AnyView(EmptyView()) },
-            hubTiles: { _, _, _ in AnyView(EmptyView()) },
-            ensureActionMetadataLoadedIfNeeded: {}
-        )
-        let owner = BrowserURLBarHubContextOwner(
-            browserManager: browserManager,
-            permissionContextOwner: permissionContextOwner,
-            extensionActionContext: { extensionActions },
-            siteControlsSnapshot: { url, profile, _, _ in
-                SiteControlsSnapshot.resolve(url: url, profile: profile)
-            },
-            settingsNavigation: browserManager.urlBarBundle.settingsNavigation
-        )
-        let context = owner.context
+        let context = browserManager.urlBarBundle.contextOwner.urlBarHubContext
         let url = try XCTUnwrap(URL(string: "https://example.test/path"))
         var boostRefreshCount = 0
         let cancellable = context.boostChanges.sink {

@@ -86,6 +86,7 @@ final class ExtensionBrowserAttachmentAuthority {
 
     func retireCurrentAttachment() {
         guard case .attached(let attachment) = state else { return }
+        attachment.lifetime.browserRoutes.retire()
         state = .retired(lastGeneration: attachment.receipt.generation)
     }
 
@@ -240,6 +241,14 @@ final class ExtensionBrowserAttachmentAuthority {
 
     func allRegisteredWindows() -> [BrowserWindowState] {
         attachedLifetime?.bridge.windows.allExtensionWindowStates ?? []
+    }
+
+    func containsExactResidence(
+        _ tab: Tab,
+        in window: BrowserWindowState
+    ) -> Bool {
+        guard let lifetime = attachedLifetime else { return false }
+        return lifetime.bridge.tabResidences.containsExact(tab, in: window)
     }
 
     private var attachedLifetime: ExtensionAttachedBrowserRuntime? {

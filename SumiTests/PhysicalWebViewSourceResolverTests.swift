@@ -7,8 +7,8 @@ import XCTest
 @MainActor
 final class PhysicalWebViewSourceResolverTests: XCTestCase {
     func testPrivateSourceRequiresExactManagedEphemeralProfileLease() throws {
-        let browser = try makeBrowser()
         let registry = WindowRegistry()
+        let browser = try makeBrowser(windowRegistry: registry)
         let window = BrowserWindowState()
         let profile = browser.profileManager.createEphemeralProfile(
             for: window.id
@@ -39,8 +39,8 @@ final class PhysicalWebViewSourceResolverTests: XCTestCase {
     }
 
     func testPrivateSourceAcceptsExplicitlySharedChildWindowLease() throws {
-        let browser = try makeBrowser()
         let registry = WindowRegistry()
+        let browser = try makeBrowser(windowRegistry: registry)
         let sourceWindowID = UUID()
         let childWindow = BrowserWindowState()
         let profile = browser.profileManager.createEphemeralProfile(
@@ -82,8 +82,8 @@ final class PhysicalWebViewSourceResolverTests: XCTestCase {
 
     func testPrivateSourceRejectsAnotherWindowsUnsharedLeaseWithoutMutation()
         throws {
-        let browser = try makeBrowser()
         let registry = WindowRegistry()
+        let browser = try makeBrowser(windowRegistry: registry)
         let leaseWindowID = UUID()
         let counterfeitWindow = BrowserWindowState()
         let profile = browser.profileManager.createEphemeralProfile(
@@ -124,8 +124,8 @@ final class PhysicalWebViewSourceResolverTests: XCTestCase {
     }
 
     func testPrivateSourceRejectsPersistentProfileWithoutMutation() throws {
-        let browser = try makeBrowser()
         let registry = WindowRegistry()
+        let browser = try makeBrowser(windowRegistry: registry)
         let window = BrowserWindowState()
         let profile = Profile(name: "Persistent")
         browser.profileManager.profiles = [profile]
@@ -159,8 +159,8 @@ final class PhysicalWebViewSourceResolverTests: XCTestCase {
     }
 
     func testReceiptBecomesStaleWhenExactTrackedSlotIsReplaced() throws {
-        let browser = try makeBrowser()
         let registry = WindowRegistry()
+        let browser = try makeBrowser(windowRegistry: registry)
         let window = BrowserWindowState()
         let profile = browser.profileManager.createEphemeralProfile(
             for: window.id
@@ -197,7 +197,6 @@ final class PhysicalWebViewSourceResolverTests: XCTestCase {
         window: BrowserWindowState,
         profile: Profile
     ) throws -> PrivatePhysicalSourceFixture {
-        browser.windowRegistry = registry
         let space = Space(name: "Private", profileId: profile.id)
         space.isEphemeral = true
         window.isIncognito = true
@@ -205,10 +204,10 @@ final class PhysicalWebViewSourceResolverTests: XCTestCase {
         window.replaceEphemeralSpaces([space])
         window.currentProfileId = profile.id
         window.currentSpaceId = space.id
-        window.tabManager = browser.tabManager
+        browser.tabResidenceAuthority.establishResidenceSession(on: window)
         registry.register(window)
 
-        let tab = browser.tabManager.ephemeralLifecycleOwner.createEphemeralTab(
+        let tab = browser.ephemeralLifecycleOwner.createEphemeralTab(
             url: try XCTUnwrap(URL(string: "https://private.example")),
             in: window,
             profile: profile
@@ -221,7 +220,13 @@ final class PhysicalWebViewSourceResolverTests: XCTestCase {
         )
         let resolver = PhysicalWebViewSourceResolver(
             ownership: browser.testWebViewRuntime().ownershipQuery,
-            tabs: browser.tabManager,
+            sourceContexts: BrowserWindowSourceContextResolver(
+                spaces: browser.spaceStateOwner,
+                regularTabs: browser.regularTabCollectionOwner,
+                shortcutTabs: browser.liveShortcutTabs
+            ),
+            pins: browser.shortcutPinCollectionStateOwner,
+            shortcutResolution: browser.shortcutPinRuntimeResolutionOwner,
             profiles: browser.profileManager,
             registry: { [weak registry] in registry }
         )
@@ -246,8 +251,11 @@ final class PhysicalWebViewSourceResolverTests: XCTestCase {
         return webView
     }
 
-    private func makeBrowser() throws -> BrowserManager {
+    private func makeBrowser(
+        windowRegistry: WindowRegistry
+    ) throws -> BrowserManager {
         BrowserManager(
+            windowRegistry: windowRegistry,
             startupPersistence: BrowserManagerStartupPersistence(
                 container: try ModelContainer(
                     for: SumiStartupPersistence.schema,

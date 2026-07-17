@@ -57,24 +57,27 @@ final class EmptySplitPlaceholderFactory {
 
 /// Creates and resolves the temporary blank member used by the “add split”
 /// command. It composes exact creation, insertion, activation, and session
-/// participants and retains no TabManager locator.
+/// participants and retains no composition-root locator.
 @MainActor
 final class EmptySplitService {
     private let placeholders: EmptySplitPlaceholderFactory
     private let insertion: SplitInsertionService
     private let activations: ShortcutPresentationActivationService
     private let session: EmptySplitSession
+    private let replacements: EmptySplitReplacementService
 
     init(
         placeholders: EmptySplitPlaceholderFactory,
         insertion: SplitInsertionService,
         activations: ShortcutPresentationActivationService,
-        session: EmptySplitSession
+        session: EmptySplitSession,
+        replacements: EmptySplitReplacementService
     ) {
         self.placeholders = placeholders
         self.insertion = insertion
         self.activations = activations
         self.session = session
+        self.replacements = replacements
     }
 
     @discardableResult
@@ -117,7 +120,7 @@ final class EmptySplitService {
         with tab: Tab,
         in windowState: BrowserWindowState
     ) -> EmptySplitReplacementReceipt? {
-        session.prepareReplacement(with: tab, in: windowState)
+        replacements.prepareReplacement(with: tab, in: windowState)
     }
 
     func cancel(in windowState: BrowserWindowState) -> Bool {

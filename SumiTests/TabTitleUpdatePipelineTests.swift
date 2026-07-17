@@ -186,7 +186,7 @@ final class TabTitleUpdatePipelineTests: XCTestCase {
     func testDeferredForegroundURLTabStartsLoadingPresentationImmediately() {
         let (browserManager, windowState) = makeBrowserSelectionHarness()
 
-        let tab = browserManager.tabLifecycleService.opening.openNewTab(
+        let tab = browserManager.tabOpening.openNewTab(
             url: "https://example.com",
             context: .foreground(windowState: windowState, loadPolicy: .deferred)
         )
@@ -198,7 +198,7 @@ final class TabTitleUpdatePipelineTests: XCTestCase {
     func testDeferredEmptyNewTabDoesNotStartLoadingPresentation() {
         let (browserManager, windowState) = makeBrowserSelectionHarness()
 
-        let tab = browserManager.tabLifecycleService.opening.openNewTab(
+        let tab = browserManager.tabOpening.openNewTab(
             context: .foreground(windowState: windowState, loadPolicy: .deferred)
         )
 
@@ -207,15 +207,14 @@ final class TabTitleUpdatePipelineTests: XCTestCase {
     }
 
     private func makeBrowserSelectionHarness() -> (BrowserManager, BrowserWindowState) {
-        let browserManager = BrowserManager()
         let windowRegistry = WindowRegistry()
+        let browserManager = BrowserManager(windowRegistry: windowRegistry)
         let windowState = BrowserWindowState()
         let space = Space(name: "Primary")
 
-        browserManager.windowRegistry = windowRegistry
-        browserManager.tabManager.spaceStateOwner.replaceSpaces([space])
-        browserManager.tabManager.spaceStateOwner.replaceCurrentSpace(space)
-        windowState.tabManager = browserManager.tabManager
+        browserManager.spaceStateOwner.replaceSpaces([space])
+        browserManager.spaceStateOwner.replaceCurrentSpace(space)
+        browserManager.tabResidenceAuthority.establishResidenceSession(on: windowState)
         windowState.currentSpaceId = space.id
 
         windowRegistry.register(windowState)

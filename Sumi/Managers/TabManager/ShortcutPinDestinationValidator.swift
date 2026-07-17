@@ -5,15 +5,15 @@ import SumiDomain
 /// runtime state. Live-folder policy remains a command-layer concern.
 @MainActor
 final class ShortcutPinDestinationValidator {
-    private let spaceExists: (UUID) -> Bool
-    private let folderSpaceId: (UUID) -> UUID?
+    private let spaces: TabSpaceCollectionStateOwner
+    private let folders: TabFolderCollectionStateOwner
 
     init(
-        spaceExists: @escaping (UUID) -> Bool,
-        folderSpaceId: @escaping (UUID) -> UUID?
+        spaces: TabSpaceCollectionStateOwner,
+        folders: TabFolderCollectionStateOwner
     ) {
-        self.spaceExists = spaceExists
-        self.folderSpaceId = folderSpaceId
+        self.spaces = spaces
+        self.folders = folders
     }
 
     func accepts(
@@ -25,9 +25,11 @@ final class ShortcutPinDestinationValidator {
         case .essential:
             return spaceId == nil && folderId == nil
         case .spacePinned:
-            guard let spaceId, spaceExists(spaceId) else { return false }
+            guard let spaceId, spaces.contains(spaceId: spaceId) else {
+                return false
+            }
             guard let folderId else { return true }
-            return folderSpaceId(folderId) == spaceId
+            return folders.spaceId(for: folderId) == spaceId
         }
     }
 }

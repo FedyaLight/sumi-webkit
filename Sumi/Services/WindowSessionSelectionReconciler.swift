@@ -2,7 +2,8 @@ import Foundation
 
 @MainActor
 struct WindowSessionSelectionReconciler {
-    let tabManager: TabManager
+    let membership: TabCollectionMembershipOwner
+    let tabStore: any ShellSelectionTabStore
     let selectionService: ShellSelectionService
     let selection: any WindowSessionSelectionApplying
     let spaceResolver: WindowSessionSpaceResolver
@@ -11,8 +12,7 @@ struct WindowSessionSelectionReconciler {
         _ windowState: BrowserWindowState
     ) {
         if let currentTabId = windowState.currentTabId,
-           tabManager.tabCollectionMembershipOwner
-            .tab(for: currentTabId) == nil {
+           membership.tab(for: currentTabId) == nil {
             windowState.currentTabId = nil
         }
     }
@@ -44,7 +44,7 @@ struct WindowSessionSelectionReconciler {
                let preferred = selectionService.preferredTabForSpace(
                 currentSpace,
                 in: windowState,
-                tabStore: tabManager.runtimeStore
+                tabStore: tabStore
                ) {
                 apply(preferred, to: windowState)
             } else if let preferred = preferredTabForWindow(windowState) {
@@ -59,7 +59,7 @@ struct WindowSessionSelectionReconciler {
            let preferred = selectionService.preferredTabForSpace(
             currentSpace,
             in: windowState,
-            tabStore: tabManager.runtimeStore
+            tabStore: tabStore
            ) {
             apply(preferred, to: windowState)
         }
@@ -75,7 +75,7 @@ struct WindowSessionSelectionReconciler {
     ) -> Bool {
         selectionService.hasValidCurrentSelection(
             in: windowState,
-            tabStore: tabManager.runtimeStore
+            tabStore: tabStore
         )
     }
 
@@ -84,7 +84,7 @@ struct WindowSessionSelectionReconciler {
     ) -> Tab? {
         selectionService.preferredTabForWindow(
             windowState,
-            tabStore: tabManager.runtimeStore
+            tabStore: tabStore
         )
     }
 

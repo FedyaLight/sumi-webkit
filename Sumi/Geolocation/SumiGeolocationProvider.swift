@@ -1,147 +1,6 @@
 import CoreLocation
-import Darwin
 import Foundation
-import WebKit
-
-@MainActor
-protocol SumiGeolocationProviding: AnyObject {
-    var currentState: SumiGeolocationProviderState { get }
-    var isAvailable: Bool { get }
-
-    func registerAllowedRequest(pageId: String, tabId: String?)
-    func containsAllowedRequest(pageId: String) -> Bool
-    func cancelAllowedRequest(pageId: String)
-    func cancelAllowedRequests(tabId: String)
-
-    @discardableResult
-    func pause() -> SumiGeolocationProviderState
-
-    @discardableResult
-    func resume() -> SumiGeolocationProviderState
-
-    @discardableResult
-    func stop(pageId: String?) -> SumiGeolocationProviderState
-
-    func observeState(
-        _ handler: @escaping @MainActor (SumiGeolocationProviderState) -> Void
-    ) -> SumiGeolocationProviderObservation
-}
-
-@MainActor
-final class SumiGeolocationProviderObservation {
-    private var cancellation: (() -> Void)?
-
-    init(_ cancellation: @escaping () -> Void) {
-        self.cancellation = cancellation
-    }
-
-    func cancel() {
-        cancellation?()
-        cancellation = nil
-    }
-
-    isolated deinit {
-        cancellation?()
-    }
-}
-
-@MainActor
-final class SumiLazyGeolocationProvider: SumiGeolocationProviding {
-    private let makeProvider: () -> (any SumiGeolocationProviding)?
-    private var provider: (any SumiGeolocationProviding)?
-    private var didAttemptProviderCreation = false
-    private var observers: [UUID: @MainActor (SumiGeolocationProviderState) -> Void] = [:]
-    private var providerObservations: [UUID: SumiGeolocationProviderObservation] = [:]
-
-    init(makeProvider: @escaping () -> (any SumiGeolocationProviding)?) {
-        self.makeProvider = makeProvider
-    }
-
-    var currentState: SumiGeolocationProviderState {
-        if let provider {
-            return provider.currentState
-        }
-        return didAttemptProviderCreation ? .unavailable : .inactive
-    }
-
-    var isAvailable: Bool {
-        resolveProvider()?.isAvailable == true
-    }
-
-    func registerAllowedRequest(pageId: String, tabId: String?) {
-        resolveProvider()?.registerAllowedRequest(pageId: pageId, tabId: tabId)
-    }
-
-    func containsAllowedRequest(pageId: String) -> Bool {
-        provider?.containsAllowedRequest(pageId: pageId) == true
-    }
-
-    func cancelAllowedRequest(pageId: String) {
-        provider?.cancelAllowedRequest(pageId: pageId)
-    }
-
-    func cancelAllowedRequests(tabId: String) {
-        provider?.cancelAllowedRequests(tabId: tabId)
-    }
-
-    @discardableResult
-    func pause() -> SumiGeolocationProviderState {
-        provider?.pause() ?? currentState
-    }
-
-    @discardableResult
-    func resume() -> SumiGeolocationProviderState {
-        provider?.resume() ?? currentState
-    }
-
-    @discardableResult
-    func stop(pageId: String?) -> SumiGeolocationProviderState {
-        provider?.stop(pageId: pageId) ?? currentState
-    }
-
-    func observeState(
-        _ handler: @escaping @MainActor (SumiGeolocationProviderState) -> Void
-    ) -> SumiGeolocationProviderObservation {
-        let id = UUID()
-        observers[id] = handler
-        if let provider {
-            providerObservations[id] = provider.observeState(handler)
-        } else {
-            handler(currentState)
-        }
-        return SumiGeolocationProviderObservation { [weak self] in
-            self?.observers.removeValue(forKey: id)
-            self?.providerObservations.removeValue(forKey: id)?.cancel()
-        }
-    }
-
-    private func resolveProvider() -> (any SumiGeolocationProviding)? {
-        if let provider {
-            return provider
-        }
-        guard !didAttemptProviderCreation else {
-            return nil
-        }
-
-        didAttemptProviderCreation = true
-        guard let provider = makeProvider() else {
-            notifyObservers(.unavailable)
-            return nil
-        }
-
-        self.provider = provider
-        for (id, handler) in observers {
-            providerObservations[id] = provider.observeState(handler)
-        }
-        return provider
-    }
-
-    private func notifyObservers(_ state: SumiGeolocationProviderState) {
-        for observer in observers.values {
-            observer(state)
-        }
-    }
-}
+import SumiDomain
 
 @MainActor
 final class SumiGeolocationProvider: NSObject, SumiGeolocationProviding {
@@ -150,6 +9,8 @@ final class SumiGeolocationProvider: NSObject, SumiGeolocationProviding {
     private var providerCallbacks: UnsafeMutablePointer<SumiWKGeolocationProviderV1>?
     private var allowedPageIds: Set<String> = []
     private var tabIdsByPageId: [String: String] = [:]
+    private var profilePartitionIdsByPageId: [String: String] = [:]
+    private var retiredProfileIDs: Set<String> = []
     private var webKitIsUpdating = false
     private var enableHighAccuracy = false
     private var observers: [UUID: @MainActor (SumiGeolocationProviderState) -> Void] = [:]
@@ -196,13 +57,23 @@ final class SumiGeolocationProvider: NSObject, SumiGeolocationProviding {
         providerCallbacks = nil
     }
 
-    func registerAllowedRequest(pageId: String, tabId: String?) {
+    func registerAllowedRequest(
+        pageId: String,
+        tabId: String?,
+        profilePartitionId: String
+    ) {
         let normalizedPageId = Self.normalizedId(pageId)
-        guard !normalizedPageId.isEmpty else { return }
+        let profileID = SumiPermissionKey.normalizedProfilePartitionId(
+            profilePartitionId
+        )
+        guard !normalizedPageId.isEmpty,
+              retiredProfileIDs.contains(profileID) == false
+        else { return }
         allowedPageIds.insert(normalizedPageId)
         if let tabId = tabId.map(Self.normalizedId), !tabId.isEmpty {
             tabIdsByPageId[normalizedPageId] = tabId
         }
+        profilePartitionIdsByPageId[normalizedPageId] = profileID
 
         if currentState == .revoked {
             currentState = .inactive
@@ -218,10 +89,18 @@ final class SumiGeolocationProvider: NSObject, SumiGeolocationProviding {
         return allowedPageIds.contains(normalizedPageId)
     }
 
+    func containsAllowedRequest(profilePartitionId: String) -> Bool {
+        let profileID = SumiPermissionKey.normalizedProfilePartitionId(
+            profilePartitionId
+        )
+        return profilePartitionIdsByPageId.values.contains(profileID)
+    }
+
     func cancelAllowedRequest(pageId: String) {
         let normalizedPageId = Self.normalizedId(pageId)
         allowedPageIds.remove(normalizedPageId)
         tabIdsByPageId.removeValue(forKey: normalizedPageId)
+        profilePartitionIdsByPageId.removeValue(forKey: normalizedPageId)
         if allowedPageIds.isEmpty {
             _ = stop()
         }
@@ -235,6 +114,25 @@ final class SumiGeolocationProvider: NSObject, SumiGeolocationProviding {
         for pageId in matchingPageIds {
             allowedPageIds.remove(pageId)
             tabIdsByPageId.removeValue(forKey: pageId)
+            profilePartitionIdsByPageId.removeValue(forKey: pageId)
+        }
+        if allowedPageIds.isEmpty {
+            _ = stop()
+        }
+    }
+
+    func retireProfile(profilePartitionId: String) {
+        let profileID = SumiPermissionKey.normalizedProfilePartitionId(
+            profilePartitionId
+        )
+        retiredProfileIDs.insert(profileID)
+        let matchingPageIDs = profilePartitionIdsByPageId
+            .filter { $0.value == profileID }
+            .map(\.key)
+        for pageID in matchingPageIDs {
+            allowedPageIds.remove(pageID)
+            tabIdsByPageId.removeValue(forKey: pageID)
+            profilePartitionIdsByPageId.removeValue(forKey: pageID)
         }
         if allowedPageIds.isEmpty {
             _ = stop()
@@ -287,6 +185,7 @@ final class SumiGeolocationProvider: NSObject, SumiGeolocationProviding {
         enableHighAccuracy = false
         allowedPageIds.removeAll()
         tabIdsByPageId.removeAll()
+        profilePartitionIdsByPageId.removeAll()
         currentState = .inactive
         return currentState
     }
@@ -398,116 +297,6 @@ final class SumiGeolocationProvider: NSObject, SumiGeolocationProviding {
 
     private static func normalizedId(_ id: String) -> String {
         id.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-    }
-}
-
-private struct SumiWebKitGeolocationManagerHandle {
-    typealias ContextGetGeolocationManager = @convention(c) (UnsafeRawPointer?) -> UnsafeRawPointer?
-    typealias ManagerSetProvider = @convention(c) (UnsafeRawPointer?, UnsafePointer<SumiWKGeolocationProviderBase>?) -> Void
-    typealias ProviderDidChangePosition = @convention(c) (UnsafeRawPointer?, UnsafeRawPointer?) -> Void
-    typealias ProviderDidFail = @convention(c) (UnsafeRawPointer?) -> Void
-    typealias ProviderDidFailWithMessage = @convention(c) (UnsafeRawPointer?, UnsafeRawPointer?) -> Void
-    typealias PositionCreate = @convention(c) (
-        Double,
-        Double,
-        Double,
-        Double,
-        Bool,
-        Double,
-        Bool,
-        Double,
-        Bool,
-        Double,
-        Bool,
-        Double,
-        Bool,
-        Double
-    ) -> UnsafeRawPointer?
-    typealias WKRelease = @convention(c) (UnsafeRawPointer?) -> Void
-
-    private static let getGeolocationManager: ContextGetGeolocationManager? =
-        symbol(named: "WKContextGetGeolocationManager")
-    private static let setProviderSymbol: ManagerSetProvider? =
-        symbol(named: "WKGeolocationManagerSetProvider")
-    private static let didChangePosition: ProviderDidChangePosition? =
-        symbol(named: "WKGeolocationManagerProviderDidChangePosition")
-    private static let didFail: ProviderDidFail? =
-        symbol(named: "WKGeolocationManagerProviderDidFailToDeterminePosition")
-    private static let didFailWithMessage: ProviderDidFailWithMessage? =
-        symbol(named: "WKGeolocationManagerProviderDidFailToDeterminePositionWithErrorMessage")
-    private static let positionCreate: PositionCreate? =
-        symbol(named: "WKGeolocationPositionCreate_c")
-    private static let release: WKRelease? =
-        symbol(named: "WKRelease")
-
-    private let manager: UnsafeRawPointer
-
-    init?(webKitProcessPoolContext: SumiWebKitProcessPoolContext) {
-        guard let getGeolocationManager = Self.getGeolocationManager,
-              Self.setProviderSymbol != nil,
-              Self.didChangePosition != nil,
-              Self.didFail != nil,
-              Self.positionCreate != nil,
-              let manager = getGeolocationManager(webKitProcessPoolContext.opaquePointer)
-        else {
-            return nil
-        }
-        self.manager = manager
-    }
-
-    func setProvider(_ provider: UnsafePointer<SumiWKGeolocationProviderBase>?) {
-        Self.setProviderSymbol?(manager, provider)
-    }
-
-    func clearProvider() {
-        Self.setProviderSymbol?(manager, nil)
-    }
-
-    func providerDidChangePosition(_ location: CLLocation) {
-        guard let position = Self.positionCreate?(
-            location.timestamp.timeIntervalSinceReferenceDate,
-            location.coordinate.latitude,
-            location.coordinate.longitude,
-            max(location.horizontalAccuracy, 0),
-            false,
-            0,
-            false,
-            0,
-            location.course >= 0,
-            location.course >= 0 ? location.course : 0,
-            location.speed >= 0,
-            location.speed >= 0 ? location.speed : 0,
-            location.floor != nil,
-            location.floor.map { Double($0.level) } ?? 0
-        ) else {
-            providerDidFailToDeterminePosition(.unavailable)
-            return
-        }
-        Self.didChangePosition?(manager, position)
-        Self.release?(position)
-    }
-
-    func providerDidFailToDeterminePosition(_ error: SumiGeolocationProviderError) {
-        if let didFailWithMessage = Self.didFailWithMessage,
-           let message = Self.webKitString(error.reason) {
-            didFailWithMessage(manager, message)
-            Self.release?(message)
-            return
-        }
-        Self.didFail?(manager)
-    }
-
-    private static func webKitString(_ value: String) -> UnsafeRawPointer? {
-        typealias StringCreate = @convention(c) (CFString) -> UnsafeRawPointer?
-        let create: StringCreate? = symbol(named: "WKStringCreateWithCFString")
-        return create?(value as CFString)
-    }
-
-    private static func symbol<T>(named name: String) -> T? {
-        guard let symbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), name) else {
-            return nil
-        }
-        return unsafeBitCast(symbol, to: T.self)
     }
 }
 

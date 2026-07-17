@@ -8,7 +8,8 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
     func testAttachBootstrapsExactRuntimeAndCanonicalState() throws {
         let profileID = UUID()
         let profile = Profile(id: profileID, name: "Default")
-        let tabManager = try makeInMemoryTabManager(attachRuntimePorts: false)
+        let fixture = try AttachmentFixture()
+        let attachment = fixture.attachment
         let space = Space(name: "Current", profileId: nil)
         let canonical = Tab()
         canonical.spaceId = space.id
@@ -21,17 +22,17 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
             launchURL: URL(string: "https://example.com")!,
             title: "Example"
         )
-        tabManager.spaceStateOwner.replaceSpaces([space])
-        tabManager.spaceStateOwner.replaceCurrentSpace(space)
-        tabManager.regularTabCollectionStateOwner.replaceTabsBySpace([
+        fixture.manager.stateStore.spaces.replaceSpaces([space])
+        fixture.manager.stateStore.spaces.replaceCurrentSpace(space)
+        fixture.manager.stateStore.regularTabs.replaceTabsBySpace([
             space.id: [canonical],
         ])
-        tabManager.shortcutPinCollectionStateOwner.replaceAll(
+        fixture.manager.stateStore.shortcutPins.replaceAll(
             pinnedByProfile: [:],
             spacePinnedShortcuts: [:],
             pendingPinnedWithoutProfile: [pendingPin]
         )
-        tabManager.selectionStateOwner.replaceCurrentTab(staleSelection)
+        fixture.manager.stateStore.selection.replaceCurrentTab(staleSelection)
         var preparedTabIDs: [UUID] = []
         var themedSpaceIDs: [UUID] = []
         let runtime = TestRuntimePorts.make(
@@ -48,28 +49,29 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
             }
         )
 
-        let outcome = tabManager.runtimePortsAttachmentOwner.attach(runtime)
+        let outcome = attachment.attach(runtime)
 
         XCTAssertEqual(outcome, .attached)
-        XCTAssertTrue(tabManager.runtimePortConnection.current != nil)
+        XCTAssertTrue(fixture.manager.runtimePortConnection.current != nil)
         XCTAssertEqual(preparedTabIDs, [canonical.id])
-        XCTAssertIdentical(tabManager.selectionStateOwner.currentTab, canonical)
+        XCTAssertIdentical(fixture.manager.stateStore.selection.currentTab, canonical)
         XCTAssertEqual(themedSpaceIDs, [space.id])
         XCTAssertEqual(space.profileId, profileID)
         XCTAssertTrue(
-            tabManager.shortcutPinCollectionStateOwner
+            fixture.manager.stateStore.shortcutPins
                 .pendingPinnedWithoutProfileSnapshot().isEmpty
         )
         XCTAssertEqual(
-            tabManager.shortcutPinCollectionStateOwner
+            fixture.manager.stateStore.shortcutPins
                 .essentialPins(for: profileID).map(\.id),
             [pendingPin.id]
         )
-        tabManager.structuralPersistence.cancelPendingPersistence()
+        fixture.manager.structuralPersistence.cancelPendingPersistence()
     }
 
     func testSecondAttachIsBusyUntilExplicitDetach() throws {
-        let tabManager = try makeInMemoryTabManager(attachRuntimePorts: false)
+        let fixture = try AttachmentFixture()
+        let attachment = fixture.attachment
         var secondPrepareCount = 0
         let first = TestRuntimePorts.make()
         let second = TestRuntimePorts.make(
@@ -79,22 +81,22 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
             )
         )
 
-        XCTAssertTrue(tabManager.runtimePortsAttachmentOwner.canAttach)
+        XCTAssertTrue(attachment.canAttach)
         XCTAssertEqual(
-            tabManager.runtimePortsAttachmentOwner.attach(first),
+            attachment.attach(first),
             .attached
         )
-        XCTAssertFalse(tabManager.runtimePortsAttachmentOwner.canAttach)
+        XCTAssertFalse(attachment.canAttach)
         XCTAssertEqual(
-            tabManager.runtimePortsAttachmentOwner.attach(second),
+            attachment.attach(second),
             .busy
         )
         XCTAssertEqual(secondPrepareCount, 0)
 
-        tabManager.runtimePortsAttachmentOwner.detach()
-        XCTAssertTrue(tabManager.runtimePortsAttachmentOwner.canAttach)
+        attachment.detach()
+        XCTAssertTrue(attachment.canAttach)
         XCTAssertEqual(
-            tabManager.runtimePortsAttachmentOwner.attach(second),
+            attachment.attach(second),
             .attached
         )
     }
@@ -102,7 +104,8 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
     func testProfileQueryReentryCannotMutateAttachmentBeforeLeaseClaim() throws {
         let firstProfileID = UUID()
         let secondProfileID = UUID()
-        let tabManager = try makeInMemoryTabManager(attachRuntimePorts: false)
+        let fixture = try AttachmentFixture()
+        let attachment = fixture.attachment
         var replacementPreparationCount = 0
         let replacement = TestRuntimePorts.make(
             currentProfileId: { secondProfileID },
@@ -120,27 +123,27 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
             currentProfileId: {
                 currentQueryCount += 1
                 reentrantDetachResults.append(
-                    tabManager.runtimePortsAttachmentOwner.detach()
+                    attachment.detach()
                 )
                 reentrantAttachOutcomes.append(
-                    tabManager.runtimePortsAttachmentOwner.attach(replacement)
+                    attachment.attach(replacement)
                 )
                 return firstProfileID
             },
             defaultProfileId: {
                 defaultQueryCount += 1
                 reentrantDetachResults.append(
-                    tabManager.runtimePortsAttachmentOwner.detach()
+                    attachment.detach()
                 )
                 reentrantAttachOutcomes.append(
-                    tabManager.runtimePortsAttachmentOwner.attach(replacement)
+                    attachment.attach(replacement)
                 )
                 return firstProfileID
             }
         )
 
         XCTAssertEqual(
-            tabManager.runtimePortsAttachmentOwner.attach(first),
+            attachment.attach(first),
             .attached
         )
 
@@ -149,10 +152,10 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
         XCTAssertEqual(reentrantDetachResults, [false, false])
         XCTAssertEqual(reentrantAttachOutcomes, [.busy, .busy])
         XCTAssertEqual(replacementPreparationCount, 0)
-        XCTAssertFalse(tabManager.runtimePortsAttachmentOwner.canAttach)
-        XCTAssertTrue(tabManager.runtimePortsAttachmentOwner.detach())
+        XCTAssertFalse(attachment.canAttach)
+        XCTAssertTrue(attachment.detach())
         XCTAssertEqual(
-            tabManager.runtimePortsAttachmentOwner.attach(replacement),
+            attachment.attach(replacement),
             .attached
         )
     }
@@ -160,15 +163,16 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
     func testBusyStructuralStateDefersPinAdoptionWithoutRejectingAttachment() throws {
         let profileID = UUID()
         let profile = Profile(id: profileID, name: "Default")
-        let tabManager = try makeInMemoryTabManager(attachRuntimePorts: false)
+        let fixture = try AttachmentFixture()
+        let attachment = fixture.attachment
         let space = Space(name: "Current", profileId: nil)
         let tab = Tab()
         tab.spaceId = space.id
-        tabManager.spaceStateOwner.replaceSpaces([space])
-        tabManager.regularTabCollectionStateOwner.replaceTabsBySpace([
+        fixture.manager.stateStore.spaces.replaceSpaces([space])
+        fixture.manager.stateStore.regularTabs.replaceTabsBySpace([
             space.id: [tab],
         ])
-        tabManager.shortcutPinCollectionStateOwner.replaceAll(
+        fixture.manager.stateStore.shortcutPins.replaceAll(
             pinnedByProfile: [:],
             spacePinnedShortcuts: [:],
             pendingPinnedWithoutProfile: [ShortcutPin(
@@ -181,7 +185,7 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
             )]
         )
         let structural = try XCTUnwrap(
-            tabManager.structuralCollectionMutationOwner.prepareAggregate()
+            fixture.mutations.prepareAggregate()
         )
         var preparationCount = 0
         let runtime = TestRuntimePorts.make(
@@ -194,24 +198,24 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
             )
         )
 
-        let outcome = tabManager.runtimePortsAttachmentOwner.attach(runtime)
+        let outcome = attachment.attach(runtime)
 
         XCTAssertEqual(outcome, .attached)
         XCTAssertEqual(preparationCount, 1)
-        XCTAssertNotNil(tabManager.runtimePortConnection.current)
+        XCTAssertNotNil(fixture.manager.runtimePortConnection.current)
         XCTAssertEqual(space.profileId, profileID)
         XCTAssertEqual(
-            tabManager.shortcutPinCollectionStateOwner
+            fixture.manager.stateStore.shortcutPins
                 .pendingPinnedWithoutProfileSnapshot().count,
             1
         )
         XCTAssertTrue(structural.rollback())
         XCTAssertTrue(
-            tabManager.shortcutPinCollectionStateOwner
+            fixture.manager.stateStore.shortcutPins
                 .pendingPinnedWithoutProfileSnapshot().isEmpty
         )
         XCTAssertEqual(
-            tabManager.shortcutPinCollectionStateOwner
+            fixture.manager.stateStore.shortcutPins
                 .essentialPins(for: profileID).count,
             1
         )
@@ -227,7 +231,8 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
         let secondSettings = SumiSettingsService(
             userDefaults: TestDefaultsHarness().defaults
         )
-        let tabManager = try makeInMemoryTabManager(attachRuntimePorts: false)
+        let fixture = try AttachmentFixture()
+        let attachment = fixture.attachment
         let space = Space(name: "Current", profileId: firstProfileID)
         let tab = Tab()
         tab.spaceId = space.id
@@ -239,12 +244,12 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
             launchURL: URL(string: "https://example.com")!,
             title: "Example"
         )
-        tabManager.spaceStateOwner.replaceSpaces([space])
-        tabManager.spaceStateOwner.replaceCurrentSpace(space)
-        tabManager.regularTabCollectionStateOwner.replaceTabsBySpace([
+        fixture.manager.stateStore.spaces.replaceSpaces([space])
+        fixture.manager.stateStore.spaces.replaceCurrentSpace(space)
+        fixture.manager.stateStore.regularTabs.replaceTabsBySpace([
             space.id: [tab],
         ])
-        tabManager.shortcutPinCollectionStateOwner.replaceAll(
+        fixture.manager.stateStore.shortcutPins.replaceAll(
             pinnedByProfile: [:],
             spacePinnedShortcuts: [:],
             pendingPinnedWithoutProfile: [pendingPin]
@@ -272,8 +277,8 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
                 prepareTab: { _ in
                     guard didReenter == false else { return }
                     didReenter = true
-                    tabManager.runtimePortsAttachmentOwner.detach()
-                    replacementOutcome = tabManager.runtimePortsAttachmentOwner
+                    attachment.detach()
+                    replacementOutcome = attachment
                         .attach(replacement)
                 }
             ),
@@ -282,7 +287,7 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
             }
         )
 
-        let firstOutcome = tabManager.runtimePortsAttachmentOwner.attach(first)
+        let firstOutcome = attachment.attach(first)
 
         XCTAssertEqual(firstOutcome, .superseded)
         XCTAssertEqual(replacementOutcome, .attached)
@@ -290,25 +295,26 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
         XCTAssertEqual(firstThemeCount, 0)
         XCTAssertIdentical(tab.sumiSettings, secondSettings)
         XCTAssertEqual(space.profileId, firstProfileID)
-        XCTAssertNotNil(tabManager.runtimePortConnection.current)
+        XCTAssertNotNil(fixture.manager.runtimePortConnection.current)
         XCTAssertTrue(
-            tabManager.shortcutPinCollectionStateOwner
+            fixture.manager.stateStore.shortcutPins
                 .essentialPins(for: firstProfileID).isEmpty
         )
         XCTAssertTrue(
-            tabManager.shortcutPinCollectionStateOwner
+            fixture.manager.stateStore.shortcutPins
                 .essentialPins(for: secondProfileID).map(\.id) == [pendingPin.id]
         )
         XCTAssertTrue(
-            tabManager.shortcutPinCollectionStateOwner
+            fixture.manager.stateStore.shortcutPins
                 .pendingPinnedWithoutProfileSnapshot().isEmpty
         )
-        tabManager.structuralPersistence.cancelPendingPersistence()
+        fixture.manager.structuralPersistence.cancelPendingPersistence()
     }
 
     func testPreparationReentryPreparesExpandedMembershipFixedPoint() throws {
         let profileID = UUID()
-        let tabManager = try makeInMemoryTabManager(attachRuntimePorts: false)
+        let fixture = try AttachmentFixture()
+        let attachment = fixture.attachment
         let space = Space(name: "Current", profileId: profileID)
         let first = Tab()
         first.spaceId = space.id
@@ -322,11 +328,11 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
             launchURL: URL(string: "https://example.com")!,
             title: "Pending"
         )
-        tabManager.spaceStateOwner.replaceSpaces([space])
-        tabManager.regularTabCollectionStateOwner.replaceTabsBySpace([
+        fixture.manager.stateStore.spaces.replaceSpaces([space])
+        fixture.manager.stateStore.regularTabs.replaceTabsBySpace([
             space.id: [first],
         ])
-        tabManager.shortcutPinCollectionStateOwner.replaceAll(
+        fixture.manager.stateStore.shortcutPins.replaceAll(
             pinnedByProfile: [:],
             spacePinnedShortcuts: [:],
             pendingPinnedWithoutProfile: [pendingPin]
@@ -341,7 +347,7 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
                 prepareTab: { tab in
                     prepared.append(tab)
                     guard tab === first else { return }
-                    tabManager.structuralCollectionMutationOwner.setTabs(
+                    fixture.mutations.setTabs(
                         [replacement],
                         for: space.id
                     )
@@ -350,7 +356,7 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
         )
 
         XCTAssertEqual(
-            tabManager.runtimePortsAttachmentOwner.attach(runtime),
+            attachment.attach(runtime),
             .attached
         )
         XCTAssertEqual(prepared.count, 2)
@@ -358,21 +364,22 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
         XCTAssertTrue(prepared.contains { $0 === replacement })
         XCTAssertEqual(unloaded.count, 1)
         XCTAssertIdentical(unloaded.first, first)
-        let terminalMembership = tabManager.tabCollectionMembershipOwner
+        let terminalMembership = fixture.membership
             .allTabs()
         XCTAssertEqual(terminalMembership.count, 1)
         XCTAssertIdentical(terminalMembership.first, replacement)
         XCTAssertEqual(
-            tabManager.shortcutPinCollectionStateOwner
+            fixture.manager.stateStore.shortcutPins
                 .essentialPins(for: profileID).map(\.id),
             [pendingPin.id]
         )
-        tabManager.structuralPersistence.cancelPendingPersistence()
+        fixture.manager.structuralPersistence.cancelPendingPersistence()
     }
 
     func testPendingPinReplacementDuringPreparationCommitsCurrentSource() throws {
         let profileID = UUID()
-        let tabManager = try makeInMemoryTabManager(attachRuntimePorts: false)
+        let fixture = try AttachmentFixture()
+        let attachment = fixture.attachment
         let space = Space(name: "Current", profileId: profileID)
         let tab = Tab()
         tab.spaceId = space.id
@@ -392,11 +399,11 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
             launchURL: URL(string: "https://replacement.example")!,
             title: "Replacement"
         )
-        tabManager.spaceStateOwner.replaceSpaces([space])
-        tabManager.regularTabCollectionStateOwner.replaceTabsBySpace([
+        fixture.manager.stateStore.spaces.replaceSpaces([space])
+        fixture.manager.stateStore.regularTabs.replaceTabsBySpace([
             space.id: [tab],
         ])
-        tabManager.shortcutPinCollectionStateOwner.replaceAll(
+        fixture.manager.stateStore.shortcutPins.replaceAll(
             pinnedByProfile: [:],
             spacePinnedShortcuts: [:],
             pendingPinnedWithoutProfile: [original]
@@ -406,7 +413,7 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
             webViewLifecycle: TestRuntimePorts.webViewLifecycle(
                 retirement: .rejecting,
                 prepareTab: { _ in
-                    tabManager.shortcutPinCollectionStateOwner.replaceAll(
+                    fixture.manager.stateStore.shortcutPins.replaceAll(
                         pinnedByProfile: [:],
                         spacePinnedShortcuts: [:],
                         pendingPinnedWithoutProfile: [replacement]
@@ -416,39 +423,40 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
         )
 
         XCTAssertEqual(
-            tabManager.runtimePortsAttachmentOwner.attach(runtime),
+            attachment.attach(runtime),
             .attached
         )
         let adopted = try XCTUnwrap(
-            tabManager.shortcutPinCollectionStateOwner
+            fixture.manager.stateStore.shortcutPins
                 .essentialPins(for: profileID).first
         )
         XCTAssertEqual(adopted.id, replacement.id)
         XCTAssertEqual(adopted.title, replacement.title)
         XCTAssertEqual(adopted.launchURL, replacement.launchURL)
         XCTAssertTrue(
-            tabManager.shortcutPinCollectionStateOwner
+            fixture.manager.stateStore.shortcutPins
                 .pendingPinnedWithoutProfileSnapshot().isEmpty
         )
-        tabManager.structuralPersistence.cancelPendingPersistence()
+        fixture.manager.structuralPersistence.cancelPendingPersistence()
     }
 
     func testSameRegistryReattachInvalidatesPreviousLease() throws {
-        let tabManager = try makeInMemoryTabManager(attachRuntimePorts: false)
+        let fixture = try AttachmentFixture()
+        let attachment = fixture.attachment
         let runtime = TestRuntimePorts.make()
         XCTAssertEqual(
-            tabManager.runtimePortsAttachmentOwner.attach(runtime),
+            attachment.attach(runtime),
             .attached
         )
-        let firstLease = tabManager.runtimePortConnection.captureLease()
+        let firstLease = fixture.manager.runtimePortConnection.captureLease()
 
-        tabManager.runtimePortsAttachmentOwner.detach()
+        attachment.detach()
         XCTAssertEqual(
-            tabManager.runtimePortsAttachmentOwner.attach(runtime),
+            attachment.attach(runtime),
             .attached
         )
 
-        XCTAssertFalse(tabManager.runtimePortConnection.accepts(firstLease))
+        XCTAssertFalse(fixture.manager.runtimePortConnection.accepts(firstLease))
     }
 
     func testThemeReentryStopsStaleSettlementBeforeProfileReconciliation() throws {
@@ -456,10 +464,11 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
         let secondProfileID = UUID()
         let firstProfile = Profile(id: firstProfileID, name: "First")
         let secondProfile = Profile(id: secondProfileID, name: "Second")
-        let tabManager = try makeInMemoryTabManager(attachRuntimePorts: false)
+        let fixture = try AttachmentFixture()
+        let attachment = fixture.attachment
         let space = Space(name: "Current", profileId: nil)
-        tabManager.spaceStateOwner.replaceSpaces([space])
-        tabManager.spaceStateOwner.replaceCurrentSpace(space)
+        fixture.manager.stateStore.spaces.replaceSpaces([space])
+        fixture.manager.stateStore.spaces.replaceCurrentSpace(space)
         let replacement = TestRuntimePorts.make(
             currentProfileId: { secondProfileID },
             defaultProfileId: { secondProfileID },
@@ -474,30 +483,31 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
             syncWorkspaceThemeAcrossWindows: { _, _ in
                 guard didReenter == false else { return }
                 didReenter = true
-                tabManager.runtimePortsAttachmentOwner.detach()
-                replacementOutcome = tabManager.runtimePortsAttachmentOwner
+                attachment.detach()
+                replacementOutcome = attachment
                     .attach(replacement)
             }
         )
 
-        let outcome = tabManager.runtimePortsAttachmentOwner.attach(first)
+        let outcome = attachment.attach(first)
 
         XCTAssertEqual(outcome, .superseded)
         XCTAssertEqual(replacementOutcome, .attached)
         XCTAssertEqual(space.profileId, secondProfileID)
-        tabManager.structuralPersistence.cancelPendingPersistence()
+        fixture.manager.structuralPersistence.cancelPendingPersistence()
     }
 
     func testCommittedPrefixSurvivesRollbackAndRetriesRemainingSpace() throws {
         let profileID = UUID()
         let profile = Profile(id: profileID, name: "Default")
-        let tabManager = try makeInMemoryTabManager(attachRuntimePorts: false)
+        let fixture = try AttachmentFixture().profileView()
+        let attachment = fixture.attachment
         let firstSpace = Space(name: "First", profileId: nil)
         let secondSpace = Space(name: "Second", profileId: nil)
         let tab = Tab()
         tab.spaceId = firstSpace.id
-        tabManager.spaceStateOwner.replaceSpaces([firstSpace, secondSpace])
-        tabManager.regularTabCollectionStateOwner.replaceTabsBySpace([
+        fixture.manager.stateStore.spaces.replaceSpaces([firstSpace, secondSpace])
+        fixture.manager.stateStore.regularTabs.replaceTabsBySpace([
             firstSpace.id: [tab],
         ])
         var models: [any SpaceProfileWebViewReplacementTransaction] = []
@@ -526,12 +536,12 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
         )
 
         XCTAssertEqual(
-            tabManager.runtimePortsAttachmentOwner.attach(runtime),
+            attachment.attach(runtime),
             .attached
         )
         XCTAssertEqual(models.count, 1)
         XCTAssertEqual(preparationCount, 1)
-        XCTAssertNotNil(tabManager.runtimePortConnection.current)
+        XCTAssertNotNil(fixture.manager.runtimePortConnection.current)
 
         try publishCommit(models[0])
         settlements[0](.committed)
@@ -548,9 +558,9 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
         XCTAssertEqual(models.count, 2)
         XCTAssertEqual(firstSpace.profileId, profileID)
         XCTAssertNil(secondSpace.profileId)
-        XCTAssertNotNil(tabManager.runtimePortConnection.current)
+        XCTAssertNotNil(fixture.manager.runtimePortConnection.current)
 
-        tabManager.profileAssignments.spaceAvailability.publish()
+        fixture.availability.publish()
 
         XCTAssertEqual(models.count, 3)
 
@@ -560,19 +570,20 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
         XCTAssertEqual(firstSpace.profileId, profileID)
         XCTAssertEqual(secondSpace.profileId, profileID)
         XCTAssertEqual(preparationCount, 1)
-        XCTAssertNotNil(tabManager.runtimePortConnection.current)
-        tabManager.structuralPersistence.cancelPendingPersistence()
+        XCTAssertNotNil(fixture.manager.runtimePortConnection.current)
+        fixture.manager.structuralPersistence.cancelPendingPersistence()
     }
 
     func testRollbackKeepsAttachmentAndWaitsAfterOneEventDrivenRetry() throws {
         let profileID = UUID()
         let profile = Profile(id: profileID, name: "Default")
-        let tabManager = try makeInMemoryTabManager(attachRuntimePorts: false)
+        let fixture = try AttachmentFixture().profileView()
+        let attachment = fixture.attachment
         let space = Space(name: "Current", profileId: nil)
         let tab = Tab()
         tab.spaceId = space.id
-        tabManager.spaceStateOwner.replaceSpaces([space])
-        tabManager.regularTabCollectionStateOwner.replaceTabsBySpace([
+        fixture.manager.stateStore.spaces.replaceSpaces([space])
+        fixture.manager.stateStore.regularTabs.replaceTabsBySpace([
             space.id: [tab],
         ])
         var models: [any SpaceProfileWebViewReplacementTransaction] = []
@@ -603,7 +614,7 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
         )
 
         XCTAssertEqual(
-            tabManager.runtimePortsAttachmentOwner.attach(runtime),
+            attachment.attach(runtime),
             .attached
         )
         let exactModel = try XCTUnwrap(models.first)
@@ -616,32 +627,33 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
         XCTAssertEqual(models.count, 1)
         XCTAssertEqual(preparationCount, 1)
         XCTAssertNil(space.profileId)
-        XCTAssertNotNil(tabManager.runtimePortConnection.current)
+        XCTAssertNotNil(fixture.manager.runtimePortConnection.current)
 
-        tabManager.profileAssignments.spaceAvailability.publish()
+        fixture.availability.publish()
 
         XCTAssertEqual(models.count, 2)
-        tabManager.profileAssignments.spaceLifecycle.cancelPending(intents[1])
+        fixture.transitionLifecycle.cancelPending(intents[1])
         XCTAssertNil(
-            tabManager.profileAssignments.spaceLifecycle.inFlightProfileID(
+            fixture.transitionLifecycle.inFlightProfileID(
                 for: space.id
             )
         )
         XCTAssertEqual(models.count, 2)
 
-        tabManager.profileAssignments.spaceAvailability.publish()
+        fixture.availability.publish()
 
         XCTAssertEqual(models.count, 3)
-        XCTAssertTrue(tabManager.runtimePortsAttachmentOwner.detach())
-        tabManager.structuralPersistence.cancelPendingPersistence()
+        XCTAssertTrue(attachment.detach())
+        fixture.manager.structuralPersistence.cancelPendingPersistence()
     }
 
     func testDetachConsumesPublishedCommitBeforeLateSettlement() throws {
         let profileID = UUID()
         let profile = Profile(id: profileID, name: "Default")
-        let tabManager = try makeInMemoryTabManager(attachRuntimePorts: false)
+        let fixture = try AttachmentFixture().profileView()
+        let attachment = fixture.attachment
         let space = Space(name: "Current", profileId: nil)
-        tabManager.spaceStateOwner.replaceSpaces([space])
+        fixture.manager.stateStore.spaces.replaceSpaces([space])
         var model: (any SpaceProfileWebViewReplacementTransaction)?
         var settlement: ProfileTransitionService.Settlement?
         let transitions = TestTabWebViewProfileTransitionParticipant(
@@ -666,11 +678,11 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
         )
 
         XCTAssertEqual(
-            tabManager.runtimePortsAttachmentOwner.attach(runtime),
+            attachment.attach(runtime),
             .attached
         )
         XCTAssertEqual(
-            tabManager.profileAssignments.spaceLifecycle.inFlightProfileID(
+            fixture.transitionLifecycle.inFlightProfileID(
                 for: space.id
             ),
             profileID
@@ -684,21 +696,21 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
         staged.publishCommit()
         XCTAssertEqual(space.profileId, profileID)
 
-        XCTAssertTrue(tabManager.runtimePortsAttachmentOwner.detach())
+        XCTAssertTrue(attachment.detach())
 
         XCTAssertNil(
-            tabManager.profileAssignments.spaceLifecycle.inFlightProfileID(
+            fixture.transitionLifecycle.inFlightProfileID(
                 for: space.id
             )
         )
-        XCTAssertNil(tabManager.runtimePortConnection.current)
+        XCTAssertNil(fixture.manager.runtimePortConnection.current)
         let terminalProfileID = space.profileId
 
         try XCTUnwrap(settlement)(.committed)
 
         XCTAssertEqual(space.profileId, terminalProfileID)
         XCTAssertNil(
-            tabManager.profileAssignments.spaceLifecycle.inFlightProfileID(
+            fixture.transitionLifecycle.inFlightProfileID(
                 for: space.id
             )
         )
@@ -707,9 +719,10 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
     func testConflictedReconciliationRemainsOwnedUntilDetachDrainsIt() throws {
         let profileID = UUID()
         let profile = Profile(id: profileID, name: "Default")
-        let tabManager = try makeInMemoryTabManager(attachRuntimePorts: false)
+        let fixture = try AttachmentFixture().profileView()
+        let attachment = fixture.attachment
         let space = Space(name: "Current", profileId: nil)
-        tabManager.spaceStateOwner.replaceSpaces([space])
+        fixture.manager.stateStore.spaces.replaceSpaces([space])
         var model: (any SpaceProfileWebViewReplacementTransaction)?
         var settlement: ProfileTransitionService.Settlement?
         let transitions = TestTabWebViewProfileTransitionParticipant(
@@ -734,7 +747,7 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
         )
 
         XCTAssertEqual(
-            tabManager.runtimePortsAttachmentOwner.attach(runtime),
+            attachment.attach(runtime),
             .attached
         )
         let conflictedModel = try XCTUnwrap(model)
@@ -743,25 +756,26 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
         try XCTUnwrap(settlement)(.conflicted)
 
         XCTAssertNotNil(
-            tabManager.profileAssignments.spaceLifecycle.inFlightProfileID(
+            fixture.transitionLifecycle.inFlightProfileID(
                 for: space.id
             )
         )
-        XCTAssertTrue(tabManager.runtimePortsAttachmentOwner.detach())
+        XCTAssertTrue(attachment.detach())
         XCTAssertNil(
-            tabManager.profileAssignments.spaceLifecycle.inFlightProfileID(
+            fixture.transitionLifecycle.inFlightProfileID(
                 for: space.id
             )
         )
-        XCTAssertNil(tabManager.runtimePortConnection.current)
+        XCTAssertNil(fixture.manager.runtimePortConnection.current)
     }
 
     func testDetachConsumesPublishedRollbackBeforeLateSettlement() throws {
         let profileID = UUID()
         let profile = Profile(id: profileID, name: "Default")
-        let tabManager = try makeInMemoryTabManager(attachRuntimePorts: false)
+        let fixture = try AttachmentFixture().profileView()
+        let attachment = fixture.attachment
         let space = Space(name: "Current", profileId: nil)
-        tabManager.spaceStateOwner.replaceSpaces([space])
+        fixture.manager.stateStore.spaces.replaceSpaces([space])
         var model: (any SpaceProfileWebViewReplacementTransaction)?
         var settlement: ProfileTransitionService.Settlement?
         let transitions = TestTabWebViewProfileTransitionParticipant(
@@ -786,7 +800,7 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
         )
 
         XCTAssertEqual(
-            tabManager.runtimePortsAttachmentOwner.attach(runtime),
+            attachment.attach(runtime),
             .attached
         )
         let rolledBack = try XCTUnwrap(model)
@@ -795,15 +809,15 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
         try rolledBack.rollback()
         rolledBack.publishRollback()
 
-        XCTAssertTrue(tabManager.runtimePortsAttachmentOwner.detach())
+        XCTAssertTrue(attachment.detach())
         XCTAssertNil(space.profileId)
-        XCTAssertNil(tabManager.runtimePortConnection.current)
+        XCTAssertNil(fixture.manager.runtimePortConnection.current)
 
         try XCTUnwrap(settlement)(.rolledBack(.abort(.superseded)))
 
         XCTAssertNil(space.profileId)
         XCTAssertNil(
-            tabManager.profileAssignments.spaceLifecycle.inFlightProfileID(
+            fixture.transitionLifecycle.inFlightProfileID(
                 for: space.id
             )
         )
@@ -812,7 +826,8 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
     func testPostAttachmentTopologyConflictIsDrainedBeforeDetach() throws {
         let profileID = UUID()
         let profile = Profile(id: profileID, name: "Default")
-        let tabManager = try makeInMemoryTabManager(attachRuntimePorts: false)
+        let fixture = try AttachmentFixture().profileView()
+        let attachment = fixture.attachment
         let original = Space(name: "Current", profileId: nil)
         let replacement = Space(
             id: original.id,
@@ -821,8 +836,8 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
         )
         let tab = Tab()
         tab.spaceId = original.id
-        tabManager.spaceStateOwner.replaceSpaces([original])
-        tabManager.regularTabCollectionStateOwner.replaceTabsBySpace([
+        fixture.manager.stateStore.spaces.replaceSpaces([original])
+        fixture.manager.stateStore.regularTabs.replaceTabsBySpace([
             original.id: [tab],
         ])
         let transitions = TestTabWebViewProfileTransitionParticipant(
@@ -830,7 +845,7 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
                 tab.profileAssignment.commit(intent) ? .committed : .stale
             },
             executeSpace: { _, _, _, _, _ in
-                tabManager.spaceStateOwner.replaceSpaces([replacement])
+                fixture.manager.stateStore.spaces.replaceSpaces([replacement])
                 return .deferred
             },
             executePrepared: { _, _, _ in .rejectedUnstaged(.failed) }
@@ -848,35 +863,36 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
         )
 
         XCTAssertEqual(
-            tabManager.runtimePortsAttachmentOwner.attach(runtime),
+            attachment.attach(runtime),
             .attached
         )
         XCTAssertEqual(preparationCount, 1)
         XCTAssertNil(replacement.profileId)
         XCTAssertNotNil(
-            tabManager.profileAssignments.spaceLifecycle.inFlightProfileID(
+            fixture.transitionLifecycle.inFlightProfileID(
                 for: original.id
             )
         )
-        XCTAssertNotNil(tabManager.runtimePortConnection.current)
+        XCTAssertNotNil(fixture.manager.runtimePortConnection.current)
 
-        tabManager.runtimePortsAttachmentOwner.detach()
+        attachment.detach()
 
         XCTAssertNil(
-            tabManager.profileAssignments.spaceLifecycle.inFlightProfileID(
+            fixture.transitionLifecycle.inFlightProfileID(
                 for: original.id
             )
         )
-        XCTAssertNil(tabManager.runtimePortConnection.current)
+        XCTAssertNil(fixture.manager.runtimePortConnection.current)
     }
 
     func testRepositoryTerminalDrainReleasesDeferredWorkBeforeLateSettlement()
         throws {
         let profileID = UUID()
         let profile = Profile(id: profileID, name: "Default")
-        let tabManager = try makeInMemoryTabManager(attachRuntimePorts: false)
+        let fixture = try AttachmentFixture().profileView()
+        let attachment = fixture.attachment
         let space = Space(name: "Current", profileId: nil)
-        tabManager.spaceStateOwner.replaceSpaces([space])
+        fixture.manager.stateStore.spaces.replaceSpaces([space])
         var model: (any SpaceProfileWebViewReplacementTransaction)?
         var settlement: ProfileTransitionService.Settlement?
         let transitions = TestTabWebViewProfileTransitionParticipant(
@@ -901,7 +917,7 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
         )
 
         XCTAssertEqual(
-            tabManager.runtimePortsAttachmentOwner.attach(runtime),
+            attachment.attach(runtime),
             .attached
         )
         let exactModel = try XCTUnwrap(model)
@@ -912,17 +928,17 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
         let terminalProfileID = space.profileId
 
         XCTAssertNil(
-            tabManager.profileAssignments.spaceLifecycle.inFlightProfileID(
+            fixture.transitionLifecycle.inFlightProfileID(
                 for: space.id
             )
         )
-        XCTAssertNotNil(tabManager.runtimePortConnection.current)
+        XCTAssertNotNil(fixture.manager.runtimePortConnection.current)
 
         try XCTUnwrap(settlement)(.committed)
 
         XCTAssertEqual(space.profileId, terminalProfileID)
         XCTAssertNil(
-            tabManager.profileAssignments.spaceLifecycle.inFlightProfileID(
+            fixture.transitionLifecycle.inFlightProfileID(
                 for: space.id
             )
         )
@@ -931,10 +947,11 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
     func testExistingPendingTransitionWakesDeferredAttachmentWork() throws {
         let profileID = UUID()
         let profile = Profile(id: profileID, name: "Default")
-        let tabManager = try makeInMemoryTabManager(attachRuntimePorts: false)
+        let fixture = try AttachmentFixture().profileView()
+        let attachment = fixture.attachment
         let firstSpace = Space(name: "First", profileId: nil)
         let secondSpace = Space(name: "Second", profileId: nil)
-        tabManager.spaceStateOwner.replaceSpaces([firstSpace, secondSpace])
+        fixture.manager.stateStore.spaces.replaceSpaces([firstSpace, secondSpace])
         var models: [any SpaceProfileWebViewReplacementTransaction] = []
         var settlements: [ProfileTransitionService.Settlement] = []
         let transitions = TestTabWebViewProfileTransitionParticipant(
@@ -957,18 +974,18 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
                 profileTransitions: transitions
             )
         )
-        tabManager.runtimePortConnection.attach(runtime)
+        fixture.manager.runtimePortConnection.attach(runtime)
         XCTAssertEqual(
-            tabManager.profileAssignments.spaces.start(
+            fixture.spaceTransitions.start(
                 spaceID: firstSpace.id,
                 profileID: profileID
             ),
             .deferred
         )
-        tabManager.runtimePortConnection.detach()
+        fixture.manager.runtimePortConnection.detach()
 
         XCTAssertEqual(
-            tabManager.runtimePortsAttachmentOwner.attach(runtime),
+            attachment.attach(runtime),
             .attached
         )
         XCTAssertEqual(models.count, 1)
@@ -979,14 +996,14 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
         XCTAssertEqual(firstSpace.profileId, profileID)
         XCTAssertEqual(models.count, 2)
         XCTAssertEqual(
-            tabManager.profileAssignments.spaceLifecycle.inFlightProfileID(
+            fixture.transitionLifecycle.inFlightProfileID(
                 for: secondSpace.id
             ),
             profileID
         )
-        XCTAssertTrue(tabManager.runtimePortsAttachmentOwner.detach())
+        XCTAssertTrue(attachment.detach())
         XCTAssertNil(
-            tabManager.profileAssignments.spaceLifecycle.inFlightProfileID(
+            fixture.transitionLifecycle.inFlightProfileID(
                 for: secondSpace.id
             )
         )
@@ -997,12 +1014,13 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
         let secondProfileID = UUID()
         let firstProfile = Profile(id: firstProfileID, name: "First")
         let secondProfile = Profile(id: secondProfileID, name: "Second")
-        let tabManager = try makeInMemoryTabManager(attachRuntimePorts: false)
+        let fixture = try AttachmentFixture().profileView()
+        let attachment = fixture.attachment
         let space = Space(name: "Current", profileId: nil)
         let tab = Tab()
         tab.spaceId = space.id
-        tabManager.spaceStateOwner.replaceSpaces([space])
-        tabManager.regularTabCollectionStateOwner.replaceTabsBySpace([
+        fixture.manager.stateStore.spaces.replaceSpaces([space])
+        fixture.manager.stateStore.regularTabs.replaceTabsBySpace([
             space.id: [tab],
         ])
 
@@ -1056,9 +1074,9 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
                     return .failed
                 }
                 XCTAssertEqual(space.profileId, firstProfileID)
-                reentrantDetachResult = tabManager.runtimePortsAttachmentOwner
+                reentrantDetachResult = attachment
                     .detach()
-                replacementOutcome = tabManager.runtimePortsAttachmentOwner
+                replacementOutcome = attachment
                     .attach(replacement)
                 settlement(.committed)
                 return .deferred
@@ -1075,7 +1093,7 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
             )
         )
 
-        let firstOutcome = tabManager.runtimePortsAttachmentOwner.attach(first)
+        let firstOutcome = attachment.attach(first)
 
         XCTAssertEqual(firstOutcome, .superseded)
         XCTAssertEqual(reentrantDetachResult, true)
@@ -1084,12 +1102,12 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
         XCTAssertEqual(replacementTransitionCount, 0)
         XCTAssertEqual(space.profileId, firstProfileID)
         XCTAssertNil(
-            tabManager.profileAssignments.spaceLifecycle.inFlightProfileID(
+            fixture.transitionLifecycle.inFlightProfileID(
                 for: space.id
             )
         )
-        XCTAssertNotNil(tabManager.runtimePortConnection.current)
-        tabManager.structuralPersistence.cancelPendingPersistence()
+        XCTAssertNotNil(fixture.manager.runtimePortConnection.current)
+        fixture.manager.structuralPersistence.cancelPendingPersistence()
     }
 
     func testSpaceRemainsReservedUntilPublishedModelSettlementArrives() throws {
@@ -1097,10 +1115,11 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
         let secondProfileID = UUID()
         let firstProfile = Profile(id: firstProfileID, name: "First")
         let secondProfile = Profile(id: secondProfileID, name: "Second")
-        let tabManager = try makeInMemoryTabManager(attachRuntimePorts: false)
+        let fixture = try AttachmentFixture().profileView()
+        let attachment = fixture.attachment
         let committedSpace = Space(name: "Committed", profileId: nil)
         let rolledBackSpace = Space(name: "Rolled Back", profileId: nil)
-        tabManager.spaceStateOwner.replaceSpaces([
+        fixture.manager.stateStore.spaces.replaceSpaces([
             committedSpace,
             rolledBackSpace,
         ])
@@ -1134,10 +1153,10 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
                 profileTransitions: transitions
             )
         )
-        tabManager.runtimePortConnection.attach(runtime)
+        fixture.manager.runtimePortConnection.attach(runtime)
 
         XCTAssertEqual(
-            tabManager.profileAssignments.spaces.start(
+            fixture.spaceTransitions.start(
                 spaceID: committedSpace.id,
                 profileID: firstProfileID
             ),
@@ -1145,7 +1164,7 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
         )
         try publishCommit(models[0])
         XCTAssertEqual(
-            tabManager.profileAssignments.spaces.start(
+            fixture.spaceTransitions.start(
                 spaceID: committedSpace.id,
                 profileID: secondProfileID
             ),
@@ -1153,16 +1172,16 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
         )
         settlements[0](.committed)
         XCTAssertEqual(
-            tabManager.profileAssignments.spaces.start(
+            fixture.spaceTransitions.start(
                 spaceID: committedSpace.id,
                 profileID: secondProfileID
             ),
             .deferred
         )
-        tabManager.profileAssignments.spaceLifecycle.cancelPending(intents[1])
+        fixture.transitionLifecycle.cancelPending(intents[1])
 
         XCTAssertEqual(
-            tabManager.profileAssignments.spaces.start(
+            fixture.spaceTransitions.start(
                 spaceID: rolledBackSpace.id,
                 profileID: firstProfileID
             ),
@@ -1173,7 +1192,7 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
         try models[2].rollback()
         models[2].publishRollback()
         XCTAssertEqual(
-            tabManager.profileAssignments.spaces.start(
+            fixture.spaceTransitions.start(
                 spaceID: rolledBackSpace.id,
                 profileID: secondProfileID
             ),
@@ -1181,15 +1200,15 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
         )
         settlements[2](.rolledBack(.abort(.superseded)))
         XCTAssertEqual(
-            tabManager.profileAssignments.spaces.start(
+            fixture.spaceTransitions.start(
                 spaceID: rolledBackSpace.id,
                 profileID: secondProfileID
             ),
             .deferred
         )
-        tabManager.profileAssignments.spaceLifecycle.cancelPending(intents[3])
-        tabManager.runtimePortConnection.detach()
-        tabManager.structuralPersistence.cancelPendingPersistence()
+        fixture.transitionLifecycle.cancelPending(intents[3])
+        fixture.manager.runtimePortConnection.detach()
+        fixture.manager.structuralPersistence.cancelPendingPersistence()
     }
 
     private func publishCommit(
@@ -1202,5 +1221,157 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
         XCTAssertEqual(model.claimTerminalModel(), .sealed)
         XCTAssertTrue(model.claimedModelIsExact())
         model.publishCommit()
+    }
+}
+
+@MainActor
+private final class AttachmentFixture {
+    let manager: TabManager
+    let attachment: TabRuntimePortsAttachmentOwner
+    let membership: TabCollectionMembershipOwner
+    let mutations: TabStructuralCollectionMutationOwner
+
+    private let spaceTransitions: SpaceProfileTransitionService
+    private let transitionLifecycle: SpaceProfileTransitionRepository
+    private let availability: SpaceProfileTransitionPublication
+
+    init() throws {
+        let container = try makeInMemoryStartupModelContainer()
+        let eventBus = TabStructureEventBus()
+        let manager = TabManager(
+            context: container.mainContext,
+            webViewSessions: WebViewSessionRepository(),
+            loadPersistedState: false,
+            tabStructureEventBus: eventBus
+        )
+        let state = manager.stateStore
+        let connection = manager.runtimePortConnection
+        let runtimePreparation = TabRuntimePreparationOwner(
+            runtimeConnection: connection
+        )
+        let structuralLookup = TabStructuralLookupCoordinator(
+            eventBus: eventBus,
+            stateStore: state
+        )
+        let mutationPublisher = TabStructuralMutationPublisher(
+            persistence: manager.structuralPersistence,
+            faviconService: manager.faviconService,
+            lookup: structuralLookup,
+            changes: manager.objectWillChange,
+            regularTabs: state.regularTabs
+        )
+        let mutations = TabStructuralCollectionMutationOwner(
+            store: TabStructuralCollectionStore(
+                regularTabs: state.regularTabs,
+                folders: state.folders,
+                shortcutPins: state.shortcutPins
+            ),
+            snapshots: TabStructuralCollectionSnapshotStore(
+                regularTabs: state.regularTabs,
+                folders: state.folders,
+                shortcutPins: state.shortcutPins
+            ),
+            publisher: mutationPublisher
+        )
+        let membership = TabCollectionMembershipOwner(
+            structuralLookupOwner: structuralLookup.lookupOwner,
+            state: state,
+            runtimePreparation: runtimePreparation,
+            runtimeConnection: connection
+        )
+        let runtimeTeardown = TabRuntimeTeardownService(
+            persistence: manager.structuralPersistence,
+            membership: membership,
+            webViewSessions: manager.tabFactory.webViewSessions
+        )
+        let liveShortcutTabs = LiveShortcutTabRegistry(
+            storage: state.transientTabs,
+            structuralLookup: structuralLookup
+        )
+        let profileGraph = SpaceProfileTransitionService.compose(
+            spaces: state.spaces,
+            pins: state.shortcutPins,
+            registry: liveShortcutTabs,
+            runtimeConnection: connection,
+            runtimeTeardown: runtimeTeardown,
+            structuralLookup: structuralLookup,
+            membership: membership,
+            persistence: manager.structuralPersistence,
+            pendingInheritance: PendingTabProfileInheritance(),
+            changes: manager.objectWillChange
+        )
+        let pendingPins = PendingShortcutPinAdopter(
+            pins: state.shortcutPins,
+            structuralMutations: mutations,
+            profileReferenceAdmission: manager.profileReferenceAdmission
+        )
+        let deferredWork = TabRuntimeAttachmentDeferredWorkOwner(
+            connection: connection,
+            spaceProfiles: SpaceProfileReconciliationService(
+                spaces: state.spaces,
+                runtimeConnection: connection,
+                spaceTransitions: profileGraph.service,
+                transitionLifecycle: profileGraph.lifecycle
+            ),
+            spaceAvailability: profileGraph.availability,
+            pendingPins: pendingPins
+        )
+        attachment = TabRuntimePortsAttachmentOwner(
+            connection: connection,
+            bootstrap: TabRuntimeAttachmentBootstrap(
+                connection: connection,
+                membership: membership,
+                runtimePreparation: runtimePreparation,
+                selection: state.selection
+            ),
+            settlement: TabRuntimeAttachmentSettlement(
+                connection: connection,
+                spaces: state.spaces,
+                deferredWork: deferredWork,
+                restoreStarter: nil
+            )
+        )
+        self.manager = manager
+        self.membership = membership
+        self.mutations = mutations
+        spaceTransitions = profileGraph.service
+        transitionLifecycle = profileGraph.lifecycle
+        availability = profileGraph.availability
+    }
+
+    func profileView() -> ProfileAttachmentFixture {
+        ProfileAttachmentFixture(owner: self)
+    }
+
+    fileprivate var profileService: SpaceProfileTransitionService {
+        spaceTransitions
+    }
+
+    fileprivate var profileLifecycle: SpaceProfileTransitionRepository {
+        transitionLifecycle
+    }
+
+    fileprivate var profileAvailability: SpaceProfileTransitionPublication {
+        availability
+    }
+}
+
+@MainActor
+private struct ProfileAttachmentFixture {
+    private let owner: AttachmentFixture
+
+    init(owner: AttachmentFixture) {
+        self.owner = owner
+    }
+
+    var manager: TabManager { owner.manager }
+    var attachment: TabRuntimePortsAttachmentOwner { owner.attachment }
+    var spaceTransitions: SpaceProfileTransitionService { owner.profileService }
+    var transitionLifecycle: SpaceProfileTransitionRepository {
+        owner.profileLifecycle
+    }
+
+    var availability: SpaceProfileTransitionPublication {
+        owner.profileAvailability
     }
 }

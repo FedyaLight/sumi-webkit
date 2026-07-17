@@ -1,7 +1,7 @@
 import AppKit
 import Foundation
-import SwiftData
 import SumiWebRuntime
+import SwiftData
 
 /// Composition root for browser kernel assembly (architecture plan A1).
 /// Owns construction of always-on managers and optional module shells so
@@ -38,6 +38,7 @@ enum BrowserCompositionRoot {
     static func assembleModules(
         moduleRegistry: SumiModuleRegistry,
         modelContext: ModelContext,
+        profileReferenceAdmission: ProfileReferenceAdmissionLedger,
         adBlockingModule: SumiAdBlockingModule? = nil,
         protectionCoordinator: SumiProtectionCoordinator? = nil,
         adblockZapperStore: SumiAdblockZapperStore? = nil,
@@ -57,10 +58,17 @@ enum BrowserCompositionRoot {
             adBlockingModule: resolvedAdBlocking,
             protectionCoordinator: resolvedProtection,
             adblockZapperStore: adblockZapperStore
-                ?? SumiAdblockZapperStore(userDefaults: moduleRegistry.userDefaults),
+                ?? SumiAdblockZapperStore(
+                    userDefaults: moduleRegistry.userDefaults,
+                    profileReferenceAdmission: profileReferenceAdmission
+                ),
             boostsModule: boostsModule ?? SumiBoostsModule(
                 moduleRegistry: moduleRegistry,
-                storeFactory: { SumiBoostStore() }
+                storeFactory: {
+                    SumiBoostStore(
+                        profileReferenceAdmission: profileReferenceAdmission
+                    )
+                }
             )
         )
     }
@@ -70,6 +78,7 @@ enum BrowserCompositionRoot {
         modelContext: ModelContext,
         browserConfiguration: BrowserConfiguration,
         initialProfileProvider: @escaping @MainActor () -> Profile?,
+        profileReferenceAdmission: ProfileReferenceAdmissionLedger,
         extensionsModule: SumiExtensionsModule? = nil
     ) -> SumiExtensionsModule {
         extensionsModule
@@ -77,7 +86,8 @@ enum BrowserCompositionRoot {
                 moduleRegistry: moduleRegistry,
                 context: modelContext,
                 browserConfiguration: browserConfiguration,
-                initialProfileProvider: initialProfileProvider
+                initialProfileProvider: initialProfileProvider,
+                profileReferenceAdmission: profileReferenceAdmission
             )
     }
 
@@ -94,98 +104,16 @@ enum BrowserCompositionRoot {
         return bookmarkManager
     }
 
-    /// Always-on session managers constructed after the initial profile is known.
-    struct AssembledSessionManagers {
-        let tabManager: TabManager
-        let downloadManager: DownloadManager
-        let downloadTransportFactory: any DownloadWebKitTransportAdapting
-        let authenticationManager: AuthenticationManager
-        let historyManager: HistoryManager
-        let bookmarkManager: SumiBookmarkManager
-        let recentlyClosedManager: RecentlyClosedManager
-        let lastSessionWindowsStore: LastSessionWindowsStore
-        let startupSessionRestoreOwner: BrowserStartupSessionRestoreOwner
-        let compositorManager: TabCompositorManager
-        let tabSuspensionController: TabSuspensionController
-        let workspaceThemeCoordinator: WorkspaceThemeCoordinator
-        let findManager: FindManager
-    }
-
     static func makeProfileManager(
         modelContext: ModelContext,
-        dataServices: BrowserManagerDataServices
+        dataServices: BrowserManagerDataServices,
+        profileReferenceAdmission: ProfileReferenceAdmissionLedger
     ) -> ProfileManager {
         ProfileManager(
             context: modelContext,
+            profileReferenceAdmission: profileReferenceAdmission,
             faviconService: dataServices.faviconService,
             visitedLinkStore: dataServices.visitedLinkStore
-        )
-    }
-
-    static func makeSessionManagers(
-        modelContext: ModelContext,
-        tabStructureEventBus: TabStructureEventBus,
-        webViewSessions: WebViewSessionRepository,
-        dataServices: BrowserManagerDataServices,
-        initialProfile: Profile?
-    ) -> AssembledSessionManagers {
-        let lastSessionWindowsStore = LastSessionWindowsStore()
-        let downloadFileManager = FileManager.default
-        let downloadDestinationAllocator = SumiDownloadDestinationAllocator(
-            fileManager: downloadFileManager
-        )
-        let downloadTransactionFactory = DownloadTransactionFactory(
-            destinations: downloadDestinationAllocator,
-            finalizer: SumiDownloadFileFinalizer(fileManager: downloadFileManager),
-            progressPublisher: SumiDownloadProgressPublisher()
-        )
-        let downloadManager = DownloadManager(
-            coordinator: DownloadListCoordinator(
-                transactionFactory: downloadTransactionFactory,
-                promptPresenter: SumiDownloadPromptPresenter()
-            ),
-            workspace: SumiDownloadWorkspace(
-                workspace: .shared,
-                fileManager: downloadFileManager
-            ),
-            orphanCleaner: SumiDownloadOrphanCleaner(
-                fileManager: downloadFileManager
-            )
-        )
-        return AssembledSessionManagers(
-            tabManager: TabManager(
-                context: modelContext,
-                webViewSessions: webViewSessions,
-                automaticallyStartPersistedStateLoad: false,
-                tabStructureEventBus: tabStructureEventBus,
-                faviconService: dataServices.faviconService,
-                faviconCapabilities: dataServices.faviconCapabilities,
-                visitedLinkStore: dataServices.visitedLinkStore
-            ),
-            downloadManager: downloadManager,
-            downloadTransportFactory: SumiWebKitDownloadTransportFactory(),
-            authenticationManager: AuthenticationManager(),
-            historyManager: HistoryManager(
-                context: modelContext,
-                profileId: initialProfile?.id,
-                faviconCleaner: dataServices.historyFaviconCleaner,
-                visitedLinkStore: dataServices.historyVisitedLinkStore
-            ),
-            bookmarkManager: makeBookmarkManager(
-                faviconService: dataServices.faviconService,
-                initialProfile: initialProfile
-            ),
-            recentlyClosedManager: RecentlyClosedManager(),
-            lastSessionWindowsStore: lastSessionWindowsStore,
-            startupSessionRestoreOwner: BrowserStartupSessionRestoreOwner(
-                lastSessionWindowsStore: lastSessionWindowsStore
-            ),
-            compositorManager: TabCompositorManager(),
-            tabSuspensionController: TabSuspensionController(
-                memoryMonitor: SumiMemoryPressureMonitor()
-            ),
-            workspaceThemeCoordinator: WorkspaceThemeCoordinator(),
-            findManager: FindManager()
         )
     }
 
@@ -257,6 +185,7 @@ enum BrowserCompositionRoot {
     /// Builds the always-on kernel graph so `BrowserManager` init only assigns fields.
     static func makeKernel(
         webViewSessions: WebViewSessionRepository,
+        windowRegistry: WindowRegistry,
         moduleRegistry: SumiModuleRegistry,
         startupPersistence: BrowserManagerStartupPersistence,
         windowSessionSnapshotStore: WindowSessionSnapshotStore,
@@ -292,6 +221,26 @@ enum BrowserCompositionRoot {
         let windowSessionPersistence = WindowSessionPersistenceRuntime(
             snapshotStore: windowSessionSnapshotStore
         )
+        let profileReferenceAdmission: ProfileReferenceAdmissionLedger
+        let profileRetirementStartupPreflight: ProfileRetirementStartupPreflightStatus
+        do {
+            let admission = try ProfileReferenceAdmissionLedger(
+                context: startupModelContext
+            )
+            try ProfileRetirementStartupRecovery.cancelReservedReservations(
+                in: admission
+            )
+            profileReferenceAdmission = admission
+            profileRetirementStartupPreflight = .ready
+        } catch {
+            RuntimeDiagnostics.emit(
+                "[ProfileRetirement] Startup preflight failed: \(error)"
+            )
+            profileReferenceAdmission = .failClosed()
+            profileRetirementStartupPreflight = .failed(
+                message: "Sumi could not safely prepare pending profile deletion recovery. \(error.localizedDescription)"
+            )
+        }
         let liveFoldersModule = SumiLiveFoldersModule(
             moduleRegistry: moduleRegistry
         )
@@ -299,6 +248,7 @@ enum BrowserCompositionRoot {
         let modules = assembleModules(
             moduleRegistry: moduleRegistry,
             modelContext: startupModelContext,
+            profileReferenceAdmission: profileReferenceAdmission,
             adBlockingModule: adBlockingModule,
             protectionCoordinator: protectionCoordinator,
             adblockZapperStore: adblockZapperStore,
@@ -306,59 +256,91 @@ enum BrowserCompositionRoot {
         )
         let profileManager = makeProfileManager(
             modelContext: startupModelContext,
-            dataServices: resolvedDataServices
+            dataServices: resolvedDataServices,
+            profileReferenceAdmission: profileReferenceAdmission
         )
         profileManager.ensureDefaultProfile()
         let initialProfile = profileManager.profiles.first
-        let session = makeSessionManagers(
-            modelContext: startupModelContext,
-            tabStructureEventBus: tabStructureEventBus,
-            webViewSessions: webViewSessions,
-            dataServices: resolvedDataServices,
-            initialProfile: initialProfile
+        let lastSessionWindowsStore = LastSessionWindowsStore()
+        let downloadFileManager = FileManager.default
+        let downloadTransactionFactory = DownloadTransactionFactory(
+            destinations: SumiDownloadDestinationAllocator(
+                fileManager: downloadFileManager
+            ),
+            finalizer: SumiDownloadFileFinalizer(
+                fileManager: downloadFileManager
+            ),
+            progressPublisher: SumiDownloadProgressPublisher()
+        )
+        let downloadManager = DownloadManager(
+            coordinator: DownloadListCoordinator(
+                transactionFactory: downloadTransactionFactory,
+                promptPresenter: SumiDownloadPromptPresenter()
+            ),
+            workspace: SumiDownloadWorkspace(
+                workspace: .shared,
+                fileManager: downloadFileManager
+            ),
+            orphanCleaner: SumiDownloadOrphanCleaner(
+                fileManager: downloadFileManager
+            )
         )
         let resolvedExtensionsModule = makeExtensionsModule(
             moduleRegistry: moduleRegistry,
             modelContext: startupModelContext,
             browserConfiguration: browserConfiguration,
             initialProfileProvider: { initialProfile },
+            profileReferenceAdmission: profileReferenceAdmission,
             extensionsModule: extensionsModule
         )
-        return BrowserKernelGraph(
-            webViewSessions: webViewSessions,
+        return makeKernelWithTabSession(
             modelContext: startupModelContext,
+            windowRegistry: windowRegistry,
             moduleRegistry: moduleRegistry,
             sidebarHostRecoveryCoordinator: sidebarHostRecoveryCoordinator,
             adBlockingModule: modules.adBlockingModule,
             protectionCoordinator: modules.protectionCoordinator,
             adblockZapperStore: modules.adblockZapperStore,
-            startupWorkspaceTheme: StartupWorkspaceThemeResolver.resolve(
-                windowSessionSnapshotStore: windowSessionSnapshotStore,
-                modelContext: startupModelContext
-            ),
             windowSessionPersistence: windowSessionPersistence,
+            profileRetirementStartupPreflight: profileRetirementStartupPreflight,
             profileManager: profileManager,
-            currentProfile: initialProfile,
             optionalModules: OptionalModuleHost(
                 extensionsModule: resolvedExtensionsModule,
                 boostsModule: modules.boostsModule,
                 liveFoldersModule: liveFoldersModule
             ),
-            tabManager: session.tabManager,
-            downloadManager: session.downloadManager,
-            downloadTransportFactory: session.downloadTransportFactory,
-            authenticationManager: session.authenticationManager,
-            historyManager: session.historyManager,
-            bookmarkManager: session.bookmarkManager,
-            recentlyClosedManager: session.recentlyClosedManager,
-            lastSessionWindowsStore: session.lastSessionWindowsStore,
-            startupSessionRestoreOwner: session.startupSessionRestoreOwner,
-            compositorManager: session.compositorManager,
-            tabSuspensionController: session.tabSuspensionController,
-            workspaceThemeCoordinator: session.workspaceThemeCoordinator,
-            findManager: session.findManager,
-            browserConfiguration: browserConfiguration,
+            tabStructureEventBus: tabStructureEventBus,
+            webViewSessions: webViewSessions,
             dataServices: resolvedDataServices,
+            initialProfile: initialProfile,
+            profileReferenceAdmission: profileReferenceAdmission,
+            downloadManager: downloadManager,
+            downloadTransportFactory: SumiWebKitDownloadTransportFactory(),
+            authenticationManager: AuthenticationManager(),
+            historyManager: HistoryManager(
+                context: startupModelContext,
+                profileId: initialProfile?.id,
+                faviconCleaner: resolvedDataServices.historyFaviconCleaner,
+                visitedLinkStore: resolvedDataServices.historyVisitedLinkStore
+            ),
+            bookmarkManager: makeBookmarkManager(
+                faviconService: resolvedDataServices.faviconService,
+                initialProfile: initialProfile
+            ),
+            recentlyClosedManager: RecentlyClosedManager(
+                profileReferenceAdmission: profileReferenceAdmission
+            ),
+            lastSessionWindowsStore: lastSessionWindowsStore,
+            startupSessionRestoreOwner: BrowserStartupSessionRestoreOwner(
+                lastSessionWindowsStore: lastSessionWindowsStore
+            ),
+            compositorManager: TabCompositorManager(),
+            tabSuspensionController: TabSuspensionController(
+                memoryMonitor: SumiMemoryPressureMonitor()
+            ),
+            workspaceThemeCoordinator: WorkspaceThemeCoordinator(),
+            findManager: FindManager(),
+            browserConfiguration: browserConfiguration,
             browsingDataCleanupService: resolvedDataServices.browsingDataCleanupService,
             nativeNowPlayingController: nowPlayingController,
             permissionRuntime: makePermissionRuntime(
@@ -379,8 +361,9 @@ enum BrowserCompositionRoot {
                     externalSchemeSessionStore: externalSchemeSessionStore,
                     permissionBridgeOverrides: permissionBridgeOverrides
                 )
-            )
+            ),
+            loadPersistedState: true,
+            automaticallyStartPersistedStateLoad: false
         )
     }
-
 }

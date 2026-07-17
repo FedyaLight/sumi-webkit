@@ -1,147 +1,126 @@
 import Foundation
-import SumiDomain
 @testable import Sumi
+import SumiDomain
 import XCTest
 
 @MainActor
 final class BrowserWindowSpaceTransitionServiceTests: XCTestCase {
-    func testLiveTransitionRequiresExactActiveWindowIdentity() {
-        UserDefaults.standard.removeObject(forKey: BrowserManager.lastWindowSessionKey)
-        defer {
-            UserDefaults.standard.removeObject(forKey: BrowserManager.lastWindowSessionKey)
-        }
+    func testTransitionRejectsStaleSameIDWindowAtEntry() throws {
+        let harness = makeHarness()
+        let staleWindow = BrowserWindowState(id: harness.window.id)
+        harness.browser.tabResidenceAuthority.establishResidenceSession(on: staleWindow)
+        staleWindow.currentSpaceId = harness.source.id
+        staleWindow.currentProfileId = harness.profile.id
 
-        let browserManager = BrowserManager()
-        let windowID = UUID()
-        let activeWindow = BrowserWindowState(id: windowID)
-        let staleStateWithSameID = BrowserWindowState(id: windowID)
-        let registry = WindowRegistry()
-        browserManager.windowRegistry = registry
-        activeWindow.tabManager = browserManager.tabManager
-        staleStateWithSameID.tabManager = browserManager.tabManager
-        registry.register(activeWindow)
-        registry.setActive(activeWindow)
-        let source = browserManager.tabManager.spaceServices.catalog
-            .createSpace(name: "Source")
-        let destination = browserManager.tabManager.spaceServices.catalog
-            .createSpace(name: "Destination")
-        browserManager.tabManager.spaceStateOwner.replaceCurrentSpace(source)
-        staleStateWithSameID.currentSpaceId = source.id
-
-        BrowserWindowSpaceTransitionService(browserManager: browserManager)
-            .setActiveSpace(
-                destination,
-                in: staleStateWithSameID
-            )
+        harness.browser.windowSpaceTransitions.setActiveSpace(
+            harness.destination,
+            in: staleWindow
+        )
 
         XCTAssertIdentical(
-            browserManager.tabManager.spaceStateOwner.currentSpace,
-            source
+            harness.browser.spaceStateOwner.currentSpace,
+            harness.source
         )
-        XCTAssertEqual(staleStateWithSameID.currentSpaceId, destination.id)
+        XCTAssertEqual(staleWindow.currentSpaceId, harness.source.id)
+        XCTAssertEqual(harness.window.currentSpaceId, harness.source.id)
     }
 
-    func testActiveWindowTransitionPreservesCrossSubsystemOrder() throws {
-        let harness = try BrowserWindowSpaceTransitionHarness()
+    func testRegisteredActiveWindowTransitionCommitsExactWindowAndSelection()
+        throws {
+        let harness = makeHarness()
 
-        harness.makeService().setActiveSpace(
+        harness.browser.windowSpaceTransitions.setActiveSpace(
             harness.destination,
-            in: harness.windowState
+            in: harness.window
         )
 
-        XCTAssertEqual(
-            harness.events,
-            [
-                "focused-runtime", "theme", "select", "visual-handoff",
-                "adopt", "persist", "split-focus",
-            ]
-        )
-        XCTAssertTrue(harness.observedProcessActivationBeforeTheme)
         XCTAssertIdentical(
-            harness.tabManager.spaceStateOwner.currentSpace,
+            harness.browser.spaceStateOwner.currentSpace,
             harness.destination
         )
-        XCTAssertIdentical(
-            harness.tabManager.selectionStateOwner.currentTab,
-            harness.targetTab
+        XCTAssertEqual(harness.window.currentSpaceId, harness.destination.id)
+        XCTAssertEqual(
+            harness.window.currentProfileId,
+            harness.destination.profileId
         )
-        XCTAssertEqual(harness.windowState.currentSpaceId, harness.destination.id)
-        XCTAssertEqual(harness.windowState.currentProfileId, harness.destination.profileId)
-        XCTAssertEqual(harness.windowState.currentTabId, harness.targetTab?.id)
-        XCTAssertEqual(harness.events.filter { $0 == "persist" }.count, 1)
+        XCTAssertEqual(harness.window.currentTabId, harness.targetTab.id)
     }
 
-    func testInactiveWindowTransitionDoesNotMutateProcessSpaceOrAdoptProfile() throws {
-        let harness = try BrowserWindowSpaceTransitionHarness()
-        harness.isActiveWindow = false
+    func testInactiveRegisteredWindowDoesNotMutateProcessSpace() throws {
+        let harness = makeHarness(active: false)
 
-        harness.makeService().setActiveSpace(
+        harness.browser.windowSpaceTransitions.setActiveSpace(
             harness.destination,
-            in: harness.windowState
+            in: harness.window
         )
 
-        XCTAssertEqual(
-            harness.events,
-            ["theme", "select", "visual-handoff", "persist", "split-focus"]
-        )
         XCTAssertIdentical(
-            harness.tabManager.spaceStateOwner.currentSpace,
+            harness.browser.spaceStateOwner.currentSpace,
             harness.source
         )
-        XCTAssertNil(harness.tabManager.selectionStateOwner.currentTab)
-        XCTAssertEqual(harness.windowState.currentSpaceId, harness.destination.id)
-        XCTAssertEqual(harness.events.filter { $0 == "persist" }.count, 1)
+        XCTAssertEqual(harness.window.currentSpaceId, harness.destination.id)
+        XCTAssertEqual(harness.window.currentTabId, harness.targetTab.id)
     }
 
-    func testEmptyDestinationPresentsEmptyStateWithoutVisualHandoff() throws {
-        let harness = try BrowserWindowSpaceTransitionHarness(hasTargetTab: false)
+    func testDeferredRetryRejectsSameIDWindowReplacement() throws {
+        let browser = BrowserManager()
+        browser.tabRuntimeLifecycle.shutdown()
+        let profile = Profile(name: "Deferred")
+        let transition = DeferredSpaceProfileTransition()
+        browser.runtimePortConnection.attach(TestRuntimePorts.make(
+            currentProfileId: { profile.id },
+            defaultProfileId: { profile.id },
+            profileExists: { $0 == profile.id },
+            profile: { $0 == profile.id ? profile : nil },
+            webViewLifecycle: transition.makeLifecycle()
+        ))
+        browser.profileManager.profiles = [profile]
+        browser.currentProfile = profile
+        let source = Space(name: "Source", profileId: profile.id)
+        let destination = Space(name: "Destination")
+        browser.spaceStateOwner.replaceSpaces([source, destination])
+        browser.spaceStateOwner.replaceCurrentSpace(source)
+        let original = BrowserWindowState()
+        browser.tabResidenceAuthority.establishResidenceSession(on: original)
+        original.currentSpaceId = source.id
+        original.currentProfileId = profile.id
+        XCTAssertEqual(browser.windowRegistry.register(original), .registered)
+        browser.windowRegistry.setActive(original)
 
-        harness.makeService().setActiveSpace(
-            harness.destination,
-            in: harness.windowState
+        browser.windowSpaceTransitions.setActiveSpace(
+            destination,
+            in: original
         )
+        XCTAssertEqual(transition.assignmentCount, 1)
 
+        browser.windowRegistry.unregister(original.id)
+        let replacement = BrowserWindowState(id: original.id)
+        browser.tabResidenceAuthority.establishResidenceSession(on: replacement)
+        replacement.currentSpaceId = source.id
+        replacement.currentProfileId = profile.id
         XCTAssertEqual(
-            harness.events,
-            [
-                "focused-runtime", "theme", "empty", "adopt", "persist",
-                "split-focus",
-            ]
+            browser.windowRegistry.register(replacement),
+            .registered
         )
-        XCTAssertNil(harness.tabManager.selectionStateOwner.currentTab)
-    }
+        browser.windowRegistry.setActive(replacement)
 
-    func testSameSpaceFastPathRefreshesContextAndPersistsWithoutActivation() throws {
-        let harness = try BrowserWindowSpaceTransitionHarness()
-        let targetTab = try XCTUnwrap(harness.targetTab)
-        harness.windowState.currentSpaceId = harness.destination.id
-        harness.windowState.currentProfileId = nil
-        harness.windowState.currentTabId = targetTab.id
+        XCTAssertTrue(try XCTUnwrap(transition.stageModel)())
+        try XCTUnwrap(transition.publishCommit)()
+        try XCTUnwrap(transition.settlement)(.committed)
 
-        harness.makeService().setActiveSpace(
-            harness.destination,
-            in: harness.windowState
-        )
-
-        XCTAssertEqual(
-            harness.events,
-            ["sanitize", "focused-runtime", "shortcut-sync", "persist"]
-        )
-        XCTAssertIdentical(
-            harness.tabManager.spaceStateOwner.currentSpace,
-            harness.source
-        )
-        XCTAssertEqual(harness.windowState.currentProfileId, harness.destination.profileId)
-        XCTAssertEqual(harness.events.filter { $0 == "persist" }.count, 1)
+        XCTAssertIdentical(browser.spaceStateOwner.currentSpace, source)
+        XCTAssertEqual(original.currentSpaceId, source.id)
+        XCTAssertEqual(replacement.currentSpaceId, source.id)
+        XCTAssertEqual(destination.profileId, profile.id)
     }
 
     func testStaleInteractiveIdentityHasNoSideEffects() throws {
-        let harness = try BrowserWindowSpaceTransitionHarness()
+        let harness = makeHarness()
         let currentIdentity = SpaceTransitionIdentity(
             sourceSpaceId: harness.source.id,
             destinationSpaceId: harness.destination.id
         )
-        harness.windowState.windowThemeState.beginInteractive(
+        harness.window.windowThemeState.beginInteractive(
             identity: currentIdentity,
             from: harness.source.workspaceTheme,
             to: harness.destination.workspaceTheme,
@@ -152,169 +131,74 @@ final class BrowserWindowSpaceTransitionServiceTests: XCTestCase {
             destinationSpaceId: harness.destination.id
         )
 
-        harness.makeService().setActiveSpace(
+        harness.browser.windowSpaceTransitions.setActiveSpace(
             harness.destination,
-            in: harness.windowState,
+            in: harness.window,
             completingTransition: staleIdentity
         )
 
-        XCTAssertTrue(harness.events.isEmpty)
-        XCTAssertEqual(harness.windowState.currentSpaceId, harness.source.id)
         XCTAssertIdentical(
-            harness.tabManager.spaceStateOwner.currentSpace,
+            harness.browser.spaceStateOwner.currentSpace,
             harness.source
         )
+        XCTAssertEqual(harness.window.currentSpaceId, harness.source.id)
     }
 
-    func testMatchingInteractiveIdentityUsesFinishInsteadOfProgrammaticTheme() throws {
-        let harness = try BrowserWindowSpaceTransitionHarness()
-        let identity = SpaceTransitionIdentity(
-            sourceSpaceId: harness.source.id,
-            destinationSpaceId: harness.destination.id
+    private func makeHarness(active: Bool = true) -> Harness {
+        let browser = BrowserManager()
+        let profile = Profile(name: "Profile")
+        browser.profileManager.profiles = [profile]
+        browser.currentProfile = profile
+        let source = Space(name: "Source", profileId: profile.id)
+        let destination = Space(
+            name: "Destination",
+            workspaceTheme: WorkspaceTheme(gradientTheme: .incognito),
+            profileId: profile.id
         )
-        harness.windowState.windowThemeState.beginInteractive(
-            identity: identity,
-            from: harness.source.workspaceTheme,
-            to: harness.destination.workspaceTheme,
-            initialProgress: 0.5
+        browser.spaceStateOwner.replaceSpaces([source, destination])
+        browser.spaceStateOwner.replaceCurrentSpace(source)
+        let targetTab = browser.regularTabLifecycleOwner.createNewTab(
+            in: destination,
+            activate: false
         )
+        destination.activeTabId = targetTab.id
+        let window = BrowserWindowState()
+        browser.tabResidenceAuthority.establishResidenceSession(on: window)
+        window.currentSpaceId = source.id
+        window.currentProfileId = profile.id
+        XCTAssertEqual(browser.windowRegistry.register(window), .registered)
 
-        harness.makeService().setActiveSpace(
-            harness.destination,
-            in: harness.windowState,
-            completingTransition: identity
-        )
+        if active {
+            browser.windowRegistry.setActive(window)
+        } else {
+            let activeWindow = BrowserWindowState()
+            browser.tabResidenceAuthority.establishResidenceSession(on: activeWindow)
+            activeWindow.currentSpaceId = source.id
+            activeWindow.currentProfileId = profile.id
+            XCTAssertEqual(
+                browser.windowRegistry.register(activeWindow),
+                .registered
+            )
+            browser.windowRegistry.setActive(activeWindow)
+        }
 
-        XCTAssertEqual(
-            harness.events,
-            [
-                "focused-runtime", "finish", "select", "visual-handoff",
-                "adopt", "persist", "split-focus",
-            ]
+        return Harness(
+            browser: browser,
+            profile: profile,
+            source: source,
+            destination: destination,
+            targetTab: targetTab,
+            window: window
         )
-        XCTAssertTrue(harness.observedProcessActivationBeforeTheme)
     }
 }
 
 @MainActor
-private final class BrowserWindowSpaceTransitionHarness {
-    let tabManager: TabManager
+private struct Harness {
+    let browser: BrowserManager
+    let profile: Profile
     let source: Space
     let destination: Space
-    let targetTab: Tab?
-    let windowState = BrowserWindowState()
-
-    var isActiveWindow = true
-    var events: [String] = []
-    var observedProcessActivationBeforeTheme = false
-
-    init(hasTargetTab: Bool = true) throws {
-        tabManager = try makeInMemoryTabManager()
-        source = Space(name: "Source", profileId: UUID())
-        destination = Space(
-            name: "Destination",
-            workspaceTheme: WorkspaceTheme(gradientTheme: .incognito),
-            profileId: UUID()
-        )
-        targetTab = hasTargetTab
-            ? Tab(
-                url: URL(string: "https://space-transition.example")
-                    ?? URL(fileURLWithPath: "/"),
-                name: "Destination",
-                spaceId: destination.id,
-                loadsCachedFaviconOnInit: false
-            )
-            : nil
-
-        tabManager.spaceStateOwner.replaceSpaces([source, destination])
-        tabManager.spaceStateOwner.replaceCurrentSpace(source)
-        tabManager.regularTabCollectionStateOwner.replaceTabsBySpace([
-            destination.id: targetTab.map { [$0] } ?? [],
-        ])
-        destination.activeTabId = targetTab?.id
-        windowState.currentSpaceId = source.id
-        windowState.currentProfileId = source.profileId
-        windowState.tabManager = tabManager
-    }
-
-    func makeService() -> BrowserWindowSpaceTransitionService {
-        let selectionService = ShellSelectionService { _ in [] }
-        let tabContext = BrowserWindowTabContext(
-            selectionService: { selectionService },
-            tabStore: { [weak tabManager] in tabManager?.runtimeStore },
-            windows: { [weak windowState] in windowState.map { [$0] } ?? [] },
-            liveShortcutTabs: { [weak tabManager] windowId in
-                tabManager?.runtimeStore.liveShortcutTabs(in: windowId) ?? []
-            },
-            visibleSplitTabIds: { _ in [] }
-        )
-        let selectionHandoff = BrowserWindowSpaceSelectionHandoff(
-            tabContext: tabContext,
-            applyTabSelection: { [weak self] tab, windowState in
-                windowState.currentTabId = tab.id
-                self?.events.append("select")
-            },
-            performImmediateVisualHandoff: { [weak self] _ in
-                self?.events.append("visual-handoff")
-            },
-            showEmptyState: { [weak self] _ in
-                self?.events.append("empty")
-            }
-        )
-        let contextTransition = BrowserWindowSpaceContextTransition(
-            contextReconciler: BrowserWindowSpaceContextReconciler(
-                tabManager: tabManager,
-                commitWorkspaceTheme: { _, _ in
-                    XCTFail("Space transition must not commit a second theme")
-                }
-            ),
-            sanitizeFloatingBarState: { [weak self] _ in
-                self?.events.append("sanitize")
-            },
-            syncShortcutSelectionState: { [weak self] _ in
-                self?.events.append("shortcut-sync")
-            },
-            updateWorkspaceTheme: { [weak self] _, _, _ in
-                self?.recordThemeEvent("theme")
-            },
-            finishInteractiveTransition: { [weak self] _, _, _ in
-                self?.recordThemeEvent("finish")
-            }
-        )
-
-        return BrowserWindowSpaceTransitionService(
-            spaceActivation: tabManager.spaceServices.activation,
-            isActiveWindow: { [weak self] _ in
-                self?.isActiveWindow ?? false
-            },
-            selectionHandoff: selectionHandoff,
-            contextTransition: contextTransition,
-            synchronizeFocusedSpaceContext: { [weak self] windowState in
-                self?.recordFocusedRuntimeSynchronization(for: windowState)
-            },
-            adoptProfileForSpaceChange: { [weak self] _ in
-                self?.events.append("adopt")
-            },
-            persistWindowSession: { [weak self] _ in
-                self?.events.append("persist")
-            },
-            completePendingSplitGroupFocus: { [weak self] _, _ in
-                self?.events.append("split-focus")
-            }
-        )
-    }
-
-    private func recordThemeEvent(_ event: String) {
-        observedProcessActivationBeforeTheme =
-            tabManager.spaceStateOwner.currentSpace === destination
-        events.append(event)
-    }
-
-    private func recordFocusedRuntimeSynchronization(
-        for windowState: BrowserWindowState
-    ) {
-        XCTAssertEqual(windowState.currentSpaceId, destination.id)
-        XCTAssertEqual(windowState.currentProfileId, destination.profileId)
-        events.append("focused-runtime")
-    }
+    let targetTab: Tab
+    let window: BrowserWindowState
 }

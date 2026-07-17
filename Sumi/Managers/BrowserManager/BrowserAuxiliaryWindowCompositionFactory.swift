@@ -3,32 +3,31 @@ import Foundation
 @MainActor
 enum BrowserAuxiliaryWindowCompositionFactory {
     static func make(
-        browserManager: BrowserManager,
+        windows: WindowRegistry,
+        currentProfile: BrowserCurrentProfileAuthority,
+        spaces: TabSpaceCollectionStateOwner,
+        tabContext: BrowserWindowTabContext,
+        auxiliaryTabs: AuxiliaryMiniWindowTabLifecycleTransaction,
+        untrackedWebViewInstallation: UntrackedWebViewInstallationService,
+        extensions: SumiExtensionsModule,
+        popupPermissions: SumiPopupPermissionBridge,
+        filePickerPermissions: SumiFilePickerPermissionBridge,
+        mutationAdmission: WebsiteDataCleanupService,
+        profileAdmissions: ProfileReferenceAdmissionLedger,
         teardownRegistry: AuxiliaryWindowTeardownRegistry
     ) -> BrowserAuxiliaryWindowComposition {
-        let shellRuntime = browserManager.shellRuntime
-        let tabManager = browserManager.tabManager
-        let untrackedWebViewInstallation = browserManager.webViewRuntime
-            .untrackedWebViewInstallationService
-        let websiteDataCleanup = browserManager.webViewRuntime
-            .websiteDataCleanupService
         let composition = BrowserAuxiliaryWindowComposition(
-            windowRegistry: { [weak shellRuntime] in
-                shellRuntime?.windowRegistry
-            },
-            currentProfile: { [weak tabManager] in
-                tabManager?.runtimePorts?.currentProfileId
-            },
-            spaces: tabManager.spaceStateOwner,
-            tabContext: shellRuntime.windowTabs,
-            transientTabs: tabManager.transientWebKitTabLifecycleOwner,
+            windowRegistry: { [windows] in windows },
+            currentProfile: { [currentProfile] in currentProfile.currentProfile?.id },
+            spaces: spaces,
+            tabContext: tabContext,
+            auxiliaryTabs: auxiliaryTabs,
             untrackedWebViewInstallation: untrackedWebViewInstallation,
-            extensions: browserManager.optionalModules.extensions,
-            popupPermissions: browserManager.permissionRuntime
-                .popupPermissionBridge,
-            filePickerPermissions: browserManager.permissionRuntime
-                .filePickerPermissionBridge,
-            mutationAdmission: websiteDataCleanup
+            extensions: extensions,
+            popupPermissions: popupPermissions,
+            filePickerPermissions: filePickerPermissions,
+            mutationAdmission: mutationAdmission,
+            profileAdmissions: profileAdmissions
         )
         teardownRegistry.register(composition.teardown)
         return composition

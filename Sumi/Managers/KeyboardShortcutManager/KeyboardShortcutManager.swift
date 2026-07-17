@@ -51,7 +51,6 @@ class KeyboardShortcutManager {
 
     private var shortcutsByAction: [ShortcutAction: KeyboardShortcut] = [:]
     private var enabledLookup: [String: ShortcutAction] = [:]
-    private var dispatcher = ShortcutActionDispatcher()
     private var eventMonitor: EventMonitorHandle?
 
     private enum LocalKeyRoutingResult {
@@ -59,17 +58,9 @@ class KeyboardShortcutManager {
         case consume
     }
 
-    weak var shortcutActionRouter: (any ShortcutActionRouting)? {
-        didSet {
-            dispatcher.actionRouter = shortcutActionRouter
-        }
-    }
-    weak var chromeRouter: (any KeyboardShortcutChromeRouting)?
+    weak var shortcutActionRouter: BrowserShortcutActionRouter?
     weak var windowRegistry: WindowRegistry?
-
-    /// Safari dispatch order: browser shortcuts win, then extension commands,
-    /// then the page. App composition injects the browser-owned extensions module.
-    var extensionCommandHandler: @MainActor (NSEvent) -> Bool = { _ in false }
+    private(set) weak var extensionsModule: SumiExtensionsModule?
 
     init(userDefaults: UserDefaults = .standard, installEventMonitor: Bool = true) {
         self.store = KeyboardShortcutStore(userDefaults: userDefaults)
@@ -81,15 +72,13 @@ class KeyboardShortcutManager {
     }
 
     func attach(
-        actionRouter: any ShortcutActionRouting,
-        chromeRouter: any KeyboardShortcutChromeRouting,
-        windowRegistry: WindowRegistry?,
-        extensionCommandHandler: @escaping @MainActor (NSEvent) -> Bool = { _ in false }
+        actionRouter: BrowserShortcutActionRouter,
+        windowRegistry: WindowRegistry,
+        extensionsModule: SumiExtensionsModule
     ) {
         shortcutActionRouter = actionRouter
-        self.chromeRouter = chromeRouter
         self.windowRegistry = windowRegistry
-        self.extensionCommandHandler = extensionCommandHandler
+        self.extensionsModule = extensionsModule
     }
 
     var shortcuts: [KeyboardShortcut] {
@@ -169,7 +158,8 @@ class KeyboardShortcutManager {
         }
 
         RuntimeDiagnostics.debug("Executing shortcut action '\(action.displayName)'.", category: "KeyboardShortcutManager")
-        dispatcher.execute(action)
+        guard let shortcutActionRouter else { return false }
+        shortcutActionRouter.execute(action)
         return true
     }
 
@@ -247,8 +237,8 @@ class KeyboardShortcutManager {
         }
 
         if event.keyCode == UInt16(kVK_Escape),
-           chromeRouter?.isFindBarVisibleForShortcutRouting == true {
-            chromeRouter?.hideFindBarForShortcutRouting()
+           shortcutActionRouter?.isFindBarVisible == true {
+            shortcutActionRouter?.hideFindBar()
             return nil
         }
 
@@ -274,7 +264,9 @@ class KeyboardShortcutManager {
             return nil
         }
 
-        if extensionCommandHandler(event) {
+        if extensionsModule?.performExtensionKeyboardCommandIfLoaded(
+            for: event
+        ) == true {
             return nil
         }
 
@@ -290,7 +282,7 @@ class KeyboardShortcutManager {
            state.presentationState.isFloatingBarVisible {
             return true
         }
-        if chromeRouter?.isNativeModalPresentedForShortcutRouting(in: keyWindow) == true {
+        if shortcutActionRouter?.isNativeModalPresented(in: keyWindow) == true {
             return true
         }
         return false
@@ -306,12 +298,12 @@ class KeyboardShortcutManager {
         }
 
         if keyCombination == KeyCombination(key: "escape") {
-            chromeRouter?.dismissFloatingBarForShortcutRouting(in: state, preserveDraft: true)
+            shortcutActionRouter?.dismissFloatingBar(in: state, preserveDraft: true)
             return .consume
         }
 
         if systemOwnedShortcuts.contains(keyCombination) {
-            chromeRouter?.dismissFloatingBarForShortcutRouting(in: state, preserveDraft: true)
+            shortcutActionRouter?.dismissFloatingBar(in: state, preserveDraft: true)
             return .pass(event)
         }
 
@@ -323,7 +315,7 @@ class KeyboardShortcutManager {
         case .focusAddressBar, .newTab:
             break
         default:
-            chromeRouter?.dismissFloatingBarForShortcutRouting(in: state, preserveDraft: true)
+            shortcutActionRouter?.dismissFloatingBar(in: state, preserveDraft: true)
         }
 
         if executeShortcut(event) {

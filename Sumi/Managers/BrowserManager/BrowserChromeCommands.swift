@@ -1,65 +1,61 @@
 import Foundation
 import WebKit
 
-/// Chrome-level command façade: popover presentation and page-privacy actions.
-/// Absorbs the former `BrowserChromePopoverRoutingOwner` and
-/// `BrowserPagePrivacyCommandOwner` so BrowserManager no longer holds two
-/// separate `.live(browserManager:)` Owners for thin chrome routing.
 @MainActor
 final class BrowserChromeCommands {
     let downloadsPopoverPresenter: DownloadsPopoverPresenter
     let urlBarHubPopoverPresenter: URLBarHubPopoverPresenter
 
-    private weak var browserManager: BrowserManager?
-    private let currentProfileAuthority: BrowserCurrentProfileAuthority
+    private let windows: WindowRegistry
+    private let downloads: DownloadManager
+    private let privacy: BrowserPagePrivacyCommandOwner
 
-    init(browserManager: BrowserManager) {
-        self.browserManager = browserManager
-        self.currentProfileAuthority = browserManager.currentProfileAuthority
-        let recovery = browserManager.sidebarHostRecoveryCoordinator
-        self.downloadsPopoverPresenter = DownloadsPopoverPresenter(
-            sidebarRecoveryCoordinator: recovery
-        )
-        self.urlBarHubPopoverPresenter = URLBarHubPopoverPresenter(
-            sidebarRecoveryCoordinator: recovery
-        )
-    }
-
-    // MARK: - Popovers
-
-    private func syncPopoverRegistries() {
-        let registry = browserManager?.windowRegistry
-        downloadsPopoverPresenter.windowRegistry = registry
+    init(
+        windows: WindowRegistry,
+        downloads: DownloadManager,
+        privacy: BrowserPagePrivacyCommandOwner,
+        downloadsPopoverPresenter: DownloadsPopoverPresenter,
+        urlBarHubPopoverPresenter: URLBarHubPopoverPresenter
+    ) {
+        self.windows = windows
+        self.downloads = downloads
+        self.privacy = privacy
+        self.downloadsPopoverPresenter = downloadsPopoverPresenter
+        self.urlBarHubPopoverPresenter = urlBarHubPopoverPresenter
     }
 
     func showDownloads() {
-        guard let windowState = browserManager?.windowRegistry?.activeWindow else { return }
+        guard let windowState = windows.activeWindow else { return }
         toggleDownloadsPopover(in: windowState)
     }
 
     func toggleDownloadsPopover(in windowState: BrowserWindowState) {
-        syncPopoverRegistries()
-        guard let downloadManager = browserManager?.downloadManager else { return }
-        downloadsPopoverPresenter.toggle(in: windowState, downloadManager: downloadManager)
+        downloadsPopoverPresenter.windowRegistry = windows
+        downloadsPopoverPresenter.toggle(
+            in: windowState,
+            downloadManager: downloads
+        )
     }
 
     func closeDownloadsPopover(in windowState: BrowserWindowState) {
-        syncPopoverRegistries()
+        downloadsPopoverPresenter.windowRegistry = windows
         downloadsPopoverPresenter.close(in: windowState)
     }
 
-    func toggleURLBarHubPopover(in windowState: BrowserWindowState) {
-        syncPopoverRegistries()
-        guard let browserContext = browserManager?.urlBarBundle.contextOwner.urlBarHubContext else { return }
+    func toggleURLBarHubPopover(
+        in windowState: BrowserWindowState,
+        browserContext: URLBarHubBrowserContext
+    ) {
         urlBarHubPopoverPresenter.toggle(
             in: windowState,
             browserContext: browserContext
         )
     }
 
-    func presentURLBarHubPopover(in windowState: BrowserWindowState) {
-        syncPopoverRegistries()
-        guard let browserContext = browserManager?.urlBarBundle.contextOwner.urlBarHubContext else { return }
+    func presentURLBarHubPopover(
+        in windowState: BrowserWindowState,
+        browserContext: URLBarHubBrowserContext
+    ) {
         urlBarHubPopoverPresenter.present(
             in: windowState,
             browserContext: browserContext
@@ -70,63 +66,11 @@ final class BrowserChromeCommands {
         urlBarHubPopoverPresenter.close(in: windowState)
     }
 
-    // MARK: - Page privacy
-
     func clearCurrentPageCookies() {
-        guard let browserManager,
-              let tab = browserManager.shellRuntime.activePageResolver
-                .resolveActiveWindow()?.tab,
-              !tab.representsSumiNativeSurface,
-              let context = makePrivacyContext()
-        else { return }
-        browserManager.dataServices.privacyService.clearCurrentPageCookies(using: context)
+        privacy.clearCurrentPageCookies()
     }
 
     func hardReloadCurrentPage() {
-        guard let browserManager,
-              let tab = browserManager.shellRuntime.activePageResolver
-                .resolveActiveWindow()?.tab,
-              !tab.representsSumiNativeSurface,
-              let context = makePrivacyContext()
-        else { return }
-        browserManager.dataServices.privacyService.hardReloadCurrentPage(using: context)
-    }
-
-    private func makePrivacyContext() -> BrowserPrivacyService.Context? {
-        guard browserManager != nil else { return nil }
-        let currentProfileAuthority = currentProfileAuthority
-        return BrowserPrivacyService.Context(
-            currentDataStore: { [weak browserManager] in
-                browserManager?.shellRuntime.activePageResolver
-                    .resolveActiveWindow()?.tab.resolveProfile()?.dataStore
-                    ?? currentProfileAuthority.currentProfile?.dataStore
-                    ?? WKWebsiteDataStore.default()
-            },
-            currentTab: { [weak browserManager] in
-                browserManager?.shellRuntime.activePageResolver
-                    .resolveActiveWindow()?.tab
-            },
-            activeWindowId: { [weak browserManager] in
-                browserManager?.windowRegistry?.activeWindow?.id
-            },
-            reloadWindowScopedPage: { [weak browserManager] tab, windowId, reason, policy in
-                guard let browserManager,
-                      let windowState = browserManager.windowRegistry?.windows[windowId]
-                else { return }
-                if let page = browserManager.shellRuntime.activePageResolver
-                    .resolve(in: windowState),
-                   page.source == .glancePreview,
-                   page.tab.id == tab.id {
-                    _ = page.tab.navigationCommandOwner.refresh(page.tab)
-                    return
-                }
-                browserManager.webViewRoutingService.refreshPage(
-                    for: tab,
-                    in: windowState,
-                    reason: reason,
-                    policy: policy
-                )
-            }
-        )
+        privacy.hardReloadCurrentPage()
     }
 }

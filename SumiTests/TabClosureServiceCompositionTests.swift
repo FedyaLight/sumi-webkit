@@ -7,55 +7,80 @@ import XCTest
 
 @MainActor
 final class TabClosureServiceCompositionTests: XCTestCase {
-    func testLiveCompositionUsesRealTabManagerService() throws {
-        let tabManager = try makeInMemoryTabManager()
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Space")
-        let active = tabManager.regularTabLifecycleOwner.createNewTab(
+    func testExactCompositionMutatesOnlyInjectedGraph() throws {
+        let selectedGraph = BrowserManager()
+        let otherGraph = BrowserManager()
+        let selectedSpace = makeSpace(in: selectedGraph, name: "Selected")
+        let otherSpace = makeSpace(in: otherGraph, name: "Other")
+        let active = selectedGraph.regularTabLifecycleOwner.createNewTab(
+            url: "https://active.example",
+            in: selectedSpace,
+            activate: true
+        )
+        let closed = selectedGraph.regularTabLifecycleOwner.createNewTab(
+            url: "https://closed.example",
+            in: selectedSpace,
+            activate: false
+        )
+        let untouched = otherGraph.regularTabLifecycleOwner.createNewTab(
+            url: "https://untouched.example",
+            in: otherSpace,
+            activate: true
+        )
+
+        let service = makeClosureService(for: selectedGraph)
+        service.removeTab(closed.id)
+
+        XCTAssertNil(selectedGraph.regularTabCollectionOwner.tab(for: closed.id))
+        XCTAssertEqual(selectedGraph.tabStateStore.selection.currentTab?.id, active.id)
+        XCTAssertEqual(
+            otherGraph.regularTabCollectionOwner.tab(for: untouched.id)?.id,
+            untouched.id
+        )
+    }
+
+    func testExactCompositionDoesNotRetainAssemblyManager() throws {
+        var tabManager: BrowserManager? = BrowserManager()
+        let space = makeSpace(
+            in: try XCTUnwrap(tabManager),
+            name: "Space"
+        )
+        let active = try XCTUnwrap(tabManager).regularTabLifecycleOwner.createNewTab(
             url: "https://active.example",
             in: space,
             activate: true
         )
-        let closed = tabManager.regularTabLifecycleOwner.createNewTab(
+        let closed = try XCTUnwrap(tabManager).regularTabLifecycleOwner.createNewTab(
             url: "https://closed.example",
             in: space,
             activate: false
         )
-
-        let service = tabManager.tabClosureService
-        service.removeTab(closed.id)
-
-        XCTAssertNil(tabManager.regularTabCollectionOwner.tab(for: closed.id))
-        XCTAssertEqual(tabManager.selectionStateOwner.currentTab?.id, active.id)
-        XCTAssertTrue(service === tabManager.tabClosureService)
-    }
-
-    func testRetainedClosureServiceDoesNotRetainTabManager() throws {
-        var tabManager: TabManager? = try makeInMemoryTabManager()
-        let service = try XCTUnwrap(tabManager).tabClosureService
+        let regularTabs = try XCTUnwrap(tabManager).regularTabCollectionOwner
+        let selection = try XCTUnwrap(tabManager).tabStateStore.selection
+        let service = makeClosureService(for: try XCTUnwrap(tabManager))
         weak let releasedTabManager = tabManager
 
         tabManager = nil
 
         XCTAssertNil(releasedTabManager)
-        withExtendedLifetime(service) {}
+        service.removeTab(closed.id)
+        XCTAssertNil(regularTabs.tab(for: closed.id))
+        XCTAssertEqual(selection.currentTab?.id, active.id)
     }
 
     func testConfirmedRegularRemovalCapturesRecentlyClosedAndNotifiesOnce() throws {
         var captured: [(UUID, UUID?)] = []
         let notifications = NotificationPresentingSpy()
-        let container = try makeInMemoryStartupModelContainer()
-        let tabManager = TabManager(
-            runtimePorts: TestRuntimePorts.make(
+        let tabManager = BrowserManager()
+        tabManager.runtimePortConnection.attach(
+            TestRuntimePorts.make(
                 captureClosedTab: { tab, spaceId in
                     captured.append((tab.id, spaceId))
                 },
                 notifications: { notifications }
-            ),
-            context: container.mainContext,
-            webViewSessions: WebViewSessionRepository(),
-            loadPersistedState: false
+            )
         )
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Space")
+        let space = makeSpace(in: tabManager, name: "Space")
         let first = tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://first.example",
             in: space,
@@ -67,7 +92,7 @@ final class TabClosureServiceCompositionTests: XCTestCase {
             activate: false
         )
 
-        tabManager.tabClosureService.removeTabs([first.id, second.id])
+        makeClosureService(for: tabManager).removeTabs([first.id, second.id])
 
         XCTAssertEqual(Set(captured.map(\.0)), [first.id, second.id])
         XCTAssertEqual(captured.map(\.1), [space.id, space.id])
@@ -78,17 +103,14 @@ final class TabClosureServiceCompositionTests: XCTestCase {
         var captured: [UUID] = []
         var structuralPublishCount = 0
         let notifications = NotificationPresentingSpy()
-        let container = try makeInMemoryStartupModelContainer()
-        let tabManager = TabManager(
-            runtimePorts: TestRuntimePorts.make(
+        let tabManager = BrowserManager()
+        tabManager.runtimePortConnection.attach(
+            TestRuntimePorts.make(
                 captureClosedTab: { tab, _ in
                     captured.append(tab.id)
                 },
                 notifications: { notifications }
-            ),
-            context: container.mainContext,
-            webViewSessions: WebViewSessionRepository(),
-            loadPersistedState: false
+            )
         )
         let cancellable = tabManager.tabStructureEventBus
             .structureChangedPublisher.sink {
@@ -96,8 +118,8 @@ final class TabClosureServiceCompositionTests: XCTestCase {
             }
 
         let persistence = TabClosurePersistenceSpy()
-        let service = TabClosureService.compose(
-            tabManager: tabManager,
+        let service = makeClosureService(
+            for: tabManager,
             persistence: persistence
         )
         service.removeTabs([UUID(), UUID()])
@@ -110,8 +132,8 @@ final class TabClosureServiceCompositionTests: XCTestCase {
     }
 
     func testSuccessfulBatchUsesOneStructuralTransaction() throws {
-        let tabManager = try makeInMemoryTabManager()
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Space")
+        let tabManager = BrowserManager()
+        let space = makeSpace(in: tabManager, name: "Space")
         let first = tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://first.example",
             in: space,
@@ -129,8 +151,8 @@ final class TabClosureServiceCompositionTests: XCTestCase {
             }
 
         let persistence = TabClosurePersistenceSpy()
-        let service = TabClosureService.compose(
-            tabManager: tabManager,
+        let service = makeClosureService(
+            for: tabManager,
             persistence: persistence
         )
         service.removeTabs([first.id, second.id])
@@ -141,8 +163,8 @@ final class TabClosureServiceCompositionTests: XCTestCase {
     }
 
     func testSelectionAfterClosingActiveRegularUsesPostRemovalNeighbor() throws {
-        let tabManager = try makeInMemoryTabManager()
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Space")
+        let tabManager = BrowserManager()
+        let space = makeSpace(in: tabManager, name: "Space")
         let first = tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://first.example",
             in: space,
@@ -158,11 +180,11 @@ final class TabClosureServiceCompositionTests: XCTestCase {
             in: space,
             activate: false
         )
-        XCTAssertEqual(tabManager.selectionStateOwner.currentTab?.id, active.id)
+        XCTAssertEqual(tabManager.tabStateStore.selection.currentTab?.id, active.id)
 
-        tabManager.tabClosureService.removeTab(active.id)
+        makeClosureService(for: tabManager).removeTab(active.id)
 
-        XCTAssertEqual(tabManager.selectionStateOwner.currentTab?.id, third.id)
+        XCTAssertEqual(tabManager.tabStateStore.selection.currentTab?.id, third.id)
         XCTAssertEqual(
             tabManager.regularTabCollectionOwner.tabs(in: space.id).map(\.id),
             [first.id, third.id]
@@ -170,9 +192,8 @@ final class TabClosureServiceCompositionTests: XCTestCase {
     }
 
     func testConfirmedRemovalUsesOneRuntimeLeaseAcrossSynchronousDetach() throws {
-        var tabManager: TabManager!
+        var tabManager: BrowserManager!
         var events: [String] = []
-        let container = try makeInMemoryStartupModelContainer()
         let runtime = TestRuntimePorts.make(
             webViewLifecycle: TestRuntimePorts.webViewLifecycle(
                 retirement: .rejecting,
@@ -181,7 +202,7 @@ final class TabClosureServiceCompositionTests: XCTestCase {
             ),
             handleTabClosures: { _ in
                 events.append("closures")
-                tabManager.detachBrowserRuntime()
+                tabManager.runtimePortConnection.detach()
             },
             captureClosedTab: { _, _ in events.append("capture") },
             validateWindowStates: {
@@ -189,25 +210,71 @@ final class TabClosureServiceCompositionTests: XCTestCase {
                 return []
             }
         )
-        tabManager = TabManager(
-            runtimePorts: runtime,
-            context: container.mainContext,
-            webViewSessions: WebViewSessionRepository(),
-            loadPersistedState: false
-        )
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Space")
+        tabManager = BrowserManager()
+        tabManager.runtimePortConnection.attach(runtime)
+        let space = makeSpace(in: tabManager, name: "Space")
         let tab = tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://lease.example",
             in: space,
             activate: false
         )
 
-        tabManager.tabClosureService.removeTab(tab.id)
+        makeClosureService(for: tabManager).removeTab(tab.id)
 
-        XCTAssertNil(tabManager.runtimePorts)
+        XCTAssertNil(tabManager.runtimePortConnection.current)
         XCTAssertEqual(
             events,
             ["closures", "unload", "remove", "capture", "validate"]
         )
+    }
+
+    private func makeClosureService(
+        for tabManager: BrowserManager,
+        persistence: (any TabClosurePersistence)? = nil
+    ) -> TabClosureService {
+        let persistence = persistence ?? tabManager.structuralPersistence
+        let candidateRetirement = TabClosureCandidateRetirement(
+            shortcutRetirement: tabManager.shortcutLiveTabRetirement,
+            persistence: persistence,
+            transientExtensionTabs: TransientExtensionTabRetirementTransaction(
+                runtimeConnection: tabManager.runtimePortConnection,
+                membership: tabManager.tabCollectionMembershipOwner
+            ),
+            auxiliaryMiniWindowTabs: tabManager.auxiliaryMiniWindowTabs
+        )
+        let runtimeCleanup = RegularTabClosureRuntimeCleanup(
+            membership: tabManager.tabCollectionMembershipOwner
+        )
+        return TabClosureService(
+            transactions: tabManager.structuralLookupCoordinator,
+            candidateRetirement: candidateRetirement,
+            regularCommit: RegularTabClosureCommitTransaction(
+                regularTabs: tabManager.regularTabCollectionOwner,
+                spaces: tabManager.spaceStateOwner,
+                runtimeCleanup: runtimeCleanup,
+                persistence: persistence,
+                runtimePorts: tabManager.runtimePortConnection
+            ),
+            selectionRepair: RegularTabClosureSelectionRepair(
+                selection: tabManager.tabStateStore.selection,
+                spaces: tabManager.spaceStateOwner,
+                regularTabs: tabManager.regularTabCollectionOwner,
+                shortcutPresentation: tabManager.shortcutPresentationOwner
+            ),
+            targets: RegularTabClosureTargetQuery(
+                regularTabs: tabManager.regularTabCollectionOwner,
+                selection: tabManager.tabStateStore.selection
+            )
+        )
+    }
+
+    private func makeSpace(
+        in browser: BrowserManager,
+        name: String
+    ) -> Space {
+        let space = Space(name: name)
+        browser.spaceStateOwner.append(space)
+        browser.spaceStateOwner.replaceCurrentSpace(space)
+        return space
     }
 }

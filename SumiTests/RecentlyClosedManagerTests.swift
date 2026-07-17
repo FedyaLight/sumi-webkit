@@ -83,4 +83,87 @@ final class RecentlyClosedManagerTests: XCTestCase {
         XCTAssertEqual(window.title, "Latest")
         XCTAssertEqual(window.sessionWindowId, sessionWindowId)
     }
+
+    func testRetirementPurgesEveryProfileBackedItemAndRejectsLateCapture()
+        throws {
+        let container = try makeInMemoryStartupModelContainer()
+        let admission = try ProfileReferenceAdmissionLedger(
+            context: container.mainContext
+        )
+        let manager = RecentlyClosedManager(
+            profileReferenceAdmission: admission
+        )
+        let deleted = Profile(name: "Deleted")
+        let fallback = Profile(name: "Fallback")
+        let tab = Tab(
+            url: URL(string: "https://private-tab.example")!,
+            name: "Private Tab",
+            loadsCachedFaviconOnInit: false
+        )
+        tab.profileId = deleted.id
+        manager.captureClosedTab(
+            tab,
+            sourceSpaceId: nil,
+            currentURL: tab.url,
+            canGoBack: false,
+            canGoForward: false
+        )
+        let pin = ShortcutPin(
+            id: UUID(),
+            role: .spacePinned,
+            profileId: fallback.id,
+            executionProfileId: deleted.id,
+            spaceId: UUID(),
+            index: 0,
+            launchURL: URL(string: "https://private-shortcut.example")!,
+            title: "Private Shortcut"
+        )
+        manager.captureClosedShortcutLiveInstance(
+            tab: Tab(
+                url: pin.launchURL,
+                name: pin.title,
+                loadsCachedFaviconOnInit: false
+            ),
+            pin: pin,
+            sourceWindowId: nil
+        )
+        manager.captureDeletedShortcutLauncher(pin)
+        var session = makeSessionRecoveryWindowSession(currentTabId: UUID())
+        session.currentProfileId = deleted.id
+        manager.captureClosedWindow(
+            sessionWindowId: UUID(),
+            title: "Private Window",
+            session: session
+        )
+        XCTAssertEqual(manager.items.count, 4)
+
+        let token = try admission.reserve(
+            profile: deleted,
+            fallbackID: fallback.id
+        )
+        manager.captureClosedTab(
+            tab,
+            sourceSpaceId: nil,
+            currentURL: tab.url,
+            canGoBack: false,
+            canGoForward: false
+        )
+        XCTAssertEqual(manager.items.count, 4)
+        XCTAssertTrue(try admission.beginReferenceMigration(token))
+        let lease = try admission.beginRetirementReferenceMigration(
+            to: [fallback.id]
+        )
+        XCTAssertTrue(
+            manager.retireProfileReferences(
+                to: deleted.id,
+                mutationLease: lease
+            )
+        )
+        XCTAssertTrue(admission.endReferenceMutation(lease))
+
+        XCTAssertTrue(manager.items.isEmpty)
+        XCTAssertFalse(manager.containsProfileReference(to: deleted.id))
+        XCTAssertFalse(try admission.cancel(token))
+        XCTAssertEqual(admission.record(for: token)?.phase, .migratingReferences)
+    }
 }

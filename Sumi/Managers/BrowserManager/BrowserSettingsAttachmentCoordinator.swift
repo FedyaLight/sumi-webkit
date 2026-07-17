@@ -9,33 +9,35 @@ import Foundation
 /// them knows the browser hub.
 @MainActor
 final class BrowserSettingsAttachmentCoordinator {
-    private weak var currentSettings: SumiSettingsService?
+    private let settingsState: BrowserSettingsState
     private let downloadManager: DownloadManager
     private let tabSuspension: TabSuspensionController
     private let backgroundMedia: SumiBackgroundMediaOptimizationService
-    private let reconcileStartupSession: @MainActor () -> Void
-    private let automaticDataCleanup: BrowserAutomaticDataCleanupOwner
+    private let startupReconciliation: BrowserStartupSessionReconciliationService
+    private let automaticDataCleanup: BrowserAutomaticBrowsingDataCleanup
 
     init(
+        settingsState: BrowserSettingsState,
         downloadManager: DownloadManager,
         tabSuspension: TabSuspensionController,
         backgroundMedia: SumiBackgroundMediaOptimizationService,
-        reconcileStartupSession: @escaping @MainActor () -> Void,
-        automaticDataCleanup: BrowserAutomaticDataCleanupOwner
+        startupReconciliation: BrowserStartupSessionReconciliationService,
+        automaticDataCleanup: BrowserAutomaticBrowsingDataCleanup
     ) {
+        self.settingsState = settingsState
         self.downloadManager = downloadManager
         self.tabSuspension = tabSuspension
         self.backgroundMedia = backgroundMedia
-        self.reconcileStartupSession = reconcileStartupSession
+        self.startupReconciliation = startupReconciliation
         self.automaticDataCleanup = automaticDataCleanup
     }
 
     var settings: SumiSettingsService? {
-        currentSettings
+        settingsState.settings
     }
 
     func attach(_ settings: SumiSettingsService?) {
-        currentSettings = settings
+        settingsState.update(settings)
         downloadManager.settings = settings
         // Weak capture keeps the policy source tracking the live settings
         // object without retaining it past its owner.
@@ -43,9 +45,7 @@ final class BrowserSettingsAttachmentCoordinator {
             TabSuspensionPolicy(settings: settings)
         }
         backgroundMedia.scheduleReconcile(reason: "settings-attached")
-        reconcileStartupSession()
-        automaticDataCleanup.scheduleAutomaticBrowsingDataCleanup(
-            reason: "settings-attached"
-        )
+        startupReconciliation.reconcileIfReady()
+        automaticDataCleanup.schedule(reason: "settings-attached")
     }
 }

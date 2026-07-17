@@ -11,18 +11,15 @@ enum WebViewProfileRuntimeComposition {
         replacementPipeline: WebViewReplacementPipeline,
         replacementActivation: ReplacementNavigationActivation,
         admissionIsBlocked: @escaping (UUID) -> Bool,
-        deferAdmission: @escaping (
-            UUID,
-            WebsiteDataMutationGate.DeferredAdmissionKey,
-            @escaping @MainActor () -> Void
-        ) -> Bool,
+        deferAdmission: @escaping WebsiteDataMutationGate.OrdinaryAdmissionDeferral,
         isProtected: @escaping (WKWebView) -> Bool,
         preparedIsProtected: @escaping (WKWebView) -> Bool,
         deferProtectedCommand: @escaping (
             DeferredWebViewCommand,
             WKWebView,
             String
-        ) -> DeferredProtectedCommandSchedulingOutcome
+        ) -> DeferredProtectedCommandSchedulingOutcome,
+        profileReferenceAdmission: ProfileReferenceAdmissionLedger
     ) -> WebViewProfileAssignmentService {
         let transitions = ProfileTransitionService(runtime: .init(
             webViewSessions: webViewSessions,
@@ -32,23 +29,24 @@ enum WebViewProfileRuntimeComposition {
             deferProtectedCommand: deferProtectedCommand,
             provisioning: ProfileReplacementProvisioning(),
             pipeline: replacementPipeline,
-            activation: replacementActivation
+            activation: replacementActivation,
+            profileAdmissions: profileReferenceAdmission
         ))
-        let preparedTransitions = PreparedProfileAssignmentBatchTransitionService(
-            runtime: .init(
-                webViewSessions: webViewSessions,
-                admissionIsBlocked: admissionIsBlocked,
-                isProtected: preparedIsProtected,
-                provisioning: ProfileReplacementProvisioning(),
-                pipeline: replacementPipeline,
-                activation: replacementActivation
-            )
-        )
         return WebViewProfileAssignmentService(
             runtimeTabs: runtimeTabs,
             resolveRuntimeTab: resolveRuntimeTab,
             transitions: transitions,
-            preparedTransitions: preparedTransitions,
+            preparedTransitions: PreparedProfileAssignmentBatchTransitionService(
+                runtime: .init(
+                    webViewSessions: webViewSessions,
+                    admissionIsBlocked: admissionIsBlocked,
+                    isProtected: preparedIsProtected,
+                    provisioning: ProfileReplacementProvisioning(),
+                    pipeline: replacementPipeline,
+                    activation: replacementActivation,
+                    profileAdmissions: profileReferenceAdmission
+                )
+            ),
             replacementPipeline: replacementPipeline
         )
     }

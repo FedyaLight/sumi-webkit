@@ -121,9 +121,9 @@ final class ExtensionPageNavigationPreparationOwner {
         guard let profileId = tabProfiles.profileID(for: tab) else {
             return nil
         }
-        let controller = controllerProvisioning.ensureExtensionController(
+        guard let controller = controllerProvisioning.controllerIfAdmitted(
             for: profileId
-        )
+        ) else { return nil }
         return controller.extensionContext(for: targetURL)
     }
 

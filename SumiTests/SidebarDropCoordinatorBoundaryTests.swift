@@ -228,7 +228,7 @@ final class SidebarDropCoordinatorBoundaryTests: XCTestCase {
         let inventory = FailingInventory()
         let operations = RecordingDragOperations(payload: nil)
         let port = SidebarDragTransactionPort(
-            windows: SidebarWindowIdentityQuery(registry: { registry }),
+            windows: SidebarWindowIdentityQuery(registry: registry),
             sourceInventory: inventory,
             dragOperations: operations,
             urlDropService: unusedURLDropService()
@@ -257,20 +257,22 @@ final class SidebarDropCoordinatorBoundaryTests: XCTestCase {
         let browserManager = makeSafariExtensionTestBrowserManager(
             profile: profile
         )
-        let tabManager = browserManager.tabManager
-        let space = tabManager.spaceServices.catalog.createSpace(
-            name: "Work",
-            profileId: profile.id
+        let space = try XCTUnwrap(
+            browserManager.sidebarSpaceLifecycle.createSpace(
+                name: "Work",
+                icon: SumiPersistentGlyph.spaceDefaultIconValue,
+                profileID: profile.id
+            )
         )
         let first = try makeEssentialPin(
-            tabManager,
+            browserManager,
             in: space,
             profileId: profile.id,
             url: "https://first.example",
             index: 0
         )
         let moved = try makeEssentialPin(
-            tabManager,
+            browserManager,
             in: space,
             profileId: profile.id,
             url: "https://moved.example",
@@ -290,9 +292,7 @@ final class SidebarDropCoordinatorBoundaryTests: XCTestCase {
         let windowState = BrowserWindowState()
         windowState.currentSpaceId = space.id
         windowState.currentProfileId = profile.id
-        let windowRegistry = WindowRegistry()
-        windowRegistry.register(windowState)
-        browserManager.windowRegistry = windowRegistry
+        browserManager.windowRegistry.register(windowState)
         let context = WindowSidebarContext.make(
             browserManager: browserManager,
             updaterService: SumiUpdaterService(backendFactory: { _ in nil })
@@ -310,7 +310,7 @@ final class SidebarDropCoordinatorBoundaryTests: XCTestCase {
             )
         )
         XCTAssertEqual(
-            tabManager.shortcutPinCollectionStateOwner
+            browserManager.shortcutPinCollectionStateOwner
                 .essentialPins(for: profile.id).map(\.id),
             [moved.id, first.id]
         )
@@ -366,25 +366,28 @@ final class SidebarDropCoordinatorBoundaryTests: XCTestCase {
     }
 
     private func makeEssentialPin(
-        _ tabManager: TabManager,
+        _ browser: BrowserManager,
         in space: Space,
         profileId: UUID,
         url: String,
         index: Int
     ) throws -> ShortcutPin {
-        let tab = tabManager.regularTabLifecycleOwner.createNewTab(
+        let tab = browser.regularTabLifecycleOwner.createNewTab(
             url: url,
             in: space,
             activate: false
         )
         return try XCTUnwrap(
-            tabManager.shortcutPinCommandOwner.convertTabToShortcutPin(
+            browser.regularTabShortcutConversion.convert(
                 tab,
-                role: .essential,
-                profileId: profileId,
-                spaceId: nil,
-                folderId: nil,
-                at: index
+                destination: TabShortcutPinDestination(
+                    role: .essential,
+                    profileId: profileId,
+                    spaceId: nil,
+                    folderId: nil,
+                    index: index,
+                    opensFolder: false
+                )
             )
         )
     }

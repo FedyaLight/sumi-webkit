@@ -16,7 +16,9 @@ struct SpacePinnedActionOwner {
     let inventory: SidebarSpaceInventorySnapshot
     let selection: SidebarWindowSelectionQuery
     let pinProjection: SidebarPinFolderProjection
-    let pinCommands: SidebarPinFolderCommands
+    let pinCommands: SidebarPinCommands
+    let pinExecution: SidebarPinExecutionCommands
+    let folderCommands: SidebarFolderCommands
     let spaceLifecycle: SidebarSpaceLifecycle
     let windowState: BrowserWindowState
     let themeContext: ResolvedThemeContext
@@ -70,14 +72,18 @@ struct SpacePinnedActionOwner {
                 share: {
                     SidebarLinkActions.presentSharePicker(
                         for: pin.launchURL,
-                        source: windowState.resolveSidebarPresentationSource(in: browserContext.windowRegistry()),
-                        presentationActions: browserContext.presentationActions
+                        source: browserContext.windows.presentationSource(
+                            for: windowState
+                        ),
+                        presentation: browserContext.sharingPresentation
                     )
                 },
                 edit: {
                     presentShortcutLinkEditor(
                         for: pin,
-                        source: windowState.resolveSidebarPresentationSource(in: browserContext.windowRegistry())
+                        source: browserContext.windows.presentationSource(
+                            for: windowState
+                        )
                     )
                 },
                 folderTarget: .init(
@@ -91,7 +97,7 @@ struct SpacePinnedActionOwner {
                 profileTarget: .init(
                     choices: profileChoices,
                     onSelect: { profileId in
-                        _ = pinCommands.assignExecutionProfile(pin, profileID: profileId)
+                        _ = pinExecution.assignExecutionProfile(pin, profileID: profileId)
                     }
                 ),
                 addToEssentials: addToEssentialsAction,
@@ -106,19 +112,19 @@ struct SpacePinnedActionOwner {
 
     func ungroupFolder(_ folder: TabFolder) {
         mutatePinnedContent {
-            _ = pinCommands.ungroupFolder(folder.id)
+            _ = folderCommands.ungroupFolder(folder.id)
         }
     }
 
     func deleteFolder(_ folder: TabFolder) {
-        let childCount = pinCommands.recursiveChildCount(for: folder.id, in: space.id) ?? 0
+        let childCount = folderCommands.recursiveChildCount(for: folder.id, in: space.id) ?? 0
         guard childCount == 0 else {
             confirmDeleteFolder(folder, childCount: childCount)
             return
         }
 
         mutatePinnedContent {
-            _ = pinCommands.deleteFolder(folder.id)
+            _ = folderCommands.deleteFolder(folder.id)
         }
     }
 
@@ -133,7 +139,7 @@ struct SpacePinnedActionOwner {
             kind: .pinnedTab,
             title: pin.preferredDisplayTitle,
             url: pin.launchURL,
-            window: windowState.shellWindow(in: browserContext.windowRegistry()),
+            window: browserContext.windows.shellWindow(for: windowState),
             themeContext: themeContext,
             onDelete: { removeShortcutPin(pin) }
         )
@@ -143,11 +149,11 @@ struct SpacePinnedActionOwner {
         SidebarSavedItemDeletionConfirmationPresenter.confirmDeleteFolder(
             folderName: folder.name,
             childCount: childCount,
-            window: windowState.shellWindow(in: browserContext.windowRegistry()),
+            window: browserContext.windows.shellWindow(for: windowState),
             themeContext: themeContext,
             onDelete: {
                 mutatePinnedContent {
-                    _ = pinCommands.deleteFolder(folder.id)
+                    _ = folderCommands.deleteFolder(folder.id)
                 }
             }
         )
@@ -162,24 +168,41 @@ struct SpacePinnedActionOwner {
     }
 
     func unloadShortcutPin(_ pin: ShortcutPin) {
-        browserContext.commands.unloadShortcutPin(pin, windowState)
+        browserContext.shortcutPinUnload.unloadShortcutPin(
+            pin,
+            in: windowState
+        )
     }
 
     func activateShortcutPin(_ pin: ShortcutPin) {
-        guard let tab = pinCommands.materialize(
+        guard let tab = pinExecution.materialize(
             pin,
             in: windowState,
             currentSpaceID: space.id
         ) else { return }
-        browserContext.commands.requestUserTabActivation(tab, windowState)
+        browserContext.tabSelection.requestUserTabActivation(
+            tab,
+            in: windowState,
+            loadPolicy: .immediate
+        )
     }
 
     func focusSplitGroup(_ groupID: UUID, memberID: SplitMemberID) {
-        browserContext.commands.focusSplitGroup(groupID, memberID, windowState.id)
+        browserContext.splitFocusCommands.focusGroup(
+            groupID,
+            memberID,
+            windowState.id
+        )
     }
 
     func duplicateShortcutPin(_ pin: ShortcutPin) {
-        _ = browserContext.commands.openForegroundTab(pin.launchURL.absoluteString, windowState, space.id)
+        _ = browserContext.tabOpening.openNewTab(
+            url: pin.launchURL.absoluteString,
+            context: .foreground(
+                windowState: windowState,
+                preferredSpaceId: space.id
+            )
+        )
     }
 
     func moveShortcutPin(_ pin: ShortcutPin, toFolder folderId: UUID) {
@@ -195,18 +218,27 @@ struct SpacePinnedActionOwner {
     }
 
     func pinShortcutGlobally(_ pin: ShortcutPin) {
-        browserContext.commands.pinShortcutGlobally(pin, windowState, space.id, activeShortcutTab(for: pin))
+        _ = browserContext.shortcutCopy.copyToEssentials(
+            pin,
+            title: pin.resolvedDisplayTitle(liveTab: activeShortcutTab(for: pin)),
+            context: EssentialsShortcutPlacementOwner.TargetContext(
+                windowState: windowState,
+                spaceId: space.id
+            )
+        )
     }
 
     private func presentShortcutLinkEditor(
         for pin: ShortcutPin,
         source: SidebarTransientPresentationSource? = nil
     ) {
-        browserContext.presentationActions.showShortcutEditor(
-            pin,
-            windowState,
-            themeContext,
-            source ?? windowState.resolveSidebarPresentationSource(in: browserContext.windowRegistry())
+        browserContext.shortcutEditorPresentation.show(
+            pin: pin,
+            in: windowState,
+            themeContext: themeContext,
+            source: source ?? browserContext.windows.presentationSource(
+                for: windowState
+            )
         )
     }
 

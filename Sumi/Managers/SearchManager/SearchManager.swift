@@ -54,7 +54,9 @@ class SearchManager {
     private let suggestionDataProvider: SearchSuggestionDataProviding
     private var webSuggestionTask: Task<Void, Never>?
     private var historySuggestionTask: Task<Void, Never>?
-    private weak var tabManager: TabManager?
+    private weak var tabMembership: TabCollectionMembershipOwner?
+    private weak var shortcutPresentation: TabShortcutPresentationOwner?
+    private weak var runtimeConnection: TabRuntimePortConnection?
     private weak var historyManager: HistoryManager?
     private weak var bookmarkManager: SumiBookmarkManager?
     private var currentProfileId: UUID?
@@ -101,8 +103,14 @@ class SearchManager {
         }
     }
 
-    func setTabManager(_ tabManager: TabManager?) {
-        self.tabManager = tabManager
+    func setTabSources(
+        membership: TabCollectionMembershipOwner,
+        shortcutPresentation: TabShortcutPresentationOwner,
+        runtimeConnection: TabRuntimePortConnection
+    ) {
+        tabMembership = membership
+        self.shortcutPresentation = shortcutPresentation
+        self.runtimeConnection = runtimeConnection
         updateProfileContext()
     }
 
@@ -124,8 +132,8 @@ class SearchManager {
             bookmarks: { [weak bookmarkManager] in
                 bookmarkManager?.allBookmarks() ?? []
             },
-            openTabs: { [weak tabManager] in
-                tabManager?.tabCollectionMembershipOwner.allTabsForCurrentProfile() ?? []
+            openTabs: { [weak tabMembership] in
+                tabMembership?.allTabsForCurrentProfile() ?? []
             }
         )
         historySuggestionTask = Task { @MainActor [weak self] in
@@ -148,23 +156,32 @@ class SearchManager {
         activeWebSuggestionGeneration = webSuggestionRequestGeneration
         isLoadingSuggestions = false
 
-        guard let tabManager else {
+        guard let tabMembership,
+              let shortcutPresentation,
+              let runtimeConnection
+        else {
             clearSuggestions()
             return
         }
 
         let owner = ActiveTabSuggestionOwner(
-            allTabsForCurrentProfile: { [weak tabManager] in
-                tabManager?.tabCollectionMembershipOwner.allTabsForCurrentProfile() ?? []
+            allTabsForCurrentProfile: { [weak tabMembership] in
+                tabMembership?.allTabsForCurrentProfile() ?? []
             },
-            liveShortcutTabs: { [weak tabManager] windowId in
-                tabManager?.shortcutPresentationOwner.liveShortcutTabs(in: windowId) ?? []
+            liveShortcutTabs: { [weak shortcutPresentation] windowId in
+                shortcutPresentation?.liveShortcutTabs(in: windowId) ?? []
             },
-            shortcutLiveTab: { [weak tabManager] pinId, windowId in
-                tabManager?.shortcutPresentationOwner.shortcutLiveTab(for: pinId, in: windowId)
+            shortcutLiveTab: { [weak shortcutPresentation] pinId, windowId in
+                shortcutPresentation?.shortcutLiveTab(
+                    for: pinId,
+                    in: windowId
+                )
             },
-            visibleSplitTabIds: { [weak tabManager] windowId in
-                Set(tabManager?.runtimePorts?.visibleSplitTabIds(for: windowId) ?? [])
+            visibleSplitTabIds: { [weak runtimeConnection] windowId in
+                Set(
+                    runtimeConnection?.current?
+                        .visibleSplitTabIds(for: windowId) ?? []
+                )
             }
         )
         let activeTabs = owner.suggestions(for: windowState)
@@ -176,7 +193,7 @@ class SearchManager {
     }
 
     @MainActor func updateProfileContext() {
-        let pid = tabManager?.runtimePorts?.currentProfileId
+        let pid = runtimeConnection?.current?.currentProfileId
         currentProfileId = pid
         #if DEBUG
         if let pid { RuntimeDiagnostics.emit("🔎 [SearchManager] Profile context updated: \(pid.uuidString)") }
@@ -361,7 +378,7 @@ class SearchManager {
     private func currentSuggestionStoreContext() -> SuggestionStoreContext {
         SuggestionContextBuilder.storeContext(
             bookmarks: bookmarkManager?.allBookmarks() ?? [],
-            tabs: tabManager?.tabCollectionMembershipOwner.allTabsForCurrentProfile() ?? []
+            tabs: tabMembership?.allTabsForCurrentProfile() ?? []
         )
     }
 

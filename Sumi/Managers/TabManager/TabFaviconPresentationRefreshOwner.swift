@@ -6,7 +6,8 @@ final class TabFaviconPresentationRefreshOwner {
 
     private let notificationCenter: NotificationCenter
     private let debounceNanoseconds: UInt64
-    private let tabsNeedingRefresh: () -> [Tab]
+    private let regularTabs: RegularTabCollectionStateOwner
+    private let liveShortcutTabs: LiveShortcutTabRegistry
 
     private var faviconCacheObserver: NSObjectProtocol?
     private var pendingRefreshTask: Task<Void, Never>?
@@ -15,11 +16,13 @@ final class TabFaviconPresentationRefreshOwner {
         notificationCenter: NotificationCenter,
         debounceNanoseconds: UInt64 = TabFaviconPresentationRefreshOwner
             .defaultDebounceNanoseconds,
-        tabsNeedingRefresh: @escaping () -> [Tab]
+        regularTabs: RegularTabCollectionStateOwner,
+        liveShortcutTabs: LiveShortcutTabRegistry
     ) {
         self.notificationCenter = notificationCenter
         self.debounceNanoseconds = debounceNanoseconds
-        self.tabsNeedingRefresh = tabsNeedingRefresh
+        self.regularTabs = regularTabs
+        self.liveShortcutTabs = liveShortcutTabs
     }
 
     deinit {
@@ -68,7 +71,9 @@ final class TabFaviconPresentationRefreshOwner {
     }
 
     private func refreshCachedFaviconPresentation() {
-        for tab in tabsNeedingRefresh() where tab.faviconIsTemplateGlobePlaceholder {
+        let tabs = regularTabs.allTabsSnapshot()
+            + liveShortcutTabs.snapshot.values.flatMap(\.values)
+        for tab in tabs where tab.faviconIsTemplateGlobePlaceholder {
             _ = tab.applyCachedFaviconOrPlaceholder(for: tab.url)
         }
     }

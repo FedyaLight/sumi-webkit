@@ -22,7 +22,8 @@ struct EssentialTileActionOwner {
     let inventory: SidebarSpaceInventorySnapshot
     let selection: SidebarWindowSelectionQuery
     let pinProjection: SidebarPinFolderProjection
-    let pinCommands: SidebarPinFolderCommands
+    let pinCommands: SidebarPinCommands
+    let pinExecution: SidebarPinExecutionCommands
     let spaceLifecycle: SidebarSpaceLifecycle
     let windowState: BrowserWindowState
     let themeContext: ResolvedThemeContext
@@ -56,8 +57,10 @@ struct EssentialTileActionOwner {
                     share: {
                         SidebarLinkActions.presentSharePicker(
                             for: pin.launchURL,
-                            source: windowState.resolveSidebarPresentationSource(in: browserContext.windowRegistry()),
-                            presentationActions: browserContext.presentationActions
+                            source: browserContext.windows.presentationSource(
+                                for: windowState
+                            ),
+                            presentation: browserContext.sharingPresentation
                         )
                     },
                     edit: { presentShortcutLinkEditor(for: pin) },
@@ -72,7 +75,7 @@ struct EssentialTileActionOwner {
                     profileTarget: .init(
                         choices: profileChoices(for: pin),
                         onSelect: { profileId in
-                            _ = pinCommands.assignExecutionProfile(pin, profileID: profileId)
+                            _ = pinExecution.assignExecutionProfile(pin, profileID: profileId)
                         }
                     ),
                     savedURLDrift: savedURLDriftActions,
@@ -84,14 +87,19 @@ struct EssentialTileActionOwner {
     }
 
     func unload(_ pin: ShortcutPin) {
-        browserContext.commands.unloadShortcutPin(pin, windowState)
+        browserContext.shortcutPinUnload.unloadShortcutPin(
+            pin,
+            in: windowState
+        )
     }
 
     func duplicateAsRegularTab(_ pin: ShortcutPin) {
-        _ = browserContext.commands.openForegroundTab(
-            pin.launchURL.absoluteString,
-            windowState,
-            windowState.currentSpaceId
+        _ = browserContext.tabOpening.openNewTab(
+            url: pin.launchURL.absoluteString,
+            context: .foreground(
+                windowState: windowState,
+                preferredSpaceId: windowState.currentSpaceId
+            )
         )
     }
 
@@ -114,18 +122,18 @@ struct EssentialTileActionOwner {
             kind: .essential,
             title: pin.preferredDisplayTitle,
             url: pin.launchURL,
-            window: windowState.shellWindow(in: browserContext.windowRegistry()),
+            window: browserContext.windows.shellWindow(for: windowState),
             themeContext: themeContext,
             onDelete: { removeFromEssentials(pin) }
         )
     }
 
     private func presentShortcutLinkEditor(for pin: ShortcutPin) {
-        browserContext.presentationActions.showShortcutEditor(
-            pin,
-            windowState,
-            themeContext,
-            windowState.resolveSidebarPresentationSource(in: browserContext.windowRegistry())
+        browserContext.shortcutEditorPresentation.show(
+            pin: pin,
+            in: windowState,
+            themeContext: themeContext,
+            source: browserContext.windows.presentationSource(for: windowState)
         )
     }
 

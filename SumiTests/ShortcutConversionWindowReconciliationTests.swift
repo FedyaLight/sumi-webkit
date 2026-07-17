@@ -1,4 +1,5 @@
 import Combine
+import SumiDomain
 import XCTest
 
 @testable import Sumi
@@ -10,12 +11,18 @@ final class ShortcutConversionWindowTests: XCTestCase {
         let historyOnly = BrowserWindowState()
         let states = [displayed.id: displayed, historyOnly.id: historyOnly]
         var persistedWindowIds: [UUID] = []
-        let tabManager = try makeInMemoryTabManager(
+        let tabManager = BrowserManager()
+        tabManager.runtimePortConnection.attach(TestRuntimePorts.make(
             windowState: { states[$0] },
             windows: { states.map { ($0.key, $0.value) } },
             persistWindowSession: { persistedWindowIds.append($0.id) }
-        )
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Space")
+        ))
+        states.values.forEach { tabManager.windowRegistry.register($0) }
+        let space = try XCTUnwrap(tabManager.sidebarSpaceLifecycle.createSpace(
+            name: "Space",
+            icon: SumiPersistentGlyph.spaceDefaultIconValue,
+            profileID: nil
+        ))
         let tab = tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://history-only.example",
             in: space,
@@ -34,13 +41,16 @@ final class ShortcutConversionWindowTests: XCTestCase {
             in: space.id
         )
 
-        let pin = tabManager.shortcutPinCommandOwner.convertTabToShortcutPin(
+        let pin = tabManager.regularTabShortcutConversion.convert(
             tab,
-            role: .spacePinned,
-            profileId: nil,
-            spaceId: space.id,
-            folderId: nil,
-            at: 0,
+            destination: TabShortcutPinDestination(
+                role: .spacePinned,
+                profileId: nil,
+                spaceId: space.id,
+                folderId: nil,
+                index: 0,
+                opensFolder: false
+            ),
             preferredWindowId: displayed.id
         )
 
@@ -61,14 +71,20 @@ final class ShortcutConversionWindowTests: XCTestCase {
         let remembered = BrowserWindowState()
         var structuralEvents = 0
         var persisted: [(UUID, Int)] = []
-        let tabManager = try makeInMemoryTabManager(
+        let tabManager = BrowserManager()
+        tabManager.runtimePortConnection.attach(TestRuntimePorts.make(
             windowState: { $0 == remembered.id ? remembered : nil },
             windows: { [(remembered.id, remembered)] },
             persistWindowSession: {
                 persisted.append(($0.id, structuralEvents))
             }
-        )
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Space")
+        ))
+        tabManager.windowRegistry.register(remembered)
+        let space = try XCTUnwrap(tabManager.sidebarSpaceLifecycle.createSpace(
+            name: "Space",
+            icon: SumiPersistentGlyph.spaceDefaultIconValue,
+            profileID: nil
+        ))
         let tab = tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://detached.example",
             in: space,
@@ -90,13 +106,16 @@ final class ShortcutConversionWindowTests: XCTestCase {
             .structureChangedPublisher.sink { structuralEvents += 1 }
         structuralEvents = 0
 
-        let pin = tabManager.shortcutPinCommandOwner.convertTabToShortcutPin(
+        let pin = tabManager.regularTabShortcutConversion.convert(
             tab,
-            role: .spacePinned,
-            profileId: nil,
-            spaceId: space.id,
-            folderId: nil,
-            at: 0
+            destination: TabShortcutPinDestination(
+                role: .spacePinned,
+                profileId: nil,
+                spaceId: space.id,
+                folderId: nil,
+                index: 0,
+                opensFolder: false
+            )
         )
 
         XCTAssertNotNil(pin)
@@ -117,9 +136,16 @@ final class ShortcutConversionWindowTests: XCTestCase {
                 container: try makeInMemoryStartupModelContainer()
             )
         )
-        let tabManager = browserManager.tabManager
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Space")
-        let folder = tabManager.folderMutationOwner.createFolder(for: space.id)
+        let tabManager = browserManager
+        let space = try XCTUnwrap(tabManager.sidebarSpaceLifecycle.createSpace(
+            name: "Space",
+            icon: SumiPersistentGlyph.spaceDefaultIconValue,
+            profileID: nil
+        ))
+        let folder = try XCTUnwrap(tabManager.sidebarFolderCommands.createFolder(
+            in: space.id,
+            name: "Folder"
+        ))
         let tab = tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://runtime-bound.example",
             in: space,
@@ -132,15 +158,18 @@ final class ShortcutConversionWindowTests: XCTestCase {
         XCTAssertTrue(tab.hasBrowserRuntime)
         XCTAssertNil(tab.resolvedCurrentWebView())
         XCTAssertFalse(folder.isOpen)
-        tabManager.detachBrowserRuntime()
+        browserManager.tabRuntimeLifecycle.shutdown()
 
-        let pin = tabManager.shortcutPinCommandOwner.convertTabToShortcutPin(
+        let pin = tabManager.regularTabShortcutConversion.convert(
             tab,
-            role: .spacePinned,
-            profileId: nil,
-            spaceId: space.id,
-            folderId: folder.id,
-            at: 0
+            destination: TabShortcutPinDestination(
+                role: .spacePinned,
+                profileId: nil,
+                spaceId: space.id,
+                folderId: folder.id,
+                index: 0,
+                opensFolder: true
+            )
         )
 
         XCTAssertNil(pin)

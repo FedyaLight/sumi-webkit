@@ -3,47 +3,24 @@ import Foundation
 
 @MainActor
 final class BrowserNativeSurfaceRoutingOwner {
-    private let tabManagerAction: @MainActor @Sendable () -> TabManager?
-    private let settingsAction: @MainActor @Sendable () -> SumiSettingsService?
-    private let openNewTabAction: @MainActor @Sendable (String, BrowserTabOpenContext) -> Tab?
-    private let selectTabAction: @MainActor @Sendable (Tab, BrowserWindowState) -> Void
-    private let focusWindowAction: @MainActor @Sendable (BrowserWindowState) -> Void
+    private let residence: BrowserNativeSurfaceResidenceOwner
+    private let settings: BrowserSettingsState
+    private let tabOpening: BrowserTabOpeningOwner
+    private let selection: BrowserTabSelectionOwner
+    private let windows: WindowRegistry
 
     init(
-        tabManager: @escaping @MainActor @Sendable () -> TabManager?,
-        settings: @escaping @MainActor @Sendable () -> SumiSettingsService?,
-        openNewTab: @escaping @MainActor @Sendable (String, BrowserTabOpenContext) -> Tab?,
-        selectTab: @escaping @MainActor @Sendable (Tab, BrowserWindowState) -> Void,
-        focusWindow: @escaping @MainActor @Sendable (BrowserWindowState) -> Void
+        residence: BrowserNativeSurfaceResidenceOwner,
+        settings: BrowserSettingsState,
+        tabOpening: BrowserTabOpeningOwner,
+        selection: BrowserTabSelectionOwner,
+        windows: WindowRegistry
     ) {
-        self.tabManagerAction = tabManager
-        self.settingsAction = settings
-        self.openNewTabAction = openNewTab
-        self.selectTabAction = selectTab
-        self.focusWindowAction = focusWindow
-    }
-
-    convenience init(browserManager: BrowserManager) {
-        self.init(
-            tabManager: { [weak browserManager] in
-                browserManager?.tabManager
-            },
-            settings: { [weak browserManager] in browserManager?.sumiSettings },
-            openNewTab: { [weak browserManager] url, context in
-                browserManager?.tabLifecycleService.opening.openNewTab(
-                    url: url,
-                    context: context
-                )
-            },
-            selectTab: { [weak browserManager] tab, windowState in
-                browserManager?.selectTab(tab, in: windowState)
-            },
-            focusWindow: { [weak browserManager] windowState in
-                windowState.shellWindow(in: browserManager?.windowRegistry)?
-                    .makeKeyAndOrderFront(nil)
-                NSApp.activate(ignoringOtherApps: true)
-            }
-        )
+        self.residence = residence
+        self.settings = settings
+        self.tabOpening = tabOpening
+        self.selection = selection
+        self.windows = windows
     }
 
     func openNativeBrowserSurface(
@@ -52,71 +29,47 @@ final class BrowserNativeSurfaceRoutingOwner {
         in windowState: BrowserWindowState,
         preferredSpaceId: UUID? = nil
     ) {
-        guard let tabManager = tabManagerAction() else { return }
-
         if windowState.isIncognito, let profile = windowState.ephemeralProfile {
             if let existing = windowState.ephemeralTabs.first(where: { kind.matches($0) }) {
                 configureAndSelect(existing, kind: kind, url: url, in: windowState)
             } else {
-                let newTab = tabManager.ephemeralLifecycleOwner.createEphemeralTab(
+                let newTab = residence.makeEphemeralTab(
                     url: url,
                     in: windowState,
                     profile: profile
                 )
                 configureAndSelect(newTab, kind: kind, url: url, in: windowState)
             }
-            focusWindowAction(windowState)
+            focus(windowState)
             return
         }
 
-        let targetSpace = resolvedTargetSpace(
-            tabManager: tabManager,
-            windowState: windowState,
-            preferredSpaceId: preferredSpaceId
+        let targetSpace = residence.targetSpace(
+            for: windowState,
+            preferredSpaceID: preferredSpaceId
         )
 
-        if let sid = targetSpace?.id,
-           let existing = tabManager.regularTabCollectionOwner.tabs(in: sid).first(where: { kind.matches($0) }) {
+        if let existing = residence.existingRegularTab(
+            matching: kind,
+            in: targetSpace
+        ) {
             configureAndSelect(existing, kind: kind, url: url, in: windowState)
-            tabManager.structuralPersistence.scheduleRuntimeStatePersistence(for: existing)
-            focusWindowAction(windowState)
+            residence.persistRuntimeState(of: existing)
+            focus(windowState)
             return
         }
 
-        guard let newTab = openNewTabAction(
-            url.absoluteString,
-            .foreground(
+        let newTab = tabOpening.openNewTab(
+            url: url.absoluteString,
+            context: .foreground(
                 windowState: windowState,
                 preferredSpaceId: targetSpace?.id,
                 loadPolicy: .deferred
             )
-        ) else { return }
+        )
         configureSurface(newTab, kind: kind, url: url)
-        tabManager.structuralPersistence.scheduleRuntimeStatePersistence(for: newTab)
-        focusWindowAction(windowState)
-    }
-
-    private func resolvedTargetSpace(
-        tabManager: TabManager,
-        windowState: BrowserWindowState,
-        preferredSpaceId: UUID?
-    ) -> Space? {
-        if let preferredSpaceId,
-           let preferredSpace = tabManager.spaceStateOwner.spaces.first(where: { $0.id == preferredSpaceId }) {
-            return preferredSpace
-        }
-
-        if let windowSpaceId = windowState.currentSpaceId,
-           let windowSpace = tabManager.spaceStateOwner.spaces.first(where: { $0.id == windowSpaceId }) {
-            return windowSpace
-        }
-
-        if let profileId = windowState.currentProfileId,
-           let profileSpace = tabManager.spaceStateOwner.spaces.first(where: { $0.profileId == profileId }) {
-            return profileSpace
-        }
-
-        return tabManager.spaceStateOwner.spaces.first
+        residence.persistRuntimeState(of: newTab)
+        focus(windowState)
     }
 
     private func configureAndSelect(
@@ -126,7 +79,11 @@ final class BrowserNativeSurfaceRoutingOwner {
         in windowState: BrowserWindowState
     ) {
         configureSurface(tab, kind: kind, url: url)
-        selectTabAction(tab, windowState)
+        _ = selection.selectTab(
+            tab,
+            in: windowState,
+            loadPolicy: .immediate
+        )
     }
 
     private func configureSurface(
@@ -143,6 +100,11 @@ final class BrowserNativeSurfaceRoutingOwner {
         url: URL
     ) {
         guard case .settings = kind else { return }
-        settingsAction()?.applyNavigationFromSettingsSurfaceURL(url)
+        settings.settings?.applyNavigationFromSettingsSurfaceURL(url)
+    }
+
+    private func focus(_ windowState: BrowserWindowState) {
+        windowState.shellWindow(in: windows)?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
     }
 }

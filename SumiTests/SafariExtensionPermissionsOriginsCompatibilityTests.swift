@@ -172,9 +172,9 @@ final class SafariExtensionPermissionsOriginsCompatibilityTests: XCTestCase {
             reason: "SafariExtensionPermissionsOriginsCompatibilityTests"
         )
 
-        let tab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
+        let tab = browserManager.regularTabLifecycleOwner.createNewTab(
             url: pageURL.absoluteString,
-            in: browserManager.tabManager.spaceStateOwner.currentSpace,
+            in: browserManager.spaceStateOwner.currentSpace,
             activate: false,
             webViewConfigurationOverride: configuration
         )

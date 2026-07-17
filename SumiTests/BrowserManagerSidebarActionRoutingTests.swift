@@ -9,7 +9,7 @@ final class BrowserManagerSidebarActionRoutingTests: XCTestCase {
         defer { removePersistedWindowSession() }
 
         let harness = makeHarness()
-        harness.browserManager.tabManager.spaceStateOwner.replaceCurrentSpace(harness.secondarySpace)
+        harness.browserManager.spaceStateOwner.replaceCurrentSpace(harness.secondarySpace)
 
         harness.browserManager.chromeBundle.sidebarActionOwner.createFolderInCurrentSpace(in: harness.windowState)
 
@@ -17,8 +17,8 @@ final class BrowserManagerSidebarActionRoutingTests: XCTestCase {
             harness.browserManager.chromeBundle.sidebarActionOwner.spaceForSidebarActions(in: harness.windowState)?.id,
             harness.primarySpace.id
         )
-        XCTAssertEqual(harness.browserManager.tabManager.folderCollectionStateOwner.folders(for: harness.primarySpace.id).count, 1)
-        XCTAssertTrue(harness.browserManager.tabManager.folderCollectionStateOwner.folders(for: harness.secondarySpace.id).isEmpty)
+        XCTAssertEqual(harness.browserManager.folderCollectionStateOwner.folders(for: harness.primarySpace.id).count, 1)
+        XCTAssertTrue(harness.browserManager.folderCollectionStateOwner.folders(for: harness.secondarySpace.id).isEmpty)
     }
 
     func testGlobalSidebarToggleTargetsOnlyRegisteredWindowWhenNoActiveWindowExists() {
@@ -31,15 +31,15 @@ final class BrowserManagerSidebarActionRoutingTests: XCTestCase {
         XCTAssertTrue(harness.windowState.isSidebarVisible)
 
         harness.browserManager.chromeBundle.sidebarPresentationOwner.toggleSidebar()
-        harness.browserManager.windowSessionBundle.persistence.flush()
+        harness.browserManager.windowSessionPersistenceCoordinator.flush()
 
         XCTAssertEqual(harness.windowRegistry.activeWindowId, harness.windowState.id)
         XCTAssertFalse(harness.windowState.isSidebarVisible)
     }
 
     private func makeHarness(activateWindow: Bool = true) -> Harness {
-        let browserManager = BrowserManager()
         let windowRegistry = WindowRegistry()
+        let browserManager = BrowserManager(windowRegistry: windowRegistry)
         let profile = Profile(name: "Primary")
         let primarySpace = Space(name: "Primary", profileId: profile.id)
         let secondarySpace = Space(name: "Secondary", profileId: profile.id)
@@ -47,11 +47,10 @@ final class BrowserManagerSidebarActionRoutingTests: XCTestCase {
 
         browserManager.profileManager.profiles = [profile]
         browserManager.currentProfile = profile
-        browserManager.windowRegistry = windowRegistry
-        browserManager.tabManager.spaceStateOwner.replaceSpaces([primarySpace, secondarySpace])
-        browserManager.tabManager.spaceStateOwner.replaceCurrentSpace(primarySpace)
+        browserManager.spaceStateOwner.replaceSpaces([primarySpace, secondarySpace])
+        browserManager.spaceStateOwner.replaceCurrentSpace(primarySpace)
 
-        windowState.tabManager = browserManager.tabManager
+        browserManager.tabResidenceAuthority.establishResidenceSession(on: windowState)
         windowState.currentSpaceId = primarySpace.id
         windowState.currentProfileId = profile.id
 

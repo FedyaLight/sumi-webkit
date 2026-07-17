@@ -1,4 +1,6 @@
+import Combine
 import SumiWebRuntime
+import SwiftData
 import XCTest
 
 @testable import Sumi
@@ -6,27 +8,29 @@ import XCTest
 @MainActor
 final class TabProfileTransitionRuntimeLeaseTests: XCTestCase {
     func testDetachedRuntimeRejectsProfileExistenceAdmission() throws {
-        let tabManager = try makeInMemoryTabManager(
-            attachRuntimePorts: false
+        let tabManager = BrowserManager()
+        let policy = ProfileAssignmentPolicy(
+            runtimeConnection: tabManager.runtimePortConnection,
+            spaces: tabManager.spaceStateOwner,
+            membership: tabManager.tabCollectionMembershipOwner,
+            transientTabs: tabManager.tabStateStore.transientTabs
         )
 
         XCTAssertFalse(
-            tabManager.profileAssignments.policy.profileExists(UUID())
+            policy.profileExists(UUID())
         )
         XCTAssertNil(
-            tabManager.profileAssignments.policy.placementProfileIDs().current
+            policy.placementProfileIDs().current
         )
         XCTAssertNil(
-            tabManager.profileAssignments.policy.placementProfileIDs().default
+            policy.placementProfileIDs().default
         )
     }
 
     func testPlacementProfileIDsRejectRuntimeAttachmentReplacement() throws {
         let currentProfileID = UUID()
         let defaultProfileID = UUID()
-        let tabManager = try makeInMemoryTabManager(
-            attachRuntimePorts: false
-        )
+        let tabManager = BrowserManager()
         defer { tabManager.runtimePortConnection.detach() }
         let replacementCurrentProfileID = UUID()
         let replacement = TestRuntimePorts.make(
@@ -46,8 +50,13 @@ final class TabProfileTransitionRuntimeLeaseTests: XCTestCase {
         )
         tabManager.runtimePortConnection.attach(original)
 
-        let profileIDs = tabManager.profileAssignments.policy
-            .placementProfileIDs()
+        let policy = ProfileAssignmentPolicy(
+            runtimeConnection: tabManager.runtimePortConnection,
+            spaces: tabManager.spaceStateOwner,
+            membership: tabManager.tabCollectionMembershipOwner,
+            transientTabs: tabManager.tabStateStore.transientTabs
+        )
+        let profileIDs = policy.placementProfileIDs()
 
         XCTAssertTrue(didReplaceAttachment)
         XCTAssertNil(profileIDs.current)
@@ -61,39 +70,147 @@ final class TabProfileTransitionRuntimeLeaseTests: XCTestCase {
     func testDetachedSpaceTransitionDoesNotPinSourceProfile() throws {
         let sourceProfileID = UUID()
         let targetProfileID = UUID()
-        let tabManager = try makeInMemoryTabManager(
-            attachRuntimePorts: false
-        )
-        let source = tabManager.spaceServices.catalog.createSpace(
+        let tabManager = BrowserManager()
+        let source = Space(
             name: "Source",
             profileId: sourceProfileID
         )
-        let target = tabManager.spaceServices.catalog.createSpace(
+        let target = Space(
             name: "Target",
             profileId: targetProfileID
         )
+        tabManager.spaceStateOwner.replaceSpaces([source, target])
         let tab = Tab()
         tab.spaceId = source.id
 
-        let preparation = tabManager.profileAssignments.tabs
+        let preparation = tabManager.tabProfileTransitions
             .prepareForSpaceTransition(
                 tab: tab,
                 targetSpaceID: target.id
             )
 
-        XCTAssertNil(preparation)
+        XCTAssertEqual(preparation, .rejected)
         XCTAssertNil(tab.profileId)
         XCTAssertEqual(tab.spaceId, source.id)
         XCTAssertFalse(tab.profileAssignment.hasUnsettledAssignment)
+    }
+
+    func testPreparedRegularPlacementRollsBackStagedProfileTransition()
+        throws {
+        let sourceProfile = Profile(name: "Source")
+        let targetProfile = Profile(name: "Target")
+        let profiles = [
+            sourceProfile.id: sourceProfile,
+            targetProfile.id: targetProfile,
+        ]
+        let tabManager = BrowserManager()
+        tabManager.runtimePortConnection.attach(TestRuntimePorts.make(
+            currentProfileId: { sourceProfile.id },
+            defaultProfileId: { sourceProfile.id },
+            profile: { profiles[$0] }
+        ))
+        let source = Space(
+            name: "Source",
+            profileId: sourceProfile.id
+        )
+        let target = Space(
+            name: "Target",
+            profileId: targetProfile.id
+        )
+        tabManager.spaceStateOwner.replaceSpaces([source, target])
+        let tab = tabManager.regularTabLifecycleOwner.createNewTab(
+            in: source,
+            activate: false
+        )
+
+        let placement = try XCTUnwrap(
+            tabManager.regularTabCollectionOwner.preparePlacement(
+                tab,
+                in: target.id,
+                at: 0
+            )
+        )
+
+        XCTAssertNil(tab.profileId)
+        XCTAssertEqual(tab.spaceId, source.id)
+        XCTAssertNotNil(tabManager.regularTabCollectionOwner.remove(
+            tab.id,
+            from: source.id,
+            currentSpaceId: source.id
+        ))
+        XCTAssertTrue(placement.stage())
+        XCTAssertEqual(tab.profileId, sourceProfile.id)
+        XCTAssertEqual(tab.spaceId, target.id)
+        XCTAssertTrue(placement.rollback())
+        XCTAssertNil(tab.profileId)
+        XCTAssertEqual(tab.spaceId, source.id)
+        XCTAssertTrue(
+            tabManager.regularTabCollectionOwner.tabs(in: target).isEmpty
+        )
+    }
+
+    func testRegularPlacementRestoresSourceWhenTargetSnapshotChanges()
+        throws {
+        let profile = Profile(name: "Profile")
+        let tabManager = BrowserManager()
+        tabManager.runtimePortConnection.attach(TestRuntimePorts.make(
+            currentProfileId: { profile.id },
+            defaultProfileId: { profile.id },
+            profile: { $0 == profile.id ? profile : nil }
+        ))
+        let source = Space(
+            name: "Source",
+            profileId: profile.id
+        )
+        let target = Space(
+            name: "Target",
+            profileId: profile.id
+        )
+        tabManager.spaceStateOwner.replaceSpaces([source, target])
+        let tab = tabManager.regularTabLifecycleOwner.createNewTab(
+            in: source,
+            activate: false
+        )
+        let intruder = tabManager.tabFactory.makeTab(
+            spaceId: target.id,
+            loadsCachedFaviconOnInit: false
+        )
+
+        let placed = tabManager.regularTabCollectionOwner.place(
+            tab,
+            in: target.id,
+            at: 0,
+            removingFromSource: {
+                guard tabManager.regularTabCollectionOwner.remove(
+                    tab.id,
+                    from: source.id,
+                    currentSpaceId: source.id
+                ) != nil else { return false }
+                tabManager.structuralCollectionMutationOwner.setTabs(
+                    [intruder],
+                    for: target.id
+                )
+                return true
+            }
+        )
+
+        XCTAssertFalse(placed)
+        XCTAssertEqual(
+            tabManager.regularTabCollectionOwner.tabs(in: source).map(\.id),
+            [tab.id]
+        )
+        XCTAssertTrue(
+            tabManager.regularTabCollectionOwner.tabs(in: target).isEmpty
+        )
+        XCTAssertEqual(tab.spaceId, source.id)
+        XCTAssertNil(tab.profileId)
     }
 
     func testLateSettlementFromSupersededAttachmentReportsLeaseLossWithoutPublication()
         throws {
         let profile = Profile(name: "Target")
         let transition = DeferredSpaceProfileTransition()
-        let tabManager = try makeInMemoryTabManager(
-            attachRuntimePorts: false
-        )
+        let tabManager = BrowserManager()
         defer { tabManager.runtimePortConnection.detach() }
         let original = TestRuntimePorts.make(
             currentProfileId: { profile.id },
@@ -116,7 +233,7 @@ final class TabProfileTransitionRuntimeLeaseTests: XCTestCase {
         var settlements: [ProfileTransitionSettlement] = []
 
         XCTAssertEqual(
-            tabManager.profileAssignments.tabs.start(
+            tabManager.tabProfileTransitions.start(
                 desiredProfileID: profile.id,
                 tab: tab,
                 requiresStructuralPersistence: true,
@@ -157,9 +274,7 @@ final class TabProfileTransitionRuntimeLeaseTests: XCTestCase {
     func testImmediateExecutionReportsLeaseLossWhenIntentObserverReattachesRuntime()
         throws {
         let profile = Profile(name: "Target")
-        let tabManager = try makeInMemoryTabManager(
-            attachRuntimePorts: false
-        )
+        let tabManager = BrowserManager()
         defer { tabManager.runtimePortConnection.detach() }
         let replacement = TestRuntimePorts.make(
             currentProfileId: { profile.id },
@@ -176,7 +291,7 @@ final class TabProfileTransitionRuntimeLeaseTests: XCTestCase {
         var settlements: [ProfileTransitionSettlement] = []
 
         XCTAssertEqual(
-            tabManager.profileAssignments.tabs.start(
+            tabManager.tabProfileTransitions.start(
                 desiredProfileID: profile.id,
                 tab: tab,
                 requiresStructuralPersistence: true,
@@ -198,9 +313,7 @@ final class TabProfileTransitionRuntimeLeaseTests: XCTestCase {
         let sourceProfile = Profile(name: "Source")
         let targetProfile = Profile(name: "Target")
         let transition = DeferredSpaceProfileTransition()
-        let tabManager = try makeInMemoryTabManager(
-            attachRuntimePorts: false
-        )
+        let tabManager = BrowserManager()
         defer { tabManager.runtimePortConnection.detach() }
         let original = TestRuntimePorts.make(
             currentProfileId: { sourceProfile.id },
@@ -239,7 +352,7 @@ final class TabProfileTransitionRuntimeLeaseTests: XCTestCase {
         var settlements: [ProfileTransitionSettlement] = []
 
         XCTAssertEqual(
-            tabManager.profileAssignments.tabs.start(
+            tabManager.tabProfileTransitions.start(
                 desiredProfileID: targetProfile.id,
                 tab: tab,
                 requiresStructuralPersistence: true,
@@ -251,7 +364,7 @@ final class TabProfileTransitionRuntimeLeaseTests: XCTestCase {
         tabManager.runtimePortConnection.attach(replacement)
 
         XCTAssertFalse(
-            tabManager.profileAssignments.tabs.executeDeferred(
+            tabManager.tabProfileTransitions.executeDeferred(
                 tab: tab,
                 intent: try XCTUnwrap(intent)
             )
@@ -267,9 +380,7 @@ final class TabProfileTransitionRuntimeLeaseTests: XCTestCase {
         async throws {
         let deletedProfile = Profile(name: "Deleted")
         let fallbackProfile = Profile(name: "Fallback")
-        let tabManager = try makeInMemoryTabManager(
-            attachRuntimePorts: false
-        )
+        let tabManager = BrowserManager()
         defer { tabManager.runtimePortConnection.detach() }
         var replacementProfileQueries = 0
         let replacement = TestRuntimePorts.make(
@@ -298,11 +409,11 @@ final class TabProfileTransitionRuntimeLeaseTests: XCTestCase {
         )
         tabManager.runtimePortConnection.attach(original)
         let contextlessTab = Tab()
-        tabManager.transientTabRegistryOwner.registerAuxiliaryMiniWindowTab(
-            contextlessTab
-        )
+        tabManager.tabCollectionMembershipOwner.attach(contextlessTab)
+        tabManager.tabCollectionMembershipOwner
+            .registerAuxiliaryMiniWindowTab(contextlessTab)
 
-        let outcome = await tabManager.profileAssignments.deletion.migrate(
+        let outcome = await tabManager.profileDeletion.migrate(
             deletedProfileID: deletedProfile.id,
             fallbackProfileID: fallbackProfile.id
         )
@@ -316,9 +427,7 @@ final class TabProfileTransitionRuntimeLeaseTests: XCTestCase {
 
     func testStartRejectsProfileResolvedBySupersededRuntimeAttachment() throws {
         let profile = Profile(name: "Target")
-        let tabManager = try makeInMemoryTabManager(
-            attachRuntimePorts: false
-        )
+        let tabManager = BrowserManager()
         defer { tabManager.runtimePortConnection.detach() }
         var replacementExecutions = 0
         let replacementCurrentProfileID = UUID()
@@ -353,7 +462,7 @@ final class TabProfileTransitionRuntimeLeaseTests: XCTestCase {
         let tab = Tab()
         let sourceRevision = tab.profileAssignment.changeRevision
 
-        let outcome = tabManager.profileAssignments.tabs.start(
+        let outcome = tabManager.tabProfileTransitions.start(
             desiredProfileID: profile.id,
             tab: tab,
             requiresStructuralPersistence: true
@@ -372,9 +481,7 @@ final class TabProfileTransitionRuntimeLeaseTests: XCTestCase {
 
     func testStartWithSupersededCallerLeaseRejectsBeforeRuntimeQuery() throws {
         let profile = Profile(name: "Target")
-        let tabManager = try makeInMemoryTabManager(
-            attachRuntimePorts: false
-        )
+        let tabManager = BrowserManager()
         defer { tabManager.runtimePortConnection.detach() }
         var originalProfileQueries = 0
         let original = TestRuntimePorts.make(
@@ -401,7 +508,7 @@ final class TabProfileTransitionRuntimeLeaseTests: XCTestCase {
         let tab = Tab()
         let sourceRevision = tab.profileAssignment.changeRevision
 
-        let outcome = tabManager.profileAssignments.tabs.start(
+        let outcome = tabManager.tabProfileTransitions.start(
             desiredProfileID: profile.id,
             tab: tab,
             requiresStructuralPersistence: true,
@@ -418,10 +525,10 @@ final class TabProfileTransitionRuntimeLeaseTests: XCTestCase {
         )
     }
 
-    func testRetainedServiceDoesNotRetainTabManager() throws {
-        var tabManager: TabManager? = try makeInMemoryTabManager()
+    func testRetainedServiceDoesNotRetainBrowserManager() throws {
+        var tabManager: BrowserManager? = BrowserManager()
         let retainedService = try XCTUnwrap(
-            tabManager?.profileAssignments.tabs
+            tabManager?.tabProfileTransitions
         )
         weak let releasedManager = tabManager
 
@@ -430,5 +537,151 @@ final class TabProfileTransitionRuntimeLeaseTests: XCTestCase {
         withExtendedLifetime(retainedService) {
             XCTAssertNil(releasedManager)
         }
+    }
+
+    func testProfilelessPlacementWithoutAdmissionWitnessRejectsBeforeMutation()
+        throws {
+        let fixture = try RegularPlacementFailClosedFixture()
+        let target = Space(name: "Unassigned")
+        fixture.state.spaces.replaceSpaces([target])
+        let tab = Tab()
+
+        let placement = fixture.placement.prepare(
+            tab,
+            in: target.id,
+            at: 0,
+            admissionProfileIDs: nil
+        )
+
+        XCTAssertNil(placement)
+        XCTAssertNil(tab.spaceId)
+        XCTAssertNil(tab.profileId)
+        XCTAssertTrue(fixture.state.regularTabs.tabs(in: target.id).isEmpty)
+        XCTAssertFalse(fixture.membership.lookupContainsExact(tab))
+    }
+
+    func testProfileSettlementFailureDoesNotPublishMembership() throws {
+        let fixture = try RegularPlacementFailClosedFixture()
+        let sourceProfile = Profile(name: "Source")
+        let targetProfile = Profile(name: "Target")
+        let profiles = [
+            sourceProfile.id: sourceProfile,
+            targetProfile.id: targetProfile,
+        ]
+        let source = Space(name: "Source", profileId: sourceProfile.id)
+        let target = Space(name: "Target", profileId: targetProfile.id)
+        fixture.state.spaces.replaceSpaces([source, target])
+        fixture.runtimeConnection.attach(TestRuntimePorts.make(
+            currentProfileId: { sourceProfile.id },
+            defaultProfileId: { sourceProfile.id },
+            profile: { profiles[$0] }
+        ))
+        let tab = Tab(spaceId: source.id)
+        let placement = try XCTUnwrap(fixture.placement.prepare(
+            tab,
+            in: target.id,
+            at: 0,
+            admissionProfileIDs: nil
+        ))
+        var publicationCount = 0
+
+        XCTAssertTrue(placement.stage())
+        fixture.runtimeConnection.detach()
+        XCTAssertFalse(placement.finish(publishing: {
+            publicationCount += 1
+            fixture.membership.attach(tab)
+        }))
+
+        XCTAssertEqual(publicationCount, 0)
+        XCTAssertFalse(fixture.membership.lookupContainsExact(tab))
+        XCTAssertTrue(placement.rollback())
+        XCTAssertTrue(fixture.state.regularTabs.tabs(in: target.id).isEmpty)
+        XCTAssertEqual(tab.spaceId, source.id)
+        XCTAssertNil(tab.profileId)
+    }
+}
+
+@MainActor
+private final class RegularPlacementFailClosedFixture {
+    let state: TabStateStore
+    let runtimeConnection: TabRuntimePortConnection
+    let membership: TabCollectionMembershipOwner
+    let placement: RegularTabPlacementTransaction
+    private let retainedModelContainer: ModelContainer
+
+    init() throws {
+        let container = try makeInMemoryStartupModelContainer()
+        retainedModelContainer = container
+        let state = TabStateStore()
+        self.state = state
+        let runtimeConnection = TabRuntimePortConnection()
+        self.runtimeConnection = runtimeConnection
+        let structuralLookup = TabStructuralLookupCoordinator(
+            eventBus: TabStructureEventBus(),
+            stateStore: state
+        )
+        let writes = TabStoreWriteExecutor(container: container)
+        let persistence = TabStructuralPersistenceService(
+            structuralStore: TabStructuralSnapshotStore(writes: writes),
+            selectionStore: TabSelectionStore(writes: writes),
+            runtimeStateCoalescer: RuntimeStateCoalescer { _ in },
+            state: state
+        )
+        let mutations = TabStructuralCollectionMutationOwner(
+            store: TabStructuralCollectionStore(
+                regularTabs: state.regularTabs,
+                folders: state.folders,
+                shortcutPins: state.shortcutPins
+            ),
+            snapshots: TabStructuralCollectionSnapshotStore(
+                regularTabs: state.regularTabs,
+                folders: state.folders,
+                shortcutPins: state.shortcutPins
+            ),
+            publisher: TabStructuralMutationPublisher(
+                persistence: persistence,
+                faviconService: TabDependencyIsolationDefaults.faviconService,
+                lookup: structuralLookup,
+                changes: ObservableObjectPublisher(),
+                regularTabs: state.regularTabs
+            )
+        )
+        let membership = TabCollectionMembershipOwner(
+            structuralLookupOwner: structuralLookup.lookupOwner,
+            state: state,
+            runtimePreparation: TabRuntimePreparationOwner(
+                runtimeConnection: runtimeConnection
+            ),
+            runtimeConnection: runtimeConnection
+        )
+        self.membership = membership
+        let policy = ProfileAssignmentPolicy(
+            runtimeConnection: runtimeConnection,
+            spaces: state.spaces,
+            membership: membership,
+            transientTabs: state.transientTabs
+        )
+        let profileTransitions = TabProfileTransitionService(
+            runtimeConnection: runtimeConnection,
+            policy: policy,
+            pendingInheritance: PendingTabProfileInheritance(),
+            publication: TabProfileTransitionPublication(
+                spaces: state.spaces,
+                membership: membership,
+                persistence: persistence,
+                structuralLookup: structuralLookup
+            )
+        )
+        let admission = RegularTabPlacementAdmission(
+            policy: policy,
+            references: .testingAllowingReferences(),
+            profiles: profileTransitions
+        )
+        placement = RegularTabPlacementTransaction(
+            stateOwner: state.regularTabs,
+            structuralMutations: mutations,
+            structuralLookup: structuralLookup,
+            admission: admission
+        )
     }
 }

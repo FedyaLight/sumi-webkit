@@ -5,25 +5,15 @@ import SumiDomain
 /// fallbacks.
 @MainActor
 final class BrowserWindowSpaceContextReconciler {
-    private let tabManager: TabManager
-    private let commitWorkspaceTheme: (WorkspaceTheme, BrowserWindowState) -> Void
+    private let membership: TabCollectionMembershipOwner
+    private let spaces: TabSpaceCollectionStateOwner
 
     init(
-        tabManager: TabManager,
-        commitWorkspaceTheme: @escaping (WorkspaceTheme, BrowserWindowState) -> Void
+        membership: TabCollectionMembershipOwner,
+        spaces: TabSpaceCollectionStateOwner
     ) {
-        self.tabManager = tabManager
-        self.commitWorkspaceTheme = commitWorkspaceTheme
-    }
-
-    convenience init(browserManager: BrowserManager) {
-        self.init(
-            tabManager: browserManager.tabManager,
-            commitWorkspaceTheme: { [weak browserManager] theme, windowState in
-                browserManager?.chromeBundle.workspaceThemeTransitionOwner
-                    .commitWorkspaceTheme(theme, for: windowState)
-            }
-        )
+        self.membership = membership
+        self.spaces = spaces
     }
 
     @discardableResult
@@ -48,7 +38,6 @@ final class BrowserWindowSpaceContextReconciler {
             didChange = true
         }
 
-        commitWorkspaceTheme(resolvedSpace?.workspaceTheme ?? .default, windowState)
         return didChange
     }
 
@@ -65,20 +54,23 @@ final class BrowserWindowSpaceContextReconciler {
         }
     }
 
+    func workspaceTheme(for windowState: BrowserWindowState) -> WorkspaceTheme {
+        space(for: windowState.currentSpaceId)?.workspaceTheme ?? .default
+    }
+
     private func resolvedSpace(for windowState: BrowserWindowState) -> Space? {
         if let currentSpace = space(for: windowState.currentSpaceId) {
             return currentSpace
         }
 
         if let currentTabId = windowState.currentTabId,
-           let tabSpaceId = tabManager.tabCollectionMembershipOwner
-               .tab(for: currentTabId)?.spaceId,
+           let tabSpaceId = membership.tab(for: currentTabId)?.spaceId,
            let tabSpace = space(for: tabSpaceId) {
             return tabSpace
         }
 
         if let profileId = windowState.currentProfileId {
-            return tabManager.spaceStateOwner.spaces.first {
+            return spaces.spaces.first {
                 $0.profileId == profileId
             }
         }
@@ -88,6 +80,6 @@ final class BrowserWindowSpaceContextReconciler {
 
     private func space(for spaceId: UUID?) -> Space? {
         guard let spaceId else { return nil }
-        return tabManager.spaceStateOwner.space(with: spaceId)
+        return spaces.space(with: spaceId)
     }
 }

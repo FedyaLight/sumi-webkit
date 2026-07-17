@@ -220,6 +220,32 @@ struct ExtensionProfileRuntimeState {
         contextBindingGenerationByProfile = generations
     }
 
+    func containsProfileReference(to profileID: UUID) -> Bool {
+        controllersByProfile[profileID] != nil
+            || controllerBindingRevisionByProfile[profileID] != nil
+            || contextsByProfile[profileID] != nil
+            || contextBindingGenerationByProfile[profileID] != nil
+            || contextBindingRevisionByProfile[profileID] != nil
+    }
+
+    mutating func removeProfileBindings(for profileID: UUID) {
+        if controllersByProfile.removeValue(forKey: profileID) != nil {
+            bumpControllerBindingRevision(for: profileID)
+        }
+        if let contexts = contextsByProfile.removeValue(forKey: profileID) {
+            for extensionID in contexts.keys {
+                _ = bumpContextBindingRevision(
+                    extensionId: extensionID,
+                    profileId: profileID
+                )
+            }
+            _ = bumpContextBindingGeneration(for: profileID)
+        }
+        controllerBindingRevisionByProfile.removeValue(forKey: profileID)
+        contextBindingGenerationByProfile.removeValue(forKey: profileID)
+        contextBindingRevisionByProfile.removeValue(forKey: profileID)
+    }
+
     func contextBindingRevision(
         extensionId: String,
         profileId: UUID

@@ -3,24 +3,36 @@ import Foundation
 
 @MainActor
 enum BrowserManagerRuntimeWiring {
-    static func attach(to browserManager: BrowserManager) -> AnyCancellable {
+    static func attach(
+        to browserManager: BrowserManager,
+        splitQuery: WindowSplitQuery
+    ) -> AnyCancellable {
         precondition(
-            browserManager.tabManager.runtimePortsAttachmentOwner.canAttach,
+            browserManager.tabRuntimeLifecycle.canStart,
             "Browser tab runtime ports must attach exactly once"
         )
         attachWebViewRuntime(to: browserManager)
         attachShellRuntime(to: browserManager)
         browserManager.compositorManager.attach(runtime: .make(browserManager: browserManager))
-        let tabRuntimeCompositionCancellable = BrowserTabRuntimeCompositionService.attach(
-            to: browserManager
+        let tabRuntimeCompositionCancellable = attachTabResourceRuntimes(
+            to: browserManager,
+            splitQuery: splitQuery
+        )
+        let webViewCommandCancellable = attachWebViewCommands(
+            windowCommands: browserManager.webViewWindowCommands,
+            closeRequests: browserManager.webViewCloseRequests,
+            windows: browserManager.windowRegistry,
+            membership: browserManager.tabCollectionMembershipOwner,
+            selection: browserManager.browserTabSelection,
+            visuals: browserManager.shellRuntime.windowVisuals,
+            closeRouter: browserManager.webViewCloseRouter
         )
         let runtimePortRegistry = BrowserTabManagerRuntimePortsFactory.registry(
             for: browserManager
         )
         precondition(
-            browserManager.tabManager.runtimePortsAttachmentOwner.attach(
-                runtimePortRegistry
-            ) == .attached,
+            browserManager.tabRuntimeLifecycle.start(with: runtimePortRegistry)
+                == .attached,
             "Browser tab runtime ports must attach exactly once"
         )
         startPersistedStateLoadIfShellReady(browserManager)
@@ -43,7 +55,10 @@ enum BrowserManagerRuntimeWiring {
         browserManager.authenticationManager.attach(
             runtime: BrowserAuthenticationRuntimeFactory.runtime(for: browserManager)
         )
-        return tabRuntimeCompositionCancellable
+        return AnyCancellable {
+            tabRuntimeCompositionCancellable.cancel()
+            webViewCommandCancellable.cancel()
+        }
     }
 
     private static func attachWebViewRuntime(to browserManager: BrowserManager) {
@@ -52,10 +67,10 @@ enum BrowserManagerRuntimeWiring {
             webViewRuntime.webViewSessions === browserManager.webViewSessions,
             "Browser session and WebView runtime must share one repository"
         )
+        let extensions = browserManager.optionalModules.extensions
         webViewRuntime.websiteDataCleanupService.registerExtensionRuntime {
-            [weak browserManager] profileIDs in
-            guard let browserManager else { return false }
-            return browserManager.optionalModules.extensions
+            [extensions] profileIDs in
+            extensions
                 .quiesceForWebsiteDataMutation(profileIDs: profileIDs)
         }
 
@@ -71,39 +86,130 @@ enum BrowserManagerRuntimeWiring {
             .attachDestructiveCleanupPreparer(cleanup)
     }
 
-    private static func attachShellRuntime(to browserManager: BrowserManager) {
-        browserManager.shellRuntime.attach(
-            windowRegistryChanged: { [weak browserManager] registry in
-                guard let browserManager else { return }
-                browserManager.glanceManager.windowRegistry = registry
-                Task { @MainActor [weak browserManager] in
-                    await browserManager?.privacyBundle.permissionSidebarPinningOwner.reconcile(
-                        reason: "window-registry-updated"
-                    )
+    private enum WebViewCommand {
+        case window(BrowserWebViewWindowCommand)
+        case close(BrowserWebViewCloseRequest)
+    }
+
+    private static func attachWebViewCommands(
+        windowCommands: BrowserWebViewWindowCommandChannel,
+        closeRequests: BrowserWebViewCloseRequestBroker,
+        windows: WindowRegistry,
+        membership: TabCollectionMembershipOwner,
+        selection: BrowserTabSelectionOwner,
+        visuals: BrowserWindowVisualCoordinator,
+        closeRouter: BrowserWebViewCloseRouter
+    ) -> AnyCancellable {
+        Publishers.Merge(
+            windowCommands.publisher.map(WebViewCommand.window),
+            closeRequests.publisher.map(WebViewCommand.close)
+        )
+        .sink { command in
+            switch command {
+            case .window(.selectTab(let tabID, let windowID)):
+                guard let window = windows.windows[windowID],
+                      let tab = membership.tab(for: tabID) else {
+                    return
                 }
-                browserManager.backgroundMediaOptimizationService.scheduleReconcile(
-                    reason: "window-registry-updated"
+                _ = selection.selectTab(
+                    tab,
+                    in: window,
+                    loadPolicy: .deferred
                 )
-                browserManager.reconcileStartupSessionIfPossible()
-                startPersistedStateLoadIfShellReady(browserManager)
+            case .window(.refreshCompositor(let windowID)):
+                guard let window = windows.windows[windowID] else { return }
+                visuals.refreshCompositor(for: window)
+            case .close(let request):
+                closeRequests.resolve(
+                    request,
+                    handled: closeRouter.handleNormalWebViewDidClose(
+                        request.webView
+                    )
+                )
             }
+        }
+    }
+
+    private static func attachShellRuntime(to browserManager: BrowserManager) {
+        browserManager.glanceManager.windowRegistry = browserManager.windowRegistry
+        browserManager.privacyBundle.permissionSidebarPinningOwner
+            .scheduleReconciliation(reason: "window-registry-attached")
+        browserManager.backgroundMediaOptimizationService.scheduleReconcile(
+            reason: "window-registry-attached"
+        )
+        browserManager.reconcileStartupSessionIfPossible()
+        startPersistedStateLoadIfShellReady(browserManager)
+    }
+
+    private static func attachTabResourceRuntimes(
+        to browserManager: BrowserManager,
+        splitQuery: WindowSplitQuery
+    ) -> AnyCancellable {
+        let shellRuntime = browserManager.shellRuntime
+        let webViewRuntime = browserManager.webViewRuntime
+        let tabSuspension = browserManager.tabSuspensionController
+        let backgroundMedia = browserManager.backgroundMediaOptimizationService
+        let reconciliation = BrowserTabRuntimeReconcileOwner(
+            tabSuspension: tabSuspension,
+            backgroundMedia: backgroundMedia
+        )
+        let structuralObserver = BrowserTabStructuralRuntimeObserver(
+            structuralChanges: browserManager.tabStructureEventBus.structureChangedPublisher,
+            reconciliation: reconciliation
+        )
+        let tabSuspensionRuntime = BrowserTabSuspensionRuntimeFactory.ports(
+            windowRegistry: { [weak shellRuntime] in
+                shellRuntime?.windowRegistry
+            },
+            regularTabs: browserManager.tabCollectionMembershipOwner,
+            lazyRestore: browserManager.lazyRestoreCoordinator,
+            windowTabs: shellRuntime.windowTabs,
+            splitQuery: splitQuery,
+            webView: TabSuspensionWebViewRuntime(
+                liveWebViews: { [ownership = webViewRuntime.ownershipQuery] tab in
+                    ownership.suspensionLiveWebViews(for: tab)
+                },
+                suspendWebViews: { [lifecycle = webViewRuntime.lifecycleService] tab, reason in
+                    lifecycle.suspendWebViews(for: tab, reason: reason)
+                },
+                isProtectedFromCompositorMutation: {
+                    [protection = webViewRuntime.protectionRuntime] webView in
+                    protection.isProtected(webView)
+                }
+            )
+        )
+        let backgroundMediaRuntime = BrowserBackgroundMediaRuntimeFactory.runtime(
+            webViews: BrowserBackgroundMediaWebViewProjection(
+                ownership: webViewRuntime.ownershipQuery
+            ),
+            energyPolicy: BrowserBackgroundMediaEnergyPolicy(
+                settings: browserManager.settingsAttachment
+            ),
+            tabs: BrowserRuntimeTabCatalog(
+                regularTabs: browserManager.tabCollectionMembershipOwner,
+                windows: browserManager.windowRegistry
+            ),
+            visibility: BrowserBackgroundMediaVisibilityProjection(
+                windows: browserManager.windowRegistry,
+                windowTabs: shellRuntime.windowTabs,
+                splitQuery: splitQuery
+            )
+        )
+
+        return BrowserTabRuntimeCompositionService.attach(
+            tabSuspension: tabSuspension,
+            tabSuspensionRuntime: tabSuspensionRuntime,
+            backgroundMedia: backgroundMedia,
+            backgroundMediaRuntime: backgroundMediaRuntime,
+            structuralObserver: structuralObserver
         )
     }
 
     private static func startPersistedStateLoadIfShellReady(
         _ browserManager: BrowserManager
     ) {
-        guard browserManager.windowRegistry != nil else { return }
-        browserManager.tabManager.runtimePortsAttachmentOwner
+        browserManager.tabRuntimeLifecycle
             .startPersistedStateRestoreIfNeeded()
-    }
-
-    static func tabSelectionRuntimeNotifications(
-        for browserManager: BrowserManager
-    ) -> BrowserTabSelectionOwner.RuntimeNotifications {
-        BrowserTabRuntimeCompositionService.tabSelectionRuntimeNotifications(
-            for: browserManager
-        )
     }
 
     static func nativeNowPlayingRuntimeContext(

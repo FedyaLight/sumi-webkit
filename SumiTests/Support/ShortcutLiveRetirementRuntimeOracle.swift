@@ -1,3 +1,4 @@
+import SumiDomain
 import SumiWebRuntime
 import WebKit
 import XCTest
@@ -14,10 +15,9 @@ final class ShortcutLiveRetirementRuntimeOracle {
         case actionOnCanRetire(Int, @MainActor () -> Void)
     }
 
-    let repository = WebViewSessionRepository()
     let window = BrowserWindowState()
     let hook: Hook
-    private(set) var tabManager: TabManager!
+    private(set) var tabManager: BrowserManager!
     private(set) var runtime: RuntimePortRegistry!
     private(set) var pin: ShortcutPin!
     private(set) var liveTab: Tab!
@@ -38,6 +38,8 @@ final class ShortcutLiveRetirementRuntimeOracle {
     }
 
     private func install() throws {
+        tabManager = BrowserManager()
+        let repository = tabManager.webViewSessions
         let capabilities = TestRuntimePorts.RetirementCapabilities(
             canRetire: { [weak self] _ in
                 guard let self else { return false }
@@ -82,21 +84,24 @@ final class ShortcutLiveRetirementRuntimeOracle {
         let lifecycle = TestRuntimePorts.webViewLifecycle(
             retirement: capabilities
         )
-        tabManager = try makeInMemoryTabManager(
+        runtime = TestRuntimePorts.make(
             windowState: { [window] id in id == window.id ? window : nil },
             windows: { [window] in [(window.id, window)] },
+            windowStates: { [window] in [window] },
+            webViewLifecycle: lifecycle,
             notifyTabClosedIfLoaded: { [weak self] _ in
                 self?.events.append("extension")
             },
             persistWindowSession: { [weak self] _ in
                 self?.events.append("persist")
-            },
-            webViewLifecycle: lifecycle,
-            webViewSessions: repository
+            }
         )
-        runtime = tabManager.requireRuntimePorts()
-        window.tabManager = tabManager
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Space")
+        tabManager.runtimePortConnection.attach(runtime)
+        let space = try XCTUnwrap(tabManager.sidebarSpaceLifecycle.createSpace(
+            name: "Space",
+            icon: SumiPersistentGlyph.spaceDefaultIconValue,
+            profileID: nil
+        ))
         pin = try XCTUnwrap(tabManager.shortcutPinStoreOwner.insert(
             ShortcutPin(
                 id: UUID(), role: .spacePinned, spaceId: space.id, index: 0,
@@ -118,7 +123,7 @@ final class ShortcutLiveRetirementRuntimeOracle {
     }
 
     private func replaceAttachment() {
-        tabManager.runtimePortsAttachmentOwner.detach()
-        tabManager.runtimePortsAttachmentOwner.attach(runtime)
+        tabManager.runtimePortConnection.detach()
+        tabManager.runtimePortConnection.attach(runtime)
     }
 }

@@ -4,6 +4,7 @@ import Foundation
 actor FakeSumiNotificationService: SumiNotificationServicing {
     private(set) var postedPayloads: [SumiNotificationPayload] = []
     private(set) var closedIdentifiers: [SumiNotificationIdentifier] = []
+    private(set) var retiredProfileIDs: [String] = []
     var nextFailureReason: String?
 
     func setNextFailureReason(_ reason: String?) {
@@ -21,6 +22,11 @@ actor FakeSumiNotificationService: SumiNotificationServicing {
 
     func close(identifier: SumiNotificationIdentifier) async {
         closedIdentifiers.append(identifier)
+    }
+
+    func retireProfile(profilePartitionId: String) async -> Bool {
+        retiredProfileIDs.append(profilePartitionId)
+        return true
     }
 
     func postedCount() -> Int {

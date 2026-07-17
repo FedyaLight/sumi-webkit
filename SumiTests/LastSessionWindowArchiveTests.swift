@@ -7,15 +7,12 @@ final class LastSessionWindowArchiveTests: XCTestCase {
     func testRefreshArchivesCurrentRegularWindowsAndSkipsIncognito() throws {
         let store = try makeIsolatedLastSessionWindowsStore(suitePrefix: "LastSessionWindowArchiveTests")
         let regularWindow = BrowserWindowState()
+        regularWindow.currentTabId = UUID()
         let incognitoWindow = BrowserWindowState()
         incognitoWindow.isIncognito = true
-        let regularSession = makeSessionRecoveryWindowSession(currentTabId: UUID())
+        incognitoWindow.currentTabId = UUID()
         let archive = makeArchive(
             windows: [regularWindow, incognitoWindow],
-            sessions: [
-                regularWindow.id: regularSession,
-                incognitoWindow.id: makeSessionRecoveryWindowSession(currentTabId: UUID()),
-            ],
             store: store,
             startupRestore: StartupSessionRestoreProviderFake()
         )
@@ -24,7 +21,7 @@ final class LastSessionWindowArchiveTests: XCTestCase {
 
         XCTAssertEqual(
             store.snapshots,
-            [LastSessionWindowSnapshot(id: regularWindow.id, session: regularSession)]
+            [snapshot(of: regularWindow)]
         )
     }
 
@@ -32,14 +29,10 @@ final class LastSessionWindowArchiveTests: XCTestCase {
         let store = try makeIsolatedLastSessionWindowsStore(suitePrefix: "LastSessionWindowArchiveTests")
         let closingWindow = BrowserWindowState()
         let survivingWindow = BrowserWindowState()
-        let survivingSession = makeSessionRecoveryWindowSession(currentTabId: UUID())
+        survivingWindow.currentTabId = UUID()
         let startupRestore = StartupSessionRestoreProviderFake()
         let archive = makeArchive(
             windows: [closingWindow, survivingWindow],
-            sessions: [
-                closingWindow.id: makeSessionRecoveryWindowSession(currentTabId: UUID()),
-                survivingWindow.id: survivingSession,
-            ],
             store: store,
             startupRestore: startupRestore
         )
@@ -48,7 +41,7 @@ final class LastSessionWindowArchiveTests: XCTestCase {
 
         XCTAssertEqual(
             store.snapshots,
-            [LastSessionWindowSnapshot(id: survivingWindow.id, session: survivingSession)]
+            [snapshot(of: survivingWindow)]
         )
         XCTAssertFalse(startupRestore.didConsumeRestoreOffer)
     }
@@ -56,10 +49,9 @@ final class LastSessionWindowArchiveTests: XCTestCase {
     func testRefreshFallsBackToAllWindowsWhenExclusionEmptiesResult() throws {
         let store = try makeIsolatedLastSessionWindowsStore(suitePrefix: "LastSessionWindowArchiveTests")
         let onlyWindow = BrowserWindowState()
-        let onlySession = makeSessionRecoveryWindowSession(currentTabId: UUID())
+        onlyWindow.currentTabId = UUID()
         let archive = makeArchive(
             windows: [onlyWindow],
-            sessions: [onlyWindow.id: onlySession],
             store: store,
             startupRestore: StartupSessionRestoreProviderFake()
         )
@@ -68,7 +60,7 @@ final class LastSessionWindowArchiveTests: XCTestCase {
 
         XCTAssertEqual(
             store.snapshots,
-            [LastSessionWindowSnapshot(id: onlyWindow.id, session: onlySession)]
+            [snapshot(of: onlyWindow)]
         )
     }
 
@@ -76,15 +68,11 @@ final class LastSessionWindowArchiveTests: XCTestCase {
         let store = try makeIsolatedLastSessionWindowsStore(suitePrefix: "LastSessionWindowArchiveTests")
         let firstWindow = BrowserWindowState()
         let secondWindow = BrowserWindowState()
-        let firstSession = makeSessionRecoveryWindowSession(currentTabId: UUID())
-        let secondSession = makeSessionRecoveryWindowSession(currentTabId: UUID())
+        firstWindow.currentTabId = UUID()
+        secondWindow.currentTabId = UUID()
         let startupRestore = StartupSessionRestoreProviderFake()
         let archive = makeArchive(
             windows: [firstWindow, secondWindow],
-            sessions: [
-                firstWindow.id: firstSession,
-                secondWindow.id: secondSession,
-            ],
             store: store,
             startupRestore: startupRestore
         )
@@ -94,8 +82,8 @@ final class LastSessionWindowArchiveTests: XCTestCase {
         XCTAssertEqual(
             store.snapshots,
             [
-                LastSessionWindowSnapshot(id: firstWindow.id, session: firstSession),
-                LastSessionWindowSnapshot(id: secondWindow.id, session: secondSession),
+                snapshot(of: firstWindow),
+                snapshot(of: secondWindow),
             ]
         )
         XCTAssertTrue(startupRestore.didConsumeRestoreOffer)
@@ -121,7 +109,6 @@ final class LastSessionWindowArchiveTests: XCTestCase {
         )
         let archive = makeArchive(
             windows: [currentWindow],
-            sessions: [currentWindow.id: makeSessionRecoveryWindowSession(currentTabId: UUID())],
             store: store,
             startupRestore: startupRestore
         )
@@ -149,11 +136,6 @@ final class LastSessionWindowArchiveTests: XCTestCase {
         )
         let archive = makeArchive(
             windows: [currentWindow],
-            sessions: [
-                currentWindow.id: makeSessionRecoveryWindowSession(
-                    currentTabId: UUID()
-                ),
-            ],
             store: store,
             startupRestore: startupRestore
         )
@@ -173,7 +155,6 @@ final class LastSessionWindowArchiveTests: XCTestCase {
         )
         let archive = makeArchive(
             windows: [],
-            sessions: [:],
             store: store,
             startupRestore: StartupSessionRestoreProviderFake()
         )
@@ -196,7 +177,6 @@ final class LastSessionWindowArchiveTests: XCTestCase {
         store.updateSnapshots([existingSnapshot])
         let archive = makeArchive(
             windows: [],
-            sessions: [:],
             store: store,
             startupRestore: StartupSessionRestoreProviderFake()
         )
@@ -206,7 +186,7 @@ final class LastSessionWindowArchiveTests: XCTestCase {
         XCTAssertEqual(store.snapshots, [existingSnapshot])
     }
 
-    func testMissingSurvivorProjectionDoesNotArchiveClosingWindow() throws {
+    func testUnregisteredSurvivorDoesNotPreventSoleWindowFallback() throws {
         let store = try makeIsolatedLastSessionWindowsStore(
             suitePrefix: "LastSessionWindowArchiveTests"
         )
@@ -216,35 +196,45 @@ final class LastSessionWindowArchiveTests: XCTestCase {
         )
         store.updateSnapshots([existingSnapshot])
         let closingWindow = BrowserWindowState()
-        let survivingWindow = BrowserWindowState()
-        let closingSession = makeSessionRecoveryWindowSession(
-            currentTabId: UUID()
-        )
+        closingWindow.currentTabId = UUID()
         let archive = makeArchive(
-            windows: [closingWindow, survivingWindow],
-            sessions: [closingWindow.id: closingSession],
+            windows: [closingWindow],
             store: store,
             startupRestore: StartupSessionRestoreProviderFake()
         )
 
         archive.refresh(excludingWindowID: closingWindow.id)
 
-        XCTAssertEqual(store.snapshots, [existingSnapshot])
+        XCTAssertEqual(store.snapshots, [snapshot(of: closingWindow)])
     }
 
     private func makeArchive(
         windows: [BrowserWindowState],
-        sessions: [UUID: WindowSessionSnapshot],
         store: LastSessionWindowsStore,
         startupRestore: StartupSessionRestoreProviderFake
     ) -> LastSessionWindowArchive {
-        LastSessionWindowArchive(
+        let registry = WindowRegistry()
+        windows.forEach { window in
+            _ = registry.register(window)
+        }
+        return LastSessionWindowArchive(
             openWindows: OpenWindowSessionCatalog(
-                allWindows: { windows },
-                makeWindowSessionSnapshot: { sessions[$0.id] }
+                windows: registry,
+                snapshots: snapshotFactory
             ),
-            lastSessionWindowsStore: { store },
+            lastSessionWindowsStore: store,
             startupRestore: startupRestore
+        )
+    }
+
+    private var snapshotFactory: WindowSessionSnapshotFactory {
+        WindowSessionSnapshotFactory(glanceManager: GlanceManager())
+    }
+
+    private func snapshot(of window: BrowserWindowState) -> LastSessionWindowSnapshot {
+        LastSessionWindowSnapshot(
+            id: window.restorationState.restoredSessionWindowID ?? window.id,
+            session: snapshotFactory.make(for: window)
         )
     }
 }

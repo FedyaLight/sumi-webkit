@@ -91,34 +91,20 @@ struct SidebarSpaceInventorySnapshot {
     }
 }
 
-/// Structural sidebar read boundary. It snapshots canonical owners at the
-/// moment a page is built and never retains rendered SwiftUI arrays.
 @MainActor
-final class SidebarInventoryProjection {
-    private let runtimeIsAlive: @MainActor () -> Bool
+final class SidebarSpaceCatalogProjection {
+    private let runtime: TabRuntimePortConnection
     private let spaces: TabSpaceCollectionStateOwner
-    private let regularTabs: RegularTabCollectionStateOwner
-    private let folders: TabFolderCollectionStateOwner
     private let pins: ShortcutPinCollectionStateOwner
-    private let splitGroups: SplitGroupStore
-    private let splitOrdering: SplitGroupSidebarOrderingService
 
     init(
-        runtimeIsAlive: @escaping @MainActor () -> Bool,
+        runtime: TabRuntimePortConnection,
         spaces: TabSpaceCollectionStateOwner,
-        regularTabs: RegularTabCollectionStateOwner,
-        folders: TabFolderCollectionStateOwner,
-        pins: ShortcutPinCollectionStateOwner,
-        splitGroups: SplitGroupStore,
-        splitOrdering: SplitGroupSidebarOrderingService
+        pins: ShortcutPinCollectionStateOwner
     ) {
-        self.runtimeIsAlive = runtimeIsAlive
+        self.runtime = runtime
         self.spaces = spaces
-        self.regularTabs = regularTabs
-        self.folders = folders
         self.pins = pins
-        self.splitGroups = splitGroups
-        self.splitOrdering = splitOrdering
     }
 
     func availableSpaces(
@@ -126,30 +112,79 @@ final class SidebarInventoryProjection {
         ephemeralSpaces: [Space]
     ) -> [Space] {
         if isIncognito { return ephemeralSpaces }
-        guard runtimeIsAlive() else { return [] }
+        guard runtime.current != nil else { return [] }
         return spaces.spaces
     }
 
     func currentSpace() -> Space? {
-        guard runtimeIsAlive() else { return nil }
+        guard runtime.current != nil else { return nil }
         return spaces.currentSpace
     }
 
     func space(id: UUID) -> Space? {
-        guard runtimeIsAlive() else { return nil }
+        guard runtime.current != nil else { return nil }
         return spaces.space(with: id)
     }
 
     func essentialPins(profileID: UUID?) -> [ShortcutPin] {
-        guard runtimeIsAlive() else { return [] }
+        guard runtime.current != nil else { return [] }
         return pins.essentialPins(for: profileID)
+    }
+}
+
+@MainActor
+final class SidebarSpaceInventoryProjection {
+    private let runtime: TabRuntimePortConnection
+    private let spaces: TabSpaceCollectionStateOwner
+    private let regularTabs: RegularTabCollectionOwner
+    private let pinned: SidebarPinnedInventoryProjection
+
+    init(
+        runtime: TabRuntimePortConnection,
+        spaces: TabSpaceCollectionStateOwner,
+        regularTabs: RegularTabCollectionOwner,
+        pinned: SidebarPinnedInventoryProjection
+    ) {
+        self.runtime = runtime
+        self.spaces = spaces
+        self.regularTabs = regularTabs
+        self.pinned = pinned
     }
 
     func snapshot(for spaceID: UUID) -> SidebarSpaceInventorySnapshot? {
-        guard runtimeIsAlive(), spaces.contains(spaceId: spaceID) else {
+        guard runtime.current != nil, spaces.contains(spaceId: spaceID) else {
             return nil
         }
+        return pinned.snapshot(
+            for: spaceID,
+            regularTabs: regularTabs.tabs(in: spaceID)
+        )
+    }
+}
 
+@MainActor
+final class SidebarPinnedInventoryProjection {
+    private let folders: TabFolderCollectionStateOwner
+    private let pins: ShortcutPinCollectionStateOwner
+    private let splitGroups: SplitGroupStore
+    private let splitOrdering: SplitGroupSidebarOrderingService
+
+    init(
+        folders: TabFolderCollectionStateOwner,
+        pins: ShortcutPinCollectionStateOwner,
+        splitGroups: SplitGroupStore,
+        splitOrdering: SplitGroupSidebarOrderingService
+    ) {
+        self.folders = folders
+        self.pins = pins
+        self.splitGroups = splitGroups
+        self.splitOrdering = splitOrdering
+    }
+
+    func snapshot(
+        for spaceID: UUID,
+        regularTabs: [Tab]
+    ) -> SidebarSpaceInventorySnapshot {
         let allFolders = folders.folders(for: spaceID)
         let allPins = pins.spacePinnedPins(for: spaceID)
         let groupValues = splitGroups.groups
@@ -168,7 +203,7 @@ final class SidebarInventoryProjection {
         let visiblePins = allPins.filter { !shortcutHostedPinIDs.contains($0.id) }
         let foldersByID = Dictionary(uniqueKeysWithValues: allFolders.map { ($0.id, $0) })
         let pinsByID = Dictionary(uniqueKeysWithValues: allPins.map { ($0.id, $0) })
-        let pageTabs = regularTabs.tabs(in: spaceID)
+        let pageTabs = regularTabs
         let tabsByID = Dictionary(uniqueKeysWithValues: pageTabs.map { ($0.id, $0) })
         let resolver = splitOrdering.resolver(for: spaceID)
         let topLevelItems = resolver.topLevelItems().map(Self.inventoryItem)

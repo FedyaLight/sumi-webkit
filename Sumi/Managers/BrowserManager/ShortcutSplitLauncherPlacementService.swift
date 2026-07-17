@@ -4,16 +4,16 @@ import SumiDomain
 /// selection or resolve dependencies through a manager façade.
 @MainActor
 final class ShortcutSplitLauncherPlacementService {
-    private let shortcutPin: (UUID) -> ShortcutPin?
+    private let pins: ShortcutPinCollectionStateOwner
     private let destinationResolver: ShortcutSplitLauncherDestinationResolver
     private let moves: ShortcutSplitLauncherMoveTransaction
 
     init(
-        shortcutPin: @escaping (UUID) -> ShortcutPin?,
+        pins: ShortcutPinCollectionStateOwner,
         destinationResolver: ShortcutSplitLauncherDestinationResolver,
         moves: ShortcutSplitLauncherMoveTransaction
     ) {
-        self.shortcutPin = shortcutPin
+        self.pins = pins
         self.destinationResolver = destinationResolver
         self.moves = moves
     }
@@ -22,7 +22,7 @@ final class ShortcutSplitLauncherPlacementService {
         for member: SplitMember
     ) -> PreparedShortcutSplitLauncherRestoration? {
         guard case .shortcutPin(let pinID) = member.memberID,
-              let pin = shortcutPin(pinID),
+              let pin = pins.shortcutPin(by: pinID),
               let destination = destinationResolver.destination(
                   for: member,
                   pin: pin

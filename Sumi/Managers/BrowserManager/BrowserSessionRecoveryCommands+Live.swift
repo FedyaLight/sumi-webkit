@@ -1,66 +1,57 @@
 extension BrowserSessionRecoveryCommands {
-    /// Composes the session-recovery services against the live browser graph.
-    /// Composition seam only — the services themselves never see
-    /// `BrowserManager`; they receive narrow closures and concrete
-    /// collaborators captured here.
     @MainActor
     static func live(
         browserManager: BrowserManager,
         startupRestore: any BrowserStartupSessionRestoreProviding,
         sessionRestore: WindowSessionRestoreService,
         openWindows: OpenWindowSessionCatalog,
-        archive: LastSessionWindowArchive
+        archive: LastSessionWindowArchive,
+        shortcutActivation: ShortcutPresentationActivationService,
+        shortcutPinStore: ShortcutPinStoreOwner
     ) -> BrowserSessionRecoveryCommands {
+        let windows = browserManager.windowRegistry
+        let browserSelection = browserManager.browserTabSelection
         let windowReopen = WindowSessionReopenService(
-            windowRegistry: { [weak browserManager] in
-                browserManager?.windowRegistry
-            },
-            createRestoredWindow: { [weak browserManager, weak sessionRestore] snapshot in
-                guard let browserManager, let sessionRestore else { return nil }
-                return browserManager.windowCommands.createPreparedWindow(
-                    initialize: { windowState in
-                        sessionRestore.prepareArchivedWindow(
-                            snapshot,
-                            forRegistration: windowState
-                        )
-                    },
-                    discardPreparedState: {
-                        sessionRestore.cancelPreparedWindowRegistration($0)
-                    }
-                )
-            }
+            windows: windows,
+            creation: ArchivedWindowCreationTransaction(
+                windows: browserManager.windowCommands,
+                restoration: sessionRestore
+            )
         )
         let tabRestore = ClosedTabRestoreService(
-            tabManager: { [weak browserManager] in browserManager?.tabManager },
-            activeWindow: { [weak browserManager] in
-                browserManager?.windowRegistry?.activeWindow
-            },
-            selectRestoredTab: { [weak browserManager] tab, windowState in
-                browserManager?.selectTab(tab, in: windowState)
-            }
+            regularLifecycle: browserManager.regularTabLifecycleOwner,
+            destinations: ClosedTabDestinationResolver(
+                spaces: browserManager.spaceStateOwner,
+                windows: windows
+            ),
+            publication: ClosedTabRestorePublication(
+                activeSelection: browserManager.activeSelectionOwner,
+                browserSelection: browserSelection
+            )
+        )
+        let launcherRestore = ClosedShortcutLauncherRestoreTransaction(
+            pins: browserManager.shortcutPinCollectionStateOwner,
+            pinStore: shortcutPinStore,
+            persistence: browserManager.structuralPersistence,
+            destinations: ClosedShortcutLauncherDestinationResolver(
+                folders: browserManager.folderCollectionStateOwner,
+                runtimeConnection: browserManager.runtimePortConnection,
+                spaces: browserManager.spaceStateOwner,
+                profiles: browserManager.profileManager
+            )
         )
         let shortcutRestore = ClosedShortcutRestoreService(
-            tabManager: { [weak browserManager] in
-                browserManager?.tabManager
-            },
-            profileManager: { [weak browserManager] in
-                browserManager?.profileManager
-            },
-            activeWindow: { [weak browserManager] in
-                browserManager?.windowRegistry?.activeWindow
-            },
-            windowState: { [weak browserManager] windowId in
-                browserManager?.windowRegistry?.windows[windowId]
-            },
-            selectRestoredTab: { [weak browserManager] tab, windowState in
-                browserManager?.selectTab(tab, in: windowState)
-            }
+            liveInstances: ClosedShortcutLiveRestoreTransaction(
+                pins: browserManager.shortcutPinCollectionStateOwner,
+                activation: shortcutActivation,
+                windows: ClosedShortcutWindowQuery(windows: windows),
+                selection: browserSelection,
+                launchers: launcherRestore
+            ),
+            launchers: launcherRestore
         )
         let itemReopen = RecentlyClosedItemReopenService(
-            // Durable history keeps failed late reopen items intact.
-            recentlyClosedItems: { [weak browserManager, recentlyClosedManager = browserManager.recentlyClosedManager] in
-                browserManager?.recentlyClosedManager ?? recentlyClosedManager
-            },
+            recentlyClosedItems: browserManager.recentlyClosedManager,
             startupRestore: startupRestore,
             tabRestore: tabRestore,
             shortcutRestore: shortcutRestore,
@@ -70,10 +61,7 @@ extension BrowserSessionRecoveryCommands {
             startupRestore: startupRestore,
             archive: archive,
             openWindows: openWindows,
-            mergeLastSessionTabSnapshot: { [weak browserManager] snapshot in
-                browserManager?.tabManager.lastSessionMergeMaterializer
-                    .merge(snapshot)
-            },
+            tabMerge: browserManager.lastSessionMergeMaterializer,
             windowReopen: windowReopen
         )
         return BrowserSessionRecoveryCommands(

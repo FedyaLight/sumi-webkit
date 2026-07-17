@@ -2,8 +2,8 @@ import Foundation
 
 /// Exact terminal retirement for the internal regular tab used as an empty
 /// split placeholder. It removes canonical collection and lookup residence
-/// without observation; runtime teardown and persistence publish only after
-/// the replacement window selection is complete.
+/// without observation; the enclosing split transaction owns window
+/// settlement, while runtime teardown and persistence publish afterward.
 @MainActor
 final class EmptySplitPlaceholderRetirementReceipt {
     private enum State {
@@ -16,7 +16,6 @@ final class EmptySplitPlaceholderRetirementReceipt {
     private let placeholder: Tab
     private let spaceID: UUID
     private let regularTabs: RegularTabCollectionOwner
-    private let selection: TabSelectionStateOwner
     private let structuralLookup: TabStructuralLookupCoordinator
     private let persistence: TabStructuralPersistenceService
     private let runtimeConnection: TabRuntimePortConnection
@@ -27,7 +26,6 @@ final class EmptySplitPlaceholderRetirementReceipt {
     init?(
         placeholder: Tab,
         regularTabs: RegularTabCollectionOwner,
-        selection: TabSelectionStateOwner,
         structuralLookup: TabStructuralLookupCoordinator,
         persistence: TabStructuralPersistenceService,
         runtimeConnection: TabRuntimePortConnection,
@@ -38,12 +36,10 @@ final class EmptySplitPlaceholderRetirementReceipt {
               regularTabs.containsIdentical(
                   placeholder,
                   in: spaceID
-              ), selection.currentTab !== placeholder,
-              runtimeLease.registry != nil else { return nil }
+              ), runtimeLease.registry != nil else { return nil }
         self.placeholder = placeholder
         self.spaceID = spaceID
         self.regularTabs = regularTabs
-        self.selection = selection
         self.structuralLookup = structuralLookup
         self.persistence = persistence
         self.runtimeConnection = runtimeConnection
@@ -54,7 +50,6 @@ final class EmptySplitPlaceholderRetirementReceipt {
     func isCurrent() -> Bool {
         guard case .prepared = state else { return false }
         return regularTabs.containsIdentical(placeholder, in: spaceID)
-            && selection.currentTab !== placeholder
             && runtimeConnection.accepts(runtimeLease)
     }
 

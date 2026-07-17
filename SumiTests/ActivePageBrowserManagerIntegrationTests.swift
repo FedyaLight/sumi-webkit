@@ -7,17 +7,17 @@ import XCTest
 @MainActor
 final class ActivePageBrowserManagerIntegrationTests: XCTestCase {
     func testResolverUsesSelectedIncognitoTabAndExactWindowWebView() throws {
+        let registry = WindowRegistry()
         let browserManager = BrowserManager(
+            windowRegistry: registry,
             startupPersistence: BrowserManagerStartupPersistence(
                 container: try makeInMemoryStartupModelContainer()
             )
         )
         let webViewRuntime = browserManager.testWebViewRuntime()
-        let registry = WindowRegistry()
-        browserManager.windowRegistry = registry
         let window = BrowserWindowState()
         window.isIncognito = true
-        window.tabManager = browserManager.tabManager
+        browserManager.tabResidenceAuthority.establishResidenceSession(on: window)
         let tab = Tab(
             url: URL(string: "https://private.example")!,
             webViewSessions: browserManager.webViewSessions,
@@ -46,20 +46,26 @@ final class ActivePageBrowserManagerIntegrationTests: XCTestCase {
     }
 
     func testResolverUsesActiveSplitMemberInsteadOfFirstGroupMember() throws {
+        let registry = WindowRegistry()
         let browserManager = BrowserManager(
+            windowRegistry: registry,
             startupPersistence: BrowserManagerStartupPersistence(
                 container: try makeInMemoryStartupModelContainer()
             )
         )
-        let registry = WindowRegistry()
-        browserManager.windowRegistry = registry
-        let firstSpace = browserManager.tabManager.spaceServices.catalog
-            .createSpace(name: "First", profileId: UUID())
-        let secondSpace = browserManager.tabManager.spaceServices.catalog
-            .createSpace(name: "Second", profileId: UUID())
-        let first = browserManager.tabManager.regularTabLifecycleOwner
+        let firstSpace = installTestSpace(
+            in: browserManager.spaceStateOwner,
+            name: "First",
+            profileID: UUID()
+        )
+        let secondSpace = installTestSpace(
+            in: browserManager.spaceStateOwner,
+            name: "Second",
+            profileID: UUID()
+        )
+        let first = browserManager.regularTabLifecycleOwner
             .createNewTab(url: "https://first.example", in: firstSpace)
-        let active = browserManager.tabManager.regularTabLifecycleOwner
+        let active = browserManager.regularTabLifecycleOwner
             .createNewTab(url: "https://active.example", in: secondSpace)
         let group = try XCTUnwrap(
             SplitGroup.make(
@@ -69,13 +75,13 @@ final class ActivePageBrowserManagerIntegrationTests: XCTestCase {
             )
         )
         XCTAssertTrue(
-            browserManager.tabManager.splitGroupMutations.insert(
+            browserManager.splitGroupMutations.insert(
                 group,
                 persist: false
             )
         )
         let window = BrowserWindowState()
-        window.tabManager = browserManager.tabManager
+        browserManager.tabResidenceAuthority.establishResidenceSession(on: window)
         window.currentSpaceId = firstSpace.id
         window.currentTabId = active.id
         window.splitSelection = WindowSplitSelection(
@@ -90,7 +96,7 @@ final class ActivePageBrowserManagerIntegrationTests: XCTestCase {
         )
 
         XCTAssertEqual(
-            browserManager.splitComposition.query.visibleTabIDs(in: window.id),
+            browserManager.splitWindowContext.query.visibleTabIDs(in: window.id),
             [first.id, active.id]
         )
         XCTAssertIdentical(page.tab, active)

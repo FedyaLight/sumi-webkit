@@ -18,19 +18,19 @@ final class BrowserWindowSessionRestorationService {
 
     private let restoration: WindowSessionRestoreService
     private let extensionPublication: WindowExtensionPublicationTransaction
-    private weak var profileSupport: (any SumiProfileRoutingSupport)?
+    private let currentProfile: BrowserCurrentProfileAuthority
     private weak var startupSessions: (any BrowserStartupSessionReconciling)?
     private var pendingPublicationsByWindowID: [UUID: PendingPublication] = [:]
 
     init(
         restoration: WindowSessionRestoreService,
         extensionPublication: WindowExtensionPublicationTransaction,
-        profileSupport: any SumiProfileRoutingSupport,
+        currentProfile: BrowserCurrentProfileAuthority,
         startupSessions: any BrowserStartupSessionReconciling
     ) {
         self.restoration = restoration
         self.extensionPublication = extensionPublication
-        self.profileSupport = profileSupport
+        self.currentProfile = currentProfile
         self.startupSessions = startupSessions
     }
 
@@ -71,7 +71,7 @@ final class BrowserWindowSessionRestorationService {
 
             restoration.restoreRegisteredWindow(
                 windowState,
-                currentProfile: profileSupport?.currentProfile
+                currentProfile: currentProfile.currentProfile
             )
             pendingPublicationsByWindowID[windowState.id] =
                 PendingPublication(

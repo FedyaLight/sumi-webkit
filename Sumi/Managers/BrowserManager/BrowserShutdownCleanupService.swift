@@ -10,7 +10,8 @@ final class BrowserShutdownCleanupService {
     private let extensions: SumiExtensionsModule
     private let auxiliaryWindows: AuxiliaryWindowTeardownRegistry
     private let glance: GlanceManager
-    private let tabs: TabManager
+    private let shortcutPresentation: TabShortcutPresentationOwner
+    private let membership: TabCollectionMembershipOwner
     private let webViewLifecycle: WebViewLifecycleService
     private let windowRegistry: @MainActor () -> WindowRegistry?
 
@@ -18,14 +19,16 @@ final class BrowserShutdownCleanupService {
         extensions: SumiExtensionsModule,
         auxiliaryWindows: AuxiliaryWindowTeardownRegistry,
         glance: GlanceManager,
-        tabs: TabManager,
+        shortcutPresentation: TabShortcutPresentationOwner,
+        membership: TabCollectionMembershipOwner,
         webViewLifecycle: WebViewLifecycleService,
         windowRegistry: @escaping @MainActor () -> WindowRegistry?
     ) {
         self.extensions = extensions
         self.auxiliaryWindows = auxiliaryWindows
         self.glance = glance
-        self.tabs = tabs
+        self.shortcutPresentation = shortcutPresentation
+        self.membership = membership
         self.webViewLifecycle = webViewLifecycle
         self.windowRegistry = windowRegistry
     }
@@ -65,16 +68,18 @@ final class BrowserShutdownCleanupService {
             reason: "BrowserShutdown.cleanupAfterBrowserRuntimeDeallocation"
         )
         extensions.closeAllOptionsWindowsIfLoaded()
+        extensions.retireBrowserAttachmentIfLoaded()
         glance.dismissGlance(persistsWindowSession: false)
+        glance.detachRuntime()
         webViewLifecycle.cleanupAfterBrowserRuntimeDeallocation()
         auxiliaryWindows.closeAllAfterBrowserRuntimeDeallocationIfLoaded()
     }
 
     private func uniqueTabsForCleanup() -> [Tab] {
         Self.uniqueTabsForCleanup(
-            essential: tabs.shortcutPresentationOwner
+            essential: shortcutPresentation
                 .activeShortcutTabs(role: .essential),
-            all: tabs.tabCollectionMembershipOwner.allTabs(),
+            all: membership.allTabs(),
             ephemeral: windowRegistry()?.allWindows
                 .flatMap(\.ephemeralTabs) ?? []
         )

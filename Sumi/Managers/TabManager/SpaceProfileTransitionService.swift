@@ -19,6 +19,12 @@ final class SpaceProfileTransitionService {
 
     var lifecycle: SpaceProfileTransitionRepository { repository }
 
+    func isCurrent(
+        _ intent: DeferredWebViewSpaceProfileAssignmentIntent
+    ) -> Bool {
+        repository.isCurrent(intent)
+    }
+
     @discardableResult
     func start(
         spaceID: UUID,

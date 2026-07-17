@@ -1,38 +1,33 @@
 import Foundation
+import SumiWebRuntime
 
 /// Resolves the tabs presented by an exact browser window. The service reads
 /// only shell-window state plus tab/split projections and does not reach back
 /// through BrowserManager.
 @MainActor
 final class BrowserWindowTabContext {
-    private let selectionService: @MainActor () -> ShellSelectionService?
-    private let tabStore: @MainActor () -> ShellSelectionTabStore?
-    private let windows: @MainActor () -> [BrowserWindowState]
-    private let liveShortcutTabs: @MainActor (UUID) -> [Tab]
-    private let visibleSplitTabIds: @MainActor (UUID) -> Set<UUID>
-    private let trackedTabIds: @MainActor (UUID) -> Set<UUID>
+    private let selectionService: ShellSelectionService
+    private let tabStore: any ShellSelectionTabStore
+    private weak var windows: WindowRegistry?
+    private let splitQuery: WindowSplitQuery
+    private let webViewSessions: WebViewSessionRepository
 
     init(
-        selectionService: @escaping @MainActor () -> ShellSelectionService?,
-        tabStore: @escaping @MainActor () -> ShellSelectionTabStore?,
-        windows: @escaping @MainActor () -> [BrowserWindowState],
-        liveShortcutTabs: @escaping @MainActor (UUID) -> [Tab],
-        visibleSplitTabIds: @escaping @MainActor (UUID) -> Set<UUID>,
-        trackedTabIds: @escaping @MainActor (UUID) -> Set<UUID> = { _ in [] }
+        selectionService: ShellSelectionService,
+        tabStore: any ShellSelectionTabStore,
+        windows: WindowRegistry,
+        splitQuery: WindowSplitQuery,
+        webViewSessions: WebViewSessionRepository
     ) {
         self.selectionService = selectionService
         self.tabStore = tabStore
         self.windows = windows
-        self.liveShortcutTabs = liveShortcutTabs
-        self.visibleSplitTabIds = visibleSplitTabIds
-        self.trackedTabIds = trackedTabIds
+        self.splitQuery = splitQuery
+        self.webViewSessions = webViewSessions
     }
 
     func currentTab(for windowState: BrowserWindowState) -> Tab? {
-        guard !windowState.restorationState.isAwaitingInitialResolution,
-              let selectionService = selectionService(),
-              let tabStore = tabStore()
-        else {
+        guard !windowState.restorationState.isAwaitingInitialResolution else {
             return nil
         }
 
@@ -43,11 +38,7 @@ final class BrowserWindowTabContext {
     }
 
     func hasValidCurrentSelection(in windowState: BrowserWindowState) -> Bool {
-        guard let selectionService = selectionService(),
-              let tabStore = tabStore() else {
-            return false
-        }
-        return selectionService.hasValidCurrentSelection(
+        selectionService.hasValidCurrentSelection(
             in: windowState,
             tabStore: tabStore
         )
@@ -57,11 +48,7 @@ final class BrowserWindowTabContext {
         for space: Space,
         in windowState: BrowserWindowState
     ) -> Tab? {
-        guard let selectionService = selectionService(),
-              let tabStore = tabStore() else {
-            return nil
-        }
-        return selectionService.selectionTargetForSpaceActivation(
+        selectionService.selectionTargetForSpaceActivation(
             in: space,
             windowState: windowState,
             tabStore: tabStore
@@ -69,28 +56,22 @@ final class BrowserWindowTabContext {
     }
 
     func windowState(containing tab: Tab) -> BrowserWindowState? {
-        windows().first { windowState in
+        windows?.allWindows.first { windowState in
             if windowState.isIncognito {
                 return windowState.ephemeralTabs.contains { $0.id == tab.id }
             }
             if windowState.currentTabId == tab.id {
                 return true
             }
-            if liveShortcutTabs(windowState.id).contains(where: { $0.id == tab.id }) {
+            if tabStore.liveShortcutTabs(in: windowState.id).contains(where: { $0.id == tab.id }) {
                 return true
             }
-            return visibleSplitTabIds(windowState.id).contains(tab.id)
+            return splitQuery.contains(tabID: tab.id, in: windowState.id)
         }
     }
 
     func tabsForDisplay(in windowState: BrowserWindowState) -> [Tab] {
-        guard let selectionService = selectionService(),
-              let tabStore = tabStore()
-        else {
-            return []
-        }
-
-        return selectionService.tabsForDisplay(
+        selectionService.tabsForDisplay(
             in: windowState,
             tabStore: tabStore
         )
@@ -102,9 +83,11 @@ final class BrowserWindowTabContext {
     func windowLocalTabResidenceIDs(
         in windowState: BrowserWindowState
     ) -> Set<UUID> {
-        var tabIDs = visibleSplitTabIds(windowState.id)
-        tabIDs.formUnion(trackedTabIds(windowState.id))
-        tabIDs.formUnion(liveShortcutTabs(windowState.id).map(\.id))
+        var tabIDs = Set(splitQuery.visibleTabIDs(in: windowState.id))
+        tabIDs.formUnion(
+            webViewSessions.trackedWebViews(in: windowState.id).map { $0.0.tabID }
+        )
+        tabIDs.formUnion(tabStore.liveShortcutTabs(in: windowState.id).map(\.id))
         if windowState.isIncognito {
             tabIDs.formUnion(windowState.ephemeralTabs.map(\.id))
         }
@@ -115,21 +98,15 @@ final class BrowserWindowTabContext {
     }
 
     func isTabDisplayedInAnyWindow(_ tabId: UUID) -> Bool {
-        windows().contains { windowState in
+        windows?.allWindows.contains { windowState in
             tabsForDisplay(in: windowState).contains { $0.id == tabId }
-        }
+        } ?? false
     }
 
     func windowScopedMediaCandidateTabs(
         in windowState: BrowserWindowState
     ) -> [Tab] {
-        guard let selectionService = selectionService(),
-              let tabStore = tabStore()
-        else {
-            return []
-        }
-
-        return selectionService.windowScopedMediaCandidateTabs(
+        selectionService.windowScopedMediaCandidateTabs(
             in: windowState,
             tabStore: tabStore
         )

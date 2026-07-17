@@ -5,30 +5,19 @@ import XCTest
 @MainActor
 final class SpaceProfileRuntimeStateServiceTests: XCTestCase {
     func testReconcileUsesLiveContentAndFocusedShortcutSelection() throws {
-        let tabManager = try makeInMemoryTabManager()
-        let focusedSpace = tabManager.spaceServices.catalog.createSpace(name: "Focused")
-        let loadedSpace = tabManager.spaceServices.catalog.createSpace(name: "Loaded")
-        let selectedShortcutSpace = tabManager.spaceServices.catalog
-            .createSpace(name: "Selected shortcut")
-        let staticStructureOnlySpace = tabManager.spaceServices.catalog
-            .createSpace(name: "Static structure")
-
-        _ = tabManager.regularTabLifecycleOwner.createNewTab(
-            url: "https://focused.example",
-            in: focusedSpace,
-            activate: false
-        )
-        _ = tabManager.regularTabLifecycleOwner.createNewTab(
-            url: "https://loaded.example",
-            in: loadedSpace,
-            activate: false
-        )
-        _ = tabManager.folderMutationOwner.createFolder(
-            for: staticStructureOnlySpace.id,
-            name: "Persisted folder"
+        let focusedSpace = Space(name: "Focused")
+        let loadedSpace = Space(name: "Loaded")
+        let selectedShortcutSpace = Space(name: "Selected shortcut")
+        let staticStructureOnlySpace = Space(name: "Static structure")
+        let fixture = Fixture(
+            spaces: [
+                focusedSpace, loadedSpace, selectedShortcutSpace,
+                staticStructureOnlySpace,
+            ],
+            liveTabsBySpace: [focusedSpace.id, loadedSpace.id]
         )
 
-        tabManager.profileRuntimeState.reconcile(
+        fixture.service.reconcile(
             focusedSpaceId: focusedSpace.id,
             selectedShortcutSpaceIds: [selectedShortcutSpace.id]
         )
@@ -37,5 +26,33 @@ final class SpaceProfileRuntimeStateServiceTests: XCTestCase {
         XCTAssertEqual(loadedSpace.profileRuntimeState, .loadedInactive)
         XCTAssertEqual(selectedShortcutSpace.profileRuntimeState, .loadedInactive)
         XCTAssertEqual(staticStructureOnlySpace.profileRuntimeState, .dormant)
+    }
+
+    @MainActor
+    private final class Fixture {
+        let service: SpaceProfileRuntimeStateService
+
+        init(spaces: [Space], liveTabsBySpace: [UUID]) {
+            let spaceState = TabSpaceCollectionStateOwner()
+            spaceState.replaceSpaces(spaces)
+            let regularTabs = RegularTabCollectionStateOwner()
+            regularTabs.replaceTabsBySpace(Dictionary(
+                uniqueKeysWithValues: liveTabsBySpace.map { spaceID in
+                    (
+                        spaceID,
+                        [Tab(
+                            url: URL(string: "https://runtime.example")!,
+                            spaceId: spaceID,
+                            loadsCachedFaviconOnInit: false
+                        )]
+                    )
+                }
+            ))
+            service = SpaceProfileRuntimeStateService(
+                spaces: spaceState,
+                regularTabs: regularTabs,
+                liveShortcutTabs: TabTransientTabRegistryOwner()
+            )
+        }
     }
 }

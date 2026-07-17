@@ -63,21 +63,16 @@ final class SplitShortcutMemberRestoreAggregateTransactionTests: XCTestCase {
         binding: RestoreAggregateBinding
     ) throws -> RestoreAggregateHarness {
         let window = BrowserWindowState()
-        let tabManager = try makeInMemoryTabManager(
+        let tabManager = BrowserManager()
+        tabManager.runtimePortConnection.attach(TestRuntimePorts.make(
             windowState: { $0 == window.id ? window : nil },
             windows: { [(window.id, window)] }
-        )
-        window.tabManager = tabManager
+        ))
+        tabManager.windowRegistry.register(window)
         let presentation = try XCTUnwrap(
-            WindowSplitPresentationSynchronizer(
-                tabManager: { tabManager },
-                windows: { [window] },
-                selectTabWithoutPersistence: { _, _ in },
-                publishPreparedSelectionEffects: { _, _, _, _ in },
-                publishWindowChange: { _ in },
-                refreshCompositor: { _ in },
-                scheduleWindowSession: { _ in },
-                persistWindowSession: { _ in }
+            makeTestWindowSplitPresentationSynchronizer(
+                browser: tabManager,
+                windows: { [window] }
             ).prepareSettlement(
                 previousGroups: [],
                 replacementGroups: [],
@@ -96,8 +91,7 @@ final class SplitShortcutMemberRestoreAggregateTransactionTests: XCTestCase {
         let participants = SplitShortcutMemberRestoreParticipants(
             presentation: presentation,
             retirement: nil,
-            topology: topology,
-            retirementService: tabManager.shortcutLiveTabRetirement
+            topology: topology
         )
         return RestoreAggregateHarness(
             aggregate: SplitShortcutMemberRestoreAggregateTransaction(

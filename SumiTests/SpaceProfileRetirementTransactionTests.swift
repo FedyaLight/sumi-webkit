@@ -43,7 +43,7 @@ final class SpaceProfileRetirementTransactionTests: XCTestCase {
         }
 
         XCTAssertEqual(
-            fixture.tabManager.profileAssignments.spaces.start(
+            fixture.spaceProfiles.service.start(
                 spaceID: fixture.space.id,
                 profileID: fixture.targetProfile.id
             ),
@@ -103,7 +103,7 @@ final class SpaceProfileRetirementTransactionTests: XCTestCase {
             retirementCount: 1
         )
         XCTAssertEqual(
-            fixture.tabManager.profileAssignments.spaces.start(
+            fixture.spaceProfiles.service.start(
                 spaceID: fixture.space.id,
                 profileID: fixture.targetProfile.id
             ),
@@ -118,14 +118,14 @@ final class SpaceProfileRetirementTransactionTests: XCTestCase {
             XCTAssertFalse(
                 fixture.regularTab.profileAssignment.hasStagedSettlement
             )
-            fixture.tabManager.detachBrowserRuntime()
+            XCTAssertTrue(fixture.runtimeAttachment.detach())
         }
 
         XCTAssertEqual(terminalDestroyCount, 1)
         XCTAssertEqual(normalDestroyCount, 0)
         XCTAssertEqual(normalTeardownCount, 0)
         XCTAssertNil(
-            fixture.tabManager.profileAssignments.spaceLifecycle.inFlightProfileID(
+            fixture.spaceProfiles.lifecycle.inFlightProfileID(
                 for: fixture.space.id
             )
         )
@@ -136,7 +136,10 @@ final class SpaceProfileRetirementTransactionTests: XCTestCase {
         throws {
         let profileID = UUID()
         let profile = Profile(id: profileID, name: "Default")
-        let tabManager = try makeInMemoryTabManager(attachRuntimePorts: false)
+        let tabManager = BrowserManager()
+        tabManager.tabRuntimeLifecycle.shutdown()
+        let spaceProfiles = makeSpaceProfileHarness(for: tabManager)
+        let runtimeAttachment = spaceProfiles.runtimeAttachment
         let space = Space(name: "Current", profileId: nil)
         tabManager.spaceStateOwner.replaceSpaces([space])
         let replacement = TestRuntimePorts.make()
@@ -164,38 +167,36 @@ final class SpaceProfileRetirementTransactionTests: XCTestCase {
             )
         )
         XCTAssertEqual(
-            tabManager.runtimePortsAttachmentOwner.attach(runtime),
+            runtimeAttachment.attach(runtime),
             .attached
         )
         let exactModel = try XCTUnwrap(model)
         XCTAssertTrue(exactModel.validateForStaging())
         try exactModel.stage()
-        let availability = tabManager.profileAssignments.spaceAvailability
+        let availability = spaceProfiles.availability
         let observation = try XCTUnwrap(availability.observeNext(
             after: availability.revision
         ) {
             terminalDrainCallbackCount += 1
-            reentrantDetachResult = tabManager
-                .runtimePortsAttachmentOwner.detach()
-            reentrantAttachOutcome = tabManager
-                .runtimePortsAttachmentOwner.attach(replacement)
+            reentrantDetachResult = runtimeAttachment.detach()
+            reentrantAttachOutcome = runtimeAttachment.attach(replacement)
         })
 
-        let outerDetachResult = tabManager.runtimePortsAttachmentOwner.detach()
+        let outerDetachResult = runtimeAttachment.detach()
 
         XCTAssertTrue(outerDetachResult)
         XCTAssertEqual(terminalDrainCallbackCount, 1)
         XCTAssertEqual(reentrantDetachResult, false)
         XCTAssertEqual(reentrantAttachOutcome, .busy)
         XCTAssertNil(tabManager.runtimePortConnection.current)
-        XCTAssertTrue(tabManager.runtimePortsAttachmentOwner.canAttach)
+        XCTAssertTrue(runtimeAttachment.canAttach)
         observation.cancel()
         XCTAssertEqual(
-            tabManager.runtimePortsAttachmentOwner.attach(replacement),
+            runtimeAttachment.attach(replacement),
             .attached
         )
         XCTAssertNotNil(tabManager.runtimePortConnection.current)
-        XCTAssertTrue(tabManager.runtimePortsAttachmentOwner.detach())
+        XCTAssertTrue(runtimeAttachment.detach())
     }
 
     func testReentrantTerminalDrainPreservesExactSameSpaceReplacement()
@@ -210,10 +211,9 @@ final class SpaceProfileRetirementTransactionTests: XCTestCase {
                 terminalDrainCallbackCount += 1
                 guard terminalDrainCallbackCount == 1,
                       let firstIntent else { return }
-                nestedDrainResult = fixture.tabManager.profileAssignments
-                    .spaceLifecycle.drainForRuntimeDetach(firstIntent)
-                replacementOutcome = fixture.tabManager.profileAssignments
-                    .spaces.start(
+                nestedDrainResult = fixture.spaceProfiles.lifecycle
+                    .drainForRuntimeDetach(firstIntent)
+                replacementOutcome = fixture.spaceProfiles.service.start(
                         spaceID: fixture.space.id,
                         profileID: fixture.sourceProfile.id
                     )
@@ -224,7 +224,7 @@ final class SpaceProfileRetirementTransactionTests: XCTestCase {
             retirementCount: 1
         )
         XCTAssertEqual(
-            fixture.tabManager.profileAssignments.spaces.start(
+            fixture.spaceProfiles.service.start(
                 spaceID: fixture.space.id,
                 profileID: fixture.targetProfile.id
             ),
@@ -236,7 +236,7 @@ final class SpaceProfileRetirementTransactionTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(transition.sealModel)(), .sealed)
         let exactFirstIntent = try XCTUnwrap(firstIntent)
 
-        let outerDrainResult = fixture.tabManager.profileAssignments.spaceLifecycle
+        let outerDrainResult = fixture.spaceProfiles.lifecycle
             .drainForRuntimeDetach(exactFirstIntent)
 
         guard case .drained = outerDrainResult else {
@@ -250,21 +250,21 @@ final class SpaceProfileRetirementTransactionTests: XCTestCase {
         let replacementIntent = try XCTUnwrap(transition.intent)
         XCTAssertNotEqual(replacementIntent, exactFirstIntent)
         XCTAssertFalse(
-            fixture.tabManager.profileAssignments.spaceLifecycle
+            fixture.spaceProfiles.lifecycle
                 .isCurrent(exactFirstIntent)
         )
         XCTAssertTrue(
-            fixture.tabManager.profileAssignments.spaceLifecycle
+            fixture.spaceProfiles.lifecycle
                 .isCurrent(replacementIntent)
         )
         XCTAssertEqual(
-            fixture.tabManager.profileAssignments.spaceLifecycle.inFlightProfileID(
+            fixture.spaceProfiles.lifecycle.inFlightProfileID(
                 for: fixture.space.id
             ),
             fixture.sourceProfile.id
         )
         XCTAssertTrue(try XCTUnwrap(transition.validateModel)())
-        fixture.tabManager.profileAssignments.spaceLifecycle
+        fixture.spaceProfiles.lifecycle
             .cancelPending(replacementIntent)
     }
 
@@ -289,7 +289,7 @@ final class SpaceProfileRetirementTransactionTests: XCTestCase {
         )
 
         XCTAssertEqual(
-            fixture.tabManager.profileAssignments.spaces.start(
+            fixture.spaceProfiles.service.start(
                 spaceID: fixture.space.id,
                 profileID: fixture.targetProfile.id
             ),
@@ -310,7 +310,7 @@ final class SpaceProfileRetirementTransactionTests: XCTestCase {
         XCTAssertEqual(terminalDestroyCount, 1)
         XCTAssertEqual(unloadCount, 0)
         XCTAssertNil(
-            fixture.tabManager.profileAssignments.spaceLifecycle.inFlightProfileID(
+            fixture.spaceProfiles.lifecycle.inFlightProfileID(
                 for: fixture.space.id
             )
         )
@@ -352,7 +352,7 @@ final class SpaceProfileRetirementTransactionTests: XCTestCase {
         ) { _ in
             MainActor.assumeIsolated {
                 lifecycleCount += 1
-                fixture.tabManager.detachBrowserRuntime()
+                XCTAssertTrue(fixture.runtimeAttachment.detach())
                 transition.settlement?(.terminalShutdown)
                 transition.settlement?(.terminalShutdown)
             }
@@ -360,7 +360,7 @@ final class SpaceProfileRetirementTransactionTests: XCTestCase {
         defer { NotificationCenter.default.removeObserver(lifecycle) }
 
         XCTAssertEqual(
-            fixture.tabManager.profileAssignments.spaces.start(
+            fixture.spaceProfiles.service.start(
                 spaceID: fixture.space.id,
                 profileID: fixture.targetProfile.id
             ),
@@ -380,7 +380,7 @@ final class SpaceProfileRetirementTransactionTests: XCTestCase {
         XCTAssertEqual(normalTeardownCount, 0)
         XCTAssertTrue(retiredTab.webViewSession.allKnownWebViews.isEmpty)
         XCTAssertNil(
-            fixture.tabManager.profileAssignments.spaceLifecycle.inFlightProfileID(
+            fixture.spaceProfiles.lifecycle.inFlightProfileID(
                 for: fixture.space.id
             )
         )
@@ -428,7 +428,7 @@ final class SpaceProfileRetirementTransactionTests: XCTestCase {
             }
 
         XCTAssertEqual(
-            fixture.tabManager.profileAssignments.spaces.start(
+            fixture.spaceProfiles.service.start(
                 spaceID: fixture.space.id,
                 profileID: fixture.targetProfile.id
             ),
@@ -487,7 +487,7 @@ final class SpaceProfileRetirementTransactionTests: XCTestCase {
             retiredTab.webViewSession.parkedWebView
         )
         XCTAssertEqual(
-            fixture.tabManager.profileAssignments.spaces.start(
+            fixture.spaceProfiles.service.start(
                 spaceID: fixture.space.id,
                 profileID: fixture.targetProfile.id
             ),
@@ -587,7 +587,7 @@ final class SpaceProfileRetirementTransactionTests: XCTestCase {
             fixture.retiredTabs.first?.webViewSession.parkedWebView
         )
         XCTAssertEqual(
-            fixture.tabManager.profileAssignments.spaces.start(
+            fixture.spaceProfiles.service.start(
                 spaceID: fixture.space.id,
                 profileID: fixture.targetProfile.id
             ),
@@ -640,7 +640,7 @@ final class SpaceProfileRetirementTransactionTests: XCTestCase {
         harness.pipeline.resetForTerminalShutdown()
         XCTAssertFalse(fixture.regularTab.profileAssignment.hasStagedSettlement)
         XCTAssertNil(
-            fixture.tabManager.profileAssignments.spaceLifecycle.inFlightProfileID(
+            fixture.spaceProfiles.lifecycle.inFlightProfileID(
                 for: fixture.space.id
             )
         )
@@ -658,7 +658,7 @@ final class SpaceProfileRetirementTransactionTests: XCTestCase {
             fixture.retiredTabs.first?.webViewSession.parkedWebView
         )
         XCTAssertEqual(
-            fixture.tabManager.profileAssignments.spaces.start(
+            fixture.spaceProfiles.service.start(
                 spaceID: fixture.space.id,
                 profileID: fixture.targetProfile.id
             ),
@@ -746,7 +746,7 @@ final class SpaceProfileRetirementTransactionTests: XCTestCase {
         withExtendedLifetime(publicationObserver) {}
 
         XCTAssertNil(
-            fixture.tabManager.profileAssignments.spaceLifecycle.inFlightProfileID(
+            fixture.spaceProfiles.lifecycle.inFlightProfileID(
                 for: fixture.space.id
             )
         )
@@ -805,7 +805,7 @@ final class SpaceProfileRetirementTransactionTests: XCTestCase {
         ))
 
         XCTAssertEqual(
-            fixture.tabManager.profileAssignments.spaces.start(
+            fixture.spaceProfiles.service.start(
                 spaceID: fixture.space.id,
                 profileID: fixture.targetProfile.id
             ),
@@ -888,7 +888,7 @@ final class SpaceProfileRetirementTransactionTests: XCTestCase {
         XCTAssertEqual(normalTeardownCount, 0)
         XCTAssertEqual(structuralEventsAfterStage, 0)
         XCTAssertNil(
-            fixture.tabManager.profileAssignments.spaceLifecycle.inFlightProfileID(
+            fixture.spaceProfiles.lifecycle.inFlightProfileID(
                 for: fixture.space.id
             )
         )
@@ -900,9 +900,8 @@ final class SpaceProfileRetirementTransactionTests: XCTestCase {
     func testAdapterRejectsInvalidModelAndWrongRollbackReceiptFailClosed()
         throws {
         let repository = WebViewSessionRepository()
-        let tabManager = try makeInMemoryTabManager(
-            webViewSessions: repository
-        )
+        let tabManager = try makeBrowser(webViewSessions: repository)
+        let runtimeTeardown = makeRuntimeTeardown(for: tabManager)
         let tab = tabManager.tabFactory.makeTab(
             existingWebView: WKWebView(),
             loadsCachedFaviconOnInit: false
@@ -922,7 +921,7 @@ final class SpaceProfileRetirementTransactionTests: XCTestCase {
             rollback: { true }
         )
 
-        guard case .modelValidationFailed = tabManager.runtimeTeardown
+        guard case .modelValidationFailed = runtimeTeardown
             .retirement.begin(
                 tabs: [tab],
                 using: runtime,
@@ -936,7 +935,7 @@ final class SpaceProfileRetirementTransactionTests: XCTestCase {
             commit: { true },
             rollback: { true }
         )
-        guard case .began(let exactBatch) = tabManager.runtimeTeardown
+        guard case .began(let exactBatch) = runtimeTeardown
             .retirement.begin(
                 tabs: [tab],
                 using: runtime,
@@ -956,14 +955,14 @@ final class SpaceProfileRetirementTransactionTests: XCTestCase {
         )
 
         XCTAssertEqual(
-            tabManager.runtimeTeardown.retirement.rollback(wrongBatch),
+            runtimeTeardown.retirement.rollback(wrongBatch),
             .modelTransactionMismatch
         )
         guard case .retiring = repository.residence(of: retiredWebView) else {
             return XCTFail("Wrong receipt must retain quarantine")
         }
         XCTAssertEqual(
-            tabManager.runtimeTeardown.retirement.rollback(exactBatch),
+            runtimeTeardown.retirement.rollback(exactBatch),
             .rolledBack
         )
     }
@@ -1022,14 +1021,14 @@ final class SpaceProfileRetirementTransactionTests: XCTestCase {
         )
         try stageProfileChange(fixture, transition: transition)
 
-        fixture.tabManager.regularTabCollectionStateOwner.replaceTabsBySpace([:])
+        fixture.tabManager.tabStateStore.regularTabs.replaceTabsBySpace([:])
         fixture.tabManager.structuralLookupCoordinator.rebuild()
         XCTAssertFalse(try XCTUnwrap(transition.stagedModelIsExact)())
 
         try XCTUnwrap(transition.rollbackModel)()
 
         XCTAssertTrue(
-            fixture.tabManager.regularTabCollectionStateOwner.allTabs().isEmpty
+            fixture.tabManager.tabStateStore.regularTabs.allTabs().isEmpty
         )
         XCTAssertEqual(fixture.space.profileId, fixture.sourceProfile.id)
         XCTAssertFalse(fixture.regularTab.profileAssignment.hasUnsettledAssignment)
@@ -1049,7 +1048,7 @@ final class SpaceProfileRetirementTransactionTests: XCTestCase {
         )
         replacement.profileId = fixture.targetProfile.id
 
-        fixture.tabManager.regularTabCollectionStateOwner.replaceTabsBySpace([
+        fixture.tabManager.tabStateStore.regularTabs.replaceTabsBySpace([
             fixture.space.id: [replacement],
         ])
         fixture.tabManager.structuralLookupCoordinator.rebuild()
@@ -1062,7 +1061,7 @@ final class SpaceProfileRetirementTransactionTests: XCTestCase {
         XCTAssertEqual(replacement.profileId, fixture.targetProfile.id)
         XCTAssertFalse(replacement.profileAssignment.hasUnsettledAssignment)
         XCTAssertIdentical(
-            fixture.tabManager.regularTabCollectionStateOwner
+            fixture.tabManager.tabStateStore.regularTabs
                 .tab(for: replacement.id),
             replacement
         )
@@ -1076,7 +1075,7 @@ final class SpaceProfileRetirementTransactionTests: XCTestCase {
             retirementCount: 0
         )
         XCTAssertEqual(
-            fixture.tabManager.profileAssignments.spaces.start(
+            fixture.spaceProfiles.service.start(
                 spaceID: fixture.space.id,
                 profileID: fixture.targetProfile.id
             ),
@@ -1088,7 +1087,7 @@ final class SpaceProfileRetirementTransactionTests: XCTestCase {
             loadsCachedFaviconOnInit: false
         )
         replacement.profileId = fixture.targetProfile.id
-        fixture.tabManager.regularTabCollectionStateOwner.replaceTabsBySpace([
+        fixture.tabManager.tabStateStore.regularTabs.replaceTabsBySpace([
             fixture.space.id: [replacement],
         ])
         fixture.tabManager.structuralLookupCoordinator.rebuild()
@@ -1100,7 +1099,7 @@ final class SpaceProfileRetirementTransactionTests: XCTestCase {
         XCTAssertFalse(replacement.profileAssignment.hasUnsettledAssignment)
         XCTAssertEqual(replacement.profileId, fixture.targetProfile.id)
         XCTAssertNil(
-            fixture.tabManager.profileAssignments.spaceLifecycle.inFlightProfileID(
+            fixture.spaceProfiles.lifecycle.inFlightProfileID(
                 for: fixture.space.id
             )
         )
@@ -1126,7 +1125,7 @@ final class SpaceProfileRetirementTransactionTests: XCTestCase {
         )
         tabReplacement.profileId = fixture.sourceProfile.id
         fixture.tabManager.spaceStateOwner.replaceSpaces([spaceReplacement])
-        fixture.tabManager.regularTabCollectionStateOwner.replaceTabsBySpace([
+        fixture.tabManager.tabStateStore.regularTabs.replaceTabsBySpace([
             fixture.space.id: [tabReplacement],
         ])
         fixture.tabManager.structuralLookupCoordinator.rebuild()
@@ -1139,7 +1138,7 @@ final class SpaceProfileRetirementTransactionTests: XCTestCase {
         XCTAssertEqual(tabReplacement.profileId, fixture.sourceProfile.id)
         XCTAssertFalse(tabReplacement.profileAssignment.hasUnsettledAssignment)
         XCTAssertNil(
-            fixture.tabManager.profileAssignments.spaceLifecycle.inFlightProfileID(
+            fixture.spaceProfiles.lifecycle.inFlightProfileID(
                 for: fixture.space.id
             )
         )
@@ -1156,13 +1155,13 @@ final class SpaceProfileRetirementTransactionTests: XCTestCase {
             spaceId: fixture.space.id,
             loadsCachedFaviconOnInit: false
         )
-        fixture.tabManager.regularTabCollectionStateOwner.replaceTabsBySpace([
+        fixture.tabManager.tabStateStore.regularTabs.replaceTabsBySpace([
             fixture.space.id: [fixture.regularTab, duplicate],
         ])
         fixture.tabManager.structuralLookupCoordinator.rebuild()
 
         XCTAssertEqual(
-            fixture.tabManager.profileAssignments.spaces.start(
+            fixture.spaceProfiles.service.start(
                 spaceID: fixture.space.id,
                 profileID: fixture.targetProfile.id
             ),
@@ -1190,7 +1189,7 @@ final class SpaceProfileRetirementTransactionTests: XCTestCase {
             .registerAuxiliaryMiniWindowTab(auxiliary)
 
         XCTAssertEqual(
-            fixture.tabManager.profileAssignments.spaces.start(
+            fixture.spaceProfiles.service.start(
                 spaceID: fixture.space.id,
                 profileID: fixture.targetProfile.id
             ),
@@ -1217,7 +1216,7 @@ final class SpaceProfileRetirementTransactionTests: XCTestCase {
             .registerAuxiliaryMiniWindowTab(auxiliary)
 
         XCTAssertEqual(
-            fixture.tabManager.profileAssignments.spaces.start(
+            fixture.spaceProfiles.service.start(
                 spaceID: fixture.space.id,
                 profileID: fixture.targetProfile.id
             ),
@@ -1239,7 +1238,7 @@ final class SpaceProfileRetirementTransactionTests: XCTestCase {
         )
 
         XCTAssertEqual(
-            fixture.tabManager.profileAssignments.spaces.start(
+            fixture.spaceProfiles.service.start(
                 spaceID: fixture.space.id,
                 profileID: fixture.targetProfile.id
             ),
@@ -1259,7 +1258,7 @@ final class SpaceProfileRetirementTransactionTests: XCTestCase {
             retirementCount: 0
         )
         XCTAssertEqual(
-            fixture.tabManager.profileAssignments.spaces.start(
+            fixture.spaceProfiles.service.start(
                 spaceID: fixture.space.id,
                 profileID: fixture.targetProfile.id
             ),
@@ -1273,7 +1272,7 @@ final class SpaceProfileRetirementTransactionTests: XCTestCase {
         detached.profileId = fixture.targetProfile.id
 
         XCTAssertFalse(
-            fixture.tabManager.profileAssignments.spaceLifecycle
+            fixture.spaceProfiles.lifecycle
                 .registerCreationFollower(
                     detached,
                     in: fixture.space.id,
@@ -1288,7 +1287,8 @@ final class SpaceProfileRetirementTransactionTests: XCTestCase {
     func testDuplicateRetirementInputIsRejectedBeforeAnyTransactionMutation()
         throws {
         let repository = WebViewSessionRepository()
-        let tabManager = try makeInMemoryTabManager(webViewSessions: repository)
+        let tabManager = try makeBrowser(webViewSessions: repository)
+        let runtimeTeardown = makeRuntimeTeardown(for: tabManager)
         let webView = WKWebView()
         let tab = tabManager.tabFactory.makeTab(
             existingWebView: webView,
@@ -1338,7 +1338,7 @@ final class SpaceProfileRetirementTransactionTests: XCTestCase {
                     return true
                 }
             )
-            guard case .rejected(let reason) = tabManager.runtimeTeardown
+            guard case .rejected(let reason) = runtimeTeardown
                 .retirement.begin(
                     tabs: candidates,
                     using: runtime,
@@ -1366,7 +1366,7 @@ final class SpaceProfileRetirementTransactionTests: XCTestCase {
         transition: DeferredSpaceProfileTransition
     ) throws {
         XCTAssertEqual(
-            fixture.tabManager.profileAssignments.spaces.start(
+            fixture.spaceProfiles.service.start(
                 spaceID: fixture.space.id,
                 profileID: fixture.targetProfile.id
             ),
@@ -1389,8 +1389,19 @@ final class SpaceProfileRetirementTransactionTests: XCTestCase {
         let container = try makeInMemoryStartupModelContainer()
         let windowID = UUID()
         let windowState = BrowserWindowState(id: windowID)
-        let tabManager = TabManager(
-            runtimePorts: TestRuntimePorts.make(
+        let tabManager = BrowserManager(
+            webViewSessions: repository,
+            windowRegistry: WindowRegistry(),
+            startupPersistence: BrowserManagerStartupPersistence(
+                container: container
+            ),
+            dataServices: .unavailable()
+        )
+        tabManager.tabRuntimeLifecycle.shutdown()
+        let spaceProfiles = makeSpaceProfileHarness(for: tabManager)
+        let runtimeAttachment = spaceProfiles.runtimeAttachment
+        XCTAssertEqual(
+            runtimeAttachment.attach(TestRuntimePorts.make(
                 currentProfileId: { targetProfile.id },
                 defaultProfileId: { targetProfile.id },
                 profile: { profiles[$0] },
@@ -1400,10 +1411,8 @@ final class SpaceProfileRetirementTransactionTests: XCTestCase {
                 windows: { [(windowID, windowState)] },
                 windowStates: { [windowState] },
                 webViewLifecycle: transition.makeLifecycle()
-            ),
-            context: container.mainContext,
-            webViewSessions: repository,
-            loadPersistedState: false
+            )),
+            .attached
         )
         let space = Space(name: "Work", profileId: sourceProfile.id)
         tabManager.spaceStateOwner.replaceSpaces([space])
@@ -1412,7 +1421,7 @@ final class SpaceProfileRetirementTransactionTests: XCTestCase {
             existingWebView: WKWebView(),
             loadsCachedFaviconOnInit: false
         )
-        tabManager.regularTabCollectionStateOwner.replaceTabsBySpace([
+        tabManager.tabStateStore.regularTabs.replaceTabsBySpace([
             space.id: [regularTab],
         ])
         let tabIDs = [
@@ -1459,11 +1468,94 @@ final class SpaceProfileRetirementTransactionTests: XCTestCase {
         return Fixture(
             repository: repository,
             tabManager: tabManager,
+            spaceProfiles: spaceProfiles,
+            runtimeAttachment: runtimeAttachment,
             sourceProfile: sourceProfile,
             targetProfile: targetProfile,
             space: space,
             regularTab: regularTab,
             retiredTabs: retiredTabs
+        )
+    }
+
+    private func makeBrowser(
+        webViewSessions: WebViewSessionRepository
+    ) throws -> BrowserManager {
+        BrowserManager(
+            webViewSessions: webViewSessions,
+            windowRegistry: WindowRegistry(),
+            startupPersistence: BrowserManagerStartupPersistence(
+                container: try makeInMemoryStartupModelContainer()
+            ),
+            dataServices: .unavailable()
+        )
+    }
+
+    private func makeRuntimeTeardown(
+        for browser: BrowserManager
+    ) -> TabRuntimeTeardownService {
+        TabRuntimeTeardownService(
+            persistence: browser.structuralPersistence,
+            membership: browser.tabCollectionMembershipOwner,
+            webViewSessions: browser.webViewSessions
+        )
+    }
+
+    private func makeSpaceProfileHarness(
+        for browser: BrowserManager
+    ) -> SpaceProfileHarness {
+        let runtimeTeardown = makeRuntimeTeardown(for: browser)
+        let pendingInheritance = PendingTabProfileInheritance()
+        let graph = SpaceProfileTransitionService.compose(
+            spaces: browser.spaceStateOwner,
+            pins: browser.shortcutPinCollectionStateOwner,
+            registry: browser.liveShortcutTabs,
+            runtimeConnection: browser.runtimePortConnection,
+            runtimeTeardown: runtimeTeardown,
+            structuralLookup: browser.structuralLookupCoordinator,
+            membership: browser.tabCollectionMembershipOwner,
+            persistence: browser.structuralPersistence,
+            pendingInheritance: pendingInheritance,
+            changes: browser.objectWillChange
+        )
+        let pendingPins = PendingShortcutPinAdopter(
+            pins: browser.shortcutPinCollectionStateOwner,
+            structuralMutations: browser.structuralCollectionMutationOwner,
+            profileReferenceAdmission: browser.profileReferenceAdmission
+        )
+        let deferredWork = TabRuntimeAttachmentDeferredWorkOwner(
+            connection: browser.runtimePortConnection,
+            spaceProfiles: SpaceProfileReconciliationService(
+                spaces: browser.spaceStateOwner,
+                runtimeConnection: browser.runtimePortConnection,
+                spaceTransitions: graph.service,
+                transitionLifecycle: graph.lifecycle
+            ),
+            spaceAvailability: graph.availability,
+            pendingPins: pendingPins
+        )
+        let attachment = TabRuntimePortsAttachmentOwner(
+            connection: browser.runtimePortConnection,
+            bootstrap: TabRuntimeAttachmentBootstrap(
+                connection: browser.runtimePortConnection,
+                membership: browser.tabCollectionMembershipOwner,
+                runtimePreparation: TabRuntimePreparationOwner(
+                    runtimeConnection: browser.runtimePortConnection
+                ),
+                selection: browser.tabStateStore.selection
+            ),
+            settlement: TabRuntimeAttachmentSettlement(
+                connection: browser.runtimePortConnection,
+                spaces: browser.spaceStateOwner,
+                deferredWork: deferredWork,
+                restoreStarter: nil
+            )
+        )
+        return SpaceProfileHarness(
+            service: graph.service,
+            lifecycle: graph.lifecycle,
+            availability: graph.availability,
+            runtimeAttachment: attachment
         )
     }
 
@@ -1541,12 +1633,22 @@ final class SpaceProfileRetirementTransactionTests: XCTestCase {
 @MainActor
 private struct Fixture {
     let repository: WebViewSessionRepository
-    let tabManager: TabManager
+    let tabManager: BrowserManager
+    let spaceProfiles: SpaceProfileHarness
+    let runtimeAttachment: TabRuntimePortsAttachmentOwner
     let sourceProfile: Profile
     let targetProfile: Profile
     let space: Space
     let regularTab: Tab
     let retiredTabs: [Tab]
+}
+
+@MainActor
+private struct SpaceProfileHarness {
+    let service: SpaceProfileTransitionService
+    let lifecycle: SpaceProfileTransitionRepository
+    let availability: SpaceProfileTransitionPublication
+    let runtimeAttachment: TabRuntimePortsAttachmentOwner
 }
 
 @MainActor

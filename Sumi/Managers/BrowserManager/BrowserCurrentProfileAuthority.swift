@@ -12,11 +12,11 @@ final class BrowserCurrentProfileAuthority {
         self.currentProfile = currentProfile
     }
 
-    fileprivate func setCurrentProfile(_ profile: Profile?) {
+    func setCurrentProfile(_ profile: Profile?) {
         currentProfile = profile
     }
 
-    fileprivate func setTransitioning(_ isTransitioning: Bool) {
+    func setTransitioning(_ isTransitioning: Bool) {
         self.isTransitioning = isTransitioning
     }
 }

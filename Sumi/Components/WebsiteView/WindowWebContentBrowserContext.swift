@@ -13,29 +13,36 @@ protocol WindowWebContentBrowserContext: AnyObject {
 
 @MainActor
 final class BrowserManagerWindowWebContentContext: WindowWebContentBrowserContext {
-    private weak var browserManager: BrowserManager?
+    private let windowTabs: BrowserWindowTabContext
+    private let membership: TabCollectionMembershipOwner
+    private let windowVisuals: BrowserWindowVisualCoordinator
 
-    init(browserManager: BrowserManager) {
-        self.browserManager = browserManager
+    init(
+        windowTabs: BrowserWindowTabContext,
+        membership: TabCollectionMembershipOwner,
+        windowVisuals: BrowserWindowVisualCoordinator
+    ) {
+        self.windowTabs = windowTabs
+        self.membership = membership
+        self.windowVisuals = windowVisuals
     }
 
     func currentTab(for windowState: BrowserWindowState) -> Tab? {
-        browserManager?.shellRuntime.windowTabs.currentTab(for: windowState)
+        windowTabs.currentTab(for: windowState)
     }
 
     func tab(for tabId: UUID) -> Tab? {
-        browserManager?.tabManager.tabCollectionMembershipOwner.tab(for: tabId)
+        membership.tab(for: tabId)
     }
 
     func schedulePrepareVisibleWebViews(for windowState: BrowserWindowState) {
-        browserManager?.shellRuntime.windowVisuals.schedulePrepareVisibleWebViews(for: windowState)
+        windowVisuals.schedulePrepareVisibleWebViews(for: windowState)
     }
 
     func enqueueWindowMutationDuringHistorySwipe(
         _ kind: HistorySwipeDeferredWindowMutationKind,
         for windowState: BrowserWindowState
     ) {
-        browserManager?.shellRuntime.windowVisuals.enqueueWindowMutationDuringHistorySwipe(kind, for: windowState)
+        windowVisuals.enqueueWindowMutationDuringHistorySwipe(kind, for: windowState)
     }
-
 }

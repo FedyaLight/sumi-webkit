@@ -733,6 +733,36 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
 
     // MARK: - 19. Rejected invocation stays zero-cost
 
+    func testResidenceDelegationFailsClosedBeforeAttachmentAndAfterRetirement()
+        async throws {
+        let harness = try await makeHarness(name: "ResidenceDelegation")
+        let detached = ExtensionBrowserAttachmentAuthority()
+
+        XCTAssertFalse(
+            detached.containsExactResidence(
+                harness.tab,
+                in: harness.windowState
+            )
+        )
+
+        let attachment = harness.inspection.browserPublication.attachment
+        XCTAssertTrue(
+            attachment.containsExactResidence(
+                harness.tab,
+                in: harness.windowState
+            )
+        )
+
+        attachment.retireCurrentAttachment()
+
+        XCTAssertFalse(
+            attachment.containsExactResidence(
+                harness.tab,
+                in: harness.windowState
+            )
+        )
+    }
+
     func testRejectedInvocationDoesNotMaterializeLazyRuntimeSystems() async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "ZeroCost")
@@ -1131,7 +1161,7 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
         async throws {
         let harness = try await makeHarness(name: "PresentationTwoPages")
         let secondWindow = BrowserWindowState()
-        secondWindow.tabManager = harness.browserManager.tabManager
+        harness.browserManager.tabResidenceAuthority.establishResidenceSession(on: secondWindow)
         XCTAssertEqual(
             harness.windowRegistry.register(secondWindow),
             .registered
@@ -1289,7 +1319,7 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
 
         harness.windowRegistry.unregister(harness.windowState.id)
         let replacement = BrowserWindowState(id: harness.windowState.id)
-        replacement.tabManager = harness.browserManager.tabManager
+        harness.browserManager.tabResidenceAuthority.establishResidenceSession(on: replacement)
         replacement.currentProfileId = harness.profileID
         replacement.currentSpaceId = tab.spaceId
         replacement.currentTabId = tab.id
@@ -1320,7 +1350,7 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
             harness: harness
         )
         let secondWindow = BrowserWindowState()
-        secondWindow.tabManager = harness.browserManager.tabManager
+        harness.browserManager.tabResidenceAuthority.establishResidenceSession(on: secondWindow)
         secondWindow.currentProfileId = harness.profileID
         secondWindow.currentSpaceId = tab.spaceId
         secondWindow.currentTabId = tab.id
@@ -1377,7 +1407,8 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
             stableAdapter: adapters.stableAdapter(for:),
             windowRegistrationReceipt: windows.registrationReceipt(for:),
             registeredWindow: windows.window(ifCurrent:),
-            allWindows: { windows.allExtensionWindowStates }
+            allWindows: { windows.allExtensionWindowStates },
+            residences: harness.attachedRuntime.bridge.tabResidences
         )
     }
 
@@ -1396,10 +1427,10 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
             profileId: profileID,
             reason: #function
         )
-        let tab = harness.browserManager.tabManager
+        let tab = harness.browserManager
             .regularTabLifecycleOwner.createNewTab(
                 url: url.absoluteString,
-                in: harness.browserManager.tabManager.spaceStateOwner.currentSpace,
+                in: harness.browserManager.spaceStateOwner.currentSpace,
                 activate: false,
                 webViewConfigurationOverride: configuration,
                 executionProfileID: profileID
@@ -1603,8 +1634,8 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
             profile: profile,
             windowRegistry: windowRegistry
         )
+        browserManager.startupRestoreLifecycle.markLoadFinished()
         manager.attach(browserManager: browserManager)
-        await browserManager.tabManager.storeRestore.startupRestoreTask?.value
         let installed = try await installPromptingExtension(
             inspection: inspection.inspection,
             name: name
@@ -1618,14 +1649,14 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
                 profileId: profile.id
             )
         )
-        let tab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
+        let tab = browserManager.regularTabLifecycleOwner.createNewTab(
             url: Self.clickedPageURL.absoluteString,
-            in: browserManager.tabManager.spaceStateOwner.currentSpace,
+            in: browserManager.spaceStateOwner.currentSpace,
             activate: false
         )
         tab.profileId = profile.id
         let windowState = BrowserWindowState()
-        windowState.tabManager = browserManager.tabManager
+        browserManager.tabResidenceAuthority.establishResidenceSession(on: windowState)
         windowState.currentProfileId = profile.id
         windowState.currentSpaceId = tab.spaceId
         windowState.currentTabId = tab.id

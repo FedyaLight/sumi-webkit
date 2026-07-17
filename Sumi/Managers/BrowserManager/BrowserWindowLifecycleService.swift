@@ -1,21 +1,16 @@
 import Foundation
 
-/// Supplies ContentView with only the browser state and persistence operation
-/// needed by a window's SwiftUI appear/disappear lifecycle.
+/// Supplies ContentView with the exact persistence authority needed by a
+/// window's SwiftUI disappear lifecycle.
 @MainActor
 final class BrowserWindowLifecycleService: BrowserWindowLifecycleHandling {
-    let tabManager: TabManager
-    private let persist: @MainActor (BrowserWindowState) -> Void
+    private let persistence: WindowSessionPersistenceCoordinator
 
-    init(
-        tabManager: TabManager,
-        persist: @escaping @MainActor (BrowserWindowState) -> Void
-    ) {
-        self.tabManager = tabManager
-        self.persist = persist
+    init(persistence: WindowSessionPersistenceCoordinator) {
+        self.persistence = persistence
     }
 
     func persistWindowSession(for windowState: BrowserWindowState) {
-        persist(windowState)
+        persistence.persist(windowState)
     }
 }

@@ -15,7 +15,7 @@ final class WebViewPresentationRoutingTests: XCTestCase {
         harness.settings.themeUseSystemColors = true
 
         let secondWindow = BrowserWindowState()
-        secondWindow.tabManager = harness.browserManager.tabManager
+        harness.browserManager.tabResidenceAuthority.establishResidenceSession(on: secondWindow)
         secondWindow.currentProfileId = harness.sourceProfile.id
         secondWindow.currentSpaceId = harness.sourceSpace.id
         secondWindow.currentTabId = harness.sourceTab.id
@@ -78,11 +78,11 @@ final class WebViewPresentationRoutingTests: XCTestCase {
             )
         )
         XCTAssertEqual(
-            harness.browserManager.bookmarkEditorPresentationRequest?.windowID,
+            harness.browserManager.bookmarkEditorPresentationState.request?.windowID,
             secondWindow.id
         )
         XCTAssertEqual(
-            harness.browserManager.bookmarkEditorPresentationRequest?.tabID,
+            harness.browserManager.bookmarkEditorPresentationState.request?.tabID,
             harness.sourceTab.id
         )
 
@@ -133,7 +133,7 @@ final class WebViewPresentationRoutingTests: XCTestCase {
         ))
 
         let backgroundTab = try XCTUnwrap(
-            harness.browserManager.tabManager.regularTabCollectionOwner
+            harness.browserManager.regularTabCollectionOwner
                 .tabs(in: harness.sourceSpace)
                 .first { $0.url == backgroundURL }
         )
@@ -151,7 +151,7 @@ final class WebViewPresentationRoutingTests: XCTestCase {
         ))
 
         let foregroundTab = try XCTUnwrap(
-            harness.browserManager.tabManager.regularTabCollectionOwner
+            harness.browserManager.regularTabCollectionOwner
                 .tabs(in: harness.sourceSpace)
                 .first { $0.url == foregroundURL }
         )
@@ -159,7 +159,7 @@ final class WebViewPresentationRoutingTests: XCTestCase {
         XCTAssertEqual(harness.sourceWindow.currentTabId, foregroundTab.id)
         XCTAssertEqual(harness.sourceWindow.currentSpaceId, harness.sourceSpace.id)
         XCTAssertTrue(
-            harness.browserManager.tabManager.regularTabCollectionOwner
+            harness.browserManager.regularTabCollectionOwner
                 .tabs(in: harness.unrelatedSpace)
                 .allSatisfy { $0.url != backgroundURL && $0.url != foregroundURL },
             "Link routing must not fall back to the process-global current space."
@@ -177,8 +177,10 @@ final class WebViewPresentationRoutingTests: XCTestCase {
             dataStore: harness.sourceProfile.dataStore
         )
         let existingAuxiliaryTabIDs = Set(
-            harness.browserManager.tabManager.transientTabRegistryOwner
-                .auxiliaryMiniWindowTabsByID.keys
+            harness.browserManager.tabCollectionMembershipOwner
+                .allIdentityWitnesses()
+                .filter { $0.isAuxiliaryMiniWindow }
+                .map(\.id)
         )
 
         let popupWebView = harness.sourceTab.navigationRuntime
@@ -197,8 +199,10 @@ final class WebViewPresentationRoutingTests: XCTestCase {
         XCTAssertNil(popupWebView)
         XCTAssertEqual(
             Set(
-                harness.browserManager.tabManager.transientTabRegistryOwner
-                    .auxiliaryMiniWindowTabsByID.keys
+                harness.browserManager.tabCollectionMembershipOwner
+                    .allIdentityWitnesses()
+                    .filter { $0.isAuxiliaryMiniWindow }
+                    .map(\.id)
             ),
             existingAuxiliaryTabIDs
         )
@@ -210,8 +214,10 @@ final class WebViewPresentationRoutingTests: XCTestCase {
         defer { closePublishedShells(in: harness.windowRegistry) }
         let sources = physicalSourceResolver(for: harness)
         let tabOpening = PhysicalSourceTabOpeningService(
-            tabs: harness.browserManager.tabManager,
-            opening: harness.browserManager.tabLifecycleService.opening,
+            spaces: harness.browserManager.spaceStateOwner,
+            regularTabs: harness.browserManager.regularTabCollectionOwner,
+            regularLifecycle: harness.browserManager.regularTabLifecycleOwner,
+            opening: harness.browserManager.tabOpening,
             select: { [weak browserManager = harness.browserManager]
                 tab,
                 window,
@@ -247,22 +253,30 @@ final class WebViewPresentationRoutingTests: XCTestCase {
             ExtensionTabRegistrarSpy()
         let childOpening = WebKitChildTabOpeningService(
             sources: sources,
-            tabs: harness.browserManager.tabManager,
-            placement: harness.browserManager.testWebViewRuntime()
-                .trackedWebViewAdmission,
-            selection: BrowserTabSelectionCommand {
-                [weak browserManager = harness.browserManager]
-                tab,
-                window,
-                loadPolicy in
-                browserManager?.selectTab(
+            creation: WebKitChildTabCreationTransaction(
+                spaces: harness.browserManager.spaceStateOwner,
+                regularTabs: harness.browserManager.regularTabCollectionOwner,
+                regularLifecycle: harness.browserManager.regularTabLifecycleOwner,
+                ephemeralLifecycle: harness.browserManager.ephemeralLifecycleOwner
+            ),
+            settlement: WebKitChildTabSettlementTransaction(
+                residences: harness.browserManager.tabResidenceAuthority,
+                placement: harness.browserManager.testWebViewRuntime()
+                    .trackedWebViewAdmission,
+                selection: BrowserTabSelectionCommand {
+                    [weak browserManager = harness.browserManager]
                     tab,
-                    in: window,
-                    loadPolicy: loadPolicy
-                )
-            },
-            notifications: harness.browserManager.notificationPresenter,
-            extensionTabs: try XCTUnwrap(childRegistrar)
+                    window,
+                    loadPolicy in
+                    browserManager?.selectTab(
+                        tab,
+                        in: window,
+                        loadPolicy: loadPolicy
+                    )
+                },
+                notifications: harness.browserManager.notificationPresenter,
+                extensionTabs: try XCTUnwrap(childRegistrar)
+            )
         )
         childRegistrar = nil
         let configuration = webViewConfiguration(
@@ -290,21 +304,29 @@ final class WebViewPresentationRoutingTests: XCTestCase {
         let placement = RejectingAuxiliaryTrackedPlacement()
         let opening = WebKitChildTabOpeningService(
             sources: physicalSourceResolver(for: harness),
-            tabs: harness.browserManager.tabManager,
-            placement: placement,
-            selection: BrowserTabSelectionCommand {
-                [weak browserManager = harness.browserManager]
-                tab,
-                window,
-                loadPolicy in
-                browserManager?.selectTab(
+            creation: WebKitChildTabCreationTransaction(
+                spaces: harness.browserManager.spaceStateOwner,
+                regularTabs: harness.browserManager.regularTabCollectionOwner,
+                regularLifecycle: harness.browserManager.regularTabLifecycleOwner,
+                ephemeralLifecycle: harness.browserManager.ephemeralLifecycleOwner
+            ),
+            settlement: WebKitChildTabSettlementTransaction(
+                residences: harness.browserManager.tabResidenceAuthority,
+                placement: placement,
+                selection: BrowserTabSelectionCommand {
+                    [weak browserManager = harness.browserManager]
                     tab,
-                    in: window,
-                    loadPolicy: loadPolicy
-                )
-            },
-            notifications: harness.browserManager.notificationPresenter,
-            extensionTabs: ExtensionTabRegistrarSpy()
+                    window,
+                    loadPolicy in
+                    browserManager?.selectTab(
+                        tab,
+                        in: window,
+                        loadPolicy: loadPolicy
+                    )
+                },
+                notifications: harness.browserManager.notificationPresenter,
+                extensionTabs: ExtensionTabRegistrarSpy()
+            )
         )
         let initialTabIDs = regularTabIDs(in: harness)
         let initialSelection = harness.sourceWindow.currentTabId
@@ -331,7 +353,7 @@ final class WebViewPresentationRoutingTests: XCTestCase {
         let rejectedWebView = try XCTUnwrap(placement.webView)
         XCTAssertEqual(regularTabIDs(in: harness), initialTabIDs)
         XCTAssertNil(
-            harness.browserManager.tabManager.tabCollectionMembershipOwner
+            harness.browserManager.tabCollectionMembershipOwner
                 .tab(for: rejectedTab.id)
         )
         XCTAssertEqual(harness.sourceWindow.currentTabId, initialSelection)
@@ -356,9 +378,12 @@ final class WebViewPresentationRoutingTests: XCTestCase {
                 restoration: harness.browserManager.windowSessionBundle
                     .restoreService,
                 profiles: harness.browserManager.profileManager,
-                tabs: harness.browserManager.tabManager
+                spaces: harness.browserManager.spaceStateOwner
             ),
-            tabs: harness.browserManager.tabManager,
+            regularTabs: harness.browserManager.regularTabCollectionOwner,
+            regularLifecycle: harness.browserManager.regularTabLifecycleOwner,
+            ephemeralLifecycle: harness.browserManager.ephemeralLifecycleOwner,
+            residences: harness.browserManager.tabResidenceAuthority,
             placement: placement,
             ownershipQuery: webViews.ownershipQuery,
             sourceResolver: physicalSourceResolver(for: harness),
@@ -394,7 +419,7 @@ final class WebViewPresentationRoutingTests: XCTestCase {
             initialWindowIDs
         )
         XCTAssertNil(
-            harness.browserManager.tabManager.tabCollectionMembershipOwner
+            harness.browserManager.tabCollectionMembershipOwner
                 .tab(for: rejectedTab.id)
         )
         XCTAssertNil(rejectedWebView.owningTab)
@@ -420,8 +445,8 @@ final class WebViewPresentationRoutingTests: XCTestCase {
                         observedPreparedWindow = true
                         selectedTabAtRegistration = windowState.currentTabId
                         initialTabAtRegistration = windowState.currentTabId.flatMap {
-                            browserManager.tabManager
-                                .tabCollectionMembershipOwner.tab(for: $0)
+                            browserManager.tabCollectionMembershipOwner
+                                .tab(for: $0)
                         }
                         profileAtRegistration = windowState.currentProfileId
                         spaceAtRegistration = windowState.currentSpaceId
@@ -457,7 +482,7 @@ final class WebViewPresentationRoutingTests: XCTestCase {
 
         let targetTabID = try XCTUnwrap(targetWindow.currentTabId)
         let targetTab = try XCTUnwrap(
-            harness.browserManager.tabManager.regularTabCollectionOwner
+            harness.browserManager.regularTabCollectionOwner
                 .tabs(in: harness.sourceSpace)
                 .first { $0.id == targetTabID }
         )
@@ -469,7 +494,7 @@ final class WebViewPresentationRoutingTests: XCTestCase {
         )
         XCTAssertEqual(targetTab.spaceId, harness.sourceSpace.id)
         XCTAssertTrue(
-            harness.browserManager.tabManager.regularTabCollectionOwner
+            harness.browserManager.regularTabCollectionOwner
                 .tabs(in: harness.unrelatedSpace)
                 .allSatisfy { $0.url != targetURL },
             "A contextual new-window link must not use the global current space."
@@ -477,9 +502,8 @@ final class WebViewPresentationRoutingTests: XCTestCase {
     }
 
     func testIncognitoNewWindowLinkCreatesOnlyEphemeralTargetState() throws {
-        let browserManager = try makeBrowserManager()
         let windowRegistry = WindowRegistry()
-        browserManager.windowRegistry = windowRegistry
+        let browserManager = try makeBrowserManager(windowRegistry: windowRegistry)
         browserManager.windowShellContentViewFactory = { _, _ in NSView() }
         defer { closePublishedShells(in: windowRegistry) }
 
@@ -497,11 +521,11 @@ final class WebViewPresentationRoutingTests: XCTestCase {
         sourceWindow.replaceEphemeralSpaces([sourceSpace])
         sourceWindow.currentProfileId = sourceProfile.id
         sourceWindow.currentSpaceId = sourceSpace.id
-        sourceWindow.tabManager = browserManager.tabManager
+        browserManager.tabResidenceAuthority.establishResidenceSession(on: sourceWindow)
         windowRegistry.register(sourceWindow)
         windowRegistry.setActive(sourceWindow)
 
-        let sourceTab = browserManager.tabLifecycleService.opening.openNewTab(
+        let sourceTab = browserManager.tabOpening.openNewTab(
             url: "https://private-source.example",
             context: .foreground(
                 windowState: sourceWindow,
@@ -577,8 +601,8 @@ final class WebViewPresentationRoutingTests: XCTestCase {
             "Private tabs stay window-scoped instead of joining the shared regular-space graph."
         )
         XCTAssertTrue(
-            browserManager.tabManager.regularTabCollectionOwner
-                .allTabs(in: browserManager.tabManager.spaceStateOwner.spaces)
+            browserManager.regularTabCollectionOwner
+                .allTabs(in: browserManager.spaceStateOwner.spaces)
                 .allSatisfy { $0.url != targetURL },
             "An incognito new-window link must never enter the persistent regular-tab graph."
         )
@@ -594,9 +618,8 @@ final class WebViewPresentationRoutingTests: XCTestCase {
 
     func testRejectedPrivateLinkMaterializationCannotRollbackReplacedAggregate()
         async throws {
-        let browserManager = try makeBrowserManager()
         let windowRegistry = WindowRegistry()
-        browserManager.windowRegistry = windowRegistry
+        let browserManager = try makeBrowserManager(windowRegistry: windowRegistry)
         browserManager.windowShellContentViewFactory = { _, _ in NSView() }
         installRegistrationRestoration(
             from: browserManager,
@@ -617,8 +640,8 @@ final class WebViewPresentationRoutingTests: XCTestCase {
         sourceWindow.replaceEphemeralSpaces([sourceSpace])
         sourceWindow.currentProfileId = sourceProfile.id
         sourceWindow.currentSpaceId = sourceSpace.id
-        sourceWindow.tabManager = browserManager.tabManager
-        let sourceTab = browserManager.tabManager.ephemeralLifecycleOwner
+        browserManager.tabResidenceAuthority.establishResidenceSession(on: sourceWindow)
+        let sourceTab = browserManager.ephemeralLifecycleOwner
             .createEphemeralTab(
                 url: try XCTUnwrap(
                     URL(string: "https://private-source.example")
@@ -660,21 +683,16 @@ final class WebViewPresentationRoutingTests: XCTestCase {
             restoration: browserManager.windowSessionBundle.restoreService,
             extensionPublication: browserManager.windowExtensionPublication,
             profiles: browserManager.profileManager,
-            tabs: browserManager.tabManager,
+            spaces: browserManager.spaceStateOwner,
+            regularLifecycle: browserManager.regularTabLifecycleOwner,
+            ephemeralLifecycle: browserManager.ephemeralLifecycleOwner,
+            residences: browserManager.tabResidenceAuthority,
             persistWindow: { _ in persistedWindows += 1 },
             materialize: { tab, window in
                 rejectedWindow = window
                 originalTab = tab
-                browserManager.tabManager.runtimeStateCoalescer.enqueue(
-                    TabRuntimeStateUpdate(
-                        id: tab.id,
-                        urlString: tab.url.absoluteString,
-                        currentURLString: tab.url.absoluteString,
-                        name: tab.name,
-                        canGoBack: false,
-                        canGoForward: false
-                    )
-                )
+                browserManager.structuralPersistence
+                    .scheduleRuntimeStatePersistence(for: tab)
                 let profile = browserManager.profileManager
                     .createEphemeralProfile(for: window.id)
                 let space = Space(
@@ -718,8 +736,8 @@ final class WebViewPresentationRoutingTests: XCTestCase {
                 forWindowID: window.id
             )
         )
-        let flushedRuntimeStateCount = await browserManager.tabManager
-            .runtimeStateCoalescer.flushImmediately()
+        let flushedRuntimeStateCount = await browserManager
+            .structuralPersistence.flushRuntimeStatePersistenceAwaitingResult()
         XCTAssertEqual(
             flushedRuntimeStateCount,
             1,
@@ -728,9 +746,8 @@ final class WebViewPresentationRoutingTests: XCTestCase {
     }
 
     func testPrivateLinkRollbackDefersInventoryUntilAggregateCommit() throws {
-        let browserManager = try makeBrowserManager()
         let windowRegistry = WindowRegistry()
-        browserManager.windowRegistry = windowRegistry
+        let browserManager = try makeBrowserManager(windowRegistry: windowRegistry)
         browserManager.windowShellContentViewFactory = { _, _ in NSView() }
         installRegistrationRestoration(
             from: browserManager,
@@ -750,8 +767,8 @@ final class WebViewPresentationRoutingTests: XCTestCase {
         sourceWindow.replaceEphemeralSpaces([sourceSpace])
         sourceWindow.currentProfileId = sourceProfile.id
         sourceWindow.currentSpaceId = sourceSpace.id
-        sourceWindow.tabManager = browserManager.tabManager
-        let sourceTab = browserManager.tabManager.ephemeralLifecycleOwner
+        browserManager.tabResidenceAuthority.establishResidenceSession(on: sourceWindow)
+        let sourceTab = browserManager.ephemeralLifecycleOwner
             .createEphemeralTab(
                 url: try XCTUnwrap(
                     URL(string: "https://private-atomic-source.example")
@@ -795,7 +812,10 @@ final class WebViewPresentationRoutingTests: XCTestCase {
             restoration: browserManager.windowSessionBundle.restoreService,
             extensionPublication: browserManager.windowExtensionPublication,
             profiles: browserManager.profileManager,
-            tabs: browserManager.tabManager,
+            spaces: browserManager.spaceStateOwner,
+            regularLifecycle: browserManager.regularTabLifecycleOwner,
+            ephemeralLifecycle: browserManager.ephemeralLifecycleOwner,
+            residences: browserManager.tabResidenceAuthority,
             persistWindow: { _ in XCTFail("Rejected window must not persist") },
             materialize: { tab, window in
                 rejectedWindow = window
@@ -825,8 +845,8 @@ final class WebViewPresentationRoutingTests: XCTestCase {
                         window.replaceEphemeralSpaces([space])
                         window.currentProfileId = profile.id
                         window.currentSpaceId = space.id
-                        let tab = browserManager.tabManager
-                            .ephemeralLifecycleOwner.createEphemeralTab(
+                        let tab = browserManager.ephemeralLifecycleOwner
+                            .createEphemeralTab(
                                 url: URL(
                                     string: "https://private-atomic-replacement.example"
                                 )!,
@@ -936,7 +956,7 @@ final class WebViewPresentationRoutingTests: XCTestCase {
         )
         let targetTabID = try XCTUnwrap(targetWindow.currentTabId)
         let targetTab = try XCTUnwrap(
-            harness.browserManager.tabManager.regularTabCollectionOwner
+            harness.browserManager.regularTabCollectionOwner
                 .tab(for: targetTabID)
         )
         XCTAssertEqual(selectedAtRegistration, targetTabID)
@@ -976,7 +996,7 @@ final class WebViewPresentationRoutingTests: XCTestCase {
         )
         XCTAssertNil(targetWindow.webKitChildWindowIdentity)
         XCTAssertNil(
-            harness.browserManager.tabManager.tabCollectionMembershipOwner
+            harness.browserManager.tabCollectionMembershipOwner
                 .tab(for: targetTabID),
             "Closing the sole physical residence must remove the script-created Tab from the durable graph."
         )
@@ -998,7 +1018,7 @@ final class WebViewPresentationRoutingTests: XCTestCase {
         defer { closePublishedShells(in: harness.windowRegistry) }
         let windowIDs = Set(harness.windowRegistry.windows.keys)
         let tabIDs = Set(
-            harness.browserManager.tabManager.regularTabCollectionStateOwner
+            harness.browserManager.tabStateStore.regularTabs
                 .allTabsSnapshot().map(\.id)
         )
         let mismatched = WKWebViewConfiguration()
@@ -1019,8 +1039,8 @@ final class WebViewPresentationRoutingTests: XCTestCase {
         XCTAssertEqual(Set(harness.windowRegistry.windows.keys), windowIDs)
         XCTAssertEqual(
             Set(
-                harness.browserManager.tabManager
-                    .regularTabCollectionStateOwner.allTabsSnapshot()
+                harness.browserManager.tabStateStore.regularTabs
+                    .allTabsSnapshot()
                     .map(\.id)
             ),
             tabIDs
@@ -1194,9 +1214,8 @@ final class WebViewPresentationRoutingTests: XCTestCase {
 
     func testPrivateWebKitChildWindowSharesPartitionUntilLastWindowCloses()
         async throws {
-        let browserManager = try makeBrowserManager()
         let windowRegistry = WindowRegistry()
-        browserManager.windowRegistry = windowRegistry
+        let browserManager = try makeBrowserManager(windowRegistry: windowRegistry)
         browserManager.windowShellContentViewFactory = { _, _ in NSView() }
         defer { closePublishedShells(in: windowRegistry) }
 
@@ -1214,7 +1233,7 @@ final class WebViewPresentationRoutingTests: XCTestCase {
         sourceWindow.replaceEphemeralSpaces([sourceSpace])
         sourceWindow.currentProfileId = sourceProfile.id
         sourceWindow.currentSpaceId = sourceSpace.id
-        sourceWindow.tabManager = browserManager.tabManager
+        browserManager.tabResidenceAuthority.establishResidenceSession(on: sourceWindow)
         windowRegistry.register(sourceWindow)
         windowRegistry.setActive(sourceWindow)
         installRegistrationRestoration(
@@ -1222,7 +1241,7 @@ final class WebViewPresentationRoutingTests: XCTestCase {
             on: windowRegistry
         )
 
-        let sourceTab = browserManager.tabManager.ephemeralLifecycleOwner
+        let sourceTab = browserManager.ephemeralLifecycleOwner
             .createEphemeralTab(
                 url: try XCTUnwrap(
                     URL(string: "https://private-source.example")
@@ -1291,8 +1310,8 @@ final class WebViewPresentationRoutingTests: XCTestCase {
     private func makeRegularHarness(
         installEventSink: ((BrowserManager, WindowRegistry) -> Void)? = nil
     ) throws -> RegularHarness {
-        let browserManager = try makeBrowserManager()
         let windowRegistry = WindowRegistry()
+        let browserManager = try makeBrowserManager(windowRegistry: windowRegistry)
         let sourceProfile = Profile(name: "Source Profile")
         let unrelatedProfile = Profile(name: "Unrelated Profile")
         let sourceSpace = Space(
@@ -1311,15 +1330,14 @@ final class WebViewPresentationRoutingTests: XCTestCase {
         browserManager.profileManager.profiles = [sourceProfile, unrelatedProfile]
         browserManager.sumiSettings = settings
         browserManager.currentProfile = unrelatedProfile
-        browserManager.windowRegistry = windowRegistry
         browserManager.windowShellContentViewFactory = { _, _ in NSView() }
-        browserManager.tabManager.spaceStateOwner.replaceSpaces([
+        browserManager.spaceStateOwner.replaceSpaces([
             sourceSpace,
             unrelatedSpace,
         ])
-        browserManager.tabManager.spaceStateOwner.replaceCurrentSpace(unrelatedSpace)
+        browserManager.spaceStateOwner.replaceCurrentSpace(unrelatedSpace)
 
-        sourceWindow.tabManager = browserManager.tabManager
+        browserManager.tabResidenceAuthority.establishResidenceSession(on: sourceWindow)
         sourceWindow.currentProfileId = sourceProfile.id
         sourceWindow.currentSpaceId = sourceSpace.id
         windowRegistry.register(sourceWindow)
@@ -1333,7 +1351,7 @@ final class WebViewPresentationRoutingTests: XCTestCase {
             )
         }
 
-        let sourceTab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
+        let sourceTab = browserManager.regularTabLifecycleOwner.createNewTab(
             url: "https://source.example",
             in: sourceSpace,
             activate: false
@@ -1366,8 +1384,11 @@ final class WebViewPresentationRoutingTests: XCTestCase {
         )
     }
 
-    private func makeBrowserManager() throws -> BrowserManager {
+    private func makeBrowserManager(
+        windowRegistry: WindowRegistry = WindowRegistry()
+    ) throws -> BrowserManager {
         BrowserManager(
+            windowRegistry: windowRegistry,
             startupPersistence: BrowserManagerStartupPersistence(
                 container: try ModelContainer(
                     for: SumiStartupPersistence.schema,
@@ -1383,7 +1404,14 @@ final class WebViewPresentationRoutingTests: XCTestCase {
         PhysicalWebViewSourceResolver(
             ownership: harness.browserManager.testWebViewRuntime()
                 .ownershipQuery,
-            tabs: harness.browserManager.tabManager,
+            sourceContexts: BrowserWindowSourceContextResolver(
+                spaces: harness.browserManager.spaceStateOwner,
+                regularTabs: harness.browserManager.regularTabCollectionOwner,
+                shortcutTabs: harness.browserManager.liveShortcutTabs
+            ),
+            pins: harness.browserManager.shortcutPinCollectionStateOwner,
+            shortcutResolution: harness.browserManager
+                .shortcutPinRuntimeResolutionOwner,
             profiles: harness.browserManager.profileManager,
             registry: { [weak registry = harness.windowRegistry] in
                 registry
@@ -1402,9 +1430,12 @@ final class WebViewPresentationRoutingTests: XCTestCase {
                 restoration: harness.browserManager.windowSessionBundle
                     .restoreService,
                 profiles: harness.browserManager.profileManager,
-                tabs: harness.browserManager.tabManager
+                spaces: harness.browserManager.spaceStateOwner
             ),
-            tabs: harness.browserManager.tabManager,
+            regularTabs: harness.browserManager.regularTabCollectionOwner,
+            regularLifecycle: harness.browserManager.regularTabLifecycleOwner,
+            ephemeralLifecycle: harness.browserManager.ephemeralLifecycleOwner,
+            residences: harness.browserManager.tabResidenceAuthority,
             placement: webViews.trackedWebViewAdmission,
             ownershipQuery: webViews.ownershipQuery,
             sourceResolver: physicalSourceResolver(for: harness),
@@ -1451,7 +1482,7 @@ final class WebViewPresentationRoutingTests: XCTestCase {
 
     private func regularTabIDs(in harness: RegularHarness) -> Set<UUID> {
         Set(
-            harness.browserManager.tabManager.regularTabCollectionStateOwner
+            harness.browserManager.tabStateStore.regularTabs
                 .allTabsSnapshot().map(\.id)
         )
     }

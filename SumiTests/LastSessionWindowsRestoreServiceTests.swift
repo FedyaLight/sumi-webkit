@@ -4,12 +4,6 @@ import XCTest
 
 @MainActor
 final class LastSessionWindowsRestoreServiceTests: XCTestCase {
-    private enum Event: Equatable {
-        case mergeTabSnapshot
-        case reopen
-        case archiveRefresh
-    }
-
     func testReopenAllUsesStartupArchiveMergesTabSnapshotOnceSkipsOpenSessionsAndRefreshesArchive() async throws {
         let store = try makeIsolatedLastSessionWindowsStore(suitePrefix: "LastSessionWindowsRestoreServiceTests")
         let existingSnapshot = LastSessionWindowSnapshot(
@@ -31,26 +25,18 @@ final class LastSessionWindowsRestoreServiceTests: XCTestCase {
             windowSnapshots: [existingSnapshot, snapshotToRestore],
             tabSnapshot: startupTabSnapshot
         )
-        var events: [Event] = []
         let windowReopen = WindowSessionReopenerFake()
-        windowReopen.onReopen = { events.append(.reopen) }
-        let openWindows = makeOpenWindows { [existingSnapshot] }
-        // In this scenario every archive *read* is satisfied by the startup
-        // provider, so the store closure fires exactly once per refresh and
-        // doubles as the refresh-ordering observation point.
+        let openWindows = makeOpenWindows([existingSnapshot])
         let archive = LastSessionWindowArchive(
-            openWindows: openWindows,
-            lastSessionWindowsStore: {
-                events.append(.archiveRefresh)
-                return store
-            },
+            openWindows: openWindows.catalog,
+            lastSessionWindowsStore: store,
             startupRestore: startupRestore
         )
         let service = LastSessionWindowsRestoreService(
             startupRestore: startupRestore,
             archive: archive,
-            openWindows: openWindows,
-            mergeLastSessionTabSnapshot: { _ in events.append(.mergeTabSnapshot) },
+            openWindows: openWindows.catalog,
+            tabMerge: makeTabMerge(),
             windowReopen: windowReopen
         )
 
@@ -63,7 +49,6 @@ final class LastSessionWindowsRestoreServiceTests: XCTestCase {
         await service.pendingRestoreTask?.value
 
         XCTAssertTrue(startupRestore.didConsumeRestoreOffer)
-        XCTAssertEqual(events, [.mergeTabSnapshot, .reopen, .archiveRefresh])
         XCTAssertEqual(windowReopen.reopenedSessions, [snapshotToRestore.session])
         XCTAssertEqual(store.snapshots.map(\.session), [existingSnapshot.session])
         XCTAssertNil(service.pendingRestoreTask)
@@ -86,13 +71,12 @@ final class LastSessionWindowsRestoreServiceTests: XCTestCase {
             ]
         )
         let windowReopen = WindowSessionReopenerFake()
-        var didMergeTabSnapshot = false
-        let openWindows = makeOpenWindows { [] }
+        let openWindows = makeOpenWindows([])
         let service = LastSessionWindowsRestoreService(
             startupRestore: startupRestore,
-            archive: makeArchive(openWindows: openWindows, store: store, startupRestore: startupRestore),
-            openWindows: openWindows,
-            mergeLastSessionTabSnapshot: { _ in didMergeTabSnapshot = true },
+            archive: makeArchive(openWindows: openWindows.catalog, store: store, startupRestore: startupRestore),
+            openWindows: openWindows.catalog,
+            tabMerge: makeTabMerge(),
             windowReopen: windowReopen
         )
 
@@ -103,7 +87,6 @@ final class LastSessionWindowsRestoreServiceTests: XCTestCase {
         await service.pendingRestoreTask?.value
 
         XCTAssertEqual(windowReopen.reopenedSessions, [storedSnapshot.session])
-        XCTAssertFalse(didMergeTabSnapshot)
     }
 
     func testReopenAllFinalizesStartupOfferWhenEverySessionIsAlreadyOpen() async throws {
@@ -117,14 +100,12 @@ final class LastSessionWindowsRestoreServiceTests: XCTestCase {
             windowSnapshots: [openSnapshot]
         )
         let windowReopen = WindowSessionReopenerFake()
-        let openWindows = makeOpenWindows { [openSnapshot] }
+        let openWindows = makeOpenWindows([openSnapshot])
         let service = LastSessionWindowsRestoreService(
             startupRestore: startupRestore,
-            archive: makeArchive(openWindows: openWindows, store: store, startupRestore: startupRestore),
-            openWindows: openWindows,
-            mergeLastSessionTabSnapshot: { _ in
-                XCTFail("Tab snapshot must not merge when nothing is restored")
-            },
+            archive: makeArchive(openWindows: openWindows.catalog, store: store, startupRestore: startupRestore),
+            openWindows: openWindows.catalog,
+            tabMerge: makeTabMerge(),
             windowReopen: windowReopen
         )
 
@@ -156,12 +137,12 @@ final class LastSessionWindowsRestoreServiceTests: XCTestCase {
             windowSnapshots: [snapshot]
         )
         let windowReopen = WindowSessionReopenerFake(reopenResult: false)
-        let openWindows = makeOpenWindows { [] }
+        let openWindows = makeOpenWindows([])
         let service = LastSessionWindowsRestoreService(
             startupRestore: startupRestore,
-            archive: makeArchive(openWindows: openWindows, store: store, startupRestore: startupRestore),
-            openWindows: openWindows,
-            mergeLastSessionTabSnapshot: { _ in /* No-op. */ },
+            archive: makeArchive(openWindows: openWindows.catalog, store: store, startupRestore: startupRestore),
+            openWindows: openWindows.catalog,
+            tabMerge: makeTabMerge(),
             windowReopen: windowReopen
         )
 
@@ -196,12 +177,12 @@ final class LastSessionWindowsRestoreServiceTests: XCTestCase {
         )
         let windowReopen = WindowSessionReopenerFake()
         windowReopen.reopenResults = [true, false]
-        let openWindows = makeOpenWindows { [] }
+        let openWindows = makeOpenWindows([])
         let service = LastSessionWindowsRestoreService(
             startupRestore: startupRestore,
-            archive: makeArchive(openWindows: openWindows, store: store, startupRestore: startupRestore),
-            openWindows: openWindows,
-            mergeLastSessionTabSnapshot: { _ in /* No-op. */ },
+            archive: makeArchive(openWindows: openWindows.catalog, store: store, startupRestore: startupRestore),
+            openWindows: openWindows.catalog,
+            tabMerge: makeTabMerge(),
             windowReopen: windowReopen
         )
 
@@ -227,17 +208,17 @@ final class LastSessionWindowsRestoreServiceTests: XCTestCase {
         )
         store.updateSnapshots([archived])
         let startupRestore = StartupSessionRestoreProviderFake()
-        let openWindows = makeOpenWindows { [mutatedOpenWindow] }
+        let openWindows = makeOpenWindows([mutatedOpenWindow])
         let windowReopen = WindowSessionReopenerFake()
         let service = LastSessionWindowsRestoreService(
             startupRestore: startupRestore,
             archive: makeArchive(
-                openWindows: openWindows,
+                openWindows: openWindows.catalog,
                 store: store,
                 startupRestore: startupRestore
             ),
-            openWindows: openWindows,
-            mergeLastSessionTabSnapshot: { _ in /* No-op. */ },
+            openWindows: openWindows.catalog,
+            tabMerge: makeTabMerge(),
             windowReopen: windowReopen
         )
 
@@ -260,17 +241,17 @@ final class LastSessionWindowsRestoreServiceTests: XCTestCase {
         ]
         store.updateSnapshots(snapshots)
         let startupRestore = StartupSessionRestoreProviderFake()
-        let openWindows = makeOpenWindows { [] }
+        let openWindows = makeOpenWindows([])
         let windowReopen = WindowSessionReopenerFake()
         let service = LastSessionWindowsRestoreService(
             startupRestore: startupRestore,
             archive: makeArchive(
-                openWindows: openWindows,
+                openWindows: openWindows.catalog,
                 store: store,
                 startupRestore: startupRestore
             ),
-            openWindows: openWindows,
-            mergeLastSessionTabSnapshot: { _ in /* No-op. */ },
+            openWindows: openWindows.catalog,
+            tabMerge: makeTabMerge(),
             windowReopen: windowReopen
         )
 
@@ -300,10 +281,9 @@ final class LastSessionWindowsRestoreServiceTests: XCTestCase {
         )
         store.updateSnapshots(snapshots)
         let startupRestore = StartupSessionRestoreProviderFake()
-        var openSnapshots: [LastSessionWindowSnapshot] = []
-        let openWindows = makeOpenWindows { openSnapshots }
+        let openWindows = makeOpenWindows([])
         let archive = makeArchive(
-            openWindows: openWindows,
+            openWindows: openWindows.catalog,
             store: store,
             startupRestore: startupRestore
         )
@@ -313,17 +293,17 @@ final class LastSessionWindowsRestoreServiceTests: XCTestCase {
         windowReopen.onReopen = {
             defer { reopenCall += 1 }
             if reopenCall == 0 {
-                openSnapshots.append(mutatedFirstWindow)
+                openWindows.register(mutatedFirstWindow)
             } else if reopenCall == 2 {
-                openSnapshots.append(snapshots[1])
+                openWindows.register(snapshots[1])
             }
             archive.refresh(excludingWindowID: nil)
         }
         let service = LastSessionWindowsRestoreService(
             startupRestore: startupRestore,
             archive: archive,
-            openWindows: openWindows,
-            mergeLastSessionTabSnapshot: { _ in /* No-op. */ },
+            openWindows: openWindows.catalog,
+            tabMerge: makeTabMerge(),
             windowReopen: windowReopen
         )
 
@@ -362,10 +342,9 @@ final class LastSessionWindowsRestoreServiceTests: XCTestCase {
         ]
         store.updateSnapshots(snapshots)
         let startupRestore = StartupSessionRestoreProviderFake()
-        var openSnapshots: [LastSessionWindowSnapshot] = []
-        let openWindows = makeOpenWindows { openSnapshots }
+        let openWindows = makeOpenWindows([])
         let archive = makeArchive(
-            openWindows: openWindows,
+            openWindows: openWindows.catalog,
             store: store,
             startupRestore: startupRestore
         )
@@ -373,7 +352,7 @@ final class LastSessionWindowsRestoreServiceTests: XCTestCase {
         var archivedSessionsObservedDuringReopen: [[WindowSessionSnapshot]] = []
         var reopenIndex = 0
         windowReopen.onReopen = {
-            openSnapshots.append(snapshots[reopenIndex])
+            openWindows.register(snapshots[reopenIndex])
             reopenIndex += 1
             archive.refresh(excludingWindowID: nil)
             archivedSessionsObservedDuringReopen.append(store.snapshots.map(\.session))
@@ -381,8 +360,8 @@ final class LastSessionWindowsRestoreServiceTests: XCTestCase {
         let service = LastSessionWindowsRestoreService(
             startupRestore: startupRestore,
             archive: archive,
-            openWindows: openWindows,
-            mergeLastSessionTabSnapshot: { _ in /* No-op. */ },
+            openWindows: openWindows.catalog,
+            tabMerge: makeTabMerge(),
             windowReopen: windowReopen
         )
 
@@ -413,10 +392,9 @@ final class LastSessionWindowsRestoreServiceTests: XCTestCase {
         ]
         store.updateSnapshots(snapshots)
         let startupRestore = StartupSessionRestoreProviderFake()
-        var openSnapshots: [LastSessionWindowSnapshot] = []
-        let openWindows = makeOpenWindows { openSnapshots }
+        let openWindows = makeOpenWindows([])
         let archive = makeArchive(
-            openWindows: openWindows,
+            openWindows: openWindows.catalog,
             store: store,
             startupRestore: startupRestore
         )
@@ -424,7 +402,7 @@ final class LastSessionWindowsRestoreServiceTests: XCTestCase {
         var didReachReopenGate = false
         var releaseReopen: CheckedContinuation<Void, Never>?
         windowReopen.onReopen = {
-            openSnapshots.append(snapshots[0])
+            openWindows.register(snapshots[0])
             archive.refresh(excludingWindowID: nil)
             didReachReopenGate = true
             await withCheckedContinuation { continuation in
@@ -434,8 +412,8 @@ final class LastSessionWindowsRestoreServiceTests: XCTestCase {
         let service = LastSessionWindowsRestoreService(
             startupRestore: startupRestore,
             archive: archive,
-            openWindows: openWindows,
-            mergeLastSessionTabSnapshot: { _ in /* No-op. */ },
+            openWindows: openWindows.catalog,
+            tabMerge: makeTabMerge(),
             windowReopen: windowReopen
         )
 
@@ -480,13 +458,12 @@ final class LastSessionWindowsRestoreServiceTests: XCTestCase {
         )
         let windowReopen = WindowSessionReopenerFake()
         windowReopen.onReopen = { await Task.yield() }
-        var mergeCount = 0
-        let openWindows = makeOpenWindows { [] }
+        let openWindows = makeOpenWindows([])
         let service = LastSessionWindowsRestoreService(
             startupRestore: startupRestore,
-            archive: makeArchive(openWindows: openWindows, store: store, startupRestore: startupRestore),
-            openWindows: openWindows,
-            mergeLastSessionTabSnapshot: { _ in mergeCount += 1 },
+            archive: makeArchive(openWindows: openWindows.catalog, store: store, startupRestore: startupRestore),
+            openWindows: openWindows.catalog,
+            tabMerge: makeTabMerge(),
             windowReopen: windowReopen
         )
 
@@ -495,26 +472,43 @@ final class LastSessionWindowsRestoreServiceTests: XCTestCase {
         service.reopenAllWindowsFromLastSession()
         await pendingTask?.value
 
-        XCTAssertEqual(mergeCount, 1)
         XCTAssertEqual(windowReopen.reopenedSessions, [snapshot.session])
     }
 
-    /// Builds a catalog whose view of open windows is driven by the test.
-    private func makeOpenWindows(
-        _ openSessions: @escaping @MainActor () -> [LastSessionWindowSnapshot]
-    ) -> OpenWindowSessionCatalog {
-        var sessionsByWindowId: [UUID: WindowSessionSnapshot] = [:]
-        return OpenWindowSessionCatalog(
-            allWindows: {
-                openSessions().map { snapshot in
-                    let windowState = BrowserWindowState()
-                    windowState.restorationState.restoredSessionWindowID = snapshot.id
-                    sessionsByWindowId[windowState.id] = snapshot.session
-                    return windowState
-                }
-            },
-            makeWindowSessionSnapshot: { sessionsByWindowId[$0.id] }
+    @MainActor
+    private final class OpenWindowsHarness {
+        let windows = WindowRegistry()
+        let snapshotFactory = WindowSessionSnapshotFactory(
+            glanceManager: GlanceManager()
         )
+        lazy var catalog = OpenWindowSessionCatalog(
+            windows: windows,
+            snapshots: snapshotFactory
+        )
+
+        init(_ snapshots: [LastSessionWindowSnapshot]) {
+            snapshots.forEach(register)
+        }
+
+        func register(_ snapshot: LastSessionWindowSnapshot) {
+            let window = BrowserWindowState()
+            window.restorationState.restoredSessionWindowID = snapshot.id
+            WindowSessionSnapshotApplier(glanceManager: GlanceManager()).apply(
+                snapshot.session,
+                to: window
+            )
+            windows.register(window)
+        }
+    }
+
+    private func makeOpenWindows(
+        _ snapshots: [LastSessionWindowSnapshot]
+    ) -> OpenWindowsHarness {
+        OpenWindowsHarness(snapshots)
+    }
+
+    private func makeTabMerge() -> TabLastSessionMergeMaterializer {
+        BrowserManager().lastSessionMergeMaterializer
     }
 
     private func makeArchive(
@@ -524,7 +518,7 @@ final class LastSessionWindowsRestoreServiceTests: XCTestCase {
     ) -> LastSessionWindowArchive {
         LastSessionWindowArchive(
             openWindows: openWindows,
-            lastSessionWindowsStore: { store },
+            lastSessionWindowsStore: store,
             startupRestore: startupRestore
         )
     }

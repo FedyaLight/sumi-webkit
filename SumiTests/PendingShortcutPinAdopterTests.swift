@@ -1,23 +1,86 @@
 import Combine
+import SwiftData
 import XCTest
 
 @testable import Sumi
 
 @MainActor
 final class PendingShortcutPinAdopterTests: XCTestCase {
+    func testDeferredAdoptionRejectsReceiptInvalidatedBeforeAvailability() throws {
+        let tabManager = BrowserManager()
+        let admission = try ProfileReferenceAdmissionLedger(
+            context: tabManager.modelContext
+        )
+        let adopter = makePendingAdopter(
+            for: tabManager,
+            admission: admission
+        )
+        let retiringProfile = Profile(name: "Retiring")
+        let fallbackProfile = Profile(name: "Fallback")
+        tabManager.modelContext.insert(
+            ProfileEntity(
+                id: retiringProfile.id,
+                name: retiringProfile.name,
+                icon: retiringProfile.icon,
+                index: 0
+            )
+        )
+        tabManager.modelContext.insert(
+            ProfileEntity(
+                id: fallbackProfile.id,
+                name: fallbackProfile.name,
+                icon: fallbackProfile.icon,
+                index: 1
+            )
+        )
+        try tabManager.modelContext.save()
+        let pin = makePendingPin()
+        install([pin], in: tabManager)
+        let aggregate = try XCTUnwrap(
+            tabManager.structuralCollectionMutationOwner.prepareAggregate()
+        )
+        guard case .deferred = adopter.adoptPendingPins(
+                into: retiringProfile.id
+            ) else {
+            return XCTFail("A busy aggregate must defer adoption")
+        }
+
+        _ = try admission.reserve(
+            profile: retiringProfile,
+            fallbackID: fallbackProfile.id
+        )
+        XCTAssertTrue(aggregate.rollback())
+
+        XCTAssertEqual(
+            tabManager.shortcutPinCollectionStateOwner
+                .pendingPinnedWithoutProfileSnapshot().map(\.id),
+            [pin.id]
+        )
+        XCTAssertTrue(
+            tabManager.shortcutPinCollectionStateOwner
+                .essentialPins(for: retiringProfile.id).isEmpty
+        )
+        XCTAssertFalse(
+            adopter.hasDeferredAdoption
+        )
+        XCTAssertFalse(
+            tabManager.structuralCollectionMutationOwner
+                .isAvailabilityObservationActive
+        )
+    }
+
     func testNoPendingPinsCreatesNoDeferredWorkOrObservation() throws {
-        let tabManager = try makeInMemoryTabManager(attachRuntimePorts: false)
+        let tabManager = BrowserManager()
+        let adopter = makePendingAdopter(for: tabManager)
         let revision = tabManager.structuralPersistence.schedulingRevision
 
-        let result = tabManager.lifecycleOwners.pendingShortcutPinAdopter
-            .adoptPendingPins(into: UUID())
+        let result = adopter.adoptPendingPins(into: UUID())
 
         guard case .noChange = result else {
             return XCTFail("Empty pending state must need no adoption")
         }
         XCTAssertFalse(
-            tabManager.lifecycleOwners.pendingShortcutPinAdopter
-                .hasDeferredAdoption
+            adopter.hasDeferredAdoption
         )
         XCTAssertFalse(
             tabManager.structuralCollectionMutationOwner
@@ -30,7 +93,8 @@ final class PendingShortcutPinAdopterTests: XCTestCase {
     }
 
     func testBusyAggregateRollbackTriggersExactAdoptionOnce() throws {
-        let tabManager = try makeInMemoryTabManager(attachRuntimePorts: false)
+        let tabManager = BrowserManager()
+        let adopter = makePendingAdopter(for: tabManager)
         let profileID = UUID()
         let pin = makePendingPin()
         install([pin], in: tabManager)
@@ -39,8 +103,7 @@ final class PendingShortcutPinAdopterTests: XCTestCase {
         )
         let revision = tabManager.structuralPersistence.schedulingRevision
 
-        let result = tabManager.lifecycleOwners.pendingShortcutPinAdopter
-            .adoptPendingPins(into: profileID)
+        let result = adopter.adoptPendingPins(into: profileID)
 
         guard case .deferred = result else {
             return XCTFail("A busy aggregate must defer adoption")
@@ -72,7 +135,8 @@ final class PendingShortcutPinAdopterTests: XCTestCase {
     }
 
     func testBusyAggregatePublishTriggersExactAdoptionOnceAfterSettlement() throws {
-        let tabManager = try makeInMemoryTabManager(attachRuntimePorts: false)
+        let tabManager = BrowserManager()
+        let adopter = makePendingAdopter(for: tabManager)
         let profileID = UUID()
         let unrelatedProfileID = UUID()
         let pin = makePendingPin()
@@ -85,8 +149,7 @@ final class PendingShortcutPinAdopterTests: XCTestCase {
             for: unrelatedProfileID
         )
         let revision = tabManager.structuralPersistence.schedulingRevision
-        guard case .deferred = tabManager.lifecycleOwners
-            .pendingShortcutPinAdopter.adoptPendingPins(into: profileID) else {
+        guard case .deferred = adopter.adoptPendingPins(into: profileID) else {
             return XCTFail("A busy aggregate must defer adoption")
         }
 
@@ -108,8 +171,7 @@ final class PendingShortcutPinAdopterTests: XCTestCase {
             revision + 1
         )
         XCTAssertFalse(
-            tabManager.lifecycleOwners.pendingShortcutPinAdopter
-                .hasDeferredAdoption
+            adopter.hasDeferredAdoption
         )
         XCTAssertFalse(
             tabManager.structuralCollectionMutationOwner
@@ -119,7 +181,8 @@ final class PendingShortcutPinAdopterTests: XCTestCase {
     }
 
     func testInvalidatedSealedAggregateReleasesDeferredAdoption() throws {
-        let tabManager = try makeInMemoryTabManager(attachRuntimePorts: false)
+        let tabManager = BrowserManager()
+        let adopter = makePendingAdopter(for: tabManager)
         let profileID = UUID()
         let stagedProfileID = UUID()
         let foreignProfileID = UUID()
@@ -134,8 +197,7 @@ final class PendingShortcutPinAdopterTests: XCTestCase {
             [stagedPin],
             for: stagedProfileID
         )
-        guard case .deferred = tabManager.lifecycleOwners
-            .pendingShortcutPinAdopter.adoptPendingPins(into: profileID) else {
+        guard case .deferred = adopter.adoptPendingPins(into: profileID) else {
             return XCTFail("A busy aggregate must defer adoption")
         }
         XCTAssertTrue(aggregate.stage())
@@ -169,19 +231,18 @@ final class PendingShortcutPinAdopterTests: XCTestCase {
     }
 
     func testCancelRemovesDeferredWorkAndLeavesPendingPinsUntouched() throws {
-        let tabManager = try makeInMemoryTabManager(attachRuntimePorts: false)
+        let tabManager = BrowserManager()
+        let adopter = makePendingAdopter(for: tabManager)
         let pin = makePendingPin()
         install([pin], in: tabManager)
         let aggregate = try XCTUnwrap(
             tabManager.structuralCollectionMutationOwner.prepareAggregate()
         )
-        guard case .deferred = tabManager.lifecycleOwners
-            .pendingShortcutPinAdopter.adoptPendingPins(into: UUID()) else {
+        guard case .deferred = adopter.adoptPendingPins(into: UUID()) else {
             return XCTFail("A busy aggregate must defer adoption")
         }
 
-        tabManager.lifecycleOwners.pendingShortcutPinAdopter
-            .cancelDeferredAdoption()
+        adopter.cancelDeferredAdoption()
         XCTAssertTrue(aggregate.rollback())
 
         XCTAssertFalse(
@@ -196,7 +257,8 @@ final class PendingShortcutPinAdopterTests: XCTestCase {
     }
 
     func testImmediateAdoptionPublishesAndSchedulesExactlyOnce() throws {
-        let tabManager = try makeInMemoryTabManager(attachRuntimePorts: false)
+        let tabManager = BrowserManager()
+        let adopter = makePendingAdopter(for: tabManager)
         let profileID = UUID()
         let pin = makePendingPin()
         install([pin], in: tabManager)
@@ -212,8 +274,7 @@ final class PendingShortcutPinAdopterTests: XCTestCase {
         }
         let revision = tabManager.structuralPersistence.schedulingRevision
 
-        let result = tabManager.lifecycleOwners.pendingShortcutPinAdopter
-            .adoptPendingPins(into: profileID)
+        let result = adopter.adoptPendingPins(into: profileID)
 
         guard case .adopted = result else {
             return XCTFail("Available structure must adopt synchronously")
@@ -235,7 +296,7 @@ final class PendingShortcutPinAdopterTests: XCTestCase {
     }
 
     func testAggregateRollbackRestoresExactPendingAndDestinationPins() throws {
-        let tabManager = try makeInMemoryTabManager(attachRuntimePorts: false)
+        let tabManager = BrowserManager()
         let profileID = UUID()
         let existing = ShortcutPin(
             id: UUID(),
@@ -257,9 +318,10 @@ final class PendingShortcutPinAdopterTests: XCTestCase {
 
         let drained = tabManager.shortcutPinCollectionStateOwner
             .drainPendingPinnedWithoutProfile()
-        tabManager.shortcutPinStoreOwner.withPinnedArray(for: profileID) {
-            $0.append(contentsOf: drained)
-        }
+        tabManager.structuralCollectionMutationOwner.setPinnedTabs(
+            ShortcutPin.reindexed([existing] + drained),
+            for: profileID
+        )
         XCTAssertTrue(aggregate.rollback())
 
         let restoredPending = try XCTUnwrap(
@@ -274,7 +336,7 @@ final class PendingShortcutPinAdopterTests: XCTestCase {
         XCTAssertIdentical(restoredExisting, existing)
     }
 
-    private func install(_ pins: [ShortcutPin], in tabManager: TabManager) {
+    private func install(_ pins: [ShortcutPin], in tabManager: BrowserManager) {
         tabManager.shortcutPinCollectionStateOwner.replaceAll(
             pinnedByProfile: [:],
             spacePinnedShortcuts: [:],
@@ -285,7 +347,7 @@ final class PendingShortcutPinAdopterTests: XCTestCase {
     private func assertAdopted(
         _ pin: ShortcutPin,
         into profileID: UUID,
-        in tabManager: TabManager
+        in tabManager: BrowserManager
     ) {
         XCTAssertTrue(
             tabManager.shortcutPinCollectionStateOwner
@@ -317,6 +379,17 @@ final class PendingShortcutPinAdopterTests: XCTestCase {
             index: 0,
             launchURL: URL(string: "https://profile.example")!,
             title: "Profile"
+        )
+    }
+
+    private func makePendingAdopter(
+        for browser: BrowserManager,
+        admission: ProfileReferenceAdmissionLedger = .testingAllowingReferences()
+    ) -> PendingShortcutPinAdopter {
+        PendingShortcutPinAdopter(
+            pins: browser.shortcutPinCollectionStateOwner,
+            structuralMutations: browser.structuralCollectionMutationOwner,
+            profileReferenceAdmission: admission
         )
     }
 }

@@ -24,20 +24,16 @@ final class WindowSessionReopenService: WindowSessionReopening {
         let task: Task<Bool, Never>
     }
 
-    private let windowRegistry: @MainActor () -> WindowRegistry?
-    private let createRestoredWindow: @MainActor (
-        LastSessionWindowSnapshot
-    ) -> BrowserWindowState?
+    private let windows: WindowRegistry
+    private let creation: ArchivedWindowCreationTransaction
     private var pendingReopen: PendingReopen?
 
     init(
-        windowRegistry: @escaping @MainActor () -> WindowRegistry?,
-        createRestoredWindow: @escaping @MainActor (
-            LastSessionWindowSnapshot
-        ) -> BrowserWindowState?
+        windows: WindowRegistry,
+        creation: ArchivedWindowCreationTransaction
     ) {
-        self.windowRegistry = windowRegistry
-        self.createRestoredWindow = createRestoredWindow
+        self.windows = windows
+        self.creation = creation
     }
 
     @discardableResult
@@ -61,21 +57,20 @@ final class WindowSessionReopenService: WindowSessionReopening {
     }
 
     private func performReopen(from snapshot: LastSessionWindowSnapshot) -> Bool {
-        guard let registry = windowRegistry() else { return false }
-        if registry.allWindows.contains(where: {
+        if windows.allWindows.contains(where: {
             $0.isIncognito == false
                 && ($0.restorationState.restoredSessionWindowID ?? $0.id) == snapshot.id
         }) {
             return true
         }
-        guard let targetWindow = createRestoredWindow(snapshot) else {
+        guard let targetWindow = creation.create(from: snapshot) else {
             return false
         }
-        guard registry.windows[targetWindow.id] === targetWindow,
+        guard windows.windows[targetWindow.id] === targetWindow,
               targetWindow.restorationState.restoredSessionWindowID == snapshot.id,
               targetWindow.restorationState.isAwaitingInitialResolution == false else {
-            let shell = registry.appKitWindow(for: targetWindow)
-            if registry.discardRejectedRegistration(targetWindow) {
+            let shell = windows.appKitWindow(for: targetWindow)
+            if windows.discardRejectedRegistration(targetWindow) {
                 shell?.close()
             }
             return false

@@ -457,7 +457,7 @@ extension AuxiliaryWindowLifecycleTests {
             webViewSessions: harness.browserManager.webViewSessions
         )
         replacement.profileId = harness.profile.id
-        harness.browserManager.tabManager.regularTabLifecycleOwner.addTab(
+        harness.browserManager.regularTabLifecycleOwner.addTab(
             replacement
         )
         let replacementAdapter = try XCTUnwrap(
@@ -586,8 +586,9 @@ extension AuxiliaryWindowLifecycleTests {
                 .miniWindowAdaptersSnapshot().isEmpty
         )
         XCTAssertTrue(
-            harness.browserManager.tabManager.transientTabRegistryOwner
-                .auxiliaryMiniWindowTabsByID.isEmpty
+            harness.browserManager.tabCollectionMembershipOwner
+                .allIdentityWitnesses()
+                .allSatisfy { $0.isAuxiliaryMiniWindow == false }
         )
     }
 
@@ -615,8 +616,9 @@ extension AuxiliaryWindowLifecycleTests {
                 .miniWindowAdaptersSnapshot().isEmpty
         )
         XCTAssertTrue(
-            harness.browserManager.tabManager.transientTabRegistryOwner
-                .auxiliaryMiniWindowTabsByID.isEmpty
+            harness.browserManager.tabCollectionMembershipOwner
+                .allIdentityWitnesses()
+                .allSatisfy { $0.isAuxiliaryMiniWindow == false }
         )
     }
 

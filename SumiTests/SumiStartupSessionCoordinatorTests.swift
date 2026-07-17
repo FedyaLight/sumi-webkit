@@ -11,14 +11,14 @@ final class SumiStartupSessionCoordinatorTests: XCTestCase {
         let harness = try makeHarness(startupMode: .nothing)
         defer { harness.defaults.reset() }
 
-        let regularTab = harness.browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
+        let regularTab = harness.browserManager.regularTabLifecycleOwner.createNewTab(
             url: "https://regular.example",
             in: harness.space,
             activate: false
         )
         let pin = makeSpacePin(spaceId: harness.space.id)
-        harness.browserManager.tabManager.structuralCollectionMutationOwner.setSpacePinnedShortcuts([pin], for: harness.space.id)
-        let liveTab = harness.browserManager.tabManager.shortcutTabMaterializer.materialize(
+        harness.browserManager.structuralCollectionMutationOwner.setSpacePinnedShortcuts([pin], for: harness.space.id)
+        let liveTab = harness.browserManager.shortcutTabMaterializer.materialize(
             pin,
             in: harness.windowState.id,
             currentSpaceId: harness.space.id
@@ -31,8 +31,8 @@ final class SumiStartupSessionCoordinatorTests: XCTestCase {
 
         harness.browserManager.profileLifecycleBundle.startupPolicy.apply(.nothing)
 
-        XCTAssertTrue(harness.browserManager.tabManager.regularTabCollectionOwner.tabs(in: harness.space).isEmpty)
-        XCTAssertNil(harness.browserManager.tabManager.shortcutPresentationOwner.shortcutLiveTab(for: pin.id, in: harness.windowState.id))
+        XCTAssertTrue(harness.browserManager.regularTabCollectionOwner.tabs(in: harness.space).isEmpty)
+        XCTAssertNil(harness.browserManager.shortcutPresentationOwner.shortcutLiveTab(for: pin.id, in: harness.windowState.id))
         XCTAssertNil(harness.windowState.currentTabId)
         XCTAssertNil(harness.windowState.currentShortcutPinId)
         XCTAssertNil(harness.windowState.restorationState.restoredSessionWindowID)
@@ -40,7 +40,7 @@ final class SumiStartupSessionCoordinatorTests: XCTestCase {
         XCTAssertTrue(harness.windowState.presentationState.isFloatingBarVisible)
         XCTAssertEqual(harness.windowState.floatingBarPresentationReason, .emptySpace)
         XCTAssertEqual(
-            harness.browserManager.tabManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: harness.space.id).map(\.id),
+            harness.browserManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: harness.space.id).map(\.id),
             [pin.id]
         )
         XCTAssertEqual(
@@ -58,7 +58,7 @@ final class SumiStartupSessionCoordinatorTests: XCTestCase {
         let harness = try makeHarness(startupMode: .specificPage, startupPage: "configured.example")
         defer { harness.defaults.reset() }
 
-        let previousTab = harness.browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
+        let previousTab = harness.browserManager.regularTabLifecycleOwner.createNewTab(
             url: "https://previous.example",
             in: harness.space,
             activate: false
@@ -67,7 +67,7 @@ final class SumiStartupSessionCoordinatorTests: XCTestCase {
 
         harness.browserManager.profileLifecycleBundle.startupPolicy.apply(.specificPage)
 
-        let tabs = harness.browserManager.tabManager.regularTabCollectionOwner.tabs(in: harness.space)
+        let tabs = harness.browserManager.regularTabCollectionOwner.tabs(in: harness.space)
         XCTAssertEqual(tabs.count, 1)
         XCTAssertEqual(tabs.first?.url.absoluteString, "https://configured.example")
         XCTAssertEqual(harness.windowState.currentTabId, tabs.first?.id)
@@ -85,17 +85,17 @@ final class SumiStartupSessionCoordinatorTests: XCTestCase {
         let harness = try makeHarness(startupMode: .specificPage, startupPage: "configured.example")
         defer { harness.defaults.reset() }
         let secondarySpace = Space(name: "Secondary")
-        harness.browserManager.tabManager.spaceStateOwner.append(secondarySpace)
-        harness.browserManager.tabManager.structuralCollectionMutationOwner.setTabs([], for: secondarySpace.id)
-        harness.browserManager.tabManager.spaceStateOwner.replaceCurrentSpace(secondarySpace)
+        harness.browserManager.spaceStateOwner.append(secondarySpace)
+        harness.browserManager.structuralCollectionMutationOwner.setTabs([], for: secondarySpace.id)
+        harness.browserManager.spaceStateOwner.replaceCurrentSpace(secondarySpace)
         harness.windowState.currentSpaceId = UUID()
         harness.windowState.currentProfileId = nil
 
         harness.browserManager.profileLifecycleBundle.startupPolicy.apply(.specificPage)
 
-        let primaryTabs = harness.browserManager.tabManager.regularTabCollectionOwner.tabs(in: harness.space)
+        let primaryTabs = harness.browserManager.regularTabCollectionOwner.tabs(in: harness.space)
         XCTAssertTrue(primaryTabs.isEmpty)
-        XCTAssertTrue(harness.browserManager.tabManager.regularTabCollectionOwner.tabs(in: secondarySpace).isEmpty)
+        XCTAssertTrue(harness.browserManager.regularTabCollectionOwner.tabs(in: secondarySpace).isEmpty)
         XCTAssertNil(harness.windowState.currentSpaceId)
         XCTAssertNil(harness.windowState.currentTabId)
         XCTAssertTrue(harness.windowState.isShowingEmptyState)
@@ -112,19 +112,19 @@ final class SumiStartupSessionCoordinatorTests: XCTestCase {
         let windowProfileSpace = Space(name: "Window", profileId: windowProfile.id)
         harness.browserManager.profileManager.profiles = [fallbackProfile, windowProfile]
         harness.browserManager.currentProfile = fallbackProfile
-        harness.browserManager.tabManager.spaceStateOwner.replaceSpaces([fallbackSpace, windowProfileSpace])
-        harness.browserManager.tabManager.structuralCollectionMutationOwner.setTabs([], for: fallbackSpace.id)
-        harness.browserManager.tabManager.structuralCollectionMutationOwner.setTabs([], for: windowProfileSpace.id)
-        harness.browserManager.tabManager.spaceStateOwner.replaceCurrentSpace(fallbackSpace)
+        harness.browserManager.spaceStateOwner.replaceSpaces([fallbackSpace, windowProfileSpace])
+        harness.browserManager.structuralCollectionMutationOwner.setTabs([], for: fallbackSpace.id)
+        harness.browserManager.structuralCollectionMutationOwner.setTabs([], for: windowProfileSpace.id)
+        harness.browserManager.spaceStateOwner.replaceCurrentSpace(fallbackSpace)
         harness.windowState.currentSpaceId = UUID()
         harness.windowState.currentProfileId = windowProfile.id
 
         harness.browserManager.profileLifecycleBundle.startupPolicy.apply(.specificPage)
 
-        let windowProfileTabs = harness.browserManager.tabManager.regularTabCollectionOwner.tabs(in: windowProfileSpace)
+        let windowProfileTabs = harness.browserManager.regularTabCollectionOwner.tabs(in: windowProfileSpace)
         XCTAssertEqual(windowProfileTabs.count, 1)
         XCTAssertEqual(windowProfileTabs.first?.url.absoluteString, "https://configured.example")
-        XCTAssertTrue(harness.browserManager.tabManager.regularTabCollectionOwner.tabs(in: fallbackSpace).isEmpty)
+        XCTAssertTrue(harness.browserManager.regularTabCollectionOwner.tabs(in: fallbackSpace).isEmpty)
         XCTAssertEqual(harness.windowState.currentSpaceId, windowProfileSpace.id)
         XCTAssertEqual(harness.windowState.currentProfileId, windowProfile.id)
     }
@@ -138,18 +138,18 @@ final class SumiStartupSessionCoordinatorTests: XCTestCase {
         let currentProfileSpace = Space(name: "Current", profileId: currentProfile.id)
         harness.browserManager.profileManager.profiles = [fallbackProfile, currentProfile]
         harness.browserManager.currentProfile = currentProfile
-        harness.browserManager.tabManager.spaceStateOwner.replaceSpaces([fallbackSpace, currentProfileSpace])
-        harness.browserManager.tabManager.structuralCollectionMutationOwner.setTabs([], for: fallbackSpace.id)
-        harness.browserManager.tabManager.structuralCollectionMutationOwner.setTabs([], for: currentProfileSpace.id)
-        harness.browserManager.tabManager.spaceStateOwner.replaceCurrentSpace(fallbackSpace)
+        harness.browserManager.spaceStateOwner.replaceSpaces([fallbackSpace, currentProfileSpace])
+        harness.browserManager.structuralCollectionMutationOwner.setTabs([], for: fallbackSpace.id)
+        harness.browserManager.structuralCollectionMutationOwner.setTabs([], for: currentProfileSpace.id)
+        harness.browserManager.spaceStateOwner.replaceCurrentSpace(fallbackSpace)
         harness.windowState.currentSpaceId = UUID()
         harness.windowState.currentProfileId = UUID()
 
         harness.browserManager.profileLifecycleBundle.startupPolicy.apply(.specificPage)
 
-        let currentProfileTabs = harness.browserManager.tabManager.regularTabCollectionOwner.tabs(in: currentProfileSpace)
+        let currentProfileTabs = harness.browserManager.regularTabCollectionOwner.tabs(in: currentProfileSpace)
         XCTAssertTrue(currentProfileTabs.isEmpty)
-        XCTAssertTrue(harness.browserManager.tabManager.regularTabCollectionOwner.tabs(in: fallbackSpace).isEmpty)
+        XCTAssertTrue(harness.browserManager.regularTabCollectionOwner.tabs(in: fallbackSpace).isEmpty)
         XCTAssertNil(harness.windowState.currentSpaceId)
         XCTAssertNil(harness.windowState.currentProfileId)
         XCTAssertNil(harness.windowState.currentTabId)
@@ -160,7 +160,7 @@ final class SumiStartupSessionCoordinatorTests: XCTestCase {
         let harness = try makeHarness(startupMode: .nothing)
         defer { harness.defaults.reset() }
 
-        let previousTab = harness.browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
+        let previousTab = harness.browserManager.regularTabLifecycleOwner.createNewTab(
             url: "https://previous.example",
             in: harness.space,
             activate: false
@@ -192,14 +192,14 @@ final class SumiStartupSessionCoordinatorTests: XCTestCase {
         let harness = try makeHarness(startupMode: .restorePreviousSession)
         defer { harness.defaults.reset() }
 
-        let regularTab = harness.browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
+        let regularTab = harness.browserManager.regularTabLifecycleOwner.createNewTab(
             url: "https://regular.example",
             in: harness.space,
             activate: false
         )
         let pin = makeSpacePin(spaceId: harness.space.id)
-        harness.browserManager.tabManager.structuralCollectionMutationOwner.setSpacePinnedShortcuts([pin], for: harness.space.id)
-        let liveTab = harness.browserManager.tabManager.shortcutTabMaterializer.materialize(
+        harness.browserManager.structuralCollectionMutationOwner.setSpacePinnedShortcuts([pin], for: harness.space.id)
+        let liveTab = harness.browserManager.shortcutTabMaterializer.materialize(
             pin,
             in: harness.windowState.id,
             currentSpaceId: harness.space.id
@@ -210,9 +210,9 @@ final class SumiStartupSessionCoordinatorTests: XCTestCase {
 
         harness.browserManager.profileLifecycleBundle.startupPolicy.apply(.restorePreviousSession)
 
-        XCTAssertEqual(harness.browserManager.tabManager.regularTabCollectionOwner.tabs(in: harness.space).map(\.id), [regularTab.id])
+        XCTAssertEqual(harness.browserManager.regularTabCollectionOwner.tabs(in: harness.space).map(\.id), [regularTab.id])
         XCTAssertEqual(
-            harness.browserManager.tabManager.shortcutPresentationOwner.shortcutLiveTab(for: pin.id, in: harness.windowState.id)?.id,
+            harness.browserManager.shortcutPresentationOwner.shortcutLiveTab(for: pin.id, in: harness.windowState.id)?.id,
             liveTab.id
         )
         XCTAssertEqual(harness.windowState.currentTabId, liveTab.id)
@@ -305,19 +305,18 @@ final class SumiStartupSessionCoordinatorTests: XCTestCase {
         settings.startupPageURLString = startupPage
 
         let webViewSessions = WebViewSessionRepository()
+        let windowRegistry = WindowRegistry()
         let browserManager = BrowserManager(
             webViewSessions: webViewSessions,
+            windowRegistry: windowRegistry,
             startupPersistence: BrowserManagerStartupPersistence(
                 container: try makeInMemoryStartupModelContainer()
             ),
             dataServices: .unavailable()
         )
-        let tabManager = browserManager.tabManager
+        let tabManager = browserManager
         browserManager.sumiSettings = settings
         browserManager.lastSessionWindowsStore = LastSessionWindowsStore(userDefaults: defaults.defaults)
-
-        let windowRegistry = WindowRegistry()
-        browserManager.windowRegistry = windowRegistry
 
         let space = Space(name: "Primary")
         tabManager.spaceStateOwner.replaceSpaces([space])
@@ -326,7 +325,6 @@ final class SumiStartupSessionCoordinatorTests: XCTestCase {
         tabManager.startupRestoreLifecycle.markLoadFinished()
 
         let windowState = BrowserWindowState()
-        windowState.tabManager = tabManager
         windowState.currentSpaceId = space.id
         windowRegistry.register(windowState)
         windowRegistry.setActive(windowState)

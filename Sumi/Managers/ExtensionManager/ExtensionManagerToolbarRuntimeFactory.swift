@@ -92,7 +92,8 @@ enum ExtensionManagerToolbarRuntimeFactory {
             },
             allWindows: { [attachment] in
                 attachment.allRegisteredWindows()
-            }
+            },
+            attachment: attachment
         )
     }
 }

@@ -131,6 +131,23 @@ final class ProfileDeletionOperationPlanner {
         }
     }
 
+    func containsReference(to profileID: UUID) -> Bool {
+        if spaces.spaces.contains(where: {
+            $0.profileId == profileID
+                || spaceTransitionLifecycle.inFlightProfileID(for: $0.id)
+                == profileID
+        }) {
+            return true
+        }
+        return policy.allProfileManagedTabs().contains { tab in
+            tab.profileId == profileID
+                || tab.profileAssignment.hasPendingAssignment(to: profileID)
+                || tab.profileAssignment.hasPendingResolvedAssignment(
+                    to: profileID
+                )
+        }
+    }
+
     private func tabOrder(_ lhs: Tab, _ rhs: Tab) -> Bool {
         lhs.id.uuidString < rhs.id.uuidString
     }
@@ -138,18 +155,15 @@ final class ProfileDeletionOperationPlanner {
 
 @MainActor
 final class ProfileDeletionFinalizer {
-    private let pins: ShortcutPinCollectionStateOwner
-    private let references: ShortcutProfileReferenceMutationApplicator
+    private let references: ShortcutProfileReferenceRetirementService
     private let runtimeConnection: TabRuntimePortConnection
     private let selection: ProfileSelectionCoordinator
 
     init(
-        pins: ShortcutPinCollectionStateOwner,
-        references: ShortcutProfileReferenceMutationApplicator,
+        references: ShortcutProfileReferenceRetirementService,
         runtimeConnection: TabRuntimePortConnection,
         selection: ProfileSelectionCoordinator
     ) {
-        self.pins = pins
         self.references = references
         self.runtimeConnection = runtimeConnection
         self.selection = selection
@@ -157,16 +171,15 @@ final class ProfileDeletionFinalizer {
 
     func finish(
         deletedProfileID: UUID,
+        fallbackProfileID: UUID,
         using runtimeLease: TabRuntimePortLease
     ) -> Bool {
         guard runtimeConnection.acceptsExactAttachment(runtimeLease) else {
             return false
         }
-        guard references.apply(
-            ShortcutProfileReferenceMutationPlanner().plan(
-                deleting: deletedProfileID,
-                state: pins
-            ),
+        guard references.migrate(
+            deletedProfileID: deletedProfileID,
+            fallbackProfileID: fallbackProfileID,
             using: runtimeLease
         ) else { return false }
         if runtimeConnection.acceptsExactAttachment(runtimeLease),
@@ -176,19 +189,8 @@ final class ProfileDeletionFinalizer {
         return containsShortcutReference(to: deletedProfileID) == false
     }
 
-    private func containsShortcutReference(to profileID: UUID) -> Bool {
-        let profilePins = pins.pinnedByProfileSnapshot()
-        if profilePins[profileID] != nil {
-            return true
-        }
-        if profilePins.values.joined().contains(where: {
-            $0.executionProfileId == profileID
-        }) {
-            return true
-        }
-        return pins.spacePinnedShortcutsSnapshot().values.joined().contains {
-            $0.executionProfileId == profileID
-        }
+    func containsShortcutReference(to profileID: UUID) -> Bool {
+        references.containsReference(to: profileID)
     }
 }
 
@@ -264,6 +266,7 @@ final class ProfileDeletionMigration {
 
         guard finalizer.finish(
             deletedProfileID: deletedProfileID,
+            fallbackProfileID: fallbackProfileID,
             using: runtimeLease
         ) else { return .rejected }
         guard runtimeConnection.acceptsExactAttachment(runtimeLease),
@@ -276,5 +279,17 @@ final class ProfileDeletionMigration {
             return .rejected
         }
         return .committed
+    }
+
+    func containsReference(to profileID: UUID) -> Bool {
+        let runtimeLease = runtimeConnection.captureLease()
+        guard runtimeConnection.acceptsExactAttachment(runtimeLease),
+              operations.containsReference(to: profileID) == false,
+              finalizer.containsShortcutReference(to: profileID) == false,
+              runtimeConnection.acceptsExactAttachment(runtimeLease)
+        else {
+            return true
+        }
+        return false
     }
 }

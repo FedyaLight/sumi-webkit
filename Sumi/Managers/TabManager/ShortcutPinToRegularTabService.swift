@@ -7,18 +7,18 @@ import SumiDomain
 final class ShortcutPinToRegularTabService {
     private let promotion: ShortcutTabPromotionService
     private let splitGroups: SplitGroupStore
-    private let canonicalPin: (UUID) -> ShortcutPin?
+    private let pins: ShortcutPinCollectionStateOwner
     private let transaction: ShortcutPinRegularConversionTransaction
 
     init(
         promotion: ShortcutTabPromotionService,
         splitGroups: SplitGroupStore,
-        canonicalPin: @escaping (UUID) -> ShortcutPin?,
+        pins: ShortcutPinCollectionStateOwner,
         transaction: ShortcutPinRegularConversionTransaction
     ) {
         self.promotion = promotion
         self.splitGroups = splitGroups
-        self.canonicalPin = canonicalPin
+        self.pins = pins
         self.transaction = transaction
     }
 
@@ -29,7 +29,7 @@ final class ShortcutPinToRegularTabService {
         at targetIndex: Int? = nil,
         preferredWindowId: UUID? = nil
     ) -> Bool {
-        guard let pin = canonicalPin(candidatePin.id),
+        guard let pin = pins.shortcutPin(by: candidatePin.id),
               let plan = promotion.preparePromotion(
                   pin,
                   into: targetSpaceId,
@@ -47,7 +47,10 @@ final class ShortcutPinToRegularTabService {
                 targetSpaceID: targetSpaceId
             )
         }
-        guard group == nil || split != nil else { return false }
+        guard group == nil || split != nil else {
+            _ = plan.placement.cancel()
+            return false
+        }
         return transaction.commit(pin: pin, plan: plan, split: split)
     }
 }

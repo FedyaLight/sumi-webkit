@@ -3,14 +3,14 @@ import SumiDomain
 
 @MainActor
 final class ShortcutPinRuntimeResolutionOwner {
-    private let spaces: @MainActor () -> [Space]
+    private let spaces: TabSpaceCollectionStateOwner
     private let runtimeConnection: TabRuntimePortConnection
-    private let faviconService: @MainActor () -> any BrowserFaviconServicing
+    private let faviconService: any BrowserFaviconServicing
 
     init(
-        spaces: @escaping @MainActor () -> [Space],
+        spaces: TabSpaceCollectionStateOwner,
         runtimeConnection: TabRuntimePortConnection,
-        faviconService: @escaping @MainActor () -> any BrowserFaviconServicing
+        faviconService: any BrowserFaviconServicing
     ) {
         self.spaces = spaces
         self.runtimeConnection = runtimeConnection
@@ -62,7 +62,7 @@ final class ShortcutPinRuntimeResolutionOwner {
             return pin.profileId
         case .spacePinned:
             return (pin.spaceId ?? currentSpaceId).flatMap { spaceId in
-                spaces().first(where: { $0.id == spaceId })?.profileId
+                spaces.space(with: spaceId)?.profileId
             }
         }
     }
@@ -82,9 +82,8 @@ final class ShortcutPinRuntimeResolutionOwner {
         presentationSpaceID: UUID?
     ) -> LiveShortcutPresentationPageReceipt? {
         guard let presentationSpaceID,
-              let presentationSpace = spaces().first(where: {
-                  $0.id == presentationSpaceID
-              }) else {
+              let presentationSpace = spaces.space(with: presentationSpaceID)
+        else {
             return nil
         }
         switch pin.role {
@@ -114,7 +113,7 @@ final class ShortcutPinRuntimeResolutionOwner {
         else {
             return .regular(profileId)
         }
-        return faviconService().partition(profile: profile)
+        return faviconService.partition(profile: profile)
     }
 }
 
@@ -133,7 +132,7 @@ private extension ShortcutPinRuntimeResolutionOwner {
             containerProfileId = profileId
         case .spacePinned:
             containerProfileId = spaceId.flatMap { targetSpaceId in
-                spaces().first(where: { $0.id == targetSpaceId })?.profileId
+                spaces.space(with: targetSpaceId)?.profileId
             }
         }
 

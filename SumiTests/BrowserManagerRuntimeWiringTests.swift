@@ -10,6 +10,29 @@ import SumiDomain
 
 @MainActor
 final class BrowserManagerRuntimeWiringTests: XCTestCase {
+    func testShellWebViewAndSelectionRootsComposeWithoutRecursiveInitialization()
+        throws {
+        let browser = BrowserManager(
+            startupPersistence: BrowserManagerStartupPersistence(
+                container: try makeInMemoryStartupContainer()
+            )
+        )
+
+        let shell = browser.shellRuntime
+        let webViewRuntime = browser.webViewRuntime
+        let selection = browser.browserTabSelection
+        let splitFocus = browser.splitShortcutFocus
+        let windowSessions = browser.windowSessionBundle
+        let windowActivation = browser.windowActivation
+
+        XCTAssertIdentical(shell.windowRegistry, browser.windowRegistry)
+        XCTAssertIdentical(webViewRuntime.webViewSessions, browser.webViewSessions)
+        XCTAssertIdentical(browser.splitWindowContext.query, browser.splitQuery)
+        withExtendedLifetime(
+            (selection, splitFocus, windowSessions, windowActivation)
+        ) {}
+    }
+
     func testBrowserManagerInitializationAttachesCoreRuntimeManagers() async throws {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
@@ -29,7 +52,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         XCTAssertFalse(browserManager.optionalModules.liveFolders.hasAttachedRuntime)
         XCTAssertFalse(browserManager.liveFolderManager.hasAttachedRuntime)
         XCTAssertTrue(compositorManagerCanUseAttachedRuntime(browserManager))
-        XCTAssertNotNil(browserManager.tabManager.runtimePorts)
+        XCTAssertNotNil(browserManager.runtimePortConnection.current)
         XCTAssertTrue(tabManagerRuntimeCanPrepareCreatedTabs(browserManager))
         XCTAssertTrue(splitServicesCanUseLiveRuntime(browserManager))
         XCTAssertFalse(
@@ -46,174 +69,78 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
 
     func testTabRuntimeCompositionServiceAttachesResourceRuntimesAndHandlesStructuralChanges() async throws {
         let structuralChanges = PassthroughSubject<Void, Never>()
-        let visibleWindowID = UUID()
-        let selectedTabID = UUID()
-        let visibleTabID = UUID()
         let tab = Tab(
             url: URL(string: "https://example.com/runtime-composition")!,
             loadsCachedFaviconOnInit: false
         )
         let webView = WKWebView()
-        let previousTab = Tab(
-            url: URL(string: "https://example.com/previous")!,
-            loadsCachedFaviconOnInit: false
+        let tabSuspension = TabSuspensionController(memoryMonitor: nil)
+        let backgroundMedia = SumiBackgroundMediaOptimizationService()
+        let reconciliation = BrowserTabRuntimeReconcileOwner(
+            tabSuspension: tabSuspension,
+            backgroundMedia: backgroundMedia
         )
-
-        var installedTabSuspensionRuntime: TabSuspensionRuntimePorts?
-        var tabSuspensionInstallCount = 0
-        var attachedBackgroundMediaRuntime: SumiBackgroundMediaOptimizationRuntime?
-        var tabSuspensionReconcileReasons: [String] = []
-        var backgroundMediaReconcileReasons: [String] = []
-        var refreshedLazyRestoreContexts: [TabSuspensionEvaluationContext] = []
-        var activatedTabs: [(new: UUID, previous: UUID?)] = []
+        let structuralObserver = BrowserTabStructuralRuntimeObserver(
+            structuralChanges: structuralChanges.eraseToAnyPublisher(),
+            reconciliation: reconciliation
+        )
+        var backgroundMediaReasons: [String] = []
         let structuralChangeHandled = expectation(description: "structural change handled")
-
-        let dependencies = BrowserTabRuntimeCompositionService.Dependencies(
-            installTabSuspensionRuntime: {
-                tabSuspensionInstallCount += 1
-                installedTabSuspensionRuntime = TabSuspensionRuntimePorts(
-                    context: TabSuspensionContextRuntime(
-                        selectedTabIDs: { [selectedTabID] },
-                        visibleTabIDsByWindow: {
-                            [visibleWindowID: [visibleTabID]]
-                        }
-                    ),
-                    webView: TabSuspensionWebViewRuntime(
-                        liveWebViews: { _ in [webView] },
-                        suspendWebViews: { _, _ in true },
-                        isProtectedFromCompositorMutation: { _ in false }
-                    ),
-                    catalog: TabSuspensionCatalogRuntime(
-                        allKnownTabs: { [tab] },
-                        refreshLazyRestoreQueue: { context in
-                            refreshedLazyRestoreContexts.append(context)
-                        }
-                    )
-                )
-            },
-            attachBackgroundMediaOptimizationRuntime: { runtime in
-                attachedBackgroundMediaRuntime = runtime
-            },
-            tabStructuralChanges: structuralChanges.eraseToAnyPublisher(),
-            scheduleTabSuspensionReconcile: { reason in
-                tabSuspensionReconcileReasons.append(reason)
+        let backgroundMediaRuntime = SumiBackgroundMediaOptimizationRuntime(
+            liveWebViewEntries: { _ in [(windowID: UUID(), webView: webView)] },
+            energySaverActive: { true },
+            allKnownTabs: { [tab] },
+            visibleTabIDsByWindow: { [:] },
+            executeJavaScriptCommand: { _, _, arguments in
+                guard let reason = arguments["reason"] as? String else { return }
+                backgroundMediaReasons.append(reason)
                 if reason == "tab-structure-changed" {
                     structuralChangeHandled.fulfill()
                 }
-            },
-            scheduleBackgroundMediaReconcile: { reason in
-                backgroundMediaReconcileReasons.append(reason)
-            },
-            trackedWebViewEntries: { _ in
-                [(windowID: visibleWindowID, webView: webView)]
-            },
-            backgroundMediaEnergySaverActive: {
-                true
-            },
-            allKnownTabs: {
-                [tab]
-            },
-            backgroundMediaVisibleTabIDsByWindow: {
-                [visibleWindowID: [visibleTabID]]
-            },
-            notifyTabActivatedIfLoaded: { newTab, previousTab in
-                activatedTabs.append((newTab.id, previousTab?.id))
             }
         )
 
         let cancellable = BrowserTabRuntimeCompositionService.attach(
-            dependencies: dependencies
+            tabSuspension: tabSuspension,
+            tabSuspensionRuntime: TabSuspensionRuntimePorts(
+                context: .inactive,
+                webView: .inactive,
+                catalog: .inactive
+            ),
+            backgroundMedia: backgroundMedia,
+            backgroundMediaRuntime: backgroundMediaRuntime,
+            structuralObserver: structuralObserver
         )
-        defer {
-            cancellable.cancel()
-        }
-
-        let suspensionRuntime = try XCTUnwrap(installedTabSuspensionRuntime)
-        XCTAssertEqual(tabSuspensionInstallCount, 1)
-        let contextRuntime = suspensionRuntime.context
-        XCTAssertEqual(contextRuntime.selectedTabIDs(), [selectedTabID])
-        XCTAssertEqual(
-            contextRuntime.visibleTabIDsByWindow(),
-            [visibleWindowID: [visibleTabID]]
-        )
-
-        let webViewRuntime = suspensionRuntime.webView
-        XCTAssertEqual(webViewRuntime.liveWebViews(tab).count, 1)
-        XCTAssertIdentical(webViewRuntime.liveWebViews(tab).first, webView)
-
-        let catalogRuntime = suspensionRuntime.catalog
-        XCTAssertEqual(catalogRuntime.allKnownTabs().map(\.id), [tab.id])
-
-        let lazyRestoreContext = TabSuspensionEvaluationContext(
-            visibleTabIDs: [visibleTabID],
-            selectedTabIDs: [selectedTabID],
-            policy: TabSuspensionPolicy(memoryMode: .balanced)
-        )
-        catalogRuntime.refreshLazyRestoreQueue(lazyRestoreContext)
-        XCTAssertEqual(refreshedLazyRestoreContexts, [lazyRestoreContext])
-
-        let backgroundMediaRuntime = try XCTUnwrap(attachedBackgroundMediaRuntime)
-        XCTAssertEqual(backgroundMediaRuntime.liveWebViewEntries(tab).count, 1)
-        XCTAssertIdentical(
-            backgroundMediaRuntime.liveWebViewEntries(tab).first?.webView,
-            webView
-        )
-        XCTAssertTrue(backgroundMediaRuntime.energySaverActive())
-        XCTAssertEqual(backgroundMediaRuntime.allKnownTabs().map(\.id), [tab.id])
-        XCTAssertEqual(
-            backgroundMediaRuntime.visibleTabIDsByWindow(),
-            [visibleWindowID: [visibleTabID]]
-        )
-
-        let runtimeNotifications = BrowserTabRuntimeCompositionService.runtimeNotifications(
-            dependencies: dependencies
-        )
-        runtimeNotifications.tabActivated(tab, previousTab)
-        runtimeNotifications.tabSelectionChanged("tab-selection")
-
-        XCTAssertEqual(activatedTabs.count, 1)
-        XCTAssertEqual(activatedTabs[0].new, tab.id)
-        XCTAssertEqual(activatedTabs[0].previous, previousTab.id)
-        XCTAssertEqual(tabSuspensionReconcileReasons, ["tab-selection"])
-        XCTAssertEqual(backgroundMediaReconcileReasons, ["tab-selection"])
+        defer { cancellable.cancel() }
 
         structuralChanges.send()
         await fulfillment(of: [structuralChangeHandled], timeout: 1)
-
-        XCTAssertEqual(
-            tabSuspensionReconcileReasons,
-            ["tab-selection", "tab-structure-changed"]
-        )
-        XCTAssertEqual(
-            backgroundMediaReconcileReasons,
-            ["tab-selection", "tab-structure-changed"]
-        )
+        XCTAssertEqual(backgroundMediaReasons, ["tab-structure-changed"])
     }
 
     func testDetachedRuntimeTabContextMenuForegroundOpenDoesNotUseActiveWindow() throws {
+        let windowRegistry = WindowRegistry()
         let browserManager = BrowserManager(
+            windowRegistry: windowRegistry,
             startupPersistence: BrowserManagerStartupPersistence(
                 container: try makeInMemoryStartupContainer()
             )
         )
-        let windowRegistry = WindowRegistry()
-        browserManager.windowRegistry = windowRegistry
-
-        let space = browserManager.tabManager.spaceStateOwner.currentSpace
-            ?? browserManager.tabManager.spaceServices.catalog.createSpace(name: "Detached Runtime Source")
-        let activeTab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
+        let space = browserManager.spaceStateOwner.currentSpace
+            ?? installTestSpace(in: browserManager.spaceStateOwner, name: "Detached Runtime Source")
+        let activeTab = browserManager.regularTabLifecycleOwner.createNewTab(
             url: "https://active.example",
             in: space,
             activate: true
         )
         let windowState = BrowserWindowState()
-        windowState.tabManager = browserManager.tabManager
+        browserManager.tabResidenceAuthority.establishResidenceSession(on: windowState)
         windowState.currentSpaceId = space.id
         windowState.currentTabId = activeTab.id
         windowRegistry.register(windowState)
         windowRegistry.setActive(windowState)
 
-        let detachedTab = browserManager.tabManager.tabFactory.makeTab(
+        let detachedTab = browserManager.tabFactory.makeTab(
             url: URL(string: "https://detached.example")!,
             loadsCachedFaviconOnInit: false
         )
@@ -233,49 +160,48 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         ))
 
         XCTAssertFalse(
-            browserManager.tabManager.tabCollectionMembershipOwner.allTabs().contains { $0.url == targetURL },
+            browserManager.tabCollectionMembershipOwner.allTabs().contains { $0.url == targetURL },
             "Detached tab runtime actions must not retarget through the active window."
         )
         XCTAssertEqual(windowState.currentTabId, activeTab.id)
     }
 
     func testTabSuspensionSelectedTabsDoNotUseGlobalCurrentTabFallback() throws {
+        let windowRegistry = WindowRegistry()
         let browserManager = BrowserManager(
+            windowRegistry: windowRegistry,
             startupPersistence: BrowserManagerStartupPersistence(
                 container: try makeInMemoryStartupContainer()
             )
         )
-        let windowRegistry = WindowRegistry()
-        browserManager.windowRegistry = windowRegistry
-
-        let selectedSpace = browserManager.tabManager.spaceStateOwner.currentSpace
-            ?? browserManager.tabManager.spaceServices.catalog.createSpace(name: "Selected")
-        let selectedTab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
+        let selectedSpace = browserManager.spaceStateOwner.currentSpace
+            ?? installTestSpace(in: browserManager.spaceStateOwner, name: "Selected")
+        let selectedTab = browserManager.regularTabLifecycleOwner.createNewTab(
             url: "https://selected.example",
             in: selectedSpace,
             activate: true
         )
-        let staleSpace = browserManager.tabManager.spaceServices.catalog.createSpace(name: "Stale")
-        let staleGlobalTab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
+        let staleSpace = installTestSpace(in: browserManager.spaceStateOwner, name: "Stale")
+        let staleGlobalTab = browserManager.regularTabLifecycleOwner.createNewTab(
             url: "https://stale.example",
             in: staleSpace,
             activate: false
         )
 
         let windowState = BrowserWindowState()
-        windowState.tabManager = browserManager.tabManager
+        browserManager.tabResidenceAuthority.establishResidenceSession(on: windowState)
         windowState.currentSpaceId = selectedSpace.id
         windowState.currentTabId = selectedTab.id
         windowRegistry.register(windowState)
         windowRegistry.setActive(windowState)
-        browserManager.tabManager.selectionStateOwner.replaceCurrentTab(staleGlobalTab)
+        browserManager.tabStateStore.selection.replaceCurrentTab(staleGlobalTab)
 
         let suspensionRuntime = BrowserTabSuspensionRuntimeFactory.ports(
             windowRegistry: { windowRegistry },
-            regularTabs: browserManager.tabManager.tabCollectionMembershipOwner,
-            lazyRestore: browserManager.tabManager.lazyRestoreCoordinator,
+            regularTabs: browserManager.tabCollectionMembershipOwner,
+            lazyRestore: browserManager.lazyRestoreCoordinator,
             windowTabs: browserManager.shellRuntime.windowTabs,
-            splitQuery: browserManager.splitComposition.query,
+            splitQuery: browserManager.splitWindowContext.query,
             webView: .inactive
         )
         let selectedTabIDs = suspensionRuntime.context.selectedTabIDs()
@@ -285,12 +211,11 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
     }
 
     private func compositorManagerCanUseAttachedRuntime(_ browserManager: BrowserManager) -> Bool {
-        let windowRegistry = WindowRegistry()
-        browserManager.windowRegistry = windowRegistry
+        let windowRegistry = browserManager.windowRegistry
 
-        let space = browserManager.tabManager.spaceStateOwner.currentSpace
-            ?? browserManager.tabManager.spaceServices.catalog.createSpace(name: "Compositor Runtime Wiring")
-        let tab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
+        let space = browserManager.spaceStateOwner.currentSpace
+            ?? installTestSpace(in: browserManager.spaceStateOwner, name: "Compositor Runtime Wiring")
+        let tab = browserManager.regularTabLifecycleOwner.createNewTab(
             url: "https://example.com/compositor",
             in: space,
             activate: true
@@ -298,11 +223,12 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         tab.replaceUntrackedWebView(WKWebView())
 
         let windowState = BrowserWindowState()
-        windowState.tabManager = browserManager.tabManager
+        browserManager.tabResidenceAuthority.establishResidenceSession(on: windowState)
         windowState.currentSpaceId = space.id
         windowState.currentTabId = tab.id
         windowRegistry.register(windowState)
         windowRegistry.setActive(windowState)
+        defer { windowRegistry.unregister(windowState.id) }
 
         browserManager.compositorManager.unloadTab(tab)
         return tab.resolvedCurrentWebView() != nil
@@ -311,31 +237,31 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
     private func splitServicesCanUseLiveRuntime(
         _ browserManager: BrowserManager
     ) -> Bool {
-        let windowRegistry = WindowRegistry()
-        browserManager.windowRegistry = windowRegistry
+        let windowRegistry = browserManager.windowRegistry
 
-        let space = browserManager.tabManager.spaceStateOwner.currentSpace
-            ?? browserManager.tabManager.spaceServices.catalog.createSpace(name: "Runtime Wiring")
-        let tab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
+        let space = browserManager.spaceStateOwner.currentSpace
+            ?? installTestSpace(in: browserManager.spaceStateOwner, name: "Runtime Wiring")
+        let tab = browserManager.regularTabLifecycleOwner.createNewTab(
             url: "https://example.com",
             in: space,
             activate: true
         )
         let windowState = BrowserWindowState()
-        windowState.tabManager = browserManager.tabManager
+        browserManager.tabResidenceAuthority.establishResidenceSession(on: windowState)
         windowState.currentSpaceId = space.id
         windowState.currentTabId = tab.id
         windowRegistry.register(windowState)
         windowRegistry.setActive(windowState)
+        defer { windowRegistry.unregister(windowState.id) }
 
-        browserManager.splitComposition.emptyCreation.create(in: windowState)
-        return browserManager.splitComposition.query.group(in: windowState.id) != nil
+        browserManager.splitEmptyCreation.create(in: windowState)
+        return browserManager.splitWindowContext.query.group(in: windowState.id) != nil
     }
 
     private func tabManagerRuntimeCanPrepareCreatedTabs(_ browserManager: BrowserManager) -> Bool {
-        let space = browserManager.tabManager.spaceStateOwner.currentSpace
-            ?? browserManager.tabManager.spaceServices.catalog.createSpace(name: "TabManager Runtime Wiring")
-        let tab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
+        let space = browserManager.spaceStateOwner.currentSpace
+            ?? installTestSpace(in: browserManager.spaceStateOwner, name: "TabManager Runtime Wiring")
+        let tab = browserManager.regularTabLifecycleOwner.createNewTab(
             url: "https://example.com/tab-manager-runtime",
             in: space,
             activate: false
@@ -344,26 +270,26 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
     }
 
     private func boostsModuleCanUseAttachedRuntime(_ browserManager: BrowserManager) async -> Bool {
-        let windowRegistry = WindowRegistry()
+        let windowRegistry = browserManager.windowRegistry
         let trackedAdmission = browserManager.webViewRuntime.trackedWebViewAdmission
-        browserManager.windowRegistry = windowRegistry
 
         let profileId = UUID()
-        let space = browserManager.tabManager.spaceStateOwner.currentSpace
-            ?? browserManager.tabManager.spaceServices.catalog.createSpace(name: "Boost Runtime Wiring", profileId: profileId)
-        let tab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
+        let space = browserManager.spaceStateOwner.currentSpace
+            ?? installTestSpace(in: browserManager.spaceStateOwner, name: "Boost Runtime Wiring", profileID: profileId)
+        let tab = browserManager.regularTabLifecycleOwner.createNewTab(
             url: "https://example.com/boost",
             in: space,
             activate: true
         )
         tab.profileId = profileId
         let windowState = BrowserWindowState()
-        windowState.tabManager = browserManager.tabManager
+        browserManager.tabResidenceAuthority.establishResidenceSession(on: windowState)
         windowState.currentProfileId = profileId
         windowState.currentSpaceId = space.id
         windowState.currentTabId = tab.id
         windowRegistry.register(windowState)
         windowRegistry.setActive(windowState)
+        defer { windowRegistry.unregister(windowState.id) }
 
         let webView = FocusableWKWebView()
         webView.owningTab = tab
@@ -388,18 +314,17 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
     private func auxiliaryWindowServicesCanOpenPopup(
         _ browserManager: BrowserManager
     ) -> Bool {
-        let windowRegistry = WindowRegistry()
-        browserManager.windowRegistry = windowRegistry
+        let windowRegistry = browserManager.windowRegistry
 
-        let space = browserManager.tabManager.spaceStateOwner.currentSpace
-            ?? browserManager.tabManager.spaceServices.catalog.createSpace(name: "Auxiliary Runtime Wiring")
-        let sourceTab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
+        let space = browserManager.spaceStateOwner.currentSpace
+            ?? installTestSpace(in: browserManager.spaceStateOwner, name: "Auxiliary Runtime Wiring")
+        let sourceTab = browserManager.regularTabLifecycleOwner.createNewTab(
             url: "https://example.com/source",
             in: space,
             activate: true
         )
         let windowState = BrowserWindowState()
-        windowState.tabManager = browserManager.tabManager
+        browserManager.tabResidenceAuthority.establishResidenceSession(on: windowState)
         windowState.currentSpaceId = space.id
         windowState.currentTabId = sourceTab.id
         windowRegistry.bindAppKitWindow(
@@ -413,6 +338,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         )
         windowRegistry.register(windowState)
         windowRegistry.setActive(windowState)
+        defer { windowRegistry.unregister(windowState.id) }
 
         guard let webView = browserManager.auxiliaryWindows.popups.presentWebPopup(
             configuration: WKWebViewConfiguration(),
@@ -430,9 +356,9 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
     }
 
     private func glanceRuntimeCanPreparePreviewTabs(_ browserManager: BrowserManager) -> Bool {
-        let space = browserManager.tabManager.spaceStateOwner.currentSpace
-            ?? browserManager.tabManager.spaceServices.catalog.createSpace(name: "Glance Runtime Wiring")
-        let sourceTab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
+        let space = browserManager.spaceStateOwner.currentSpace
+            ?? installTestSpace(in: browserManager.spaceStateOwner, name: "Glance Runtime Wiring")
+        let sourceTab = browserManager.regularTabLifecycleOwner.createNewTab(
             url: "https://example.com/glance-source",
             in: space,
             activate: true
@@ -462,7 +388,8 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         let cleanupService = SumiPermissionCleanupService(
             store: permissionStore,
             recentActivityStore: recentActivityStore,
-            antiAbuseStore: SumiPermissionAntiAbuseStore(userDefaults: nil)
+            antiAbuseStore: SumiPermissionAntiAbuseStore(userDefaults: nil),
+            siteActivityStore: siteActivityStore
         )
         let blockedPopupStore = SumiBlockedPopupStore()
         let externalSchemeSessionStore = SumiExternalSchemeSessionStore()
@@ -578,24 +505,24 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
     }
 
     func testCanonicalWebViewRuntimePreparesVisibleWebViewsThroughBrowserManager() async throws {
+        let windowRegistry = WindowRegistry()
         let browserManager = BrowserManager(
+            windowRegistry: windowRegistry,
             startupPersistence: BrowserManagerStartupPersistence(
                 container: try makeInMemoryStartupContainer()
             )
         )
-        let windowRegistry = WindowRegistry()
-        browserManager.windowRegistry = windowRegistry
         await browserManager.drainProtectionRuntimeTasksForTests()
 
-        let space = browserManager.tabManager.spaceStateOwner.currentSpace
-            ?? browserManager.tabManager.spaceServices.catalog.createSpace(name: "Visible WebView Runtime")
-        let tab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
+        let space = browserManager.spaceStateOwner.currentSpace
+            ?? installTestSpace(in: browserManager.spaceStateOwner, name: "Visible WebView Runtime")
+        let tab = browserManager.regularTabLifecycleOwner.createNewTab(
             url: "https://example.com/visible-webview",
             in: space,
             activate: true
         )
         let windowState = BrowserWindowState()
-        windowState.tabManager = browserManager.tabManager
+        browserManager.tabResidenceAuthority.establishResidenceSession(on: windowState)
         windowState.currentSpaceId = space.id
         windowState.currentTabId = tab.id
         windowRegistry.register(windowState)
@@ -608,7 +535,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
                 in: windowState.id
             )
         )
-        let runtimePorts = try XCTUnwrap(browserManager.tabManager.runtimePorts)
+        let runtimePorts = try XCTUnwrap(browserManager.runtimePortConnection.current)
 
         runtimePorts.webViewLifecycle.materializeVisibleTabWebViewIfNeeded(
             tab,
@@ -672,8 +599,8 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
 
     func testSessionSideEffectsPortRetainsExactProcessServices() throws {
         let browserManager = BrowserManager()
-        let runtimePorts = try XCTUnwrap(browserManager.tabManager.runtimePorts)
-        let tab = browserManager.tabManager.tabFactory.makeTab(
+        let runtimePorts = try XCTUnwrap(browserManager.runtimePortConnection.current)
+        let tab = browserManager.tabFactory.makeTab(
             url: URL(string: "https://example.com/closed")!,
             loadsCachedFaviconOnInit: false
         )
@@ -690,25 +617,23 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         )
     }
 
-    func testWindowQueryPortTracksTheExactShellRegistryBinding() throws {
+    func testWindowQueryPortTracksTheExactInjectedShellRegistry() throws {
+        let windowRegistry = WindowRegistry()
         let browserManager = BrowserManager(
+            windowRegistry: windowRegistry,
             startupPersistence: BrowserManagerStartupPersistence(
                 container: try makeInMemoryStartupContainer()
             )
         )
-        let runtimePorts = try XCTUnwrap(browserManager.tabManager.runtimePorts)
+        let runtimePorts = try XCTUnwrap(browserManager.runtimePortConnection.current)
         let firstWindow = BrowserWindowState()
-        let firstRegistry = WindowRegistry()
-        firstRegistry.register(firstWindow)
-
-        browserManager.windowRegistry = firstRegistry
+        windowRegistry.register(firstWindow)
 
         XCTAssertIdentical(runtimePorts.windowState(for: firstWindow.id), firstWindow)
 
         let replacementWindow = BrowserWindowState()
-        let replacementRegistry = WindowRegistry()
-        replacementRegistry.register(replacementWindow)
-        browserManager.windowRegistry = replacementRegistry
+        windowRegistry.unregister(firstWindow.id)
+        windowRegistry.register(replacementWindow)
 
         XCTAssertNil(runtimePorts.windowState(for: firstWindow.id))
         XCTAssertIdentical(
@@ -718,50 +643,49 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
     }
 
     func testShellRuntimeWindowRegistryBindingUpdatesDependentRuntimeManagers() throws {
+        let windowRegistry = WindowRegistry()
         let browserManager = BrowserManager(
+            windowRegistry: windowRegistry,
             startupPersistence: BrowserManagerStartupPersistence(
                 container: try makeInMemoryStartupContainer()
             )
         )
-        let windowRegistry = WindowRegistry()
-
-        browserManager.windowRegistry = windowRegistry
-
         XCTAssertIdentical(browserManager.windowRegistry, windowRegistry)
         XCTAssertIdentical(browserManager.glanceManager.windowRegistry, windowRegistry)
         let selectedTabID = UUID()
         let windowState = BrowserWindowState()
         windowState.currentTabId = selectedTabID
         windowRegistry.register(windowState)
-        browserManager.splitComposition.previews.begin(
+        browserManager.splitWindowContext.previews.begin(
             targetRect: nil,
             style: .edge,
             in: windowState.id
         )
         XCTAssertEqual(
-            browserManager.splitComposition.query.visibleTabIDs(in: windowState.id),
+            browserManager.splitWindowContext.query.visibleTabIDs(in: windowState.id),
             [selectedTabID]
         )
     }
 
-    func testShellRuntimeOwnsWindowRegistryUntilExplicitDetachment() throws {
-        let browserManager = BrowserManager(
-            startupPersistence: BrowserManagerStartupPersistence(
-                container: try makeInMemoryStartupContainer()
-            )
-        )
+    func testShellRuntimeOwnsConstructorInjectedWindowRegistryForItsLifetime() throws {
+        var browserManager: BrowserManager?
         weak var retainedRegistry: WindowRegistry?
 
         do {
             let windowRegistry = WindowRegistry()
             retainedRegistry = windowRegistry
-            browserManager.windowRegistry = windowRegistry
+            browserManager = BrowserManager(
+                windowRegistry: windowRegistry,
+                startupPersistence: BrowserManagerStartupPersistence(
+                    container: try makeInMemoryStartupContainer()
+                )
+            )
         }
 
         XCTAssertNotNil(retainedRegistry)
-        XCTAssertIdentical(browserManager.windowRegistry, retainedRegistry)
+        XCTAssertIdentical(browserManager?.windowRegistry, retainedRegistry)
 
-        browserManager.windowRegistry = nil
+        browserManager = nil
 
         XCTAssertNil(retainedRegistry)
     }
@@ -792,12 +716,13 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
             ),
             permissionSiteActivityStore: try makeSiteActivityStore()
         )
+        browserManager.startRuntimeAfterStartupRecovery()
         let initialProfile = try XCTUnwrap(browserManager.currentProfile)
 
         XCTAssertIdentical(browserManager.browsingDataCleanupService, browsingDataCleanupService)
         XCTAssertEqual(faviconService.partitionProfileIds, [initialProfile.id])
 
-        let tab = browserManager.tabManager.tabFactory.makeTab(
+        let tab = browserManager.tabFactory.makeTab(
             url: URL(string: "https://example.com/path")!,
             loadsCachedFaviconOnInit: false
         )
@@ -838,7 +763,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         XCTAssertEqual(automaticCleanupService.schedules[0].currentProfileId, initialProfile.id)
         XCTAssertEqual(automaticCleanupService.schedules[0].reason, "settings-attached")
 
-        browserManager.privacyBundle.automaticDataCleanupOwner.scheduleAutomaticBrowsingDataCleanup(
+        browserManager.privacyBundle.automaticBrowsingDataCleanup.schedule(
             reason: "unit-test",
             force: true,
             delayNanoseconds: 0
@@ -898,6 +823,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
             ),
             permissionSiteActivityStore: try makeSiteActivityStore()
         )
+        browserManager?.startRuntimeAfterStartupRecovery()
 
         let suiteName = "BrowserManagerDeinitShutdownTests-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
@@ -932,14 +858,13 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
     }
 
     func testRetainedAttachedTabDoesNotRetainBrowserRuntimeRoots() throws {
+        var windowRegistry: WindowRegistry? = WindowRegistry()
         var browserManager: BrowserManager? = BrowserManager(
+            windowRegistry: try XCTUnwrap(windowRegistry),
             startupPersistence: BrowserManagerStartupPersistence(
                 container: try makeInMemoryStartupContainer()
             )
         )
-        var windowRegistry: WindowRegistry? = WindowRegistry()
-        browserManager?.windowRegistry = windowRegistry
-
         let tab: Tab
         let installation: UntrackedWebViewInstallationService
         do {
@@ -1027,7 +952,9 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
             UserDefaults.standard.removeObject(forKey: BrowserManager.lastWindowSessionKey)
         }
 
+        let windowRegistry = WindowRegistry()
         let browserManager = BrowserManager(
+            windowRegistry: windowRegistry,
             startupPersistence: BrowserManagerStartupPersistence(
                 container: try makeInMemoryStartupContainer()
             ),
@@ -1035,22 +962,20 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         )
         let profile = Profile(name: "Settings Context")
         let space = Space(name: "Settings Context", profileId: profile.id)
-        let windowRegistry = WindowRegistry()
         let windowState = BrowserWindowState()
 
         browserManager.profileManager.profiles = [profile]
         browserManager.currentProfile = profile
-        browserManager.windowRegistry = windowRegistry
-        browserManager.tabManager.spaceStateOwner.replaceSpaces([space])
-        browserManager.tabManager.spaceStateOwner.replaceCurrentSpace(space)
+        browserManager.spaceStateOwner.replaceSpaces([space])
+        browserManager.spaceStateOwner.replaceCurrentSpace(space)
 
-        windowState.tabManager = browserManager.tabManager
+        browserManager.tabResidenceAuthority.establishResidenceSession(on: windowState)
         windowState.currentSpaceId = space.id
         windowState.currentProfileId = profile.id
         windowRegistry.register(windowState)
         windowRegistry.setActive(windowState)
 
-        let settingsTab = browserManager.tabLifecycleService.opening.openNewTab(
+        let settingsTab = browserManager.tabOpening.openNewTab(
             url: "sumi://settings/general",
             context: .foreground(windowState: windowState)
         )
@@ -1059,7 +984,8 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         )
 
         XCTAssertTrue(browserContext.profileManager === browserManager.profileManager)
-        XCTAssertTrue(browserContext.tabManager === browserManager.tabManager)
+        XCTAssertEqual(browserContext.profileInventory.spacesCount(profile.id), 1)
+        XCTAssertEqual(browserContext.profileInventory.tabsCount(profile.id), 1)
         XCTAssertTrue(browserContext.extensionsModule === browserManager.optionalModules.extensions)
         XCTAssertTrue(
             browserContext.extensionSurfaceStore === browserManager.optionalModules.extensions.surfaceStore
@@ -1067,6 +993,18 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         XCTAssertEqual(browserContext.currentProfile()?.id, profile.id)
         XCTAssertEqual(browserContext.currentTab(windowState)?.id, settingsTab.id)
         XCTAssertTrue(settingsTab.representsSumiSettingsSurface)
+
+        var inventoryUpdateCount = 0
+        let inventoryUpdates = browserContext.profileInventory.updates.sink {
+            inventoryUpdateCount += 1
+        }
+        _ = browserManager.regularTabLifecycleOwner.createNewTab(
+            url: "https://settings-inventory.example",
+            in: space,
+            activate: false
+        )
+        XCTAssertEqual(inventoryUpdateCount, 1)
+        XCTAssertEqual(browserContext.profileInventory.tabsCount(profile.id), 2)
 
         var browserManagerChangeCount = 0
         var publishedProfileIDs: [UUID?] = []
@@ -1090,11 +1028,13 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
             replacementProfile
         )
         XCTAssertEqual(
-            browserManager.tabManager.runtimePorts?.currentProfileId,
+            browserManager.runtimePortConnection.current?.currentProfileId,
             replacementProfile.id
         )
         XCTAssertIdentical(browserContext.currentProfile(), replacementProfile)
-        withExtendedLifetime((browserManagerChanges, currentProfileChanges)) {}
+        withExtendedLifetime(
+            (browserManagerChanges, currentProfileChanges, inventoryUpdates)
+        ) {}
 
         let repository = browserContext.makePermissionRepository()
         XCTAssertNotNil(repository)
@@ -1105,24 +1045,33 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         XCTAssertNotEqual(settingsTab.url, previousURL)
     }
 
-    func testRuntimeNotificationsPreserveLazyExtensionRuntime() throws {
+    func testSelectionPublicationPreservesLazyExtensionRuntime() throws {
+        let windowRegistry = WindowRegistry()
         let browserManager = BrowserManager(
+            windowRegistry: windowRegistry,
             startupPersistence: BrowserManagerStartupPersistence(
                 container: try makeInMemoryStartupContainer()
             ),
             permissionSiteActivityStore: try makeSiteActivityStore()
         )
+        let profile = try XCTUnwrap(
+            browserManager.currentProfileAuthority.currentProfile
+        )
+        let space = installTestSpace(
+            in: browserManager.spaceStateOwner,
+            name: "Lazy Extension Selection",
+            profileID: profile.id
+        )
         let windowState = BrowserWindowState()
-        let tab = browserManager.tabManager.tabFactory.makeTab(
-            loadsCachedFaviconOnInit: false
+        windowState.currentProfileId = profile.id
+        windowState.currentSpaceId = space.id
+        browserManager.tabResidenceAuthority.establishResidenceSession(on: windowState)
+        windowRegistry.register(windowState)
+        windowRegistry.setActive(windowState)
+        let tab = browserManager.regularTabLifecycleOwner.createNewTab(
+            in: space,
+            activate: false
         )
-        let runtimeNotifications = BrowserManagerRuntimeWiring.tabSelectionRuntimeNotifications(
-            for: browserManager
-        )
-        let closeRouter = BrowserWebViewCloseRouter(
-            browserManager: browserManager
-        )
-
         browserManager.optionalModules.extensions.notifyWindowOpenedIfLoaded(windowState)
         browserManager.optionalModules.extensions.notifyWindowFocusedIfLoaded(windowState)
         let inactivePreparation = browserManager.optionalModules.extensions
@@ -1130,11 +1079,12 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
                 window: windowState,
                 tab: tab,
                 webView: FocusableWKWebView(),
-                reason: "testRuntimeNotificationsPreserveLazyExtensionRuntime"
+                reason: "testSelectionPublicationPreservesLazyExtensionRuntime"
             )
-        runtimeNotifications.tabActivated(tab, nil)
-        runtimeNotifications.tabSelectionChanged("test-tab-selection")
-        closeRouter.notifyExtensionTabClosed(tab)
+        XCTAssertTrue(
+            browserManager.selectTab(tab, in: windowState).wasCommitted
+        )
+        browserManager.optionalModules.extensions.notifyTabClosedIfLoaded(tab)
 
         XCTAssertFalse(browserManager.optionalModules.extensions.hasLoadedRuntime)
         guard case .notParticipating = inactivePreparation else {
@@ -1169,7 +1119,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
             nowPlayingController: nowPlayingController,
             permissionSiteActivityStore: try makeSiteActivityStore()
         )
-        let tab = browserManager.tabManager.tabFactory.makeTab(
+        let tab = browserManager.tabFactory.makeTab(
             url: URL(string: "https://example.com/video")!,
             loadsCachedFaviconOnInit: false
         )

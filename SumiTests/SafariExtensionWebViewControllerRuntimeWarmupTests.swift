@@ -284,15 +284,18 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         _ = inspection.controller.provisioning.ensureExtensionController(for: profile.id)
         inspection.actionSurfaces.publication.markRuntimePublicationReady()
 
-        let browserManager = makeBrowserManager(profile: profile)
         let windowRegistry = WindowRegistry()
-        browserManager.windowRegistry = windowRegistry
-        let space = browserManager.tabManager.spaceServices.catalog.createSpace(
+        let browserManager = makeBrowserManager(
+            profile: profile,
+            windowRegistry: windowRegistry
+        )
+        let space = installTestSpace(
+            in: browserManager.spaceStateOwner,
             name: "Work",
-            profileId: profile.id
+            profileID: profile.id
         )
         let windowState = BrowserWindowState()
-        windowState.tabManager = browserManager.tabManager
+        browserManager.tabResidenceAuthority.establishResidenceSession(on: windowState)
         windowState.currentProfileId = profile.id
         windowState.currentSpaceId = space.id
         windowRegistry.register(windowState)
@@ -310,7 +313,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
             .ensureContentScriptContextsLoaded(for: profile.id)
 
         let pageURL = URL(string: "https://example.com/login")!
-        let tab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
+        let tab = browserManager.regularTabLifecycleOwner.createNewTab(
             url: pageURL.absoluteString,
             in: space,
             activate: false
@@ -605,31 +608,30 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
             initialProfileProvider: { profile },
             managerFactory: { _, _, _, _ in manager }
         )
+        let windowRegistry = WindowRegistry()
         let browserManager = makeBrowserManager(
             moduleRegistry: registry,
             extensionsModule: extensionsModule,
-            profile: profile
+            profile: profile,
+            windowRegistry: windowRegistry
         )
         browserManager.windowShellContentViewFactory = { _, _ in NSView() }
-        let windowRegistry = WindowRegistry()
-        browserManager.windowRegistry = windowRegistry
         let windowSessions = browserManager.windowSessionBundle
         BrowserWindowRegistryBinding.install(
             registration: windowSessions.restoration,
             closing: BrowserWindowCloseWorkflow(
                 browserRuntime: browserManager,
                 recorder: windowSessions.history.recorder,
-                persistence: windowSessions.persistence,
+                persistence: browserManager.windowSessionPersistenceCoordinator,
                 extensions: browserManager.optionalModules.extensions,
                 webViews: browserManager.webViewRuntime.lifecycleService,
-                emptySplitPlaceholders: browserManager.splitComposition
-                    .emptyPlaceholders,
-                splitPreviews: browserManager.splitComposition.previews,
+                emptySplitPlaceholders: browserManager.splitEmptyPlaceholders,
+                splitPreviews: browserManager.splitWindowContext.previews,
                 backgroundMedia: browserManager
                     .backgroundMediaOptimizationService,
                 commands: browserManager.windowCommands
             ),
-            activity: windowSessions.activation,
+            activity: browserManager.windowActivation,
             allWindowsClosed: BrowserAllWindowsClosedWorkflow(
                 browserRuntime: browserManager,
                 sessionRestore: windowSessions.restoreService,
@@ -639,9 +641,10 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
             ),
             on: windowRegistry
         )
-        _ = browserManager.tabManager.spaceServices.catalog.createSpace(
+        _ = installTestSpace(
+            in: browserManager.spaceStateOwner,
             name: "Work",
-            profileId: profile.id
+            profileID: profile.id
         )
         manager.attach(browserManager: browserManager)
 
@@ -695,7 +698,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         )
 
         let tab = try XCTUnwrap(
-            browserManager.tabManager.tabCollectionMembershipOwner.allTabs().first { $0.url == pageURL }
+            browserManager.tabCollectionMembershipOwner.allTabs().first { $0.url == pageURL }
         )
         XCTAssertNotNil(tab.resolvedAssignedWebView() ?? tab.resolvedCurrentWebView())
         XCTAssertEqual(
@@ -1100,9 +1103,10 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
             profile: profile
         )
         manager.attach(browserManager: browserManager)
-        let space = browserManager.tabManager.spaceServices.catalog.createSpace(
+        let space = installTestSpace(
+            in: browserManager.spaceStateOwner,
             name: "Work",
-            profileId: profile.id
+            profileID: profile.id
         )
         let scratchDirectory = try makeScratchDirectory()
         let installed = try await installContentScriptProbeExtension(
@@ -1116,7 +1120,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         )
         inspection.actionSurfaces.publication.markRuntimePublicationReady()
 
-        let tabWithController = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
+        let tabWithController = browserManager.regularTabLifecycleOwner.createNewTab(
             url: "https://example.com/with-controller",
             in: space,
             activate: false
@@ -1136,7 +1140,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         webViewWithController.owningTab = tabWithController
         tabWithController.replaceUntrackedWebView(webViewWithController)
 
-        let tabWithoutController = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
+        let tabWithoutController = browserManager.regularTabLifecycleOwner.createNewTab(
             url: "https://example.com/without-controller",
             in: space,
             activate: false

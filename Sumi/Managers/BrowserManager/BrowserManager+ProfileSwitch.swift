@@ -1,20 +1,22 @@
 import Foundation
 
+enum BrowserProfileSwitchContext {
+    case userInitiated
+    case spaceChange
+    case windowActivation
+    case recovery
+    case profileRetirement
+}
+
 extension BrowserManager {
-    enum ProfileSwitchContext {
-        case userInitiated
-        case spaceChange
-        case windowActivation
-        case recovery
-    }
+    typealias ProfileSwitchContext = BrowserProfileSwitchContext
 
     func adoptProfileIfNeeded(
         for windowState: BrowserWindowState, context: ProfileSwitchContext
     ) {
-        SumiProfileRouting.adoptProfileIfNeeded(
+        profileAdoption.adoptProfileIfNeeded(
             for: windowState,
-            context: context,
-            support: self
+            context: context
         )
     }
 
@@ -27,13 +29,5 @@ extension BrowserManager {
             context: context,
             in: windowState
         )
-    }
-
-    func duplicateCurrentTab() {
-        guard let activeWindow = windowRegistry?.activeWindow,
-              let currentTab = shellRuntime.windowTabs.currentTab(for: activeWindow) else {
-            return
-        }
-        tabLifecycleService.opening.duplicateTab(currentTab, in: activeWindow)
     }
 }

@@ -624,15 +624,12 @@ private final class ParityContentRuleListProvider: SumiContentRuleListSetProvidi
         subject.eraseToAnyPublisher()
     }
 
-    let hasProfileSpecificRuleLists = false
-
     func sendChange() {
         subject.send(())
     }
 
-    func ruleListSet(profileId: UUID?) -> SumiContentRuleListSet {
-        _ = profileId
-        return SumiContentRuleListSet()
+    func ruleListSet() -> SumiContentRuleListSet {
+        SumiContentRuleListSet()
     }
 }
 

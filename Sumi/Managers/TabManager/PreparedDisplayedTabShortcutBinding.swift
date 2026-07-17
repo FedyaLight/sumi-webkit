@@ -2,9 +2,47 @@ import Foundation
 import SumiDomain
 
 @MainActor
-final class DisplayedTabShortcutBindingPreflight {
+private struct DisplayedTabShortcutCandidateReceipt {
+    let id: UUID
+    let role: ShortcutPinRole
+    let profileID: UUID?
+    let executionProfileID: UUID?
+    let spaceID: UUID?
+    let folderID: UUID?
+
+    init(_ candidate: ShortcutPin) {
+        id = candidate.id
+        role = candidate.role
+        profileID = candidate.profileId
+        executionProfileID = candidate.executionProfileId
+        spaceID = candidate.spaceId
+        folderID = candidate.folderId
+    }
+
+    func accepts(_ pin: ShortcutPin) -> Bool {
+        pin.id == id
+            && pin.role == role
+            && pin.profileId == profileID
+            && pin.executionProfileId == executionProfileID
+            && pin.spaceId == spaceID
+            && pin.folderId == folderID
+    }
+}
+
+@MainActor
+private struct DisplayedTabShortcutSourceReceipt {
+    let tab: Tab
+    let spaceID: UUID?
+    let liveTabsByWindowID: [UUID: Tab]
+    let freshTabs: [(Tab, BrowserWindowState)]
+
+    var windowIDs: Set<UUID> { Set(liveTabsByWindowID.keys) }
+}
+
+@MainActor
+private final class DisplayedTabShortcutResidencePreparer {
     @MainActor
-    private struct PlannedResidence {
+    struct PlannedResidence {
         let tab: Tab
         let presentation: DisplayedShortcutPresentationResidencePlan.Entry
         let target: ShortcutSplitLauncherBindingTarget
@@ -20,64 +58,43 @@ final class DisplayedTabShortcutBindingPreflight {
         }
     }
 
-    private let candidateID: UUID
-    private let candidateRole: ShortcutPinRole
-    private let candidateProfileID: UUID?
-    private let candidateExecutionProfileID: UUID?
-    private let candidateSpaceID: UUID?
-    private let candidateFolderID: UUID?
     private let registry: LiveShortcutTabRegistry
     private let membership: TabCollectionMembershipOwner
-    private let profile: ShortcutTabProfileAssignmentAdmission
     private let planned: [PlannedResidence]
-
-    let sourceTab: Tab
-    let sourceSpaceID: UUID?
-    let liveTabsByWindowID: [UUID: Tab]
-    let freshTabs: [(Tab, BrowserWindowState)]
+    private let source: DisplayedTabShortcutSourceReceipt
 
     init(
-        candidate: ShortcutPin,
         registry: LiveShortcutTabRegistry,
         membership: TabCollectionMembershipOwner,
-        profile: ShortcutTabProfileAssignmentAdmission,
         planned: [(Tab, DisplayedShortcutPresentationResidencePlan.Entry,
             ShortcutSplitLauncherBindingTarget)],
-        sourceTab: Tab,
-        sourceSpaceID: UUID?,
-        liveTabsByWindowID: [UUID: Tab],
-        freshTabs: [(Tab, BrowserWindowState)]
+        source: DisplayedTabShortcutSourceReceipt
     ) {
-        candidateID = candidate.id
-        candidateRole = candidate.role
-        candidateProfileID = candidate.profileId
-        candidateExecutionProfileID = candidate.executionProfileId
-        candidateSpaceID = candidate.spaceId
-        candidateFolderID = candidate.folderId
         self.registry = registry
         self.membership = membership
-        self.profile = profile
         self.planned = planned.map {
             PlannedResidence(tab: $0.0, presentation: $0.1, target: $0.2)
         }
-        self.sourceTab = sourceTab
-        self.sourceSpaceID = sourceSpaceID
-        self.liveTabsByWindowID = liveTabsByWindowID
-        self.freshTabs = freshTabs
+        self.source = source
     }
 
-    func prepareResidences(
+    func prepare(
         for pin: ShortcutPin
-    ) -> PreparedDisplayedTabShortcutBinding? {
-        guard accepts(pin), planned.allSatisfy({ item in
+    ) -> (
+        LiveShortcutPresentationResidenceTransaction,
+        DisplayedShortcutResidenceContribution,
+        [ShortcutSplitLauncherBindingPlan],
+        [UUID: ShortcutBindingIdentity]
+    )? {
+        guard planned.allSatisfy({ item in
             registry.entry(containing: item.tab) == nil
                 && registry.tab(
                     for: pin.id,
                     in: item.presentation.window.id
                 ) == nil
         }), planned.allSatisfy({ item in
-            item.tab === sourceTab || item.acceptsFreshModel(for: pin)
-        }), planned.filter({ $0.tab === sourceTab }).count == 1 else {
+            item.tab === source.tab || item.acceptsFreshModel(for: pin)
+        }), planned.filter({ $0.tab === source.tab }).count == 1 else {
             return nil
         }
         var residencePlans: [LiveShortcutResidenceMutationStaging.Plan] = []
@@ -100,8 +117,9 @@ final class DisplayedTabShortcutBindingPreflight {
                 forKey: item.presentation.window.id
             ) == nil else { return nil }
         }
-        guard Set(terminalIdentitiesByWindowID.keys)
-                == Set(liveTabsByWindowID.keys) else { return nil }
+        guard Set(terminalIdentitiesByWindowID.keys) == source.windowIDs else {
+            return nil
+        }
         let residences = LiveShortcutPresentationResidenceTransaction(
             pin: pin,
             admission: LiveShortcutPresentationRefreshAdmission(
@@ -124,7 +142,7 @@ final class DisplayedTabShortcutBindingPreflight {
                     spaceId: item.target.spaceID
                 ),
                 targetFolderID: item.target.folderID,
-                preparedLookup: item.tab === sourceTab
+                preparedLookup: item.tab === source.tab
                     ? .exactSource : .absentFresh
             )
         }
@@ -137,7 +155,7 @@ final class DisplayedTabShortcutBindingPreflight {
                 entries: contributionEntries
             ) else { return nil }
         let bindingPlans: [ShortcutSplitLauncherBindingPlan] = planned.compactMap { item in
-            guard item.tab === sourceTab else { return nil }
+            guard item.tab === source.tab else { return nil }
             return ShortcutSplitLauncherBindingPlan(
                 tab: item.tab,
                 windowID: item.presentation.window.id,
@@ -149,32 +167,78 @@ final class DisplayedTabShortcutBindingPreflight {
                 target: item.target
             )
         }
+        return (
+            residences,
+            presentationContribution,
+            bindingPlans,
+            terminalIdentitiesByWindowID
+        )
+    }
+}
+
+@MainActor
+final class DisplayedTabShortcutBindingPreflight {
+    private let candidate: DisplayedTabShortcutCandidateReceipt
+    private let profile: ShortcutTabProfileAssignmentAdmission
+    private let residences: DisplayedTabShortcutResidencePreparer
+    private let source: DisplayedTabShortcutSourceReceipt
+
+    var sourceSpaceID: UUID? { source.spaceID }
+    var freshTabs: [(Tab, BrowserWindowState)] { source.freshTabs }
+    var sourceTab: Tab { source.tab }
+    var liveTabsByWindowID: [UUID: Tab] { source.liveTabsByWindowID }
+
+    init(
+        candidate: ShortcutPin,
+        registry: LiveShortcutTabRegistry,
+        membership: TabCollectionMembershipOwner,
+        profile: ShortcutTabProfileAssignmentAdmission,
+        planned: [(Tab, DisplayedShortcutPresentationResidencePlan.Entry,
+            ShortcutSplitLauncherBindingTarget)],
+        sourceTab: Tab,
+        sourceSpaceID: UUID?,
+        liveTabsByWindowID: [UUID: Tab],
+        freshTabs: [(Tab, BrowserWindowState)]
+    ) {
+        self.candidate = DisplayedTabShortcutCandidateReceipt(candidate)
+        self.profile = profile
+        let source = DisplayedTabShortcutSourceReceipt(
+            tab: sourceTab,
+            spaceID: sourceSpaceID,
+            liveTabsByWindowID: liveTabsByWindowID,
+            freshTabs: freshTabs
+        )
+        self.source = source
+        residences = DisplayedTabShortcutResidencePreparer(
+            registry: registry,
+            membership: membership,
+            planned: planned,
+            source: source
+        )
+    }
+
+    func prepareResidences(
+        for pin: ShortcutPin
+    ) -> PreparedDisplayedTabShortcutBinding? {
+        guard candidate.accepts(pin),
+              let prepared = residences.prepare(for: pin) else { return nil }
         return PreparedDisplayedTabShortcutBinding(
             contribution: ShortcutTabBindingBatchContribution(
                 inputs: [.init(
                     pin: pin,
-                    plans: bindingPlans,
-                    residences: residences
+                    plans: prepared.2,
+                    residences: prepared.0
                 )],
                 profileAdmissions: [profile],
                 residences: [
-                    ShortcutTabBindingResidenceReceiptTransaction(residences),
+                    ShortcutTabBindingResidenceReceiptTransaction(prepared.0),
                 ]
             ),
             preflight: self,
-            residences: residences,
-            presentationContribution: presentationContribution,
-            terminalIdentitiesByWindowID: terminalIdentitiesByWindowID
+            residences: prepared.0,
+            presentationContribution: prepared.1,
+            terminalIdentitiesByWindowID: prepared.3
         )
-    }
-
-    private func accepts(_ pin: ShortcutPin) -> Bool {
-        pin.id == candidateID
-            && pin.role == candidateRole
-            && pin.profileId == candidateProfileID
-            && pin.executionProfileId == candidateExecutionProfileID
-            && pin.spaceId == candidateSpaceID
-            && pin.folderId == candidateFolderID
     }
 }
 

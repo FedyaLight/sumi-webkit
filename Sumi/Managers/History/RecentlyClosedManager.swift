@@ -12,6 +12,13 @@ final class RecentlyClosedManager: ObservableObject {
     }
 
     @Published private(set) var items: [RecentlyClosedItem] = []
+    private let profileReferenceAdmission: ProfileReferenceAdmissionLedger?
+
+    init(
+        profileReferenceAdmission: ProfileReferenceAdmissionLedger? = nil
+    ) {
+        self.profileReferenceAdmission = profileReferenceAdmission
+    }
 
     var mostRecentItem: RecentlyClosedItem? {
         items.first
@@ -29,6 +36,9 @@ final class RecentlyClosedManager: ObservableObject {
         canGoForward: Bool
     ) {
         guard !tab.representsSumiEmptySurface else { return }
+        guard tab.profileId.map(profileReferenceIsAllowed) != false else {
+            return
+        }
 
         let item = RecentlyClosedItem.tab(
             RecentlyClosedTabState(
@@ -53,6 +63,9 @@ final class RecentlyClosedManager: ObservableObject {
         sourceWindowId: UUID?
     ) {
         guard !tab.representsSumiEmptySurface else { return }
+        guard ProfileReferenceInventory(shortcutPin: pin).profileIDs
+            .allSatisfy(profileReferenceIsAllowed)
+        else { return }
 
         let title = tab.name.trimmingCharacters(in: .whitespacesAndNewlines)
         let item = RecentlyClosedItem.shortcutLiveInstance(
@@ -70,6 +83,9 @@ final class RecentlyClosedManager: ObservableObject {
     }
 
     func captureDeletedShortcutLauncher(_ pin: ShortcutPin) {
+        guard ProfileReferenceInventory(shortcutPin: pin).profileIDs
+            .allSatisfy(profileReferenceIsAllowed)
+        else { return }
         let item = RecentlyClosedItem.shortcutLauncher(
             RecentlyClosedShortcutLauncherState(
                 id: UUID(),
@@ -84,6 +100,9 @@ final class RecentlyClosedManager: ObservableObject {
         title: String,
         session: WindowSessionSnapshot
     ) {
+        guard ProfileReferenceInventory(windowSnapshot: session).profileIDs
+            .allSatisfy(profileReferenceIsAllowed)
+        else { return }
         let item = RecentlyClosedItem.window(
             RecentlyClosedWindowState(
                 id: UUID(),
@@ -97,6 +116,32 @@ final class RecentlyClosedManager: ObservableObject {
 
     func remove(_ item: RecentlyClosedItem) {
         items.removeAll { $0.id == item.id }
+    }
+
+    func retireProfileReferences(
+        to profileID: UUID,
+        mutationLease: ProfileReferenceMutationLease
+    ) -> Bool {
+        guard let profileReferenceAdmission,
+              profileReferenceAdmission.validate(mutationLease)
+        else { return false }
+        items.removeAll {
+            ProfileReferenceInventory(recentlyClosedItem: $0)
+                .contains(profileID)
+        }
+        return profileReferenceAdmission.validate(mutationLease)
+            && containsProfileReference(to: profileID) == false
+    }
+
+    func containsProfileReference(to profileID: UUID) -> Bool {
+        items.contains {
+            ProfileReferenceInventory(recentlyClosedItem: $0)
+                .contains(profileID)
+        }
+    }
+
+    private func profileReferenceIsAllowed(_ profileID: UUID) -> Bool {
+        profileReferenceAdmission?.isReferenceAllowed(profileID) ?? true
     }
 
     private func prepend(_ item: RecentlyClosedItem) {

@@ -165,7 +165,7 @@ final class ShortcutLiveRetirementBatchStateMachineTests: XCTestCase {
             activeMemberID: .shortcutPin(oracle.pin.id)
         )
 
-        oracle.tabManager.shortcutPinCommandOwner.removeShortcutPin(oracle.pin)
+        XCTAssertTrue(oracle.tabManager.sidebarPinCommands.remove(oracle.pin))
 
         XCTAssertIdentical(
             oracle.tabManager.liveShortcutTabs.tab(

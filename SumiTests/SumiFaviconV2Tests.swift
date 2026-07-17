@@ -1,7 +1,7 @@
 import AppKit
 import Foundation
-import SumiDomain
 import ImageIO
+import SumiDomain
 import UniformTypeIdentifiers
 import WebKit
 import XCTest
@@ -1356,13 +1356,13 @@ final class SumiFaviconV2PipelineRegressionTests: XCTestCase {
         XCTAssertNotNil(siteInvalidatedClearB)
         XCTAssertNotNil(siteInvalidatedClearPrivate)
 
-        runtime.maintenance.clearPartition(profileB)
+        try runtime.maintenance.clearPartition(profileB)
         let clearedProfileB = await runtime.images.preparedImage(for: clearBRequest, priority: .visibleSidebarOrTabStrip, scheduleFetchOnMiss: false)
         let afterProfileClearPrivate = await runtime.images.preparedImage(for: clearPrivateRequest, priority: .visibleSidebarOrTabStrip, scheduleFetchOnMiss: false)
         XCTAssertNil(clearedProfileB)
         XCTAssertNotNil(afterProfileClearPrivate)
 
-        runtime.maintenance.clearPartition(privateA)
+        try runtime.maintenance.clearPartition(privateA)
         let clearedPrivate = await runtime.images.preparedImage(for: clearPrivateRequest, priority: .visibleSidebarOrTabStrip, scheduleFetchOnMiss: false)
         XCTAssertNil(clearedPrivate)
     }
@@ -1389,7 +1389,7 @@ final class SumiFaviconV2PipelineRegressionTests: XCTestCase {
             .appendingPathComponent("profile-\(profileID.uuidString.lowercased())", isDirectory: true)
         XCTAssertTrue(FileManager.default.fileExists(atPath: profileDirectory.path))
 
-        runtime.maintenance.clearPartition(partition)
+        try runtime.maintenance.clearPartition(partition)
 
         XCTAssertFalse(FileManager.default.fileExists(atPath: profileDirectory.path))
         XCTAssertNil(runtime.images.cachedPreparedImage(
@@ -1420,7 +1420,7 @@ final class SumiFaviconV2PipelineRegressionTests: XCTestCase {
         )
         XCTAssertTrue(runtime.images.hasFavicon(for: pageURL, partition: partition))
 
-        runtime.maintenance.clearPartition(partition)
+        try runtime.maintenance.clearPartition(partition)
 
         XCTAssertFalse(runtime.images.hasFavicon(for: pageURL, partition: partition))
         let privateEntries = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)

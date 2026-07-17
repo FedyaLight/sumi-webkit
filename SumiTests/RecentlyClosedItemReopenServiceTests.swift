@@ -25,7 +25,8 @@ final class RecentlyClosedItemReopenServiceTests: XCTestCase {
         XCTAssertTrue(harness.startupRestore.didConsumeRestoreOffer)
         XCTAssertFalse(harness.recentlyClosedManager.items.contains { $0.id == item.id })
         XCTAssertFalse(
-            harness.tabManager.regularTabCollectionOwner.tabs(in: harness.space).isEmpty
+            harness.browserManager.regularTabCollectionOwner
+                .tabs(in: harness.space).isEmpty
         )
     }
 
@@ -66,7 +67,10 @@ final class RecentlyClosedItemReopenServiceTests: XCTestCase {
         harness.service.reopen(item)
 
         XCTAssertEqual(harness.recentlyClosedManager.mostRecentItem?.id, item.id)
-        XCTAssertNil(harness.tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: orphanEssentialPin.id))
+        XCTAssertNil(
+            harness.browserManager.shortcutPinCollectionStateOwner
+                .shortcutPin(by: orphanEssentialPin.id)
+        )
         XCTAssertFalse(harness.startupRestore.didConsumeRestoreOffer)
     }
 
@@ -194,24 +198,46 @@ final class RecentlyClosedItemReopenServiceTests: XCTestCase {
 
         browserManager.profileManager.profiles = [profile]
         browserManager.currentProfile = profile
-        browserManager.tabManager.spaceStateOwner.replaceSpaces([space])
-        browserManager.tabManager.structuralCollectionMutationOwner.setTabs([], for: space.id)
-        browserManager.tabManager.spaceStateOwner.replaceCurrentSpace(space)
+        browserManager.spaceStateOwner.replaceSpaces([space])
+        browserManager.structuralCollectionMutationOwner.setTabs([], for: space.id)
+        browserManager.spaceStateOwner.replaceCurrentSpace(space)
 
         let tabRestore = ClosedTabRestoreService(
-            tabManager: { browserManager.tabManager },
-            activeWindow: { nil },
-            selectRestoredTab: { _, _ in /* No-op. */ }
+            regularLifecycle: browserManager.regularTabLifecycleOwner,
+            destinations: ClosedTabDestinationResolver(
+                spaces: browserManager.spaceStateOwner,
+                windows: browserManager.windowRegistry
+            ),
+            publication: ClosedTabRestorePublication(
+                activeSelection: browserManager.activeSelectionOwner,
+                browserSelection: browserManager.browserTabSelection
+            )
+        )
+        let launcherRestore = ClosedShortcutLauncherRestoreTransaction(
+            pins: browserManager.shortcutPinCollectionStateOwner,
+            pinStore: browserManager.shortcutPinStoreOwner,
+            persistence: browserManager.structuralPersistence,
+            destinations: ClosedShortcutLauncherDestinationResolver(
+                folders: browserManager.folderCollectionStateOwner,
+                runtimeConnection: browserManager.runtimePortConnection,
+                spaces: browserManager.spaceStateOwner,
+                profiles: browserManager.profileManager
+            )
         )
         let shortcutRestore = ClosedShortcutRestoreService(
-            tabManager: { browserManager.tabManager },
-            profileManager: { browserManager.profileManager },
-            activeWindow: { nil },
-            windowState: { _ in nil },
-            selectRestoredTab: { _, _ in /* No-op. */ }
+            liveInstances: ClosedShortcutLiveRestoreTransaction(
+                pins: browserManager.shortcutPinCollectionStateOwner,
+                activation: browserManager.shortcutPresentationActivation,
+                windows: ClosedShortcutWindowQuery(
+                    windows: browserManager.windowRegistry
+                ),
+                selection: browserManager.browserTabSelection,
+                launchers: launcherRestore
+            ),
+            launchers: launcherRestore
         )
         let service = RecentlyClosedItemReopenService(
-            recentlyClosedItems: { recentlyClosedManager },
+            recentlyClosedItems: recentlyClosedManager,
             startupRestore: startupRestore,
             tabRestore: tabRestore,
             shortcutRestore: shortcutRestore,
@@ -220,7 +246,6 @@ final class RecentlyClosedItemReopenServiceTests: XCTestCase {
 
         return Harness(
             browserManager: browserManager,
-            tabManager: browserManager.tabManager,
             recentlyClosedManager: recentlyClosedManager,
             startupRestore: startupRestore,
             windowReopen: windowReopen,
@@ -232,7 +257,6 @@ final class RecentlyClosedItemReopenServiceTests: XCTestCase {
     @MainActor
     private struct Harness {
         let browserManager: BrowserManager
-        let tabManager: TabManager
         let recentlyClosedManager: RecentlyClosedManager
         let startupRestore: StartupSessionRestoreProviderFake
         let windowReopen: WindowSessionReopenerFake

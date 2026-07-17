@@ -16,15 +16,24 @@ final class TabStartupRestoreLifecycleTests: XCTestCase {
             payloadLoader: payloadLoader,
             connection: connection
         )
-        let liveSpace = harness.manager.spaceServices.catalog.createSpace(
+        let liveSpace = Space(
             name: "Live Before Restore",
             profileId: UUID()
         )
-        let liveTab = harness.manager.regularTabLifecycleOwner.createNewTab(
-            url: "https://example.com/live-before-restore",
-            in: liveSpace,
-            activate: true
+        let liveTab = harness.manager.tabFactory.makeTab(
+            url: URL(string: "https://example.com/live-before-restore")!,
+            spaceId: liveSpace.id
         )
+        harness.structuralLookup.withTransaction {
+            harness.spaces.replaceSpaces([liveSpace])
+            harness.spaces.replaceCurrentSpace(liveSpace)
+            harness.regularTabs.replaceTabsBySpace([
+                liveSpace.id: [liveTab],
+            ])
+            harness.membership.attach(liveTab)
+            harness.selection.replaceCurrentTab(liveTab)
+            harness.structuralLookup.requestPublish(scope: .all)
+        }
         var firstPreparationCount = 0
         var replacementPreparationCount = 0
         let replacement = TestRuntimePorts.make(
@@ -61,14 +70,14 @@ final class TabStartupRestoreLifecycleTests: XCTestCase {
         XCTAssertTrue(connection.accepts(replacementLease))
         XCTAssertEqual(firstPreparationCount, 0)
         XCTAssertEqual(replacementPreparationCount, 0)
-        XCTAssertEqual(harness.manager.spaceStateOwner.spaces.map(\.id), [liveSpace.id])
+        XCTAssertEqual(harness.spaces.spaces.map(\.id), [liveSpace.id])
         XCTAssertEqual(
-            harness.manager.regularTabCollectionStateOwner
+            harness.regularTabs
                 .tabsBySpaceSnapshot()[liveSpace.id]?.map(\.id),
             [liveTab.id]
         )
-        XCTAssertIdentical(harness.manager.spaceStateOwner.currentSpace, liveSpace)
-        XCTAssertIdentical(harness.manager.selectionStateOwner.currentTab, liveTab)
+        XCTAssertIdentical(harness.spaces.currentSpace, liveSpace)
+        XCTAssertIdentical(harness.selection.currentTab, liveTab)
     }
 
     func testInstallAdmissionRejectsSynchronousStructuralRevisionChange() async throws {
@@ -76,11 +85,9 @@ final class TabStartupRestoreLifecycleTests: XCTestCase {
             payload: makeZeroTabRestorePayload()
         )
         let connection = TabRuntimePortConnection()
-        var structuralRevision: UInt64 = 0
         let harness = try makeRestoreABAHarness(
             payloadLoader: payloadLoader,
-            connection: connection,
-            structuralRevision: { structuralRevision }
+            connection: connection
         )
         connection.attach(TestRuntimePorts.inactive)
         var liveSpace: Space?
@@ -88,11 +95,16 @@ final class TabStartupRestoreLifecycleTests: XCTestCase {
         let observation = harness.manager.objectWillChange.sink {
             guard !didMutateStructure else { return }
             didMutateStructure = true
-            structuralRevision = 1
-            liveSpace = harness.manager.spaceServices.catalog.createSpace(
+            let created = Space(
                 name: "Live During Restore Admission",
                 profileId: UUID()
             )
+            harness.structuralLookup.withTransaction {
+                harness.spaces.replaceSpaces([created])
+                harness.spaces.replaceCurrentSpace(created)
+                harness.structuralLookup.requestPublish(scope: .all)
+            }
+            liveSpace = created
         }
 
         harness.starter.startManually(using: connection.captureLease())
@@ -103,10 +115,10 @@ final class TabStartupRestoreLifecycleTests: XCTestCase {
 
         let admittedLiveSpace = try XCTUnwrap(liveSpace)
         XCTAssertEqual(
-            harness.manager.spaceStateOwner.spaces.map(\.id),
+            harness.spaces.spaces.map(\.id),
             [admittedLiveSpace.id]
         )
-        XCTAssertTrue(harness.lifecycle.hasLoadedInitialData)
+        XCTAssertTrue(harness.manager.startupRestoreLifecycle.hasLoadedInitialData)
         let loadCount = await payloadLoader.loadCount()
         XCTAssertEqual(loadCount, 1)
     }
@@ -170,7 +182,8 @@ final class TabStartupRestoreLifecycleTests: XCTestCase {
             faviconService: faviconService
         )
         var readinessCount = 0
-        let readinessObservation = harness.eventBus.initialDataLoadedPublisher
+        let readinessObservation = harness.manager.tabStructureEventBus
+            .initialDataLoadedPublisher
             .sink { readinessCount += 1 }
         var replacementThemeSyncCount = 0
         let replacement = TestRuntimePorts.make(
@@ -187,13 +200,13 @@ final class TabStartupRestoreLifecycleTests: XCTestCase {
             let replacementLease = connection.captureLease()
             _ = TabRuntimeAttachmentBootstrap(
                 connection: connection,
-                membership: harness.manager.tabCollectionMembershipOwner,
+                membership: harness.membership,
                 runtimePreparation: TabRuntimePreparationOwner(
                     runtimeConnection: connection
                 ),
-                selection: harness.manager.selectionStateOwner
+                selection: harness.selection
             ).run(using: replacementLease)
-            if let currentSpace = harness.manager.spaceStateOwner.currentSpace {
+            if let currentSpace = harness.spaces.currentSpace {
                 replacement.syncWorkspaceThemeAcrossWindows(
                     for: currentSpace,
                     animate: false
@@ -226,65 +239,45 @@ final class TabStartupRestoreLifecycleTests: XCTestCase {
         )
         let loadCount = await payloadLoader.loadCount()
         XCTAssertEqual(loadCount, 1)
-        XCTAssertTrue(harness.lifecycle.hasLoadedInitialData)
+        XCTAssertTrue(harness.manager.startupRestoreLifecycle.hasLoadedInitialData)
         XCTAssertEqual(readinessCount, 1)
         readinessObservation.cancel()
         harness.manager.structuralPersistence.cancelPendingPersistence()
     }
 
     func testReplacementAttachmentOwnsDeferredRestoreExactlyOnce() async throws {
-        let container = try makeInMemoryStartupModelContainer()
-        let tabManager = TabManager(
-            context: container.mainContext,
-            webViewSessions: WebViewSessionRepository(),
-            loadPersistedState: false
+        let payloadLoader = CountingTabRestorePayloadLoader(
+            container: try makeInMemoryStartupModelContainer()
         )
-        let lifecycle = TabStartupRestoreLifecycle(eventBus: TabStructureEventBus())
-        let payloadLoader = CountingTabRestorePayloadLoader(container: container)
         let connection = TabRuntimePortConnection()
-        let restore = TabStoreRestoreService(
+        let harness = try makeRestoreABAHarness(
             payloadLoader: payloadLoader,
-            structuralStore: tabManager.structuralSnapshotStore,
-            runtimeConnection: connection,
-            structuralRevision: { 0 },
-            loadLifecycle: lifecycle,
-            payloadApplier: TabRestorePayloadApplyService(
-                tabFactory: tabManager.tabFactory,
-                structuralInstaller: tabManager.structuralInstallOwner,
-                runtimePreparation: tabManager.runtimePreparationOwner,
-                lazyRestore: tabManager.lazyRestoreCoordinator,
-                persistence: tabManager.structuralPersistence
-            )
-        )
-        let starter = TabRuntimeAttachmentRestoreStarter(
             connection: connection,
-            policy: TabStartupRestorePolicy(
+            startupPolicy: TabStartupRestorePolicy(
                 isEnabled: true,
                 automaticallyStarts: true,
                 requestedStructuralRevision: 0
-            ),
-            lifecycle: lifecycle,
-            restore: restore
+            )
         )
         connection.attach(TestRuntimePorts.inactive)
         let staleLease = connection.captureLease()
 
-        starter.startAutomatically(using: staleLease)
-        starter.prepareForDetach()
+        harness.starter.startAutomatically(using: staleLease)
+        harness.starter.prepareForDetach()
         connection.detach()
         connection.attach(TestRuntimePorts.inactive)
         let replacementLease = connection.captureLease()
-        starter.startAutomatically(using: replacementLease)
+        harness.starter.startAutomatically(using: replacementLease)
 
         await payloadLoader.loaded.wait()
-        await restore.startupRestoreTask?.value
+        await harness.restore.startupRestoreTask?.value
         let loadCount = await payloadLoader.loadCount()
 
         XCTAssertFalse(connection.accepts(staleLease))
         XCTAssertTrue(connection.accepts(replacementLease))
         XCTAssertEqual(loadCount, 1)
-        XCTAssertTrue(lifecycle.didStartPersistedStateLoad)
-        XCTAssertTrue(lifecycle.hasLoadedInitialData)
+        XCTAssertTrue(harness.manager.startupRestoreLifecycle.didStartPersistedStateLoad)
+        XCTAssertTrue(harness.manager.startupRestoreLifecycle.hasLoadedInitialData)
     }
 
     func testStaleNoncooperativeLoadCannotClearOrFinishReplacementLoad() async throws {
@@ -297,7 +290,8 @@ final class TabStartupRestoreLifecycleTests: XCTestCase {
             connection: connection
         )
         var readinessCount = 0
-        let readinessObservation = harness.eventBus.initialDataLoadedPublisher
+        let readinessObservation = harness.manager.tabStructureEventBus
+            .initialDataLoadedPublisher
             .sink { readinessCount += 1 }
         connection.attach(TestRuntimePorts.inactive)
         let staleLease = connection.captureLease()
@@ -317,7 +311,7 @@ final class TabStartupRestoreLifecycleTests: XCTestCase {
         await payloadLoader.firstReturned.wait()
         await staleTask.value
 
-        XCTAssertFalse(harness.lifecycle.hasLoadedInitialData)
+        XCTAssertFalse(harness.manager.startupRestoreLifecycle.hasLoadedInitialData)
         XCTAssertEqual(readinessCount, 0)
         XCTAssertNotNil(harness.restore.startupRestoreTask)
         let countAfterStaleCompletion = await payloadLoader.loadCount()
@@ -326,7 +320,7 @@ final class TabStartupRestoreLifecycleTests: XCTestCase {
         await payloadLoader.releaseSecond.publish()
         await replacementTask.value
 
-        XCTAssertTrue(harness.lifecycle.hasLoadedInitialData)
+        XCTAssertTrue(harness.manager.startupRestoreLifecycle.hasLoadedInitialData)
         XCTAssertEqual(readinessCount, 1)
         XCTAssertNil(harness.restore.startupRestoreTask)
         let terminalLoadCount = await payloadLoader.loadCount()
@@ -337,121 +331,103 @@ final class TabStartupRestoreLifecycleTests: XCTestCase {
     }
 
     func testDisabledPersistenceDoesNotCreateAttachmentRestoreStarter() throws {
-        let tabManager = try makeInMemoryTabManager(
-            loadPersistedState: false,
-            attachRuntimePorts: false
-        )
-
-        XCTAssertNil(tabManager.lifecycleOwners.runtimeAttachmentRestoreStarter)
-        XCTAssertEqual(
-            tabManager.runtimePortsAttachmentOwner.attach(
-                TestRuntimePorts.inactive
+        let container = try makeInMemoryStartupModelContainer()
+        let connection = TabRuntimePortConnection()
+        let harness = try makeRestoreABAHarness(
+            payloadLoader: CountingTabRestorePayloadLoader(
+                container: container
             ),
-            .attached
+            connection: connection,
+            startupPolicy: TabStartupRestorePolicy(
+                isEnabled: false,
+                automaticallyStarts: false,
+                requestedStructuralRevision: 0
+            )
         )
-        XCTAssertNil(tabManager.lifecycleOwners.runtimeAttachmentRestoreStarter)
+        connection.attach(TestRuntimePorts.inactive)
+        harness.starter.startManually(using: connection.captureLease())
         XCTAssertFalse(
-            tabManager.startupRestoreLifecycle.didStartPersistedStateLoad
+            harness.manager.startupRestoreLifecycle.didStartPersistedStateLoad
         )
     }
 
     func testShellDeferredRestoreStaysLazyUntilManualStart() async throws {
         let container = try makeInMemoryStartupModelContainer()
-        let tabManager = TabManager(
-            context: container.mainContext,
-            webViewSessions: WebViewSessionRepository(),
-            loadPersistedState: true,
-            automaticallyStartPersistedStateLoad: false
-        )
-
-        XCTAssertNotNil(tabManager.lifecycleOwners.runtimeAttachmentRestoreStarter)
-        XCTAssertEqual(
-            tabManager.runtimePortsAttachmentOwner.attach(
-                TestRuntimePorts.inactive
+        let connection = TabRuntimePortConnection()
+        let harness = try makeRestoreABAHarness(
+            payloadLoader: CountingTabRestorePayloadLoader(
+                container: container
             ),
-            .attached
+            connection: connection,
+            startupPolicy: TabStartupRestorePolicy(
+                isEnabled: true,
+                automaticallyStarts: false,
+                requestedStructuralRevision: 0
+            )
         )
-        XCTAssertNotNil(tabManager.lifecycleOwners.runtimeAttachmentRestoreStarter)
+        connection.attach(TestRuntimePorts.inactive)
         XCTAssertFalse(
-            tabManager.startupRestoreLifecycle.didStartPersistedStateLoad
+            harness.manager.startupRestoreLifecycle.didStartPersistedStateLoad
         )
 
         let initialDataLoaded = expectation(description: "initial data loaded")
-        let loadedObservation = tabManager.tabStructureEventBus
+        let loadedObservation = harness.manager.tabStructureEventBus
             .initialDataLoadedPublisher
             .sink { initialDataLoaded.fulfill() }
-        tabManager.runtimePortsAttachmentOwner
-            .startPersistedStateRestoreIfNeeded()
-        tabManager.runtimePortsAttachmentOwner
-            .startPersistedStateRestoreIfNeeded()
+        let lease = connection.captureLease()
+        harness.starter.startManually(using: lease)
+        harness.starter.startManually(using: lease)
         await fulfillment(of: [initialDataLoaded])
         loadedObservation.cancel()
 
         XCTAssertTrue(
-            tabManager.startupRestoreLifecycle.didStartPersistedStateLoad
+            harness.manager.startupRestoreLifecycle.didStartPersistedStateLoad
         )
-        XCTAssertTrue(tabManager.startupRestoreLifecycle.hasLoadedInitialData)
+        XCTAssertTrue(
+            harness.manager.startupRestoreLifecycle.hasLoadedInitialData
+        )
     }
 
     func testManualRestoreDetachCancelsOnlyExactLoadAndPreservesStructuralWrite() async throws {
-        let container = try makeInMemoryStartupModelContainer()
-        let tabManager = TabManager(
-            context: container.mainContext,
-            webViewSessions: WebViewSessionRepository(),
-            loadPersistedState: false
-        )
-        let lifecycle = TabStartupRestoreLifecycle(eventBus: TabStructureEventBus())
         let payloadLoader = SuspendedTabRestorePayloadLoader()
         let connection = TabRuntimePortConnection()
-        let restore = TabStoreRestoreService(
+        let harness = try makeRestoreABAHarness(
             payloadLoader: payloadLoader,
-            structuralStore: tabManager.structuralSnapshotStore,
-            runtimeConnection: connection,
-            structuralRevision: { 0 },
-            loadLifecycle: lifecycle,
-            payloadApplier: TabRestorePayloadApplyService(
-                tabFactory: tabManager.tabFactory,
-                structuralInstaller: tabManager.structuralInstallOwner,
-                runtimePreparation: tabManager.runtimePreparationOwner,
-                lazyRestore: tabManager.lazyRestoreCoordinator,
-                persistence: tabManager.structuralPersistence
-            )
-        )
-        let starter = TabRuntimeAttachmentRestoreStarter(
             connection: connection,
-            policy: TabStartupRestorePolicy(
+            startupPolicy: TabStartupRestorePolicy(
                 isEnabled: true,
                 automaticallyStarts: false,
                 requestedStructuralRevision: 0
-            ),
-            lifecycle: lifecycle,
-            restore: restore
+            )
         )
         connection.attach(TestRuntimePorts.inactive)
 
-        starter.startManually(using: connection.captureLease())
+        harness.starter.startManually(using: connection.captureLease())
         await payloadLoader.started.wait()
-        tabManager.structuralPersistence.scheduleStructuralPersistence()
+        harness.manager.structuralPersistence.scheduleStructuralPersistence()
 
-        XCTAssertNotNil(restore.startupRestoreTask)
-        XCTAssertNotNil(tabManager.structuralPersistence.scheduledPersistTask)
+        XCTAssertNotNil(harness.restore.startupRestoreTask)
+        XCTAssertNotNil(harness.manager.structuralPersistence.scheduledPersistTask)
 
-        starter.prepareForDetach()
+        harness.starter.prepareForDetach()
         connection.detach()
         await payloadLoader.cancelled.wait()
 
-        XCTAssertNil(restore.startupRestoreTask)
-        XCTAssertNotNil(tabManager.structuralPersistence.scheduledPersistTask)
+        XCTAssertNil(harness.restore.startupRestoreTask)
+        XCTAssertNotNil(harness.manager.structuralPersistence.scheduledPersistTask)
         XCTAssertNil(connection.current)
-        tabManager.structuralPersistence.cancelPendingPersistence()
+        harness.manager.structuralPersistence.cancelPendingPersistence()
     }
 }
 
 @MainActor
 private struct RestoreABAHarness {
     let manager: TabManager
-    let eventBus: TabStructureEventBus
-    let lifecycle: TabStartupRestoreLifecycle
+    let spaces: TabSpaceCollectionStateOwner
+    let regularTabs: RegularTabCollectionStateOwner
+    let selection: TabSelectionStateOwner
+    let membership: TabCollectionMembershipOwner
+    let structuralLookup: TabStructuralLookupCoordinator
     let restore: TabStoreRestoreService
     let starter: TabRuntimeAttachmentRestoreStarter
 }
@@ -461,45 +437,80 @@ private func makeRestoreABAHarness(
     payloadLoader: any TabRestorePayloadLoading,
     connection: TabRuntimePortConnection,
     faviconService: any BrowserFaviconServicing = RestoreABAFaviconService(),
-    structuralRevision: @escaping @MainActor () -> UInt64 = { 0 }
+    startupPolicy: TabStartupRestorePolicy = TabStartupRestorePolicy(
+        isEnabled: true,
+        automaticallyStarts: false,
+        requestedStructuralRevision: 0
+    )
 ) throws -> RestoreABAHarness {
     let container = try makeInMemoryStartupModelContainer()
+    let eventBus = TabStructureEventBus()
     let manager = TabManager(
         context: container.mainContext,
         webViewSessions: WebViewSessionRepository(),
         loadPersistedState: false,
+        tabStructureEventBus: eventBus,
         faviconService: faviconService
     )
-    let eventBus = TabStructureEventBus()
-    let lifecycle = TabStartupRestoreLifecycle(eventBus: eventBus)
-    let restore = TabStoreRestoreService(
+    let runtimePreparation = TabRuntimePreparationOwner(
+        runtimeConnection: connection
+    )
+    let structuralLookup = TabStructuralLookupCoordinator(
+        eventBus: eventBus,
+        stateStore: manager.stateStore
+    )
+    let membership = TabCollectionMembershipOwner(
+        structuralLookupOwner: structuralLookup.lookupOwner,
+        state: manager.stateStore,
+        runtimePreparation: runtimePreparation,
+        runtimeConnection: connection
+    )
+    let lazyRestore = TabLazyRestoreCoordinator(
+        spaces: manager.stateStore.spaces,
+        regularTabs: manager.stateStore.regularTabs,
+        membership: membership
+    )
+    let structuralInstall = TabStructuralInstallOwner(
+        state: manager.stateStore,
+        structuralLookup: structuralLookup,
+        persistence: manager.structuralPersistence,
+        publication: TabStructuralInstallPublication(
+            changes: manager.objectWillChange,
+            faviconService: manager.faviconService
+        ),
+        profileReferenceAdmission: manager.profileReferenceAdmission
+    )
+    let lifecycle = manager.startupRestoreLifecycle
+    let executor = TabStoreRestoreAttemptExecutor(
         payloadLoader: payloadLoader,
         structuralStore: manager.structuralSnapshotStore,
-        runtimeConnection: connection,
-        structuralRevision: structuralRevision,
+        structuralLookup: structuralLookup,
         loadLifecycle: lifecycle,
         payloadApplier: TabRestorePayloadApplyService(
             tabFactory: manager.tabFactory,
-            structuralInstaller: manager.structuralInstallOwner,
-            runtimePreparation: TabRuntimePreparationOwner(
-                runtimeConnection: connection
-            ),
-            lazyRestore: manager.lazyRestoreCoordinator,
+            structuralInstaller: structuralInstall,
+            runtimePreparation: runtimePreparation,
+            lazyRestore: lazyRestore,
             persistence: manager.structuralPersistence
         )
     )
+    let restore = TabStoreRestoreService(
+        runtimeConnection: connection,
+        structuralLookup: structuralLookup,
+        loadLifecycle: lifecycle,
+        executor: executor
+    )
     return RestoreABAHarness(
         manager: manager,
-        eventBus: eventBus,
-        lifecycle: lifecycle,
+        spaces: manager.stateStore.spaces,
+        regularTabs: manager.stateStore.regularTabs,
+        selection: manager.stateStore.selection,
+        membership: membership,
+        structuralLookup: structuralLookup,
         restore: restore,
         starter: TabRuntimeAttachmentRestoreStarter(
             connection: connection,
-            policy: TabStartupRestorePolicy(
-                isEnabled: true,
-                automaticallyStarts: false,
-                requestedStructuralRevision: 0
-            ),
+            policy: startupPolicy,
             lifecycle: lifecycle,
             restore: restore
         )

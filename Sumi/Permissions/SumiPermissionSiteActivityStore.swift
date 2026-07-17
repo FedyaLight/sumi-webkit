@@ -44,6 +44,7 @@ final class SumiPermissionSiteActivityStore: ObservableObject {
     let persistenceAuthority: SumiPermissionPersistenceAuthority
     private let domainCache: SumiPermissionDomainCache
     private var ephemeralRecordsById: [String: SumiPermissionSiteActivityRecord] = [:]
+    private var retiredProfileIDs: Set<String> = []
 
     var persistenceDiagnostics: SumiPermissionPersistenceDiagnostics {
         persistenceAuthority.persistenceDiagnostics
@@ -207,6 +208,17 @@ final class SumiPermissionSiteActivityStore: ObservableObject {
         )
     }
 
+    func retireProfile(_ profilePartitionId: String) {
+        let profileID = SumiPermissionKey.normalizedProfilePartitionId(
+            profilePartitionId
+        )
+        retiredProfileIDs.insert(profileID)
+        persistenceAuthority.sealProfile(profileID)
+        ephemeralRecordsById = ephemeralRecordsById.filter {
+            $0.value.profilePartitionId != profileID
+        }
+    }
+
     @discardableResult
     func clearSite(
         origin: SumiPermissionOrigin,
@@ -268,6 +280,9 @@ final class SumiPermissionSiteActivityStore: ObservableObject {
         reason: String?,
         now: Date
     ) {
+        guard retiredProfileIDs.contains(key.profilePartitionId) == false else {
+            return
+        }
         guard let siteHost = siteHost(for: key.topOrigin.isWebOrigin ? key.topOrigin : key.requestingOrigin) else {
             return
         }

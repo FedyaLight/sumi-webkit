@@ -68,7 +68,7 @@ final class TabProfileResolutionOwnerTests: XCTestCase {
             explicitProfile,
         ]
         harness.browserManager.currentProfile = currentProfile
-        harness.browserManager.tabManager.spaceStateOwner.replaceSpaces([space])
+        harness.browserManager.spaceStateOwner.replaceSpaces([space])
         tab.spaceId = space.id
         tab.profileId = explicitProfile.id
 
@@ -87,7 +87,7 @@ final class TabProfileResolutionOwnerTests: XCTestCase {
 
         harness.browserManager.profileManager.profiles = [currentProfile, spaceProfile]
         harness.browserManager.currentProfile = currentProfile
-        harness.browserManager.tabManager.spaceStateOwner.replaceSpaces([space])
+        harness.browserManager.spaceStateOwner.replaceSpaces([space])
         tab.spaceId = space.id
 
         XCTAssertIdentical(
@@ -113,9 +113,8 @@ final class TabProfileResolutionOwnerTests: XCTestCase {
     }
 
     private func makeHarness() -> Harness {
-        let browserManager = BrowserManager()
         let windowRegistry = WindowRegistry()
-        browserManager.windowRegistry = windowRegistry
+        let browserManager = BrowserManager(windowRegistry: windowRegistry)
         return Harness(
             browserManager: browserManager,
             windowRegistry: windowRegistry
@@ -123,7 +122,7 @@ final class TabProfileResolutionOwnerTests: XCTestCase {
     }
 
     private func makeRuntimeTab(in browserManager: BrowserManager) -> Tab {
-        let tab = browserManager.tabManager.tabFactory.makeTab(loadsCachedFaviconOnInit: false)
+        let tab = browserManager.tabFactory.makeTab(loadsCachedFaviconOnInit: false)
         tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
         return tab
     }

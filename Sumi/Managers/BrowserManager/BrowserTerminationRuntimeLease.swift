@@ -10,7 +10,7 @@ final class BrowserTerminationRuntimeLease: BrowserTerminationFinalizing {
 
     private let browserRuntime: BrowserManager
     private let modelContext: ModelContext
-    private let tabManager: TabManager
+    private let tabPersistence: TabStructuralPersistenceService
     private let windowPersistence: WindowSessionPersistenceCoordinator
     private let backgroundMediaOptimization: SumiBackgroundMediaOptimizationService
     private let cleanup: BrowserShutdownCleanupService
@@ -21,8 +21,8 @@ final class BrowserTerminationRuntimeLease: BrowserTerminationFinalizing {
         self.init(
             browserRuntime: browserRuntime,
             modelContext: browserRuntime.modelContext,
-            tabManager: browserRuntime.tabManager,
-            windowPersistence: browserRuntime.windowSessionBundle.persistence,
+            tabPersistence: browserRuntime.structuralPersistence,
+            windowPersistence: browserRuntime.windowSessionPersistenceCoordinator,
             backgroundMediaOptimization: browserRuntime.backgroundMediaOptimizationService,
             cleanup: browserRuntime.shutdownCleanupService,
             siteDataPolicy: browserRuntime.dataServices.siteDataPolicyEnforcementService,
@@ -33,7 +33,7 @@ final class BrowserTerminationRuntimeLease: BrowserTerminationFinalizing {
     init(
         browserRuntime: BrowserManager,
         modelContext: ModelContext,
-        tabManager: TabManager,
+        tabPersistence: TabStructuralPersistenceService,
         windowPersistence: WindowSessionPersistenceCoordinator,
         backgroundMediaOptimization: SumiBackgroundMediaOptimizationService,
         cleanup: BrowserShutdownCleanupService,
@@ -42,7 +42,7 @@ final class BrowserTerminationRuntimeLease: BrowserTerminationFinalizing {
     ) {
         self.browserRuntime = browserRuntime
         self.modelContext = modelContext
-        self.tabManager = tabManager
+        self.tabPersistence = tabPersistence
         self.windowPersistence = windowPersistence
         self.backgroundMediaOptimization = backgroundMediaOptimization
         self.cleanup = cleanup
@@ -61,7 +61,7 @@ final class BrowserTerminationRuntimeLease: BrowserTerminationFinalizing {
         )
 
         let runtimePersistStart = CFAbsoluteTimeGetCurrent()
-        let flushedRuntimeStates = await tabManager.structuralPersistence
+        let flushedRuntimeStates = await tabPersistence
             .flushRuntimeStatePersistenceAwaitingResult()
         let runtimePersistDuration = CFAbsoluteTimeGetCurrent() - runtimePersistStart
         Self.log.info(
@@ -69,7 +69,7 @@ final class BrowserTerminationRuntimeLease: BrowserTerminationFinalizing {
         )
 
         let reconcileStart = CFAbsoluteTimeGetCurrent()
-        let didReconcile = await tabManager.structuralPersistence
+        let didReconcile = await tabPersistence
             .persistFullReconcileAwaitingResult(reason: "app termination")
         let reconcileDuration = CFAbsoluteTimeGetCurrent() - reconcileStart
         Self.log.info(

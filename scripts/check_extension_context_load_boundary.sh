@@ -131,7 +131,8 @@ for required_loader_call in \
 done
 
 for required_transaction_call in \
-  'profileRuntime.setContext(' \
+  'profileRuntime.publishContextIfAdmitted(' \
+  'profileRuntime.validateProfileReference(profileAdmission)' \
   'controller.load(context)' \
   'controllerDelegateReadiness.controllerDidBecomeReady(' \
   'rollback.rollBack(' \

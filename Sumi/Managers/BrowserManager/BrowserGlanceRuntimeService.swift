@@ -4,29 +4,44 @@ import WebKit
 @MainActor
 enum BrowserGlanceRuntimeService {
     static func runtime(for browserManager: BrowserManager) -> GlanceManager.Runtime {
-        let splitQuery = browserManager.splitComposition.query
-        let emptySplitCreation = browserManager.splitComposition.emptyCreation
+        let splitQuery = browserManager.splitQuery
+        let emptySplitCreation = browserManager.splitEmptyCreation
         let webViewCompositor = browserManager.webViewRuntime.compositorRuntime
         let untrackedMaterialization = browserManager.webViewRuntime
             .untrackedWebViewMaterialization
         let detachedCleanup = browserManager.webViewRuntime.detachedWebViewCleanup
         let tabBrowserRuntime = TabBrowserRuntimeFactory.make(for: browserManager)
+        let windowTabs = browserManager.shellRuntime.windowTabs
+        let startupRestore = browserManager.startupRestoreLifecycle
+        let membership = browserManager
+            .tabCollectionMembershipOwner
+        let pins = browserManager.shortcutPinCollectionStateOwner
+        let shortcutActivation = browserManager
+            .shortcutPresentationActivation
+        let regularLifecycle = browserManager
+            .regularTabLifecycleOwner
+        let spaces = browserManager.spaceStateOwner
+        let tabFactory = browserManager.tabFactory
+        let profileAdmission = browserManager.profileReferenceAdmission
+        let currentProfile = browserManager.currentProfileAuthority
 
         return GlanceManager.Runtime(
-            windowStateContainingTab: { [weak browserManager] in
-                browserManager?.shellRuntime.windowTabs.windowState(containing: $0)
+            windowStateContainingTab: { [windowTabs] in
+                windowTabs.windowState(containing: $0)
             },
-            hasLoadedInitialTabData: { [weak browserManager] in browserManager?.tabManager.startupRestoreLifecycle.hasLoadedInitialData ?? false },
-            tab: { [weak browserManager] in browserManager?.tabManager.tabCollectionMembershipOwner.tab(for: $0) },
-            shortcutPin: { [weak browserManager] in browserManager?.tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: $0) },
-            activateShortcutPin: { [weak browserManager] in
-                browserManager?.tabManager.shortcutPresentationActivation.activate(
+            hasLoadedInitialTabData: { [startupRestore] in
+                startupRestore.hasLoadedInitialData
+            },
+            tab: { [membership] in membership.tab(for: $0) },
+            shortcutPin: { [pins] in pins.shortcutPin(by: $0) },
+            activateShortcutPin: { [shortcutActivation] in
+                shortcutActivation.activate(
                     $0,
                     in: $1,
                     presentationSpaceID: $2
                 )
             },
-            currentTab: { [weak browserManager] in browserManager?.shellRuntime.windowTabs.currentTab(for: $0) },
+            currentTab: { [windowTabs] in windowTabs.currentTab(for: $0) },
             restoreSourceSelection: { [weak browserManager] tab, windowState in
                 browserManager?.applyTabSelection(
                     tab,
@@ -49,26 +64,37 @@ enum BrowserGlanceRuntimeService {
             findCurrentTabId: { [weak browserManager] in browserManager?.findManager.currentTab?.id },
             hideFindBar: { [weak browserManager] in browserManager?.findManager.hideFindBar() },
             updateFindManagerCurrentTab: { [weak browserManager] in browserManager?.updateFindManagerCurrentTab() },
-            persistWindowSession: { [weak browserManager] in browserManager?.windowSessionBundle.persistence.persist($0) },
-            makePreviewTab: { [weak browserManager] url, sourceTab, windowState in
-                guard let browserManager else { return nil }
-                return makePreviewTab(
+            persistWindowSession: { [weak browserManager] in
+                browserManager?.windowSessionPersistenceCoordinator.persist($0)
+            },
+            withPreparedPreviewTab: {
+                [
+                    spaces,
+                    tabFactory,
+                    profileAdmission,
+                    currentProfile,
+                    tabBrowserRuntime
+                ] url, sourceTab, windowState, publish in
+                return withPreparedPreviewTab(
                     for: url,
                     sourceTab: sourceTab,
                     windowState: windowState,
-                    browserManager: browserManager,
-                    tabBrowserRuntime: tabBrowserRuntime
+                    spaces: spaces,
+                    tabFactory: tabFactory,
+                    profileAdmission: profileAdmission,
+                    currentProfile: currentProfile,
+                    tabBrowserRuntime: tabBrowserRuntime,
+                    publish: publish
                 )
             },
-            adoptPreviewTab: { [weak browserManager] previewTab, sourceTab, windowState in
-                guard let browserManager else { return previewTab }
-                return browserManager.tabManager.regularTabLifecycleOwner.adoptGlanceTab(
+            adoptPreviewTab: { [regularLifecycle, spaces] previewTab, sourceTab, windowState in
+                regularLifecycle.adoptGlanceTab(
                     previewTab,
                     sourceTab: sourceTab,
                     in: targetSpace(
                         sourceTab: sourceTab,
                         windowState: windowState,
-                        browserManager: browserManager
+                        spaces: spaces
                     )
                 )
             },
@@ -100,42 +126,66 @@ enum BrowserGlanceRuntimeService {
         )
     }
 
-    private static func makePreviewTab(
+    private static func withPreparedPreviewTab(
         for url: URL,
         sourceTab: Tab?,
         windowState: BrowserWindowState?,
-        browserManager: BrowserManager,
-        tabBrowserRuntime: TabBrowserRuntime
-    ) -> Tab {
-        let sourceProfile = sourceTab?.resolveProfile()
+        spaces: TabSpaceCollectionStateOwner,
+        tabFactory: TabFactory,
+        profileAdmission: ProfileReferenceAdmissionLedger,
+        currentProfile: BrowserCurrentProfileAuthority,
+        tabBrowserRuntime: TabBrowserRuntime,
+        publish: @MainActor (Tab) -> Bool
+    ) -> Bool {
         let targetSpace = targetSpace(
             sourceTab: sourceTab,
             windowState: windowState,
-            browserManager: browserManager
+            spaces: spaces
         )
+        let profileID = sourceTab?.resolveProfile()?.id
+            ?? targetSpace?.profileId
+            ?? currentProfile.currentProfile?.id
+        let referencedProfileIDs = Set(profileID.map { [$0] } ?? [])
+        let lease: ProfileReferenceMutationLease
+        do {
+            lease = try profileAdmission.beginReferenceMutation(
+                to: referencedProfileIDs
+            )
+        } catch {
+            return false
+        }
+        defer {
+            precondition(
+                profileAdmission.endReferenceMutation(lease),
+                "Glance preview publication lost its profile-reference mutation lease"
+            )
+        }
 
-        let tab = browserManager.tabManager.tabFactory.makeTab(
+        let tab = tabFactory.makeTab(
             url: url,
             name: url.host ?? "Glance",
             favicon: "globe",
             spaceId: targetSpace?.id,
             index: 0
         )
+        tab.profileId = profileID
         tab.attachBrowserRuntime(tabBrowserRuntime)
-        tab.profileId = sourceProfile?.id ?? targetSpace?.profileId ?? browserManager.currentProfile?.id
-        return tab
+        guard profileAdmission.validate(lease, covers: referencedProfileIDs) else {
+            return false
+        }
+        return publish(tab)
     }
 
     private static func targetSpace(
         sourceTab: Tab?,
         windowState: BrowserWindowState?,
-        browserManager: BrowserManager
+        spaces: TabSpaceCollectionStateOwner
     ) -> Space? {
         windowState?.currentSpaceId.flatMap { spaceId in
-            browserManager.tabManager.spaceStateOwner.spaces.first(where: { $0.id == spaceId })
+            spaces.space(with: spaceId)
         }
         ?? sourceTab?.spaceId.flatMap { spaceId in
-            browserManager.tabManager.spaceStateOwner.spaces.first(where: { $0.id == spaceId })
+            spaces.space(with: spaceId)
         }
     }
 }

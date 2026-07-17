@@ -67,6 +67,11 @@ final class TabProfileAssignmentStateMachine {
         return intent?.desiredProfileID == desiredProfileID
     }
 
+    func hasPendingResolvedAssignment(to profileID: UUID) -> Bool {
+        let intent = pendingIntent ?? settlingIntent
+        return intent?.resolvedProfileID == profileID
+    }
+
     var hasUnsettledAssignment: Bool {
         pendingIntent != nil || settlingIntent != nil
     }

@@ -19,13 +19,6 @@ final class LiveShortcutTabRegistry {
         )
     }
 
-    convenience init(tabManager: TabManager) {
-        self.init(
-            storage: tabManager.transientTabRegistryOwner,
-            structuralLookup: tabManager.structuralLookupCoordinator
-        )
-    }
-
     var snapshot: [UUID: [UUID: Tab]] {
         storage.transientShortcutTabsByWindow
     }

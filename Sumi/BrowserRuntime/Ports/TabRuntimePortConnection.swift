@@ -87,6 +87,13 @@ final class TabRuntimePortConnection {
         }
         return registry
     }
+
+    func notifications(
+        for lease: TabRuntimePortLease
+    ) -> (any BrowserNotificationPresenting)? {
+        guard acceptsExactAttachment(lease) else { return nil }
+        return lease.registry?.notifications()
+    }
 }
 
 @MainActor
@@ -99,6 +106,14 @@ struct TabRuntimePortLease {
 
     func windowState(for windowID: UUID) -> BrowserWindowState? {
         registry?.windowState(for: windowID)
+    }
+
+    func forEachWindowState(_ body: (BrowserWindowState) -> Void) {
+        registry?.forEachWindowState(body)
+    }
+
+    func validateWindowStates() -> Set<UUID> {
+        registry?.validateWindowStates() ?? []
     }
 
     func persistWindowSession(for state: BrowserWindowState) {

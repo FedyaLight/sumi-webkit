@@ -1,18 +1,6 @@
 import Foundation
 import WebKit
 
-@available(macOS 15.5, *)
-@MainActor
-protocol ExtensionInactiveProfileContextRetiring: AnyObject {
-    func unloadExtensionContextsForInactiveProfiles(keepingProfileId: UUID)
-}
-
-@available(macOS 15.5, *)
-@MainActor
-protocol ExtensionToolbarProfileReloading: AnyObject {
-    func reloadPinnedToolbarExtensionsForCurrentProfile()
-}
-
 /// Applies one profile switch to the extension runtime, then performs the
 /// deferred WebView/UI reconciliation only while its monotonic receipt is
 /// still current. Returning to the same profile does not revive older work.
@@ -23,11 +11,13 @@ final class ExtensionProfileRuntimeTransition {
         fileprivate let revision: UInt64
         let profileID: UUID
         fileprivate let controller: WKWebExtensionController?
+        fileprivate let profileAdmission: ProfileReferenceAdmissionReceipt?
 
         static func == (lhs: Self, rhs: Self) -> Bool {
             lhs.revision == rhs.revision
                 && lhs.profileID == rhs.profileID
                 && lhs.controller === rhs.controller
+                && lhs.profileAdmission == rhs.profileAdmission
         }
     }
 
@@ -71,7 +61,10 @@ final class ExtensionProfileRuntimeTransition {
     }
 
     @discardableResult
-    func switchProfile(profileID: UUID) -> Receipt {
+    func switchProfile(
+        profileID: UUID,
+        mutationLease suppliedMutationLease: ProfileReferenceMutationLease? = nil
+    ) -> Receipt {
         let signpostState = PerformanceTrace.beginInterval(
             "ExtensionManager.switchProfile"
         )
@@ -88,28 +81,46 @@ final class ExtensionProfileRuntimeTransition {
         let pendingReceipt = Receipt(
             revision: revision,
             profileID: profileID,
-            controller: nil
+            controller: nil,
+            profileAdmission: nil
         )
 
+        let ownsMutationLease = suppliedMutationLease == nil
+        guard let profileAdmission = profileRuntime.admitProfileReference(
+            to: profileID
+        ), let mutationLease = suppliedMutationLease
+            ?? profileRuntime.beginProfileReferenceMutation(to: profileID)
+            ?? profileRuntime.beginProfileRetirementMigration(to: profileID),
+           profileRuntime.validateProfileReferenceMutation(
+            mutationLease,
+            profileID: profileID
+           ) else { return pendingReceipt }
+        defer {
+            if ownsMutationLease {
+                precondition(profileRuntime.endProfileReferenceMutation(mutationLease))
+            }
+        }
         let catalogSnapshot = installedExtensions.records
         let enabledExtensionIDs = Set(
             catalogSnapshot.lazy.filter(\.isEnabled).map(\.id)
         )
         let hasEnabledExtensionDemand = enabledExtensionIDs.isEmpty == false
-        let runtimeInitialized = profileRuntime.activateProfile(
+        guard let runtimeInitialized = profileRuntime.activateProfileIfAdmitted(
             profileID,
             hasExtensionDemand: hasEnabledExtensionDemand,
-            runtimeIsReadyOrLoading: runtimeLifecycle.isReadyOrLoading
-        )
+            runtimeIsReadyOrLoading: runtimeLifecycle.isReadyOrLoading,
+            mutationLease: mutationLease
+        ) else { return pendingReceipt }
         actionAnchors.clearAnchors(notMatching: profileID)
         toolbarProfiles.reloadPinnedToolbarExtensionsForCurrentProfile()
 
         guard runtimeInitialized else {
             return pendingReceipt
         }
-        let controller = controllerProvisioning.ensureExtensionController(
-            for: profileID
-        )
+        guard let controller = controllerProvisioning.controllerIfAdmitted(
+            for: profileID,
+            mutationLease: mutationLease
+        ) else { return pendingReceipt }
         browserConfiguration.webViewConfiguration.webExtensionController =
             controller
         let readiness = profileRuntime.readinessContext(
@@ -122,11 +133,11 @@ final class ExtensionProfileRuntimeTransition {
         inactiveContextRetirement.unloadExtensionContextsForInactiveProfiles(
             keepingProfileId: profileID
         )
-
         let receipt = Receipt(
             revision: revision,
             profileID: profileID,
-            controller: controller
+            controller: controller,
+            profileAdmission: profileAdmission
         )
         pendingReconciliation = Task { @MainActor [weak self] in
             await Task.yield()
@@ -143,8 +154,12 @@ final class ExtensionProfileRuntimeTransition {
     }
 
     func isCurrent(_ receipt: Receipt) -> Bool {
-        receipt.revision == revision
+        guard let profileAdmission = receipt.profileAdmission else {
+            return false
+        }
+        return receipt.revision == revision
             && receipt.profileID == profileRuntime.currentProfileId
+            && profileRuntime.validateProfileReference(profileAdmission)
     }
 
     private func settle(_ receipt: Receipt) {

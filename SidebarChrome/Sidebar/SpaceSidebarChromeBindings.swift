@@ -89,7 +89,7 @@ struct SpaceSidebarUpdateNoticeReader: View {
 struct SpaceSidebarMiniPlayer: View {
     @ObservedObject var nowPlayingController: SumiNativeNowPlayingController
     let faviconImageReader: any BrowserFaviconImageReading
-    let configureMediaStore: (SumiBackgroundMediaCardStore, BrowserWindowState) -> Void
+    let mediaStoreConfiguration: SidebarMediaStoreConfigurationOwner
 
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sumiSettings) private var settings
@@ -103,7 +103,7 @@ struct SpaceSidebarMiniPlayer: View {
             MediaControlsView(
                 nowPlayingController: nowPlayingController,
                 faviconImageReader: faviconImageReader,
-                configureMediaStore: configureMediaStore
+                mediaStoreConfiguration: mediaStoreConfiguration
             )
             .environment(windowState)
         }

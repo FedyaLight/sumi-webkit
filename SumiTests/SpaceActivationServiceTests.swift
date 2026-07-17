@@ -5,31 +5,31 @@ import XCTest
 @MainActor
 final class SpaceActivationServiceTests: XCTestCase {
     func testActivationStoresPreviousTabAndSelectsRegularTab() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let tabManager = BrowserManager()
         let previousSpace = Space(name: "Previous", profileId: UUID())
         let targetSpace = Space(name: "Target", profileId: UUID())
         let previousTab = makeTab(in: previousSpace)
         let targetTab = makeTab(in: targetSpace)
         tabManager.spaceStateOwner.replaceSpaces([previousSpace, targetSpace])
         tabManager.spaceStateOwner.replaceCurrentSpace(previousSpace)
-        tabManager.regularTabCollectionStateOwner.replaceTabsBySpace([
+        tabManager.tabStateStore.regularTabs.replaceTabsBySpace([
             previousSpace.id: [previousTab],
             targetSpace.id: [targetTab],
         ])
-        tabManager.selectionStateOwner.replaceCurrentTab(previousTab)
+        tabManager.tabStateStore.selection.replaceCurrentTab(previousTab)
         let service = makeService(tabManager)
 
         service.setActiveSpace(targetSpace)
 
         XCTAssertEqual(previousSpace.activeTabId, previousTab.id)
         XCTAssertIdentical(tabManager.spaceStateOwner.currentSpace, targetSpace)
-        XCTAssertIdentical(tabManager.selectionStateOwner.currentTab, targetTab)
+        XCTAssertIdentical(tabManager.tabStateStore.selection.currentTab, targetTab)
         XCTAssertTrue(tabManager.structuralPersistence.dirtySet.isEmpty)
         XCTAssertNil(tabManager.structuralPersistence.scheduledPersistTask)
     }
 
     func testActivationUsesLiveSpacePinFromExactWindowContext() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let tabManager = BrowserManager()
         let currentSpace = Space(name: "Current", profileId: UUID())
         let targetSpace = Space(name: "Target", profileId: UUID())
         tabManager.spaceStateOwner.replaceSpaces([currentSpace, targetSpace])
@@ -73,28 +73,45 @@ final class SpaceActivationServiceTests: XCTestCase {
         )
 
         XCTAssertIdentical(
-            tabManager.selectionStateOwner.currentTab,
+            tabManager.tabStateStore.selection.currentTab,
             firstLiveTab
         )
     }
 
     func testSelectionFallbackOrderIsRegularThenSpacePinThenEssential() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let profileID = UUID()
+        let tabManager = BrowserManager()
+        tabManager.runtimePortConnection.attach(TestRuntimePorts.make(
+            currentProfileId: { profileID }
+        ))
         let sourceSpace = Space(name: "Source", profileId: UUID())
-        let targetSpace = Space(name: "Target", profileId: UUID())
+        let targetSpace = Space(name: "Target", profileId: profileID)
         let regular = makeTab(in: targetSpace)
         let pin = makePin(in: targetSpace, index: 0)
         let livePin = makeLiveTab(for: pin)
         let essential = makeTab(in: targetSpace)
         essential.isPinned = true
+        let essentialPin = ShortcutPin(
+            id: UUID(),
+            role: .essential,
+            profileId: profileID,
+            index: 0,
+            launchURL: essential.url,
+            title: "Essential"
+        )
+        essential.bindToShortcutPin(essentialPin)
         let windowId = UUID()
         tabManager.spaceStateOwner.replaceSpaces([sourceSpace, targetSpace])
         tabManager.spaceStateOwner.replaceCurrentSpace(sourceSpace)
-        tabManager.regularTabCollectionStateOwner.replaceTabsBySpace([
+        tabManager.tabStateStore.regularTabs.replaceTabsBySpace([
             targetSpace.id: [regular],
         ])
         tabManager.shortcutPinCollectionStateOwner
-            .replaceSpacePinnedShortcuts([targetSpace.id: [pin]])
+            .replaceAll(
+                pinnedByProfile: [profileID: [essentialPin]],
+                spacePinnedShortcuts: [targetSpace.id: [pin]],
+                pendingPinnedWithoutProfile: []
+            )
         XCTAssertTrue(tabManager.liveShortcutTabs.register(
             livePin,
             for: pin.id,
@@ -105,151 +122,145 @@ final class SpaceActivationServiceTests: XCTestCase {
                 profileID: targetSpace.profileId
             )
         ))
-        var essentialReadCount = 0
-        let service = makeService(
-            tabManager,
-            activeEssentialTabs: { _ in
-                essentialReadCount += 1
-                return [essential]
-            }
-        )
+        let essentialWindowID = UUID()
+        XCTAssertTrue(tabManager.liveShortcutTabs.register(
+            essential,
+            for: essentialPin.id,
+            in: essentialWindowID,
+            presentationPage: LiveShortcutPresentationPageReceipt(
+                windowID: essentialWindowID,
+                spaceID: targetSpace.id,
+                profileID: profileID
+            )
+        ))
+        let service = makeService(tabManager)
 
         service.setActiveSpace(targetSpace, contextWindowId: windowId)
-        XCTAssertIdentical(tabManager.selectionStateOwner.currentTab, regular)
-        XCTAssertEqual(essentialReadCount, 0)
+        XCTAssertIdentical(tabManager.tabStateStore.selection.currentTab, regular)
 
-        tabManager.selectionStateOwner.replaceCurrentTab(nil)
-        tabManager.regularTabCollectionStateOwner.replaceTabsBySpace([:])
+        tabManager.tabStateStore.selection.replaceCurrentTab(nil)
+        tabManager.tabStateStore.regularTabs.replaceTabsBySpace([:])
         service.setActiveSpace(targetSpace, contextWindowId: windowId)
-        XCTAssertIdentical(tabManager.selectionStateOwner.currentTab, livePin)
-        XCTAssertEqual(essentialReadCount, 0)
+        XCTAssertIdentical(tabManager.tabStateStore.selection.currentTab, livePin)
 
-        tabManager.selectionStateOwner.replaceCurrentTab(nil)
+        tabManager.tabStateStore.selection.replaceCurrentTab(nil)
         XCTAssertIdentical(
             tabManager.liveShortcutTabs.remove(pinId: pin.id, in: windowId)?.tab,
             livePin
         )
         service.setActiveSpace(targetSpace, contextWindowId: windowId)
-        XCTAssertIdentical(tabManager.selectionStateOwner.currentTab, essential)
-        XCTAssertEqual(essentialReadCount, 1)
+        XCTAssertIdentical(tabManager.tabStateStore.selection.currentTab, essential)
     }
 
-    func testRegularSelectionDoesNotScanEssentialTabs() throws {
-        let tabManager = try makeInMemoryTabManager()
+    func testRegularSelectionWinsOverLiveEssentialTab() throws {
+        let profileID = UUID()
+        let tabManager = BrowserManager()
+        tabManager.runtimePortConnection.attach(TestRuntimePorts.make(
+            currentProfileId: { profileID }
+        ))
         let sourceSpace = Space(name: "Source", profileId: UUID())
-        let targetSpace = Space(name: "Target", profileId: UUID())
+        let targetSpace = Space(name: "Target", profileId: profileID)
         let regular = makeTab(in: targetSpace)
+        let essentialPin = ShortcutPin(
+            id: UUID(),
+            role: .essential,
+            profileId: profileID,
+            index: 0,
+            launchURL: URL(string: "https://essential.example")!,
+            title: "Essential"
+        )
+        let essential = makeLiveTab(for: essentialPin)
         tabManager.spaceStateOwner.replaceSpaces([sourceSpace, targetSpace])
         tabManager.spaceStateOwner.replaceCurrentSpace(sourceSpace)
-        tabManager.regularTabCollectionStateOwner.replaceTabsBySpace([
+        tabManager.tabStateStore.regularTabs.replaceTabsBySpace([
             targetSpace.id: [regular],
         ])
-        var essentialReadCount = 0
-        let service = makeService(
-            tabManager,
-            activeEssentialTabs: { _ in
-                essentialReadCount += 1
-                return []
-            }
-        )
+        tabManager.shortcutPinCollectionStateOwner.replacePinnedByProfile([
+            profileID: [essentialPin],
+        ])
+        let essentialWindowID = UUID()
+        XCTAssertTrue(tabManager.liveShortcutTabs.register(
+            essential,
+            for: essentialPin.id,
+            in: essentialWindowID,
+            presentationPage: LiveShortcutPresentationPageReceipt(
+                windowID: essentialWindowID,
+                spaceID: targetSpace.id,
+                profileID: profileID
+            )
+        ))
+        let service = makeService(tabManager)
 
         service.setActiveSpace(targetSpace)
 
-        XCTAssertIdentical(tabManager.selectionStateOwner.currentTab, regular)
-        XCTAssertEqual(essentialReadCount, 0)
+        XCTAssertIdentical(tabManager.tabStateStore.selection.currentTab, regular)
     }
 
     func testNilProfileBackfillUsesDefaultProfileWhenAvailable() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let defaultProfile = Profile(name: "Default")
+        let tabManager = BrowserManager()
+        tabManager.runtimePortConnection.attach(TestRuntimePorts.make(
+            defaultProfileId: { defaultProfile.id },
+            profileExists: { $0 == defaultProfile.id },
+            profile: { $0 == defaultProfile.id ? defaultProfile : nil }
+        ))
         let targetSpace = Space(name: "Target")
         tabManager.spaceStateOwner.replaceSpaces([targetSpace])
-        let defaultProfileId = UUID()
-        var assignments: [(UUID, UUID)] = []
-        let service = makeService(
-            tabManager,
-            defaultProfileId: { defaultProfileId },
-            assignSpaceProfile: { spaceId, profileId, settlement in
-                assignments.append((spaceId, profileId))
-                XCTAssertTrue(tabManager.spaceStateOwner
-                    .assignProfileWithoutObservation(
-                        spaceId: spaceId,
-                        profileId: profileId
-                    ))
-                tabManager.spaceStateOwner.publishProfileMutation(
-                    spaceId: spaceId
-                )
-                settlement(.committed)
-                return .committed
-            }
-        )
+        let service = makeService(tabManager)
 
         service.setActiveSpace(targetSpace)
 
-        XCTAssertEqual(assignments.count, 1)
-        XCTAssertEqual(assignments.first?.0, targetSpace.id)
-        XCTAssertEqual(assignments.first?.1, defaultProfileId)
-        XCTAssertEqual(targetSpace.profileId, defaultProfileId)
+        XCTAssertEqual(targetSpace.profileId, defaultProfile.id)
     }
 
     func testDeferredProfileBackfillDoesNotActivateUntilCommit() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let profile = Profile(name: "Deferred")
+        let transition = DeferredSpaceProfileTransition()
+        let tabManager = BrowserManager()
+        tabManager.runtimePortConnection.attach(TestRuntimePorts.make(
+            defaultProfileId: { profile.id },
+            profileExists: { $0 == profile.id },
+            profile: { $0 == profile.id ? profile : nil },
+            webViewLifecycle: transition.makeLifecycle()
+        ))
         let previousSpace = Space(name: "Previous", profileId: UUID())
         let targetSpace = Space(name: "Target")
         let previousTab = makeTab(in: previousSpace)
         tabManager.spaceStateOwner.replaceSpaces([previousSpace, targetSpace])
         tabManager.spaceStateOwner.replaceCurrentSpace(previousSpace)
-        tabManager.selectionStateOwner.replaceCurrentTab(previousTab)
-        let profileID = UUID()
-        var settlement: ProfileTransitionService.Settlement?
-        let service = makeService(
-            tabManager,
-            defaultProfileId: { profileID },
-            assignSpaceProfile: { _, _, callback in
-                settlement = callback
-                return .deferred
-            }
-        )
+        tabManager.tabStateStore.selection.replaceCurrentTab(previousTab)
+        let service = makeService(tabManager)
 
         XCTAssertFalse(service.setActiveSpace(targetSpace))
         XCTAssertIdentical(tabManager.spaceStateOwner.currentSpace, previousSpace)
-        XCTAssertIdentical(tabManager.selectionStateOwner.currentTab, previousTab)
+        XCTAssertIdentical(tabManager.tabStateStore.selection.currentTab, previousTab)
 
-        XCTAssertTrue(tabManager.spaceStateOwner
-            .assignProfileWithoutObservation(
-                spaceId: targetSpace.id,
-                profileId: profileID
-            ))
-        tabManager.spaceStateOwner.publishProfileMutation(
-            spaceId: targetSpace.id
-        )
-        settlement?(.committed)
+        XCTAssertTrue(try XCTUnwrap(transition.stageModel)())
+        try XCTUnwrap(transition.publishCommit)()
+        try XCTUnwrap(transition.settlement)(.committed)
 
         XCTAssertIdentical(tabManager.spaceStateOwner.currentSpace, targetSpace)
-        XCTAssertEqual(targetSpace.profileId, profileID)
+        XCTAssertEqual(targetSpace.profileId, profile.id)
     }
 
     private func makeService(
-        _ tabManager: TabManager,
-        defaultProfileId: @escaping @MainActor () -> UUID? = { nil },
-        currentProfileId: @escaping @MainActor () -> UUID? = { nil },
-        assignSpaceProfile: @escaping @MainActor (
-            UUID,
-            UUID,
-            @escaping ProfileTransitionService.Settlement
-        ) -> TabProfileAssignmentExecutionOutcome = { _, _, _ in .failed },
-        activeEssentialTabs: @escaping @MainActor (UUID?) -> [Tab] = { _ in [] }
+        _ tabManager: BrowserManager
     ) -> SpaceActivationService {
         SpaceActivationService(
-            state: tabManager.stateStore,
-            projection: tabManager.spaceLauncherProjection,
+            state: tabManager.tabStateStore,
+            projection: SpaceLauncherProjectionService(
+                regularTabs: tabManager.tabStateStore.regularTabs,
+                pins: tabManager.shortcutPinCollectionStateOwner,
+                folders: tabManager.folderCollectionStateOwner,
+                splitOrdering: tabManager.splitGroupSidebarOrdering,
+                transientTabs: tabManager.tabStateStore.transientTabs
+            ),
             persistence: tabManager.structuralPersistence,
             profileAdmission: SpaceActivationProfileAdmission(
-                profileIDs: {
-                    (current: currentProfileId(), default: defaultProfileId())
-                },
-                assignSpaceProfile: assignSpaceProfile
+                runtimeConnection: tabManager.runtimePortConnection,
+                profileTransitions: tabManager.spaceProfileTransitions
             ),
-            activeEssentialTabs: activeEssentialTabs
+            shortcutPresentation: tabManager.shortcutPresentationOwner
         )
     }
 

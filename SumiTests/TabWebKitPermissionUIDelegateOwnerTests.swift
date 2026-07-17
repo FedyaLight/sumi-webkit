@@ -28,19 +28,19 @@ final class TabWebKitPermissionUIDelegateOwnerTests: XCTestCase {
 
     func testFilePickerPermissionContextUsesExactFocusableDocument() async throws {
         let browserManager = BrowserManager()
-        let space = browserManager.tabManager.spaceStateOwner.currentSpace
-            ?? browserManager.tabManager.spaceServices.catalog.createSpace(
+        let space = browserManager.spaceStateOwner.currentSpace
+            ?? installTestSpace(
+                in: browserManager.spaceStateOwner,
                 name: "File Picker Permission Tests"
             )
-        let tab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
+        let tab = browserManager.regularTabLifecycleOwner.createNewTab(
             url: "https://files.example/page",
             in: space,
             activate: true
         )
-        let windowRegistry = browserManager.windowRegistry ?? WindowRegistry()
-        browserManager.windowRegistry = windowRegistry
+        let windowRegistry = browserManager.windowRegistry
         let windowState = BrowserWindowState()
-        windowState.tabManager = browserManager.tabManager
+        browserManager.tabResidenceAuthority.establishResidenceSession(on: windowState)
         windowState.currentSpaceId = space.id
         windowState.currentProfileId = tab.resolveProfile()?.id
         windowState.currentTabId = tab.id
@@ -79,7 +79,7 @@ final class TabWebKitPermissionUIDelegateOwnerTests: XCTestCase {
 
     func testLegacyMediaUIDelegateRejectsCallbackWebViewWithoutExactDocumentLease() async throws {
         let browserManager = BrowserManager()
-        let tab = browserManager.tabManager.tabFactory.makeTab(
+        let tab = browserManager.tabFactory.makeTab(
             url: URL(string: "https://top.example/page")!,
             loadsCachedFaviconOnInit: false
         )
@@ -112,7 +112,7 @@ final class TabWebKitPermissionUIDelegateOwnerTests: XCTestCase {
     func testFilePickerActivationCannotCrossFocusableWebViewCloneBoundary() async throws {
         let presenter = PermissionFilePickerPanelPresenter()
         let browserManager = BrowserManager(filePickerPanelPresenter: presenter)
-        let tab = browserManager.tabManager.tabFactory.makeTab(
+        let tab = browserManager.tabFactory.makeTab(
             url: URL(string: "https://files.example/page")!,
             loadsCachedFaviconOnInit: false
         )

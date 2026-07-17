@@ -215,9 +215,17 @@ final class WindowSplitProjectionTests: XCTestCase {
     func testWebsiteViewContextDoesNotRetainBrowserKernel() async throws {
         var browserManager: BrowserManager? = BrowserManager()
         weak let releasedBrowserManager = browserManager
-        let context = WebsiteViewContextFactory.websiteViewBrowserContext(
-            for: try XCTUnwrap(browserManager)
-        )
+        let context = try {
+            let manager = try XCTUnwrap(browserManager)
+            let shell = manager.shellRuntime
+            return WebsiteViewContextFactory.websiteViewBrowserContext(
+                windowTabs: shell.windowTabs,
+                membership: manager.tabCollectionMembershipOwner,
+                windowVisuals: shell.windowVisuals,
+                spaces: manager.spaceStateOwner,
+                dragOperations: manager.sidebarDragRouter
+            )
+        }()
 
         browserManager = nil
         for _ in 0..<20 where releasedBrowserManager != nil {

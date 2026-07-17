@@ -305,9 +305,11 @@ class BrowserWindowState {
         registry?.appKitWindow(for: self)
     }
 
-    /// Reference to TabManager for computed properties
-    /// Set by BrowserManager during window registration
-    weak var tabManager: TabManager?
+    /// Identity-only fence for the browser kernel that owns this window.
+    /// Runtime services are injected into their consumers and never recovered
+    /// through the window model.
+    weak var tabResidenceSessionIdentity:
+        BrowserTabResidenceSessionIdentity?
 
     var unpublishedShortcutMutationState: BrowserWindowShortcutMutationState {
         var state = shortcutMutationState
@@ -482,11 +484,12 @@ class BrowserWindowState {
         expectedProfile: Profile,
         expectedSpace: Space,
         expectedTab: Tab,
-        expectedTabManager: TabManager,
+        expectedResidenceSessionID: ObjectIdentifier,
         expectedChildWindowIdentity: WebKitChildWindowIdentity?
     ) -> Bool {
         guard isIncognito,
-              tabManager === expectedTabManager,
+              tabResidenceSessionIdentity.map(ObjectIdentifier.init)
+                == expectedResidenceSessionID,
               ephemeralProfile === expectedProfile,
               currentProfileId == expectedProfile.id,
               currentSpaceId == expectedSpace.id,

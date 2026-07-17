@@ -21,8 +21,8 @@ final class TabStructuralPublishOwner {
 
     @discardableResult
     func withTransaction<T>(
-        flushPendingLookupBatch: () -> Void,
-        _ operation: () throws -> T
+        flushPendingLookupBatch: @MainActor @Sendable () -> Void,
+        _ operation: @MainActor @Sendable () throws -> T
     ) rethrows -> T {
         begin()
         defer {
@@ -75,7 +75,9 @@ final class TabStructuralPublishOwner {
         structuralUpdateDepth += 1
     }
 
-    private func end(flushPendingLookupBatch: () -> Void) {
+    private func end(
+        flushPendingLookupBatch: @MainActor @Sendable () -> Void
+    ) {
         guard structuralUpdateDepth > 0 else { return }
         guard structuralUpdateDepth == 1 else {
             structuralUpdateDepth -= 1

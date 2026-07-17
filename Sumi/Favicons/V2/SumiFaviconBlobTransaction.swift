@@ -129,18 +129,13 @@ final class SumiFaviconBlobTransaction: @unchecked Sendable {
         }
     }
 
-    func clearPartition(_ partition: SumiFaviconPartition) {
-        sync {
+    func clearPartition(_ partition: SumiFaviconPartition) throws {
+        try sync {
+            if !partition.isPrivate {
+                try diskStorage.removePartition(partition)
+            }
             cache.clear(partition)
             pendingPersistPartitions.remove(partition)
-            guard !partition.isPrivate else { return }
-            do {
-                try diskStorage.removePartition(partition)
-            } catch {
-                Self.log.error(
-                    "Failed to clear favicon partition \(partition.storageComponent, privacy: .public): \(String(describing: error), privacy: .public)"
-                )
-            }
         }
     }
 

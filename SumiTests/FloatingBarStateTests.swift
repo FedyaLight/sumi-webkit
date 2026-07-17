@@ -10,7 +10,7 @@ final class FloatingBarStateTests: XCTestCase {
             UserDefaults.standard.removeObject(forKey: BrowserManager.lastWindowSessionKey)
         }
 
-        let browserManager = BrowserManager()
+        let browserManager = BrowserManager(windowRegistry: WindowRegistry())
         let windowState = BrowserWindowState()
 
         browserManager.urlBarBundle.floatingBar.presentation.focus(
@@ -54,7 +54,7 @@ final class FloatingBarStateTests: XCTestCase {
         }
 
         let (browserManager, _, windowState, space) = makeHarness()
-        let currentTab = browserManager.tabLifecycleService.opening.openNewTab(
+        let currentTab = browserManager.tabOpening.openNewTab(
             url: "https://example.com/start",
             context: .foreground(windowState: windowState)
         )
@@ -72,7 +72,7 @@ final class FloatingBarStateTests: XCTestCase {
         )
 
         XCTAssertFalse(windowState.floatingBarDraftNavigatesCurrentTab)
-        XCTAssertEqual(browserManager.tabManager.regularTabCollectionOwner.tabs(in: space).count, 1)
+        XCTAssertEqual(browserManager.regularTabCollectionOwner.tabs(in: space).count, 1)
         XCTAssertEqual(browserManager.shellRuntime.windowTabs.currentTab(for: windowState)?.id, currentTab.id)
         XCTAssertEqual(currentTab.url.absoluteString, "https://example.com/replaced")
     }
@@ -84,7 +84,7 @@ final class FloatingBarStateTests: XCTestCase {
         }
 
         let (browserManager, _, windowState, space) = makeHarness()
-        let currentTab = browserManager.tabLifecycleService.opening.openNewTab(
+        let currentTab = browserManager.tabOpening.openNewTab(
             url: "https://example.com/start",
             context: .foreground(windowState: windowState)
         )
@@ -95,7 +95,7 @@ final class FloatingBarStateTests: XCTestCase {
             in: windowState
         )
 
-        XCTAssertEqual(browserManager.tabManager.regularTabCollectionOwner.tabs(in: space).count, 2)
+        XCTAssertEqual(browserManager.regularTabCollectionOwner.tabs(in: space).count, 2)
         XCTAssertEqual(browserManager.shellRuntime.windowTabs.currentTab(for: windowState)?.id, currentTab.id)
     }
 
@@ -124,19 +124,20 @@ final class FloatingBarStateTests: XCTestCase {
     }
 
     private func makeHarness() -> (BrowserManager, WindowRegistry, BrowserWindowState, Space) {
-        let browserManager = BrowserManager()
         let windowRegistry = WindowRegistry()
+        let browserManager = BrowserManager(windowRegistry: windowRegistry)
         let profile = Profile(name: "Primary")
         let space = Space(name: "Primary", profileId: profile.id)
         let windowState = BrowserWindowState()
 
         browserManager.profileManager.profiles = [profile]
         browserManager.currentProfile = profile
-        browserManager.windowRegistry = windowRegistry
-        browserManager.tabManager.spaceStateOwner.replaceSpaces([space])
-        browserManager.tabManager.spaceStateOwner.replaceCurrentSpace(space)
+        browserManager.spaceStateOwner.replaceSpaces([space])
+        browserManager.spaceStateOwner.replaceCurrentSpace(space)
 
-        windowState.tabManager = browserManager.tabManager
+        browserManager.tabResidenceAuthority.establishResidenceSession(
+            on: windowState
+        )
         windowState.currentSpaceId = space.id
         windowState.currentProfileId = profile.id
 

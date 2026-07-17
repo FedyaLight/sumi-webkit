@@ -12,19 +12,24 @@ struct SpaceRemovalFootprint {
 /// because they live in per-Space history maps or deferred split state.
 @MainActor
 final class DeletedSpaceWindowStateReconciler {
-    private let runtimePorts: () -> RuntimePortRegistry
+    private let runtimeConnection: TabRuntimePortConnection
 
-    init(runtimePorts: @escaping () -> RuntimePortRegistry) {
-        self.runtimePorts = runtimePorts
+    init(runtimeConnection: TabRuntimePortConnection) {
+        self.runtimeConnection = runtimeConnection
     }
 
-    func runtimeLease() -> RuntimePortRegistry {
-        runtimePorts()
+    func runtimeLease() -> TabRuntimePortLease? {
+        let lease = runtimeConnection.captureLease()
+        return lease.registry == nil ? nil : lease
+    }
+
+    func accepts(_ lease: TabRuntimePortLease) -> Bool {
+        runtimeConnection.accepts(lease)
     }
 
     func reconcile(
         _ removal: SpaceRemovalFootprint,
-        using runtime: RuntimePortRegistry
+        using runtime: TabRuntimePortLease
     ) -> [BrowserWindowState] {
         var changedWindows: [BrowserWindowState] = []
         runtime.forEachWindowState { windowState in
@@ -40,7 +45,7 @@ final class DeletedSpaceWindowStateReconciler {
 
     func finish(
         changedWindows: [BrowserWindowState],
-        using runtime: RuntimePortRegistry
+        using runtime: TabRuntimePortLease
     ) {
         let persistedWindowIds = runtime.validateWindowStates()
         changedWindows

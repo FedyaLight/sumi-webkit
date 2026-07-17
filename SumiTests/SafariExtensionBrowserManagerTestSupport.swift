@@ -208,15 +208,13 @@ extension XCTestCase {
             )
         )
         let browserManager = BrowserManager(
+            windowRegistry: windowRegistry ?? WindowRegistry(),
             moduleRegistry: moduleRegistry,
             startupPersistence: startupPersistence,
             adBlockingModule: adBlockingModule,
             protectionCoordinator: protectionCoordinator,
             extensionsModule: extensionsModule
         )
-        if let windowRegistry {
-            browserManager.windowRegistry = windowRegistry
-        }
         if let profile {
             browserManager.profileManager.profiles = [profile]
             browserManager.currentProfile = profile

@@ -5,44 +5,15 @@ import WebKit
 @MainActor
 final class BrowserExtensionTabMutationAdapter:
     ExtensionTabMutation {
-    private let createTab: @MainActor (
-        URL?, Space?, Bool, WKWebExtensionContext?
-    ) -> Tab
-    private let createTransientTab: @MainActor (
-        URL, Space?, WKWebExtensionContext?
-    ) -> Tab
-    private let pinTab: @MainActor (
-        Tab,
-        BrowserWindowState?,
-        Space?
-    ) -> Bool
-    private let selectTab: @MainActor (Tab, BrowserWindowState) -> Void
-    private let placeTab: @MainActor (Tab, BrowserWindowState) -> Void
-    private let requestedTabDiscard: ExtensionRequestedTabDiscardService
-    private let promoteTransientTab: @MainActor (Tab) -> Bool
+    private let commands: BrowserExtensionTabCommands
+    private let selection: BrowserTabSelectionOwner
 
     init(
-        createTab: @escaping @MainActor (
-            URL?, Space?, Bool, WKWebExtensionContext?
-        ) -> Tab,
-        createTransientTab: @escaping @MainActor (
-            URL, Space?, WKWebExtensionContext?
-        ) -> Tab,
-        pinTab: @escaping @MainActor (
-            Tab, BrowserWindowState?, Space?
-        ) -> Bool,
-        selectTab: @escaping @MainActor (Tab, BrowserWindowState) -> Void,
-        placeTab: @escaping @MainActor (Tab, BrowserWindowState) -> Void,
-        requestedTabDiscard: ExtensionRequestedTabDiscardService,
-        promoteTransientTab: @escaping @MainActor (Tab) -> Bool
+        commands: BrowserExtensionTabCommands,
+        selection: BrowserTabSelectionOwner
     ) {
-        self.createTab = createTab
-        self.createTransientTab = createTransientTab
-        self.pinTab = pinTab
-        self.selectTab = selectTab
-        self.placeTab = placeTab
-        self.requestedTabDiscard = requestedTabDiscard
-        self.promoteTransientTab = promoteTransientTab
+        self.commands = commands
+        self.selection = selection
     }
 
     func createExtensionTab(
@@ -51,7 +22,12 @@ final class BrowserExtensionTabMutationAdapter:
         activate: Bool,
         webExtensionContextOverride: WKWebExtensionContext?
     ) -> Tab {
-        createTab(url, space, activate, webExtensionContextOverride)
+        commands.create(
+            url: url,
+            in: space,
+            activate: activate,
+            webExtensionContextOverride: webExtensionContextOverride
+        )
     }
 
     func createTransientExtensionTab(
@@ -59,7 +35,11 @@ final class BrowserExtensionTabMutationAdapter:
         in space: Space?,
         webExtensionContextOverride: WKWebExtensionContext?
     ) -> Tab {
-        createTransientTab(url, space, webExtensionContextOverride)
+        commands.createTransient(
+            url: url,
+            in: space,
+            webExtensionContextOverride: webExtensionContextOverride
+        )
     }
 
     @discardableResult
@@ -68,21 +48,25 @@ final class BrowserExtensionTabMutationAdapter:
         targetWindow: BrowserWindowState?,
         targetSpace: Space?
     ) -> Bool {
-        pinTab(tab, targetWindow, targetSpace)
+        commands.pin(
+            tab,
+            targetWindow: targetWindow,
+            targetSpace: targetSpace
+        )
     }
 
     func selectExtensionTab(
         _ tab: Tab,
         in windowState: BrowserWindowState
     ) {
-        selectTab(tab, windowState)
+        selection.selectTab(tab, in: windowState, loadPolicy: .immediate)
     }
 
     func placeExtensionTab(
         _ tab: Tab,
         in windowState: BrowserWindowState
     ) {
-        placeTab(tab, windowState)
+        windowState.markWebKitChildWindowAdopted(by: tab.id)
     }
 
     @discardableResult
@@ -90,13 +74,13 @@ final class BrowserExtensionTabMutationAdapter:
         _ tab: Tab,
         restoringSelectionTo tabID: UUID?
     ) -> Bool {
-        requestedTabDiscard.discard(
+        commands.discard(
             tab,
             restoringSelectionTo: tabID
         )
     }
 
     func promoteTransientExtensionTab(_ tab: Tab) -> Bool {
-        promoteTransientTab(tab)
+        commands.promoteTransient(tab)
     }
 }

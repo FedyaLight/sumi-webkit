@@ -6,32 +6,30 @@ import Foundation
 /// touches the last-session archive.
 @MainActor
 final class ClosedWindowHistoryRecorder {
-    private let openWindows: OpenWindowSessionCatalog
-    private let windowDisplayTitle: @MainActor (BrowserWindowState) -> String
-    private let recentlyClosedManager: @MainActor () -> RecentlyClosedManager
+    private let snapshots: WindowSessionSnapshotFactory
+    private let titles: ClosedWindowDisplayTitleProjection
+    private let recentlyClosedManager: RecentlyClosedManager
 
     init(
-        openWindows: OpenWindowSessionCatalog,
-        windowDisplayTitle: @escaping @MainActor (BrowserWindowState) -> String,
-        recentlyClosedManager: @escaping @MainActor () -> RecentlyClosedManager
+        snapshots: WindowSessionSnapshotFactory,
+        titles: ClosedWindowDisplayTitleProjection,
+        recentlyClosedManager: RecentlyClosedManager
     ) {
-        self.openWindows = openWindows
-        self.windowDisplayTitle = windowDisplayTitle
+        self.snapshots = snapshots
+        self.titles = titles
         self.recentlyClosedManager = recentlyClosedManager
     }
 
     func recordWindowWillClose(_ windowState: BrowserWindowState) {
         guard !windowState.isIncognito else { return }
-        guard let snapshot = openWindows.snapshot(of: windowState) else {
-            return
-        }
+        let snapshot = snapshots.make(for: windowState)
         guard snapshot.currentTabId != nil
             || snapshot.splitSelection != nil
             || !snapshot.isShowingEmptyState
         else { return }
-        recentlyClosedManager().captureClosedWindow(
+        recentlyClosedManager.captureClosedWindow(
             sessionWindowId: windowState.restorationState.restoredSessionWindowID ?? windowState.id,
-            title: windowDisplayTitle(windowState),
+            title: titles.title(for: windowState),
             session: snapshot
         )
     }

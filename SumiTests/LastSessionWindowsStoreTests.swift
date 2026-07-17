@@ -237,6 +237,28 @@ final class LastSessionWindowsStoreTests: XCTestCase {
         XCTAssertEqual(store.snapshots, [first])
     }
 
+    func testCorruptArchiveBlocksProfileMigrationWithoutOverwritingPayload()
+        throws {
+        let suiteName = "SumiTests.LastSessionWindowsStore.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let key = "\(SumiAppIdentity.runtimeBundleIdentifier).history.lastSessionWindows"
+        let corruptPayload = Data("not-an-archive".utf8)
+        defaults.set(corruptPayload, forKey: key)
+        let store = LastSessionWindowsStore(userDefaults: defaults)
+
+        XCTAssertEqual(store.archiveLoadState, .failed)
+        XCTAssertFalse(
+            store.migrateProfileReferences(
+                from: UUID(),
+                to: UUID()
+            )
+        )
+        XCTAssertTrue(store.containsProfileReference(to: UUID()))
+        XCTAssertEqual(defaults.data(forKey: key), corruptPayload)
+        XCTAssertEqual(store.archiveLoadState, .failed)
+    }
+
     private func makeWindowSnapshot() -> LastSessionWindowSnapshot {
         LastSessionWindowSnapshot(
             id: UUID(),

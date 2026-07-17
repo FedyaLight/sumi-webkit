@@ -1,11 +1,6 @@
 import Foundation
 import SumiDomain
 
-enum WindowSplitSessionWriteUrgency {
-    case scheduled
-    case immediate
-}
-
 @MainActor
 extension WindowSplitPresentationSynchronizer {
     func prepareSettlementAgainstSource(
@@ -43,43 +38,25 @@ extension WindowSplitPresentationSynchronizer {
 /// called; it never chooses or mutates shared split topology.
 @MainActor
 final class WindowSplitPresentationSynchronizer {
-    private let tabManager: @MainActor () -> TabManager?
-    private let windows: @MainActor () -> [BrowserWindowState]
-    private let selectTabWithoutPersistence: @MainActor (
-        Tab,
-        BrowserWindowState
-    ) -> Void
+    private let preparation: WindowSplitPresentationPreparationService
+    private let splitGroups: SplitGroupStore
+    private let members: SplitRuntimeMemberResolver
+    private let materialization: WindowSplitMaterializationService
     private let terminalEffects:
         WindowSplitPresentationEffectExecutor
 
     init(
-        tabManager: @escaping @MainActor () -> TabManager?,
-        windows: @escaping @MainActor () -> [BrowserWindowState],
-        selectTabWithoutPersistence: @escaping @MainActor (
-            Tab,
-            BrowserWindowState
-        ) -> Void,
-        publishPreparedSelectionEffects: @escaping @MainActor (
-            Tab,
-            BrowserWindowState,
-            UUID?,
-            UUID?
-        ) -> Void,
-        publishWindowChange: @escaping @MainActor (UUID) -> Void,
-        refreshCompositor: @escaping @MainActor (BrowserWindowState) -> Void,
-        scheduleWindowSession: @escaping @MainActor (BrowserWindowState) -> Void,
-        persistWindowSession: @escaping @MainActor (BrowserWindowState) -> Void
+        preparation: WindowSplitPresentationPreparationService,
+        splitGroups: SplitGroupStore,
+        members: SplitRuntimeMemberResolver,
+        materialization: WindowSplitMaterializationService,
+        terminalEffects: WindowSplitPresentationEffectExecutor
     ) {
-        self.tabManager = tabManager
-        self.windows = windows
-        self.selectTabWithoutPersistence = selectTabWithoutPersistence
-        terminalEffects = WindowSplitPresentationEffectExecutor(
-            publishPreparedSelectionEffects: publishPreparedSelectionEffects,
-            publishWindowChange: publishWindowChange,
-            refreshCompositor: refreshCompositor,
-            scheduleWindowSession: scheduleWindowSession,
-            persistWindowSession: persistWindowSession
-        )
+        self.preparation = preparation
+        self.splitGroups = splitGroups
+        self.members = members
+        self.materialization = materialization
+        self.terminalEffects = terminalEffects
     }
 
     /// Prepares the complete window-local half of a split topology aggregate.
@@ -152,12 +129,8 @@ final class WindowSplitPresentationSynchronizer {
         terminalParticipants: WindowSplitPresentationTerminalParticipants,
         sessionWriteUrgency: WindowSplitSessionWriteUrgency
     ) -> PreparedWindowSplitPresentationSettlement? {
-        guard let tabManager = tabManager(),
-              tabManager.splitGroupStore.groups == currentGroups else {
-            return nil
-        }
-        guard let draft = WindowSplitPresentationDraftPlanner().prepare(
-            .init(
+        preparation.prepare(
+            input: .init(
                 previousGroups: previousGroups,
                 replacementGroups: replacementGroups,
                 affectedGroupIDs: affectedGroupIDs,
@@ -168,35 +141,7 @@ final class WindowSplitPresentationSynchronizer {
                 sessionWriteUrgency: sessionWriteUrgency
             ),
             currentGroups: currentGroups,
-            tabManager: tabManager,
-            windows: windows()
-        ) else { return nil }
-        guard let residences = WindowSplitPresentationResidencePreparer().prepare(
-            source: activationSource,
-            requests: draft.activationRequests,
-            activation: tabManager.shortcutPresentationActivation
-        ),
-            let plan = WindowSplitPresentationSettlementPlanner().prepare(
-                draft,
-                shortcutWitnesses: residences.shortcutWitnesses,
-                regularTabs: tabManager.regularTabCollectionOwner
-            ) else { return nil }
-        let participantIDs = terminalParticipants.map(ObjectIdentifier.init)
-        guard Set(participantIDs).count == participantIDs.count,
-              terminalParticipants.allSatisfy({ participant in
-                  plan.windows.contains {
-                      $0.window === participant.targetWindow
-                  }
-              }) else { return nil }
-        return PreparedWindowSplitPresentationSettlement(
-            plan: plan,
-            residences: residences,
-            validator: WindowSplitPresentationSettlementValidator(
-                splitGroups: tabManager.splitGroupStore,
-                regularTabs: tabManager.regularTabCollectionOwner,
-                liveShortcuts: tabManager.liveShortcutTabs,
-                currentWindows: windows
-            ),
+            activationSource: activationSource,
             terminalEffects: terminalEffects,
             terminalParticipants: terminalParticipants
         )
@@ -214,16 +159,13 @@ final class WindowSplitPresentationSynchronizer {
         unavailableMembers: [UUID: Set<SplitMemberID>] = [:],
         sessionWriteUrgency: WindowSplitSessionWriteUrgency = .scheduled
     ) {
-        guard !affectedGroupIDs.isEmpty,
-              let tabManager = tabManager() else {
-            return
-        }
+        guard !affectedGroupIDs.isEmpty else { return }
         let previousByID = Dictionary(
             previousGroups.map { ($0.id, $0) },
             uniquingKeysWith: { first, _ in first }
         )
 
-        for windowState in windows() {
+        for windowState in preparation.currentWindows() {
             let previousSelectedGroupID = windowState.splitSelection?.groupID
             guard preferredSelections[windowState.id] != nil
                     || preferredActiveMembers[windowState.id] != nil
@@ -235,12 +177,14 @@ final class WindowSplitPresentationSynchronizer {
             let before = WindowSplitPresentationPersistedState(windowState)
             if let standaloneMember = standaloneMembers[windowState.id] {
                 windowState.splitSelection = nil
-                if let tab = liveTab(
+                if let tab = members.liveTab(
                     for: standaloneMember,
-                    in: windowState,
-                    tabManager: tabManager
+                    in: windowState
                 ) {
-                    selectTabWithoutPersistence(tab, windowState)
+                    terminalEffects.selectWithoutPersistence(
+                        tab,
+                        in: windowState
+                    )
                 }
             } else {
                 synchronize(
@@ -250,8 +194,7 @@ final class WindowSplitPresentationSynchronizer {
                     },
                     preferredSelection: preferredSelections[windowState.id],
                     preferredActiveMember: preferredActiveMembers[windowState.id],
-                    unavailableMembers: unavailableMembers[windowState.id] ?? [],
-                    tabManager: tabManager
+                    unavailableMembers: unavailableMembers[windowState.id] ?? []
                 )
             }
             terminalEffects.publishSynchronizedWindow(
@@ -266,7 +209,7 @@ final class WindowSplitPresentationSynchronizer {
     /// reselecting tabs, materializing members or writing window sessions.
     func refreshPresentations(for groupIDs: Set<UUID>) {
         guard !groupIDs.isEmpty else { return }
-        for windowState in windows()
+        for windowState in preparation.currentWindows()
             where windowState.splitSelection.map({
                 groupIDs.contains($0.groupID)
             }) == true {
@@ -279,20 +222,18 @@ final class WindowSplitPresentationSynchronizer {
         previousGroup: SumiDomain.SplitGroup?,
         preferredSelection: WindowSplitSelection?,
         preferredActiveMember: SplitMemberID?,
-        unavailableMembers: Set<SplitMemberID>,
-        tabManager: TabManager
+        unavailableMembers: Set<SplitMemberID>
     ) {
         let selectedGroupID = preferredSelection?.groupID
             ?? windowState.splitSelection?.groupID
         guard let selectedGroupID,
-              let currentGroup = tabManager.splitGroupStore.group(
+              let currentGroup = splitGroups.group(
                   id: selectedGroupID
               ) else {
             leaveDissolvedGroup(
                 previousGroup,
                 unavailableMembers: unavailableMembers,
-                in: windowState,
-                tabManager: tabManager
+                in: windowState
             )
             return
         }
@@ -311,15 +252,14 @@ final class WindowSplitPresentationSynchronizer {
             groupID: currentGroup.id,
             activeMemberID: activeMemberID
         )
-        guard WindowSplitMaterializationService().withMaterialization(
+        guard materialization.withMaterialization(
             currentGroup,
             selection: selection,
             in: windowState,
-            tabManager: tabManager,
-            finalizing: { [selectTabWithoutPersistence] materialized in
-                selectTabWithoutPersistence(
+            finalizing: { [terminalEffects] materialized in
+                terminalEffects.selectWithoutPersistence(
                     materialized.activeTab,
-                    windowState
+                    in: windowState
                 )
                 windowState.splitSelection = materialized.presentation.selection
             }
@@ -332,8 +272,7 @@ final class WindowSplitPresentationSynchronizer {
     private func leaveDissolvedGroup(
         _ previousGroup: SumiDomain.SplitGroup?,
         unavailableMembers: Set<SplitMemberID>,
-        in windowState: BrowserWindowState,
-        tabManager: TabManager
+        in windowState: BrowserWindowState
     ) {
         let selectedMemberID = windowState.splitSelection?.activeMemberID
         windowState.splitSelection = nil
@@ -343,33 +282,17 @@ final class WindowSplitPresentationSynchronizer {
             + previousGroup.memberIDs.map(Optional.some)
         for memberID in candidates.compactMap({ $0 })
             where !unavailableMembers.contains(memberID) {
-            guard let tab = liveTab(
+            guard let tab = members.liveTab(
                 for: memberID,
-                in: windowState,
-                tabManager: tabManager
+                in: windowState
             ) else {
                 continue
             }
-            selectTabWithoutPersistence(tab, windowState)
-            return
-        }
-    }
-
-    private func liveTab(
-        for memberID: SplitMemberID,
-        in windowState: BrowserWindowState,
-        tabManager: TabManager
-    ) -> Tab? {
-        switch memberID {
-        case .regularTab(let tabID):
-            return tabManager.regularTabCollectionOwner.tab(for: tabID)
-
-        case .shortcutPin(let pinID):
-            return tabManager.shortcutPresentationActivation.activate(
-                pinID: pinID,
-                in: windowState.id,
-                presentationSpaceID: windowState.currentSpaceId
+            terminalEffects.selectWithoutPersistence(
+                tab,
+                in: windowState
             )
+            return
         }
     }
 
@@ -380,7 +303,7 @@ final class WindowSplitPresentationSynchronizer {
         SplitDropPresentationSelectionProjector.prepare(
             effect,
             caller: caller,
-            windows: windows()
+            windows: preparation.currentWindows()
         )
     }
 }

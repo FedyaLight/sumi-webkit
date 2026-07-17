@@ -4,11 +4,39 @@ import XCTest
 
 @MainActor
 final class BrowserTabOpeningOwnerTests: XCTestCase {
+    func testDelayedSidebarSelectionRejectsSameIDWindowReplacement() async throws {
+        let harness = makeHarness()
+        let staleWindow = harness.windowState
+        let replacement = BrowserWindowState(id: staleWindow.id)
+        harness.browserManager.tabResidenceAuthority.establishResidenceSession(on: replacement)
+        replacement.currentSpaceId = harness.primarySpace.id
+        replacement.currentProfileId = harness.primaryProfile.id
+
+        let opened = harness.browserManager.tabOpening
+            .createNewTabAfterSidebarInsertion(in: staleWindow)
+        harness.windowRegistry.unregister(staleWindow.id)
+        XCTAssertEqual(
+            harness.windowRegistry.register(replacement),
+            .registered
+        )
+
+        try await Task.sleep(nanoseconds: 300_000_000)
+
+        XCTAssertNil(staleWindow.currentTabId)
+        XCTAssertNil(replacement.currentTabId)
+        XCTAssertIdentical(
+            harness.browserManager.regularTabCollectionOwner.tab(
+                for: opened.id
+            ),
+            opened
+        )
+    }
+
     func testForegroundOpenUsesPreferredSpaceBeforeWindowSpace() {
         let harness = makeHarness()
         harness.windowState.currentSpaceId = harness.primarySpace.id
 
-        let opened = harness.browserManager.tabLifecycleService.opening.openNewTab(
+        let opened = harness.browserManager.tabOpening.openNewTab(
             context: .foreground(
                 windowState: harness.windowState,
                 preferredSpaceId: harness.secondarySpace.id
@@ -22,17 +50,17 @@ final class BrowserTabOpeningOwnerTests: XCTestCase {
 
     func testBackgroundOpenFromSourceInsertsAfterSourceWithoutChangingSelection() {
         let harness = makeHarness()
-        let source = harness.browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
+        let source = harness.browserManager.regularTabLifecycleOwner.createNewTab(
             in: harness.primarySpace,
             activate: false
         )
-        let trailing = harness.browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
+        let trailing = harness.browserManager.regularTabLifecycleOwner.createNewTab(
             in: harness.primarySpace,
             activate: false
         )
         harness.windowState.currentTabId = source.id
 
-        let opened = harness.browserManager.tabLifecycleService.opening.openNewTab(
+        let opened = harness.browserManager.tabOpening.openNewTab(
             context: .background(
                 windowState: harness.windowState,
                 sourceTab: source
@@ -41,14 +69,14 @@ final class BrowserTabOpeningOwnerTests: XCTestCase {
 
         XCTAssertEqual(harness.windowState.currentTabId, source.id)
         XCTAssertEqual(
-            harness.browserManager.tabManager.regularTabCollectionOwner.tabs(in: harness.primarySpace).map(\.id),
+            harness.browserManager.regularTabCollectionOwner.tabs(in: harness.primarySpace).map(\.id),
             [source.id, opened.id, trailing.id]
         )
     }
 
     func testBackgroundOpenAdoptsDedicatedWebKitChildWindow() {
         let harness = makeHarness()
-        let initialTab = harness.browserManager.tabManager
+        let initialTab = harness.browserManager
             .regularTabLifecycleOwner.createNewTab(
                 in: harness.primarySpace,
                 activate: false
@@ -57,7 +85,7 @@ final class BrowserTabOpeningOwnerTests: XCTestCase {
         harness.windowState.webKitChildWindowIdentity =
             WebKitChildWindowIdentity(initialTabID: initialTab.id)
 
-        let opened = harness.browserManager.tabLifecycleService.opening
+        let opened = harness.browserManager.tabOpening
             .openNewTab(context: .background(
                 windowState: harness.windowState,
                 sourceTab: initialTab
@@ -70,16 +98,16 @@ final class BrowserTabOpeningOwnerTests: XCTestCase {
 
     func testDuplicateUsesWindowSpaceBeforeSourceSpace() {
         let harness = makeHarness()
-        let source = harness.browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
+        let source = harness.browserManager.regularTabLifecycleOwner.createNewTab(
             in: harness.secondarySpace,
             activate: false
         )
         source.name = "Source"
         harness.windowState.currentSpaceId = harness.primarySpace.id
 
-        harness.browserManager.tabLifecycleService.opening.duplicateTab(source, in: harness.windowState)
+        harness.browserManager.tabOpening.duplicateTab(source, in: harness.windowState)
 
-        let duplicated = harness.browserManager.tabManager.regularTabCollectionOwner.tabs(in: harness.primarySpace).first
+        let duplicated = harness.browserManager.regularTabCollectionOwner.tabs(in: harness.primarySpace).first
         XCTAssertEqual(duplicated?.name, "Source")
         XCTAssertEqual(duplicated?.url, source.url)
         XCTAssertEqual(harness.windowState.currentTabId, duplicated?.id)
@@ -88,20 +116,20 @@ final class BrowserTabOpeningOwnerTests: XCTestCase {
     func testCreateNewTabWithoutActiveWindowUsesFirstSpaceInsteadOfGlobalCurrentSpace() {
         let harness = makeHarness()
         harness.windowRegistry.activeWindowId = nil
-        harness.browserManager.tabManager.spaceStateOwner.replaceCurrentSpace(harness.secondarySpace)
+        harness.browserManager.spaceStateOwner.replaceCurrentSpace(harness.secondarySpace)
 
-        let opened = harness.browserManager.tabLifecycleService.opening.createNewTab()
+        let opened = harness.browserManager.tabOpening.createNewTab()
 
         XCTAssertEqual(opened.spaceId, harness.primarySpace.id)
-        XCTAssertEqual(harness.browserManager.tabManager.selectionStateOwner.currentTab?.id, opened.id)
+        XCTAssertEqual(harness.browserManager.tabStateStore.selection.currentTab?.id, opened.id)
     }
 
     func testContextlessBackgroundOpenUsesFirstSpaceInsteadOfGlobalCurrentSpace() {
         let harness = makeHarness()
         harness.windowRegistry.activeWindowId = nil
-        harness.browserManager.tabManager.spaceStateOwner.replaceCurrentSpace(harness.secondarySpace)
+        harness.browserManager.spaceStateOwner.replaceCurrentSpace(harness.secondarySpace)
 
-        let opened = harness.browserManager.tabLifecycleService.opening.openNewTab(context: .background())
+        let opened = harness.browserManager.tabOpening.openNewTab(context: .background())
 
         XCTAssertEqual(opened.spaceId, harness.primarySpace.id)
     }
@@ -110,21 +138,21 @@ final class BrowserTabOpeningOwnerTests: XCTestCase {
         let harness = makeHarness()
         harness.windowState.currentSpaceId = nil
         harness.windowState.currentProfileId = harness.primaryProfile.id
-        harness.browserManager.tabManager.spaceStateOwner.replaceCurrentSpace(harness.secondarySpace)
+        harness.browserManager.spaceStateOwner.replaceCurrentSpace(harness.secondarySpace)
 
         let source = Tab(name: "Detached Source")
 
-        harness.browserManager.tabLifecycleService.opening.duplicateTab(source, in: harness.windowState)
+        harness.browserManager.tabOpening.duplicateTab(source, in: harness.windowState)
 
-        let duplicated = harness.browserManager.tabManager.regularTabCollectionOwner.tabs(in: harness.primarySpace).first
+        let duplicated = harness.browserManager.regularTabCollectionOwner.tabs(in: harness.primarySpace).first
         XCTAssertEqual(duplicated?.name, "Detached Source")
         XCTAssertEqual(duplicated?.spaceId, harness.primarySpace.id)
-        XCTAssertTrue(harness.browserManager.tabManager.regularTabCollectionOwner.tabs(in: harness.secondarySpace).isEmpty)
+        XCTAssertTrue(harness.browserManager.regularTabCollectionOwner.tabs(in: harness.secondarySpace).isEmpty)
     }
 
     private func makeHarness() -> Harness {
         let browserManager = BrowserManager()
-        let windowRegistry = WindowRegistry()
+        let windowRegistry = browserManager.windowRegistry
         let primaryProfile = Profile(name: "Primary")
         let primarySpace = Space(name: "Primary", profileId: primaryProfile.id)
         let secondarySpace = Space(name: "Secondary", profileId: primaryProfile.id)
@@ -132,11 +160,10 @@ final class BrowserTabOpeningOwnerTests: XCTestCase {
 
         browserManager.profileManager.profiles = [primaryProfile]
         browserManager.currentProfile = primaryProfile
-        browserManager.windowRegistry = windowRegistry
-        browserManager.tabManager.spaceStateOwner.replaceSpaces([primarySpace, secondarySpace])
-        browserManager.tabManager.spaceStateOwner.replaceCurrentSpace(primarySpace)
+        browserManager.spaceStateOwner.replaceSpaces([primarySpace, secondarySpace])
+        browserManager.spaceStateOwner.replaceCurrentSpace(primarySpace)
 
-        windowState.tabManager = browserManager.tabManager
+        browserManager.tabResidenceAuthority.establishResidenceSession(on: windowState)
         windowState.currentSpaceId = primarySpace.id
         windowState.currentProfileId = primaryProfile.id
 

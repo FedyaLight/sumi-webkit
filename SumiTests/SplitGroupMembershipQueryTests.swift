@@ -11,11 +11,7 @@ final class SplitGroupMembershipQueryTests: XCTestCase {
         let shortcut = Tab(url: URL(string: "https://shortcut.example")!)
         let pinID = UUID()
         shortcut.shortcutPinId = pinID
-        let query = SplitGroupMembershipQuery(
-            store: SplitGroupStore(),
-            tab: { _ in nil },
-            shortcutPinExists: { _ in false }
-        )
+        let query = makeQuery(store: SplitGroupStore())
 
         XCTAssertEqual(query.memberID(for: regular), .regularTab(regular.id))
         XCTAssertEqual(query.memberID(for: shortcut), .shortcutPin(pinID))
@@ -44,12 +40,10 @@ final class SplitGroupMembershipQueryTests: XCTestCase {
         )
         let store = SplitGroupStore()
         store.replaceAll(with: [group])
-        let query = SplitGroupMembershipQuery(
+        let query = makeQuery(
             store: store,
-            tab: { id in
-                [regular, shortcut].first { $0.id == id }
-            },
-            shortcutPinExists: { $0 == pinID }
+            tabs: [regular, shortcut],
+            pins: [makePin(id: pinID)]
         )
 
         XCTAssertEqual(query.group(containing: regular), group)
@@ -65,10 +59,10 @@ final class SplitGroupMembershipQueryTests: XCTestCase {
             id: sharedID,
             url: URL(string: "https://regular.example")!
         )
-        let query = SplitGroupMembershipQuery(
+        let query = makeQuery(
             store: SplitGroupStore(),
-            tab: { $0 == sharedID ? tab : nil },
-            shortcutPinExists: { $0 == sharedID }
+            tabs: [tab],
+            pins: [makePin(id: sharedID)]
         )
 
         XCTAssertEqual(
@@ -78,11 +72,7 @@ final class SplitGroupMembershipQueryTests: XCTestCase {
     }
 
     func testRawLookupDoesNotInventIdentityForUnknownUUID() {
-        let query = SplitGroupMembershipQuery(
-            store: SplitGroupStore(),
-            tab: { _ in nil },
-            shortcutPinExists: { _ in false }
-        )
+        let query = makeQuery(store: SplitGroupStore())
 
         XCTAssertNil(query.memberID(forLookupID: UUID()))
         XCTAssertNil(query.group(forLookupID: UUID()))
@@ -133,6 +123,45 @@ final class SplitGroupMembershipQueryTests: XCTestCase {
         XCTAssertEqual(
             store.group(containing: .shortcutPin(sharedID)),
             shortcutGroup
+        )
+    }
+
+    private func makeQuery(
+        store: SplitGroupStore,
+        tabs: [Tab] = [],
+        pins: [ShortcutPin] = []
+    ) -> SplitGroupMembershipQuery {
+        let state = TabStateStore()
+        let spaceID = UUID()
+        state.regularTabs.replaceTabsBySpace(
+            [spaceID: tabs],
+            publish: false
+        )
+        state.shortcutPins.replacePinnedByProfile([UUID(): pins])
+        let runtimeConnection = TabRuntimePortConnection()
+        let membership = TabCollectionMembershipOwner(
+            structuralLookupOwner: TabStructuralLookupOwner(),
+            state: state,
+            runtimePreparation: TabRuntimePreparationOwner(
+                runtimeConnection: runtimeConnection
+            ),
+            runtimeConnection: runtimeConnection
+        )
+        return SplitGroupMembershipQuery(
+            store: store,
+            tabs: membership,
+            pins: state.shortcutPins
+        )
+    }
+
+    private func makePin(id: UUID) -> ShortcutPin {
+        ShortcutPin(
+            id: id,
+            role: .essential,
+            profileId: UUID(),
+            index: 0,
+            launchURL: URL(string: "https://pin.example")!,
+            title: "Pin"
         )
     }
 }

@@ -123,12 +123,19 @@ struct SidebarHoverOverlayView: View {
     let chromeBackgroundResolvedThemeContext: ResolvedThemeContext
     let windowChromeSize: CGSize
     let browserContext: SidebarBrowserContext
-    let inventory: SidebarInventoryProjection
+    let spaceCatalog: SidebarSpaceCatalogProjection
+    let inventory: SidebarSpaceInventoryProjection
     let selection: SidebarWindowSelectionQuery
     let pinProjection: SidebarPinFolderProjection
-    let pinCommands: SidebarPinFolderCommands
+    let pinCommands: SidebarPinCommands
+    let pinExecution: SidebarPinExecutionCommands
+    let folderCommands: SidebarFolderCommands
     let spaceLifecycle: SidebarSpaceLifecycle
-    let regularTabs: any SidebarRegularTabsControlling
+    let regularTabCatalog: SidebarRegularTabCatalog
+    let regularTabTargets: SidebarRegularTabTargetQuery
+    let regularTabLifecycleCommands: SidebarRegularTabLifecycleCommands
+    let regularTabShortcutCommands: SidebarRegularTabShortcutCommands
+    let regularTabPlacementCommands: SidebarRegularTabPlacementCommands
     let dragTransactions: SidebarDragTransactionPort
     let inventoryUpdates: SidebarInventoryUpdates
     let profileUpdates: SidebarProfileUpdates
@@ -148,12 +155,19 @@ struct SidebarHoverOverlayView: View {
         chromeBackgroundResolvedThemeContext: ResolvedThemeContext,
         windowChromeSize: CGSize,
         browserContext: SidebarBrowserContext,
-        inventory: SidebarInventoryProjection,
+        spaceCatalog: SidebarSpaceCatalogProjection,
+        inventory: SidebarSpaceInventoryProjection,
         selection: SidebarWindowSelectionQuery,
         pinProjection: SidebarPinFolderProjection,
-        pinCommands: SidebarPinFolderCommands,
+        pinCommands: SidebarPinCommands,
+        pinExecution: SidebarPinExecutionCommands,
+        folderCommands: SidebarFolderCommands,
         spaceLifecycle: SidebarSpaceLifecycle,
-        regularTabs: any SidebarRegularTabsControlling,
+        regularTabCatalog: SidebarRegularTabCatalog,
+        regularTabTargets: SidebarRegularTabTargetQuery,
+        regularTabLifecycleCommands: SidebarRegularTabLifecycleCommands,
+        regularTabShortcutCommands: SidebarRegularTabShortcutCommands,
+        regularTabPlacementCommands: SidebarRegularTabPlacementCommands,
         dragTransactions: SidebarDragTransactionPort,
         inventoryUpdates: SidebarInventoryUpdates,
         profileUpdates: SidebarProfileUpdates,
@@ -165,12 +179,19 @@ struct SidebarHoverOverlayView: View {
         self.chromeBackgroundResolvedThemeContext = chromeBackgroundResolvedThemeContext
         self.windowChromeSize = windowChromeSize
         self.browserContext = browserContext
+        self.spaceCatalog = spaceCatalog
         self.inventory = inventory
         self.selection = selection
         self.pinProjection = pinProjection
         self.pinCommands = pinCommands
+        self.pinExecution = pinExecution
+        self.folderCommands = folderCommands
         self.spaceLifecycle = spaceLifecycle
-        self.regularTabs = regularTabs
+        self.regularTabCatalog = regularTabCatalog
+        self.regularTabTargets = regularTabTargets
+        self.regularTabLifecycleCommands = regularTabLifecycleCommands
+        self.regularTabShortcutCommands = regularTabShortcutCommands
+        self.regularTabPlacementCommands = regularTabPlacementCommands
         self.dragTransactions = dragTransactions
         self.inventoryUpdates = inventoryUpdates
         self.profileUpdates = profileUpdates
@@ -343,12 +364,19 @@ struct SidebarHoverOverlayView: View {
     private var collapsedOverlayHost: some View {
         CollapsedSidebarOverlayHost(
             browserContext: browserContext,
+            spaceCatalog: spaceCatalog,
             inventory: inventory,
             selection: selection,
             pinProjection: pinProjection,
             pinCommands: pinCommands,
+            pinExecution: pinExecution,
+            folderCommands: folderCommands,
             spaceLifecycle: spaceLifecycle,
-            regularTabs: regularTabs,
+            regularTabCatalog: regularTabCatalog,
+            regularTabTargets: regularTabTargets,
+            regularTabLifecycleCommands: regularTabLifecycleCommands,
+            regularTabShortcutCommands: regularTabShortcutCommands,
+            regularTabPlacementCommands: regularTabPlacementCommands,
             dragTransactions: dragTransactions,
             inventoryUpdates: inventoryUpdates,
             profileUpdates: profileUpdates,

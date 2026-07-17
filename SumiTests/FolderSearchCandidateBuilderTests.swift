@@ -6,7 +6,7 @@ import XCTest
 @MainActor
 final class FolderSearchCandidateBuilderTests: XCTestCase {
     func testCandidatesFollowVisualOrderRecurseIntoNestedFoldersAndExcludeVisibleCollapsedProjection() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let browser = BrowserManager(windowRegistry: WindowRegistry())
         let liveProvider = FakeFolderSearchLiveProvider()
         let space = Space(name: "Work")
         let root = TabFolder(name: "Root", spaceId: space.id, index: 0)
@@ -15,15 +15,15 @@ final class FolderSearchCandidateBuilderTests: XCTestCase {
         let direct = try makePin(title: "Direct", folderId: root.id, spaceId: space.id, index: 1)
         let nestedPin = try makePin(title: "Nested Docs", folderId: nested.id, spaceId: space.id, index: 0)
 
-        tabManager.folderCollectionStateOwner.replaceFoldersBySpace([
+        browser.folderCollectionStateOwner.replaceFoldersBySpace([
             space.id: [root, nested],
         ])
-        tabManager.shortcutPinCollectionStateOwner.replaceSpacePinnedShortcuts([
+        browser.shortcutPinCollectionStateOwner.replaceSpacePinnedShortcuts([
             space.id: [visible, direct, nestedPin],
         ])
 
         let candidates = makeBuilder(
-            tabManager: tabManager,
+            browser: browser,
             space: space,
             liveProvider: liveProvider
         ).candidates(
@@ -44,14 +44,13 @@ final class FolderSearchCandidateBuilderTests: XCTestCase {
     }
 
     func testLiveFolderUsesVisibleItemSnapshot() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let browser = BrowserManager(windowRegistry: WindowRegistry())
         let liveProvider = FakeFolderSearchLiveProvider()
         let space = Space(name: "Work")
         let folder = TabFolder(name: "Feed", spaceId: space.id)
         let source = SumiLiveFolderSource(
             folderId: folder.id,
             spaceId: space.id,
-            profileId: nil,
             kind: .rss,
             title: "Feed",
             urlString: "https://example.com/feed.xml"
@@ -74,7 +73,7 @@ final class FolderSearchCandidateBuilderTests: XCTestCase {
         liveProvider.itemsByFolderId[folder.id] = [item]
 
         let candidates = makeBuilder(
-            tabManager: tabManager,
+            browser: browser,
             space: space,
             liveProvider: liveProvider
         ).candidates(
@@ -89,7 +88,7 @@ final class FolderSearchCandidateBuilderTests: XCTestCase {
     }
 
     func testShortcutHostedSplitGroupMembersBecomeCandidates() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let browser = BrowserManager(windowRegistry: WindowRegistry())
         let liveProvider = FakeFolderSearchLiveProvider()
         let space = Space(name: "Work")
         let folder = TabFolder(name: "Split Folder", spaceId: space.id)
@@ -125,16 +124,16 @@ final class FolderSearchCandidateBuilderTests: XCTestCase {
             )
         )
 
-        tabManager.folderCollectionStateOwner.replaceFoldersBySpace([
+        browser.folderCollectionStateOwner.replaceFoldersBySpace([
             space.id: [folder],
         ])
-        tabManager.shortcutPinCollectionStateOwner.replaceSpacePinnedShortcuts([
+        browser.shortcutPinCollectionStateOwner.replaceSpacePinnedShortcuts([
             space.id: [first, second],
         ])
-        tabManager.splitGroupStore.replaceAll(with: [group])
+        browser.splitGroupStore.replaceAll(with: [group])
 
         let candidates = makeBuilder(
-            tabManager: tabManager,
+            browser: browser,
             space: space,
             liveProvider: liveProvider
         ).candidates(
@@ -186,19 +185,41 @@ final class FolderSearchCandidateBuilderTests: XCTestCase {
     }
 
     private func makeBuilder(
-        tabManager: TabManager,
+        browser: BrowserManager,
         space: Space,
         liveProvider: FolderSearchLiveFolderProviding
     ) -> FolderSearchCandidateBuilder {
-        tabManager.spaceStateOwner.replaceSpaces([space])
+        browser.spaceStateOwner.replaceSpaces([space])
         let windowState = BrowserWindowState()
-        let roles = SidebarConsumerTestSupport.roles(
-            tabManager: tabManager,
-            windowState: windowState
+        browser.tabResidenceAuthority.establishResidenceSession(
+            on: windowState
+        )
+        browser.windowRegistry.register(windowState)
+        let windows = SidebarWindowIdentityQuery(
+            registry: browser.windowRegistry
+        )
+        let pinnedInventory = SidebarPinnedInventoryProjection(
+            folders: browser.folderCollectionStateOwner,
+            pins: browser.shortcutPinCollectionStateOwner,
+            splitGroups: browser.splitGroupStore,
+            splitOrdering: browser.splitGroupSidebarOrdering
+        )
+        let inventory = SidebarSpaceInventoryProjection(
+            runtime: browser.runtimePortConnection,
+            spaces: browser.spaceStateOwner,
+            regularTabs: browser.regularTabCollectionOwner,
+            pinned: pinnedInventory
+        )
+        let selection = SidebarWindowSelectionQuery(
+            runtimeIsAlive: { true },
+            windows: windows,
+            windowTabs: browser.shellRuntime.windowTabs,
+            shortcutPresentation: browser.shortcutPresentationOwner,
+            splitQuery: browser.splitWindowContext.query
         )
         return FolderSearchCandidateBuilder(
-            inventory: roles.inventory.snapshot(for: space.id)!,
-            selection: roles.selection,
+            inventory: inventory.snapshot(for: space.id)!,
+            selection: selection,
             windowState: windowState,
             liveFolderProvider: liveProvider,
             faviconImageReader: TabDependencyIsolationDefaults.faviconCapabilities.images,

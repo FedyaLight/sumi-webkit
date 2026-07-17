@@ -86,7 +86,7 @@ final class SumiFaviconRuntimeArchitectureTests: XCTestCase {
             priority: .backgroundPrefetch
         )
         await fetcher.waitUntilStarted()
-        runtime.maintenance.clearPartition(partition)
+        try runtime.maintenance.clearPartition(partition)
         await fetcher.release()
         await fetcher.waitUntilCompleted()
         await runtime.coldFetches.drainForTests(cancel: false)

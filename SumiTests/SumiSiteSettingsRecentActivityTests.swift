@@ -101,4 +101,65 @@ final class SumiSiteSettingsRecentActivityTests: XCTestCase {
 
         XCTAssertEqual(harness.repository.recentActivity(profile: harness.profileContext), [])
     }
+
+    func testRetiredProfileActivityCannotBeRecreatedAndRetainedProfileRemainsWritable() {
+        let store = SumiPermissionRecentActivityStore()
+        let targetKey = activityKey(
+            profileID: "target-profile",
+            host: "target.example"
+        )
+        let retainedKey = activityKey(
+            profileID: "retained-profile",
+            host: "retained.example"
+        )
+        store.recordSettingsChange(
+            displayDomain: "target.example",
+            key: targetKey,
+            state: .allow
+        )
+        store.recordSettingsChange(
+            displayDomain: "retained.example",
+            key: retainedKey,
+            state: .allow
+        )
+
+        store.deleteProfileData(profilePartitionId: "target-profile")
+        store.recordSettingsChange(
+            displayDomain: "target.example",
+            key: targetKey,
+            state: .deny
+        )
+        store.recordSettingsChange(
+            displayDomain: "retained.example",
+            key: retainedKey,
+            state: .deny
+        )
+
+        XCTAssertTrue(
+            store.records(
+                profilePartitionId: "target-profile",
+                isEphemeralProfile: false
+            ).isEmpty
+        )
+        XCTAssertEqual(
+            store.records(
+                profilePartitionId: "retained-profile",
+                isEphemeralProfile: false
+            ).count,
+            2
+        )
+    }
+
+    private func activityKey(
+        profileID: String,
+        host: String
+    ) -> SumiPermissionKey {
+        let origin = SumiPermissionOrigin(string: "https://\(host)")
+        return SumiPermissionKey(
+            requestingOrigin: origin,
+            topOrigin: origin,
+            permissionType: .camera,
+            profilePartitionId: profileID
+        )
+    }
 }

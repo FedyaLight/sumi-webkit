@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import SumiDomain
 import SumiWebRuntime
@@ -9,7 +10,7 @@ import XCTest
 @MainActor
 final class SpaceRemovalServiceTests: XCTestCase {
     func testCannotRemoveTheLastSpace() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let tabManager = BrowserManager()
         let onlySpace = Space(name: "Only")
         tabManager.spaceStateOwner.replaceSpaces([onlySpace])
         tabManager.spaceStateOwner.replaceCurrentSpace(onlySpace)
@@ -23,7 +24,7 @@ final class SpaceRemovalServiceTests: XCTestCase {
     }
 
     func testRemovalClearsEverySpaceScopedCollectionAndRepairsSelection() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let tabManager = BrowserManager()
         let survivingSpace = Space(name: "Surviving")
         let removedSpace = Space(name: "Removed")
         tabManager.spaceStateOwner.replaceSpaces([
@@ -54,7 +55,7 @@ final class SpaceRemovalServiceTests: XCTestCase {
         )
         transientTab.bindToShortcutPin(pin)
         let windowId = UUID()
-        tabManager.regularTabCollectionStateOwner.replaceTabsBySpace([
+        tabManager.tabStateStore.regularTabs.replaceTabsBySpace([
             removedSpace.id: [regularTab],
         ])
         tabManager.folderCollectionStateOwner.replaceFoldersBySpace([
@@ -74,12 +75,14 @@ final class SpaceRemovalServiceTests: XCTestCase {
                 profileID: removedSpace.profileId
             )
         ))
-        tabManager.selectionStateOwner.replaceCurrentTab(transientTab)
+        tabManager.tabStateStore.selection.replaceCurrentTab(transientTab)
         var validationCount = 0
         var announcementCount = 0
+        let observation = tabManager.objectWillChange.sink {
+            announcementCount += 1
+        }
         let service = makeService(
             tabManager,
-            announceChange: { announcementCount += 1 },
             validateWindowStates: { validationCount += 1 }
         )
 
@@ -92,10 +95,11 @@ final class SpaceRemovalServiceTests: XCTestCase {
         )
         XCTAssertEqual(announcementCount, 1)
         XCTAssertEqual(validationCount, 1)
+        withExtendedLifetime(observation) {}
     }
 
     func testRemovalRetiresEveryLiveTabSurfaceAndPurgesWindowReferences() async throws {
-        let tabManager = try makeInMemoryTabManager()
+        let tabManager = BrowserManager()
         let fixture = try makeLiveRemovalFixture(in: tabManager)
         let runtimeProbe = SpaceRemovalRuntimeProbe(
             windowState: fixture.windowState,
@@ -121,15 +125,15 @@ final class SpaceRemovalServiceTests: XCTestCase {
         XCTAssertEqual(runtimeProbe.auxiliaryCloseTabIds, [fixture.auxiliary.id])
         XCTAssertTrue(tabManager.splitGroupStore.groups.isEmpty)
         XCTAssertTrue(
-            tabManager.transientTabRegistryOwner
+            tabManager.tabStateStore.transientTabs
                 .transientExtensionTabsByID.isEmpty
         )
         XCTAssertTrue(
-            tabManager.transientTabRegistryOwner
+            tabManager.tabStateStore.transientTabs
                 .auxiliaryMiniWindowTabsByID.isEmpty
         )
         XCTAssertTrue(
-            tabManager.transientTabRegistryOwner
+            tabManager.tabStateStore.transientTabs
                 .liveShortcutEntries(
                     presentedInSpace: fixture.removedSpace.id
                 ).isEmpty
@@ -154,7 +158,7 @@ final class SpaceRemovalServiceTests: XCTestCase {
     }
 
     func testBlockedPhysicalCleanupLeavesSpaceAndMembershipIntact() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let tabManager = BrowserManager()
         let fixture = try makeLiveRemovalFixture(in: tabManager)
         let runtimeProbe = SpaceRemovalRuntimeProbe(
             windowState: fixture.windowState,
@@ -184,7 +188,7 @@ final class SpaceRemovalServiceTests: XCTestCase {
             }
         )
         XCTAssertIdentical(
-            tabManager.selectionStateOwner.currentTab,
+            tabManager.tabStateStore.selection.currentTab,
             fixture.auxiliary
         )
         for tab in fixture.removedTabs {
@@ -200,13 +204,12 @@ final class SpaceRemovalServiceTests: XCTestCase {
     }
 
     func testHistoryOnlyCleanupPersistsRepairedWindowSession() throws {
-        let tabManager = try makeInMemoryTabManager()
-        let survivingSpace = tabManager.spaceServices.catalog.createSpace(
+        let tabManager = BrowserManager()
+        let survivingSpace = try createSpace(
+            in: tabManager,
             name: "Surviving"
         )
-        let removedSpace = tabManager.spaceServices.catalog.createSpace(
-            name: "Removed"
-        )
+        let removedSpace = try createSpace(in: tabManager, name: "Removed")
         let windowState = BrowserWindowState()
         windowState.currentSpaceId = survivingSpace.id
         windowState.currentTabId = UUID()
@@ -233,7 +236,7 @@ final class SpaceRemovalServiceTests: XCTestCase {
     private func assertRemoval(
         of removedSpace: Space,
         keeps survivingSpace: Space,
-        in tabManager: TabManager
+        in tabManager: BrowserManager
     ) {
         XCTAssertEqual(
             tabManager.spaceStateOwner.spaces.map(\.id),
@@ -243,9 +246,9 @@ final class SpaceRemovalServiceTests: XCTestCase {
             tabManager.spaceStateOwner.currentSpace,
             survivingSpace
         )
-        XCTAssertNil(tabManager.selectionStateOwner.currentTab)
+        XCTAssertNil(tabManager.tabStateStore.selection.currentTab)
         XCTAssertEqual(
-            tabManager.regularTabCollectionStateOwner.tabs(in: removedSpace.id),
+            tabManager.tabStateStore.regularTabs.tabs(in: removedSpace.id),
             []
         )
         XCTAssertEqual(
@@ -258,7 +261,7 @@ final class SpaceRemovalServiceTests: XCTestCase {
             []
         )
         XCTAssertTrue(
-            tabManager.transientTabRegistryOwner
+            tabManager.tabStateStore.transientTabs
                 .liveShortcutEntries(presentedInSpace: removedSpace.id).isEmpty
         )
         XCTAssertTrue(
@@ -268,8 +271,7 @@ final class SpaceRemovalServiceTests: XCTestCase {
     }
 
     private func makeService(
-        _ tabManager: TabManager,
-        announceChange: @escaping @MainActor () -> Void = { /* No-op. */ },
+        _ tabManager: BrowserManager,
         validateWindowStates: @escaping @MainActor () -> Void
     ) -> SpaceRemovalService {
         let runtimePorts = TestRuntimePorts.make(
@@ -278,26 +280,27 @@ final class SpaceRemovalServiceTests: XCTestCase {
                 return []
             }
         )
-        return makeService(tabManager, runtimePorts: runtimePorts, announceChange: announceChange)
+        return makeService(tabManager, runtimePorts: runtimePorts)
     }
 
     private func makeService(
-        _ tabManager: TabManager,
-        runtimePorts: RuntimePortRegistry,
-        announceChange: @escaping @MainActor () -> Void = { /* No-op. */ }
+        _ tabManager: BrowserManager,
+        runtimePorts: RuntimePortRegistry
     ) -> SpaceRemovalService {
-        SpaceRemovalService(
-            state: tabManager.stateStore,
-            persistence: tabManager.structuralPersistence,
+        let runtimeConnection = TabRuntimePortConnection(runtimePorts)
+        return SpaceRemovalService(
             transactions: tabManager.structuralLookupCoordinator,
             contentRetirement: SpaceContentRetirementService(
-                state: tabManager.stateStore,
+                state: tabManager.tabStateStore,
                 structuralMutations: tabManager.structuralCollectionMutationOwner,
                 splitGroups: SpaceSplitGroupRetirementService(
                     store: tabManager.splitGroupStore,
                     mutations: tabManager.splitGroupMutations
                 ),
-                liveShortcutRetirement: tabManager.liveShortcutTabBatchRetirement,
+                liveShortcutRetirement: LiveShortcutTabBatchRetirement(
+                    storage: tabManager.tabStateStore.transientTabs,
+                    structuralLookup: tabManager.structuralLookupCoordinator
+                ),
                 runtimeTeardown: TabRuntimeTeardownService(
                     persistence: tabManager.structuralPersistence,
                     membership: tabManager.tabCollectionMembershipOwner,
@@ -305,16 +308,20 @@ final class SpaceRemovalServiceTests: XCTestCase {
                 )
             ),
             windowStates: DeletedSpaceWindowStateReconciler(
-                runtimePorts: { runtimePorts }
+                runtimeConnection: runtimeConnection
             ),
-            announceChange: announceChange
+            catalog: SpaceRemovalCatalogCommitter(
+                state: tabManager.tabStateStore,
+                persistence: tabManager.structuralPersistence,
+                changes: tabManager.objectWillChange
+            )
         )
     }
 
     private func makeLiveTab(
         path: String,
         spaceId: UUID,
-        tabManager: TabManager
+        tabManager: BrowserManager
     ) -> Tab {
         tabManager.tabFactory.makeTab(
             url: URL(string: "https://\(path).example")
@@ -326,7 +333,7 @@ final class SpaceRemovalServiceTests: XCTestCase {
     }
 
     private func makeLiveRemovalFixture(
-        in tabManager: TabManager
+        in tabManager: BrowserManager
     ) throws -> SpaceRemovalFixture {
         let survivingSpace = Space(name: "Surviving")
         let removedSpace = Space(name: "Removed")
@@ -370,7 +377,7 @@ final class SpaceRemovalServiceTests: XCTestCase {
         ))
         membership.registerTransientExtensionTab(transientExtension)
         membership.registerAuxiliaryMiniWindowTab(auxiliary)
-        tabManager.selectionStateOwner.replaceCurrentTab(auxiliary)
+        tabManager.tabStateStore.selection.replaceCurrentTab(auxiliary)
         let groups = try installSplitGroups(
             removedSpaceId: removedSpace.id,
             survivingSpaceId: survivingSpace.id,
@@ -403,7 +410,7 @@ final class SpaceRemovalServiceTests: XCTestCase {
         survivingSpaceId: UUID,
         deletedHostTabs: (Tab, Tab),
         crossSpaceTabs: (Tab, Tab),
-        tabManager: TabManager
+        tabManager: BrowserManager
     ) throws -> (SplitGroup, SplitGroup) {
         let shortcutPinID = try XCTUnwrap(
             deletedHostTabs.1.shortcutPinId
@@ -439,6 +446,17 @@ final class SpaceRemovalServiceTests: XCTestCase {
             with: [deletedHostGroup, crossSpaceGroup]
         )
         return (deletedHostGroup, crossSpaceGroup)
+    }
+
+    private func createSpace(
+        in browser: BrowserManager,
+        name: String
+    ) throws -> Space {
+        try XCTUnwrap(browser.sidebarSpaceLifecycle.createSpace(
+            name: name,
+            icon: SumiPersistentGlyph.spaceDefaultIconValue,
+            profileID: nil
+        ))
     }
 }
 

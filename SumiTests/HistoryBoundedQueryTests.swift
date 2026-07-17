@@ -316,6 +316,26 @@ final class HistoryBoundedQueryTests: XCTestCase {
         XCTAssertTrue(otherStore.addedURLs.isEmpty)
     }
 
+    func testDiscardVisitedLinkStoreClearsLiveAndPendingProfileState() {
+        let provider = SharedVisitedLinkStoreProvider()
+        let profileID = UUID()
+        let pendingURL = URL(string: "https://discard.example/pending")!
+        let liveStore = FakeVisitedLinkStore()
+        provider.preloadVisitedLinks([pendingURL], for: profileID)
+        provider.seedStoreForTesting(liveStore, profileId: profileID)
+
+        provider.discardStore(for: profileID)
+
+        XCTAssertEqual(liveStore.removeAllCallCount, 1)
+        let replacementStore = FakeVisitedLinkStore()
+        provider.seedStoreForTesting(replacementStore, profileId: profileID)
+        provider.applyStore(
+            to: WKWebViewConfiguration(),
+            profileId: profileID
+        )
+        XCTAssertTrue(replacementStore.addedURLs.isEmpty)
+    }
+
     func testHistoryAndCleanupDomainConsumersShareSiteIdentity() async throws {
         let harness = try makeHarness()
         try await recordVisit(

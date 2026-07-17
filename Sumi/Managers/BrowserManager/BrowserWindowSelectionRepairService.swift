@@ -4,47 +4,24 @@ import Foundation
 /// does not persist or refresh UI; it reports whether its caller must commit.
 @MainActor
 final class BrowserWindowSelectionRepairService {
-    private let tabManager: TabManager
+    private let membership: TabCollectionMembershipOwner
+    private let spaces: TabSpaceCollectionStateOwner
+    private let tabStore: any ShellSelectionTabStore
     private let selection: ShellSelectionService
-    private let synchronizeShortcutSelection: (BrowserWindowState) -> Void
-    private let applyTabSelection: (Tab, BrowserWindowState) -> Void
-    private let showEmptyState: (BrowserWindowState) -> Void
+    private let selectionOwner: BrowserTabSelectionOwner
 
     init(
-        tabManager: TabManager,
+        membership: TabCollectionMembershipOwner,
+        spaces: TabSpaceCollectionStateOwner,
+        tabStore: any ShellSelectionTabStore,
         selection: ShellSelectionService,
-        synchronizeShortcutSelection: @escaping (BrowserWindowState) -> Void,
-        applyTabSelection: @escaping (Tab, BrowserWindowState) -> Void,
-        showEmptyState: @escaping (BrowserWindowState) -> Void
+        selectionOwner: BrowserTabSelectionOwner
     ) {
-        self.tabManager = tabManager
+        self.membership = membership
+        self.spaces = spaces
+        self.tabStore = tabStore
         self.selection = selection
-        self.synchronizeShortcutSelection = synchronizeShortcutSelection
-        self.applyTabSelection = applyTabSelection
-        self.showEmptyState = showEmptyState
-    }
-
-    convenience init(browserManager: BrowserManager) {
-        self.init(
-            tabManager: browserManager.tabManager,
-            selection: browserManager.shellRuntime.windowSelection,
-            synchronizeShortcutSelection: { [weak browserManager] windowState in
-                browserManager?.syncShortcutSelectionState(for: windowState)
-            },
-            applyTabSelection: { [weak browserManager] tab, windowState in
-                browserManager?.applyTabSelection(
-                    tab,
-                    in: windowState,
-                    updateSpaceFromTab: false,
-                    updateTheme: false,
-                    rememberSelection: false,
-                    persistSelection: false
-                )
-            },
-            showEmptyState: { [weak browserManager] windowState in
-                browserManager?.showEmptyState(in: windowState)
-            }
-        )
+        self.selectionOwner = selectionOwner
     }
 
     @discardableResult
@@ -56,15 +33,23 @@ final class BrowserWindowSelectionRepairService {
         if !windowState.isShowingEmptyState,
            !hasValidCurrentSelection(in: windowState) {
             if let preferredTab = preferredTab(in: windowState) {
-                applyTabSelection(preferredTab, windowState)
+                selectionOwner.applyTabSelection(
+                    preferredTab,
+                    in: windowState,
+                    updateSpaceFromTab: false,
+                    updateTheme: false,
+                    rememberSelection: false,
+                    persistSelection: false,
+                    loadPolicy: .immediate
+                )
             } else {
-                showEmptyState(windowState)
+                selectionOwner.showEmptyState(in: windowState)
             }
             didChange = true
         }
 
         let previousShortcutPinId = windowState.currentShortcutPinId
-        synchronizeShortcutSelection(windowState)
+        selectionOwner.syncShortcutSelectionState(for: windowState)
         if previousShortcutPinId != windowState.currentShortcutPinId {
             didChange = true
         }
@@ -79,7 +64,7 @@ final class BrowserWindowSelectionRepairService {
         if windowState.isIncognito {
             tabExists = windowState.ephemeralTabs.contains { $0.id == currentTabId }
         } else {
-            tabExists = tabManager.tabCollectionMembershipOwner.tab(for: currentTabId) != nil
+            tabExists = membership.tab(for: currentTabId) != nil
         }
 
         guard !tabExists else { return false }
@@ -90,24 +75,24 @@ final class BrowserWindowSelectionRepairService {
     private func hasValidCurrentSelection(in windowState: BrowserWindowState) -> Bool {
         selection.hasValidCurrentSelection(
             in: windowState,
-            tabStore: tabManager.runtimeStore
+            tabStore: tabStore
         )
     }
 
     private func preferredTab(in windowState: BrowserWindowState) -> Tab? {
         if let currentSpaceId = windowState.currentSpaceId,
-           let currentSpace = tabManager.spaceStateOwner.space(with: currentSpaceId),
+           let currentSpace = spaces.space(with: currentSpaceId),
            let preferred = selection.preferredTabForSpace(
                currentSpace,
                in: windowState,
-               tabStore: tabManager.runtimeStore
+               tabStore: tabStore
            ) {
             return preferred
         }
 
         return selection.preferredTabForWindow(
             windowState,
-            tabStore: tabManager.runtimeStore
+            tabStore: tabStore
         )
     }
 }

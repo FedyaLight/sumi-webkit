@@ -4,12 +4,19 @@ import SwiftUI
 struct SidebarColumnHostedRootView: View {
     let environmentContext: SidebarHostEnvironmentContext
     let presentationContext: SidebarPresentationContext
-    let inventory: SidebarInventoryProjection
+    let spaceCatalog: SidebarSpaceCatalogProjection
+    let inventory: SidebarSpaceInventoryProjection
     let selection: SidebarWindowSelectionQuery
     let pinProjection: SidebarPinFolderProjection
-    let pinCommands: SidebarPinFolderCommands
+    let pinCommands: SidebarPinCommands
+    let pinExecution: SidebarPinExecutionCommands
+    let folderCommands: SidebarFolderCommands
     let spaceLifecycle: SidebarSpaceLifecycle
-    let regularTabs: any SidebarRegularTabsControlling
+    let regularTabCatalog: SidebarRegularTabCatalog
+    let regularTabTargets: SidebarRegularTabTargetQuery
+    let regularTabLifecycleCommands: SidebarRegularTabLifecycleCommands
+    let regularTabShortcutCommands: SidebarRegularTabShortcutCommands
+    let regularTabPlacementCommands: SidebarRegularTabPlacementCommands
     let dragTransactions: SidebarDragTransactionPort
     let inventoryUpdates: SidebarInventoryUpdates
     let profileUpdates: SidebarProfileUpdates
@@ -18,12 +25,19 @@ struct SidebarColumnHostedRootView: View {
     var body: some View {
         SpacesSideBarView(
             browserContext: environmentContext.browserContext,
+            spaceCatalog: spaceCatalog,
             inventory: inventory,
             selection: selection,
             pinProjection: pinProjection,
             pinCommands: pinCommands,
+            pinExecution: pinExecution,
+            folderCommands: folderCommands,
             spaceLifecycle: spaceLifecycle,
-            regularTabs: regularTabs,
+            regularTabCatalog: regularTabCatalog,
+            regularTabTargets: regularTabTargets,
+            regularTabLifecycleCommands: regularTabLifecycleCommands,
+            regularTabShortcutCommands: regularTabShortcutCommands,
+            regularTabPlacementCommands: regularTabPlacementCommands,
             dragTransactions: dragTransactions,
             inventoryUpdates: inventoryUpdates,
             profileUpdates: profileUpdates,
@@ -143,12 +157,19 @@ enum SidebarColumnHostedRoot {
     static func view(
         environmentContext: SidebarHostEnvironmentContext,
         presentationContext: SidebarPresentationContext,
-        inventory: SidebarInventoryProjection,
+        spaceCatalog: SidebarSpaceCatalogProjection,
+        inventory: SidebarSpaceInventoryProjection,
         selection: SidebarWindowSelectionQuery,
         pinProjection: SidebarPinFolderProjection,
-        pinCommands: SidebarPinFolderCommands,
+        pinCommands: SidebarPinCommands,
+        pinExecution: SidebarPinExecutionCommands,
+        folderCommands: SidebarFolderCommands,
         spaceLifecycle: SidebarSpaceLifecycle,
-        regularTabs: any SidebarRegularTabsControlling,
+        regularTabCatalog: SidebarRegularTabCatalog,
+        regularTabTargets: SidebarRegularTabTargetQuery,
+        regularTabLifecycleCommands: SidebarRegularTabLifecycleCommands,
+        regularTabShortcutCommands: SidebarRegularTabShortcutCommands,
+        regularTabPlacementCommands: SidebarRegularTabPlacementCommands,
         dragTransactions: SidebarDragTransactionPort,
         inventoryUpdates: SidebarInventoryUpdates,
         profileUpdates: SidebarProfileUpdates
@@ -156,12 +177,19 @@ enum SidebarColumnHostedRoot {
         SidebarColumnHostedRootView(
             environmentContext: environmentContext,
             presentationContext: presentationContext,
+            spaceCatalog: spaceCatalog,
             inventory: inventory,
             selection: selection,
             pinProjection: pinProjection,
             pinCommands: pinCommands,
+            pinExecution: pinExecution,
+            folderCommands: folderCommands,
             spaceLifecycle: spaceLifecycle,
-            regularTabs: regularTabs,
+            regularTabCatalog: regularTabCatalog,
+            regularTabTargets: regularTabTargets,
+            regularTabLifecycleCommands: regularTabLifecycleCommands,
+            regularTabShortcutCommands: regularTabShortcutCommands,
+            regularTabPlacementCommands: regularTabPlacementCommands,
             dragTransactions: dragTransactions,
             inventoryUpdates: inventoryUpdates,
             profileUpdates: profileUpdates
@@ -171,12 +199,19 @@ enum SidebarColumnHostedRoot {
 
 struct SidebarColumnRepresentable: NSViewControllerRepresentable {
     var browserContext: SidebarBrowserContext
-    let inventory: SidebarInventoryProjection
+    let spaceCatalog: SidebarSpaceCatalogProjection
+    let inventory: SidebarSpaceInventoryProjection
     let selection: SidebarWindowSelectionQuery
     let pinProjection: SidebarPinFolderProjection
-    let pinCommands: SidebarPinFolderCommands
+    let pinCommands: SidebarPinCommands
+    let pinExecution: SidebarPinExecutionCommands
+    let folderCommands: SidebarFolderCommands
     let spaceLifecycle: SidebarSpaceLifecycle
-    let regularTabs: any SidebarRegularTabsControlling
+    let regularTabCatalog: SidebarRegularTabCatalog
+    let regularTabTargets: SidebarRegularTabTargetQuery
+    let regularTabLifecycleCommands: SidebarRegularTabLifecycleCommands
+    let regularTabShortcutCommands: SidebarRegularTabShortcutCommands
+    let regularTabPlacementCommands: SidebarRegularTabPlacementCommands
     let dragTransactions: SidebarDragTransactionPort
     let inventoryUpdates: SidebarInventoryUpdates
     let profileUpdates: SidebarProfileUpdates
@@ -235,12 +270,19 @@ struct SidebarColumnRepresentable: NSViewControllerRepresentable {
         let root = SidebarColumnHostedRoot.view(
             environmentContext: environmentContext,
             presentationContext: presentationContext,
+            spaceCatalog: spaceCatalog,
             inventory: inventory,
             selection: selection,
             pinProjection: pinProjection,
             pinCommands: pinCommands,
+            pinExecution: pinExecution,
+            folderCommands: folderCommands,
             spaceLifecycle: spaceLifecycle,
-            regularTabs: regularTabs,
+            regularTabCatalog: regularTabCatalog,
+            regularTabTargets: regularTabTargets,
+            regularTabLifecycleCommands: regularTabLifecycleCommands,
+            regularTabShortcutCommands: regularTabShortcutCommands,
+            regularTabPlacementCommands: regularTabPlacementCommands,
             dragTransactions: dragTransactions,
             inventoryUpdates: inventoryUpdates,
             profileUpdates: profileUpdates

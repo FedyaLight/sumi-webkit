@@ -16,7 +16,7 @@ extension BrowserWindowCommands {
                     permissionLifecycleController: browserRuntime
                         .permissionRuntime.permissionLifecycleController,
                     profileManager: browserRuntime.profileManager,
-                    tabManager: browserRuntime.tabManager,
+                    tabResidences: browserRuntime.tabResidenceAuthority,
                     makeContentView: browserRuntime.shellRuntime
                         .requireWindowShellContentViewFactory(),
                     showEmptyState: { [weak browserRuntime] window, presentBar in
@@ -42,8 +42,27 @@ extension BrowserWindowCommands {
                     .discardRegistration(window)
             },
             discardActivation: { [weak browserRuntime] window in
-                browserRuntime?.windowSessionBundle.activation
+                browserRuntime?.windowActivation
                     .discardDeferredActivation(window)
+            }
+        )
+    }
+
+    func createArchivedWindow(
+        from snapshot: LastSessionWindowSnapshot,
+        sessionRestore: WindowSessionRestoreService
+    ) -> BrowserWindowState? {
+        var didPrepareArchivedSession = false
+        return createPreparedWindow(
+            initialize: { windowState in
+                didPrepareArchivedSession = sessionRestore.prepareArchivedWindow(
+                    snapshot,
+                    forRegistration: windowState
+                )
+            },
+            validateBeforeShell: { _ in didPrepareArchivedSession },
+            discardPreparedState: {
+                sessionRestore.cancelPreparedWindowRegistration($0)
             }
         )
     }

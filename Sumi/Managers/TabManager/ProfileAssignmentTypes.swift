@@ -104,5 +104,19 @@ struct TabSpaceProfileTransitionPreparation: Equatable {
     let tabID: UUID
     let sourceSpaceID: UUID?
     let targetSpaceID: UUID?
+    let sourceProfileID: UUID?
+    let sourceAssignmentRevision: UInt64
     let pinnedProfileID: UUID
+}
+
+enum TabSpaceProfileTransitionPreparationOutcome: Equatable {
+    case unnecessary
+    case prepared(TabSpaceProfileTransitionPreparation)
+    case rejected
+}
+
+enum TabSpaceProfileResolution: Equatable {
+    case unchanged
+    case transition(current: UUID, target: UUID)
+    case unavailable
 }

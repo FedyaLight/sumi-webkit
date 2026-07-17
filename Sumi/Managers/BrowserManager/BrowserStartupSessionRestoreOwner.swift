@@ -76,4 +76,43 @@ final class BrowserStartupSessionRestoreOwner: BrowserStartupSessionRestoreProvi
     func markRestoreOfferConsumed() {
         didConsumeRestoreOffer = true
     }
+
+    func migrateCachedProfileReferences(
+        from deletedProfileID: UUID,
+        to fallbackProfileID: UUID
+    ) -> Bool {
+        let migratedWindows = windowSnapshots.map { snapshot in
+            var session = snapshot.session
+            if session.currentProfileId == deletedProfileID {
+                session.currentProfileId = fallbackProfileID
+            }
+            return LastSessionWindowSnapshot(id: snapshot.id, session: session)
+        }
+        let migratedTabSnapshot: TabPersistenceSnapshot?
+        if let tabSnapshot {
+            guard let migrated = TabPersistenceSnapshotProfileMigration.migrate(
+                tabSnapshot,
+                from: deletedProfileID,
+                to: fallbackProfileID
+            ) else {
+                return false
+            }
+            migratedTabSnapshot = migrated
+        } else {
+            migratedTabSnapshot = nil
+        }
+        windowSnapshots = migratedWindows
+        tabSnapshot = migratedTabSnapshot
+        return true
+    }
+
+    func containsCachedProfileReference(to profileID: UUID) -> Bool {
+        windowSnapshots.contains {
+            ProfileReferenceInventory(lastSessionWindowSnapshot: $0)
+                .contains(profileID)
+        }
+            || tabSnapshot.map {
+                ProfileReferenceInventory(tabSnapshot: $0).contains(profileID)
+            } == true
+    }
 }

@@ -29,12 +29,14 @@ final class BrowserNotificationPresenter {
     }
 
     convenience init(browserManager: BrowserManager) {
+        let membership = browserManager
+            .tabCollectionMembershipOwner
         self.init(
             showInAppNotifications: { [weak browserManager] in
                 browserManager?.sumiSettings?.showInAppNotifications != false
             },
             activeWindow: { [weak browserManager] in
-                browserManager?.windowRegistry?.activeWindow
+                browserManager?.windowRegistry.activeWindow
             },
             undoCloseTabShortcut: { [weak browserManager] in
                 browserManager?.keyboardShortcutManager?.shortcutDisplayString(for: .undoCloseTab)
@@ -42,8 +44,8 @@ final class BrowserNotificationPresenter {
             undoCloseTab: { [weak browserManager] in
                 browserManager?.windowSessionBundle.sessionRecovery.reopenMostRecentClosedItem()
             },
-            tabForId: { [weak browserManager] tabId in
-                browserManager?.tabManager.tabCollectionMembershipOwner.tab(for: tabId)
+            tabForId: { [membership] tabId in
+                membership.tab(for: tabId)
             },
             selectTab: { [weak browserManager] tab, windowState in
                 browserManager?.selectTab(tab, in: windowState)

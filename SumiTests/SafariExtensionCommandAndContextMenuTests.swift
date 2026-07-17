@@ -101,11 +101,8 @@ final class SafariExtensionCommandAndContextMenuTests: XCTestCase {
             profile: profile,
             windowRegistry: windowRegistry
         )
+        browserManager.startupRestoreLifecycle.markLoadFinished()
         manager.attach(browserManager: browserManager)
-
-        // The startup restore task replaces the tab-manager structural state
-        // when it lands; wait for it so the tab created below stays resolvable.
-        await browserManager.tabManager.storeRestore.startupRestoreTask?.value
 
         let installed = try await installCommandAndMenuProbeExtension(
             manager: manager,
@@ -142,9 +139,9 @@ final class SafariExtensionCommandAndContextMenuTests: XCTestCase {
             reason: "SafariExtensionCommandAndContextMenuTests"
         )
 
-        let tab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
+        let tab = browserManager.regularTabLifecycleOwner.createNewTab(
             url: server.loginBasicURL.absoluteString,
-            in: browserManager.tabManager.spaceStateOwner.currentSpace,
+            in: browserManager.spaceStateOwner.currentSpace,
             activate: false,
             webViewConfigurationOverride: configuration
         )
@@ -152,7 +149,7 @@ final class SafariExtensionCommandAndContextMenuTests: XCTestCase {
         tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
 
         let windowState = BrowserWindowState()
-        windowState.tabManager = browserManager.tabManager
+        browserManager.tabResidenceAuthority.establishResidenceSession(on: windowState)
         windowState.currentProfileId = profile.id
         windowState.currentSpaceId = tab.spaceId
         windowState.currentTabId = tab.id

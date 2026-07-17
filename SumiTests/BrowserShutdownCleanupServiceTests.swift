@@ -22,10 +22,11 @@ final class BrowserShutdownCleanupServiceTests: XCTestCase {
     func testCleanupReleasesTabWebViewsWithoutLoadingOptionalExtensionRuntime() {
         let browserManager = BrowserManager()
         let webViewRuntime = browserManager.testWebViewRuntime()
-        let space = browserManager.tabManager.spaceServices.catalog.createSpace(
+        let space = installTestSpace(
+            in: browserManager.spaceStateOwner,
             name: "Shutdown"
         )
-        let tab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
+        let tab = browserManager.regularTabLifecycleOwner.createNewTab(
             url: "https://shutdown.example/page",
             in: space,
             activate: true

@@ -15,13 +15,6 @@ final class ShortcutFreshTabFactory {
         self.bindings = bindings
     }
 
-    convenience init(tabManager: TabManager) {
-        self.init(
-            tabFactory: tabManager.tabFactory,
-            bindings: tabManager.shortcutTabBindings
-        )
-    }
-
     func makeDetached(
         for pin: ShortcutPin,
         currentSpaceID: UUID?

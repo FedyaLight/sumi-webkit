@@ -1,7 +1,7 @@
 @testable import Sumi
+import SumiDomain
 import WebKit
 import XCTest
-import SumiDomain
 
 @MainActor
 final class SumiNotificationPermissionBridgeTests: XCTestCase {
@@ -164,6 +164,208 @@ final class SumiNotificationPermissionBridgeTests: XCTestCase {
         XCTAssertEqual(result, .failed(identifier: identifier, reason: "delivery-failed"))
     }
 
+    func testProfileRetirementDrainsInFlightPostAndRejectsLateDelivery() async {
+        let gateway = SuspendedNotificationCenterGateway()
+        let service = SumiNotificationService(gateway: gateway)
+        let profileID = "profile-a"
+        let payload = SumiNotificationPayload(
+            identifier: SumiNotificationIdentifier(rawValue: "in-flight"),
+            kind: .website,
+            title: "Title",
+            body: "Body",
+            userInfo: ["profilePartitionId": profileID]
+        )
+
+        let postTask = Task { await service.post(payload) }
+        await gateway.waitUntilAddIsSuspended()
+        let retirementTask = Task {
+            await service.retireProfile(profilePartitionId: profileID)
+        }
+        while await service.isProfileRetiredForTesting(profileID) == false {
+            await Task.yield()
+        }
+        let retainedPayload = SumiNotificationPayload(
+            identifier: payload.identifier,
+            kind: .website,
+            title: "Retained",
+            body: "Retained body",
+            userInfo: ["profilePartitionId": "retained-profile"]
+        )
+        let retainedResult = await service.post(retainedPayload)
+        XCTAssertEqual(
+            retainedResult,
+            .delivered(identifier: retainedPayload.identifier)
+        )
+        await gateway.resumeAdd()
+
+        let postResult = await postTask.value
+        XCTAssertEqual(
+            postResult,
+            .failed(
+                identifier: payload.identifier,
+                reason: "notification-profile-retired"
+            )
+        )
+        let retirementSucceeded = await retirementTask.value
+        let deliveredAfterRetirement = await gateway.deliveredRecords()
+        let pendingAfterRetirement = await gateway.pendingRecords()
+        XCTAssertTrue(retirementSucceeded)
+        XCTAssertEqual(
+            deliveredAfterRetirement.map(\.profilePartitionId),
+            ["retained-profile"]
+        )
+        XCTAssertTrue(pendingAfterRetirement.isEmpty)
+
+        let lateResult = await service.post(payload)
+        XCTAssertEqual(
+            lateResult,
+            .failed(
+                identifier: payload.identifier,
+                reason: "notification-profile-unavailable"
+            )
+        )
+        let addCount = await gateway.addCount()
+        XCTAssertEqual(addCount, 2)
+    }
+
+    func testProfileRetirementClearsOnlyTargetPermissionRuntimeRecords() async {
+        let coordinator = FakeNotificationPermissionCoordinator(
+            mode: .immediate(decision(.granted, systemState: .authorized))
+        )
+        let blockedPopupStore = SumiBlockedPopupStore()
+        let externalSchemeStore = SumiExternalSchemeSessionStore()
+        let indicatorStore = SumiPermissionIndicatorEventStore()
+        for profileID in ["target-profile", "retained-profile"] {
+            _ = blockedPopupStore.record(
+                SumiBlockedPopupRecord(
+                    id: "popup-\(profileID)",
+                    tabId: "tab-\(profileID)",
+                    pageId: "page-\(profileID)",
+                    requestingOrigin: SumiPermissionOrigin(
+                        string: "https://example.com"
+                    ),
+                    topOrigin: SumiPermissionOrigin(
+                        string: "https://example.com"
+                    ),
+                    targetURL: URL(string: "https://popup.example"),
+                    sourceURL: URL(string: "https://example.com"),
+                    lastBlockedAt: Date(),
+                    reason: .blockedByDefault,
+                    profilePartitionId: profileID,
+                    attemptCount: 1
+                )
+            )
+            _ = externalSchemeStore.record(
+                SumiExternalSchemeAttemptRecord(
+                    id: "external-\(profileID)",
+                    tabId: "tab-\(profileID)",
+                    pageId: "page-\(profileID)",
+                    requestingOrigin: SumiPermissionOrigin(
+                        string: "https://example.com"
+                    ),
+                    topOrigin: SumiPermissionOrigin(
+                        string: "https://example.com"
+                    ),
+                    scheme: "example-app",
+                    redactedTargetURLString: nil,
+                    lastAttemptAt: Date(),
+                    result: .blockedByDefault,
+                    reason: "test",
+                    profilePartitionId: profileID,
+                    attemptCount: 1
+                )
+            )
+            _ = indicatorStore.record(
+                SumiPermissionIndicatorEventRecord(
+                    tabId: "tab-\(profileID)",
+                    pageId: "page-\(profileID)",
+                    displayDomain: "example.com",
+                    permissionTypes: [.notifications],
+                    category: .blockedEvent,
+                    visualStyle: .blocked,
+                    priority: .blockedNotification,
+                    profilePartitionId: profileID
+                )
+            )
+        }
+        let lifecycle = SumiPermissionGrantLifecycleController(
+            coordinator: coordinator,
+            geolocationProvider: nil,
+            filePickerBridge: nil,
+            indicatorEventStore: indicatorStore,
+            blockedPopupStore: blockedPopupStore,
+            externalSchemeSessionStore: externalSchemeStore
+        )
+
+        let retirementSucceeded = await lifecycle.prepareForProfileRetirement(
+            profilePartitionId: "target-profile"
+        )
+        XCTAssertTrue(retirementSucceeded)
+        _ = blockedPopupStore.record(
+            SumiBlockedPopupRecord(
+                id: "late-popup",
+                tabId: "late-tab",
+                pageId: "late-page",
+                requestingOrigin: SumiPermissionOrigin(
+                    string: "https://example.com"
+                ),
+                topOrigin: SumiPermissionOrigin(
+                    string: "https://example.com"
+                ),
+                targetURL: URL(string: "https://popup.example"),
+                sourceURL: URL(string: "https://example.com"),
+                lastBlockedAt: Date(),
+                reason: .blockedByDefault,
+                profilePartitionId: "target-profile",
+                attemptCount: 1
+            )
+        )
+        _ = externalSchemeStore.record(
+            SumiExternalSchemeAttemptRecord(
+                id: "late-external",
+                tabId: "late-tab",
+                pageId: "late-page",
+                requestingOrigin: SumiPermissionOrigin(
+                    string: "https://example.com"
+                ),
+                topOrigin: SumiPermissionOrigin(
+                    string: "https://example.com"
+                ),
+                scheme: "example-app",
+                redactedTargetURLString: nil,
+                lastAttemptAt: Date(),
+                result: .blockedByDefault,
+                reason: "late-test",
+                profilePartitionId: "target-profile",
+                attemptCount: 1
+            )
+        )
+        _ = indicatorStore.record(
+            SumiPermissionIndicatorEventRecord(
+                tabId: "late-tab",
+                pageId: "late-page",
+                displayDomain: "example.com",
+                permissionTypes: [.notifications],
+                category: .blockedEvent,
+                visualStyle: .blocked,
+                priority: .blockedNotification,
+                profilePartitionId: "target-profile"
+            )
+        )
+        XCTAssertEqual(
+            blockedPopupStore.allRecords().map(\.profilePartitionId),
+            ["retained-profile"]
+        )
+        XCTAssertEqual(
+            externalSchemeStore.allRecords().map(\.profilePartitionId),
+            ["retained-profile"]
+        )
+        XCTAssertEqual(
+            indicatorStore.allRecords().map(\.profilePartitionId),
+            ["retained-profile"]
+        )
+    }
+
     func testDocumentationListsDDGNotificationReferenceFiles() throws {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
@@ -246,6 +448,62 @@ final class SumiNotificationPermissionBridgeTests: XCTestCase {
     }
 }
 
+private actor SuspendedNotificationCenterGateway: SumiNotificationCenterGateway {
+    private var suspendedAdd: CheckedContinuation<Void, Never>?
+    private var delivered: [SumiNotificationCenterRecord] = []
+    private var numberOfAdds = 0
+    private var didSuspendFirstAdd = false
+
+    func add(
+        _ payload: SumiNotificationPayload,
+        physicalIdentifier: String
+    ) async throws {
+        numberOfAdds += 1
+        if didSuspendFirstAdd == false {
+            didSuspendFirstAdd = true
+            await withCheckedContinuation { continuation in
+                suspendedAdd = continuation
+            }
+        }
+        delivered.append(
+            SumiNotificationCenterRecord(
+                identifier: physicalIdentifier,
+                logicalIdentifier: payload.identifier.rawValue,
+                profilePartitionId: payload.userInfo["profilePartitionId"]
+            )
+        )
+    }
+
+    func waitUntilAddIsSuspended() async {
+        while suspendedAdd == nil {
+            await Task.yield()
+        }
+    }
+
+    func resumeAdd() {
+        suspendedAdd?.resume()
+        suspendedAdd = nil
+    }
+
+    func deliveredRecords() -> [SumiNotificationCenterRecord] {
+        delivered
+    }
+
+    func pendingRecords() -> [SumiNotificationCenterRecord] {
+        []
+    }
+
+    func removeDelivered(identifiers: [String]) {
+        delivered.removeAll { identifiers.contains($0.identifier) }
+    }
+
+    func removePending(identifiers _: [String]) {}
+
+    func addCount() -> Int {
+        numberOfAdds
+    }
+}
+
 private actor FakeNotificationPermissionCoordinator: SumiPermissionCoordinating {
     enum Mode {
         case immediate(SumiPermissionCoordinatorDecision)
@@ -258,6 +516,7 @@ private actor FakeNotificationPermissionCoordinator: SumiPermissionCoordinating 
     private var activeQueries: [String: SumiPermissionAuthorizationQuery] = [:]
     private var continuations: [String: CheckedContinuation<SumiPermissionCoordinatorDecision, Never>] = [:]
     private var cancelReasons: [String] = []
+    private var retiredProfileIDs: Set<String> = []
 
     init(mode: Mode) {
         self.mode = mode
@@ -364,6 +623,27 @@ private actor FakeNotificationPermissionCoordinator: SumiPermissionCoordinating 
         return SumiWebNotificationDecisionMapper.failClosedDecision(
             for: nil,
             reason: reason
+        )
+    }
+
+    @discardableResult
+    func retireProfile(
+        profilePartitionId: String,
+        reason: String
+    ) async -> SumiPermissionCoordinatorDecision {
+        let profileID = SumiPermissionKey.normalizedProfilePartitionId(
+            profilePartitionId
+        )
+        retiredProfileIDs.insert(profileID)
+        return await cancelProfile(
+            profilePartitionId: profileID,
+            reason: reason
+        )
+    }
+
+    func isProfileRetired(_ profilePartitionId: String) -> Bool {
+        retiredProfileIDs.contains(
+            SumiPermissionKey.normalizedProfilePartitionId(profilePartitionId)
         )
     }
 

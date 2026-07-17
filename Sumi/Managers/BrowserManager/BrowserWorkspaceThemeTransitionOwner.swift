@@ -26,7 +26,7 @@ final class BrowserWorkspaceThemeTransitionOwner {
             for: windowState,
             to: newTheme,
             animate: animate,
-            isActiveWindow: shellRuntime.windowRegistry?.activeWindow?.id == windowState.id
+            isActiveWindow: shellRuntime.windowRegistry.activeWindow?.id == windowState.id
         )
     }
 
@@ -91,7 +91,7 @@ final class BrowserWorkspaceThemeTransitionOwner {
         for space: Space,
         animate: Bool
     ) {
-        guard let windowRegistry = shellRuntime.windowRegistry else { return }
+        let windowRegistry = shellRuntime.windowRegistry
         for windowState in windowRegistry.windows.values {
             guard !windowState.isIncognito else { continue }
             if windowState.currentSpaceId == space.id {

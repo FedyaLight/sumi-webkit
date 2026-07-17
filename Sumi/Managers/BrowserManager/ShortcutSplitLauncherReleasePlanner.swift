@@ -11,14 +11,14 @@ struct ShortcutSplitLauncherReleasePlacement {
 /// exact durable launcher placement.
 @MainActor
 final class ShortcutSplitLauncherReleasePlanner {
-    private let shortcutPin: (UUID) -> ShortcutPin?
+    private let pins: ShortcutPinCollectionStateOwner
     private let destinationResolver: ShortcutSplitLauncherDestinationResolver
 
     init(
-        shortcutPin: @escaping (UUID) -> ShortcutPin?,
+        pins: ShortcutPinCollectionStateOwner,
         destinationResolver: ShortcutSplitLauncherDestinationResolver
     ) {
-        self.shortcutPin = shortcutPin
+        self.pins = pins
         self.destinationResolver = destinationResolver
     }
 
@@ -32,7 +32,7 @@ final class ShortcutSplitLauncherReleasePlanner {
         var placements: [ShortcutSplitLauncherReleasePlacement] = []
         for member in shortcutMembers {
             guard case .shortcutPin(let pinID) = member.memberID,
-                  let pin = shortcutPin(pinID),
+                  let pin = pins.shortcutPin(by: pinID),
                   let destination = destinationResolver.destination(
                       for: member,
                       pin: pin
@@ -52,7 +52,9 @@ final class ShortcutSplitLauncherReleasePlanner {
 
     func accepts(_ placements: [ShortcutSplitLauncherReleasePlacement]) -> Bool {
         placements.allSatisfy { placement in
-            guard let pin = shortcutPin(placement.pin.pin.id) else { return false }
+            guard let pin = pins.shortcutPin(by: placement.pin.pin.id) else {
+                return false
+            }
             return placement.pin.accepts(pin)
                 && Self.matches(pin, placement.destination)
         }

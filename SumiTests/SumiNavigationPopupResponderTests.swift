@@ -474,9 +474,9 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
         XCTAssertNotEqual(harness.windowState.currentTabId, harness.sourceTab.id)
         XCTAssertEqual(
             harness.windowState.currentTabId,
-            harness.browserManager.tabManager.regularTabCollectionStateOwner.allTabsSnapshot().last?.id
+            harness.browserManager.tabStateStore.regularTabs.allTabsSnapshot().last?.id
         )
-        let childTab = harness.browserManager.tabManager.regularTabCollectionStateOwner.allTabsSnapshot().last
+        let childTab = harness.browserManager.tabStateStore.regularTabs.allTabsSnapshot().last
         XCTAssertIdentical(childTab?.resolvedCurrentWebView(), childWebView)
         XCTAssertNil(childTab?.webViewConfigurationOverride)
     }
@@ -528,7 +528,7 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
         XCTAssertEqual(
             harness.browserManager.testWebViewRuntime().ownershipQuery
                 .trackedOwner(containing: childWebView)?.tabID,
-            harness.browserManager.tabManager.regularTabCollectionStateOwner
+            harness.browserManager.tabStateStore.regularTabs
                 .allTabsSnapshot().last?.id
         )
     }
@@ -670,8 +670,8 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
         )!
         let targetURL = URL(string: "https://account.example.test/login")!
         harness.sourceTab.url = extensionPopupURL
-        let initialRegularTabCount = harness.browserManager.tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[
-            harness.browserManager.tabManager.spaceStateOwner.currentSpace!.id
+        let initialRegularTabCount = harness.browserManager.tabStateStore.regularTabs.tabsBySpaceSnapshot()[
+            harness.browserManager.spaceStateOwner.currentSpace!.id
         ]?.count ?? 0
 
         let responder = popupResponder(for: harness.sourceTab)
@@ -689,14 +689,18 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
         )
 
         XCTAssertNil(childWebView)
-        XCTAssertTrue(harness.browserManager.tabManager.transientTabRegistryOwner.auxiliaryMiniWindowTabsByID.isEmpty)
+        XCTAssertTrue(
+            harness.browserManager.tabCollectionMembershipOwner
+                .allIdentityWitnesses()
+                .allSatisfy { $0.isAuxiliaryMiniWindow == false }
+        )
         XCTAssertEqual(
-            harness.browserManager.tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[
-                harness.browserManager.tabManager.spaceStateOwner.currentSpace!.id
+            harness.browserManager.tabStateStore.regularTabs.tabsBySpaceSnapshot()[
+                harness.browserManager.spaceStateOwner.currentSpace!.id
             ]?.count,
             initialRegularTabCount + 1
         )
-        let openedTab = try XCTUnwrap(harness.browserManager.tabManager.regularTabCollectionStateOwner.allTabsSnapshot().last)
+        let openedTab = try XCTUnwrap(harness.browserManager.tabStateStore.regularTabs.allTabsSnapshot().last)
         XCTAssertEqual(openedTab.url, targetURL)
         XCTAssertFalse(openedTab.isAuxiliaryMiniWindow)
         XCTAssertFalse(openedTab.isPopupHost)
@@ -712,8 +716,8 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
             name: "Secondary",
             profileId: harness.sourceSpace.profileId
         )
-        harness.browserManager.tabManager.spaceStateOwner.append(secondarySpace)
-        harness.browserManager.tabManager.spaceStateOwner.replaceCurrentSpace(secondarySpace)
+        harness.browserManager.spaceStateOwner.append(secondarySpace)
+        harness.browserManager.spaceStateOwner.replaceCurrentSpace(secondarySpace)
         harness.sourceTab.spaceId = nil
 
         let extensionPopupURL = URL(
@@ -721,10 +725,10 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
         )!
         let targetURL = URL(string: "https://account.example.test/login")!
         harness.sourceTab.url = extensionPopupURL
-        let initialWindowSpaceTabCount = harness.browserManager.tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[
+        let initialWindowSpaceTabCount = harness.browserManager.tabStateStore.regularTabs.tabsBySpaceSnapshot()[
             harness.sourceSpace.id
         ]?.count ?? 0
-        let initialGlobalSpaceTabCount = harness.browserManager.tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[
+        let initialGlobalSpaceTabCount = harness.browserManager.tabStateStore.regularTabs.tabsBySpaceSnapshot()[
             secondarySpace.id
         ]?.count ?? 0
 
@@ -744,15 +748,15 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
 
         XCTAssertNil(childWebView)
         XCTAssertEqual(
-            harness.browserManager.tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[harness.sourceSpace.id]?.count,
+            harness.browserManager.tabStateStore.regularTabs.tabsBySpaceSnapshot()[harness.sourceSpace.id]?.count,
             initialWindowSpaceTabCount
         )
         XCTAssertEqual(
-            harness.browserManager.tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[secondarySpace.id]?.count ?? 0,
+            harness.browserManager.tabStateStore.regularTabs.tabsBySpaceSnapshot()[secondarySpace.id]?.count ?? 0,
             initialGlobalSpaceTabCount
         )
         XCTAssertEqual(
-            harness.browserManager.tabManager.regularTabCollectionStateOwner
+            harness.browserManager.tabStateStore.regularTabs
                 .allTabsSnapshot().filter { $0.url == targetURL }.count,
             0
         )
@@ -770,8 +774,8 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
         )!
         let targetURL = URL(string: "https://account.example.test/login")!
         harness.sourceTab.url = extensionPopupURL
-        let initialRegularTabCount = harness.browserManager.tabManager
-            .regularTabCollectionStateOwner.allTabsSnapshot().count
+        let initialRegularTabCount = harness.browserManager.tabStateStore
+            .regularTabs.allTabsSnapshot().count
 
         let responder = popupResponder(for: harness.sourceTab)
         let action = popupNavigationAction(
@@ -789,7 +793,7 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
 
         XCTAssertNil(childWebView)
         XCTAssertEqual(
-            harness.browserManager.tabManager.regularTabCollectionStateOwner
+            harness.browserManager.tabStateStore.regularTabs
                 .allTabsSnapshot().count,
             initialRegularTabCount
         )
@@ -850,10 +854,13 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
         )
     }
 
-    private func makePopupBrowserManager() throws -> BrowserManager {
+    private func makePopupBrowserManager(
+        windowRegistry: WindowRegistry
+    ) throws -> BrowserManager {
         let moduleRegistry = makePopupModuleRegistry()
         moduleRegistry.setEnabled(false, for: .extensions)
         return BrowserManager(
+            windowRegistry: windowRegistry,
             moduleRegistry: moduleRegistry,
             startupPersistence: BrowserManagerStartupPersistence(
                 container: try Self.makeInMemoryStartupContainer()
@@ -923,8 +930,10 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
 
     private func makePopupFocusHarness() async throws -> PopupFocusHarness {
         let settings = SumiSettingsService(userDefaults: TestDefaultsHarness().defaults)
-        let browserManager = try makePopupBrowserManager()
         let windowRegistry = WindowRegistry()
+        let browserManager = try makePopupBrowserManager(
+            windowRegistry: windowRegistry
+        )
         let profile = Profile(name: "Primary")
         let space = Space(name: "Primary", profileId: profile.id)
         let windowState = BrowserWindowState()
@@ -932,17 +941,16 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
         browserManager.sumiSettings = settings
         browserManager.profileManager.profiles = [profile]
         browserManager.currentProfile = profile
-        browserManager.windowRegistry = windowRegistry
-        browserManager.tabManager.spaceStateOwner.replaceSpaces([space])
-        browserManager.tabManager.spaceStateOwner.replaceCurrentSpace(space)
+        browserManager.spaceStateOwner.replaceSpaces([space])
+        browserManager.spaceStateOwner.replaceCurrentSpace(space)
 
-        windowState.tabManager = browserManager.tabManager
+        browserManager.tabResidenceAuthority.establishResidenceSession(on: windowState)
         windowState.currentSpaceId = space.id
         windowState.currentProfileId = profile.id
         windowRegistry.register(windowState)
         windowRegistry.setActive(windowState)
 
-        let sourceTab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
+        let sourceTab = browserManager.regularTabLifecycleOwner.createNewTab(
             url: "https://source.example/page",
             in: space,
             activate: true

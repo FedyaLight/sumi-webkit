@@ -9,6 +9,7 @@ final class SumiPermissionGrantLifecycleController {
     private let indicatorEventStore: SumiPermissionIndicatorEventStore
     private let blockedPopupStore: SumiBlockedPopupStore
     private let externalSchemeSessionStore: SumiExternalSchemeSessionStore
+    private let siteActivityStore: SumiPermissionSiteActivityStore?
 
     init(
         coordinator: any SumiPermissionCoordinating,
@@ -16,7 +17,8 @@ final class SumiPermissionGrantLifecycleController {
         filePickerBridge: SumiFilePickerPermissionBridge?,
         indicatorEventStore: SumiPermissionIndicatorEventStore,
         blockedPopupStore: SumiBlockedPopupStore,
-        externalSchemeSessionStore: SumiExternalSchemeSessionStore
+        externalSchemeSessionStore: SumiExternalSchemeSessionStore,
+        siteActivityStore: SumiPermissionSiteActivityStore? = nil
     ) {
         self.coordinator = coordinator
         self.geolocationProvider = geolocationProvider
@@ -24,6 +26,7 @@ final class SumiPermissionGrantLifecycleController {
         self.indicatorEventStore = indicatorEventStore
         self.blockedPopupStore = blockedPopupStore
         self.externalSchemeSessionStore = externalSchemeSessionStore
+        self.siteActivityStore = siteActivityStore
     }
 
     func handle(_ event: SumiPermissionLifecycleEvent) {
@@ -85,6 +88,45 @@ final class SumiPermissionGrantLifecycleController {
                 )
             }
         }
+    }
+
+    func prepareForProfileRetirement(
+        profilePartitionId: String,
+        reason: String = "profile-retirement"
+    ) async -> Bool {
+        let profileID = SumiPermissionKey.normalizedProfilePartitionId(
+            profilePartitionId
+        )
+        _ = await coordinator.retireProfile(
+            profilePartitionId: profileID,
+            reason: reason
+        )
+        geolocationProvider?.retireProfile(profilePartitionId: profileID)
+        filePickerBridge?.retireProfile(profilePartitionId: profileID, reason: reason)
+        blockedPopupStore.retireProfile(profileID)
+        externalSchemeSessionStore.retireProfile(profileID)
+        indicatorEventStore.retireProfile(profileID)
+        siteActivityStore?.retireProfile(profileID)
+        let coordinatorRetiredProfile = await coordinator.isProfileRetired(
+            profileID
+        )
+
+        return blockedPopupStore.allRecords().contains {
+            $0.profilePartitionId == profileID
+        } == false
+            && externalSchemeSessionStore.allRecords().contains {
+                $0.profilePartitionId == profileID
+            } == false
+            && indicatorEventStore.allRecords().contains {
+                $0.profilePartitionId == profileID
+            } == false
+            && filePickerBridge?.containsPendingRequest(
+                profilePartitionId: profileID
+            ) != true
+            && geolocationProvider?.containsAllowedRequest(
+                profilePartitionId: profileID
+            ) != true
+            && coordinatorRetiredProfile
     }
 
     private func clearPageRuntime(pageId: String, reason: String) {

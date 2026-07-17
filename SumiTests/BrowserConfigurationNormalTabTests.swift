@@ -157,7 +157,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             adBlockingModule: adBlockingModule,
             protectionCoordinator: protectionCoordinator
         )
-        await waitForStartupProtectionRestore(on: browserManager)
+        await startAndWaitForStartupProtectionRestore(on: browserManager)
         markIsolatedTabManagerReady(browserManager)
 
         settings.setLevel(.protection)
@@ -165,9 +165,9 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         _ = try await protectionCoordinator.restoreAppliedLevelForStartup()
 
         let profile = try XCTUnwrap(browserManager.currentProfile)
-        let tab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
+        let tab = browserManager.regularTabLifecycleOwner.createNewTab(
             url: "https://example.com/protection",
-            in: browserManager.tabManager.spaceStateOwner.currentSpace,
+            in: browserManager.spaceStateOwner.currentSpace,
             activate: false
         )
         let decision = protectionCoordinator.normalTabDecision(for: tab.url, profileId: profile.id)
@@ -242,7 +242,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             protectionCoordinator: protectionCoordinator,
             extensionsModule: extensionsModule
         )
-        await waitForStartupProtectionRestore(on: browserManager)
+        await startAndWaitForStartupProtectionRestore(on: browserManager)
         markIsolatedTabManagerReady(browserManager)
 
         settings.setLevel(.protection)
@@ -250,9 +250,9 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         _ = try await protectionCoordinator.restoreAppliedLevelForStartup()
 
         let profile = try XCTUnwrap(browserManager.currentProfile)
-        let tab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
+        let tab = browserManager.regularTabLifecycleOwner.createNewTab(
             url: "https://example.com/protection-and-safari-content-blocker",
-            in: browserManager.tabManager.spaceStateOwner.currentSpace,
+            in: browserManager.spaceStateOwner.currentSpace,
             activate: false
         )
         let protectionDecision = protectionCoordinator.normalTabDecision(
@@ -399,9 +399,8 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             for: tab,
             reason: "BrowserConfigurationNormalTabTests.safariContentBlockerRuntimeInitial"
         )
-        let windowRegistry = WindowRegistry()
-        harness.browserManager.windowRegistry = windowRegistry
-        let currentSpace = try XCTUnwrap(harness.browserManager.tabManager.spaceStateOwner.currentSpace)
+        let windowRegistry = harness.windowRegistry
+        let currentSpace = try XCTUnwrap(harness.browserManager.spaceStateOwner.currentSpace)
         let windowState = BrowserWindowState()
         windowState.currentProfileId = harness.browserManager.currentProfile?.id
         windowState.currentSpaceId = currentSpace.id
@@ -556,7 +555,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         )
         await controller.waitForContentBlockingAssetsInstalled()
         XCTAssertTrue(
-            harness.browserManager.tabManager.tabCollectionMembershipOwner.allTabs().contains { $0.id == tab.id }
+            harness.browserManager.tabCollectionMembershipOwner.allTabs().contains { $0.id == tab.id }
         )
         XCTAssertEqual(tab.safariContentBlockerAppliedAttachmentState?.isEnabled, true)
         XCTAssertFalse(tab.isSafariContentBlockerReloadRequired)
@@ -818,9 +817,9 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             extensionsModule: module
         )
         markIsolatedTabManagerReady(browserManager)
-        let tab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
+        let tab = browserManager.regularTabLifecycleOwner.createNewTab(
             url: "https://example.com/extensions-disabled",
-            in: browserManager.tabManager.spaceStateOwner.currentSpace,
+            in: browserManager.spaceStateOwner.currentSpace,
             activate: false
         )
 
@@ -856,9 +855,9 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             boostsModule: module
         )
         markIsolatedTabManagerReady(browserManager)
-        let tab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
+        let tab = browserManager.regularTabLifecycleOwner.createNewTab(
             url: "https://example.com/boosts-disabled",
-            in: browserManager.tabManager.spaceStateOwner.currentSpace,
+            in: browserManager.spaceStateOwner.currentSpace,
             activate: false
         )
 
@@ -1375,6 +1374,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         let defaults: TestDefaultsHarness
         let extensionsModule: SumiExtensionsModule
         let browserManager: BrowserManager
+        let windowRegistry: WindowRegistry
         let installedContentBlocker: InstalledSafariContentBlockerRecord
         let ruleListIdentifiers: Set<String>
     }
@@ -1401,17 +1401,20 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         let installedContentBlocker = try await extensionsModule.enableSafariContentBlocker(
             from: safariContentBlocker.candidate
         )
+        let windowRegistry = WindowRegistry()
         let browserManager = BrowserManager(
+            windowRegistry: windowRegistry,
             moduleRegistry: registry,
             startupPersistence: BrowserManagerStartupPersistence(container: startupContainer),
             extensionsModule: extensionsModule
         )
-        await waitForStartupProtectionRestore(on: browserManager)
+        await startAndWaitForStartupProtectionRestore(on: browserManager)
         markIsolatedTabManagerReady(browserManager)
         return SafariContentBlockerBrowserHarness(
             defaults: defaults,
             extensionsModule: extensionsModule,
             browserManager: browserManager,
+            windowRegistry: windowRegistry,
             installedContentBlocker: installedContentBlocker,
             ruleListIdentifiers: ruleListIdentifiers
         )
@@ -1422,7 +1425,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         url: String,
         activate: Bool
     ) -> Tab {
-        let tabManager = harness.browserManager.tabManager
+        let tabManager = harness.browserManager
         let tab = tabManager.regularTabLifecycleOwner.createNewTab(
             url: url,
             in: tabManager.spaceStateOwner.currentSpace,
@@ -1538,20 +1541,20 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         )
     }
 
-    private func waitForStartupProtectionRestore(on browserManager: BrowserManager) async {
-        for _ in 0..<100 {
-            if browserManager.startupProtectionRuntime.hasFinishedProtectionRestore { return }
-            await Task.yield()
-        }
-        XCTFail("Timed out waiting for initial startup protection restore")
+    private func startAndWaitForStartupProtectionRestore(
+        on browserManager: BrowserManager
+    ) async {
+        browserManager.startRuntimeAfterStartupRecovery()
+        await browserManager.startupProtectionRuntime
+            .drainProtectionRestoreTaskForTests()
     }
 
     private func markIsolatedTabManagerReady(_ browserManager: BrowserManager) {
         XCTAssertFalse(
-            browserManager.tabManager.startupRestoreLifecycle.didStartPersistedStateLoad,
+            browserManager.startupRestoreLifecycle.didStartPersistedStateLoad,
             "Isolated configuration tests must not race a real restore task"
         )
-        browserManager.tabManager.startupRestoreLifecycle.markLoadFinished()
+        browserManager.startupRestoreLifecycle.markLoadFinished()
     }
 
     private static func makeInMemoryExtensionContainer() throws -> ModelContainer {

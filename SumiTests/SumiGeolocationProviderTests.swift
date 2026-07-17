@@ -18,7 +18,11 @@ final class SumiGeolocationProviderTests: XCTestCase {
 
     func testStopAndRevokeAreIdempotent() {
         let provider = FakeSumiGeolocationProvider(currentState: .active)
-        provider.registerAllowedRequest(pageId: "page-a", tabId: "tab-a")
+        provider.registerAllowedRequest(
+            pageId: "page-a",
+            tabId: "tab-a",
+            profilePartitionId: "profile-a"
+        )
 
         XCTAssertEqual(provider.stop(), .inactive)
         XCTAssertEqual(provider.stop(), .inactive)
@@ -40,8 +44,16 @@ final class SumiGeolocationProviderTests: XCTestCase {
     func testRegisterAndCancelAllowedRequestsDoNotPersistSiteDecisions() {
         let provider = FakeSumiGeolocationProvider(currentState: .inactive)
 
-        provider.registerAllowedRequest(pageId: "page-a", tabId: "tab-a")
-        provider.registerAllowedRequest(pageId: "page-b", tabId: "tab-a")
+        provider.registerAllowedRequest(
+            pageId: "page-a",
+            tabId: "tab-a",
+            profilePartitionId: "profile-a"
+        )
+        provider.registerAllowedRequest(
+            pageId: "page-b",
+            tabId: "tab-a",
+            profilePartitionId: "profile-a"
+        )
         provider.cancelAllowedRequest(pageId: "page-a")
 
         XCTAssertEqual(provider.registeredRequests.map(\.pageId), ["page-b"])
@@ -96,6 +108,51 @@ final class SumiGeolocationProviderTests: XCTestCase {
         XCTAssertEqual(observedStates, [.inactive, .active])
 
         observation.cancel()
+    }
+
+    func testLazyProviderKeepsRetiredProfileFailClosedWithoutEagerCreation() {
+        var creationCount = 0
+        var underlyingProvider: FakeSumiGeolocationProvider?
+        let lazyProvider = SumiLazyGeolocationProvider {
+            creationCount += 1
+            let provider = FakeSumiGeolocationProvider()
+            underlyingProvider = provider
+            return provider
+        }
+
+        lazyProvider.retireProfile(profilePartitionId: " Profile-A ")
+        lazyProvider.registerAllowedRequest(
+            pageId: "retired-page",
+            tabId: "retired-tab",
+            profilePartitionId: "PROFILE-A"
+        )
+
+        XCTAssertEqual(creationCount, 0)
+
+        lazyProvider.registerAllowedRequest(
+            pageId: "retained-page",
+            tabId: "retained-tab",
+            profilePartitionId: "profile-b"
+        )
+
+        XCTAssertEqual(creationCount, 1)
+        XCTAssertEqual(
+            underlyingProvider?.registeredRequests.map(\.pageId),
+            ["retained-page"]
+        )
+
+        lazyProvider.retireProfile(profilePartitionId: "PROFILE-B")
+        lazyProvider.registerAllowedRequest(
+            pageId: "late-page",
+            tabId: "late-tab",
+            profilePartitionId: "profile-b"
+        )
+
+        XCTAssertEqual(
+            underlyingProvider?.cancelledProfilePartitionIds,
+            ["profile-b"]
+        )
+        XCTAssertTrue(underlyingProvider?.registeredRequests.isEmpty == true)
     }
 
     func testApplicationLifecycleControllerPausesActiveGeolocationWhileApplicationInactive() {

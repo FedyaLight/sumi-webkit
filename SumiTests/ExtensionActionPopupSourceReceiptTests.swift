@@ -37,7 +37,7 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
         harness.windowRegistry.unregister(staleWindow.id)
 
         let replacementWindow = BrowserWindowState(id: staleWindow.id)
-        replacementWindow.tabManager = harness.browserManager.tabManager
+        harness.browserManager.tabResidenceAuthority.establishResidenceSession(on: replacementWindow)
         replacementWindow.currentSpaceId = staleWindow.currentSpaceId
         replacementWindow.currentProfileId = staleWindow.currentProfileId
         let replacementShell = NSWindow(
@@ -147,9 +147,9 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
         )
 
         let space = try XCTUnwrap(
-            harness.browserManager.tabManager.spaceStateOwner.currentSpace
+            harness.browserManager.spaceStateOwner.currentSpace
         )
-        let executionTab = harness.browserManager.tabManager
+        let executionTab = harness.browserManager
             .regularTabLifecycleOwner.createNewTab(
                 url: "https://profile-b.example.test/",
                 in: space,
@@ -184,9 +184,9 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
                 .controllersByProfile[harness.profile.id]
         )
         let space = try XCTUnwrap(
-            harness.browserManager.tabManager.spaceStateOwner.currentSpace
+            harness.browserManager.spaceStateOwner.currentSpace
         )
-        let backgroundTab = harness.browserManager.tabManager
+        let backgroundTab = harness.browserManager
             .regularTabLifecycleOwner.createNewTab(
                 url: "https://background.example.test/",
                 in: space,
@@ -471,10 +471,10 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
             extensionID: "open-window-admission-reentry"
         )
         let tab = harness.sourceTab
-        let selectedTab = harness.browserManager.tabManager
+        let selectedTab = harness.browserManager
             .regularTabLifecycleOwner.createNewTab(
                 url: "about:blank",
-                in: harness.browserManager.tabManager.spaceStateOwner
+                in: harness.browserManager.spaceStateOwner
                     .currentSpace,
                 activate: true
             )
@@ -684,7 +684,7 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
                 replacementController,
                 for: harness.profile.id
             )
-            harness.browserManager.tabLifecycleService.closeOrchestration
+            harness.browserManager.tabCloseOrchestration
                 .closeTab(closingTab, in: harness.windowState)
             harness.inspection.contextState.profiles.setController(
                 openingController,
@@ -719,7 +719,7 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
         XCTAssertEqual(didCloseCount, 2)
         XCTAssertEqual(didReopenCount, 0)
         XCTAssertNil(
-            harness.browserManager.tabManager.tabCollectionMembershipOwner
+            harness.browserManager.tabCollectionMembershipOwner
                 .tab(for: closingTab.id)
         )
         XCTAssertIdentical(
@@ -1042,7 +1042,7 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
         let spaceID = try XCTUnwrap(harness.windowState.currentSpaceId)
         harness.windowState.currentTabId = activatedTab.id
         harness.windowState.activeTabForSpace[spaceID] = activatedTab.id
-        harness.browserManager.tabManager.spaceStateOwner.space(
+        harness.browserManager.spaceStateOwner.space(
             with: spaceID
         )?.activeTabId = activatedTab.id
 
@@ -1132,10 +1132,10 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
         )
 
         let space = Space(name: "Source Space", profileId: profile.id)
-        browserManager.tabManager.spaceStateOwner.replaceSpaces([space])
-        browserManager.tabManager.spaceStateOwner.replaceCurrentSpace(space)
+        browserManager.spaceStateOwner.replaceSpaces([space])
+        browserManager.spaceStateOwner.replaceCurrentSpace(space)
         let windowState = BrowserWindowState()
-        windowState.tabManager = browserManager.tabManager
+        browserManager.tabResidenceAuthority.establishResidenceSession(on: windowState)
         windowState.currentSpaceId = space.id
         windowState.currentProfileId = profile.id
         let sourceWindow = NSWindow(
@@ -1147,7 +1147,7 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
         windowRegistry.bindAppKitWindow(sourceWindow, to: windowState)
         windowRegistry.register(windowState)
         windowRegistry.setActive(windowState)
-        let sourceTab = browserManager.tabManager.regularTabLifecycleOwner
+        let sourceTab = browserManager.regularTabLifecycleOwner
             .createNewTab(
                 url: "safari-web-extension://\(extensionID)/popup.html",
                 in: space,

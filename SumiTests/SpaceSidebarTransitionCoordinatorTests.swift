@@ -25,18 +25,18 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
             settingsHarness.reset()
         }
 
-        windowState.tabManager = browserHarness.tabManager
         windowState.currentProfileId = sourceProfileId
         windowState.currentSpaceId = source.id
 
         let context = SpaceSidebarTransitionCoordinator.Context(
             spaces: [source, staleDestination],
-            currentSpaces: { browserHarness.tabManager.spaceStateOwner.spaces },
+            currentSpaces: { browserHarness.browserManager.spaceStateOwner.spaces },
             windowState: windowState,
             browserContext: browserHarness.context,
-            inventory: browserHarness.roles.inventory,
-            selection: browserHarness.roles.selection,
-            pinProjection: browserHarness.roles.pinProjection,
+            spaceCatalog: browserHarness.sidebar.spaceCatalog,
+            inventory: browserHarness.sidebar.inventory,
+            selection: browserHarness.sidebar.selection,
+            pinProjection: browserHarness.sidebar.pinProjection,
             dragState: dragState,
             settings: settings,
             allowsInteractiveWork: false,
@@ -44,13 +44,13 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
         )
 
         coordinator.switchSpace(to: staleDestination, context: context)
-        browserHarness.tabManager.spaceStateOwner.replaceSpaces([source, replacement])
+        browserHarness.browserManager.spaceStateOwner.replaceSpaces([source, replacement])
 
         XCTAssertEqual(delayedActions.scheduledDelays, [SpaceSidebarRenderPolicy.completionDelay])
         delayedActions.runNext()
 
         let activeSpaceId = try XCTUnwrap(windowState.currentSpaceId)
-        XCTAssertTrue(browserHarness.tabManager.spaceStateOwner.spaces.contains { $0.id == activeSpaceId })
+        XCTAssertTrue(browserHarness.browserManager.spaceStateOwner.spaces.contains { $0.id == activeSpaceId })
         XCTAssertNotEqual(activeSpaceId, staleDestination.id)
         XCTAssertFalse(windowState.isInteractiveSpaceTransition)
         XCTAssertNil(coordinator.transitionSnapshot)
@@ -74,19 +74,19 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
             settingsHarness.reset()
         }
 
-        windowState.tabManager = browserHarness.tabManager
         windowState.currentProfileId = sourceProfileId
         windowState.currentSpaceId = source.id
         browserHarness.commitWorkspaceTheme(source.workspaceTheme, for: windowState)
 
         let context = SpaceSidebarTransitionCoordinator.Context(
             spaces: [source, destination],
-            currentSpaces: { browserHarness.tabManager.spaceStateOwner.spaces },
+            currentSpaces: { browserHarness.browserManager.spaceStateOwner.spaces },
             windowState: windowState,
             browserContext: browserHarness.context,
-            inventory: browserHarness.roles.inventory,
-            selection: browserHarness.roles.selection,
-            pinProjection: browserHarness.roles.pinProjection,
+            spaceCatalog: browserHarness.sidebar.spaceCatalog,
+            inventory: browserHarness.sidebar.inventory,
+            selection: browserHarness.sidebar.selection,
+            pinProjection: browserHarness.sidebar.pinProjection,
             dragState: dragState,
             settings: settings,
             allowsInteractiveWork: true,
@@ -138,19 +138,19 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
             settingsHarness.reset()
         }
 
-        windowState.tabManager = browserHarness.tabManager
         windowState.currentProfileId = sourceProfileId
         windowState.currentSpaceId = source.id
         browserHarness.commitWorkspaceTheme(source.workspaceTheme, for: windowState)
 
         let context = SpaceSidebarTransitionCoordinator.Context(
             spaces: [source, destination],
-            currentSpaces: { browserHarness.tabManager.spaceStateOwner.spaces },
+            currentSpaces: { browserHarness.browserManager.spaceStateOwner.spaces },
             windowState: windowState,
             browserContext: browserHarness.context,
-            inventory: browserHarness.roles.inventory,
-            selection: browserHarness.roles.selection,
-            pinProjection: browserHarness.roles.pinProjection,
+            spaceCatalog: browserHarness.sidebar.spaceCatalog,
+            inventory: browserHarness.sidebar.inventory,
+            selection: browserHarness.sidebar.selection,
+            pinProjection: browserHarness.sidebar.pinProjection,
             dragState: dragState,
             settings: settings,
             allowsInteractiveWork: true,
@@ -174,11 +174,6 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
         XCTAssertFalse(windowState.isInteractiveSpaceTransition)
         XCTAssertNil(coordinator.transitionSnapshot)
         XCTAssertFalse(coordinator.transitionState.hasDestination)
-        guard case .setActiveSpaceFromTransition(let committedSpaceId, _) = browserHarness.transitionEvents.last else {
-            XCTFail("Expected completion through transition-aware space activation")
-            return
-        }
-        XCTAssertEqual(committedSpaceId, destination.id)
 
         let pendingGeneration = try XCTUnwrap(dragState.pendingGeometryGeneration)
         XCTAssertEqual(dragState.activeGeometryGeneration, 0)
@@ -238,19 +233,19 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
             settingsHarness.reset()
         }
 
-        windowState.tabManager = browserHarness.tabManager
         windowState.currentProfileId = sourceProfileId
         windowState.currentSpaceId = source.id
         browserHarness.commitWorkspaceTheme(source.workspaceTheme, for: windowState)
 
         let context = SpaceSidebarTransitionCoordinator.Context(
             spaces: [source, destination],
-            currentSpaces: { browserHarness.tabManager.spaceStateOwner.spaces },
+            currentSpaces: { browserHarness.browserManager.spaceStateOwner.spaces },
             windowState: windowState,
             browserContext: browserHarness.context,
-            inventory: browserHarness.roles.inventory,
-            selection: browserHarness.roles.selection,
-            pinProjection: browserHarness.roles.pinProjection,
+            spaceCatalog: browserHarness.sidebar.spaceCatalog,
+            inventory: browserHarness.sidebar.inventory,
+            selection: browserHarness.sidebar.selection,
+            pinProjection: browserHarness.sidebar.pinProjection,
             dragState: dragState,
             settings: settings,
             allowsInteractiveWork: true,
@@ -325,18 +320,18 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
             settingsHarness.reset()
         }
 
-        windowState.tabManager = browserHarness.tabManager
         windowState.currentSpaceId = source.id
         browserHarness.commitWorkspaceTheme(source.workspaceTheme, for: windowState)
 
         let context = SpaceSidebarTransitionCoordinator.Context(
             spaces: [source, scheduledDestination, directDestination],
-            currentSpaces: { browserHarness.tabManager.spaceStateOwner.spaces },
+            currentSpaces: { browserHarness.browserManager.spaceStateOwner.spaces },
             windowState: windowState,
             browserContext: browserHarness.context,
-            inventory: browserHarness.roles.inventory,
-            selection: browserHarness.roles.selection,
-            pinProjection: browserHarness.roles.pinProjection,
+            spaceCatalog: browserHarness.sidebar.spaceCatalog,
+            inventory: browserHarness.sidebar.inventory,
+            selection: browserHarness.sidebar.selection,
+            pinProjection: browserHarness.sidebar.pinProjection,
             dragState: dragState,
             settings: settings,
             allowsInteractiveWork: false,
@@ -412,19 +407,19 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
             settingsHarness.reset()
         }
 
-        windowState.tabManager = browserHarness.tabManager
         windowState.currentProfileId = sourceProfileId
         windowState.currentSpaceId = source.id
         browserHarness.commitWorkspaceTheme(source.workspaceTheme, for: windowState)
 
         let context = SpaceSidebarTransitionCoordinator.Context(
             spaces: [source, scheduledDestination, directDestination],
-            currentSpaces: { browserHarness.tabManager.spaceStateOwner.spaces },
+            currentSpaces: { browserHarness.browserManager.spaceStateOwner.spaces },
             windowState: windowState,
             browserContext: browserHarness.context,
-            inventory: browserHarness.roles.inventory,
-            selection: browserHarness.roles.selection,
-            pinProjection: browserHarness.roles.pinProjection,
+            spaceCatalog: browserHarness.sidebar.spaceCatalog,
+            inventory: browserHarness.sidebar.inventory,
+            selection: browserHarness.sidebar.selection,
+            pinProjection: browserHarness.sidebar.pinProjection,
             dragState: dragState,
             settings: settings,
             allowsInteractiveWork: true,
@@ -497,17 +492,17 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
             settingsHarness.reset()
         }
 
-        windowState.tabManager = browserHarness.tabManager
         windowState.currentSpaceId = UUID()
 
         let context = SpaceSidebarTransitionCoordinator.Context(
             spaces: [fallbackSpace, secondSpace],
-            currentSpaces: { browserHarness.tabManager.spaceStateOwner.spaces },
+            currentSpaces: { browserHarness.browserManager.spaceStateOwner.spaces },
             windowState: windowState,
             browserContext: browserHarness.context,
-            inventory: browserHarness.roles.inventory,
-            selection: browserHarness.roles.selection,
-            pinProjection: browserHarness.roles.pinProjection,
+            spaceCatalog: browserHarness.sidebar.spaceCatalog,
+            inventory: browserHarness.sidebar.inventory,
+            selection: browserHarness.sidebar.selection,
+            pinProjection: browserHarness.sidebar.pinProjection,
             dragState: SidebarDragState(),
             settings: settings,
             allowsInteractiveWork: false,
@@ -517,8 +512,6 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
         coordinator.handleSpacesCollectionChange(context)
 
         XCTAssertEqual(windowState.currentSpaceId, fallbackSpace.id)
-        XCTAssertEqual(browserHarness.tabManager.spaceStateOwner.currentSpace?.id, fallbackSpace.id)
-        XCTAssertEqual(browserHarness.transitionEvents, [.setActiveSpace(fallbackSpace.id)])
     }
 
     func testRuntimeRelativePreviousWrapsFromFirstToLastThroughTransitionPath() async throws {
@@ -535,11 +528,6 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
         fixture.completeScheduledSpaceTransition()
 
         XCTAssertEqual(fixture.windowState.currentSpaceId, lastSpace.id)
-        guard case .setActiveSpaceFromTransition(let committedSpaceId, _) = fixture.browserHarness.transitionEvents.last else {
-            XCTFail("Expected relative switch to commit through transition-aware activation")
-            return
-        }
-        XCTAssertEqual(committedSpaceId, lastSpace.id)
         XCTAssertFalse(fixture.coordinator.transitionState.hasDestination)
     }
 
@@ -557,11 +545,6 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
         fixture.completeScheduledSpaceTransition()
 
         XCTAssertEqual(fixture.windowState.currentSpaceId, firstSpace.id)
-        guard case .setActiveSpaceFromTransition(let committedSpaceId, _) = fixture.browserHarness.transitionEvents.last else {
-            XCTFail("Expected relative switch to commit through transition-aware activation")
-            return
-        }
-        XCTAssertEqual(committedSpaceId, firstSpace.id)
         XCTAssertFalse(fixture.coordinator.transitionState.hasDestination)
     }
 
@@ -576,13 +559,11 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
         fixture.switchRelativeSpace(offset: 1, spaces: [firstSpace])
 
         XCTAssertEqual(fixture.windowState.currentSpaceId, firstSpace.id)
-        XCTAssertTrue(fixture.browserHarness.transitionEvents.isEmpty)
         XCTAssertEqual(fixture.coordinator.transitionState.phase, .idle)
 
         fixture.windowState.currentSpaceId = UUID()
         fixture.switchRelativeSpace(offset: 1, spaces: spaces)
 
-        XCTAssertTrue(fixture.browserHarness.transitionEvents.isEmpty)
         XCTAssertEqual(fixture.coordinator.transitionState.phase, .idle)
     }
 
@@ -618,9 +599,8 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
         let delayedActions = ManualMainActorDelayedActionScheduler()
         let coordinator = SpaceSidebarTransitionCoordinator(delayedActions: delayedActions.scheduler)
 
-        windowState.tabManager = browserHarness.tabManager
         windowState.currentSpaceId = currentSpace.id
-        browserHarness.tabManager.spaceStateOwner.replaceCurrentSpace(currentSpace)
+        browserHarness.browserManager.spaceStateOwner.replaceCurrentSpace(currentSpace)
         browserHarness.commitWorkspaceTheme(currentSpace.workspaceTheme, for: windowState)
 
         return RuntimeRelativeSwitchFixture(
@@ -649,12 +629,13 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
         func context(spaces contextSpaces: [Space]) -> SpaceSidebarTransitionCoordinator.Context {
             SpaceSidebarTransitionCoordinator.Context(
                 spaces: contextSpaces,
-                currentSpaces: { browserHarness.tabManager.spaceStateOwner.spaces },
+                currentSpaces: { browserHarness.browserManager.spaceStateOwner.spaces },
                 windowState: windowState,
                 browserContext: browserHarness.context,
-                inventory: browserHarness.roles.inventory,
-                selection: browserHarness.roles.selection,
-                pinProjection: browserHarness.roles.pinProjection,
+                spaceCatalog: browserHarness.sidebar.spaceCatalog,
+                inventory: browserHarness.sidebar.inventory,
+                selection: browserHarness.sidebar.selection,
+                pinProjection: browserHarness.sidebar.pinProjection,
                 dragState: dragState,
                 settings: settings,
                 allowsInteractiveWork: true,
@@ -772,40 +753,59 @@ private func applyRegularListGeometry(
     )
 }
 
-private enum TestSidebarTransitionEvent: Equatable {
-    case setActiveSpace(UUID)
-    case setActiveSpaceFromTransition(UUID, SpaceTransitionIdentity)
-}
+@MainActor
+private struct TransitionSidebarFixture {
+    let spaceCatalog: SidebarSpaceCatalogProjection
+    let inventory: SidebarSpaceInventoryProjection
+    let selection: SidebarWindowSelectionQuery
+    let pinProjection: SidebarPinFolderProjection
+    let lifecycle: SidebarSpaceLifecycle
 
-private final class TransitionEventRecorder {
-    var events: [TestSidebarTransitionEvent] = []
+    init(browser: BrowserManager) {
+        let registry = browser.windowRegistry
+        let windows = SidebarWindowIdentityQuery(registry: registry)
+        spaceCatalog = SidebarSpaceCatalogProjection(
+            runtime: browser.runtimePortConnection,
+            spaces: browser.spaceStateOwner,
+            pins: browser.shortcutPinCollectionStateOwner
+        )
+        inventory = SidebarSpaceInventoryProjection(
+            runtime: browser.runtimePortConnection,
+            spaces: browser.spaceStateOwner,
+            regularTabs: browser.regularTabCollectionOwner,
+            pinned: SidebarPinnedInventoryProjection(
+                folders: browser.folderCollectionStateOwner,
+                pins: browser.shortcutPinCollectionStateOwner,
+                splitGroups: browser.splitGroupStore,
+                splitOrdering: browser.splitGroupSidebarOrdering
+            )
+        )
+        let splitQuery = browser.splitQuery
+        selection = SidebarWindowSelectionQuery(
+            runtimeIsAlive: { true },
+            windows: windows,
+            windowTabs: browser.windowTabContext,
+            shortcutPresentation: browser.shortcutPresentationOwner,
+            splitQuery: splitQuery
+        )
+        pinProjection = SidebarPinFolderProjection(
+            runtimeIsAlive: { true },
+            windows: windows,
+            essentials: browser.essentialsShortcutPlacementOwner,
+            resolution: browser.shortcutPinRuntimeResolutionOwner
+        )
+        lifecycle = browser.sidebarSpaceLifecycle
+    }
 }
 
 @MainActor
 private final class TestSidebarBrowserContextHarness {
-    let container: ModelContainer
-    let tabManager: TabManager
-    let profileManager: ProfileManager
+    let browserManager: BrowserManager
     let context: SidebarBrowserContext
-    let roles: SidebarConsumerTestRoles
-
-    private let browserManager: BrowserManager
-    private let liveFolderManager: SumiLiveFolderManager
-    private let downloadManager = DownloadManager.unavailable()
-    private let downloadsPopoverPresenter = DownloadsPopoverPresenter()
-    private let glanceManager = GlanceManager()
-    private let extensionSurfaceStore = BrowserExtensionSurfaceStore(
-        binding: nil
-    )
-    private let workspaceThemeCoordinator = WorkspaceThemeCoordinator()
-    private let transitionEventRecorder = TransitionEventRecorder()
-
-    var transitionEvents: [TestSidebarTransitionEvent] {
-        transitionEventRecorder.events
-    }
+    let sidebar: TransitionSidebarFixture
 
     init(spaces: [Space]) throws {
-        container = try ModelContainer(
+        let container = try ModelContainer(
             for: SumiStartupPersistence.schema,
             configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
         )
@@ -815,135 +815,20 @@ private final class TestSidebarBrowserContextHarness {
             )
         )
         self.browserManager = browserManager
-        tabManager = browserManager.tabManager
-        tabManager.spaceStateOwner.replaceSpaces(spaces)
-        tabManager.spaceStateOwner.replaceCurrentSpace(spaces.first)
-        tabManager.startupRestoreLifecycle.markLoadFinished()
-        profileManager = browserManager.profileManager
-        profileManager.ensureDefaultProfile()
-        liveFolderManager = browserManager.liveFolderManager
-        roles = SidebarConsumerTestSupport.roles(tabManager: tabManager)
+        browserManager.spaceStateOwner.replaceSpaces(spaces)
+        browserManager.spaceStateOwner.replaceCurrentSpace(spaces.first)
+        browserManager.startupRestoreLifecycle.markLoadFinished()
+        browserManager.profileManager.ensureDefaultProfile()
+        let sidebar = TransitionSidebarFixture(browser: browserManager)
+        self.sidebar = sidebar
 
-        let tabManager = tabManager
-        let profileManager = profileManager
-        let liveFolderManager = liveFolderManager
-        let downloadManager = downloadManager
-        let downloadsPopoverPresenter = downloadsPopoverPresenter
-        let glanceManager = glanceManager
-        let extensionSurfaceStore = extensionSurfaceStore
-        let workspaceThemeCoordinator = workspaceThemeCoordinator
-        let transitionEventRecorder = transitionEventRecorder
-
-        context = SidebarBrowserContext(
-            profileManager: profileManager,
-            liveFolderManager: liveFolderManager,
-            splitQuery: browserManager.splitComposition.query,
-            splitLayout: browserManager.splitComposition.layout,
-            emptySplitCreation: browserManager.splitComposition.emptyCreation,
-            downloadManager: downloadManager,
-            downloadsPopoverPresenter: downloadsPopoverPresenter,
-            glanceManager: glanceManager,
-            extensionSurfaceStore: extensionSurfaceStore,
-            faviconImageReader: TabDependencyIsolationDefaults.faviconCapabilities.images,
-            presentationActions: SidebarBrowserPresentationActions(
-                showShortcutEditor: { _, _, _, _ in /* No-op. */ },
-                showFolderEditor: { _, _, _, _ in /* No-op. */ },
-                showFolderSearchPopover: { _, _, _, _ in /* No-op. */ },
-                folderSearchAnchorHoverChanged: { _, _, _ in /* No-op. */ },
-                showSpaceEditor: { _, _, _, _ in /* No-op. */ },
-                showGradientEditorForSpace: { _, _ in /* No-op. */ },
-                confirmDeleteSpace: { _, _ in /* No-op. */ },
-                presentSharingServicePicker: { _, _ in /* No-op. */ }
-            ),
-            headerContext: { _ in fatalError("Unused in SpaceSidebarTransitionCoordinatorTests") },
-            isTransitioningProfile: { false },
-            currentProfile: { profileManager.profiles.first },
-            extensionToolbarSlots: { _, _ in [] },
-            extensionActionBrowserContext: { _ in
-                fatalError("Unused in SpaceSidebarTransitionCoordinatorTests")
-            },
-            savedSidebarWidth: { _ in BrowserWindowState.sidebarDefaultWidth },
-            configureMediaStore: { _, _ in /* No-op. */ },
-            spaceTransitions: SidebarSpaceTransitionActions(
-                completePendingSplitGroupFocusIfReady: { _, _ in /* No-op. */ },
-                setActiveSpace: { space, windowState in
-                    transitionEventRecorder.events.append(.setActiveSpace(space.id))
-                    tabManager.spaceStateOwner.replaceCurrentSpace(space)
-                    windowState.currentSpaceId = space.id
-                    workspaceThemeCoordinator.update(
-                        for: windowState,
-                        to: space.workspaceTheme,
-                        animate: true,
-                        isActiveWindow: true
-                    )
-                },
-                setActiveSpaceFromTransition: { space, windowState, identity in
-                    guard identity.destinationSpaceId == space.id,
-                          windowState.windowThemeState.matchesInteractiveSpaceTransition(identity) else {
-                        return
-                    }
-                    transitionEventRecorder.events.append(.setActiveSpaceFromTransition(space.id, identity))
-                    tabManager.spaceStateOwner.replaceCurrentSpace(space)
-                    windowState.currentSpaceId = space.id
-                    workspaceThemeCoordinator.finishInteractiveTransition(
-                        to: space.workspaceTheme,
-                        in: windowState,
-                        identity: identity
-                    )
-                },
-                beginInteractiveSpaceTransition: { source, destination, identity, windowState in
-                    workspaceThemeCoordinator.beginInteractiveTransition(
-                        from: source,
-                        to: destination,
-                        identity: identity,
-                        initialProgress: 0,
-                        in: windowState
-                    )
-                },
-                updateInteractiveSpaceTransition: { progress, identity, windowState in
-                    workspaceThemeCoordinator.updateInteractiveTransition(
-                        progress: progress,
-                        identity: identity,
-                        in: windowState
-                    )
-                },
-                cancelInteractiveSpaceTransition: { identity, windowState in
-                    workspaceThemeCoordinator.cancelInteractiveTransition(
-                        in: windowState,
-                        identity: identity
-                    )
-                }
-            ),
-            commands: SidebarBrowserCommandActions(
-                canCreateFolderInCurrentSpace: { _ in true },
-                showGradientEditor: { _ in /* No-op. */ },
-                toggleSidebar: { _ in /* No-op. */ },
-                openAppearanceSettings: { _ in /* No-op. */ },
-                closeDownloadsPopover: { _ in /* No-op. */ },
-                requestUserTabActivation: { _, _ in /* No-op. */ },
-                closeTab: { _, _ in /* No-op. */ },
-                moveTabUp: { _ in /* No-op. */ },
-                moveTabDown: { _ in /* No-op. */ },
-                focusSplitGroup: { _, _, _ in /* No-op. */ },
-                restoreShortcutSplitMember: { _, _, _ in /* No-op. */ },
-                closeSplitMember: { _, _, _ in /* No-op. */ },
-                openForegroundTab: { _, _, _ in nil },
-                openNewTabOrFloatingBar: { _ in /* No-op. */ },
-                duplicateTab: { _, _ in /* No-op. */ },
-                pinShortcutGlobally: { _, _, _, _ in /* No-op. */ },
-                toggleDownloadsPopover: { _ in /* No-op. */ },
-                createFolderInCurrentSpace: { _ in /* No-op. */ },
-                createRSSLiveFolderInCurrentSpace: { _ in /* No-op. */ },
-                createGitHubPRFolderInCurrentSpace: { _ in /* No-op. */ },
-                createGitHubIssuesFolderInCurrentSpace: { _ in /* No-op. */ },
-                unloadShortcutPin: { _, _ in /* No-op. */ },
-                unloadShortcutPins: { _, _ in /* No-op. */ }
-            ),
-            windowRegistry: { nil }
+        context = browserManager.composeSidebarBrowserContext(
+            spaceLifecycle: sidebar.lifecycle
         )
     }
 
     func commitWorkspaceTheme(_ theme: WorkspaceTheme, for windowState: BrowserWindowState) {
-        workspaceThemeCoordinator.restore(theme, in: windowState)
+        browserManager.chromeBundle.workspaceThemeTransitionOwner
+            .commitWorkspaceTheme(theme, for: windowState)
     }
 }

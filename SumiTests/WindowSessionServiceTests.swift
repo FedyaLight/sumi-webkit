@@ -1,11 +1,48 @@
+import SumiDomain
+import SumiWebRuntime
 import SwiftData
 import XCTest
 
 @testable import Sumi
-import SumiDomain
 
 @MainActor
 final class WindowSessionServiceTests: XCTestCase {
+    func testOverrideSnapshotWithUnavailableAdmissionClearsProfileWithoutApplyingSession() throws {
+        let tabManager = BrowserManager()
+        let retiredProfileID = UUID()
+        let fallback = Profile(name: "Fallback")
+        var overrideSnapshot = makeSessionRecoveryWindowSession(
+            currentTabId: UUID(),
+            isShowingEmptyState: false
+        )
+        overrideSnapshot.currentProfileId = retiredProfileID
+        let overrideURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sumi-window-override-\(UUID()).json")
+        let overrideData = try WindowSessionSnapshotCodec().encode(
+            overrideSnapshot
+        )
+        try overrideData.write(to: overrideURL, options: .atomic)
+        defer { try? FileManager.default.removeItem(at: overrideURL) }
+        let snapshotStore = WindowSessionSnapshotStore(
+            key: "SumiTests.windowSession.override.\(UUID())",
+            environment: {
+                [WindowSessionSnapshotStore.overridePathEnvironmentKey: overrideURL.path]
+            }
+        )
+        let delegate = TestWindowSessionDelegate(runtime: tabManager)
+        let service = delegate.makeRestoreService(
+            snapshotStore: snapshotStore
+        )
+        let window = BrowserWindowState()
+
+        service.setupWindowState(window, currentProfile: fallback)
+
+        XCTAssertNil(window.currentProfileId)
+        XCTAssertNil(window.currentTabId)
+        XCTAssertTrue(window.isShowingEmptyState)
+        XCTAssertEqual(try Data(contentsOf: overrideURL), overrideData)
+    }
+
     func testBrowserManagerFlushesPendingWindowSessionWithoutWaitingForDebounce() throws {
         let sessionKey = "SumiTests.windowSession.flush.\(UUID().uuidString)"
         UserDefaults.standard.removeObject(forKey: sessionKey)
@@ -25,14 +62,14 @@ final class WindowSessionServiceTests: XCTestCase {
         windowState.savedSidebarWidth = 312
         windowState.sidebarContentWidth = BrowserWindowState.sidebarContentWidth(for: 312)
 
-        browserManager.windowSessionBundle.persistence.schedule(
+        browserManager.windowSessionPersistenceCoordinator.schedule(
             windowState,
             delayNanoseconds: 60_000_000_000
         )
 
         XCTAssertNil(UserDefaults.standard.data(forKey: sessionKey))
 
-        browserManager.windowSessionBundle.persistence.flush()
+        browserManager.windowSessionPersistenceCoordinator.flush()
 
         let data = try XCTUnwrap(UserDefaults.standard.data(forKey: sessionKey))
         let snapshot = try JSONDecoder().decode(WindowSessionSnapshot.self, from: data)
@@ -41,7 +78,7 @@ final class WindowSessionServiceTests: XCTestCase {
     }
 
     func testSetupWindowStatePreservesSeededThemeUntilInitialTabManagerLoadCompletes() throws {
-        let tabManager = try makeInMemoryTabManager(loadPersistedState: false)
+        let tabManager = BrowserManager()
         XCTAssertFalse(tabManager.startupRestoreLifecycle.hasLoadedInitialData)
 
         let spaceId = UUID()
@@ -53,7 +90,7 @@ final class WindowSessionServiceTests: XCTestCase {
             initialWorkspaceTheme: initialTheme,
             awaitsInitialSessionResolution: true
         )
-        let delegate = TestWindowSessionDelegate(tabManager: tabManager)
+        let delegate = TestWindowSessionDelegate(runtime: tabManager)
         let service = delegate.makeRestoreService(lastWindowSessionKey: sessionKey)
 
         service.setupWindowState(windowState, currentProfile: delegate.currentProfile)
@@ -66,7 +103,7 @@ final class WindowSessionServiceTests: XCTestCase {
     }
 
     func testSetupWindowStateWithoutStoredSessionUsesFirstCurrentProfileSpaceInsteadOfGlobalCurrentSpace() throws {
-        let tabManager = try makeInMemoryTabManager(loadPersistedState: false)
+        let tabManager = BrowserManager()
         let primaryProfile = Profile(name: "Primary")
         let primarySpace = Space(name: "Primary", profileId: primaryProfile.id)
         let secondarySpace = Space(name: "Secondary", profileId: primaryProfile.id)
@@ -75,7 +112,7 @@ final class WindowSessionServiceTests: XCTestCase {
 
         let sessionKey = "SumiTests.windowSession.\(UUID().uuidString)"
         defer { UserDefaults.standard.removeObject(forKey: sessionKey) }
-        let delegate = TestWindowSessionDelegate(tabManager: tabManager)
+        let delegate = TestWindowSessionDelegate(runtime: tabManager)
         let service = delegate.makeRestoreService(lastWindowSessionKey: sessionKey)
         delegate.currentProfile = primaryProfile
         let windowState = BrowserWindowState()
@@ -87,7 +124,7 @@ final class WindowSessionServiceTests: XCTestCase {
     }
 
     func testSetupWindowStateWithoutStoredSessionSelectsResolvedSpaceTabInsteadOfGlobalCurrentTab() throws {
-        let tabManager = try makeInMemoryTabManager(loadPersistedState: false)
+        let tabManager = BrowserManager()
         let primaryProfile = Profile(name: "Primary")
         let windowSpace = Space(name: "Window", profileId: primaryProfile.id)
         let globalSpace = Space(name: "Global", profileId: primaryProfile.id)
@@ -104,11 +141,11 @@ final class WindowSessionServiceTests: XCTestCase {
             activate: true
         )
         tabManager.spaceStateOwner.replaceCurrentSpace(globalSpace)
-        tabManager.selectionStateOwner.replaceCurrentTab(globalTab)
+        tabManager.activeSelectionOwner.setActiveTab(globalTab)
 
         let sessionKey = "SumiTests.windowSession.\(UUID().uuidString)"
         defer { UserDefaults.standard.removeObject(forKey: sessionKey) }
-        let delegate = TestWindowSessionDelegate(tabManager: tabManager)
+        let delegate = TestWindowSessionDelegate(runtime: tabManager)
         let service = delegate.makeRestoreService(lastWindowSessionKey: sessionKey)
         delegate.currentProfile = primaryProfile
         let windowState = BrowserWindowState()
@@ -117,12 +154,12 @@ final class WindowSessionServiceTests: XCTestCase {
 
         XCTAssertEqual(windowState.currentSpaceId, windowSpace.id)
         XCTAssertEqual(windowState.currentTabId, windowTab.id)
-        XCTAssertEqual(tabManager.selectionStateOwner.currentTab?.id, globalTab.id)
+        XCTAssertEqual(tabManager.tabStateStore.selection.currentTab?.id, globalTab.id)
     }
 
     func testHandleTabManagerDataLoadedRepairsStaleWindowSpaceFromWindowProfileInsteadOfGlobalCurrentSpace()
         throws {
-        let tabManager = try makeInMemoryTabManager(loadPersistedState: false)
+        let tabManager = BrowserManager()
         let primaryProfile = Profile(name: "Primary")
         let secondaryProfile = Profile(name: "Secondary")
         let primarySpace = Space(name: "Primary", profileId: primaryProfile.id)
@@ -132,17 +169,19 @@ final class WindowSessionServiceTests: XCTestCase {
 
         let sessionKey = "SumiTests.windowSession.\(UUID().uuidString)"
         defer { UserDefaults.standard.removeObject(forKey: sessionKey) }
-        let delegate = TestWindowSessionDelegate(tabManager: tabManager)
-        let service = delegate.makeRestoreService(lastWindowSessionKey: sessionKey)
         let windowRegistry = WindowRegistry()
+        let delegate = TestWindowSessionDelegate(
+            runtime: tabManager,
+            windowRegistry: windowRegistry
+        )
+        let service = delegate.makeRestoreService(lastWindowSessionKey: sessionKey)
         let windowState = BrowserWindowState(awaitsInitialSessionResolution: true)
         windowState.currentSpaceId = UUID()
         windowState.currentProfileId = primaryProfile.id
         delegate.currentProfile = secondaryProfile
-        delegate.windowRegistry = windowRegistry
         windowRegistry.register(windowState)
 
-        service.handleTabManagerDataLoaded(windows: delegate.windowRegistry?.allWindows ?? [])
+        service.handleTabManagerDataLoaded(windows: delegate.windowRegistry.allWindows)
 
         XCTAssertEqual(windowState.currentProfileId, primaryProfile.id)
         XCTAssertEqual(windowState.currentSpaceId, primarySpace.id)
@@ -150,7 +189,7 @@ final class WindowSessionServiceTests: XCTestCase {
 
     func testHandleTabManagerDataLoadedDoesNotUseCurrentProfileWhenPersistedProfileIsStale()
         throws {
-        let tabManager = try makeInMemoryTabManager(loadPersistedState: false)
+        let tabManager = BrowserManager()
         let staleProfileId = UUID()
         let fallbackProfile = Profile(name: "Fallback")
         let currentProfile = Profile(name: "Current")
@@ -161,17 +200,19 @@ final class WindowSessionServiceTests: XCTestCase {
 
         let sessionKey = "SumiTests.windowSession.\(UUID().uuidString)"
         defer { UserDefaults.standard.removeObject(forKey: sessionKey) }
-        let delegate = TestWindowSessionDelegate(tabManager: tabManager)
-        let service = delegate.makeRestoreService(lastWindowSessionKey: sessionKey)
         let windowRegistry = WindowRegistry()
+        let delegate = TestWindowSessionDelegate(
+            runtime: tabManager,
+            windowRegistry: windowRegistry
+        )
+        let service = delegate.makeRestoreService(lastWindowSessionKey: sessionKey)
         let windowState = BrowserWindowState(awaitsInitialSessionResolution: true)
         windowState.currentSpaceId = UUID()
         windowState.currentProfileId = staleProfileId
         delegate.currentProfile = currentProfile
-        delegate.windowRegistry = windowRegistry
         windowRegistry.register(windowState)
 
-        service.handleTabManagerDataLoaded(windows: delegate.windowRegistry?.allWindows ?? [])
+        service.handleTabManagerDataLoaded(windows: delegate.windowRegistry.allWindows)
 
         XCTAssertNil(windowState.currentProfileId)
         XCTAssertNil(windowState.currentSpaceId)
@@ -179,7 +220,7 @@ final class WindowSessionServiceTests: XCTestCase {
     }
 
     func testHandleTabManagerDataLoadedRepairsStaleWindowSpaceFromCurrentTabSpace() throws {
-        let tabManager = try makeInMemoryTabManager(loadPersistedState: false)
+        let tabManager = BrowserManager()
         let windowProfile = Profile(name: "Window")
         let globalProfile = Profile(name: "Global")
         let windowSpace = Space(name: "Window", profileId: windowProfile.id)
@@ -194,17 +235,19 @@ final class WindowSessionServiceTests: XCTestCase {
 
         let sessionKey = "SumiTests.windowSession.\(UUID().uuidString)"
         defer { UserDefaults.standard.removeObject(forKey: sessionKey) }
-        let delegate = TestWindowSessionDelegate(tabManager: tabManager)
-        let service = delegate.makeRestoreService(lastWindowSessionKey: sessionKey)
         let windowRegistry = WindowRegistry()
+        let delegate = TestWindowSessionDelegate(
+            runtime: tabManager,
+            windowRegistry: windowRegistry
+        )
+        let service = delegate.makeRestoreService(lastWindowSessionKey: sessionKey)
         let windowState = BrowserWindowState(awaitsInitialSessionResolution: true)
         windowState.currentSpaceId = UUID()
         windowState.currentTabId = windowTab.id
         delegate.currentProfile = globalProfile
-        delegate.windowRegistry = windowRegistry
         windowRegistry.register(windowState)
 
-        service.handleTabManagerDataLoaded(windows: delegate.windowRegistry?.allWindows ?? [])
+        service.handleTabManagerDataLoaded(windows: delegate.windowRegistry.allWindows)
 
         XCTAssertEqual(windowState.currentProfileId, windowProfile.id)
         XCTAssertEqual(windowState.currentSpaceId, windowSpace.id)
@@ -236,10 +279,10 @@ final class WindowSessionServiceTests: XCTestCase {
     func testBrowserManagerCurrentTabRequiresCommittedWindowSelection() {
         let browserManager = BrowserManager()
         let space = Space(id: UUID(), name: "Primary")
-        browserManager.tabManager.spaceStateOwner.replaceSpaces([space])
-        browserManager.tabManager.spaceStateOwner.replaceCurrentSpace(space)
+        browserManager.spaceStateOwner.replaceSpaces([space])
+        browserManager.spaceStateOwner.replaceCurrentSpace(space)
 
-        let fallbackTab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
+        let fallbackTab = browserManager.regularTabLifecycleOwner.createNewTab(
             url: "https://first.example",
             in: space,
             activate: true
@@ -256,14 +299,14 @@ final class WindowSessionServiceTests: XCTestCase {
             browserManager.shellRuntime.windowSelection.preferredTabForSpace(
                 space,
                 in: windowState,
-                tabStore: browserManager.tabManager.runtimeStore
+                tabStore: browserManager.runtimeStore
             )?.id,
             fallbackTab.id
         )
     }
 
     func testSetupWindowStateRestoresEmptyStateDraftWithoutSynthesizingFloatingBarReason() throws {
-        let tabManager = try makeInMemoryTabManager(loadPersistedState: false)
+        let tabManager = BrowserManager()
         let spaceId = UUID()
         let sessionKey = try seedWindowSession(
             currentSpaceId: spaceId,
@@ -273,7 +316,7 @@ final class WindowSessionServiceTests: XCTestCase {
         )
         defer { UserDefaults.standard.removeObject(forKey: sessionKey) }
 
-        let delegate = TestWindowSessionDelegate(tabManager: tabManager)
+        let delegate = TestWindowSessionDelegate(runtime: tabManager)
         let service = delegate.makeRestoreService(lastWindowSessionKey: sessionKey)
         let windowState = BrowserWindowState(awaitsInitialSessionResolution: true)
 
@@ -287,7 +330,7 @@ final class WindowSessionServiceTests: XCTestCase {
 
     func testSetupWindowStatePreservesExplicitEmptyStateFloatingBarReasons() throws {
         for reason in [FloatingBarPresentationReason.emptySpace, .keyboard] {
-            let tabManager = try makeInMemoryTabManager(loadPersistedState: false)
+            let tabManager = BrowserManager()
             let spaceId = UUID()
             let sessionKey = try seedWindowSession(
                 currentSpaceId: spaceId,
@@ -297,7 +340,7 @@ final class WindowSessionServiceTests: XCTestCase {
             )
             defer { UserDefaults.standard.removeObject(forKey: sessionKey) }
 
-            let delegate = TestWindowSessionDelegate(tabManager: tabManager)
+        let delegate = TestWindowSessionDelegate(runtime: tabManager)
             let service = delegate.makeRestoreService(lastWindowSessionKey: sessionKey)
             let windowState = BrowserWindowState(awaitsInitialSessionResolution: true)
 
@@ -311,9 +354,13 @@ final class WindowSessionServiceTests: XCTestCase {
     }
 
     func testApplyWindowSessionSnapshotRestoresPersistedWindowFields() throws {
-        let tabManager = try makeInMemoryTabManager(loadPersistedState: false)
+        let tabManager = BrowserManager()
         let profileId = UUID()
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Snapshot", profileId: profileId)
+        let space = try createSpace(
+            named: "Snapshot",
+            profileID: profileId,
+            in: tabManager
+        )
         let tab = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://snapshot.example", in: space, activate: true)
         let shortcutPinId = UUID()
         let sessionKey = "SumiTests.windowSession.\(UUID().uuidString)"
@@ -339,7 +386,7 @@ final class WindowSessionServiceTests: XCTestCase {
             isSidebarVisible: false,
             floatingBarDraft: FloatingBarDraftState(text: "persisted draft", navigateCurrentTab: true)
         )
-        let delegate = TestWindowSessionDelegate(tabManager: tabManager)
+        let delegate = TestWindowSessionDelegate(runtime: tabManager)
         let service = delegate.makeRestoreService(lastWindowSessionKey: sessionKey)
         let windowState = BrowserWindowState()
         windowState.presentationState.isDownloadsPopoverPresented = true
@@ -365,7 +412,7 @@ final class WindowSessionServiceTests: XCTestCase {
     }
 
     func testPreparedArchivedWindowBypassesConflictingGlobalSnapshot() throws {
-        let tabManager = try makeInMemoryTabManager(loadPersistedState: false)
+        let tabManager = BrowserManager()
         let globalProfileID = UUID()
         let archivedProfileID = UUID()
         let globalSpace = Space(name: "Global", profileId: globalProfileID)
@@ -379,7 +426,7 @@ final class WindowSessionServiceTests: XCTestCase {
             isShowingEmptyState: true
         )
         defer { UserDefaults.standard.removeObject(forKey: sessionKey) }
-        let delegate = TestWindowSessionDelegate(tabManager: tabManager)
+        let delegate = TestWindowSessionDelegate(runtime: tabManager)
         let service = delegate.makeRestoreService(
             lastWindowSessionKey: sessionKey
         )
@@ -424,7 +471,7 @@ final class WindowSessionServiceTests: XCTestCase {
     }
 
     func testActiveEssentialShortcutSurvivesPreloadSetupAndMaterializesAfterTabLoad() throws {
-        let tabManager = try makeInMemoryTabManager(loadPersistedState: false)
+        let tabManager = BrowserManager()
         let profileId = UUID()
         let space = Space(
             id: UUID(),
@@ -451,11 +498,13 @@ final class WindowSessionServiceTests: XCTestCase {
         )
         defer { UserDefaults.standard.removeObject(forKey: sessionKey) }
 
-        let delegate = TestWindowSessionDelegate(tabManager: tabManager)
-        let service = delegate.makeRestoreService(lastWindowSessionKey: sessionKey)
         let windowRegistry = WindowRegistry()
+        let delegate = TestWindowSessionDelegate(
+            runtime: tabManager,
+            windowRegistry: windowRegistry
+        )
+        let service = delegate.makeRestoreService(lastWindowSessionKey: sessionKey)
         let windowState = BrowserWindowState(awaitsInitialSessionResolution: true)
-        delegate.windowRegistry = windowRegistry
         windowRegistry.register(windowState)
 
         service.setupWindowState(windowState, currentProfile: delegate.currentProfile)
@@ -470,7 +519,7 @@ final class WindowSessionServiceTests: XCTestCase {
         tabManager.structuralCollectionMutationOwner.setPinnedTabs([pin], for: profileId)
         tabManager.startupRestoreLifecycle.markLoadFinished()
 
-        service.handleTabManagerDataLoaded(windows: delegate.windowRegistry?.allWindows ?? [])
+        service.handleTabManagerDataLoaded(windows: delegate.windowRegistry.allWindows)
 
         let liveTab = try XCTUnwrap(tabManager.shortcutPresentationOwner.shortcutLiveTab(for: pin.id, in: windowState.id))
         XCTAssertEqual(windowState.currentTabId, liveTab.id)
@@ -481,7 +530,7 @@ final class WindowSessionServiceTests: XCTestCase {
     }
 
     func testRememberedSpacePinnedShortcutSurvivesPreloadSetupAndMaterializesAfterTabLoad() throws {
-        let tabManager = try makeInMemoryTabManager(loadPersistedState: false)
+        let tabManager = BrowserManager()
         let space = Space(id: UUID(), name: "Primary")
         let pin = ShortcutPin(
             id: UUID(),
@@ -502,11 +551,13 @@ final class WindowSessionServiceTests: XCTestCase {
         )
         defer { UserDefaults.standard.removeObject(forKey: sessionKey) }
 
-        let delegate = TestWindowSessionDelegate(tabManager: tabManager)
-        let service = delegate.makeRestoreService(lastWindowSessionKey: sessionKey)
         let windowRegistry = WindowRegistry()
+        let delegate = TestWindowSessionDelegate(
+            runtime: tabManager,
+            windowRegistry: windowRegistry
+        )
+        let service = delegate.makeRestoreService(lastWindowSessionKey: sessionKey)
         let windowState = BrowserWindowState(awaitsInitialSessionResolution: true)
-        delegate.windowRegistry = windowRegistry
         windowRegistry.register(windowState)
 
         service.setupWindowState(windowState, currentProfile: delegate.currentProfile)
@@ -520,7 +571,7 @@ final class WindowSessionServiceTests: XCTestCase {
         tabManager.structuralCollectionMutationOwner.setSpacePinnedShortcuts([pin], for: space.id)
         tabManager.startupRestoreLifecycle.markLoadFinished()
 
-        service.handleTabManagerDataLoaded(windows: delegate.windowRegistry?.allWindows ?? [])
+        service.handleTabManagerDataLoaded(windows: delegate.windowRegistry.allWindows)
 
         let liveTab = try XCTUnwrap(tabManager.shortcutPresentationOwner.shortcutLiveTab(for: pin.id, in: windowState.id))
         XCTAssertEqual(windowState.currentTabId, liveTab.id)
@@ -533,8 +584,12 @@ final class WindowSessionServiceTests: XCTestCase {
     }
 
     func testActiveSplitGroupSnapshotRestoresGroupFocus() throws {
-        let tabManager = try makeInMemoryTabManager(loadPersistedState: false)
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Split", profileId: UUID())
+        let tabManager = BrowserManager()
+        let space = try createSpace(
+            named: "Split",
+            profileID: UUID(),
+            in: tabManager
+        )
         let first = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://one.example", in: space, activate: true)
         let second = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://two.example", in: space, activate: false)
         let group = try XCTUnwrap(
@@ -570,7 +625,7 @@ final class WindowSessionServiceTests: XCTestCase {
                 activeMemberID: .regularTab(second.id)
             )
         )
-        let delegate = TestWindowSessionDelegate(tabManager: tabManager)
+        let delegate = TestWindowSessionDelegate(runtime: tabManager)
         let service = delegate.makeRestoreService(lastWindowSessionKey: "SumiTests.windowSession.\(UUID().uuidString)")
         let windowState = BrowserWindowState()
 
@@ -582,10 +637,11 @@ final class WindowSessionServiceTests: XCTestCase {
     }
 
     func testDeferredSplitSelectionRetriesOnlyAfterTabDataLoad() throws {
-        let tabManager = try makeInMemoryTabManager(loadPersistedState: false)
-        let space = tabManager.spaceServices.catalog.createSpace(
-            name: "Deferred Split",
-            profileId: UUID()
+        let tabManager = BrowserManager()
+        let space = try createSpace(
+            named: "Deferred Split",
+            profileID: UUID(),
+            in: tabManager
         )
         let first = tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://one.example",
@@ -630,7 +686,7 @@ final class WindowSessionServiceTests: XCTestCase {
             ),
             splitSelection: pendingSelection
         )
-        let delegate = TestWindowSessionDelegate(tabManager: tabManager)
+        let delegate = TestWindowSessionDelegate(runtime: tabManager)
         var didPublishGroup = false
         delegate.onSyncShortcutSelectionState = { _ in
             guard !didPublishGroup else { return }
@@ -671,8 +727,12 @@ final class WindowSessionServiceTests: XCTestCase {
     }
 
     func testLegacySplitSessionSnapshotMigratesAfterTabLoad() throws {
-        let tabManager = try makeInMemoryTabManager(loadPersistedState: false)
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Legacy Split", profileId: UUID())
+        let tabManager = BrowserManager()
+        let space = try createSpace(
+            named: "Legacy Split",
+            profileID: UUID(),
+            in: tabManager
+        )
         let left = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://left.example", in: space, activate: true)
         let right = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://right.example", in: space, activate: false)
         let sessionKey = try seedLegacySplitWindowSession(
@@ -685,11 +745,13 @@ final class WindowSessionServiceTests: XCTestCase {
         )
         defer { UserDefaults.standard.removeObject(forKey: sessionKey) }
 
-        let delegate = TestWindowSessionDelegate(tabManager: tabManager)
-        let service = delegate.makeRestoreService(lastWindowSessionKey: sessionKey)
         let windowRegistry = WindowRegistry()
+        let delegate = TestWindowSessionDelegate(
+            runtime: tabManager,
+            windowRegistry: windowRegistry
+        )
+        let service = delegate.makeRestoreService(lastWindowSessionKey: sessionKey)
         let windowState = BrowserWindowState(awaitsInitialSessionResolution: true)
-        delegate.windowRegistry = windowRegistry
         windowRegistry.register(windowState)
 
         service.setupWindowState(windowState, currentProfile: delegate.currentProfile)
@@ -702,7 +764,7 @@ final class WindowSessionServiceTests: XCTestCase {
         )
 
         tabManager.startupRestoreLifecycle.markLoadFinished()
-        service.handleTabManagerDataLoaded(windows: delegate.windowRegistry?.allWindows ?? [])
+        service.handleTabManagerDataLoaded(windows: delegate.windowRegistry.allWindows)
 
         let group = try XCTUnwrap(
             tabManager.splitGroupStore.group(containing: .regularTab(left.id))
@@ -727,19 +789,18 @@ final class WindowSessionServiceTests: XCTestCase {
     }
 
     func testSetupWindowStateFallsBackToDefaultWhenLoadedSpaceIsMissing() async throws {
-        let tabManager = try makeInMemoryTabManager(loadPersistedState: false)
-        await tabManager.storeRestore.loadFromStoreAwaitingResult()
+        let tabManager = BrowserManager()
+        tabManager.startupRestoreLifecycle.markLoadFinished()
         XCTAssertTrue(tabManager.startupRestoreLifecycle.hasLoadedInitialData)
         tabManager.spaceStateOwner.replaceSpaces([])
         tabManager.spaceStateOwner.replaceCurrentSpace(nil)
-        tabManager.selectionStateOwner.replaceCurrentTab(nil)
 
         let spaceId = UUID()
         let sessionKey = try seedWindowSession(currentSpaceId: spaceId)
         defer { UserDefaults.standard.removeObject(forKey: sessionKey) }
 
         let windowState = BrowserWindowState(initialWorkspaceTheme: makeVisibleTheme())
-        let delegate = TestWindowSessionDelegate(tabManager: tabManager)
+        let delegate = TestWindowSessionDelegate(runtime: tabManager)
         let service = delegate.makeRestoreService(lastWindowSessionKey: sessionKey)
 
         service.setupWindowState(windowState, currentProfile: delegate.currentProfile)
@@ -754,8 +815,8 @@ final class WindowSessionServiceTests: XCTestCase {
         UserDefaults.standard.removeObject(forKey: BrowserManager.lastWindowSessionKey)
         defer { UserDefaults.standard.removeObject(forKey: BrowserManager.lastWindowSessionKey) }
 
-        let browserManager = BrowserManager()
         let windowRegistry = WindowRegistry()
+        let browserManager = BrowserManager(windowRegistry: windowRegistry)
         let globalProfile = Profile(name: "Global")
         let windowProfile = Profile(name: "Window")
         let globalSpace = Space(name: "Global", profileId: globalProfile.id)
@@ -764,12 +825,11 @@ final class WindowSessionServiceTests: XCTestCase {
         windowState.currentSpaceId = UUID()
         windowState.currentProfileId = windowProfile.id
         windowState.isShowingEmptyState = true
-        windowState.tabManager = browserManager.tabManager
+        browserManager.tabResidenceAuthority.establishResidenceSession(on: windowState)
 
         browserManager.currentProfile = globalProfile
         browserManager.profileManager.profiles = [globalProfile, windowProfile]
-        browserManager.tabManager.spaceStateOwner.replaceSpaces([globalSpace, windowSpace])
-        browserManager.windowRegistry = windowRegistry
+        browserManager.spaceStateOwner.replaceSpaces([globalSpace, windowSpace])
         windowRegistry.register(windowState)
 
         browserManager.windowStateReconciler.validateWindowStates()
@@ -782,16 +842,16 @@ final class WindowSessionServiceTests: XCTestCase {
         UserDefaults.standard.removeObject(forKey: BrowserManager.lastWindowSessionKey)
         defer { UserDefaults.standard.removeObject(forKey: BrowserManager.lastWindowSessionKey) }
 
-        let browserManager = BrowserManager()
         let windowRegistry = WindowRegistry()
+        let browserManager = BrowserManager(windowRegistry: windowRegistry)
         let globalProfile = Profile(name: "Global")
         let windowProfile = Profile(name: "Window")
         let globalSpace = Space(name: "Global", profileId: globalProfile.id)
         let windowSpace = Space(name: "Window", profileId: windowProfile.id)
         browserManager.currentProfile = globalProfile
         browserManager.profileManager.profiles = [globalProfile, windowProfile]
-        browserManager.tabManager.spaceStateOwner.replaceSpaces([globalSpace, windowSpace])
-        let windowTab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
+        browserManager.spaceStateOwner.replaceSpaces([globalSpace, windowSpace])
+        let windowTab = browserManager.regularTabLifecycleOwner.createNewTab(
             url: "https://window.example",
             in: windowSpace,
             activate: false
@@ -799,9 +859,8 @@ final class WindowSessionServiceTests: XCTestCase {
         let windowState = BrowserWindowState()
         windowState.currentSpaceId = UUID()
         windowState.currentTabId = windowTab.id
-        windowState.tabManager = browserManager.tabManager
+        browserManager.tabResidenceAuthority.establishResidenceSession(on: windowState)
 
-        browserManager.windowRegistry = windowRegistry
         windowRegistry.register(windowState)
 
         browserManager.windowStateReconciler.validateWindowStates()
@@ -815,8 +874,8 @@ final class WindowSessionServiceTests: XCTestCase {
         UserDefaults.standard.removeObject(forKey: BrowserManager.lastWindowSessionKey)
         defer { UserDefaults.standard.removeObject(forKey: BrowserManager.lastWindowSessionKey) }
 
-        let browserManager = BrowserManager()
         let windowRegistry = WindowRegistry()
+        let browserManager = BrowserManager(windowRegistry: windowRegistry)
         let globalProfile = Profile(name: "Global")
         let otherProfile = Profile(name: "Other")
         let globalSpace = Space(name: "Global", profileId: globalProfile.id)
@@ -824,12 +883,11 @@ final class WindowSessionServiceTests: XCTestCase {
         let windowState = BrowserWindowState()
         windowState.currentSpaceId = UUID()
         windowState.isShowingEmptyState = false
-        windowState.tabManager = browserManager.tabManager
+        browserManager.tabResidenceAuthority.establishResidenceSession(on: windowState)
 
         browserManager.currentProfile = globalProfile
         browserManager.profileManager.profiles = [globalProfile, otherProfile]
-        browserManager.tabManager.spaceStateOwner.replaceSpaces([globalSpace, otherSpace])
-        browserManager.windowRegistry = windowRegistry
+        browserManager.spaceStateOwner.replaceSpaces([globalSpace, otherSpace])
         windowRegistry.register(windowState)
 
         browserManager.windowStateReconciler.validateWindowStates()
@@ -840,8 +898,8 @@ final class WindowSessionServiceTests: XCTestCase {
     }
 
     func testValidateWindowStatesDoesNotMutateUnresolvedInitialSession() {
-        let browserManager = BrowserManager()
         let windowRegistry = WindowRegistry()
+        let browserManager = BrowserManager(windowRegistry: windowRegistry)
         let pendingSpaceId = UUID()
         let pendingProfileId = UUID()
         let pendingTabId = UUID()
@@ -851,9 +909,8 @@ final class WindowSessionServiceTests: XCTestCase {
         windowState.currentSpaceId = pendingSpaceId
         windowState.currentProfileId = pendingProfileId
         windowState.currentTabId = pendingTabId
-        windowState.tabManager = browserManager.tabManager
+        browserManager.tabResidenceAuthority.establishResidenceSession(on: windowState)
 
-        browserManager.windowRegistry = windowRegistry
         windowRegistry.register(windowState)
 
         browserManager.windowStateReconciler.validateWindowStates()
@@ -865,8 +922,8 @@ final class WindowSessionServiceTests: XCTestCase {
     }
 
     func testValidateWindowStatesPreservesIncognitoContextAndSelection() {
-        let browserManager = BrowserManager()
         let windowRegistry = WindowRegistry()
+        let browserManager = BrowserManager(windowRegistry: windowRegistry)
         let ephemeralProfileId = UUID()
         let ephemeralSpaceId = UUID()
         let ephemeralTab = Tab(
@@ -881,9 +938,8 @@ final class WindowSessionServiceTests: XCTestCase {
         windowState.currentSpaceId = ephemeralSpaceId
         windowState.replaceEphemeralTabs([ephemeralTab])
         windowState.currentTabId = ephemeralTab.id
-        windowState.tabManager = browserManager.tabManager
+        browserManager.tabResidenceAuthority.establishResidenceSession(on: windowState)
 
-        browserManager.windowRegistry = windowRegistry
         windowRegistry.register(windowState)
 
         browserManager.windowStateReconciler.validateWindowStates()
@@ -902,7 +958,7 @@ final class WindowSessionServiceTests: XCTestCase {
         windowState.currentSpaceId = UUID()
         windowState.currentProfileId = staleProfileId
         browserManager.currentProfile = processProfile
-        browserManager.tabManager.spaceStateOwner.replaceSpaces([])
+        browserManager.spaceStateOwner.replaceSpaces([])
 
         browserManager.windowStateReconciler.synchronizeSpaceContext(
             in: windowState
@@ -920,7 +976,7 @@ final class WindowSessionServiceTests: XCTestCase {
         let windowState = BrowserWindowState()
         browserManager.currentProfile = processProfile
 
-        browserManager.windowSessionBundle.activation.activate(windowState)
+        browserManager.windowActivation.activate(windowState)
 
         XCTAssertNil(windowState.currentProfileId)
     }
@@ -1015,6 +1071,20 @@ final class WindowSessionServiceTests: XCTestCase {
         UserDefaults.standard.set(data, forKey: sessionKey)
         return sessionKey
     }
+
+    private func createSpace(
+        named name: String,
+        profileID: UUID,
+        in browser: BrowserManager
+    ) throws -> Space {
+        try XCTUnwrap(
+            browser.sidebarSpaceLifecycle.createSpace(
+                name: name,
+                icon: "square",
+                profileID: profileID
+            )
+        )
+    }
 }
 
 @MainActor
@@ -1023,11 +1093,11 @@ final class TestWindowSessionDelegate:
     WindowSessionFloatingBarSanitizing,
     WindowSessionThemeCommitting,
     WindowSessionSplitFocusing {
-    let tabManager: TabManager
+    let runtime: BrowserManager
     let glanceManager = GlanceManager()
-    let shellSelectionService = ShellSelectionService(splitTabsForWindow: { _ in [] })
+    let shellSelectionService: ShellSelectionService
     var currentProfile: Profile?
-    var windowRegistry: WindowRegistry?
+    let windowRegistry: WindowRegistry
     private(set) var persistenceComposition: WindowSessionPersistenceTestComposition?
     var lastSessionWindowsStore: LastSessionWindowsStore? {
         persistenceComposition?.lastSessionWindowsStore
@@ -1037,14 +1107,31 @@ final class TestWindowSessionDelegate:
     private(set) var focusedSplitGroupIds: [UUID] = []
     var onSyncShortcutSelectionState: ((BrowserWindowState) -> Void)?
 
-    init(tabManager: TabManager) {
-        self.tabManager = tabManager
+    init(
+        runtime: BrowserManager,
+        windowRegistry: WindowRegistry = WindowRegistry()
+    ) {
+        self.runtime = runtime
+        self.windowRegistry = windowRegistry
+        self.shellSelectionService = ShellSelectionService(
+            splitQuery: WindowSplitQuery(
+                splitGroups: runtime.splitGroupStore,
+                regularTabs: runtime.regularTabCollectionOwner,
+                pins: runtime.shortcutPinCollectionStateOwner,
+                liveShortcuts: runtime.liveShortcutTabs,
+                windows: windowRegistry,
+                previewIsActive: { _ in false }
+            )
+        )
     }
 
     func makeRestoreService(
-        lastWindowSessionKey: String
+        lastWindowSessionKey: String = "SumiTests.windowSession.\(UUID())",
+        snapshotStore: WindowSessionSnapshotStore? = nil
     ) -> WindowSessionRestoreService {
-        let store = WindowSessionSnapshotStore(key: lastWindowSessionKey)
+        let store = snapshotStore ?? WindowSessionSnapshotStore(
+            key: lastWindowSessionKey
+        )
         let scheduler = WindowSessionPersistenceScheduler()
         let snapshotFactory = WindowSessionSnapshotFactory(
             glanceManager: glanceManager
@@ -1053,26 +1140,46 @@ final class TestWindowSessionDelegate:
             snapshotStore: store,
             scheduler: scheduler,
             snapshotFactory: snapshotFactory,
-            openWindows: { [weak self] in
-                self?.windowRegistry?.allWindows ?? []
-            }
+            windows: windowRegistry
         )
         self.persistenceComposition = persistenceComposition
+        let spaceResolver = WindowSessionSpaceResolver(
+            spaces: runtime.spaceStateOwner,
+            membership: runtime.tabCollectionMembershipOwner
+        )
         return WindowSessionRestoreService(
             snapshotStore: store,
             persistence: persistenceComposition.coordinator,
-            tabManager: tabManager,
+            profileReferenceAdmission: runtime.profileReferenceAdmission,
+            membership: runtime.tabCollectionMembershipOwner,
+            startupRestore: runtime.startupRestoreLifecycle,
+            tabStore: runtime.runtimeStore,
             glanceManager: glanceManager,
+            spaceResolver: spaceResolver,
+            shortcutRestorer: WindowSessionShortcutRestorer(
+                pins: runtime.shortcutPinCollectionStateOwner,
+                activation: runtime.shortcutPresentationActivation
+            ),
+            splitRestorer: WindowSessionSplitRestorer(
+                groups: runtime.splitGroupStore,
+                mutations: runtime.splitGroupMutations,
+                membership: runtime.tabCollectionMembershipOwner,
+                startupRestore: runtime.startupRestoreLifecycle,
+                focus: self
+            ),
+            themeRestorer: WindowSessionThemeRestorer(
+                startupRestore: runtime.startupRestoreLifecycle,
+                spaceResolver: spaceResolver,
+                themeCommitter: self
+            ),
             selectionService: shellSelectionService,
             selection: self,
-            floatingBarSanitizer: self,
-            themeCommitter: self,
-            splitFocus: self
+            floatingBarSanitizer: self
         )
     }
 
     func hasValidCurrentSelection(in windowState: BrowserWindowState) -> Bool {
-        windowState.currentTabId.map { tabManager.tabCollectionMembershipOwner.tab(for: $0) != nil } ?? false
+        windowState.currentTabId.map { runtime.tabCollectionMembershipOwner.tab(for: $0) != nil } ?? false
     }
 
     func applyTabSelection(
@@ -1109,7 +1216,7 @@ final class TestWindowSessionDelegate:
 
     func space(for spaceId: UUID?) -> Space? {
         guard let spaceId else { return nil }
-        return tabManager.spaceStateOwner.spaces.first { $0.id == spaceId }
+        return runtime.spaceStateOwner.spaces.first { $0.id == spaceId }
     }
 
     func focusSplitGroup(
@@ -1131,7 +1238,7 @@ final class TestWindowSessionDelegate:
             guard case .regularTab(let tabID) = memberID else { return nil }
             return tabID
         }
-        if let tab = targetTabId.flatMap({ tabManager.tabCollectionMembershipOwner.tab(for: $0) }) {
+        if let tab = targetTabId.flatMap({ runtime.tabCollectionMembershipOwner.tab(for: $0) }) {
             applyTabSelection(
                 tab,
                 in: windowState,

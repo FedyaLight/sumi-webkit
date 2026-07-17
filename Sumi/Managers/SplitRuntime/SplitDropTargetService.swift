@@ -6,7 +6,7 @@ import SumiDomain
 /// bounded layout cache used while a full-group drag is active.
 @MainActor
 final class SplitDropTargetService {
-    private let tabManager: () -> TabManager?
+    private let splitGroups: SplitGroupStore
     private let windowState: (UUID) -> BrowserWindowState?
     private let currentTab: (BrowserWindowState) -> Tab?
     private let query: WindowSplitQuery
@@ -15,13 +15,13 @@ final class SplitDropTargetService {
     private var fullGroupLayouts = SplitFullGroupLayoutCatalog()
 
     init(
-        tabManager: @escaping () -> TabManager?,
+        splitGroups: SplitGroupStore,
         windowState: @escaping (UUID) -> BrowserWindowState?,
         currentTab: @escaping (BrowserWindowState) -> Tab?,
         query: WindowSplitQuery,
         memberResolver: SplitRuntimeMemberResolver
     ) {
-        self.tabManager = tabManager
+        self.splitGroups = splitGroups
         self.windowState = windowState
         self.currentTab = currentTab
         self.query = query
@@ -85,7 +85,7 @@ final class SplitDropTargetService {
         for memberID: SplitMemberID,
         in windowState: BrowserWindowState
     ) -> SplitMember? {
-        tabManager()?.splitGroupStore.group(containing: memberID)?
+        splitGroups.group(containing: memberID)?
             .member(for: memberID)
             ?? memberResolver.makeMember(
                 for: memberID,

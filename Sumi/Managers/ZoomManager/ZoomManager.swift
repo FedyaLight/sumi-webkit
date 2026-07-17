@@ -243,6 +243,23 @@ class ZoomManager: ObservableObject {
     func removeTabZoomLevel(for tabId: UUID) {
         tabZoomLevels.removeValue(forKey: tabId)
     }
+
+    func deletePreferences(profileID: UUID) throws {
+        let prefix = "\(zoomKeyPrefix)\(profileID.uuidString.lowercased())."
+        let matchingKeys = userDefaults.dictionaryRepresentation().keys.filter {
+            $0.hasPrefix(prefix)
+        }
+        matchingKeys.forEach(userDefaults.removeObject(forKey:))
+        guard userDefaults.dictionaryRepresentation().keys.contains(where: {
+            $0.hasPrefix(prefix)
+        }) == false else {
+            throw ZoomManagerError.preferenceDeletionFailed(profileID)
+        }
+    }
+}
+
+enum ZoomManagerError: Error, Equatable {
+    case preferenceDeletionFailed(UUID)
 }
 
 // MARK: - Supporting Types

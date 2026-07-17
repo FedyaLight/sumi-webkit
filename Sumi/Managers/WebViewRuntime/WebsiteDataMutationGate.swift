@@ -8,6 +8,11 @@ import SumiWebRuntime
 @MainActor
 final class WebsiteDataMutationGate {
     typealias Lease = WebsiteDataMutationLeaseLedger.Lease
+    typealias OrdinaryAdmissionDeferral = @MainActor (
+        UUID,
+        DeferredAdmissionKey,
+        @escaping @MainActor () -> Void
+    ) -> Bool
 
     enum OrdinaryRuntimeAdmissionOutcome: Equatable {
         case admitted

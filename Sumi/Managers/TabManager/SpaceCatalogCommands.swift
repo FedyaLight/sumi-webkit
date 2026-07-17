@@ -19,66 +19,36 @@ final class SpaceCatalogCommands {
 
     private let transactions: TabStructuralLookupCoordinator
     private let spaces: TabSpaceCollectionStateOwner
-    private let structuralMutations: TabStructuralCollectionMutationOwner
-    private let persistence: TabStructuralPersistenceService
-    private let defaultProfileID: @MainActor () -> UUID?
-    private let announceChange: @MainActor () -> Void
-    private let notifications: @MainActor () -> (any BrowserNotificationPresenting)?
+    private let creation: SpaceCreationTransaction
+    private let runtimeConnection: TabRuntimePortConnection
+    private let publication: SpaceCatalogMutationPublication
 
     init(
         transactions: TabStructuralLookupCoordinator,
         spaces: TabSpaceCollectionStateOwner,
-        structuralMutations: TabStructuralCollectionMutationOwner,
-        persistence: TabStructuralPersistenceService,
-        defaultProfileID: @escaping @MainActor () -> UUID?,
-        announceChange: @escaping @MainActor () -> Void,
-        notifications: @escaping @MainActor () -> (any BrowserNotificationPresenting)?
+        creation: SpaceCreationTransaction,
+        runtimeConnection: TabRuntimePortConnection,
+        publication: SpaceCatalogMutationPublication
     ) {
         self.transactions = transactions
         self.spaces = spaces
-        self.structuralMutations = structuralMutations
-        self.persistence = persistence
-        self.defaultProfileID = defaultProfileID
-        self.announceChange = announceChange
-        self.notifications = notifications
+        self.creation = creation
+        self.runtimeConnection = runtimeConnection
+        self.publication = publication
     }
     @discardableResult
-    func createSpace(
+    func createSpaceIfAdmitted(
         name: String,
         icon: String = SumiPersistentGlyph.spaceDefaultIconValue,
         workspaceTheme: WorkspaceTheme? = nil,
         profileId: UUID? = nil
-    ) -> Space {
-        transactions.withTransaction {
-            let resolvedProfileID = profileId ?? defaultProfileID()
-            let resolvedTheme = workspaceTheme
-                ?? SumiWorkspaceThemePresets.rotatingTheme(at: spaces.count)
-            let space = Space(
-                name: name,
-                icon: icon,
-                workspaceTheme: resolvedTheme,
-                profileId: resolvedProfileID
-            )
-
-            if resolvedProfileID == nil {
-                RuntimeDiagnostics.debug(
-                    "Creating space '\(name)' without a resolved profile; profile reconciliation will run later.",
-                    category: "SpaceCatalog"
-                )
-            }
-
-            announceChange()
-            spaces.append(space)
-            persistence.markAllSpacesStructurallyDirty()
-            structuralMutations.setTabs([], for: space.id)
-
-            if spaces.currentSpace == nil {
-                spaces.replaceCurrentSpace(space)
-            }
-            transactions.requestPublish(scope: .space(space.id, catalog: true))
-            persistence.scheduleStructuralPersistence()
-            return space
-        }
+    ) -> Space? {
+        creation.create(
+            name: name,
+            icon: icon,
+            workspaceTheme: workspaceTheme,
+            profileID: profileId
+        )
     }
     @discardableResult
     func reorderSpace(spaceId: UUID, to targetIndex: Int) -> Bool {
@@ -88,7 +58,7 @@ final class SpaceCatalogCommands {
                 return false
             }
 
-            announceChange()
+            publication.willMutate()
             guard spaces.reorderSpace(
                 spaceId: spaceId,
                 to: targetIndex
@@ -96,26 +66,24 @@ final class SpaceCatalogCommands {
                 return false
             }
 
-            persistence.markAllSpacesStructurallyDirty()
-            transactions.requestPublish(scope: .space(spaceId, catalog: true))
-            persistence.scheduleStructuralPersistence()
+            publication.didMutate(spaceID: spaceId, in: transactions)
             return true
         }
     }
 
     func renameSpace(spaceId: UUID, newName: String) throws {
+        let runtimeLease = runtimeConnection.captureLease()
         try transactions.withTransaction {
             guard let space = spaces.space(with: spaceId) else {
                 throw CommandError.spaceNotFound(spaceId)
             }
             guard space.name != newName else { return }
 
-            announceChange()
+            publication.willMutate()
             spaces.renameSpace(spaceId: spaceId, to: newName)
-            persistence.markAllSpacesStructurallyDirty()
-            transactions.requestPublish(scope: .space(spaceId, catalog: true))
-            persistence.scheduleStructuralPersistence()
-            notifications()?.presentSpaceRenamedNotification(name: newName)
+            publication.didMutate(spaceID: spaceId, in: transactions)
+            runtimeConnection.notifications(for: runtimeLease)?
+                .presentSpaceRenamedNotification(name: newName)
         }
     }
 
@@ -125,11 +93,9 @@ final class SpaceCatalogCommands {
                 throw CommandError.spaceNotFound(spaceId)
             }
 
-            announceChange()
+            publication.willMutate()
             spaces.updateIcon(spaceId: spaceId, to: icon)
-            persistence.markAllSpacesStructurallyDirty()
-            transactions.requestPublish(scope: .space(spaceId, catalog: true))
-            persistence.scheduleStructuralPersistence()
+            publication.didMutate(spaceID: spaceId, in: transactions)
         }
     }
 }

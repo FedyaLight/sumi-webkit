@@ -18,24 +18,6 @@ final class ShortcutTabBindingSynchronizer {
         self.targets = targets
     }
 
-    convenience init(tabManager: TabManager) {
-        let targets = ShortcutTabBindingTargetMutationService(
-            resolution: tabManager.shortcutPinRuntimeResolutionOwner,
-            profiles: tabManager.profileAssignments.tabs
-        )
-        self.init(
-            presentationRefreshes: tabManager.liveShortcutPresentationRefreshes,
-            runtimeMutations: ShortcutTabBindingRuntimeMutation(
-                registry: tabManager.liveShortcutTabs,
-                targets: targets,
-                runtimeConnection: tabManager.runtimePortConnection,
-                windowMutations: tabManager.shortcutWindowMutationOwner,
-                structuralLookup: tabManager.structuralLookupCoordinator
-            ),
-            targets: targets
-        )
-    }
-
     func refreshAdmission(
         for pin: ShortcutPin
     ) -> LiveShortcutPresentationRefreshAdmission? {

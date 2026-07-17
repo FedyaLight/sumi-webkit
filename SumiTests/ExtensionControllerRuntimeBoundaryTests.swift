@@ -48,7 +48,7 @@ final class ExtensionControllerRuntimeBoundaryTests: XCTestCase {
         let browserManager = makeSafariExtensionTestBrowserManager(
             profile: profile
         )
-        let tab = browserManager.tabManager.tabFactory.makeTab(
+        let tab = browserManager.tabFactory.makeTab(
             id: UUID(),
             url: URL(string: "about:blank")!,
             name: "Auxiliary controller query"
@@ -85,12 +85,12 @@ final class ExtensionControllerRuntimeBoundaryTests: XCTestCase {
             profile: profile
         )
         let tabID = UUID()
-        let canonical = browserManager.tabManager.tabFactory.makeTab(
+        let canonical = browserManager.tabFactory.makeTab(
             id: tabID,
             url: URL(string: "about:blank")!,
             name: "Canonical auxiliary controller query"
         )
-        let stale = browserManager.tabManager.tabFactory.makeTab(
+        let stale = browserManager.tabFactory.makeTab(
             id: tabID,
             url: URL(string: "about:blank")!,
             name: "Stale auxiliary controller query"

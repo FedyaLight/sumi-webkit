@@ -20,6 +20,89 @@ final class SumiPermissionSiteActivityStoreTests: XCTestCase {
         super.tearDown()
     }
 
+    func testRetiredProfileCannotRecreateSiteActivityAfterCleanup() async throws {
+        let authority = SumiPermissionPersistenceAuthority(
+            userDefaults: nil
+        )
+        let store = SumiPermissionSiteActivityStore(
+            persistenceAuthority: authority
+        )
+        let antiAbuseStore = SumiPermissionAntiAbuseStore(
+            persistenceAuthority: authority
+        )
+        let targetKey = siteActivityKey(
+            .camera,
+            profilePartitionId: "target-profile"
+        )
+        let retainedKey = siteActivityKey(
+            .camera,
+            profilePartitionId: "retained-profile"
+        )
+        for key in [targetKey, retainedKey] {
+            store.recordSettingsChange(
+                displayDomain: key.displayDomain,
+                key: key,
+                state: .allow,
+                reason: "before-retirement"
+            )
+        }
+
+        store.retireProfile("target-profile")
+        try await authority.deleteProfileData(
+            profilePartitionId: "target-profile"
+        )
+        store.recordSettingsChange(
+            displayDomain: targetKey.displayDomain,
+            key: targetKey,
+            state: .deny,
+            reason: "late-recreation"
+        )
+        store.recordSettingsChange(
+            displayDomain: retainedKey.displayDomain,
+            key: retainedKey,
+            state: .deny,
+            reason: "retained-profile-write"
+        )
+        await antiAbuseStore.record(
+            SumiPermissionAntiAbuseEvent(
+                type: .userDenied,
+                key: targetKey
+            )
+        )
+        await antiAbuseStore.record(
+            SumiPermissionAntiAbuseEvent(
+                type: .userDenied,
+                key: retainedKey
+            )
+        )
+
+        XCTAssertTrue(
+            store.records(
+                forSiteOf: targetKey.topOrigin,
+                profilePartitionId: "target-profile",
+                isEphemeralProfile: false
+            ).isEmpty
+        )
+        XCTAssertEqual(
+            store.records(
+                forSiteOf: retainedKey.topOrigin,
+                profilePartitionId: "retained-profile",
+                isEphemeralProfile: false
+            ).first?.reason,
+            "retained-profile-write"
+        )
+        let targetEvents = await antiAbuseStore.events(
+            for: targetKey,
+            now: Date()
+        )
+        let retainedEvents = await antiAbuseStore.events(
+            for: retainedKey,
+            now: Date()
+        )
+        XCTAssertTrue(targetEvents.isEmpty)
+        XCTAssertEqual(retainedEvents.count, 1)
+    }
+
     func testUnreadablePersistentPayloadIsPreservedForDiagnostics() throws {
         let suiteName = "SumiSiteActivityStoreTests-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
@@ -751,12 +834,15 @@ final class SumiPermissionSiteActivityStoreTests: XCTestCase {
         XCTAssertFalse(didFlush, file: file, line: line)
     }
 
-    private func siteActivityKey(_ type: SumiPermissionType) -> SumiPermissionKey {
+    private func siteActivityKey(
+        _ type: SumiPermissionType,
+        profilePartitionId: String = "profile-a"
+    ) -> SumiPermissionKey {
         SumiPermissionKey(
             requestingOrigin: SumiPermissionOrigin(string: "https://example.com/path"),
             topOrigin: SumiPermissionOrigin(string: "https://example.com"),
             permissionType: type,
-            profilePartitionId: "profile-a",
+            profilePartitionId: profilePartitionId,
             isEphemeralProfile: false
         )
     }

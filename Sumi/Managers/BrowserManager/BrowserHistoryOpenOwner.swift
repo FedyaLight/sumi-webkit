@@ -1,6 +1,6 @@
 import AppKit
-import WebKit
 import SumiDomain
+import WebKit
 
 enum HistoryOpenMode {
     case currentTab

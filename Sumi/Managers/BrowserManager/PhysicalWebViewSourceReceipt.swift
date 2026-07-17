@@ -49,19 +49,25 @@ struct PhysicalWebViewSourceReceipt {
 /// process-current-Space, or model-only Tab fallbacks.
 @MainActor
 final class PhysicalWebViewSourceResolver {
-    private weak var ownership: WebViewOwnershipQuery?
-    private weak var tabs: TabManager?
-    private weak var profiles: ProfileManager?
+    private let ownership: WebViewOwnershipQuery
+    private let sourceContexts: BrowserWindowSourceContextResolver
+    private let pins: ShortcutPinCollectionStateOwner
+    private let shortcutResolution: ShortcutPinRuntimeResolutionOwner
+    private let profiles: ProfileManager
     private let registry: @MainActor () -> WindowRegistry?
 
     init(
         ownership: WebViewOwnershipQuery,
-        tabs: TabManager,
+        sourceContexts: BrowserWindowSourceContextResolver,
+        pins: ShortcutPinCollectionStateOwner,
+        shortcutResolution: ShortcutPinRuntimeResolutionOwner,
         profiles: ProfileManager,
         registry: @escaping @MainActor () -> WindowRegistry?
     ) {
         self.ownership = ownership
-        self.tabs = tabs
+        self.sourceContexts = sourceContexts
+        self.pins = pins
+        self.shortcutResolution = shortcutResolution
         self.profiles = profiles
         self.registry = registry
     }
@@ -69,10 +75,7 @@ final class PhysicalWebViewSourceResolver {
     func resolve(
         _ webView: FocusableWKWebView
     ) -> PhysicalWebViewSourceReceipt? {
-        guard let ownership,
-              let tabs,
-              let profiles,
-              let registry = registry(),
+        guard let registry = registry(),
               let tab = webView.owningTab,
               let tracked = ownership.trackedOwner(containing: webView),
               tracked.tabID == tab.id,
@@ -102,7 +105,6 @@ final class PhysicalWebViewSourceResolver {
             tab: tab,
             window: window,
             registry: registry,
-            tabs: tabs,
             profiles: profiles
         )
     }
@@ -166,17 +168,14 @@ final class PhysicalWebViewSourceResolver {
         tab: Tab,
         window: BrowserWindowState,
         registry: WindowRegistry,
-        tabs: TabManager,
         profiles: ProfileManager
     ) -> PhysicalWebViewSourceReceipt? {
-        guard let context = BrowserWindowSourceContextResolver.resolve(
+        guard let source = sourceContexts.resolve(
             tab: tab,
-            window: window,
-            tabs: tabs
+            window: window
         ),
-              let space = tabs.spaceStateOwner.space(with: context.spaceID),
               let presentationProfile = profiles.profiles.first(where: {
-                  $0.id == context.profileID
+                  $0.id == source.context.profileID
               })
         else {
             return nil
@@ -184,22 +183,20 @@ final class PhysicalWebViewSourceResolver {
 
         let residence: PhysicalWebViewSourceResidence
         let executionProfileID: UUID
-        switch context.residence {
+        switch source.context.residence {
         case .regularSpaceTab:
             residence = .regularSpaceMember
-            executionProfileID = tab.profileId ?? context.profileID
+            executionProfileID = tab.profileId ?? source.context.profileID
         case .windowShortcut:
             guard let pinID = tab.shortcutPinId,
                   let role = tab.shortcutPinRole,
-                  let pin = tabs.shortcutPinCollectionStateOwner
-                    .shortcutPin(by: pinID),
+                  let pin = pins.shortcutPin(by: pinID),
                   pin.role == role,
-                  let resolvedProfileID = tabs
-                    .shortcutPinRuntimeResolutionOwner
-                    .resolvedExecutionProfileId(
-                        for: pin,
-                        currentSpaceId: context.spaceID
-                    ),
+                  let resolvedProfileID = shortcutResolution
+                  .resolvedExecutionProfileId(
+                      for: pin,
+                      currentSpaceId: source.context.spaceID
+                  ),
                   tab.profileId == resolvedProfileID
             else {
                 return nil
@@ -222,7 +219,7 @@ final class PhysicalWebViewSourceResolver {
             tab: tab,
             window: window,
             residence: residence,
-            presentationSpace: space,
+            presentationSpace: source.space,
             presentationProfile: presentationProfile,
             executionProfile: executionProfile,
             dataStore: executionProfile.dataStore,

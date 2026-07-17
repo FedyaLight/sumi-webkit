@@ -20,14 +20,21 @@ final class ClosedTabRestoreServiceTests: XCTestCase {
         XCTAssertTrue(harness.service.restore(tabState))
 
         let restored = try XCTUnwrap(
-            harness.tabManager.regularTabCollectionOwner.tabs(in: harness.currentProfileSpace).first
+            harness.browserManager.regularTabCollectionOwner
+                .tabs(in: harness.currentProfileSpace).first
         )
         XCTAssertEqual(restored.url, tabState.url)
         XCTAssertEqual(restored.name, "Closed")
         XCTAssertTrue(try XCTUnwrap(restored.restoredCanGoBack))
         XCTAssertFalse(try XCTUnwrap(restored.restoredCanGoForward))
-        XCTAssertTrue(harness.tabManager.regularTabCollectionOwner.tabs(in: harness.fallbackSpace).isEmpty)
-        XCTAssertEqual(harness.tabManager.selectionStateOwner.currentTab?.id, restored.id)
+        XCTAssertTrue(
+            harness.browserManager.regularTabCollectionOwner
+                .tabs(in: harness.fallbackSpace).isEmpty
+        )
+        XCTAssertEqual(
+            harness.browserManager.tabStateStore.selection.currentTab?.id,
+            restored.id
+        )
     }
 
     func testRestoreFailsWithoutResolvableSpaceAndCreatesNothing() {
@@ -45,10 +52,15 @@ final class ClosedTabRestoreServiceTests: XCTestCase {
 
         XCTAssertFalse(harness.service.restore(tabState))
 
-        XCTAssertTrue(harness.tabManager.regularTabCollectionOwner.tabs(in: harness.currentProfileSpace).isEmpty)
-        XCTAssertTrue(harness.tabManager.regularTabCollectionOwner.tabs(in: harness.fallbackSpace).isEmpty)
-        XCTAssertNil(harness.tabManager.selectionStateOwner.currentTab)
-        XCTAssertTrue(harness.selectedTabs.isEmpty)
+        XCTAssertTrue(
+            harness.browserManager.regularTabCollectionOwner
+                .tabs(in: harness.currentProfileSpace).isEmpty
+        )
+        XCTAssertTrue(
+            harness.browserManager.regularTabCollectionOwner
+                .tabs(in: harness.fallbackSpace).isEmpty
+        )
+        XCTAssertNil(harness.browserManager.tabStateStore.selection.currentTab)
     }
 
     func testRestorePrefersCurrentURLAndSelectsInProvidedWindow() throws {
@@ -71,13 +83,13 @@ final class ClosedTabRestoreServiceTests: XCTestCase {
         XCTAssertTrue(harness.service.restore(tabState))
 
         let restored = try XCTUnwrap(
-            harness.tabManager.regularTabCollectionOwner.tabs(in: harness.currentProfileSpace).first
+            harness.browserManager.regularTabCollectionOwner
+                .tabs(in: harness.currentProfileSpace).first
         )
         XCTAssertEqual(restored.url, currentURL)
         XCTAssertTrue(try XCTUnwrap(restored.restoredCanGoBack))
         XCTAssertTrue(try XCTUnwrap(restored.restoredCanGoForward))
-        XCTAssertEqual(harness.selectedTabs.map(\.tab.id), [restored.id])
-        XCTAssertIdentical(harness.selectedTabs.first?.window, windowState)
+        XCTAssertEqual(windowState.currentTabId, restored.id)
     }
 
     private func makeHarness(activeWindow: BrowserWindowState? = nil) -> Harness {
@@ -89,40 +101,39 @@ final class ClosedTabRestoreServiceTests: XCTestCase {
 
         browserManager.profileManager.profiles = [fallbackProfile, currentProfile]
         browserManager.currentProfile = currentProfile
-        browserManager.tabManager.spaceStateOwner.replaceSpaces([fallbackSpace, currentProfileSpace])
-        browserManager.tabManager.structuralCollectionMutationOwner.setTabs([], for: fallbackSpace.id)
-        browserManager.tabManager.structuralCollectionMutationOwner.setTabs([], for: currentProfileSpace.id)
-        browserManager.tabManager.spaceStateOwner.replaceCurrentSpace(fallbackSpace)
+        browserManager.spaceStateOwner.replaceSpaces([fallbackSpace, currentProfileSpace])
+        browserManager.structuralCollectionMutationOwner.setTabs([], for: fallbackSpace.id)
+        browserManager.structuralCollectionMutationOwner.setTabs([], for: currentProfileSpace.id)
+        browserManager.spaceStateOwner.replaceCurrentSpace(fallbackSpace)
 
-        let selectionRecorder = TabSelectionRecorder()
         let service = ClosedTabRestoreService(
-            tabManager: { browserManager.tabManager },
-            activeWindow: { activeWindow },
-            selectRestoredTab: { tab, windowState in
-                selectionRecorder.selected.append((tab, windowState))
-            }
+            regularLifecycle: browserManager.regularTabLifecycleOwner,
+            destinations: ClosedTabDestinationResolver(
+                spaces: browserManager.spaceStateOwner,
+                windows: browserManager.windowRegistry
+            ),
+            publication: ClosedTabRestorePublication(
+                activeSelection: browserManager.activeSelectionOwner,
+                browserSelection: browserManager.browserTabSelection
+            )
         )
+        if let activeWindow {
+            browserManager.windowRegistry.register(activeWindow)
+            browserManager.windowRegistry.setActive(activeWindow)
+        }
         return Harness(
             browserManager: browserManager,
-            tabManager: browserManager.tabManager,
             fallbackSpace: fallbackSpace,
             currentProfileSpace: currentProfileSpace,
-            service: service,
-            selectionRecorder: selectionRecorder
+            service: service
         )
     }
 
     @MainActor
     private struct Harness {
         let browserManager: BrowserManager
-        let tabManager: TabManager
         let fallbackSpace: Space
         let currentProfileSpace: Space
         let service: ClosedTabRestoreService
-        let selectionRecorder: TabSelectionRecorder
-
-        var selectedTabs: [(tab: Tab, window: BrowserWindowState)] {
-            selectionRecorder.selected
-        }
     }
 }

@@ -176,9 +176,9 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
                 probe: extensionsProbe
             )
         )
-        let tab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
+        let tab = browserManager.regularTabLifecycleOwner.createNewTab(
             url: "https://example.com/prompt-20-default-normal-tab",
-            in: browserManager.tabManager.spaceStateOwner.currentSpace,
+            in: browserManager.spaceStateOwner.currentSpace,
             activate: false
         )
 
@@ -307,7 +307,6 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
             }
         )
     }
-
 }
 
 private final class ExtensionsRuntimeProbe {

@@ -13,6 +13,9 @@ graph_file="Sumi/Managers/WebViewRuntime/WebViewRuntimeGraph.swift"
 profile_runtime_composition_file="Sumi/Managers/WebViewRuntime/WebViewProfileRuntimeComposition.swift"
 browser_manager_file="Sumi/Managers/BrowserManager/BrowserManager.swift"
 runtime_composition_file="Sumi/Managers/BrowserManager/BrowserManager+WebViewRuntimeComposition.swift"
+runtime_wiring_file="Sumi/Managers/BrowserManager/BrowserManagerRuntimeWiring.swift"
+window_command_channel_file="Sumi/Managers/WebViewRuntime/BrowserWebViewWindowCommandChannel.swift"
+close_request_broker_file="Sumi/Managers/WebViewRuntime/BrowserWebViewCloseRequestBroker.swift"
 runtime_lifecycle_file="Sumi/Managers/WebViewRuntime/WebViewLifecycleService.swift"
 visible_runtime_provider_file="Sumi/Managers/WebViewRuntime/VisibleWebViewRuntimeProvider.swift"
 hidden_clone_eviction_file="Sumi/Managers/WebViewRuntime/HiddenCloneEvictionService.swift"
@@ -35,6 +38,9 @@ floating_bar_context_file="FloatingBar/FloatingBarBrowserContext.swift"
 for required_file in \
   "$browser_manager_file" \
   "$runtime_composition_file" \
+  "$runtime_wiring_file" \
+  "$window_command_channel_file" \
+  "$close_request_broker_file" \
   "$runtime_lifecycle_file" \
   "$profile_runtime_composition_file" \
   "$replacement_pipeline_file" \
@@ -77,7 +83,6 @@ is_allowed_web_view_runtime_access() {
     Sumi/Managers/BrowserManager/BrowserTabManagerRuntimePortsFactory.swift|\
     Sumi/Managers/BrowserManager/BrowserTabManagerWebViewLifecycleFactory.swift|\
     Sumi/Managers/BrowserManager/BrowserTabRuntimeCompositionService.swift|\
-    Sumi/Managers/BrowserManager/BrowserTabSelectionOwner+Live.swift|\
     Sumi/Managers/BrowserManager/TabBrowserRuntimeFactory.swift|\
     Sumi/Managers/BrowserManager/BrowserWebViewCloseRouter.swift|\
     Sumi/Managers/BrowserManager/BrowserWindowViewContextComposition.swift|\
@@ -278,7 +283,7 @@ runtime_composition_signature_count="$(
 )" || exit
 runtime_graph_body_count="$(
   guard_count_matches \
-    '^[[:space:]]*WebViewRuntimeGraph\(' \
+    '^[[:space:]]*(return[[:space:]]+)?WebViewRuntimeGraph\(' \
     - <<< "$runtime_composition_body"
 )" || exit
 if (( runtime_composition_signature_count == 0 || runtime_graph_body_count == 0 )); then
@@ -317,7 +322,7 @@ if [[ -n "$runtime_composition_forbidden" ]]; then
 fi
 
 runtime_graph_construction_count="$(
-  guard_count_matches '^[[:space:]]*WebViewRuntimeGraph\(' \
+  guard_count_matches '^[[:space:]]*(return[[:space:]]+)?WebViewRuntimeGraph\(' \
     "$runtime_composition_file"
 )"
 runtime_composition_install_count="$(
@@ -340,6 +345,58 @@ guard_exact \
   'WebView root composition declaration + call' \
   "$runtime_composition_call_count" \
   2
+
+guard_expect_no_matches \
+  'WebView runtime composition regained BrowserManager lifetime capture' \
+  '\[weak (self|browserManager)\]|\brequireBrowserManager\b|\brequireWindowRegistry\b|let browserManager = self' \
+  "$runtime_composition_file"
+
+guard_expect_no_matches \
+  'WebView runtime composition regained the split layout/selection cycle' \
+  '\bsplitWindowContext\b' \
+  "$runtime_composition_file"
+
+window_command_collaborators="$(
+  guard_count_matches '^    private let ' "$window_command_channel_file"
+)"
+close_broker_collaborators="$(
+  guard_count_matches '^    private (let|var) ' "$close_request_broker_file"
+)"
+guard_max \
+  'WebView window command channel stored collaborators' \
+  "$window_command_collaborators" \
+  1
+guard_max \
+  'WebView close request broker stored collaborators' \
+  "$close_broker_collaborators" \
+  2
+guard_expect_no_matches \
+  'WebView command boundary gained a late callback slot or protocol mirror' \
+  '@escaping|^    private (let|var).*->[[:space:]]*(Void|Bool)|^[[:space:]]*protocol ' \
+  "$window_command_channel_file" "$close_request_broker_file"
+
+command_boundary_hits="$(
+  guard_capture_matches \
+    '\b(BrowserWebViewWindowCommandChannel|BrowserWebViewCloseRequestBroker)\b' \
+    "${production_roots[@]}" -g '*.swift'
+)"
+while IFS= read -r match; do
+  [[ -z "$match" ]] && continue
+  file="${match%%:*}"
+  case "$file" in
+    "$browser_manager_file"|\
+    "$runtime_composition_file"|\
+    "$runtime_wiring_file"|\
+    "$window_command_channel_file"|\
+    "$close_request_broker_file")
+      ;;
+    *)
+      printf 'error: WebView command boundary escaped root composition: %s\n' \
+        "$match" >&2
+      guard_failures=$((guard_failures + 1))
+      ;;
+  esac
+done <<< "$command_boundary_hits"
 
 # The graph is composition storage, not a feature dependency. Production code
 # can name its concrete type only where it is declared and where BrowserManager

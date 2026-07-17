@@ -7,24 +7,26 @@ import SwiftUI
 @MainActor
 enum WebsiteViewContextFactory {
     static func websiteViewBrowserContext(
-        for browserManager: BrowserManager
+        windowTabs: BrowserWindowTabContext,
+        membership: TabCollectionMembershipOwner,
+        windowVisuals: BrowserWindowVisualCoordinator,
+        spaces: TabSpaceCollectionStateOwner,
+        dragOperations: SidebarDragOperationRouter
     ) -> WebsiteViewBrowserContext {
         let webContentContext = BrowserManagerWindowWebContentContext(
-            browserManager: browserManager
+            windowTabs: windowTabs,
+            membership: membership,
+            windowVisuals: windowVisuals
         )
         return WebsiteViewBrowserContext(
-            currentTab: { [weak browserManager] windowState in
-                browserManager?.shellRuntime.windowTabs.currentTab(for: windowState)
+            currentTab: { [windowTabs] windowState in
+                windowTabs.currentTab(for: windowState)
             },
-            workspaceTheme: { [weak browserManager] spaceId in
-                spaceId.flatMap {
-                    browserManager?.tabManager.spaceStateOwner.space(with: $0)?
-                        .workspaceTheme
-                }
+            workspaceTheme: { [spaces] spaceId in
+                spaceId.flatMap { spaces.space(with: $0)?.workspaceTheme }
             },
-            resolveDragTab: { [weak browserManager] item in
-                browserManager?.tabManager.sidebarDragRouter
-                    .resolveDragTab(for: item)
+            resolveDragTab: { [dragOperations] item in
+                dragOperations.resolveDragTab(for: item)
             },
             makeWebContentContext: { webContentContext }
         )
@@ -73,9 +75,32 @@ enum WebsiteViewContextFactory {
         for browserManager: BrowserManager
     ) -> SettingsBrowserContext {
         let currentProfileAuthority = browserManager.currentProfileAuthority
+        let spaces = browserManager.spaceStateOwner
+        let membership = browserManager
+            .tabCollectionMembershipOwner
+        let profileDeletion = browserManager.profileLifecycleBundle
+            .deletionWorkflow
         return SettingsBrowserContext(
             profileManager: browserManager.profileManager,
-            tabManager: browserManager.tabManager,
+            profileInventory: ProfileSettingsInventory(
+                spacesCount: { profileID in
+                    spaces.spaces.lazy.filter {
+                        $0.profileId == profileID
+                    }.count
+                },
+                tabsCount: { profileID in
+                    let spaceIDs = Set(
+                        spaces.spaces.lazy.filter {
+                            $0.profileId == profileID
+                        }.map(\.id)
+                    )
+                    return membership.allTabs().lazy.filter {
+                        $0.spaceId.map(spaceIDs.contains) == true
+                    }.count
+                },
+                updates: browserManager.tabStructureEventBus
+                    .structureChangedPublisher
+            ),
             extensionsModule: browserManager.optionalModules.extensions,
             extensionSurfaceStore: browserManager.optionalModules.extensions.surfaceStore,
             currentProfile: { [currentProfileAuthority] in
@@ -86,15 +111,11 @@ enum WebsiteViewContextFactory {
             currentTab: { [weak browserManager] windowState in
                 browserManager?.shellRuntime.windowTabs.currentTab(for: windowState)
             },
-            deleteProfile: { [weak browserManager] profile in
-                guard let browserManager else { return }
-                BrowserProfileDeletionWorkflow.delete(
-                    profile,
-                    from: browserManager
-                )
+            deleteProfile: { [profileDeletion] profile in
+                profileDeletion.delete(profile)
             },
             scheduleRuntimeStatePersistence: { [weak browserManager] tab in
-                browserManager?.tabManager.structuralPersistence.scheduleRuntimeStatePersistence(for: tab)
+                browserManager?.structuralPersistence.scheduleRuntimeStatePersistence(for: tab)
             },
             makePermissionRepository: { [weak browserManager] in
                 guard let browserManager else {
@@ -114,14 +135,28 @@ enum WebsiteViewContextFactory {
                     guard let browserManager else {
                         throw SumiImportExportError.browserUnavailable
                     }
+                    let data = SumiImportExportSnapshot.makeData(
+                        profiles: browserManager.profileManager.profiles,
+                        state: browserManager.tabStateStore,
+                        bookmarks: browserManager.bookmarkManager.snapshot(
+                            sortMode: .manual
+                        ).root.children
+                    )
                     return try SumiTransferExportService()
-                        .exportBrowser2ZenDocument(from: browserManager)
+                        .exportBrowser2ZenDocument(from: data)
                 },
                 writeBackup: { [weak browserManager] url in
                     guard let browserManager else {
                         throw SumiImportExportError.browserUnavailable
                     }
-                    try SumiBackupService().writeBackup(from: browserManager, to: url)
+                    let data = SumiImportExportSnapshot.makeData(
+                        profiles: browserManager.profileManager.profiles,
+                        state: browserManager.tabStateStore,
+                        bookmarks: browserManager.bookmarkManager.snapshot(
+                            sortMode: .manual
+                        ).root.children
+                    )
+                    try SumiBackupService().writeBackup(data: data, to: url)
                 },
                 applyImport: { [weak browserManager] request in
                     guard let browserManager else {
@@ -129,15 +164,27 @@ enum WebsiteViewContextFactory {
                     }
                     let plan = SumiImportPlanBuilder().makePlan(
                         request: request,
-                        baseline: SumiImportExportSnapshot.makeData(from: browserManager)
+                        baseline: SumiImportExportSnapshot.makeData(
+                            profiles: browserManager.profileManager.profiles,
+                            state: browserManager.tabStateStore,
+                            bookmarks: browserManager.bookmarkManager.snapshot(
+                                sortMode: .manual
+                            ).root.children
+                        )
                     )
                     let runtime = SumiImportRuntimeStore(
                         profileManager: browserManager.profileManager,
-                        tabManager: browserManager.tabManager,
-                        profileSelection: browserManager
+                        profileSelection: browserManager,
+                        profileReferenceAdmission: browserManager
+                            .profileReferenceAdmission,
+                        state: browserManager.tabStateStore,
+                        structuralInstaller: browserManager
+                            .structuralInstallOwner,
+                        persistence: browserManager
+                            .structuralPersistence
                     )
                     let materializer = SumiImportRuntimeMaterializer(
-                        tabFactory: browserManager.tabManager.tabFactory,
+                        tabFactory: browserManager.tabFactory,
                         tabBrowserRuntime: TabBrowserRuntimeFactory.make(for: browserManager)
                     )
                     return try await SumiImportTransaction(
@@ -168,7 +215,8 @@ enum WebsiteViewContextFactory {
             },
             currentProfileUpdates: currentProfileAuthority.$currentProfile
                 .eraseToAnyPublisher(),
-            nativeModalPresentationUpdates: browserManager.$nativeModalPresentation
+            nativeModalPresentationUpdates: browserManager
+                .nativeModalPresentationState.$presentation
                 .map { _ in () }
                 .eraseToAnyPublisher(),
             isNativeModalPresented: { [weak browserManager] windowId in
@@ -198,7 +246,7 @@ enum WebsiteViewContextFactory {
                 )
             },
             scheduleRuntimeStatePersistence: { [weak browserManager] tab in
-                browserManager?.tabManager.structuralPersistence.scheduleRuntimeStatePersistence(for: tab)
+                browserManager?.structuralPersistence.scheduleRuntimeStatePersistence(for: tab)
             },
             sumiSettings: { [weak browserManager] in
                 browserManager?.sumiSettings
@@ -245,7 +293,7 @@ enum WebsiteViewContextFactory {
                 browserManager?.bookmarkBundle.bookmarkCommandOwner.exportBookmarksFromMenu()
             },
             scheduleRuntimeStatePersistence: { [weak browserManager] tab in
-                browserManager?.tabManager.structuralPersistence.scheduleRuntimeStatePersistence(for: tab)
+                browserManager?.structuralPersistence.scheduleRuntimeStatePersistence(for: tab)
             },
             sumiSettings: { [weak browserManager] in
                 browserManager?.sumiSettings

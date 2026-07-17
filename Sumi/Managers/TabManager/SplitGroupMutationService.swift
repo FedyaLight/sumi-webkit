@@ -9,33 +9,14 @@ import SumiDomain
 @MainActor
 final class SplitGroupMutationService {
     private let store: SplitGroupStore
-    private let withStructuralTransaction: (@MainActor () -> Void) -> Void
-    private let beforeStructuralPublication: (
-        @escaping @MainActor () -> Void
-    ) -> Void
-    private let announceChange: @MainActor () -> Void
-    private let requestStructuralPublish: (TabStructureChangeScope) -> Void
-    private let markStructurallyDirty: () -> Void
-    private let schedulePersistence: () -> Void
+    private let publication: TabStructuralMutationPublisher
 
     init(
         store: SplitGroupStore,
-        withStructuralTransaction: @escaping (@MainActor () -> Void) -> Void,
-        beforeStructuralPublication: @escaping (
-            @escaping @MainActor () -> Void
-        ) -> Void,
-        announceChange: @escaping @MainActor () -> Void,
-        requestStructuralPublish: @escaping (TabStructureChangeScope) -> Void,
-        markStructurallyDirty: @escaping () -> Void,
-        schedulePersistence: @escaping () -> Void
+        publication: TabStructuralMutationPublisher
     ) {
         self.store = store
-        self.withStructuralTransaction = withStructuralTransaction
-        self.beforeStructuralPublication = beforeStructuralPublication
-        self.announceChange = announceChange
-        self.requestStructuralPublish = requestStructuralPublish
-        self.markStructurallyDirty = markStructurallyDirty
-        self.schedulePersistence = schedulePersistence
+        self.publication = publication
     }
 
     @discardableResult
@@ -324,10 +305,10 @@ final class SplitGroupMutationService {
     func installRestoredGroups(_ groups: [SumiDomain.SplitGroup]) -> Bool {
         guard SumiDomain.SplitGroup.sanitized(groups) == groups else { return false }
         guard store.groups != groups else { return true }
-        withStructuralTransaction {
+        publication.withTransaction {
             announceBeforeStructuralPublication()
             store.replaceAll(with: groups)
-            requestStructuralPublish(scope(for: groups))
+            publication.publishSplitGroupChange(scope: scope(for: groups))
         }
         return true
     }
@@ -345,29 +326,31 @@ final class SplitGroupMutationService {
             return false
         }
 
-        withStructuralTransaction {
+        publication.withTransaction {
             // MainActor serialization plus the exact snapshot guard above make
             // this mutation indivisible with respect to other split commits.
             announceBeforeStructuralPublication()
             store.replaceAll(with: replacement)
             alongside?()
-            markStructurallyDirty()
-            requestStructuralPublish(scope(for: expected + replacement))
+            publication.publishSplitGroupChange(
+                scope: scope(for: expected + replacement)
+            )
         }
         if persist {
-            schedulePersistence()
+            publication.schedulePersistence()
         }
         return true
     }
 
     func publishPreparedReplacement(_ plan: SplitGroupReplacementPlan) {
-        withStructuralTransaction {
+        publication.withTransaction {
             announceBeforeStructuralPublication()
-            markStructurallyDirty()
-            requestStructuralPublish(scope(for: plan.expected + plan.replacement))
+            publication.publishSplitGroupChange(
+                scope: scope(for: plan.expected + plan.replacement)
+            )
         }
         if plan.persist {
-            schedulePersistence()
+            publication.schedulePersistence()
         }
     }
 
@@ -384,7 +367,7 @@ final class SplitGroupMutationService {
         }
 
         var committed = false
-        withStructuralTransaction {
+        publication.withTransaction {
             store.replaceAll(with: replacement)
             guard sideEffect() else {
                 precondition(
@@ -395,13 +378,14 @@ final class SplitGroupMutationService {
                 return
             }
             announceBeforeStructuralPublication()
-            markStructurallyDirty()
-            requestStructuralPublish(scope(for: expected + replacement))
+            publication.publishSplitGroupChange(
+                scope: scope(for: expected + replacement)
+            )
             committed = true
         }
         guard committed else { return false }
         if persist {
-            schedulePersistence()
+            publication.schedulePersistence()
         }
         return true
     }
@@ -416,45 +400,6 @@ final class SplitGroupMutationService {
     }
 
     private func announceBeforeStructuralPublication() {
-        beforeStructuralPublication(announceChange)
-    }
-}
-
-extension SplitGroupMutationService {
-    convenience init(tabManager: TabManager) {
-        self.init(
-            store: tabManager.splitGroupStore,
-            withStructuralTransaction: { [weak tabManager] operation in
-                guard let tabManager else {
-                    operation()
-                    return
-                }
-                tabManager.structuralLookupCoordinator.withTransaction {
-                    operation()
-                }
-            },
-            beforeStructuralPublication: { [weak tabManager] action in
-                guard let tabManager else {
-                    action()
-                    return
-                }
-                tabManager.structuralLookupCoordinator
-                    .runBeforeCurrentBatchPublication(action)
-            },
-            announceChange: { [weak tabManager] in
-                tabManager?.objectWillChange.send()
-            },
-            requestStructuralPublish: { [weak tabManager] scope in
-                tabManager?.structuralLookupCoordinator.requestPublish(scope: scope)
-            },
-            markStructurallyDirty: { [weak tabManager] in
-                tabManager?.structuralPersistence
-                    .markSplitGroupsStructurallyDirty()
-            },
-            schedulePersistence: { [weak tabManager] in
-                tabManager?.structuralPersistence
-                    .scheduleStructuralPersistence()
-            }
-        )
+        publication.announceStateChange()
     }
 }

@@ -91,14 +91,228 @@ final class SumiPermissionCoordinatorPendingQueryTests: XCTestCase {
         XCTAssertNil(activeAfterDismissal)
     }
 
-    private func makeCoordinator() -> SumiPermissionCoordinator {
+    func testProfileRetirementCancelsActiveQueryAndRejectsLateRequests() async {
+        let coordinator = makeCoordinator()
+        let targetContext = sumiPermissionIntegrationContext(
+            [.camera],
+            id: "target-active",
+            profilePartitionId: "target-profile"
+        )
+        let targetTask = Task {
+            await coordinator.requestPermission(targetContext)
+        }
+        _ = await sumiPermissionIntegrationWaitForActiveQuery(coordinator)
+
+        let retirementDecision = await coordinator.retireProfile(
+            profilePartitionId: "target-profile",
+            reason: "test-profile-retired"
+        )
+
+        let targetDecision = await targetTask.value
+        XCTAssertEqual(retirementDecision.outcome, .cancelled)
+        XCTAssertEqual(targetDecision.outcome, .cancelled)
+        let targetIsRetired = await coordinator.isProfileRetired(
+            "target-profile"
+        )
+        let activeQuery = await coordinator.activeQuery(forPageId: "tab-a:1")
+        XCTAssertTrue(targetIsRetired)
+        XCTAssertNil(activeQuery)
+
+        let lateTargetDecision = await coordinator.requestPermission(
+            sumiPermissionIntegrationContext(
+                [.camera],
+                id: "target-late",
+                profilePartitionId: "target-profile"
+            )
+        )
+        XCTAssertEqual(lateTargetDecision.outcome, .cancelled)
+        XCTAssertEqual(lateTargetDecision.reason, "profile-retired")
+
+        let retainedDecision = await coordinator.queryPermissionState(
+            sumiPermissionIntegrationContext(
+                [.camera],
+                id: "retained-query",
+                profilePartitionId: "retained-profile"
+            )
+        )
+        XCTAssertEqual(retainedDecision.outcome, .promptRequired)
+    }
+
+    func testRetirementDrainsAdmittedWriteThenBlocksRecreation() async throws {
+        let store = SuspendingPermissionRetirementStore()
+        let coordinator = makeCoordinator(persistentStore: store)
+        var events = await coordinator.events().makeAsyncIterator()
+        let targetKey = sumiPermissionIntegrationKey(
+            .camera,
+            profilePartitionId: "target-profile",
+            pageId: nil
+        )
+        let retainedKey = sumiPermissionIntegrationKey(
+            .camera,
+            requestingOrigin: sumiPermissionIntegrationOrigin(
+                "https://retained.example"
+            ),
+            topOrigin: sumiPermissionIntegrationOrigin(
+                "https://retained.example"
+            ),
+            profilePartitionId: "retained-profile",
+            pageId: nil
+        )
+
+        let admittedWrite = Task {
+            try await coordinator.setSiteDecision(
+                for: targetKey,
+                state: .allow,
+                source: .user,
+                reason: "admitted-before-retirement"
+            )
+        }
+        await store.waitUntilWriteIsSuspended()
+        let retirementCompletion = PermissionRetirementCompletionProbe()
+        let retirement = Task {
+            let decision = await coordinator.retireProfile(
+                profilePartitionId: "target-profile",
+                reason: "test-profile-retired"
+            )
+            await retirementCompletion.markCompleted()
+            return decision
+        }
+        await waitForProfileRetirementCancellation(
+            from: &events,
+            profilePartitionId: "target-profile"
+        )
+        let retirementCompletedBeforeWriteDrain = await retirementCompletion
+            .isCompleted()
+        XCTAssertFalse(retirementCompletedBeforeWriteDrain)
+
+        await store.resumeWrite()
+        try await admittedWrite.value
+        _ = await retirement.value
+
+        await store.resetDecision(for: targetKey)
+        do {
+            try await coordinator.setSiteDecision(
+                for: targetKey,
+                state: .allow,
+                source: .user,
+                reason: "late-recreation"
+            )
+            XCTFail("Retired profile accepted a late persistent decision")
+        } catch SumiPermissionSiteDecisionError.unavailable {
+            // Expected fail-closed behavior.
+        }
+
+        try await coordinator.setSiteDecision(
+            for: retainedKey,
+            state: .allow,
+            source: .user,
+            reason: "retained-profile-write"
+        )
+        let targetRecords = await store.listDecisions(
+            profilePartitionId: "target-profile"
+        )
+        let retainedRecords = await store.listDecisions(
+            profilePartitionId: "retained-profile"
+        )
+        XCTAssertTrue(targetRecords.isEmpty)
+        XCTAssertEqual(
+            retainedRecords.count,
+            1
+        )
+    }
+
+    func testRetirementDrainsAdmittedSettlementBeforeReturning() async throws {
+        let store = SuspendingPermissionRetirementStore()
+        let coordinator = makeCoordinator(persistentStore: store)
+        var events = await coordinator.events().makeAsyncIterator()
+        let context = pendingQueryContext(
+            permissionTypes: [.camera],
+            id: "target-persistent-settlement"
+        )
+        let targetKey = sumiPermissionIntegrationKey(
+            .camera,
+            profilePartitionId: context.profilePartitionId,
+            pageId: nil
+        )
+        let request = Task {
+            await coordinator.requestPermission(context)
+        }
+        let query = await waitForActiveQuery(from: &events)
+        let settlement = Task {
+            await coordinator.approvePersistently(query.id)
+        }
+        await store.waitUntilWriteIsSuspended()
+
+        let retirementCompletion = PermissionRetirementCompletionProbe()
+        let retirement = Task {
+            let decision = await coordinator.retireProfile(
+                profilePartitionId: context.profilePartitionId,
+                reason: "test-profile-retired"
+            )
+            await retirementCompletion.markCompleted()
+            return decision
+        }
+        await waitForProfileRetirementCancellation(
+            from: &events,
+            profilePartitionId: context.profilePartitionId
+        )
+
+        let requestDecision = await request.value
+        let completedBeforeWriteDrain = await retirementCompletion.isCompleted()
+        let writesBeforeDrain = await store.setInvocationCount()
+        let recordsBeforeDrain = await store.records(
+            profilePartitionId: context.profilePartitionId
+        )
+        XCTAssertEqual(requestDecision.outcome, .cancelled)
+        XCTAssertFalse(completedBeforeWriteDrain)
+        XCTAssertEqual(writesBeforeDrain, 1)
+        XCTAssertTrue(recordsBeforeDrain.isEmpty)
+
+        await store.resumeWrite()
+        let settlementDecision = await settlement.value
+        _ = await retirement.value
+
+        XCTAssertEqual(settlementDecision.outcome, .granted)
+        let recordsAfterDrain = await store.records(
+            profilePartitionId: context.profilePartitionId
+        )
+        XCTAssertEqual(recordsAfterDrain.count, 1)
+        let snapshotAfterRetirement = await coordinator.stateSnapshot()
+        guard case .querySettled(let settledQueryID, _) = snapshotAfterRetirement.latestEvent else {
+            return XCTFail("Retirement returned before the admitted settlement event")
+        }
+        XCTAssertEqual(settledQueryID, query.id)
+
+        do {
+            try await coordinator.setSiteDecision(
+                for: targetKey,
+                state: .deny,
+                source: .user,
+                reason: "post-retirement-write"
+            )
+            XCTFail("Retired profile accepted a post-retirement write")
+        } catch SumiPermissionSiteDecisionError.unavailable {
+            // Expected fail-closed behavior.
+        }
+        let finalWriteCount = await store.setInvocationCount()
+        let finalEvent = await coordinator.stateSnapshot().latestEvent
+        XCTAssertEqual(finalWriteCount, 1)
+        XCTAssertEqual(
+            finalEvent,
+            snapshotAfterRetirement.latestEvent
+        )
+    }
+
+    private func makeCoordinator(
+        persistentStore: any SumiPermissionStore = SumiPermissionIntegrationStore()
+    ) -> SumiPermissionCoordinator {
         SumiPermissionCoordinator(
             policyResolver: DefaultSumiPermissionPolicyResolver(
                 systemPermissionService: FakeSumiSystemPermissionService(
                     states: sumiPermissionIntegrationAuthorizedSystemStates()
                 )
             ),
-            persistentStore: SumiPermissionIntegrationStore(),
+            persistentStore: persistentStore,
             now: { sumiPermissionIntegrationNow }
         )
     }
@@ -165,5 +379,114 @@ final class SumiPermissionCoordinatorPendingQueryTests: XCTestCase {
             }
         }
         XCTFail("Permission event stream ended before query queuing", file: file, line: line)
+    }
+
+    private func waitForProfileRetirementCancellation(
+        from events: inout AsyncStream<SumiPermissionCoordinatorEvent>.Iterator,
+        profilePartitionId: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) async {
+        while let event = await events.next() {
+            if case .profileCancelled(let cancelledProfileID, _) = event,
+               cancelledProfileID == profilePartitionId {
+                return
+            }
+        }
+        XCTFail(
+            "Permission event stream ended before profile retirement cancellation",
+            file: file,
+            line: line
+        )
+    }
+}
+
+private actor PermissionRetirementCompletionProbe {
+    private var completed = false
+
+    func markCompleted() {
+        completed = true
+    }
+
+    func isCompleted() -> Bool {
+        completed
+    }
+}
+
+private actor SuspendingPermissionRetirementStore: SumiPermissionStore {
+    private var records: [String: SumiPermissionStoreRecord] = [:]
+    private var suspendedWrite: CheckedContinuation<Void, Never>?
+    private var writeSuspensionWaiters: [CheckedContinuation<Void, Never>] = []
+    private var shouldSuspendNextWrite = true
+    private var writeCount = 0
+
+    func getDecision(
+        for key: SumiPermissionKey
+    ) async -> SumiPermissionStoreRecord? {
+        records[key.persistentIdentity]
+    }
+
+    func setDecision(
+        for key: SumiPermissionKey,
+        decision: SumiPermissionDecision
+    ) async {
+        writeCount += 1
+        if shouldSuspendNextWrite {
+            shouldSuspendNextWrite = false
+            await withCheckedContinuation { continuation in
+                suspendedWrite = continuation
+                let waiters = writeSuspensionWaiters
+                writeSuspensionWaiters.removeAll()
+                waiters.forEach { $0.resume() }
+            }
+        }
+        records[key.persistentIdentity] = SumiPermissionStoreRecord(
+            key: key,
+            decision: decision
+        )
+    }
+
+    func resetDecision(for key: SumiPermissionKey) async {
+        records.removeValue(forKey: key.persistentIdentity)
+    }
+
+    func listDecisions(
+        profilePartitionId: String
+    ) async -> [SumiPermissionStoreRecord] {
+        let profileID = SumiPermissionKey.normalizedProfilePartitionId(
+            profilePartitionId
+        )
+        return records.values.filter {
+            $0.key.profilePartitionId == profileID
+        }
+    }
+
+    func recordLastUsed(for _: SumiPermissionKey, at _: Date) async {}
+
+    func waitUntilWriteIsSuspended() async {
+        guard suspendedWrite == nil else { return }
+        await withCheckedContinuation { continuation in
+            writeSuspensionWaiters.append(continuation)
+        }
+    }
+
+    func resumeWrite() {
+        suspendedWrite?.resume()
+        suspendedWrite = nil
+    }
+
+    func setInvocationCount() -> Int {
+        writeCount
+    }
+
+    func records(
+        profilePartitionId: String
+    ) -> [SumiPermissionStoreRecord] {
+        let profileID = SumiPermissionKey.normalizedProfilePartitionId(
+            profilePartitionId
+        )
+        return records.values.filter {
+            $0.key.profilePartitionId == profileID
+        }
     }
 }

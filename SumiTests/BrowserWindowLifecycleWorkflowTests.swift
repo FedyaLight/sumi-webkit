@@ -34,11 +34,11 @@ final class BrowserWindowLifecycleWorkflowTests: XCTestCase {
             workflow = BrowserWindowCloseWorkflow(
                 browserRuntime: browserManager,
                 recorder: windowSession.history.recorder,
-                persistence: windowSession.persistence,
+                persistence: browserManager.windowSessionPersistenceCoordinator,
                 extensions: browserManager.optionalModules.extensions,
                 webViews: webViewRuntime.lifecycleService,
-                emptySplitPlaceholders: browserManager.splitComposition.emptyPlaceholders,
-                splitPreviews: browserManager.splitComposition.previews,
+                emptySplitPlaceholders: browserManager.splitEmptyPlaceholders,
+                splitPreviews: browserManager.splitWindowContext.previews,
                 backgroundMedia: browserManager.backgroundMediaOptimizationService,
                 commands: browserManager.windowCommands
             )
@@ -90,40 +90,38 @@ final class BrowserWindowLifecycleWorkflowTests: XCTestCase {
         )
     }
 
-    func testWindowCloseRecordsHistoryThenRefreshesArchiveExcludingClosedWindow() throws {
+    func testWindowCloseRecordsHistoryAndRefreshesArchiveExcludingClosedWindow() throws {
         let browserManager = BrowserManager()
         let webViewRuntime = browserManager.testWebViewRuntime()
+        let registry = browserManager.windowRegistry
         let closingWindow = BrowserWindowState()
+        closingWindow.currentTabId = UUID()
         let survivingWindow = BrowserWindowState()
-        let closingSession = makeSessionRecoveryWindowSession(currentTabId: UUID())
-        let survivingSession = makeSessionRecoveryWindowSession(currentTabId: UUID())
-        let sessions = [
-            closingWindow.id: closingSession,
-            survivingWindow.id: survivingSession,
-        ]
+        survivingWindow.currentTabId = UUID()
+        registry.register(closingWindow)
+        registry.register(survivingWindow)
+        let snapshotFactory = WindowSessionSnapshotFactory(
+            glanceManager: browserManager.glanceManager
+        )
         let store = try makeIsolatedLastSessionWindowsStore(
             suitePrefix: "BrowserWindowLifecycleWorkflowTests"
         )
         let recentlyClosed = RecentlyClosedManager()
-        var events: [String] = []
         let catalog = OpenWindowSessionCatalog(
-            allWindows: { [closingWindow, survivingWindow] },
-            makeWindowSessionSnapshot: { sessions[$0.id] }
+            windows: registry,
+            snapshots: snapshotFactory
         )
         let recorder = ClosedWindowHistoryRecorder(
-            openWindows: catalog,
-            windowDisplayTitle: { _ in "Closed Window" },
-            recentlyClosedManager: {
-                events.append("record")
-                return recentlyClosed
-            }
+            snapshots: snapshotFactory,
+            titles: ClosedWindowDisplayTitleProjection(
+                windowTabs: browserManager.windowTabContext,
+                spaces: browserManager.spaceStateOwner
+            ),
+            recentlyClosedManager: recentlyClosed
         )
         let archive = LastSessionWindowArchive(
             openWindows: catalog,
-            lastSessionWindowsStore: {
-                events.append("archiveRefresh")
-                return store
-            },
+            lastSessionWindowsStore: store,
             startupRestore: StartupSessionRestoreProviderFake()
         )
         let persistence = makeClosePersistence(
@@ -137,47 +135,50 @@ final class BrowserWindowLifecycleWorkflowTests: XCTestCase {
             persistence: persistence,
             extensions: browserManager.optionalModules.extensions,
             webViews: webViewRuntime.lifecycleService,
-            emptySplitPlaceholders: browserManager.splitComposition.emptyPlaceholders,
-            splitPreviews: browserManager.splitComposition.previews,
+            emptySplitPlaceholders: browserManager.splitEmptyPlaceholders,
+            splitPreviews: browserManager.splitWindowContext.previews,
             backgroundMedia: browserManager.backgroundMediaOptimizationService,
             commands: browserManager.windowCommands
         )
 
         workflow.handleWindowClose(closingWindow)
 
-        XCTAssertEqual(events, ["record", "archiveRefresh"])
         guard case .window(let closedItem)? = recentlyClosed.items.first else {
             return XCTFail("Expected the closed window in recently-closed history")
         }
-        XCTAssertEqual(closedItem.title, "Closed Window")
-        XCTAssertEqual(closedItem.session, closingSession)
+        XCTAssertEqual(closedItem.title, "Window")
+        XCTAssertEqual(closedItem.session, snapshotFactory.make(for: closingWindow))
         XCTAssertEqual(
             store.snapshots,
-            [LastSessionWindowSnapshot(id: survivingWindow.id, session: survivingSession)]
+            [
+                LastSessionWindowSnapshot(
+                    id: survivingWindow.id,
+                    session: snapshotFactory.make(for: survivingWindow)
+                ),
+            ]
         )
     }
 
     func testIncognitoClosePreservesRegularHistoryArchive() async throws {
         let browserManager = BrowserManager()
         let webViewRuntime = browserManager.testWebViewRuntime()
-        let registry = WindowRegistry()
-        browserManager.windowRegistry = registry
+        let registry = browserManager.windowRegistry
         browserManager.windowShellContentViewFactory = { _, _ in NSView() }
         let incognitoWindow = BrowserWindowState()
         let profile = browserManager.profileManager.createEphemeralProfile(
             for: incognitoWindow.id
         )
         incognitoWindow.isIncognito = true
-        incognitoWindow.tabManager = browserManager.tabManager
+        browserManager.tabResidenceAuthority.establishResidenceSession(on: incognitoWindow)
         incognitoWindow.ephemeralProfile = profile
         incognitoWindow.currentProfileId = profile.id
         registry.register(incognitoWindow)
         let survivingWindow = BrowserWindowState()
-        let survivingSession = makeSessionRecoveryWindowSession(currentTabId: UUID())
-        let sessions = [
-            incognitoWindow.id: makeSessionRecoveryWindowSession(currentTabId: UUID()),
-            survivingWindow.id: survivingSession,
-        ]
+        survivingWindow.currentTabId = UUID()
+        registry.register(survivingWindow)
+        let snapshotFactory = WindowSessionSnapshotFactory(
+            glanceManager: browserManager.glanceManager
+        )
         let store = try makeIsolatedLastSessionWindowsStore(
             suitePrefix: "BrowserWindowLifecycleWorkflowTests"
         )
@@ -188,20 +189,23 @@ final class BrowserWindowLifecycleWorkflowTests: XCTestCase {
         store.updateSnapshots([archivedSnapshot])
         let recentlyClosed = RecentlyClosedManager()
         let catalog = OpenWindowSessionCatalog(
-            allWindows: { [incognitoWindow, survivingWindow] },
-            makeWindowSessionSnapshot: { sessions[$0.id] }
+            windows: registry,
+            snapshots: snapshotFactory
         )
         let archive = LastSessionWindowArchive(
             openWindows: catalog,
-            lastSessionWindowsStore: { store },
+            lastSessionWindowsStore: store,
             startupRestore: StartupSessionRestoreProviderFake()
         )
         let workflow = BrowserWindowCloseWorkflow(
             browserRuntime: browserManager,
             recorder: ClosedWindowHistoryRecorder(
-                openWindows: catalog,
-                windowDisplayTitle: { _ in "Incognito" },
-                recentlyClosedManager: { recentlyClosed }
+                snapshots: snapshotFactory,
+                titles: ClosedWindowDisplayTitleProjection(
+                    windowTabs: browserManager.windowTabContext,
+                    spaces: browserManager.spaceStateOwner
+                ),
+                recentlyClosedManager: recentlyClosed
             ),
             persistence: makeClosePersistence(
                 catalog: catalog,
@@ -210,8 +214,8 @@ final class BrowserWindowLifecycleWorkflowTests: XCTestCase {
             ),
             extensions: browserManager.optionalModules.extensions,
             webViews: webViewRuntime.lifecycleService,
-            emptySplitPlaceholders: browserManager.splitComposition.emptyPlaceholders,
-            splitPreviews: browserManager.splitComposition.previews,
+            emptySplitPlaceholders: browserManager.splitEmptyPlaceholders,
+            splitPreviews: browserManager.splitWindowContext.previews,
             backgroundMedia: browserManager.backgroundMediaOptimizationService,
             commands: browserManager.windowCommands
         )
@@ -273,14 +277,13 @@ final class BrowserWindowLifecycleWorkflowTests: XCTestCase {
 
     func testIncognitoCloseKeepsExactRuntimeAliveUntilAsyncCleanupFinishes() async throws {
         var browserManager: BrowserManager? = BrowserManager()
-        let registry = WindowRegistry()
+        let registry = try XCTUnwrap(browserManager).windowRegistry
         let windowState = BrowserWindowState()
         let workflow: BrowserWindowCloseWorkflow
 
         do {
             let browserManager = try XCTUnwrap(browserManager)
             let webViewRuntime = browserManager.testWebViewRuntime()
-            browserManager.windowRegistry = registry
             browserManager.windowShellContentViewFactory = { _, _ in NSView() }
             let profile = browserManager.profileManager.createEphemeralProfile(
                 for: windowState.id
@@ -288,7 +291,7 @@ final class BrowserWindowLifecycleWorkflowTests: XCTestCase {
             let space = Space(name: "Incognito", profileId: profile.id)
             space.isEphemeral = true
             windowState.isIncognito = true
-            windowState.tabManager = browserManager.tabManager
+            browserManager.tabResidenceAuthority.establishResidenceSession(on: windowState)
             windowState.ephemeralProfile = profile
             windowState.replaceEphemeralSpaces([space])
             windowState.currentProfileId = profile.id
@@ -299,11 +302,11 @@ final class BrowserWindowLifecycleWorkflowTests: XCTestCase {
             workflow = BrowserWindowCloseWorkflow(
                 browserRuntime: browserManager,
                 recorder: windowSession.history.recorder,
-                persistence: windowSession.persistence,
+                persistence: browserManager.windowSessionPersistenceCoordinator,
                 extensions: browserManager.optionalModules.extensions,
                 webViews: webViewRuntime.lifecycleService,
-                emptySplitPlaceholders: browserManager.splitComposition.emptyPlaceholders,
-                splitPreviews: browserManager.splitComposition.previews,
+                emptySplitPlaceholders: browserManager.splitEmptyPlaceholders,
+                splitPreviews: browserManager.splitWindowContext.previews,
                 backgroundMedia: browserManager.backgroundMediaOptimizationService,
                 commands: browserManager.windowCommands
             )
@@ -328,11 +331,11 @@ final class BrowserWindowLifecycleWorkflowTests: XCTestCase {
         let closeWorkflow = BrowserWindowCloseWorkflow(
             browserRuntime: browserManager,
             recorder: windowSession.history.recorder,
-            persistence: windowSession.persistence,
+            persistence: browserManager.windowSessionPersistenceCoordinator,
             extensions: browserManager.optionalModules.extensions,
             webViews: webViewRuntime.lifecycleService,
-            emptySplitPlaceholders: browserManager.splitComposition.emptyPlaceholders,
-            splitPreviews: browserManager.splitComposition.previews,
+            emptySplitPlaceholders: browserManager.splitEmptyPlaceholders,
+            splitPreviews: browserManager.splitWindowContext.previews,
             backgroundMedia: browserManager.backgroundMediaOptimizationService,
             commands: browserManager.windowCommands
         )
@@ -348,7 +351,7 @@ final class BrowserWindowLifecycleWorkflowTests: XCTestCase {
         BrowserWindowRegistryBinding.install(
             registration: windowSession.restoration,
             closing: closeWorkflow,
-            activity: windowSession.activation,
+            activity: browserManager.windowActivation,
             allWindowsClosed: allClosedWorkflow,
             on: try XCTUnwrap(registry)
         )

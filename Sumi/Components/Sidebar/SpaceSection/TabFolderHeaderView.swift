@@ -121,10 +121,10 @@ struct TabFolderHeaderView: View {
                 openFolderSearchPopover(anchorView: anchorView)
             },
             onHoverChanged: { hovering in
-                browserContext.presentationActions.folderSearchAnchorHoverChanged(
-                    folder.id,
-                    windowState,
-                    hovering
+                browserContext.folderSearchPresentation.setAnchorHovered(
+                    folderID: folder.id,
+                    in: windowState,
+                    hovering: hovering
                 )
             }
         )
@@ -141,11 +141,11 @@ struct TabFolderHeaderView: View {
             window: anchorView.window ?? windowState.shellWindow(in: windowRegistry),
             ownerView: anchorView
         )
-        browserContext.presentationActions.showFolderSearchPopover(
-            request,
-            windowState,
-            themeContext,
-            source
+        browserContext.folderSearchPresentation.show(
+            request: request,
+            in: windowState,
+            themeContext: themeContext,
+            source: source
         )
     }
 
@@ -164,7 +164,7 @@ struct TabFolderHeaderView: View {
                     browserContext.liveFolderManager.open(item: item, in: windowState)
                 },
                 activateSplitGroupItem: { item, group in
-                    browserContext.commands.focusSplitGroup(
+                    browserContext.splitFocusCommands.focusGroup(
                         group.id,
                         item.id,
                         windowState.id

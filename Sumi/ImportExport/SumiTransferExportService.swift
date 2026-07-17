@@ -186,8 +186,7 @@ final class SumiTransferExportService {
         decoder = JSONDecoder()
     }
 
-    func exportBrowser2ZenDocument(from browserManager: BrowserManager) throws -> Data {
-        let data = SumiImportExportSnapshot.makeData(from: browserManager)
+    func exportBrowser2ZenDocument(from data: SumiPortableData) throws -> Data {
         let document = makeBrowser2ZenDocument(from: data)
         return try encoder.encode(document)
     }

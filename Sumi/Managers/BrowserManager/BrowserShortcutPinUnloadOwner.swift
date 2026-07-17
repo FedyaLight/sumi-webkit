@@ -2,17 +2,17 @@ import Foundation
 
 @MainActor
 final class BrowserShortcutPinUnloadOwner {
-    private let shortcutLiveTab: @MainActor (UUID, BrowserWindowState) -> Tab?
-    private let closeTab: @MainActor (Tab, BrowserWindowState, Bool) -> Bool
-    private let notifications: @MainActor () -> (any BrowserNotificationPresenting)?
+    private let shortcuts: TabShortcutPresentationOwner
+    private let close: ShortcutLiveTabCloseService
+    private let notifications: BrowserNotificationPresenter
 
     init(
-        shortcutLiveTab: @escaping @MainActor (UUID, BrowserWindowState) -> Tab?,
-        closeTab: @escaping @MainActor (Tab, BrowserWindowState, Bool) -> Bool,
-        notifications: @escaping @MainActor () -> (any BrowserNotificationPresenting)?
+        shortcuts: TabShortcutPresentationOwner,
+        close: ShortcutLiveTabCloseService,
+        notifications: BrowserNotificationPresenter
     ) {
-        self.shortcutLiveTab = shortcutLiveTab
-        self.closeTab = closeTab
+        self.shortcuts = shortcuts
+        self.close = close
         self.notifications = notifications
     }
 
@@ -29,10 +29,17 @@ final class BrowserShortcutPinUnloadOwner {
         in windowState: BrowserWindowState,
         suppressNotification: Bool
     ) -> Bool {
-        guard let liveTab = shortcutLiveTab(pin.id, windowState) else {
+        guard let liveTab = shortcuts.shortcutLiveTab(
+            for: pin.id,
+            in: windowState.id
+        ) else {
             return false
         }
-        return closeTab(liveTab, windowState, !suppressNotification)
+        return close.close(
+            liveTab,
+            in: windowState,
+            presentNotification: !suppressNotification
+        )
     }
 
     func unloadShortcutPins(_ pins: [ShortcutPin], in windowState: BrowserWindowState) {
@@ -44,7 +51,7 @@ final class BrowserShortcutPinUnloadOwner {
         }
 
         if unloadedCount > 0 {
-            notifications()?.presentTabUnloadedNotification(
+            notifications.presentTabUnloadedNotification(
                 count: unloadedCount,
                 in: windowState
             )

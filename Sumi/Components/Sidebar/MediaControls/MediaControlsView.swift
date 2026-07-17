@@ -13,18 +13,18 @@ struct MediaControlsView: View {
 
     @StateObject private var mediaStore: SumiBackgroundMediaCardStore
     private let faviconImageReader: any BrowserFaviconImageReading
-    private let configureMediaStore: (SumiBackgroundMediaCardStore, BrowserWindowState) -> Void
+    private let mediaStoreConfiguration: SidebarMediaStoreConfigurationOwner
 
     init(
         nowPlayingController: any SumiNativeNowPlayingRuntimeControlling,
         faviconImageReader: any BrowserFaviconImageReading,
-        configureMediaStore: @escaping (SumiBackgroundMediaCardStore, BrowserWindowState) -> Void
+        mediaStoreConfiguration: SidebarMediaStoreConfigurationOwner
     ) {
         _mediaStore = StateObject(
             wrappedValue: SumiBackgroundMediaCardStore(controller: nowPlayingController)
         )
         self.faviconImageReader = faviconImageReader
-        self.configureMediaStore = configureMediaStore
+        self.mediaStoreConfiguration = mediaStoreConfiguration
     }
 
     var body: some View {
@@ -53,7 +53,7 @@ struct MediaControlsView: View {
         }
         .animation(.easeInOut(duration: 0.2), value: mediaStore.cardState != nil)
         .onAppear {
-            configureMediaStore(mediaStore, windowState)
+            mediaStoreConfiguration.configure(mediaStore, for: windowState)
         }
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .active {

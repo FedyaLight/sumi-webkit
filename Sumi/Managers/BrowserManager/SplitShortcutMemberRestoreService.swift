@@ -3,21 +3,21 @@ import SumiDomain
 
 @MainActor
 final class SplitShortcutMemberRestoreService {
-    private let runtimeLease: () -> SplitShortcutRuntimeLease?
-    private let launcherPlacement: ShortcutSplitLauncherPlacementService
-    private let presentations: WindowSplitPresentationSynchronizer
-    private let performImmediateVisualHandoff: (BrowserWindowState) -> Void
+    private let preparation: SplitShortcutMemberRestorePreparationService
+    private let splitMutations: SplitGroupMutationService
+    private let shortcutRetirement: ShortcutLiveTabRetirementService
+    private let publication: SplitShortcutMemberRestorePublication
 
     init(
-        runtimeLease: @escaping () -> SplitShortcutRuntimeLease?,
-        launcherPlacement: ShortcutSplitLauncherPlacementService,
-        presentations: WindowSplitPresentationSynchronizer,
-        performImmediateVisualHandoff: @escaping (BrowserWindowState) -> Void
+        preparation: SplitShortcutMemberRestorePreparationService,
+        splitMutations: SplitGroupMutationService,
+        shortcutRetirement: ShortcutLiveTabRetirementService,
+        publication: SplitShortcutMemberRestorePublication
     ) {
-        self.runtimeLease = runtimeLease
-        self.launcherPlacement = launcherPlacement
-        self.presentations = presentations
-        self.performImmediateVisualHandoff = performImmediateVisualHandoff
+        self.preparation = preparation
+        self.splitMutations = splitMutations
+        self.shortcutRetirement = shortcutRetirement
+        self.publication = publication
     }
 
     @discardableResult
@@ -27,73 +27,28 @@ final class SplitShortcutMemberRestoreService {
         in windowState: BrowserWindowState,
         preserveLiveInstance: Bool = true
     ) -> Bool {
-        guard let runtime = runtimeLease() else { return false }
-        let tabManager = runtime.tabManager
-        guard tabManager.splitGroupStore.group(id: group.id) == group else {
-            return false
-        }
-        guard let resolution = SplitShortcutMemberResolver.resolve(
-                  memberID: memberID,
-                  in: group,
-                  windowState: windowState,
-                  tabManager: tabManager
-              ) else { return false }
-        guard let launcher = launcherPlacement.prepareRestorations(
-                  for: [resolution.member]
-              ) else { return false }
-
-        let sourceGroups = tabManager.splitGroupStore.groups
-        guard let index = sourceGroups.firstIndex(of: group) else { return false }
-        var replacementGroups = sourceGroups
-        if let remaining = group.removingMember(memberID) {
-            replacementGroups[index] = remaining
-        } else {
-            replacementGroups.remove(at: index)
-        }
-        let retiringPinID: UUID?
-        if preserveLiveInstance {
-            retiringPinID = nil
-        } else {
-            guard case .shortcutPin(let pinID) = memberID else { return false }
-            let liveTab = tabManager.liveShortcutTabs.tab(
-                for: pinID, in: windowState.id
-            )
-            guard liveTab == nil || tabManager.runtimePorts != nil
-            else { return false }
-            retiringPinID = liveTab == nil ? nil : pinID
-        }
-
-        let targetPresentsGroup = windowState.splitSelection?.groupID == group.id
-        let settlesTargetWindow = preserveLiveInstance || targetPresentsGroup
-        let terminalParticipants: WindowSplitPresentationTerminalParticipants =
-            settlesTargetWindow
-                ? [SplitShortcutMemberRestoreHandoffReceipt(
-                    window: windowState,
-                    publish: performImmediateVisualHandoff
-                )]
-                : []
-        guard let presentation = presentations.prepareSettlementAgainstSource(
-            previousGroups: [group],
-            sourceGroups: sourceGroups,
-            replacementGroups: replacementGroups,
-            affectedGroupIDs: [group.id],
-            standaloneMembers: preserveLiveInstance
-                ? [windowState.id: memberID] : [:],
-            unavailableMembers: preserveLiveInstance || !targetPresentsGroup
-                ? [:] : [windowState.id: [memberID]],
-            requiredWindows: settlesTargetWindow
-                ? [windowState.id: windowState] : [:],
-            terminalParticipants: terminalParticipants,
-            sessionWriteUrgency: .immediate
+        guard let prepared = preparation.prepare(
+            memberID,
+            from: group,
+            in: windowState,
+            preserveLiveInstance: preserveLiveInstance
         ) else { return false }
-        guard let topology = tabManager.splitGroupMutations.prepareReplaceAll(
-            expected: sourceGroups,
-            with: replacementGroups
+
+        guard let presentation = publication.prepare(
+            prepared,
+            memberID: memberID,
+            sourceGroup: group,
+            windowState: windowState,
+            preserveLiveInstance: preserveLiveInstance
+        ) else { return false }
+        guard let topology = splitMutations.prepareReplaceAll(
+            expected: prepared.sourceGroups,
+            with: prepared.replacementGroups
         ) else { return false }
 
         let retirement: ReversibleShortcutLiveTabRetirement?
-        if let retiringPinID {
-            guard let prepared = tabManager.shortcutLiveTabRetirement
+        if let retiringPinID = prepared.retiringPinID {
+            guard let prepared = shortcutRetirement
                 .prepareReversibleRetirement(
                     pinId: retiringPinID,
                     in: windowState.id
@@ -118,7 +73,7 @@ final class SplitShortcutMemberRestoreService {
         } else {
             bindingMode = .preservingLiveBindings
         }
-        guard let move = launcher.applyForComposedResidenceAggregate(
+        guard let move = prepared.launcher.applyForComposedResidenceAggregate(
             bindingMode: bindingMode
         ) else {
             _ = presentation.cancelPrepared()
@@ -133,12 +88,12 @@ final class SplitShortcutMemberRestoreService {
             topology.rollback()
             return false
         }
-        guard let outcome = move.executeRestore(
+        guard let outcome = publication.execute(
+            move,
             presentation: presentation,
             retirement: retirement,
             topology: topology,
-            retirementService: tabManager.shortcutLiveTabRetirement,
-            folderOpenState: tabManager.folderOpenState
+            retirementService: shortcutRetirement
         ) else { return false }
         return outcome.wasAccepted
     }

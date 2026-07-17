@@ -1,11 +1,68 @@
 @MainActor
+private final class ShortcutLiveTerminalDrainPublication {
+    private let retirement: TabRuntimeRetirementService
+    private let ownership: CommittedTabRuntimeRetirementCleanupOwnership?
+
+    init(
+        retirement: TabRuntimeRetirementService,
+        ownership: CommittedTabRuntimeRetirementCleanupOwnership?
+    ) {
+        self.retirement = retirement
+        self.ownership = ownership
+    }
+
+    func publish() {
+        guard let ownership else { return }
+        retirement.destroyAfterTerminalDrain(ownership)
+    }
+}
+
+@MainActor
+private struct ShortcutLiveRuntimeRetirementPublicationEffects {
+    let claimed: ShortcutLiveRuntimeRetirementEffect
+    let physical: ShortcutLiveTabRetirementPhysicalEffect?
+    let terminalDrain: ShortcutLiveTerminalDrainPublication?
+
+    init(
+        plan: ShortcutLiveTabRetirementPlan,
+        claimed: ShortcutLiveRuntimeRetirementEffect,
+        hasTerminalModel: Bool,
+        teardown: TabRuntimeTeardownService
+    ) {
+        self.claimed = claimed
+        guard hasTerminalModel else {
+            physical = nil
+            terminalDrain = nil
+            return
+        }
+        if case .terminallyDrained = claimed {
+            physical = nil
+        } else {
+            physical = ShortcutLiveTabRetirementPhysicalEffect(
+                prepared: ShortcutLiveRuntimeRetirementPreparedResultFactory
+                    .make(plan: plan, effect: claimed),
+                teardown: teardown
+            )
+        }
+        let ownership: CommittedTabRuntimeRetirementCleanupOwnership?
+        if case .committed(let committed) = claimed {
+            ownership = committed
+        } else {
+            ownership = nil
+        }
+        terminalDrain = ShortcutLiveTerminalDrainPublication(
+            retirement: teardown.retirement,
+            ownership: ownership
+        )
+    }
+}
+
+@MainActor
 final class ShortcutLiveRuntimeRetirementPublication {
     private let plan: ShortcutLiveTabRetirementPlan
     private let residence: ShortcutLiveResidenceRetirementParticipant
     private let terminalModel: PreparedTabTerminalModelRetirement?
-    private let effect: ShortcutLiveRuntimeRetirementEffect
-    private let physical: ShortcutLiveTabRetirementPhysicalEffect?
-    private let terminalDrain: ShortcutLiveTerminalDrainEffect?
+    private let effects: ShortcutLiveRuntimeRetirementPublicationEffects
     private var isConsumed = false
 
     init(
@@ -18,32 +75,18 @@ final class ShortcutLiveRuntimeRetirementPublication {
         self.plan = plan
         self.residence = residence
         self.terminalModel = terminalModel
-        self.effect = effect
-        guard terminalModel != nil else {
-            physical = nil
-            terminalDrain = nil
-            return
-        }
-        if case .terminallyDrained = effect {
-            physical = nil
-        } else {
-            physical = ShortcutLiveTabRetirementPhysicalEffect(
-                prepared: ShortcutLiveRuntimeRetirementPreparedResultFactory
-                    .make(plan: plan, effect: effect),
-                teardown: teardown
-            )
-        }
-        terminalDrain = { [teardown] in
-            if case .committed(let committed) = effect {
-                teardown.retirement.destroyAfterTerminalDrain(committed)
-            }
-        }
+        effects = ShortcutLiveRuntimeRetirementPublicationEffects(
+            plan: plan,
+            claimed: effect,
+            hasTerminalModel: terminalModel != nil,
+            teardown: teardown
+        )
     }
 
     func canPublishNormally() -> Bool {
         guard terminalModel != nil else { return plan.tabs.isEmpty }
-        if case .terminallyDrained = effect { return true }
-        return physical != nil
+        if case .terminallyDrained = effects.claimed { return true }
+        return effects.physical != nil
     }
 
     func publish() -> PreparedShortcutLiveTabRetirement {
@@ -60,7 +103,9 @@ final class ShortcutLiveRuntimeRetirementPublication {
             )
         }
         return ShortcutLiveRuntimeRetirementPreparedResultFactory.make(
-            plan: plan, effect: effect, terminalEffect: terminalEffect
+            plan: plan,
+            effect: effects.claimed,
+            terminalEffect: terminalEffect
         )
     }
 
@@ -70,7 +115,9 @@ final class ShortcutLiveRuntimeRetirementPublication {
         }
         isConsumed = true
         let residencePublication = commitSilentResidence(
-            physicalEffect: terminalDrain
+            physicalEffect: { [terminalDrain = effects.terminalDrain] in
+                terminalDrain?.publish()
+            }
         )
         return { [terminalModel] in
             residencePublication.publish()
@@ -88,7 +135,8 @@ final class ShortcutLiveRuntimeRetirementPublication {
         precondition(terminalModel.commitSilentModel {
             publication = residence.commitSilentModel()
         })
-        let claimedEffect = physicalEffect ?? { [physical] in physical?.publish() }
+        let claimedEffect = physicalEffect
+            ?? { [physical = effects.physical] in physical?.publish() }
         precondition(terminalModel.claimPhysicalEffect(preparing: {
             claimedEffect
         }) == .claimed)

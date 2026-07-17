@@ -417,7 +417,7 @@ final class WebViewRuntimeTabRegistryTests: XCTestCase {
         async throws {
         let manager = BrowserManager()
         let graph = manager.testWebViewRuntime()
-        let tab = manager.tabManager.tabFactory.makeTab(
+        let tab = manager.tabFactory.makeTab(
             url: URL(string: "https://example.com/protected-retirement")!,
             loadsCachedFaviconOnInit: false
         )
@@ -499,7 +499,7 @@ final class WebViewRuntimeTabRegistryTests: XCTestCase {
     func testRetiredTabCannotRecreateTrackedOrExtensionWebView() {
         let manager = BrowserManager()
         let graph = manager.testWebViewRuntime()
-        let tab = manager.tabManager.tabFactory.makeTab(
+        let tab = manager.tabFactory.makeTab(
             url: URL(string: "https://example.com/retired")!,
             loadsCachedFaviconOnInit: false
         )
@@ -536,7 +536,7 @@ final class WebViewRuntimeTabRegistryTests: XCTestCase {
     func testTerminalRuntimeCannotRebindOrRecreateWebViews() {
         let manager = BrowserManager()
         let graph = manager.testWebViewRuntime()
-        let tab = manager.tabManager.tabFactory.makeTab(
+        let tab = manager.tabFactory.makeTab(
             url: URL(string: "https://example.com/terminal")!,
             loadsCachedFaviconOnInit: false
         )

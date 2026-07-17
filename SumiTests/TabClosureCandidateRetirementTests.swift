@@ -6,7 +6,7 @@ import XCTest
 @MainActor
 final class TabClosureCandidateRetirementTests: XCTestCase {
     func testDuplicateCandidateIDsAreRetiredOnce() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let tabManager = BrowserManager()
         let persistence = TabClosurePersistenceSpy()
         let retirement = makeRetirement(
             tabManager: tabManager,
@@ -23,40 +23,37 @@ final class TabClosureCandidateRetirementTests: XCTestCase {
     func testMixedLiveCandidatesUseTheirConcreteLifecycleAuthorities() throws {
         let window = BrowserWindowState()
         var auxiliaryCloseIDs: [UUID] = []
-        let container = try makeInMemoryStartupModelContainer()
-        let tabManager = TabManager(
-            runtimePorts: TestRuntimePorts.make(
+        let tabManager = BrowserManager()
+        tabManager.runtimePortConnection.attach(
+            TestRuntimePorts.make(
                 windowState: { $0 == window.id ? window : nil },
                 windows: { [(window.id, window)] },
                 windowStates: { [window] },
                 closeAuxiliaryMiniWindow: { tab, _ in
                     auxiliaryCloseIDs.append(tab.id)
                 }
-            ),
-            context: container.mainContext,
-            webViewSessions: WebViewSessionRepository(),
-            loadPersistedState: false
+            )
         )
-        window.tabManager = tabManager
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Space")
+        let space = Space(name: "Space")
+        tabManager.spaceStateOwner.append(space)
         let regular = tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://regular.example",
             in: space,
             activate: false
         )
-        let transient = tabManager.transientWebKitTabLifecycleOwner
-            .createTransientExtensionTab(
-                url: "https://transient.example",
+        let transient = tabManager.extensionTabCommands.createTransient(
+                url: URL(string: "https://transient.example")!,
                 in: space,
                 webExtensionContextOverride: nil
             )
-        let auxiliary = tabManager.transientWebKitTabLifecycleOwner
-            .createAuxiliaryMiniWindowTab(
+        let auxiliary = try XCTUnwrap(
+            tabManager.auxiliaryMiniWindowTabs.create(
                 openerTab: regular,
-                profileId: nil,
+                profileID: nil,
                 urlString: "https://auxiliary.example",
                 webExtensionContextOverride: nil
             )
+        )
         let pin = ShortcutPin(
             id: UUID(),
             role: .spacePinned,
@@ -89,7 +86,7 @@ final class TabClosureCandidateRetirementTests: XCTestCase {
 
         XCTAssertNil(tabManager.liveShortcutTabs.entry(tabId: shortcut.id))
         XCTAssertNil(
-            tabManager.transientTabRegistryOwner
+            tabManager.tabStateStore.transientTabs
                 .transientExtensionTabsByID[transient.id]
         )
         XCTAssertEqual(auxiliaryCloseIDs, [auxiliary.id])
@@ -101,13 +98,17 @@ final class TabClosureCandidateRetirementTests: XCTestCase {
     }
 
     private func makeRetirement(
-        tabManager: TabManager,
+        tabManager: BrowserManager,
         persistence: any TabClosurePersistence
     ) -> TabClosureCandidateRetirement {
         TabClosureCandidateRetirement(
             shortcutRetirement: tabManager.shortcutLiveTabRetirement,
             persistence: persistence,
-            transientTabs: tabManager.transientWebKitTabLifecycleOwner
+            transientExtensionTabs: TransientExtensionTabRetirementTransaction(
+                runtimeConnection: tabManager.runtimePortConnection,
+                membership: tabManager.tabCollectionMembershipOwner
+            ),
+            auxiliaryMiniWindowTabs: tabManager.auxiliaryMiniWindowTabs
         )
     }
 }

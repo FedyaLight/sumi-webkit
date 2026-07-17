@@ -124,9 +124,9 @@ extension ExtensionRequestedTabServicesTests {
     func testStoreRetirementReleasesTabAdapterRoles() async throws {
         let harness = try await makeRequestedPublicationHarness()
         let space = try XCTUnwrap(
-            harness.browserManager.tabManager.spaceStateOwner.currentSpace
+            harness.browserManager.spaceStateOwner.currentSpace
         )
-        let unpublishedTab = harness.browserManager.tabManager
+        let unpublishedTab = harness.browserManager
             .regularTabLifecycleOwner.createNewTab(
                 url: "https://unpublished.example",
                 in: space,

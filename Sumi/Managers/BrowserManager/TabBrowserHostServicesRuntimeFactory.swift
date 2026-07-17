@@ -5,76 +5,89 @@ import WebKit
 @MainActor
 enum TabBrowserHostServicesRuntimeFactory {
     static func webViewRoutingRuntime(
-        for browserManager: BrowserManager
+        service: BrowserWebViewRoutingService
     ) -> TabWebViewRoutingRuntime {
-        .make(webViewRoutingService: browserManager.webViewRoutingService)
+        .make(webViewRoutingService: service)
     }
 
     static func persistenceCallbacks(
-        for browserManager: BrowserManager
+        persistence: TabStructuralPersistenceService
     ) -> TabRuntimePersistenceCallbacks {
-        .make(tabManager: browserManager.tabManager)
+        .make(persistence: persistence)
     }
 
     static func mediaCallbacks(
-        for browserManager: BrowserManager
+        nowPlayingController: any SumiNativeNowPlayingRuntimeControlling,
+        backgroundMediaOptimizationService: SumiBackgroundMediaOptimizationService
     ) -> TabMediaRuntimeCallbacks {
         .make(
-            nowPlayingController: browserManager.nativeNowPlayingController,
-            backgroundMediaOptimizationService: browserManager.backgroundMediaOptimizationService
+            nowPlayingController: nowPlayingController,
+            backgroundMediaOptimizationService: backgroundMediaOptimizationService
         )
     }
 
     static func closeLifecycleRuntime(
-        for browserManager: BrowserManager
+        zoom: BrowserZoomCommandOwner,
+        compositor: TabCompositorManager,
+        tabClosure: TabClosureService
     ) -> TabCloseLifecycleRuntime {
         .make(
-            cleanupZoomForTab: { [weak browserManager] tabId in
-                browserManager?.chromeBundle.zoomCommandOwner.cleanupZoomForTab(tabId)
+            cleanupZoomForTab: { [weak zoom] tabId in
+                zoom?.cleanupZoomForTab(tabId)
             },
-            updateTabVisibility: { [weak browserManager] in
-                browserManager?.compositorManager.updateTabVisibility()
+            updateTabVisibility: { [weak compositor] in
+                compositor?.updateTabVisibility()
             },
-            removeTab: { [weak browserManager] tabId in
-                browserManager?.tabManager.tabClosureService.removeTab(tabId)
+            removeTab: { [weak tabClosure] tabId in
+                tabClosure?.removeTab(tabId)
             }
         )
     }
 
     static func permissionRuntime(
-        for browserManager: BrowserManager,
+        permissionRuntime: BrowserManagerPermissionRuntime,
+        glanceManager: GlanceManager,
+        routing: BrowserWebViewRoutingService,
+        windowRegistry: @escaping @MainActor () -> WindowRegistry?,
+        spaces: TabSpaceCollectionStateOwner,
+        profiles: ProfileManager,
+        auxiliaryTabs: AuxiliaryMiniWindowTabLifecycleTransaction,
         ownershipQuery: WebViewOwnershipQuery,
         visibility: WebViewVisibilityRuntime
     ) -> TabPermissionRuntime {
         .make(
-            permissionBridges: { [weak browserManager] in
-                browserManager?.permissionRuntime.permissionBridges
+            permissionBridges: { [weak permissionRuntime] in
+                permissionRuntime?.permissionBridges
             },
-            handlePermissionLifecycleEvent: { [weak browserManager] event in
-                browserManager?.permissionRuntime.permissionLifecycleController.handle(event)
+            handlePermissionLifecycleEvent: { [weak permissionRuntime] event in
+                permissionRuntime?.permissionLifecycleController.handle(event)
             },
-            isActiveGlancePreviewSurface: { [weak browserManager] tabId, webView in
-                guard let browserManager,
-                      let session = browserManager.glanceManager.currentSession,
+            isActiveGlancePreviewSurface: {
+                [weak glanceManager, weak routing]
+                tabId,
+                webView in
+                guard let glanceManager,
+                      let routing,
+                      let session = glanceManager.currentSession,
                       session.previewTab.id == tabId,
-                      browserManager.webViewRoutingService.ownsLiveWebView(
-                        webView,
-                        for: session.previewTab
+                      routing.ownsLiveWebView(
+                          webView,
+                          for: session.previewTab
                       ),
-                      let windowState = browserManager.windowRegistry?.windows[session.windowId],
-                      browserManager.glanceManager.activeSession(for: windowState)?.id == session.id
+                      let windowState = windowRegistry()?.windows[session.windowId],
+                      glanceManager.activeSession(for: windowState)?.id
+                      == session.id
                 else {
                     return false
                 }
                 return true
             },
-            surfaceState: { [weak browserManager] tabId, webView in
-                guard let browserManager,
-                      let tracked = ownershipQuery.trackedOwner(
+            surfaceState: { tabId, webView in
+                guard let tracked = ownershipQuery.trackedOwner(
                           containing: webView
                       ),
                       tracked.tabID == tabId,
-                      let registry = browserManager.windowRegistry,
+                      let registry = windowRegistry(),
                       registry.windows[tracked.windowID] != nil
                 else {
                     return .inactive
@@ -88,14 +101,13 @@ enum TabBrowserHostServicesRuntimeFactory {
                     isVisible: isVisible
                 )
             },
-            profile: { [weak browserManager] tabId, webView in
-                guard let browserManager else { return nil }
+            profile: { tabId, webView in
                 if let tracked = ownershipQuery.trackedOwner(
                     containing: webView
                 ) {
                     guard
                       tracked.tabID == tabId,
-                      let sourceWindow = browserManager.windowRegistry?
+                      let sourceWindow = windowRegistry()?
                           .windows[tracked.windowID],
                       let sourceTab = (webView as? FocusableWKWebView)?.owningTab,
                       sourceTab.id == tabId
@@ -113,7 +125,7 @@ enum TabBrowserHostServicesRuntimeFactory {
                     let sourceSpaceID = sourceTab.spaceId
                         ?? sourceWindow.currentSpaceId
                     let spaceProfileID = sourceSpaceID.flatMap {
-                        browserManager.tabManager.spaceStateOwner.profileId(for: $0)
+                        spaces.profileId(for: $0)
                     }
                     let candidates = [
                         sourceTab.profileId,
@@ -125,7 +137,7 @@ enum TabBrowserHostServicesRuntimeFactory {
                     else {
                         return nil
                     }
-                    return browserManager.profileManager.profiles.first {
+                    return profiles.profiles.first {
                         $0.id == profileID
                     }
                 }
@@ -133,10 +145,8 @@ enum TabBrowserHostServicesRuntimeFactory {
                 guard let sourceTab = (webView as? FocusableWKWebView)?
                     .owningTab,
                       sourceTab.id == tabId,
-                      browserManager.tabManager
-                      .transientWebKitTabLifecycleOwner
-                      .isAuxiliaryMiniWindowTab(sourceTab),
-                      browserManager.webViewRoutingService.ownsLiveWebView(
+                      auxiliaryTabs.containsExact(sourceTab),
+                      routing.ownsLiveWebView(
                           webView,
                           for: sourceTab
                       ),
@@ -210,13 +220,13 @@ extension TabWebViewRoutingRuntime {
 
 @MainActor
 extension TabRuntimePersistenceCallbacks {
-    static func make(tabManager: TabManager) -> Self {
+    static func make(persistence: TabStructuralPersistenceService) -> Self {
         Self(
-            updateNavigationState: { [weak tabManager] tab in
-                tabManager?.structuralPersistence.scheduleRuntimeStatePersistence(for: tab)
+            updateNavigationState: { [weak persistence] tab in
+                persistence?.scheduleRuntimeStatePersistence(for: tab)
             },
-            scheduleRuntimeStatePersistence: { [weak tabManager] tab in
-                tabManager?.structuralPersistence.scheduleRuntimeStatePersistence(for: tab)
+            scheduleRuntimeStatePersistence: { [weak persistence] tab in
+                persistence?.scheduleRuntimeStatePersistence(for: tab)
             }
         )
     }

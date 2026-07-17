@@ -94,27 +94,40 @@ if (( invalidate_guard_count == 0 )); then
   exit 1
 fi
 
-shutdown_body="$(extract_scope "$lifecycle" 'func shutdown()')"
+shutdown_body="$(extract_scope "$lifecycle" 'func shutdown() {')"
 shutdown_cancel_line="$(guard_capture_matches 'runtimeGraphSubscription?.cancel()' -F - <<< "$shutdown_body" | cut -d: -f1)"
 shutdown_detach_line="$(guard_capture_matches 'backgroundMediaOptimization.detach()' -F - <<< "$shutdown_body" | cut -d: -f1)"
-if [[ -z "$shutdown_cancel_line" || -z "$shutdown_detach_line" ]]; then
-  guard_record_failure "background-media lifecycle boundary: runtime shutdown must cancel inputs and detach background media"
+shutdown_tab_runtime_line="$(guard_capture_matches 'tabRuntimeLifecycle.shutdown()' -F - <<< "$shutdown_body" | cut -d: -f1)"
+if [[ -z "$shutdown_cancel_line" || -z "$shutdown_detach_line" || -z "$shutdown_tab_runtime_line" ]]; then
+  guard_record_failure "background-media lifecycle boundary: runtime shutdown must cancel inputs, detach background media, and shut down the tab runtime"
   exit 1
 fi
 if (( shutdown_cancel_line >= shutdown_detach_line )); then
   guard_record_failure "background-media lifecycle boundary: runtime shutdown must cancel structural input before detaching background media"
   exit 1
 fi
+if (( shutdown_detach_line >= shutdown_tab_runtime_line )); then
+  guard_record_failure "background-media lifecycle boundary: runtime shutdown must detach background media before tab runtime teardown"
+  exit 1
+fi
 
 manager_deinit="$(extract_scope "$browser_manager" 'isolated deinit')"
 manager_shutdown_line="$(guard_capture_matches 'runtimeLifecycle.shutdown()' -F - <<< "$manager_deinit" | cut -d: -f1)"
-manager_tab_detach_line="$(guard_capture_matches 'tabManager.detachBrowserRuntime()' -F - <<< "$manager_deinit" | cut -d: -f1)"
-if [[ -z "$manager_shutdown_line" || -z "$manager_tab_detach_line" ]]; then
-  guard_record_failure "background-media lifecycle boundary: BrowserManager deinit lost runtime or tab detach"
+manager_cleanup_line="$(guard_capture_matches 'shutdownCleanupService.cleanupAfterBrowserRuntimeDeallocation()' -F - <<< "$manager_deinit" | cut -d: -f1)"
+if [[ -z "$manager_shutdown_line" || -z "$manager_cleanup_line" ]]; then
+  guard_record_failure "background-media lifecycle boundary: BrowserManager deinit lost runtime shutdown or final cleanup"
   exit 1
 fi
-if (( manager_shutdown_line >= manager_tab_detach_line )); then
-  guard_record_failure "background-media lifecycle boundary: background media must detach before tab runtime teardown"
+if (( manager_shutdown_line >= manager_cleanup_line )); then
+  guard_record_failure "background-media lifecycle boundary: runtime shutdown must finish before final browser cleanup"
+  exit 1
+fi
+manager_detach_reach="$(
+  guard_capture_matches 'tabManager\.detachBrowserRuntime\(\)' \
+    "$browser_manager"
+)"
+if [[ -n "$manager_detach_reach" ]]; then
+  guard_record_failure "background-media lifecycle boundary: BrowserManager must not bypass BrowserRuntimeLifecycle for tab-runtime teardown"
   exit 1
 fi
 

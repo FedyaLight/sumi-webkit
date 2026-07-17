@@ -33,13 +33,13 @@ final class SumiBookmarksSurfaceTests: XCTestCase {
 
         harness.browserManager.bookmarkBundle.bookmarkCommandOwner.openBookmarksTab(selecting: "first", in: harness.windowState)
         let firstBookmarksTab = try XCTUnwrap(
-            harness.browserManager.tabManager.regularTabCollectionOwner.tabs(in: harness.space).first(where: \.representsSumiBookmarksSurface)
+            harness.browserManager.regularTabCollectionOwner.tabs(in: harness.space).first(where: \.representsSumiBookmarksSurface)
         )
         XCTAssertEqual(SumiSurface.bookmarksSelectedFolderID(from: firstBookmarksTab.url), "first")
 
         harness.browserManager.bookmarkBundle.bookmarkCommandOwner.openBookmarksTab(selecting: "second", in: harness.windowState)
 
-        let bookmarksTabs = harness.browserManager.tabManager.regularTabCollectionOwner.tabs(in: harness.space)
+        let bookmarksTabs = harness.browserManager.regularTabCollectionOwner.tabs(in: harness.space)
             .filter(\.representsSumiBookmarksSurface)
         XCTAssertEqual(bookmarksTabs.count, 1)
         XCTAssertEqual(bookmarksTabs.first?.id, firstBookmarksTab.id)
@@ -95,8 +95,8 @@ final class SumiBookmarksSurfaceTests: XCTestCase {
             configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
         )
         let context = ModelContext(container)
-        let browserManager = BrowserManager()
         let windowRegistry = WindowRegistry()
+        let browserManager = BrowserManager(windowRegistry: windowRegistry)
         let profile = Profile(name: "Primary")
         let space = Space(name: "Primary", profileId: profile.id)
         let windowState = BrowserWindowState()
@@ -112,11 +112,12 @@ final class SumiBookmarksSurfaceTests: XCTestCase {
         )
         browserManager.lastSessionWindowsStore = LastSessionWindowsStore()
         browserManager.bookmarkManager = makeBookmarkManager()
-        browserManager.windowRegistry = windowRegistry
-        browserManager.tabManager.spaceStateOwner.replaceSpaces([space])
-        browserManager.tabManager.spaceStateOwner.replaceCurrentSpace(space)
+        browserManager.spaceStateOwner.replaceSpaces([space])
+        browserManager.spaceStateOwner.replaceCurrentSpace(space)
 
-        windowState.tabManager = browserManager.tabManager
+        browserManager.tabResidenceAuthority.establishResidenceSession(
+            on: windowState
+        )
         windowState.currentSpaceId = space.id
         windowState.currentProfileId = profile.id
 
@@ -141,7 +142,7 @@ final class SumiBookmarksSurfaceTests: XCTestCase {
         name: String,
         browserManager: BrowserManager
     ) -> Tab {
-        let tab = browserManager.tabManager.tabFactory.makeTab(url: url, name: name)
+        let tab = browserManager.tabFactory.makeTab(url: url, name: name)
         tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
         return tab
     }

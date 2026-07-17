@@ -3,9 +3,23 @@ import SumiDomain
 
 /// Chooses the affected windows, active members and shortcut activation
 /// requests for an already-installed raw split topology. It performs no model
-/// staging and retains no TabManager after returning its immutable draft.
+/// staging and retains no composition-root locator after returning its draft.
 @MainActor
-struct WindowSplitPresentationDraftPlanner {
+final class WindowSplitPresentationDraftPlanner {
+    private let splitGroups: SplitGroupStore
+    private let regularTabs: RegularTabCollectionOwner
+    private let pins: ShortcutPinCollectionStateOwner
+
+    init(
+        splitGroups: SplitGroupStore,
+        regularTabs: RegularTabCollectionOwner,
+        pins: ShortcutPinCollectionStateOwner
+    ) {
+        self.splitGroups = splitGroups
+        self.regularTabs = regularTabs
+        self.pins = pins
+    }
+
     private struct ActivationRequestSlot: Hashable {
         let windowID: UUID
         let pinID: UUID
@@ -39,7 +53,6 @@ struct WindowSplitPresentationDraftPlanner {
     func prepare(
         _ input: WindowSplitPresentationSettlementInput,
         currentGroups: [SumiDomain.SplitGroup],
-        tabManager: TabManager,
         windows: [BrowserWindowState]
     ) -> WindowSplitPresentationDraftPlan? {
         let windowIDs = Set(windows.map(\.id))
@@ -47,7 +60,7 @@ struct WindowSplitPresentationDraftPlanner {
             .union(input.unavailableMembers.keys)
             .union(input.preferredSelections.keys)
         guard input.affectedGroupIDs.isEmpty == false,
-              tabManager.splitGroupStore.groups == currentGroups,
+              splitGroups.groups == currentGroups,
               windowIDs.count == windows.count,
               Set(input.previousGroups.map(\.id)).count
                 == input.previousGroups.count,
@@ -77,8 +90,7 @@ struct WindowSplitPresentationDraftPlanner {
             input: input,
             windows: windows,
             previousByID: previousByID,
-            replacementByID: replacementByID,
-            tabManager: tabManager
+            replacementByID: replacementByID
         ), requestedWindowIDs.isSubset(
             of: Set(draftPlan.drafts.map { $0.window.id })
         ) else { return nil }
@@ -89,8 +101,7 @@ struct WindowSplitPresentationDraftPlanner {
         input: WindowSplitPresentationSettlementInput,
         windows: [BrowserWindowState],
         previousByID: [UUID: SumiDomain.SplitGroup],
-        replacementByID: [UUID: SumiDomain.SplitGroup],
-        tabManager: TabManager
+        replacementByID: [UUID: SumiDomain.SplitGroup]
     ) -> WindowSplitPresentationDraftPlan? {
         var drafts: [WindowSplitPresentationDraft] = []
         var activationRequests = ActivationRequestBuilder()
@@ -156,8 +167,7 @@ struct WindowSplitPresentationDraftPlanner {
             let activeMemberID = candidates.first {
                 memberIsAvailable(
                     $0,
-                    excluding: unavailable,
-                    tabManager: tabManager
+                    excluding: unavailable
                 )
             }
             if let activeMemberID {
@@ -185,16 +195,14 @@ struct WindowSplitPresentationDraftPlanner {
 
     private func memberIsAvailable(
         _ memberID: SplitMemberID,
-        excluding unavailable: Set<SplitMemberID>,
-        tabManager: TabManager
+        excluding unavailable: Set<SplitMemberID>
     ) -> Bool {
         guard unavailable.contains(memberID) == false else { return false }
         switch memberID {
         case .regularTab(let tabID):
-            return tabManager.regularTabCollectionOwner.tab(for: tabID) != nil
+            return regularTabs.tab(for: tabID) != nil
         case .shortcutPin(let pinID):
-            return tabManager.shortcutPinCollectionStateOwner
-                .shortcutPin(by: pinID) != nil
+            return pins.shortcutPin(by: pinID) != nil
         }
     }
 }

@@ -10,14 +10,20 @@ import SwiftData
 @MainActor
 final class SumiAutoplayPolicyStoreAdapter {
     private let persistentStore: any SumiPermissionStore
+    let profileAdmission: SumiPermissionProfileAdmission
     /// Persistent + ephemeral policies keyed by `SumiPermissionKey.persistentIdentity`.
     private var policiesByIdentity: [String: SumiAutoplayPolicy] = [:]
+    private var retiredProfileIDs: Set<String> = []
 
     /// Canonical store shared with `SumiPermissionCoordinator` (same instance).
     var permissionStore: any SumiPermissionStore { persistentStore }
 
-    init(persistentStore: any SumiPermissionStore) {
+    init(
+        persistentStore: any SumiPermissionStore,
+        profileAdmission: SumiPermissionProfileAdmission = SumiPermissionProfileAdmission()
+    ) {
         self.persistentStore = persistentStore
+        self.profileAdmission = profileAdmission
     }
 
     /// Seeds the sync cache from canonical store records (composition-root / test harness).
@@ -39,6 +45,9 @@ final class SumiAutoplayPolicyStoreAdapter {
 
     func explicitPolicy(for key: SumiPermissionKey) -> SumiAutoplayPolicy? {
         guard key.permissionType == .autoplay else { return nil }
+        guard retiredProfileIDs.contains(key.profilePartitionId) == false else {
+            return nil
+        }
         return policiesByIdentity[key.persistentIdentity]
     }
 
@@ -59,12 +68,37 @@ final class SumiAutoplayPolicyStoreAdapter {
         source: SumiPermissionDecisionSource = .user,
         now: Date = Date()
     ) async throws {
+        guard let lease = await profileAdmission.admit(
+            profilePartitionId: key.profilePartitionId
+        ) else {
+            throw SumiPermissionSiteDecisionError.unavailable
+        }
+        do {
+            try await setPolicyAdmitted(
+                policy,
+                for: key,
+                source: source,
+                now: now
+            )
+            await profileAdmission.release(lease)
+        } catch {
+            await profileAdmission.release(lease)
+            throw error
+        }
+    }
+
+    private func setPolicyAdmitted(
+        _ policy: SumiAutoplayPolicy,
+        for key: SumiPermissionKey,
+        source: SumiPermissionDecisionSource,
+        now: Date
+    ) async throws {
         guard key.permissionType == .autoplay else {
             throw SumiPermissionSiteDecisionError.unsupportedPermission(key.permissionType.identity)
         }
 
         guard policy != .default else {
-            try await resetPolicy(for: key)
+            try await resetPolicyAdmitted(for: key)
             return
         }
 
@@ -80,7 +114,9 @@ final class SumiAutoplayPolicyStoreAdapter {
         ) else { return }
 
         try await persistentStore.setDecision(for: key, decision: decision)
-        policiesByIdentity[key.persistentIdentity] = policy
+        if await profileAdmission.isRetired(key.profilePartitionId) == false {
+            policiesByIdentity[key.persistentIdentity] = policy
+        }
     }
 
     func resetPolicy(for url: URL?, profile: Profile?) async throws {
@@ -89,6 +125,21 @@ final class SumiAutoplayPolicyStoreAdapter {
     }
 
     func resetPolicy(for key: SumiPermissionKey) async throws {
+        guard let lease = await profileAdmission.admit(
+            profilePartitionId: key.profilePartitionId
+        ) else {
+            throw SumiPermissionSiteDecisionError.unavailable
+        }
+        do {
+            try await resetPolicyAdmitted(for: key)
+            await profileAdmission.release(lease)
+        } catch {
+            await profileAdmission.release(lease)
+            throw error
+        }
+    }
+
+    private func resetPolicyAdmitted(for key: SumiPermissionKey) async throws {
         guard key.permissionType == .autoplay else {
             throw SumiPermissionSiteDecisionError.unsupportedPermission(key.permissionType.identity)
         }
@@ -105,6 +156,9 @@ final class SumiAutoplayPolicyStoreAdapter {
         isEphemeralProfile: Bool
     ) async throws -> [SumiPermissionStoreRecord] {
         let normalizedProfileId = SumiPermissionKey.normalizedProfilePartitionId(profilePartitionId)
+        guard await profileAdmission.isRetired(normalizedProfileId) == false else {
+            throw SumiPermissionSiteDecisionError.unavailable
+        }
         if isEphemeralProfile {
             return policiesByIdentity.compactMap { identity, policy in
                 guard identity.hasPrefix("\(normalizedProfileId)|"),
@@ -117,6 +171,23 @@ final class SumiAutoplayPolicyStoreAdapter {
         return try await persistentStore
             .listDecisions(profilePartitionId: normalizedProfileId)
             .filter { $0.key.permissionType == .autoplay }
+    }
+
+    func sealProfile(_ profilePartitionId: String) async -> String {
+        let profileID = await profileAdmission.seal(
+            profilePartitionId: profilePartitionId
+        )
+        retiredProfileIDs.insert(profileID)
+        policiesByIdentity = policiesByIdentity.filter {
+            $0.key.hasPrefix("\(profileID)|") == false
+        }
+        return profileID
+    }
+
+    func waitForProfileDrain(_ profilePartitionId: String) async {
+        await profileAdmission.waitForDrain(
+            profilePartitionId: profilePartitionId
+        )
     }
 
     func key(for url: URL?, profile: Profile?) -> SumiPermissionKey? {

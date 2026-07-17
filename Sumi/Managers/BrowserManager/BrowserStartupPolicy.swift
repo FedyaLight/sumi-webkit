@@ -7,7 +7,7 @@ import SumiDomain
 final class BrowserStartupPolicy {
     private let cleanStartup: CleanStartupWorkflow
     private let windowRestore: StartupWindowRestoreService
-    private let startupPageURL: @MainActor () -> URL?
+    private let settings: BrowserSettingsState
 
     var startupWindow: BrowserWindowState? {
         cleanStartup.firstRegularWindow
@@ -16,11 +16,11 @@ final class BrowserStartupPolicy {
     init(
         cleanStartup: CleanStartupWorkflow,
         windowRestore: StartupWindowRestoreService,
-        startupPageURL: @escaping @MainActor () -> URL?
+        settings: BrowserSettingsState
     ) {
         self.cleanStartup = cleanStartup
         self.windowRestore = windowRestore
-        self.startupPageURL = startupPageURL
+        self.settings = settings
     }
 
     func apply(_ mode: SumiStartupMode) {
@@ -31,7 +31,8 @@ final class BrowserStartupPolicy {
             cleanStartup.apply(opening: nil)
         case .specificPage:
             cleanStartup.apply(
-                opening: startupPageURL() ?? SumiSurface.emptyTabURL
+                opening: settings.settings?.resolvedStartupPageURL
+                    ?? SumiSurface.emptyTabURL
             )
         }
     }

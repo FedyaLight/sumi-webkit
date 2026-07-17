@@ -18,27 +18,39 @@ final class ShortcutTabPromotionService {
         self.structuralLookup = structuralLookup
     }
 
-    convenience init(tabManager: TabManager) {
+    static func compose(
+        registry: LiveShortcutTabRegistry,
+        spaces: TabSpaceCollectionStateOwner,
+        splitGroups: SplitGroupStore,
+        tabFactory: TabFactory,
+        regularTabs: RegularTabCollectionOwner,
+        runtimeConnection: TabRuntimePortConnection,
+        retirement: ShortcutLiveTabRetirementService,
+        membership: TabCollectionMembershipOwner,
+        structuralLookup: TabStructuralLookupCoordinator
+    ) -> ShortcutTabPromotionService {
         let windowTransition = ShortcutTabPromotionWindowTransition(
-            registry: tabManager.liveShortcutTabs,
-            membership: tabManager.tabCollectionMembershipOwner
+            registry: registry,
+            membership: membership
         )
-        self.init(
+        return ShortcutTabPromotionService(
             planner: ShortcutTabPromotionPlanner(
-                registry: tabManager.liveShortcutTabs,
-                spaces: tabManager.spaceStateOwner,
-                splitGroups: tabManager.splitGroupStore,
-                tabFactory: tabManager.tabFactory,
-                runtimePorts: { [weak tabManager] in tabManager?.runtimePorts }
+                spaces: spaces,
+                splitGroups: splitGroups,
+                regularTabs: regularTabs,
+                sources: ShortcutTabPromotionSourcePlanner(
+                    registry: registry,
+                    tabFactory: tabFactory,
+                    runtimeConnection: runtimeConnection
+                )
             ),
             committer: ShortcutTabPromotionCommitter(
-                registry: tabManager.liveShortcutTabs,
-                retirement: tabManager.shortcutLiveTabRetirement,
-                membership: tabManager.tabCollectionMembershipOwner,
-                regularTabs: tabManager.regularTabCollectionOwner,
+                registry: registry,
+                retirement: retirement,
+                membership: membership,
                 windows: windowTransition
             ),
-            structuralLookup: tabManager.structuralLookupCoordinator
+            structuralLookup: structuralLookup
         )
     }
 
@@ -58,6 +70,7 @@ final class ShortcutTabPromotionService {
         let prepared = structuralLookup.withTransaction {
             committer.commit(plan, split: .none)
         }
+        guard let prepared else { return nil }
         return committer.finish(prepared)
     }
 
@@ -80,7 +93,7 @@ final class ShortcutTabPromotionService {
     func commit(
         _ plan: ShortcutTabPromotionPlan,
         splitTransition: ShortcutTabPromotionSplitTransition
-    ) -> PreparedShortcutTabPromotion {
+    ) -> PreparedShortcutTabPromotion? {
         committer.commit(plan, split: splitTransition)
     }
 

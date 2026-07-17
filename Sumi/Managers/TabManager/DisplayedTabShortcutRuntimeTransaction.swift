@@ -1,135 +1,70 @@
 import Foundation
 
-/// Window and fresh-membership participant for one displayed conversion.
-/// Raw window state is reversible; membership opens only after terminal claim.
 @MainActor
 final class DisplayedTabShortcutRuntimeTransaction {
-    private enum State {
-        case prepared, staged, published, rolledBack, abandoned
-    }
-
     let windows: ShortcutTabBindingWindowContribution
-    private let binding: PreparedDisplayedTabShortcutBinding
-    private let membershipWitness: DisplayedTabShortcutMembershipWitness
-    private let containerRemoval: ShortcutContainerRemovalOwner
-    private let regularTabs: RegularTabCollectionOwner
+    private let sourceModel: DisplayedTabShortcutSourceModelTransaction
     private let structuralLookup: TabStructuralLookupCoordinator
     private let runtimeAttachment: TabRuntimeAttachmentWitness
-    private var state = State.prepared
 
     init(
         windows: ShortcutTabBindingWindowContribution,
-        binding: PreparedDisplayedTabShortcutBinding,
-        membershipWitness: DisplayedTabShortcutMembershipWitness,
-        containerRemoval: ShortcutContainerRemovalOwner,
-        regularTabs: RegularTabCollectionOwner,
+        sourceModel: DisplayedTabShortcutSourceModelTransaction,
         structuralLookup: TabStructuralLookupCoordinator,
         runtimeAttachment: TabRuntimeAttachmentWitness
     ) {
         self.windows = windows
-        self.binding = binding
-        self.membershipWitness = membershipWitness
-        self.containerRemoval = containerRemoval
-        self.regularTabs = regularTabs
+        self.sourceModel = sourceModel
         self.structuralLookup = structuralLookup
         self.runtimeAttachment = runtimeAttachment
     }
 
     func validateForStaging() -> Bool {
-        guard case .prepared = state else { return false }
-        guard let sourceSpaceID = binding.sourceSpaceID else { return false }
-        return runtimeAttachment.isCurrent()
-            && membershipWitness.preparedModelIsExact()
-            && regularTabs.containsIdentical(
-            binding.sourceTab,
-            in: sourceSpaceID
-        )
+        runtimeAttachment.isCurrent() && sourceModel.validateForStaging()
     }
 
     func stage() -> Bool {
-        guard validateForStaging() else { return false }
-        membershipWitness.prepareFreshTabsForRuntime()
-        guard validateForStaging() else { return false }
-        containerRemoval.removeFromCurrentContainer(binding.sourceTab)
-        guard runtimeAttachment.isCurrent(),
-              sourceContainerWasRemoved(),
-              membershipWitness.sourceRemovalIsExact() else { return false }
-        state = .staged
-        return true
+        guard validateForStaging(), sourceModel.stage() else { return false }
+        return runtimeAttachment.isCurrent()
+            && sourceModel.stagedSourceRemovalIsExact()
     }
 
     func stagedModelIsExact() -> Bool {
-        guard case .staged = state else { return false }
-        return runtimeAttachment.isCurrent()
-            && sourceContainerWasRemoved()
-            && membershipWitness.stagedResidencesAreExact()
+        runtimeAttachment.isCurrent() && sourceModel.stagedModelIsExact()
     }
 
-    func rollback() -> Bool {
-        guard case .staged = state else { return false }
-        state = .rolledBack
-        return true
-    }
+    func rollback() -> Bool { sourceModel.rollback() }
 
-    func cancelPrepared() -> Bool {
-        guard case .prepared = state else { return false }
-        state = .rolledBack
-        return true
-    }
+    func cancelPrepared() -> Bool { sourceModel.cancelPrepared() }
 
     func settleAfterFailedStage() -> Bool {
-        switch state {
-        case .prepared:
-            return cancelPrepared()
-        case .staged:
-            return rollback()
-        case .rolledBack:
-            return true
-        case .published, .abandoned:
-            return false
-        }
+        sourceModel.settleAfterFailedStage()
     }
 
     func abandonForTerminalDrain() {
-        precondition(canAbandonForTerminalDrain())
-        state = .abandoned
+        sourceModel.abandonForTerminalDrain()
     }
 
     func canAbandonForTerminalDrain() -> Bool {
-        stagedModelIsExact()
+        sourceModel.canAbandonForTerminalDrain()
     }
 
     func publishBeforeBinding() {
-        guard case .staged = state else {
-            preconditionFailure("Displayed runtime lost terminal window model")
-        }
-        guard membershipWitness.publishFreshAttachments() else {
-            preconditionFailure("Displayed membership lost terminal authority")
-        }
+        sourceModel.publishBeforeBinding()
     }
 
     func publishAfterBinding() {
-        guard case .staged = state else {
-            preconditionFailure("Displayed runtime was not staged")
-        }
-        state = .published
+        sourceModel.finishPublication()
         let attachment = runtimeAttachment
-        structuralLookup.runAfterCurrentBatch { [binding] in
+        let freshTabs = sourceModel.freshTabs
+        structuralLookup.runAfterCurrentBatch {
             guard let runtime = attachment.currentRegistry() else { return }
-            binding.freshTabs.forEach {
+            freshTabs.forEach {
                 runtime.webViewLifecycle.materializeVisibleTabWebViewIfNeeded(
                     $0.0,
                     in: $0.1
                 )
             }
         }
-    }
-
-    private func sourceContainerWasRemoved() -> Bool {
-        guard let sourceSpaceID = binding.sourceSpaceID else { return false }
-        return regularTabs.containsIdentical(
-            binding.sourceTab,
-            in: sourceSpaceID
-        ) == false
     }
 }

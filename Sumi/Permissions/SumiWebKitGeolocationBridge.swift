@@ -133,7 +133,8 @@ final class SumiWebKitGeolocationBridge {
                 }
                 provider.registerAllowedRequest(
                     pageId: tabContext.pageId,
-                    tabId: tabContext.tabId
+                    tabId: tabContext.tabId,
+                    profilePartitionId: tabContext.profilePartitionId
                 )
             }
 

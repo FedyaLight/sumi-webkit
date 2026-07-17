@@ -9,12 +9,12 @@ final class BrowserWindowFocusRuntimeTests: XCTestCase {
         let first = makeLiveWindow(named: "First", in: browserManager)
         let second = makeLiveWindow(named: "Second", in: browserManager)
 
-        browserManager.windowSessionBundle.activation.activate(first.window)
+        browserManager.windowActivation.activate(first.window)
 
         XCTAssertEqual(first.space.profileRuntimeState, .active)
         XCTAssertEqual(second.space.profileRuntimeState, .loadedInactive)
 
-        browserManager.windowSessionBundle.activation.activate(second.window)
+        browserManager.windowActivation.activate(second.window)
 
         XCTAssertEqual(first.space.profileRuntimeState, .loadedInactive)
         XCTAssertEqual(second.space.profileRuntimeState, .active)
@@ -30,7 +30,7 @@ final class BrowserWindowFocusRuntimeTests: XCTestCase {
             in: browserManager
         )
 
-        browserManager.windowSessionBundle.activation.activate(focused.window)
+        browserManager.windowActivation.activate(focused.window)
         browserManager.windowStateReconciler.synchronizeSpaceContext(
             in: background.window
         )
@@ -43,14 +43,16 @@ final class BrowserWindowFocusRuntimeTests: XCTestCase {
     func testActiveShortcutSelectionRecomputesFocusedRuntime() {
         let browserManager = makeBrowserManager()
         let focused = makeLiveWindow(named: "Focused", in: browserManager)
-        let shortcutSpace = browserManager.tabManager.spaceServices.catalog
-            .createSpace(name: "Shortcut only")
+        let shortcutSpace = installTestSpace(
+            in: browserManager.spaceStateOwner,
+            name: "Shortcut only"
+        )
         let registry = register(
             [focused.window],
             active: focused.window,
             in: browserManager
         )
-        browserManager.windowSessionBundle.activation.activate(focused.window)
+        browserManager.windowActivation.activate(focused.window)
         XCTAssertEqual(shortcutSpace.profileRuntimeState, .dormant)
 
         focused.window.selectedShortcutPinForSpace[shortcutSpace.id] = UUID()
@@ -73,10 +75,10 @@ final class BrowserWindowFocusRuntimeTests: XCTestCase {
         privateWindow.currentProfileId = privateProfileID
         privateWindow.currentSpaceId = privateSpaceID
 
-        browserManager.windowSessionBundle.activation.activate(regular.window)
+        browserManager.windowActivation.activate(regular.window)
         XCTAssertEqual(regular.space.profileRuntimeState, .active)
 
-        browserManager.windowSessionBundle.activation.activate(privateWindow)
+        browserManager.windowActivation.activate(privateWindow)
 
         XCTAssertEqual(regular.space.profileRuntimeState, .loadedInactive)
         XCTAssertEqual(privateWindow.currentProfileId, privateProfileID)
@@ -92,14 +94,14 @@ final class BrowserWindowFocusRuntimeTests: XCTestCase {
             in: browserManager
         )
 
-        browserManager.windowSessionBundle.activation.activate(first.window)
-        browserManager.windowSessionBundle.activation.activate(deferred.window)
+        browserManager.windowActivation.activate(first.window)
+        browserManager.windowActivation.activate(deferred.window)
 
         XCTAssertEqual(first.space.profileRuntimeState, .active)
         XCTAssertEqual(deferred.space.profileRuntimeState, .loadedInactive)
 
         deferred.window.restorationState.isAwaitingInitialResolution = false
-        browserManager.windowSessionBundle.activation
+        browserManager.windowActivation
             .completeDeferredActivation(for: deferred.window)
 
         XCTAssertEqual(first.space.profileRuntimeState, .loadedInactive)
@@ -116,8 +118,8 @@ final class BrowserWindowFocusRuntimeTests: XCTestCase {
                 key: sessionKey
             )
         )
-        browserManager.tabManager.spaceStateOwner.replaceSpaces([])
-        browserManager.tabManager.spaceStateOwner.replaceCurrentSpace(nil)
+        browserManager.spaceStateOwner.replaceSpaces([])
+        browserManager.spaceStateOwner.replaceCurrentSpace(nil)
         return browserManager
     }
 
@@ -126,9 +128,11 @@ final class BrowserWindowFocusRuntimeTests: XCTestCase {
         awaitsInitialSessionResolution: Bool = false,
         in browserManager: BrowserManager
     ) -> (space: Space, window: BrowserWindowState) {
-        let space = browserManager.tabManager.spaceServices.catalog
-            .createSpace(name: name)
-        let tab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
+        let space = installTestSpace(
+            in: browserManager.spaceStateOwner,
+            name: name
+        )
+        let tab = browserManager.regularTabLifecycleOwner.createNewTab(
             url: "https://\(name.lowercased()).example",
             in: space,
             activate: false
@@ -136,7 +140,7 @@ final class BrowserWindowFocusRuntimeTests: XCTestCase {
         let window = BrowserWindowState(
             awaitsInitialSessionResolution: awaitsInitialSessionResolution
         )
-        window.tabManager = browserManager.tabManager
+        browserManager.tabResidenceAuthority.establishResidenceSession(on: window)
         window.currentSpaceId = space.id
         window.currentTabId = tab.id
         window.isShowingEmptyState = false
@@ -148,8 +152,7 @@ final class BrowserWindowFocusRuntimeTests: XCTestCase {
         active activeWindow: BrowserWindowState,
         in browserManager: BrowserManager
     ) -> WindowRegistry {
-        let registry = WindowRegistry()
-        browserManager.windowRegistry = registry
+        let registry = browserManager.windowRegistry
         for window in windows {
             registry.register(window)
         }

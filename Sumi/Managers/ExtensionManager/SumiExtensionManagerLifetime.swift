@@ -128,6 +128,11 @@ final class SumiExtensionManagerLifetime {
         runtime = nil
     }
 
+    func retireBrowserAttachmentIfLoaded() {
+        resident?.module.retireBrowserAttachment()
+        clearAttachedRuntime()
+    }
+
     func loadedCompatibilityDiagnosticsIfEnabled()
         -> ExtensionCompatibilityDiagnosticsSnapshot? {
         loadedModuleIfEnabled()?.compatibilityDiagnosticsSnapshot()
@@ -220,6 +225,22 @@ final class SumiExtensionManagerLifetime {
         guard #available(macOS 15.5, *) else { return true }
         guard let module = resident?.module else { return true }
         return module.websiteDataQuiescence.quiesce(profileIDs: profileIDs)
+    }
+
+    func retireProfileRuntimeIfLoaded(
+        profileID: UUID,
+        fallbackProfileID: UUID
+    ) -> Bool {
+        guard let module = resident?.module else { return true }
+        return module.profileRetirement.retire(
+            profileID: profileID,
+            fallbackProfileID: fallbackProfileID
+        )
+    }
+
+    func containsProfileRuntimeReference(to profileID: UUID) -> Bool {
+        resident?.module.profileRetirement.containsReference(to: profileID)
+            ?? false
     }
 
     func tearDownLoadedRuntime(reason: String) {

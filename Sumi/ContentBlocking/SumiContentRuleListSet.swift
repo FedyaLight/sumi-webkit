@@ -16,7 +16,5 @@ struct SumiContentRuleListSet: Equatable, Sendable {
 @MainActor
 protocol SumiContentRuleListSetProviding: AnyObject {
     var changesPublisher: AnyPublisher<Void, Never> { get }
-    var hasProfileSpecificRuleLists: Bool { get }
-
-    func ruleListSet(profileId: UUID?) throws -> SumiContentRuleListSet
+    func ruleListSet() throws -> SumiContentRuleListSet
 }

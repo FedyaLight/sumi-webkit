@@ -1,3 +1,4 @@
+import AppKit
 import XCTest
 
 @testable import Sumi
@@ -7,7 +8,7 @@ final class ShortcutLiveTabClosePersistenceTests: XCTestCase {
     func testSelectedCloseWithFallbackCommitsWindowSessionOnce() throws {
         let fixture = try makeFixture(hasFallback: true, liveTabIsSelected: true)
 
-        XCTAssertTrue(fixture.service.close(fixture.liveTab, in: fixture.windowState))
+        XCTAssertTrue(fixture.closeLiveTab())
 
         XCTAssertEqual(fixture.probe.commits, [.retirement])
         XCTAssertEqual(fixture.windowState.currentTabId, fixture.fallback?.id)
@@ -24,7 +25,7 @@ final class ShortcutLiveTabClosePersistenceTests: XCTestCase {
     func testBackgroundCloseDoesNotWriteUnchangedWindowSession() throws {
         let fixture = try makeFixture(hasFallback: true, liveTabIsSelected: false)
 
-        XCTAssertTrue(fixture.service.close(fixture.liveTab, in: fixture.windowState))
+        XCTAssertTrue(fixture.closeLiveTab())
 
         XCTAssertTrue(fixture.probe.commits.isEmpty)
         XCTAssertEqual(fixture.windowState.currentTabId, fixture.fallback?.id)
@@ -33,7 +34,7 @@ final class ShortcutLiveTabClosePersistenceTests: XCTestCase {
     func testSelectedCloseWithoutFallbackCommitsFinalEmptyStateOnce() throws {
         let fixture = try makeFixture(hasFallback: false, liveTabIsSelected: true)
 
-        XCTAssertTrue(fixture.service.close(fixture.liveTab, in: fixture.windowState))
+        XCTAssertTrue(fixture.closeLiveTab())
 
         XCTAssertEqual(fixture.probe.commits, [.retirement])
         XCTAssertNil(fixture.windowState.currentTabId)
@@ -42,17 +43,59 @@ final class ShortcutLiveTabClosePersistenceTests: XCTestCase {
         XCTAssertTrue(fixture.probe.registryWasClearedBeforeEmptyHandoff)
         XCTAssertTrue(fixture.probe.teardownObservedAfterVisualHandoff)
     }
+
+    func testStandaloneCloseRejectsEquivalentTabWithSameID() throws {
+        let fixture = try makeFixture(
+            hasFallback: true,
+            liveTabIsSelected: true
+        )
+        let replacement = Tab(
+            id: fixture.liveTab.id,
+            url: fixture.liveTab.url
+        )
+        replacement.isShortcutLiveInstance = true
+        replacement.shortcutPinId = fixture.pin.id
+        replacement.shortcutPinRole = fixture.pin.role
+
+        XCTAssertFalse(
+            fixture.transaction.close(
+                replacement,
+                pinID: fixture.pin.id,
+                in: fixture.windowState,
+                publishingHistory: {
+                    XCTFail("Rejected identity must not publish history")
+                }
+            )
+        )
+        XCTAssertTrue(
+            fixture.tabManager.shortcutPresentationOwner.shortcutLiveTab(
+                for: fixture.pin.id,
+                in: fixture.windowState.id
+            ) === fixture.liveTab
+        )
+        XCTAssertTrue(fixture.probe.commits.isEmpty)
+    }
 }
 
 private extension ShortcutLiveTabClosePersistenceTests {
+    @MainActor
     struct Fixture {
-        let tabManager: TabManager
+        let tabManager: BrowserManager
         let windowState: BrowserWindowState
         let pin: ShortcutPin
         let liveTab: Tab
         let fallback: Tab?
-        let service: ShortcutLiveTabCloseService
+        let transaction: ShortcutLiveTabStandaloneCloseTransaction
         let probe: PersistenceProbe
+
+        func closeLiveTab() -> Bool {
+            transaction.close(
+                liveTab,
+                pinID: pin.id,
+                in: windowState,
+                publishingHistory: {}
+            )
+        }
     }
 
     enum Commit: Equatable {
@@ -60,6 +103,7 @@ private extension ShortcutLiveTabClosePersistenceTests {
         case explicit
     }
 
+    @MainActor
     final class PersistenceProbe {
         var commits: [Commit] = []
         var didPerformVisualHandoff = false
@@ -73,7 +117,12 @@ private extension ShortcutLiveTabClosePersistenceTests {
     ) throws -> Fixture {
         let windowState = BrowserWindowState()
         let probe = PersistenceProbe()
-        let tabManager = try makeInMemoryTabManager(
+        let profile = Profile(name: "Shortcut close persistence")
+        let tabManager = BrowserManager()
+        tabManager.runtimePortConnection.attach(TestRuntimePorts.make(
+            currentProfileId: { profile.id },
+            defaultProfileId: { profile.id },
+            profile: { $0 == profile.id ? profile : nil },
             windowState: { $0 == windowState.id ? windowState : nil },
             windows: { [(windowState.id, windowState)] },
             notifyTabClosedIfLoaded: { _ in
@@ -81,9 +130,12 @@ private extension ShortcutLiveTabClosePersistenceTests {
                     probe.didPerformVisualHandoff
             },
             persistWindowSession: { _ in probe.commits.append(.retirement) }
-        )
-        windowState.tabManager = tabManager
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Space")
+        ))
+        let space = try XCTUnwrap(tabManager.sidebarSpaceLifecycle.createSpace(
+            name: "Space",
+            icon: SumiPersistentGlyph.spaceDefaultIconValue,
+            profileID: profile.id
+        ))
         windowState.currentSpaceId = space.id
         let fallback = hasFallback
             ? tabManager.regularTabLifecycleOwner.createNewTab(
@@ -117,7 +169,7 @@ private extension ShortcutLiveTabClosePersistenceTests {
             windowState.currentTabId = fallback?.id
         }
 
-        let service = makeService(
+        let transaction = makeTransaction(
             tabManager: tabManager,
             windowState: windowState,
             pin: pin,
@@ -129,33 +181,44 @@ private extension ShortcutLiveTabClosePersistenceTests {
             pin: pin,
             liveTab: liveTab,
             fallback: fallback,
-            service: service,
+            transaction: transaction,
             probe: probe
         )
     }
 
-    func makeService(
-        tabManager: TabManager,
+    func makeTransaction(
+        tabManager: BrowserManager,
         windowState: BrowserWindowState,
         pin: ShortcutPin,
         probe: PersistenceProbe
-    ) -> ShortcutLiveTabCloseService {
-        ShortcutLiveTabCloseService(
-            tabManager: { tabManager },
-            recentlyClosedManager: { RecentlyClosedManager() },
-            fallbackPlanner: {
-                BrowserTabCloseFallbackPlanner(
-                    selectionService: ShellSelectionService { _ in [] }
-                )
-            },
-            performImmediateVisualHandoffIfPossible: { _ in
+    ) -> ShortcutLiveTabStandaloneCloseTransaction {
+        tabManager.windowRegistry.register(windowState)
+        let fallbackPlanner = BrowserTabCloseFallbackPlanner(
+            selectionService: ShellSelectionService(
+                splitQuery: tabManager.splitQuery
+            ),
+            tabStore: tabManager.runtimeStore
+        )
+        tabManager.webViewRuntime.compositorRuntime.registerContainer(
+            NSView(),
+            for: windowState.id,
+            immediateVisualHandoffHandler: {
                 probe.didPerformVisualHandoff = true
                 probe.registryWasClearedBeforeEmptyHandoff =
                     tabManager.shortcutPresentationOwner
-                        .shortcutLiveTab(for: pin.id, in: windowState.id) == nil
-            },
-            splitShortcuts: { nil },
-            notifications: { nil }
+                        .shortcutLiveTab(
+                            for: pin.id,
+                            in: windowState.id
+                        ) == nil
+                return true
+            }
+        )
+        return ShortcutLiveTabStandaloneCloseTransaction(
+            tabStore: tabManager.runtimeStore,
+            structuralLookup: tabManager.structuralLookupCoordinator,
+            retirement: tabManager.shortcutLiveTabRetirement,
+            fallbackPlanner: fallbackPlanner,
+            visuals: tabManager.shellRuntime.windowVisuals
         )
     }
 }

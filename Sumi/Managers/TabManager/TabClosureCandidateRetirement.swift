@@ -13,16 +13,19 @@ struct TabClosureCandidateRetirementResult: Equatable {
 final class TabClosureCandidateRetirement {
     private let shortcutRetirement: ShortcutLiveTabRetirementService
     private let persistence: any TabClosurePersistence
-    private let transientTabs: TabTransientWebKitTabLifecycleOwner
+    private let transientExtensionTabs: TransientExtensionTabRetirementTransaction
+    private let auxiliaryMiniWindowTabs: AuxiliaryMiniWindowTabLifecycleTransaction
 
     init(
         shortcutRetirement: ShortcutLiveTabRetirementService,
         persistence: any TabClosurePersistence,
-        transientTabs: TabTransientWebKitTabLifecycleOwner
+        transientExtensionTabs: TransientExtensionTabRetirementTransaction,
+        auxiliaryMiniWindowTabs: AuxiliaryMiniWindowTabLifecycleTransaction
     ) {
         self.shortcutRetirement = shortcutRetirement
         self.persistence = persistence
-        self.transientTabs = transientTabs
+        self.transientExtensionTabs = transientExtensionTabs
+        self.auxiliaryMiniWindowTabs = auxiliaryMiniWindowTabs
     }
 
     func retire(_ ids: [UUID]) -> TabClosureCandidateRetirementResult {
@@ -34,10 +37,13 @@ final class TabClosureCandidateRetirement {
                 continue
             }
             persistence.cancelRuntimeStatePersistence(for: id)
-            if transientTabs.removeTransientExtensionTab(id: id) {
+            if transientExtensionTabs.remove(
+                id: id,
+                notifyingExtensionClose: true
+            ) {
                 continue
             }
-            if transientTabs.closeAuxiliaryMiniWindowTabIfPresent(id: id) {
+            if auxiliaryMiniWindowTabs.closeIfPresent(id: id) {
                 continue
             }
             regularCandidates.insert(id)

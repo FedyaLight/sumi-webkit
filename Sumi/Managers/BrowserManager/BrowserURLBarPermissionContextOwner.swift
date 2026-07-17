@@ -3,26 +3,19 @@ import SumiDomain
 
 @MainActor
 final class BrowserURLBarPermissionContextOwner {
-    private let permissionRuntime: @MainActor () -> BrowserManagerPermissionRuntime
-    private let siteActivityRevision: @MainActor () -> Int
-    private let updateIndicator: @MainActor (SumiPermissionIndicatorViewModel, Tab, BrowserWindowState) -> Void
-    private let updatePrompt: @MainActor (SumiPermissionPromptPresenter, Tab, BrowserWindowState) -> Void
+    private let runtime: BrowserManagerPermissionRuntime
+    private let webViews: BrowserWebViewRoutingService
 
     init(
-        permissionRuntime: @escaping @MainActor () -> BrowserManagerPermissionRuntime,
-        siteActivityRevision: @escaping @MainActor () -> Int,
-        updateIndicator: @escaping @MainActor (SumiPermissionIndicatorViewModel, Tab, BrowserWindowState) -> Void,
-        updatePrompt: @escaping @MainActor (SumiPermissionPromptPresenter, Tab, BrowserWindowState) -> Void
+        runtime: BrowserManagerPermissionRuntime,
+        webViews: BrowserWebViewRoutingService
     ) {
-        self.permissionRuntime = permissionRuntime
-        self.siteActivityRevision = siteActivityRevision
-        self.updateIndicator = updateIndicator
-        self.updatePrompt = updatePrompt
+        self.runtime = runtime
+        self.webViews = webViews
     }
 
     var context: URLBarPermissionContext {
-        let runtime = permissionRuntime()
-        return URLBarPermissionContext(
+        URLBarPermissionContext(
             coordinator: runtime.permissionCoordinator,
             runtimeController: runtime.runtimePermissionController,
             popupStore: runtime.blockedPopupStore,
@@ -30,15 +23,26 @@ final class BrowserURLBarPermissionContextOwner {
             indicatorEventStore: runtime.permissionIndicatorEventStore,
             systemPermissionService: runtime.systemPermissionService,
             externalAppResolver: runtime.externalAppResolver,
-            siteActivityRevision: siteActivityRevision,
-            updateIndicator: updateIndicator,
-            updatePrompt: updatePrompt
+            siteActivityRevision: { [runtime] in
+                runtime.permissionSiteActivityStore.revision
+            },
+            updateIndicator: { [webViews] viewModel, tab, windowState in
+                viewModel.update(
+                    tab: tab,
+                    webView: webViews.windowOwnedWebView(
+                        for: tab,
+                        in: windowState.id
+                    )
+                )
+            },
+            updatePrompt: { presenter, tab, windowState in
+                presenter.update(tab: tab, windowState: windowState)
+            }
         )
     }
 
     var loadDependencies: SumiCurrentSitePermissionsViewModel.LoadDependencies {
-        let runtime = permissionRuntime()
-        return SumiCurrentSitePermissionsViewModel.LoadDependencies(
+        SumiCurrentSitePermissionsViewModel.LoadDependencies(
             coordinator: runtime.permissionCoordinator,
             systemPermissionService: runtime.systemPermissionService,
             runtimeController: runtime.runtimePermissionController,
@@ -51,48 +55,19 @@ final class BrowserURLBarPermissionContextOwner {
     }
 
     var blockedPopupChanges: AnyPublisher<Void, Never> {
-        permissionRuntime().blockedPopupStore.objectWillChange.eraseVoid()
+        runtime.blockedPopupStore.objectWillChange.eraseVoid()
     }
 
     var externalSchemeChanges: AnyPublisher<Void, Never> {
-        permissionRuntime().externalSchemeSessionStore.objectWillChange.eraseVoid()
+        runtime.externalSchemeSessionStore.objectWillChange.eraseVoid()
     }
 
     var indicatorEventChanges: AnyPublisher<Void, Never> {
-        permissionRuntime().permissionIndicatorEventStore.objectWillChange.eraseVoid()
+        runtime.permissionIndicatorEventStore.objectWillChange.eraseVoid()
     }
 
     var siteActivityChanges: AnyPublisher<Void, Never> {
-        permissionRuntime().permissionSiteActivityStore.objectWillChange.eraseVoid()
-    }
-}
-
-@MainActor
-extension BrowserURLBarPermissionContextOwner {
-    convenience init(browserManager: BrowserManager) {
-        let permissionRuntime = browserManager.permissionRuntime
-        self.init(
-            permissionRuntime: {
-                permissionRuntime
-            },
-            siteActivityRevision: { [weak browserManager] in
-                browserManager?.permissionRuntime.permissionSiteActivityStore.revision ?? 0
-            },
-            updateIndicator: { [weak browserManager] viewModel, tab, windowState in
-                guard let browserManager else { return }
-                let webView = browserManager.webViewRoutingService.windowOwnedWebView(for: tab, in: windowState.id)
-                viewModel.update(
-                    tab: tab,
-                    webView: webView
-                )
-            },
-            updatePrompt: { presenter, tab, windowState in
-                presenter.update(
-                    tab: tab,
-                    windowState: windowState
-                )
-            }
-        )
+        runtime.permissionSiteActivityStore.objectWillChange.eraseVoid()
     }
 }
 

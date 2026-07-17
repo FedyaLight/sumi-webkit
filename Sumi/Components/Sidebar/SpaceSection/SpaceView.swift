@@ -116,9 +116,15 @@ struct SpaceView: View {
     let inventory: SidebarSpaceInventorySnapshot
     let selection: SidebarWindowSelectionQuery
     let pinProjection: SidebarPinFolderProjection
-    let pinCommands: SidebarPinFolderCommands
+    let pinCommands: SidebarPinCommands
+    let pinExecution: SidebarPinExecutionCommands
+    let folderCommands: SidebarFolderCommands
     let spaceLifecycle: SidebarSpaceLifecycle
-    let regularTabs: any SidebarRegularTabsControlling
+    let regularTabCatalog: SidebarRegularTabCatalog
+    let regularTabTargets: SidebarRegularTabTargetQuery
+    let regularTabLifecycleCommands: SidebarRegularTabLifecycleCommands
+    let regularTabShortcutCommands: SidebarRegularTabShortcutCommands
+    let regularTabPlacementCommands: SidebarRegularTabPlacementCommands
     let renderMode: SpaceViewRenderMode
     let allowsInteraction: Bool
     let scrollHoverCoordinator: NativeSurfaceScrollHoverCoordinator
@@ -134,7 +140,9 @@ struct SpaceView: View {
         if visibleWidth > 0 {
             return visibleWidth
         }
-        let fallbackWidth = browserContext.savedSidebarWidth(windowState)
+        let fallbackWidth = browserContext.sidebarPresentation.savedSidebarWidth(
+            for: windowState
+        )
         return max(fallbackWidth, 0)
     }
 
@@ -164,6 +172,8 @@ struct SpaceView: View {
             selection: selection,
             pinProjection: pinProjection,
             pinCommands: pinCommands,
+            pinExecution: pinExecution,
+            folderCommands: folderCommands,
             spaceLifecycle: spaceLifecycle,
             browserContext: browserContext,
             isInteractive: isInteractive,
@@ -176,7 +186,11 @@ struct SpaceView: View {
             space: space,
             inventory: inventory,
             selection: selection,
-            regularTabs: regularTabs,
+            regularTabCatalog: regularTabCatalog,
+            regularTabTargets: regularTabTargets,
+            regularTabLifecycleCommands: regularTabLifecycleCommands,
+            regularTabShortcutCommands: regularTabShortcutCommands,
+            regularTabPlacementCommands: regularTabPlacementCommands,
             browserContext: browserContext,
             isInteractive: isInteractive,
             innerWidth: innerWidth,

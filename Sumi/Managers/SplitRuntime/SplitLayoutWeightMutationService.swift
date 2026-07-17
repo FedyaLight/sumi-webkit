@@ -6,10 +6,15 @@ import SumiDomain
 /// structure event or window-session write.
 @MainActor
 final class SplitLayoutWeightMutationService {
-    private let tabManager: @MainActor () -> TabManager?
+    private let splitGroups: SplitGroupStore
+    private let persistence: TabStructuralPersistenceService
 
-    init(tabManager: @escaping @MainActor () -> TabManager?) {
-        self.tabManager = tabManager
+    init(
+        splitGroups: SplitGroupStore,
+        persistence: TabStructuralPersistenceService
+    ) {
+        self.splitGroups = splitGroups
+        self.persistence = persistence
     }
 
     @discardableResult
@@ -18,7 +23,6 @@ final class SplitLayoutWeightMutationService {
         path: [Int],
         weights: [Double]
     ) -> Bool {
-        guard let tabManager = tabManager() else { return false }
         let tree = SplitLayoutSizing.updatingChildWeights(
             in: expectedGroup.layoutTree,
             at: path,
@@ -26,14 +30,14 @@ final class SplitLayoutWeightMutationService {
         )
         guard tree != expectedGroup.layoutTree,
               let replacement = expectedGroup.replacingLayoutTree(with: tree),
-              tabManager.splitGroupStore.replaceLayout(
+              splitGroups.replaceLayout(
                 expectedGroup,
                 with: replacement
               ) else {
             return false
         }
-        tabManager.structuralPersistence.markSplitGroupsStructurallyDirty()
-        tabManager.structuralPersistence.scheduleStructuralPersistenceFromMain()
+        persistence.markSplitGroupsStructurallyDirty()
+        persistence.scheduleStructuralPersistenceFromMain()
         return true
     }
 }

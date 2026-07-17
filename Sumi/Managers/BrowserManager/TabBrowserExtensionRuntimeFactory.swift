@@ -18,7 +18,7 @@ enum TabBrowserExtensionRuntimeFactory {
                 browserManager?.optionalModules.extensions
             },
             windowState: { [weak browserManager] windowId in
-                browserManager?.windowRegistry?.windows[windowId]
+                browserManager?.windowRegistry.windows[windowId]
             },
             currentTab: { [weak browserManager] windowState in
                 browserManager?.shellRuntime.windowTabs.currentTab(for: windowState)
@@ -40,7 +40,7 @@ enum TabBrowserExtensionRuntimeFactory {
                 browserManager?.optionalModules.extensions.surfaceStore
             },
             shortcutLaunchURL: { [weak browserManager] shortcutPinId in
-                browserManager?.tabManager.shortcutPinCollectionStateOwner
+                browserManager?.shortcutPinCollectionStateOwner
                     .shortcutPin(by: shortcutPinId)?.launchURL
             }
         )

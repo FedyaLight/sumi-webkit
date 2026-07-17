@@ -32,31 +32,33 @@ protocol WebKitCloseTargetResolving: AnyObject {
 /// process-global current Tab or window.
 @MainActor
 final class WebKitCloseTargetResolver: WebKitCloseTargetResolving {
-    private weak var lifecycle: WebViewLifecycleService?
-    private weak var ownership: WebViewOwnershipQuery?
-    private weak var tabs: TabManager?
-    private weak var windowTabs: BrowserWindowTabContext?
-    private weak var routing: BrowserWebViewRoutingService?
+    private let lifecycle: WebViewLifecycleService
+    private let ownership: WebViewOwnershipQuery
+    private let membership: TabCollectionMembershipOwner
+    private let residences: BrowserTabResidenceAuthority
+    private let windowTabs: BrowserWindowTabContext
+    private let routing: BrowserWebViewRoutingService
     private let registry: @MainActor () -> WindowRegistry?
 
     init(
         lifecycle: WebViewLifecycleService,
         ownership: WebViewOwnershipQuery,
-        tabs: TabManager,
+        membership: TabCollectionMembershipOwner,
+        residences: BrowserTabResidenceAuthority,
         windowTabs: BrowserWindowTabContext,
         routing: BrowserWebViewRoutingService,
         registry: @escaping @MainActor () -> WindowRegistry?
     ) {
         self.lifecycle = lifecycle
         self.ownership = ownership
-        self.tabs = tabs
+        self.membership = membership
+        self.residences = residences
         self.windowTabs = windowTabs
         self.routing = routing
         self.registry = registry
     }
 
     func resolve(_ webView: WKWebView) -> WebKitCloseTarget {
-        guard let lifecycle else { return .orphan }
         switch lifecycle.prepareWebKitClose(webView) {
         case .deferred:
             return .deferred
@@ -64,14 +66,12 @@ final class WebKitCloseTargetResolver: WebKitCloseTargetResolving {
             guard let trackedOwner else {
                 return resolveUntracked(webView)
             }
-            guard let ownership,
-                  ownership.trackedOwner(containing: webView) == trackedOwner,
+            guard ownership.trackedOwner(containing: webView) == trackedOwner,
                   let window = registry()?.windows[trackedOwner.windowID],
                   let tab = window.ephemeralTabs.first(where: {
                       $0.id == trackedOwner.tabID
-                  }) ?? tabs?.tabCollectionMembershipOwner.tab(
-                      for: trackedOwner.tabID
-                  ),
+                  }) ?? membership.tab(for: trackedOwner.tabID),
+                  residences.containsExact(tab, in: window),
                   (webView as? FocusableWKWebView)?.owningTab === tab
             else {
                 return .staleTracked(trackedOwner)
@@ -86,7 +86,6 @@ final class WebKitCloseTargetResolver: WebKitCloseTargetResolving {
     }
 
     private func resolveUntracked(_ webView: WKWebView) -> WebKitCloseTarget {
-        guard let tabs, let routing else { return .orphan }
         if let windows = registry()?.allWindows {
             for window in windows {
                 if let tab = window.ephemeralTabs.first(where: {
@@ -101,7 +100,7 @@ final class WebKitCloseTargetResolver: WebKitCloseTargetResolving {
             }
         }
 
-        guard let tab = tabs.tabCollectionMembershipOwner.allTabs().first(
+        guard let tab = membership.allTabs().first(
             where: { routing.ownsLiveWebView(webView, for: $0) }
         ) else {
             return .orphan
@@ -109,7 +108,7 @@ final class WebKitCloseTargetResolver: WebKitCloseTargetResolving {
         return .untracked(UntrackedWebKitCloseTarget(
             webView: webView,
             tab: tab,
-            window: windowTabs?.windowState(containing: tab)
+            window: windowTabs.windowState(containing: tab)
         ))
     }
 }

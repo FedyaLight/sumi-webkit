@@ -134,10 +134,11 @@ final class SplitDropServiceShortcutConversionTests: XCTestCase {
 
     func testDisplayedCenterDropPublishesTerminalReleasedLauncherAggregateAndPreservesReentrantLayout() throws {
         let fixture = try makeFixture(sourceMemberCount: 3)
-        let restorationSpace = fixture.manager.spaceServices.catalog.createSpace(
+        let restorationSpace = try XCTUnwrap(fixture.manager.sidebarSpaceLifecycle.createSpace(
             name: "Restoration",
-            profileId: fixture.restorationProfile.id
-        )
+            icon: SumiPersistentGlyph.spaceDefaultIconValue,
+            profileID: fixture.restorationProfile.id
+        ))
         let displacedPin = fixture.targetPins[0]
         let retainedPin = fixture.targetPins[1]
         let targetGroup = try XCTUnwrap(SplitGroup.make(
@@ -184,7 +185,7 @@ final class SplitDropServiceShortcutConversionTests: XCTestCase {
         var tabsBySpacePublications = 0
         let structureCancellable = fixture.manager.tabStructureEventBus
             .structureChangedPublisher.sink { structuralEvents += 1 }
-        let tabsCancellable = fixture.manager.regularTabCollectionStateOwner
+        let tabsCancellable = fixture.manager.tabStateStore.regularTabs
             .tabsBySpacePublisher.sink { tabsBySpace in
                 tabsBySpacePublications += 1
                 guard tabsBySpacePublications == 1 else { return }
@@ -347,7 +348,10 @@ final class SplitDropServiceShortcutConversionTests: XCTestCase {
             }.count,
             1
         )
-        XCTAssertGreaterThan(fixture.probe.sessionWriteCount, 0)
+        XCTAssertGreaterThan(
+            fixture.manager.windowSessionPersistenceCoordinator.flush(),
+            0
+        )
         XCTAssertEqual(structuralEvents, 1)
         XCTAssertEqual(observation.publicationCount, 1)
         XCTAssertEqual(tabsBySpacePublications, 1)
@@ -360,7 +364,7 @@ final class SplitDropServiceShortcutConversionTests: XCTestCase {
 private extension SplitDropServiceShortcutConversionTests {
     @MainActor
     struct Fixture {
-        let manager: TabManager
+        let manager: BrowserManager
         let window: BrowserWindowState
         let space: Space
         let source: Tab
@@ -430,28 +434,33 @@ private extension SplitDropServiceShortcutConversionTests {
             restorationProfile.id: restorationProfile,
         ]
         let probe = Probe()
-        let manager = try makeInMemoryTabManager(
+        let manager = BrowserManager()
+        manager.runtimePortConnection.attach(TestRuntimePorts.make(
             currentProfileId: { sourceProfile.id },
             defaultProfileId: { sourceProfile.id },
             profile: { profiles[$0] },
             windowState: { $0 == window.id ? window : nil },
             windows: { [(window.id, window)] },
-            primaryTrackedWindowId: { _ in window.id },
+            webViewLifecycle: TestRuntimePorts.webViewLifecycle(
+                retirement: .rejecting,
+                primaryTrackedWindowId: { _ in window.id },
+                executeProfileAssignment: { tab, _, intent in
+                    probe.profileAssignmentTabIDs.append(tab.id)
+                    return tab.profileAssignment.commit(intent)
+                        ? .committed
+                        : .stale
+                }
+            ),
             persistWindowSession: { _ in
                 probe.sessionWriteCount += 1
-            },
-            executeProfileAssignment: { tab, _, intent in
-                probe.profileAssignmentTabIDs.append(tab.id)
-                return tab.profileAssignment.commit(intent)
-                    ? .committed
-                    : .stale
             }
-        )
-        window.tabManager = manager
-        let space = manager.spaceServices.catalog.createSpace(
+        ))
+        manager.windowRegistry.register(window)
+        let space = try XCTUnwrap(manager.sidebarSpaceLifecycle.createSpace(
             name: "Space",
-            profileId: sourceProfile.id
-        )
+            icon: SumiPersistentGlyph.spaceDefaultIconValue,
+            profileID: sourceProfile.id
+        ))
         let source = manager.regularTabLifecycleOwner.createNewTab(
             url: "https://drop-source.example",
             in: space,
@@ -515,67 +524,31 @@ private extension SplitDropServiceShortcutConversionTests {
             groupID: sourceGroup.id,
             activeMemberID: .regularTab(source.id)
         )
-        let launcherPlacement = ShortcutSplitLauncherPlacementService(
-            tabManager: manager
-        )
-        let members = SplitRuntimeMemberResolver(tabManager: { manager })
-        let presentations = WindowSplitPresentationSynchronizer(
-            tabManager: { manager },
-            windows: { [window] },
-            selectTabWithoutPersistence: { tab, state in
-                _ = WindowTabSelectionStateApplicator.apply(
-                    tab,
-                    to: state,
-                    updateSpaceFromTab: true,
-                    rememberSelection: true
-                )
-            },
-            publishPreparedSelectionEffects: { _, _, _, _ in
-                /* The drop fixture records selection through its model probe. */
-            },
-            publishWindowChange: { _ in
-                /* No window-update subscriber is installed by this fixture. */
-            },
-            refreshCompositor: { _ in },
-            scheduleWindowSession: { _ in },
-            persistWindowSession: { _ in }
-        )
-        let placeholderReplacements = SplitPlaceholderReplacementPlanner(
-            query: SplitPlaceholderReplacementQuery(
-                regularTabs: manager.regularTabCollectionOwner,
-                splitGroups: manager.splitGroupStore,
-                membership: manager.splitGroupMembership,
-                liveShortcuts: manager.liveShortcutTabs,
-                members: members
-            ),
-            launcherRelease: ShortcutSplitLauncherReleasePlanner(
-                tabManager: manager
-            ),
-            splitMutations: manager.splitGroupMutations,
-            retirement: EmptySplitPlaceholderRetirementService(
-                regularTabs: manager.regularTabCollectionOwner,
-                selection: manager.selectionStateOwner,
-                structuralLookup: manager.structuralLookupCoordinator,
-                persistence: manager.structuralPersistence,
-                runtimeConnection: manager.runtimePortConnection,
-                runtimeCleanup: RegularTabClosureRuntimeCleanup(
-                    membership: manager.tabCollectionMembershipOwner
-                )
-            ),
-            presentations: RecordingSplitDropPresentations(
-                presentations: presentations,
-                probe: probe
-            )
+        let launcherPlacement = makeTestShortcutSplitLauncherPlacement(manager)
+        let members = makeTestSplitRuntimeMemberResolver(manager)
+        let presentations = makeTestWindowSplitPresentationSynchronizer(
+            browser: manager,
+            windows: { [window] }
         )
         let recordingPresentations = RecordingSplitDropPresentations(
             presentations: presentations,
             probe: probe
         )
         let service = SplitDropService(
-            tabManager: { manager },
+            topology: SplitDropTopologyTransaction(
+                structuralLookup: manager.structuralLookupCoordinator,
+                membership: manager.splitGroupMembership,
+                splitGroups: manager.splitGroupStore,
+                mutations: manager.splitGroupMutations,
+                launcherPlacement: launcherPlacement
+            ),
             memberResolver: members,
-            launcherPlacement: launcherPlacement,
-            placeholderReplacements: placeholderReplacements,
+            regularShortcutSidebarDrop:
+                RegularTabShortcutSidebarDropTransaction(
+                    conversion: manager.regularTabShortcutConversion,
+                    launcherPlacement: launcherPlacement,
+                    presentations: recordingPresentations
+                ),
             presentations: recordingPresentations,
             notifyLimit: { _ in probe.limitCount += 1 }
         )

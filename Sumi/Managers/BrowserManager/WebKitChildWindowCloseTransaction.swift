@@ -7,7 +7,7 @@ import Foundation
 final class WebKitChildWindowCloseTransaction: WebKitChildWindowClosing {
     private weak var lifecycle: WebViewLifecycleService?
     private weak var ownership: WebViewOwnershipQuery?
-    private weak var tabs: TabManager?
+    private let tabClosure: TabClosureService
     private weak var windowTabs: BrowserWindowTabContext?
     private weak var windowCommands: BrowserWindowCommands?
     private let registry: @MainActor () -> WindowRegistry?
@@ -15,14 +15,14 @@ final class WebKitChildWindowCloseTransaction: WebKitChildWindowClosing {
     init(
         lifecycle: WebViewLifecycleService,
         ownership: WebViewOwnershipQuery,
-        tabs: TabManager,
+        tabClosure: TabClosureService,
         windowTabs: BrowserWindowTabContext,
         windowCommands: BrowserWindowCommands,
         registry: @escaping @MainActor () -> WindowRegistry?
     ) {
         self.lifecycle = lifecycle
         self.ownership = ownership
-        self.tabs = tabs
+        self.tabClosure = tabClosure
         self.windowTabs = windowTabs
         self.windowCommands = windowCommands
         self.registry = registry
@@ -60,7 +60,7 @@ final class WebKitChildWindowCloseTransaction: WebKitChildWindowClosing {
                     owner: target.owner
                 )
             } else {
-                tabs?.tabClosureService.removeTab(target.tab.id)
+                tabClosure.removeTab(target.tab.id)
             }
         }
 

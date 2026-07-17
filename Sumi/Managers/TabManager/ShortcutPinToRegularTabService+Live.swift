@@ -1,25 +1,26 @@
 import Foundation
 
 extension ShortcutPinToRegularTabService {
-    convenience init(tabManager: TabManager) {
-        let promotion = tabManager.shortcutTabPromotion
+    static func compose(
+        promotion: ShortcutTabPromotionService,
+        splitGroups: SplitGroupStore,
+        splitMutations: SplitGroupMutationService,
+        pinStore: ShortcutPinStoreOwner,
+        pins: ShortcutPinCollectionStateOwner,
+        persistence: TabStructuralPersistenceService,
+        structuralLookup: TabStructuralLookupCoordinator
+    ) -> Self {
         let transaction = ShortcutPinRegularConversionTransaction(
             promotion: promotion,
-            splitMutations: tabManager.splitGroupMutations,
-            removePin: { [weak tabManager] pin in
-                tabManager?.shortcutPinStoreOwner.removeFromContainers(pin)
-            },
-            schedulePersistence: { [weak tabManager] in
-                tabManager?.structuralPersistence.scheduleStructuralPersistence()
-            },
-            structuralLookup: tabManager.structuralLookupCoordinator
+            splitMutations: splitMutations,
+            pinStore: pinStore,
+            persistence: persistence,
+            structuralLookup: structuralLookup
         )
-        self.init(
+        return Self(
             promotion: promotion,
-            splitGroups: tabManager.splitGroupStore,
-            canonicalPin: { [weak tabManager] in
-                tabManager?.shortcutPinCollectionStateOwner.shortcutPin(by: $0)
-            },
+            splitGroups: splitGroups,
+            pins: pins,
             transaction: transaction
         )
     }

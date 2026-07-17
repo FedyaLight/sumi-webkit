@@ -3,11 +3,12 @@ import Foundation
 
 @MainActor
 enum SumiImportExportSnapshot {
-    static func makeData(from browserManager: BrowserManager) -> SumiPortableData {
-        let profileManager = browserManager.profileManager
-        let tabManager = browserManager.tabManager
-
-        let profiles = profileManager.profiles.enumerated().map { index, profile in
+    static func makeData(
+        profiles sourceProfiles: [Profile],
+        state: TabStateStore,
+        bookmarks sourceBookmarks: [SumiBookmarkEntity]
+    ) -> SumiPortableData {
+        let profiles = sourceProfiles.enumerated().map { index, profile in
             SumiPortableProfile(
                 id: profile.id.uuidString,
                 name: profile.name,
@@ -16,7 +17,7 @@ enum SumiImportExportSnapshot {
             )
         }
 
-        let spaces = tabManager.spaceStateOwner.spaces.enumerated().map { index, space in
+        let spaces = state.spaces.spaces.enumerated().map { index, space in
             SumiPortableSpace(
                 id: space.id.uuidString,
                 name: space.name,
@@ -28,8 +29,8 @@ enum SumiImportExportSnapshot {
             )
         }
 
-        let folders = tabManager.spaceStateOwner.spaces.flatMap { space -> [SumiPortableFolder] in
-            tabManager.folderCollectionStateOwner.folders(for: space.id)
+        let folders = state.spaces.spaces.flatMap { space -> [SumiPortableFolder] in
+            state.folders.folders(for: space.id)
                 .map { folder in
                     SumiPortableFolder(
                         id: folder.id.uuidString,
@@ -45,7 +46,7 @@ enum SumiImportExportSnapshot {
                 }
         }
 
-        let essentials = tabManager.shortcutPinCollectionStateOwner.pinnedByProfileSnapshot()
+        let essentials = state.shortcutPins.pinnedByProfileSnapshot()
             .sorted { $0.key.uuidString < $1.key.uuidString }
             .flatMap { profileId, pins -> [SumiPortableLauncher] in
                 pins.sorted { $0.index < $1.index }.map { pin in
@@ -64,8 +65,8 @@ enum SumiImportExportSnapshot {
                 }
             }
 
-        let pinnedLaunchers = tabManager.spaceStateOwner.spaces.flatMap { space -> [SumiPortableLauncher] in
-            tabManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: space.id)
+        let pinnedLaunchers = state.spaces.spaces.flatMap { space -> [SumiPortableLauncher] in
+            state.shortcutPins.spacePinnedPins(for: space.id)
                 .map { pin in
                     SumiPortableLauncher(
                         id: pin.id.uuidString,
@@ -82,8 +83,8 @@ enum SumiImportExportSnapshot {
                 }
         }
 
-        let regularTabs = tabManager.spaceStateOwner.spaces.flatMap { space -> [SumiPortableRegularTab] in
-            (tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[space.id] ?? [])
+        let regularTabs = state.spaces.spaces.flatMap { space -> [SumiPortableRegularTab] in
+            (state.regularTabs.tabsBySpaceSnapshot()[space.id] ?? [])
                 .sorted { $0.index < $1.index }
                 .map { tab in
                     SumiPortableRegularTab(
@@ -98,9 +99,7 @@ enum SumiImportExportSnapshot {
                 }
         }
 
-        let bookmarks = portableBookmarks(
-            from: browserManager.bookmarkManager.snapshot(sortMode: .manual).root.children
-        )
+        let bookmarks = portableBookmarks(from: sourceBookmarks)
 
         return SumiPortableData(
             profiles: profiles,

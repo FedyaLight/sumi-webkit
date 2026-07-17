@@ -13,7 +13,7 @@ final class BrowserWindowActivationService {
     private let activePageResolver: ActivePageResolver
     private let findManager: FindManager
     private let extensions: any BrowserWindowExtensionFocusNotifying
-    private let synchronizeFocusedContext: (BrowserWindowState) -> Void
+    private let focusedContext: BrowserWindowFocusedContextSynchronizer
     private let nowPlaying: any SumiNativeNowPlayingRuntimeControlling
     private let backgroundMedia: SumiBackgroundMediaOptimizationService
     private var deferredActivationsByWindowID: [UUID: DeferredActivation] = [:]
@@ -24,7 +24,7 @@ final class BrowserWindowActivationService {
         activePageResolver: ActivePageResolver,
         findManager: FindManager,
         extensions: any BrowserWindowExtensionFocusNotifying,
-        synchronizeFocusedContext: @escaping (BrowserWindowState) -> Void,
+        focusedContext: BrowserWindowFocusedContextSynchronizer,
         nowPlaying: any SumiNativeNowPlayingRuntimeControlling,
         backgroundMedia: SumiBackgroundMediaOptimizationService
     ) {
@@ -33,7 +33,7 @@ final class BrowserWindowActivationService {
         self.activePageResolver = activePageResolver
         self.findManager = findManager
         self.extensions = extensions
-        self.synchronizeFocusedContext = synchronizeFocusedContext
+        self.focusedContext = focusedContext
         self.nowPlaying = nowPlaying
         self.backgroundMedia = backgroundMedia
     }
@@ -81,7 +81,7 @@ final class BrowserWindowActivationService {
     }
 
     private func applyActivation(_ windowState: BrowserWindowState) {
-        synchronizeFocusedContext(windowState)
+        focusedContext.synchronize(windowState)
         sidebarPresentation.syncFromWindow(windowState)
         persistence.persist(windowState)
 

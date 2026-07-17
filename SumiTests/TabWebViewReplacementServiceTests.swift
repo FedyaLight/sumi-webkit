@@ -140,11 +140,10 @@ final class TabWebViewReplacementServiceTests: XCTestCase {
     }
 
     func testProtectedUntrackedReplacementKeepsDisplacedWebViewLeasedUntilRelease() async throws {
-        let browserManager = BrowserManager()
         let windowRegistry = WindowRegistry()
+        let browserManager = BrowserManager(windowRegistry: windowRegistry)
         let webViewRuntime = browserManager.testWebViewRuntime()
-        browserManager.windowRegistry = windowRegistry
-        let tab = browserManager.tabManager.tabFactory.makeTab(
+        let tab = browserManager.tabFactory.makeTab(
             url: URL(string: "https://example.com/original")!,
             loadsCachedFaviconOnInit: false
         )
@@ -193,11 +192,10 @@ final class TabWebViewReplacementServiceTests: XCTestCase {
     }
 
     func testProtectedUntrackedReleaseKeepsWebViewLeasedUntilProtectionEnds() async throws {
-        let browserManager = BrowserManager()
         let windowRegistry = WindowRegistry()
+        let browserManager = BrowserManager(windowRegistry: windowRegistry)
         let webViewRuntime = browserManager.testWebViewRuntime()
-        browserManager.windowRegistry = windowRegistry
-        let tab = browserManager.tabManager.tabFactory.makeTab(
+        let tab = browserManager.tabFactory.makeTab(
             loadsCachedFaviconOnInit: false
         )
         tab.attachBrowserRuntime(
@@ -241,7 +239,7 @@ final class TabWebViewReplacementServiceTests: XCTestCase {
         windowID: UUID
     ) {
         let browserManager = BrowserManager()
-        let tab = browserManager.tabManager.tabFactory.makeTab(
+        let tab = browserManager.tabFactory.makeTab(
             url: URL(string: "https://example.com/original")!,
             loadsCachedFaviconOnInit: false
         )

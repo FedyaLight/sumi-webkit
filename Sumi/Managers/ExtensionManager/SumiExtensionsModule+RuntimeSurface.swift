@@ -69,8 +69,11 @@ extension SumiExtensionsModule {
         runtimeSurface.notifyWindowFocused(windowState)
     }
 
-    func switchProfileIfLoaded(_ profile: Profile) {
-        runtimeSurface.switchProfile(profile)
+    func switchProfileIfLoaded(
+        _ profile: Profile,
+        mutationLease: ProfileReferenceMutationLease? = nil
+    ) {
+        runtimeSurface.switchProfile(profile, mutationLease: mutationLease)
     }
 
     func notifyTabActivatedIfLoaded(newTab: Tab, previous: Tab?) {

@@ -16,7 +16,7 @@ final class WindowSessionPersistenceTestComposition {
         snapshotStore: WindowSessionSnapshotStore,
         scheduler: WindowSessionPersistenceScheduler,
         snapshotFactory: WindowSessionSnapshotFactory,
-        openWindows: @escaping @MainActor () -> [BrowserWindowState]
+        windows: WindowRegistry
     ) {
         let suiteName = "WindowSessionPersistenceTestComposition.\(UUID().uuidString)"
         guard let userDefaults = UserDefaults(suiteName: suiteName) else {
@@ -31,12 +31,12 @@ final class WindowSessionPersistenceTestComposition {
         )
         startupRestore.markRestoreOfferConsumed()
         let catalog = OpenWindowSessionCatalog(
-            allWindows: openWindows,
-            makeWindowSessionSnapshot: snapshotFactory.make
+            windows: windows,
+            snapshots: snapshotFactory
         )
         let archive = LastSessionWindowArchive(
             openWindows: catalog,
-            lastSessionWindowsStore: { lastSessionWindowsStore },
+            lastSessionWindowsStore: lastSessionWindowsStore,
             startupRestore: startupRestore
         )
 

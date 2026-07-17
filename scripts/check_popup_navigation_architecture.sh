@@ -21,6 +21,8 @@ glance_runtime="Sumi/Managers/BrowserManager/BrowserGlanceRuntimeService.swift"
 extension_opening="Sumi/Managers/BrowserManager/ExtensionExternalTabOpeningService.swift"
 physical_popup="Sumi/Managers/BrowserManager/PhysicalWebPopupOpeningService.swift"
 child_tab_opening="Sumi/Managers/BrowserManager/WebKitChildTabOpeningService.swift"
+child_tab_creation="Sumi/Managers/BrowserManager/WebKitChildTabCreationTransaction.swift"
+child_tab_settlement="Sumi/Managers/BrowserManager/WebKitChildTabSettlementTransaction.swift"
 child_window_opening="Sumi/Managers/BrowserManager/WebKitChildWindowOpeningService.swift"
 auxiliary_factory="Sumi/AuxiliaryWindows/AuxiliaryWebViewFactory.swift"
 browser_configuration="Sumi/Models/BrowserConfig/BrowserConfig.swift"
@@ -68,6 +70,8 @@ for required in \
   "$extension_opening" \
   "$physical_popup" \
   "$child_tab_opening" \
+  "$child_tab_creation" \
+  "$child_tab_settlement" \
   "$child_window_opening" \
   "$auxiliary_factory" \
   "$browser_configuration"; do
@@ -97,7 +101,8 @@ replacement_bag_hits="$(
   guard_capture_matches '\b(class|struct|enum)[[:space:]]+(PopupNavigationServices|PopupNavigationRuntime|PopupNavigationCapabilities)\b|\bstruct[[:space:]]+Dependencies\b' \
     "$runtime_state" "$responder" "$child_webview_transaction" \
     "$child_surface_router" "$glance_routing" "$extension_opening" \
-    "$physical_popup" "$child_tab_opening"
+    "$physical_popup" "$child_tab_opening" "$child_tab_creation" \
+    "$child_tab_settlement"
 )"
 if [[ -n "$replacement_bag_hits" ]]; then
   guard_record_failure "popup closure bag hidden behind a replacement container:
@@ -172,14 +177,16 @@ fi
 
 behavioral_service_hits="$(
   guard_capture_matches '\bBrowserManager\b|\bbrowserManager\b|\b(activeWindow|currentWindow)\b' \
-    "$extension_opening" "$physical_popup" "$child_tab_opening"
+    "$extension_opening" "$physical_popup" "$child_tab_opening" \
+    "$child_tab_creation" "$child_tab_settlement"
 )"
 if [[ -n "$behavioral_service_hits" ]]; then
   guard_record_failure "popup behavioral service depends on a browser root or current-window fallback:
 $behavioral_service_hits"
 fi
 
-for service in "$extension_opening" "$physical_popup" "$child_tab_opening"; do
+for service in "$extension_opening" "$physical_popup" "$child_tab_opening" \
+  "$child_tab_creation" "$child_tab_settlement"; do
   stored_closure_count="$(
     guard_count_matches '^[[:space:]]*private[[:space:]]+(let|var)[^:]*:.*->' \
       "$service"
@@ -193,7 +200,9 @@ done
 
 enforce_service_boundary "$extension_opening" 80 3
 enforce_service_boundary "$physical_popup" 80 2
-enforce_service_boundary "$child_tab_opening" 160 6
+enforce_service_boundary "$child_tab_opening" 80 3
+enforce_service_boundary "$child_tab_creation" 120 4
+enforce_service_boundary "$child_tab_settlement" 160 5
 enforce_service_boundary "$responder" 300 3
 enforce_service_boundary "$child_webview_transaction" 250 4
 enforce_service_boundary "$child_surface_router" 125 4
@@ -256,9 +265,21 @@ contract_count="$(guard_count_matches 'guard[[:space:]]+let[[:space:]]+extension
 if (( contract_count == 0 )); then
   guard_record_failure "external extension Tab opening must acquire its registrar before mutation"
 fi
-contract_count="$(guard_count_matches 'isExtensionOriginated[[:space:]]*==[[:space:]]*false[[:space:]]*\|\|[[:space:]]*extensionTabs[[:space:]]*!=[[:space:]]*nil' "$child_tab_opening")"
+contract_count="$(guard_count_matches 'isExtensionOriginated[[:space:]]*==[[:space:]]*false[[:space:]]*\|\|[[:space:]]*extensionTabs[[:space:]]*!=[[:space:]]*nil' "$child_tab_settlement")"
 if (( contract_count == 0 )); then
   guard_record_failure "extension WebKit child opening must require a registrar before mutation"
+fi
+child_admission_line="$(
+  guard_capture_matches 'let admission = settlement\.admit' "$child_tab_opening" \
+    | cut -d: -f1
+)"
+child_creation_line="$(
+  guard_capture_matches 'let prepared = creation\.prepare' "$child_tab_opening" \
+    | cut -d: -f1
+)"
+if [[ -z "$child_admission_line" || -z "$child_creation_line" ]] \
+  || (( child_admission_line >= child_creation_line )); then
+  guard_record_failure "WebKit child settlement admission must precede model creation"
 fi
 contract_count="$(guard_count_matches 'configuration\.websiteDataStore[[:space:]]*===[[:space:]]*source\.dataStore' "$child_tab_opening")"
 if (( contract_count == 0 )); then
@@ -322,6 +343,18 @@ fi
 contract_count="$(guard_count_matches 'attachBrowserRuntime\(tabBrowserRuntime\)' "$glance_runtime")"
 if (( contract_count == 0 )); then
   guard_record_failure "Glance preview Tabs must attach the shared runtime"
+fi
+contract_count="$(guard_count_matches 'beginReferenceMutation\(' "$glance_runtime")"
+if (( contract_count != 1 )); then
+  guard_record_failure "Glance preview publication must begin one profile-reference mutation lease"
+fi
+contract_count="$(guard_count_matches 'validate\(lease,[[:space:]]*covers:[[:space:]]*referencedProfileIDs\)' "$glance_runtime")"
+if (( contract_count != 1 )); then
+  guard_record_failure "Glance preview publication must validate its exact profile-reference lease"
+fi
+contract_count="$(guard_count_matches 'endReferenceMutation\(lease\)' "$glance_runtime")"
+if (( contract_count != 1 )); then
+  guard_record_failure "Glance preview publication must close its profile-reference mutation lease"
 fi
 
 if (( status != 0 || guard_failures != 0 )); then

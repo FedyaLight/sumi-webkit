@@ -4,24 +4,16 @@ final class SplitShortcutMemberRestoreParticipants {
     private let presentation: PreparedWindowSplitPresentationSettlement
     private let retirement: ReversibleShortcutLiveTabRetirement?
     private let topology: SplitGroupReplacementReceipt
-    private let publication: SplitShortcutMemberRestorePublication
     private var state = SplitShortcutMemberRestoreParticipantState.prepared
 
     init(
         presentation: PreparedWindowSplitPresentationSettlement,
         retirement: ReversibleShortcutLiveTabRetirement?,
-        topology: SplitGroupReplacementReceipt,
-        retirementService: ShortcutLiveTabRetirementService
+        topology: SplitGroupReplacementReceipt
     ) {
         self.presentation = presentation
         self.retirement = retirement
         self.topology = topology
-        publication = SplitShortcutMemberRestorePublication(
-            presentation: presentation,
-            retirement: retirement,
-            topology: topology,
-            retirementService: retirementService
-        )
     }
 
     func stage() -> StageOutcome {
@@ -89,7 +81,7 @@ final class SplitShortcutMemberRestoreParticipants {
             return false
         }
         state = .terminalEffectsClaimed
-        return publication.claim()
+        return true
     }
 
     func publishObservableModel() {
@@ -97,14 +89,14 @@ final class SplitShortcutMemberRestoreParticipants {
             preconditionFailure("Split restore terminal effects were not claimed")
         }
         state = .terminal
-        publication.publishObservableModel()
+        presentation.publishAdmittedModel()
     }
 
     func publishTerminalEffects() {
         guard case .terminal = state else {
             preconditionFailure("Split restore terminal effects were not claimed")
         }
-        publication.publishTerminalEffects()
+        presentation.publishTerminalEffects()
     }
 
     func rollbackModel() -> Bool {

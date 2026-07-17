@@ -6,11 +6,6 @@ import WebKit
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionRuntimeDemandCoordinator {
-    private enum Admission {
-        case existingDemand
-        case explicitRuntime
-    }
-
     private let installedExtensions: InstalledExtensionCollection
     private let profileRuntime: ExtensionProfileRuntime
     private let runtimeLifecycle: ExtensionRuntimeLifecycleAuthority
@@ -63,7 +58,7 @@ final class ExtensionRuntimeDemandCoordinator {
 
     private func request(
         reason: ExtensionRuntimeDemandReason,
-        admission: Admission,
+        admission: ExtensionRuntimeDemandAdmission,
         profileId explicitProfileID: UUID?
     ) -> WKWebExtensionController? {
         PerformanceTrace.emitEvent("ExtensionManager.lazyRuntimeRequested")
@@ -89,9 +84,10 @@ final class ExtensionRuntimeDemandCoordinator {
             runtimeDemand.recordRuntimeDemandWithoutEnabledExtensions()
         }
 
-        let controller = controllerProvisioning.ensureExtensionController(
-            for: resolvedProfileID
-        )
+        guard let controller = controllerProvisioning.controllerIfAdmitted(
+            for: resolvedProfileID,
+            mutationLease: nil
+        ) else { return nil }
         let readiness = profileRuntime.readinessContext(
             for: resolvedProfileID,
             hasEnabledExtensionDemand: enabledExtensionIDs.isEmpty == false,

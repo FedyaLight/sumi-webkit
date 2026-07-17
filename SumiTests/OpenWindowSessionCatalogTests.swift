@@ -6,95 +6,70 @@ import XCTest
 final class OpenWindowSessionCatalogTests: XCTestCase {
     func testRegularWindowSnapshotsFilterIncognitoWindows() {
         let regularWindow = BrowserWindowState()
+        regularWindow.currentTabId = UUID()
         let incognitoWindow = BrowserWindowState()
         incognitoWindow.isIncognito = true
-        let regularSession = makeSessionRecoveryWindowSession(currentTabId: UUID())
-        let sessions = [
-            regularWindow.id: regularSession,
-            incognitoWindow.id: makeSessionRecoveryWindowSession(currentTabId: UUID()),
-        ]
-        let catalog = makeCatalog(
-            windows: [regularWindow, incognitoWindow],
-            sessions: sessions
-        )
+        incognitoWindow.currentTabId = UUID()
+        let catalog = makeCatalog(windows: [regularWindow, incognitoWindow])
 
         XCTAssertEqual(
             catalog.regularWindowSnapshots(excludingWindowID: nil),
-            [LastSessionWindowSnapshot(id: regularWindow.id, session: regularSession)]
+            [snapshot(of: regularWindow)]
         )
     }
 
     func testRegularWindowSnapshotsExcludeExactWindowID() {
         let excludedWindow = BrowserWindowState()
         let survivingWindow = BrowserWindowState()
-        let survivingSession = makeSessionRecoveryWindowSession(currentTabId: UUID())
-        let sessions = [
-            excludedWindow.id: makeSessionRecoveryWindowSession(currentTabId: UUID()),
-            survivingWindow.id: survivingSession,
-        ]
-        let catalog = makeCatalog(
-            windows: [excludedWindow, survivingWindow],
-            sessions: sessions
-        )
+        survivingWindow.currentTabId = UUID()
+        let catalog = makeCatalog(windows: [excludedWindow, survivingWindow])
 
         XCTAssertEqual(
             catalog.regularWindowSnapshots(excludingWindowID: excludedWindow.id),
-            [LastSessionWindowSnapshot(id: survivingWindow.id, session: survivingSession)]
+            [snapshot(of: survivingWindow)]
         )
     }
 
     func testRegularWindowSnapshotsMapEveryWindowToItsExactSession() {
         let firstWindow = BrowserWindowState()
         let secondWindow = BrowserWindowState()
-        let firstSession = makeSessionRecoveryWindowSession(currentTabId: UUID())
-        let secondSession = makeSessionRecoveryWindowSession(currentTabId: UUID())
-        let catalog = makeCatalog(
-            windows: [firstWindow, secondWindow],
-            sessions: [
-                firstWindow.id: firstSession,
-                secondWindow.id: secondSession,
-            ]
-        )
+        firstWindow.currentTabId = UUID()
+        secondWindow.currentSpaceId = UUID()
+        let catalog = makeCatalog(windows: [firstWindow, secondWindow])
 
         XCTAssertEqual(
             catalog.regularWindowSnapshots(excludingWindowID: nil),
             [
-                LastSessionWindowSnapshot(id: firstWindow.id, session: firstSession),
-                LastSessionWindowSnapshot(id: secondWindow.id, session: secondSession),
+                snapshot(of: firstWindow),
+                snapshot(of: secondWindow),
             ]
         )
     }
 
-    func testWindowWithoutSnapshotProducesNoElement() {
-        let mappableWindow = BrowserWindowState()
-        let unmappableWindow = BrowserWindowState()
-        let mappableSession = makeSessionRecoveryWindowSession(currentTabId: UUID())
-        let catalog = makeCatalog(
-            windows: [mappableWindow, unmappableWindow],
-            sessions: [mappableWindow.id: mappableSession]
-        )
+    func testContainsRegularWindowRequiresExactRegisteredIdentity() {
+        let registeredWindow = BrowserWindowState()
+        let staleSameIDWindow = BrowserWindowState(id: registeredWindow.id)
+        let catalog = makeCatalog(windows: [registeredWindow])
 
-        XCTAssertEqual(
-            catalog.regularWindowSnapshots(excludingWindowID: nil),
-            [LastSessionWindowSnapshot(id: mappableWindow.id, session: mappableSession)]
-        )
-        XCTAssertNil(catalog.snapshot(of: unmappableWindow))
-        XCTAssertEqual(catalog.snapshot(of: mappableWindow), mappableSession)
+        XCTAssertTrue(catalog.containsRegularWindow(registeredWindow))
+        XCTAssertFalse(catalog.containsRegularWindow(staleSameIDWindow))
     }
 
     func testRestoredWindowPublishesStableArchiveIdentityAfterSessionMutation() {
         let archivedWindowID = UUID()
         let restoredWindow = BrowserWindowState()
         restoredWindow.restorationState.restoredSessionWindowID = archivedWindowID
-        let mutatedSession = makeSessionRecoveryWindowSession(currentTabId: UUID())
-        let catalog = makeCatalog(
-            windows: [restoredWindow],
-            sessions: [restoredWindow.id: mutatedSession]
-        )
+        restoredWindow.currentTabId = UUID()
+        let catalog = makeCatalog(windows: [restoredWindow])
 
         XCTAssertEqual(
             catalog.regularWindowSnapshots(excludingWindowID: nil),
-            [LastSessionWindowSnapshot(id: archivedWindowID, session: mutatedSession)]
+            [
+                LastSessionWindowSnapshot(
+                    id: archivedWindowID,
+                    session: snapshotFactory.make(for: restoredWindow)
+                ),
+            ]
         )
     }
 
@@ -113,8 +88,7 @@ final class OpenWindowSessionCatalogTests: XCTestCase {
         )
         incognitoWindow.isIncognito = true
         let catalog = makeCatalog(
-            windows: [laterWindow, incognitoWindow, excludedWindow, expectedWindow],
-            sessions: [:]
+            windows: [laterWindow, incognitoWindow, excludedWindow, expectedWindow]
         )
 
         XCTAssertIdentical(
@@ -125,13 +99,25 @@ final class OpenWindowSessionCatalogTests: XCTestCase {
         )
     }
 
-    private func makeCatalog(
-        windows: [BrowserWindowState],
-        sessions: [UUID: WindowSessionSnapshot]
-    ) -> OpenWindowSessionCatalog {
-        OpenWindowSessionCatalog(
-            allWindows: { windows },
-            makeWindowSessionSnapshot: { sessions[$0.id] }
+    private var snapshotFactory: WindowSessionSnapshotFactory {
+        WindowSessionSnapshotFactory(glanceManager: GlanceManager())
+    }
+
+    private func snapshot(of window: BrowserWindowState) -> LastSessionWindowSnapshot {
+        LastSessionWindowSnapshot(
+            id: window.restorationState.restoredSessionWindowID ?? window.id,
+            session: snapshotFactory.make(for: window)
+        )
+    }
+
+    private func makeCatalog(windows: [BrowserWindowState]) -> OpenWindowSessionCatalog {
+        let registry = WindowRegistry()
+        windows.forEach { window in
+            _ = registry.register(window)
+        }
+        return OpenWindowSessionCatalog(
+            windows: registry,
+            snapshots: snapshotFactory
         )
     }
 }

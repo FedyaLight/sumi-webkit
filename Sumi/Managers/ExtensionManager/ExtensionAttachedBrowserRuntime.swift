@@ -15,6 +15,7 @@ struct ExtensionAttachedBrowserRuntime {
     let optionsComposer: ExtensionOptionsWindowCallbackComposer
     let profileQuery: ExtensionBrowserProfileQuery
     let websiteDataAdmission: ExtensionWebsiteDataMutationAdmission
+    let browserRoutes: ExtensionControllerBrowserRouteInstaller
 }
 
 #if DEBUG

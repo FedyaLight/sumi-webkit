@@ -51,7 +51,7 @@ protocol TabWebViewRetirementParticipant: AnyObject {
 
 /// Typed profile transition boundary. Model staging and WebView replacement
 /// are one transaction behind this participant, not independently ordered
-/// callback slots on the TabManager facade.
+/// independently ordered callback slots on a manager facade.
 @MainActor
 protocol TabWebViewProfileTransitionParticipant: AnyObject {
     func abortProfileTransitions(profileIDs: Set<UUID>) -> Int
@@ -84,7 +84,7 @@ protocol SpaceProfileWebViewReplacementTransaction:
     func exactTabsForRuntime() -> [Tab]?
 }
 
-/// Stable TabManager-facing facade over four cohesive WebView runtime roles.
+/// Stable tab-session facade over four cohesive WebView runtime roles.
 /// It deliberately contains no independently injectable effect callbacks.
 @MainActor
 struct TabManagerWebViewLifecycleService {

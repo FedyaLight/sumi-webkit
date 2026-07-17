@@ -20,60 +20,34 @@ struct SpaceLauncherProjectionSnapshot {
 
 @MainActor
 final class SpaceLauncherProjectionService {
-    private let regularTabs: @MainActor (UUID) -> [Tab]
-    private let spacePinnedPins: @MainActor (UUID) -> [ShortcutPin]
-    private let folders: @MainActor (UUID) -> [TabFolder]
-    private let shortcutHostedSplitGroups: @MainActor (UUID) -> [SplitGroup]
-    private let liveShortcutTabs: @MainActor (UUID) -> [Tab]
-    private let transientShortcutTabsByWindow: @MainActor () -> [UUID: [UUID: Tab]]
+    private let regularTabs: RegularTabCollectionStateOwner
+    private let pins: ShortcutPinCollectionStateOwner
+    private let folders: TabFolderCollectionStateOwner
+    private let splitOrdering: SplitGroupSidebarOrderingService
+    private let transientTabs: TabTransientTabRegistryOwner
 
     init(
-        regularTabs: @escaping @MainActor (UUID) -> [Tab],
-        spacePinnedPins: @escaping @MainActor (UUID) -> [ShortcutPin],
-        folders: @escaping @MainActor (UUID) -> [TabFolder],
-        shortcutHostedSplitGroups: @escaping @MainActor (UUID) -> [SplitGroup],
-        liveShortcutTabs: @escaping @MainActor (UUID) -> [Tab],
-        transientShortcutTabsByWindow: @escaping @MainActor () -> [UUID: [UUID: Tab]]
+        regularTabs: RegularTabCollectionStateOwner,
+        pins: ShortcutPinCollectionStateOwner,
+        folders: TabFolderCollectionStateOwner,
+        splitOrdering: SplitGroupSidebarOrderingService,
+        transientTabs: TabTransientTabRegistryOwner
     ) {
         self.regularTabs = regularTabs
-        self.spacePinnedPins = spacePinnedPins
+        self.pins = pins
         self.folders = folders
-        self.shortcutHostedSplitGroups = shortcutHostedSplitGroups
-        self.liveShortcutTabs = liveShortcutTabs
-        self.transientShortcutTabsByWindow = transientShortcutTabsByWindow
-    }
-
-    convenience init(tabManager: TabManager) {
-        self.init(
-            regularTabs: { [weak tabManager] spaceId in
-                tabManager?.regularTabCollectionOwner.tabs(in: spaceId) ?? []
-            },
-            spacePinnedPins: { [weak tabManager] spaceId in
-                tabManager?.shortcutPinCollectionStateOwner.spacePinnedPins(for: spaceId) ?? []
-            },
-            folders: { [weak tabManager] spaceId in
-                tabManager?.folderCollectionStateOwner.folders(for: spaceId) ?? []
-            },
-            shortcutHostedSplitGroups: { [weak tabManager] spaceId in
-                tabManager?.splitGroupSidebarOrdering.groups(for: spaceId) ?? []
-            },
-            liveShortcutTabs: { [weak tabManager] windowId in
-                tabManager?.shortcutPresentationOwner.liveShortcutTabs(in: windowId) ?? []
-            },
-            transientShortcutTabsByWindow: { [weak tabManager] in
-                tabManager?.transientTabRegistryOwner.transientShortcutTabsByWindow ?? [:]
-            }
-        )
+        self.splitOrdering = splitOrdering
+        self.transientTabs = transientTabs
     }
 
     func projection(
         for spaceId: UUID,
         in windowId: UUID? = nil
     ) -> SpaceLauncherProjectionSnapshot {
-        let projectedRegularTabs = regularTabs(spaceId)
-        let persistedPins = spacePinnedPins(spaceId)
+        let projectedRegularTabs = regularTabs.tabs(in: spaceId)
+        let persistedPins = pins.spacePinnedPins(for: spaceId)
         let shortcutHostedHiddenPinIds = Set(
-            shortcutHostedSplitGroups(spaceId).flatMap { group in
+            splitOrdering.groups(for: spaceId).flatMap { group in
                 group.memberIDs.compactMap { memberID -> UUID? in
                     guard case .shortcutPin(let pinID) = memberID else {
                         return nil
@@ -83,7 +57,7 @@ final class SpaceLauncherProjectionService {
             }
         )
         let visiblePersistedPins = persistedPins.filter { !shortcutHostedHiddenPinIds.contains($0.id) }
-        let spaceFolders = folders(spaceId)
+        let spaceFolders = folders.folders(for: spaceId)
         let topLevelFolders = spaceFolders.sorted { lhs, rhs in
             if lhs.index != rhs.index { return lhs.index < rhs.index }
             return lhs.id.uuidString < rhs.id.uuidString
@@ -116,9 +90,11 @@ final class SpaceLauncherProjectionService {
 
         let candidateLiveTabs: [Tab]
         if let windowId {
-            candidateLiveTabs = liveShortcutTabs(windowId)
+            candidateLiveTabs = transientTabs
+                .transientShortcutTabsByWindow[windowId]
+                .map { Array($0.values) } ?? []
         } else {
-            candidateLiveTabs = transientShortcutTabsByWindow().values
+            candidateLiveTabs = transientTabs.transientShortcutTabsByWindow.values
                 .flatMap(\.values)
         }
 

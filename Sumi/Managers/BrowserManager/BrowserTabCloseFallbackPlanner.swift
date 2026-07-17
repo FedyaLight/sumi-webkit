@@ -3,15 +3,19 @@ import Foundation
 @MainActor
 final class BrowserTabCloseFallbackPlanner {
     private let selectionService: ShellSelectionService
+    private let tabStore: any ShellSelectionTabStore
 
-    init(selectionService: ShellSelectionService) {
+    init(
+        selectionService: ShellSelectionService,
+        tabStore: any ShellSelectionTabStore
+    ) {
         self.selectionService = selectionService
+        self.tabStore = tabStore
     }
 
     func fallbackAfterClosingRegularTab(
         _ tab: Tab,
-        in windowState: BrowserWindowState,
-        tabStore: ShellSelectionTabStore
+        in windowState: BrowserWindowState
     ) -> Tab? {
         let targetSpaceId = tab.spaceId ?? windowState.currentSpaceId
         guard let targetSpaceId,
@@ -61,8 +65,7 @@ final class BrowserTabCloseFallbackPlanner {
 
     func fallbackAfterClosingShortcutLiveTab(
         _ tab: Tab,
-        in windowState: BrowserWindowState,
-        tabStore: ShellSelectionTabStore
+        in windowState: BrowserWindowState
     ) -> Tab? {
         historicalFallbackTab(
             afterClosing: tab,

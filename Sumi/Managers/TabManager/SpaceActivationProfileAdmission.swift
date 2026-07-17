@@ -5,8 +5,6 @@ import Foundation
 /// their committed settlement arrives.
 @MainActor
 final class SpaceActivationProfileAdmission {
-    typealias ProfileIDs = (current: UUID?, default: UUID?)
-
     @MainActor
     private final class AssignmentHandoff {
         private let retry: @MainActor () -> Void
@@ -32,27 +30,19 @@ final class SpaceActivationProfileAdmission {
         }
     }
 
-    private let profileIDs: @MainActor () -> ProfileIDs
-    private let assignSpaceProfile: @MainActor (
-        UUID,
-        UUID,
-        @escaping ProfileTransitionService.Settlement
-    ) -> TabProfileAssignmentExecutionOutcome
+    private let runtimeConnection: TabRuntimePortConnection
+    private let profileTransitions: SpaceProfileTransitionService
 
     init(
-        profileIDs: @escaping @MainActor () -> ProfileIDs,
-        assignSpaceProfile: @escaping @MainActor (
-            UUID,
-            UUID,
-            @escaping ProfileTransitionService.Settlement
-        ) -> TabProfileAssignmentExecutionOutcome
+        runtimeConnection: TabRuntimePortConnection,
+        profileTransitions: SpaceProfileTransitionService
     ) {
-        self.profileIDs = profileIDs
-        self.assignSpaceProfile = assignSpaceProfile
+        self.runtimeConnection = runtimeConnection
+        self.profileTransitions = profileTransitions
     }
 
     var currentProfileID: UUID? {
-        profileIDs().current
+        runtimeConnection.captureLease().currentProfileID
     }
 
     func admit(
@@ -60,7 +50,8 @@ final class SpaceActivationProfileAdmission {
         retry: @escaping @MainActor () -> Void
     ) -> Bool {
         guard space.profileId == nil else { return true }
-        guard let profileID = profileIDs().default else {
+        let runtimeLease = runtimeConnection.captureLease()
+        guard let profileID = runtimeLease.defaultProfileID else {
             RuntimeDiagnostics.debug(
                 "No profiles available to assign to a space switch target; reconciliation deferred.",
                 category: "SpaceActivation"
@@ -69,9 +60,14 @@ final class SpaceActivationProfileAdmission {
         }
 
         let handoff = AssignmentHandoff(retry: retry)
-        let outcome = assignSpaceProfile(space.id, profileID) { settlement in
-            handoff.receive(settlement)
+        guard runtimeConnection.acceptsExactAttachment(runtimeLease) else {
+            return false
         }
+        let outcome = profileTransitions.start(
+            spaceID: space.id,
+            profileID: profileID,
+            settlementObserver: handoff.receive
+        )
         handoff.markAssignmentReturned()
 
         switch outcome {

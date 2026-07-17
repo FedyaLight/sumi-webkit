@@ -1,4 +1,3 @@
-import SwiftData
 import WebKit
 import XCTest
 
@@ -554,7 +553,7 @@ final class WindowSessionRegistrationTests: XCTestCase {
         fixture.registration.prepareRegistration(windowState)
 
         XCTAssertTrue(fixture.extensions.openedWindowIDs.isEmpty)
-        XCTAssertIdentical(windowState.tabManager, fixture.tabManager)
+        XCTAssertNil(windowState.tabResidenceSessionIdentity)
 
         fixture.registration.commitRegistration(windowState)
 
@@ -578,7 +577,6 @@ final class WindowSessionRegistrationTests: XCTestCase {
         ephemeralSpace.isEphemeral = true
         let ephemeralTabID = UUID()
         windowState.isIncognito = true
-        windowState.tabManager = fixture.tabManager
         windowState.ephemeralProfile = ephemeralProfile
         windowState.replaceEphemeralSpaces([ephemeralSpace])
         windowState.currentProfileId = ephemeralProfile.id
@@ -611,8 +609,8 @@ final class WindowSessionRegistrationTests: XCTestCase {
             [firstWindow, secondWindow]
         )
 
-        XCTAssertIdentical(firstWindow.tabManager, fixture.tabManager)
-        XCTAssertIdentical(secondWindow.tabManager, fixture.tabManager)
+        XCTAssertNil(firstWindow.tabResidenceSessionIdentity)
+        XCTAssertNil(secondWindow.tabResidenceSessionIdentity)
         XCTAssertEqual(firstWindow.currentProfileId, profile.id)
         XCTAssertEqual(secondWindow.currentProfileId, profile.id)
         XCTAssertEqual(firstWindow.currentSpaceId, space.id)
@@ -715,13 +713,14 @@ final class WindowSessionRegistrationTests: XCTestCase {
         let activation = BrowserWindowActivationService(
             sidebarPresentation: browserManager.chromeBundle
                 .sidebarPresentationOwner,
-            persistence: browserManager.windowSessionBundle.persistence,
+            persistence: browserManager.windowSessionPersistenceCoordinator,
             activePageResolver: browserManager.shellRuntime.activePageResolver,
             findManager: browserManager.findManager,
             extensions: extensions,
-            synchronizeFocusedContext: { _ in
-                // Focus-context behavior is covered independently.
-            },
+            focusedContext: BrowserWindowFocusedContextSynchronizer(
+                windowState: browserManager.windowStateReconciler,
+                profileAdoption: browserManager.profileAdoption
+            ),
             nowPlaying: browserManager.nativeNowPlayingController,
             backgroundMedia: browserManager
                 .backgroundMediaOptimizationService
@@ -748,7 +747,7 @@ final class WindowSessionRegistrationTests: XCTestCase {
         currentProfile: Profile? = nil,
         snapshot: WindowSessionSnapshot? = nil
     ) throws -> RegistrationFixture {
-        let tabManager = try makeInMemoryTabManager(loadPersistedState: false)
+        let tabManager = BrowserManager()
         let sessionKey = "SumiTests.registration.\(UUID().uuidString)"
         if let snapshot {
             XCTAssertTrue(
@@ -758,12 +757,15 @@ final class WindowSessionRegistrationTests: XCTestCase {
         addTeardownBlock {
             UserDefaults.standard.removeObject(forKey: sessionKey)
         }
-        let restoreDelegate = TestWindowSessionDelegate(tabManager: tabManager)
+        let restoreDelegate = TestWindowSessionDelegate(
+            runtime: tabManager,
+            windowRegistry: tabManager.windowRegistry
+        )
         let restoreService = restoreDelegate.makeRestoreService(
             lastWindowSessionKey: sessionKey
         )
-        let profileSupport = try RegistrationProfileSupport(
-            currentProfile: currentProfile
+        let currentProfileAuthority = BrowserCurrentProfileAuthority(
+            currentProfile
         )
         let extensions = RecordingWindowExtensionLifecycle()
         let startup = RecordingStartupSessionReconciler()
@@ -774,14 +776,13 @@ final class WindowSessionRegistrationTests: XCTestCase {
         let registration = BrowserWindowSessionRestorationService(
             restoration: restoreService,
             extensionPublication: extensionPublication,
-            profileSupport: profileSupport,
+            currentProfile: currentProfileAuthority,
             startupSessions: startup
         )
         return RegistrationFixture(
             tabManager: tabManager,
             restoreDelegate: restoreDelegate,
             restoreService: restoreService,
-            profileSupport: profileSupport,
             extensions: extensions,
             extensionPublication: extensionPublication,
             startup: startup,
@@ -823,10 +824,9 @@ final class WindowSessionRegistrationTests: XCTestCase {
 
 @MainActor
 private struct RegistrationFixture {
-    let tabManager: TabManager
+    let tabManager: BrowserManager
     let restoreDelegate: TestWindowSessionDelegate
     let restoreService: WindowSessionRestoreService
-    let profileSupport: RegistrationProfileSupport
     let extensions: RecordingWindowExtensionLifecycle
     let extensionPublication: WindowExtensionPublicationTransaction
     let startup: RecordingStartupSessionReconciler
@@ -999,28 +999,5 @@ private final class RecordingStartupSessionReconciler:
 
     func reconcileStartupSessionIfPossible() {
         reconcileCallCount += 1
-    }
-}
-
-@MainActor
-private final class RegistrationProfileSupport: SumiProfileRoutingSupport {
-    let currentProfile: Profile?
-    let profileManager: ProfileManager
-    let windowRegistry: WindowRegistry? = nil
-    private let container: ModelContainer
-
-    init(currentProfile: Profile?) throws {
-        self.currentProfile = currentProfile
-        container = try makeInMemoryStartupModelContainer()
-        profileManager = ProfileManager(context: container.mainContext)
-        profileManager.profiles = currentProfile.map { [$0] } ?? []
-    }
-
-    func switchToProfile(
-        _: Profile,
-        context _: BrowserManager.ProfileSwitchContext,
-        in _: BrowserWindowState?
-    ) async {
-        // Registration tests never perform a process-wide profile switch.
     }
 }

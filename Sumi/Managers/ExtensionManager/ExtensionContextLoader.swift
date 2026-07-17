@@ -58,21 +58,29 @@ final class ExtensionContextLoader {
         ) else {
             throw CancellationError()
         }
-        try validate(request)
+        guard let profileAdmission = profileRuntime.admitProfileReference(
+            to: request.profileId
+        ) else { throw CancellationError() }
+        try validate(request, profileAdmission: profileAdmission)
         guard await waitForWebsiteDataMutationAdmission(request.profileId) else {
             throw CancellationError()
         }
-        try validate(request)
+        try validate(request, profileAdmission: profileAdmission)
 
-        let controller = controllerProvisioning.ensureExtensionController(
-            for: request.profileId
-        )
+        guard let controller = controllerProvisioning.controllerIfAdmitted(
+            for: request.profileId,
+            mutationLease: nil
+        ) else { throw CancellationError() }
         guard let controllerBinding = profileRuntime.controllerBindingSnapshot(
             for: request.profileId
         ), controllerBinding.controller === controller else {
             throw CancellationError()
         }
-        try validateController(controllerBinding, request: request)
+        try validateController(
+            controllerBinding,
+            request: request,
+            profileAdmission: profileAdmission
+        )
 
         let webExtensionStart = CFAbsoluteTimeGetCurrent()
         let source = try await sourceCache.resolve(
@@ -83,11 +91,19 @@ final class ExtensionContextLoader {
             claim: request.claim,
             mutationLease: request.mutationLease
         )
-        try validateController(controllerBinding, request: request)
+        try validateController(
+            controllerBinding,
+            request: request,
+            profileAdmission: profileAdmission
+        )
         guard await waitForWebsiteDataMutationAdmission(request.profileId) else {
             throw CancellationError()
         }
-        try validateController(controllerBinding, request: request)
+        try validateController(
+            controllerBinding,
+            request: request,
+            profileAdmission: profileAdmission
+        )
 
         diagnostics.traceNativeMessagingContextBinding(
             phase: request.operation.webExtensionCreatedPhase,
@@ -113,7 +129,11 @@ final class ExtensionContextLoader {
             webExtension: source.webExtension,
             request: request
         )
-        try validateController(controllerBinding, request: request)
+        try validateController(
+            controllerBinding,
+            request: request,
+            profileAdmission: profileAdmission
+        )
         diagnostics.traceNativeMessagingContextBinding(
             phase: request.operation.contextPreparedPhase,
             extensionId: request.extensionId,
@@ -131,7 +151,11 @@ final class ExtensionContextLoader {
             controller: controller,
             planner: storagePlanner
         )
-        try validateController(controllerBinding, request: request)
+        try validateController(
+            controllerBinding,
+            request: request,
+            profileAdmission: profileAdmission
+        )
         storage.prepare()
         storage.traceLifecycle(
             phase: request.operation.beforeControllerLoadStorePhase,
@@ -141,7 +165,11 @@ final class ExtensionContextLoader {
             ),
             diagnostics: diagnostics
         )
-        try validateController(controllerBinding, request: request)
+        try validateController(
+            controllerBinding,
+            request: request,
+            profileAdmission: profileAdmission
+        )
 
         let loaded = try controllerTransaction.load(
             context: prepared.context,
@@ -149,7 +177,8 @@ final class ExtensionContextLoader {
             loadSource: source.loadSource,
             controllerBinding: controllerBinding,
             storage: storage,
-            request: request
+            request: request,
+            profileAdmission: profileAdmission
         )
         if request.operation.emitsLoadedTrace {
             diagnostics.trace(
@@ -166,11 +195,22 @@ final class ExtensionContextLoader {
         )
     }
 
-    private func validateController(
-        _ snapshot: ExtensionControllerBindingSnapshot,
-        request: ExtensionContextLoadRequest
+    private func validate(
+        _ request: ExtensionContextLoadRequest,
+        profileAdmission: ProfileReferenceAdmissionReceipt
     ) throws {
         try validate(request)
+        guard profileAdmission.profileID == request.profileId,
+              profileRuntime.validateProfileReference(profileAdmission)
+        else { throw CancellationError() }
+    }
+
+    private func validateController(
+        _ snapshot: ExtensionControllerBindingSnapshot,
+        request: ExtensionContextLoadRequest,
+        profileAdmission: ProfileReferenceAdmissionReceipt
+    ) throws {
+        try validate(request, profileAdmission: profileAdmission)
         guard snapshot.profileID == request.claim.key.profileId,
               profileRuntime.isCurrent(snapshot)
         else {

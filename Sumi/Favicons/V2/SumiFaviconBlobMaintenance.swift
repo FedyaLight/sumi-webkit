@@ -34,8 +34,8 @@ final class SumiFaviconBlobMaintenance: @unchecked Sendable {
         }.flatMap(\.self)
     }
 
-    func clearPartition(_ partition: SumiFaviconPartition) {
-        transaction.clearPartition(partition)
+    func clearPartition(_ partition: SumiFaviconPartition) throws {
+        try transaction.clearPartition(partition)
     }
 
     func burnAfterHistoryClear(

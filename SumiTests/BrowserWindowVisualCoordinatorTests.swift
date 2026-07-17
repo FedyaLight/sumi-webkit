@@ -1,3 +1,5 @@
+import AppKit
+import WebKit
 import XCTest
 
 @testable import Sumi
@@ -5,122 +7,185 @@ import XCTest
 @MainActor
 final class BrowserWindowVisualCoordinatorTests: XCTestCase {
     func testRefreshCompositorDefersDuringTabBackForwardNavigationUntilFlush() async {
-        let windowState = BrowserWindowState()
-        let tab = Tab()
-        tab.navigationRuntime.navigationTransactionOwner.pendingMainFrameNavigationKind = .backForward
-        let owner = makeOwner(currentTab: { tab })
+        let fixture = VisualFixture()
+        fixture.tab.navigationRuntime.navigationTransactionOwner
+            .pendingMainFrameNavigationKind = .backForward
 
-        owner.refreshCompositor(for: windowState)
+        fixture.visuals.refreshCompositor(for: fixture.window)
         await drainMainQueue()
 
-        XCTAssertEqual(windowState.compositorInvalidation.compositorVersion, 0)
+        XCTAssertEqual(fixture.window.compositorInvalidation.compositorVersion, 0)
 
-        owner.flushWindowMutationsAfterHistorySwipe(in: windowState.id)
+        fixture.tab.navigationRuntime.navigationTransactionOwner
+            .pendingMainFrameNavigationKind = nil
+        fixture.visuals.flushWindowMutationsAfterHistorySwipe(in: fixture.window.id)
         await drainMainQueue()
 
-        XCTAssertEqual(windowState.compositorInvalidation.compositorVersion, 1)
+        XCTAssertEqual(fixture.window.compositorInvalidation.compositorVersion, 1)
     }
 
     func testRefreshCompositorDefersDuringFrozenBackForwardNavigationUntilFlush() async {
-        let windowState = BrowserWindowState()
-        let tab = Tab()
-        tab.navigationRuntime.navigationTransactionOwner.isFreezingNavDuringBackForwardGesture = true
-        let owner = makeOwner(currentTab: { tab })
+        let fixture = VisualFixture()
+        fixture.tab.navigationRuntime.navigationTransactionOwner
+            .isFreezingNavDuringBackForwardGesture = true
 
-        owner.refreshCompositor(for: windowState)
+        fixture.visuals.refreshCompositor(for: fixture.window)
         await drainMainQueue()
 
-        XCTAssertEqual(windowState.compositorInvalidation.compositorVersion, 0)
+        XCTAssertEqual(fixture.window.compositorInvalidation.compositorVersion, 0)
 
-        owner.flushWindowMutationsAfterHistorySwipe(in: windowState.id)
+        fixture.tab.navigationRuntime.navigationTransactionOwner
+            .isFreezingNavDuringBackForwardGesture = false
+        fixture.visuals.flushWindowMutationsAfterHistorySwipe(in: fixture.window.id)
         await drainMainQueue()
 
-        XCTAssertEqual(windowState.compositorInvalidation.compositorVersion, 1)
+        XCTAssertEqual(fixture.window.compositorInvalidation.compositorVersion, 1)
     }
 
-    func testSchedulePrepareVisibleWebViewsDefersDuringActiveHistorySwipeAndFlushesBeforeRefresh() async {
-        let windowState = BrowserWindowState()
-        var hasActiveHistorySwipe = true
-        var events: [String] = []
-        let owner = makeOwner(
-            hasActiveHistorySwipe: { hasActiveHistorySwipe },
-            prepareVisibleWebViews: {
-                events.append("prepare")
-                return true
-            },
-            schedulePrepareVisibleWebViews: { _ in
-                events.append("schedule")
-            }
+    func testSchedulePrepareVisibleWebViewsDefersDuringActiveHistorySwipe() async {
+        let fixture = VisualFixture()
+        let webView = fixture.beginHistorySwipe()
+        let initialVersion = fixture.window.compositorInvalidation.compositorVersion
+
+        fixture.visuals.schedulePrepareVisibleWebViews(for: fixture.window)
+        await drainMainQueue()
+
+        XCTAssertEqual(
+            fixture.window.compositorInvalidation.compositorVersion,
+            initialVersion
         )
 
-        owner.schedulePrepareVisibleWebViews(for: windowState)
+        _ = fixture.browser.webViewRuntime.protectionRuntime.finishHistorySwipe(
+            tabID: fixture.tab.id,
+            webView: webView,
+            currentURL: nil,
+            currentHistoryItem: nil
+        )
+        fixture.visuals.flushWindowMutationsAfterHistorySwipe(in: fixture.window.id)
         await drainMainQueue()
 
-        XCTAssertEqual(events, [])
-        XCTAssertEqual(windowState.compositorInvalidation.compositorVersion, 0)
-
-        hasActiveHistorySwipe = false
-        owner.flushWindowMutationsAfterHistorySwipe(in: windowState.id)
-        await drainMainQueue()
-
-        XCTAssertEqual(events, ["prepare"])
-        XCTAssertEqual(windowState.compositorInvalidation.compositorVersion, 1)
+        XCTAssertGreaterThan(
+            fixture.window.compositorInvalidation.compositorVersion,
+            initialVersion
+        )
     }
 
     func testImmediateVisualHandoffReturnsFalseDuringActiveHistorySwipe() {
-        let owner = makeOwner(
-            hasActiveHistorySwipe: { true },
-            performImmediateVisualHandoffIfPossible: {
-                XCTFail("Handoff should not be attempted during an active history swipe")
+        let fixture = VisualFixture()
+        let webView = fixture.beginHistorySwipe()
+        defer {
+            _ = fixture.browser.webViewRuntime.protectionRuntime.finishHistorySwipe(
+                tabID: fixture.tab.id,
+                webView: webView,
+                currentURL: nil,
+                currentHistoryItem: nil
+            )
+        }
+        fixture.browser.webViewRuntime.compositorRuntime.registerContainer(
+            NSView(),
+            for: fixture.window.id,
+            immediateVisualHandoffHandler: {
+                XCTFail("Handoff should not run during an active history swipe")
                 return true
             }
         )
 
-        XCTAssertFalse(owner.performImmediateVisualHandoffIfPossible(in: BrowserWindowState()))
+        XCTAssertFalse(
+            fixture.visuals.performImmediateVisualHandoffIfPossible(
+                in: fixture.window
+            )
+        )
     }
 
-    func testSchedulePrepareVisibleWebViewsRunsImmediatelyWhenGestureInactive() {
-        let windowState = BrowserWindowState()
-        var scheduledWindowIds: [UUID] = []
-        let owner = makeOwner(
-            schedulePrepareVisibleWebViews: {
-                scheduledWindowIds.append($0.id)
+    func testImmediateVisualHandoffUsesExactCompositorRegistration() {
+        let fixture = VisualFixture()
+        var handoffCount = 0
+        fixture.browser.webViewRuntime.compositorRuntime.registerContainer(
+            NSView(),
+            for: fixture.window.id,
+            immediateVisualHandoffHandler: {
+                handoffCount += 1
+                return true
             }
         )
 
-        owner.schedulePrepareVisibleWebViews(for: windowState)
-
-        XCTAssertEqual(scheduledWindowIds, [windowState.id])
+        XCTAssertTrue(
+            fixture.visuals.performImmediateVisualHandoffIfPossible(
+                in: fixture.window
+            )
+        )
+        XCTAssertEqual(handoffCount, 1)
     }
 
     func testCancelDropsDeferredWindowMutation() async {
-        let windowState = BrowserWindowState()
-        let owner = makeOwner(hasActiveHistorySwipe: { true })
+        let fixture = VisualFixture()
+        fixture.tab.navigationRuntime.navigationTransactionOwner
+            .pendingMainFrameNavigationKind = .backForward
 
-        owner.refreshCompositor(for: windowState)
-        owner.cancelWindowMutationsAfterHistorySwipe(in: windowState.id)
-        owner.flushWindowMutationsAfterHistorySwipe(in: windowState.id)
+        fixture.visuals.refreshCompositor(for: fixture.window)
+        fixture.visuals.cancelWindowMutationsAfterHistorySwipe(in: fixture.window.id)
+        fixture.tab.navigationRuntime.navigationTransactionOwner
+            .pendingMainFrameNavigationKind = nil
+        fixture.visuals.flushWindowMutationsAfterHistorySwipe(in: fixture.window.id)
         await drainMainQueue()
 
-        XCTAssertEqual(windowState.compositorInvalidation.compositorVersion, 0)
+        XCTAssertEqual(fixture.window.compositorInvalidation.compositorVersion, 0)
+    }
+}
+
+@MainActor
+private final class VisualFixture {
+    let browser = BrowserManager()
+    let window = BrowserWindowState()
+    let tab: Tab
+
+    var visuals: BrowserWindowVisualCoordinator {
+        browser.shellRuntime.windowVisuals
     }
 
-    private func makeOwner(
-        hasActiveHistorySwipe: @escaping @MainActor () -> Bool = { false },
-        currentTab: @escaping @MainActor () -> Tab? = { nil },
-        performImmediateVisualHandoffIfPossible: @escaping @MainActor () -> Bool = { true },
-        prepareVisibleWebViews: @escaping @MainActor () -> Bool = { false },
-        schedulePrepareVisibleWebViews: @escaping @MainActor (BrowserWindowState) -> Void = { _ in /* No-op. */ }
-    ) -> BrowserWindowVisualCoordinator {
-        BrowserWindowVisualCoordinator(
-            hasActiveHistorySwipe: { _ in hasActiveHistorySwipe() },
-            currentTab: { _ in currentTab() },
-            performImmediateVisualHandoffIfPossible: { _ in
-                performImmediateVisualHandoffIfPossible()
-            },
-            prepareVisibleWebViews: { _ in prepareVisibleWebViews() },
-            schedulePrepareVisibleWebViews: schedulePrepareVisibleWebViews
+    init() {
+        let space = browser.spaceStateOwner.currentSpace
+            ?? installTestSpace(
+                in: browser.spaceStateOwner,
+                name: "Visual fixture"
+            )
+        tab = browser.regularTabLifecycleOwner.createNewTab(
+            url: "https://visual-fixture.example",
+            in: space,
+            activate: true
         )
+        browser.tabResidenceAuthority.establishResidenceSession(on: window)
+        window.currentSpaceId = space.id
+        window.currentTabId = tab.id
+        browser.windowRegistry.register(window)
+    }
+
+    func beginHistorySwipe() -> WKWebView {
+        let webView: WKWebView
+        if let tracked = browser.webViewSessions.webView(
+            for: tab.id,
+            in: window.id
+        ) {
+            webView = tracked
+        } else {
+            let candidate = FocusableWKWebView()
+            candidate.owningTab = tab
+            let outcome = browser.webViewRuntime.trackedWebViewAdmission
+                .registerAuxiliaryTrackedWebView(
+                    candidate,
+                    for: tab,
+                    in: window.id
+                )
+            XCTAssertTrue(outcome.isAccepted)
+            webView = candidate
+        }
+        browser.webViewRuntime.protectionRuntime.beginHistorySwipe(
+            tabID: tab.id,
+            webView: webView,
+            originURL: nil,
+            originHistoryItem: nil
+        )
+        return webView
     }
 }
 

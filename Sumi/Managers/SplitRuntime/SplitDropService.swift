@@ -2,36 +2,85 @@ import CoreGraphics
 import Foundation
 import SumiDomain
 
+@MainActor
+final class SplitDropTopologyTransaction {
+    private let structuralLookup: TabStructuralLookupCoordinator
+    private let membership: SplitGroupMembershipQuery
+    private let splitGroups: SplitGroupStore
+    private let mutations: SplitGroupMutationService
+    private let launcherPlacement: ShortcutSplitLauncherPlacementService
+
+    init(
+        structuralLookup: TabStructuralLookupCoordinator,
+        membership: SplitGroupMembershipQuery,
+        splitGroups: SplitGroupStore,
+        mutations: SplitGroupMutationService,
+        launcherPlacement: ShortcutSplitLauncherPlacementService
+    ) {
+        self.structuralLookup = structuralLookup
+        self.membership = membership
+        self.splitGroups = splitGroups
+        self.mutations = mutations
+        self.launcherPlacement = launcherPlacement
+    }
+
+    func perform(
+        _ operation: @MainActor @Sendable () -> Bool
+    ) -> Bool {
+        structuralLookup.withTransaction(operation)
+    }
+
+    func memberID(for tab: Tab) -> SplitMemberID {
+        membership.memberID(for: tab)
+    }
+
+    func group(containing memberID: SplitMemberID) -> SumiDomain.SplitGroup? {
+        splitGroups.group(containing: memberID)
+    }
+
+    var groups: [SumiDomain.SplitGroup] { splitGroups.groups }
+
+    func commit(
+        expected: [SumiDomain.SplitGroup],
+        replacement: [SumiDomain.SplitGroup],
+        releasedMembers: [SplitMember]
+    ) -> Bool {
+        guard let restorations = launcherPlacement.prepareRestorations(
+            for: releasedMembers
+        ) else { return false }
+        return mutations.replaceAllAtomically(
+            expected: expected,
+            with: replacement,
+            applying: { restorations.applyAndCommit() }
+        )
+    }
+
+    func flushPendingWritesForRead() {
+        structuralLookup.flushPendingWritesForRead()
+    }
+}
+
 /// Commits one drag/drop intent as a single exact split-store transaction.
 /// Hit testing is handled by the resolver family; this service owns only the
 /// structural move and the resulting window-local selection.
 @MainActor
 final class SplitDropService {
-    private let tabManager: @MainActor () -> TabManager?
+    private let topology: SplitDropTopologyTransaction
     private let memberResolver: SplitRuntimeMemberResolver
-    private let launcherPlacement: ShortcutSplitLauncherPlacementService
-    private let placeholderReplacements: SplitPlaceholderReplacementPlanner
     private let regularShortcutSidebarDrop: RegularTabShortcutSidebarDropTransaction
     private let presentations: any SplitDropPresentationReconciling
     private let notifyLimit: @MainActor (BrowserWindowState) -> Void
 
     init(
-        tabManager: @escaping @MainActor () -> TabManager?,
+        topology: SplitDropTopologyTransaction,
         memberResolver: SplitRuntimeMemberResolver,
-        launcherPlacement: ShortcutSplitLauncherPlacementService,
-        placeholderReplacements: SplitPlaceholderReplacementPlanner,
+        regularShortcutSidebarDrop: RegularTabShortcutSidebarDropTransaction,
         presentations: any SplitDropPresentationReconciling,
         notifyLimit: @escaping @MainActor (BrowserWindowState) -> Void
     ) {
-        self.tabManager = tabManager
+        self.topology = topology
         self.memberResolver = memberResolver
-        self.launcherPlacement = launcherPlacement
-        self.placeholderReplacements = placeholderReplacements
-        regularShortcutSidebarDrop = RegularTabShortcutSidebarDropTransaction(
-            tabManager: tabManager,
-            launcherPlacement: launcherPlacement,
-            presentations: presentations
-        )
+        self.regularShortcutSidebarDrop = regularShortcutSidebarDrop
         self.presentations = presentations
         self.notifyLimit = notifyLimit
     }
@@ -42,27 +91,25 @@ final class SplitDropService {
         on target: SplitDropTarget,
         in windowState: BrowserWindowState
     ) -> Bool {
-        guard tab.representsSumiNativeSurface == false,
-              let tabManager = tabManager() else {
+        guard tab.representsSumiNativeSurface == false else {
             return false
         }
-        return tabManager.structuralLookupCoordinator.withTransaction {
-            commitDrop(tab, on: target, in: windowState, tabManager: tabManager)
+        return topology.perform {
+            commitDrop(tab, on: target, in: windowState)
         }
     }
 
     private func commitDrop(
         _ tab: Tab,
         on target: SplitDropTarget,
-        in windowState: BrowserWindowState,
-        tabManager: TabManager
+        in windowState: BrowserWindowState
     ) -> Bool {
-        let incomingID = tabManager.splitGroupMembership.memberID(for: tab)
+        let incomingID = topology.memberID(for: tab)
 
-        let sourceGroup = tabManager.splitGroupStore.group(
+        let sourceGroup = topology.group(
             containing: incomingID
         )
-        let targetGroup = tabManager.splitGroupStore.group(
+        let targetGroup = topology.group(
             containing: target.targetMemberID
         )
         if case .regularTab = incomingID,
@@ -73,8 +120,7 @@ final class SplitDropService {
                 sourceMemberID: incomingID,
                 into: targetGroup,
                 target: target,
-                windowState: windowState,
-                tabManager: tabManager
+                windowState: windowState
             )
         }
         guard let incoming = memberResolver.resolveExisting(
@@ -90,8 +136,7 @@ final class SplitDropService {
                 incoming,
                 in: targetGroup,
                 target: target,
-                windowState: windowState,
-                tabManager: tabManager
+                windowState: windowState
             )
         }
         if let targetGroup {
@@ -100,28 +145,14 @@ final class SplitDropService {
                 sourceGroup: sourceGroup,
                 into: targetGroup,
                 target: target,
-                windowState: windowState,
-                tabManager: tabManager
+                windowState: windowState
             )
         }
         return createGroup(
             incoming,
             sourceGroup: sourceGroup,
             target: target,
-            windowState: windowState,
-            tabManager: tabManager
-        )
-    }
-
-    func preparePlaceholderReplacement(
-        with tab: Tab,
-        placeholder: Tab,
-        in windowState: BrowserWindowState
-    ) -> (any SplitPlaceholderReplacementMutation)? {
-        placeholderReplacements.prepare(
-            tab: tab,
-            placeholder: placeholder,
-            window: windowState
+            windowState: windowState
         )
     }
 
@@ -129,8 +160,7 @@ final class SplitDropService {
         _ incoming: ResolvedSplitRuntimeMember,
         in group: SumiDomain.SplitGroup,
         target: SplitDropTarget,
-        windowState: BrowserWindowState,
-        tabManager: TabManager
+        windowState: BrowserWindowState
     ) -> Bool {
         guard incoming.member.memberID != target.targetMemberID else {
             return false
@@ -145,7 +175,7 @@ final class SplitDropService {
         else {
             return false
         }
-        let expectedGroups = tabManager.splitGroupStore.groups
+        let expectedGroups = topology.groups
         guard let groupIndex = expectedGroups.firstIndex(where: { $0 == group })
         else { return false }
         var replacementGroups = expectedGroups
@@ -162,8 +192,7 @@ final class SplitDropService {
         guard commit(
             expected: expectedGroups,
             replacement: replacementGroups,
-            effect: effect,
-            tabManager: tabManager
+            effect: effect
         ) else { return false }
         presentations.reconcile(effect)
         return true
@@ -174,8 +203,7 @@ final class SplitDropService {
         sourceGroup: SumiDomain.SplitGroup?,
         into targetGroup: SumiDomain.SplitGroup,
         target: SplitDropTarget,
-        windowState: BrowserWindowState,
-        tabManager: TabManager
+        windowState: BrowserWindowState
     ) -> Bool {
         guard !targetGroup.container.isShortcutSidebar
                 || memberResolver.canJoinShortcutSidebar(
@@ -207,7 +235,7 @@ final class SplitDropService {
             return false
         }
 
-        let expected = tabManager.splitGroupStore.groups
+        let expected = topology.groups
         let replacement = SplitDropGroupAlgebra.replacingGroups(
             expected,
             sourceGroup: sourceGroup,
@@ -227,8 +255,7 @@ final class SplitDropService {
         guard commit(
             expected: expected,
             replacement: replacement,
-            effect: effect,
-            tabManager: tabManager
+            effect: effect
         ) else { return false }
         presentations.reconcile(effect)
         return true
@@ -238,8 +265,7 @@ final class SplitDropService {
         _ incoming: ResolvedSplitRuntimeMember,
         sourceGroup: SumiDomain.SplitGroup?,
         target: SplitDropTarget,
-        windowState: BrowserWindowState,
-        tabManager: TabManager
+        windowState: BrowserWindowState
     ) -> Bool {
         guard incoming.member.memberID != target.targetMemberID,
               let targetMember = memberResolver.makeMember(
@@ -285,7 +311,7 @@ final class SplitDropService {
             return false
         }
 
-        let expected = tabManager.splitGroupStore.groups
+        let expected = topology.groups
         var replacement = SplitDropGroupAlgebra.removingSourceGroup(
             sourceGroup,
             memberID: incoming.member.memberID,
@@ -304,8 +330,7 @@ final class SplitDropService {
         guard commit(
             expected: expected,
             replacement: replacement,
-            effect: effect,
-            tabManager: tabManager
+            effect: effect
         ) else { return false }
         presentations.reconcile(effect)
         return true
@@ -316,8 +341,7 @@ final class SplitDropService {
         sourceMemberID: SplitMemberID,
         into targetGroup: SumiDomain.SplitGroup,
         target: SplitDropTarget,
-        windowState: BrowserWindowState,
-        tabManager: TabManager
+        windowState: BrowserWindowState
     ) -> Bool {
         if target.side != .center,
            targetGroup.memberIDs.count >= SumiDomain.SplitGroup.maximumMembers {
@@ -331,27 +355,19 @@ final class SplitDropService {
             target: target,
             windowState: windowState
         ) else { return false }
-        tabManager.structuralLookupCoordinator.flushPendingWritesForRead()
+        topology.flushPendingWritesForRead()
         return true
     }
 
     private func commit(
         expected: [SumiDomain.SplitGroup],
         replacement: [SumiDomain.SplitGroup],
-        effect: SplitDropCommitEffect,
-        tabManager: TabManager
+        effect: SplitDropCommitEffect
     ) -> Bool {
-        guard let restorations = launcherPlacement.prepareRestorations(
-            for: effect.releasedMembers
-        ) else {
-            return false
-        }
-        return tabManager.splitGroupMutations.replaceAllAtomically(
+        topology.commit(
             expected: expected,
-            with: replacement,
-            applying: {
-                restorations.applyAndCommit()
-            }
+            replacement: replacement,
+            releasedMembers: effect.releasedMembers
         )
     }
 }

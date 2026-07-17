@@ -5,32 +5,20 @@ import Foundation
 @MainActor
 final class BrowserWindowSpaceTransitionService {
     private let spaceActivation: SpaceActivationService
-    private let isActiveWindow: (BrowserWindowState) -> Bool
-    private let selectionHandoff: BrowserWindowSpaceSelectionHandoff
-    private let contextTransition: BrowserWindowSpaceContextTransition
-    private let synchronizeFocusedSpaceContext: (BrowserWindowState) -> Void
-    private let adoptProfileForSpaceChange: (BrowserWindowState) -> Void
-    private let persistWindowSession: (BrowserWindowState) -> Void
-    private let completePendingSplitGroupFocus: (BrowserWindowState, UUID) -> Void
+    private let preservedSelection: BrowserWindowSpacePreservedSelectionTransaction
+    private let spaceChange: BrowserWindowSpaceChangeTransaction
+    private let settlement: BrowserWindowSpaceTransitionSettlement
 
     init(
         spaceActivation: SpaceActivationService,
-        isActiveWindow: @escaping (BrowserWindowState) -> Bool,
-        selectionHandoff: BrowserWindowSpaceSelectionHandoff,
-        contextTransition: BrowserWindowSpaceContextTransition,
-        synchronizeFocusedSpaceContext: @escaping (BrowserWindowState) -> Void,
-        adoptProfileForSpaceChange: @escaping (BrowserWindowState) -> Void,
-        persistWindowSession: @escaping (BrowserWindowState) -> Void,
-        completePendingSplitGroupFocus: @escaping (BrowserWindowState, UUID) -> Void
+        preservedSelection: BrowserWindowSpacePreservedSelectionTransaction,
+        spaceChange: BrowserWindowSpaceChangeTransaction,
+        settlement: BrowserWindowSpaceTransitionSettlement
     ) {
         self.spaceActivation = spaceActivation
-        self.isActiveWindow = isActiveWindow
-        self.selectionHandoff = selectionHandoff
-        self.contextTransition = contextTransition
-        self.synchronizeFocusedSpaceContext = synchronizeFocusedSpaceContext
-        self.adoptProfileForSpaceChange = adoptProfileForSpaceChange
-        self.persistWindowSession = persistWindowSession
-        self.completePendingSplitGroupFocus = completePendingSplitGroupFocus
+        self.preservedSelection = preservedSelection
+        self.spaceChange = spaceChange
+        self.settlement = settlement
     }
 
     func setActiveSpace(
@@ -38,6 +26,26 @@ final class BrowserWindowSpaceTransitionService {
         in windowState: BrowserWindowState,
         completingTransition identity: SpaceTransitionIdentity? = nil
     ) {
+        guard let windowReceipt = settlement.admit(windowState) else {
+            return
+        }
+        setActiveSpace(
+            space,
+            in: windowState,
+            admittedBy: windowReceipt,
+            completingTransition: identity
+        )
+    }
+
+    private func setActiveSpace(
+        _ space: Space,
+        in windowState: BrowserWindowState,
+        admittedBy windowReceipt: WindowRegistry.WindowRegistrationReceipt,
+        completingTransition identity: SpaceTransitionIdentity?
+    ) {
+        guard settlement.resolve(windowReceipt) === windowState else {
+            return
+        }
         guard windowState.windowThemeState.acceptsInteractiveCompletion(
             identity: identity,
             destinationSpaceID: space.id
@@ -47,54 +55,34 @@ final class BrowserWindowSpaceTransitionService {
 
         guard spaceActivation.admitProfileIfNeeded(
             for: space,
-            retry: { [weak self, weak space, weak windowState] in
-                guard let self, let space, let windowState else { return }
+            retry: { [weak self, weak space] in
+                guard let self,
+                      let space,
+                      let currentWindow = settlement.resolve(windowReceipt)
+                else { return }
                 self.setActiveSpace(
                     space,
-                    in: windowState,
+                    in: currentWindow,
+                    admittedBy: windowReceipt,
                     completingTransition: identity
                 )
             }
         ) else { return }
 
-        let operatesOnActiveWindow = isActiveWindow(windowState)
+        let operatesOnActiveWindow = settlement.isActiveWindow(windowState)
         if identity == nil,
-           windowState.currentSpaceId == space.id,
-           selectionHandoff.canPreserveCurrentSelection(in: windowState) {
-            contextTransition.sanitizePreservedSelection(in: windowState)
-            contextTransition.commitContext(space, to: windowState)
-            if operatesOnActiveWindow {
-                synchronizeFocusedSpaceContext(windowState)
-            }
-            contextTransition.completePreservedSelectionRefresh(in: windowState)
-            persistWindowSession(windowState)
+           preservedSelection.commitIfPossible(
+               space,
+               in: windowState,
+               operatesOnActiveWindow: operatesOnActiveWindow
+           ) {
             return
         }
-
-        let target = selectionHandoff.resolveTarget(for: space, in: windowState)
-        if operatesOnActiveWindow {
-            guard spaceActivation.setActiveSpace(
-                space,
-                preferredTab: target.preferredTab,
-                contextWindowId: windowState.id
-            ) else { return }
-        }
-
-        contextTransition.commitContext(space, to: windowState)
-        if operatesOnActiveWindow {
-            synchronizeFocusedSpaceContext(windowState)
-        }
-        contextTransition.completeVisualTransition(
-            to: space,
+        spaceChange.commit(
+            space,
             in: windowState,
-            identity: identity
+            identity: identity,
+            operatesOnActiveWindow: operatesOnActiveWindow
         )
-        selectionHandoff.present(target, in: windowState)
-
-        if operatesOnActiveWindow {
-            adoptProfileForSpaceChange(windowState)
-        }
-        persistWindowSession(windowState)
-        completePendingSplitGroupFocus(windowState, space.id)
     }
 }

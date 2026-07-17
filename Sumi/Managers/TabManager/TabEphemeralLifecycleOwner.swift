@@ -2,14 +2,14 @@ import Foundation
 
 @MainActor
 final class TabEphemeralLifecycleOwner {
-    private let prepareTabForRuntime: @MainActor (Tab) -> Void
+    private let runtimePreparation: TabRuntimePreparationOwner
     private let tabFactory: TabFactory
 
     init(
-        prepareTabForRuntime: @escaping @MainActor (Tab) -> Void,
+        runtimePreparation: TabRuntimePreparationOwner,
         tabFactory: TabFactory
     ) {
-        self.prepareTabForRuntime = prepareTabForRuntime
+        self.runtimePreparation = runtimePreparation
         self.tabFactory = tabFactory
     }
 
@@ -28,7 +28,7 @@ final class TabEphemeralLifecycleOwner {
             index: nextIndex
         )
         newTab.profileId = profile.id
-        prepareTabForRuntime(newTab)
+        _ = runtimePreparation.prepare(newTab)
 
         windowState.appendEphemeralTab(newTab)
         windowState.currentTabId = newTab.id

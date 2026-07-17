@@ -104,7 +104,7 @@ final class SafariExtensionAutofillInfrastructureTests: XCTestCase {
         fixture.inspection.actionSurfaces.publication
             .markRuntimePublicationReady()
         let installed = try await installProbeExtension(manager: manager)
-        let tab = browserManager.tabManager.tabFactory.makeTab(
+        let tab = browserManager.tabFactory.makeTab(
             url: URL(string: "http://127.0.0.1/login-form.html")!,
             name: "Private"
         )
@@ -132,9 +132,11 @@ final class SafariExtensionAutofillInfrastructureTests: XCTestCase {
         )
         let manager = fixture.manager
         let inspection = fixture.inspection
-        let browserManager = makeSafariExtensionTestBrowserManager(profile: profile)
         let windowRegistry = WindowRegistry()
-        browserManager.windowRegistry = windowRegistry
+        let browserManager = makeSafariExtensionTestBrowserManager(
+            profile: profile,
+            windowRegistry: windowRegistry
+        )
         manager.attach(browserManager: browserManager)
         _ = inspection.contextCoordination.demand.requestRuntimeExplicitly(
             reason: .install
@@ -161,21 +163,22 @@ final class SafariExtensionAutofillInfrastructureTests: XCTestCase {
         let configuration = browserConfiguration.auxiliaryWebViewConfiguration(
             surface: .extensionOptions
         )
-        let space = browserManager.tabManager.spaceStateOwner.currentSpace
-            ?? browserManager.tabManager.spaceServices.catalog.createSpace(
+        let space = browserManager.spaceStateOwner.currentSpace
+            ?? installTestSpace(
+                in: browserManager.spaceStateOwner,
                 name: "Autofill",
-                profileId: profile.id
+                profileID: profile.id
             )
-        let tab = browserManager.tabManager.tabFactory.makeTab(
+        let tab = browserManager.tabFactory.makeTab(
             url: URL(string: "http://127.0.0.1/login-form.html")!,
             name: "Loaded",
             spaceId: space.id
         )
         tab.profileId = profile.id
         tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
-        browserManager.tabManager.regularTabLifecycleOwner.addTab(tab)
+        browserManager.regularTabLifecycleOwner.addTab(tab)
         let windowState = BrowserWindowState()
-        windowState.tabManager = browserManager.tabManager
+        browserManager.tabResidenceAuthority.establishResidenceSession(on: windowState)
         windowState.currentSpaceId = tab.spaceId
         windowState.currentProfileId = profile.id
         windowState.currentTabId = tab.id
@@ -229,9 +232,11 @@ final class SafariExtensionAutofillInfrastructureTests: XCTestCase {
         )
         let manager = fixture.manager
         let inspection = fixture.inspection
-        let browserManager = makeSafariExtensionTestBrowserManager(profile: profile)
         let windowRegistry = WindowRegistry()
-        browserManager.windowRegistry = windowRegistry
+        let browserManager = makeSafariExtensionTestBrowserManager(
+            profile: profile,
+            windowRegistry: windowRegistry
+        )
         manager.attach(browserManager: browserManager)
         _ = inspection.contextCoordination.demand.requestRuntimeExplicitly(
             reason: .install
@@ -263,21 +268,22 @@ final class SafariExtensionAutofillInfrastructureTests: XCTestCase {
             reason: "SafariExtensionAutofillInfrastructureTests"
         )
 
-        let space = browserManager.tabManager.spaceStateOwner.currentSpace
-            ?? browserManager.tabManager.spaceServices.catalog.createSpace(
+        let space = browserManager.spaceStateOwner.currentSpace
+            ?? installTestSpace(
+                in: browserManager.spaceStateOwner,
                 name: "Autofill",
-                profileId: profile.id
+                profileID: profile.id
             )
-        let tab = browserManager.tabManager.tabFactory.makeTab(
+        let tab = browserManager.tabFactory.makeTab(
             url: URL(string: "http://127.0.0.1/login-form.html")!,
             name: "Ready",
             spaceId: space.id
         )
         tab.profileId = profile.id
         tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
-        browserManager.tabManager.regularTabLifecycleOwner.addTab(tab)
+        browserManager.regularTabLifecycleOwner.addTab(tab)
         let windowState = BrowserWindowState()
-        windowState.tabManager = browserManager.tabManager
+        browserManager.tabResidenceAuthority.establishResidenceSession(on: windowState)
         windowState.currentSpaceId = tab.spaceId
         windowState.currentProfileId = profile.id
         windowState.currentTabId = tab.id

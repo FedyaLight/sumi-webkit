@@ -83,8 +83,8 @@ final class ExtensionRequestedTabServicesTests:
         async throws {
         let harness = try await makeRequestedPublicationHarness()
         let spaceID = try XCTUnwrap(harness.sourceTab.spaceId)
-        let originalTabIDs = harness.browserManager.tabManager
-            .regularTabCollectionStateOwner.tabsBySpaceSnapshot()[spaceID]?
+        let originalTabIDs = harness.browserManager.tabStateStore.regularTabs
+            .tabsBySpaceSnapshot()[spaceID]?
             .map(\.id)
         var lifecycleEvents: [String] = []
         harness.manager.testHooks.didOpenTab = { tabID in
@@ -115,7 +115,7 @@ final class ExtensionRequestedTabServicesTests:
         )
 
         XCTAssertEqual(
-            harness.browserManager.tabManager.regularTabCollectionStateOwner
+            harness.browserManager.tabStateStore.regularTabs
                 .tabsBySpaceSnapshot()[spaceID]?.map(\.id),
             originalTabIDs
         )
@@ -198,8 +198,8 @@ final class ExtensionRequestedTabServicesTests:
             )?.absoluteURL
         )
         let spaceID = try XCTUnwrap(harness.sourceTab.spaceId)
-        let originalTabIDs = harness.browserManager.tabManager
-            .regularTabCollectionStateOwner.tabsBySpaceSnapshot()[spaceID]?
+        let originalTabIDs = harness.browserManager.tabStateStore.regularTabs
+            .tabsBySpaceSnapshot()[spaceID]?
             .map(\.id)
 
         XCTAssertThrowsError(
@@ -214,7 +214,7 @@ final class ExtensionRequestedTabServicesTests:
             )
         )
         XCTAssertEqual(
-            harness.browserManager.tabManager.regularTabCollectionStateOwner
+            harness.browserManager.tabStateStore.regularTabs
                 .tabsBySpaceSnapshot()[spaceID]?.map(\.id),
             originalTabIDs
         )
@@ -263,13 +263,14 @@ final class ExtensionRequestedTabServicesTests:
         manager.attach(browserManager: browserManager)
         let materializer = attachedRuntime.runtime.normalTabs
             .requestedTabWebViewMaterializer
-        let space = browserManager.tabManager.spaceStateOwner.firstSpace(
+        let space = browserManager.spaceStateOwner.firstSpace(
             forProfile: profile.id
-        ) ?? browserManager.tabManager.spaceServices.catalog.createSpace(
+        ) ?? installTestSpace(
+            in: browserManager.spaceStateOwner,
             name: "Extension requested",
-            profileId: profile.id
+            profileID: profile.id
         )
-        let tab = browserManager.tabManager.regularTabLifecycleOwner
+        let tab = browserManager.regularTabLifecycleOwner
             .createNewTab(
                 url: "https://example.com",
                 in: space,
@@ -356,13 +357,13 @@ final class ExtensionRequestedTabServicesTests:
 
     func testActiveWindowCurrentTabDoesNotFallbackToGlobalTabManagerCurrentTab() throws {
         let harness = try makeProfileRoutingHarness()
-        let tab = harness.browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
+        let tab = harness.browserManager.regularTabLifecycleOwner.createNewTab(
             url: "https://example.com/current",
             in: harness.spaceA,
             activate: true
         )
 
-        XCTAssertEqual(harness.browserManager.tabManager.selectionStateOwner.currentTab?.id, tab.id)
+        XCTAssertEqual(harness.browserManager.tabStateStore.selection.currentTab?.id, tab.id)
         XCTAssertNil(
             harness.browserManager.extensionBridgeComposition.windows
                 .currentExtensionTabForActiveWindow()
@@ -371,23 +372,24 @@ final class ExtensionRequestedTabServicesTests:
 
     func testPreferredExtensionWindowStateResolvesTransientTabFromDisplayedSpace() throws {
         let harness = try makeProfileRoutingHarness()
-        let windowRegistry = WindowRegistry()
-        harness.browserManager.windowRegistry = windowRegistry
         let windowState = BrowserWindowState()
+        harness.browserManager.tabResidenceAuthority.establishResidenceSession(
+            on: windowState
+        )
         windowState.currentProfileId = harness.profileA.id
         windowState.currentSpaceId = harness.spaceA.id
-        windowRegistry.register(windowState)
-        windowRegistry.setActive(windowState)
+        harness.windowRegistry.register(windowState)
+        harness.windowRegistry.setActive(windowState)
 
-        let tab = harness.browserManager.tabManager.transientWebKitTabLifecycleOwner.createTransientExtensionTab(
-            url: "safari-web-extension://extension-id/popup.html",
+        let tab = harness.browserManager.extensionTabCommands.createTransient(
+            url: try XCTUnwrap(URL(string: "safari-web-extension://extension-id/popup.html")),
             in: harness.spaceA,
             webExtensionContextOverride: nil
         )
 
-        XCTAssertTrue(harness.browserManager.tabManager.transientWebKitTabLifecycleOwner.isTransientExtensionTab(tab))
+        XCTAssertTrue(harness.browserManager.extensionTabCommands.containsTransient(tab))
         XCTAssertFalse(
-            harness.browserManager.tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[harness.spaceA.id]?.contains { $0.id == tab.id }
+            harness.browserManager.tabStateStore.regularTabs.tabsBySpaceSnapshot()[harness.spaceA.id]?.contains { $0.id == tab.id }
                 ?? false
         )
         XCTAssertEqual(
@@ -418,8 +420,8 @@ final class ExtensionRequestedTabServicesTests:
 
         harness.manager.testHooks.didOpenTab = { tabID in
             guard tabID != harness.sourceTab.id,
-                  let tab = harness.browserManager.tabManager
-                    .tabCollectionMembershipOwner.tab(for: tabID)
+                  let tab = harness.browserManager.tabCollectionMembershipOwner
+                    .tab(for: tabID)
             else {
                 return
             }
@@ -476,8 +478,8 @@ final class ExtensionRequestedTabServicesTests:
 
         harness.manager.testHooks.didOpenTab = { tabID in
             guard tabID != harness.sourceTab.id,
-                  let tab = harness.browserManager.tabManager
-                    .tabCollectionMembershipOwner.tab(for: tabID)
+                  let tab = harness.browserManager.tabCollectionMembershipOwner
+                    .tab(for: tabID)
             else {
                 return
             }
@@ -521,7 +523,7 @@ final class ExtensionRequestedTabServicesTests:
         XCTAssertTrue(activatedTabIDs.isEmpty)
         XCTAssertEqual(harness.window.currentTabId, harness.sourceTab.id)
         XCTAssertNil(
-            harness.browserManager.tabManager.tabCollectionMembershipOwner
+            harness.browserManager.tabCollectionMembershipOwner
                 .tab(for: tab.id)
         )
         XCTAssertNil(harness.inspection.normalTabs.adapters.tabAdapters[tab.id])
@@ -577,7 +579,7 @@ final class ExtensionRequestedTabServicesTests:
         let tabID = try XCTUnwrap(rejectedTabID)
         XCTAssertEqual(lifecycleEvents, ["didOpen", "didClose"])
         XCTAssertNil(
-            harness.browserManager.tabManager.tabCollectionMembershipOwner
+            harness.browserManager.tabCollectionMembershipOwner
                 .tab(for: tabID)
         )
         XCTAssertNil(harness.inspection.normalTabs.adapters.tabAdapters[tabID])
@@ -749,7 +751,7 @@ final class ExtensionRequestedTabServicesTests:
         }
         XCTAssertNotNil(staleTabCloseError)
         XCTAssertIdentical(
-            harness.browserManager.tabManager.tabCollectionMembershipOwner
+            harness.browserManager.tabCollectionMembershipOwner
                 .tab(for: harness.sourceTab.id),
             harness.sourceTab
         )
@@ -859,7 +861,7 @@ final class ExtensionRequestedTabServicesTests:
             harness.inspection.normalTabs.adapters.tabAdapters[staleTab.id]
         )
         let spaceID = try XCTUnwrap(staleTab.spaceId)
-        harness.browserManager.tabManager.tabClosureService.removeTab(
+        harness.browserManager.tabClosureService.removeTab(
             staleTab.id
         )
         XCTAssertNil(
@@ -868,7 +870,7 @@ final class ExtensionRequestedTabServicesTests:
             )
         )
 
-        let replacementTab = harness.browserManager.tabManager.tabFactory
+        let replacementTab = harness.browserManager.tabFactory
             .makeTab(
             id: staleTab.id,
             url: URL(string: "https://replacement.example/same-id")!,
@@ -877,7 +879,7 @@ final class ExtensionRequestedTabServicesTests:
             index: staleTab.index
         )
         replacementTab.profileId = harness.profile.id
-        harness.browserManager.tabManager.regularTabLifecycleOwner.addTab(
+        harness.browserManager.regularTabLifecycleOwner.addTab(
             replacementTab
         )
 
@@ -978,6 +980,7 @@ final class ExtensionRequestedTabServicesTests:
         let inspection: ExtensionManagerTestInspection
         let attachedRuntime: ExtensionAttachedBrowserRuntimeInspection
         let browserManager: BrowserManager
+        let windowRegistry: WindowRegistry
         let profileA: Profile
         let profileB: Profile
         let spaceA: Space
@@ -1044,11 +1047,11 @@ final class ExtensionRequestedTabServicesTests:
         manager.attach(browserManager: browserManager)
 
         let space = Space(name: "Primary", profileId: profile.id)
-        browserManager.tabManager.spaceStateOwner.replaceSpaces([space])
-        browserManager.tabManager.spaceStateOwner.replaceCurrentSpace(space)
+        browserManager.spaceStateOwner.replaceSpaces([space])
+        browserManager.spaceStateOwner.replaceCurrentSpace(space)
 
         let window = BrowserWindowState()
-        window.tabManager = browserManager.tabManager
+        browserManager.tabResidenceAuthority.establishResidenceSession(on: window)
         window.currentProfileId = profile.id
         window.currentSpaceId = space.id
         let appKitWindow = NSWindow(
@@ -1066,7 +1069,7 @@ final class ExtensionRequestedTabServicesTests:
             appKitWindow.close()
         }
 
-        let sourceTab = browserManager.tabManager.regularTabLifecycleOwner
+        let sourceTab = browserManager.regularTabLifecycleOwner
             .createNewTab(
                 url: "https://source.example/page",
                 in: space,
@@ -1147,6 +1150,7 @@ final class ExtensionRequestedTabServicesTests:
         let container = try makeTestContainer()
         let profileA = Profile(name: "Profile A")
         let profileB = Profile(name: "Profile B")
+        let windowRegistry = WindowRegistry()
         let attachedRuntime = ExtensionAttachedRuntimeCapture()
         let inspection = ExtensionManagerInspectionCapture()
         let manager = makeSafariExtensionTestExtensionManager(
@@ -1155,14 +1159,17 @@ final class ExtensionRequestedTabServicesTests:
             attachedRuntimeCapture: attachedRuntime,
             inspectionCapture: inspection
         )
-        let browserManager = makeSafariExtensionTestBrowserManager(profile: profileA)
+        let browserManager = makeSafariExtensionTestBrowserManager(
+            profile: profileA,
+            windowRegistry: windowRegistry
+        )
         browserManager.profileManager.profiles = [profileA, profileB]
         browserManager.currentProfile = profileA
 
         let spaceA = Space(name: "Space A", profileId: profileA.id)
         let spaceB = Space(name: "Space B", profileId: profileB.id)
-        browserManager.tabManager.spaceStateOwner.replaceSpaces([spaceA, spaceB])
-        browserManager.tabManager.spaceStateOwner.replaceCurrentSpace(spaceA)
+        browserManager.spaceStateOwner.replaceSpaces([spaceA, spaceB])
+        browserManager.spaceStateOwner.replaceCurrentSpace(spaceA)
         manager.attach(browserManager: browserManager)
 
         return ProfileRoutingHarness(
@@ -1170,6 +1177,7 @@ final class ExtensionRequestedTabServicesTests:
             inspection: inspection.inspection,
             attachedRuntime: attachedRuntime.runtime,
             browserManager: browserManager,
+            windowRegistry: windowRegistry,
             profileA: profileA,
             profileB: profileB,
             spaceA: spaceA,

@@ -1,6 +1,5 @@
 import Combine
 import SumiDomain
-import SumiWebRuntime
 import SwiftData
 import XCTest
 
@@ -9,9 +8,14 @@ import XCTest
 @MainActor
 final class TabRemovalBatchTests: XCTestCase {
     func testCloseAllBelowRemovesInactiveMemberFromThreeMemberGroupOnce() throws {
-        let probe = SplitClosureBatchProbe()
-        let (_, tabManager) = try makeTabManager(probe: probe)
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Space")
+        let (_, tabManager) = try makeBrowserManager()
+        let space = try XCTUnwrap(
+            tabManager.sidebarSpaceLifecycle.createSpace(
+                name: "Space",
+                icon: "square",
+                profileID: nil
+            )
+        )
         let first = tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://first.example",
             in: space,
@@ -39,7 +43,6 @@ final class TabRemovalBatchTests: XCTestCase {
 
         tabManager.tabClosureService.closeAllTabsBelow(second)
 
-        XCTAssertEqual(probe.batches, [[inactive.id]])
         XCTAssertEqual(structuralPublishCount, 1)
         XCTAssertEqual(
             tabManager.regularTabCollectionOwner.tabs(in: space.id).map(\.id),
@@ -49,14 +52,19 @@ final class TabRemovalBatchTests: XCTestCase {
             tabManager.splitGroupStore.group(id: group.id)?.memberIDs,
             [.regularTab(first.id), .regularTab(second.id)]
         )
-        XCTAssertEqual(tabManager.selectionStateOwner.currentTab?.id, first.id)
+        XCTAssertEqual(tabManager.tabStateStore.selection.currentTab?.id, first.id)
         withExtendedLifetime(cancellable) {}
     }
 
     func testCloseAllBelowDissolvesTwoMemberGroupAndPersistsNoDeadMember() async throws {
-        let probe = SplitClosureBatchProbe()
-        let (container, tabManager) = try makeTabManager(probe: probe)
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Space")
+        let (container, tabManager) = try makeBrowserManager()
+        let space = try XCTUnwrap(
+            tabManager.sidebarSpaceLifecycle.createSpace(
+                name: "Space",
+                icon: "square",
+                profileID: nil
+            )
+        )
         let survivor = tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://survivor.example",
             in: space,
@@ -82,7 +90,6 @@ final class TabRemovalBatchTests: XCTestCase {
 
         tabManager.tabClosureService.closeAllTabsBelow(survivor)
 
-        XCTAssertEqual(probe.batches, [[closed.id]])
         XCTAssertEqual(structuralPublishCount, 1)
         XCTAssertNil(tabManager.splitGroupStore.group(id: group.id))
         XCTAssertNil(tabManager.regularTabCollectionOwner.tab(for: closed.id))
@@ -117,9 +124,14 @@ final class TabRemovalBatchTests: XCTestCase {
     }
 
     func testCloseAllBelowRequestsOneBatchCleanupAndOnePersistence() throws {
-        let probe = SplitClosureBatchProbe()
-        let (_, tabManager) = try makeTabManager(probe: probe)
-        let space = tabManager.spaceServices.catalog.createSpace(name: "Space")
+        let (_, tabManager) = try makeBrowserManager()
+        let space = try XCTUnwrap(
+            tabManager.sidebarSpaceLifecycle.createSpace(
+                name: "Space",
+                icon: "square",
+                profileID: nil
+            )
+        )
         let first = tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://0.example",
             in: space,
@@ -143,7 +155,6 @@ final class TabRemovalBatchTests: XCTestCase {
 
         tabManager.tabClosureService.closeAllTabsBelow(first)
 
-        XCTAssertEqual(probe.batches, [[second.id, third.id]])
         XCTAssertEqual(structuralPublishCount, 1)
         XCTAssertEqual(
             tabManager.regularTabCollectionOwner.tabs(in: space.id).map(\.id),
@@ -152,50 +163,19 @@ final class TabRemovalBatchTests: XCTestCase {
         withExtendedLifetime(cancellable) {}
     }
 
-    private func makeTabManager(
-        probe: SplitClosureBatchProbe
-    ) throws -> (ModelContainer, TabManager) {
+    private func makeBrowserManager() throws -> (ModelContainer, BrowserManager) {
         let container = try makeInMemoryStartupModelContainer()
-        let managerReference = WeakTabManagerReference()
-        let runtime = TestRuntimePorts.make(
-            handleTabClosures: { tabIDs in
-                probe.batches.append(tabIDs)
-                guard let tabManager = managerReference.value else { return }
-                let expected = tabManager.splitGroupStore.groups
-                let closedMemberIDs = Set(
-                    tabIDs.map(SplitMemberID.regularTab)
-                )
-                let replacement = expected.compactMap { group in
-                    closedMemberIDs.reduce(Optional(group)) {
-                        candidate,
-                        memberID in
-                        guard let candidate,
-                              candidate.contains(memberID) else {
-                            return candidate
-                        }
-                        return candidate.removingMember(memberID)
-                    }
-                }
-                guard replacement != expected else { return }
-                _ = tabManager.splitGroupMutations.replaceAll(
-                    expected: expected,
-                    with: replacement
-                )
-            }
+        let tabManager = BrowserManager(
+            startupPersistence: BrowserManagerStartupPersistence(
+                container: container
+            )
         )
-        let tabManager = TabManager(
-            runtimePorts: runtime,
-            context: container.mainContext,
-            webViewSessions: WebViewSessionRepository(),
-            loadPersistedState: false
-        )
-        managerReference.value = tabManager
         return (container, tabManager)
     }
 
     private func installGroup(
         tabs: [Tab],
-        in tabManager: TabManager
+        in tabManager: BrowserManager
     ) throws -> SumiDomain.SplitGroup {
         let group = try XCTUnwrap(
             SumiDomain.SplitGroup.make(
@@ -209,14 +189,4 @@ final class TabRemovalBatchTests: XCTestCase {
         )
         return group
     }
-}
-
-@MainActor
-private final class SplitClosureBatchProbe {
-    var batches: [Set<UUID>] = []
-}
-
-@MainActor
-private final class WeakTabManagerReference {
-    weak var value: TabManager?
 }

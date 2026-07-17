@@ -7,7 +7,14 @@ extension GlanceManager {
         else { return }
 
         transition(to: .promoting)
-        let newTab = promotePreviewTab(for: session, runtime: runtime, windowState: windowState)
+        guard let newTab = promotePreviewTab(
+            for: session,
+            runtime: runtime,
+            windowState: windowState
+        ) else {
+            transition(to: .open)
+            return
+        }
         runtime.selectPromotedTab(newTab, windowState)
         runtime.createSplitPlaceholder(windowState)
         finishPromotedSession()
@@ -19,11 +26,14 @@ extension GlanceManager {
 
         transition(to: .promoting)
         let windowState = targetWindowState(for: session)
-        let newTab = promotePreviewTab(
+        guard let newTab = promotePreviewTab(
             for: session,
             runtime: runtime,
             windowState: windowState
-        )
+        ) else {
+            transition(to: .open)
+            return
+        }
 
         if let windowState {
             runtime.selectPromotedTab(newTab, windowState)
@@ -41,7 +51,7 @@ extension GlanceManager {
         for session: GlanceSession,
         runtime: Runtime,
         windowState: BrowserWindowState?
-    ) -> Tab {
+    ) -> Tab? {
         materializePreviewWebViewIfNeeded(for: session)
         return runtime.adoptPreviewTab(
             session.previewTab,

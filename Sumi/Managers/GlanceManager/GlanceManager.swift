@@ -36,6 +36,10 @@ final class GlanceManager: ObservableObject {
         self.runtime = runtime
     }
 
+    func detachRuntime() {
+        runtime = nil
+    }
+
     @discardableResult
     func presentExternalURL(
         _ url: URL,
@@ -382,23 +386,30 @@ final class GlanceManager: ObservableObject {
             finishCurrentSession(preservesPreviewWebView: false, persistsWindowSession: false)
         }
 
-        guard let previewTab = runtime.makePreviewTab(url, tab, windowState) else {
-            return false
-        }
         let windowId = windowState?.id ?? fallbackWindowId
-        let session = GlanceSession(
-            targetURL: url,
-            windowId: windowId,
-            sourceTab: tab,
-            previewTab: previewTab,
-            originRectInWindow: originRect
-        )
-        if let initialTitle, !initialTitle.isEmpty {
-            session.updateNavigationState(url: nil, title: initialTitle)
+        var publishedSession: GlanceSession?
+        let didPublish = runtime.withPreparedPreviewTab(
+            url,
+            tab,
+            windowState
+        ) { [weak self] previewTab in
+            guard let self else { return false }
+            let session = GlanceSession(
+                targetURL: url,
+                windowId: windowId,
+                sourceTab: tab,
+                previewTab: previewTab,
+                originRectInWindow: originRect
+            )
+            if let initialTitle, !initialTitle.isEmpty {
+                session.updateNavigationState(url: nil, title: initialTitle)
+            }
+            currentSession = session
+            transition(to: .opening)
+            publishedSession = session
+            return true
         }
-
-        currentSession = session
-        transition(to: .opening)
+        guard didPublish, let session = publishedSession else { return false }
         if persistsWindowSession {
             persistWindowSession(for: windowId)
         }
@@ -407,7 +418,10 @@ final class GlanceManager: ObservableObject {
             guard let self,
                   let session,
                   self.currentSession?.id == session.id,
-                  let webView = self.runtime?.ensurePreviewWebView(previewTab, windowId)
+                  let webView = self.runtime?.ensurePreviewWebView(
+                      session.previewTab,
+                      windowId
+                  )
             else { return }
 
             webView.allowsMagnification = false

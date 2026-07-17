@@ -5,6 +5,11 @@ import XCTest
 
 @MainActor
 final class SumiAdblockZapperStoreTests: XCTestCase {
+    private enum ProfileID {
+        static let a = "00000000-0000-0000-0000-00000000000A"
+        static let b = "00000000-0000-0000-0000-00000000000B"
+    }
+
     override func tearDown() async throws {
         await MainActor.run {
             SumiAdblockZapperInjector.resetForTesting()
@@ -23,7 +28,7 @@ final class SumiAdblockZapperStoreTests: XCTestCase {
         SumiAdblockZapperInjector.applySavedRules(
             to: webView,
             host: "example.com",
-            profilePartitionId: "profile-a",
+            profilePartitionId: ProfileID.a,
             isEphemeralProfile: false,
             store: store
         )
@@ -38,7 +43,7 @@ final class SumiAdblockZapperStoreTests: XCTestCase {
         store.setRules(
             [".ad-slot"],
             forHost: "example.com",
-            profilePartitionId: "profile-a",
+            profilePartitionId: ProfileID.a,
             isEphemeralProfile: false
         )
         let webView = WKWebView()
@@ -50,7 +55,7 @@ final class SumiAdblockZapperStoreTests: XCTestCase {
         SumiAdblockZapperInjector.applySavedRules(
             to: webView,
             host: "example.com",
-            profilePartitionId: "profile-a",
+            profilePartitionId: ProfileID.a,
             isEphemeralProfile: false,
             store: store
         )
@@ -72,30 +77,30 @@ final class SumiAdblockZapperStoreTests: XCTestCase {
         store.setRules(
             [".ad-slot"],
             forHost: "Example.com",
-            profilePartitionId: "profile-a",
+            profilePartitionId: ProfileID.a,
             isEphemeralProfile: false
         )
         store.setRules(
             [".promo"],
             forHost: "example.com",
-            profilePartitionId: "profile-b",
+            profilePartitionId: ProfileID.b,
             isEphemeralProfile: false
         )
         store.setEnabled(
             false,
             forHost: "example.com",
-            profilePartitionId: "profile-a",
+            profilePartitionId: ProfileID.a,
             isEphemeralProfile: false
         )
 
         let profileAState = store.state(
             forHost: "example.com",
-            profilePartitionId: "profile-a",
+            profilePartitionId: ProfileID.a,
             isEphemeralProfile: false
         )
         let profileBState = store.state(
             forHost: "example.com",
-            profilePartitionId: "profile-b",
+            profilePartitionId: ProfileID.b,
             isEphemeralProfile: false
         )
 
@@ -112,20 +117,20 @@ final class SumiAdblockZapperStoreTests: XCTestCase {
         store.setRules(
             [".persistent"],
             forHost: "example.com",
-            profilePartitionId: "profile-a",
+            profilePartitionId: ProfileID.a,
             isEphemeralProfile: false
         )
         store.setRules(
             [".private"],
             forHost: "example.com",
-            profilePartitionId: "profile-a",
+            profilePartitionId: ProfileID.a,
             isEphemeralProfile: true
         )
 
         XCTAssertEqual(
             store.state(
                 forHost: "example.com",
-                profilePartitionId: "profile-a",
+                profilePartitionId: ProfileID.a,
                 isEphemeralProfile: false
             ).rules,
             [".persistent"]
@@ -133,7 +138,7 @@ final class SumiAdblockZapperStoreTests: XCTestCase {
         XCTAssertEqual(
             store.state(
                 forHost: "example.com",
-                profilePartitionId: "profile-a",
+                profilePartitionId: ProfileID.a,
                 isEphemeralProfile: true
             ).rules,
             [".private"]
@@ -143,7 +148,7 @@ final class SumiAdblockZapperStoreTests: XCTestCase {
         XCTAssertEqual(
             reloadedStore.state(
                 forHost: "example.com",
-                profilePartitionId: "profile-a",
+                profilePartitionId: ProfileID.a,
                 isEphemeralProfile: false
             ).rules,
             [".persistent"]
@@ -151,7 +156,7 @@ final class SumiAdblockZapperStoreTests: XCTestCase {
         XCTAssertEqual(
             reloadedStore.state(
                 forHost: "example.com",
-                profilePartitionId: "profile-a",
+                profilePartitionId: ProfileID.a,
                 isEphemeralProfile: true
             ),
             .empty
@@ -171,7 +176,33 @@ final class SumiAdblockZapperStoreTests: XCTestCase {
         XCTAssertEqual(
             store.state(
                 forHost: "example.com",
-                profilePartitionId: "profile-a",
+                profilePartitionId: ProfileID.a,
+                isEphemeralProfile: false
+            ),
+            .empty
+        )
+    }
+
+    func testPersistentMutationDoesNotOverwriteUnreadableBaseline() {
+        let defaults = makeDefaults()
+        let storageKey =
+            "settings.adblock.zapper.statesByPersistentProfileAndHost.v1"
+        let corruptPayload = Data("not-json".utf8)
+        defaults.set(corruptPayload, forKey: storageKey)
+        let store = SumiAdblockZapperStore(userDefaults: defaults)
+
+        store.setRules(
+            [".late-rule"],
+            forHost: "example.com",
+            profilePartitionId: ProfileID.a,
+            isEphemeralProfile: false
+        )
+
+        XCTAssertEqual(defaults.data(forKey: storageKey), corruptPayload)
+        XCTAssertEqual(
+            store.state(
+                forHost: "example.com",
+                profilePartitionId: ProfileID.a,
                 isEphemeralProfile: false
             ),
             .empty

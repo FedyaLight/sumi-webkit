@@ -8,17 +8,26 @@ enum TabBrowserRuntimeFactory {
     static func make(for browserManager: BrowserManager) -> TabBrowserRuntime {
         let currentProfileAuthority = browserManager.currentProfileAuthority
         let webViewRuntime = browserManager.webViewRuntime
+        let tabs = browserManager
         let physicalSources = PhysicalWebViewSourceResolver(
             ownership: webViewRuntime.ownershipQuery,
-            tabs: browserManager.tabManager,
+            sourceContexts: BrowserWindowSourceContextResolver(
+                spaces: tabs.spaceStateOwner,
+                regularTabs: tabs.regularTabCollectionOwner,
+                shortcutTabs: tabs.liveShortcutTabs
+            ),
+            pins: tabs.shortcutPinCollectionStateOwner,
+            shortcutResolution: tabs.shortcutPinRuntimeResolutionOwner,
             profiles: browserManager.profileManager,
             registry: { [weak browserManager] in
                 browserManager?.windowRegistry
             }
         )
         let physicalTabOpening = PhysicalSourceTabOpeningService(
-            tabs: browserManager.tabManager,
-            opening: browserManager.tabLifecycleService.opening,
+            spaces: tabs.spaceStateOwner,
+            regularTabs: tabs.regularTabCollectionOwner,
+            regularLifecycle: tabs.regularTabLifecycleOwner,
+            opening: browserManager.tabOpening,
             select: { [weak browserManager] tab, window, loadPolicy in
                 browserManager?.selectTab(
                     tab,
@@ -39,34 +48,45 @@ enum TabBrowserRuntimeFactory {
         )
         let childTabs = WebKitChildTabOpeningService(
             sources: physicalSources,
-            tabs: browserManager.tabManager,
-            placement: webViewRuntime.trackedWebViewAdmission,
-            selection: BrowserTabSelectionCommand {
-                [weak browserManager] tab, window, loadPolicy in
-                browserManager?.selectTab(
-                    tab,
-                    in: window,
-                    loadPolicy: loadPolicy
-                )
-            },
-            notifications: browserManager.notificationPresenter,
-            extensionTabs: extensions
+            creation: WebKitChildTabCreationTransaction(
+                spaces: tabs.spaceStateOwner,
+                regularTabs: tabs.regularTabCollectionOwner,
+                regularLifecycle: tabs.regularTabLifecycleOwner,
+                ephemeralLifecycle: tabs.ephemeralLifecycleOwner
+            ),
+            settlement: WebKitChildTabSettlementTransaction(
+                residences: browserManager.tabResidenceAuthority,
+                placement: webViewRuntime.trackedWebViewAdmission,
+                selection: BrowserTabSelectionCommand {
+                    [weak browserManager] tab, window, loadPolicy in
+                    browserManager?.selectTab(
+                        tab,
+                        in: window,
+                        loadPolicy: loadPolicy
+                    )
+                },
+                notifications: browserManager.notificationPresenter,
+                extensionTabs: extensions
+            )
         )
         let childWindows = WebKitChildWindowOpeningService(
             windowTransaction: WebKitChildWindowShellTransaction(
                 commands: browserManager.windowCommands,
                 restoration: browserManager.windowSessionBundle.restoreService,
                 profiles: browserManager.profileManager,
-                tabs: browserManager.tabManager
+                spaces: tabs.spaceStateOwner
             ),
-            tabs: browserManager.tabManager,
+            regularTabs: tabs.regularTabCollectionOwner,
+            regularLifecycle: tabs.regularTabLifecycleOwner,
+            ephemeralLifecycle: tabs.ephemeralLifecycleOwner,
+            residences: browserManager.tabResidenceAuthority,
             placement: webViewRuntime.trackedWebViewAdmission,
             ownershipQuery: webViewRuntime.ownershipQuery,
             sourceResolver: physicalSources,
             lifecycle: webViewRuntime.lifecycleService,
             extensionPublication: browserManager.windowExtensionPublication,
             persistWindowSession: { [weak browserManager] window in
-                browserManager?.windowSessionBundle.persistence.persist(window)
+                browserManager?.windowSessionPersistenceCoordinator.persist(window)
             }
         )
         return TabBrowserRuntime(
@@ -79,9 +99,21 @@ enum TabBrowserRuntimeFactory {
                 for: browserManager,
                 ownershipQuery: webViewRuntime.ownershipQuery
             ),
-            webViewRoutingRuntime: TabBrowserHostServicesRuntimeFactory.webViewRoutingRuntime(for: browserManager),
-            persistenceRuntimeCallbacks: TabBrowserHostServicesRuntimeFactory.persistenceCallbacks(for: browserManager),
-            mediaRuntimeCallbacks: TabBrowserHostServicesRuntimeFactory.mediaCallbacks(for: browserManager),
+            webViewRoutingRuntime: TabBrowserHostServicesRuntimeFactory
+                .webViewRoutingRuntime(
+                    service: browserManager.webViewRoutingService
+                ),
+            persistenceRuntimeCallbacks: TabBrowserHostServicesRuntimeFactory
+                .persistenceCallbacks(
+                    persistence: tabs.structuralPersistence
+                ),
+            mediaRuntimeCallbacks: TabBrowserHostServicesRuntimeFactory
+                .mediaCallbacks(
+                    nowPlayingController: browserManager
+                        .nativeNowPlayingController,
+                    backgroundMediaOptimizationService: browserManager
+                        .backgroundMediaOptimizationService
+                ),
             navigationCommandRuntime: TabBrowserNavigationRuntimeFactory.navigationCommandRuntime(for: browserManager),
             profileResolutionRuntime: TabBrowserNavigationRuntimeFactory.profileResolutionRuntime(for: browserManager),
             reloadPolicies: TabBrowserNavigationRuntimeFactory.reloadPolicies(
@@ -91,10 +123,23 @@ enum TabBrowserRuntimeFactory {
             historyRecordingRuntime: TabBrowserNavigationRuntimeFactory.historyRecordingRuntime(for: browserManager),
             findInPageRuntime: TabBrowserNavigationRuntimeFactory.findInPageRuntime(for: browserManager),
             extensionPropertiesRuntime: TabBrowserExtensionRuntimeFactory.extensionPropertiesRuntime(for: browserManager),
-            closeLifecycleRuntime: TabBrowserHostServicesRuntimeFactory.closeLifecycleRuntime(for: browserManager),
+            closeLifecycleRuntime: TabBrowserHostServicesRuntimeFactory
+                .closeLifecycleRuntime(
+                    zoom: browserManager.chromeBundle.zoomCommandOwner,
+                    compositor: browserManager.compositorManager,
+                    tabClosure: tabs.tabClosureService
+                ),
             lifecycleNavigationRuntime: TabBrowserNavigationRuntimeFactory.lifecycleNavigationRuntime(for: browserManager),
             permissionRuntime: TabBrowserHostServicesRuntimeFactory.permissionRuntime(
-                for: browserManager,
+                permissionRuntime: browserManager.permissionRuntime,
+                glanceManager: browserManager.glanceManager,
+                routing: browserManager.webViewRoutingService,
+                windowRegistry: { [weak browserManager] in
+                    browserManager?.windowRegistry
+                },
+                spaces: tabs.spaceStateOwner,
+                profiles: browserManager.profileManager,
+                auxiliaryTabs: tabs.auxiliaryMiniWindowTabs,
                 ownershipQuery: webViewRuntime.ownershipQuery,
                 visibility: webViewRuntime.visibilityRuntime
             ),
@@ -135,9 +180,12 @@ enum TabBrowserRuntimeFactory {
             restoration: browserManager.windowSessionBundle.restoreService,
             extensionPublication: browserManager.windowExtensionPublication,
             profiles: browserManager.profileManager,
-            tabs: browserManager.tabManager,
+            spaces: browserManager.spaceStateOwner,
+            regularLifecycle: browserManager.regularTabLifecycleOwner,
+            ephemeralLifecycle: browserManager.ephemeralLifecycleOwner,
+            residences: browserManager.tabResidenceAuthority,
             persistWindow: { [weak browserManager] window in
-                browserManager?.windowSessionBundle.persistence.persist(window)
+                browserManager?.windowSessionPersistenceCoordinator.persist(window)
             },
             materialize: { [weak browserManager] tab, window in
                 guard let browserManager else { return nil }

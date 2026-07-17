@@ -10,10 +10,7 @@ final class TabStructuralLookupCoordinatorTests: XCTestCase {
     ) -> TabStructuralLookupCoordinator {
         TabStructuralLookupCoordinator(
             eventBus: eventBus,
-            tabsBySpace: { [:] },
-            transientShortcutTabsByWindow: { [:] },
-            transientExtensionTabsByID: { [:] },
-            auxiliaryMiniWindowTabsByID: { [:] }
+            stateStore: TabStateStore()
         )
     }
 

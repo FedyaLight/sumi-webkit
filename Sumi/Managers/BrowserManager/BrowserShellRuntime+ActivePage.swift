@@ -4,7 +4,7 @@ extension BrowserShellRuntime {
     func makeActivePageResolver() -> ActivePageResolver {
         ActivePageResolver(
             activeWindow: { [weak self] in
-                self?.windowRegistry?.activeWindow
+                self?.windowRegistry.activeWindow
             },
             selectedTab: { [weak self] windowState in
                 self?.windowTabs.currentTab(for: windowState)

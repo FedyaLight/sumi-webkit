@@ -11,7 +11,8 @@ for removed_file in \
   Sumi/ContentBlocking/SumiAdblockUpdatePipeline.swift \
   Sumi/ContentBlocking/SumiProtectionBundleRemoteUpdate.swift \
   Sumi/ContentBlocking/SumiContentBlockingScheduledTaskOwner.swift \
-  Sumi/ContentBlocking/ProtectionRuntimeSynchronizer.swift; do
+  Sumi/ContentBlocking/ProtectionRuntimeSynchronizer.swift \
+  Sumi/ContentBlocking/SumiProfileContentBlockingRuntime.swift; do
   if [[ -e "$removed_file" || -L "$removed_file" ]]; then
     echo "error: retired Adblock god surface returned: $removed_file" >&2
     exit 1
@@ -24,7 +25,8 @@ for removed_symbol in \
   AdblockUpdateCoordinator \
   SumiContentBlockingScheduledTaskOwner \
   AdblockWebKitRuleListStore \
-  ProtectionRuntimeSynchronizer; do
+  ProtectionRuntimeSynchronizer \
+  SumiProfileContentBlockingRuntime; do
   removed_symbol_count="$(
     guard_count_matches "\\b${removed_symbol}\\b" Sumi SumiTests --glob '*.swift'
   )"
@@ -33,6 +35,16 @@ for removed_symbol in \
     exit 1
   fi
 done
+
+profile_specific_runtime_count="$(
+  guard_count_matches \
+    'hasProfileSpecificRuleLists|profileSubjects|refreshProfileSubjects|profileUserContentPublisher' \
+    Sumi/ContentBlocking SumiTests --glob '*.swift'
+)"
+if (( profile_specific_runtime_count > 0 )); then
+  echo "error: retired profile-specific content-blocking runtime seam returned" >&2
+  exit 1
+fi
 
 line_budgets=(
   "Sumi/ContentBlocking/AdblockGenerationArchive.swift|280"
@@ -59,7 +71,6 @@ line_budgets=(
   "Sumi/ContentBlocking/SumiContentBlockingService.swift|360"
   "Sumi/ContentBlocking/SumiContentBlockingStateMachine.swift|125"
   "Sumi/ContentBlocking/SumiRuleListProviderRuntime.swift|130"
-  "Sumi/ContentBlocking/SumiProfileContentBlockingRuntime.swift|150"
   "Sumi/ContentBlocking/ContentBlockingTaskRegistry.swift|80"
 )
 for budget in "${line_budgets[@]}"; do
@@ -98,7 +109,6 @@ focused_files=(
   Sumi/ContentBlocking/SumiContentBlockingService.swift
   Sumi/ContentBlocking/SumiContentBlockingStateMachine.swift
   Sumi/ContentBlocking/SumiRuleListProviderRuntime.swift
-  Sumi/ContentBlocking/SumiProfileContentBlockingRuntime.swift
   Sumi/ContentBlocking/ContentBlockingTaskRegistry.swift
 )
 
@@ -139,6 +149,17 @@ provider_leak_count="$(guard_count_matches \
   Sumi/ContentBlocking/SumiContentBlockingStateMachine.swift)"
 if (( provider_leak_count > 0 )); then
   echo "error: provider observation/generation leaked back into policy runtime" >&2
+  exit 1
+fi
+
+profile_scoped_global_provider_count="$(guard_count_matches \
+  'profileId' \
+  Sumi/ContentBlocking/SumiContentRuleListSet.swift \
+  Sumi/ContentBlocking/AdblockManifestRuleListProvider.swift \
+  Sumi/ContentBlocking/SumiRuleListProviderRuntime.swift \
+  Sumi/ContentBlocking/SumiContentBlockingService.swift)"
+if (( profile_scoped_global_provider_count > 0 )); then
+  echo "error: global content-rule publication regained a fake profile-specific API" >&2
   exit 1
 fi
 

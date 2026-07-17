@@ -12,7 +12,7 @@ protocol BrowserFaviconServicing: AnyObject {
         _ bookmarks: [SumiBookmark],
         partition: SumiFaviconPartition
     )
-    func clearFaviconPartition(for profile: Profile)
+    func clearFaviconPartition(for profile: Profile) throws
 
 #if DEBUG
     func drainRuntimeTasksForTests(cancel: Bool) async
@@ -130,6 +130,7 @@ protocol BrowserSiteDataPolicyStoring: AnyObject {
     var changesPublisher: AnyPublisher<Void, Never> { get }
     func state(forHost host: String, profileId: UUID?) -> SumiSiteDataPolicyState
     func hostsWithPolicies(profileId: UUID?) -> Set<String>
+    func deletePolicies(profileId: UUID) throws
 }
 
 extension SumiSiteDataPolicyStore: BrowserSiteDataPolicyStoring {}

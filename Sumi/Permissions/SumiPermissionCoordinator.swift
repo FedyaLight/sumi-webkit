@@ -10,11 +10,13 @@ actor SumiPermissionCoordinator {
     private let persistentStore: (any SumiPermissionStore)?
     private let decisionResolutionOwner: SumiPermissionDecisionResolutionOwner
     private let decisionSideEffectOwner: SumiPermissionDecisionSideEffectOwner
+    private let siteDecisions: SumiPermissionSiteDecisionTransaction
     private let queue: SumiPermissionQueue
     private let settlementDecisionBuilder = SumiPermissionSettlementDecisionBuilder()
-    private let eventStream = SumiPermissionCoordinatorEventStream()
+    private let authorizationQueryBuilder: SumiPermissionAuthorizationQueryBuilder
+    private let eventPublisher: SumiPermissionEventPublisher
     private let sessionOwnerId: String?
-    private let nowProvider: NowProvider
+    private let profileAdmission: SumiPermissionProfileAdmission
 
     private var state = SumiPermissionCoordinatorState()
     private var pendingQueryOwner = SumiPermissionPendingQueryOwner()
@@ -27,20 +29,37 @@ actor SumiPermissionCoordinator {
         antiAbusePolicy: SumiPermissionAntiAbusePolicy = SumiPermissionAntiAbusePolicy(),
         queue: SumiPermissionQueue = SumiPermissionQueue(),
         sessionOwnerId: String? = nil,
+        profileAdmission: SumiPermissionProfileAdmission = SumiPermissionProfileAdmission(),
         now: @escaping NowProvider = { Date() }
     ) {
         self.memoryStore = memoryStore
         self.persistentStore = persistentStore
         self.queue = queue
         self.sessionOwnerId = Self.normalizedOptionalId(sessionOwnerId)
-        self.nowProvider = now
-        self.decisionSideEffectOwner = SumiPermissionDecisionSideEffectOwner(
+        self.profileAdmission = profileAdmission
+        self.authorizationQueryBuilder = SumiPermissionAuthorizationQueryBuilder(
+            now: now
+        )
+        let decisionSideEffects = SumiPermissionDecisionSideEffectOwner(
             memoryStore: memoryStore,
             persistentStore: persistentStore,
             antiAbuseStore: antiAbuseStore,
             antiAbusePolicy: antiAbusePolicy,
             sessionOwnerId: Self.normalizedOptionalId(sessionOwnerId),
             now: now
+        )
+        self.decisionSideEffectOwner = decisionSideEffects
+        self.siteDecisions = SumiPermissionSiteDecisionTransaction(
+            memoryStore: memoryStore,
+            persistentStore: persistentStore,
+            sideEffects: decisionSideEffects,
+            sessionOwnerID: Self.normalizedOptionalId(sessionOwnerId),
+            now: now
+        )
+        let eventStream = SumiPermissionCoordinatorEventStream()
+        self.eventPublisher = SumiPermissionEventPublisher(
+            sideEffects: decisionSideEffects,
+            events: eventStream
         )
         self.decisionResolutionOwner = SumiPermissionDecisionResolutionOwner(
             policyResolver: policyResolver,
@@ -56,9 +75,25 @@ actor SumiPermissionCoordinator {
     func requestPermission(
         _ context: SumiPermissionSecurityContext
     ) async -> SumiPermissionCoordinatorDecision {
-        switch await decisionResolutionOwner.resolveRequest(context) {
+        guard let decision = await profileAdmission.withLease(
+            profilePartitionId: context.profilePartitionId,
+            operation: { await self.resolveRequestPermission(context) }
+        ) else {
+            return SumiPermissionRetiredProfileDecisionBuilder.make(for: context)
+        }
+        return decision
+    }
+
+    private func resolveRequestPermission(
+        _ context: SumiPermissionSecurityContext
+    ) async -> SumiPermissionCoordinatorDecision {
+        let resolution = await decisionResolutionOwner.resolveRequest(context)
+        guard await isContextAdmitted(context) else {
+            return SumiPermissionRetiredProfileDecisionBuilder.make(for: context)
+        }
+        switch resolution {
         case .immediate(let decision):
-            await emitPolicyEventIfNeeded(decision)
+            await eventPublisher.publishIfNeeded(decision)
             return decision
         case .promptRequired(let promptEvaluations):
             return await enqueueAuthorizationQuery(
@@ -79,14 +114,27 @@ actor SumiPermissionCoordinator {
     func queryPermissionState(
         _ context: SumiPermissionSecurityContext
     ) async -> SumiPermissionCoordinatorDecision {
-        let decision = await decisionResolutionOwner.resolveQuery(context)
-        await emitPolicyEventIfNeeded(decision)
+        guard let decision = await profileAdmission.withLease(
+            profilePartitionId: context.profilePartitionId,
+            operation: {
+                let decision = await self.decisionResolutionOwner.resolveQuery(context)
+                guard await self.isContextAdmitted(context) else {
+                    return SumiPermissionRetiredProfileDecisionBuilder.make(
+                        for: context
+                    )
+                }
+                await self.eventPublisher.publishIfNeeded(decision)
+                return decision
+            }
+        ) else {
+            return SumiPermissionRetiredProfileDecisionBuilder.make(for: context)
+        }
         return decision
     }
 
     func stateSnapshot() -> SumiPermissionCoordinatorState {
         var snapshot = state
-        let eventSnapshot = eventStream.snapshot()
+        let eventSnapshot = eventPublisher.snapshot()
         snapshot.latestEvent = eventSnapshot.latestEvent
         snapshot.latestSystemBlockedEvent = eventSnapshot.latestSystemBlockedEvent
         snapshot.activeQueriesByPageId = pendingQueryOwner.activeQueriesByPageId
@@ -100,6 +148,18 @@ actor SumiPermissionCoordinator {
 
     func recordPromptShown(queryId: String) async {
         guard let pending = pendingQueryOwner.pending(queryId: queryId) else { return }
+        _ = await profileAdmission.withLease(
+            profilePartitionId: pending.query.profilePartitionId,
+            operation: {
+                await self.recordPromptShownAdmitted(queryId: queryId)
+            }
+        )
+    }
+
+    private func recordPromptShownAdmitted(queryId: String) async {
+        guard let pending = pendingQueryOwner.pending(queryId: queryId) else {
+            return
+        }
         await decisionSideEffectOwner.recordEvents(
             type: .promptShown,
             keys: pending.keys,
@@ -112,26 +172,47 @@ actor SumiPermissionCoordinator {
         isEphemeralProfile: Bool
     ) async throws -> [SumiPermissionStoreRecord] {
         let profileId = SumiPermissionKey.normalizedProfilePartitionId(profilePartitionId)
-        if isEphemeralProfile {
-            return try await memoryStore.listDecisions(
-                profilePartitionId: profileId,
-                includingPersistences: [.session]
-            )
+        let memoryStore = memoryStore
+        let persistentStore = persistentStore
+        guard let records = try await profileAdmission.withLease(
+            profilePartitionId: profileId,
+            operation: {
+                if isEphemeralProfile {
+                    return try await memoryStore.listDecisions(
+                        profilePartitionId: profileId,
+                        includingPersistences: [.session]
+                    )
+                }
+                guard let persistentStore else {
+                    return []
+                }
+                return try await persistentStore.listDecisions(
+                    profilePartitionId: profileId
+                )
+            }
+        ) else {
+            throw SumiPermissionSiteDecisionError.unavailable
         }
-        guard let persistentStore else {
-            return []
-        }
-        return try await persistentStore.listDecisions(profilePartitionId: profileId)
+        return records
     }
 
     func transientDecisionRecords(
         profilePartitionId: String,
         pageId: String
     ) async throws -> [SumiPermissionStoreRecord] {
-        try await memoryStore.listOneTimeDecisions(
+        let memoryStore = memoryStore
+        guard let records = try await profileAdmission.withLease(
             profilePartitionId: profilePartitionId,
-            pageId: pageId
-        )
+            operation: {
+                try await memoryStore.listOneTimeDecisions(
+                    profilePartitionId: profilePartitionId,
+                    pageId: pageId
+                )
+            }
+        ) else {
+            throw SumiPermissionSiteDecisionError.unavailable
+        }
+        return records
     }
 
     func setSiteDecision(
@@ -140,45 +221,34 @@ actor SumiPermissionCoordinator {
         source: SumiPermissionDecisionSource = .user,
         reason: String? = nil
     ) async throws {
-        guard key.permissionType.canBePersisted else {
-            throw SumiPermissionSiteDecisionError.unsupportedPermission(key.permissionType.identity)
-        }
-
-        let now = nowProvider()
-        let persistence: SumiPermissionPersistence = key.isEphemeralProfile ? .session : .persistent
-        let decision = SumiPermissionDecision(
-            state: state,
-            persistence: persistence,
-            source: source,
-            reason: reason,
-            createdAt: now,
-            updatedAt: now
+        let result: Void? = try await profileAdmission.withLease(
+            profilePartitionId: key.profilePartitionId,
+            operation: {
+                try await self.siteDecisions.set(
+                    state,
+                    for: key,
+                    source: source,
+                    reason: reason
+                )
+            }
         )
-
-        if key.isEphemeralProfile {
-            try await memoryStore.setDecision(
-                for: key,
-                decision: decision,
-                sessionOwnerId: sessionOwnerId
-            )
-            await decisionSideEffectOwner.recordManualSiteDecisionAntiAbuse(state: state, key: key, reason: reason)
-            return
+        guard result != nil else {
+            throw SumiPermissionSiteDecisionError.unavailable
         }
-
-        guard let persistentStore else {
-            throw SumiPermissionSiteDecisionError.persistentStoreUnavailable
-        }
-        try await persistentStore.setDecision(for: key, decision: decision)
-        await decisionSideEffectOwner.recordManualSiteDecisionAntiAbuse(state: state, key: key, reason: reason)
     }
 
     func resetSiteDecision(
         for key: SumiPermissionKey
     ) async throws {
-        try await memoryStore.resetDecision(for: key, sessionOwnerId: sessionOwnerId)
-        await decisionSideEffectOwner.clearSuppressionState(for: key)
-        guard !key.isEphemeralProfile else { return }
-        try await persistentStore?.resetDecision(for: key)
+        let result: Void? = try await profileAdmission.withLease(
+            profilePartitionId: key.profilePartitionId,
+            operation: {
+                try await self.siteDecisions.reset(key)
+            }
+        )
+        guard result != nil else {
+            throw SumiPermissionSiteDecisionError.unavailable
+        }
     }
 
     func resetSiteDecisions(
@@ -198,16 +268,22 @@ actor SumiPermissionCoordinator {
         reason: String = "transient-decisions-reset"
     ) async -> Int {
         _ = reason
-        return await memoryStore.clearTransientDecisions(
+        let memoryStore = memoryStore
+        return await profileAdmission.withLease(
             profilePartitionId: profilePartitionId,
-            pageId: pageId,
-            requestingOrigin: requestingOrigin,
-            topOrigin: topOrigin
-        )
+            operation: {
+                await memoryStore.clearTransientDecisions(
+                    profilePartitionId: profilePartitionId,
+                    pageId: pageId,
+                    requestingOrigin: requestingOrigin,
+                    topOrigin: topOrigin
+                )
+            }
+        ) ?? 0
     }
 
     func events() async -> AsyncStream<SumiPermissionCoordinatorEvent> {
-        eventStream.events()
+        eventPublisher.stream()
     }
 
     @discardableResult
@@ -247,6 +323,36 @@ actor SumiPermissionCoordinator {
 
     @discardableResult
     func systemBlock(
+        queryId: String,
+        snapshots: [SumiSystemPermissionSnapshot],
+        reason: String
+    ) async -> SumiPermissionCoordinatorDecision {
+        guard let pending = pendingQueryOwner.pending(queryId: queryId) else {
+            return ignoredDecision(reason: "query-not-found", permissionTypes: [])
+        }
+        let profilePartitionID = pending.query.profilePartitionId
+        let requestIDs = Array(pending.requestIds)
+        guard let decision = await profileAdmission.withLease(
+            profilePartitionId: profilePartitionID,
+            operation: {
+                await self.systemBlockAdmitted(
+                    queryId: queryId,
+                    snapshots: snapshots,
+                    reason: reason
+                )
+            }
+        ) else {
+            return cancellationDecision(
+                outcome: .cancelled,
+                source: .cancelled,
+                reason: "profile-retired",
+                requestIds: requestIDs
+            )
+        }
+        return decision
+    }
+
+    private func systemBlockAdmitted(
         queryId: String,
         snapshots: [SumiSystemPermissionSnapshot],
         reason: String
@@ -385,6 +491,27 @@ actor SumiPermissionCoordinator {
     }
 
     @discardableResult
+    func retireProfile(
+        profilePartitionId: String,
+        reason: String = "profile-retired"
+    ) async -> SumiPermissionCoordinatorDecision {
+        let profileID = SumiPermissionKey.normalizedProfilePartitionId(
+            profilePartitionId
+        )
+        await profileAdmission.seal(profilePartitionId: profileID)
+        let decision = await cancelProfile(
+            profilePartitionId: profileID,
+            reason: reason
+        )
+        await profileAdmission.waitForDrain(profilePartitionId: profileID)
+        return decision
+    }
+
+    func isProfileRetired(_ profilePartitionId: String) async -> Bool {
+        await profileAdmission.isRetired(profilePartitionId)
+    }
+
+    @discardableResult
     func cancelSession(
         ownerId: String,
         reason: String = "session-cancelled"
@@ -411,14 +538,24 @@ actor SumiPermissionCoordinator {
         originalContext: SumiPermissionSecurityContext,
         promptEvaluations: [PolicyEvaluation]
     ) async -> SumiPermissionCoordinatorDecision {
+        guard await isContextAdmitted(originalContext) else {
+            return SumiPermissionRetiredProfileDecisionBuilder.make(
+                for: originalContext
+            )
+        }
         let promptTypes = promptEvaluations.map(\.permissionType)
-        let promptRequest = request(
+        let promptRequest = authorizationQueryBuilder.request(
             from: originalContext,
             permissionTypes: promptTypes
         )
         let enqueueResult = await queue.enqueue(promptRequest)
-        let query = authorizationQuery(
-            id: stableQueryId(for: promptRequest),
+        guard await isContextAdmitted(originalContext) else {
+            _ = await queue.cancel(requestId: promptRequest.id)
+            return SumiPermissionRetiredProfileDecisionBuilder.make(
+                for: originalContext
+            )
+        }
+        let query = authorizationQueryBuilder.authorizationQuery(
             request: promptRequest,
             originalContext: originalContext,
             promptEvaluations: promptEvaluations
@@ -439,6 +576,12 @@ actor SumiPermissionCoordinator {
                 await self.cancel(requestId: promptRequest.id, reason: "task-cancelled")
             }
         }
+    }
+
+    private func isContextAdmitted(
+        _ context: SumiPermissionSecurityContext
+    ) async -> Bool {
+        await profileAdmission.isRetired(context.profilePartitionId) == false
     }
 
     private func register(
@@ -473,6 +616,33 @@ actor SumiPermissionCoordinator {
     }
 
     private func settle(
+        queryId: String,
+        with userDecision: SumiPermissionUserDecision
+    ) async -> SumiPermissionCoordinatorDecision {
+        guard let pending = pendingQueryOwner.pending(queryId: queryId) else {
+            return ignoredDecision(reason: "query-not-found", permissionTypes: [])
+        }
+        let requestIDs = Array(pending.requestIds)
+        guard let decision = await profileAdmission.withLease(
+            profilePartitionId: pending.query.profilePartitionId,
+            operation: {
+                await self.settleAdmitted(
+                    queryId: queryId,
+                    with: userDecision
+                )
+            }
+        ) else {
+            return cancellationDecision(
+                outcome: .cancelled,
+                source: .cancelled,
+                reason: "profile-retired",
+                requestIds: requestIDs
+            )
+        }
+        return decision
+    }
+
+    private func settleAdmitted(
         queryId: String,
         with userDecision: SumiPermissionUserDecision
     ) async -> SumiPermissionCoordinatorDecision {
@@ -571,90 +741,6 @@ actor SumiPermissionCoordinator {
         pendingQueryOwner.pageIds(forRequestIds: requestIds)
     }
 
-    private func authorizationQuery(
-        id: String,
-        request: SumiPermissionRequest,
-        originalContext: SumiPermissionSecurityContext,
-        promptEvaluations: [PolicyEvaluation]
-    ) -> SumiPermissionAuthorizationQuery {
-        let policyResults = promptEvaluations.map(\.result)
-        let allowedPersistences = allowedPersistences(for: policyResults)
-        let systemSnapshots = policyResults.compactMap(\.systemAuthorizationSnapshot)
-        return SumiPermissionAuthorizationQuery(
-            id: id,
-            pageId: request.pageBucketId,
-            profilePartitionId: request.profilePartitionId,
-            displayDomain: request.displayDomain,
-            requestingOrigin: request.requestingOrigin,
-            topOrigin: request.topOrigin,
-            permissionTypes: request.permissionTypes,
-            presentationPermissionType: presentationPermissionType(
-                originalTypes: originalContext.request.permissionTypes,
-                promptTypes: request.permissionTypes
-            ),
-            availablePersistences: allowedPersistences,
-            systemAuthorizationSnapshots: systemSnapshots,
-            policyReasons: policyResults.map(\.reason),
-            createdAt: nowProvider(),
-            isEphemeralProfile: request.isEphemeralProfile,
-            shouldOfferSystemSettings: policyResults.contains(where: \.mayOpenSystemSettings),
-            disablesPersistentAllow: request.isEphemeralProfile || !allowedPersistences.contains(.persistent)
-        )
-    }
-
-    private func allowedPersistences(
-        for policyResults: [SumiPermissionPolicyResult]
-    ) -> Set<SumiPermissionPersistence> {
-        var allowed: Set<SumiPermissionPersistence>?
-        for policyResult in policyResults {
-            if var current = allowed {
-                current.formIntersection(policyResult.allowedPersistences)
-                allowed = current
-            } else {
-                allowed = policyResult.allowedPersistences
-            }
-        }
-        return allowed ?? [.oneTime]
-    }
-
-    private func presentationPermissionType(
-        originalTypes: [SumiPermissionType],
-        promptTypes: [SumiPermissionType]
-    ) -> SumiPermissionType? {
-        Set(originalTypes) == Set([.camera, .microphone])
-            && Set(promptTypes) == Set([.camera, .microphone])
-            ? .cameraAndMicrophone
-            : nil
-    }
-
-    private func request(
-        from context: SumiPermissionSecurityContext,
-        permissionTypes: [SumiPermissionType]
-    ) -> SumiPermissionRequest {
-        SumiPermissionRequest(
-            id: context.request.id,
-            tabId: context.request.tabId,
-            pageId: context.request.pageId,
-            frameId: context.request.frameId,
-            requestingOrigin: context.requestingOrigin,
-            topOrigin: context.topOrigin,
-            displayDomain: context.request.displayDomain,
-            permissionTypes: permissionTypes,
-            hasUserGesture: context.hasUserGesture ?? context.request.hasUserGesture,
-            requestedAt: context.request.requestedAt,
-            isEphemeralProfile: context.isEphemeralProfile,
-            profilePartitionId: context.profilePartitionId
-        )
-    }
-
-    private func stableQueryId(for request: SumiPermissionRequest) -> String {
-        [
-            "permission-query",
-            request.pageBucketId,
-            request.queuePersistentIdentity,
-        ].joined(separator: "|")
-    }
-
     private func cancellationDecision(
         outcome: SumiPermissionCoordinatorOutcome,
         source: SumiPermissionDecisionSource,
@@ -690,41 +776,8 @@ actor SumiPermissionCoordinator {
         )
     }
 
-    private func emitPolicyEventIfNeeded(_ decision: SumiPermissionCoordinatorDecision) async {
-        guard decision.outcome == .systemBlocked else { return }
-        if let suppression = await decisionSideEffectOwner.systemBlockedSuppression(for: decision) {
-            let suppressedDecision = SumiPermissionCoordinatorDecision(
-                outcome: .systemBlocked,
-                state: decision.state,
-                persistence: decision.persistence,
-                source: decision.source,
-                reason: suppression.reason,
-                permissionTypes: decision.permissionTypes,
-                keys: decision.keys,
-                queryId: decision.queryId,
-                systemAuthorizationSnapshot: decision.systemAuthorizationSnapshot,
-                shouldOfferSystemSettings: decision.shouldOfferSystemSettings,
-                disablesPersistentAllow: decision.disablesPersistentAllow,
-                promptSuppression: suppression
-            )
-            await decisionSideEffectOwner.recordEvents(
-                type: suppression.eventType,
-                keys: decision.keys,
-                reason: suppression.reason
-            )
-            emit(.promptSuppressed(suppression, decision: suppressedDecision))
-            return
-        }
-        await decisionSideEffectOwner.recordEvents(
-            type: .systemBlocked,
-            keys: decision.keys,
-            reason: decision.reason
-        )
-        emit(.systemBlocked(decision))
-    }
-
     private func emit(_ event: SumiPermissionCoordinatorEvent) {
-        eventStream.emit(event)
+        eventPublisher.emit(event)
     }
 
     private static func normalizedPageId(_ value: String) -> String {

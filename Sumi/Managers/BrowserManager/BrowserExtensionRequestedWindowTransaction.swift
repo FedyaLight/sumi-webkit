@@ -22,7 +22,9 @@ final class BrowserExtensionRequestedWindowTransaction:
     private weak var restoration: WindowSessionRestoreService?
     private weak var extensionPublication:
         WindowExtensionPublicationTransaction?
-    private weak var tabs: TabManager?
+    private let spaces: TabSpaceCollectionStateOwner
+    private let regularLifecycle: TabRegularLifecycleOwner
+    private let residences: BrowserTabResidenceAuthority
     private let ownership: WebViewOwnershipQuery
     private let registeredWindow: @MainActor (UUID) -> BrowserWindowState?
     private let materialize: @MainActor (
@@ -39,7 +41,9 @@ final class BrowserExtensionRequestedWindowTransaction:
         commands: BrowserWindowCommands,
         restoration: WindowSessionRestoreService,
         extensionPublication: WindowExtensionPublicationTransaction,
-        tabs: TabManager,
+        spaces: TabSpaceCollectionStateOwner,
+        regularLifecycle: TabRegularLifecycleOwner,
+        residences: BrowserTabResidenceAuthority,
         ownership: WebViewOwnershipQuery,
         registeredWindow: @escaping @MainActor (
             UUID
@@ -56,7 +60,9 @@ final class BrowserExtensionRequestedWindowTransaction:
         self.commands = commands
         self.restoration = restoration
         self.extensionPublication = extensionPublication
-        self.tabs = tabs
+        self.spaces = spaces
+        self.regularLifecycle = regularLifecycle
+        self.residences = residences
         self.ownership = ownership
         self.registeredWindow = registeredWindow
         self.materialize = materialize
@@ -70,12 +76,14 @@ final class BrowserExtensionRequestedWindowTransaction:
         guard let commands,
               let restoration,
               let extensionPublication,
-              let tabs,
               seed.space.profileId == seed.profileID,
-              tabs.spaceStateOwner.space(with: seed.space.id) === seed.space
+              spaces.space(with: seed.space.id) === seed.space
         else {
             return nil
         }
+        let spaces = self.spaces
+        let regularLifecycle = self.regularLifecycle
+        let residences = self.residences
 
         var initialTab: Tab?
         var initialWebView: FocusableWKWebView?
@@ -84,13 +92,13 @@ final class BrowserExtensionRequestedWindowTransaction:
 
         let window = commands.createPreparedWindow(
             initialize: { target in
-                guard tabs.spaceStateOwner.space(with: seed.space.id)
+                guard spaces.space(with: seed.space.id)
                         === seed.space,
                       seed.space.profileId == seed.profileID
                 else {
                     return
                 }
-                let tab = tabs.regularTabLifecycleOwner.createNewTab(
+                let tab = regularLifecycle.createNewTab(
                     url: (seed.url ?? SumiSurface.emptyTabURL).absoluteString,
                     in: seed.space,
                     activate: false,
@@ -120,7 +128,8 @@ final class BrowserExtensionRequestedWindowTransaction:
                     initialTab,
                     seed: seed,
                     in: target,
-                    tabs: tabs,
+                    spaces: spaces,
+                    residences: residences,
                     webView: nil,
                     ownership: self.ownership
                 )
@@ -132,7 +141,8 @@ final class BrowserExtensionRequestedWindowTransaction:
                           initialTab,
                           seed: seed,
                           in: target,
-                          tabs: tabs,
+                          spaces: spaces,
+                          residences: residences,
                           webView: initialWebView,
                           ownership: self.ownership
                       )
@@ -189,7 +199,8 @@ final class BrowserExtensionRequestedWindowTransaction:
                     initialTab,
                     seed: seed,
                     in: target,
-                    tabs: tabs,
+                    spaces: spaces,
+                    residences: residences,
                     webView: initialWebView,
                     ownership: self.ownership
                 )
@@ -228,7 +239,8 @@ final class BrowserExtensionRequestedWindowTransaction:
                   initialTab,
                   seed: seed,
                   in: window,
-                  tabs: tabs,
+                  spaces: spaces,
+                  residences: residences,
                   webView: initialWebView,
                   ownership: ownership
               )
@@ -337,12 +349,12 @@ final class BrowserExtensionRequestedWindowTransaction:
               registeredWindow(window.id) === window,
               extensionPublication?.initialPublicationResult(for: window)
                 == .extensionPublished,
-              let tabs,
               Self.validate(
                   prepared.tab,
                   seed: prepared.seed,
                   in: window,
-                  tabs: tabs,
+                  spaces: spaces,
+                  residences: residences,
                   webView: prepared.webView,
                   ownership: ownership
               )
@@ -356,7 +368,8 @@ final class BrowserExtensionRequestedWindowTransaction:
         _ tab: Tab,
         seed: ExtensionRequestedWindowSeed,
         in window: BrowserWindowState,
-        tabs: TabManager,
+        spaces: TabSpaceCollectionStateOwner,
+        residences: BrowserTabResidenceAuthority,
         webView: FocusableWKWebView?,
         ownership: WebViewOwnershipQuery
     ) -> Bool {
@@ -367,13 +380,11 @@ final class BrowserExtensionRequestedWindowTransaction:
               tab.spaceId == seed.space.id,
               (tab.profileId ?? seed.space.profileId) == seed.profileID,
               tab.webExtensionContextOverride === seed.webExtensionContext,
-              tabs.spaceStateOwner.space(with: seed.space.id) === seed.space
+              spaces.space(with: seed.space.id) === seed.space
         else {
             return false
         }
-        guard tabs.regularTabCollectionOwner
-            .tabs(in: seed.space.id)
-            .contains(where: { $0 === tab })
+        guard residences.containsExact(tab, in: window)
         else {
             return false
         }
@@ -406,17 +417,19 @@ final class BrowserExtensionRequestedWindowTransaction:
         from window: BrowserWindowState,
         spaceID: UUID
     ) {
-        guard let tabs else { return }
+        guard tab.spaceId == spaceID,
+              let admission = residences.admitRemoval(
+            of: tab,
+            from: window
+        ) else { return }
         tab.performComprehensiveWebViewCleanup()
-        tabs.structuralPersistence.cancelRuntimeStatePersistence(for: tab.id)
-        window.currentTabId = nil
-        if tabs.regularTabCollectionOwner.remove(
-            tab.id,
-            from: spaceID,
-            currentSpaceId: window.currentSpaceId
-        ) != nil {
-            tabs.tabCollectionMembershipOwner.detach(tab)
-            tabs.structuralPersistence.scheduleStructuralPersistence()
+        guard residences.commitRemoval(
+                  admission,
+                  currentSpaceID: window.currentSpaceId
+              )
+        else { return }
+        if window.currentTabId == tab.id {
+            window.currentTabId = nil
         }
         restoration?.cancelPreparedWindowRegistration(window)
     }

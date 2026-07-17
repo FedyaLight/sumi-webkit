@@ -53,10 +53,12 @@ final class DisplayedTabShortcutRuntimePreparer {
               attachment.isCurrent() else { return nil }
         return DisplayedTabShortcutRuntimeTransaction(
             windows: windows,
-            binding: binding,
-            membershipWitness: membershipWitness,
-            containerRemoval: containerRemoval,
-            regularTabs: regularTabs,
+            sourceModel: DisplayedTabShortcutSourceModelTransaction(
+                binding: binding,
+                membershipWitness: membershipWitness,
+                containerRemoval: containerRemoval,
+                regularTabs: regularTabs
+            ),
             structuralLookup: structuralLookup,
             runtimeAttachment: attachment
         )

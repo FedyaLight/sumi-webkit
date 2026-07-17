@@ -5,22 +5,22 @@ import Foundation
 /// directly and cannot steal focus from another window.
 @MainActor
 final class FocusedSpaceRuntimeStateSynchronizer {
-    private let activeWindow: () -> BrowserWindowState?
+    private let windows: WindowRegistry
     private let windowContext: BrowserWindowSpaceContextReconciler
     private let runtimeState: SpaceProfileRuntimeStateService
 
     init(
-        activeWindow: @escaping () -> BrowserWindowState?,
+        windows: WindowRegistry,
         windowContext: BrowserWindowSpaceContextReconciler,
         runtimeState: SpaceProfileRuntimeStateService
     ) {
-        self.activeWindow = activeWindow
+        self.windows = windows
         self.windowContext = windowContext
         self.runtimeState = runtimeState
     }
 
     func synchronizeActiveWindow() {
-        synchronize(activeWindow())
+        synchronize(windows.activeWindow)
     }
 
     func synchronize(_ windowState: BrowserWindowState?) {

@@ -854,8 +854,8 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         let destination = Space(name: "Destination", profileId: profileId)
         let essential = makeEssentialPin(profileId: profileId, title: "Pinned")
 
-        browserManager.tabManager.spaceStateOwner.replaceSpaces([source, destination])
-        browserManager.tabManager.structuralCollectionMutationOwner.setPinnedTabs([essential], for: profileId)
+        browserManager.spaceStateOwner.replaceSpaces([source, destination])
+        browserManager.structuralCollectionMutationOwner.setPinnedTabs([essential], for: profileId)
         windowState.currentProfileId = profileId
         windowState.currentSpaceId = source.id
 
@@ -880,11 +880,11 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         let destination = Space(name: "Destination", profileId: profileId)
         let essential = makeEssentialPin(profileId: profileId, title: "Pinned")
 
-        browserManager.tabManager.spaceStateOwner.replaceSpaces([source, destination])
-        browserManager.tabManager.structuralCollectionMutationOwner.setPinnedTabs([essential], for: profileId)
+        browserManager.spaceStateOwner.replaceSpaces([source, destination])
+        browserManager.structuralCollectionMutationOwner.setPinnedTabs([essential], for: profileId)
         windowState.currentProfileId = profileId
         windowState.currentSpaceId = source.id
-        _ = browserManager.tabManager.shortcutTabMaterializer.materialize(
+        _ = browserManager.shortcutTabMaterializer.materialize(
             essential,
             in: windowState.id,
             currentSpaceId: source.id
@@ -898,7 +898,7 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
             windowState: windowState,
             settings: settings
         )
-        let expectedPartition = browserManager.tabManager.shortcutPinRuntimeResolutionOwner.resolvedFaviconPartition(
+        let expectedPartition = browserManager.shortcutPinRuntimeResolutionOwner.resolvedFaviconPartition(
             for: essential,
             currentSpaceId: windowState.currentSpaceId
         )
@@ -919,7 +919,7 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         let source = Space(name: "Source Space", icon: "sparkles", profileId: profileId)
         let destination = Space(name: "Destination Space", icon: "star.fill", profileId: profileId)
 
-        browserManager.tabManager.spaceStateOwner.replaceSpaces([source, destination])
+        browserManager.spaceStateOwner.replaceSpaces([source, destination])
         windowState.currentProfileId = profileId
         windowState.currentSpaceId = source.id
 
@@ -960,7 +960,7 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
             viewportHeight: 180
         )
 
-        browserManager.tabManager.spaceStateOwner.replaceSpaces([source, destination])
+        browserManager.spaceStateOwner.replaceSpaces([source, destination])
         windowState.currentProfileId = profileId
         windowState.currentSpaceId = source.id
 
@@ -999,7 +999,7 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
             viewportHeight: 140
         )
 
-        browserManager.tabManager.spaceStateOwner.replaceSpaces([source, destination])
+        browserManager.spaceStateOwner.replaceSpaces([source, destination])
         windowState.currentProfileId = profileId
         windowState.currentSpaceId = source.id
 
@@ -1030,9 +1030,9 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         let sourceEssential = makeEssentialPin(profileId: sourceProfileId, title: "Source Pin")
         let destinationEssential = makeEssentialPin(profileId: destinationProfileId, title: "Destination Pin")
 
-        browserManager.tabManager.spaceStateOwner.replaceSpaces([source, destination])
-        browserManager.tabManager.structuralCollectionMutationOwner.setPinnedTabs([sourceEssential], for: sourceProfileId)
-        browserManager.tabManager.structuralCollectionMutationOwner.setPinnedTabs([destinationEssential], for: destinationProfileId)
+        browserManager.spaceStateOwner.replaceSpaces([source, destination])
+        browserManager.structuralCollectionMutationOwner.setPinnedTabs([sourceEssential], for: sourceProfileId)
+        browserManager.structuralCollectionMutationOwner.setPinnedTabs([destinationEssential], for: destinationProfileId)
         windowState.currentProfileId = sourceProfileId
         windowState.currentSpaceId = source.id
 
@@ -1056,13 +1056,13 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         let profileId = UUID()
         let source = Space(name: "Source", profileId: profileId)
         let destination = Space(name: "Destination", profileId: profileId)
-        let first = browserManager.tabManager.tabFactory.makeTab(
+        let first = browserManager.tabFactory.makeTab(
             url: URL(string: "https://example.com/first")!,
             name: "First",
             spaceId: source.id,
             index: 0
         )
-        let second = browserManager.tabManager.tabFactory.makeTab(
+        let second = browserManager.tabFactory.makeTab(
             url: URL(string: "https://example.com/second")!,
             name: "Second",
             spaceId: source.id,
@@ -1071,9 +1071,9 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         first.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
         second.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
 
-        browserManager.tabManager.spaceStateOwner.replaceSpaces([source, destination])
-        browserManager.tabManager.regularTabLifecycleOwner.addTab(first)
-        browserManager.tabManager.regularTabLifecycleOwner.addTab(second)
+        browserManager.spaceStateOwner.replaceSpaces([source, destination])
+        browserManager.regularTabLifecycleOwner.addTab(first)
+        browserManager.regularTabLifecycleOwner.addTab(second)
         windowState.currentProfileId = profileId
         windowState.currentSpaceId = source.id
         windowState.currentTabId = second.id
@@ -1097,7 +1097,7 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         let profileId = UUID()
         let source = Space(name: "Source", profileId: profileId)
         let destination = Space(name: "Destination", profileId: profileId)
-        let unloadedTab = browserManager.tabManager.tabFactory.makeTab(
+        let unloadedTab = browserManager.tabFactory.makeTab(
             url: URL(string: "https://example.com/unloaded")!,
             name: "Unloaded",
             spaceId: source.id,
@@ -1105,8 +1105,8 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         )
         unloadedTab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
 
-        browserManager.tabManager.spaceStateOwner.replaceSpaces([source, destination])
-        browserManager.tabManager.regularTabLifecycleOwner.addTab(unloadedTab)
+        browserManager.spaceStateOwner.replaceSpaces([source, destination])
+        browserManager.regularTabLifecycleOwner.addTab(unloadedTab)
         windowState.currentProfileId = profileId
         windowState.currentSpaceId = source.id
         windowState.currentTabId = unloadedTab.id
@@ -1189,13 +1189,13 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         let firstPin = makeSpacePinnedPin(spaceId: source.id, folderId: folder.id, index: 0, title: "First")
         let secondPin = makeSpacePinnedPin(spaceId: source.id, folderId: folder.id, index: 1, title: "Second")
 
-        browserManager.tabManager.spaceStateOwner.replaceSpaces([source, destination])
-        browserManager.tabManager.structuralCollectionMutationOwner.setFolders([folder], for: source.id)
-        browserManager.tabManager.structuralCollectionMutationOwner.setSpacePinnedShortcuts([firstPin, secondPin], for: source.id)
+        browserManager.spaceStateOwner.replaceSpaces([source, destination])
+        browserManager.structuralCollectionMutationOwner.setFolders([folder], for: source.id)
+        browserManager.structuralCollectionMutationOwner.setSpacePinnedShortcuts([firstPin, secondPin], for: source.id)
         windowState.currentProfileId = profileId
         windowState.currentSpaceId = source.id
 
-        _ = browserManager.tabManager.shortcutTabMaterializer.materialize(
+        _ = browserManager.shortcutTabMaterializer.materialize(
             secondPin,
             in: windowState.id,
             currentSpaceId: source.id
@@ -1231,9 +1231,9 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         child.isOpen = true
         let nestedPin = makeSpacePinnedPin(spaceId: source.id, folderId: child.id, index: 0, title: "Nested")
 
-        browserManager.tabManager.spaceStateOwner.replaceSpaces([source, destination])
-        browserManager.tabManager.structuralCollectionMutationOwner.setFolders([parent, child], for: source.id)
-        browserManager.tabManager.structuralCollectionMutationOwner.setSpacePinnedShortcuts([nestedPin], for: source.id)
+        browserManager.spaceStateOwner.replaceSpaces([source, destination])
+        browserManager.structuralCollectionMutationOwner.setFolders([parent, child], for: source.id)
+        browserManager.structuralCollectionMutationOwner.setSpacePinnedShortcuts([nestedPin], for: source.id)
         windowState.currentProfileId = profileId
         windowState.currentSpaceId = source.id
 
@@ -1514,20 +1514,20 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         settings: SumiSettingsService,
         scrollViewportForSpace: (UUID) -> SpaceSidebarSnapshotViewport? = { _ in nil }
     ) -> SpaceSidebarTransitionSnapshot {
-        let roles = SidebarConsumerTestSupport.roles(
-            tabManager: browserManager.tabManager,
+        let sidebar = TransitionStateSidebarFixture(
+            browser: browserManager,
             windowState: windowState
         )
         return SpaceSidebarTransitionSnapshotBuilder.make(
             sourceSpace: sourceSpace,
             destinationSpace: destinationSpace,
-            browserContext: SidebarBrowserContext.live(
-                browserManager: browserManager,
-                spaceLifecycle: roles.lifecycle
+            browserContext: browserManager.composeSidebarBrowserContext(
+                spaceLifecycle: sidebar.lifecycle
             ),
-            inventory: roles.inventory,
-            selection: roles.selection,
-            pinProjection: roles.pinProjection,
+            spaceCatalog: sidebar.spaceCatalog,
+            inventory: sidebar.inventory,
+            selection: sidebar.selection,
+            pinProjection: sidebar.pinProjection,
             windowState: windowState,
             settings: settings,
             scrollViewportForSpace: scrollViewportForSpace
@@ -1580,5 +1580,51 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
             launchURL: URL(string: "https://example.com/\(UUID().uuidString)")!,
             title: title
         )
+    }
+}
+
+@MainActor
+private struct TransitionStateSidebarFixture {
+    let spaceCatalog: SidebarSpaceCatalogProjection
+    let inventory: SidebarSpaceInventoryProjection
+    let selection: SidebarWindowSelectionQuery
+    let pinProjection: SidebarPinFolderProjection
+    let lifecycle: SidebarSpaceLifecycle
+
+    init(browser: BrowserManager, windowState: BrowserWindowState) {
+        let registry = browser.windowRegistry
+        registry.register(windowState)
+        let windows = SidebarWindowIdentityQuery(registry: registry)
+        spaceCatalog = SidebarSpaceCatalogProjection(
+            runtime: browser.runtimePortConnection,
+            spaces: browser.spaceStateOwner,
+            pins: browser.shortcutPinCollectionStateOwner
+        )
+        inventory = SidebarSpaceInventoryProjection(
+            runtime: browser.runtimePortConnection,
+            spaces: browser.spaceStateOwner,
+            regularTabs: browser.regularTabCollectionOwner,
+            pinned: SidebarPinnedInventoryProjection(
+                folders: browser.folderCollectionStateOwner,
+                pins: browser.shortcutPinCollectionStateOwner,
+                splitGroups: browser.splitGroupStore,
+                splitOrdering: browser.splitGroupSidebarOrdering
+            )
+        )
+        let splitQuery = browser.splitQuery
+        selection = SidebarWindowSelectionQuery(
+            runtimeIsAlive: { true },
+            windows: windows,
+            windowTabs: browser.windowTabContext,
+            shortcutPresentation: browser.shortcutPresentationOwner,
+            splitQuery: splitQuery
+        )
+        pinProjection = SidebarPinFolderProjection(
+            runtimeIsAlive: { true },
+            windows: windows,
+            essentials: browser.essentialsShortcutPlacementOwner,
+            resolution: browser.shortcutPinRuntimeResolutionOwner
+        )
+        lifecycle = browser.sidebarSpaceLifecycle
     }
 }

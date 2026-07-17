@@ -1,5 +1,7 @@
+import Combine
 @testable import Sumi
 import SumiDomain
+import SumiWebRuntime
 import XCTest
 
 @MainActor
@@ -65,7 +67,7 @@ final class SplitGroupStoreTests: XCTestCase {
         let staleReplacement = try XCTUnwrap(
             original.changingLayout(to: .grid)
         )
-        let harness = MutationHarness(groups: [current])
+        let harness = try MutationHarness(groups: [current])
 
         XCTAssertFalse(
             harness.service.replace(original, with: staleReplacement)
@@ -74,8 +76,7 @@ final class SplitGroupStoreTests: XCTestCase {
         XCTAssertEqual(harness.transactionCount, 0)
         XCTAssertEqual(harness.announceCount, 0)
         XCTAssertEqual(harness.publishCount, 0)
-        XCTAssertEqual(harness.dirtyCount, 0)
-        XCTAssertEqual(harness.persistenceCount, 0)
+        XCTAssertFalse(harness.persistenceScheduled)
     }
 
     func testSuccessfulReplacementPublishesAndPersistsExactlyOnce() throws {
@@ -86,7 +87,7 @@ final class SplitGroupStoreTests: XCTestCase {
         let replacement = try XCTUnwrap(
             original.changingLayout(to: .horizontal)
         )
-        let harness = MutationHarness(groups: [original])
+        let harness = try MutationHarness(groups: [original])
 
         XCTAssertTrue(harness.service.replace(original, with: replacement))
 
@@ -94,8 +95,7 @@ final class SplitGroupStoreTests: XCTestCase {
         XCTAssertEqual(harness.transactionCount, 1)
         XCTAssertEqual(harness.announceCount, 1)
         XCTAssertEqual(harness.publishCount, 1)
-        XCTAssertEqual(harness.dirtyCount, 1)
-        XCTAssertEqual(harness.persistenceCount, 1)
+        XCTAssertTrue(harness.persistenceScheduled)
     }
 
     func testInsertRejectsMemberOwnedByAnotherGroup() throws {
@@ -108,7 +108,7 @@ final class SplitGroupStoreTests: XCTestCase {
             .regularTab(sharedMemberID),
             .regularTab(UUID()),
         ]))
-        let harness = MutationHarness(groups: [existing])
+        let harness = try MutationHarness(groups: [existing])
 
         XCTAssertFalse(harness.service.insert(conflicting))
         XCTAssertEqual(harness.store.groups, [existing])
@@ -128,27 +128,53 @@ final class SplitGroupStoreTests: XCTestCase {
 
 @MainActor
 private final class MutationHarness {
-    let store = SplitGroupStore()
-    private(set) var transactionCount = 0
+    private let manager: TabManager
+    private let lookup: TabStructuralLookupCoordinator
+    private let persistence: TabStructuralPersistenceService
+    private var changeObservation: AnyCancellable?
     private(set) var announceCount = 0
-    private(set) var publishCount = 0
-    private(set) var dirtyCount = 0
-    private(set) var persistenceCount = 0
 
-    lazy var service = SplitGroupMutationService(
-        store: store,
-        withStructuralTransaction: { [weak self] operation in
-            self?.transactionCount += 1
-            operation()
-        },
-        beforeStructuralPublication: { action in action() },
-        announceChange: { [weak self] in self?.announceCount += 1 },
-        requestStructuralPublish: { [weak self] _ in self?.publishCount += 1 },
-        markStructurallyDirty: { [weak self] in self?.dirtyCount += 1 },
-        schedulePersistence: { [weak self] in self?.persistenceCount += 1 }
-    )
+    let store: SplitGroupStore
+    let service: SplitGroupMutationService
+    var transactionCount: Int {
+        Int(lookup.mutationRevision)
+    }
+    var publishCount: Int { transactionCount }
+    var persistenceScheduled: Bool {
+        persistence.scheduledPersistTask != nil
+    }
 
-    init(groups: [SumiDomain.SplitGroup]) {
+    init(groups: [SumiDomain.SplitGroup]) throws {
+        let container = try makeInMemoryStartupModelContainer()
+        let manager = TabManager(
+            context: container.mainContext,
+            webViewSessions: WebViewSessionRepository(),
+            profileReferenceAdmission: try ProfileReferenceAdmissionLedger(
+                context: container.mainContext
+            ),
+            loadPersistedState: false
+        )
+        self.manager = manager
+        let lookup = TabStructuralLookupCoordinator(
+            eventBus: manager.tabStructureEventBus,
+            stateStore: manager.stateStore
+        )
+        self.lookup = lookup
+        persistence = manager.structuralPersistence
+        store = manager.stateStore.splitGroups
+        service = SplitGroupMutationService(
+            store: store,
+            publication: TabStructuralMutationPublisher(
+                persistence: manager.structuralPersistence,
+                faviconService: manager.faviconService,
+                lookup: lookup,
+                changes: manager.objectWillChange,
+                regularTabs: manager.stateStore.regularTabs
+            )
+        )
         store.replaceAll(with: groups)
+        changeObservation = manager.objectWillChange.sink { [weak self] _ in
+            self?.announceCount += 1
+        }
     }
 }

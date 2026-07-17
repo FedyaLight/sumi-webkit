@@ -9,20 +9,20 @@ final class SpaceActivationService {
     private let projection: SpaceLauncherProjectionService
     private let persistence: TabStructuralPersistenceService
     private let profileAdmission: SpaceActivationProfileAdmission
-    private let activeEssentialTabs: @MainActor (UUID?) -> [Tab]
+    private let shortcutPresentation: TabShortcutPresentationOwner
 
     init(
         state: TabStateStore,
         projection: SpaceLauncherProjectionService,
         persistence: TabStructuralPersistenceService,
         profileAdmission: SpaceActivationProfileAdmission,
-        activeEssentialTabs: @escaping @MainActor (UUID?) -> [Tab]
+        shortcutPresentation: TabShortcutPresentationOwner
     ) {
         self.state = state
         self.projection = projection
         self.persistence = persistence
         self.profileAdmission = profileAdmission
-        self.activeEssentialTabs = activeEssentialTabs
+        self.shortcutPresentation = shortcutPresentation
     }
 
     @discardableResult
@@ -110,8 +110,8 @@ final class SpaceActivationService {
         var didResolveEssentialTabs = false
         func essentialTabs() -> [Tab] {
             if !didResolveEssentialTabs {
-                cachedEssentialTabs = activeEssentialTabs(
-                    profileAdmission.currentProfileID
+                cachedEssentialTabs = shortcutPresentation.activeEssentialTabs(
+                    for: profileAdmission.currentProfileID
                 )
                 didResolveEssentialTabs = true
             }

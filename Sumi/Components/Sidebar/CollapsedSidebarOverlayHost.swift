@@ -17,12 +17,19 @@ private struct ZenCompactSidebarOffset: @preconcurrency AnimatableModifier {
 
 struct CollapsedSidebarOverlayHost: View {
     var browserContext: SidebarBrowserContext
-    let inventory: SidebarInventoryProjection
+    let spaceCatalog: SidebarSpaceCatalogProjection
+    let inventory: SidebarSpaceInventoryProjection
     let selection: SidebarWindowSelectionQuery
     let pinProjection: SidebarPinFolderProjection
-    let pinCommands: SidebarPinFolderCommands
+    let pinCommands: SidebarPinCommands
+    let pinExecution: SidebarPinExecutionCommands
+    let folderCommands: SidebarFolderCommands
     let spaceLifecycle: SidebarSpaceLifecycle
-    let regularTabs: any SidebarRegularTabsControlling
+    let regularTabCatalog: SidebarRegularTabCatalog
+    let regularTabTargets: SidebarRegularTabTargetQuery
+    let regularTabLifecycleCommands: SidebarRegularTabLifecycleCommands
+    let regularTabShortcutCommands: SidebarRegularTabShortcutCommands
+    let regularTabPlacementCommands: SidebarRegularTabPlacementCommands
     let dragTransactions: SidebarDragTransactionPort
     let inventoryUpdates: SidebarInventoryUpdates
     let profileUpdates: SidebarProfileUpdates
@@ -62,12 +69,19 @@ struct CollapsedSidebarOverlayHost: View {
             ZStack {
                 SidebarColumnRepresentable(
                     browserContext: browserContext,
+                    spaceCatalog: spaceCatalog,
                     inventory: inventory,
                     selection: selection,
                     pinProjection: pinProjection,
                     pinCommands: pinCommands,
+                    pinExecution: pinExecution,
+                    folderCommands: folderCommands,
                     spaceLifecycle: spaceLifecycle,
-                    regularTabs: regularTabs,
+                    regularTabCatalog: regularTabCatalog,
+                    regularTabTargets: regularTabTargets,
+                    regularTabLifecycleCommands: regularTabLifecycleCommands,
+                    regularTabShortcutCommands: regularTabShortcutCommands,
+                    regularTabPlacementCommands: regularTabPlacementCommands,
                     dragTransactions: dragTransactions,
                     inventoryUpdates: inventoryUpdates,
                     profileUpdates: profileUpdates,

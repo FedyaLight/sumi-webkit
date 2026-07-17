@@ -55,4 +55,8 @@ final class ExtensionRuntimeTermination {
             reason: reason
         )
     }
+
+    func retireBrowserAttachment() {
+        browser.retireBrowserAttachment()
+    }
 }

@@ -8,18 +8,31 @@ import XCTest
 /// observable effects on the live subsystems instead of injected counters.
 @MainActor
 final class BrowserManagerLifecycleWiringTests: XCTestCase {
-    func testInitializationStartsRuntimeLifecycleAgainstLiveSubsystems() throws {
+    func testInitializationAttachesRuntimeGraphButDefersLifecycleUntilRecoveryGate() throws {
         let browserManager = BrowserManager(
             startupPersistence: BrowserManagerStartupPersistence(
                 container: try makeInMemoryStartupContainer()
             )
         )
+        let startupProbe = Tab(
+            url: URL(string: "https://startup-protection.example")!,
+            loadsCachedFaviconOnInit: false
+        )
+
+        XCTAssertFalse(browserManager.permissionRuntime.isObservingPermissionEvents)
+        XCTAssertFalse(
+            browserManager.startupProtectionRuntime
+                .canMaterializeWebViewDuringStartup(startupProbe)
+        )
+        XCTAssertNotNil(browserManager.runtimePortConnection.current)
+
+        browserManager.startRuntimeAfterStartupRecovery()
 
         XCTAssertTrue(browserManager.permissionRuntime.isObservingPermissionEvents)
-        // In tests the protection restore short-circuits synchronously, so a
-        // finished restore proves the lifecycle began it during init.
-        XCTAssertTrue(browserManager.startupProtectionRuntime.hasFinishedProtectionRestore)
-        XCTAssertNotNil(browserManager.tabManager.runtimePorts)
+        XCTAssertTrue(
+            browserManager.startupProtectionRuntime
+                .canMaterializeWebViewDuringStartup(startupProbe)
+        )
     }
 
     func testSettingsAttachmentReconfiguresLiveSubsystemsThroughDidSet() async throws {
@@ -28,6 +41,7 @@ final class BrowserManagerLifecycleWiringTests: XCTestCase {
                 container: try makeInMemoryStartupContainer()
             )
         )
+        browserManager.startRuntimeAfterStartupRecovery()
         var backgroundMediaEnergySaverReads = 0
         browserManager.backgroundMediaOptimizationService.attach(
             runtime: SumiBackgroundMediaOptimizationRuntime(
@@ -55,7 +69,7 @@ final class BrowserManagerLifecycleWiringTests: XCTestCase {
         browserManager.sumiSettings = settings
 
         XCTAssertIdentical(browserManager.downloadManager.settings, settings)
-        XCTAssertIdentical(browserManager.tabManager.runtimePorts?.settings, settings)
+        XCTAssertIdentical(browserManager.runtimePortConnection.current?.settings, settings)
         XCTAssertEqual(
             browserManager.tabSuspensionController.currentPolicyForTesting,
             TabSuspensionPolicy(settings: settings)
@@ -81,7 +95,7 @@ final class BrowserManagerLifecycleWiringTests: XCTestCase {
         browserManager.sumiSettings = replacement
 
         XCTAssertIdentical(browserManager.downloadManager.settings, replacement)
-        XCTAssertIdentical(browserManager.tabManager.runtimePorts?.settings, replacement)
+        XCTAssertIdentical(browserManager.runtimePortConnection.current?.settings, replacement)
         XCTAssertEqual(
             browserManager.tabSuspensionController.currentPolicyForTesting,
             TabSuspensionPolicy(settings: replacement)
@@ -99,7 +113,7 @@ final class BrowserManagerLifecycleWiringTests: XCTestCase {
         browserManager.sumiSettings = nil
 
         XCTAssertNil(browserManager.downloadManager.settings)
-        XCTAssertNil(browserManager.tabManager.runtimePorts?.settings)
+        XCTAssertNil(browserManager.runtimePortConnection.current?.settings)
         XCTAssertEqual(
             browserManager.tabSuspensionController.currentPolicyForTesting,
             TabSuspensionPolicy(settings: nil)
@@ -111,11 +125,14 @@ final class BrowserManagerLifecycleWiringTests: XCTestCase {
     }
 
     func testInitialDataLoadedEventAppliesStartupPolicyThroughLiveWiring() throws {
+        let windowRegistry = WindowRegistry()
         let browserManager = BrowserManager(
+            windowRegistry: windowRegistry,
             startupPersistence: BrowserManagerStartupPersistence(
                 container: try makeInMemoryStartupContainer()
             )
         )
+        browserManager.startRuntimeAfterStartupRecovery()
         let settings = try makeSettings(suiteName: "startup")
         settings.startupMode = .nothing
         browserManager.sumiSettings = settings
@@ -123,12 +140,13 @@ final class BrowserManagerLifecycleWiringTests: XCTestCase {
             userDefaults: try makeDefaults(suiteName: "startup-last-session")
         )
 
-        let windowRegistry = WindowRegistry()
-        browserManager.windowRegistry = windowRegistry
-        let space = browserManager.tabManager.spaceStateOwner.currentSpace
-            ?? browserManager.tabManager.spaceServices.catalog.createSpace(name: "Startup Wiring")
+        let space = browserManager.spaceStateOwner.currentSpace
+            ?? installTestSpace(
+                in: browserManager.spaceStateOwner,
+                name: "Startup Wiring"
+            )
         let windowState = BrowserWindowState()
-        windowState.tabManager = browserManager.tabManager
+        browserManager.tabResidenceAuthority.establishResidenceSession(on: windowState)
         windowState.currentSpaceId = space.id
         windowState.isShowingEmptyState = false
         windowRegistry.register(windowState)
@@ -138,7 +156,7 @@ final class BrowserManagerLifecycleWiringTests: XCTestCase {
         // Publishing initial-data-loaded on the real event bus must reach the
         // startup-session owner through the live lifecycle subscription and
         // apply the configured "nothing" startup policy.
-        browserManager.tabManager.startupRestoreLifecycle.markLoadFinished()
+        browserManager.startupRestoreLifecycle.markLoadFinished()
 
         XCTAssertTrue(windowState.isShowingEmptyState)
     }

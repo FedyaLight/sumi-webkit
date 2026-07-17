@@ -26,6 +26,10 @@ retired_files=(
   Sumi/Managers/SplitViewManager/SplitViewManager.swift
   Sumi/Managers/SplitViewManager/WindowSplitSelectionReconciler.swift
   Sumi/Managers/BrowserManager/BrowserSplitViewRuntimeFactory.swift
+  Sumi/Managers/BrowserManager/SplitShortcutRuntimeLease.swift
+  Sumi/Managers/BrowserManager/SplitShortcutServices+Live.swift
+  Sumi/Managers/BrowserManager/SplitShortcutServices.swift
+  Sumi/Managers/BrowserManager/BrowserSplitServices.swift
   SumiTests/SplitGroupCollectionStateOwnerTests.swift
   SumiTests/SplitMembershipResolutionOwnerTests.swift
   SumiTests/SplitEmptyPlaceholderOwnerTests.swift
@@ -70,13 +74,15 @@ required_runtime_components=(
   Sumi/Managers/BrowserManager/ShortcutSplitLauncherCatalogSnapshot.swift
   Sumi/Managers/BrowserManager/ShortcutSplitLauncherCatalogPinReceipt.swift
   Sumi/Managers/BrowserManager/ShortcutSplitLauncherReleasePlanner.swift
-  Sumi/Managers/BrowserManager/ShortcutSplitLauncherReleasePlanner+Live.swift
   Sumi/Managers/BrowserManager/ShortcutSplitLauncherReleaseReceipt.swift
   Sumi/Managers/BrowserManager/PreparedShortcutSplitLauncherRestorationBatch.swift
   Sumi/Managers/BrowserManager/SplitShortcutMemberRestoreHandoffReceipt.swift
   Sumi/Managers/BrowserManager/ShortcutSplitLauncherRestoration.swift
   Sumi/Managers/SplitRuntime/WindowSplitQuery.swift
   Sumi/Managers/SplitRuntime/WindowSplitPresentationSynchronizer.swift
+  Sumi/Managers/SplitRuntime/WindowSplitPresentationEffectExecutor.swift
+  Sumi/Managers/SplitRuntime/WindowSplitPresentationPreparationService.swift
+  Sumi/Managers/SplitRuntime/WindowSplitSessionWriteUrgency.swift
   Sumi/Managers/SplitRuntime/SplitLayoutService.swift
   Sumi/Managers/SplitRuntime/SplitDropGroupAlgebra.swift
   Sumi/Managers/SplitRuntime/SplitDropCommitEffect.swift
@@ -131,36 +137,36 @@ guard_expect_no_matches \
   -g '*.swift' Sumi/Managers/SplitRuntime
 
 guard_expect_no_matches \
-  'composition-only split storage escaped into feature code' \
+  'retired composition-only split storage returned' \
   '\bBrowserSplitServices\b' \
-  -g '*.swift' \
-  -g '!BrowserSplitServices.swift' \
-  -g '!BrowserManager.swift' \
-  Sumi SumiTests SumiUITests SidebarChrome UI App Settings FloatingBar
+  -g '*.swift' Sumi SumiTests SumiUITests SidebarChrome UI App Settings FloatingBar
 
-# Access to the graph itself is limited to explicit construction edges. Each
-# allowed file must immediately inject one concrete field into feature code.
 guard_expect_no_matches \
-  'split composition graph was accessed outside an approved construction edge' \
+  'retired split composition graph returned' \
   '\bsplitComposition\b' \
-  -g '*.swift' \
-  -g '!BrowserManager.swift' \
-  -g '!BrowserWindowViewContextComposition.swift' \
-  -g '!BrowserTabManagerRuntimePortsFactory.swift' \
-  -g '!BrowserTabRuntimeCompositionService.swift' \
-  -g '!BrowserManager+WebViewRuntimeComposition.swift' \
-  -g '!BrowserKeyboardShortcutCommandOwner.swift' \
-  -g '!BrowserGlanceRuntimeService.swift' \
-  -g '!BrowserURLBarBundle+Live.swift' \
-  -g '!SplitShortcutServices+Live.swift' \
-  -g '!SidebarBrowserContext.swift' \
-  -g '!BrowserAppOrchestrationOwner.swift' \
-  Sumi SidebarChrome UI App Settings FloatingBar
+  -g '*.swift' Sumi SumiTests SumiUITests SidebarChrome UI App Settings FloatingBar
 
 guard_expect_no_matches \
-  'composition-only split storage gained forwarding behavior or mutable state' \
-  '^    ((private|fileprivate|internal|public)[[:space:]]+)?(mutating[[:space:]]+)?(func|var|subscript)\b' \
-  Sumi/Managers/BrowserManager/BrowserSplitServices.swift
+  'split composition hid exact roles behind a broad local alias' \
+  'let[[:space:]]+split[[:space:]]*=' \
+  Sumi/Managers/BrowserManager/BrowserManager+SplitComposition.swift \
+  Sumi/Managers/BrowserManager/BrowserManager+SidebarCommandComposition.swift \
+  Sumi/Managers/BrowserManager/BrowserManager+SidebarPresentationComposition.swift \
+  Sumi/Managers/BrowserManager/BrowserManager+WindowSidebarComposition.swift
+
+for split_field in \
+  splitUpdateChannel splitPreviews splitQuery splitMembers splitMaterialization \
+  splitPresentations splitLauncherPlacement splitLauncherRelease splitDissolution \
+  splitWeightMutations splitDropTargets splitPlaceholderRetirement \
+  splitPlaceholderReplacements splitDrops; do
+  guard_expect_no_matches \
+    "split composition field escaped its owning composition boundary: $split_field" \
+    "\\b(browserManager|browserRuntime|manager|self)\\.${split_field}\\b" \
+    -g '*.swift' \
+    -g '!BrowserManager.swift' \
+    -g '!BrowserManager+SplitComposition.swift' \
+    Sumi
+done
 
 guard_expect_no_matches \
   'retired live-tab split API is still used outside v1 migration' \

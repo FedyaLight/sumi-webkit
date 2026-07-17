@@ -275,6 +275,10 @@ final class SumiBoostsModule: ObservableObject {
         reinstallUserScripts(profileId: boost.profileId, host: boost.host)
     }
 
+    func deleteProfileData(profileID: UUID) throws {
+        try loadStore().deleteProfileData(profileID: profileID)
+    }
+
     @discardableResult
     func importBoost(
         from data: Data,

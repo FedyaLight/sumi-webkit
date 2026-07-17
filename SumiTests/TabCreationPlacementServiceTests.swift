@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 @testable import Sumi
 import SumiWebRuntime
@@ -7,23 +8,23 @@ import XCTest
 @MainActor
 final class TabCreationPlacementServiceTests: XCTestCase {
     func testExplicitAndFallbackPlacementsWinWithoutProfileRepair() throws {
-        let tabManager = try makeInMemoryTabManager()
-        let explicit = tabManager.spaceServices.catalog.createSpace(
-            name: "Explicit"
-        )
-        let fallback = tabManager.spaceServices.catalog.createSpace(
-            name: "Fallback"
-        )
+        let tabManager = BrowserManager()
+        let explicit = Space(name: "Explicit")
+        let fallback = Space(name: "Fallback")
+        tabManager.spaceStateOwner.replaceSpaces([explicit, fallback])
+        let placement = makeCreationPlacement(for: tabManager)
 
         let explicitTab = installTab(
             preferred: explicit,
             fallbackSpaceId: fallback.id,
-            tabManager: tabManager
+            tabManager: tabManager,
+            placement: placement
         )
         let fallbackTab = installTab(
             preferred: nil,
             fallbackSpaceId: fallback.id,
-            tabManager: tabManager
+            tabManager: tabManager,
+            placement: placement
         )
 
         XCTAssertEqual(explicitTab.spaceId, explicit.id)
@@ -31,7 +32,9 @@ final class TabCreationPlacementServiceTests: XCTestCase {
     }
 
     func testPlacementPrefersCurrentProfileSpaceWithoutPersistingAnOverride() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let tabManager = BrowserManager()
+        let runtimeAttachment = tabManager.runtimePortConnection
+        let placement = makeCreationPlacement(for: tabManager)
         let selectedProfileID = UUID()
         let currentProfileID = UUID()
         let selected = Space(name: "Selected", profileId: selectedProfileID)
@@ -41,15 +44,18 @@ final class TabCreationPlacementServiceTests: XCTestCase {
         )
         tabManager.spaceStateOwner.replaceSpaces([selected, currentProfileSpace])
         tabManager.spaceStateOwner.replaceCurrentSpace(selected)
-        tabManager.runtimePortsAttachmentOwner.detach()
-        tabManager.runtimePortsAttachmentOwner.attach(
+        runtimeAttachment.attach(
             TestRuntimePorts.make(
                 currentProfileId: { currentProfileID },
                 defaultProfileId: { selectedProfileID }
             )
         )
 
-        let tab = installTab(preferred: nil, tabManager: tabManager)
+        let tab = installTab(
+            preferred: nil,
+            tabManager: tabManager,
+            placement: placement
+        )
 
         XCTAssertEqual(tab.spaceId, currentProfileSpace.id)
         XCTAssertNil(tab.profileId)
@@ -61,10 +67,10 @@ final class TabCreationPlacementServiceTests: XCTestCase {
             profile: profile
         )
         let space = Space(name: "Profiled", profileId: profile.id)
-        browserManager.tabManager.spaceStateOwner.replaceSpaces([space])
-        browserManager.tabManager.spaceStateOwner.replaceCurrentSpace(space)
+        browserManager.spaceStateOwner.replaceSpaces([space])
+        browserManager.spaceStateOwner.replaceCurrentSpace(space)
 
-        let tab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
+        let tab = browserManager.regularTabLifecycleOwner.createNewTab(
             url: "https://runtime-profile.example",
             in: space,
             activate: false
@@ -84,7 +90,7 @@ final class TabCreationPlacementServiceTests: XCTestCase {
         let existingProfile = Profile(name: "Existing")
         let pendingProfile = Profile(name: "Pending")
         let transition = DeferredSpaceProfileTransition()
-        let tabManager = try makeDeferredTabManager(
+        let tabManager = try makeDeferredBrowser(
             profiles: [
                 existingProfile.id: existingProfile,
                 pendingProfile.id: pendingProfile,
@@ -96,7 +102,7 @@ final class TabCreationPlacementServiceTests: XCTestCase {
         tabManager.spaceStateOwner.replaceSpaces([space])
 
         XCTAssertEqual(
-            tabManager.profileAssignments.spaces.start(
+            tabManager.spaceProfileTransitions.start(
                 spaceID: space.id,
                 profileID: pendingProfile.id
             ),
@@ -125,7 +131,7 @@ final class TabCreationPlacementServiceTests: XCTestCase {
         let pendingProfile = Profile(name: "Pending")
         let explicitProfile = Profile(name: "Explicit")
         let transition = DeferredSpaceProfileTransition()
-        let tabManager = try makeDeferredTabManager(
+        let tabManager = try makeDeferredBrowser(
             profiles: [
                 existingProfile.id: existingProfile,
                 pendingProfile.id: pendingProfile,
@@ -138,7 +144,7 @@ final class TabCreationPlacementServiceTests: XCTestCase {
         tabManager.spaceStateOwner.replaceSpaces([space])
 
         XCTAssertEqual(
-            tabManager.profileAssignments.spaces.start(
+            tabManager.spaceProfileTransitions.start(
                 spaceID: space.id,
                 profileID: pendingProfile.id
             ),
@@ -151,7 +157,7 @@ final class TabCreationPlacementServiceTests: XCTestCase {
         )
         XCTAssertEqual(follower.profileId, pendingProfile.id)
         XCTAssertTrue(
-            tabManager.profileAssignments.tabs.assign(
+            tabManager.tabProfileTransitions.assign(
                 follower,
                 toProfile: explicitProfile.id
             )
@@ -176,14 +182,15 @@ final class TabCreationPlacementServiceTests: XCTestCase {
     }
 
     func testNonInheritingPlacementPreservesExplicitTabProfile() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let tabManager = BrowserManager()
         let canonicalProfileID = UUID()
         let explicitProfileID = UUID()
         let space = Space(name: "Profiled", profileId: canonicalProfileID)
         tabManager.spaceStateOwner.replaceSpaces([space])
         var offeredOverrideID: UUID?
 
-        let tab = tabManager.spaceServices.placement.withCreationPlacement(
+        let placement = makeCreationPlacement(for: tabManager)
+        let tab = placement.withCreationPlacement(
             preferred: space,
             inheritsSpaceProfile: false
         ) { placement in
@@ -194,7 +201,10 @@ final class TabCreationPlacementServiceTests: XCTestCase {
                 loadsCachedFaviconOnInit: false
             )
             tab.profileId = explicitProfileID
-            tabManager.regularTabLifecycleOwner.addTab(tab)
+            XCTAssertTrue(tabManager.regularTabLifecycleOwner.addTab(
+                tab,
+                admissionProfileIDs: placement.admissionProfileIDs
+            ))
             return tab
         }
 
@@ -203,11 +213,12 @@ final class TabCreationPlacementServiceTests: XCTestCase {
     }
 
     func testCreationInstallsTabBeforeOneCommittedBackfill() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let tabManager = BrowserManager()
+        let runtimeAttachment = tabManager.runtimePortConnection
+        let placement = makeCreationPlacement(for: tabManager)
         let profileID = UUID()
         let profile = Profile(id: profileID, name: "Current")
-        tabManager.runtimePortsAttachmentOwner.detach()
-        tabManager.runtimePortsAttachmentOwner.attach(
+        runtimeAttachment.attach(
             TestRuntimePorts.make(
                 currentProfileId: { profileID },
                 profile: { $0 == profileID ? profile : nil }
@@ -216,7 +227,11 @@ final class TabCreationPlacementServiceTests: XCTestCase {
         let unassigned = Space(name: "Unassigned")
         tabManager.spaceStateOwner.replaceSpaces([unassigned])
 
-        let tab = installTab(preferred: nil, tabManager: tabManager)
+        let tab = installTab(
+            preferred: nil,
+            tabManager: tabManager,
+            placement: placement
+        )
 
         XCTAssertEqual(tab.spaceId, unassigned.id)
         XCTAssertNil(tab.profileId)
@@ -226,12 +241,13 @@ final class TabCreationPlacementServiceTests: XCTestCase {
 
     func testCreationDoesNotStampFailedOrDeferredBackfill() throws {
         let profileID = UUID()
-        let failedManager = try makeInMemoryTabManager()
+        let failedManager = BrowserManager()
+        let failedRuntimeAttachment = failedManager.runtimePortConnection
+        let failedPlacement = makeCreationPlacement(for: failedManager)
         let failedSpace = Space(name: "Failed")
         failedManager.spaceStateOwner.replaceSpaces([failedSpace])
         var failedDefaultProfileID: UUID?
-        failedManager.runtimePortsAttachmentOwner.detach()
-        failedManager.runtimePortsAttachmentOwner.attach(
+        failedRuntimeAttachment.attach(
             TestRuntimePorts.make(
                 defaultProfileId: { failedDefaultProfileID },
                 profile: { _ in nil }
@@ -241,19 +257,21 @@ final class TabCreationPlacementServiceTests: XCTestCase {
 
         let failedTab = installTab(
             preferred: failedSpace,
-            tabManager: failedManager
+            tabManager: failedManager,
+            placement: failedPlacement
         )
         XCTAssertNil(failedTab.profileId)
         XCTAssertNil(failedSpace.profileId)
 
-        let deferredManager = try makeInMemoryTabManager()
+        let deferredManager = BrowserManager()
+        let deferredRuntimeAttachment = deferredManager.runtimePortConnection
+        let deferredPlacement = makeCreationPlacement(for: deferredManager)
         let deferredSpace = Space(name: "Deferred")
         deferredManager.spaceStateOwner.replaceSpaces([deferredSpace])
         let profile = Profile(id: profileID, name: "Deferred")
         let transition = DeferredSpaceProfileTransition()
         var deferredDefaultProfileID: UUID?
-        deferredManager.runtimePortsAttachmentOwner.detach()
-        deferredManager.runtimePortsAttachmentOwner.attach(
+        deferredRuntimeAttachment.attach(
             TestRuntimePorts.make(
                 defaultProfileId: { deferredDefaultProfileID },
                 profile: { $0 == profileID ? profile : nil },
@@ -264,7 +282,8 @@ final class TabCreationPlacementServiceTests: XCTestCase {
 
         let deferredTab = installTab(
             preferred: deferredSpace,
-            tabManager: deferredManager
+            tabManager: deferredManager,
+            placement: deferredPlacement
         )
         XCTAssertNil(deferredTab.profileId)
         XCTAssertNil(deferredSpace.profileId)
@@ -274,9 +293,10 @@ final class TabCreationPlacementServiceTests: XCTestCase {
     func testDeferredBackfillIncludesNewWebViewTabAndRollsBackInheritance() throws {
         let profile = Profile(name: "Target")
         let transition = DeferredSpaceProfileTransition()
-        let tabManager = try makeInMemoryTabManager()
-        tabManager.runtimePortsAttachmentOwner.detach()
-        tabManager.runtimePortsAttachmentOwner.attach(
+        let tabManager = BrowserManager()
+        let runtimeAttachment = tabManager.runtimePortConnection
+        let placement = makeCreationPlacement(for: tabManager)
+        runtimeAttachment.attach(
             TestRuntimePorts.make(
                 currentProfileId: { profile.id },
                 defaultProfileId: { profile.id },
@@ -292,7 +312,8 @@ final class TabCreationPlacementServiceTests: XCTestCase {
         let tab = installWebViewTab(
             in: space,
             webView: webView,
-            tabManager: tabManager
+            tabManager: tabManager,
+            placement: placement
         )
 
         XCTAssertEqual(transition.assignmentCount, 1)
@@ -321,17 +342,19 @@ final class TabCreationPlacementServiceTests: XCTestCase {
         ]
         var currentProfileID = pendingProfile.id
         let transition = DeferredSpaceProfileTransition()
-        let tabManager = try makeDeferredTabManager(
+        let tabManager = try makeDeferredBrowser(
             profiles: profiles,
             currentProfileID: { currentProfileID },
             transition: transition
         )
+        let placement = makeCreationPlacement(for: tabManager)
         let space = Space(name: "Unassigned")
         tabManager.spaceStateOwner.replaceSpaces([space])
         let first = installWebViewTab(
             in: space,
             webView: WKWebView(),
-            tabManager: tabManager
+            tabManager: tabManager,
+            placement: placement
         )
 
         currentProfileID = laterProfile.id
@@ -355,7 +378,7 @@ final class TabCreationPlacementServiceTests: XCTestCase {
         XCTAssertNil(follower.profileId)
 
         XCTAssertEqual(
-            tabManager.profileAssignments.spaces.start(
+            tabManager.spaceProfileTransitions.start(
                 spaceID: space.id,
                 profileID: laterProfile.id
             ),
@@ -370,17 +393,19 @@ final class TabCreationPlacementServiceTests: XCTestCase {
     func testCreationDuringStagedBackfillStaysExplicitAfterRollback() throws {
         let profile = Profile(name: "Pending")
         let transition = DeferredSpaceProfileTransition()
-        let tabManager = try makeDeferredTabManager(
+        let tabManager = try makeDeferredBrowser(
             profiles: [profile.id: profile],
             currentProfileID: { profile.id },
             transition: transition
         )
+        let placement = makeCreationPlacement(for: tabManager)
         let space = Space(name: "Unassigned")
         tabManager.spaceStateOwner.replaceSpaces([space])
         _ = installWebViewTab(
             in: space,
             webView: WKWebView(),
-            tabManager: tabManager
+            tabManager: tabManager,
+            placement: placement
         )
         XCTAssertTrue(try XCTUnwrap(transition.stageModel)())
         let follower = tabManager.regularTabLifecycleOwner.createNewTab(
@@ -400,18 +425,20 @@ final class TabCreationPlacementServiceTests: XCTestCase {
     func testDeferredBackfillRejectsTabMovedOutOfItsExactSpace() throws {
         let profile = Profile(name: "Pending")
         let transition = DeferredSpaceProfileTransition()
-        let tabManager = try makeDeferredTabManager(
+        let tabManager = try makeDeferredBrowser(
             profiles: [profile.id: profile],
             currentProfileID: { profile.id },
             transition: transition
         )
+        let placement = makeCreationPlacement(for: tabManager)
         let source = Space(name: "Source")
         let destination = Space(name: "Destination")
         tabManager.spaceStateOwner.replaceSpaces([source, destination])
         let tab = installWebViewTab(
             in: source,
             webView: WKWebView(),
-            tabManager: tabManager
+            tabManager: tabManager,
+            placement: placement
         )
 
         tab.spaceId = destination.id
@@ -423,13 +450,13 @@ final class TabCreationPlacementServiceTests: XCTestCase {
     }
 
     func testPreferredSpaceIsCanonicalizedAgainstCatalog() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let tabManager = BrowserManager()
         let sharedID = UUID()
         let canonical = Space(id: sharedID, name: "Canonical")
         let detached = Space(id: sharedID, name: "Detached")
         let fallback = Space(name: "Fallback")
         tabManager.spaceStateOwner.replaceSpaces([canonical, fallback])
-        let placementService = tabManager.spaceServices.placement
+        let placementService = makeCreationPlacement(for: tabManager)
         var resolvedSpace: Space?
 
         _ = placementService.withCreationPlacement(
@@ -443,7 +470,10 @@ final class TabCreationPlacementServiceTests: XCTestCase {
                 loadsCachedFaviconOnInit: false
             )
             tab.profileId = placement.temporaryProfileOverrideId
-            tabManager.regularTabLifecycleOwner.addTab(tab)
+            XCTAssertTrue(tabManager.regularTabLifecycleOwner.addTab(
+                tab,
+                admissionProfileIDs: placement.admissionProfileIDs
+            ))
             return tab
         }
 
@@ -461,7 +491,10 @@ final class TabCreationPlacementServiceTests: XCTestCase {
                 loadsCachedFaviconOnInit: false
             )
             tab.profileId = placement.temporaryProfileOverrideId
-            tabManager.regularTabLifecycleOwner.addTab(tab)
+            XCTAssertTrue(tabManager.regularTabLifecycleOwner.addTab(
+                tab,
+                admissionProfileIDs: placement.admissionProfileIDs
+            ))
             return tab
         }
 
@@ -469,15 +502,20 @@ final class TabCreationPlacementServiceTests: XCTestCase {
     }
 
     func testPlacementCreatesDeterministicPersonalSpaceWhenCatalogIsEmpty() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let tabManager = BrowserManager()
+        let runtimeAttachment = tabManager.runtimePortConnection
+        let placement = makeCreationPlacement(for: tabManager)
         tabManager.spaceStateOwner.removeAll()
         let profileID = UUID()
-        tabManager.runtimePortsAttachmentOwner.detach()
-        tabManager.runtimePortsAttachmentOwner.attach(
+        runtimeAttachment.attach(
             TestRuntimePorts.make(currentProfileId: { profileID })
         )
 
-        let tab = installTab(preferred: nil, tabManager: tabManager)
+        let tab = installTab(
+            preferred: nil,
+            tabManager: tabManager,
+            placement: placement
+        )
         let resolved = try XCTUnwrap(tabManager.spaceStateOwner.firstSpace)
 
         XCTAssertEqual(resolved.name, "Personal")
@@ -487,7 +525,7 @@ final class TabCreationPlacementServiceTests: XCTestCase {
         XCTAssertIdentical(tabManager.spaceStateOwner.currentSpace, resolved)
         XCTAssertEqual(tabManager.spaceStateOwner.spaces.map(\.id), [resolved.id])
         XCTAssertEqual(
-            tabManager.regularTabCollectionStateOwner
+            tabManager.tabStateStore.regularTabs
                 .tabsBySpaceSnapshot()[resolved.id]?.map(\.id),
             [tab.id]
         )
@@ -498,12 +536,16 @@ final class TabCreationPlacementServiceTests: XCTestCase {
     }
 
     func testPlacementWithoutProfilesUsesExistingFirstSpace() throws {
-        let tabManager = try makeInMemoryTabManager()
+        let tabManager = BrowserManager()
         let first = Space(name: "First")
         let second = Space(name: "Second")
         tabManager.spaceStateOwner.replaceSpaces([first, second])
         tabManager.spaceStateOwner.replaceCurrentSpace(second)
-        let tab = installTab(preferred: nil, tabManager: tabManager)
+        let tab = installTab(
+            preferred: nil,
+            tabManager: tabManager,
+            placement: makeCreationPlacement(for: tabManager)
+        )
 
         XCTAssertEqual(tab.spaceId, first.id)
     }
@@ -511,9 +553,10 @@ final class TabCreationPlacementServiceTests: XCTestCase {
     private func installTab(
         preferred space: Space?,
         fallbackSpaceId: UUID? = nil,
-        tabManager: TabManager
+        tabManager: BrowserManager,
+        placement: TabCreationPlacementService
     ) -> Tab {
-        tabManager.spaceServices.placement.withCreationPlacement(
+        placement.withCreationPlacement(
             preferred: space,
             fallbackSpaceId: fallbackSpaceId
         ) { placement in
@@ -523,7 +566,10 @@ final class TabCreationPlacementServiceTests: XCTestCase {
                 loadsCachedFaviconOnInit: false
             )
             tab.profileId = placement.temporaryProfileOverrideId
-            tabManager.regularTabLifecycleOwner.addTab(tab)
+            XCTAssertTrue(tabManager.regularTabLifecycleOwner.addTab(
+                tab,
+                admissionProfileIDs: placement.admissionProfileIDs
+            ))
             return tab
         }
     }
@@ -531,9 +577,10 @@ final class TabCreationPlacementServiceTests: XCTestCase {
     private func installWebViewTab(
         in space: Space,
         webView: WKWebView,
-        tabManager: TabManager
+        tabManager: BrowserManager,
+        placement: TabCreationPlacementService
     ) -> Tab {
-        tabManager.spaceServices.placement.withCreationPlacement(
+        placement.withCreationPlacement(
             preferred: space
         ) { placement in
             let tab = tabManager.tabFactory.makeTab(
@@ -547,19 +594,22 @@ final class TabCreationPlacementServiceTests: XCTestCase {
                 existingWebView: webView
             )
             tab.profileId = placement.temporaryProfileOverrideId
-            tabManager.regularTabLifecycleOwner.addTab(tab)
+            XCTAssertTrue(tabManager.regularTabLifecycleOwner.addTab(
+                tab,
+                admissionProfileIDs: placement.admissionProfileIDs
+            ))
             return tab
         }
     }
 
-    private func makeDeferredTabManager(
+    private func makeDeferredBrowser(
         profiles: [UUID: Profile],
         currentProfileID: @escaping @MainActor () -> UUID?,
         transition: DeferredSpaceProfileTransition
-    ) throws -> TabManager {
-        let tabManager = try makeInMemoryTabManager()
-        tabManager.runtimePortsAttachmentOwner.detach()
-        tabManager.runtimePortsAttachmentOwner.attach(
+    ) throws -> BrowserManager {
+        let tabManager = BrowserManager()
+        let runtimeAttachment = tabManager.runtimePortConnection
+        runtimeAttachment.attach(
             TestRuntimePorts.make(
                 currentProfileId: currentProfileID,
                 defaultProfileId: currentProfileID,
@@ -568,5 +618,44 @@ final class TabCreationPlacementServiceTests: XCTestCase {
             )
         )
         return tabManager
+    }
+
+    private func makeCreationPlacement(
+        for tabManager: BrowserManager
+    ) -> TabCreationPlacementService {
+        let profilePolicy = ProfileAssignmentPolicy(
+            runtimeConnection: tabManager.runtimePortConnection,
+            spaces: tabManager.spaceStateOwner,
+            membership: tabManager.tabCollectionMembershipOwner,
+            transientTabs: tabManager.tabStateStore.transientTabs
+        )
+        let creation = SpaceCreationTransaction(
+            transactions: tabManager.structuralLookupCoordinator,
+            spaces: tabManager.spaceStateOwner,
+            runtimeConnection: tabManager.runtimePortConnection,
+            profileReferenceAdmission: .testingAllowingReferences(),
+            committer: SpaceCreationCommitter(
+                structuralMutations: tabManager.structuralCollectionMutationOwner,
+                persistence: tabManager.structuralPersistence,
+                changes: tabManager.objectWillChange
+            )
+        )
+        let catalog = SpaceCatalogCommands(
+            transactions: tabManager.structuralLookupCoordinator,
+            spaces: tabManager.spaceStateOwner,
+            creation: creation,
+            runtimeConnection: tabManager.runtimePortConnection,
+            publication: SpaceCatalogMutationPublication(
+                persistence: tabManager.structuralPersistence,
+                changes: tabManager.objectWillChange
+            )
+        )
+        return TabCreationPlacementService(
+            spaces: tabManager.spaceStateOwner,
+            catalog: catalog,
+            profilePolicy: profilePolicy,
+            profileTransitions: tabManager.spaceProfileTransitions,
+            membership: tabManager.tabCollectionMembershipOwner
+        )
     }
 }

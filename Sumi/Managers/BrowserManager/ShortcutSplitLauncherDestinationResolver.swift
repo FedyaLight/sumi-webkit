@@ -4,15 +4,15 @@ import SumiDomain
 /// Resolves persisted return placement against the current launcher catalog.
 @MainActor
 struct ShortcutSplitLauncherDestinationResolver {
-    private let folderSpaceID: (UUID) -> UUID?
-    private let topLevelItemCount: (UUID) -> Int
+    private let folders: TabFolderCollectionStateOwner
+    private let spacePinnedStructure: SpacePinnedStructureOwner
 
     init(
-        folderSpaceID: @escaping (UUID) -> UUID?,
-        topLevelItemCount: @escaping (UUID) -> Int
+        folders: TabFolderCollectionStateOwner,
+        spacePinnedStructure: SpacePinnedStructureOwner
     ) {
-        self.folderSpaceID = folderSpaceID
-        self.topLevelItemCount = topLevelItemCount
+        self.folders = folders
+        self.spacePinnedStructure = spacePinnedStructure
     }
 
     func destination(
@@ -34,7 +34,7 @@ struct ShortcutSplitLauncherDestinationResolver {
             )
         case .spacePinned(let spaceID, let folderID, let index):
             let validFolderID = folderID.flatMap {
-                folderSpaceID($0) == spaceID ? $0 : nil
+                folders.spaceId(for: $0) == spaceID ? $0 : nil
             }
             return ShortcutSplitLauncherDestination(
                 role: .spacePinned,
@@ -49,7 +49,8 @@ struct ShortcutSplitLauncherDestinationResolver {
                 profileId: nil,
                 spaceId: spaceID,
                 folderId: nil,
-                index: topLevelItemCount(spaceID)
+                index: spacePinnedStructure
+                    .topLevelSpacePinnedItems(for: spaceID).count
             )
         }
     }

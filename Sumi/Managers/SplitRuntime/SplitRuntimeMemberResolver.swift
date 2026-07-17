@@ -10,26 +10,36 @@ struct ResolvedSplitRuntimeMember {
 /// and one window's concrete tab. It performs no structural mutation.
 @MainActor
 final class SplitRuntimeMemberResolver {
-    private let tabManager: @MainActor () -> TabManager?
+    private let membership: SplitGroupMembershipQuery
+    private let splitGroups: SplitGroupStore
+    private let regularTabs: RegularTabCollectionOwner
+    private let pins: ShortcutPinCollectionStateOwner
+    private let activation: ShortcutPresentationActivationService
 
-    init(tabManager: @escaping @MainActor () -> TabManager?) {
-        self.tabManager = tabManager
+    init(
+        membership: SplitGroupMembershipQuery,
+        splitGroups: SplitGroupStore,
+        regularTabs: RegularTabCollectionOwner,
+        pins: ShortcutPinCollectionStateOwner,
+        activation: ShortcutPresentationActivationService
+    ) {
+        self.membership = membership
+        self.splitGroups = splitGroups
+        self.regularTabs = regularTabs
+        self.pins = pins
+        self.activation = activation
     }
 
     func memberID(for tab: Tab) -> SplitMemberID? {
-        tabManager()?.splitGroupMembership.memberID(for: tab)
+        membership.memberID(for: tab)
     }
 
     func memberID(forLookupID id: UUID) -> SplitMemberID? {
-        tabManager()?.splitGroupMembership.memberID(forLookupID: id)
+        membership.memberID(forLookupID: id)
     }
 
     func sourceGroup(for tab: Tab) -> SumiDomain.SplitGroup? {
-        guard let tabManager = tabManager() else {
-            return nil
-        }
-        let memberID = tabManager.splitGroupMembership.memberID(for: tab)
-        return tabManager.splitGroupStore.group(containing: memberID)
+        splitGroups.group(containing: membership.memberID(for: tab))
     }
 
     func resolveExisting(
@@ -37,10 +47,7 @@ final class SplitRuntimeMemberResolver {
         sourceGroup: SumiDomain.SplitGroup?,
         in windowState: BrowserWindowState
     ) -> ResolvedSplitRuntimeMember? {
-        guard let tabManager = tabManager() else {
-            return nil
-        }
-        let memberID = tabManager.splitGroupMembership.memberID(for: tab)
+        let memberID = membership.memberID(for: tab)
         let member = sourceGroup?.member(for: memberID)
             ?? makeMember(for: memberID, windowState: windowState)
         guard let member,
@@ -59,10 +66,9 @@ final class SplitRuntimeMemberResolver {
         candidate: Tab? = nil,
         in windowState: BrowserWindowState
     ) -> Tab? {
-        guard let tabManager = tabManager() else { return nil }
         switch memberID {
         case .regularTab(let tabID):
-            guard let canonical = tabManager.regularTabCollectionOwner.tab(
+            guard let canonical = regularTabs.tab(
                 for: tabID
             ), candidate == nil || candidate === canonical else {
                 return nil
@@ -70,13 +76,11 @@ final class SplitRuntimeMemberResolver {
             return canonical
 
         case .shortcutPin(let pinID):
-            guard let pin = tabManager.shortcutPinCollectionStateOwner
-                .shortcutPin(by: pinID) else {
+            guard let pin = pins.shortcutPin(by: pinID) else {
                 return nil
             }
             var activated: Tab?
-            let accepted = tabManager.shortcutPresentationActivation
-                .withActivation(
+            let accepted = activation.withActivation(
                 pin,
                 in: windowState.id,
                 presentationSpaceID: pin.spaceId ?? windowState.currentSpaceId
@@ -95,17 +99,15 @@ final class SplitRuntimeMemberResolver {
         for memberID: SplitMemberID,
         windowState: BrowserWindowState
     ) -> SplitMember? {
-        guard let tabManager = tabManager() else { return nil }
         switch memberID {
         case .regularTab(let tabID):
-            guard tabManager.regularTabCollectionOwner.tab(for: tabID) != nil else {
+            guard regularTabs.tab(for: tabID) != nil else {
                 return nil
             }
             return .regularTab(tabID)
 
         case .shortcutPin(let pinID):
-            guard let pin = tabManager.shortcutPinCollectionStateOwner
-                .shortcutPin(by: pinID),
+            guard let pin = pins.shortcutPin(by: pinID),
                   let placement = returnPlacement(
                       for: pin,
                       windowState: windowState
@@ -121,14 +123,10 @@ final class SplitRuntimeMemberResolver {
         target: SplitMemberID,
         windowState: BrowserWindowState
     ) -> SplitGroupContainer {
-        let manager = tabManager()
         guard case .shortcutPin(let incomingPinID) = incoming,
               case .shortcutPin(let targetPinID) = target,
-              let manager,
-              let incomingPin = manager.shortcutPinCollectionStateOwner
-                .shortcutPin(by: incomingPinID),
-              let targetPin = manager.shortcutPinCollectionStateOwner
-                .shortcutPin(by: targetPinID),
+              let incomingPin = pins.shortcutPin(by: incomingPinID),
+              let targetPin = pins.shortcutPin(by: targetPinID),
               incomingPin.role == .spacePinned,
               targetPin.role == .spacePinned,
               let spaceID = incomingPin.spaceId,
@@ -137,8 +135,7 @@ final class SplitRuntimeMemberResolver {
             let targetSpaceID: UUID?
             switch target {
             case .regularTab(let tabID):
-                targetSpaceID = manager?.tabCollectionMembershipOwner
-                    .tab(for: tabID)?.spaceId
+                targetSpaceID = regularTabs.tab(for: tabID)?.spaceId
             case .shortcutPin:
                 targetSpaceID = nil
             }
@@ -187,8 +184,7 @@ final class SplitRuntimeMemberResolver {
             _
         ) = container,
               case .shortcutPin(let pinID) = memberID,
-              let pin = tabManager()?.shortcutPinCollectionStateOwner
-                .shortcutPin(by: pinID) else {
+              let pin = pins.shortcutPin(by: pinID) else {
             return false
         }
         return pin.role == .spacePinned

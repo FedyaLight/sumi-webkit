@@ -1,5 +1,5 @@
-import CoreGraphics
 import Combine
+import CoreGraphics
 import Foundation
 import XCTest
 
@@ -15,9 +15,9 @@ final class SplitPreviewSessionTests: XCTestCase {
             deliveryCount += 1
         }
 
-        channel.emitter.publish(windowID: UUID())
-        channel.emitter.publish(windowID: trackedWindowID)
-        channel.emitter.publish(windowID: UUID())
+        channel.publish(windowID: UUID())
+        channel.publish(windowID: trackedWindowID)
+        channel.publish(windowID: UUID())
 
         XCTAssertEqual(deliveryCount, 1)
         withExtendedLifetime(subscription) {}

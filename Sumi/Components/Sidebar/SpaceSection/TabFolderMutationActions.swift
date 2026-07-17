@@ -10,7 +10,8 @@ import SwiftUI
 @MainActor
 struct TabFolderMutationActions {
     let browserContext: SidebarBrowserContext
-    let pinCommands: SidebarPinFolderCommands
+    let pinExecution: SidebarPinExecutionCommands
+    let folderCommands: SidebarFolderCommands
     let windowState: BrowserWindowState
     let windowRegistry: WindowRegistry
     let themeContext: ResolvedThemeContext
@@ -19,12 +20,12 @@ struct TabFolderMutationActions {
 
     func toggleFolderOpenState(_ folderId: UUID) {
         withAnimation(folderLayoutAnimation) {
-            _ = pinCommands.toggleFolder(folderId)
+            _ = folderCommands.toggleFolder(folderId)
         }
     }
 
     func deleteNestedFolder(_ childFolder: TabFolder) {
-        let childCount = pinCommands.recursiveChildCount(
+        let childCount = folderCommands.recursiveChildCount(
             for: childFolder.id,
             in: space.id
         ) ?? 0
@@ -36,7 +37,7 @@ struct TabFolderMutationActions {
                 themeContext: themeContext,
                 onDelete: {
                     mutateFolderContent {
-                        _ = pinCommands.deleteFolder(childFolder.id)
+                        _ = folderCommands.deleteFolder(childFolder.id)
                     }
                 }
             )
@@ -44,30 +45,35 @@ struct TabFolderMutationActions {
         }
 
         mutateFolderContent {
-            _ = pinCommands.deleteFolder(childFolder.id)
+            _ = folderCommands.deleteFolder(childFolder.id)
         }
     }
 
     func ungroupNestedFolder(_ childFolder: TabFolder) {
         mutateFolderContent {
-            _ = pinCommands.ungroupFolder(childFolder.id)
+            _ = folderCommands.ungroupFolder(childFolder.id)
         }
     }
 
     func activateShortcutPin(_ pin: ShortcutPin) {
-        guard let tab = pinCommands.materialize(
+        guard let tab = pinExecution.materialize(
             pin,
             in: windowState,
             currentSpaceID: space.id
         ) else { return }
-        browserContext.commands.requestUserTabActivation(
+        browserContext.tabSelection.requestUserTabActivation(
             tab,
-            windowState
+            in: windowState,
+            loadPolicy: .immediate
         )
     }
 
     func focusSplitGroup(_ groupID: UUID, memberID: SplitMemberID) {
-        browserContext.commands.focusSplitGroup(groupID, memberID, windowState.id)
+        browserContext.splitFocusCommands.focusGroup(
+            groupID,
+            memberID,
+            windowState.id
+        )
     }
 
     func mutateFolderContent(_ update: () -> Void) {

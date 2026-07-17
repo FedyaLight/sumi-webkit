@@ -1,39 +1,25 @@
 import Foundation
 
 /// Retires one exact inactive Tab whose WebExtension creation transaction did
-/// not commit. This is not a user close: no recently-closed entry or closure
-/// notification is produced, while a didOpenTab that crossed WebKit is still
-/// balanced before model/WebView teardown.
+/// not commit. This is not a user close and never captures recently-closed UI.
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionRequestedTabDiscardService {
     private let transactions: TabStructuralLookupCoordinator
-    private let persistence: TabStructuralPersistenceService
-    private let membership: TabCollectionMembershipOwner
-    private let transientTabs: TabTransientWebKitTabLifecycleOwner
-    private let regularTabs: RegularTabCollectionOwner
-    private let spaces: TabSpaceCollectionStateOwner
-    private let selection: TabSelectionStateOwner
-    private let runtimePorts: @MainActor () -> RuntimePortRegistry
+    private let residenceRemoval: ExtensionRequestedTabResidenceRemovalTransaction
+    private let runtimeSettlement: ExtensionRequestedTabRuntimeSettlementTransaction
+    private let selectionRestoration: ExtensionRequestedTabSelectionRestoration
 
     init(
         transactions: TabStructuralLookupCoordinator,
-        persistence: TabStructuralPersistenceService,
-        membership: TabCollectionMembershipOwner,
-        transientTabs: TabTransientWebKitTabLifecycleOwner,
-        regularTabs: RegularTabCollectionOwner,
-        spaces: TabSpaceCollectionStateOwner,
-        selection: TabSelectionStateOwner,
-        runtimePorts: @escaping @MainActor () -> RuntimePortRegistry
+        residenceRemoval: ExtensionRequestedTabResidenceRemovalTransaction,
+        runtimeSettlement: ExtensionRequestedTabRuntimeSettlementTransaction,
+        selectionRestoration: ExtensionRequestedTabSelectionRestoration
     ) {
         self.transactions = transactions
-        self.persistence = persistence
-        self.membership = membership
-        self.transientTabs = transientTabs
-        self.regularTabs = regularTabs
-        self.spaces = spaces
-        self.selection = selection
-        self.runtimePorts = runtimePorts
+        self.residenceRemoval = residenceRemoval
+        self.runtimeSettlement = runtimeSettlement
+        self.selectionRestoration = selectionRestoration
     }
 
     @discardableResult
@@ -42,78 +28,21 @@ final class ExtensionRequestedTabDiscardService {
         restoringSelectionTo tabID: UUID?
     ) -> Bool {
         transactions.withTransaction {
-            guard membership.tab(for: tab.id) === tab else {
-                return false
-            }
-
-            let wasCurrent = selection.currentTab === tab
+            let selectionWitness = selectionRestoration.capture(for: tab)
             let needsExtensionClose = tab.extensionPageRuntimeOwner
                 .hasAnyDidOpenTabNotification()
-            persistence.cancelRuntimeStatePersistence(for: tab.id)
-            let removedTransient = needsExtensionClose
-                ? transientTabs.removeTransientExtensionTab(id: tab.id)
-                : transientTabs
-                    .discardTransientExtensionTabWithoutPublishedOpen(
-                        id: tab.id
-                    )
-            if removedTransient {
-                restoreSelectionIfNeeded(
-                    wasCurrent: wasCurrent,
-                    tabID: tabID
-                )
-                persistence.scheduleStructuralPersistence()
-                _ = runtimePorts().validateWindowStates()
-                return true
-            }
-
-            let removals = regularTabs.remove(
-                [tab.id],
-                in: spaces.spaces,
-                currentSpaceId: spaces.currentSpaceId
+            guard let removal = residenceRemoval.remove(
+                tab,
+                notifyingExtensionClose: needsExtensionClose
+            ) else { return false }
+            runtimeSettlement.settle(
+                removal,
+                notifyingExtensionClose: needsExtensionClose,
+                restoreSelection: {
+                    selectionRestoration.restore(selectionWitness, to: tabID)
+                }
             )
-            guard removals.count == 1,
-                  removals[0].tab === tab
-            else {
-                return false
-            }
-
-            let runtime = runtimePorts()
-            let splitSettlement = runtime.stageTabClosures([tab.id])
-            if needsExtensionClose {
-                runtime.notifyTabClosedIfLoaded(tab)
-            }
-            runtime.forEachWindowState { windowState in
-                windowState.selectionHistory
-                    .removeFromRegularTabHistory(tab.id)
-            }
-            runtime.webViewLifecycle.unloadTab(tab)
-            runtime.webViewLifecycle.requireRemoveAllWebViews(
-                for: tab,
-                closeActiveFullscreenMedia: true
-            )
-            membership.detach(tab)
-            restoreSelectionIfNeeded(
-                wasCurrent: wasCurrent,
-                tabID: tabID
-            )
-            NotificationCenter.default.post(
-                name: .sumiTabLifecycleDidChange,
-                object: tab
-            )
-            splitSettlement?.publish()
-            persistence.scheduleStructuralPersistence()
-            _ = runtime.validateWindowStates()
             return true
         }
-    }
-
-    private func restoreSelectionIfNeeded(
-        wasCurrent: Bool,
-        tabID: UUID?
-    ) {
-        guard wasCurrent else { return }
-        selection.replaceCurrentTab(
-            tabID.flatMap { membership.tab(for: $0) }
-        )
     }
 }

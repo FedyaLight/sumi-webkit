@@ -67,6 +67,18 @@ final class ExtensionProfileWebsiteDataStoreCache {
         privateRuntimeProfileIDs.removeAll()
     }
 
+    func remove(profileID: UUID) {
+        storesByProfile.removeValue(forKey: profileID)
+        storeOrder.removeAll { $0 == profileID }
+        privateRuntimeProfileIDs.remove(profileID)
+    }
+
+    func containsProfileReference(to profileID: UUID) -> Bool {
+        storesByProfile[profileID] != nil
+            || storeOrder.contains(profileID)
+            || privateRuntimeProfileIDs.contains(profileID)
+    }
+
     func cachedStore(for profileId: UUID) -> WKWebsiteDataStore? {
         storesByProfile[profileId]
     }

@@ -52,16 +52,16 @@ private final class BrowserAuxiliaryWindowContext:
 @MainActor
 private final class BrowserAuxiliaryWindowTabs:
     AuxiliaryWindowTabLifecycle {
-    private let transientTabs: TabTransientWebKitTabLifecycleOwner
+    private let auxiliaryTabs: AuxiliaryMiniWindowTabLifecycleTransaction
     private let webViewInstaller: any UntrackedWebViewInstalling
     private let context: any AuxiliaryWindowContextResolving
 
     init(
-        transientTabs: TabTransientWebKitTabLifecycleOwner,
+        auxiliaryTabs: AuxiliaryMiniWindowTabLifecycleTransaction,
         untrackedWebViewInstallation: any UntrackedWebViewInstalling,
         context: any AuxiliaryWindowContextResolving
     ) {
-        self.transientTabs = transientTabs
+        self.auxiliaryTabs = auxiliaryTabs
         self.webViewInstaller = untrackedWebViewInstallation
         self.context = context
     }
@@ -83,12 +83,12 @@ private final class BrowserAuxiliaryWindowTabs:
             currentSpaceID: currentSpace?.id,
             currentSpaceProfileID: currentSpace?.profileId
         )
-        let tab = transientTabs.createAuxiliaryMiniWindowTab(
+        guard let tab = auxiliaryTabs.create(
             openerTab: openerTab,
-            profileId: identity.profileID,
+            profileID: identity.profileID,
             urlString: urlString,
             webExtensionContextOverride: extensionContext
-        )
+        ) else { return nil }
         tab.profileId = identity.profileID
         tab.spaceId = identity.spaceID
         return tab
@@ -106,11 +106,11 @@ private final class BrowserAuxiliaryWindowTabs:
         unplacedWebView: WKWebView?
     ) {
         unplacedWebView.map(tab.cleanupCloneWebView)
-        transientTabs.removeAuxiliaryMiniWindowTab(tab)
+        auxiliaryTabs.remove(tab)
     }
 
     func removeMiniWindowTab(_ tab: Tab) {
-        transientTabs.removeAuxiliaryMiniWindowTab(tab)
+        auxiliaryTabs.remove(tab)
     }
 }
 
@@ -164,17 +164,29 @@ private final class BrowserAuxiliaryWindowPermissions:
 private final class BrowserAuxiliaryWindowMutationAdmission:
     AuxiliaryWindowMutationAdmitting {
     private let cleanup: WebsiteDataCleanupService
+    private let profileAdmissions: ProfileReferenceAdmissionLedger
 
-    init(cleanup: WebsiteDataCleanupService) {
+    init(
+        cleanup: WebsiteDataCleanupService,
+        profileAdmissions: ProfileReferenceAdmissionLedger
+    ) {
         self.cleanup = cleanup
+        self.profileAdmissions = profileAdmissions
     }
 
     func admissionIsBlocked(profileID: UUID) -> Bool {
-        cleanup.admissionIsBlocked(profileID: profileID)
+        profileAdmissions.isReferenceAllowed(profileID) == false
+            || cleanup.admissionIsBlocked(profileID: profileID)
     }
 
     func waitForAdmission(profileID: UUID) async -> Bool {
-        await cleanup.waitForAdmission(profileID: profileID)
+        guard profileAdmissions.isReferenceAllowed(profileID) else {
+            return false
+        }
+        guard await cleanup.waitForAdmission(profileID: profileID) else {
+            return false
+        }
+        return profileAdmissions.isReferenceAllowed(profileID)
     }
 }
 
@@ -201,12 +213,13 @@ final class BrowserAuxiliaryWindowComposition {
         currentProfile: @escaping @MainActor () -> UUID?,
         spaces: TabSpaceCollectionStateOwner,
         tabContext: BrowserWindowTabContext,
-        transientTabs: TabTransientWebKitTabLifecycleOwner,
+        auxiliaryTabs: AuxiliaryMiniWindowTabLifecycleTransaction,
         untrackedWebViewInstallation: any UntrackedWebViewInstalling,
         extensions: SumiExtensionsModule,
         popupPermissions: SumiPopupPermissionBridge,
         filePickerPermissions: SumiFilePickerPermissionBridge,
-        mutationAdmission: WebsiteDataCleanupService
+        mutationAdmission: WebsiteDataCleanupService,
+        profileAdmissions: ProfileReferenceAdmissionLedger
     ) {
         let context = BrowserAuxiliaryWindowContext(
             windowRegistry: windowRegistry,
@@ -215,7 +228,7 @@ final class BrowserAuxiliaryWindowComposition {
             tabs: tabContext
         )
         let tabs = BrowserAuxiliaryWindowTabs(
-            transientTabs: transientTabs,
+            auxiliaryTabs: auxiliaryTabs,
             untrackedWebViewInstallation: untrackedWebViewInstallation,
             context: context
         )
@@ -224,7 +237,8 @@ final class BrowserAuxiliaryWindowComposition {
             filePicker: filePickerPermissions
         )
         let admission = BrowserAuxiliaryWindowMutationAdmission(
-            cleanup: mutationAdmission
+            cleanup: mutationAdmission,
+            profileAdmissions: profileAdmissions
         )
         let nestingPolicy = AuxiliaryWindowNestingPolicy()
         let sessions = AuxiliaryWindowSessionRegistry()

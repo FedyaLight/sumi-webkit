@@ -24,6 +24,7 @@ struct ExtensionManagerModuleResidence {
     let surfaceBinding: BrowserExtensionSurfaceBinding
     let lifetimeControl: ExtensionManagerLifetimeControl
     let websiteDataQuiescence: ExtensionWebsiteDataRuntimeQuiescence
+    let profileRetirement: ExtensionProfileRuntimeRetirement
     let settingsCatalog: ExtensionSettingsCatalogBinding
     let toolbarRuntime: ExtensionToolbarRuntime
     let autofillRuntime: SafariExtensionAutofillRuntime
@@ -38,6 +39,7 @@ struct ExtensionManagerModuleResidence {
         surfaceBinding: BrowserExtensionSurfaceBinding,
         lifetimeControl: ExtensionManagerLifetimeControl,
         websiteDataQuiescence: ExtensionWebsiteDataRuntimeQuiescence,
+        profileRetirement: ExtensionProfileRuntimeRetirement,
         settingsCatalog: ExtensionSettingsCatalogBinding,
         toolbarRuntime: ExtensionToolbarRuntime,
         autofillRuntime: SafariExtensionAutofillRuntime,
@@ -50,6 +52,7 @@ struct ExtensionManagerModuleResidence {
         self.surfaceBinding = surfaceBinding
         self.lifetimeControl = lifetimeControl
         self.websiteDataQuiescence = websiteDataQuiescence
+        self.profileRetirement = profileRetirement
         self.settingsCatalog = settingsCatalog
         self.toolbarRuntime = toolbarRuntime
         self.autofillRuntime = autofillRuntime
@@ -77,5 +80,9 @@ struct ExtensionManagerModuleResidence {
         reason: String
     ) -> [ExtensionRuntimeTabRebuildPlan.Execution] {
         runtimeTermination.executeRebuildPlan(plan, reason: reason)
+    }
+
+    func retireBrowserAttachment() {
+        runtimeTermination.retireBrowserAttachment()
     }
 }

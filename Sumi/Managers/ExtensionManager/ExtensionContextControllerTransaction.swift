@@ -61,17 +61,23 @@ final class ExtensionContextControllerTransaction {
         loadSource: SafariAppExtensionRuntimeLoadSource,
         controllerBinding: ExtensionControllerBindingSnapshot,
         storage: WebExtensionRuntimeStoragePreparation,
-        request: ExtensionContextLoadRequest
+        request: ExtensionContextLoadRequest,
+        profileAdmission: ProfileReferenceAdmissionReceipt
     ) throws -> ExtensionLoadedContext {
-        try validateController(controllerBinding, request: request)
+        try validateController(
+            controllerBinding,
+            request: request,
+            profileAdmission: profileAdmission
+        )
         let controller = controllerBinding.controller
         var bindingReceipt: ExtensionContextBindingReceipt?
         do {
-            let receipt = profileRuntime.setContext(
+            guard let receipt = profileRuntime.publishContextIfAdmitted(
                 context,
                 extensionId: request.extensionId,
-                profileId: request.profileId
-            )
+                profileId: request.profileId,
+                admission: profileAdmission
+            ) else { throw CancellationError() }
             bindingReceipt = receipt
             diagnostics.trace(
                 "contextBinding profile=\(request.profileId.uuidString) extensionId=\(request.extensionId) generation=\(profileRuntime.contextBindingGeneration(for: request.profileId))"
@@ -102,7 +108,8 @@ final class ExtensionContextControllerTransaction {
                 receipt,
                 context: context,
                 controller: controller,
-                request: request
+                request: request,
+                profileAdmission: profileAdmission
             )
             let contextLoadStart = CFAbsoluteTimeGetCurrent()
             try controller.load(context)
@@ -110,7 +117,8 @@ final class ExtensionContextControllerTransaction {
                 receipt,
                 context: context,
                 controller: controller,
-                request: request
+                request: request,
+                profileAdmission: profileAdmission
             )
             controllerDelegateReadiness.controllerDidBecomeReady(
                 controllerBinding
@@ -171,13 +179,16 @@ final class ExtensionContextControllerTransaction {
 
     private func validateController(
         _ snapshot: ExtensionControllerBindingSnapshot,
-        request: ExtensionContextLoadRequest
+        request: ExtensionContextLoadRequest,
+        profileAdmission: ProfileReferenceAdmissionReceipt
     ) throws {
         try authority.validate(
             request.claim,
             mutationLease: request.mutationLease
         )
-        guard snapshot.profileID == request.claim.key.profileId,
+        guard profileAdmission.profileID == request.profileId,
+              profileRuntime.validateProfileReference(profileAdmission),
+              snapshot.profileID == request.claim.key.profileId,
               profileRuntime.isCurrent(snapshot)
         else {
             throw CancellationError()
@@ -188,13 +199,16 @@ final class ExtensionContextControllerTransaction {
         _ receipt: ExtensionContextBindingReceipt,
         context: WKWebExtensionContext,
         controller: WKWebExtensionController,
-        request: ExtensionContextLoadRequest
+        request: ExtensionContextLoadRequest,
+        profileAdmission: ProfileReferenceAdmissionReceipt
     ) throws {
         try authority.validate(
             request.claim,
             mutationLease: request.mutationLease
         )
-        guard profileRuntime.context(ifCurrent: receipt) === context,
+        guard profileAdmission.profileID == request.profileId,
+              profileRuntime.validateProfileReference(profileAdmission),
+              profileRuntime.context(ifCurrent: receipt) === context,
               profileRuntime.controller(ifCurrent: receipt) === controller
         else {
             throw CancellationError()

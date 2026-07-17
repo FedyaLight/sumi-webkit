@@ -118,7 +118,8 @@ final class DisplayedTabShortcutBindingAggregateTransactionTests:
         let window = BrowserWindowState()
         let counters = Counters()
         let profile = Profile(name: "Profile")
-        let tabManager = try makeInMemoryTabManager(
+        let tabManager = BrowserManager()
+        tabManager.runtimePortConnection.attach(TestRuntimePorts.make(
             currentProfileId: { profile.id },
             defaultProfileId: { profile.id },
             profile: { $0 == profile.id ? profile : nil },
@@ -127,12 +128,13 @@ final class DisplayedTabShortcutBindingAggregateTransactionTests:
             persistWindowSession: { _ in
                 counters.windowPersistence += 1
             }
-        )
-        window.tabManager = tabManager
-        let space = tabManager.spaceServices.catalog.createSpace(
+        ))
+        tabManager.windowRegistry.register(window)
+        let space = try XCTUnwrap(tabManager.sidebarSpaceLifecycle.createSpace(
             name: "Space",
-            profileId: profile.id
-        )
+            icon: SumiPersistentGlyph.spaceDefaultIconValue,
+            profileID: profile.id
+        ))
         let source = tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://aggregate-rollback.example",
             in: space,
@@ -148,7 +150,7 @@ final class DisplayedTabShortcutBindingAggregateTransactionTests:
         )
         let sourceWindow = window.unpublishedShortcutMutationState
         let profileAdmission = try XCTUnwrap(
-            tabManager.profileAssignments.tabs.prepareShortcutAssignment(
+            tabManager.tabProfileTransitions.prepareShortcutAssignment(
                 tab: source,
                 desiredProfileID: nil,
                 resolvedProfileID: profile.id,
@@ -175,10 +177,18 @@ final class DisplayedTabShortcutBindingAggregateTransactionTests:
         )
         let runtime = DisplayedTabShortcutRuntimeTransaction(
             windows: .empty,
-            binding: bindingFixture.binding,
-            membershipWitness: membershipWitness,
-            containerRemoval: tabManager.shortcutContainerRemovalOwner,
-            regularTabs: tabManager.regularTabCollectionOwner,
+            sourceModel: DisplayedTabShortcutSourceModelTransaction(
+                binding: bindingFixture.binding,
+                membershipWitness: membershipWitness,
+                containerRemoval: ShortcutContainerRemovalOwner(
+                    pins: tabManager.shortcutPinCollectionStateOwner,
+                    structuralMutations: tabManager
+                        .structuralCollectionMutationOwner,
+                    regularTabs: tabManager.regularTabCollectionOwner,
+                    spaces: tabManager.spaceStateOwner
+                ),
+                regularTabs: tabManager.regularTabCollectionOwner
+            ),
             structuralLookup: tabManager.structuralLookupCoordinator,
             runtimeAttachment: TabRuntimeAttachmentWitness(
                 connection: tabManager.runtimePortConnection,
@@ -312,7 +322,7 @@ final class DisplayedTabShortcutBindingAggregateTransactionTests:
 
     private struct AggregateHarness {
         let aggregate: DisplayedTabShortcutBindingAggregateTransaction
-        let tabManager: TabManager
+        let tabManager: BrowserManager
         let window: BrowserWindowState
         let space: Space
         let source: Tab

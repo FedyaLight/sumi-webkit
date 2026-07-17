@@ -92,6 +92,10 @@ final class ExtensionControllerDelegateBridge: NSObject, WKWebExtensionControlle
         return RoutesReceipt(identity: ObjectIdentifier(self))
     }
 
+    func retireBrowserRoutes() {
+        browserRoutes = nil
+    }
+
     // MARK: - Windows
     func webExtensionController(
         _ controller: WKWebExtensionController,

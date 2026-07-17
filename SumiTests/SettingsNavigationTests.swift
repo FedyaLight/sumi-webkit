@@ -294,7 +294,7 @@ final class SettingsNavigationTests: XCTestCase {
 
         browserManager.urlBarBundle.settingsNavigation.openSettings(selecting: .about, in: windowState)
 
-        let settingsTabs = browserManager.tabManager.regularTabCollectionOwner.tabs(in: space).filter(\.representsSumiSettingsSurface)
+        let settingsTabs = browserManager.regularTabCollectionOwner.tabs(in: space).filter(\.representsSumiSettingsSurface)
         XCTAssertEqual(settingsTabs.count, 1)
         XCTAssertEqual(settingsTabs.first?.url, SettingsTabs.about.settingsSurfaceURL)
         XCTAssertEqual(windowState.currentTabId, settingsTabs.first?.id)
@@ -303,7 +303,7 @@ final class SettingsNavigationTests: XCTestCase {
 
     func testOpenSettingsTabReusesExistingSettingsSurfaceForAbout() {
         let (browserManager, _, settings, windowState, space) = makeHarness()
-        let existing = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
+        let existing = browserManager.regularTabLifecycleOwner.createNewTab(
             url: SettingsTabs.general.settingsSurfaceURL.absoluteString,
             in: space,
             activate: false
@@ -311,7 +311,7 @@ final class SettingsNavigationTests: XCTestCase {
 
         browserManager.urlBarBundle.settingsNavigation.openSettings(selecting: .about, in: windowState)
 
-        let settingsTabs = browserManager.tabManager.regularTabCollectionOwner.tabs(in: space).filter(\.representsSumiSettingsSurface)
+        let settingsTabs = browserManager.regularTabCollectionOwner.tabs(in: space).filter(\.representsSumiSettingsSurface)
         XCTAssertEqual(settingsTabs.count, 1)
         XCTAssertEqual(settingsTabs.first?.id, existing.id)
         XCTAssertEqual(existing.url, SettingsTabs.about.settingsSurfaceURL)
@@ -336,7 +336,7 @@ final class SettingsNavigationTests: XCTestCase {
         XCTAssertEqual(firstSettingsTab.name, "Settings")
         XCTAssertEqual(windowState.currentTabId, firstSettingsTab.id)
         XCTAssertEqual(settings.currentSettingsTab, .privacy)
-        XCTAssertFalse(browserManager.tabManager.regularTabCollectionOwner.tabs(in: space).contains(where: \.representsSumiSettingsSurface))
+        XCTAssertFalse(browserManager.regularTabCollectionOwner.tabs(in: space).contains(where: \.representsSumiSettingsSurface))
 
         browserManager.urlBarBundle.settingsNavigation.openSettings(selecting: .about, in: windowState)
 
@@ -346,12 +346,12 @@ final class SettingsNavigationTests: XCTestCase {
         XCTAssertEqual(firstSettingsTab.url, SettingsTabs.about.settingsSurfaceURL)
         XCTAssertEqual(windowState.currentTabId, firstSettingsTab.id)
         XCTAssertEqual(settings.currentSettingsTab, .about)
-        XCTAssertFalse(browserManager.tabManager.regularTabCollectionOwner.tabs(in: space).contains(where: \.representsSumiSettingsSurface))
+        XCTAssertFalse(browserManager.regularTabCollectionOwner.tabs(in: space).contains(where: \.representsSumiSettingsSurface))
     }
 
     func testFloatingBarCurrentSettingsURLCommitAppliesPaneNavigation() {
         let (browserManager, _, settings, windowState, space) = makeHarness()
-        let existing = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
+        let existing = browserManager.regularTabLifecycleOwner.createNewTab(
             url: SettingsTabs.general.settingsSurfaceURL.absoluteString,
             in: space,
             activate: false
@@ -384,18 +384,17 @@ final class SettingsNavigationTests: XCTestCase {
             harness.reset()
         }
 
-        let browserManager = BrowserManager()
         let windowRegistry = WindowRegistry()
+        let browserManager = BrowserManager(windowRegistry: windowRegistry)
         let settings = SumiSettingsService(userDefaults: harness.defaults)
         let space = Space(name: "Primary")
         let windowState = BrowserWindowState()
 
-        browserManager.windowRegistry = windowRegistry
         browserManager.sumiSettings = settings
-        browserManager.tabManager.spaceStateOwner.replaceSpaces([space])
-        browserManager.tabManager.spaceStateOwner.replaceCurrentSpace(space)
+        browserManager.spaceStateOwner.replaceSpaces([space])
+        browserManager.spaceStateOwner.replaceCurrentSpace(space)
 
-        windowState.tabManager = browserManager.tabManager
+        browserManager.tabResidenceAuthority.establishResidenceSession(on: windowState)
         windowState.currentSpaceId = space.id
 
         windowRegistry.register(windowState)

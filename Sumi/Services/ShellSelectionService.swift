@@ -14,12 +14,10 @@ protocol ShellSelectionTabStore: AnyObject {
 
 @MainActor
 final class ShellSelectionService {
-    typealias SplitTabProvider = (_ windowId: UUID) -> [UUID]
+    private let splitQuery: WindowSplitQuery
 
-    private let splitTabsForWindow: SplitTabProvider
-
-    init(splitTabsForWindow: @escaping SplitTabProvider) {
-        self.splitTabsForWindow = splitTabsForWindow
+    init(splitQuery: WindowSplitQuery) {
+        self.splitQuery = splitQuery
     }
 
     func currentTab(
@@ -214,7 +212,7 @@ final class ShellSelectionService {
             return windowState.ephemeralTabs
         }
 
-        let splitTabs = splitTabsForWindow(windowState.id)
+        let splitTabs = splitQuery.visibleTabIDs(in: windowState.id)
         var orderedTabs = tabsForDisplay(in: windowState, tabStore: tabStore)
 
         func appendIfMissing(_ tab: Tab?) {
@@ -278,7 +276,7 @@ final class ShellSelectionService {
             return !tab.isShortcutLiveInstance || tab.shortcutPinRole == .essential
         }
 
-        let splitTabs = splitTabsForWindow(windowState.id)
+        let splitTabs = splitQuery.visibleTabIDs(in: windowState.id)
         if splitTabs.contains(tab.id) {
             return true
         }

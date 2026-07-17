@@ -1,0 +1,32 @@
+import Foundation
+
+@MainActor
+final class BrowserSiteControlsContextOwner {
+    private let protection: SumiProtectionCoordinator
+    private let extensions: SumiExtensionsModule
+
+    init(
+        protection: SumiProtectionCoordinator,
+        extensions: SumiExtensionsModule
+    ) {
+        self.protection = protection
+        self.extensions = extensions
+    }
+
+    func snapshot(
+        url: URL?,
+        profile: Profile?,
+        protectionReloadRequired: Bool,
+        contentBlockerReloadRequired: Bool
+    ) -> SiteControlsSnapshot {
+        SiteControlsSnapshot.resolve(
+            url: url,
+            profile: profile,
+            protectionCoordinator: protection,
+            protectionBrowserRestartRequired: protection.settings.browserRestartRequired,
+            protectionReloadRequired: protectionReloadRequired,
+            extensionsModule: extensions,
+            safariContentBlockerReloadRequired: contentBlockerReloadRequired
+        )
+    }
+}

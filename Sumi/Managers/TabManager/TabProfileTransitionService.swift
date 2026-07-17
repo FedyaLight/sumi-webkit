@@ -109,33 +109,72 @@ final class TabProfileTransitionService {
         tab: Tab,
         targetSpaceID: UUID?,
         desiredProfileID: UUID? = nil
-    ) -> TabSpaceProfileTransitionPreparation? {
-        guard tab.spaceId != targetSpaceID else { return nil }
-        // Both callers have already committed to changing `spaceId`; a nil
-        // preparation only means that no WebView profile replacement is needed.
-        pendingInheritance.tabLeftSourceSpace(tab)
+    ) -> TabSpaceProfileTransitionPreparationOutcome {
+        guard tab.spaceId != targetSpaceID else { return .unnecessary }
+        guard tab.profileAssignment.hasUnsettledAssignment == false else {
+            return .rejected
+        }
         let lease = runtimeConnection.captureLease()
-        guard let profileIDs = policy.profileIDsForSpaceTransition(
+        let resolution = policy.spaceTransitionProfileResolution(
             tab: tab,
             targetSpaceID: targetSpaceID,
             desiredProfileID: desiredProfileID,
             using: lease
-        ), runtimeConnection.acceptsExactAttachment(lease) else {
-            return nil
-        }
-
-        let pendingRevision = tab.profileAssignment.changeRevision
-        if tab.profileAssignment.cancelPending() {
-            removeRuntimeAdmission(for: tab, revision: pendingRevision)
-        }
-        let preparation = TabSpaceProfileTransitionPreparation(
-            tabID: tab.id,
-            sourceSpaceID: tab.spaceId,
-            targetSpaceID: targetSpaceID,
-            pinnedProfileID: profileIDs.current
         )
-        tab.profileId = profileIDs.current
-        return preparation
+        guard runtimeConnection.acceptsExactAttachment(lease) else {
+            return .rejected
+        }
+        switch resolution {
+        case .unavailable:
+            return .rejected
+        case .unchanged:
+            return .unnecessary
+        case .transition(let currentProfileID, _):
+            return .prepared(TabSpaceProfileTransitionPreparation(
+                tabID: tab.id,
+                sourceSpaceID: tab.spaceId,
+                targetSpaceID: targetSpaceID,
+                sourceProfileID: tab.profileId,
+                sourceAssignmentRevision: tab.profileAssignment.changeRevision,
+                pinnedProfileID: currentProfileID
+            ))
+        }
+    }
+
+    func stageSpaceTransition(
+        _ preparation: TabSpaceProfileTransitionPreparation,
+        for tab: Tab
+    ) -> Bool {
+        guard tab.id == preparation.tabID,
+              tab.spaceId == preparation.sourceSpaceID,
+              tab.profileId == preparation.sourceProfileID,
+              tab.profileAssignment.changeRevision
+                == preparation.sourceAssignmentRevision,
+              tab.profileAssignment.hasUnsettledAssignment == false else {
+            return false
+        }
+        tab.profileId = preparation.pinnedProfileID
+        return true
+    }
+
+    func canRollbackStagedSpaceTransition(
+        _ preparation: TabSpaceProfileTransitionPreparation,
+        for tab: Tab
+    ) -> Bool {
+        tab.id == preparation.tabID
+            && tab.profileId == preparation.pinnedProfileID
+            && tab.profileAssignment.hasUnsettledAssignment == false
+    }
+
+    func rollbackStagedSpaceTransition(
+        _ preparation: TabSpaceProfileTransitionPreparation,
+        for tab: Tab
+    ) -> Bool {
+        guard canRollbackStagedSpaceTransition(preparation, for: tab) else {
+            return false
+        }
+        tab.profileId = preparation.sourceProfileID
+        return true
     }
 
     func prepareShortcutAssignment(
@@ -199,11 +238,15 @@ final class TabProfileTransitionService {
               tab.profileId == preparation.pinnedProfileID else {
             return .stale
         }
-        return start(
+        let outcome = start(
             desiredProfileID: nil,
             tab: tab,
             requiresStructuralPersistence: true
         )
+        if outcome.wasAccepted {
+            pendingInheritance.tabLeftSourceSpace(tab)
+        }
+        return outcome
     }
 
     @discardableResult

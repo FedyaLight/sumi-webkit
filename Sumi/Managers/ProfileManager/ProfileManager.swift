@@ -11,12 +11,19 @@ import SwiftData
 import SwiftUI
 import WebKit
 
+enum ProfileManagerMutationError: Error, Equatable {
+    case retiredReference(UUID)
+    case profileIdentityMutationRequiresRetirement
+}
+
 @MainActor
 final class ProfileManager: ObservableObject {
     let context: ModelContext
+    let profileReferenceAdmission: ProfileReferenceAdmissionLedger
     @Published var profiles: [Profile] = []
     private let faviconService: any BrowserFaviconServicing
     private let visitedLinkStore: any BrowserVisitedLinkStoreManaging
+    private let saveContext: @MainActor (ModelContext) throws -> Void
 
     // MARK: - Ephemeral Profiles (Incognito)
     /// Active ephemeral profiles (one per incognito window)
@@ -24,12 +31,31 @@ final class ProfileManager: ObservableObject {
 
     init(
         context: ModelContext,
+        profileReferenceAdmission: ProfileReferenceAdmissionLedger? = nil,
         faviconService: any BrowserFaviconServicing = TabDependencyIsolationDefaults.faviconService,
-        visitedLinkStore: any BrowserVisitedLinkStoreManaging = TabDependencyIsolationDefaults.visitedLinkStore
+        visitedLinkStore: any BrowserVisitedLinkStoreManaging = TabDependencyIsolationDefaults.visitedLinkStore,
+        saveContext: @escaping @MainActor (ModelContext) throws -> Void = {
+            try $0.save()
+        }
     ) {
         self.context = context
+        if let profileReferenceAdmission {
+            self.profileReferenceAdmission = profileReferenceAdmission
+        } else {
+            do {
+                self.profileReferenceAdmission = try ProfileReferenceAdmissionLedger(
+                    context: context
+                )
+            } catch {
+                RuntimeDiagnostics.emit(
+                    "[ProfileRetirement] Profile admission unavailable: \(error)"
+                )
+                self.profileReferenceAdmission = .failClosed()
+            }
+        }
         self.faviconService = faviconService
         self.visitedLinkStore = visitedLinkStore
+        self.saveContext = saveContext
         loadProfiles()
     }
 
@@ -40,12 +66,20 @@ final class ProfileManager: ObservableObject {
                 sortBy: [SortDescriptor(\.index, order: .forward)]
             )
             let entities = try context.fetch(descriptor)
-            self.profiles = entities.map { e in
+            let admittedEntities = entities.filter {
+                profileReferenceAdmission.isReferenceAllowed($0.id)
+            }
+            if admittedEntities.count != entities.count {
+                RuntimeDiagnostics.emit(
+                    "[ProfileRetirement] Suppressed blocked persisted profiles"
+                )
+            }
+            self.profiles = admittedEntities.map { e in
                 Profile(id: e.id, name: e.name, icon: e.icon)
             }
             // Normalize indices if not sequential 0..n-1
-            let expected = Array(0..<entities.count)
-            let actual = entities.map { $0.index }
+            let expected = Array(0..<admittedEntities.count)
+            let actual = admittedEntities.map { $0.index }
             if actual != expected { persistProfiles() }
         } catch {
             RuntimeDiagnostics.emit("[ProfileManager] Failed to load profiles: \(error)")
@@ -55,39 +89,65 @@ final class ProfileManager: ObservableObject {
 
     // MARK: - CRUD
     @discardableResult
-    func createProfile(name: String, icon: String = SumiProfileIcon.defaultIcon) -> Profile {
+    func createProfile(
+        name: String,
+        icon: String = SumiProfileIcon.defaultIcon
+    ) throws -> Profile {
+        precondition(
+            profileReferenceAdmission.isAvailable,
+            "Profile creation requires durable reference admission"
+        )
         // Next index is current count (append to end)
         let nextIndex = profiles.count
         let profile = Profile(name: name, icon: icon)
+        let mutationLease = try profileReferenceAdmission
+            .beginReferenceMutation(to: [profile.id])
+        defer {
+            precondition(
+                profileReferenceAdmission.endReferenceMutation(mutationLease),
+                "Profile creation lost its reference mutation lease"
+            )
+        }
         let entity = ProfileEntity(id: profile.id, name: name, icon: profile.icon, index: nextIndex)
         context.insert(entity)
-        do { try context.save() } catch { RuntimeDiagnostics.emit("[ProfileManager] Save failed during create: \(error)") }
+        do {
+            try saveContext(context)
+        } catch {
+            context.rollback()
+            throw error
+        }
         profiles.append(profile)
         return profile
     }
 
-    /// Persists profile-entity removal only.
-    /// Full deletion cleanup (browsing data, favicons, permissions) runs through
-    /// `ProfileDeletionCleanupOrchestrator` in `SumiProfileMaintenanceService.deleteProfile`.
-    func deleteProfile(_ profile: Profile) -> Bool {
-        guard profiles.count > 1 else { return false } // prevent deleting last profile
-        // Remove from SwiftData first; if persistence fails, do not mutate runtime state
-        do {
-            let pid = profile.id
-            let predicate = #Predicate<ProfileEntity> { $0.id == pid }
-            if let entity = try context.fetch(FetchDescriptor<ProfileEntity>(predicate: predicate)).first {
-                context.delete(entity)
-            }
-            try context.save()
-        } catch {
-            RuntimeDiagnostics.emit("[ProfileManager] Delete failed: \(error)")
+    /// Deletes the canonical profile row and advances the exact retirement
+    /// journal in the same SwiftData save before publishing runtime removal.
+    func beginReferenceMigration(_ token: ProfileRetirementToken) throws -> Bool {
+        guard profiles.count > 1,
+              let record = profileReferenceAdmission.record(for: token),
+              record.phase == .reserved,
+              profiles.contains(where: { $0.id == token.profileID }),
+              profiles.contains(where: { $0.id == record.fallbackProfileID }),
+              try profileReferenceAdmission.beginReferenceMigration(token)
+        else {
             return false
         }
-        // Remove from runtime and reindex
-        if let idx = profiles.firstIndex(where: { $0.id == profile.id }) {
-            profiles.remove(at: idx)
+        profiles.removeAll { $0.id == token.profileID }
+        return true
+    }
+
+    func commitLogicalDeletion(_ token: ProfileRetirementToken) throws -> Bool {
+        guard profiles.isEmpty == false,
+              let record = profileReferenceAdmission.record(for: token),
+              record.phase == .migratingReferences,
+              profiles.contains(where: { $0.id == token.profileID }) == false,
+              profiles.contains(where: { $0.id == record.fallbackProfileID })
+        else {
+            return false
         }
-        persistProfiles()
+
+        let committed = try profileReferenceAdmission.commitLogicalDeletion(token)
+        guard committed else { return false }
         return true
     }
 
@@ -102,6 +162,19 @@ final class ProfileManager: ObservableObject {
     /// Atomically persists a complete profile snapshot before publishing it to runtime readers.
     /// Import rollback uses the same operation, so a failed save never exposes an unpersisted list.
     func replaceProfiles(with replacement: [Profile]) throws {
+        let currentIDs = profiles.map(\.id)
+        let replacementIDs = replacement.map(\.id)
+        guard currentIDs.count == replacementIDs.count,
+              Set(currentIDs) == Set(replacementIDs)
+        else {
+            throw ProfileManagerMutationError
+                .profileIdentityMutationRequiresRetirement
+        }
+        if let rejected = replacement.first(where: {
+            profileReferenceAdmission.isReferenceAllowed($0.id) == false
+        }) {
+            throw ProfileManagerMutationError.retiredReference(rejected.id)
+        }
         try persistProfileSnapshot(replacement)
         profiles = replacement
     }
@@ -130,7 +203,7 @@ final class ProfileManager: ObservableObject {
             for (id, entity) in byId where !keep.contains(id) {
                 context.delete(entity)
             }
-            try context.save()
+            try saveContext(context)
         } catch {
             context.rollback()
             throw error
@@ -138,8 +211,17 @@ final class ProfileManager: ObservableObject {
     }
 
     func ensureDefaultProfile() {
-        if profiles.isEmpty {
-            _ = createProfile(name: "Default", icon: SumiProfileIcon.defaultIcon)
+        if profiles.isEmpty, profileReferenceAdmission.isAvailable {
+            do {
+                try createProfile(
+                    name: "Default",
+                    icon: SumiProfileIcon.defaultIcon
+                )
+            } catch {
+                RuntimeDiagnostics.emit(
+                    "[ProfileManager] Failed to create default profile: \(error)"
+                )
+            }
         }
     }
 
@@ -260,7 +342,13 @@ final class ProfileManager: ObservableObject {
             profilePartitionId: profile.id,
             isEphemeralProfile: true
         )
-        faviconService.clearFaviconPartition(for: profile)
+        do {
+            try faviconService.clearFaviconPartition(for: profile)
+        } catch {
+            RuntimeDiagnostics.emit(
+                "[ProfileManager] Failed to clear ephemeral favicon partition: \(error)"
+            )
+        }
         profile.destroyEphemeralDataStore()
     }
 }

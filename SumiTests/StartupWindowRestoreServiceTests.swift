@@ -4,14 +4,6 @@ import XCTest
 
 @MainActor
 final class StartupWindowRestoreServiceTests: XCTestCase {
-    private final class WindowReference {
-        var value: BrowserWindowState?
-
-        init(_ value: BrowserWindowState?) {
-            self.value = value
-        }
-    }
-
     func testPartialFailureKeepsSourceAndRetrySkipsRestoredWindowIDs() async throws {
         let store = try makeIsolatedLastSessionWindowsStore(
             suitePrefix: "StartupWindowRestoreServiceTests"
@@ -27,38 +19,33 @@ final class StartupWindowRestoreServiceTests: XCTestCase {
             canOfferRestoreShortcut: true,
             windowSnapshots: sourceSnapshots
         )
+        let browser = BrowserManager()
+        let windows = browser.windowRegistry
         let launchWindow = BrowserWindowState()
-        var windows = [launchWindow]
-        var sessions = [
-            launchWindow.id: makeSessionRecoveryWindowSession(currentTabId: UUID()),
-        ]
-        let catalog = makeCatalog(windows: { windows }, sessions: { sessions })
+        windows.register(launchWindow)
+        let catalog = makeCatalog(windows: windows)
         let archive = makeArchive(
             catalog: catalog,
             store: store,
             startupRestore: startupRestore
         )
-        var reopenResults = [true, false]
-        var reopenRequests: [UUID] = []
+        let windowReopen = WindowSessionReopenerFake()
+        windowReopen.reopenResults = [true, false]
+        windowReopen.onReopen = {
+            guard windowReopen.reopenedSnapshots.count == 1,
+                  let restored = windowReopen.reopenedSnapshots.last else { return }
+            let window = BrowserWindowState()
+            WindowSessionSnapshotApplier(glanceManager: GlanceManager())
+                .prepareForRegistration(restored.session, to: window)
+            window.restorationState.restoredSessionWindowID = restored.id
+            windows.register(window)
+        }
         let service = StartupWindowRestoreService(
             startupRestore: startupRestore,
             archive: archive,
             openWindows: catalog,
-            startupWindow: { launchWindow },
-            applySnapshot: { snapshot, window in
-                sessions[window.id] = snapshot.session
-            },
-            reopenWindow: { snapshot in
-                reopenRequests.append(snapshot.id)
-                let didReopen = reopenResults.removeFirst()
-                if didReopen {
-                    let window = BrowserWindowState()
-                    window.restorationState.restoredSessionWindowID = snapshot.id
-                    windows.append(window)
-                    sessions[window.id] = snapshot.session
-                }
-                return didReopen
-            }
+            restoration: browser.windowSessionBundle.restoreService,
+            windowReopen: windowReopen
         )
 
         service.restoreIfNeeded()
@@ -70,16 +57,24 @@ final class StartupWindowRestoreServiceTests: XCTestCase {
         archive.refresh(excludingWindowID: nil)
         XCTAssertEqual(store.snapshots, sourceSnapshots)
         XCTAssertEqual(
-            reopenRequests,
+            windowReopen.reopenedSnapshots.map(\.id),
             [sourceSnapshots[1].id, sourceSnapshots[2].id]
         )
 
-        reopenResults = [true]
+        windowReopen.reopenResults = [true]
+        windowReopen.onReopen = {
+            guard let restored = windowReopen.reopenedSnapshots.last else { return }
+            let window = BrowserWindowState()
+            WindowSessionSnapshotApplier(glanceManager: GlanceManager())
+                .prepareForRegistration(restored.session, to: window)
+            window.restorationState.restoredSessionWindowID = restored.id
+            windows.register(window)
+        }
         service.restoreIfNeeded()
         await service.pendingRestoreTask?.value
 
         XCTAssertTrue(startupRestore.didConsumeRestoreOffer)
-        XCTAssertEqual(reopenRequests.last, sourceSnapshots[2].id)
+        XCTAssertEqual(windowReopen.reopenedSnapshots.last?.id, sourceSnapshots[2].id)
         XCTAssertEqual(Set(store.snapshots.map(\.id)), Set(sourceSnapshots.map(\.id)))
     }
 
@@ -96,50 +91,39 @@ final class StartupWindowRestoreServiceTests: XCTestCase {
             canOfferRestoreShortcut: true,
             windowSnapshots: [sourceSnapshot]
         )
+        let browser = BrowserManager()
+        let windows = browser.windowRegistry
         let launchWindow = BrowserWindowState()
-        var sessions = [
-            launchWindow.id: makeSessionRecoveryWindowSession(currentTabId: UUID()),
-        ]
-        let catalog = makeCatalog(
-            windows: { [launchWindow] },
-            sessions: { sessions }
-        )
+        windows.register(launchWindow)
+        let catalog = makeCatalog(windows: windows)
         let archive = makeArchive(
             catalog: catalog,
             store: store,
             startupRestore: startupRestore
         )
         let blockingAttempt = try XCTUnwrap(archive.beginRestoreAttempt())
-        var appliedSnapshotIDs: [UUID] = []
-        var appliedWindow: BrowserWindowState?
-        let startupWindow = WindowReference(launchWindow)
+        let windowReopen = WindowSessionReopenerFake(reopenResult: false)
         let service = StartupWindowRestoreService(
             startupRestore: startupRestore,
             archive: archive,
             openWindows: catalog,
-            startupWindow: { startupWindow.value },
-            applySnapshot: { snapshot, window in
-                appliedSnapshotIDs.append(snapshot.id)
-                appliedWindow = window
-                sessions[window.id] = snapshot.session
-            },
-            reopenWindow: { _ in
-                XCTFail("Launch window should receive the only snapshot")
-                return false
-            }
+            restoration: browser.windowSessionBundle.restoreService,
+            windowReopen: windowReopen
         )
 
         service.restoreIfNeeded()
-        startupWindow.value = BrowserWindowState()
         await Task.yield()
-        XCTAssertTrue(appliedSnapshotIDs.isEmpty)
+        XCTAssertNil(launchWindow.restorationState.restoredSessionWindowID)
         XCTAssertFalse(startupRestore.didConsumeRestoreOffer)
 
         archive.finishRestoreAttempt(blockingAttempt, outcome: .interrupted)
         await service.pendingRestoreTask?.value
 
-        XCTAssertEqual(appliedSnapshotIDs, [sourceSnapshot.id])
-        XCTAssertIdentical(appliedWindow, launchWindow)
+        XCTAssertEqual(
+            launchWindow.restorationState.restoredSessionWindowID,
+            sourceSnapshot.id
+        )
+        XCTAssertTrue(windowReopen.reopenedSnapshots.isEmpty)
         XCTAssertTrue(startupRestore.didConsumeRestoreOffer)
         XCTAssertEqual(store.snapshots.map(\.id), [sourceSnapshot.id])
     }
@@ -156,30 +140,30 @@ final class StartupWindowRestoreServiceTests: XCTestCase {
             canOfferRestoreShortcut: true,
             windowSnapshots: [sourceSnapshot]
         )
-        let catalog = makeCatalog(windows: { [] }, sessions: { [:] })
+        let browser = BrowserManager()
+        let windows = browser.windowRegistry
+        let catalog = makeCatalog(windows: windows)
         let archive = makeArchive(
             catalog: catalog,
             store: store,
             startupRestore: startupRestore
         )
         var didEnterReopen = false
+        let windowReopen = WindowSessionReopenerFake(reopenResult: false)
+        windowReopen.onReopen = {
+            didEnterReopen = true
+            let clock = ContinuousClock()
+            let deadline = clock.now.advanced(by: .seconds(2))
+            while Task.isCancelled == false, clock.now < deadline {
+                await Task.yield()
+            }
+        }
         var service: StartupWindowRestoreService? = StartupWindowRestoreService(
             startupRestore: startupRestore,
             archive: archive,
             openWindows: catalog,
-            startupWindow: { nil },
-            applySnapshot: { _, _ in
-                XCTFail("No launch window is available")
-            },
-            reopenWindow: { _ in
-                didEnterReopen = true
-                let clock = ContinuousClock()
-                let deadline = clock.now.advanced(by: .seconds(2))
-                while Task.isCancelled == false, clock.now < deadline {
-                    await Task.yield()
-                }
-                return false
-            }
+            restoration: browser.windowSessionBundle.restoreService,
+            windowReopen: windowReopen
         )
         weak let releasedService = service
 
@@ -216,46 +200,44 @@ final class StartupWindowRestoreServiceTests: XCTestCase {
             canOfferRestoreShortcut: true,
             windowSnapshots: [sourceSnapshot]
         )
+        let browser = BrowserManager()
+        let windows = browser.windowRegistry
         let launchWindow = BrowserWindowState()
-        var windows = [launchWindow]
-        var sessions = [
-            launchWindow.id: makeSessionRecoveryWindowSession(currentTabId: UUID()),
-        ]
-        let catalog = makeCatalog(windows: { windows }, sessions: { sessions })
+        windows.register(launchWindow)
+        let catalog = makeCatalog(windows: windows)
         let archive = makeArchive(
             catalog: catalog,
             store: store,
             startupRestore: startupRestore
         )
         let blockingAttempt = try XCTUnwrap(archive.beginRestoreAttempt())
-        var didApplyToClosedLaunchWindow = false
-        var reopenRequests: [UUID] = []
+        let windowReopen = WindowSessionReopenerFake()
+        windowReopen.onReopen = {
+            guard let snapshot = windowReopen.reopenedSnapshots.last else { return }
+            let restoredWindow = BrowserWindowState()
+            WindowSessionSnapshotApplier(glanceManager: GlanceManager())
+                .prepareForRegistration(
+                    snapshot.session,
+                    to: restoredWindow
+                )
+            restoredWindow.restorationState.restoredSessionWindowID = snapshot.id
+            windows.register(restoredWindow)
+        }
         let service = StartupWindowRestoreService(
             startupRestore: startupRestore,
             archive: archive,
             openWindows: catalog,
-            startupWindow: { launchWindow },
-            applySnapshot: { _, _ in
-                didApplyToClosedLaunchWindow = true
-            },
-            reopenWindow: { snapshot in
-                reopenRequests.append(snapshot.id)
-                let restoredWindow = BrowserWindowState()
-                restoredWindow.restorationState.restoredSessionWindowID = snapshot.id
-                windows.append(restoredWindow)
-                sessions[restoredWindow.id] = snapshot.session
-                return true
-            }
+            restoration: browser.windowSessionBundle.restoreService,
+            windowReopen: windowReopen
         )
 
         service.restoreIfNeeded()
-        windows.removeAll()
-        sessions.removeAll()
+        XCTAssertTrue(windows.discardRejectedRegistration(launchWindow))
         archive.finishRestoreAttempt(blockingAttempt, outcome: .interrupted)
         await service.pendingRestoreTask?.value
 
-        XCTAssertFalse(didApplyToClosedLaunchWindow)
-        XCTAssertEqual(reopenRequests, [sourceSnapshot.id])
+        XCTAssertNil(launchWindow.restorationState.restoredSessionWindowID)
+        XCTAssertEqual(windowReopen.reopenedSnapshots.map(\.id), [sourceSnapshot.id])
         XCTAssertTrue(startupRestore.didConsumeRestoreOffer)
         XCTAssertEqual(store.snapshots, [sourceSnapshot])
     }
@@ -272,25 +254,22 @@ final class StartupWindowRestoreServiceTests: XCTestCase {
             canOfferRestoreShortcut: true,
             windowSnapshots: [sourceSnapshot]
         )
-        let catalog = makeCatalog(windows: { [] }, sessions: { [:] })
+        let browser = BrowserManager()
+        let windows = browser.windowRegistry
+        let catalog = makeCatalog(windows: windows)
         let archive = makeArchive(
             catalog: catalog,
             store: store,
             startupRestore: startupRestore
         )
         let blockingAttempt = try XCTUnwrap(archive.beginRestoreAttempt())
+        let windowReopen = WindowSessionReopenerFake()
         var service: StartupWindowRestoreService? = StartupWindowRestoreService(
             startupRestore: startupRestore,
             archive: archive,
             openWindows: catalog,
-            startupWindow: { nil },
-            applySnapshot: { _, _ in
-                XCTFail("Cancelled queued restore must not apply a snapshot")
-            },
-            reopenWindow: { _ in
-                XCTFail("Cancelled queued restore must not create a window")
-                return false
-            }
+            restoration: browser.windowSessionBundle.restoreService,
+            windowReopen: windowReopen
         )
 
         service?.restoreIfNeeded()
@@ -303,15 +282,15 @@ final class StartupWindowRestoreServiceTests: XCTestCase {
         let nextAttempt = try XCTUnwrap(archive.beginRestoreAttempt())
         archive.finishRestoreAttempt(nextAttempt, outcome: .interrupted)
         XCTAssertFalse(startupRestore.didConsumeRestoreOffer)
+        XCTAssertTrue(windowReopen.reopenedSnapshots.isEmpty)
     }
 
-    private func makeCatalog(
-        windows: @escaping @MainActor () -> [BrowserWindowState],
-        sessions: @escaping @MainActor () -> [UUID: WindowSessionSnapshot]
-    ) -> OpenWindowSessionCatalog {
+    private func makeCatalog(windows: WindowRegistry) -> OpenWindowSessionCatalog {
         OpenWindowSessionCatalog(
-            allWindows: windows,
-            makeWindowSessionSnapshot: { sessions()[$0.id] }
+            windows: windows,
+            snapshots: WindowSessionSnapshotFactory(
+                glanceManager: GlanceManager()
+            )
         )
     }
 
@@ -322,7 +301,7 @@ final class StartupWindowRestoreServiceTests: XCTestCase {
     ) -> LastSessionWindowArchive {
         LastSessionWindowArchive(
             openWindows: catalog,
-            lastSessionWindowsStore: { store },
+            lastSessionWindowsStore: store,
             startupRestore: startupRestore
         )
     }

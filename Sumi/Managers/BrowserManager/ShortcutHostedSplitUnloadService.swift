@@ -5,18 +5,24 @@ import SumiDomain
 /// is already canonical and is therefore never rewritten during unload.
 @MainActor
 final class ShortcutHostedSplitUnloadService {
-    private let runtimeLease: () -> SplitShortcutRuntimeLease?
-    private let performImmediateVisualHandoff: (BrowserWindowState) -> Void
-    private let refreshCompositor: (BrowserWindowState) -> Void
+    private let runtimeConnection: TabRuntimePortConnection
+    private let splitGroups: SplitGroupStore
+    private let retirement: ShortcutLiveTabRetirementService
+    private let fallback: ShortcutHostedSplitFallbackQuery
+    private let visuals: BrowserWindowVisualCoordinator
 
     init(
-        runtimeLease: @escaping () -> SplitShortcutRuntimeLease?,
-        performImmediateVisualHandoff: @escaping (BrowserWindowState) -> Void,
-        refreshCompositor: @escaping (BrowserWindowState) -> Void
+        runtimeConnection: TabRuntimePortConnection,
+        splitGroups: SplitGroupStore,
+        retirement: ShortcutLiveTabRetirementService,
+        fallback: ShortcutHostedSplitFallbackQuery,
+        visuals: BrowserWindowVisualCoordinator
     ) {
-        self.runtimeLease = runtimeLease
-        self.performImmediateVisualHandoff = performImmediateVisualHandoff
-        self.refreshCompositor = refreshCompositor
+        self.runtimeConnection = runtimeConnection
+        self.splitGroups = splitGroups
+        self.retirement = retirement
+        self.fallback = fallback
+        self.visuals = visuals
     }
 
     @discardableResult
@@ -24,9 +30,9 @@ final class ShortcutHostedSplitUnloadService {
         _ group: SumiDomain.SplitGroup,
         in windowState: BrowserWindowState
     ) -> Bool {
-        guard let runtime = runtimeLease(),
+        guard runtimeConnection.current != nil,
               group.container.isShortcutSidebar,
-              runtime.tabManager.splitGroupStore.group(id: group.id) == group
+              splitGroups.group(id: group.id) == group
         else {
             return false
         }
@@ -40,10 +46,7 @@ final class ShortcutHostedSplitUnloadService {
         }
         var target = windowState.unpublishedShortcutMutationState
         target.splitSelection = nil
-        if let fallback = fallbackVisibleRegularTab(
-            in: windowState,
-            tabManager: runtime.tabManager
-        ) {
+        if let fallback = fallback.visibleRegularTab(in: windowState) {
             _ = WindowTabSelectionStateApplicator.apply(
                 fallback,
                 to: &target,
@@ -56,30 +59,15 @@ final class ShortcutHostedSplitUnloadService {
             target.currentShortcutPinRole = nil
             target.isShowingEmptyState = true
         }
-        guard let retirement = runtime.tabManager.structuralLookupCoordinator
-            .withTransaction({
-                runtime.tabManager.shortcutLiveTabRetirement
-                    .prepareRetirements(
-                        pinIds: pinIDs,
-                        in: windowState.id,
-                        targetWindowState: target
-                    )
-            }), retirement.result.didRetire else { return false }
-        performImmediateVisualHandoff(windowState)
+        guard let preparedRetirement = retirement.prepareRetirements(
+            pinIds: pinIDs,
+            in: windowState.id,
+            targetWindowState: target
+        ), preparedRetirement.result.didRetire else { return false }
+        _ = visuals.performImmediateVisualHandoffIfPossible(in: windowState)
 
-        _ = runtime.tabManager.shortcutLiveTabRetirement.finish(retirement)
-        refreshCompositor(windowState)
+        _ = retirement.finish(preparedRetirement)
+        visuals.refreshCompositor(for: windowState)
         return true
-    }
-
-    private func fallbackVisibleRegularTab(
-        in windowState: BrowserWindowState,
-        tabManager: TabManager
-    ) -> Tab? {
-        guard let spaceID = windowState.currentSpaceId,
-              let space = tabManager.spaceStateOwner.space(with: spaceID) else {
-            return nil
-        }
-        return tabManager.regularTabCollectionOwner.tabs(in: space).first
     }
 }

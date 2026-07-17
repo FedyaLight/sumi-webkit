@@ -70,7 +70,6 @@ struct SumiLiveFolderSource: Identifiable, Codable, Equatable, Sendable {
     var id: UUID
     var folderId: UUID
     var spaceId: UUID
-    var profileId: UUID?
     var kind: SumiLiveFolderKind
     var title: String
     var urlString: String
@@ -93,7 +92,6 @@ struct SumiLiveFolderSource: Identifiable, Codable, Equatable, Sendable {
         id: UUID = UUID(),
         folderId: UUID,
         spaceId: UUID,
-        profileId: UUID?,
         kind: SumiLiveFolderKind,
         title: String? = nil,
         urlString: String? = nil
@@ -101,7 +99,6 @@ struct SumiLiveFolderSource: Identifiable, Codable, Equatable, Sendable {
         self.id = id
         self.folderId = folderId
         self.spaceId = spaceId
-        self.profileId = profileId
         self.kind = kind
         self.title = title ?? kind.defaultFolderName
         self.urlString = urlString ?? kind.defaultURLString

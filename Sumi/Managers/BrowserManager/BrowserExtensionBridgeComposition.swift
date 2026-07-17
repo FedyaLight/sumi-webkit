@@ -12,6 +12,7 @@ import Foundation
 @MainActor
 final class BrowserExtensionBridgeComposition {
     let availability: ExtensionBrowserRuntimeAvailability
+    let tabResidences: BrowserTabResidenceAuthority
     let profiles: ExtensionBrowserProfileQuery
     let websiteDataAdmission: ExtensionWebsiteDataMutationAdmission
     let windows: BrowserExtensionWindowQueryAdapter
@@ -24,22 +25,36 @@ final class BrowserExtensionBridgeComposition {
     let presentation: BrowserExtensionWindowPresentationAdapter
     let requestedWindows: BrowserExtensionRequestedWindowTransaction
 
-    init(browserManager: BrowserManager) {
+    init(
+        browserManager: BrowserManager,
+        tabCommands: BrowserExtensionTabCommands
+    ) {
         availability = ExtensionBrowserRuntimeAvailability {
             [weak browserManager] in browserManager != nil
         }
+        tabResidences = browserManager.tabResidenceAuthority
         let currentProfileAuthority = browserManager.currentProfileAuthority
+        let profileManager = browserManager.profileManager
+        let tabStore = browserManager.runtimeStore
+        let windowSelection = browserManager.shellRuntime.windowSelection
+        let windowTabs = browserManager.shellRuntime.windowTabs
+        let membership = browserManager
+            .tabCollectionMembershipOwner
+        let auxiliaryTabs = browserManager.auxiliaryMiniWindowTabs
+        let shortcutPresentation = browserManager
+            .shortcutPresentationOwner
+        let spaces = browserManager.spaceStateOwner
         profiles = ExtensionBrowserProfileQuery(
             currentProfile: { [currentProfileAuthority] in
                 currentProfileAuthority.currentProfile
             },
-            profile: { [weak browserManager] profileID in
-                browserManager?.profileManager.profiles.first {
+            profile: { [profileManager] profileID in
+                profileManager.profiles.first {
                     $0.id == profileID
                 }
             },
             ephemeralProfile: { [weak browserManager] profileID in
-                browserManager?.windowRegistry?.windows.values
+                browserManager?.windowRegistry.windows.values
                     .compactMap(\.ephemeralProfile)
                     .first { $0.id == profileID }
             }
@@ -67,81 +82,68 @@ final class BrowserExtensionBridgeComposition {
             primaryTrackedWindowID: { [webViewOwnershipQuery] tabID in
                 webViewOwnershipQuery.primaryWindowID(for: tabID)
             },
-            tabs: { [weak browserManager] windowState in
-                guard let browserManager else { return [] }
-                return browserManager.shellRuntime.windowSelection
-                    .tabsForWebExtensionWindow(
+            tabs: { [windowSelection, tabStore] windowState in
+                windowSelection.tabsForWebExtensionWindow(
                         in: windowState,
-                        tabStore: browserManager.tabManager.runtimeStore
+                        tabStore: tabStore
                     )
             },
-            currentTab: { [weak browserManager] windowState in
-                browserManager?.shellRuntime.windowTabs
-                    .currentTab(for: windowState)
+            currentTab: { [windowTabs] windowState in
+                windowTabs.currentTab(for: windowState)
             },
-            currentTabForActiveWindow: { [weak browserManager] in
+            currentTabForActiveWindow: { [weak browserManager, windowTabs] in
                 guard let browserManager,
-                      let activeWindow = browserManager.windowRegistry?.activeWindow
+                      let activeWindow = browserManager.windowRegistry.activeWindow
                 else { return nil }
-                return browserManager.shellRuntime.windowTabs.currentTab(for: activeWindow)
+                return windowTabs.currentTab(for: activeWindow)
             },
-            windowContainingTab: { [weak browserManager] tab in
-                browserManager?.shellRuntime.windowTabs
-                    .windowState(containing: tab)
+            windowContainingTab: { [windowTabs] tab in
+                windowTabs.windowState(containing: tab)
             }
         )
 
         let tabs = BrowserExtensionTabQueryAdapter(
-            regularTab: { [weak browserManager] tabID in
-                browserManager?.tabManager.tabCollectionMembershipOwner
-                    .tab(for: tabID)
+            regularTab: { [membership] tabID in
+                membership.tab(for: tabID)
             },
-            allTabs: { [weak browserManager] in
-                guard let browserManager else { return [] }
-                return browserManager.tabManager.tabCollectionMembershipOwner
-                    .allTabs()
+            allTabs: { [membership, windows] in
+                membership.allTabs()
                     + windows.allExtensionWindowStates.flatMap(\.ephemeralTabs)
             },
-            windows: {
+            windows: { [windows] in
                 windows.allExtensionWindowStates
             },
-            isTransient: { [weak browserManager] tab in
-                browserManager?.tabManager.transientWebKitTabLifecycleOwner
-                    .isTransientExtensionTab(tab) ?? false
+            isTransient: { [tabCommands] tab in
+                tabCommands.containsTransient(tab)
             },
-            isAuxiliaryMiniWindow: { [weak browserManager] tab in
-                browserManager?.tabManager.transientWebKitTabLifecycleOwner
-                    .isAuxiliaryMiniWindowTab(tab) ?? false
+            isAuxiliaryMiniWindow: { [auxiliaryTabs] tab in
+                auxiliaryTabs.containsExact(tab)
             },
-            isPinned: { [weak browserManager] tab in
-                tab.isPinned || browserManager?.tabManager
-                    .shortcutPresentationOwner.activeShortcutTabs()
+            isPinned: { [shortcutPresentation] tab in
+                tab.isPinned || shortcutPresentation.activeShortcutTabs()
                     .contains(where: { $0.id == tab.id }) == true
             }
         )
 
         let requestedTabTargets = BrowserRequestedTabTargetAdapter(
             windows: windows,
-            space: { [weak browserManager] spaceID in
-                browserManager?.tabManager.spaceStateOwner.space(
-                    with: spaceID
-                )
+            space: { [spaces] spaceID in
+                spaces.space(with: spaceID)
             },
-            firstSpace: { [weak browserManager] profileID in
-                browserManager?.tabManager.spaceStateOwner.firstSpace(
-                    forProfile: profileID
-                )
+            firstSpace: { [spaces] profileID in
+                spaces.firstSpace(forProfile: profileID)
             },
             auxiliarySessions: browserManager.auxiliaryWindows.sessions
         )
 
         let tabMutation = BrowserExtensionTabMutationComposition.make(
-            browserManager: browserManager
+            commands: tabCommands,
+            selection: browserManager.browserTabSelection
         )
 
         let windowActivation = BrowserExtensionWindowActivationAdapter(
             activate: { [weak browserManager] windowState in
-                browserManager?.windowRegistry?.setActive(windowState)
+                browserManager?.windowRegistry.setActive(windowState)
             }
         )
 
@@ -292,10 +294,13 @@ final class BrowserExtensionBridgeComposition {
             commands: browserManager.windowCommands,
             restoration: browserManager.windowSessionBundle.restoreService,
             extensionPublication: browserManager.windowExtensionPublication,
-            tabs: browserManager.tabManager,
+            spaces: spaces,
+            regularLifecycle: browserManager
+                .regularTabLifecycleOwner,
+            residences: browserManager.tabResidenceAuthority,
             ownership: webViewOwnershipQuery,
             registeredWindow: { [weak browserManager] windowID in
-                browserManager?.windowRegistry?.windows[windowID]
+                browserManager?.windowRegistry.windows[windowID]
             },
             materialize: { [weak browserManager] tab, window in
                 guard let browserManager else { return nil }
@@ -322,7 +327,7 @@ final class BrowserExtensionBridgeComposition {
                 return registry.windows[window.id] !== window
             },
             persistWindow: { [weak browserManager] window in
-                browserManager?.windowSessionBundle.persistence.persist(window)
+                browserManager?.windowSessionPersistenceCoordinator.persist(window)
             }
         )
 

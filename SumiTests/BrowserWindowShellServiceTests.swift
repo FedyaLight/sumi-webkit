@@ -4,7 +4,6 @@ import XCTest
 
 @testable import Sumi
 import SumiDomain
-import SumiWebRuntime
 
 @MainActor
 final class BrowserWindowShellServiceTests: XCTestCase {
@@ -105,7 +104,11 @@ final class BrowserWindowShellServiceTests: XCTestCase {
         let ephemeralProfile = try XCTUnwrap(windowState.ephemeralProfile)
         XCTAssertTrue(ephemeralProfile.isEphemeral)
         XCTAssertFalse(ephemeralProfile.dataStore.isPersistent)
-        XCTAssertFalse(harness.profileManager.profiles.contains { $0.id == ephemeralProfile.id })
+        XCTAssertFalse(
+            harness.browserManager.profileManager.profiles.contains {
+                $0.id == ephemeralProfile.id
+            }
+        )
     }
 
     func testCreateNewWindowUsesContentFactoryAndRegistersWindowWithAssociatedNSWindow() throws {
@@ -124,8 +127,8 @@ final class BrowserWindowShellServiceTests: XCTestCase {
         let context = BrowserWindowShellService.Context(
             windowRegistry: harness.windowRegistry,
             permissionLifecycleController: harness.permissionLifecycleController,
-            profileManager: harness.profileManager,
-            tabManager: harness.tabManager,
+            profileManager: harness.browserManager.profileManager,
+            tabResidences: harness.browserManager.tabResidenceAuthority,
             makeContentView: { windowRegistry, windowState in
                 XCTAssertIdentical(windowRegistry, harness.windowRegistry)
                 factoryWindowStates.append(windowState)
@@ -145,7 +148,9 @@ final class BrowserWindowShellServiceTests: XCTestCase {
 
         XCTAssertEqual(factoryWindowStates.map(\.id), [windowState.id])
         XCTAssertTrue(harness.windowRegistry.appKitWindow(for: windowState) is SumiBrowserWindow)
-        XCTAssertIdentical(windowState.tabManager, harness.tabManager)
+        XCTAssertTrue(
+            harness.browserManager.tabResidenceAuthority.owns(windowState)
+        )
         XCTAssertEqual(harness.windowRegistry.activeWindowId, windowState.id)
         XCTAssertTrue(try XCTUnwrap(registeredWindowHadNSWindow))
     }
@@ -190,8 +195,8 @@ final class BrowserWindowShellServiceTests: XCTestCase {
             windowRegistry: harness.windowRegistry,
             permissionLifecycleController: harness
                 .permissionLifecycleController,
-            profileManager: harness.profileManager,
-            tabManager: harness.tabManager,
+            profileManager: harness.browserManager.profileManager,
+            tabResidences: harness.browserManager.tabResidenceAuthority,
             makeContentView: { registry, windowState in
                 events.append("content")
                 XCTAssertEqual(windowState.restorationState.restoredSessionWindowID, archiveID)
@@ -302,8 +307,8 @@ final class BrowserWindowShellServiceTests: XCTestCase {
             windowRegistry: harness.windowRegistry,
             permissionLifecycleController: harness
                 .permissionLifecycleController,
-            profileManager: harness.profileManager,
-            tabManager: harness.tabManager,
+            profileManager: harness.browserManager.profileManager,
+            tabResidences: harness.browserManager.tabResidenceAuthority,
             makeContentView: { _, _ in
                 events.append("content")
                 return NSView()
@@ -373,8 +378,8 @@ final class BrowserWindowShellServiceTests: XCTestCase {
             windowRegistry: harness.windowRegistry,
             permissionLifecycleController: harness
                 .permissionLifecycleController,
-            profileManager: harness.profileManager,
-            tabManager: harness.tabManager,
+            profileManager: harness.browserManager.profileManager,
+            tabResidences: harness.browserManager.tabResidenceAuthority,
             makeContentView: { _, _ in
                 XCTFail("A rejected preparation must not construct content")
                 return NSView()
@@ -426,12 +431,12 @@ final class BrowserWindowShellServiceTests: XCTestCase {
         }
 
         let profile = try XCTUnwrap(windowState.ephemeralProfile)
-        let firstTab = harness.tabManager.ephemeralLifecycleOwner.createEphemeralTab(
+        let firstTab = harness.browserManager.ephemeralLifecycleOwner.createEphemeralTab(
             url: try XCTUnwrap(URL(string: "https://example.com/one")),
             in: windowState,
             profile: profile
         )
-        let secondTab = harness.tabManager.ephemeralLifecycleOwner.createEphemeralTab(
+        let secondTab = harness.browserManager.ephemeralLifecycleOwner.createEphemeralTab(
             url: try XCTUnwrap(URL(string: "https://example.com/two")),
             in: windowState,
             profile: profile
@@ -458,9 +463,11 @@ final class BrowserWindowShellServiceTests: XCTestCase {
         let context = makeContext(harness: harness) { _, _ in /* No-op. */ }
         let windowState = BrowserWindowState()
         windowState.isIncognito = true
-        windowState.tabManager = harness.tabManager
+        harness.browserManager.tabResidenceAuthority
+            .establishResidenceSession(on: windowState)
 
-        let ephemeralProfile = harness.profileManager.createEphemeralProfile(for: windowState.id)
+        let ephemeralProfile = harness.browserManager.profileManager
+            .createEphemeralProfile(for: windowState.id)
         windowState.ephemeralProfile = ephemeralProfile
         windowState.currentProfileId = ephemeralProfile.id
 
@@ -469,7 +476,7 @@ final class BrowserWindowShellServiceTests: XCTestCase {
         windowState.appendEphemeralSpace(ephemeralSpace)
         windowState.currentSpaceId = ephemeralSpace.id
 
-        _ = harness.tabManager.ephemeralLifecycleOwner.createEphemeralTab(
+        _ = harness.browserManager.ephemeralLifecycleOwner.createEphemeralTab(
             url: try XCTUnwrap(URL(string: "https://private.example")),
             in: windowState,
             profile: ephemeralProfile
@@ -494,23 +501,20 @@ final class BrowserWindowShellServiceTests: XCTestCase {
     }
 
     private struct Harness {
-        let startupContainer: ModelContainer
         let windowRegistry: WindowRegistry
-        let webViewRuntime: WebViewRuntimeGraph
         let permissionCoordinator: RecordingPermissionCoordinator
         let permissionLifecycleController: SumiPermissionGrantLifecycleController
-        let profileManager: ProfileManager
-        let tabManager: TabManager
+        let browserManager: BrowserManager
     }
 
     private func makeHarness() throws -> Harness {
         let startupContainer = try makeInMemoryStartupContainer()
-        let context = startupContainer.mainContext
-        let webViewSessions = WebViewSessionRepository()
-        let profileManager = ProfileManager(context: context)
-        let tabManager = TabManager(
-            context: context,
-            webViewSessions: webViewSessions
+        let windowRegistry = WindowRegistry()
+        let browserManager = BrowserManager(
+            windowRegistry: windowRegistry,
+            startupPersistence: BrowserManagerStartupPersistence(
+                container: startupContainer
+            )
         )
         let permissionCoordinator = RecordingPermissionCoordinator()
         let permissionLifecycleController = SumiPermissionGrantLifecycleController(
@@ -522,13 +526,10 @@ final class BrowserWindowShellServiceTests: XCTestCase {
             externalSchemeSessionStore: SumiExternalSchemeSessionStore()
         )
         return Harness(
-            startupContainer: startupContainer,
-            windowRegistry: WindowRegistry(),
-            webViewRuntime: makeTestWebViewRuntimeGraph(webViewSessions: webViewSessions),
+            windowRegistry: windowRegistry,
             permissionCoordinator: permissionCoordinator,
             permissionLifecycleController: permissionLifecycleController,
-            profileManager: profileManager,
-            tabManager: tabManager
+            browserManager: browserManager
         )
     }
 
@@ -558,8 +559,8 @@ final class BrowserWindowShellServiceTests: XCTestCase {
         BrowserWindowShellService.Context(
             windowRegistry: harness.windowRegistry,
             permissionLifecycleController: harness.permissionLifecycleController,
-            profileManager: harness.profileManager,
-            tabManager: harness.tabManager,
+            profileManager: harness.browserManager.profileManager,
+            tabResidences: harness.browserManager.tabResidenceAuthority,
             makeContentView: { _, _ in NSView() },
             showEmptyState: showEmptyState,
             sidebarHostRecoveryCoordinator: SidebarHostRecoveryCoordinator()

@@ -79,12 +79,18 @@ final class SumiLiveFolderManager: ObservableObject {
         hasLoadedState = true
 
         Task { [store] in
-            let diskState = await store.load()
-            await MainActor.run {
-                self.apply(diskState)
-                self.reconcileOrphanedSources()
-                self.rescheduleBackgroundActivity()
-                self.refreshDueSources(reason: "startup")
+            do {
+                let diskState = try await store.load()
+                await MainActor.run {
+                    self.apply(diskState)
+                    self.reconcileOrphanedSources()
+                    self.rescheduleBackgroundActivity()
+                    self.refreshDueSources(reason: "startup")
+                }
+            } catch {
+                RuntimeDiagnostics.emit(
+                    "[LiveFolders] Failed to load durable state: \(error)"
+                )
             }
         }
 
@@ -164,7 +170,7 @@ final class SumiLiveFolderManager: ObservableObject {
     }
 
     func createRSSFolder(in spaceId: UUID, feedURLString: String) {
-        guard let space = runtime.spaceContext(spaceId),
+        guard runtime.spaceContext(spaceId) != nil,
               let folderId = runtime.createFolder(spaceId, SumiLiveFolderKind.rss.defaultFolderName) else {
             return
         }
@@ -172,7 +178,6 @@ final class SumiLiveFolderManager: ObservableObject {
         var source = SumiLiveFolderSource(
             folderId: folderId,
             spaceId: spaceId,
-            profileId: space.profileId,
             kind: .rss,
             urlString: feedURLString
         )
@@ -183,7 +188,7 @@ final class SumiLiveFolderManager: ObservableObject {
 
     func createGitHubFolder(in spaceId: UUID, kind: SumiLiveFolderKind) {
         guard kind == .githubPullRequests || kind == .githubIssues,
-              let space = runtime.spaceContext(spaceId),
+              runtime.spaceContext(spaceId) != nil,
               let folderId = runtime.createFolder(spaceId, kind.defaultFolderName) else {
             return
         }
@@ -191,7 +196,6 @@ final class SumiLiveFolderManager: ObservableObject {
         let source = SumiLiveFolderSource(
             folderId: folderId,
             spaceId: spaceId,
-            profileId: space.profileId,
             kind: kind
         )
         insert(source)
@@ -383,7 +387,7 @@ final class SumiLiveFolderManager: ObservableObject {
     }
 
     private func profile(for source: SumiLiveFolderSource) -> Profile? {
-        runtime.profile(source.profileId, source.spaceId)
+        runtime.profile(nil, source.spaceId)
     }
 
     private func apply(_ diskState: SumiLiveFolderDiskState) {
@@ -439,7 +443,31 @@ final class SumiLiveFolderManager: ObservableObject {
             }
         )
         Task { [store] in
-            await store.save(state)
+            do {
+                try await store.save(state)
+            } catch {
+                RuntimeDiagnostics.emit(
+                    "[LiveFolders] Failed to persist durable state: \(error)"
+                )
+            }
+        }
+    }
+
+    func prepareForProfileRetirement() async -> Bool {
+        let tasks = Array(refreshTasksBySourceId.values)
+        tasks.forEach { $0.cancel() }
+        for task in tasks {
+            await task.value
+        }
+        refreshTasksBySourceId.removeAll()
+        do {
+            try await store.normalizeLegacyProfileReferences()
+            return true
+        } catch {
+            RuntimeDiagnostics.emit(
+                "[ProfileRetirement] Live Folder normalization failed: \(error)"
+            )
+            return false
         }
     }
 

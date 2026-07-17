@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Tab closing must stay a role-exact transaction: TabClosureService orchestrates,
-# candidate retirement / selection policy / runtime cleanup stay separate, and
-# no TabRemovalOwner / Dependencies bag / TabManager retention returns.
+# Tab closing remains an explicit candidate-retirement, durable commit,
+# selection-repair, and target-query transaction without a broad live factory.
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -10,157 +9,116 @@ repo_root="$(cd "$script_dir/.." && pwd)"
 source "$script_dir/lib/architecture_guard.sh"
 guard_initialize "$repo_root"
 
-status=0
-
 service='Sumi/Managers/TabManager/TabClosureService.swift'
-composition='Sumi/Managers/TabManager/TabClosureService+Live.swift'
 retirement='Sumi/Managers/TabManager/TabClosureCandidateRetirement.swift'
 cleanup='Sumi/Managers/TabManager/RegularTabClosureRuntimeCleanup.swift'
 policy='Sumi/Managers/TabManager/SelectionAfterClosurePolicy.swift'
-runtime_connection='Sumi/BrowserRuntime/Ports/TabRuntimePortConnection.swift'
-lifecycle_bag='Sumi/Managers/TabManager/TabLifecycleOwnerBag.swift'
-accessors='Sumi/Managers/TabManager/TabManager+OwnerAccessors.swift'
-for file in "$service" "$composition" "$retirement" "$cleanup" "$policy" \
-  "$runtime_connection"; do
+composition_root='Sumi/BrowserRuntime/BrowserCompositionRoot+TabSession.swift'
+role_files=(
+  Sumi/Managers/TabManager/CommittedRegularTabClosures.swift
+  Sumi/Managers/TabManager/RegularTabClosureCommitTransaction.swift
+  Sumi/Managers/TabManager/RegularTabClosureSelectionRepair.swift
+  Sumi/Managers/TabManager/RegularTabClosureTargetQuery.swift
+  "$service"
+)
+sources=("${role_files[@]}" "$retirement" "$cleanup" "$policy")
+
+for file in "${sources[@]}" "$composition_root"; do
   guard_require_file "$file"
 done
 
-# Retired god surface must stay deleted.
-if [[ -e Sumi/Managers/TabManager/TabRemovalOwner.swift ]]; then
-  printf 'error: tombstone violated: TabRemovalOwner.swift must stay deleted\n' >&2
-  status=1
-fi
-
-retired_hits="$(
-  guard_capture_matches '\bTabRemovalOwner\b|\btabRemovalOwner\b' \
-    App FloatingBar SidebarChrome Settings Sumi UI SumiTests \
-    scripts/check_architecture_guardrails.sh \
-    scripts/check_extension_browser_bridge_architecture.sh \
-    scripts/check_di_ceremony_debt.sh \
-    scripts/check_modernization_debt.sh
-)"
-# Ignore this guard's own tombstone/alias checks when the first scan found any.
-if [[ -n "$retired_hits" ]]; then
-  retired_hits="$(
-    printf '%s\n' "$retired_hits" \
-      | guard_capture_matches 'scripts/check_tab_closure_service_boundary\.sh:' -v --no-line-number -
-  )"
-fi
-if [[ -n "$retired_hits" ]]; then
-  guard_record_failure "TabRemovalOwner / tabRemovalOwner reintroduced:
-$retired_hits"
-fi
-
-# No Dependencies/Actions bags or generic capability bags in the slice.
-closure_bag_hits="$(
-  guard_capture_matches '\bstruct[[:space:]]+Dependencies\b|\bstruct[[:space:]]+Actions\b|\bstruct[[:space:]]+Context\b|\bstruct[[:space:]]+Environment\b|\bstruct[[:space:]]+Capabilities\b' \
-    "$service" "$retirement" "$cleanup" "$policy"
-)"
-if [[ -n "$closure_bag_hits" ]]; then
-  guard_record_failure "tab closure slice grew a Dependencies/Actions/Context/Environment/Capabilities bag:
-$closure_bag_hits"
-fi
-
-# Services must not store or look up TabManager at runtime. Mentions are
-# allowed only inside TabClosureService.live composition.
-manager_storage_hits="$(
-  guard_capture_matches '\bTabManager\b' "$service" "$retirement" "$cleanup" "$policy" \
-    "$runtime_connection"
-)"
-if [[ -n "$manager_storage_hits" ]]; then
-  guard_record_failure "tab closure collaborators mention TabManager:
-$manager_storage_hits"
-fi
-
-stored_manager_hits="$(
-  guard_capture_matches 'private[[:space:]].*\bTabManager\b|unowned[[:space:]].*\bTabManager\b|weak[[:space:]].*\bTabManager\b' \
-    "$service" "$retirement" "$cleanup" "$policy"
-)"
-if [[ -n "$stored_manager_hits" ]]; then
-  guard_record_failure "tab closure services retain TabManager storage:
-$stored_manager_hits"
-fi
-
-runtime_reachthrough_hits="$(
-  guard_capture_matches '\[weak[[:space:]]+tabManager\]|requireRuntimePorts|->[[:space:]]*RuntimePortRegistry' \
-    "$service" "$composition" "$retirement" "$cleanup" "$policy"
-)"
-if [[ -n "$runtime_reachthrough_hits" ]]; then
-  guard_record_failure "tab closure slice regained runtime TabManager reach-through/provider closure:
-$runtime_reachthrough_hits"
-fi
-
-runtime_lease_count="$(guard_count_matches 'runtimePorts\.requireLease\(\)' "$service")"
-if (( runtime_lease_count == 0 )); then
-  printf 'error: TabClosureService must acquire one explicit runtime lease\n' >&2
-  status=1
-fi
-if (( ${runtime_lease_count:-0} != 1 )); then
-  printf 'error: TabClosureService must acquire exactly one runtime lease (%s != 1)\n' \
-    "${runtime_lease_count:-0}" >&2
-  status=1
-fi
-
-# Composition must resolve collaborators once; no forwarding alias.
-guard_require_file "$lifecycle_bag"
-guard_require_file "$accessors"
-required_contracts=(
-  "$lifecycle_bag|lazy var[[:space:]]+tabClosureService[[:space:]]*=[[:space:]]*TabClosureService\\.live\\(tabManager:[[:space:]]*tm\\)|TabLifecycleOwnerBag must compose TabClosureService.live at bag construction"
-  "$accessors|var[[:space:]]+tabClosureService:[[:space:]]*TabClosureService|TabManager must expose tabClosureService"
-)
-for contract in "${required_contracts[@]}"; do
-  file="${contract%%|*}"
-  remainder="${contract#*|}"
-  pattern="${remainder%%|*}"
-  message="${remainder#*|}"
-  contract_count="$(guard_count_matches "$pattern" "$file")"
-  if (( contract_count == 0 )); then
-    guard_record_failure "$message"
-  fi
+for role_file in "${role_files[@]}"; do
+  role="$(basename "$role_file" .swift)"
+  guard_exact \
+    "$role stays in its role-exact file" \
+    "$(guard_count_matches "^(final[[:space:]]+class|struct)[[:space:]]+${role}\\b" "$role_file")" \
+    1
+  guard_exact \
+    "$role file owns one top-level role" \
+    "$(guard_count_matches '^(final[[:space:]]+class|struct|enum)[[:space:]]+' "$role_file")" \
+    1
 done
-alias_count="$(guard_count_matches 'tabRemovalOwner' "$accessors" "$lifecycle_bag")"
-if (( alias_count > 0 )); then
-  printf 'error: forwarding compatibility alias tabRemovalOwner remains\n' >&2
-  status=1
+
+if [[ -e Sumi/Managers/TabManager/TabRemovalOwner.swift ]]; then
+  guard_record_failure 'TabRemovalOwner.swift must stay deleted'
+fi
+if [[ -e Sumi/Managers/TabManager/TabClosureService+Live.swift ]]; then
+  guard_record_failure \
+    'TabClosureService+Live.swift must stay deleted; root composes exact roles'
 fi
 
-# Focused surface size caps keep the orchestrator from becoming another god.
-service_lines="$(guard_count_lines "$service")"
-service_collaborators="$(
-  guard_count_matches '^[[:space:]]*private[[:space:]]+(let|weak[[:space:]]+var)\b' "$service"
-)"
-retirement_lines="$(guard_count_lines "$retirement")"
-cleanup_lines="$(guard_count_lines "$cleanup")"
-policy_lines="$(guard_count_lines "$policy")"
+guard_expect_no_matches \
+  'tab closure defines no replacement dependency bag' \
+  '\bstruct[[:space:]]+(Dependencies|Capabilities|Actions|OwnerBag)\b' \
+  "${sources[@]}"
+guard_expect_no_matches \
+  'tab closure stores no callback dependencies' \
+  '^[[:space:]]*private[[:space:]]+(let|var)[[:space:]].*->[[:space:]]*' \
+  "${sources[@]}"
+guard_expect_no_matches \
+  'tab closure defines no forwarding protocol surface' \
+  '^[[:space:]]*(public[[:space:]]+|private[[:space:]]+|internal[[:space:]]+)?protocol[[:space:]]' \
+  "${sources[@]}"
+guard_expect_no_matches \
+  'tab closure cannot recover a manager root' \
+  '\b(browserManager|tabManager)\b|:[[:space:]]*(BrowserManager|TabManager)[?!]?' \
+  "${sources[@]}"
+guard_expect_no_matches \
+  'retired broad closure factory stays absent' \
+  'TabClosureService\.(compose|live)\(' \
+  App FloatingBar SidebarChrome Settings Sumi UI
 
-if (( service_lines > 220 )); then
-  printf 'error: TabClosureService exceeded focused LOC cap (%s > 220)\n' \
-    "$service_lines" >&2
-  status=1
-fi
-if (( ${service_collaborators:-0} > 9 )); then
-  printf 'error: TabClosureService became a collaboration hub (%s > 9)\n' \
-    "${service_collaborators:-0}" >&2
-  status=1
-fi
-if (( retirement_lines > 120 )); then
-  printf 'error: TabClosureCandidateRetirement exceeded focused LOC cap (%s > 120)\n' \
-    "$retirement_lines" >&2
-  status=1
-fi
-if (( cleanup_lines > 80 )); then
-  printf 'error: RegularTabClosureRuntimeCleanup exceeded focused LOC cap (%s > 80)\n' \
-    "$cleanup_lines" >&2
-  status=1
-fi
-if (( policy_lines > 90 )); then
-  printf 'error: SelectionAfterClosurePolicy exceeded focused LOC cap (%s > 90)\n' \
-    "$policy_lines" >&2
-  status=1
-fi
+declare -a type_limits=(
+  'RegularTabClosureCommitTransaction|5'
+  'RegularTabClosureSelectionRepair|4'
+  'RegularTabClosureTargetQuery|2'
+  'TabClosureService|5'
+  'TabClosureCandidateRetirement|4'
+  'RegularTabClosureRuntimeCleanup|1'
+)
 
-if (( status != 0 || guard_failures != 0 )); then
-  exit 1
-fi
+count_type_collaborators() {
+  local type="$1"
+  awk -v type="$type" '
+    $0 ~ "^final class " type "[[:space:]]*\\{" {
+      inside = 1
+      next
+    }
+    inside && /^final class / { exit }
+    inside && /^[[:space:]]*private[[:space:]]+(let|weak[[:space:]]+var)[[:space:]]/ {
+      count += 1
+    }
+    END { print count + 0 }
+  ' "${sources[@]}"
+}
 
-echo "tab closure service boundary passed"
+for type_limit in "${type_limits[@]}"; do
+  IFS='|' read -r type maximum <<< "$type_limit"
+  guard_exact \
+    "one concrete ${type}" \
+    "$(guard_count_matches "^final[[:space:]]+class[[:space:]]+${type}\\b" "${sources[@]}")" \
+    1
+  guard_max \
+    "${type} collaborators" \
+    "$(count_type_collaborators "$type")" \
+    "$maximum"
+done
+
+guard_exact \
+  'root composes closure commit once' \
+  "$(guard_count_matches 'RegularTabClosureCommitTransaction\(' "$composition_root")" \
+  1
+guard_exact \
+  'root composes closure selection repair once' \
+  "$(guard_count_matches 'RegularTabClosureSelectionRepair\(' "$composition_root")" \
+  1
+guard_exact \
+  'root composes closure target query once' \
+  "$(guard_count_matches 'RegularTabClosureTargetQuery\(' "$composition_root")" \
+  1
+guard_exact \
+  'root composes closure service once' \
+  "$(guard_count_matches 'let tabClosureService = TabClosureService\(' "$composition_root")" \
+  1
+
+guard_finish 'tab closure service boundary'
