@@ -10,7 +10,6 @@ struct SplitGroupSidebarRow: View {
     let group: SplitGroup
     let items: [SplitGroupSidebarItem]
     let spaceId: UUID
-    let currentTabId: UUID?
     let isAppKitInteractionEnabled: Bool
     let faviconImageReader: any BrowserFaviconImageReading
     let splitLayout: SplitLayoutService
@@ -28,6 +27,7 @@ struct SplitGroupSidebarRow: View {
     @Environment(\.sumiSettings) var sumiSettings
     @Environment(\.resolvedThemeContext) var themeContext
     @Environment(\.chromeThemeTokens) var scopedChromeTokens
+    @Environment(\.sidebarWindowSelectionSnapshot) var sidebarSelection
     @State var isRowHovered = false
     @State var displayedItems: [SplitGroupSidebarItem] = []
     @State var departingItemIds = Set<SplitMemberID>()
@@ -135,19 +135,23 @@ struct SplitGroupSidebarRow: View {
     }
 
     var isFocusedGroup: Bool {
-        windowState.splitSelection?.groupID == group.id
+        sidebarSelection.splitSelection?.groupID == group.id
     }
 
     func isActive(_ item: SplitGroupSidebarItem) -> Bool {
-        if windowState.splitSelection?.groupID == group.id,
-           windowState.splitSelection?.activeMemberID == item.id {
+        if sidebarSelection.splitSelection?.groupID == group.id,
+           sidebarSelection.splitSelection?.activeMemberID == item.id {
             return true
         }
         switch item.id {
         case .regularTab(let tabID):
-            return currentTabId == tabID
+            return sidebarSelection.currentTabID == tabID
         case .shortcutPin(let pinID):
-            return windowState.currentShortcutPinId == pinID
+            return ShortcutSelectionIdentity.isSelected(
+                tabId: item.tab?.id,
+                pinId: pinID,
+                in: sidebarSelection.shortcut
+            )
         }
     }
 

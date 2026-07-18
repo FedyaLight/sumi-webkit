@@ -28,8 +28,10 @@ struct SpaceRegularTabsListView: View {
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.sidebarWindowSelectionSnapshot) private var sidebarSelection
 
     var body: some View {
+        let selectionSnapshot = sidebarSelection
         let tabByID = Dictionary(uniqueKeysWithValues: tabs.map { ($0.id, $0) })
         let splitGroups = visibleSplitGroups
         let groupedTabIDs = Set(splitGroups.flatMap { group in
@@ -76,7 +78,10 @@ struct SpaceRegularTabsListView: View {
                                 for: tabID,
                                 liveTab: { regularTabCatalog.tab(for: $0) }
                             ) {
-                            animatedTabRow(tab)
+                            animatedTabRow(
+                                tab,
+                                selectionSnapshot: selectionSnapshot
+                            )
                         }
                     case .gap(let gapID):
                         Color.clear.sidebarRowLayoutGap(
@@ -123,11 +128,15 @@ struct SpaceRegularTabsListView: View {
         )
     }
 
-    private func animatedTabRow(_ tab: Tab) -> some View {
-        SpaceRegularTabEntryView(
+    private func animatedTabRow(
+        _ tab: Tab,
+        selectionSnapshot: SidebarWindowSelectionSnapshot
+    ) -> some View {
+        let isCurrentTab = selectionSnapshot.currentTabID == tab.id
+        return SpaceRegularTabEntryView(
             tab: tab,
             spaceID: space.id,
-            isCurrentTab: windowState.currentTabId == tab.id,
+            isCurrentTab: isCurrentTab,
             opacity: dragSnapshot.isDragging && dragSnapshot.activeDragItemID == tab.id ? 0.001 : 1,
             isInteractive: isInteractive,
             actionOwner: tabActionOwner,
@@ -135,7 +144,7 @@ struct SpaceRegularTabsListView: View {
         )
         .sidebarRowAnimatedListSlot(interactionSession.listAnimation.rowMotion(for: tab.id))
         .zIndex(
-            SidebarSelectionElevation.zIndex(isElevated: windowState.currentTabId == tab.id)
+            SidebarSelectionElevation.zIndex(isElevated: isCurrentTab)
         )
     }
 

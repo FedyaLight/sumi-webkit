@@ -53,6 +53,7 @@ struct PinnedGrid: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
+    @Environment(\.sidebarWindowSelectionSnapshot) private var sidebarSelection
     init(
         width: CGFloat,
         browserContext: SidebarBrowserContext,
@@ -89,6 +90,7 @@ struct PinnedGrid: View {
 
     var body: some View {
         let shouldReduceMotion = reduceMotion || sumiSettings.shouldReduceChromeMotion
+        let selectionSnapshot = sidebarSelection
 
         // Use profile-filtered essentials
         let effectiveProfileId = profileId
@@ -144,7 +146,8 @@ struct PinnedGrid: View {
                                 case .pin(let pin):
                                     renderTile(
                                         for: pin,
-                                        tileSize: row.tileSize
+                                        tileSize: row.tileSize,
+                                        selectionSnapshot: selectionSnapshot
                                     )
                                 case .gap:
                                     renderDropGap(
@@ -206,7 +209,8 @@ struct PinnedGrid: View {
     @ViewBuilder
     private func renderTile(
         for pin: ShortcutPin,
-        tileSize: CGSize
+        tileSize: CGSize,
+        selectionSnapshot: SidebarWindowSelectionSnapshot
     ) -> some View {
         if let placeholderGroup = splitPlaceholderGroup(for: pin) {
             PinnedSplitPlaceholderTile(
@@ -216,7 +220,11 @@ struct PinnedGrid: View {
                     currentSpaceID: windowState.currentSpaceId
                 ),
                 faviconImageReader: browserContext.faviconImageReader,
-                isSelected: isSplitPlaceholderSelected(placeholderGroup, pin: pin),
+                isSelected: isSplitPlaceholderSelected(
+                    placeholderGroup,
+                    pin: pin,
+                    selectionSnapshot: selectionSnapshot
+                ),
                 accessibilityID: "essential-split-placeholder-\(pin.id.uuidString)",
                 isAppKitInteractionEnabled: isAppKitInteractionEnabled,
                 onActivate: {
@@ -239,7 +247,10 @@ struct PinnedGrid: View {
                     : .scale(scale: 0.96, anchor: .center).combined(with: .opacity)
             )
         } else {
-            let presentationState = pinPresentationState(pin)
+            let presentationState = pinPresentationState(
+                pin,
+                selectionSnapshot: selectionSnapshot
+            )
             let liveTab = selection.liveTab(for: pin.id, in: windowState)
             let contextMenuActions = essentialTileActionOwner.contextMenuActions(for: pin)
 
@@ -252,7 +263,10 @@ struct PinnedGrid: View {
                 faviconImageReader: browserContext.faviconImageReader,
                 presentationState: presentationState,
                 liveTab: liveTab,
-                essentialRuntimeState: essentialRuntimeState(pin),
+                essentialRuntimeState: essentialRuntimeState(
+                    pin,
+                    selectionSnapshot: selectionSnapshot
+                ),
                 accessibilityID: "essential-shortcut-\(pin.id.uuidString)",
                 onActivate: { activate(pin) },
                 onUnload: { essentialTileActionOwner.unload(pin) },
@@ -286,12 +300,26 @@ struct PinnedGrid: View {
 
     @EnvironmentObject private var dragState: SidebarDragState
 
-    private func pinPresentationState(_ pin: ShortcutPin) -> ShortcutPresentationState {
-        selection.presentationState(for: pin, in: windowState)
+    private func pinPresentationState(
+        _ pin: ShortcutPin,
+        selectionSnapshot: SidebarWindowSelectionSnapshot
+    ) -> ShortcutPresentationState {
+        selection.presentationState(
+            for: pin,
+            in: windowState,
+            selection: selectionSnapshot
+        )
     }
 
-    private func essentialRuntimeState(_ pin: ShortcutPin) -> SumiEssentialRuntimeState? {
-        selection.essentialRuntimeState(for: pin, in: windowState)
+    private func essentialRuntimeState(
+        _ pin: ShortcutPin,
+        selectionSnapshot: SidebarWindowSelectionSnapshot
+    ) -> SumiEssentialRuntimeState? {
+        selection.essentialRuntimeState(
+            for: pin,
+            in: windowState,
+            selection: selectionSnapshot
+        )
     }
 
     private func splitPlaceholderGroup(for pin: ShortcutPin) -> SplitGroup? {
@@ -305,12 +333,21 @@ struct PinnedGrid: View {
         return group
     }
 
-    private func isSplitPlaceholderSelected(_ group: SplitGroup, pin: ShortcutPin) -> Bool {
-        selection.isShortcutSelected(pin, in: windowState)
+    private func isSplitPlaceholderSelected(
+        _ group: SplitGroup,
+        pin: ShortcutPin,
+        selectionSnapshot: SidebarWindowSelectionSnapshot
+    ) -> Bool {
+        selection.isShortcutSelected(
+            pin,
+            in: windowState,
+            selection: selectionSnapshot
+        )
             || selection.isSplitMemberSelected(
                 groupID: group.id,
                 memberID: .shortcutPin(pin.id),
-                in: windowState
+                in: windowState,
+                selection: selectionSnapshot
             )
     }
 

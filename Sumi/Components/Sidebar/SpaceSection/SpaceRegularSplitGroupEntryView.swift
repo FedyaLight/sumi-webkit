@@ -26,6 +26,7 @@ struct SpaceRegularSplitGroupEntryView: View {
     @Binding var splitSegmentRemovalIDs: Set<UUID>
 
     @Environment(BrowserWindowState.self) private var windowState
+    @Environment(\.sidebarWindowSelectionSnapshot) private var sidebarSelection
 
     private var splitResolver: RegularSplitSegmentResolver {
         RegularSplitSegmentResolver(space: space, isInteractive: isInteractive)
@@ -46,7 +47,6 @@ struct SpaceRegularSplitGroupEntryView: View {
             group: group,
             items: items,
             spaceId: space.id,
-            currentTabId: windowState.currentTabId,
             isAppKitInteractionEnabled: isInteractive,
             faviconImageReader: browserContext.faviconImageReader,
             splitLayout: browserContext.splitLayout,
@@ -63,7 +63,7 @@ struct SpaceRegularSplitGroupEntryView: View {
             SidebarSelectionElevation.zIndex(
                 isElevated: SidebarSelectionElevation.splitGroupIsSelected(
                     group,
-                    selectedGroupID: windowState.splitSelection?.groupID
+                    selectedGroupID: sidebarSelection.splitSelection?.groupID
                 )
             )
         )

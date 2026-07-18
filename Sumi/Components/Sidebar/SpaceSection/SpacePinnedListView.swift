@@ -25,6 +25,7 @@ struct SpacePinnedListView: View {
     @Binding var shortcutRestoreSession: SpaceShortcutRestoreInteractionSession
 
     @Environment(BrowserWindowState.self) private var windowState
+    @Environment(\.sidebarWindowSelectionSnapshot) private var sidebarSelection
 
     private var topLevelPins: [ShortcutPin] {
         windowState.isIncognito ? [] : inventory.topLevelPins
@@ -43,15 +44,22 @@ struct SpacePinnedListView: View {
         )
     }
 
-    private var elevatedFolderIDs: Set<UUID> {
+    private func elevatedFolderIDs(
+        selectionSnapshot: SidebarWindowSelectionSnapshot
+    ) -> Set<UUID> {
         SpaceElevatedFolderOwner(
             inventory: inventory,
             selection: selection,
-            windowState: windowState
+            windowState: windowState,
+            selectionSnapshot: selectionSnapshot
         ).elevatedFolderIds
     }
 
     var body: some View {
+        let selectionSnapshot = sidebarSelection
+        let elevatedFolderIDs = elevatedFolderIDs(
+            selectionSnapshot: selectionSnapshot
+        )
         let foldersByID = Dictionary(uniqueKeysWithValues: topLevelFolders.map { ($0.id, $0) })
         let pinsByID = Dictionary(uniqueKeysWithValues: topLevelPins.map { ($0.id, $0) })
 
@@ -85,7 +93,11 @@ struct SpacePinnedListView: View {
                         }
                     case .item(.shortcut(let pinID)):
                         if let pin = pinsByID[pinID] {
-                            shortcutEntry(pin, topLevelIndex: entry.dropIndex)
+                            shortcutEntry(
+                                pin,
+                                topLevelIndex: entry.dropIndex,
+                                selectionSnapshot: selectionSnapshot
+                            )
                         }
                     case .item(.splitGroup(let groupID)):
                         if let group = inventory.splitGroup(id: groupID) {
@@ -110,10 +122,19 @@ struct SpacePinnedListView: View {
                     case .dragPlaceholder:
                         dropGap
                     case .restoreGap(let gapID):
-                        shortcutRestoreGap(gapID)
+                        shortcutRestoreGap(
+                            gapID,
+                            selectionSnapshot: selectionSnapshot
+                        )
                     }
                 }
-                .zIndex(displayEntryZIndex(entry))
+                .zIndex(
+                    displayEntryZIndex(
+                        entry,
+                        selectionSnapshot: selectionSnapshot,
+                        elevatedFolderIDs: elevatedFolderIDs
+                    )
+                )
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -130,14 +151,19 @@ struct SpacePinnedListView: View {
 
     private func shortcutEntry(
         _ pin: ShortcutPin,
-        topLevelIndex: Int
+        topLevelIndex: Int,
+        selectionSnapshot: SidebarWindowSelectionSnapshot
     ) -> SpacePinnedShortcutEntryView {
         let placeholderGroup = regularSplitGroup(containing: pin.id)
         return SpacePinnedShortcutEntryView(
             pin: pin,
             placeholderGroup: placeholderGroup,
             placeholderIsSelected: placeholderGroup.map {
-                isSplitPlaceholderSelected($0, pin: pin)
+                isSplitPlaceholderSelected(
+                    $0,
+                    pin: pin,
+                    selectionSnapshot: selectionSnapshot
+                )
             } ?? false,
             liveTab: selection.liveTab(for: pin.id, in: windowState),
             faviconPartition: pinProjection.faviconPartition(
@@ -145,7 +171,11 @@ struct SpacePinnedListView: View {
                 currentSpaceID: windowState.currentSpaceId
             ),
             faviconImageReader: browserContext.faviconImageReader,
-            runtimeAffordance: selection.runtimeAffordance(for: pin, in: windowState),
+            runtimeAffordance: selection.runtimeAffordance(
+                for: pin,
+                in: windowState,
+                selection: selectionSnapshot
+            ),
             spaceID: space.id,
             isInteractive: isInteractive,
             opacity: itemOpacity(pin.id),
@@ -164,12 +194,19 @@ struct SpacePinnedListView: View {
             .accessibilityHidden(true)
     }
 
-    private func shortcutRestoreGap(_ gapID: UUID) -> some View {
+    private func shortcutRestoreGap(
+        _ gapID: UUID,
+        selectionSnapshot: SidebarWindowSelectionSnapshot
+    ) -> some View {
         let isAppearing = shortcutRestoreSession.appearingGapIDs.contains(gapID)
         return ZStack(alignment: .topLeading) {
             if let gap = shortcutRestoreSession.gaps.first(where: { $0.id == gapID }),
                let pin = inventory.pin(id: gap.pinId) {
-                shortcutEntry(pin, topLevelIndex: gap.index)
+                shortcutEntry(
+                    pin,
+                    topLevelIndex: gap.index,
+                    selectionSnapshot: selectionSnapshot
+                )
                     .frame(height: SidebarRowLayout.rowHeight, alignment: .top)
             }
         }
@@ -181,24 +218,50 @@ struct SpacePinnedListView: View {
         .accessibilityHidden(true)
     }
 
-    private func displayEntryZIndex(_ entry: SpacePinnedDisplayEntry) -> Double {
+    private func displayEntryZIndex(
+        _ entry: SpacePinnedDisplayEntry,
+        selectionSnapshot: SidebarWindowSelectionSnapshot,
+        elevatedFolderIDs: Set<UUID>
+    ) -> Double {
         guard case .item(let item) = entry.item else { return 0 }
-        return SidebarSelectionElevation.zIndex(isElevated: itemIsElevated(item))
+        return SidebarSelectionElevation.zIndex(
+            isElevated: itemIsElevated(
+                item,
+                selectionSnapshot: selectionSnapshot,
+                elevatedFolderIDs: elevatedFolderIDs
+            )
+        )
     }
 
-    private func itemIsElevated(_ item: SpacePinnedListItem) -> Bool {
+    private func itemIsElevated(
+        _ item: SpacePinnedListItem,
+        selectionSnapshot: SidebarWindowSelectionSnapshot,
+        elevatedFolderIDs: Set<UUID>
+    ) -> Bool {
         switch item {
         case .folder(let folderID):
             return elevatedFolderIDs.contains(folderID)
         case .shortcut(let pinID):
             guard let pin = topLevelPins.first(where: { $0.id == pinID }) else { return false }
             if let group = regularSplitGroup(containing: pin.id) {
-                return isSplitPlaceholderSelected(group, pin: pin)
+                return isSplitPlaceholderSelected(
+                    group,
+                    pin: pin,
+                    selectionSnapshot: selectionSnapshot
+                )
             }
-            return selection.isShortcutSelected(pin, in: windowState)
+            return selection.isShortcutSelected(
+                pin,
+                in: windowState,
+                selection: selectionSnapshot
+            )
         case .splitGroup(let groupID):
             guard let group = inventory.splitGroup(id: groupID) else { return false }
-            return selection.isSplitGroupSelected(group, in: windowState)
+            return selection.isSplitGroupSelected(
+                group,
+                in: windowState,
+                selection: selectionSnapshot
+            )
         }
     }
 
@@ -214,12 +277,21 @@ struct SpacePinnedListView: View {
         return group
     }
 
-    private func isSplitPlaceholderSelected(_ group: SplitGroup, pin: ShortcutPin) -> Bool {
-        selection.isShortcutSelected(pin, in: windowState)
+    private func isSplitPlaceholderSelected(
+        _ group: SplitGroup,
+        pin: ShortcutPin,
+        selectionSnapshot: SidebarWindowSelectionSnapshot
+    ) -> Bool {
+        selection.isShortcutSelected(
+            pin,
+            in: windowState,
+            selection: selectionSnapshot
+        )
             || selection.isSplitMemberSelected(
                 groupID: group.id,
                 memberID: .shortcutPin(pin.id),
-                in: windowState
+                in: windowState,
+                selection: selectionSnapshot
             )
     }
 }

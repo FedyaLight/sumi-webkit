@@ -103,11 +103,6 @@ struct ShortcutSidebarRowChrome: View {
             isVisible: drawsRowSurface,
             drawsSelectionShadow: runtimeAffordance.isSelected
         )
-        // Expose the row container itself so the launcher keeps the same source identity
-        // when runtime drift replaces the leading favicon with the reset control.
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier(accessibilityID ?? "shortcut-sidebar-row")
-        .accessibilityValue(runtimeAffordance.isSelected ? "selected" : "not selected")
         .sidebarDDGHover($isRowHovered, isEnabled: dragIsEnabled)
         .onChange(of: isRowHovered) { _, hovering in
             if !hovering {
@@ -137,6 +132,12 @@ struct ShortcutSidebarRowChrome: View {
             sourceID: rowSourceID,
             entries: contextMenuEntries
         )
+        // Expose the outer row so context-menu and action overlays cannot
+        // replace its stable accessibility identity or selection value.
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier(accessibilityID ?? "shortcut-sidebar-row")
+        .accessibilityValue(runtimeAffordance.isSelected ? "selected" : "not selected")
+        .accessibilityAddTraits(runtimeAffordance.isSelected ? .isSelected : [])
     }
 
 }

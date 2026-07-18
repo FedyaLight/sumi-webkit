@@ -343,7 +343,8 @@ struct SidebarFolderViewProjection {
         liveFolderSource: SumiLiveFolderSource?,
         liveFolderItems: [SumiLiveFolderItem],
         currentTab: Tab?,
-        windowState: BrowserWindowState
+        windowState: BrowserWindowState,
+        selectionSnapshot: SidebarWindowSelectionSnapshot
     ) {
         let visualItems = inventory.folderItems(for: folder.id)
         let shortcutHostedGroups = visualItems.compactMap { item -> SplitGroup? in
@@ -402,7 +403,11 @@ struct SidebarFolderViewProjection {
         )
         self.selectedPinIds = Set(
             uniqueProjectionPins.compactMap { pin in
-                selection.isShortcutSelected(pin, in: windowState)
+                selection.isShortcutSelected(
+                    pin,
+                    in: windowState,
+                    selection: selectionSnapshot
+                )
                     ? pin.id
                     : nil
             }
@@ -469,10 +474,10 @@ struct SidebarFolderViewProjectionReader<Content: View>: View {
     let inventory: SidebarSpaceInventorySnapshot
     let selection: SidebarWindowSelectionQuery
     let liveFolderSnapshot: SidebarLiveFolderSnapshot
-    let currentTab: Tab?
     @ViewBuilder let content: (SidebarFolderViewProjection) -> Content
 
     @Environment(BrowserWindowState.self) private var windowState
+    @Environment(\.sidebarWindowSelectionSnapshot) private var sidebarSelection
 
     init(
         folder: TabFolder,
@@ -483,7 +488,6 @@ struct SidebarFolderViewProjectionReader<Content: View>: View {
         inventory: SidebarSpaceInventorySnapshot,
         selection: SidebarWindowSelectionQuery,
         liveFolderSnapshot: SidebarLiveFolderSnapshot,
-        currentTab: Tab?,
         @ViewBuilder content: @escaping (SidebarFolderViewProjection) -> Content
     ) {
         self.folder = folder
@@ -494,11 +498,11 @@ struct SidebarFolderViewProjectionReader<Content: View>: View {
         self.inventory = inventory
         self.selection = selection
         self.liveFolderSnapshot = liveFolderSnapshot
-        self.currentTab = currentTab
         self.content = content
     }
 
     var body: some View {
+        let selectionSnapshot = sidebarSelection
         content(
             SidebarFolderViewProjection(
                 folder: folder,
@@ -510,8 +514,9 @@ struct SidebarFolderViewProjectionReader<Content: View>: View {
                 selection: selection,
                 liveFolderSource: liveFolderSnapshot.source,
                 liveFolderItems: liveFolderSnapshot.items,
-                currentTab: currentTab,
-                windowState: windowState
+                currentTab: selection.currentTab(in: windowState),
+                windowState: windowState,
+                selectionSnapshot: selectionSnapshot
             )
         )
     }

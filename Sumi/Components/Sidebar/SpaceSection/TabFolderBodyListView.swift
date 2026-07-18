@@ -41,12 +41,14 @@ struct TabFolderBodyListView: View {
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
     @Environment(\.chromeThemeTokens) private var scopedChromeTokens
+    @Environment(\.sidebarWindowSelectionSnapshot) private var sidebarSelection
 
     private var tokens: ChromeThemeTokens {
         scopedChromeTokens ?? themeContext.tokens(settings: sumiSettings)
     }
 
     var body: some View {
+        let selectionSnapshot = sidebarSelection
         let childFoldersById = Dictionary(
             uniqueKeysWithValues: (inventory.childFoldersByParentID[folder.id] ?? []).map { ($0.id, $0) }
         )
@@ -89,7 +91,10 @@ struct TabFolderBodyListView: View {
                         }
                     case .shortcut(let pinId):
                         if let pin = shortcutPinsById[pinId] {
-                            shortcutEntry(pin)
+                            shortcutEntry(
+                                pin,
+                                selectionSnapshot: selectionSnapshot
+                            )
                                 .sidebarFolderChildDropGeometry(
                                     spaceId: space.id,
                                     folderId: folder.id,
@@ -130,12 +135,20 @@ struct TabFolderBodyListView: View {
                                 )
                         }
                     case .restoreGap(let gapId):
-                        shortcutRestoreGap(gapId)
+                        shortcutRestoreGap(
+                            gapId,
+                            selectionSnapshot: selectionSnapshot
+                        )
                     case .placeholder:
                         folderDropGap
                     }
                 }
-                .zIndex(folderDisplayEntryZIndex(entry))
+                .zIndex(
+                    folderDisplayEntryZIndex(
+                        entry,
+                        selectionSnapshot: selectionSnapshot
+                    )
+                )
             }
         }
         .padding(.leading, Self.folderContentLeadingPadding)
@@ -158,13 +171,22 @@ struct TabFolderBodyListView: View {
         }
     }
 
-    private func folderDisplayEntryZIndex(_ entry: FolderDisplayEntry) -> Double {
+    private func folderDisplayEntryZIndex(
+        _ entry: FolderDisplayEntry,
+        selectionSnapshot: SidebarWindowSelectionSnapshot
+    ) -> Double {
         SidebarSelectionElevation.zIndex(
-            isElevated: folderListItemIsElevated(entry.item)
+            isElevated: folderListItemIsElevated(
+                entry.item,
+                selectionSnapshot: selectionSnapshot
+            )
         )
     }
 
-    private func folderListItemIsElevated(_ item: FolderListItem) -> Bool {
+    private func folderListItemIsElevated(
+        _ item: FolderListItem,
+        selectionSnapshot: SidebarWindowSelectionSnapshot
+    ) -> Bool {
         switch item {
         case .folder(let folderId):
             return elevatedFolderIds.contains(folderId)
@@ -173,7 +195,11 @@ struct TabFolderBodyListView: View {
                 return false
             }
             if let placeholderGroup = projection.regularPlaceholderGroup(for: pin.id) {
-                return isFolderSplitPlaceholderSelected(placeholderGroup, pin: pin)
+                return isFolderSplitPlaceholderSelected(
+                    placeholderGroup,
+                    pin: pin,
+                    selectionSnapshot: selectionSnapshot
+                )
             }
             return projection.isShortcutSelected(pin)
         case .liveItem(let itemId):
@@ -185,7 +211,11 @@ struct TabFolderBodyListView: View {
             guard let group = projection.splitGroup(with: groupId) else {
                 return false
             }
-            return selection.isSplitGroupSelected(group, in: windowState)
+            return selection.isSplitGroupSelected(
+                group,
+                in: windowState,
+                selection: selectionSnapshot
+            )
         case .restoreGap, .placeholder:
             return false
         }
@@ -200,12 +230,18 @@ struct TabFolderBodyListView: View {
             .accessibilityHidden(true)
     }
 
-    private func shortcutRestoreGap(_ gapId: UUID) -> some View {
+    private func shortcutRestoreGap(
+        _ gapId: UUID,
+        selectionSnapshot: SidebarWindowSelectionSnapshot
+    ) -> some View {
         let isAppearing = shortcutRestoreSession.appearingGapIDs.contains(gapId)
         return ZStack(alignment: .topLeading) {
             if let gap = shortcutRestoreSession.gaps.first(where: { $0.id == gapId }),
                let pin = projection.shortcutPin(with: gap.pinId) {
-                shortcutEntry(pin)
+                shortcutEntry(
+                    pin,
+                    selectionSnapshot: selectionSnapshot
+                )
                     .frame(height: SidebarRowLayout.rowHeight, alignment: .top)
             }
         }
@@ -217,18 +253,26 @@ struct TabFolderBodyListView: View {
         .accessibilityHidden(true)
     }
 
-    private func shortcutEntry(_ pin: ShortcutPin) -> TabFolderShortcutEntryView {
+    private func shortcutEntry(
+        _ pin: ShortcutPin,
+        selectionSnapshot: SidebarWindowSelectionSnapshot
+    ) -> TabFolderShortcutEntryView {
         let placeholderGroup = projection.regularPlaceholderGroup(for: pin.id)
         let presentationOwner = TabFolderShortcutPresentationOwner(
             pinProjection: pinProjection,
             selection: selection,
-            windowState: windowState
+            windowState: windowState,
+            selectionSnapshot: selectionSnapshot
         )
         return TabFolderShortcutEntryView(
             pin: pin,
             placeholderGroup: placeholderGroup,
             placeholderIsSelected: placeholderGroup.map {
-                isFolderSplitPlaceholderSelected($0, pin: pin)
+                isFolderSplitPlaceholderSelected(
+                    $0,
+                    pin: pin,
+                    selectionSnapshot: selectionSnapshot
+                )
             } ?? false,
             liveTab: projection.liveTab(for: pin.id),
             faviconPartition: presentationOwner.faviconPartition(for: pin),
@@ -242,12 +286,21 @@ struct TabFolderBodyListView: View {
         )
     }
 
-    private func isFolderSplitPlaceholderSelected(_ group: SplitGroup, pin: ShortcutPin) -> Bool {
-        selection.isShortcutSelected(pin, in: windowState)
+    private func isFolderSplitPlaceholderSelected(
+        _ group: SplitGroup,
+        pin: ShortcutPin,
+        selectionSnapshot: SidebarWindowSelectionSnapshot
+    ) -> Bool {
+        selection.isShortcutSelected(
+            pin,
+            in: windowState,
+            selection: selectionSnapshot
+        )
             || selection.isSplitMemberSelected(
                 groupID: group.id,
                 memberID: .shortcutPin(pin.id),
-                in: windowState
+                in: windowState,
+                selection: selectionSnapshot
             )
     }
 }

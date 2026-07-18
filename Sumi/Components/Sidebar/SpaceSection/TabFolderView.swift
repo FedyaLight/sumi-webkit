@@ -67,7 +67,6 @@ struct TabFolderView: View {
                     inventory: inventory,
                     selection: selection,
                     liveFolderSnapshot: liveFolderSnapshot,
-                    currentTab: selection.currentTab(in: windowState)
                 ) { projection in
                     TabFolderContentView(
                         folder: folder,

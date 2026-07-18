@@ -12,6 +12,7 @@ struct TabFolderShortcutPresentationOwner {
     let pinProjection: SidebarPinFolderProjection
     let selection: SidebarWindowSelectionQuery
     let windowState: BrowserWindowState
+    let selectionSnapshot: SidebarWindowSelectionSnapshot
 
     func faviconPartition(for pin: ShortcutPin) -> SumiFaviconPartition {
         pinProjection.faviconPartition(
@@ -23,7 +24,8 @@ struct TabFolderShortcutPresentationOwner {
     func runtimeAffordance(for pin: ShortcutPin) -> SumiLauncherRuntimeAffordanceState {
         selection.runtimeAffordance(
             for: pin,
-            in: windowState
+            in: windowState,
+            selection: selectionSnapshot
         )
     }
 }

@@ -223,39 +223,44 @@ extension SpacesSideBarView {
         isTransitioningProfile: Bool,
         allowsInteractiveWork: Bool
     ) -> some View {
-        VStack(spacing: 8) {
-            if includesPinnedGrid && !windowState.isIncognito {
-                makeSidebarExtensionGrid(
-                    profileId: pageProfileId,
-                    pageRenderMode: pageRenderMode
-                )
+        SidebarWindowSelectionSnapshotScope {
+            VStack(spacing: 8) {
+                if includesPinnedGrid && !windowState.isIncognito {
+                    makeSidebarExtensionGrid(
+                        profileId: pageProfileId,
+                        pageRenderMode: pageRenderMode
+                    )
 
-                makePinnedGrid(
-                    spaceId: space.id,
-                    profileId: pageProfileId,
+                    makePinnedGrid(
+                        spaceId: space.id,
+                        profileId: pageProfileId,
+                        inventory: pageInventory.space,
+                        items: pageInventory.essentialPins,
+                        isTransitioningProfile: isTransitioningProfile,
+                        pageRenderMode: pageRenderMode
+                    )
+                }
+
+                makeSpaceView(
+                    for: space,
                     inventory: pageInventory.space,
-                    items: pageInventory.essentialPins,
-                    isTransitioningProfile: isTransitioningProfile,
-                    pageRenderMode: pageRenderMode
+                    renderMode: pageRenderMode.spaceRenderMode,
+                    allowsInteraction: pageRenderMode == .interactive && allowsSidebarInteractiveWork
                 )
             }
-
-            makeSpaceView(
-                for: space,
-                inventory: pageInventory.space,
-                renderMode: pageRenderMode.spaceRenderMode,
-                allowsInteraction: pageRenderMode == .interactive && allowsSidebarInteractiveWork
+            .animation(
+                allowsInteractiveWork ? .easeInOut(duration: 0.18) : nil,
+                value: dragState.hoveredSlot
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .sidebarPageGeometry(
+                spaceId: space.id,
+                profileId: pageProfileId,
+                renderMode: pageRenderMode.geometryRenderMode,
+                generation: dragState.sidebarGeometryGeneration,
+                isEnabled: allowsInteractiveWork
             )
         }
-        .animation(allowsInteractiveWork ? .easeInOut(duration: 0.18) : nil, value: dragState.hoveredSlot)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .sidebarPageGeometry(
-            spaceId: space.id,
-            profileId: pageProfileId,
-            renderMode: pageRenderMode.geometryRenderMode,
-            generation: dragState.sidebarGeometryGeneration,
-            isEnabled: allowsInteractiveWork
-        )
     }
 
     @ViewBuilder

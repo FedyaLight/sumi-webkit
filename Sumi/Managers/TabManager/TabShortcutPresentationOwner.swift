@@ -73,7 +73,23 @@ final class TabShortcutPresentationOwner {
         for pin: ShortcutPin,
         in windowState: BrowserWindowState
     ) -> SumiLauncherRuntimeAffordanceState {
-        let presentation = shortcutPresentationState(for: pin, in: windowState)
+        shortcutRuntimeAffordanceState(
+            for: pin,
+            in: windowState,
+            selection: ShortcutSelectionSnapshot(windowState: windowState)
+        )
+    }
+
+    func shortcutRuntimeAffordanceState(
+        for pin: ShortcutPin,
+        in windowState: BrowserWindowState,
+        selection: ShortcutSelectionSnapshot
+    ) -> SumiLauncherRuntimeAffordanceState {
+        let presentation = shortcutPresentationState(
+            for: pin,
+            in: windowState,
+            selection: selection
+        )
         let drifted = shortcutHasDrifted(pin, in: windowState)
 
         switch (presentation, drifted) {
@@ -95,6 +111,20 @@ final class TabShortcutPresentationOwner {
         in windowState: BrowserWindowState,
         splitQuery: WindowSplitQuery
     ) -> SumiEssentialRuntimeState? {
+        essentialRuntimeState(
+            for: pin,
+            in: windowState,
+            splitQuery: splitQuery,
+            selection: ShortcutSelectionSnapshot(windowState: windowState)
+        )
+    }
+
+    func essentialRuntimeState(
+        for pin: ShortcutPin,
+        in windowState: BrowserWindowState,
+        splitQuery: WindowSplitQuery,
+        selection: ShortcutSelectionSnapshot
+    ) -> SumiEssentialRuntimeState? {
         guard pin.role == .essential else { return nil }
         guard let liveTab = shortcutLiveTab(for: pin.id, in: windowState.id) else {
             return .launcherOnly
@@ -112,7 +142,7 @@ final class TabShortcutPresentationOwner {
                 || ShortcutSelectionIdentity.isSelected(
                     tabId: liveTab.id,
                     pinId: pin.id,
-                    in: windowState
+                    in: selection
                 )
             return isSelected ? .splitProxySelected : .splitProxyBackgrounded
         }
@@ -127,7 +157,7 @@ final class TabShortcutPresentationOwner {
         let isSelected = ShortcutSelectionIdentity.isSelected(
             tabId: liveTab.id,
             pinId: pinId,
-            in: windowState
+            in: ShortcutSelectionSnapshot(windowState: windowState)
         )
         return isSelected ? liveTab : nil
     }
@@ -172,6 +202,18 @@ final class TabShortcutPresentationOwner {
         for pin: ShortcutPin,
         in windowState: BrowserWindowState
     ) -> ShortcutPresentationState {
+        shortcutPresentationState(
+            for: pin,
+            in: windowState,
+            selection: ShortcutSelectionSnapshot(windowState: windowState)
+        )
+    }
+
+    func shortcutPresentationState(
+        for pin: ShortcutPin,
+        in windowState: BrowserWindowState,
+        selection: ShortcutSelectionSnapshot
+    ) -> ShortcutPresentationState {
         guard let liveTab = shortcutLiveTab(for: pin.id, in: windowState.id) else {
             return .launcherOnly
         }
@@ -179,7 +221,7 @@ final class TabShortcutPresentationOwner {
         if ShortcutSelectionIdentity.isSelected(
             tabId: liveTab.id,
             pinId: pin.id,
-            in: windowState
+            in: selection
         ) {
             return .visuallySelected
         }

@@ -36,6 +36,7 @@ struct TabFolderContentView: View {
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.sidebarWindowSelectionSnapshot) private var sidebarSelection
 
     private var shortcutPinsInFolder: [ShortcutPin] {
         inventory.folderPinsByFolderID[folder.id] ?? []
@@ -145,11 +146,11 @@ struct TabFolderContentView: View {
                 scheduleProjectionStateRefresh()
                 refreshLiveFolderIfNeeded()
             }
-            .onChange(of: windowState.currentTabId) { _, _ in
+            .onChange(of: sidebarSelection.currentTabID) { _, _ in
                 syncDisplayedCollapsedProjectionIDs(animated: true)
                 scheduleProjectionStateRefresh()
             }
-            .onChange(of: windowState.currentShortcutPinId) { _, _ in
+            .onChange(of: sidebarSelection.currentShortcutPinID) { _, _ in
                 syncDisplayedCollapsedProjectionIDs(animated: true)
                 scheduleProjectionStateRefresh()
             }

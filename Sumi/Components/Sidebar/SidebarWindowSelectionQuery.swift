@@ -1,6 +1,62 @@
 import AppKit
 import Foundation
 import SumiDomain
+import SwiftUI
+
+struct SidebarWindowSelectionSnapshot: Equatable {
+    static let none = Self()
+
+    let shortcut: ShortcutSelectionSnapshot
+    let splitSelection: WindowSplitSelection?
+
+    var currentTabID: UUID? { shortcut.currentTabID }
+    var currentShortcutPinID: UUID? { shortcut.currentShortcutPinID }
+
+    init(
+        shortcut: ShortcutSelectionSnapshot = ShortcutSelectionSnapshot(),
+        splitSelection: WindowSplitSelection? = nil
+    ) {
+        self.shortcut = shortcut
+        self.splitSelection = splitSelection
+    }
+
+    @MainActor
+    init(windowState: BrowserWindowState) {
+        self.init(
+            shortcut: ShortcutSelectionSnapshot(windowState: windowState),
+            splitSelection: windowState.splitSelection
+        )
+    }
+}
+
+private struct SidebarWindowSelectionSnapshotKey: EnvironmentKey {
+    static let defaultValue = SidebarWindowSelectionSnapshot.none
+}
+
+extension EnvironmentValues {
+    var sidebarWindowSelectionSnapshot: SidebarWindowSelectionSnapshot {
+        get { self[SidebarWindowSelectionSnapshotKey.self] }
+        set { self[SidebarWindowSelectionSnapshotKey.self] = newValue }
+    }
+}
+
+struct SidebarWindowSelectionSnapshotScope<Content: View>: View {
+    @Environment(BrowserWindowState.self) private var windowState
+
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        let snapshot = SidebarWindowSelectionSnapshot(
+            shortcut: ShortcutSelectionSnapshot(
+                currentTabID: windowState.currentTabId,
+                currentShortcutPinID: windowState.currentShortcutPinId
+            ),
+            splitSelection: windowState.splitSelection
+        )
+        content()
+            .environment(\.sidebarWindowSelectionSnapshot, snapshot)
+    }
+}
 
 /// Validates that a sidebar action or query still belongs to the exact
 /// registered window object, not merely a retained object with the same UUID.
@@ -98,10 +154,23 @@ final class SidebarWindowSelectionQuery {
         for pin: ShortcutPin,
         in windowState: BrowserWindowState
     ) -> ShortcutPresentationState {
+        presentationState(
+            for: pin,
+            in: windowState,
+            selection: SidebarWindowSelectionSnapshot(windowState: windowState)
+        )
+    }
+
+    func presentationState(
+        for pin: ShortcutPin,
+        in windowState: BrowserWindowState,
+        selection: SidebarWindowSelectionSnapshot
+    ) -> ShortcutPresentationState {
         guard isCurrent(windowState) else { return .launcherOnly }
         return shortcutPresentation.shortcutPresentationState(
             for: pin,
-            in: windowState
+            in: windowState,
+            selection: selection.shortcut
         )
     }
 
@@ -109,10 +178,23 @@ final class SidebarWindowSelectionQuery {
         for pin: ShortcutPin,
         in windowState: BrowserWindowState
     ) -> SumiLauncherRuntimeAffordanceState {
+        runtimeAffordance(
+            for: pin,
+            in: windowState,
+            selection: SidebarWindowSelectionSnapshot(windowState: windowState)
+        )
+    }
+
+    func runtimeAffordance(
+        for pin: ShortcutPin,
+        in windowState: BrowserWindowState,
+        selection: SidebarWindowSelectionSnapshot
+    ) -> SumiLauncherRuntimeAffordanceState {
         guard isCurrent(windowState) else { return .launcherOnly }
         return shortcutPresentation.shortcutRuntimeAffordanceState(
             for: pin,
-            in: windowState
+            in: windowState,
+            selection: selection.shortcut
         )
     }
 
@@ -120,13 +202,26 @@ final class SidebarWindowSelectionQuery {
         for pin: ShortcutPin,
         in windowState: BrowserWindowState
     ) -> SumiEssentialRuntimeState? {
+        essentialRuntimeState(
+            for: pin,
+            in: windowState,
+            selection: SidebarWindowSelectionSnapshot(windowState: windowState)
+        )
+    }
+
+    func essentialRuntimeState(
+        for pin: ShortcutPin,
+        in windowState: BrowserWindowState,
+        selection: SidebarWindowSelectionSnapshot
+    ) -> SumiEssentialRuntimeState? {
         guard isCurrent(windowState) else {
             return pin.role == .essential ? .launcherOnly : nil
         }
         return shortcutPresentation.essentialRuntimeState(
             for: pin,
             in: windowState,
-            splitQuery: splitQuery
+            splitQuery: splitQuery,
+            selection: selection.shortcut
         )
     }
 
@@ -154,7 +249,22 @@ final class SidebarWindowSelectionQuery {
         _ group: SplitGroup,
         in windowState: BrowserWindowState
     ) -> Bool {
-        selectedSplitGroup(in: windowState)?.id == group.id
+        isSplitGroupSelected(
+            group,
+            in: windowState,
+            selection: SidebarWindowSelectionSnapshot(windowState: windowState)
+        )
+    }
+
+    func isSplitGroupSelected(
+        _ group: SplitGroup,
+        in windowState: BrowserWindowState,
+        selection: SidebarWindowSelectionSnapshot
+    ) -> Bool {
+        guard selectedSplitGroup(in: windowState)?.id == group.id else {
+            return false
+        }
+        return selection.splitSelection?.groupID == group.id
     }
 
     func isShortcutSelected(
@@ -164,15 +274,41 @@ final class SidebarWindowSelectionQuery {
         runtimeAffordance(for: pin, in: windowState).isSelected
     }
 
+    func isShortcutSelected(
+        _ pin: ShortcutPin,
+        in windowState: BrowserWindowState,
+        selection: SidebarWindowSelectionSnapshot
+    ) -> Bool {
+        runtimeAffordance(
+            for: pin,
+            in: windowState,
+            selection: selection
+        ).isSelected
+    }
+
     func isSplitMemberSelected(
         groupID: UUID,
         memberID: SplitMemberID,
         in windowState: BrowserWindowState
     ) -> Bool {
-        guard let group = selectedSplitGroup(in: windowState),
-              group.id == groupID else {
+        isSplitMemberSelected(
+            groupID: groupID,
+            memberID: memberID,
+            in: windowState,
+            selection: SidebarWindowSelectionSnapshot(windowState: windowState)
+        )
+    }
+
+    func isSplitMemberSelected(
+        groupID: UUID,
+        memberID: SplitMemberID,
+        in windowState: BrowserWindowState,
+        selection: SidebarWindowSelectionSnapshot
+    ) -> Bool {
+        guard selectedSplitGroup(in: windowState)?.id == groupID,
+              selection.splitSelection?.groupID == groupID else {
             return false
         }
-        return windowState.splitSelection?.activeMemberID == memberID
+        return selection.splitSelection?.activeMemberID == memberID
     }
 }

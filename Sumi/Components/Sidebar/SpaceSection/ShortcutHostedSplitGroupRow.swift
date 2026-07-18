@@ -19,8 +19,6 @@ struct ShortcutHostedSplitGroupRow: View {
         @escaping () -> Void
     ) -> Void
 
-    @Environment(BrowserWindowState.self) private var windowState
-
     init(
         group: SplitGroup,
         items: [SplitGroupSidebarItem],
@@ -60,7 +58,6 @@ struct ShortcutHostedSplitGroupRow: View {
             group: group,
             items: items,
             spaceId: spaceId,
-            currentTabId: windowState.currentTabId,
             isAppKitInteractionEnabled: isAppKitInteractionEnabled,
             faviconImageReader: faviconImageReader,
             splitLayout: splitLayout,
