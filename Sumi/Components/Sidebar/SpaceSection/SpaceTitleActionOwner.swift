@@ -62,6 +62,12 @@ struct SpaceTitleActionOwner {
                     space,
                     in: windowState
                 )
+            },
+            clearSpace: {
+                browserContext.spaceDeletionPresentation.confirmClear(
+                    space,
+                    in: windowState
+                )
             }
         )
     }

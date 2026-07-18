@@ -18,69 +18,63 @@ private struct SidebarExtensionGridSnapshot {
 
 extension SpacesSideBarView {
     func spacesPageView(spaces: [Space]) -> some View {
-        Group {
-            if spaces.isEmpty {
-                SpaceSidebarEmptySpacesView(onCreateSpace: beginSpaceCreationMode)
-            } else {
-                GeometryReader { geo in
-                    spaceTransitionContainer(spaces: spaces, size: geo.size)
-                        .modifier(
-                            SpaceTransitionProgressObserver(
-                                progress: transitionState.progress,
-                                transitionIdentity: transitionState.transitionIdentity
-                            ) { progress, transitionIdentity in
-                                transitionCoordinator.handleTransitionProgressFrame(
-                                    progress,
-                                    transitionIdentity: transitionIdentity,
-                                    context: makeTransitionContext(spaces: spaces)
-                                )
-                            }
-                        )
-                        .overlay {
-                            SidebarSwipeCaptureSurface(
-                                isEnabled: allowsSidebarInteractiveWork
-                                    && spaces.count > 1
-                                    && (transitionState.phase == .idle || transitionState.phase == .interactive)
-                                    && sidebarInteractionState.allowsSidebarSwipeCapture,
-                                dragAutoscrollRegistry: dragState.dragAutoscrollRegistry
-                            ) { event in
-                                transitionCoordinator.handleSwipeEvent(
-                                    event,
-                                    context: makeTransitionContext(spaces: spaces)
-                                )
-                            }
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        }
-                }
-                .clipped()
-                .onAppear {
-                    transitionCoordinator.handleSpacesCollectionChange(
-                        makeTransitionContext(spaces: spaces)
-                    )
-                    transitionCoordinator.refreshCommittedSidebarDragGeometryIfInteractive(
-                        context: makeTransitionContext(spaces: spaces)
-                    )
-                }
-                .onChange(of: spaces.map(\.id)) { _, _ in
-                    transitionCoordinator.handleSpacesCollectionChange(
-                        makeTransitionContext(spaces: spaces)
-                    )
-                    transitionCoordinator.refreshCommittedSidebarDragGeometryIfInteractive(
-                        context: makeTransitionContext(spaces: spaces)
-                    )
-                }
-                .onChange(of: transitionCoordinator.committedSpaceId(in: makeTransitionContext(spaces: spaces))) { _, _ in
-                    transitionCoordinator.handleCommittedSpaceChange(
-                        makeTransitionContext(spaces: spaces)
-                    )
-                }
-                .onChange(of: allowsSidebarInteractiveWork) { _, allowsInteractiveWork in
-                    if allowsInteractiveWork {
-                        transitionCoordinator.refreshCommittedSidebarDragGeometry(
+        GeometryReader { geo in
+            spaceTransitionContainer(spaces: spaces, size: geo.size)
+                .modifier(
+                    SpaceTransitionProgressObserver(
+                        progress: transitionState.progress,
+                        transitionIdentity: transitionState.transitionIdentity
+                    ) { progress, transitionIdentity in
+                        transitionCoordinator.handleTransitionProgressFrame(
+                            progress,
+                            transitionIdentity: transitionIdentity,
                             context: makeTransitionContext(spaces: spaces)
                         )
                     }
+                )
+                .overlay {
+                    SidebarSwipeCaptureSurface(
+                        isEnabled: allowsSidebarInteractiveWork
+                            && spaces.count > 1
+                            && (transitionState.phase == .idle || transitionState.phase == .interactive)
+                            && sidebarInteractionState.allowsSidebarSwipeCapture,
+                        dragAutoscrollRegistry: dragState.dragAutoscrollRegistry
+                    ) { event in
+                        transitionCoordinator.handleSwipeEvent(
+                            event,
+                            context: makeTransitionContext(spaces: spaces)
+                        )
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
+        }
+        .clipped()
+        .onAppear {
+            transitionCoordinator.handleSpacesCollectionChange(
+                makeTransitionContext(spaces: spaces)
+            )
+            transitionCoordinator.refreshCommittedSidebarDragGeometryIfInteractive(
+                context: makeTransitionContext(spaces: spaces)
+            )
+        }
+        .onChange(of: spaces.map(\.id)) { _, _ in
+            transitionCoordinator.handleSpacesCollectionChange(
+                makeTransitionContext(spaces: spaces)
+            )
+            transitionCoordinator.refreshCommittedSidebarDragGeometryIfInteractive(
+                context: makeTransitionContext(spaces: spaces)
+            )
+        }
+        .onChange(of: transitionCoordinator.committedSpaceId(in: makeTransitionContext(spaces: spaces))) { _, _ in
+            transitionCoordinator.handleCommittedSpaceChange(
+                makeTransitionContext(spaces: spaces)
+            )
+        }
+        .onChange(of: allowsSidebarInteractiveWork) { _, allowsInteractiveWork in
+            if allowsInteractiveWork {
+                transitionCoordinator.refreshCommittedSidebarDragGeometry(
+                    context: makeTransitionContext(spaces: spaces)
+                )
             }
         }
     }

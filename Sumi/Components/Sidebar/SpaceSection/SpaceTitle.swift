@@ -8,6 +8,7 @@ struct SpaceTitleActions {
     let editSpace: () -> Void
     let changeTheme: () -> Void
     let deleteSpace: () -> Void
+    let clearSpace: () -> Void
 }
 
 enum SpaceTitleRowLayout {
@@ -298,10 +299,13 @@ struct SpaceTitle: View {
 
     private func spaceContextMenuEntries() -> [SidebarContextMenuEntry] {
         let deleteSpaceAction: (() -> Void)?
+        let clearSpaceAction: (() -> Void)?
         if canDeleteSpace {
             deleteSpaceAction = { showDeleteConfirmation() }
+            clearSpaceAction = nil
         } else {
             deleteSpaceAction = nil
+            clearSpaceAction = { showClearConfirmation() }
         }
 
         return makeSpaceContextMenuEntries(
@@ -312,13 +316,18 @@ struct SpaceTitle: View {
                 changeTheme: {
                     actions.changeTheme()
                 },
-                deleteSpace: deleteSpaceAction
+                deleteSpace: deleteSpaceAction,
+                clearSpace: clearSpaceAction
             )
         )
     }
 
     private func showDeleteConfirmation() {
         actions.deleteSpace()
+    }
+
+    private func showClearConfirmation() {
+        actions.clearSpace()
     }
 
     private func toggleSpaceIconPicker() {

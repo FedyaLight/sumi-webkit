@@ -18,6 +18,7 @@ struct SidebarSpaceMenuActions {
     let edit: () -> Void
     let changeTheme: () -> Void
     let deleteSpace: (() -> Void)?
+    let clearSpace: (() -> Void)?
 }
 
 struct SidebarShellMenuActions {
@@ -515,6 +516,10 @@ func makeSpaceContextMenuEntries(actions: SidebarSpaceMenuActions) -> [SidebarCo
             actions.deleteSpace.map {
                 [
                     .action(.init(title: "Delete Space", systemImage: "trash", role: .destructive, classification: .structuralMutation, onAction: $0)),
+                ]
+            } ?? actions.clearSpace.map {
+                [
+                    .action(.init(title: "Clear Space", systemImage: "eraser", role: .destructive, classification: .structuralMutation, onAction: $0)),
                 ]
             } ?? [],
         ]

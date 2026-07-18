@@ -29,13 +29,15 @@ final class DeletedSpaceWindowStateReconciler {
 
     func reconcile(
         _ removal: SpaceRemovalFootprint,
-        using runtime: TabRuntimePortLease
+        using runtime: TabRuntimePortLease,
+        spaceSurvives: Bool = false
     ) -> [BrowserWindowState] {
         var changedWindows: [BrowserWindowState] = []
         runtime.forEachWindowState { windowState in
             if DeletedSpaceWindowReferencePruner().removeReferences(
                 to: removal,
-                from: windowState
+                from: windowState,
+                spaceSurvives: spaceSurvives
             ) {
                 changedWindows.append(windowState)
             }

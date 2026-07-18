@@ -15,12 +15,6 @@ enum ChromeLayoutTokens: Sendable {
 
     /// Horizontal inset for sidebar content (`SidebarChromeMetrics` / `SpaceViewLayout`).
     static let sidebarContentHorizontalPadding: CGFloat = 8
-    /// Default vertical stack spacing for empty-state chrome.
-    static let sidebarEmptyStateStackSpacing: CGFloat = 16
-    /// Nested text stack spacing inside empty-state chrome.
-    static let sidebarEmptyStateTextSpacing: CGFloat = 8
-    /// SF Symbol point size for the empty-spaces icon.
-    static let sidebarEmptyStateIconPointSize: CGFloat = 48
 
     // MARK: - Floating bar
 

@@ -135,10 +135,13 @@ struct SpacesListItem: View {
 
     private func spaceContextMenuEntries() -> [SidebarContextMenuEntry] {
         let deleteSpaceAction: (() -> Void)?
+        let clearSpaceAction: (() -> Void)?
         if spaceLifecycle.canDeleteSpace() {
             deleteSpaceAction = { showDeleteConfirmation() }
+            clearSpaceAction = nil
         } else {
             deleteSpaceAction = nil
+            clearSpaceAction = { showClearConfirmation() }
         }
 
         let actions = SidebarSpaceMenuActions(
@@ -160,7 +163,8 @@ struct SpacesListItem: View {
                     )
                 )
             },
-            deleteSpace: deleteSpaceAction
+            deleteSpace: deleteSpaceAction,
+            clearSpace: clearSpaceAction
         )
 
         return makeSpaceContextMenuEntries(actions: actions)
@@ -170,6 +174,13 @@ struct SpacesListItem: View {
 
     private func showDeleteConfirmation() {
         browserContext.spaceDeletionPresentation.confirmDelete(
+            space,
+            in: windowState
+        )
+    }
+
+    private func showClearConfirmation() {
+        browserContext.spaceDeletionPresentation.confirmClear(
             space,
             in: windowState
         )

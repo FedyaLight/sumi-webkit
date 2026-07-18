@@ -425,7 +425,8 @@ final class SidebarContextMenuLifecycleTests: XCTestCase {
             actions: .init(
                 edit: Self.noop,
                 changeTheme: Self.noop,
-                deleteSpace: Self.noop
+                deleteSpace: Self.noop,
+                clearSpace: nil
             )
         )
         XCTAssertEqual(
@@ -435,6 +436,24 @@ final class SidebarContextMenuLifecycleTests: XCTestCase {
                 "Change Theme",
                 "---",
                 "Delete Space [destructive]",
+            ]
+        )
+
+        let lastSpaceMenu = makeSpaceContextMenuEntries(
+            actions: .init(
+                edit: Self.noop,
+                changeTheme: Self.noop,
+                deleteSpace: nil,
+                clearSpace: Self.noop
+            )
+        )
+        XCTAssertEqual(
+            Self.snapshot(lastSpaceMenu),
+            [
+                "Edit",
+                "Change Theme",
+                "---",
+                "Clear Space [destructive]",
             ]
         )
 

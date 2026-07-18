@@ -11,7 +11,8 @@ enum BrowserSidebarSpaceLifecycleFactory {
         splitOrdering: SplitGroupSidebarOrderingService,
         regularTabs: RegularTabCollectionOwner,
         catalog: SpaceCatalogCommands,
-        removal: SpaceRemovalService
+        removal: SpaceRemovalService,
+        clearing: SpaceClearingService
     ) -> SidebarSpaceLifecycle {
         let spaceCatalog = SidebarSpaceCatalogProjection(
             runtime: runtime,
@@ -35,7 +36,8 @@ enum BrowserSidebarSpaceLifecycleFactory {
             spaces: spaceCatalog,
             inventory: inventory,
             catalog: catalog,
-            removal: removal
+            removal: removal,
+            clearing: clearing
         )
     }
 }

@@ -5,9 +5,14 @@ import Foundation
 struct DeletedSpaceWindowReferencePruner {
     func removeReferences(
         to removal: SpaceRemovalFootprint,
-        from windowState: BrowserWindowState
+        from windowState: BrowserWindowState,
+        spaceSurvives: Bool = false
     ) -> Bool {
-        var changed = pruneCurrentSelection(removal, in: windowState)
+        var changed = pruneCurrentSelection(
+            removal,
+            in: windowState,
+            spaceSurvives: spaceSurvives
+        )
 
         let activeTabs = windowState.activeTabForSpace.filter {
             $0.key != removal.spaceId && !removal.tabIds.contains($0.value)
@@ -55,10 +60,11 @@ struct DeletedSpaceWindowReferencePruner {
 
     private func pruneCurrentSelection(
         _ removal: SpaceRemovalFootprint,
-        in windowState: BrowserWindowState
+        in windowState: BrowserWindowState,
+        spaceSurvives: Bool
     ) -> Bool {
         var changed = false
-        if windowState.currentSpaceId == removal.spaceId {
+        if !spaceSurvives, windowState.currentSpaceId == removal.spaceId {
             windowState.currentSpaceId = nil
             changed = true
         }

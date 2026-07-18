@@ -28,4 +28,17 @@ final class SidebarSpaceDeletionPresentationOwner {
             settings: settings.settings
         )
     }
+
+    func confirmClear(
+        _ space: Space,
+        in windowState: BrowserWindowState
+    ) {
+        SpaceClearConfirmationPresenter.confirmClear(
+            space: space,
+            lifecycle: lifecycle,
+            window: windows.shellWindow(for: windowState),
+            windowState: windows.contains(windowState) ? windowState : nil,
+            settings: settings.settings
+        )
+    }
 }

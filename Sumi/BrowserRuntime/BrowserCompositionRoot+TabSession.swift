@@ -327,17 +327,24 @@ extension BrowserCompositionRoot {
             liveShortcutRetirement: liveShortcutTabBatchRetirement,
             runtimeTeardown: runtimeTeardown
         )
+        let deletedSpaceWindowStates = DeletedSpaceWindowStateReconciler(
+            runtimeConnection: runtimeConnection
+        )
         let spaceRemoval = SpaceRemovalService(
             transactions: structuralLookupCoordinator,
             contentRetirement: spaceContentRetirement,
-            windowStates: DeletedSpaceWindowStateReconciler(
-                runtimeConnection: runtimeConnection
-            ),
+            windowStates: deletedSpaceWindowStates,
             catalog: SpaceRemovalCatalogCommitter(
                 state: state,
                 persistence: structuralPersistence,
                 changes: tabManager.objectWillChange
             )
+        )
+        let spaceClearing = SpaceClearingService(
+            transactions: structuralLookupCoordinator,
+            contentRetirement: spaceContentRetirement,
+            windowStates: deletedSpaceWindowStates,
+            persistence: structuralPersistence
         )
         let shortcutTabWindowQuery = ShortcutTabWindowQuery(
             runtimeConnection: runtimeConnection
@@ -947,7 +954,8 @@ extension BrowserCompositionRoot {
             splitOrdering: splitGroupSidebarOrdering,
             regularTabs: regularTabCollectionOwner,
             catalog: spaceCatalog,
-            removal: spaceRemoval
+            removal: spaceRemoval,
+            clearing: spaceClearing
         )
 
         return BrowserKernelGraph(

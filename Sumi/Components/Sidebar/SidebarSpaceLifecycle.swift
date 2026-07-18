@@ -18,19 +18,22 @@ final class SidebarSpaceLifecycle {
     private let inventory: SidebarSpaceInventoryProjection
     private let catalog: SpaceCatalogCommands
     private let removal: SpaceRemovalService
+    private let clearing: SpaceClearingService
 
     init(
         runtimeIsAlive: @escaping @MainActor () -> Bool,
         spaces: SidebarSpaceCatalogProjection,
         inventory: SidebarSpaceInventoryProjection,
         catalog: SpaceCatalogCommands,
-        removal: SpaceRemovalService
+        removal: SpaceRemovalService,
+        clearing: SpaceClearingService
     ) {
         self.runtimeIsAlive = runtimeIsAlive
         self.spaces = spaces
         self.inventory = inventory
         self.catalog = catalog
         self.removal = removal
+        self.clearing = clearing
     }
 
     func availableSpaces(
@@ -100,5 +103,14 @@ final class SidebarSpaceLifecycle {
         }
         removal.removeSpace(spaceID)
         return space(id: spaceID) == nil
+    }
+
+    @discardableResult
+    func clearSpace(_ spaceID: UUID) -> Bool {
+        guard runtimeIsAlive(), space(id: spaceID) != nil else {
+            return false
+        }
+        clearing.clearSpace(spaceID)
+        return true
     }
 }
