@@ -1,8 +1,6 @@
 import SumiDomain
 import XCTest
-
 @testable import Sumi
-
 @MainActor
 final class SumiImportTransactionTests: XCTestCase {
     func testMergePlanningIsDeterministicAndIdempotentAcrossRetry() {
