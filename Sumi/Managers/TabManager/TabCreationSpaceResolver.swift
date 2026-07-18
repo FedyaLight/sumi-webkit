@@ -56,10 +56,10 @@ final class TabCreationSpaceResolver {
 
         precondition(
             spaces.count == 0,
-            "Personal Space provisioning requires an empty catalog"
+            "Default Space provisioning requires an empty catalog"
         )
         return catalog.createSpaceIfAdmitted(
-            name: "Personal",
+            name: "Space",
             icon: SumiPersistentGlyph.spaceDefaultIconValue,
             workspaceTheme: .default,
             profileId: defaultProfileID

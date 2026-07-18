@@ -501,9 +501,11 @@ final class TabCreationPlacementServiceTests: XCTestCase {
         XCTAssertIdentical(resolvedSpace, fallback)
     }
 
-    func testPlacementCreatesDeterministicPersonalSpaceWhenCatalogIsEmpty() throws {
+    func testPlacementCreatesDeterministicDefaultSpaceWhenCatalogIsEmpty() throws {
         let tabManager = BrowserManager()
+        tabManager.tabRuntimeLifecycle.shutdown()
         let runtimeAttachment = tabManager.runtimePortConnection
+        defer { runtimeAttachment.detach() }
         let placement = makeCreationPlacement(for: tabManager)
         tabManager.spaceStateOwner.removeAll()
         let profileID = UUID()
@@ -518,7 +520,7 @@ final class TabCreationPlacementServiceTests: XCTestCase {
         )
         let resolved = try XCTUnwrap(tabManager.spaceStateOwner.firstSpace)
 
-        XCTAssertEqual(resolved.name, "Personal")
+        XCTAssertEqual(resolved.name, "Space")
         XCTAssertEqual(resolved.profileId, profileID)
         XCTAssertTrue(resolved.workspaceTheme.visuallyEquals(.default))
         XCTAssertEqual(resolved.icon, SumiPersistentGlyph.spaceDefaultIconValue)

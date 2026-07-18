@@ -131,8 +131,10 @@ final class TabSpaceServiceIntegrationTests: XCTestCase {
         XCTAssertEqual(tabManager.spaceStateOwner.spaces.count, 1)
     }
 
-    func testTabCreationCreatesPersonalSpaceWhenNoSpaceExists() throws {
+    func testTabCreationCreatesDefaultSpaceWhenNoSpaceExists() throws {
         let tabManager = BrowserManager()
+        tabManager.tabRuntimeLifecycle.shutdown()
+        defer { tabManager.runtimePortConnection.detach() }
         let currentProfileId = UUID()
         tabManager.spaceStateOwner.removeAll()
         tabManager.runtimePortConnection.attach(
@@ -145,7 +147,7 @@ final class TabSpaceServiceIntegrationTests: XCTestCase {
         )
         let resolved = try XCTUnwrap(tabManager.spaceStateOwner.firstSpace)
 
-        XCTAssertEqual(resolved.name, "Personal")
+        XCTAssertEqual(resolved.name, "Space")
         XCTAssertEqual(resolved.profileId, currentProfileId)
         XCTAssertEqual(resolved.icon, SumiPersistentGlyph.spaceDefaultIconValue)
         XCTAssertEqual(SumiPersistentGlyph.resolvedSpaceIconPresentation(resolved.icon), .defaultDot)

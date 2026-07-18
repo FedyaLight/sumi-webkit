@@ -81,16 +81,15 @@ extension URLBarView {
     func copyLinkButton(for currentTab: Tab) -> some View {
         let url = activePageURL ?? currentTab.url
         let action = {
-            copyURLToClipboard(url.absoluteString)
+            _ = browserContext.copyURLToClipboard(url.absoluteString, windowState)
         }
         let isAvailable = isCopyLinkAvailable(for: url)
 
-        return Button("Copy Link", systemImage: showCheckmark ? "checkmark" : "link", action: action)
+        return Button("Copy Link", systemImage: "link", action: action)
         .labelStyle(.iconOnly)
         .buttonStyle(URLBarButtonStyle())
         .foregroundStyle(tokens.primaryText)
         .help("Copy Link")
-        .contentTransition(.symbolEffect(.replace))
         .disabled(!isAvailable)
         .sidebarAppKitPrimaryAction(isEnabled: isAvailable, action: action)
     }
@@ -132,20 +131,6 @@ extension URLBarView {
             .allowsHitTesting(false)
         )
         .sidebarAppKitPrimaryAction(action: action)
-    }
-
-    func copyURLToClipboard(_ urlString: String) {
-        _ = browserContext.copyURLToClipboard(urlString, windowState)
-
-        withAnimation(.easeInOut(duration: 0.2)) {
-            showCheckmark = true
-        }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            withAnimation(.easeInOut(duration: 0.2)) {
-                showCheckmark = false
-            }
-        }
     }
 
     func isCopyLinkAvailable(for url: URL) -> Bool {

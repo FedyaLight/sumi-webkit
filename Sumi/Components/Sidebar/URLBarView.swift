@@ -51,7 +51,6 @@ struct URLBarView: View {
     let presentationMode: URLBarPresentationMode
 
     @State var isHovering = false
-    @State var showCheckmark = false
     @State var isPermissionIndicatorPopoverPresented = false
     @StateObject var permissionIndicatorViewModel = SumiPermissionIndicatorViewModel()
     @StateObject var permissionPromptPresenter = SumiPermissionPromptPresenter()

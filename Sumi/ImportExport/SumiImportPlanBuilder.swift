@@ -255,7 +255,7 @@ struct SumiImportPlanBuilder {
         guard data.spaces.isEmpty else { return }
         data.spaces.append(SumiPortableSpace(
             id: identity.fallbackId(.space),
-            name: "Personal",
+            name: "Space",
             icon: SumiPersistentGlyph.spaceDefaultIconValue,
             index: 0,
             profileId: data.profiles.first?.id,
