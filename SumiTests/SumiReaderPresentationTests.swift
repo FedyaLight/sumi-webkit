@@ -532,16 +532,18 @@ final class SumiReaderPresentationTests: XCTestCase {
             SumiWebKitMenuItemIdentifier.reload.rawValue
         )
         pageMenu.addItem(nativeReloadItem)
-        let pageMenuController = SumiWebPageMenuController()
-        pageMenuController.prepare(
-            pageMenu,
-            for: readerWebView,
-            targetHint: .page
+        let pageMenuPresenter = SumiWebPageMenuPresenter()
+        readerWebView.contextMenu.record(
+            SumiWebPageContextMenuTargetSnapshot(kind: .page)
         )
+        pageMenuPresenter.menuWillOpen(pageMenu, for: readerWebView)
         let printItem = try XCTUnwrap(pageMenu.items.first {
             SumiWebPageMenuCommand($0.identifier) == .printPage
         })
-        XCTAssertIdentical(printItem.target as AnyObject?, pageMenuController)
+        XCTAssertIdentical(
+            printItem.target as AnyObject?,
+            pageMenuPresenter.actionOwner
+        )
         withExtendedLifetime(navigationLifetime) { /* Keep exact navigation identity alive. */ }
     }
 

@@ -183,13 +183,30 @@ final class WebViewHoveredLinkState {
 @MainActor
 final class WebViewContextMenuState {
     private var latestTarget: SumiWebPageContextMenuTargetSnapshot?
+    private var onNextRecord: ((SumiWebPageContextMenuTargetSnapshot) -> Void)?
 
     func record(_ target: SumiWebPageContextMenuTargetSnapshot) {
         latestTarget = target
+        let pending = onNextRecord
+        onNextRecord = nil
+        pending?(target)
+    }
+
+    /// One-shot continuation for a menu presented before the DOM snapshot
+    /// arrived. Consumed by the next `record(_:)`; replaced by re-registration.
+    func awaitNextRecord(
+        _ handler: @escaping (SumiWebPageContextMenuTargetSnapshot) -> Void
+    ) {
+        onNextRecord = handler
+    }
+
+    func cancelPendingRecordHandler() {
+        onNextRecord = nil
     }
 
     func clear() {
         latestTarget = nil
+        onNextRecord = nil
     }
 
     func recentTarget(maxAge: TimeInterval = 1) -> SumiWebPageContextMenuTargetSnapshot? {

@@ -9,7 +9,7 @@ final class SumiWebPageContextMenuUserScript: NSObject, SumiPageScript,
 
     let source: String
     let injectionTime: WKUserScriptInjectionTime = .atDocumentEnd
-    let forMainFrameOnly = true
+    let forMainFrameOnly = false
     let requiresRunInPageContentWorld = false
     let messageNames: [String]
 
@@ -106,11 +106,49 @@ final class SumiWebPageContextMenuUserScript: NSObject, SumiPageScript,
                 return null;
             }
 
-            document.addEventListener("contextmenu", function(event) {
-                const reply = handler.postMessage({
-                    kind: classifyTarget(event.target),
-                    selectedText: selectionTextForTarget(event.target)
+            function nonEmpty(value) {
+                const text = String(value || "");
+                return text ? text : null;
+            }
+
+            function targetDetails(target) {
+                const details = {
+                    kind: classifyTarget(target),
+                    selectedText: selectionTextForTarget(target),
+                    linkHref: null,
+                    linkText: null,
+                    imageSrc: null,
+                    mediaSrc: null
+                };
+
+                const anchor = closestElement(target, function(element) {
+                    return localName(element) === "a" && element.href;
                 });
+                if (anchor) {
+                    details.linkHref = nonEmpty(anchor.href);
+                    details.linkText = nonEmpty(String(anchor.textContent || "").trim().slice(0, 500));
+                }
+
+                const image = closestElement(target, function(element) {
+                    return localName(element) === "img";
+                });
+                if (image) {
+                    details.imageSrc = nonEmpty(image.currentSrc || image.src);
+                }
+
+                const media = closestElement(target, function(element) {
+                    return ["audio", "video"].includes(localName(element));
+                });
+                if (media) {
+                    details.mediaSrc = nonEmpty(media.currentSrc || media.src);
+                }
+
+                return details;
+            }
+
+            document.addEventListener("contextmenu", function(event) {
+                if (!event.isTrusted) { return; }
+                const reply = handler.postMessage(targetDetails(event.target));
                 if (reply && typeof reply.catch === "function") {
                     reply.catch(() => {});
                 }
@@ -133,7 +171,11 @@ final class SumiWebPageContextMenuUserScript: NSObject, SumiPageScript,
         webView.contextMenu.record(
             SumiWebPageContextMenuTargetSnapshot(
                 kind: kind,
-                selectedText: dictionary["selectedText"] as? String
+                selectedText: dictionary["selectedText"] as? String,
+                linkHref: dictionary["linkHref"] as? String,
+                linkText: dictionary["linkText"] as? String,
+                imageSrc: dictionary["imageSrc"] as? String,
+                mediaSrc: dictionary["mediaSrc"] as? String
             )
         )
         return (["accepted": true], nil)

@@ -9,45 +9,75 @@
 import AppKit
 import WebKit
 
+/// Resolved facts for one web page menu presentation. Built once per rewrite
+/// from the live `NSMenu` and the trusted DOM snapshot (when one arrived).
 struct SumiWebPageMenuContext {
     let identifiers: Set<SumiWebKitMenuItemIdentifier>
-    let hasOwnedPageCommands: Bool
-    let hasOwnedElementCommands: Bool
     let targetHint: SumiWebPageContextMenuTargetKind?
     let selectedText: String?
-    let hasLinkContext: Bool
-    let hasImageContext: Bool
-    let hasMediaContext: Bool
+    let linkURL: URL?
+    let linkText: String?
+    let imageURL: URL?
     let searchProviderName: String
+    let isLoading: Bool
+    let isDeveloperInspectionEnabled: Bool
 
     init(
         menu: NSMenu,
-        targetHint: SumiWebPageContextMenuTargetKind?,
-        selectedText: String?,
-        searchProviderName: String
+        snapshot: SumiWebPageContextMenuTargetSnapshot?,
+        searchProviderName: String,
+        isLoading: Bool,
+        isDeveloperInspectionEnabled: Bool
     ) {
         identifiers = Set(menu.items.compactMap {
             SumiWebKitMenuItemIdentifier($0.identifier)
         })
-        self.targetHint = targetHint
-        self.selectedText = selectedText?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
-        hasOwnedPageCommands = menu.items.contains {
-            SumiWebPageMenuCommand($0.identifier)?.isPageBackgroundCommand == true
-        }
-        hasOwnedElementCommands = menu.items.contains {
-            SumiWebPageMenuCommand($0.identifier)?.belongsToElementContext == true
-        }
-        hasLinkContext = identifiers.contains(where: \.belongsToLinkContext)
-        hasImageContext = identifiers.contains(where: \.belongsToImageContext)
-        hasMediaContext = identifiers.contains(where: \.belongsToMediaContext)
+        targetHint = snapshot?.kind
+        selectedText = snapshot?.selectedText
+        linkURL = snapshot?.linkHref.flatMap(URL.init(string:))
+        linkText = snapshot?.linkText
+        imageURL = snapshot?.imageSrc.flatMap(URL.init(string:))
         self.searchProviderName = searchProviderName
+        self.isLoading = isLoading
+        self.isDeveloperInspectionEnabled = isDeveloperInspectionEnabled
     }
 
-    var hasElementContext: Bool {
-        hasOwnedElementCommands
-            || identifiers.contains(where: \.belongsToElementContext)
-            || targetHint?.isWebPageElement == true
-            || selectedText != nil
+    var hasLinkContext: Bool {
+        identifiers.contains(where: \.belongsToLinkContext)
+    }
+
+    var hasImageContext: Bool {
+        identifiers.contains(where: \.belongsToImageContext)
+    }
+
+    var isMailtoLink: Bool {
+        linkURL?.scheme?.lowercased() == "mailto"
+    }
+
+    var isWebSchemeLink: Bool {
+        isWebScheme(linkURL)
+    }
+
+    var isWebSchemeImage: Bool {
+        isWebScheme(imageURL)
+    }
+
+    /// Recipients of a `mailto:` link: the path list plus any `to=` query
+    /// values, comma-separated per RFC 6068.
+    var mailtoAddresses: [String] {
+        guard isMailtoLink,
+              let linkURL,
+              let components = URLComponents(url: linkURL, resolvingAgainstBaseURL: false)
+        else { return [] }
+
+        var rawLists = [components.path]
+        for query in components.queryItems ?? [] where query.name.lowercased() == "to" {
+            rawLists.append(query.value ?? "")
+        }
+        return rawLists
+            .flatMap { $0.split(separator: ",") }
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
     }
 
     var isPageBackground: Bool {
@@ -57,59 +87,17 @@ struct SumiWebPageMenuContext {
         if selectedText != nil {
             return false
         }
-
-        return hasOwnedPageCommands
-            || (
-                !hasOwnedElementCommands
-                && identifiers.contains(where: \.isPageBackgroundSignal)
-                && !identifiers.contains(where: \.belongsToElementContext)
-            )
+        return identifiers.contains(where: \.isPageBackgroundSignal)
+            && !identifiers.contains(where: \.belongsToElementContext)
     }
 
     var canCopyLinkToSelectedText: Bool {
         targetHint != .editable
     }
 
-    func selectionFallbackInsertionIndex(in menu: NSMenu) -> Int {
-        let elementIdentifiers = Set(identifiers.filter(\.belongsToElementContext))
-        guard !elementIdentifiers.isEmpty else { return 0 }
-
-        var lastElementIndex = -1
-        for (index, item) in menu.items.enumerated() {
-            if let identifier = SumiWebKitMenuItemIdentifier(item.identifier),
-               identifier.belongsToElementContext {
-                lastElementIndex = index
-            }
-            if SumiWebPageMenuCommand(item.identifier)?.belongsToElementContext == true {
-                lastElementIndex = index
-            }
-        }
-        return lastElementIndex >= 0 ? lastElementIndex + 1 : 0
-    }
-
-    func hasPrintCommand(in menu: NSMenu) -> Bool {
-        menu.items.contains {
-            SumiWebPageMenuCommand($0.identifier) == .printPage
-                || $0.title.localizedCaseInsensitiveContains("Print")
-                || $0.title.localizedCaseInsensitiveContains("Печать")
-        }
-    }
-}
-
-private extension SumiWebPageContextMenuTargetKind {
-    var isWebPageElement: Bool {
-        switch self {
-        case .editable, .interactiveElement, .link, .image, .media:
-            return true
-        case .page, .otherElement:
-            return false
-        }
-    }
-}
-
-private extension String {
-    var nilIfEmpty: String? {
-        isEmpty ? nil : self
+    private func isWebScheme(_ url: URL?) -> Bool {
+        guard let scheme = url?.scheme?.lowercased() else { return false }
+        return scheme == "http" || scheme == "https"
     }
 }
 
@@ -124,6 +112,14 @@ enum SumiWebPageMenuCommand: String, CaseIterable {
     case copySelection = "SumiWebPageMenu.CopySelection"
     case copyLinkToSelectedText = "SumiWebPageMenu.CopyLinkToSelectedText"
     case searchSelection = "SumiWebPageMenu.SearchSelection"
+    case openLinkInNewTab = "SumiWebPageMenu.OpenLinkInNewTab"
+    case openLinkInNewWindow = "SumiWebPageMenu.OpenLinkInNewWindow"
+    case addLinkToBookmarks = "SumiWebPageMenu.AddLinkToBookmarks"
+    case copyLink = "SumiWebPageMenu.CopyLink"
+    case copyEmailAddress = "SumiWebPageMenu.CopyEmailAddress"
+    case openImageInNewTab = "SumiWebPageMenu.OpenImageInNewTab"
+    case openImageInNewWindow = "SumiWebPageMenu.OpenImageInNewWindow"
+    case copyImageAddress = "SumiWebPageMenu.CopyImageAddress"
 
     init?(_ identifier: NSUserInterfaceItemIdentifier?) {
         guard let identifier else { return nil }
@@ -150,11 +146,37 @@ enum SumiWebPageMenuCommand: String, CaseIterable {
     }
 
     var belongsToElementContext: Bool {
+        !isPageBackgroundCommand
+    }
+
+    var symbolName: String {
         switch self {
-        case .copySelection, .copyLinkToSelectedText, .searchSelection:
-            return true
-        default:
-            return !isPageBackgroundCommand
+        case .back:
+            return "chevron.left"
+        case .forward:
+            return "chevron.right"
+        case .reload:
+            return "arrow.clockwise"
+        case .stop:
+            return "xmark"
+        case .bookmarkPage, .addLinkToBookmarks:
+            return "bookmark"
+        case .copyPageAddress, .copyLink, .copyImageAddress:
+            return "link"
+        case .printPage:
+            return "printer"
+        case .copySelection:
+            return "doc.on.doc"
+        case .copyLinkToSelectedText:
+            return "quote.bubble"
+        case .searchSelection:
+            return "magnifyingglass"
+        case .openLinkInNewTab, .openImageInNewTab:
+            return "plus.square.on.square"
+        case .openLinkInNewWindow, .openImageInNewWindow:
+            return "macwindow.badge.plus"
+        case .copyEmailAddress:
+            return "envelope"
         }
     }
 }
@@ -230,10 +252,11 @@ enum SumiWebKitMenuItemIdentifier: String, CaseIterable {
         }
     }
 
+    // `copyLinkWithHighlight` is deliberately absent: WebKit adds it for text
+    // selections (Copy Link with Highlight), not for anchor elements.
     var belongsToLinkContext: Bool {
         switch self {
         case .copyLink,
-             .copyLinkWithHighlight,
              .downloadLinkedFile,
              .openLink,
              .openLinkInNewWindow:
@@ -290,7 +313,6 @@ enum SumiWebKitMenuItemIdentifier: String, CaseIterable {
              .downloadLinkedFile,
              .downloadMedia,
              .lookUp,
-             .openFrameInNewWindow,
              .openImageInNewWindow,
              .openLink,
              .openLinkInNewWindow,
@@ -317,20 +339,9 @@ enum SumiWebKitMenuItemIdentifier: String, CaseIterable {
              .translate,
              .writingTools:
             return true
-        case .goBack, .goForward, .inspectElement, .reload, .shareMenu:
-            return false
-        }
-    }
-
-    var isSuppressedBySumi: Bool {
-        switch self {
-        case .checkGrammarWithSpelling,
-             .checkSpelling,
-             .checkSpellingWhileTyping,
-             .showSpellingPanel,
-             .spellingMenu:
-            return true
-        default:
+        case .goBack, .goForward, .inspectElement, .openFrameInNewWindow, .reload, .shareMenu:
+            // A subframe hit is still a page-background menu: it keeps the
+            // owned page section alongside the native frame item.
             return false
         }
     }

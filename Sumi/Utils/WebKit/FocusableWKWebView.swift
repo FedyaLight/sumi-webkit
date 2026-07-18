@@ -20,7 +20,7 @@ final class FocusableWKWebView: WKWebView {
 
     private var webKitMouseTrackingLoadSheddingOwner: WebKitMouseTrackingLoadSheddingOwner?
     private let webKitClientMediaControlsOwner = WebKitClientMediaControlsOwner()
-    private lazy var webPageMenuController = SumiWebPageMenuController()
+    private lazy var webPageMenuPresenter = SumiWebPageMenuPresenter()
     private var transientChromeInteractionShieldOwner: WebKitTransientChromeInteractionShieldOwner?
     private var glanceCursorStabilizationOwner: WebKitGlanceCursorStabilizationOwner?
 
@@ -363,7 +363,12 @@ final class FocusableWKWebView: WKWebView {
 
     override func willOpenMenu(_ menu: NSMenu, with event: NSEvent) {
         super.willOpenMenu(menu, with: event)
-        webPageMenuController.prepare(menu, for: self)
+        webPageMenuPresenter.menuWillOpen(menu, for: self)
+    }
+
+    override func didCloseMenu(_ menu: NSMenu, with event: NSEvent?) {
+        super.didCloseMenu(menu, with: event)
+        webPageMenuPresenter.menuDidClose(menu)
     }
 
     override var isInFullScreenMode: Bool {

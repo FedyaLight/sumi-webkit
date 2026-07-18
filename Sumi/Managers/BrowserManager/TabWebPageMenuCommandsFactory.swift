@@ -62,6 +62,20 @@ enum TabWebPageMenuCommandsFactory {
                         for: source.tab,
                         in: source.window
                     )
+            },
+            bookmarkLink: { [weak browserManager] webView, url, title in
+                guard let browserManager,
+                      source(
+                          for: webView,
+                          in: browserManager.windowRegistry
+                      ) != nil
+                else {
+                    return false
+                }
+                return (try? browserManager.bookmarkManager.createBookmark(
+                    url: url,
+                    title: title ?? url.absoluteString
+                )) != nil
             }
         )
     }

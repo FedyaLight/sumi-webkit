@@ -12,6 +12,11 @@ struct TabWebPageMenuCommands {
     private let requestBookmarkEditorAction: @MainActor (
         FocusableWKWebView
     ) -> Bool
+    private let bookmarkLinkAction: @MainActor (
+        FocusableWKWebView,
+        URL,
+        String?
+    ) -> Bool
 
     init(
         appearance: @escaping @MainActor (
@@ -21,11 +26,17 @@ struct TabWebPageMenuCommands {
         canBookmark: @escaping @MainActor (FocusableWKWebView) -> Bool,
         requestBookmarkEditor: @escaping @MainActor (
             FocusableWKWebView
+        ) -> Bool,
+        bookmarkLink: @escaping @MainActor (
+            FocusableWKWebView,
+            URL,
+            String?
         ) -> Bool
     ) {
         appearanceAction = appearance
         canBookmarkAction = canBookmark
         requestBookmarkEditorAction = requestBookmarkEditor
+        bookmarkLinkAction = bookmarkLink
     }
 
     func appearance(
@@ -46,9 +57,20 @@ struct TabWebPageMenuCommands {
         requestBookmarkEditorAction(sourceWebView)
     }
 
+    /// Silently bookmarks a link from the page menu (no editor), DDG-style.
+    @discardableResult
+    func bookmarkLink(
+        from sourceWebView: FocusableWKWebView,
+        url: URL,
+        title: String?
+    ) -> Bool {
+        bookmarkLinkAction(sourceWebView, url, title)
+    }
+
     static let inactive = Self(
         appearance: { _, fallback in fallback },
         canBookmark: { _ in false },
-        requestBookmarkEditor: { _ in false }
+        requestBookmarkEditor: { _ in false },
+        bookmarkLink: { _, _, _ in false }
     )
 }
