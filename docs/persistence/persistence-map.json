@@ -664,7 +664,7 @@
     {"path": "Sumi/ContentBlocking/SumiProtectionBundleUpdateStatusStore.swift", "declaration": "static let lastSigningKeyVersion = \"settings.protection.bundleUpdate.lastSigningKeyVersion\"", "owner": "excluded", "reason": "UserDefaults key name, not a schema version"},
     {"path": "Sumi/Favicons/V2/SumiFaviconBlobModels.swift", "declaration": "static let currentSchemaVersion = 2", "owner": "favicon-cache"},
     {"path": "Sumi/ImportExport/SumiImportExportModels.swift", "declaration": "static let currentVersion = 1", "owner": "logical-backups"},
-    {"path": "Sumi/ImportExport/SumiImportTransactionJournal.swift", "declaration": "static let currentVersion = 1", "owner": "import-journal"},
+    {"path": "Sumi/ImportExport/SumiImportTransactionJournal.swift", "declaration": "static let currentVersion = 2", "owner": "import-journal"},
     {"path": "Sumi/Managers/TabManager/TabPersistenceCodec.swift", "declaration": "static let schemaVersion = 2", "owner": "preferences-userdefaults"},
     {"path": "Sumi/Permissions/SumiPermissionPersistenceAuthority.swift", "declaration": "static let storageVersion = 1", "owner": "permissions-json"},
     {"path": "Sumi/Services/SumiStartupPersistence.swift", "declaration": "static let versionIdentifier = Schema.Version(3, 0, 0)", "owner": "startup-swiftdata"},
