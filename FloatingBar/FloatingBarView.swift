@@ -274,14 +274,19 @@ struct FloatingBarView: View {
                             }
                         }
                         .background(tokens.floatingBarBackground)
-                        .clipShape(.rect(cornerRadius: ChromeLayoutTokens.floatingBarCornerRadius))
+                        .clipShape(
+                            RoundedRectangle(
+                                cornerRadius: ChromeLayoutTokens.floatingBarCornerRadius,
+                                style: .continuous
+                            ),
+                            style: FillStyle(antialiased: false)
+                        )
                         .overlay {
                             RoundedRectangle(cornerRadius: ChromeLayoutTokens.floatingBarCornerRadius, style: .continuous)
                                 .strokeBorder(
-                                    tokens.separator.opacity(
-                                        accessibilityReduceTransparency ? 0.95 : 0.72
-                                    ),
-                                    lineWidth: accessibilityReduceTransparency ? 1.15 : 1
+                                    tokens.separator,
+                                    lineWidth: 1,
+                                    antialiased: false
                                 )
                         }
                         .overlay {
