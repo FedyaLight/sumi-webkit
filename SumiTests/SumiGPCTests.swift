@@ -2,6 +2,7 @@ import WebKit
 import XCTest
 
 @testable import Sumi
+import Navigation
 import SumiDomain
 
 @MainActor
@@ -99,7 +100,11 @@ final class SumiGPCNavigationResponderTests: XCTestCase {
         return tab
     }
 
-    private func mainFrameAction(url: URL, httpMethod: String? = nil) -> SumiNavigationAction {
+    private func mainFrameAction(
+        url: URL,
+        httpMethod: String? = nil,
+        isUserInitiated: Bool = true
+    ) -> SumiNavigationAction {
         var request = URLRequest(url: url)
         request.httpMethod = httpMethod
         return SumiNavigationAction(
@@ -110,7 +115,7 @@ final class SumiGPCNavigationResponderTests: XCTestCase {
             targetFrame: nil,
             isTargetingNewWindow: false,
             isForMainFrame: true,
-            isUserInitiated: true,
+            isUserInitiated: isUserInitiated,
             navigationType: .other,
             navigationTypeDescription: "0",
             redirectHistory: SumiNavigationRedirectHistory(),
@@ -147,6 +152,83 @@ final class SumiGPCNavigationResponderTests: XCTestCase {
         XCTAssertEqual(policy, .cancel)
         XCTAssertEqual(webView.loadedRequests.count, 1)
         XCTAssertEqual(webView.loadedRequests.first?.value(forHTTPHeaderField: "Sec-GPC"), "1")
+    }
+
+    func testNavigatorExpectReusesActiveNavigationIdentity() throws {
+        let webView = SumiGPCLoadRecordingWebView()
+        _ = makeTab().installNavigationDelegate(on: webView)
+        let navigator = try XCTUnwrap(webView.navigator())
+        let physicalNavigation = try XCTUnwrap(
+            webView.load(URLRequest(url: URL(string: "about:blank")!))
+        )
+
+        let policyNavigation = navigator.expect(physicalNavigation)
+        let submittedNavigation = navigator.expect(physicalNavigation)
+
+        XCTAssertEqual(
+            policyNavigation.stableIdentifier,
+            submittedNavigation.stableIdentifier
+        )
+        XCTAssertTrue(
+            policyNavigation.identityLifetime === submittedNavigation.identityLifetime
+        )
+    }
+
+    func testReentrantPolicyIdentityCanJoinLateBrowserSubmission() async throws {
+        let targetURL = URL(string: "https://example.com/first-navigation")!
+        let webView = SumiGPCLoadRecordingWebView()
+        let tab = makeTab()
+        _ = tab.installNavigationDelegate(on: webView)
+        let navigator = try XCTUnwrap(webView.navigator())
+        _ = tab.beginMainFrameNavigationIntent(to: targetURL)
+        let submissionLease = try XCTUnwrap(
+            tab.mainFrameLoads.claimDirectSubmission(on: webView)
+        )
+        let physicalNavigation = try XCTUnwrap(
+            webView.load(URLRequest(url: URL(string: "about:blank")!))
+        )
+
+        // WebKit may deliver decidePolicy before load(_:) returns. Model that
+        // ordering by resolving policy identity before the browser binds the
+        // submitted load returned from the same physical WKNavigation.
+        let policyNavigation = navigator.expect(physicalNavigation)
+        let submittedNavigation = navigator.expect(physicalNavigation)
+        XCTAssertTrue(
+            tab.mainFrameSubmission.bindSubmittedLoad(
+                on: webView,
+                navigationID: submittedNavigation.stableIdentifier,
+                navigationLifetime: submittedNavigation.identityLifetime,
+                matching: submissionLease
+            )
+        )
+
+        var diagnostics: [SumiGPCNavigationRewriteFailure] = []
+        let responder = SumiGPCNavigationResponder(
+            tab: tab,
+            isGPCEnabledProvider: { true },
+            recordDiagnostic: { diagnostics.append($0) }
+        )
+        var preferences = sumiPreferences()
+
+        let policy = await responder.decidePolicy(
+            for: mainFrameAction(
+                url: targetURL,
+                isUserInitiated: false
+            ),
+            targetWebView: webView,
+            context: SumiNavigationActionContext(
+                navigationID: policyNavigation.stableIdentifier,
+                navigationLifetime: policyNavigation.identityLifetime
+            ),
+            preferences: &preferences
+        )
+
+        XCTAssertEqual(policy, .cancel)
+        XCTAssertTrue(diagnostics.isEmpty)
+        XCTAssertEqual(
+            webView.loadedRequests.last?.value(forHTTPHeaderField: "Sec-GPC"),
+            "1"
+        )
     }
 
     func testAllowsNavigationOnSecondPassOnceHeaderIsPresent() async {

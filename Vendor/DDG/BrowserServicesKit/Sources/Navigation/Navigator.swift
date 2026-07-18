@@ -106,6 +106,14 @@ extension WKNavigation {
 
     @MainActor
     func expectedNavigation(with expectedNavigationType: NavigationType?, distributedNavigationDelegate: DistributedNavigationDelegate) -> ExpectedNavigation {
+        // WKWebView.load(_:) may re-enter decidePolicy before returning its
+        // WKNavigation. In that ordering the delegate has already associated
+        // the physical navigation with the logical Navigation responders saw.
+        // Preserve that identity when the browser binds the returned load.
+        if let navigation, !navigation.state.isCompleted {
+            return ExpectedNavigation(navigation: navigation)
+        }
+
         let navigation = Navigation(identity: NavigationIdentity(self), responders: distributedNavigationDelegate.responders, state: .expected(expectedNavigationType), isCurrent: false)
         navigation.associate(with: self)
         return ExpectedNavigation(navigation: navigation)
