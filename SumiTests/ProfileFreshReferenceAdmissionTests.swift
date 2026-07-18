@@ -32,7 +32,6 @@ final class ProfileFreshReferenceAdmissionTests: XCTestCase {
             ProfileEntity(
                 id: retiringProfile.id,
                 name: retiringProfile.name,
-                icon: retiringProfile.icon,
                 index: 0
             )
         )
@@ -40,7 +39,6 @@ final class ProfileFreshReferenceAdmissionTests: XCTestCase {
             ProfileEntity(
                 id: fallbackProfile.id,
                 name: fallbackProfile.name,
-                icon: fallbackProfile.icon,
                 index: 1
             )
         )
@@ -968,7 +966,6 @@ final class ProfileFreshReferenceAdmissionTests: XCTestCase {
             ProfileEntity(
                 id: retiringProfile.id,
                 name: retiringProfile.name,
-                icon: retiringProfile.icon,
                 index: 0
             )
         )
@@ -976,7 +973,6 @@ final class ProfileFreshReferenceAdmissionTests: XCTestCase {
             ProfileEntity(
                 id: fallbackProfile.id,
                 name: fallbackProfile.name,
-                icon: fallbackProfile.icon,
                 index: 1
             )
         )

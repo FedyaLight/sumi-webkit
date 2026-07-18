@@ -203,7 +203,7 @@ final class SumiAutoplayBrowserConfigTests: XCTestCase {
     }
 
     private func makeProfile(_ id: String) -> Profile {
-        Profile(id: UUID(uuidString: id)!, name: "Profile", icon: "person")
+        Profile(id: UUID(uuidString: id)!, name: "Profile")
     }
 
     private func configurationContext(

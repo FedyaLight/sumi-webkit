@@ -6,7 +6,6 @@
 //
 
 import SwiftUI
-import SumiDomain
 
 struct ProfileRowView: View {
     let profile: Profile
@@ -21,10 +20,9 @@ struct ProfileRowView: View {
             ZStack {
                 Circle()
                     .fill(Color(nsColor: .controlBackgroundColor))
-                SumiProfileIconView(
-                    icon: profile.icon,
-                    font: SettingsThemeTokens.Typography.profileRowIcon
-                )
+                Image(systemName: "person.fill")
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(.secondary)
             }
             .frame(width: 36, height: 36)
 

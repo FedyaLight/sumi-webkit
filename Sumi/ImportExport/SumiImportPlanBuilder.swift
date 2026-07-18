@@ -191,7 +191,6 @@ struct SumiImportPlanBuilder {
             data.profiles.append(SumiPortableProfile(
                 id: id,
                 name: uniqueName(profile.name, existing: data.profiles.map(\.name)),
-                icon: profile.icon,
                 index: data.profiles.count
             ))
         }
@@ -205,7 +204,6 @@ struct SumiImportPlanBuilder {
         data.profiles.append(SumiPortableProfile(
             id: identity.fallbackId(.profile),
             name: "Default",
-            icon: SumiProfileIcon.defaultIcon,
             index: 0
         ))
     }

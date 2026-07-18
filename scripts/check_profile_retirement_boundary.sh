@@ -82,25 +82,25 @@ guard_expect_no_matches \
   '\bBrowserProfileSwitchTransitionHost\b|host:[[:space:]]*browserManager' \
   --glob '*.swift' "${production_roots[@]}"
 
-schema_v3="$({
+schema_v4="$({
   sed -n \
-    '/^enum SumiStartupSchemaV3: VersionedSchema {$/,/^enum SumiStartupMigrationPlan: SchemaMigrationPlan {$/p' \
+    '/^enum SumiStartupSchemaV4: VersionedSchema {$/,/^enum SumiStartupMigrationPlan: SchemaMigrationPlan {$/p' \
     "$startup_persistence"
 } || true)"
-if [[ -z "$schema_v3" ]]; then
-  guard_record_failure 'SumiStartupSchemaV3 declaration is missing'
+if [[ -z "$schema_v4" ]]; then
+  guard_record_failure 'SumiStartupSchemaV4 declaration is missing'
 else
   schema_version_count="$({
     guard_count_matches \
-      'static let versionIdentifier = Schema\.Version\(3, 0, 0\)' \
-      - <<< "$schema_v3"
+      'static let versionIdentifier = Schema\.Version\(4, 0, 0\)' \
+      - <<< "$schema_v4"
   })"
-  guard_exact 'startup schema V3 version declaration' "$schema_version_count" 1
+  guard_exact 'startup schema V4 version declaration' "$schema_version_count" 1
 
   retirement_model_count="$({
-    guard_count_matches 'ProfileRetirementEntity\.self' - <<< "$schema_v3"
+    guard_count_matches 'ProfileRetirementEntity\.self' - <<< "$schema_v4"
   })"
-  guard_exact 'retirement journal model in startup schema V3' "$retirement_model_count" 1
+  guard_exact 'retirement journal model in startup schema V4' "$retirement_model_count" 1
 fi
 
 transition_entry_count="$({

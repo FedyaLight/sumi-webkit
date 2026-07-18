@@ -21,7 +21,6 @@ final class PendingShortcutPinAdopterTests: XCTestCase {
             ProfileEntity(
                 id: retiringProfile.id,
                 name: retiringProfile.name,
-                icon: retiringProfile.icon,
                 index: 0
             )
         )
@@ -29,7 +28,6 @@ final class PendingShortcutPinAdopterTests: XCTestCase {
             ProfileEntity(
                 id: fallbackProfile.id,
                 name: fallbackProfile.name,
-                icon: fallbackProfile.icon,
                 index: 1
             )
         )

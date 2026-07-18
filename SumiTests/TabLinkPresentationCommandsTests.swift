@@ -280,7 +280,6 @@ final class TabLinkPresentationCommandsTests: XCTestCase {
     ) -> PhysicalWebViewSourceReceipt {
         let profile = Profile(
             name: "Unit",
-            icon: "person.crop.circle",
             dataStore: webView.configuration.websiteDataStore
         )
         let space = Space(name: "Unit", profileId: profile.id)

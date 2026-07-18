@@ -23,8 +23,7 @@ final class SumiDomainSmokeTests: XCTestCase {
         XCTAssertEqual(combo.lookupKey, "cmd+t")
     }
 
-    func testProfileIconAndURLNormalization() {
-        XCTAssertTrue(SumiProfileIcon.usesDefaultIcon(""))
+    func testURLNormalization() {
         XCTAssertEqual(
             SumiURLNormalization.normalizedStartupURLString(from: "example.com"),
             "https://example.com"
@@ -36,8 +35,7 @@ final class SumiDomainSmokeTests: XCTestCase {
     }
 
     func testProfilePartitionAndTabIdentityAreHashable() {
-        let partition = ProfilePartition(name: "Work", icon: "💼", isEphemeral: false)
-        XCTAssertEqual(partition.icon, "💼")
+        let partition = ProfilePartition(name: "Work", isEphemeral: false)
         XCTAssertFalse(partition.isEphemeral)
 
         let tab = TabIdentity(

@@ -89,7 +89,6 @@ final class ProfileReferenceAdmittedModelTransactionTests: XCTestCase {
             ProfileEntity(
                 id: profile.id,
                 name: profile.name,
-                icon: profile.icon,
                 index: 0
             )
         )
@@ -97,7 +96,6 @@ final class ProfileReferenceAdmittedModelTransactionTests: XCTestCase {
             ProfileEntity(
                 id: fallback.id,
                 name: fallback.name,
-                icon: fallback.icon,
                 index: 1
             )
         )

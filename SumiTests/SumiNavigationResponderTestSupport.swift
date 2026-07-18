@@ -163,7 +163,7 @@ class SumiNavigationResponderTestCase: XCTestCase {
     }
 
     func makeProfile(_ id: String) -> Profile {
-        Profile(id: UUID(uuidString: id)!, name: "Profile", icon: "person")
+        Profile(id: UUID(uuidString: id)!, name: "Profile")
     }
 
     func makeMouseEvent(

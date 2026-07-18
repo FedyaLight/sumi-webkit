@@ -157,19 +157,16 @@ final class ExtensionProfileReferenceAdmissionTests: XCTestCase {
         context.insert(ProfileEntity(
             id: retiring.id,
             name: retiring.name,
-            icon: retiring.icon,
             index: 0
         ))
         context.insert(ProfileEntity(
             id: fallback.id,
             name: fallback.name,
-            icon: fallback.icon,
             index: 1
         ))
         context.insert(ProfileEntity(
             id: third.id,
             name: third.name,
-            icon: third.icon,
             index: 2
         ))
         try context.save()

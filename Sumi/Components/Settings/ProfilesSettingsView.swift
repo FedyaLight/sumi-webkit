@@ -4,7 +4,6 @@
 //
 
 import AppKit
-import SumiDomain
 import SwiftUI
 
 /// Profile management (also used in the in-tab settings surface).
@@ -143,8 +142,8 @@ struct ProfilesSettingsView: View {
             ProfileEditorSheet(
                 mode: .create,
                 isNameAvailable: { isProfileNameAvailable($0) },
-                onSave: { name, icon in
-                    createProfile(name: name, icon: icon)
+                onSave: { name in
+                    createProfile(name: name)
                 },
                 onCancel: {
                     profileEditorPresentation = nil
@@ -155,12 +154,11 @@ struct ProfilesSettingsView: View {
                 ProfileEditorSheet(
                     mode: .edit,
                     initialName: profile.name,
-                    initialIcon: profile.icon,
                     isNameAvailable: {
                         isProfileNameAvailable($0, excluding: profile.id)
                     },
-                    onSave: { name, icon in
-                        updateProfile(profile, name: name, icon: icon)
+                    onSave: { name in
+                        updateProfile(profile, name: name)
                     },
                     onCancel: {
                         profileEditorPresentation = nil
@@ -202,15 +200,12 @@ struct ProfilesSettingsView: View {
         }
     }
 
-    private func createProfile(name: String, icon: String) {
+    private func createProfile(name: String) {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, isProfileNameAvailable(trimmed) else { return }
 
         do {
-            try profileManager.createProfile(
-                name: trimmed,
-                icon: SumiProfileIcon.storedValue(icon)
-            )
+            try profileManager.createProfile(name: trimmed)
             profileEditorPresentation = nil
         } catch {
             RuntimeDiagnostics.emit(
@@ -220,14 +215,13 @@ struct ProfilesSettingsView: View {
         }
     }
 
-    private func updateProfile(_ profile: Profile, name: String, icon: String) {
+    private func updateProfile(_ profile: Profile, name: String) {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty,
               isProfileNameAvailable(trimmed, excluding: profile.id)
         else { return }
 
         profile.name = trimmed
-        profile.icon = SumiProfileIcon.storedValue(icon)
         profileManager.persistProfiles()
         profileEditorPresentation = nil
     }

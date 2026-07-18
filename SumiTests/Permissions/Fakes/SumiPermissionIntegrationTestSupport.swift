@@ -371,8 +371,7 @@ func sumiPermissionIntegrationProfile(
 ) -> Profile {
     let profile = Profile(
         id: UUID(uuidString: id)!,
-        name: isEphemeral ? "Ephemeral" : "Work",
-        icon: "person"
+        name: isEphemeral ? "Ephemeral" : "Work"
     )
     profile.isEphemeral = isEphemeral
     return profile

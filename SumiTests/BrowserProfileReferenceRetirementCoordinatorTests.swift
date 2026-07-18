@@ -689,7 +689,6 @@ final class BrowserProfileReferenceRetirementCoordinatorTests: XCTestCase {
             ProfileEntity(
                 id: deleted.id,
                 name: deleted.name,
-                icon: deleted.icon,
                 index: 0
             )
         )
@@ -697,7 +696,6 @@ final class BrowserProfileReferenceRetirementCoordinatorTests: XCTestCase {
             ProfileEntity(
                 id: fallback.id,
                 name: fallback.name,
-                icon: fallback.icon,
                 index: 1
             )
         )

@@ -61,8 +61,7 @@ final class TabPermissionGlanceFailClosedTests: XCTestCase {
         let tabId = UUID()
         let profile = Profile(
             id: UUID(uuidString: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")!,
-            name: "Glance Fail Closed",
-            icon: "person"
+            name: "Glance Fail Closed"
         )
         let committedURL = URL(string: "https://example.com/")!
         let webView = PermissionCommittedURLWebView()

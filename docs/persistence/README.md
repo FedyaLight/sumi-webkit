@@ -8,7 +8,7 @@ Run `scripts/check_persistence_inventory.sh` after changing a store, a persisten
 
 | Family | Class | Owner/version | Logical root | Recovery truth |
 |---|---|---|---|---|
-| Startup browser state | Authoritative | `SumiStartupSchemaV3` 3.0.0 | Application Support runtime root, `default.store` | Structured SQLite corruption alone can quarantine; schema/lock failures fail closed |
+| Startup browser state | Authoritative | `SumiStartupSchemaV4` 4.0.0 | Application Support runtime root, `default.store` | Structured SQLite corruption alone can quarantine; schema/lock failures fail closed |
 | Bookmarks | Authoritative | `BookmarksModel` 6 | Application Support runtime `Bookmarks` root | Core Data lightweight migration; load failure does not authorize deletion |
 | Preferences and small sessions | Authoritative | Per-key owners; split archive v2 | Runtime UserDefaults domain | Per-owner default/legacy decode; no domain transaction |
 | Permission activity | Authoritative | `SumiPermissionPersistenceAuthority` v1 | Runtime `Permissions` root | Unsupported/malformed bytes fail closed and are preserved as unreadable |

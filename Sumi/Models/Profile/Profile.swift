@@ -10,14 +10,12 @@
 import Foundation
 import Observation
 import WebKit
-import SumiDomain
 
 @MainActor
 @Observable
 final class Profile: NSObject, Identifiable {
     let id: UUID
     var name: String
-    var icon: String
     @ObservationIgnored private let explicitDataStore: WKWebsiteDataStore?
     @ObservationIgnored private var cachedPersistentDataStore: WKWebsiteDataStore?
     var dataStore: WKWebsiteDataStore {
@@ -45,12 +43,10 @@ final class Profile: NSObject, Identifiable {
 
     init(
         id: UUID = UUID(),
-        name: String = "Default Profile",
-        icon: String = SumiProfileIcon.defaultIcon
+        name: String = "Default Profile"
     ) {
         self.id = id
         self.name = name
-        self.icon = SumiProfileIcon.storedValue(icon)
         self.explicitDataStore = nil
         super.init()
     }
@@ -59,12 +55,10 @@ final class Profile: NSObject, Identifiable {
     init(
         id: UUID = UUID(),
         name: String,
-        icon: String,
         dataStore: WKWebsiteDataStore
     ) {
         self.id = id
         self.name = name
-        self.icon = SumiProfileIcon.storedValue(icon)
         self.explicitDataStore = dataStore
         super.init()
     }
@@ -75,7 +69,6 @@ final class Profile: NSObject, Identifiable {
         let profile = Profile(
             id: UUID(),
             name: "Incognito",
-            icon: "🕶️",
             dataStore: .nonPersistent()
         )
         profile.isEphemeral = true

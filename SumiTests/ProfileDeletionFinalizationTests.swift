@@ -605,7 +605,6 @@ final class ProfileDeletionFinalizationTests: XCTestCase {
                 ProfileEntity(
                     id: profile.id,
                     name: profile.name,
-                    icon: profile.icon,
                     index: index
                 )
             )

@@ -129,11 +129,10 @@ final class SumiImportRuntimeMaterializer: SumiImportRuntimeMaterializing {
         return try records.sorted { $0.index < $1.index }.map { record in
             let id = try requiredUUID(record.id)
             if let existing = existingById[id],
-               existing.name == record.name,
-               existing.icon == record.icon {
+               existing.name == record.name {
                 return existing
             }
-            return Profile(id: id, name: record.name, icon: record.icon)
+            return Profile(id: id, name: record.name)
         }
     }
 

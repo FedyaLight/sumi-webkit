@@ -392,7 +392,6 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
         service.attachDestructiveCleanupPreparer(FakeDestructiveCleanupPreparer())
         let profile = Profile(
             name: "Primary",
-            icon: "🏠",
             dataStore: .nonPersistent()
         )
 
@@ -421,7 +420,6 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
         service.attachDestructiveCleanupPreparer(FakeDestructiveCleanupPreparer())
         let profile = Profile(
             name: "Primary",
-            icon: "🏠",
             dataStore: .nonPersistent()
         )
 
@@ -480,7 +478,6 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
         )
         let profile = Profile(
             name: "Primary",
-            icon: "person",
             dataStore: .nonPersistent()
         )
 
@@ -528,7 +525,6 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
         )
         let profile = Profile(
             name: "Primary",
-            icon: "person",
             dataStore: .nonPersistent()
         )
 
@@ -559,7 +555,6 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
         service.attachDestructiveCleanupPreparer(preparer)
         let profile = Profile(
             name: "Primary",
-            icon: "person",
             dataStore: .nonPersistent()
         )
 
@@ -842,13 +837,11 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
         let currentProfile = Profile(
             id: harness.profileID,
             name: "Current",
-            icon: "🏠",
             dataStore: .nonPersistent()
         )
         let otherProfile = Profile(
             id: otherProfileID,
             name: "Other",
-            icon: "🏠",
             dataStore: .nonPersistent()
         )
 
@@ -1054,7 +1047,6 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
         let profile = Profile(
             id: harness.profileID,
             name: "Primary",
-            icon: "🏠",
             dataStore: .nonPersistent()
         )
 
@@ -1107,7 +1099,6 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
         let profile = Profile(
             id: harness.profileID,
             name: "Primary",
-            icon: "🏠",
             dataStore: .nonPersistent()
         )
 
@@ -1165,7 +1156,6 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
         let profile = Profile(
             id: harness.profileID,
             name: "Primary",
-            icon: "🏠",
             dataStore: .nonPersistent()
         )
 
@@ -1227,7 +1217,6 @@ private func testProfile(id: UUID) -> Profile {
     Profile(
         id: id,
         name: "Current",
-        icon: "🏠",
         dataStore: .nonPersistent()
     )
 }

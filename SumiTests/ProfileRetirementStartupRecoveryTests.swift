@@ -366,14 +366,13 @@ final class ProfileRetirementStartupRecoveryTests: XCTestCase {
             for: Schema([ProfileEntity.self, ProfileRetirementEntity.self]),
             configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
         )
-        let profile = Profile(name: "Retiring", icon: "Retiring icon")
-        let fallback = Profile(name: "Fallback", icon: "Fallback icon")
+        let profile = Profile(name: "Retiring")
+        let fallback = Profile(name: "Fallback")
         let context = ModelContext(container)
         context.insert(
             ProfileEntity(
                 id: profile.id,
                 name: profile.name,
-                icon: profile.icon,
                 index: 1
             )
         )
@@ -381,7 +380,6 @@ final class ProfileRetirementStartupRecoveryTests: XCTestCase {
             ProfileEntity(
                 id: fallback.id,
                 name: fallback.name,
-                icon: fallback.icon,
                 index: 0
             )
         )

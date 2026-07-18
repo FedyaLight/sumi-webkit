@@ -198,7 +198,6 @@ struct SumiPortableData: Codable, Equatable, Sendable {
 struct SumiPortableProfile: Codable, Equatable, Identifiable, Sendable {
     var id: String
     var name: String
-    var icon: String
     var index: Int
 }
 

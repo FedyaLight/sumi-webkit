@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 /// Authoritative sidebar projection and commands for the Space catalog.
 /// Long-lived AppKit completions may retain this boundary, but every command
@@ -70,12 +71,14 @@ final class SidebarSpaceLifecycle {
     func createSpace(
         name: String,
         icon: String,
+        workspaceTheme: WorkspaceTheme? = nil,
         profileID: UUID?
     ) -> Space? {
         guard runtimeIsAlive() else { return nil }
         return catalog.createSpaceIfAdmitted(
             name: name,
             icon: icon,
+            workspaceTheme: workspaceTheme,
             profileId: profileID
         )
     }

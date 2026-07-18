@@ -299,8 +299,7 @@ struct SiteSettingsRepositoryHarness {
     ) throws {
         self.profile = profile ?? Profile(
             id: UUID(uuidString: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")!,
-            name: "Work",
-            icon: "person"
+            name: "Work"
         )
         self.coordinator = SiteSettingsFakePermissionCoordinator()
         self.recentStore = SumiPermissionRecentActivityStore()

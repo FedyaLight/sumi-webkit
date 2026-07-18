@@ -122,8 +122,7 @@ final class TabPermissionSurfaceTests: XCTestCase {
         let tabId = UUID()
         let profile = Profile(
             id: UUID(uuidString: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")!,
-            name: "Permission Context",
-            icon: "person"
+            name: "Permission Context"
         )
         let currentURL = URL(string: "https://visible.example/page")!
         let committedURL = URL(string: "https://committed.example/main")!

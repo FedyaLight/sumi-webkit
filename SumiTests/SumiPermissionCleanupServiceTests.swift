@@ -10,8 +10,7 @@ final class SumiPermissionCleanupServiceTests: XCTestCase {
     func testStoreFailureReturnsFailedInsteadOfCompleted() async {
         let profile = Profile(
             id: UUID(uuidString: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")!,
-            name: "Profile",
-            icon: "person"
+            name: "Profile"
         )
         let service = SumiPermissionCleanupService(
             store: FailingCleanupPermissionStore(),

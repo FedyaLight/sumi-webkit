@@ -61,8 +61,7 @@ final class TabPermissionMiniWindowFailClosedTests: XCTestCase {
         let tabId = UUID()
         let profile = Profile(
             id: UUID(uuidString: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")!,
-            name: "MiniWindow Fail Closed",
-            icon: "person"
+            name: "MiniWindow Fail Closed"
         )
         let committedURL = URL(string: "https://example.com/")!
         let webView = PermissionCommittedURLWebView()
@@ -118,8 +117,7 @@ final class TabPermissionMiniWindowFailClosedTests: XCTestCase {
         let tabId = UUID()
         let profile = Profile(
             id: UUID(uuidString: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")!,
-            name: "MiniWindow Fail Closed",
-            icon: "person"
+            name: "MiniWindow Fail Closed"
         )
         let owner = TabPermissionSurfaceOwner(
             context: TabPermissionSurfaceOwner.Context(

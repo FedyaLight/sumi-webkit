@@ -341,13 +341,11 @@ final class ProfileApplicationDataCleanupServiceTests: XCTestCase {
         container.mainContext.insert(ProfileEntity(
             id: target.id,
             name: target.name,
-            icon: target.icon,
             index: 0
         ))
         container.mainContext.insert(ProfileEntity(
             id: fallback.id,
             name: fallback.name,
-            icon: fallback.icon,
             index: 1
         ))
         try container.mainContext.save()

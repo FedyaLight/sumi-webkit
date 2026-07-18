@@ -10,7 +10,6 @@ import SwiftData
 final class ProfileRetirementEntity {
     @Attribute(.unique) var profileID: UUID
     var profileName: String
-    var profileIcon: String
     var profileIndex: Int
     var fallbackProfileID: UUID
     var generation: UUID
@@ -20,7 +19,6 @@ final class ProfileRetirementEntity {
     init(
         profileID: UUID,
         profileName: String,
-        profileIcon: String,
         profileIndex: Int,
         fallbackProfileID: UUID,
         generation: UUID,
@@ -29,7 +27,6 @@ final class ProfileRetirementEntity {
     ) {
         self.profileID = profileID
         self.profileName = profileName
-        self.profileIcon = profileIcon
         self.profileIndex = profileIndex
         self.fallbackProfileID = fallbackProfileID
         self.generation = generation

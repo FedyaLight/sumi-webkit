@@ -7,24 +7,20 @@
 
 import Foundation
 import SwiftData
-import SumiDomain
 
 @Model
 final class ProfileEntity {
     @Attribute(.unique) var id: UUID
     var name: String
-    var icon: String
     var index: Int
 
     init(
         id: UUID = UUID(),
         name: String = "Default Profile",
-        icon: String = SumiProfileIcon.defaultIcon,
         index: Int = 0
     ) {
         self.id = id
         self.name = name
-        self.icon = icon
         self.index = index
     }
 }

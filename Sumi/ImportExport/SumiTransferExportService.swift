@@ -339,7 +339,6 @@ enum SumiBrowser2ZenNormalizer {
         let profile = SumiPortableProfile(
             id: "browser2zen-default-profile",
             name: "\(document.source.capitalized) Import",
-            icon: SumiProfileIcon.defaultIcon,
             index: 0
         )
 

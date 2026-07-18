@@ -53,7 +53,6 @@ struct SumiArcImportParser {
                 profileRecordsByName[profileName] = SumiPortableProfile(
                     id: profileId,
                     name: profileName,
-                    icon: SumiProfileIcon.defaultIcon,
                     index: profileRecordsByName.count
                 )
             }

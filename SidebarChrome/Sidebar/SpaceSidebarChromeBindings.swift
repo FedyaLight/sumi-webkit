@@ -4,6 +4,7 @@
 //
 //
 
+import SumiDomain
 import SwiftUI
 
 /// Pure chrome binding helpers extracted from `SpacesSideBarView` so the
@@ -116,6 +117,7 @@ struct SidebarSpaceCreationProfilesView: View {
     let profileUpdates: SidebarProfileUpdates
     let isActive: Bool
     let currentProfileID: @MainActor () -> UUID?
+    let defaultDraftTheme: @MainActor () -> WorkspaceTheme
     let onCreate: () -> Void
     let onCancel: () -> Void
 
@@ -131,6 +133,7 @@ struct SidebarSpaceCreationProfilesView: View {
                     profiles: profiles,
                     currentProfileID: currentProfileID()
                 ),
+                defaultDraftTheme: defaultDraftTheme,
                 onCreate: onCreate,
                 onCancel: onCancel
             )

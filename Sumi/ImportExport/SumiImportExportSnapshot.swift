@@ -12,7 +12,6 @@ enum SumiImportExportSnapshot {
             SumiPortableProfile(
                 id: profile.id.uuidString,
                 name: profile.name,
-                icon: profile.icon,
                 index: index
             )
         }

@@ -58,7 +58,6 @@ struct ProfileRetirementToken: Equatable, Hashable, Sendable {
 struct ProfileRetirementSnapshot: Equatable, Sendable {
     let id: UUID
     let name: String
-    let icon: String
     let index: Int
 }
 
@@ -178,7 +177,6 @@ final class ProfileRetirementStore {
         let retirement = ProfileRetirementEntity(
             profileID: profile.id,
             profileName: profile.name,
-            profileIcon: profile.icon,
             profileIndex: profile.index,
             fallbackProfileID: fallbackProfileID,
             generation: generation,
@@ -378,7 +376,6 @@ final class ProfileRetirementStore {
             snapshot: ProfileRetirementSnapshot(
                 id: entity.profileID,
                 name: entity.profileName,
-                icon: entity.profileIcon,
                 index: entity.profileIndex
             ),
             fallbackProfileID: entity.fallbackProfileID,

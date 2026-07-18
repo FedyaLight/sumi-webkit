@@ -11,6 +11,9 @@ enum SidebarSpaceCreationMetrics {
     static let groupSpacing: CGFloat = 12
     static let formRowHeight: CGFloat = 42
     static let iconWellSize: CGFloat = 28
+    static let actionHorizontalPadding: CGFloat = 16
+    static let primaryButtonHeight: CGFloat = 40
+    static let primaryButtonCornerRadius: CGFloat = 10
 }
 
 @MainActor
@@ -41,6 +44,7 @@ struct SpaceCreationProfileContext {
 struct SidebarSpaceCreationView: View {
     @ObservedObject var session: SpaceCreationSession
     let profileContext: SpaceCreationProfileContext
+    let defaultDraftTheme: @MainActor () -> WorkspaceTheme
     let onCreate: () -> Void
     let onCancel: () -> Void
 
@@ -50,86 +54,84 @@ struct SidebarSpaceCreationView: View {
 
     @FocusState private var focusedField: SidebarSpaceCreationFocusedField?
     @StateObject private var emojiManager = EmojiPickerManager()
+    @State private var showsProfileInfo = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: SidebarSpaceCreationMetrics.groupSpacing) {
-            titleRow
+            headerSection
 
-            formGroup
+            nameCard
+
+            profileCard
+
+            if session.createsNewProfile {
+                newProfileCard
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+
+            themeCard
+
+            Spacer(minLength: 0)
 
             actionButtons
         }
+        .animation(profileExpansionAnimation, value: session.createsNewProfile)
         .padding(.horizontal, SidebarSpaceCreationMetrics.horizontalPadding)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onAppear(perform: focusNameField)
         .onExitCommand(perform: cancel)
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("sidebar-space-creation")
     }
 
-    private var titleRow: some View {
-        HStack(spacing: SidebarRowLayout.iconTrailingSpacing) {
-            SpaceIconGlyphView(
-                iconValue: SumiPersistentGlyph.spaceDefaultIconValue,
-                textColor: tokens.secondaryText,
-                defaultDotSize: SumiPersistentGlyph.spaceDefaultDotDiameter,
-                emojiFont: SidebarSpaceCreationThemeTokens.Typography.titleIcon,
-                systemFont: SidebarSpaceCreationThemeTokens.Typography.titleIcon,
-                hidesAccessibility: true
-            )
-            .frame(width: SidebarRowLayout.faviconSize, height: SidebarRowLayout.faviconSize)
+    private var headerSection: some View {
+        VStack(spacing: 8) {
+            SidebarSpaceCreationHeaderIllustration(tokens: tokens)
+                .padding(.top, 12)
 
-            Text("New space")
-                .font(SidebarSpaceCreationThemeTokens.Typography.title)
+            Text("Create a Space")
+                .font(SidebarSpaceCreationThemeTokens.Typography.headerTitle)
                 .foregroundStyle(tokens.primaryText)
-                .lineLimit(1)
 
-            Spacer(minLength: 0)
-        }
-        .padding(.leading, SidebarRowLayout.leadingInset)
-        .padding(.trailing, SidebarRowLayout.trailingInset)
-        .padding(.vertical, 5)
-        .frame(height: SidebarRowLayout.rowHeight)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .contentShape(RoundedRectangle(cornerRadius: rowCornerRadius, style: .continuous))
-    }
-
-    private var formGroup: some View {
-        VStack(spacing: 0) {
-            nameRow
-
-            Divider()
-                .overlay(tokens.separator.opacity(0.58))
-                .padding(.leading, SidebarRowLayout.leadingInset + SidebarSpaceCreationMetrics.iconWellSize + 10)
-
-            profileRow
-
-            if session.createsNewProfile {
-                Divider()
-                    .overlay(tokens.separator.opacity(0.58))
-                    .padding(.leading, SidebarRowLayout.leadingInset + SidebarSpaceCreationMetrics.iconWellSize + 10)
-
-                SidebarSpaceCreationNewProfileEditor(
-                    session: session,
-                    validationMessage: newProfileValidationMessage,
-                    focusedField: $focusedField,
-                    tokens: tokens,
-                    iconCornerRadius: iconCornerRadius,
-                    onSubmit: createIfPossible
-                )
-                .transition(.opacity.combined(with: .move(edge: .top)))
-            }
+            Text("Separate your tabs for life, work, projects, and more.")
+                .font(SidebarSpaceCreationThemeTokens.Typography.headerSubtitle)
+                .foregroundStyle(tokens.secondaryText)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity)
-        .background {
-            RoundedRectangle(cornerRadius: formCornerRadius, style: .continuous)
-                .fill(tokens.fieldBackground.opacity(0.78))
-        }
-        .overlay {
-            RoundedRectangle(cornerRadius: formCornerRadius, style: .continuous)
-                .stroke(tokens.separator.opacity(0.74), lineWidth: 1)
-        }
-        .clipShape(RoundedRectangle(cornerRadius: formCornerRadius, style: .continuous))
-        .animation(profileExpansionAnimation, value: session.createsNewProfile)
+        .padding(.bottom, 8)
+    }
+
+    private var nameCard: some View {
+        nameRow
+            .modifier(cardBackground)
+    }
+
+    private var profileCard: some View {
+        profileRow
+            .modifier(cardBackground)
+    }
+
+    private var newProfileCard: some View {
+        SidebarSpaceCreationNewProfileEditor(
+            session: session,
+            validationMessage: newProfileValidationMessage,
+            focusedField: $focusedField,
+            tokens: tokens,
+            onSubmit: createIfPossible
+        )
+        .modifier(cardBackground)
+    }
+
+    private var themeCard: some View {
+        SidebarSpaceCreationThemeRow(
+            session: session,
+            defaultDraftTheme: defaultDraftTheme,
+            tokens: tokens,
+            rowCornerRadius: rowCornerRadius
+        )
+        .modifier(cardBackground)
     }
 
     private var nameRow: some View {
@@ -140,15 +142,13 @@ struct SidebarSpaceCreationView: View {
                         width: SidebarSpaceCreationMetrics.iconWellSize,
                         height: SidebarSpaceCreationMetrics.iconWellSize
                     )
-                    .background(tokens.chromeControlHoverBackground.opacity(0.72))
-                    .clipShape(RoundedRectangle(cornerRadius: iconCornerRadius, style: .continuous))
             }
             .buttonStyle(.plain)
             .background(EmojiPickerAnchor(manager: emojiManager))
             .help("Choose icon")
             .accessibilityLabel("Choose Space Icon")
 
-            TextField("Name", text: $session.name)
+            TextField("Space name...", text: $session.name)
                 .textFieldStyle(.plain)
                 .font(SidebarSpaceCreationThemeTokens.Typography.field)
                 .foregroundStyle(tokens.primaryText)
@@ -164,7 +164,9 @@ struct SidebarSpaceCreationView: View {
 
     private var profileRow: some View {
         HStack(spacing: 10) {
-            Color.clear
+            Image(systemName: "person.crop.circle")
+                .font(SidebarSpaceCreationThemeTokens.Typography.rowGlyph)
+                .foregroundStyle(tokens.secondaryText)
                 .frame(
                     width: SidebarSpaceCreationMetrics.iconWellSize,
                     height: SidebarSpaceCreationMetrics.iconWellSize
@@ -173,7 +175,7 @@ struct SidebarSpaceCreationView: View {
 
             Text("Profile")
                 .font(SidebarSpaceCreationThemeTokens.Typography.rowLabel)
-                .foregroundStyle(tokens.secondaryText)
+                .foregroundStyle(tokens.primaryText)
 
             Spacer(minLength: 0)
 
@@ -182,14 +184,7 @@ struct SidebarSpaceCreationView: View {
                     Button {
                         selectExistingProfile(profile.id)
                     } label: {
-                        Label {
-                            Text(profile.name)
-                        } icon: {
-                            SumiProfileIconView(
-                                icon: profile.icon,
-                                font: SidebarSpaceCreationThemeTokens.Typography.profileMenuIcon
-                            )
-                        }
+                        Text(verbatim: isSelectedProfile(profile) ? "✓ \(profile.name)" : profile.name)
                     }
                 }
 
@@ -198,17 +193,34 @@ struct SidebarSpaceCreationView: View {
                 Button {
                     selectNewProfile()
                 } label: {
-                    Label("New profile", systemImage: "person.badge.plus")
+                    Label("New Profile…", systemImage: "person.badge.plus")
                 }
             } label: {
                 profileMenuLabel
                     .padding(.horizontal, 10)
-                    .frame(height: 30)
+                    .frame(height: 26)
                     .background(tokens.chromeControlHoverBackground.opacity(0.56))
-                    .clipShape(RoundedRectangle(cornerRadius: rowCornerRadius, style: .continuous))
+                    .clipShape(Capsule())
             }
             .buttonStyle(.plain)
-            .frame(maxWidth: 190, alignment: .trailing)
+            .frame(maxWidth: 170, alignment: .trailing)
+            .accessibilityIdentifier("sidebar-space-creation-profile-menu")
+
+            Button {
+                showsProfileInfo = true
+            } label: {
+                Image(systemName: "info.circle")
+                    .font(SidebarSpaceCreationThemeTokens.Typography.rowGlyph)
+                    .foregroundStyle(tokens.secondaryText)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("About profiles")
+            .popover(isPresented: $showsProfileInfo, arrowEdge: .bottom) {
+                Text("Profiles keep cookies, logins, and history separate between spaces.")
+                    .font(SidebarSpaceCreationThemeTokens.Typography.rowLabel)
+                    .frame(width: 220)
+                    .padding(12)
+            }
         }
         .padding(.leading, SidebarRowLayout.leadingInset)
         .padding(.trailing, SidebarRowLayout.trailingInset)
@@ -218,21 +230,11 @@ struct SidebarSpaceCreationView: View {
 
     private var profileMenuLabel: some View {
         HStack(spacing: 6) {
-            if session.createsNewProfile {
-                Image(systemName: "person.badge.plus")
-                    .font(SidebarSpaceCreationThemeTokens.Typography.profileMenuIcon)
-            } else {
-                SumiProfileIconView(
-                    icon: currentProfileIcon,
-                    font: SidebarSpaceCreationThemeTokens.Typography.profileMenuIcon
-                )
-            }
-
             Text(currentProfileName)
                 .font(SidebarSpaceCreationThemeTokens.Typography.profileMenuText)
                 .lineLimit(1)
 
-            Image(systemName: "chevron.up.chevron.down")
+            Image(systemName: "chevron.down")
                 .font(SidebarSpaceCreationThemeTokens.Typography.profileMenuChevron)
                 .foregroundStyle(tokens.secondaryText)
         }
@@ -242,13 +244,12 @@ struct SidebarSpaceCreationView: View {
     private var actionButtons: some View {
         VStack(spacing: 8) {
             Button(action: createIfPossible) {
-                Label("Create", systemImage: "plus")
+                Text("Create Space")
                     .font(SidebarSpaceCreationThemeTokens.Typography.primaryButton)
-                    .frame(maxWidth: .infinity, minHeight: 32)
-                    .contentShape(Rectangle())
+                    .frame(maxWidth: .infinity)
+                    .frame(height: SidebarSpaceCreationMetrics.primaryButtonHeight)
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
+            .buttonStyle(SidebarSpaceCreationPrimaryButtonStyle(tokens: tokens))
             .keyboardShortcut(.return, modifiers: [])
             .disabled(!canCreate)
 
@@ -264,19 +265,48 @@ struct SidebarSpaceCreationView: View {
             .foregroundStyle(tokens.secondaryText)
         }
         .frame(maxWidth: .infinity)
-        .padding(.top, 2)
+        .padding(.horizontal, SidebarSpaceCreationMetrics.actionHorizontalPadding)
+        .padding(.bottom, 18)
     }
 
     @ViewBuilder
     private var spaceIconView: some View {
-        SpaceIconGlyphView(
-            iconValue: session.resolvedIcon,
-            textColor: tokens.primaryText,
-            defaultDotSize: SumiPersistentGlyph.spaceDefaultDotDiameter,
-            emojiFont: SidebarSpaceCreationThemeTokens.Typography.spaceEmoji,
-            systemFont: SidebarSpaceCreationThemeTokens.Typography.spaceSymbol,
-            hidesAccessibility: true
-        )
+        if hasCustomIcon {
+            SpaceIconGlyphView(
+                iconValue: session.resolvedIcon,
+                textColor: tokens.primaryText,
+                defaultDotSize: SumiPersistentGlyph.spaceDefaultDotDiameter,
+                emojiFont: SidebarSpaceCreationThemeTokens.Typography.spaceEmoji,
+                systemFont: SidebarSpaceCreationThemeTokens.Typography.spaceSymbol,
+                hidesAccessibility: true
+            )
+            .frame(
+                width: SidebarSpaceCreationMetrics.iconWellSize,
+                height: SidebarSpaceCreationMetrics.iconWellSize
+            )
+            .background(tokens.chromeControlHoverBackground.opacity(0.72))
+            .clipShape(RoundedRectangle(cornerRadius: iconCornerRadius, style: .continuous))
+        } else {
+            RoundedRectangle(cornerRadius: iconCornerRadius, style: .continuous)
+                .strokeBorder(
+                    tokens.separator,
+                    style: StrokeStyle(lineWidth: 1, dash: [3, 2])
+                )
+                .frame(
+                    width: SidebarSpaceCreationMetrics.iconWellSize,
+                    height: SidebarSpaceCreationMetrics.iconWellSize
+                )
+                .overlay {
+                    Image(systemName: "plus")
+                        .font(SidebarSpaceCreationThemeTokens.Typography.rowGlyph)
+                        .foregroundStyle(tokens.secondaryText)
+                }
+        }
+    }
+
+    private var hasCustomIcon: Bool {
+        session.icon.isEmpty == false
+            && session.icon != SpaceCreationSession.defaultIcon
     }
 
     private var currentProfileName: String {
@@ -289,12 +319,8 @@ struct SidebarSpaceCreationView: View {
         return profile.name
     }
 
-    private var currentProfileIcon: String {
-        guard let profile = currentProfile else {
-            return profileContext.fallbackProfile?.icon
-                ?? SumiProfileIcon.defaultIcon
-        }
-        return profile.icon
+    private func isSelectedProfile(_ profile: Profile) -> Bool {
+        session.createsNewProfile == false && currentProfile?.id == profile.id
     }
 
     private var currentProfile: Profile? {
@@ -324,6 +350,13 @@ struct SidebarSpaceCreationView: View {
 
     private var profileExpansionAnimation: Animation? {
         reduceMotion || sumiSettings.shouldReduceChromeMotion ? nil : .easeInOut(duration: 0.18)
+    }
+
+    private var cardBackground: SidebarSpaceCreationCardBackground {
+        SidebarSpaceCreationCardBackground(
+            cornerRadius: formCornerRadius,
+            tokens: tokens
+        )
     }
 
     private var rowCornerRadius: CGFloat {
@@ -394,5 +427,54 @@ struct SidebarSpaceCreationView: View {
     private func syncPendingEmojiSelection() {
         guard emojiManager.selectedEmoji.isEmpty == false else { return }
         session.icon = SumiPersistentGlyph.normalizedSpaceIconValue(emojiManager.selectedEmoji)
+    }
+}
+
+private struct SidebarSpaceCreationPrimaryButtonStyle: ButtonStyle {
+    let tokens: ChromeThemeTokens
+
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(Color(nsColor: .alternateSelectedControlTextColor))
+            .background {
+                RoundedRectangle(
+                    cornerRadius: SidebarSpaceCreationMetrics.primaryButtonCornerRadius,
+                    style: .continuous
+                )
+                .fill(Color(nsColor: .controlAccentColor))
+            }
+            .contentShape(
+                RoundedRectangle(
+                    cornerRadius: SidebarSpaceCreationMetrics.primaryButtonCornerRadius,
+                    style: .continuous
+                )
+            )
+            .opacity(opacity(isPressed: configuration.isPressed))
+    }
+
+    private func opacity(isPressed: Bool) -> CGFloat {
+        guard isEnabled else { return tokens.popoverActionDisabledAlpha }
+        return isPressed ? 0.82 : 1
+    }
+}
+
+private struct SidebarSpaceCreationCardBackground: ViewModifier {
+    let cornerRadius: CGFloat
+    let tokens: ChromeThemeTokens
+
+    func body(content: Content) -> some View {
+        content
+            .frame(maxWidth: .infinity)
+            .background {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(tokens.fieldBackground.opacity(0.78))
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .stroke(tokens.separator.opacity(0.74), lineWidth: 1)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
     }
 }

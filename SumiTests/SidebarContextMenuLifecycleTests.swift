@@ -124,8 +124,8 @@ final class SidebarContextMenuLifecycleTests: XCTestCase {
 
     @MainActor
     func testChoiceFactoriesPreserveSpaceProfileAndFolderIcons() {
-        let personalProfile = Profile(id: Self.profileA, name: "Personal", icon: "😀")
-        let workProfile = Profile(id: Self.profileB, name: "Work", icon: "💼")
+        let personalProfile = Profile(id: Self.profileA, name: "Personal")
+        let workProfile = Profile(id: Self.profileB, name: "Work")
         let currentSpace = Space(id: Self.spaceA, name: "Current", icon: "✨", profileId: personalProfile.id)
         let workSpace = Space(id: Self.spaceB, name: "Work", profileId: workProfile.id)
         let folder = TabFolder(

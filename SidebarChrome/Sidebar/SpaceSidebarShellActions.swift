@@ -101,8 +101,7 @@ extension SpacesSideBarView {
             guard isNewProfileNameAvailable(for: session) else { return }
             do {
                 let createdProfile = try browserContext.profileManager.createProfile(
-                    name: session.trimmedNewProfileName,
-                    icon: session.resolvedNewProfileIcon
+                    name: session.trimmedNewProfileName
                 )
                 profileId = createdProfile.id
             } catch {
@@ -118,6 +117,7 @@ extension SpacesSideBarView {
         let newSpace = spaceLifecycle.createSpace(
             name: session.trimmedName,
             icon: session.resolvedIcon,
+            workspaceTheme: session.workspaceTheme,
             profileID: profileId
         )
         if let newSpace,

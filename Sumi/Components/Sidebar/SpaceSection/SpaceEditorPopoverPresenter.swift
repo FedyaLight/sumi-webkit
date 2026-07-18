@@ -217,9 +217,6 @@ private final class SpaceEditorViewController: NSViewController, NSTextFieldDele
         for profile in profiles {
             profilePicker.addItem(withTitle: profile.name)
             profilePicker.lastItem?.representedObject = profile.id
-            profilePicker.lastItem?.image = SidebarContextMenuImageStore.image(
-                for: sidebarContextMenuProfileIcon(profile.icon)
-            )
         }
 
         if let selectedIndex = profiles.firstIndex(where: { $0.id == session.profileID }) {

@@ -37,7 +37,6 @@ struct SumiZenImportParser {
         let defaultProfile = SumiPortableProfile(
             id: "zen-container-0",
             name: "Default",
-            icon: SumiProfileIcon.defaultIcon,
             index: 0
         )
         var profilesByContainer: [Int: SumiPortableProfile] = [0: defaultProfile]
@@ -45,7 +44,6 @@ struct SumiZenImportParser {
             profilesByContainer[container.key] = SumiPortableProfile(
                 id: "zen-container-\(container.key)",
                 name: SumiImportTextNormalization.nilIfBlank(container.value) ?? "Container \(container.key)",
-                icon: SumiProfileIcon.defaultIcon,
                 index: profilesByContainer.count
             )
         }

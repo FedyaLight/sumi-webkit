@@ -5,7 +5,6 @@ import SumiDomain
 @MainActor
 final class SpaceCreationSession: ObservableObject, Identifiable {
     static let defaultIcon = SumiPersistentGlyph.spaceDefaultIconValue
-    static let defaultProfileIcon = SumiProfileIcon.defaultIcon
 
     let id = UUID()
     let previousSpaceID: UUID?
@@ -17,7 +16,7 @@ final class SpaceCreationSession: ObservableObject, Identifiable {
     @Published var profileID: UUID?
     @Published var createsNewProfile: Bool
     @Published var newProfileName: String
-    @Published var newProfileIcon: String
+    @Published var workspaceTheme: WorkspaceTheme?
 
     var cancelsOnDismiss = false
 
@@ -30,7 +29,7 @@ final class SpaceCreationSession: ObservableObject, Identifiable {
         profileID: UUID?,
         createsNewProfile: Bool = false,
         newProfileName: String = "",
-        newProfileIcon: String = SpaceCreationSession.defaultProfileIcon
+        workspaceTheme: WorkspaceTheme? = nil
     ) {
         self.previousSpaceID = previousSpaceID
         self.source = source
@@ -40,7 +39,7 @@ final class SpaceCreationSession: ObservableObject, Identifiable {
         self.profileID = profileID
         self.createsNewProfile = createsNewProfile
         self.newProfileName = newProfileName
-        self.newProfileIcon = newProfileIcon
+        self.workspaceTheme = workspaceTheme
     }
 
     var trimmedName: String {
@@ -55,12 +54,6 @@ final class SpaceCreationSession: ObservableObject, Identifiable {
 
     var trimmedNewProfileName: String {
         newProfileName.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    var resolvedNewProfileIcon: String {
-        SumiProfileIcon.storedValue(
-            newProfileIcon.isEmpty ? Self.defaultProfileIcon : newProfileIcon
-        )
     }
 
     var canCommit: Bool {

@@ -428,7 +428,7 @@ final class SumiImportExportTests: XCTestCase {
     func testSumiExtensionBlockImportsExactPortableData() throws {
         let exact = SumiPortableData(
             profiles: [
-                SumiPortableProfile(id: "profile-a", name: "Profile A", icon: "person", index: 0),
+                SumiPortableProfile(id: "profile-a", name: "Profile A", index: 0),
             ],
             spaces: [
                 SumiPortableSpace(
@@ -463,7 +463,7 @@ final class SumiImportExportTests: XCTestCase {
     func testSumiBackupArchiveCarriesVersionedLogicalData() throws {
         let data = SumiPortableData(
             profiles: [
-                SumiPortableProfile(id: "profile-a", name: "Profile A", icon: "person", index: 0),
+                SumiPortableProfile(id: "profile-a", name: "Profile A", index: 0),
             ]
         )
         let archive = SumiPortableArchive(
@@ -511,7 +511,7 @@ final class SumiImportExportTests: XCTestCase {
             includedCategories: [.profiles],
             data: SumiPortableData(
                 profiles: [
-                    SumiPortableProfile(id: "profile-a", name: "Profile A", icon: "person", index: 0),
+                    SumiPortableProfile(id: "profile-a", name: "Profile A", index: 0),
                 ]
             )
         )
@@ -560,7 +560,7 @@ final class SumiImportExportTests: XCTestCase {
             warnings: ["logical only"],
             data: SumiPortableData(
                 profiles: [
-                    SumiPortableProfile(id: "profile-a", name: "Profile A", icon: "person", index: 0),
+                    SumiPortableProfile(id: "profile-a", name: "Profile A", index: 0),
                 ]
             )
         )

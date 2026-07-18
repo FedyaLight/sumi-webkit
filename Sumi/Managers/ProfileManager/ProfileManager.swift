@@ -6,7 +6,6 @@
 //
 
 import Foundation
-import SumiDomain
 import SwiftData
 import SwiftUI
 import WebKit
@@ -76,7 +75,7 @@ final class ProfileManager: ObservableObject {
                 )
             }
             self.profiles = admittedEntities.map { e in
-                Profile(id: e.id, name: e.name, icon: e.icon)
+                Profile(id: e.id, name: e.name)
             }
             // Normalize indices if not sequential 0..n-1
             let expected = Array(0..<admittedEntities.count)
@@ -92,17 +91,14 @@ final class ProfileManager: ObservableObject {
 
     // MARK: - CRUD
     @discardableResult
-    func createProfile(
-        name: String,
-        icon: String = SumiProfileIcon.defaultIcon
-    ) throws -> Profile {
+    func createProfile(name: String) throws -> Profile {
         precondition(
             profileReferenceAdmission.isAvailable,
             "Profile creation requires durable reference admission"
         )
         // Next index is current count (append to end)
         let nextIndex = profiles.count
-        let profile = Profile(name: name, icon: icon)
+        let profile = Profile(name: name)
         let mutationLease = try profileReferenceAdmission
             .beginReferenceMutation(to: [profile.id])
         defer {
@@ -111,7 +107,7 @@ final class ProfileManager: ObservableObject {
                 "Profile creation lost its reference mutation lease"
             )
         }
-        let entity = ProfileEntity(id: profile.id, name: name, icon: profile.icon, index: nextIndex)
+        let entity = ProfileEntity(id: profile.id, name: name, index: nextIndex)
         context.insert(entity)
         do {
             try saveContext(context)
@@ -231,13 +227,11 @@ final class ProfileManager: ObservableObject {
             for (index, profile) in snapshot.enumerated() {
                 if let entity = byId[profile.id] {
                     entity.name = profile.name
-                    entity.icon = profile.icon
                     entity.index = index
                 } else {
                     let entity = ProfileEntity(
                         id: profile.id,
                         name: profile.name,
-                        icon: profile.icon,
                         index: index
                     )
                     context.insert(entity)
@@ -258,10 +252,7 @@ final class ProfileManager: ObservableObject {
     func ensureDefaultProfile() {
         if profiles.isEmpty, profileReferenceAdmission.isAvailable {
             do {
-                try createProfile(
-                    name: "Default",
-                    icon: SumiProfileIcon.defaultIcon
-                )
+                try createProfile(name: "Default")
             } catch {
                 RuntimeDiagnostics.emit(
                     "[ProfileManager] Failed to create default profile: \(error)"

@@ -709,7 +709,6 @@ final class ShortcutPinAtomicityTests: XCTestCase {
             ProfileEntity(
                 id: retiringProfile.id,
                 name: retiringProfile.name,
-                icon: retiringProfile.icon,
                 index: 0
             )
         )
@@ -717,7 +716,6 @@ final class ShortcutPinAtomicityTests: XCTestCase {
             ProfileEntity(
                 id: fallbackProfile.id,
                 name: fallbackProfile.name,
-                icon: fallbackProfile.icon,
                 index: 1
             )
         )
@@ -774,7 +772,6 @@ final class ShortcutPinAtomicityTests: XCTestCase {
         browser.modelContext.insert(ProfileEntity(
             id: profile.id,
             name: profile.name,
-            icon: profile.icon,
             index: browser.profileManager.profiles.count
         ))
         try browser.modelContext.save()

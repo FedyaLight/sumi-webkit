@@ -48,7 +48,7 @@ final class SumiImportTransactionTests: XCTestCase {
 
     func testMaterializationPreservesLiveObjectsInUntouchedRuntimeBuckets() throws {
         let browserManager = BrowserManager()
-        let profile = Profile(name: "Existing", icon: "person")
+        let profile = Profile(name: "Existing")
         let space = Space(name: "Existing Space", icon: "circle", profileId: profile.id)
         let tab = browserManager.tabFactory.makeTab(
             url: URL(string: "https://existing.example")!,
@@ -1253,8 +1253,8 @@ final class SumiImportTransactionTests: XCTestCase {
         let journalURL = directory.appendingPathComponent("active.json")
 
         let browserManager = BrowserManager()
-        let firstProfile = Profile(name: "First", icon: "person")
-        let selectedProfile = Profile(name: "Selected", icon: "person.2")
+        let firstProfile = Profile(name: "First")
+        let selectedProfile = Profile(name: "Selected")
         let space = Space(name: "Baseline Space", icon: "circle", profileId: selectedProfile.id)
         let firstTab = browserManager.tabFactory.makeTab(
             url: URL(string: "https://first.example")!,
@@ -1306,7 +1306,7 @@ final class SumiImportTransactionTests: XCTestCase {
             currentSpace: space,
             currentTab: firstTab
         )
-        let importedProfile = Profile(id: firstProfile.id, name: "Imported", icon: "person")
+        let importedProfile = Profile(id: firstProfile.id, name: "Imported")
         let importedState = SumiImportRuntimeState(
             profiles: [importedProfile, selectedProfile],
             currentProfile: importedProfile,
@@ -1701,7 +1701,7 @@ final class SumiImportTransactionTests: XCTestCase {
     }
 
     private func portableProfile(id: String, name: String) -> SumiPortableProfile {
-        SumiPortableProfile(id: id, name: name, icon: "person", index: 0)
+        SumiPortableProfile(id: id, name: name, index: 0)
     }
 
     private func portableSpace(id: String, profileId: String) -> SumiPortableSpace {

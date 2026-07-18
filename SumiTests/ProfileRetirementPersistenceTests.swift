@@ -165,7 +165,6 @@ final class ProfileRetirementPersistenceTests: XCTestCase {
             ProfileRetirementSnapshot(
                 id: fixture.profile.id,
                 name: "Persisted name",
-                icon: "Persisted icon",
                 index: 3
             )
         )
@@ -217,12 +216,11 @@ final class ProfileRetirementPersistenceTests: XCTestCase {
             ProfileEntity(
                 id: thirdID,
                 name: "Third",
-                icon: "Third icon",
                 index: 2
             )
         )
         try context.save()
-        let third = Profile(id: thirdID, name: "Third", icon: "Third icon")
+        let third = Profile(id: thirdID, name: "Third")
         let missingFallbackID = UUID()
 
         XCTAssertThrowsError(
@@ -442,7 +440,6 @@ final class ProfileRetirementPersistenceTests: XCTestCase {
             ProfileEntity(
                 id: profileID,
                 name: "Persisted name",
-                icon: "Persisted icon",
                 index: 3
             )
         )
@@ -450,7 +447,6 @@ final class ProfileRetirementPersistenceTests: XCTestCase {
             ProfileEntity(
                 id: fallbackID,
                 name: "Fallback",
-                icon: "Fallback icon",
                 index: 0
             )
         )
@@ -460,8 +456,8 @@ final class ProfileRetirementPersistenceTests: XCTestCase {
         return try Fixture(
             container: container,
             context: ledgerContext,
-            profile: Profile(id: profileID, name: "Runtime name", icon: "Runtime icon"),
-            fallback: Profile(id: fallbackID, name: "Fallback", icon: "Fallback icon"),
+            profile: Profile(id: profileID, name: "Runtime name"),
+            fallback: Profile(id: fallbackID, name: "Fallback"),
             ledger: ProfileReferenceAdmissionLedger(context: ledgerContext)
         )
     }

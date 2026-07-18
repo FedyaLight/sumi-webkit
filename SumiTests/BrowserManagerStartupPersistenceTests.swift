@@ -152,8 +152,8 @@ final class BrowserManagerStartupPersistenceTests: XCTestCase {
 
     func testRetiredProfileTombstoneSealsPermissionsBeforeRuntimeStarts() async throws {
         let container = try makeInMemoryStartupContainer()
-        let target = Profile(name: "Retired", icon: "Retired icon")
-        let retained = Profile(name: "Retained", icon: "Retained icon")
+        let target = Profile(name: "Retired")
+        let retained = Profile(name: "Retained")
         try persistProfiles([retained, target], in: container)
         try persistRetiredTombstone(
             for: target,
@@ -231,8 +231,8 @@ final class BrowserManagerStartupPersistenceTests: XCTestCase {
 
     func testFailedRetiredProfileRecoveryDoesNotStartRuntime() async throws {
         let container = try makeInMemoryStartupContainer()
-        let target = Profile(name: "Retired", icon: "Retired icon")
-        let retained = Profile(name: "Retained", icon: "Retained icon")
+        let target = Profile(name: "Retired")
+        let retained = Profile(name: "Retained")
         try persistProfiles([retained, target], in: container)
         try persistRetiredTombstone(
             for: target,
@@ -508,7 +508,6 @@ final class BrowserManagerStartupPersistenceTests: XCTestCase {
                 ProfileEntity(
                     id: profile.id,
                     name: profile.name,
-                    icon: profile.icon,
                     index: index
                 )
             )

@@ -85,8 +85,7 @@ enum BrowserProfileRetirementStartupRecovery {
                 ProfileRetirementCleanupComposition.make(
                     profile: Profile(
                         id: snapshot.id,
-                        name: snapshot.name,
-                        icon: snapshot.icon
+                        name: snapshot.name
                     ),
                     dependencies: cleanupDependencies
                 )

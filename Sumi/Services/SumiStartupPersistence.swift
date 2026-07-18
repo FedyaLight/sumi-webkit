@@ -14,8 +14,8 @@ import SwiftData
 import SwiftUI
 import WebKit
 
-enum SumiStartupSchemaV3: VersionedSchema {
-    static let versionIdentifier = Schema.Version(3, 0, 0)
+enum SumiStartupSchemaV4: VersionedSchema {
+    static let versionIdentifier = Schema.Version(4, 0, 0)
 
     static var models: [any PersistentModel.Type] {
         [
@@ -53,7 +53,7 @@ final class SumiStartupPersistence {
     nonisolated private static let storeFileName = "default.store"
     nonisolated private static let quarantineDirectoryName = "StartupPersistenceQuarantine"
 
-    static let schema = Schema(versionedSchema: SumiStartupSchemaV3.self)
+    static let schema = Schema(versionedSchema: SumiStartupSchemaV4.self)
 
     // MARK: - URLs
     nonisolated private static var appSupportURL: URL {
