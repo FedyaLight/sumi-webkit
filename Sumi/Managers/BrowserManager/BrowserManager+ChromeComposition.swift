@@ -71,7 +71,6 @@ extension BrowserManager {
             downloads: downloadManager,
             privacy: BrowserPagePrivacyCommandOwner(
                 activePages: shell.activePageResolver,
-                windows: windowRegistry,
                 dataServices: dataServices,
                 profiles: currentProfileAuthority,
                 webViews: webViews

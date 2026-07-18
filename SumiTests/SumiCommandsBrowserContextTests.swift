@@ -20,26 +20,6 @@ final class SumiCommandsBrowserContextTests: XCTestCase {
         try await super.tearDown()
     }
 
-    func testOpenCommandBarForActivePageUsesActivePageURLAndKeyboardPresentation() throws {
-        let pageState = FakeCommandPageState()
-        pageState.activePageURL = try XCTUnwrap(URL(string: "https://preview.example/session"))
-        let browserActions = FakeCommandBrowserActions()
-        let context = try makeContext(
-            pageState: pageState,
-            browserActions: browserActions
-        )
-
-        context.openCommandBarForActivePage()
-
-        XCTAssertEqual(browserActions.focusCalls, [
-            .init(
-                prefill: "https://preview.example/session",
-                navigateCurrentTab: true,
-                presentationReason: .keyboard
-            ),
-        ])
-    }
-
     func testDerivedMenuStateReadsOnlyNarrowProviders() throws {
         let pageState = FakeCommandPageState()
         pageState.activePageURL = try XCTUnwrap(URL(string: "https://state.example/path"))
@@ -81,12 +61,8 @@ final class SumiCommandsBrowserContextTests: XCTestCase {
         let historyURL = try XCTUnwrap(URL(string: "https://history.example/"))
         let bookmarkURL = try XCTUnwrap(URL(string: "https://bookmark.example/"))
 
-        context.goBackInActiveWindow()
-        context.goForwardInActiveWindow()
-        context.reopenMostRecentClosedItem()
         context.reopenAllWindowsFromLastSession()
         context.openHistoryURLFromMenuItem(historyURL)
-        context.showHistory()
         context.clearAllHistoryFromMenu()
         context.requestBookmarkEditorForActiveWindowFromMenu()
         context.bookmarkAllTabsFromMenu()
@@ -96,12 +72,8 @@ final class SumiCommandsBrowserContextTests: XCTestCase {
         context.openBookmarkURLFromMenuItem(bookmarkURL)
 
         XCTAssertEqual(historyRouting.events, [
-            .goBack,
-            .goForward,
-            .reopenMostRecent,
             .reopenAllWindows,
             .openHistoryURL(historyURL),
-            .showHistory,
             .clearAllHistory,
         ])
         XCTAssertEqual(bookmarkRouting.events, [
@@ -112,19 +84,6 @@ final class SumiCommandsBrowserContextTests: XCTestCase {
             .exportBookmarks,
             .openBookmarkURL(bookmarkURL),
         ])
-    }
-
-    func testCloseCommandsForwardExplicitWindowTargets() throws {
-        let browserActions = FakeCommandBrowserActions()
-        let context = try makeContext(browserActions: browserActions)
-        let tabWindow = BrowserWindowState()
-        let closeWindow = BrowserWindowState()
-
-        context.closeCurrentTab(in: tabWindow)
-        context.closeWindow(closeWindow)
-
-        XCTAssertEqual(browserActions.closedTabWindowIds, [tabWindow.id])
-        XCTAssertEqual(browserActions.closedWindowIds, [closeWindow.id])
     }
 
     private func makeContext(
@@ -201,73 +160,21 @@ private final class FakeCommandPageState: SumiCommandPageStateProviding {
 
 @MainActor
 private final class FakeCommandBrowserActions: SumiCommandBrowserActionRouting {
-    struct FocusCall: Equatable {
-        let prefill: String
-        let navigateCurrentTab: Bool
-        let presentationReason: FloatingBarPresentationReason
-    }
-
-    private(set) var focusCalls: [FocusCall] = []
-    private(set) var closedTabWindowIds: [UUID] = []
-    private(set) var closedWindowIds: [UUID] = []
-
     func openSettingsTab(selecting pane: SettingsTabs, in windowState: BrowserWindowState?) {
         _ = (pane, windowState)
     }
 
     func setAsDefaultBrowser() { /* No-op. */ }
     func clearCurrentPageCookies() { /* No-op. */ }
-    func showGradientEditor() { /* No-op. */ }
-    func showQuitDialog() { /* No-op. */ }
-    func closeCurrentTab() { /* No-op. */ }
-    func closeCurrentTab(in windowState: BrowserWindowState) {
-        closedTabWindowIds.append(windowState.id)
-    }
-    func closeActiveWindow() { /* No-op. */ }
-    func closeWindow(_ windowState: BrowserWindowState) {
-        closedWindowIds.append(windowState.id)
-    }
-    func undoCloseTab() { /* No-op. */ }
-    func openNewTabSurfaceInActiveWindow() { /* No-op. */ }
-    func createNewWindow() { /* No-op. */ }
     func createIncognitoWindow() { /* No-op. */ }
-
-    func focusFloatingBarForActiveWindow(
-        prefill: String,
-        navigateCurrentTab: Bool,
-        presentationReason: FloatingBarPresentationReason
-    ) {
-        focusCalls.append(
-            FocusCall(
-                prefill: prefill,
-                navigateCurrentTab: navigateCurrentTab,
-                presentationReason: presentationReason
-            )
-        )
-    }
-
-    func copyCurrentURL() { /* No-op. */ }
-    func toggleSidebar() { /* No-op. */ }
-    func showFindBar() { /* No-op. */ }
-    func refreshCurrentTabInActiveWindow() { /* No-op. */ }
-    func zoomInCurrentTab() { /* No-op. */ }
-    func zoomOutCurrentTab() { /* No-op. */ }
-    func resetZoomCurrentTab() { /* No-op. */ }
-    func hardReloadCurrentPage() { /* No-op. */ }
-    func openWebInspector() { /* No-op. */ }
-    func toggleMuteCurrentTabInActiveWindow() { /* No-op. */ }
 }
 
 @MainActor
 private final class FakeCommandHistoryRouting: SumiCommandHistoryRouting {
     enum Event: Equatable {
-        case goBack
-        case goForward
-        case reopenMostRecent
         case reopenRecentlyClosed(UUID)
         case reopenAllWindows
         case openHistoryURL(URL)
-        case showHistory
         case clearAllHistory
     }
 
@@ -275,18 +182,6 @@ private final class FakeCommandHistoryRouting: SumiCommandHistoryRouting {
     var canGoForwardInActiveWindow = false
     var canRestoreAnyLastSession = false
     private(set) var events: [Event] = []
-
-    func goBackInActiveWindow() {
-        events.append(.goBack)
-    }
-
-    func goForwardInActiveWindow() {
-        events.append(.goForward)
-    }
-
-    func reopenMostRecentClosedItem() {
-        events.append(.reopenMostRecent)
-    }
 
     func reopenRecentlyClosedItem(_ item: RecentlyClosedItem) {
         events.append(.reopenRecentlyClosed(item.id))
@@ -298,10 +193,6 @@ private final class FakeCommandHistoryRouting: SumiCommandHistoryRouting {
 
     func openHistoryURLFromMenuItem(_ url: URL) {
         events.append(.openHistoryURL(url))
-    }
-
-    func showHistory() {
-        events.append(.showHistory)
     }
 
     func clearAllHistoryFromMenu() {

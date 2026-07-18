@@ -3,34 +3,34 @@ import SumiDomain
 
 @MainActor
 final class BrowserShortcutOverlayCommandDispatcher {
-    private let activePage: ActivePageResolver
     private let find: FindManager
     private let dialogs: BrowserNativeDialogPresentationOwner
     private let floatingBar: FloatingBarPresentationService
 
     init(
-        activePage: ActivePageResolver,
         find: FindManager,
         dialogs: BrowserNativeDialogPresentationOwner,
         floatingBar: FloatingBarPresentationService
     ) {
-        self.activePage = activePage
         self.find = find
         self.dialogs = dialogs
         self.floatingBar = floatingBar
     }
 
-    func dispatch(_ action: ShortcutAction) -> Bool {
+    func dispatch(
+        _ action: ShortcutAction,
+        in context: BrowserShortcutContext
+    ) -> Bool {
         switch action {
         case .findInPage:
-            let resolution = activePage.resolveActiveWindow()
             find.showFindBar(
-                for: resolution?.tab,
-                in: resolution?.windowState.id
+                for: context.page?.tab,
+                in: context.windowState.id
             )
         case .focusAddressBar:
-            let prefill = activePage.resolveActiveWindow()?.url.absoluteString ?? ""
-            floatingBar.focusActiveWindow(
+            let prefill = context.page?.url.absoluteString ?? ""
+            floatingBar.focus(
+                in: context.windowState,
                 prefill: prefill,
                 navigateCurrentTab: true,
                 reason: .keyboard

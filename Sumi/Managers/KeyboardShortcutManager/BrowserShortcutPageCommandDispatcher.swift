@@ -19,33 +19,43 @@ final class BrowserShortcutPageCommandDispatcher {
         self.privacy = privacy
     }
 
-    func dispatch(_ action: ShortcutAction) -> Bool {
+    func dispatch(
+        _ action: ShortcutAction,
+        in context: BrowserShortcutContext
+    ) -> Bool {
         switch action {
         case .goBack:
-            history.goBackInActiveWindow()
+            history.goBack(in: context.windowState)
         case .goForward:
-            history.goForwardInActiveWindow()
+            history.goForward(in: context.windowState)
         case .refresh:
-            page.reloadActivePage()
+            if let activePage = context.page {
+                _ = page.reload(activePage, reason: "Shortcut.refresh")
+            }
         case .clearCookiesAndRefresh:
-            privacy.clearCurrentPageCookies()
-            page.reloadActivePage()
+            privacy.clearCookies(for: context.page)
+            if let activePage = context.page {
+                _ = page.reload(
+                    activePage,
+                    reason: "Shortcut.clearCookiesAndRefresh"
+                )
+            }
         case .openDevTools:
-            page.inspectActivePage()
+            page.inspect(context.page)
         case .viewHistory:
-            history.openHistoryTab()
+            history.openHistoryTab(in: context.windowState)
         case .zoomIn:
-            zoom.zoomInCurrentTab()
+            zoom.zoomInCurrentTab(in: context.windowState)
         case .zoomOut:
-            zoom.zoomOutCurrentTab()
+            zoom.zoomOutCurrentTab(in: context.windowState)
         case .actualSize:
-            zoom.resetZoomCurrentTab()
+            zoom.resetZoomCurrentTab(in: context.windowState)
         case .copyCurrentURL:
-            page.copyActivePageURL()
+            page.copyURL(context.page)
         case .hardReload:
-            privacy.hardReloadCurrentPage()
+            privacy.hardReload(context.page)
         case .muteUnmuteAudio:
-            page.toggleMuteForActivePage()
+            page.toggleMute(context.page)
         default:
             return false
         }

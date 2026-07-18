@@ -3,65 +3,69 @@ import WebKit
 @MainActor
 final class BrowserPagePrivacyCommandOwner {
     private let activePages: ActivePageResolver
-    private let windows: WindowRegistry
     private let dataServices: BrowserManagerDataServices
     private let profiles: BrowserCurrentProfileAuthority
     private let webViews: BrowserWebViewRoutingService
 
     init(
         activePages: ActivePageResolver,
-        windows: WindowRegistry,
         dataServices: BrowserManagerDataServices,
         profiles: BrowserCurrentProfileAuthority,
         webViews: BrowserWebViewRoutingService
     ) {
         self.activePages = activePages
-        self.windows = windows
         self.dataServices = dataServices
         self.profiles = profiles
         self.webViews = webViews
     }
 
     func clearCurrentPageCookies() {
-        guard let tab = activePages.resolveActiveWindow()?.tab,
-              !tab.representsSumiNativeSurface else {
-            return
-        }
-        dataServices.privacyService.clearCurrentPageCookies(using: context)
+        clearCookies(for: activePages.resolveActiveWindow())
+    }
+
+    func clearCookies(for page: ActivePageResolution?) {
+        guard let page, !page.tab.representsSumiNativeSurface else { return }
+        dataServices.privacyService.clearCurrentPageCookies(
+            using: context(for: page)
+        )
     }
 
     func hardReloadCurrentPage() {
-        guard let tab = activePages.resolveActiveWindow()?.tab,
-              !tab.representsSumiNativeSurface else {
-            return
-        }
-        dataServices.privacyService.hardReloadCurrentPage(using: context)
+        hardReload(activePages.resolveActiveWindow())
     }
 
-    private var context: BrowserPrivacyService.Context {
+    func hardReload(_ page: ActivePageResolution?) {
+        guard let page, !page.tab.representsSumiNativeSurface else { return }
+        dataServices.privacyService.hardReloadCurrentPage(
+            using: context(for: page)
+        )
+    }
+
+    private func context(
+        for page: ActivePageResolution
+    ) -> BrowserPrivacyService.Context {
         BrowserPrivacyService.Context(
-            currentDataStore: { [activePages, profiles] in
-                activePages.resolveActiveWindow()?.tab.resolveProfile()?.dataStore
+            currentDataStore: { [profiles] in
+                page.tab.resolveProfile()?.dataStore
                     ?? profiles.currentProfile?.dataStore
                     ?? WKWebsiteDataStore.default()
             },
-            currentTab: { [activePages] in
-                activePages.resolveActiveWindow()?.tab
+            currentTab: {
+                page.tab
             },
-            activeWindowId: { [windows] in
-                windows.activeWindow?.id
+            activeWindowId: {
+                page.windowState.id
             },
-            reloadWindowScopedPage: { [activePages, webViews, windows] tab, windowID, reason, policy in
-                guard let windowState = windows.windows[windowID] else { return }
-                if let page = activePages.resolve(in: windowState),
-                   page.source == .glancePreview,
+            reloadWindowScopedPage: { [webViews] tab, windowID, reason, policy in
+                guard windowID == page.windowState.id else { return }
+                if page.source == .glancePreview,
                    page.tab.id == tab.id {
-                    _ = page.tab.navigationCommandOwner.refresh(page.tab)
+                    _ = tab.navigationCommandOwner.refresh(tab)
                     return
                 }
                 _ = webViews.refreshPage(
                     for: tab,
-                    in: windowState,
+                    in: page.windowState,
                     reason: reason,
                     policy: policy
                 )

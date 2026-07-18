@@ -19,16 +19,19 @@ final class BrowserShortcutChromeCommandDispatcher {
         self.reader = reader
     }
 
-    func dispatch(_ action: ShortcutAction) -> Bool {
+    func dispatch(
+        _ action: ShortcutAction,
+        in context: BrowserShortcutContext
+    ) -> Bool {
         switch action {
         case .viewDownloads:
-            chrome.showDownloads()
+            chrome.toggleDownloadsPopover(in: context.windowState)
         case .toggleSidebar:
-            sidebar.toggleSidebar()
+            sidebar.toggleSidebar(for: context.windowState)
         case .toggleReaderMode:
-            reader.toggleReaderModeInActiveWindow()
+            reader.toggleReaderMode(on: context.page)
         case .customizeSpaceGradient:
-            theme.showGradientEditor()
+            theme.showGradientEditor(in: context.windowState)
         default:
             return false
         }

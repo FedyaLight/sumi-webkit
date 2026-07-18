@@ -14,14 +14,19 @@ final class ClosedShortcutRestoreService {
     }
 
     func restoreLiveInstance(
-        _ shortcutState: RecentlyClosedShortcutLiveState
+        _ shortcutState: RecentlyClosedShortcutLiveState,
+        in windowState: BrowserWindowState? = nil
     ) -> Bool {
-        liveInstances.restore(shortcutState)
+        liveInstances.restore(
+            shortcutState,
+            preferredWindow: windowState
+        )
     }
 
     func restoreLauncher(
-        from pinState: RecentlyClosedShortcutPinState
+        from pinState: RecentlyClosedShortcutPinState,
+        in windowState: BrowserWindowState? = nil
     ) -> Bool {
-        launchers.restore(pinState, fallbackWindow: nil) != nil
+        launchers.restore(pinState, fallbackWindow: windowState) != nil
     }
 }

@@ -1,5 +1,6 @@
-import SwiftUI
+import AppKit
 import SumiDomain
+import SwiftUI
 
 struct SumiHistoryCommands: Commands {
     let browserContext: SumiCommandsBrowserContext
@@ -34,6 +35,10 @@ struct SumiHistoryCommands: Commands {
         return browserContext.faviconPartition
     }
 
+    private func performShortcut(_ action: ShortcutAction) {
+        _ = shortcutManager.perform(action, keyWindow: NSApp.keyWindow)
+    }
+
     private var recentVisitedItems: [HistoryListItem] {
         let _ = historyManager.revision
         return historyManager.recentVisitedItems(maxCount: 12)
@@ -44,13 +49,13 @@ struct SumiHistoryCommands: Commands {
             let faviconPartition = historyMenuFaviconPartition
 
             Button("Back") {
-                browserContext.goBackInActiveWindow()
+                performShortcut(.goBack)
             }
             .modifier(dynamicShortcut(.goBack))
             .disabled(!browserContext.canGoBackInActiveWindow)
 
             Button("Forward") {
-                browserContext.goForwardInActiveWindow()
+                performShortcut(.goForward)
             }
             .modifier(dynamicShortcut(.goForward))
             .disabled(!browserContext.canGoForwardInActiveWindow)
@@ -64,7 +69,7 @@ struct SumiHistoryCommands: Commands {
                     return "Reopen Last Closed Tab"
                 } ?? "Reopen Last Closed Tab"
             ) {
-                browserContext.reopenMostRecentClosedItem()
+                performShortcut(.undoCloseTab)
             }
             .modifier(dynamicShortcut(.undoCloseTab))
             .disabled(recentlyClosedManager.canReopenRecentlyClosedItem == false)
@@ -142,7 +147,7 @@ struct SumiHistoryCommands: Commands {
             Divider()
 
             Button("Show All History") {
-                browserContext.showHistory()
+                performShortcut(.viewHistory)
             }
             .modifier(dynamicShortcut(.viewHistory))
 

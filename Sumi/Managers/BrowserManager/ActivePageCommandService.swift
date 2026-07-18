@@ -53,15 +53,22 @@ final class ActivePageCommandService {
     }
 
     func toggleMuteForActivePage() {
-        guard let page = resolver.resolveActiveWindow(),
-              !page.tab.representsSumiNativeSurface
-        else { return }
+        toggleMute(resolver.resolveActiveWindow())
+    }
+
+    func toggleMute(_ page: ActivePageResolution?) {
+        guard let page, !page.tab.representsSumiNativeSurface else { return }
         page.tab.toggleMute()
     }
 
     @discardableResult
     func copyActivePageURL() -> Bool {
-        guard let page = resolver.resolveActiveWindow(),
+        copyURL(resolver.resolveActiveWindow())
+    }
+
+    @discardableResult
+    func copyURL(_ page: ActivePageResolution?) -> Bool {
+        guard let page,
               !page.tab.representsSumiNativeSurface,
               let scheme = page.url.scheme?.lowercased(),
               scheme == "http" || scheme == "https"
@@ -82,7 +89,12 @@ final class ActivePageCommandService {
 
     @discardableResult
     func inspectActivePage() -> Bool {
-        guard let page = resolver.resolveActiveWindow(),
+        inspect(resolver.resolveActiveWindow())
+    }
+
+    @discardableResult
+    func inspect(_ page: ActivePageResolution?) -> Bool {
+        guard let page,
               !page.tab.representsSumiNativeSurface,
               let webView = page.presentationWebView
         else { return false }

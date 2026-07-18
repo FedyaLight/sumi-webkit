@@ -22,7 +22,13 @@ final class ClosedTabRestoreService {
     /// Returns `false` when no destination space can be resolved; the caller
     /// must then keep the recently-closed history item.
     func restore(_ tabState: RecentlyClosedTabState) -> Bool {
-        let targetWindow = destinations.activeWindow
+        restore(tabState, in: destinations.activeWindow)
+    }
+
+    func restore(
+        _ tabState: RecentlyClosedTabState,
+        in targetWindow: BrowserWindowState?
+    ) -> Bool {
         guard let targetSpace = destinations.destinationSpace(
             sourceSpaceID: tabState.sourceSpaceId,
             sourceProfileID: tabState.profileId,

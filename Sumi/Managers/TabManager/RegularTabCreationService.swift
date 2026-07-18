@@ -29,7 +29,8 @@ final class RegularTabCreationService {
         webViewConfigurationOverride: WKWebViewConfiguration?,
         webExtensionContextOverride: WKWebExtensionContext?,
         executionProfileID: UUID?,
-        regularInsertionIndex: Int?
+        regularInsertionIndex: Int?,
+        prepareBeforePublication: @MainActor (Tab) -> Void
     ) -> Tab {
         structuralLookup.withTransaction {
             guard let newTab = creation.create(
@@ -38,7 +39,8 @@ final class RegularTabCreationService {
                 webViewConfigurationOverride: webViewConfigurationOverride,
                 webExtensionContextOverride: webExtensionContextOverride,
                 executionProfileID: executionProfileID,
-                regularInsertionIndex: regularInsertionIndex
+                regularInsertionIndex: regularInsertionIndex,
+                prepareBeforePublication: prepareBeforePublication
             ) else { return candidates.makeFallbackTab() }
             if activate { selection.setActiveTab(newTab) }
             return newTab

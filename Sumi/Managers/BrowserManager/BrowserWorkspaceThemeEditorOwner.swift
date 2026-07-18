@@ -8,15 +8,18 @@ final class BrowserWorkspaceThemeEditorOwner {
 
     private let contexts: BrowserWorkspaceAppearanceContextFactory
     private let presentation: BrowserWorkspaceThemePickerPresentation
+    private let windows: WindowRegistry
 
     init(
         workspaceAppearanceService: WorkspaceAppearanceService,
         contexts: BrowserWorkspaceAppearanceContextFactory,
-        presentation: BrowserWorkspaceThemePickerPresentation
+        presentation: BrowserWorkspaceThemePickerPresentation,
+        windows: WindowRegistry
     ) {
         self.workspaceAppearanceService = workspaceAppearanceService
         self.contexts = contexts
         self.presentation = presentation
+        self.windows = windows
         self.workspaceThemePickerPopoverPresenter = presentation.presenter
     }
 
@@ -29,6 +32,20 @@ final class BrowserWorkspaceThemeEditorOwner {
         guard !closeWorkspaceThemePickerIfPresented() else { return }
         workspaceAppearanceService.showGradientEditor(
             using: makeContext(),
+            preferredSource: source
+        )
+    }
+
+    func showGradientEditor(in windowState: BrowserWindowState) {
+        guard let space = contexts.space(with: windowState.currentSpaceId),
+              !closeWorkspaceThemePickerIfPresented()
+        else { return }
+        let source = windowState.sidebarTransientSessionCoordinator
+            .preparedPresentationSource(
+                window: windows.appKitWindow(for: windowState)
+            )
+        workspaceAppearanceService.showGradientEditor(
+            using: makeContext(currentSpaceOverride: space),
             preferredSource: source
         )
     }

@@ -250,7 +250,14 @@ final class BrowserWindowShellService {
 
     func toggleFullScreenForActiveWindow(in windowRegistry: WindowRegistry) {
         guard let activeWindow = windowRegistry.activeWindow else { return }
-        windowRegistry.appKitWindow(for: activeWindow)?.toggleFullScreen(nil)
+        toggleFullScreen(activeWindow, in: windowRegistry)
+    }
+
+    func toggleFullScreen(
+        _ windowState: BrowserWindowState,
+        in windowRegistry: WindowRegistry
+    ) {
+        windowRegistry.appKitWindow(for: windowState)?.toggleFullScreen(nil)
     }
 
     private func makeWindow(title: String, contentView: NSView) -> NSWindow {

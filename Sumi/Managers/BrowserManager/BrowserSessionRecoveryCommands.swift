@@ -33,6 +33,10 @@ final class BrowserSessionRecoveryCommands {
         itemReopen.reopenMostRecentItem()
     }
 
+    func reopenMostRecentClosedItem(in windowState: BrowserWindowState) {
+        itemReopen.reopenMostRecentItem(in: windowState)
+    }
+
     func reopenRecentlyClosedItem(_ item: RecentlyClosedItem) {
         itemReopen.reopen(item)
     }

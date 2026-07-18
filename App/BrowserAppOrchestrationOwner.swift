@@ -5,7 +5,6 @@ final class BrowserAppOrchestrationOwner {
     struct Dependencies {
         let appDelegate: AppDelegate
         let browserManager: BrowserManager
-        let windowRegistry: WindowRegistry
         let webViewLifecycle: WebViewLifecycleService
         let settingsManager: SumiSettingsService
         let keyboardShortcutManager: KeyboardShortcutManager
@@ -24,14 +23,14 @@ final class BrowserAppOrchestrationOwner {
 
     @discardableResult
     func setupIfNeeded(dependencies: Dependencies) -> Bool {
+        let windowRegistry = dependencies.browserManager.windowRegistry
         guard !didSetup,
-              dependencies.windowRegistry.canInstallEventSink
+              windowRegistry.canInstallEventSink
         else { return false }
         didSetup = true
 
         let appDelegate = dependencies.appDelegate
         let browserManager = dependencies.browserManager
-        let windowRegistry = dependencies.windowRegistry
         let settingsManager = dependencies.settingsManager
         let keyboardShortcutManager = dependencies.keyboardShortcutManager
         let nowPlayingController = dependencies.nowPlayingController
@@ -54,10 +53,6 @@ final class BrowserAppOrchestrationOwner {
         appDelegate.shortcutManager = keyboardShortcutManager
         appDelegate.fallbackPersistenceSave = dependencies.fallbackPersistenceSave
 
-        precondition(
-            browserManager.windowRegistry === windowRegistry,
-            "App orchestration must use the browser kernel's WindowRegistry"
-        )
         browserManager.sumiSettings = settingsManager
         browserManager.keyboardShortcutManager = keyboardShortcutManager
         browserManager.windowShellContentViewFactory = dependencies.windowShellContentViewFactory
@@ -85,8 +80,6 @@ final class BrowserAppOrchestrationOwner {
         self.externalURLTabOpening = externalURLTabOpening
 
         appDelegate.mouseButtonRouter = mouseCommandRouter
-        appDelegate.tabCommandRouter = browserManager.tabCloseOrchestration
-        appDelegate.windowRouter = browserManager.windowCommands
         appDelegate.externalURLHandler = externalURLTabOpening
         appDelegate.terminationCoordinator = terminationCoordinator
 
@@ -97,7 +90,7 @@ final class BrowserAppOrchestrationOwner {
         dependencies.startUpdater()
         keyboardShortcutManager.attach(
             actionRouter: browserManager.shortcutActionRouter,
-            windowRegistry: windowRegistry,
+            targetResolver: browserManager.shortcutTargetResolver,
             extensionsModule: browserManager.optionalModules.extensions
         )
 

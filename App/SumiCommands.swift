@@ -17,7 +17,6 @@ struct SumiCommands: Commands {
     @ObservedObject private var recentlyClosedManager: RecentlyClosedManager
     @ObservedObject private var menuFaviconInvalidator: SumiMenuFaviconInvalidator
     @Environment(\.sumiSettings) var sumiSettings
-    private let menuCloseRoutingOwner = BrowserMenuCloseRoutingOwner()
 
     init(
         browserContext: SumiCommandsBrowserContext,
@@ -46,26 +45,8 @@ struct SumiCommands: Commands {
         )
     }
 
-    private func closeKeyWindowOrCurrentTab() {
-        menuCloseRoutingOwner.closeCurrentTab(
-            keyWindow: NSApp.keyWindow,
-            sender: nil,
-            windowRegistry: windowRegistry,
-            closeCurrentTab: { windowState in
-                browserContext.closeCurrentTab(in: windowState)
-            }
-        )
-    }
-
-    private func closeKeyWindowOrSumiBrowserWindow() {
-        menuCloseRoutingOwner.closeWindow(
-            keyWindow: NSApp.keyWindow,
-            sender: nil,
-            windowRegistry: windowRegistry,
-            closeWindow: { windowState in
-                browserContext.closeWindow(windowState)
-            }
-        )
+    private func performShortcut(_ action: ShortcutAction) {
+        _ = shortcutManager.perform(action, keyWindow: NSApp.keyWindow)
     }
 
     @CommandsBuilder
@@ -143,7 +124,7 @@ struct SumiCommands: Commands {
 
         CommandMenu("Appearance") {
             Button("Customize Space Gradient...") {
-                browserContext.showGradientEditor()
+                performShortcut(.customizeSpaceGradient)
             }
             .modifier(dynamicShortcut(.customizeSpaceGradient))
             .disabled(browserContext.canCustomizeSpaceGradient == false)
@@ -156,9 +137,12 @@ struct SumiCommands: Commands {
         }
         CommandGroup(replacing: .appTermination) {
             Button("Quit Sumi") {
-                browserContext.showQuitDialog()
+                _ = shortcutManager.perform(
+                    .closeBrowser,
+                    keyWindow: NSApp.keyWindow
+                )
             }
-            .keyboardShortcut("q", modifiers: [.command])
+            .modifier(dynamicShortcut(.closeBrowser))
         }
         CommandGroup(replacing: .windowList) {
             EmptyView()
@@ -176,14 +160,14 @@ struct SumiCommands: Commands {
             Divider()
 
             Button("Close Tab") {
-                closeKeyWindowOrCurrentTab()
+                performShortcut(.closeTab)
             }
-            .keyboardShortcut("w", modifiers: [.command])
+            .modifier(dynamicShortcut(.closeTab))
 
             Button("Close Window") {
-                closeKeyWindowOrSumiBrowserWindow()
+                performShortcut(.closeWindow)
             }
-            .keyboardShortcut("w", modifiers: [.command, .shift])
+            .modifier(dynamicShortcut(.closeWindow))
 
             Divider()
 
@@ -197,7 +181,7 @@ struct SumiCommands: Commands {
         // Edit Section
         CommandGroup(replacing: .undoRedo) {
             Button("Undo Close Tab") {
-                browserContext.undoCloseTab()
+                performShortcut(.undoCloseTab)
             }
             .modifier(dynamicShortcut(.undoCloseTab))
             .disabled(recentlyClosedManager.canReopenRecentlyClosedItem == false)
@@ -206,11 +190,11 @@ struct SumiCommands: Commands {
         // File Section
         CommandGroup(after: .newItem) {
             Button("New Tab") {
-                browserContext.openNewTabSurfaceInActiveWindow()
+                performShortcut(.newTab)
             }
             .modifier(dynamicShortcut(.newTab))
             Button("New Window") {
-                browserContext.createNewWindow()
+                performShortcut(.newWindow)
             }
             .modifier(dynamicShortcut(.newWindow))
 
@@ -221,13 +205,13 @@ struct SumiCommands: Commands {
 
             Divider()
             Button("Open Command Bar") {
-                browserContext.openCommandBarForActivePage()
+                performShortcut(.focusAddressBar)
             }
             .modifier(dynamicShortcut(.focusAddressBar))
             .disabled(browserContext.hasActivePageTab == false)
 
             Button("Copy Current URL") {
-                browserContext.copyCurrentURL()
+                performShortcut(.copyCurrentURL)
             }
             .modifier(dynamicShortcut(.copyCurrentURL))
             .disabled(browserContext.hasActivePageTab == false)
@@ -236,7 +220,7 @@ struct SumiCommands: Commands {
         // Sidebar commands
         CommandGroup(after: .sidebar) {
             Button("Toggle Sidebar") {
-                browserContext.toggleSidebar()
+                performShortcut(.toggleSidebar)
             }
             .modifier(dynamicShortcut(.toggleSidebar))
         }
@@ -244,13 +228,13 @@ struct SumiCommands: Commands {
         // View commands
         CommandGroup(after: .windowSize) {
             Button("Find in Page") {
-                browserContext.showFindBar()
+                performShortcut(.findInPage)
             }
             .modifier(dynamicShortcut(.findInPage))
             .disabled(browserContext.hasActivePageTab == false)
 
             Button("Reload Page") {
-                browserContext.refreshCurrentTabInActiveWindow()
+                performShortcut(.refresh)
             }
             .modifier(dynamicShortcut(.refresh))
             .disabled(browserContext.canReloadActivePage == false)
@@ -258,19 +242,19 @@ struct SumiCommands: Commands {
             Divider()
 
             Button("Zoom In") {
-                browserContext.zoomInCurrentTab()
+                performShortcut(.zoomIn)
             }
             .modifier(dynamicShortcut(.zoomIn))
             .disabled(browserContext.hasActivePageTab == false)
 
             Button("Zoom Out") {
-                browserContext.zoomOutCurrentTab()
+                performShortcut(.zoomOut)
             }
             .modifier(dynamicShortcut(.zoomOut))
             .disabled(browserContext.hasActivePageTab == false)
 
             Button("Actual Size") {
-                browserContext.resetZoomCurrentTab()
+                performShortcut(.actualSize)
             }
             .modifier(dynamicShortcut(.actualSize))
             .disabled(browserContext.hasActivePageTab == false)
@@ -278,7 +262,7 @@ struct SumiCommands: Commands {
             Divider()
 
             Button("Hard Reload (Ignore Cache)") {
-                browserContext.hardReloadCurrentPage()
+                performShortcut(.hardReload)
             }
             .modifier(dynamicShortcut(.hardReload))
             .disabled(browserContext.canReloadActivePage == false)
@@ -286,7 +270,7 @@ struct SumiCommands: Commands {
             Divider()
 
             Button("Web Inspector") {
-                browserContext.openWebInspector()
+                performShortcut(.openDevTools)
             }
             .modifier(dynamicShortcut(.openDevTools))
             .disabled(
@@ -297,7 +281,7 @@ struct SumiCommands: Commands {
             Divider()
 
             Button(browserContext.currentTabIsMuted ? "Unmute Audio" : "Mute Audio") {
-                browserContext.toggleMuteCurrentTabInActiveWindow()
+                performShortcut(.muteUnmuteAudio)
             }
             .modifier(dynamicShortcut(.muteUnmuteAudio))
             .disabled(

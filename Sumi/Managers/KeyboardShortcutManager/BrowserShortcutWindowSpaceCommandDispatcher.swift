@@ -19,24 +19,36 @@ final class BrowserShortcutWindowSpaceCommandDispatcher {
         self.spaces = spaces
     }
 
-    func dispatch(_ action: ShortcutAction) -> Bool {
+    func dispatch(
+        _ action: ShortcutAction,
+        in context: BrowserShortcutContext
+    ) -> Bool {
+        let windowState = context.windowState
         switch action {
         case .undoCloseTab:
-            recovery.reopenMostRecentClosedItem()
+            recovery.reopenMostRecentClosedItem(in: windowState)
         case .nextSpace:
-            spaces.selectRelativeSpace(offset: 1)
+            spaces.selectRelativeSpace(offset: 1, in: windowState)
         case .previousSpace:
-            spaces.selectRelativeSpace(offset: -1)
+            spaces.selectRelativeSpace(offset: -1, in: windowState)
+        case .closeWindow:
+            windows.closeWindow(windowState)
+        case .toggleFullScreen:
+            windows.toggleFullScreen(windowState)
+        case .expandAllFolders:
+            spaces.expandAllFolders(in: windowState)
+        default:
+            return false
+        }
+        return true
+    }
+
+    func dispatchApplicationAction(_ action: ShortcutAction) -> Bool {
+        switch action {
         case .newWindow:
             windows.createNewWindow()
-        case .closeWindow:
-            windows.closeActiveWindow()
         case .closeBrowser:
             dialogs.showQuitDialog()
-        case .toggleFullScreen:
-            windows.toggleFullScreenForActiveWindow()
-        case .expandAllFolders:
-            spaces.expandAllFoldersInActiveSpace()
         default:
             return false
         }

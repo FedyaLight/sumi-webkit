@@ -108,96 +108,8 @@ private final class SumiCommandsBrowserManagerAdapter:
         browserManager?.chromeBundle.commands.clearCurrentPageCookies()
     }
 
-    func showGradientEditor() {
-        browserManager?.chromeBundle.workspaceThemeEditorOwner.showGradientEditor()
-    }
-
-    func showQuitDialog() {
-        browserManager?.chromeBundle.nativeDialogPresentationOwner.showQuitDialog()
-    }
-
-    func closeCurrentTab() {
-        browserManager?.tabCloseOrchestration.closeCurrentTab()
-    }
-
-    func closeCurrentTab(in windowState: BrowserWindowState) {
-        browserManager?.tabCloseOrchestration.closeCurrentTab(in: windowState)
-    }
-
-    func closeActiveWindow() {
-        browserManager?.windowCommands.closeActiveWindow()
-    }
-
-    func closeWindow(_ windowState: BrowserWindowState) {
-        browserManager?.windowCommands.closeWindow(windowState)
-    }
-
-    func undoCloseTab() {
-        browserManager?.windowSessionBundle.sessionRecovery.reopenMostRecentClosedItem()
-    }
-
-    func openNewTabSurfaceInActiveWindow() {
-        browserManager?.shortcutActionRouter.execute(.newTab)
-    }
-
-    func createNewWindow() {
-        browserManager?.windowCommands.createNewWindow()
-    }
-
     func createIncognitoWindow() {
         browserManager?.windowCommands.createIncognitoWindow()
-    }
-
-    func focusFloatingBarForActiveWindow(
-        prefill: String,
-        navigateCurrentTab: Bool,
-        presentationReason: FloatingBarPresentationReason
-    ) {
-        browserManager?.urlBarBundle.floatingBar.presentation.focusActiveWindow(
-            prefill: prefill,
-            navigateCurrentTab: navigateCurrentTab,
-            reason: presentationReason
-        )
-    }
-
-    func copyCurrentURL() {
-        browserManager?.chromeBundle.activePageCommands.copyActivePageURL()
-    }
-
-    func toggleSidebar() {
-        browserManager?.chromeBundle.sidebarPresentationOwner.toggleSidebar()
-    }
-
-    func showFindBar() {
-        browserManager?.showFindBar()
-    }
-
-    func refreshCurrentTabInActiveWindow() {
-        browserManager?.chromeBundle.activePageCommands.reloadActivePage()
-    }
-
-    func zoomInCurrentTab() {
-        browserManager?.chromeBundle.zoomCommandOwner.zoomInCurrentTab()
-    }
-
-    func zoomOutCurrentTab() {
-        browserManager?.chromeBundle.zoomCommandOwner.zoomOutCurrentTab()
-    }
-
-    func resetZoomCurrentTab() {
-        browserManager?.chromeBundle.zoomCommandOwner.resetZoomCurrentTab()
-    }
-
-    func hardReloadCurrentPage() {
-        browserManager?.chromeBundle.commands.hardReloadCurrentPage()
-    }
-
-    func openWebInspector() {
-        browserManager?.chromeBundle.activePageCommands.inspectActivePage()
-    }
-
-    func toggleMuteCurrentTabInActiveWindow() {
-        browserManager?.chromeBundle.activePageCommands.toggleMuteForActivePage()
     }
 
     var canGoBackInActiveWindow: Bool {
@@ -212,18 +124,6 @@ private final class SumiCommandsBrowserManagerAdapter:
         browserManager?.windowSessionBundle.sessionRecovery.canRestoreAnyLastSession ?? false
     }
 
-    func goBackInActiveWindow() {
-        browserManager?.historyBundle.historyNavigationOwner.goBackInActiveWindow()
-    }
-
-    func goForwardInActiveWindow() {
-        browserManager?.historyBundle.historyNavigationOwner.goForwardInActiveWindow()
-    }
-
-    func reopenMostRecentClosedItem() {
-        browserManager?.windowSessionBundle.sessionRecovery.reopenMostRecentClosedItem()
-    }
-
     func reopenRecentlyClosedItem(_ item: RecentlyClosedItem) {
         browserManager?.windowSessionBundle.sessionRecovery.reopenRecentlyClosedItem(item)
     }
@@ -234,10 +134,6 @@ private final class SumiCommandsBrowserManagerAdapter:
 
     func openHistoryURLFromMenuItem(_ url: URL) {
         browserManager?.historyBundle.historyNavigationOwner.openHistoryURLFromMenuItem(url)
-    }
-
-    func showHistory() {
-        browserManager?.historyBundle.historyNavigationOwner.openHistoryTab()
     }
 
     func clearAllHistoryFromMenu() {

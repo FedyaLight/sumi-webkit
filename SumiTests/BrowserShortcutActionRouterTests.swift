@@ -1,3 +1,4 @@
+import AppKit
 import SwiftData
 import XCTest
 
@@ -5,7 +6,7 @@ import XCTest
 
 @MainActor
 final class BrowserShortcutActionRouterTests: XCTestCase {
-    func testShortcutDispatchUsesActiveWindowNewTabSurface() throws {
+    func testShortcutDispatchUsesResolvedWindowNewTabSurface() throws {
         let windowRegistry = WindowRegistry()
         let browserManager = try makeBrowserManager(
             windowRegistry: windowRegistry
@@ -23,14 +24,19 @@ final class BrowserShortcutActionRouterTests: XCTestCase {
         browserManager.spaceStateOwner.replaceCurrentSpace(space)
         windowRegistry.register(windowState)
         windowRegistry.setActive(windowState)
+        let appKitWindow = NSWindow()
+        windowRegistry.bindAppKitWindow(appKitWindow, to: windowState)
 
-        browserManager.shortcutActionRouter.execute(.newTab)
+        guard case .browser(let context) = browserManager.shortcutTargetResolver
+            .resolve(keyWindow: appKitWindow)
+        else { return XCTFail("Expected browser shortcut context") }
+        browserManager.shortcutActionRouter.execute(.newTab, in: context)
 
         XCTAssertTrue(windowState.presentationState.isFloatingBarVisible)
         XCTAssertFalse(browserManager.optionalModules.extensions.hasLoadedRuntime)
     }
 
-    func testShortcutDispatchCreatesTabWhenNoWindowIsRegistered() throws {
+    func testContextualActionIsNotAcceptedAsApplicationAction() throws {
         let browserManager = try makeBrowserManager(
             windowRegistry: WindowRegistry()
         )
@@ -42,11 +48,14 @@ final class BrowserShortcutActionRouterTests: XCTestCase {
         let tabCountBefore = browserManager.tabCollectionMembershipOwner
             .allTabs().count
 
-        browserManager.shortcutActionRouter.execute(.newTab)
+        XCTAssertFalse(
+            browserManager.shortcutActionRouter
+                .executeApplicationAction(.newTab)
+        )
 
         XCTAssertEqual(
             browserManager.tabCollectionMembershipOwner.allTabs().count,
-            tabCountBefore + 1
+            tabCountBefore
         )
         XCTAssertFalse(browserManager.optionalModules.extensions.hasLoadedRuntime)
     }

@@ -59,15 +59,18 @@ final class BrowserNativeSurfaceRoutingOwner {
             return
         }
 
-        let newTab = tabOpening.openNewTab(
+        applySettingsSurfaceNavigationIfNeeded(kind, url: url)
+        let newTab = tabOpening.openPreparedRegularTab(
             url: url.absoluteString,
             context: .foreground(
                 windowState: windowState,
                 preferredSpaceId: targetSpace?.id,
                 loadPolicy: .deferred
-            )
+            ),
+            prepareBeforePublication: { tab in
+                kind.configure(tab, url: url)
+            }
         )
-        configureSurface(newTab, kind: kind, url: url)
         residence.persistRuntimeState(of: newTab)
         focus(windowState)
     }

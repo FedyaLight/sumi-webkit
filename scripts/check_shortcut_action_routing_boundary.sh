@@ -13,6 +13,7 @@ guard_initialize "$repo_root"
 router='Sumi/Managers/KeyboardShortcutManager/BrowserShortcutActionRouter.swift'
 composition='Sumi/Managers/KeyboardShortcutManager/BrowserShortcutActionComposition.swift'
 manager='Sumi/Managers/KeyboardShortcutManager/KeyboardShortcutManager.swift'
+target_resolver='Sumi/Managers/KeyboardShortcutManager/BrowserShortcutTargetResolver.swift'
 page_dispatcher='Sumi/Managers/KeyboardShortcutManager/BrowserShortcutPageCommandDispatcher.swift'
 tab_dispatcher='Sumi/Managers/KeyboardShortcutManager/BrowserShortcutTabCommandDispatcher.swift'
 window_space_dispatcher='Sumi/Managers/KeyboardShortcutManager/BrowserShortcutWindowSpaceCommandDispatcher.swift'
@@ -39,19 +40,22 @@ selection_roles=(
   Sumi/Managers/BrowserManager/BrowserTabSelectionPublicationTransaction.swift
 )
 browser_root='Sumi/Managers/BrowserManager/BrowserManager.swift'
+browser_shortcut_composition='Sumi/Managers/BrowserManager/BrowserManager+ShortcutComposition.swift'
 production_roots=(App Sumi Settings SidebarChrome FloatingBar UI)
 shortcut_sources=(
   "$router"
   "${dispatcher_files[@]}"
   "$composition"
   "$manager"
+  "$target_resolver"
   "$tab_commands"
   "$split_commands"
   "$space_commands"
   "$reader_commands"
 )
 
-for file in "${shortcut_sources[@]}" "${selection_roles[@]}" "$browser_root"; do
+for file in "${shortcut_sources[@]}" "${selection_roles[@]}" \
+  "$browser_root" "$browser_shortcut_composition"; do
   guard_require_file "$file"
 done
 
@@ -80,10 +84,24 @@ guard_expect_no_matches \
   '\bBrowserManager\b|\bbrowserManager\b' \
   "$router" "$composition" "$tab_commands" "$split_commands" \
   "$space_commands" "$reader_commands"
+guard_expect_no_matches \
+  'contextual shortcut routing cannot re-resolve active state' \
+  '\b(activeWindow|resolveActiveWindow|InActiveWindow|ActiveWindow)\b' \
+  "$router" "${dispatcher_files[@]}" "$manager" "$target_resolver" \
+  "$tab_commands" "$split_commands" "$space_commands" "$reader_commands"
+guard_expect_no_matches \
+  'shortcut router is invoked only through the keyboard manager' \
+  'shortcutActionRouter\.execute|\.shortcutActionRouter[[:space:]]*$' \
+  App Sumi -g '*.swift' -g '!Sumi/Managers/KeyboardShortcutManager/KeyboardShortcutManager.swift'
+
+guard_exact \
+  'shortcut target context has one definition' \
+  "$(guard_count_matches '^struct BrowserShortcutContext' "$target_resolver")" \
+  1
 
 guard_exact \
   'browser root composes shortcut graph once' \
-  "$(guard_count_matches 'BrowserShortcutActionComposition\.make\(' "$browser_root")" \
+  "$(guard_count_matches 'BrowserShortcutActionComposition\.make\(' "$browser_shortcut_composition")" \
   1
 guard_exact \
   'composition constructs shortcut router once' \
@@ -94,9 +112,9 @@ guard_exact \
   "$(guard_count_matches '^final class BrowserShortcut.*CommandDispatcher' "${dispatcher_files[@]}")" \
   5
 guard_exact \
-  'five domain switches plus one domain router' \
+  'five contextual switches, application switch, and domain router' \
   "$(guard_count_matches 'switch action' "$router" "${dispatcher_files[@]}")" \
-  6
+  7
 guard_exact \
   'shortcut domain classification is exhaustive' \
   "$(guard_count_matches 'switch self' "$router")" \

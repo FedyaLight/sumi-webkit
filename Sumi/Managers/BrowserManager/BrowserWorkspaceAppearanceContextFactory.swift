@@ -23,6 +23,10 @@ final class BrowserWorkspaceAppearanceContextFactory {
         self.modal = modal
     }
 
+    func space(with id: UUID?) -> Space? {
+        id.flatMap { spaces.space(with: $0) }
+    }
+
     func make(
         currentSpaceOverride: Space? = nil,
         presentPicker: @escaping @MainActor (

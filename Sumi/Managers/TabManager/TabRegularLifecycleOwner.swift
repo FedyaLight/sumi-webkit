@@ -48,7 +48,8 @@ final class TabRegularLifecycleOwner {
         webViewConfigurationOverride: WKWebViewConfiguration? = nil,
         webExtensionContextOverride: WKWebExtensionContext? = nil,
         executionProfileID: UUID? = nil,
-        regularInsertionIndex: Int? = nil
+        regularInsertionIndex: Int? = nil,
+        prepareBeforePublication: @MainActor (Tab) -> Void = { _ in }
     ) -> Tab {
         creation.create(
             url: url,
@@ -57,7 +58,8 @@ final class TabRegularLifecycleOwner {
             webViewConfigurationOverride: webViewConfigurationOverride,
             webExtensionContextOverride: webExtensionContextOverride,
             executionProfileID: executionProfileID,
-            regularInsertionIndex: regularInsertionIndex
+            regularInsertionIndex: regularInsertionIndex,
+            prepareBeforePublication: prepareBeforePublication
         )
     }
 

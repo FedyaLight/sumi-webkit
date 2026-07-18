@@ -553,7 +553,9 @@ final class WindowSessionRegistrationTests: XCTestCase {
         fixture.registration.prepareRegistration(windowState)
 
         XCTAssertTrue(fixture.extensions.openedWindowIDs.isEmpty)
-        XCTAssertNil(windowState.tabResidenceSessionIdentity)
+        XCTAssertTrue(
+            fixture.tabManager.tabResidenceAuthority.owns(windowState)
+        )
 
         fixture.registration.commitRegistration(windowState)
 
@@ -609,8 +611,12 @@ final class WindowSessionRegistrationTests: XCTestCase {
             [firstWindow, secondWindow]
         )
 
-        XCTAssertNil(firstWindow.tabResidenceSessionIdentity)
-        XCTAssertNil(secondWindow.tabResidenceSessionIdentity)
+        XCTAssertTrue(
+            fixture.tabManager.tabResidenceAuthority.owns(firstWindow)
+        )
+        XCTAssertTrue(
+            fixture.tabManager.tabResidenceAuthority.owns(secondWindow)
+        )
         XCTAssertEqual(firstWindow.currentProfileId, profile.id)
         XCTAssertEqual(secondWindow.currentProfileId, profile.id)
         XCTAssertEqual(firstWindow.currentSpaceId, space.id)
@@ -775,6 +781,7 @@ final class WindowSessionRegistrationTests: XCTestCase {
         )
         let registration = BrowserWindowSessionRestorationService(
             restoration: restoreService,
+            tabResidences: tabManager.tabResidenceAuthority,
             extensionPublication: extensionPublication,
             currentProfile: currentProfileAuthority,
             startupSessions: startup

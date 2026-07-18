@@ -74,6 +74,7 @@ final class BrowserWindowSessionBundle {
 
         self.restoration = BrowserWindowSessionRestorationService(
             restoration: restoreService,
+            tabResidences: browserManager.tabResidenceAuthority,
             extensionPublication: browserManager.windowExtensionPublication,
             currentProfile: browserManager.currentProfileAuthority,
             startupSessions: browserManager

@@ -17,37 +17,42 @@ final class BrowserShortcutTabCommandDispatcher {
         self.close = close
     }
 
-    func dispatch(_ action: ShortcutAction) -> Bool {
+    func dispatch(
+        _ action: ShortcutAction,
+        in context: BrowserShortcutContext
+    ) -> Bool {
+        let windowState = context.windowState
         switch action {
         case .newTab:
-            selection.openNewTabSurfaceInActiveWindow()
+            selection.openNewTabSurface(in: windowState)
         case .closeTab:
-            close.closeCurrentTab()
+            close.closeCurrentTab(in: windowState)
         case .nextTab:
-            selection.selectRelativeTab(offset: 1)
+            selection.selectRelativeTab(offset: 1, in: windowState)
         case .previousTab:
-            selection.selectRelativeTab(offset: -1)
+            selection.selectRelativeTab(offset: -1, in: windowState)
         case .goToTab1, .goToTab2, .goToTab3, .goToTab4,
              .goToTab5, .goToTab6, .goToTab7, .goToTab8:
             let index = Int(action.rawValue.components(separatedBy: "_").last ?? "1") ?? 1
-            selection.selectTab(at: index - 1)
+            selection.selectTab(at: index - 1, in: windowState)
         case .goToLastTab:
-            selection.selectLastTab()
+            selection.selectLastTab(in: windowState)
         case .duplicateTab:
-            selection.duplicateActiveTab()
+            selection.duplicateTab(in: windowState)
         case .splitGrid:
-            splits.setActiveLayout(.grid)
+            splits.setLayout(.grid, in: windowState)
         case .splitVertical:
-            splits.setActiveLayout(.vertical)
+            splits.setLayout(.vertical, in: windowState)
         case .splitHorizontal:
-            splits.setActiveLayout(.horizontal)
+            splits.setLayout(.horizontal, in: windowState)
         case .unsplit:
-            splits.unsplitActiveWindow()
+            splits.unsplit(in: windowState)
         case .newEmptySplit:
-            splits.createEmptySplitInActiveWindow()
+            splits.createEmptySplit(in: windowState)
         default:
             return false
         }
         return true
     }
+
 }

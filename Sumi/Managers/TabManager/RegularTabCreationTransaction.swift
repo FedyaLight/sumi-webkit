@@ -28,7 +28,8 @@ final class RegularTabCreationTransaction {
         webViewConfigurationOverride: WKWebViewConfiguration?,
         webExtensionContextOverride: WKWebExtensionContext?,
         executionProfileID: UUID?,
-        regularInsertionIndex: Int?
+        regularInsertionIndex: Int?,
+        prepareBeforePublication: @MainActor (Tab) -> Void
     ) -> Tab? {
         creationPlacement.withAdmittedCreationPlacement(
             preferred: space,
@@ -49,6 +50,7 @@ final class RegularTabCreationTransaction {
                 webViewConfigurationOverride: webViewConfigurationOverride,
                 webExtensionContextOverride: webExtensionContextOverride
             )
+            prepareBeforePublication(tab)
             return publication.add(
                 tab,
                 regularInsertionIndex: regularInsertionIndex,

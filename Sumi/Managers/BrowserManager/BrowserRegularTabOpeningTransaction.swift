@@ -24,7 +24,11 @@ final class BrowserRegularTabOpeningTransaction {
         lifecycle.createNewTab(in: destinations.firstSpace)
     }
 
-    func open(url: String, context: BrowserTabOpenContext) -> Tab {
+    func open(
+        url: String,
+        context: BrowserTabOpenContext,
+        prepareBeforePublication: @MainActor (Tab) -> Void = { _ in }
+    ) -> Tab {
         let windowState = destinations.window(for: context)
         let space = destinations.space(for: context)
         let insertionIndex = context.regularInsertionIndex
@@ -36,7 +40,8 @@ final class BrowserRegularTabOpeningTransaction {
             url: url,
             in: space,
             activate: false,
-            regularInsertionIndex: insertionIndex
+            regularInsertionIndex: insertionIndex,
+            prepareBeforePublication: prepareBeforePublication
         )
         windowState?.markWebKitChildWindowAdopted(by: tab.id)
         activation.apply(

@@ -529,4 +529,25 @@ final class WindowRegistryTests: XCTestCase {
         XCTAssertNil(registry.appKitWindow(for: windowState.id))
         XCTAssertNil(windowState.shellWindow(in: registry))
     }
+
+    func testStaleBridgeDetachDoesNotUnbindReplacementWindow() {
+        let registry = WindowRegistry()
+        let staleWindow = NSWindow()
+        let replacementWindow = NSWindow()
+        let windowState = BrowserWindowState()
+        registry.register(windowState)
+        registry.bindAppKitWindow(staleWindow, to: windowState)
+        registry.bindAppKitWindow(replacementWindow, to: windowState)
+
+        registry.unbindAppKitWindow(staleWindow, from: windowState)
+
+        XCTAssertIdentical(
+            registry.appKitWindow(for: windowState),
+            replacementWindow
+        )
+        XCTAssertIdentical(
+            registry.windowState(forAppKitWindow: replacementWindow),
+            windowState
+        )
+    }
 }

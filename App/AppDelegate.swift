@@ -25,8 +25,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     private static let log = Logger.sumi(category: "AppTermination")
 
     weak var mouseButtonRouter: (any BrowserMouseButtonCommandRouting)?
-    weak var tabCommandRouter: (any BrowserTabCommandRouting)?
-    weak var windowRouter: (any WindowCommandRouting)?
     weak var externalURLHandler: (any ExternalURLHandling)?
     /// Process-lifetime adapter with only a weak browser-root reference. A
     /// strong runtime lease is acquired synchronously after Quit is confirmed.
@@ -49,8 +47,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     private lazy var mouseButtonRoutingOwner = BrowserMouseButtonRoutingOwner(
         sidebarMouseButtonCaptureRegistry: sidebarMouseButtonCaptureRegistry
     )
-    private let menuCloseRoutingOwner = BrowserMenuCloseRoutingOwner()
-
     private let urlEventClass = AEEventClass(kInternetEventClass)
     private let urlEventID = AEEventID(kAEGetURL)
 
@@ -80,7 +76,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         UNUserNotificationCenter.current().delegate = self
         setupURLEventHandling()
         setupMouseButtonHandling()
-        scheduleCloseMenuConfiguration()
         warmUpPublicSuffixList()
         if NSApplication.shared.windows.isEmpty == false {
             NSApp.activate(ignoringOtherApps: true)
@@ -97,7 +92,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     }
 
     func applicationDidBecomeActive(_ _: Notification) {
-        scheduleCloseMenuConfiguration()
         appLifecycleHandler?.handleApplicationDidBecomeActive()
     }
 
@@ -160,59 +154,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             }
             return event
         }
-    }
-
-    private func configureCloseMenuItems() {
-        guard let fileMenu = NSApp.mainMenu?.items.first(where: { $0.title == "File" })?.submenu else {
-            return
-        }
-
-        if let closeItem = fileMenu.items.first(where: { $0.title == "Close" }) {
-            closeItem.title = "Close Tab"
-            closeItem.keyEquivalent = "w"
-            closeItem.keyEquivalentModifierMask = [.command]
-            closeItem.target = self
-            closeItem.action = #selector(handleCloseTabMenuItem(_:))
-        }
-
-        if let closeAllItem = fileMenu.items.first(where: { $0.title == "Close All" }) {
-            closeAllItem.title = "Close Window"
-            closeAllItem.keyEquivalent = "w"
-            closeAllItem.keyEquivalentModifierMask = [.command, .shift]
-            closeAllItem.target = self
-            closeAllItem.action = #selector(handleCloseWindowMenuItem(_:))
-        }
-    }
-
-    private func scheduleCloseMenuConfiguration() {
-        DispatchQueue.main.async { [weak self] in
-            self?.configureCloseMenuItems()
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
-            self?.configureCloseMenuItems()
-        }
-    }
-
-    @MainActor @objc private func handleCloseTabMenuItem(_ sender: Any?) {
-        menuCloseRoutingOwner.closeCurrentTab(
-            keyWindow: NSApp.keyWindow,
-            sender: sender,
-            windowRegistry: windowRegistry,
-            closeCurrentTab: { [weak self] windowState in
-                self?.tabCommandRouter?.closeCurrentTab(in: windowState)
-            }
-        )
-    }
-
-    @MainActor @objc private func handleCloseWindowMenuItem(_ sender: Any?) {
-        menuCloseRoutingOwner.closeWindow(
-            keyWindow: NSApp.keyWindow,
-            sender: sender,
-            windowRegistry: windowRegistry,
-            closeWindow: { [weak self] windowState in
-                self?.windowRouter?.closeWindow(windowState)
-            }
-        )
     }
 
     /// Handles URLs opened from external sources (e.g., Finder, other apps)

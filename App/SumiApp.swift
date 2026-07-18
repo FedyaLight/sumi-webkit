@@ -30,7 +30,7 @@ struct SumiApp: App {
 
     @State private var windowRegistry: WindowRegistry
     @State private var settingsManager: SumiSettingsService
-    @State private var keyboardShortcutManager = KeyboardShortcutManager()
+    @State private var keyboardShortcutManager: KeyboardShortcutManager
     @State private var appOrchestrationOwner = BrowserAppOrchestrationOwner()
     @State private var startupRecovery = SumiStartupRecoveryTransaction()
     @State private var pendingProfileRetirementNotice:
@@ -83,6 +83,12 @@ struct SumiApp: App {
             externalAppResolver: SumiNSWorkspaceExternalAppResolver(),
             sidebarHostRecoveryCoordinator: SidebarHostRecoveryCoordinator()
         )
+        let keyboardShortcutManager = KeyboardShortcutManager()
+        keyboardShortcutManager.attach(
+            actionRouter: browserManager.shortcutActionRouter,
+            targetResolver: browserManager.shortcutTargetResolver,
+            extensionsModule: browserManager.optionalModules.extensions
+        )
         self.updaterService = updaterService
         self.defaultBrowserService = defaultBrowserService
         self.windowLifecycleService = BrowserWindowLifecycleService(
@@ -91,6 +97,9 @@ struct SumiApp: App {
         _windowRegistry = State(initialValue: windowRegistry)
         _nowPlayingController = StateObject(wrappedValue: nowPlayingController)
         _settingsManager = State(initialValue: SumiSettingsService(nowPlayingController: nowPlayingController))
+        _keyboardShortcutManager = State(
+            initialValue: keyboardShortcutManager
+        )
         _browserManager = StateObject(wrappedValue: browserManager)
     }
 
@@ -250,7 +259,6 @@ struct SumiApp: App {
             dependencies: BrowserAppOrchestrationOwner.Dependencies(
                 appDelegate: appDelegate,
                 browserManager: browserManager,
-                windowRegistry: windowRegistry,
                 webViewLifecycle: browserManager.webViewRuntime.lifecycleService,
                 settingsManager: settingsManager,
                 keyboardShortcutManager: keyboardShortcutManager,

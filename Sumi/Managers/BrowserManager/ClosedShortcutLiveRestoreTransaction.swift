@@ -22,12 +22,18 @@ final class ClosedShortcutLiveRestoreTransaction {
         self.launchers = launchers
     }
 
-    func restore(_ shortcutState: RecentlyClosedShortcutLiveState) -> Bool {
-        guard let targetWindow = windows.targetWindow(for: shortcutState) else {
+    func restore(
+        _ shortcutState: RecentlyClosedShortcutLiveState,
+        preferredWindow: BrowserWindowState? = nil
+    ) -> Bool {
+        guard let targetWindow = windows.targetWindow(
+            for: shortcutState,
+            preferredWindow: preferredWindow
+        ) else {
             if pins.shortcutPin(by: shortcutState.pin.id) == nil {
                 return launchers.restore(
                     shortcutState.pin,
-                    fallbackWindow: nil
+                    fallbackWindow: preferredWindow
                 ) != nil
             }
             return false

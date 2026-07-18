@@ -127,6 +127,19 @@ final class BrowserTabOpeningOwner {
         return regularTabs.open(url: url, context: context)
     }
 
+    @discardableResult
+    func openPreparedRegularTab(
+        url: String,
+        context: BrowserTabOpenContext,
+        prepareBeforePublication: @MainActor (Tab) -> Void
+    ) -> Tab {
+        regularTabs.open(
+            url: url,
+            context: context,
+            prepareBeforePublication: prepareBeforePublication
+        )
+    }
+
     func duplicateTab(_ tab: Tab, in windowState: BrowserWindowState) {
         regularTabs.duplicate(tab, in: windowState)
     }

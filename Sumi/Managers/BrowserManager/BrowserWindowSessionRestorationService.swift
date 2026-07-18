@@ -17,6 +17,7 @@ final class BrowserWindowSessionRestorationService {
     }
 
     private let restoration: WindowSessionRestoreService
+    private let tabResidences: BrowserTabResidenceAuthority
     private let extensionPublication: WindowExtensionPublicationTransaction
     private let currentProfile: BrowserCurrentProfileAuthority
     private weak var startupSessions: (any BrowserStartupSessionReconciling)?
@@ -24,11 +25,13 @@ final class BrowserWindowSessionRestorationService {
 
     init(
         restoration: WindowSessionRestoreService,
+        tabResidences: BrowserTabResidenceAuthority,
         extensionPublication: WindowExtensionPublicationTransaction,
         currentProfile: BrowserCurrentProfileAuthority,
         startupSessions: any BrowserStartupSessionReconciling
     ) {
         self.restoration = restoration
+        self.tabResidences = tabResidences
         self.extensionPublication = extensionPublication
         self.currentProfile = currentProfile
         self.startupSessions = startupSessions
@@ -59,6 +62,7 @@ final class BrowserWindowSessionRestorationService {
 
     private func restoreModels(_ windowStates: [BrowserWindowState]) {
         for windowState in windowStates {
+            tabResidences.establishResidenceSession(on: windowState)
             extensionPublication.prepareRegistration(windowState)
             if windowState.isIncognito {
                 pendingPublicationsByWindowID[windowState.id] =

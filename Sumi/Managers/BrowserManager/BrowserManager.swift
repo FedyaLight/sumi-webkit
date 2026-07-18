@@ -329,39 +329,8 @@ class BrowserManager: ObservableObject {
     private(set) lazy var settingsAttachment = BrowserSettingsAttachmentCoordinator.live(browserManager: self)
     lazy var webViewCloseRouter = composeWebViewCloseRouter()
     lazy var notificationPresenter = BrowserNotificationPresenter(browserManager: self)
-    lazy var shortcutActionRouter: BrowserShortcutActionRouter = {
-        let shell = shellRuntime
-        let urlBar = urlBarBundle
-        let chrome = chromeBundle
-        let history = historyBundle
-        let sessions = windowSessionBundle
-        return BrowserShortcutActionComposition.make(
-            shell: shell,
-            tabOpening: tabOpening,
-            tabSelection: browserTabSelection,
-            newTabCommit: urlBar.floatingBar.commit,
-            splitQuery: splitQuery,
-            splitLayout: splitLayout,
-            splitInsertion: splitInsertion,
-            emptySplitCreation: splitEmptyCreation,
-            spaces: spaceStateOwner,
-            spaceTransitions: windowSpaceTransitions,
-            folderOpenState: folderOpenState,
-            sessionPersistence: windowSessionPersistenceCoordinator,
-            history: history.historyNavigationOwner,
-            pageCommands: chrome.activePageCommands,
-            zoom: chrome.zoomCommandOwner,
-            privacyAndPopovers: chrome.commands,
-            windowCommands: windowCommands,
-            dialogs: chrome.nativeDialogPresentationOwner,
-            sessionRecovery: sessions.sessionRecovery,
-            tabClose: tabCloseOrchestration,
-            theme: chrome.workspaceThemeEditorOwner,
-            sidebar: chrome.sidebarPresentationOwner,
-            find: findManager,
-            floatingBar: urlBar.floatingBar.presentation
-        )
-    }()
+    lazy var shortcutTargetResolver = makeShortcutTargetResolver()
+    lazy var shortcutActionRouter = makeShortcutActionRouter()
     lazy var windowCommands = BrowserWindowCommands.live(browserRuntime: self)
     lazy var windowStateReconciler = composeWindowStateReconciler()
     lazy var windowSpaceTransitions = composeWindowSpaceTransitions(

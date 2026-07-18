@@ -70,7 +70,15 @@ final class BrowserChromeCommands {
         privacy.clearCurrentPageCookies()
     }
 
+    func clearCookies(for page: ActivePageResolution?) {
+        privacy.clearCookies(for: page)
+    }
+
     func hardReloadCurrentPage() {
         privacy.hardReloadCurrentPage()
+    }
+
+    func hardReload(_ page: ActivePageResolution?) {
+        privacy.hardReload(page)
     }
 }

@@ -1,50 +1,40 @@
 import Foundation
 import SumiDomain
 
-/// Active-window split commands with exact split-runtime collaborators.
+/// Split commands scoped to one resolved browser window.
 @MainActor
 final class BrowserKeyboardSplitCommands {
-    private let shell: BrowserShellRuntime
     private let query: WindowSplitQuery
     private let layout: SplitLayoutService
-    private let insertion: SplitInsertionService
     private let emptyCreation: EmptySplitCreationWorkflow
 
     init(
-        shell: BrowserShellRuntime,
         query: WindowSplitQuery,
         layout: SplitLayoutService,
-        insertion: SplitInsertionService,
         emptyCreation: EmptySplitCreationWorkflow
     ) {
-        self.shell = shell
         self.query = query
         self.layout = layout
-        self.insertion = insertion
         self.emptyCreation = emptyCreation
     }
 
-    func setActiveLayout(_ layoutKind: SplitLayoutKind) {
-        guard let activeWindow = shell.windowRegistry.activeWindow else { return }
-        if query.group(in: activeWindow.id) != nil {
-            layout.setLayoutKind(layoutKind, in: activeWindow.id)
+    func setLayout(
+        _ layoutKind: SplitLayoutKind,
+        in windowState: BrowserWindowState
+    ) {
+        if query.group(in: windowState.id) != nil {
+            layout.setLayoutKind(layoutKind, in: windowState.id)
             return
         }
-        guard let current = shell.windowTabs.currentTab(for: activeWindow),
-              current.representsSumiNativeSurface == false else {
-            return
-        }
-        insertion.enterSplit(with: current, side: .right, in: activeWindow)
-        layout.setLayoutKind(layoutKind, in: activeWindow.id)
+        emptyCreation.create(side: .right, in: windowState)
+        layout.setLayoutKind(layoutKind, in: windowState.id)
     }
 
-    func unsplitActiveWindow() {
-        guard let activeWindow = shell.windowRegistry.activeWindow else { return }
-        layout.unsplit(in: activeWindow)
+    func unsplit(in windowState: BrowserWindowState) {
+        layout.unsplit(in: windowState)
     }
 
-    func createEmptySplitInActiveWindow() {
-        guard let activeWindow = shell.windowRegistry.activeWindow else { return }
-        emptyCreation.create(side: .right, in: activeWindow)
+    func createEmptySplit(in windowState: BrowserWindowState) {
+        emptyCreation.create(side: .right, in: windowState)
     }
 }

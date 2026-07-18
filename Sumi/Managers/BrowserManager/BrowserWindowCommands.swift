@@ -86,15 +86,11 @@ final class BrowserWindowCommands {
         await shells.closeIncognitoWindow(window, using: context())
     }
 
-    func closeActiveWindow() {
-        shells.closeActiveWindow(in: windowRegistry())
-    }
-
     func closeWindow(_ window: BrowserWindowState) {
         shells.closeWindow(window, in: windowRegistry())
     }
 
-    func toggleFullScreenForActiveWindow() {
-        shells.toggleFullScreenForActiveWindow(in: windowRegistry())
+    func toggleFullScreen(_ windowState: BrowserWindowState) {
+        shells.toggleFullScreen(windowState, in: windowRegistry())
     }
 }

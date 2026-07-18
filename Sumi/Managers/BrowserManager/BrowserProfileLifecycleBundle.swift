@@ -239,7 +239,10 @@ extension BrowserManager {
         let cleanStartupWindowReset = CleanStartupWindowResetTransaction(
             windows: windowRegistry,
             spaces: spaceStateOwner,
-            glance: glanceManager
+            glance: glanceManager,
+            currentProfileID: { [currentProfileAuthority] in
+                currentProfileAuthority.currentProfile?.id
+            }
         )
         let cleanStartup = CleanStartupWorkflow(
             archive: CleanStartupSessionArchiveTransaction(

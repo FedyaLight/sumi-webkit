@@ -2,8 +2,8 @@
 //  KeyboardShortcutManager.swift
 //  Sumi
 //
-//  Keyboard routing for browser windows follows the DuckDuckGo macOS pattern:
-//  a scoped local monitor plus menu delivery via NSMenu.performKeyEquivalent.
+//  Keyboard routing for browser windows uses one scoped local monitor and one
+//  action router shared with menu commands.
 //
 
 import AppKit
@@ -11,7 +11,6 @@ import Carbon
 import Foundation
 import SumiDomain
 import SwiftUI
-import WebKit
 
 @MainActor
 @Observable
@@ -52,6 +51,7 @@ class KeyboardShortcutManager {
     private var shortcutsByAction: [ShortcutAction: KeyboardShortcut] = [:]
     private var enabledLookup: [String: ShortcutAction] = [:]
     private var eventMonitor: EventMonitorHandle?
+    private let installsEventMonitorWhenAttached: Bool
 
     private enum LocalKeyRoutingResult {
         case pass(NSEvent)
@@ -59,26 +59,27 @@ class KeyboardShortcutManager {
     }
 
     weak var shortcutActionRouter: BrowserShortcutActionRouter?
-    weak var windowRegistry: WindowRegistry?
+    private var shortcutTargetResolver: BrowserShortcutTargetResolver?
     private(set) weak var extensionsModule: SumiExtensionsModule?
 
     init(userDefaults: UserDefaults = .standard, installEventMonitor: Bool = true) {
         self.store = KeyboardShortcutStore(userDefaults: userDefaults)
         self.validator = ShortcutValidator(systemOwnedShortcuts: systemOwnedShortcuts)
+        self.installsEventMonitorWhenAttached = installEventMonitor
         loadShortcuts()
-        if installEventMonitor {
-            setupGlobalMonitor()
-        }
     }
 
     func attach(
         actionRouter: BrowserShortcutActionRouter,
-        windowRegistry: WindowRegistry,
+        targetResolver: BrowserShortcutTargetResolver,
         extensionsModule: SumiExtensionsModule
     ) {
         shortcutActionRouter = actionRouter
-        self.windowRegistry = windowRegistry
+        shortcutTargetResolver = targetResolver
         self.extensionsModule = extensionsModule
+        if installsEventMonitorWhenAttached {
+            setupLocalMonitor()
+        }
     }
 
     var shortcuts: [KeyboardShortcut] {
@@ -134,7 +135,10 @@ class KeyboardShortcutManager {
         validator.validate(keyCombination, in: shortcutsByAction, excludingAction: excludingAction)
     }
 
-    func executeShortcut(_ event: NSEvent) -> Bool {
+    func executeShortcut(
+        _ event: NSEvent,
+        in context: BrowserShortcutContext
+    ) -> Bool {
         if shouldPassUnmodifiedSpecialKeyThrough(event) {
             return false
         }
@@ -152,15 +156,42 @@ class KeyboardShortcutManager {
             return false
         }
 
-        guard let action = enabledLookup[keyCombination.lookupKey] else {
+        guard let action = resolvedShortcutAction(for: keyCombination) else {
             RuntimeDiagnostics.debug("No registered shortcut for \(keyCombination.lookupKey).", category: "KeyboardShortcutManager")
             return false
         }
 
         RuntimeDiagnostics.debug("Executing shortcut action '\(action.displayName)'.", category: "KeyboardShortcutManager")
         guard let shortcutActionRouter else { return false }
-        shortcutActionRouter.execute(action)
-        return true
+        return shortcutActionRouter.executeApplicationAction(action)
+            || shortcutActionRouter.execute(action, in: context)
+    }
+
+    func resolvedShortcutAction(
+        for keyCombination: KeyCombination
+    ) -> ShortcutAction? {
+        guard !systemOwnedShortcuts.contains(keyCombination) else { return nil }
+        return enabledLookup[keyCombination.lookupKey]
+    }
+
+    @discardableResult
+    func perform(_ action: ShortcutAction, keyWindow: NSWindow?) -> Bool {
+        guard let shortcutActionRouter else { return false }
+        if shortcutActionRouter.executeApplicationAction(action) {
+            return true
+        }
+        switch shortcutTargetResolver?.resolve(keyWindow: keyWindow) ?? .none {
+        case .browser(let context):
+            return shortcutActionRouter.execute(action, in: context)
+        case .foreignWindow(let window):
+            guard action == .closeTab || action == .closeWindow else {
+                return false
+            }
+            window.performClose(nil)
+            return true
+        case .none:
+            return false
+        }
     }
 
     private func loadShortcuts() {
@@ -206,24 +237,33 @@ class KeyboardShortcutManager {
             && !event.modifierFlags.contains(.shift)
     }
 
-    private func setupGlobalMonitor() {
+    private func setupLocalMonitor() {
+        guard eventMonitor == nil else { return }
         let monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
             guard let self else { return event }
-            return self.handleLocalKeyDown(event)
+            return self.routeLocalKeyDown(event, keyWindow: NSApp.keyWindow)
         }
         guard let monitor else { return }
         eventMonitor = EventMonitorHandle(monitor: monitor)
     }
 
-    private func handleLocalKeyDown(_ event: NSEvent) -> NSEvent? {
+    func routeLocalKeyDown(
+        _ event: NSEvent,
+        keyWindow: NSWindow?
+    ) -> NSEvent? {
         if Self.isShortcutRecorderCaptureActive {
             return event
         }
 
-        guard let keyWindow = NSApp.keyWindow else { return event }
-        guard isManagedSumiBrowserWindow(keyWindow) else { return event }
+        guard case .browser(let context) = shortcutTargetResolver?
+            .resolve(keyWindow: keyWindow) else {
+            return event
+        }
 
-        if let routingResult = routeFloatingBarShortcutIfNeeded(event, keyWindow: keyWindow) {
+        if let routingResult = routeFloatingBarShortcutIfNeeded(
+            event,
+            context: context
+        ) {
             switch routingResult {
             case .pass(let event):
                 return event
@@ -232,7 +272,9 @@ class KeyboardShortcutManager {
             }
         }
 
-        if shouldBypassShortcutRouting(keyWindow: keyWindow) {
+        if shouldBypassShortcutRouting(
+            context: context
+        ) {
             return event
         }
 
@@ -242,25 +284,7 @@ class KeyboardShortcutManager {
             return nil
         }
 
-        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting(.capsLock)
-        let routingFlags = flags.intersection([.command, .shift, .option, .control])
-        let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
-        let isWebViewFocused = keyWindow.firstResponder is WKWebView
-
-        if routeControlTabThroughMenu(event: event, routingFlags: routingFlags) {
-            return nil
-        }
-
-        if routeWebViewMenuChromeThroughMenu(
-            event: event,
-            routingFlags: routingFlags,
-            key: key,
-            isWebViewFocused: isWebViewFocused
-        ) {
-            return nil
-        }
-
-        if executeShortcut(event) {
+        if executeShortcut(event, in: context) {
             return nil
         }
 
@@ -273,37 +297,46 @@ class KeyboardShortcutManager {
         return event
     }
 
-    private func isManagedSumiBrowserWindow(_ window: NSWindow) -> Bool {
-        windowRegistry?.windowState(containing: window) != nil
-    }
-
-    private func shouldBypassShortcutRouting(keyWindow: NSWindow) -> Bool {
-        if let state = windowRegistry?.windowState(containing: keyWindow),
-           state.presentationState.isFloatingBarVisible {
+    private func shouldBypassShortcutRouting(
+        context: BrowserShortcutContext
+    ) -> Bool {
+        if context.windowState.presentationState.isFloatingBarVisible {
             return true
         }
-        if shortcutActionRouter?.isNativeModalPresented(in: keyWindow) == true {
+        if shortcutActionRouter?.isNativeModalPresented(
+            in: context.appKitWindow
+        ) == true {
             return true
         }
         return false
     }
 
-    private func routeFloatingBarShortcutIfNeeded(_ event: NSEvent, keyWindow: NSWindow) -> LocalKeyRoutingResult? {
-        guard let state = browserWindowState(containing: keyWindow),
-              state.presentationState.isFloatingBarVisible
-        else { return nil }
+    private func routeFloatingBarShortcutIfNeeded(
+        _ event: NSEvent,
+        context: BrowserShortcutContext
+    ) -> LocalKeyRoutingResult? {
+        let windowState = context.windowState
+        guard windowState.presentationState.isFloatingBarVisible else {
+            return nil
+        }
 
         guard let keyCombination = KeyCombination(from: event) else {
             return .pass(event)
         }
 
         if keyCombination == KeyCombination(key: "escape") {
-            shortcutActionRouter?.dismissFloatingBar(in: state, preserveDraft: true)
+            shortcutActionRouter?.dismissFloatingBar(
+                in: windowState,
+                preserveDraft: true
+            )
             return .consume
         }
 
         if systemOwnedShortcuts.contains(keyCombination) {
-            shortcutActionRouter?.dismissFloatingBar(in: state, preserveDraft: true)
+            shortcutActionRouter?.dismissFloatingBar(
+                in: windowState,
+                preserveDraft: true
+            )
             return .pass(event)
         }
 
@@ -315,53 +348,17 @@ class KeyboardShortcutManager {
         case .focusAddressBar, .newTab:
             break
         default:
-            shortcutActionRouter?.dismissFloatingBar(in: state, preserveDraft: true)
+            shortcutActionRouter?.dismissFloatingBar(
+                in: windowState,
+                preserveDraft: true
+            )
         }
 
-        if executeShortcut(event) {
+        if executeShortcut(event, in: context) {
             return .consume
         }
 
         return .pass(event)
     }
 
-    private func browserWindowState(containing window: NSWindow) -> BrowserWindowState? {
-        windowRegistry?.windowState(containing: window)
-    }
-
-    private func routeControlTabThroughMenu(event: NSEvent, routingFlags: NSEvent.ModifierFlags) -> Bool {
-        guard event.keyCode == UInt16(kVK_Tab) else { return false }
-        guard [.control, [.control, .shift]].contains(routingFlags) else { return false }
-        guard let keyWindow = NSApp.keyWindow, isManagedSumiBrowserWindow(keyWindow) else { return false }
-        if executeShortcut(event) { return true }
-        return NSApp.mainMenu?.performKeyEquivalent(with: event) ?? false
-    }
-
-    private func routeWebViewMenuChromeThroughMenu(
-        event: NSEvent,
-        routingFlags: NSEvent.ModifierFlags,
-        key: String,
-        isWebViewFocused: Bool
-    ) -> Bool {
-        guard isWebViewFocused else { return false }
-
-        let isCmdTabIndex = routingFlags == [.command] && "123456789".contains(key)
-        let isBrowserChromeKey: Bool
-        switch (key, routingFlags, routingFlags.contains(.command)) {
-        case ("n", [.command], _),
-            ("t", [.command], _),
-            ("t", [.command, .shift], _),
-            ("w", _, true),
-            ("q", [.command], _),
-            ("r", [.command], _):
-            isBrowserChromeKey = true
-        default:
-            isBrowserChromeKey = false
-        }
-
-        guard isCmdTabIndex || isBrowserChromeKey else { return false }
-
-        if executeShortcut(event) { return true }
-        return NSApp.mainMenu?.performKeyEquivalent(with: event) ?? false
-    }
 }

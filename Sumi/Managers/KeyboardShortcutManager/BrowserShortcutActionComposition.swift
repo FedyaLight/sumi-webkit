@@ -12,7 +12,6 @@ enum BrowserShortcutActionComposition {
         newTabCommit: FloatingBarCommitService,
         splitQuery: WindowSplitQuery,
         splitLayout: SplitLayoutService,
-        splitInsertion: SplitInsertionService,
         emptySplitCreation: EmptySplitCreationWorkflow,
         spaces: TabSpaceCollectionStateOwner,
         spaceTransitions: BrowserWindowSpaceTransitionService,
@@ -31,29 +30,24 @@ enum BrowserShortcutActionComposition {
         find: FindManager,
         floatingBar: FloatingBarPresentationService
     ) -> BrowserShortcutActionRouter {
-        let activePage = shell.activePageResolver
         let tabCommands = BrowserKeyboardTabSelectionCommands(
-            windows: shell.windowRegistry,
             windowTabs: shell.windowTabs,
             opening: tabOpening,
             newTabCommit: newTabCommit,
             selection: tabSelection
         )
         let splitCommands = BrowserKeyboardSplitCommands(
-            shell: shell,
             query: splitQuery,
             layout: splitLayout,
-            insertion: splitInsertion,
             emptyCreation: emptySplitCreation
         )
         let spaceCommands = BrowserKeyboardSpaceCommands(
-            shell: shell,
             spaces: spaces,
             transitions: spaceTransitions,
             folderOpenState: folderOpenState,
             persistence: sessionPersistence
         )
-        let readerCommands = BrowserKeyboardReaderCommands(activePage: activePage)
+        let readerCommands = BrowserKeyboardReaderCommands()
         return BrowserShortcutActionRouter(
             page: BrowserShortcutPageCommandDispatcher(
                 history: history,
@@ -79,7 +73,6 @@ enum BrowserShortcutActionComposition {
                 reader: readerCommands
             ),
             overlays: BrowserShortcutOverlayCommandDispatcher(
-                activePage: activePage,
                 find: find,
                 dialogs: dialogs,
                 floatingBar: floatingBar

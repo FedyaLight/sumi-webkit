@@ -12,7 +12,8 @@ extension BrowserManager {
                 persistence: structuralPersistence,
                 modal: nativeModalTransaction
             ),
-            presentation: workspaceThemePickerPresentation
+            presentation: workspaceThemePickerPresentation,
+            windows: windowRegistry
         )
     }
 }

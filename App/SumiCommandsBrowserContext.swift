@@ -15,31 +15,7 @@ protocol SumiCommandBrowserActionRouting: AnyObject {
     func openSettingsTab(selecting pane: SettingsTabs, in windowState: BrowserWindowState?)
     func setAsDefaultBrowser()
     func clearCurrentPageCookies()
-    func showGradientEditor()
-    func showQuitDialog()
-    func closeCurrentTab()
-    func closeCurrentTab(in windowState: BrowserWindowState)
-    func closeActiveWindow()
-    func closeWindow(_ windowState: BrowserWindowState)
-    func undoCloseTab()
-    func openNewTabSurfaceInActiveWindow()
-    func createNewWindow()
     func createIncognitoWindow()
-    func focusFloatingBarForActiveWindow(
-        prefill: String,
-        navigateCurrentTab: Bool,
-        presentationReason: FloatingBarPresentationReason
-    )
-    func copyCurrentURL()
-    func toggleSidebar()
-    func showFindBar()
-    func refreshCurrentTabInActiveWindow()
-    func zoomInCurrentTab()
-    func zoomOutCurrentTab()
-    func resetZoomCurrentTab()
-    func hardReloadCurrentPage()
-    func openWebInspector()
-    func toggleMuteCurrentTabInActiveWindow()
 }
 
 @MainActor
@@ -47,13 +23,9 @@ protocol SumiCommandHistoryRouting: AnyObject {
     var canGoBackInActiveWindow: Bool { get }
     var canGoForwardInActiveWindow: Bool { get }
     var canRestoreAnyLastSession: Bool { get }
-    func goBackInActiveWindow()
-    func goForwardInActiveWindow()
-    func reopenMostRecentClosedItem()
     func reopenRecentlyClosedItem(_ item: RecentlyClosedItem)
     func reopenAllWindowsFromLastSession()
     func openHistoryURLFromMenuItem(_ url: URL)
-    func showHistory()
     func clearAllHistoryFromMenu()
 }
 
@@ -230,111 +202,8 @@ final class SumiCommandsBrowserContext {
         historyRouting.clearAllHistoryFromMenu()
     }
 
-    func showGradientEditor() {
-        browserActions.showGradientEditor()
-    }
-
-    func showQuitDialog() {
-        browserActions.showQuitDialog()
-    }
-
-    func closeCurrentTab() {
-        browserActions.closeCurrentTab()
-    }
-
-    func closeCurrentTab(in windowState: BrowserWindowState) {
-        browserActions.closeCurrentTab(in: windowState)
-    }
-
-    func closeActiveWindow() {
-        browserActions.closeActiveWindow()
-    }
-
-    func closeWindow(_ windowState: BrowserWindowState) {
-        browserActions.closeWindow(windowState)
-    }
-
-    func undoCloseTab() {
-        browserActions.undoCloseTab()
-    }
-
-    func openNewTabSurfaceInActiveWindow() {
-        browserActions.openNewTabSurfaceInActiveWindow()
-    }
-
-    func createNewWindow() {
-        browserActions.createNewWindow()
-    }
-
     func createIncognitoWindow() {
         browserActions.createIncognitoWindow()
-    }
-
-    func focusFloatingBarForActiveWindow(prefill: String, navigateCurrentTab: Bool) {
-        browserActions.focusFloatingBarForActiveWindow(
-            prefill: prefill,
-            navigateCurrentTab: navigateCurrentTab,
-            presentationReason: .keyboard
-        )
-    }
-
-    func openCommandBarForActivePage() {
-        focusFloatingBarForActiveWindow(
-            prefill: activePageURL?.absoluteString ?? "",
-            navigateCurrentTab: true
-        )
-    }
-
-    func copyCurrentURL() {
-        browserActions.copyCurrentURL()
-    }
-
-    func toggleSidebar() {
-        browserActions.toggleSidebar()
-    }
-
-    func showFindBar() {
-        browserActions.showFindBar()
-    }
-
-    func refreshCurrentTabInActiveWindow() {
-        browserActions.refreshCurrentTabInActiveWindow()
-    }
-
-    func zoomInCurrentTab() {
-        browserActions.zoomInCurrentTab()
-    }
-
-    func zoomOutCurrentTab() {
-        browserActions.zoomOutCurrentTab()
-    }
-
-    func resetZoomCurrentTab() {
-        browserActions.resetZoomCurrentTab()
-    }
-
-    func hardReloadCurrentPage() {
-        browserActions.hardReloadCurrentPage()
-    }
-
-    func openWebInspector() {
-        browserActions.openWebInspector()
-    }
-
-    func toggleMuteCurrentTabInActiveWindow() {
-        browserActions.toggleMuteCurrentTabInActiveWindow()
-    }
-
-    func goBackInActiveWindow() {
-        historyRouting.goBackInActiveWindow()
-    }
-
-    func goForwardInActiveWindow() {
-        historyRouting.goForwardInActiveWindow()
-    }
-
-    func reopenMostRecentClosedItem() {
-        historyRouting.reopenMostRecentClosedItem()
     }
 
     func reopenRecentlyClosedItem(_ item: RecentlyClosedItem) {
@@ -347,10 +216,6 @@ final class SumiCommandsBrowserContext {
 
     func openHistoryURLFromMenuItem(_ url: URL) {
         historyRouting.openHistoryURLFromMenuItem(url)
-    }
-
-    func showHistory() {
-        historyRouting.showHistory()
     }
 
     func requestBookmarkEditorForActiveWindowFromMenu() {

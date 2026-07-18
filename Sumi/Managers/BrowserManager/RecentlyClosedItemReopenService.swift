@@ -1,9 +1,6 @@
 import Foundation
 
-/// Reopens one recently-closed history item by dispatching it to the restore
-/// service that owns the matching workflow, and removes the item from history
-/// only after that service reports success (also consuming the startup
-/// restore offer).
+/// Restores one history item and removes it only after a successful restore.
 @MainActor
 final class RecentlyClosedItemReopenService {
     private let recentlyClosedItems: RecentlyClosedManager
@@ -12,13 +9,9 @@ final class RecentlyClosedItemReopenService {
     private let shortcutRestore: ClosedShortcutRestoreService
     private let windowReopen: any WindowSessionReopening
 
-    /// Window reopening is serialized by the shared reopener; the handle is
-    /// exposed so callers and tests can await completion explicitly.
     private(set) var pendingWindowReopenTask: Task<Void, Never>?
 
-    isolated deinit {
-        pendingWindowReopenTask?.cancel()
-    }
+    isolated deinit { pendingWindowReopenTask?.cancel() }
 
     init(
         recentlyClosedItems: RecentlyClosedManager,
@@ -34,26 +27,31 @@ final class RecentlyClosedItemReopenService {
         self.windowReopen = windowReopen
     }
 
-    func reopenMostRecentItem() {
+    func reopenMostRecentItem(in windowState: BrowserWindowState? = nil) {
         guard let item = recentlyClosedItems.mostRecentItem else { return }
-        reopen(item)
+        reopen(item, in: windowState)
     }
 
-    func reopen(_ item: RecentlyClosedItem) {
+    func reopen(_ item: RecentlyClosedItem, in windowState: BrowserWindowState? = nil) {
+        let didRestore: Bool
         switch item {
         case .tab(let tabState):
-            finalizeIfRestored(tabRestore.restore(tabState), item: item)
+            didRestore = tabRestore.restore(tabState, in: windowState)
         case .shortcutLiveInstance(let shortcutState):
-            finalizeIfRestored(shortcutRestore.restoreLiveInstance(shortcutState), item: item)
+            didRestore = shortcutRestore.restoreLiveInstance(shortcutState, in: windowState)
         case .shortcutLauncher(let launcherState):
-            finalizeIfRestored(shortcutRestore.restoreLauncher(from: launcherState.pin), item: item)
+            didRestore = shortcutRestore.restoreLauncher(from: launcherState.pin, in: windowState)
         case .window(let windowState):
-            let snapshot = LastSessionWindowSnapshot(
-                id: windowState.sessionWindowId,
-                session: windowState.session
+            reopenWindowItem(
+                item,
+                snapshot: LastSessionWindowSnapshot(
+                    id: windowState.sessionWindowId,
+                    session: windowState.session
+                )
             )
-            reopenWindowItem(item, snapshot: snapshot)
+            return
         }
+        finalizeIfRestored(didRestore, item: item)
     }
 
     private func reopenWindowItem(

@@ -2,6 +2,7 @@ import AppKit
 import SumiDomain
 
 private enum BrowserShortcutCommandDomain {
+    case application
     case page
     case tabs
     case windowsAndSpaces
@@ -22,9 +23,10 @@ private extension ShortcutAction {
              .splitGrid, .splitVertical, .splitHorizontal, .unsplit,
              .newEmptySplit:
             .tabs
-        case .undoCloseTab, .nextSpace, .previousSpace, .newWindow,
-             .closeWindow, .closeBrowser, .toggleFullScreen,
-             .expandAllFolders:
+        case .newWindow, .closeBrowser:
+            .application
+        case .undoCloseTab, .nextSpace, .previousSpace, .closeWindow,
+             .toggleFullScreen, .expandAllFolders:
             .windowsAndSpaces
         case .viewDownloads, .toggleSidebar, .toggleReaderMode,
              .customizeSpaceGradient:
@@ -58,20 +60,35 @@ final class BrowserShortcutActionRouter {
         self.overlays = overlays
     }
 
-    func execute(_ action: ShortcutAction) {
+    @discardableResult
+    func execute(
+        _ action: ShortcutAction,
+        in context: BrowserShortcutContext
+    ) -> Bool {
         let handled = switch action.browserCommandDomain {
-        case .page:
-            page.dispatch(action)
+        case .application:
+            false
         case .tabs:
-            tabs.dispatch(action)
+            tabs.dispatch(action, in: context)
         case .windowsAndSpaces:
-            windowsAndSpaces.dispatch(action)
+            windowsAndSpaces.dispatch(action, in: context)
+        case .page:
+            page.dispatch(action, in: context)
         case .chrome:
-            chrome.dispatch(action)
+            chrome.dispatch(action, in: context)
         case .overlays:
-            overlays.dispatch(action)
+            overlays.dispatch(action, in: context)
         }
-        precondition(handled, "Shortcut domain rejected its action: \(action)")
+        precondition(
+            handled,
+            "Contextual shortcut domain rejected its action: \(action)"
+        )
+        return true
+    }
+
+    @discardableResult
+    func executeApplicationAction(_ action: ShortcutAction) -> Bool {
+        windowsAndSpaces.dispatchApplicationAction(action)
     }
 
     var isFindBarVisible: Bool { overlays.isFindBarVisible }

@@ -388,6 +388,16 @@ class WindowRegistry {
         shells.removeValue(forKey: windowId)
     }
 
+    func unbindAppKitWindow(
+        _ appKitWindow: NSWindow?,
+        from windowState: BrowserWindowState
+    ) {
+        guard let appKitWindow,
+              shells[windowState.id]?.window === appKitWindow
+        else { return }
+        shells.removeValue(forKey: windowState.id)
+    }
+
     /// AppKit window lookup from the shell map.
     func appKitWindow(for windowId: UUID) -> NSWindow? {
         shells[windowId]?.window
@@ -395,6 +405,12 @@ class WindowRegistry {
 
     func appKitWindow(for windowState: BrowserWindowState) -> NSWindow? {
         appKitWindow(for: windowState.id)
+    }
+
+    func windowState(forAppKitWindow appKitWindow: NSWindow) -> BrowserWindowState? {
+        windows.values.first { state in
+            self.appKitWindow(for: state) === appKitWindow
+        }
     }
 
     func windowState(containing appKitWindow: NSWindow) -> BrowserWindowState? {

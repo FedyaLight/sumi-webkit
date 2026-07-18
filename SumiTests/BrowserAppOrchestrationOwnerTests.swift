@@ -15,14 +15,6 @@ final class BrowserAppOrchestrationOwnerTests: XCTestCase {
         XCTAssertFalse(secondSetup)
         XCTAssertIdentical(harness.appDelegate.windowRegistry, harness.windowRegistry)
         XCTAssertNotNil(harness.appDelegate.mouseButtonRouter)
-        XCTAssertIdentical(
-            harness.appDelegate.tabCommandRouter,
-            harness.browserManager.tabCloseOrchestration
-        )
-        XCTAssertIdentical(
-            harness.appDelegate.windowRouter,
-            harness.browserManager.windowCommands
-        )
         XCTAssertTrue(
             harness.appDelegate.externalURLHandler is ExternalURLTabOpeningService
         )
@@ -65,7 +57,10 @@ final class BrowserAppOrchestrationOwnerTests: XCTestCase {
             harness.owner.setupIfNeeded(dependencies: harness.dependencies)
         )
         XCTAssertNil(harness.appDelegate.windowRegistry)
-        XCTAssertNil(harness.browserManager.windowRegistry)
+        XCTAssertIdentical(
+            harness.browserManager.windowRegistry,
+            harness.windowRegistry
+        )
         XCTAssertEqual(harness.startUpdaterCallCount(), 0)
     }
 
@@ -108,6 +103,7 @@ final class BrowserAppOrchestrationOwnerTests: XCTestCase {
         let registry = WindowRegistry()
         let shortcuts = KeyboardShortcutManager(installEventMonitor: false)
         var browserManager: BrowserManager? = BrowserManager(
+            windowRegistry: registry,
             nowPlayingController: nowPlayingController
         )
         weak let releasedBrowserManager = browserManager
@@ -132,7 +128,6 @@ final class BrowserAppOrchestrationOwnerTests: XCTestCase {
                 dependencies: BrowserAppOrchestrationOwner.Dependencies(
                     appDelegate: appDelegate,
                     browserManager: browserManager,
-                    windowRegistry: registry,
                     webViewLifecycle: browserManager.webViewRuntime.lifecycleService,
                     settingsManager: settings,
                     keyboardShortcutManager: shortcuts,
@@ -222,8 +217,11 @@ final class BrowserAppOrchestrationOwnerTests: XCTestCase {
         let nowPlayingController = SumiNativeNowPlayingController()
         let settingsManager = SumiSettingsService(nowPlayingController: nowPlayingController)
         settingsManager.sidebarMiniPlayerEnabled = false
-        let browserManager = BrowserManager(nowPlayingController: nowPlayingController)
         let windowRegistry = WindowRegistry()
+        let browserManager = BrowserManager(
+            windowRegistry: windowRegistry,
+            nowPlayingController: nowPlayingController
+        )
         let keyboardShortcutManager = KeyboardShortcutManager(installEventMonitor: false)
         var startUpdaterCallCount = 0
         let factory: BrowserWindowShellService.ContentViewFactory = { _, _ in
@@ -232,7 +230,6 @@ final class BrowserAppOrchestrationOwnerTests: XCTestCase {
         let dependencies = BrowserAppOrchestrationOwner.Dependencies(
             appDelegate: appDelegate,
             browserManager: browserManager,
-            windowRegistry: windowRegistry,
             webViewLifecycle: browserManager.webViewRuntime.lifecycleService,
             settingsManager: settingsManager,
             keyboardShortcutManager: keyboardShortcutManager,

@@ -54,6 +54,85 @@ final class SumiStartupSessionCoordinatorTests: XCTestCase {
         XCTAssertTrue(harness.browserManager.windowSessionBundle.sessionRecovery.canOfferStartupSessionRestoreShortcut)
     }
 
+    func testNothingStartupInitializesWindowContextBeforeFirstShortcutClick() throws {
+        let harness = try makeHarness(startupMode: .nothing)
+        defer { harness.defaults.reset() }
+        let profile = Profile(name: "Primary")
+        let space = Space(name: "Primary", profileId: profile.id)
+        let essential = ShortcutPin(
+            id: UUID(),
+            role: .essential,
+            profileId: profile.id,
+            index: 0,
+            launchURL: URL(string: "https://essential.example")!,
+            title: "Essential"
+        )
+        let spacePin = makeSpacePin(spaceId: space.id)
+
+        harness.browserManager.profileManager.profiles = [profile]
+        harness.browserManager.currentProfile = profile
+        harness.browserManager.spaceStateOwner.replaceSpaces([space])
+        harness.browserManager.spaceStateOwner.replaceCurrentSpace(space)
+        harness.browserManager.structuralCollectionMutationOwner.setTabs(
+            [],
+            for: space.id
+        )
+        harness.browserManager.structuralCollectionMutationOwner.setPinnedTabs(
+            [essential],
+            for: profile.id
+        )
+        harness.browserManager.structuralCollectionMutationOwner
+            .setSpacePinnedShortcuts([spacePin], for: space.id)
+        harness.windowState.currentSpaceId = nil
+        harness.windowState.currentProfileId = nil
+
+        harness.browserManager.profileLifecycleBundle.startupPolicy.apply(.nothing)
+
+        XCTAssertEqual(harness.windowState.currentSpaceId, space.id)
+        XCTAssertEqual(harness.windowState.currentProfileId, profile.id)
+
+        let execution = SidebarPinExecutionCommands(
+            runtime: harness.browserManager.runtimePortConnection,
+            windows: SidebarWindowIdentityQuery(
+                registry: harness.windowRegistry
+            ),
+            pins: harness.browserManager.shortcutPinCollectionStateOwner,
+            materializer: harness.browserManager.shortcutTabMaterializer,
+            profiles: harness.browserManager.shortcutExecutionProfileAssignments
+        )
+        let essentialTab = try XCTUnwrap(
+            execution.materialize(
+                essential,
+                in: harness.windowState,
+                currentSpaceID: harness.windowState.currentSpaceId
+            )
+        )
+        XCTAssertTrue(
+            harness.browserManager.browserTabSelection.selectTab(
+                essentialTab,
+                in: harness.windowState,
+                loadPolicy: .deferred
+            ).wasCommitted
+        )
+        XCTAssertEqual(harness.windowState.currentTabId, essentialTab.id)
+
+        let spacePinnedTab = try XCTUnwrap(
+            execution.materialize(
+                spacePin,
+                in: harness.windowState,
+                currentSpaceID: space.id
+            )
+        )
+        XCTAssertTrue(
+            harness.browserManager.browserTabSelection.selectTab(
+                spacePinnedTab,
+                in: harness.windowState,
+                loadPolicy: .deferred
+            ).wasCommitted
+        )
+        XCTAssertEqual(harness.windowState.currentTabId, spacePinnedTab.id)
+    }
+
     func testSpecificPageStartupOpensExactlyOneConfiguredRegularTabAndArchivesManualRestoreSnapshot() throws {
         let harness = try makeHarness(startupMode: .specificPage, startupPage: "configured.example")
         defer { harness.defaults.reset() }
@@ -150,6 +229,30 @@ final class SumiStartupSessionCoordinatorTests: XCTestCase {
         let currentProfileTabs = harness.browserManager.regularTabCollectionOwner.tabs(in: currentProfileSpace)
         XCTAssertTrue(currentProfileTabs.isEmpty)
         XCTAssertTrue(harness.browserManager.regularTabCollectionOwner.tabs(in: fallbackSpace).isEmpty)
+        XCTAssertNil(harness.windowState.currentSpaceId)
+        XCTAssertNil(harness.windowState.currentProfileId)
+        XCTAssertNil(harness.windowState.currentTabId)
+        XCTAssertTrue(harness.windowState.isShowingEmptyState)
+    }
+
+    func testSpecificPageStartupWithMissingSpaceAndStaleProfileFailsClosed() throws {
+        let harness = try makeHarness(startupMode: .specificPage, startupPage: "configured.example")
+        defer { harness.defaults.reset() }
+        let currentProfile = Profile(name: "Current")
+        let currentProfileSpace = Space(name: "Current", profileId: currentProfile.id)
+        harness.browserManager.profileManager.profiles = [currentProfile]
+        harness.browserManager.currentProfile = currentProfile
+        harness.browserManager.spaceStateOwner.replaceSpaces([currentProfileSpace])
+        harness.browserManager.structuralCollectionMutationOwner.setTabs([], for: currentProfileSpace.id)
+        harness.browserManager.spaceStateOwner.replaceCurrentSpace(currentProfileSpace)
+        harness.windowState.currentSpaceId = nil
+        harness.windowState.currentProfileId = UUID()
+
+        harness.browserManager.profileLifecycleBundle.startupPolicy.apply(.specificPage)
+
+        XCTAssertTrue(
+            harness.browserManager.regularTabCollectionOwner.tabs(in: currentProfileSpace).isEmpty
+        )
         XCTAssertNil(harness.windowState.currentSpaceId)
         XCTAssertNil(harness.windowState.currentProfileId)
         XCTAssertNil(harness.windowState.currentTabId)

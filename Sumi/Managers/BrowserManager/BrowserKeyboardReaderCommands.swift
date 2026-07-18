@@ -1,16 +1,10 @@
 import Foundation
 
-/// Reader-mode keyboard command resolved from one canonical active page.
+/// Reader-mode keyboard command for the page captured by shortcut routing.
 @MainActor
 final class BrowserKeyboardReaderCommands {
-    private let activePage: ActivePageResolver
-
-    init(activePage: ActivePageResolver) {
-        self.activePage = activePage
-    }
-
-    func toggleReaderModeInActiveWindow() {
-        guard let page = activePage.resolveActiveWindow(),
+    func toggleReaderMode(on page: ActivePageResolution?) {
+        guard let page,
               page.tab.representsSumiNativeSurface == false,
               let webView = page.canonicalWebView else {
             return

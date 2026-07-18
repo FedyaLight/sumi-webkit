@@ -5,15 +5,18 @@ final class CleanStartupWindowResetTransaction {
     private let windows: WindowRegistry
     private let spaces: TabSpaceCollectionStateOwner
     private let glance: GlanceManager
+    private let currentProfileID: @MainActor () -> UUID?
 
     init(
         windows: WindowRegistry,
         spaces: TabSpaceCollectionStateOwner,
-        glance: GlanceManager
+        glance: GlanceManager,
+        currentProfileID: @escaping @MainActor () -> UUID?
     ) {
         self.windows = windows
         self.spaces = spaces
         self.glance = glance
+        self.currentProfileID = currentProfileID
     }
 
     var firstRegularWindow: BrowserWindowState? {
@@ -22,7 +25,9 @@ final class CleanStartupWindowResetTransaction {
 
     func reset(selectedWindow: BrowserWindowState) {
         for windowState in regularWindows {
-            let fallbackSpaceID = resolvedStartupSpace(for: windowState)?.id
+            let fallbackSpaceID = resolvedWindowResetSpace(
+                for: windowState
+            )?.id
 
             windowState.currentTabId = nil
             windowState.restorationState.restoredSessionWindowID = nil
@@ -54,7 +59,27 @@ final class CleanStartupWindowResetTransaction {
            let currentSpace = spaces.space(with: currentSpaceID) {
             return currentSpace
         }
-        guard let profileID = windowState.currentProfileId else { return nil }
+        if let profileID = windowState.currentProfileId {
+            return spaces.firstSpace(forProfile: profileID)
+        }
+
+        return nil
+    }
+
+    private func resolvedWindowResetSpace(
+        for windowState: BrowserWindowState
+    ) -> Space? {
+        if let resolved = resolvedStartupSpace(for: windowState) {
+            return resolved
+        }
+        guard windowState.currentSpaceId == nil,
+              windowState.currentProfileId == nil
+        else { return nil }
+        if let currentSpace = spaces.currentSpace,
+           let catalogSpace = spaces.space(with: currentSpace.id) {
+            return catalogSpace
+        }
+        guard let profileID = currentProfileID() else { return nil }
         return spaces.firstSpace(forProfile: profileID)
     }
 
