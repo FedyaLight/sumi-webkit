@@ -114,7 +114,7 @@ final class SumiImportTransactionTests: XCTestCase {
         XCTAssertIdentical(materialized.currentTab, tab)
     }
 
-    func testMaterializationRejectsProfileIdentityReplacementBeforeRuntimeMutation() throws {
+    func testMaterializationBuildsProfileIdentityReplacementForDurableReconciliation() throws {
         let browserManager = BrowserManager()
         let profile = Profile(name: "Existing")
         let checkpoint = SumiImportRuntimeState(
@@ -143,17 +143,86 @@ final class SumiImportTransactionTests: XCTestCase {
             warnings: []
         )
 
-        XCTAssertThrowsError(
-            try SumiImportRuntimeMaterializer(
-                tabFactory: browserManager.tabFactory,
-                tabBrowserRuntime: .inactive
-            ).materialize(plan, preserving: checkpoint)
-        ) { error in
-            XCTAssertEqual(
-                error as? SumiImportMaterializationError,
-                .profileIdentityMutationRequiresRetirement
-            )
-        }
+        let materialized = try SumiImportRuntimeMaterializer(
+            tabFactory: browserManager.tabFactory,
+            tabBrowserRuntime: .inactive
+        ).materialize(plan, preserving: checkpoint)
+
+        XCTAssertEqual(materialized.profiles.map(\.name), ["Replacement"])
+        XCTAssertNotEqual(materialized.profiles.first?.id, profile.id)
+    }
+
+    func testReplaceProfilePlanningReusesLocalIdentitiesAndRetiresOnlySurplus() throws {
+        let firstID = "11111111-1111-1111-1111-111111111111"
+        let secondID = "22222222-2222-2222-2222-222222222222"
+        let baseline = SumiPortableData(profiles: [
+            portableProfile(id: firstID, name: "First Local"),
+            portableProfile(id: secondID, name: "Second Local"),
+        ])
+        let sourceID = UUID().uuidString
+        let request = SumiImportRequest(
+            sourceKind: .sumiBackup,
+            data: SumiPortableData(profiles: [
+                portableProfile(id: sourceID, name: "Restored"),
+            ]),
+            categories: [.profiles],
+            mode: .replace
+        )
+
+        let plan = SumiImportPlanBuilder().makePlan(
+            request: request,
+            baseline: baseline
+        )
+
+        XCTAssertEqual(plan.targetRuntimeData.profiles.map(\.id), [firstID])
+        XCTAssertEqual(
+            plan.profileTransition.sourceToTargetProfileID[sourceID],
+            firstID
+        )
+        XCTAssertTrue(plan.profileTransition.createdProfileIDs.isEmpty)
+        XCTAssertEqual(
+            plan.profileTransition.retiringProfileIDs,
+            Set([try XCTUnwrap(UUID(uuidString: secondID))])
+        )
+    }
+
+    func testMergeProfilePlanningAddsIdentityWithoutRetiringLocalProfiles() throws {
+        let localID = UUID().uuidString
+        let request = makeMergeRequest()
+        let plan = SumiImportPlanBuilder().makePlan(
+            request: request,
+            baseline: SumiPortableData(profiles: [
+                portableProfile(id: localID, name: "Local"),
+            ])
+        )
+
+        XCTAssertEqual(plan.targetRuntimeData.profiles.count, 2)
+        XCTAssertEqual(plan.targetRuntimeData.profiles.first?.id, localID)
+        XCTAssertEqual(plan.profileTransition.createdProfileIDs.count, 1)
+        XCTAssertTrue(plan.profileTransition.retiringProfileIDs.isEmpty)
+    }
+
+    func testMergeProfilePlanningDoesNotReuseBlockedProfileIdentity() throws {
+        let request = makeMergeRequest()
+        let first = SumiImportPlanBuilder().makePlan(
+            request: request,
+            baseline: SumiPortableData()
+        )
+        let blockedID = try XCTUnwrap(
+            first.profileTransition.createdProfileIDs.first
+        )
+
+        let remapped = SumiImportPlanBuilder(
+            isProfileIdentityAllowed: { $0 != blockedID }
+        ).makePlan(
+            request: request,
+            baseline: SumiPortableData()
+        )
+
+        XCTAssertFalse(
+            remapped.profileTransition.createdProfileIDs.contains(blockedID)
+        )
+        XCTAssertEqual(remapped.profileTransition.createdProfileIDs.count, 1)
     }
 
     func testMaterializationUsesCheckedWorkspaceThemeBytesBeforeStructuredFallback() throws {
@@ -1348,6 +1417,206 @@ final class SumiImportTransactionTests: XCTestCase {
         XCTAssertTrue(report.appliedCategories.isEmpty)
     }
 
+    func testCommittedReplaceRetiresProfilesAfterRuntimeLeaseEnds() async throws {
+        let fixture = makeTransactionFixture()
+        let retirement = RecordingImportProfileRetirement()
+        retirement.onRetire = {
+            XCTAssertFalse(fixture.runtime.isMutationActive)
+        }
+        let basePlan = mutatingPlan()
+        let retiringID = try XCTUnwrap(
+            UUID(uuidString: basePlan.baseline.profiles[0].id)
+        )
+        let fallbackID = try XCTUnwrap(
+            UUID(uuidString: basePlan.targetRuntimeData.profiles[0].id)
+        )
+        let plan = SumiImportPlan(
+            baseline: basePlan.baseline,
+            targetRuntimeData: basePlan.targetRuntimeData,
+            bookmarkMutation: basePlan.bookmarkMutation,
+            categories: basePlan.categories,
+            mode: .replace,
+            warnings: [],
+            profileTransition: SumiImportProfileTransition(
+                sourceToTargetProfileID: [:],
+                createdProfileIDs: [fallbackID],
+                retiringProfileIDs: [retiringID],
+                fallbackProfileID: fallbackID
+            )
+        )
+        let transaction = SumiImportTransaction(
+            materializer: fixture.materializer,
+            runtime: fixture.runtime,
+            bookmarks: fixture.bookmarks,
+            backupWriter: fixture.backup,
+            journal: fixture.journal,
+            profileRetirement: retirement,
+            executionGate: fixture.executionGate
+        )
+
+        _ = try await transaction.commit(plan)
+
+        XCTAssertEqual(retirement.calls.count, 1)
+        XCTAssertEqual(retirement.calls[0].profileIDs, [retiringID])
+        XCTAssertEqual(retirement.calls[0].fallbackProfileID, fallbackID)
+        XCTAssertTrue(fixture.journal.savedPhases.contains(.retiringProfiles))
+        XCTAssertNil(fixture.journal.record)
+    }
+
+    func testRetiringProfilesPhaseResumesForwardWithoutRollback() async throws {
+        let fixture = makeTransactionFixture()
+        let retirement = RecordingImportProfileRetirement()
+        retirement.error = TestImportFailure.rollback
+        let basePlan = mutatingPlan()
+        let retiringID = try XCTUnwrap(
+            UUID(uuidString: basePlan.baseline.profiles[0].id)
+        )
+        let fallbackID = try XCTUnwrap(
+            UUID(uuidString: basePlan.targetRuntimeData.profiles[0].id)
+        )
+        let plan = SumiImportPlan(
+            baseline: basePlan.baseline,
+            targetRuntimeData: basePlan.targetRuntimeData,
+            bookmarkMutation: basePlan.bookmarkMutation,
+            categories: basePlan.categories,
+            mode: .replace,
+            warnings: [],
+            profileTransition: SumiImportProfileTransition(
+                sourceToTargetProfileID: [:],
+                createdProfileIDs: [fallbackID],
+                retiringProfileIDs: [retiringID],
+                fallbackProfileID: fallbackID
+            )
+        )
+        let transaction = SumiImportTransaction(
+            materializer: fixture.materializer,
+            runtime: fixture.runtime,
+            bookmarks: fixture.bookmarks,
+            backupWriter: fixture.backup,
+            journal: fixture.journal,
+            profileRetirement: retirement,
+            executionGate: fixture.executionGate
+        )
+
+        await XCTAssertThrowsErrorAsync {
+            _ = try await transaction.commit(plan)
+        }
+        XCTAssertEqual(fixture.journal.record?.phase, .retiringProfiles)
+        XCTAssertFalse(fixture.runtime.events.contains("restore"))
+
+        retirement.error = nil
+        _ = try await transaction.recoverIfNeeded()
+
+        XCTAssertEqual(retirement.calls.count, 2)
+        XCTAssertNil(fixture.journal.record)
+        XCTAssertFalse(fixture.runtime.events.contains("restore"))
+    }
+
+    func testRollbackRetiresProfilesCreatedByFailedImport() async throws {
+        let fixture = makeTransactionFixture()
+        fixture.bookmarks.failuresRemaining = 1
+        let retirement = RecordingImportProfileRetirement()
+        let basePlan = mutatingPlan()
+        let createdID = try XCTUnwrap(
+            UUID(uuidString: basePlan.targetRuntimeData.profiles[0].id)
+        )
+        let fallbackID = try XCTUnwrap(
+            UUID(uuidString: basePlan.baseline.profiles[0].id)
+        )
+        let plan = SumiImportPlan(
+            baseline: basePlan.baseline,
+            targetRuntimeData: basePlan.targetRuntimeData,
+            bookmarkMutation: basePlan.bookmarkMutation,
+            categories: basePlan.categories,
+            mode: .merge,
+            warnings: [],
+            profileTransition: SumiImportProfileTransition(
+                sourceToTargetProfileID: [:],
+                createdProfileIDs: [createdID],
+                retiringProfileIDs: [],
+                fallbackProfileID: createdID
+            )
+        )
+        let transaction = SumiImportTransaction(
+            materializer: fixture.materializer,
+            runtime: fixture.runtime,
+            bookmarks: fixture.bookmarks,
+            backupWriter: fixture.backup,
+            journal: fixture.journal,
+            profileRetirement: retirement,
+            executionGate: fixture.executionGate
+        )
+
+        await XCTAssertThrowsErrorAsync {
+            _ = try await transaction.commit(plan)
+        }
+
+        XCTAssertTrue(fixture.runtime.events.contains("restore"))
+        XCTAssertEqual(retirement.calls.count, 1)
+        XCTAssertEqual(retirement.calls[0].profileIDs, [createdID])
+        XCTAssertEqual(retirement.calls[0].fallbackProfileID, fallbackID)
+        XCTAssertTrue(
+            fixture.journal.savedPhases.contains(.compensatingProfiles)
+        )
+        XCTAssertNil(fixture.journal.record)
+    }
+
+    func testCompensatingProfileRetirementResumesAfterJournalInterruption() async throws {
+        let fixture = makeTransactionFixture()
+        fixture.bookmarks.failuresRemaining = 1
+        let retirement = RecordingImportProfileRetirement()
+        let basePlan = mutatingPlan()
+        let createdID = try XCTUnwrap(
+            UUID(uuidString: basePlan.targetRuntimeData.profiles[0].id)
+        )
+        let plan = SumiImportPlan(
+            baseline: basePlan.baseline,
+            targetRuntimeData: basePlan.targetRuntimeData,
+            bookmarkMutation: basePlan.bookmarkMutation,
+            categories: basePlan.categories,
+            mode: .merge,
+            warnings: [],
+            profileTransition: SumiImportProfileTransition(
+                sourceToTargetProfileID: [:],
+                createdProfileIDs: [createdID],
+                retiringProfileIDs: [],
+                fallbackProfileID: createdID
+            )
+        )
+        let interrupted = SumiImportTransaction(
+            materializer: fixture.materializer,
+            runtime: fixture.runtime,
+            bookmarks: fixture.bookmarks,
+            backupWriter: fixture.backup,
+            journal: fixture.journal,
+            profileRetirement: retirement,
+            executionGate: fixture.executionGate,
+            shouldInterrupt: {
+                $0 == .phasePersisted(.compensatingProfiles)
+            }
+        )
+
+        await XCTAssertThrowsErrorAsync {
+            _ = try await interrupted.commit(plan)
+        }
+
+        XCTAssertEqual(fixture.journal.record?.phase, .compensatingProfiles)
+        XCTAssertTrue(retirement.calls.isEmpty)
+
+        _ = try await SumiImportTransaction(
+            materializer: fixture.materializer,
+            runtime: fixture.runtime,
+            bookmarks: fixture.bookmarks,
+            backupWriter: fixture.backup,
+            journal: fixture.journal,
+            profileRetirement: retirement,
+            executionGate: fixture.executionGate
+        ).recoverIfNeeded()
+
+        XCTAssertEqual(retirement.calls.first?.profileIDs, [createdID])
+        XCTAssertNil(fixture.journal.record)
+    }
+
     private func makeMergeRequest() -> SumiImportRequest {
         let profileId = "source-profile"
         let spaceId = "source-space"
@@ -1850,6 +2119,32 @@ private final class RecordingImportBackup: SumiImportBackupWriting {
         callCount += 1
         if let error { throw error }
         return URL(fileURLWithPath: "/tmp/import-backup.sumibackup")
+    }
+}
+
+@MainActor
+private final class RecordingImportProfileRetirement: SumiImportProfileRetiring {
+    struct Call: Equatable {
+        let profileIDs: Set<UUID>
+        let fallbackProfileID: UUID
+    }
+
+    var error: Error?
+    var onRetire: (() -> Void)?
+    private(set) var calls: [Call] = []
+
+    func retireProfiles(
+        _ profileIDs: Set<UUID>,
+        fallbackProfileID: UUID
+    ) async throws {
+        calls.append(
+            Call(
+                profileIDs: profileIDs,
+                fallbackProfileID: fallbackProfileID
+            )
+        )
+        onRetire?()
+        if let error { throw error }
     }
 }
 

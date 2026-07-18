@@ -14,6 +14,7 @@ import WebKit
 enum ProfileManagerMutationError: Error, Equatable {
     case retiredReference(UUID)
     case profileIdentityMutationRequiresRetirement
+    case invalidImportMutationLease
 }
 
 @MainActor
@@ -187,6 +188,32 @@ final class ProfileManager: ObservableObject {
         else {
             throw ProfileManagerMutationError
                 .profileIdentityMutationRequiresRetirement
+        }
+        if let rejected = replacement.first(where: {
+            profileReferenceAdmission.isReferenceAllowed($0.id) == false
+        }) {
+            throw ProfileManagerMutationError.retiredReference(rejected.id)
+        }
+        try persistProfileSnapshot(replacement)
+        profiles = replacement
+    }
+
+    /// Import may publish new profile identities while holding the same
+    /// reference-admission lease as the structural install. Existing identities
+    /// are never removed here; removal remains owned by durable retirement.
+    func applyImportProfiles(
+        _ replacement: [Profile],
+        mutationLease: ProfileReferenceMutationLease
+    ) throws {
+        let currentIDs = Set(profiles.map(\.id))
+        let replacementIDs = Set(replacement.map(\.id))
+        guard replacementIDs.isSuperset(of: currentIDs),
+              profileReferenceAdmission.validate(
+                  mutationLease,
+                  covers: replacementIDs
+              )
+        else {
+            throw ProfileManagerMutationError.invalidImportMutationLease
         }
         if let rejected = replacement.first(where: {
             profileReferenceAdmission.isReferenceAllowed($0.id) == false

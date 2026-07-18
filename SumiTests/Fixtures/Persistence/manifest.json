@@ -119,16 +119,16 @@
       "family": "import-journal",
       "role": "malformed import journal",
       "provenance": "adversarial-format-mutation",
-      "test": "testImportJournalFixturesReadV1AndRejectFutureAndMalformed"
+      "test": "testImportJournalFixturesReadV1AndV2AndRejectFutureAndMalformed"
     },
     {
-      "path": "SumiTests/Fixtures/Persistence/import/import-journal-unsupported-v2.json",
-      "sha256": "3f8319e26bd7894c82e80d5739cb4f584929aa889394355bffb209243e5d8a4c",
+      "path": "SumiTests/Fixtures/Persistence/import/import-journal-unsupported-v3.json",
+      "sha256": "2f7658ec5aded6782d6892ad2f097c0930c07a4da8ce0f90e80b70d657622726",
       "bytes": 391,
       "family": "import-journal",
       "role": "unsupported future import journal",
       "provenance": "adversarial-format-mutation",
-      "test": "testImportJournalFixturesReadV1AndRejectFutureAndMalformed"
+      "test": "testImportJournalFixturesReadV1AndV2AndRejectFutureAndMalformed"
     },
     {
       "path": "SumiTests/Fixtures/Persistence/import/import-journal-v1.json",
@@ -137,7 +137,16 @@
       "family": "import-journal",
       "role": "shipped import journal v1",
       "provenance": "shipped-codable-format",
-      "test": "testImportJournalFixturesReadV1AndRejectFutureAndMalformed"
+      "test": "testImportJournalFixturesReadV1AndV2AndRejectFutureAndMalformed"
+    },
+    {
+      "path": "SumiTests/Fixtures/Persistence/import/import-journal-v2.json",
+      "sha256": "8661dbf7b276031bce1a00537607ccc7a7bc89a8b8e08f8397163bf034b7973a",
+      "bytes": 514,
+      "family": "import-journal",
+      "role": "current import journal v2",
+      "provenance": "shipped-codable-format",
+      "test": "testImportJournalFixturesReadV1AndV2AndRejectFutureAndMalformed"
     },
     {
       "path": "SumiTests/Fixtures/Persistence/live-folders/live-folders-malformed.json",

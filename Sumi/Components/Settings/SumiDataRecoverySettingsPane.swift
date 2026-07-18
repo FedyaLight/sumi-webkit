@@ -395,6 +395,19 @@ private struct SumiImportPreviewSheet: View {
                 }
             }
 
+            if applyMode == .replace,
+               selectedCategories.contains(.profiles) {
+                Label(
+                    "Replace safely retires local profiles not present in the import "
+                        + "and removes their profile-scoped website data, which is not "
+                        + "included in backups.",
+                    systemImage: "exclamationmark.shield"
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+
             HStack {
                 Spacer()
                 Button("Cancel", action: onCancel)

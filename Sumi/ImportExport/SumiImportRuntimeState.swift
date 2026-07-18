@@ -50,3 +50,43 @@ protocol SumiImportProfileSelection: AnyObject {
     var currentProfile: Profile? { get }
     func applyImportProfileSelection(_ profile: Profile?)
 }
+
+@MainActor
+protocol SumiImportProfileRetiring: AnyObject {
+    func retireProfiles(
+        _ profileIDs: Set<UUID>,
+        fallbackProfileID: UUID
+    ) async throws
+}
+
+@MainActor
+final class SumiImportNoopProfileRetirement: SumiImportProfileRetiring {
+    func retireProfiles(
+        _ profileIDs: Set<UUID>,
+        fallbackProfileID _: UUID
+    ) async throws {
+        guard profileIDs.isEmpty else {
+            throw SumiImportProfileRetirementError.unavailable
+        }
+    }
+}
+
+enum SumiImportProfileRetirementError: LocalizedError {
+    case unavailable
+    case profileMissing(UUID)
+    case fallbackMissing(UUID)
+    case deferred(UUID)
+
+    var errorDescription: String? {
+        switch self {
+        case .unavailable:
+            "Durable profile retirement is unavailable for this import."
+        case .profileMissing(let id):
+            "The profile scheduled for retirement is unavailable: \(id.uuidString)."
+        case .fallbackMissing(let id):
+            "The import fallback profile is unavailable: \(id.uuidString)."
+        case .deferred(let id):
+            "Cleanup for profile \(id.uuidString) is pending and will resume on next launch."
+        }
+    }
+}

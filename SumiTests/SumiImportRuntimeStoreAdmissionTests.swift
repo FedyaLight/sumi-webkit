@@ -6,6 +6,39 @@ import XCTest
 
 @MainActor
 final class SumiImportRuntimeStoreAdmissionTests: XCTestCase {
+    func testImportProfileSnapshotCanAddButNotRemoveIdentities() throws {
+        let container = try makeInMemoryStartupModelContainer()
+        let profileManager = ProfileManager(context: container.mainContext)
+        let original = try profileManager.createProfile(name: "Original")
+        let imported = Profile(name: "Imported")
+        let lease = try profileManager.profileReferenceAdmission
+            .beginReferenceMutation(to: [original.id, imported.id])
+        defer {
+            XCTAssertTrue(
+                profileManager.profileReferenceAdmission
+                    .endReferenceMutation(lease)
+            )
+        }
+
+        try profileManager.applyImportProfiles(
+            [original, imported],
+            mutationLease: lease
+        )
+
+        XCTAssertEqual(profileManager.profiles.map(\.id), [original.id, imported.id])
+        XCTAssertThrowsError(
+            try profileManager.applyImportProfiles(
+                [imported],
+                mutationLease: lease
+            )
+        ) { error in
+            XCTAssertEqual(
+                error as? ProfileManagerMutationError,
+                .invalidImportMutationLease
+            )
+        }
+    }
+
     func testProfileSnapshotReplacementCannotBypassDurableRetirement() throws {
         let container = try makeInMemoryStartupModelContainer()
         let profileManager = ProfileManager(context: container.mainContext)

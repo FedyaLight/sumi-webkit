@@ -9,6 +9,11 @@
     "spaces": []
   },
   "phase": "prepared",
+  "profileTransition": {
+    "createdProfileIDs": [],
+    "retiringProfileIDs": [],
+    "sourceToTargetProfileID": {}
+  },
   "targetRuntimeData": {
     "bookmarks": [],
     "essentials": [],

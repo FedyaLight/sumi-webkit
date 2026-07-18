@@ -5,7 +5,9 @@ enum SumiImportTransactionPhase: String, Codable, CaseIterable, Sendable {
     case prepared
     case runtimeCommitted
     case bookmarksCommitted
+    case retiringProfiles
     case compensating
+    case compensatingProfiles
     case completed
 
     func canTransition(to phase: Self) -> Bool {
@@ -15,8 +17,13 @@ enum SumiImportTransactionPhase: String, Codable, CaseIterable, Sendable {
              (.runtimeCommitted, .bookmarksCommitted),
              (.runtimeCommitted, .compensating),
              (.bookmarksCommitted, .compensating),
+             (.bookmarksCommitted, .retiringProfiles),
              (.bookmarksCommitted, .completed),
+             (.retiringProfiles, .completed),
+             (.compensating, .compensatingProfiles),
              (.compensating, .completed):
+            true
+        case (.compensatingProfiles, .completed):
             true
         default:
             false
@@ -25,7 +32,7 @@ enum SumiImportTransactionPhase: String, Codable, CaseIterable, Sendable {
 }
 
 struct SumiImportTransactionJournalRecord: Codable, Equatable, Sendable {
-    static let currentVersion = 1
+    static let currentVersion = 2
 
     let version: Int
     var phase: SumiImportTransactionPhase
@@ -34,6 +41,7 @@ struct SumiImportTransactionJournalRecord: Codable, Equatable, Sendable {
     let runtimeCheckpoint: SumiImportDurableRuntimeCheckpoint?
     let bookmarkCheckpoint: SumiImportBookmarkCheckpoint?
     let preRestoreBackupURL: URL?
+    let profileTransition: SumiImportProfileTransition
 
     init(
         phase: SumiImportTransactionPhase,
@@ -41,7 +49,8 @@ struct SumiImportTransactionJournalRecord: Codable, Equatable, Sendable {
         targetRuntimeData: SumiPortableData,
         runtimeCheckpoint: SumiImportDurableRuntimeCheckpoint?,
         bookmarkCheckpoint: SumiImportBookmarkCheckpoint?,
-        preRestoreBackupURL: URL?
+        preRestoreBackupURL: URL?,
+        profileTransition: SumiImportProfileTransition = .none
     ) {
         version = Self.currentVersion
         self.phase = phase
@@ -50,8 +59,46 @@ struct SumiImportTransactionJournalRecord: Codable, Equatable, Sendable {
         self.runtimeCheckpoint = runtimeCheckpoint
         self.bookmarkCheckpoint = bookmarkCheckpoint
         self.preRestoreBackupURL = preRestoreBackupURL
+        self.profileTransition = profileTransition
     }
 
+    private enum CodingKeys: String, CodingKey {
+        case version
+        case phase
+        case baseline
+        case targetRuntimeData
+        case runtimeCheckpoint
+        case bookmarkCheckpoint
+        case preRestoreBackupURL
+        case profileTransition
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        version = try container.decode(Int.self, forKey: .version)
+        phase = try container.decode(SumiImportTransactionPhase.self, forKey: .phase)
+        baseline = try container.decode(SumiPortableData.self, forKey: .baseline)
+        targetRuntimeData = try container.decode(
+            SumiPortableData.self,
+            forKey: .targetRuntimeData
+        )
+        runtimeCheckpoint = try container.decodeIfPresent(
+            SumiImportDurableRuntimeCheckpoint.self,
+            forKey: .runtimeCheckpoint
+        )
+        bookmarkCheckpoint = try container.decodeIfPresent(
+            SumiImportBookmarkCheckpoint.self,
+            forKey: .bookmarkCheckpoint
+        )
+        preRestoreBackupURL = try container.decodeIfPresent(
+            URL.self,
+            forKey: .preRestoreBackupURL
+        )
+        profileTransition = try container.decodeIfPresent(
+            SumiImportProfileTransition.self,
+            forKey: .profileTransition
+        ) ?? .none
+    }
 }
 
 struct SumiImportDurableRuntimeCheckpoint: Codable, Equatable, Sendable {

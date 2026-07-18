@@ -188,7 +188,9 @@ struct SumiApp: App {
                     bookmarks: SumiImportBookmarkStore(
                         bookmarkManager: browserManager.bookmarkManager
                     ),
-                    backupWriter: SumiBackupService()
+                    backupWriter: SumiBackupService(),
+                    profileRetirement: browserManager.profileLifecycleBundle
+                        .importRetirement
                 )
                 return try await transaction.recoverIfNeeded()
             },

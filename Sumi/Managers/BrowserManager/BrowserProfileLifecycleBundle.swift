@@ -21,17 +21,20 @@ final class BrowserProfileLifecycleBundle {
     let startupPolicy: BrowserStartupPolicy
     let deletionWorkflow: BrowserProfileDeletionWorkflow
     let retirementStartupRecovery: ProfileRetirementStartupRecovery
+    let importRetirement: SumiImportProfileRetirementCoordinator
 
     init(
         profileSwitchTransition: BrowserProfileSwitchTransitionOwner,
         startupPolicy: BrowserStartupPolicy,
         deletionWorkflow: BrowserProfileDeletionWorkflow,
-        retirementStartupRecovery: ProfileRetirementStartupRecovery
+        retirementStartupRecovery: ProfileRetirementStartupRecovery,
+        importRetirement: SumiImportProfileRetirementCoordinator
     ) {
         self.profileSwitchTransition = profileSwitchTransition
         self.startupPolicy = startupPolicy
         self.deletionWorkflow = deletionWorkflow
         self.retirementStartupRecovery = retirementStartupRecovery
+        self.importRetirement = importRetirement
     }
 }
 
@@ -155,8 +158,7 @@ extension BrowserManager {
             applicationDataCleanupService: applicationDataCleanup
         )
         let noticePresenter = chromeBundle.nativeDialogPresentationOwner
-        let deletionWorkflow = BrowserProfileDeletionWorkflow(
-            maintenanceContext: SumiProfileMaintenanceService.Context(
+        let maintenanceContext = SumiProfileMaintenanceService.Context(
                 currentProfile: { [currentProfileAuthority] in
                     currentProfileAuthority.currentProfile
                 },
@@ -209,6 +211,8 @@ extension BrowserManager {
                     )
                 }
             )
+        let deletionWorkflow = BrowserProfileDeletionWorkflow(
+            maintenanceContext: maintenanceContext
         )
 
         return BrowserProfileLifecycleBundle(
@@ -224,7 +228,10 @@ extension BrowserManager {
                     permissionRuntime: permissionRuntime,
                     browsingDataCleanupService: browsingDataCleanupService,
                     cleanupDependencies: cleanupDependencies
-                )
+                ),
+            importRetirement: SumiImportProfileRetirementCoordinator(
+                context: maintenanceContext
+            )
         )
     }
 

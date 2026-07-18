@@ -2,6 +2,13 @@ import Foundation
 
 @MainActor
 final class SumiProfileMaintenanceService {
+    enum RetirementResult: Equatable {
+        case completed
+        case failed(String)
+        case migrationPending
+        case cleanupPending
+    }
+
     struct Notice {
         var title: String
         var subtitle: String
@@ -44,147 +51,141 @@ final class SumiProfileMaintenanceService {
         }
 
         Task { @MainActor in
-            guard let replacement = context.profileManager.profiles.first(where: { $0.id != profile.id }) else {
-                return
-            }
-
-            guard let cleanup = makeDeletionCleanupOrchestrator(
-                for: profile,
+            guard let replacement = context.profileManager.profiles.first(where: {
+                $0.id != profile.id
+            }) else { return }
+            switch await retireProfile(
+                profile,
+                fallback: replacement,
                 using: context
-            ) else {
-                showDeletionFailure(
-                    profile,
-                    message: "Required profile cleanup services are unavailable.",
-                    using: context
-                )
-                return
+            ) {
+            case .completed:
+                break
+            case .failed(let message):
+                showDeletionFailure(profile, message: message, using: context)
+            case .migrationPending:
+                showMigrationPending(profile, using: context)
+            case .cleanupPending:
+                showCleanupPending(profile, using: context)
             }
+        }
+    }
 
-            let token: ProfileRetirementToken
-            do {
-                token = try context.profileManager.profileReferenceAdmission.reserve(
-                    profile: profile,
-                    fallbackID: replacement.id
-                )
-            } catch {
-                showDeletionFailure(
-                    profile,
-                    message: "The profile could not be reserved for safe deletion.",
-                    using: context
-                )
-                return
-            }
+    func retireProfile(
+        _ profile: Profile,
+        fallback replacement: Profile,
+        using context: Context
+    ) async -> RetirementResult {
+        guard profile.id != replacement.id,
+              context.profileManager.profiles.contains(where: { $0.id == profile.id }),
+              context.profileManager.profiles.contains(where: { $0.id == replacement.id })
+        else {
+            return .failed("The profile or its replacement is unavailable.")
+        }
+        guard let cleanup = makeDeletionCleanupOrchestrator(
+            for: profile,
+            using: context
+        ) else {
+            return .failed("Required profile cleanup services are unavailable.")
+        }
 
-            let preflightAccepted = await context.browsingDataCleanupService
-                .performDestructiveWebsiteDataCleanup(
-                    profileIDs: [profile.id],
-                    deletion: {}
-                )
-            guard preflightAccepted else {
-                cancelReservation(token, using: context)
-                showDeletionFailure(
-                    profile,
-                    message: "The browser could not prepare profile data for safe deletion.",
-                    using: context
-                )
-                return
-            }
-
-            do {
-                guard try context.profileManager.beginReferenceMigration(token)
-                else {
-                    throw ProfileDeletionCleanupFailure.staleRetirement
-                }
-            } catch {
-                cancelReservation(token, using: context)
-                showDeletionFailure(
-                    profile,
-                    message: "The profile could not begin safe reference migration.",
-                    using: context
-                )
-                return
-            }
-
-            let migration = await context.migrateProfileReferences(
-                profile.id,
-                replacement.id
+        let token: ProfileRetirementToken
+        do {
+            token = try context.profileManager.profileReferenceAdmission.reserve(
+                profile: profile,
+                fallbackID: replacement.id
             )
-            guard migration == .committed else {
-                showMigrationPending(profile, using: context)
-                return
-            }
+        } catch {
+            return .failed("The profile could not be reserved for safe deletion.")
+        }
 
-            guard await context.persistProfileReferences() else {
-                showMigrationPending(profile, using: context)
-                return
-            }
+        let preflightAccepted = await context.browsingDataCleanupService
+            .performDestructiveWebsiteDataCleanup(
+                profileIDs: [profile.id],
+                deletion: { /* Cleanup runs after logical deletion. */ }
+            )
+        guard preflightAccepted else {
+            cancelReservation(token, using: context)
+            return .failed("The browser could not prepare profile data for safe deletion.")
+        }
 
-            guard await context.migrateBrowserProfileReferences(
-                profile.id,
-                replacement
-            ) else {
-                showMigrationPending(profile, using: context)
-                return
+        do {
+            guard try context.profileManager.beginReferenceMigration(token) else {
+                throw ProfileDeletionCleanupFailure.staleRetirement
             }
+        } catch {
+            cancelReservation(token, using: context)
+            return .failed("The profile could not begin safe reference migration.")
+        }
 
-            guard context.currentProfile()?.id != profile.id,
-                  context.hasProfileReferences(profile.id) == false,
-                  context.profileManager.profileReferenceAdmission.validate(token)
+        let migration = await context.migrateProfileReferences(
+            profile.id,
+            replacement.id
+        )
+        guard migration == .committed,
+              await context.persistProfileReferences(),
+              await context.migrateBrowserProfileReferences(
+                  profile.id,
+                  replacement
+              ),
+              context.currentProfile()?.id != profile.id,
+              context.hasProfileReferences(profile.id) == false,
+              context.profileManager.profileReferenceAdmission.validate(token)
+        else {
+            return .migrationPending
+        }
+
+        do {
+            guard try context.profileManager.commitLogicalDeletion(token) else {
+                return .migrationPending
+            }
+        } catch {
+            return .migrationPending
+        }
+
+        guard await context.sealProfileRuntime(profile.id) else {
+            return .cleanupPending
+        }
+
+        return await completeRetirementCleanup(
+            profile,
+            token: token,
+            cleanup: cleanup,
+            using: context
+        )
+    }
+
+    private func completeRetirementCleanup(
+        _ profile: Profile,
+        token: ProfileRetirementToken,
+        cleanup: ProfileDeletionCleanupOrchestrator,
+        using context: Context
+    ) async -> RetirementResult {
+        do {
+            guard try context.profileManager.profileReferenceAdmission
+                .beginCleaning(token),
+                  let record = context.profileManager.profileReferenceAdmission
+                    .record(for: token)
             else {
-                showMigrationPending(profile, using: context)
-                return
+                throw ProfileDeletionCleanupFailure.staleRetirement
             }
-
-            do {
-                guard try context.profileManager.commitLogicalDeletion(token) else {
-                    showMigrationPending(profile, using: context)
-                    return
-                }
-            } catch {
-                showMigrationPending(profile, using: context)
-                return
-            }
-
-            guard await context.sealProfileRuntime(profile.id) else {
-                showCleanupPending(profile, using: context)
-                return
-            }
-
-            do {
-                guard try context.profileManager.profileReferenceAdmission
-                    .beginCleaning(token) else {
-                    throw ProfileDeletionCleanupFailure.staleRetirement
-                }
-            } catch {
-                showCleanupPending(profile, using: context)
-                return
-            }
-
-            do {
-                guard let record = context.profileManager.profileReferenceAdmission
-                    .record(for: token) else {
-                    throw ProfileDeletionCleanupFailure.staleRetirement
-                }
-                try await cleanup.cleanup(
-                    profileId: profile.id,
-                    startingAt: record.nextCleanupStep,
-                    checkpoint: { completedStep in
-                        guard try context.profileManager.profileReferenceAdmission
-                            .completeCleanupStep(
-                                completedStep,
-                                using: token
-                            ) else {
-                            throw ProfileDeletionCleanupFailure.staleRetirement
-                        }
+            try await cleanup.cleanup(
+                profileId: profile.id,
+                startingAt: record.nextCleanupStep,
+                checkpoint: { completedStep in
+                    guard try context.profileManager.profileReferenceAdmission
+                        .completeCleanupStep(completedStep, using: token) else {
+                        throw ProfileDeletionCleanupFailure.staleRetirement
                     }
-                )
-                guard try context.profileManager.profileReferenceAdmission
-                    .markRetired(token) else {
-                    throw ProfileDeletionCleanupFailure.staleRetirement
                 }
-            } catch {
-                showCleanupPending(profile, using: context)
+            )
+            guard try context.profileManager.profileReferenceAdmission
+                .markRetired(token) else {
+                throw ProfileDeletionCleanupFailure.staleRetirement
             }
+            return .completed
+        } catch {
+            return .cleanupPending
         }
     }
 

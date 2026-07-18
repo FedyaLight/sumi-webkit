@@ -17,11 +17,35 @@ struct SumiImportIdentityResolver {
     let importsProfiles: Bool
     let importsSpaces: Bool
     let importsFolders: Bool
+    let profileIDsBySource: [String: String]
     let fallbackProfileId: String?
     let fallbackSpaceId: String?
 
+    init(
+        sourceKind: SumiImportSourceKind,
+        mode: SumiImportApplyMode,
+        importsProfiles: Bool,
+        importsSpaces: Bool,
+        importsFolders: Bool,
+        profileIDsBySource: [String: String] = [:],
+        fallbackProfileId: String?,
+        fallbackSpaceId: String?
+    ) {
+        self.sourceKind = sourceKind
+        self.mode = mode
+        self.importsProfiles = importsProfiles
+        self.importsSpaces = importsSpaces
+        self.importsFolders = importsFolders
+        self.profileIDsBySource = profileIDsBySource
+        self.fallbackProfileId = fallbackProfileId
+        self.fallbackSpaceId = fallbackSpaceId
+    }
+
     func profileId(_ source: String) -> String {
-        importsProfiles ? importedId(.profile, source: source) : fallbackProfileId ?? fallbackId(.profile)
+        if importsProfiles, let mapped = profileIDsBySource[source] {
+            return mapped
+        }
+        return fallbackProfileId ?? fallbackId(.profile)
     }
 
     func spaceId(_ source: String) -> String {

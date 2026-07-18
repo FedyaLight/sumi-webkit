@@ -18,7 +18,7 @@ Run `scripts/check_persistence_inventory.sh` after changing a store, a persisten
 | Extension packages | Authoritative | Package install transaction plus SwiftData `ExtensionEntity` | Runtime extension package roots | Staged filesystem publication; later metadata/runtime reconciliation |
 | WebKit website data | Authoritative | WebKit; profile UUID is Sumi identity | WebKit-selected default/profile stores | Only WebKit APIs inspect or delete it |
 | WebKit extension storage | Authoritative | WebKit plus controller/directory owners | WebKit-selected and runtime extension-storage roots | Ordered legacy-directory retirement; no package/metadata transaction |
-| Import journal | Recovery | `SumiImportTransactionJournalRecord` v1 | Runtime `ImportTransaction.json` | Fsynced phases and completed tombstone drive compensation/recovery |
+| Import journal | Recovery | `SumiImportTransactionJournalRecord` v2 | Runtime `ImportTransaction.json` | Fsynced phases and completed tombstone drive compensation/recovery, including profile retirement |
 | Logical backups | Backup | `SumiBackupArchive` v1 | User-selected URL or runtime `Backups` root | Validate before mutation; future/malformed archives are rejected |
 | Favicon blobs | Cache | Metadata schema v2 | Runtime `Favicons/v2` root | Invalid metadata/blob is discarded and rebuilt |
 | Generated adblock archive | Cache | Generation schema 6, reads 1...6 | Sumi `Adblock` root | Topology/path/size/hash checks precede active-manifest publication |

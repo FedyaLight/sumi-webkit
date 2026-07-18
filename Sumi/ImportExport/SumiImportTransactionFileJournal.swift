@@ -225,7 +225,8 @@ struct SumiImportTransactionFileJournal: SumiImportTransactionJournal, Sendable 
             SumiImportTransactionJournalRecord.self,
             from: Data(contentsOf: url)
         )
-        guard record.version == SumiImportTransactionJournalRecord.currentVersion else {
+        guard (1...SumiImportTransactionJournalRecord.currentVersion)
+            .contains(record.version) else {
             throw SumiImportTransactionJournalError.unsupportedVersion(record.version)
         }
         return record
@@ -479,7 +480,7 @@ struct SumiImportTransactionFileJournal: SumiImportTransactionJournal, Sendable 
             domain: NSPOSIXErrorDomain,
             code: Int(code),
             userInfo: [
-                NSLocalizedDescriptionKey: "Failed to \(operation) at \(path): \(String(cString: strerror(code)))"
+                NSLocalizedDescriptionKey: "Failed to \(operation) at \(path): \(String(cString: strerror(code)))",
             ]
         )
     }

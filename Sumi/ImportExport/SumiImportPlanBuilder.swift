@@ -4,6 +4,12 @@ import SumiDomain
 struct SumiImportPlanBuilder {
     static let maxEssentialsPerProfile = 12
 
+    private let isProfileIdentityAllowed: (UUID) -> Bool
+
+    init(isProfileIdentityAllowed: @escaping (UUID) -> Bool = { _ in true }) {
+        self.isProfileIdentityAllowed = isProfileIdentityAllowed
+    }
+
     func makePlan(request: SumiImportRequest, baseline: SumiPortableData) -> SumiImportPlan {
         var warnings: [String] = []
         let runtimeCategories = request.categories.subtracting([.bookmarks])
@@ -20,12 +26,17 @@ struct SumiImportPlanBuilder {
         var output = baseline
         clearReplacedCategories(request.categories, in: &output, mode: request.mode)
 
+        let profileIDsBySource = makeProfileIdentityMapping(
+            request: request,
+            baseline: baseline
+        )
         let identity = SumiImportIdentityResolver(
             sourceKind: request.sourceKind,
             mode: request.mode,
             importsProfiles: request.categories.contains(.profiles),
             importsSpaces: request.categories.contains(.spaces),
             importsFolders: request.categories.contains(.folders),
+            profileIDsBySource: profileIDsBySource,
             fallbackProfileId: output.profiles.first?.id,
             fallbackSpaceId: output.spaces.first?.id
         )
@@ -42,14 +53,106 @@ struct SumiImportPlanBuilder {
         output.bookmarks = baseline.bookmarks
         output = SumiImportDataNormalizer.normalize(output)
 
+        let baselineProfileIDs = Set(baseline.profiles.compactMap { UUID(uuidString: $0.id) })
+        let targetProfileIDs = Set(output.profiles.compactMap { UUID(uuidString: $0.id) })
+        let replacesProfiles = request.mode == .replace
+            && request.categories.contains(.profiles)
+        let transition = SumiImportProfileTransition(
+            sourceToTargetProfileID: profileIDsBySource,
+            createdProfileIDs: targetProfileIDs.subtracting(baselineProfileIDs),
+            retiringProfileIDs: replacesProfiles
+                ? baselineProfileIDs.subtracting(targetProfileIDs)
+                : [],
+            fallbackProfileID: output.profiles.first.flatMap { UUID(uuidString: $0.id) }
+        )
+
         return SumiImportPlan(
             baseline: baseline,
             targetRuntimeData: output,
             bookmarkMutation: bookmarkMutation(for: request, baseline: baseline),
             categories: request.categories,
             mode: request.mode,
-            warnings: warnings
+            warnings: warnings,
+            profileTransition: transition
         )
+    }
+
+    private func makeProfileIdentityMapping(
+        request: SumiImportRequest,
+        baseline: SumiPortableData
+    ) -> [String: String] {
+        guard request.categories.contains(.profiles) else { return [:] }
+        let incoming = request.data.profiles.sorted(by: stableIndexOrder)
+        let existing = baseline.profiles.sorted(by: stableIndexOrder)
+        var mapping: [String: String] = [:]
+        var usedTargetIDs: Set<String> = []
+
+        if request.mode == .replace {
+            let existingIDs = Set(existing.map(\.id))
+            for profile in incoming where existingIDs.contains(profile.id) {
+                mapping[profile.id] = profile.id
+                usedTargetIDs.insert(profile.id)
+            }
+
+            var reusableIDs = existing.map(\.id).filter { !usedTargetIDs.contains($0) }
+            for profile in incoming where mapping[profile.id] == nil {
+                if !reusableIDs.isEmpty {
+                    let reused = reusableIDs.removeFirst()
+                    mapping[profile.id] = reused
+                    usedTargetIDs.insert(reused)
+                } else {
+                    let created = availableImportedProfileID(
+                        source: profile.id,
+                        sourceKind: request.sourceKind,
+                        mode: request.mode,
+                        excluding: usedTargetIDs
+                    )
+                    mapping[profile.id] = created
+                    usedTargetIDs.insert(created)
+                }
+            }
+            return mapping
+        }
+
+        for profile in incoming {
+            let created = availableImportedProfileID(
+                source: profile.id,
+                sourceKind: request.sourceKind,
+                mode: request.mode,
+                excluding: usedTargetIDs
+            )
+            mapping[profile.id] = created
+            usedTargetIDs.insert(created)
+        }
+        return mapping
+    }
+
+    private func availableImportedProfileID(
+        source: String,
+        sourceKind: SumiImportSourceKind,
+        mode: SumiImportApplyMode,
+        excluding: Set<String>
+    ) -> String {
+        let resolver = SumiImportIdentityResolver(
+            sourceKind: sourceKind,
+            mode: mode,
+            importsProfiles: true,
+            importsSpaces: false,
+            importsFolders: false,
+            profileIDsBySource: [:],
+            fallbackProfileId: nil,
+            fallbackSpaceId: nil
+        )
+        for attempt in 0..<128 {
+            let candidateSource = attempt == 0 ? source : "\(source)|retry:\(attempt)"
+            let candidate = resolver.importedId(.profile, source: candidateSource)
+            if !excluding.contains(candidate),
+               let id = UUID(uuidString: candidate),
+               isProfileIdentityAllowed(id) {
+                return candidate
+            }
+        }
+        return resolver.importedId(.profile, source: "\(source)|fallback")
     }
 
     private func clearReplacedCategories(
@@ -83,7 +186,7 @@ struct SumiImportPlanBuilder {
     ) {
         guard request.categories.contains(.profiles) else { return }
         for profile in request.data.profiles.sorted(by: stableIndexOrder) {
-            let id = identity.importedId(.profile, source: profile.id)
+            let id = identity.profileId(profile.id)
             guard !data.profiles.contains(where: { $0.id == id }) else { continue }
             data.profiles.append(SumiPortableProfile(
                 id: id,

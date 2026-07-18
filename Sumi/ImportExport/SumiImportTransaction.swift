@@ -7,6 +7,7 @@ final class SumiImportTransaction {
     private let bookmarks: any SumiImportBookmarkMutating
     private let backupWriter: any SumiImportBackupWriting
     private let journal: any SumiImportTransactionJournal
+    private let profileRetirement: any SumiImportProfileRetiring
     private let executionGate: SumiImportTransactionExecutionGate
     private let shouldInterrupt: (SumiImportTransactionFaultPoint) -> Bool
 
@@ -16,6 +17,7 @@ final class SumiImportTransaction {
         bookmarks: any SumiImportBookmarkMutating,
         backupWriter: any SumiImportBackupWriting,
         journal: any SumiImportTransactionJournal = SumiImportTransactionFileJournal(),
+        profileRetirement: any SumiImportProfileRetiring = SumiImportNoopProfileRetirement(),
         executionGate: SumiImportTransactionExecutionGate = .shared,
         shouldInterrupt: @escaping (SumiImportTransactionFaultPoint) -> Bool = { _ in false }
     ) {
@@ -24,6 +26,7 @@ final class SumiImportTransaction {
         self.bookmarks = bookmarks
         self.backupWriter = backupWriter
         self.journal = journal
+        self.profileRetirement = profileRetirement
         self.executionGate = executionGate
         self.shouldInterrupt = shouldInterrupt
     }
@@ -76,7 +79,7 @@ final class SumiImportTransaction {
             throw commitFailure(error, rollbackErrors: [], backupURL: nil)
         }
 
-        let runtimeMutationSession: SumiImportRuntimeMutationSession?
+        var runtimeMutationSession: SumiImportRuntimeMutationSession?
         do {
             runtimeMutationSession = try importedState.map { importedState in
                 try runtime.beginMutation(
@@ -105,7 +108,8 @@ final class SumiImportTransaction {
             targetRuntimeData: plan.targetRuntimeData,
             runtimeCheckpoint: runtimeCheckpoint.map(SumiImportDurableRuntimeCheckpoint.init),
             bookmarkCheckpoint: bookmarkCheckpoint.map(SumiImportBookmarkCheckpoint.init),
-            preRestoreBackupURL: preRestoreBackupURL
+            preRestoreBackupURL: preRestoreBackupURL,
+            profileTransition: plan.profileTransition
         )
 
         do {
@@ -137,11 +141,17 @@ final class SumiImportTransaction {
         } catch is SumiImportTransactionInterruption {
             throw SumiImportTransactionInterruption()
         } catch let importError {
-            let rollbackErrors = try await compensate(
+            let compensation = try await compensate(
                 record: record,
                 runtimeCheckpoint: runtimeCheckpoint,
                 bookmarkCheckpoint: bookmarkCheckpoint,
                 runtimeMutationSession: runtimeMutationSession
+            )
+            endRuntimeMutationSession(&runtimeMutationSession)
+            let rollbackErrors = await finishCommitCompensation(
+                compensation,
+                transition: plan.profileTransition,
+                baseline: plan.baseline
             )
             throw commitFailure(
                 importError,
@@ -150,25 +160,12 @@ final class SumiImportTransaction {
             )
         }
 
-        do {
-            record = try await transition(record, to: .completed)
-        } catch is SumiImportTransactionInterruption {
-            throw SumiImportTransactionInterruption()
-        } catch {
-            throw SumiImportTransactionError.commitFinalizationFailed(
-                finalizationError: error,
-                preRestoreBackupURL: preRestoreBackupURL
-            )
-        }
-
-        do {
-            try await journal.clear()
-        } catch {
-            throw SumiImportTransactionError.commitFinalizationFailed(
-                finalizationError: error,
-                preRestoreBackupURL: preRestoreBackupURL
-            )
-        }
+        endRuntimeMutationSession(&runtimeMutationSession)
+        try await finalizeCommittedImport(
+            record: record,
+            transition: plan.profileTransition,
+            backupURL: preRestoreBackupURL
+        )
 
         return SumiImportReport(
             warnings: reportWarnings(plan.warnings, bookmarkSummary: bookmarkSummary),
@@ -184,16 +181,8 @@ final class SumiImportTransaction {
             preRestoreBackupURL: record.preRestoreBackupURL
         )
 
-        if record.phase == .completed {
-            do {
-                try await journal.clear()
-                return report
-            } catch {
-                throw SumiImportTransactionError.recoveryFailed(
-                    rollbackErrors: [error],
-                    preRestoreBackupURL: record.preRestoreBackupURL
-                )
-            }
+        if try await finalizeRecoveryIfPossible(record) {
+            return report
         }
 
         var recoveryErrors: [Error] = []
@@ -269,6 +258,40 @@ final class SumiImportTransaction {
             }
         }
 
+        if recoveryErrors.isEmpty,
+           !record.profileTransition.createdProfileIDs.isEmpty {
+            do {
+                record = try await transition(
+                    record,
+                    to: .compensatingProfiles
+                )
+            } catch is SumiImportTransactionInterruption {
+                throw SumiImportTransactionInterruption()
+            } catch {
+                recoveryErrors.append(error)
+            }
+        }
+
+        if let active = runtimeRecovery {
+            precondition(
+                runtime.endMutation(active.session),
+                "Import recovery lost its exact runtime mutation session"
+            )
+            runtimeRecovery = nil
+        }
+
+        if recoveryErrors.isEmpty,
+           record.phase == .compensatingProfiles {
+            do {
+                try await retireCompensatedProfiles(
+                    record.profileTransition.createdProfileIDs,
+                    baseline: record.baseline
+                )
+            } catch {
+                recoveryErrors.append(error)
+            }
+        }
+
         if recoveryErrors.isEmpty {
             do {
                 record = try await transition(record, to: .completed)
@@ -299,7 +322,10 @@ final class SumiImportTransaction {
         runtimeCheckpoint: SumiImportRuntimeState?,
         bookmarkCheckpoint: SumiBookmarksSnapshot?,
         runtimeMutationSession: SumiImportRuntimeMutationSession?
-    ) async throws -> [Error] {
+    ) async throws -> (
+        record: SumiImportTransactionJournalRecord,
+        errors: [Error]
+    ) {
         var record = record
         var rollbackErrors: [Error] = []
         do {
@@ -337,22 +363,22 @@ final class SumiImportTransaction {
 
         if rollbackErrors.isEmpty {
             do {
-                record = try await transition(record, to: .completed)
+                if record.profileTransition.createdProfileIDs.isEmpty {
+                    record = try await transition(record, to: .completed)
+                    try await journal.clear()
+                } else {
+                    record = try await transition(
+                        record,
+                        to: .compensatingProfiles
+                    )
+                }
             } catch is SumiImportTransactionInterruption {
                 throw SumiImportTransactionInterruption()
             } catch {
                 rollbackErrors.append(error)
             }
         }
-
-        if rollbackErrors.isEmpty {
-            do {
-                try await journal.clear()
-            } catch {
-                rollbackErrors.append(error)
-            }
-        }
-        return rollbackErrors
+        return (record, rollbackErrors)
     }
 
     private func transition(
@@ -411,6 +437,166 @@ final class SumiImportTransaction {
             warnings.append("Skipped \(bookmarkSummary.failed) invalid bookmarks.")
         }
         return warnings
+    }
+}
+
+private extension SumiImportTransaction {
+    func finishCommitCompensation(
+        _ compensation: (
+            record: SumiImportTransactionJournalRecord,
+            errors: [Error]
+        ),
+        transition: SumiImportProfileTransition,
+        baseline: SumiPortableData
+    ) async -> [Error] {
+        var record = compensation.record
+        var rollbackErrors = compensation.errors
+        guard rollbackErrors.isEmpty,
+              !transition.createdProfileIDs.isEmpty
+        else { return rollbackErrors }
+
+        do {
+            try await retireCompensatedProfiles(
+                transition.createdProfileIDs,
+                baseline: baseline
+            )
+            record = try await self.transition(record, to: .completed)
+            try await journal.clear()
+        } catch {
+            rollbackErrors.append(error)
+        }
+        return rollbackErrors
+    }
+
+    func finalizeCommittedImport(
+        record: SumiImportTransactionJournalRecord,
+        transition profileTransition: SumiImportProfileTransition,
+        backupURL: URL?
+    ) async throws {
+        var record = record
+        if !profileTransition.retiringProfileIDs.isEmpty {
+            do {
+                record = try await transition(record, to: .retiringProfiles)
+            } catch {
+                throw SumiImportTransactionError.commitFinalizationFailed(
+                    finalizationError: error,
+                    preRestoreBackupURL: backupURL
+                )
+            }
+            do {
+                try await retireImportedProfiles(profileTransition)
+            } catch {
+                throw SumiImportTransactionError.profileRetirementPending(
+                    retirementError: error,
+                    preRestoreBackupURL: backupURL
+                )
+            }
+        }
+
+        do {
+            _ = try await transition(record, to: .completed)
+        } catch is SumiImportTransactionInterruption {
+            throw SumiImportTransactionInterruption()
+        } catch {
+            throw SumiImportTransactionError.commitFinalizationFailed(
+                finalizationError: error,
+                preRestoreBackupURL: backupURL
+            )
+        }
+
+        do {
+            try await journal.clear()
+        } catch {
+            throw SumiImportTransactionError.commitFinalizationFailed(
+                finalizationError: error,
+                preRestoreBackupURL: backupURL
+            )
+        }
+    }
+
+    func finalizeRecoveryIfPossible(
+        _ record: SumiImportTransactionJournalRecord
+    ) async throws -> Bool {
+        var record = record
+        switch record.phase {
+        case .completed:
+            do {
+                try await journal.clear()
+                return true
+            } catch {
+                throw SumiImportTransactionError.recoveryFailed(
+                    rollbackErrors: [error],
+                    preRestoreBackupURL: record.preRestoreBackupURL
+                )
+            }
+        case .retiringProfiles:
+            do {
+                try await retireImportedProfiles(record.profileTransition)
+                record = try await transition(record, to: .completed)
+                try await journal.clear()
+                return true
+            } catch {
+                throw SumiImportTransactionError.profileRetirementPending(
+                    retirementError: error,
+                    preRestoreBackupURL: record.preRestoreBackupURL
+                )
+            }
+        case .compensatingProfiles:
+            do {
+                try await retireCompensatedProfiles(
+                    record.profileTransition.createdProfileIDs,
+                    baseline: record.baseline
+                )
+                record = try await transition(record, to: .completed)
+                try await journal.clear()
+                return true
+            } catch {
+                throw SumiImportTransactionError.recoveryFailed(
+                    rollbackErrors: [error],
+                    preRestoreBackupURL: record.preRestoreBackupURL
+                )
+            }
+        default:
+            return false
+        }
+    }
+
+    func endRuntimeMutationSession(
+        _ session: inout SumiImportRuntimeMutationSession?
+    ) {
+        guard let active = session else { return }
+        precondition(
+            runtime.endMutation(active),
+            "Import transaction lost its exact runtime mutation session"
+        )
+        session = nil
+    }
+
+    func retireImportedProfiles(
+        _ transition: SumiImportProfileTransition
+    ) async throws {
+        guard let fallbackProfileID = transition.fallbackProfileID else {
+            throw SumiImportProfileRetirementError.unavailable
+        }
+        try await profileRetirement.retireProfiles(
+            transition.retiringProfileIDs,
+            fallbackProfileID: fallbackProfileID
+        )
+    }
+
+    func retireCompensatedProfiles(
+        _ profileIDs: Set<UUID>,
+        baseline: SumiPortableData
+    ) async throws {
+        guard let fallbackProfileID = baseline.profiles.first.flatMap({
+            UUID(uuidString: $0.id)
+        }) else {
+            throw SumiImportProfileRetirementError.unavailable
+        }
+        try await profileRetirement.retireProfiles(
+            profileIDs,
+            fallbackProfileID: fallbackProfileID
+        )
     }
 }
 

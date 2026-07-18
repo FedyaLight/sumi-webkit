@@ -296,17 +296,18 @@
       "name": "Import and restore transaction journal",
       "classification": "recovery",
       "technology": "Versioned JSON published with POSIX write, fsync, rename, and directory sync",
-      "versionOwner": "SumiImportTransactionJournalRecord.currentVersion = 1",
+      "versionOwner": "SumiImportTransactionJournalRecord.currentVersion = 2",
       "locationPolicy": "<Application Support>/<runtime bundle identifier>/ImportTransaction.json with an adjacent completed tombstone during durable retirement",
       "backupRestorePolicy": "The journal records baseline, target, runtime checkpoint, bookmark checkpoint, and optional pre-restore backup URL; it is recovery metadata rather than user-exported backup content",
       "corruptionRecoveryPolicy": "Malformed or unsupported journal data fails startup recovery closed. Phase transitions are validated and durably published; completed retirement is also fsynced.",
-      "legacySources": "Journal v1 is the first shipped format",
+      "legacySources": "Journal v1 remains readable; v2 adds durable profile reconciliation state",
       "productionTypes": ["SumiImportTransactionFileJournal", "SumiImportTransactionJournalRecord"],
       "semanticSources": ["Sumi/ImportExport/SumiImportTransactionFileJournal.swift"],
       "fixtures": [
         "SumiTests/Fixtures/Persistence/import/import-journal-malformed.json",
-        "SumiTests/Fixtures/Persistence/import/import-journal-unsupported-v2.json",
-        "SumiTests/Fixtures/Persistence/import/import-journal-v1.json"
+        "SumiTests/Fixtures/Persistence/import/import-journal-unsupported-v3.json",
+        "SumiTests/Fixtures/Persistence/import/import-journal-v1.json",
+        "SumiTests/Fixtures/Persistence/import/import-journal-v2.json"
       ]
     },
     {

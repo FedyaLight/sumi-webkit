@@ -119,7 +119,14 @@ final class SumiImportRuntimeStore: SumiImportRuntimeMutating {
             throw SumiImportRuntimeStoreError.referenceAdmissionLost
         }
 
-        try profileManager.replaceProfiles(with: state.profiles)
+        let targetProfileIDs = Set(state.profiles.map(\.id))
+        let additiveProfiles = state.profiles + profileManager.profiles.filter {
+            !targetProfileIDs.contains($0.id)
+        }
+        try profileManager.applyImportProfiles(
+            additiveProfiles,
+            mutationLease: lease
+        )
         guard profileReferenceAdmission.validate(lease) else {
             throw SumiImportRuntimeStoreError.referenceAdmissionLost
         }

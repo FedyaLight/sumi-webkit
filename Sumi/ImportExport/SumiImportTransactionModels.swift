@@ -42,6 +42,25 @@ struct SumiImportPlan: Equatable, Sendable {
     let categories: Set<SumiImportCategory>
     let mode: SumiImportApplyMode
     let warnings: [String]
+    let profileTransition: SumiImportProfileTransition
+
+    init(
+        baseline: SumiPortableData,
+        targetRuntimeData: SumiPortableData,
+        bookmarkMutation: SumiImportBookmarkMutation,
+        categories: Set<SumiImportCategory>,
+        mode: SumiImportApplyMode,
+        warnings: [String],
+        profileTransition: SumiImportProfileTransition = .none
+    ) {
+        self.baseline = baseline
+        self.targetRuntimeData = targetRuntimeData
+        self.bookmarkMutation = bookmarkMutation
+        self.categories = categories
+        self.mode = mode
+        self.warnings = warnings
+        self.profileTransition = profileTransition
+    }
 
     var changesRuntime: Bool {
         targetRuntimeData.profiles != baseline.profiles
@@ -55,6 +74,20 @@ struct SumiImportPlan: Equatable, Sendable {
     var hasMutations: Bool {
         changesRuntime || bookmarkMutation.changesBookmarks
     }
+}
+
+struct SumiImportProfileTransition: Codable, Equatable, Sendable {
+    let sourceToTargetProfileID: [String: String]
+    let createdProfileIDs: Set<UUID>
+    let retiringProfileIDs: Set<UUID>
+    let fallbackProfileID: UUID?
+
+    static let none = SumiImportProfileTransition(
+        sourceToTargetProfileID: [:],
+        createdProfileIDs: [],
+        retiringProfileIDs: [],
+        fallbackProfileID: nil
+    )
 }
 
 enum SumiImportTransactionError: LocalizedError {
@@ -72,6 +105,10 @@ enum SumiImportTransactionError: LocalizedError {
         finalizationError: Error,
         preRestoreBackupURL: URL?
     )
+    case profileRetirementPending(
+        retirementError: Error,
+        preRestoreBackupURL: URL?
+    )
 
     var rollbackErrors: [Error] {
         switch self {
@@ -81,6 +118,8 @@ enum SumiImportTransactionError: LocalizedError {
              .recoveryFailed(let rollbackErrors, _):
             rollbackErrors
         case .commitFinalizationFailed:
+            []
+        case .profileRetirementPending:
             []
         }
     }
@@ -92,6 +131,8 @@ enum SumiImportTransactionError: LocalizedError {
         case .commitFailed(_, _, let backupURL),
              .recoveryFailed(_, let backupURL),
              .commitFinalizationFailed(_, let backupURL):
+            backupURL
+        case .profileRetirementPending(_, let backupURL):
             backupURL
         }
     }
@@ -109,6 +150,8 @@ enum SumiImportTransactionError: LocalizedError {
             return "Sumi could not recover an interrupted import. \(Self.errorList(rollbackErrors))\(Self.backupDescription(backupURL))"
         case .commitFinalizationFailed(let finalizationError, let backupURL):
             return "Import effects were applied, but durable transaction finalization could not be confirmed: \(finalizationError.localizedDescription) Sumi will resolve the journal on next launch.\(Self.backupDescription(backupURL))"
+        case .profileRetirementPending(let retirementError, let backupURL):
+            return "Imported data was applied, but profile cleanup is still pending: \(retirementError.localizedDescription) Sumi will resume it on next launch.\(Self.backupDescription(backupURL))"
         }
     }
 

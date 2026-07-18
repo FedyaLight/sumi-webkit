@@ -105,7 +105,7 @@ final class PersistenceFixtureTests: XCTestCase {
         }
     }
 
-    func testImportJournalFixturesReadV1AndRejectFutureAndMalformed()
+    func testImportJournalFixturesReadV1AndV2AndRejectFutureAndMalformed()
         async throws {
         let directory = try makeTemporaryDirectory()
         let journalURL = directory.appendingPathComponent(
@@ -118,8 +118,17 @@ final class PersistenceFixtureTests: XCTestCase {
         XCTAssertEqual(loaded?.version, 1)
         XCTAssertEqual(loaded?.phase, .prepared)
 
+        try FileManager.default.removeItem(at: journalURL)
+        try copyFixture("import/import-journal-v2.json", to: journalURL)
+        let current = try await journal.load()
+        XCTAssertEqual(current?.version, 2)
+        XCTAssertEqual(
+            current?.profileTransition,
+            SumiImportProfileTransition.none
+        )
+
         for fixtureName in [
-            "import/import-journal-unsupported-v2.json",
+            "import/import-journal-unsupported-v3.json",
             "import/import-journal-malformed.json",
         ] {
             try FileManager.default.removeItem(at: journalURL)

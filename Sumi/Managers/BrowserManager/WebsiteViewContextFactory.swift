@@ -162,7 +162,11 @@ enum WebsiteViewContextFactory {
                     guard let browserManager else {
                         throw SumiImportExportError.browserUnavailable
                     }
-                    let plan = SumiImportPlanBuilder().makePlan(
+                    let plan = SumiImportPlanBuilder(
+                        isProfileIdentityAllowed: { [admission = browserManager.profileReferenceAdmission] id in
+                            admission.isReferenceAllowed(id)
+                        }
+                    ).makePlan(
                         request: request,
                         baseline: SumiImportExportSnapshot.makeData(
                             profiles: browserManager.profileManager.profiles,
@@ -193,7 +197,9 @@ enum WebsiteViewContextFactory {
                         bookmarks: SumiImportBookmarkStore(
                             bookmarkManager: browserManager.bookmarkManager
                         ),
-                        backupWriter: SumiBackupService()
+                        backupWriter: SumiBackupService(),
+                        profileRetirement: browserManager.profileLifecycleBundle
+                            .importRetirement
                     ).commit(
                         plan
                     )
