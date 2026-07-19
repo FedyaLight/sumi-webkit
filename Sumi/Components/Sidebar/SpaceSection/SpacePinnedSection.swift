@@ -18,6 +18,7 @@ struct SpacePinnedSectionView: View {
     let spaceLifecycle: SidebarSpaceLifecycle
     let browserContext: SidebarBrowserContext
     let isInteractive: Bool
+    let onSetPinnedContentCollapsed: (Bool) -> Void
     @Binding var shortcutRestoreSession: SpaceShortcutRestoreInteractionSession
 
     @Environment(BrowserWindowState.self) private var windowState
@@ -49,6 +50,7 @@ struct SpacePinnedSectionView: View {
                 spaceLifecycle: spaceLifecycle,
                 browserContext: browserContext,
                 isInteractive: isInteractive,
+                onSetPinnedContentCollapsed: onSetPinnedContentCollapsed,
                 pinnedItems: pinnedItems,
                 dragSnapshot: dragSnapshot,
                 shortcutRestoreSession: $shortcutRestoreSession
@@ -93,11 +95,7 @@ struct SpacePinnedDragSnapshot {
         activeDragItemID = dragState.activeDragItemId
         geometryGeneration = dragState.sidebarGeometryGeneration
         shouldAnimateDropLayout = dragState.shouldAnimateDropLayout
-        if case .spacePinned(let hoveredSpaceID, _) = dragState.hoveredSlot {
-            isHoveringEmptySection = hoveredSpaceID == spaceID
-        } else {
-            isHoveringEmptySection = false
-        }
+        isHoveringEmptySection = hoveredSpaceID == spaceID
         projection = .init(
             isDropProjectionActive: dragState.isDropProjectionActive,
             sourceContainer: dragState.projectionDragScope?.sourceContainer,
@@ -143,6 +141,7 @@ private struct SpacePinnedSectionContentView: View {
     let spaceLifecycle: SidebarSpaceLifecycle
     let browserContext: SidebarBrowserContext
     let isInteractive: Bool
+    let onSetPinnedContentCollapsed: (Bool) -> Void
     let pinnedItems: [SpacePinnedListItem]
     let dragSnapshot: SpacePinnedDragSnapshot
     @Binding var shortcutRestoreSession: SpaceShortcutRestoreInteractionSession
@@ -151,10 +150,37 @@ private struct SpacePinnedSectionContentView: View {
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.sidebarWindowSelectionSnapshot) private var sidebarSelection
 
     private var hasContent: Bool {
         !pinnedItems.isEmpty
             || shortcutRestoreSession.gaps.contains { $0.container == .spacePinned(space.id) }
+    }
+
+    private var hasPinnedContent: Bool {
+        !pinnedItems.isEmpty
+    }
+
+    private var isCollapsed: Bool {
+        windowState.sidebarSpacePinnedCollapse.isCollapsed(space.id)
+    }
+
+    private var structuralItemIDs: [UUID] {
+        inventory.pinnedStructuralItemIDs()
+    }
+
+    private var stickyOwner: SidebarSpacePinnedStickyProjectionOwner {
+        SidebarSpacePinnedStickyProjectionOwner(
+            space: space,
+            inventory: inventory,
+            selection: selection,
+            selectionSnapshot: sidebarSelection,
+            windowState: windowState
+        )
+    }
+
+    private var visibleStickyItemIDs: [UUID] {
+        stickyOwner.visibleStickyItemIDs
     }
 
     private var showsEmptyDropPlaceholder: Bool {
@@ -194,23 +220,7 @@ private struct SpacePinnedSectionContentView: View {
     var body: some View {
         Group {
             if hasContent {
-                SpacePinnedListView(
-                    space: space,
-                    inventory: inventory,
-                    selection: selection,
-                    pinProjection: pinProjection,
-                    pinCommands: pinCommands,
-                    pinExecution: pinExecution,
-                    folderCommands: folderCommands,
-                    spaceLifecycle: spaceLifecycle,
-                    browserContext: browserContext,
-                    isInteractive: isInteractive,
-                    pinnedItems: pinnedItems,
-                    dragSnapshot: dragSnapshot,
-                    contentMutationAnimation: contentMutationAnimation,
-                    actionOwner: actionOwner,
-                    shortcutRestoreSession: $shortcutRestoreSession
-                )
+                pinnedContent
                 .transition(
                     isInteractive
                         ? .asymmetric(
@@ -230,6 +240,8 @@ private struct SpacePinnedSectionContentView: View {
         .animation(isInteractive ? .easeInOut(duration: 0.25) : nil, value: hasContent)
         .animation(isInteractive ? .easeInOut(duration: 0.18) : nil, value: showsEmptyDropPlaceholder)
         .animation(contentMutationAnimation, value: pinnedItems)
+        .animation(contentMutationAnimation, value: visibleStickyItemIDs)
+        .animation(contentMutationAnimation, value: isCollapsed)
         .transaction { transaction in
             if dragSnapshot.isCompletingDrop {
                 transaction.animation = nil
@@ -241,6 +253,52 @@ private struct SpacePinnedSectionContentView: View {
             spaceId: space.id,
             generation: dragSnapshot.geometryGeneration,
             isEnabled: isInteractive
+        )
+        .onAppear {
+            stickyOwner.reconcileOnAppear()
+            if !hasPinnedContent, isCollapsed {
+                onSetPinnedContentCollapsed(false)
+            }
+        }
+        .onChange(of: sidebarSelection) { _, _ in
+            stickyOwner.handleSelectionChange()
+        }
+        .onChange(of: dragSnapshot.isCompletingDrop) { _, isCompletingDrop in
+            if isCompletingDrop,
+               isCollapsed,
+               dragSnapshot.isHoveringEmptySection {
+                onSetPinnedContentCollapsed(false)
+            }
+        }
+        .onChange(of: structuralItemIDs) { oldIDs, newIDs in
+            stickyOwner.handleMembershipChange()
+            guard isCollapsed else { return }
+            if newIDs.isEmpty || !Set(newIDs).subtracting(oldIDs).isEmpty {
+                onSetPinnedContentCollapsed(false)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var pinnedContent: some View {
+        SpacePinnedListView(
+            space: space,
+            inventory: inventory,
+            selection: selection,
+            pinProjection: pinProjection,
+            pinCommands: pinCommands,
+            pinExecution: pinExecution,
+            folderCommands: folderCommands,
+            spaceLifecycle: spaceLifecycle,
+            browserContext: browserContext,
+            isInteractive: isInteractive,
+            isCollapsed: isCollapsed,
+            pinnedItems: pinnedItems,
+            stickyItemIDs: visibleStickyItemIDs,
+            dragSnapshot: dragSnapshot,
+            contentMutationAnimation: contentMutationAnimation,
+            actionOwner: actionOwner,
+            shortcutRestoreSession: $shortcutRestoreSession
         )
     }
 

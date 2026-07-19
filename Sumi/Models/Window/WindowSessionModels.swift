@@ -68,6 +68,7 @@ struct WindowSessionSnapshot: Codable, Equatable, Hashable {
     /// before any dictionary materialization can trap.
     private(set) var activeTabsBySpace: [SpaceTabSelectionSnapshot]
     private(set) var activeShortcutsBySpace: [SpaceShortcutSelectionSnapshot]
+    private(set) var collapsedPinnedSpaceIDs: [UUID]
     var sidebarWidth: Double
     var savedSidebarWidth: Double
     var sidebarContentWidth: Double
@@ -86,6 +87,7 @@ struct WindowSessionSnapshot: Codable, Equatable, Hashable {
         case floatingBarReason
         case activeTabsBySpace
         case activeShortcutsBySpace
+        case collapsedPinnedSpaceIDs
         case sidebarWidth
         case savedSidebarWidth
         case sidebarContentWidth
@@ -105,6 +107,7 @@ struct WindowSessionSnapshot: Codable, Equatable, Hashable {
         floatingBarReason: FloatingBarPresentationReason?,
         activeTabsBySpace: [SpaceTabSelectionSnapshot],
         activeShortcutsBySpace: [SpaceShortcutSelectionSnapshot],
+        collapsedPinnedSpaceIDs: [UUID] = [],
         sidebarWidth: Double,
         savedSidebarWidth: Double,
         sidebarContentWidth: Double,
@@ -122,6 +125,7 @@ struct WindowSessionSnapshot: Codable, Equatable, Hashable {
         self.floatingBarReason = floatingBarReason
         self.activeTabsBySpace = Self.canonicalized(activeTabsBySpace)
         self.activeShortcutsBySpace = Self.canonicalized(activeShortcutsBySpace)
+        self.collapsedPinnedSpaceIDs = Self.canonicalized(collapsedPinnedSpaceIDs)
         self.sidebarWidth = sidebarWidth
         self.savedSidebarWidth = savedSidebarWidth
         self.sidebarContentWidth = sidebarContentWidth
@@ -152,6 +156,12 @@ struct WindowSessionSnapshot: Codable, Equatable, Hashable {
                 forKey: .activeShortcutsBySpace
             ) ?? []
         )
+        collapsedPinnedSpaceIDs = Self.canonicalized(
+            try container.decodeIfPresent(
+                [UUID].self,
+                forKey: .collapsedPinnedSpaceIDs
+            ) ?? []
+        )
         sidebarWidth = try container.decode(Double.self, forKey: .sidebarWidth)
         savedSidebarWidth = try container.decode(Double.self, forKey: .savedSidebarWidth)
         sidebarContentWidth = try container.decode(Double.self, forKey: .sidebarContentWidth)
@@ -175,6 +185,7 @@ struct WindowSessionSnapshot: Codable, Equatable, Hashable {
         try container.encodeIfPresent(floatingBarReason, forKey: .floatingBarReason)
         try container.encode(activeTabsBySpace, forKey: .activeTabsBySpace)
         try container.encode(activeShortcutsBySpace, forKey: .activeShortcutsBySpace)
+        try container.encode(collapsedPinnedSpaceIDs, forKey: .collapsedPinnedSpaceIDs)
         try container.encode(sidebarWidth, forKey: .sidebarWidth)
         try container.encode(savedSidebarWidth, forKey: .savedSidebarWidth)
         try container.encode(sidebarContentWidth, forKey: .sidebarContentWidth)
@@ -217,5 +228,9 @@ struct WindowSessionSnapshot: Codable, Equatable, Hashable {
         return bySpace.values.sorted {
             $0.spaceId.uuidString < $1.spaceId.uuidString
         }
+    }
+
+    private static func canonicalized(_ spaceIDs: [UUID]) -> [UUID] {
+        Set(spaceIDs).sorted { $0.uuidString < $1.uuidString }
     }
 }

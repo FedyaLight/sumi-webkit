@@ -41,6 +41,8 @@ struct SpaceTransitionSnapshotPageView: View {
                 SpaceSnapshotTitleView(
                     title: snapshot.title,
                     iconValue: snapshot.iconValue,
+                    hasPinnedContent: snapshot.hasPinnedContent,
+                    isPinnedContentCollapsed: snapshot.isPinnedContentCollapsed,
                     rowCornerRadius: snapshot.rowCornerRadius,
                     tokens: tokens
                 )
@@ -184,6 +186,8 @@ private struct SpaceSnapshotContentView: View {
 private struct SpaceSnapshotTitleView: View {
     let title: String
     let iconValue: String
+    let hasPinnedContent: Bool
+    let isPinnedContentCollapsed: Bool
     let rowCornerRadius: CGFloat
     let tokens: ChromeThemeTokens
 
@@ -192,12 +196,19 @@ private struct SpaceSnapshotTitleView: View {
             backgroundColor: .clear,
             cornerRadius: rowCornerRadius
         ) {
-            SpaceTitleIconView(
-                iconValue: iconValue,
-                textColor: tokens.primaryText,
-                hidesAccessibility: true
-            )
-            .id(iconValue)
+            if hasPinnedContent && isPinnedContentCollapsed {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(tokens.primaryText)
+                    .accessibilityHidden(true)
+            } else {
+                SpaceTitleIconView(
+                    iconValue: iconValue,
+                    textColor: tokens.primaryText,
+                    hidesAccessibility: true
+                )
+                .id(iconValue)
+            }
         } title: {
             SpaceTitleTextLabel(
                 title: title,
@@ -207,7 +218,13 @@ private struct SpaceSnapshotTitleView: View {
             Color.clear
                 .accessibilityHidden(true)
         }
-        .id(SpaceSnapshotTitleIdentity(title: title, iconValue: iconValue))
+        .id(
+            SpaceSnapshotTitleIdentity(
+                title: title,
+                iconValue: iconValue,
+                isPinnedContentCollapsed: isPinnedContentCollapsed
+            )
+        )
         .allowsHitTesting(false)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(title)
@@ -218,6 +235,7 @@ private struct SpaceSnapshotTitleView: View {
 private struct SpaceSnapshotTitleIdentity: Hashable {
     let title: String
     let iconValue: String
+    let isPinnedContentCollapsed: Bool
 }
 
 @MainActor
@@ -338,7 +356,69 @@ private struct SpaceSnapshotPinnedItemView: View {
                 rowCornerRadius: rowCornerRadius,
                 tokens: tokens
             )
+        case .splitGroup(let splitGroup):
+            SpaceSnapshotSplitGroupView(
+                splitGroup: splitGroup,
+                rowCornerRadius: rowCornerRadius,
+                tokens: tokens
+            )
         }
+    }
+}
+
+private struct SpaceSnapshotSplitGroupView: View {
+    let splitGroup: SpaceSplitGroupSnapshot
+    let rowCornerRadius: CGFloat
+    let tokens: ChromeThemeTokens
+
+    var body: some View {
+        GeometryReader { geometry in
+            let memberCount = max(splitGroup.members.count, 1)
+            let separatorCount = max(memberCount - 1, 0)
+            let segmentWidth = max(
+                0,
+                (geometry.size.width - CGFloat(separatorCount)) / CGFloat(memberCount)
+            )
+
+            HStack(spacing: 0) {
+                ForEach(Array(splitGroup.members.enumerated()), id: \.element.id) { index, member in
+                    HStack(spacing: 6) {
+                        SpaceSnapshotIconView(
+                            icon: member.icon,
+                            size: SidebarRowLayout.faviconSize,
+                            foregroundColor: tokens.primaryText
+                        )
+                        SidebarFadingRowTitleLabel(
+                            title: member.title,
+                            font: .system(size: 12, weight: member.isSelected ? .semibold : .regular),
+                            color: tokens.primaryText,
+                            height: SidebarRowLayout.titleHeight
+                        )
+                        .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+                    }
+                    .padding(.horizontal, 7)
+                    .frame(width: segmentWidth, height: SidebarRowLayout.rowHeight)
+                    .clipped()
+
+                    if index < splitGroup.members.count - 1 {
+                        Rectangle()
+                            .fill(tokens.separator.opacity(0.7))
+                            .frame(width: 1, height: 22)
+                            .padding(.vertical, 6)
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 2)
+        .frame(height: SidebarRowLayout.rowHeight)
+        .frame(minWidth: 0, maxWidth: .infinity)
+        .sidebarRowSurface(
+            background: splitGroup.isSelected ? tokens.sidebarRowActive : .clear,
+            cornerRadius: rowCornerRadius,
+            tokens: tokens,
+            isVisible: splitGroup.isSelected,
+            drawsSelectionShadow: splitGroup.isSelected
+        )
     }
 }
 

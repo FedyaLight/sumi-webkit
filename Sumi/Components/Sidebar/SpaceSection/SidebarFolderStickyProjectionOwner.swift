@@ -94,6 +94,19 @@ struct SidebarFolderStickyProjectionOwner {
         }
     }
 
+    /// A collapsed ancestor stopped owning these projected rows. Preserve
+    /// them in this still-collapsed folder before the ancestor expands.
+    func adoptStickyItemIDs(_ itemIDs: [UUID]) {
+        guard !folder.isOpen, !itemIDs.isEmpty else { return }
+        let context = makeContext(for: folder)
+        scheduleTransform(for: folder.id, context: context) { current in
+            SidebarFolderStickyProjectionPolicy.stickyPruned(
+                current: current + itemIDs.filter { !current.contains($0) },
+                context: context
+            )
+        }
+    }
+
     private func reconcile() {
         let context = makeContext(for: folder)
         scheduleTransform(for: folder.id, context: context) { current in

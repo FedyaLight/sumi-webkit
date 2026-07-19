@@ -56,6 +56,7 @@ struct SpacesSideBarView: View {
     let profileUpdates: SidebarProfileUpdates
     let nowPlayingController: SumiNativeNowPlayingController
     let updaterService: SumiUpdaterService
+    let persistWindowSession: (BrowserWindowState) -> Void
 
     init(
         browserContext: SidebarBrowserContext,
@@ -76,7 +77,8 @@ struct SpacesSideBarView: View {
         inventoryUpdates: SidebarInventoryUpdates,
         profileUpdates: SidebarProfileUpdates,
         nowPlayingController: SumiNativeNowPlayingController,
-        updaterService: SumiUpdaterService
+        updaterService: SumiUpdaterService,
+        persistWindowSession: @escaping (BrowserWindowState) -> Void
     ) {
         self.browserContext = browserContext
         self.spaceCatalog = spaceCatalog
@@ -97,6 +99,7 @@ struct SpacesSideBarView: View {
         self.profileUpdates = profileUpdates
         self.nowPlayingController = nowPlayingController
         self.updaterService = updaterService
+        self.persistWindowSession = persistWindowSession
     }
 
     var sidebarBrowserContext: SidebarBrowserContext {

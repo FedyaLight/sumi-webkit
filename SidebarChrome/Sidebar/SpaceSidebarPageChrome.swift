@@ -103,6 +103,7 @@ extension SpacesSideBarView {
             renderMode: renderMode,
             allowsInteraction: allowsInteraction,
             scrollHoverCoordinator: scrollHoverCoordinator,
+            persistWindowSession: persistWindowSession,
             isSidebarHovered: $isSidebarHovered,
             onScrollViewportChange: { spaceId, viewport in
                 transitionCoordinator.recordScrollViewport(viewport, for: spaceId)

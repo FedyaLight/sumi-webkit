@@ -22,6 +22,8 @@ struct WindowSessionSnapshotFactory {
                     shortcutPinId: $0.value
                 )
             },
+            collapsedPinnedSpaceIDs: windowState.sidebarSpacePinnedCollapse
+                .persistedCollapsedSpaceIDs,
             sidebarWidth: Double(windowState.sidebarWidth),
             savedSidebarWidth: Double(windowState.savedSidebarWidth),
             sidebarContentWidth: Double(windowState.sidebarContentWidth),

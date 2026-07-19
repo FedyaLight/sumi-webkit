@@ -105,6 +105,51 @@ struct SidebarSpaceInventorySnapshot {
         }
     }
 
+    /// All saved leaf rows in their visual depth-first order. Folder headers
+    /// are omitted because a collapsed Space projects only live leaf rows.
+    func orderedPinnedLeafItems() -> [SidebarPinnedInventoryItem] {
+        var leaves: [SidebarPinnedInventoryItem] = []
+        var visitedFolders = Set<UUID>()
+
+        func append(_ items: [SidebarPinnedInventoryItem]) {
+            for item in items {
+                switch item {
+                case .shortcut, .splitGroup:
+                    leaves.append(item)
+                case .folder(let folderID):
+                    guard visitedFolders.insert(folderID).inserted else { continue }
+                    append(folderItems(for: folderID))
+                }
+            }
+        }
+
+        append(topLevelItems)
+        return leaves
+    }
+
+    /// Complete saved hierarchy identity used to distinguish additions from
+    /// reorders/removals while a Space is collapsed.
+    func pinnedStructuralItemIDs() -> [UUID] {
+        var ids: [UUID] = []
+        var visitedFolders = Set<UUID>()
+
+        func append(_ items: [SidebarPinnedInventoryItem]) {
+            for item in items {
+                switch item {
+                case .shortcut(let id), .splitGroup(let id):
+                    ids.append(id)
+                case .folder(let folderID):
+                    guard visitedFolders.insert(folderID).inserted else { continue }
+                    ids.append(folderID)
+                    append(folderItems(for: folderID))
+                }
+            }
+        }
+
+        append(topLevelItems)
+        return ids
+    }
+
     func recursiveChildCount(for folderID: UUID) -> Int {
         func count(_ parentID: UUID, visited: Set<UUID>) -> Int {
             guard !visited.contains(parentID) else { return 0 }

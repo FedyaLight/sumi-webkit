@@ -6,6 +6,17 @@
 import SumiDomain
 import SwiftUI
 
+private enum SpacePinnedContentRenderedItem {
+    case pinned(SpacePinnedRenderedItem)
+    case nestedSticky(UUID)
+}
+
+private struct SpacePinnedContentDisplayEntry: Identifiable {
+    let item: SpacePinnedContentRenderedItem
+    let dropIndex: Int
+    let id: String
+}
+
 /// Renders and reorders the top-level saved folders, shortcuts, and split groups.
 struct SpacePinnedListView: View {
     let space: Space
@@ -18,7 +29,9 @@ struct SpacePinnedListView: View {
     let spaceLifecycle: SidebarSpaceLifecycle
     let browserContext: SidebarBrowserContext
     let isInteractive: Bool
+    let isCollapsed: Bool
     let pinnedItems: [SpacePinnedListItem]
+    let stickyItemIDs: [UUID]
     let dragSnapshot: SpacePinnedDragSnapshot
     let contentMutationAnimation: Animation?
     let actionOwner: SpacePinnedActionOwner
@@ -44,6 +57,55 @@ struct SpacePinnedListView: View {
         )
     }
 
+    private var contentDisplayEntries: [SpacePinnedContentDisplayEntry] {
+        guard isCollapsed else {
+            return projection.displayEntries.map { entry in
+                SpacePinnedContentDisplayEntry(
+                    item: .pinned(entry.item),
+                    dropIndex: entry.dropIndex,
+                    id: entry.id
+                )
+            }
+        }
+
+        return stickyItemIDs.compactMap { itemID in
+            if let index = pinnedItems.firstIndex(where: { $0.id == itemID }) {
+                return SpacePinnedContentDisplayEntry(
+                    item: .pinned(.item(pinnedItems[index])),
+                    dropIndex: index,
+                    id: "item-\(itemID.uuidString)"
+                )
+            }
+
+            guard inventory.pin(id: itemID) != nil
+                    || inventory.splitGroup(id: itemID) != nil else {
+                return nil
+            }
+            return SpacePinnedContentDisplayEntry(
+                item: .nestedSticky(itemID),
+                dropIndex: 0,
+                id: "item-\(itemID.uuidString)"
+            )
+        }
+    }
+
+    private var showsCollapsedEmptyTarget: Bool {
+        isCollapsed && stickyItemIDs.isEmpty
+    }
+
+    private var leadingSpacerHeight: CGFloat {
+        guard showsCollapsedEmptyTarget else {
+            return SidebarInsertionGuide.visualCenterY
+        }
+        return isInteractive && dragSnapshot.isHoveringEmptySection
+            ? SidebarRowLayout.rowHeight
+            : 6
+    }
+
+    private var bottomPadding: CGFloat {
+        showsCollapsedEmptyTarget ? 0 : 8
+    }
+
     private func elevatedFolderIDs(
         selectionSnapshot: SidebarWindowSelectionSnapshot
     ) -> Set<UUID> {
@@ -65,66 +127,86 @@ struct SpacePinnedListView: View {
 
         LazyVStack(spacing: 0) {
             Color.clear
-                .frame(height: SidebarInsertionGuide.visualCenterY)
+                .frame(height: leadingSpacerHeight)
                 .allowsHitTesting(false)
 
-            ForEach(projection.displayEntries) { entry in
+            ForEach(contentDisplayEntries) { entry in
                 VStack(spacing: 0) {
                     switch entry.item {
-                    case .item(.folder(let folderID)):
-                        if let folder = foldersByID[folderID] {
-                            SpacePinnedFolderEntryView(
-                                folder: folder,
-                                space: space,
-                                inventory: inventory,
-                                selection: selection,
-                                pinProjection: pinProjection,
-                                pinCommands: pinCommands,
-                                pinExecution: pinExecution,
-                                folderCommands: folderCommands,
-                                spaceLifecycle: spaceLifecycle,
-                                browserContext: browserContext,
-                                shortcutRestoreSession: $shortcutRestoreSession,
-                                elevatedFolderIDs: elevatedFolderIDs,
-                                topLevelIndex: entry.dropIndex,
-                                geometryGeneration: dragSnapshot.geometryGeneration,
-                                isInteractive: isInteractive
-                            )
-                        }
-                    case .item(.shortcut(let pinID)):
-                        if let pin = pinsByID[pinID] {
-                            shortcutEntry(
-                                pin,
-                                topLevelIndex: entry.dropIndex,
+                    case .pinned(let item):
+                        switch item {
+                        case .item(.folder(let folderID)):
+                            if let folder = foldersByID[folderID] {
+                                SpacePinnedFolderEntryView(
+                                    folder: folder,
+                                    space: space,
+                                    inventory: inventory,
+                                    selection: selection,
+                                    pinProjection: pinProjection,
+                                    pinCommands: pinCommands,
+                                    pinExecution: pinExecution,
+                                    folderCommands: folderCommands,
+                                    spaceLifecycle: spaceLifecycle,
+                                    browserContext: browserContext,
+                                    shortcutRestoreSession: $shortcutRestoreSession,
+                                    elevatedFolderIDs: elevatedFolderIDs,
+                                    topLevelIndex: entry.dropIndex,
+                                    geometryGeneration: dragSnapshot.geometryGeneration,
+                                    isInteractive: isInteractive
+                                )
+                            }
+                        case .item(.shortcut(let pinID)):
+                            if let pin = pinsByID[pinID] {
+                                shortcutEntry(
+                                    pin,
+                                    topLevelIndex: entry.dropIndex,
+                                    selectionSnapshot: selectionSnapshot
+                                )
+                            }
+                        case .item(.splitGroup(let groupID)):
+                            if let group = inventory.splitGroup(id: groupID) {
+                                SpacePinnedSplitGroupEntryView(
+                                    group: group,
+                                    items: SplitGroupSidebarModel.items(
+                                        for: group,
+                                        inventory: inventory,
+                                        selection: selection,
+                                        windowState: windowState
+                                    ),
+                                    space: space,
+                                    inventory: inventory,
+                                    browserContext: browserContext,
+                                    isInteractive: isInteractive,
+                                    topLevelIndex: entry.dropIndex,
+                                    geometryGeneration: dragSnapshot.geometryGeneration,
+                                    contentMutationAnimation: contentMutationAnimation,
+                                    shortcutRestoreSession: $shortcutRestoreSession
+                                )
+                            }
+                        case .dragPlaceholder:
+                            dropGap
+                        case .restoreGap(let gapID):
+                            shortcutRestoreGap(
+                                gapID,
                                 selectionSnapshot: selectionSnapshot
                             )
                         }
-                    case .item(.splitGroup(let groupID)):
-                        if let group = inventory.splitGroup(id: groupID) {
-                            SpacePinnedSplitGroupEntryView(
-                                group: group,
-                                items: SplitGroupSidebarModel.items(
-                                    for: group,
-                                    inventory: inventory,
-                                    selection: selection,
-                                    windowState: windowState
-                                ),
-                                space: space,
-                                inventory: inventory,
-                                browserContext: browserContext,
-                                isInteractive: isInteractive,
-                                topLevelIndex: entry.dropIndex,
-                                geometryGeneration: dragSnapshot.geometryGeneration,
-                                contentMutationAnimation: contentMutationAnimation,
-                                shortcutRestoreSession: $shortcutRestoreSession
-                            )
-                        }
-                    case .dragPlaceholder:
-                        dropGap
-                    case .restoreGap(let gapID):
-                        shortcutRestoreGap(
-                            gapID,
-                            selectionSnapshot: selectionSnapshot
+                    case .nestedSticky(let itemID):
+                        SpaceNestedPinnedStickyEntryView(
+                            space: space,
+                            inventory: inventory,
+                            selection: selection,
+                            pinProjection: pinProjection,
+                            pinCommands: pinCommands,
+                            pinExecution: pinExecution,
+                            folderCommands: folderCommands,
+                            spaceLifecycle: spaceLifecycle,
+                            browserContext: browserContext,
+                            isInteractive: isInteractive,
+                            itemID: itemID,
+                            dragSnapshot: dragSnapshot,
+                            contentMutationAnimation: contentMutationAnimation,
+                            shortcutRestoreSession: $shortcutRestoreSession
                         )
                     }
                 }
@@ -138,6 +220,7 @@ struct SpacePinnedListView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.bottom, bottomPadding)
         .animation(
             isInteractive && dragSnapshot.shouldAnimateDropLayout ? SidebarDropMotion.gap : nil,
             value: projection.projectedItems
@@ -145,8 +228,8 @@ struct SpacePinnedListView: View {
         .animation(contentMutationAnimation, value: pinnedItems)
         .animation(contentMutationAnimation, value: shortcutRestoreSession.gaps)
         .animation(contentMutationAnimation, value: shortcutRestoreSession.appearingGapIDs)
-        .animation(contentMutationAnimation, value: projection.displayEntries.map(\.id))
-        .padding(.bottom, 8)
+        .animation(contentMutationAnimation, value: contentDisplayEntries.map(\.id))
+        .animation(contentMutationAnimation, value: isCollapsed)
     }
 
     private func shortcutEntry(
@@ -219,11 +302,11 @@ struct SpacePinnedListView: View {
     }
 
     private func displayEntryZIndex(
-        _ entry: SpacePinnedDisplayEntry,
+        _ entry: SpacePinnedContentDisplayEntry,
         selectionSnapshot: SidebarWindowSelectionSnapshot,
         elevatedFolderIDs: Set<UUID>
     ) -> Double {
-        guard case .item(let item) = entry.item else { return 0 }
+        guard case .pinned(.item(let item)) = entry.item else { return 0 }
         return SidebarSelectionElevation.zIndex(
             isElevated: itemIsElevated(
                 item,

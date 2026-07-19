@@ -132,9 +132,23 @@ struct SpaceFolderSnapshot: Identifiable {
     let bodyChildren: [SpacePinnedItemSnapshot]
 }
 
+struct SpaceSplitGroupMemberSnapshot: Identifiable {
+    let id: SplitMemberID
+    let title: String
+    let icon: SpaceSidebarSnapshotIcon
+    let isSelected: Bool
+}
+
+struct SpaceSplitGroupSnapshot: Identifiable {
+    let id: UUID
+    let members: [SpaceSplitGroupMemberSnapshot]
+    let isSelected: Bool
+}
+
 indirect enum SpacePinnedItemSnapshot: Identifiable {
     case folder(SpaceFolderSnapshot)
     case shortcut(SpaceShortcutSnapshot)
+    case splitGroup(SpaceSplitGroupSnapshot)
 
     var id: UUID {
         switch self {
@@ -142,6 +156,8 @@ indirect enum SpacePinnedItemSnapshot: Identifiable {
             return folder.id
         case .shortcut(let shortcut):
             return shortcut.id
+        case .splitGroup(let splitGroup):
+            return splitGroup.id
         }
     }
 }
@@ -154,6 +170,8 @@ private extension Array where Element == SpacePinnedItemSnapshot {
                 return folder.hasActiveSelection || folder.bodyChildren.containsActiveSelection
             case .shortcut(let shortcut):
                 return shortcut.presentationState.isSelected
+            case .splitGroup(let splitGroup):
+                return splitGroup.isSelected
             }
         }
     }
@@ -180,6 +198,8 @@ struct SpaceSidebarPageSnapshot {
     let iconValue: String
     let extensionActions: ExtensionActionGridSnapshot?
     let essentials: EssentialsSnapshot?
+    let hasPinnedContent: Bool
+    let isPinnedContentCollapsed: Bool
     let pinnedItems: [SpacePinnedItemSnapshot]
     let regularTabs: [SpaceTabRowSnapshot]
     let showsNewTabButtonInList: Bool
@@ -308,6 +328,25 @@ enum SpaceSidebarTransitionSnapshotBuilder {
         let regularTabs = tabs.map {
             tabSnapshot($0, currentTabId: currentTabID)
         }
+        let hasPinnedContent = projection?.topLevelItems.isEmpty == false
+        let isPinnedContentCollapsed = hasPinnedContent
+            && windowState.sidebarSpacePinnedCollapse.isCollapsed(space.id)
+        let pinnedItems = isPinnedContentCollapsed
+            ? collapsedPinnedItemsSnapshot(
+                space: space,
+                projection: projection,
+                selection: selection,
+                pinProjection: pinProjection,
+                imageReader: browserContext.faviconImageReader,
+                windowState: windowState
+            )
+            : pinnedItemsSnapshot(
+                projection: projection,
+                selection: selection,
+                pinProjection: pinProjection,
+                imageReader: browserContext.faviconImageReader,
+                windowState: windowState
+            )
 
         return SpaceSidebarPageSnapshot(
             spaceId: space.id,
@@ -330,13 +369,9 @@ enum SpaceSidebarTransitionSnapshotBuilder {
                     imageReader: browserContext.faviconImageReader,
                     windowState: windowState
                 ),
-            pinnedItems: pinnedItemsSnapshot(
-                projection: projection,
-                selection: selection,
-                pinProjection: pinProjection,
-                imageReader: browserContext.faviconImageReader,
-                windowState: windowState
-            ),
+            hasPinnedContent: hasPinnedContent,
+            isPinnedContentCollapsed: isPinnedContentCollapsed,
+            pinnedItems: pinnedItems,
             regularTabs: regularTabs,
             showsNewTabButtonInList: settings.showNewTabButtonInTabList,
             showsTopNewTabButton: settings.tabListNewTabButtonPosition == .top,
@@ -464,50 +499,97 @@ enum SpaceSidebarTransitionSnapshotBuilder {
             windowState: windowState
         )
 
-        return (
-            projection.topLevelFolders.map { folder in
-                (
-                    folder.index,
-                    SpacePinnedItemSnapshot.folder(
-                        folderSnapshot(
-                            for: folder,
-                            context: folderContext,
-                            visitedFolderIds: []
-                        )
-                    )
-                )
-            }
-            + projection.topLevelPins.map { pin in
-                (
-                    pin.index,
-                    SpacePinnedItemSnapshot.shortcut(
-                        shortcutSnapshot(
-                            for: pin,
-                            liveTab: selection.liveTab(for: pin.id, in: windowState),
-                            inventory: projection,
-                            selection: selection,
-                            pinProjection: pinProjection,
-                            imageReader: imageReader,
-                            windowState: windowState
-                        )
-                    )
-                )
-            }
-        )
-        .sorted { lhs, rhs in
-            if lhs.0 != rhs.0 { return lhs.0 < rhs.0 }
-            switch (lhs.1, rhs.1) {
-            case (.folder(let left), .folder(let right)):
-                return left.id.uuidString < right.id.uuidString
-            case (.shortcut(let left), .shortcut(let right)):
-                return left.id.uuidString < right.id.uuidString
-            case (.folder, .shortcut):
-                return true
-            case (.shortcut, .folder):
-                return false
-            }
+        return projection.topLevelItems.compactMap {
+            pinnedItemSnapshot(
+                for: $0,
+                context: folderContext,
+                visitedFolderIds: []
+            )
         }
-        .map(\.1)
+    }
+
+    private static func collapsedPinnedItemsSnapshot(
+        space: Space,
+        projection: SidebarSpaceInventorySnapshot?,
+        selection: SidebarWindowSelectionQuery,
+        pinProjection: SidebarPinFolderProjection,
+        imageReader: any BrowserFaviconImageReading,
+        windowState: BrowserWindowState
+    ) -> [SpacePinnedItemSnapshot] {
+        guard let projection else { return [] }
+        let context = FolderSnapshotContext(
+            childFoldersByParentId: projection.childFoldersByParentID,
+            folderPinsByFolderId: projection.folderPinsByFolderID,
+            liveTabsByPinId: Dictionary(
+                uniqueKeysWithValues: projection.pinsByID.values.compactMap { pin in
+                    selection.liveTab(for: pin.id, in: windowState).map { (pin.id, $0) }
+                }
+            ),
+            inventory: projection,
+            selection: selection,
+            pinProjection: pinProjection,
+            imageReader: imageReader,
+            windowState: windowState
+        )
+        let owner = SidebarSpacePinnedStickyProjectionOwner(
+            space: space,
+            inventory: projection,
+            selection: selection,
+            selectionSnapshot: SidebarWindowSelectionSnapshot(windowState: windowState),
+            windowState: windowState
+        )
+        return owner.visibleStickyItemIDs.compactMap { itemID in
+            if projection.pin(id: itemID) != nil {
+                return pinnedItemSnapshot(
+                    for: .shortcut(itemID),
+                    context: context,
+                    visitedFolderIds: []
+                )
+            }
+            if projection.splitGroup(id: itemID) != nil {
+                return pinnedItemSnapshot(
+                    for: .splitGroup(itemID),
+                    context: context,
+                    visitedFolderIds: []
+                )
+            }
+            return nil
+        }
+    }
+
+    private static func pinnedItemSnapshot(
+        for item: SidebarPinnedInventoryItem,
+        context: FolderSnapshotContext,
+        visitedFolderIds: Set<UUID>
+    ) -> SpacePinnedItemSnapshot? {
+        switch item {
+        case .folder(let folderID):
+            guard !visitedFolderIds.contains(folderID),
+                  let folder = context.inventory.folder(id: folderID) else { return nil }
+            return .folder(
+                folderSnapshot(
+                    for: folder,
+                    context: context,
+                    visitedFolderIds: visitedFolderIds
+                )
+            )
+        case .shortcut(let pinID):
+            guard let pin = context.inventory.pin(id: pinID) else { return nil }
+            return .shortcut(
+                shortcutSnapshot(
+                    for: pin,
+                    liveTab: context.liveTabsByPinId[pin.id],
+                    inventory: context.inventory,
+                    selection: context.selection,
+                    pinProjection: context.pinProjection,
+                    imageReader: context.imageReader,
+                    windowState: context.windowState
+                )
+            )
+        case .splitGroup(let groupID):
+            guard let group = context.inventory.splitGroup(id: groupID) else { return nil }
+            return .splitGroup(splitGroupSnapshot(for: group, context: context))
+        }
     }
 
     private static func doesFolderContainActiveSelection(
@@ -582,41 +664,25 @@ enum SpaceSidebarTransitionSnapshotBuilder {
     ) -> SpaceFolderSnapshot {
         var nextVisited = visitedFolderIds
         nextVisited.insert(folder.id)
-        let directChildFolders = (context.childFoldersByParentId[folder.id] ?? [])
-            .filter { nextVisited.contains($0.id) == false }
-        let directShortcutPins = context.folderPinsByFolderId[folder.id] ?? []
-
-        let projectionState = context.windowState.sidebarFolderProjections.projection(for: folder.id)
+        let projectionState = context.windowState.sidebarFolderProjections
+            .pendingOrCurrentProjection(for: folder.id)
 
         let bodyChildren: [SpacePinnedItemSnapshot]
         let hasActiveSelection: Bool
 
         if folder.isOpen {
             bodyChildren = folderBodyChildSnapshots(
-                childFolders: directChildFolders,
-                shortcutPins: directShortcutPins,
+                items: context.inventory.folderItems(for: folder.id),
                 context: context,
                 visitedFolderIds: nextVisited
             )
             hasActiveSelection = projectionState.hasActiveProjection || bodyChildren.containsActiveSelection
         } else {
-            bodyChildren = collapsedStickyShortcutPins(
+            bodyChildren = collapsedStickyItems(
                 for: folder.id,
                 context: context,
                 projectionState: projectionState
-            ).map { pin in
-                SpacePinnedItemSnapshot.shortcut(
-                    shortcutSnapshot(
-                        for: pin,
-                        liveTab: context.liveTabsByPinId[pin.id],
-                        inventory: context.inventory,
-                        selection: context.selection,
-                        pinProjection: context.pinProjection,
-                        imageReader: context.imageReader,
-                        windowState: context.windowState
-                    )
-                )
-            }
+            )
             hasActiveSelection = projectionState.hasActiveProjection || doesFolderContainActiveSelection(
                 folderId: folder.id,
                 childFoldersByParentId: context.childFoldersByParentId,
@@ -638,65 +704,95 @@ enum SpaceSidebarTransitionSnapshotBuilder {
     }
 
     private static func folderBodyChildSnapshots(
-        childFolders: [TabFolder],
-        shortcutPins: [ShortcutPin],
+        items: [SidebarPinnedInventoryItem],
         context: FolderSnapshotContext,
         visitedFolderIds: Set<UUID>
     ) -> [SpacePinnedItemSnapshot] {
-        (
-            childFolders.map { childFolder in
-                (
-                    childFolder.index,
-                    0,
-                    SpacePinnedItemSnapshot.folder(
-                        folderSnapshot(
-                            for: childFolder,
-                            context: context,
-                            visitedFolderIds: visitedFolderIds
-                        )
-                    )
-                )
-            }
-            + shortcutPins.map { pin in
-                (
-                    pin.index,
-                    1,
-                    SpacePinnedItemSnapshot.shortcut(
-                        shortcutSnapshot(
-                            for: pin,
-                            liveTab: context.liveTabsByPinId[pin.id],
-                            inventory: context.inventory,
-                            selection: context.selection,
-                            pinProjection: context.pinProjection,
-                            imageReader: context.imageReader,
-                            windowState: context.windowState
-                        )
-                    )
-                )
-            }
-        )
-        .sorted { lhs, rhs in
-            if lhs.0 != rhs.0 { return lhs.0 < rhs.0 }
-            if lhs.1 != rhs.1 { return lhs.1 < rhs.1 }
-            return lhs.2.id.uuidString < rhs.2.id.uuidString
+        items.compactMap {
+            pinnedItemSnapshot(
+                for: $0,
+                context: context,
+                visitedFolderIds: visitedFolderIds
+            )
         }
-        .map(\.2)
     }
 
-    private static func collapsedStickyShortcutPins(
+    private static func collapsedStickyItems(
         for folderId: UUID,
         context: FolderSnapshotContext,
         projectionState: SidebarFolderProjectionState
-    ) -> [ShortcutPin] {
-        let descendantPinsById = Dictionary(
-            context.inventory.descendantPins(for: folderId).map { ($0.id, $0) },
-            uniquingKeysWith: { first, _ in first }
+    ) -> [SpacePinnedItemSnapshot] {
+        let descendantIDs = Set(
+            context.inventory.orderedDescendantItemIDs(for: folderId)
         )
         return projectionState.stickyItemIDs.compactMap { itemID in
-            guard let pin = descendantPinsById[itemID],
-                  context.liveTabsByPinId[pin.id] != nil else { return nil }
-            return pin
+            guard descendantIDs.contains(itemID) else { return nil }
+            if let pin = context.inventory.pin(id: itemID),
+               context.liveTabsByPinId[pin.id] != nil {
+                return pinnedItemSnapshot(
+                    for: .shortcut(itemID),
+                    context: context,
+                    visitedFolderIds: []
+                )
+            }
+            if context.inventory.splitGroup(id: itemID) != nil {
+                return pinnedItemSnapshot(
+                    for: .splitGroup(itemID),
+                    context: context,
+                    visitedFolderIds: []
+                )
+            }
+            return nil
         }
+    }
+
+    private static func splitGroupSnapshot(
+        for group: SplitGroup,
+        context: FolderSnapshotContext
+    ) -> SpaceSplitGroupSnapshot {
+        let selectionSnapshot = SidebarWindowSelectionSnapshot(
+            windowState: context.windowState
+        )
+        let items = SplitGroupSidebarModel.items(
+            for: group,
+            inventory: context.inventory,
+            selection: context.selection,
+            windowState: context.windowState
+        )
+        let members = items.map { item in
+            let icon: SpaceSidebarSnapshotIcon
+            if let pin = item.pin {
+                icon = shortcutIcon(
+                    for: pin,
+                    liveTab: item.tab,
+                    faviconPartition: context.pinProjection.faviconPartition(
+                        for: pin,
+                        currentSpaceID: context.inventory.spaceID
+                    ),
+                    imageReader: context.imageReader
+                )
+            } else if let tab = item.tab {
+                icon = tabIcon(for: tab)
+            } else {
+                icon = .system("globe")
+            }
+            return SpaceSplitGroupMemberSnapshot(
+                id: item.id,
+                title: item.title,
+                icon: icon,
+                isSelected: selectionSnapshot.splitSelection?.groupID == group.id
+                    && selectionSnapshot.splitSelection?.activeMemberID == item.id
+            )
+        }
+        return SpaceSplitGroupSnapshot(
+            id: group.id,
+            members: members,
+            isSelected: context.selection.isSplitGroupSelected(
+                group,
+                in: context.windowState,
+                selection: selectionSnapshot
+            )
+        )
     }
 
     private static func shortcutSnapshot(

@@ -1123,6 +1123,73 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         XCTAssertEqual(snapshot.source.regularTabs.map(\.showsUnloadedIndicator), [true])
     }
 
+    func testSnapshotBuilderKeepsOnlyStickyPinnedRowsWhenSpaceIsCollapsed() {
+        let browserManager = BrowserManager()
+        let windowState = BrowserWindowState()
+        let settings = makeIsolatedSettings()
+        let profileID = UUID()
+        let source = Space(name: "Source", profileId: profileID)
+        let destination = Space(name: "Destination", profileId: profileID)
+        let hiddenPin = ShortcutPin(
+            id: UUID(),
+            role: .spacePinned,
+            spaceId: source.id,
+            index: 0,
+            launchURL: URL(string: "https://example.com/hidden")!,
+            title: "Hidden"
+        )
+        let stickyPin = ShortcutPin(
+            id: UUID(),
+            role: .spacePinned,
+            spaceId: source.id,
+            index: 1,
+            launchURL: URL(string: "https://example.com/sticky")!,
+            title: "Sticky"
+        )
+
+        browserManager.spaceStateOwner.replaceSpaces([source, destination])
+        browserManager.structuralCollectionMutationOwner
+            .setSpacePinnedShortcuts([hiddenPin, stickyPin], for: source.id)
+        let regularTab = browserManager.regularTabLifecycleOwner.createNewTab(
+            url: "https://example.com/regular",
+            in: source,
+            activate: false
+        )
+        windowState.currentProfileId = profileID
+        windowState.currentSpaceId = source.id
+        _ = TransitionStateSidebarFixture(
+            browser: browserManager,
+            windowState: windowState
+        )
+        _ = browserManager.shortcutTabMaterializer.materialize(
+            stickyPin,
+            in: windowState.id,
+            currentSpaceId: source.id
+        )
+        windowState.sidebarSpacePinnedCollapse.setCollapsed(true, for: source.id)
+        windowState.sidebarSpacePinnedCollapse.scheduleMutation(
+            for: source.id
+        ) { _ in
+            SidebarFolderProjectionState(
+                stickyItemIDs: [stickyPin.id],
+                hasActiveProjection: true
+            )
+        }
+
+        let snapshot = makeTransitionSnapshot(
+            sourceSpace: source,
+            destinationSpace: destination,
+            browserManager: browserManager,
+            windowState: windowState,
+            settings: settings
+        )
+
+        XCTAssertTrue(snapshot.source.hasPinnedContent)
+        XCTAssertTrue(snapshot.source.isPinnedContentCollapsed)
+        XCTAssertEqual(snapshot.source.pinnedItems.map(\.id), [stickyPin.id])
+        XCTAssertEqual(snapshot.source.regularTabs.map(\.id), [regularTab.id])
+    }
+
     func testSnapshotFolderBodyKeepsLiveFolderLayoutMetrics() {
         XCTAssertEqual(SpaceSidebarSnapshotFolderLayout.contentLeadingPadding, 14)
         XCTAssertEqual(SpaceSidebarSnapshotFolderLayout.contentVerticalPadding, 4)
@@ -1200,6 +1267,11 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
             in: windowState.id,
             currentSpaceId: source.id
         )!
+        windowState.sidebarFolderProjections.scheduleUpdate(
+            for: folder.id,
+            stickyItemIDs: [secondPin.id],
+            hasActiveProjection: true
+        )
 
         let snapshot = makeTransitionSnapshot(
             sourceSpace: source,
@@ -1545,6 +1617,8 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
             iconValue: iconValue,
             extensionActions: nil,
             essentials: nil,
+            hasPinnedContent: false,
+            isPinnedContentCollapsed: false,
             pinnedItems: [],
             regularTabs: [],
             showsNewTabButtonInList: true,

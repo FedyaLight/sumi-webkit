@@ -28,6 +28,30 @@ enum SpaceTitleRowLayout {
     }
 }
 
+enum SpaceTitleLeadingPresentation: Equatable {
+    case icon
+    case chevron(isExpanded: Bool)
+
+    static func resolve(
+        hasPinnedContent: Bool,
+        isCollapsed: Bool,
+        isHovered: Bool
+    ) -> Self {
+        guard hasPinnedContent, isCollapsed || isHovered else { return .icon }
+        return .chevron(isExpanded: !isCollapsed)
+    }
+}
+
+enum SpaceTitleCollapseMotion {
+    static func animation(
+        reduceMotion: Bool,
+        shouldReduceChromeMotion: Bool
+    ) -> Animation? {
+        guard !reduceMotion, !shouldReduceChromeMotion else { return nil }
+        return .easeInOut(duration: 0.1)
+    }
+}
+
 struct SpaceIconGlyphView: View {
     let iconValue: String
     let textColor: Color
@@ -132,6 +156,9 @@ struct SpaceTitle: View {
 
     let space: Space
     let actions: SpaceTitleActions
+    let hasPinnedContent: Bool
+    let isPinnedContentCollapsed: Bool
+    let onTogglePinnedContent: () -> Void
     var isAppKitInteractionEnabled: Bool = true
 
     @State private var isRenaming: Bool = false
@@ -140,6 +167,7 @@ struct SpaceTitle: View {
     @FocusState private var nameFieldFocused: Bool
 
     @StateObject private var emojiManager = EmojiPickerManager()
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         SpaceTitleRowChrome(
@@ -153,6 +181,15 @@ struct SpaceTitle: View {
             menuButton
         }
         .accessibilityIdentifier("space-title-\(space.id.uuidString)")
+        .conditionally(if: hasPinnedContent) { view in
+            view
+                .accessibilityValue(
+                    isPinnedContentCollapsed ? "collapsed" : "expanded"
+                )
+                .accessibilityAction {
+                    onTogglePinnedContent()
+                }
+        }
         .sidebarDDGHover($isRowHovered, isEnabled: isAppKitInteractionEnabled)
         .onAppear {
             emojiManager.sidebarRecoveryCoordinator =
@@ -166,6 +203,8 @@ struct SpaceTitle: View {
         }
         .sidebarAppKitContextMenu(
             isInteractionEnabled: isAppKitInteractionEnabled,
+            primaryAction: hasPinnedContent ? onTogglePinnedContent : nil,
+            sourceID: hasPinnedContent ? "space-title-toggle-\(space.id.uuidString)" : nil,
             entries: {
                 spaceContextMenuEntries()
             }
@@ -179,9 +218,12 @@ struct SpaceTitle: View {
                 iconValue: space.icon,
                 textColor: textColor
             )
+            .opacity(showsCollapseChevron ? 0 : 1)
             .background(EmojiPickerAnchor(manager: emojiManager))
             .onTapGesture(count: 2) {
-                toggleSpaceIconPicker()
+                if !hasPinnedContent {
+                    toggleSpaceIconPicker()
+                }
             }
             .modifier(
                 SpaceTitleEmojiPickModifier(
@@ -190,7 +232,15 @@ struct SpaceTitle: View {
                     persistCommittedEmoji: actions.persistCommittedEmoji
                 )
             )
+
+            Image(systemName: "chevron.right")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(textColor)
+                .rotationEffect(.degrees(chevronIsExpanded ? 90 : 0))
+                .opacity(showsCollapseChevron ? 1 : 0)
+                .accessibilityHidden(true)
         }
+        .animation(collapseChevronAnimation, value: leadingPresentation)
     }
 
     @ViewBuilder
@@ -220,7 +270,9 @@ struct SpaceTitle: View {
                 textColor: textColor
             )
                 .onTapGesture(count: 2) {
-                    startRenaming()
+                    if !hasPinnedContent {
+                        startRenaming()
+                    }
                 }
         }
     }
@@ -273,6 +325,33 @@ struct SpaceTitle: View {
 
     private var displayIsHovering: Bool {
         SidebarHoverChrome.displayHover(isRowHovered, freezesHoverState: freezesHoverState)
+    }
+
+    private var leadingPresentation: SpaceTitleLeadingPresentation {
+        SpaceTitleLeadingPresentation.resolve(
+            hasPinnedContent: hasPinnedContent,
+            isCollapsed: isPinnedContentCollapsed,
+            isHovered: displayIsHovering
+        )
+    }
+
+    private var showsCollapseChevron: Bool {
+        if case .chevron = leadingPresentation { return true }
+        return false
+    }
+
+    private var chevronIsExpanded: Bool {
+        if case .chevron(let isExpanded) = leadingPresentation {
+            return isExpanded
+        }
+        return !isPinnedContentCollapsed
+    }
+
+    private var collapseChevronAnimation: Animation? {
+        SpaceTitleCollapseMotion.animation(
+            reduceMotion: reduceMotion,
+            shouldReduceChromeMotion: sumiSettings.shouldReduceChromeMotion
+        )
     }
 
     // MARK: - Actions

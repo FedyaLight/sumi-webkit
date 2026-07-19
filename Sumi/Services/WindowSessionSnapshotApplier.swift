@@ -45,6 +45,9 @@ struct WindowSessionSnapshotApplier {
                 ($0.spaceId, $0.shortcutPinId)
             }
         )
+        windowState.sidebarSpacePinnedCollapse.restoreCollapsedSpaceIDs(
+            snapshot.collapsedPinnedSpaceIDs
+        )
 
         let sidebarWidth = BrowserWindowState.clampedSidebarWidth(
             CGFloat(snapshot.sidebarWidth)

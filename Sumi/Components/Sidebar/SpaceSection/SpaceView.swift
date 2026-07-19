@@ -128,10 +128,14 @@ struct SpaceView: View {
     let renderMode: SpaceViewRenderMode
     let allowsInteraction: Bool
     let scrollHoverCoordinator: NativeSurfaceScrollHoverCoordinator
+    let persistWindowSession: (BrowserWindowState) -> Void
     @Binding var isSidebarHovered: Bool
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(WindowRegistry.self) private var windowRegistry
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.resolvedThemeContext) private var themeContext
+    @Environment(\.sidebarWindowSelectionSnapshot) private var sidebarSelection
+    @Environment(\.sumiSettings) private var sumiSettings
     @State private var shortcutRestoreSession = SpaceShortcutRestoreInteractionSession()
 
     let onScrollViewportChange: (UUID, SpaceSidebarSnapshotViewport) -> Void
@@ -165,6 +169,15 @@ struct SpaceView: View {
         renderMode.resolvesInteraction(allowsInteraction: allowsInteraction)
     }
 
+    private var pinnedLayoutAnimation: Animation? {
+        guard isInteractive else { return nil }
+        return SidebarMotionPolicy.folderLayoutAnimation(
+            for: SidebarMotionPolicy.currentMode(
+                reduceMotion: reduceMotion || sumiSettings.shouldReduceChromeMotion
+            )
+        )
+    }
+
     private var pinnedSection: SpacePinnedSectionView {
         SpacePinnedSectionView(
             space: space,
@@ -177,7 +190,27 @@ struct SpaceView: View {
             spaceLifecycle: spaceLifecycle,
             browserContext: browserContext,
             isInteractive: isInteractive,
+            onSetPinnedContentCollapsed: setPinnedContentCollapsed,
             shortcutRestoreSession: $shortcutRestoreSession
+        )
+    }
+
+    private var hasPinnedContent: Bool {
+        !windowState.isIncognito && !inventory.topLevelItems.isEmpty
+    }
+
+    private var isPinnedContentCollapsed: Bool {
+        hasPinnedContent
+            && windowState.sidebarSpacePinnedCollapse.isCollapsed(space.id)
+    }
+
+    private var pinnedStickyOwner: SidebarSpacePinnedStickyProjectionOwner {
+        SidebarSpacePinnedStickyProjectionOwner(
+            space: space,
+            inventory: inventory,
+            selection: selection,
+            selectionSnapshot: sidebarSelection,
+            windowState: windowState
         )
     }
 
@@ -205,6 +238,11 @@ struct SpaceView: View {
                 SpaceTitle(
                     space: space,
                     actions: spaceTitleActions,
+                    hasPinnedContent: hasPinnedContent,
+                    isPinnedContentCollapsed: isPinnedContentCollapsed,
+                    onTogglePinnedContent: {
+                        setPinnedContentCollapsed(!isPinnedContentCollapsed)
+                    },
                     isAppKitInteractionEnabled: isInteractive
                 )
 
@@ -235,6 +273,23 @@ struct SpaceView: View {
                 }
             }
         }
+    }
+
+    private func setPinnedContentCollapsed(_ isCollapsed: Bool) {
+        guard !isCollapsed || hasPinnedContent else { return }
+        let collapseState = windowState.sidebarSpacePinnedCollapse
+        guard collapseState.isCollapsed(space.id) != isCollapsed else { return }
+
+        withAnimation(pinnedLayoutAnimation) {
+            if isCollapsed {
+                _ = collapseState.setCollapsed(true, for: space.id)
+                pinnedStickyOwner.handleCollapse()
+            } else {
+                pinnedStickyOwner.handleExpand()
+                _ = collapseState.setCollapsed(false, for: space.id)
+            }
+        }
+        persistWindowSession(windowState)
     }
 }
 

@@ -29,6 +29,9 @@ struct DeletedSpaceWindowReferencePruner {
             windowState.selectedShortcutPinForSpace = activeShortcuts
             changed = true
         }
+        if windowState.sidebarSpacePinnedCollapse.removeSpace(removal.spaceId) {
+            changed = true
+        }
 
         var history = windowState.selectionHistory
         if history.removeReferences(

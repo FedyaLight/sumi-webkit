@@ -208,6 +208,9 @@ class BrowserWindowState {
     /// Window-local sidebar projection state that must not publish through shared models.
     let sidebarFolderProjections = SidebarFolderProjectionCoalescer()
 
+    /// Window-local Zen-style collapsed state for each Space pinned section.
+    let sidebarSpacePinnedCollapse = SidebarSpacePinnedCollapseState()
+
     /// Window-local owner for the Zen-style in-sidebar space creation flow.
     let spaceCreationSession = WindowSpaceCreationSessionOwner()
 

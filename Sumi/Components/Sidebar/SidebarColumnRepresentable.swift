@@ -42,7 +42,8 @@ struct SidebarColumnHostedRootView: View {
             inventoryUpdates: inventoryUpdates,
             profileUpdates: profileUpdates,
             nowPlayingController: environmentContext.nowPlayingController,
-            updaterService: environmentContext.updaterService
+            updaterService: environmentContext.updaterService,
+            persistWindowSession: environmentContext.hostActions.persistWindowSession
         )
             .frame(width: presentationContext.sidebarWidth, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
