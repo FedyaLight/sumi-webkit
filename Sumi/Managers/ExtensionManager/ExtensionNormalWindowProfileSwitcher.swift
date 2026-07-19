@@ -16,11 +16,14 @@ final class ExtensionNormalWindowProfileSwitcher {
 
     func switchToWindowProfile(_ window: BrowserWindowState) {
         if window.isIncognito, let profile = window.ephemeralProfile {
+            transition.rememberProfile(profile)
             transition.switchProfile(profileID: profile.id)
         } else if let profileID = window.currentProfileId,
-                  profiles.profile(profileID) != nil {
+                  let profile = profiles.profile(profileID) {
+            transition.rememberProfile(profile)
             transition.switchProfile(profileID: profileID)
         } else if let currentProfile = profiles.currentProfile() {
+            transition.rememberProfile(currentProfile)
             transition.switchProfile(profileID: currentProfile.id)
         }
     }

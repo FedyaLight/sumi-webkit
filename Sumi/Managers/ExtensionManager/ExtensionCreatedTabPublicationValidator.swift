@@ -17,7 +17,6 @@ final class ExtensionCreatedTabPublicationValidator {
     private let contextLoading: any ExtensionContentScriptContextLoading
     private let publications: ExtensionWindowPublicationQuery
     private let adapters: ExtensionCreatedTabAdapterPublication
-    private let extensionsLoaded: @MainActor () -> Bool
 
     init(
         runtimePublicationEvidence:
@@ -30,8 +29,7 @@ final class ExtensionCreatedTabPublicationValidator {
         controllerAdmission: any ExtensionWebViewControllerAdmitting,
         contextLoading: any ExtensionContentScriptContextLoading,
         publications: ExtensionWindowPublicationQuery,
-        adapters: ExtensionCreatedTabAdapterPublication,
-        extensionsLoaded: @escaping @MainActor () -> Bool
+        adapters: ExtensionCreatedTabAdapterPublication
     ) {
         self.runtimePublicationEvidence = runtimePublicationEvidence
         self.profileRuntime = profileRuntime
@@ -43,18 +41,15 @@ final class ExtensionCreatedTabPublicationValidator {
         self.contextLoading = contextLoading
         self.publications = publications
         self.adapters = adapters
-        self.extensionsLoaded = extensionsLoaded
     }
 
     func prepareBase(
         for tab: Tab
     ) -> ExtensionCreatedTabPublicationBaseEvidence? {
-        guard extensionsLoaded(),
-              tab.isEphemeral == false,
+        guard tab.isEphemeral == false,
               let profileID = tabProfiles.profileID(for: tab),
-              contextLoading.profileHasLoadedContentScriptContexts(
-                  profileId: profileID
-              ), let dataStore = browserProfiles.anyProfile(profileID)?.dataStore,
+              profileIsReady(profileID),
+              let dataStore = browserProfiles.anyProfile(profileID)?.dataStore,
               let webView = webViews.liveWebView(for: tab),
               webView.configuration.websiteDataStore === dataStore,
               let controller = controllers.existingController(for: tab),
@@ -112,14 +107,12 @@ final class ExtensionCreatedTabPublicationValidator {
         let currentGeneration = currentRuntimePublication.tabPublication
         let binding = base.tab.extensionPageRuntimeOwner
             .documentBindingSnapshot()
-        guard extensionsLoaded(),
+        guard profileIsReady(base.profileID),
               tabProfiles.profileID(for: base.tab) == base.profileID,
               browserProfiles.anyProfile(base.profileID)?.dataStore
                 === base.dataStore,
               base.webView.configuration.websiteDataStore === base.dataStore,
-              contextLoading.profileHasLoadedContentScriptContexts(
-                  profileId: base.profileID
-              ), let currentController = profileRuntime.controller(
+              let currentController = profileRuntime.controller(
                   for: base.profileID
               ), controllers.existingController(for: base.tab)
                 === currentController,
@@ -163,7 +156,7 @@ final class ExtensionCreatedTabPublicationValidator {
         _ evidence: ExtensionCreatedTabPublicationEvidence
     ) -> Bool {
         let base = evidence.base
-        return extensionsLoaded()
+        return profileIsReady(base.profileID)
             && runtimePublicationEvidence.isCurrent(
                 base.runtimePublication
             )
@@ -175,9 +168,6 @@ final class ExtensionCreatedTabPublicationValidator {
                 === base.controller
             && profileRuntime.contextBindingGeneration(for: base.profileID)
                 == base.contextBindingGeneration
-            && contextLoading.profileHasLoadedContentScriptContexts(
-                profileId: base.profileID
-            )
             && controllers.existingController(for: base.tab)
                 === base.controller
             && webViews.liveWebView(for: base.tab)
@@ -192,5 +182,11 @@ final class ExtensionCreatedTabPublicationValidator {
             && base.tab.extensionPageRuntimeOwner.isEligible(
                 for: base.generation
             )
+    }
+
+    private func profileIsReady(_ profileID: UUID) -> Bool {
+        contextLoading.profileHasLoadedContentScriptContexts(
+            profileId: profileID
+        )
     }
 }

@@ -27,6 +27,7 @@ struct ExtensionBrowserPublicationRuntime {
         _ profile: Profile,
         mutationLease: ProfileReferenceMutationLease? = nil
     ) {
+        profiles.rememberProfile(profile)
         profiles.switchProfile(
             profileID: profile.id,
             mutationLease: mutationLease

@@ -24,7 +24,6 @@ final class ExtensionCreatedTabRuntimeRegistrar {
         publications: ExtensionWindowPublicationQuery,
         publicationAdmission: ExtensionTabPublicationAdmission,
         events: any ExtensionTabLifecycleEventSink,
-        extensionsLoaded: @escaping @MainActor () -> Bool,
         diagnostics: ExtensionRuntimeDiagnostics
     ) {
         let adapters = ExtensionCreatedTabAdapterPublication(
@@ -42,8 +41,7 @@ final class ExtensionCreatedTabRuntimeRegistrar {
             controllerAdmission: controllerAdmission,
             contextLoading: contextLoading,
             publications: publications,
-            adapters: adapters,
-            extensionsLoaded: extensionsLoaded
+            adapters: adapters
         )
         self.publicationAdmission = publicationAdmission
         retirement = ExtensionCreatedTabPublicationRetirement(

@@ -249,6 +249,22 @@ final class ExtensionRuntimeLifecycleBoundaryTests: XCTestCase {
         XCTAssertEqual(fixture.lifecycle.state, .ready)
     }
 
+    func testLoadedContextPublishesBrowserProjectionBeforeOtherContextsLoad()
+        async throws {
+        let fixture = try await makeResidencySettlementFixture(
+            extensionID: "current-loaded",
+            additionalEnabledExtensionID: "still-lazy"
+        )
+
+        XCTAssertTrue(fixture.settlement.settle(fixture.loadedContext))
+        XCTAssertEqual(fixture.projectionProbe.publicationCount, 1)
+        XCTAssertFalse(fixture.loadStatus.extensionsLoaded)
+        XCTAssertEqual(fixture.lifecycle.state, .loading)
+
+        XCTAssertTrue(fixture.settlement.settle(fixture.loadedContext))
+        XCTAssertEqual(fixture.projectionProbe.publicationCount, 1)
+    }
+
     func testSupersededLoadedContextDoesNotPublishRuntime() async throws {
         let fixture = try await makeResidencySettlementFixture(
             extensionID: "superseded-loaded"
@@ -270,7 +286,8 @@ final class ExtensionRuntimeLifecycleBoundaryTests: XCTestCase {
     }
 
     private func makeResidencySettlementFixture(
-        extensionID: String
+        extensionID: String,
+        additionalEnabledExtensionID: String? = nil
     ) async throws -> ResidencySettlementFixture {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -317,13 +334,21 @@ final class ExtensionRuntimeLifecycleBoundaryTests: XCTestCase {
         let installedExtensions = InstalledExtensionCollection()
         installedExtensions.connectRecordChanges {}
         installedExtensions.upsert(makeInstalledExtension(id: extensionID))
+        if let additionalEnabledExtensionID {
+            installedExtensions.upsert(
+                makeInstalledExtension(id: additionalEnabledExtensionID)
+            )
+        }
         let contextLoadRegistry = ExtensionContextLoadRegistry()
         let claim = contextLoadRegistry.begin(for: receipt.key)
+        let projectionProbe = ExtensionProjectionPublicationProbe()
         let settlement = ExtensionContextSettlementOwner(
             profileRuntime: profileRuntime,
             runtimeLifecycle: runtimeLifecycle,
             installedExtensions: installedExtensions,
-            publishReadyProfile: { _, _ in true },
+            publishProfileProjection: { _, _ in
+                projectionProbe.publish()
+            },
             markPublicationReady: {
                 runtimeLoadStatus.markExtensionsLoaded()
             },
@@ -343,6 +368,7 @@ final class ExtensionRuntimeLifecycleBoundaryTests: XCTestCase {
                 loadClaim: claim,
                 mutationLease: nil
             ),
+            projectionProbe: projectionProbe,
             settlement: settlement
         )
     }
@@ -399,7 +425,18 @@ private struct ResidencySettlementFixture {
     let loadStatus: ExtensionRuntimeLoadStatusAuthority
     let controller: WKWebExtensionController
     let loadedContext: ExtensionLoadedContext
+    let projectionProbe: ExtensionProjectionPublicationProbe
     let settlement: ExtensionContextSettlementOwner
+}
+
+@MainActor
+private final class ExtensionProjectionPublicationProbe {
+    private(set) var publicationCount = 0
+
+    func publish() -> Bool {
+        publicationCount += 1
+        return true
+    }
 }
 
 @available(macOS 15.5, *)

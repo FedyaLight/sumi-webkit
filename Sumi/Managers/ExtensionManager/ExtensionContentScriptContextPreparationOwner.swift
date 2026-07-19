@@ -45,6 +45,14 @@ final class ExtensionContentScriptContextPreparationOwner {
         }
     }
 
+    func profileHasLoadedExtensionContext(profileID: UUID) -> Bool {
+        // A normal tab only needs the content-script contexts that can
+        // actually inject into its document. Popup/options-only extensions do
+        // not make browser tab publication wait for an unrelated background
+        // context.
+        profileHasLoadedContexts(profileID: profileID)
+    }
+
     func profileNeedsLoad(profileID: UUID) -> Bool {
         profileHasLoadedContexts(profileID: profileID) == false
     }

@@ -20,9 +20,24 @@ struct ExtensionRequestedTabRuntimeAdmission {
         reason: String
     ) -> Bool {
         if publicationControllerIsReady {
+            // WebKit may ask an extension to open an ordinary page while a
+            // sibling context in the same profile is still settling. The
+            // browser tab is a valid user-visible result even when extension
+            // publication must be deferred; normal tab lifecycle will retry
+            // registration after the profile contexts become ready. Internal
+            // extension URLs still fail closed because they cannot be safely
+            // represented without their owning context.
             return registrar.register(tab, reason: reason)
+                || isOrdinaryBrowserTab(tab, load: load)
         }
-        return load.isOrdinaryBrowserRequest
+        return isOrdinaryBrowserTab(tab, load: load)
+    }
+
+    private func isOrdinaryBrowserTab(
+        _ tab: Tab,
+        load: ExtensionRequestedTabLoad
+    ) -> Bool {
+        load.isOrdinaryBrowserRequest
             && tab.isEphemeral == false
             && tab.webExtensionContextOverride == nil
             && ExtensionURLIdentity.isOwned(tab.url) == false

@@ -1,4 +1,5 @@
 import SwiftData
+import SumiWebRuntime
 import WebKit
 import XCTest
 
@@ -7,6 +8,36 @@ import XCTest
 @available(macOS 15.5, *)
 @MainActor
 final class SafariExtensionRuntimeDataStoreTests: XCTestCase {
+    func testRememberedProfileProvidesCanonicalStoreObject() throws {
+        let profile = Profile(name: "Canonical Extension Store")
+        let cache = ExtensionProfileWebsiteDataStoreCache()
+
+        cache.remember(profile)
+        let resolved = cache.store(
+            for: profile.id,
+            activeProfile: nil,
+            currentProfileId: profile.id
+        )
+
+        XCTAssertIdentical(resolved, profile.dataStore)
+    }
+
+    func testActiveDifferentProfileCannotAliasRequestedStore() throws {
+        let requested = Profile(name: "Requested Extension Store")
+        let active = Profile(name: "Active Extension Store")
+        let cache = ExtensionProfileWebsiteDataStoreCache()
+
+        cache.remember(requested)
+        let resolved = cache.store(
+            for: requested.id,
+            activeProfile: active,
+            currentProfileId: active.id
+        )
+
+        XCTAssertIdentical(resolved, requested.dataStore)
+        XCTAssertFalse(resolved === active.dataStore)
+    }
+
     func testExtensionRuntimeWebsiteDataStoreMatchesProfileStore() throws {
         let container = try ModelContainer(
             for: SumiStartupPersistence.schema,
@@ -17,7 +48,6 @@ final class SafariExtensionRuntimeDataStoreTests: XCTestCase {
             context: container.mainContext,
             initialProfile: profile
         )
-        let manager = fixture.manager
         let inspection = fixture.inspection
         _ = inspection.contextCoordination.demand.requestRuntimeExplicitly(
             reason: .install
@@ -30,12 +60,18 @@ final class SafariExtensionRuntimeDataStoreTests: XCTestCase {
         let controllerDefaultStore = try XCTUnwrap(
             controller.configuration.defaultWebsiteDataStore
         )
-        let pageConfigurationStore = try XCTUnwrap(
-            controller.configuration.webViewConfiguration?.websiteDataStore
+        let pageConfiguration = try XCTUnwrap(
+            controller.configuration.webViewConfiguration
         )
+        let pageConfigurationStore = pageConfiguration.websiteDataStore
 
         XCTAssertEqual(controllerDefaultStore.identifier, profileStore.identifier)
         XCTAssertEqual(pageConfigurationStore.identifier, profileStore.identifier)
+        XCTAssertEqual(
+            pageConfiguration.applicationNameForUserAgent,
+            SumiUserAgent.safariCompatibleApplicationNameForUserAgent
+        )
+        XCTAssertFalse(pageConfiguration.sumiIsNormalTabWebViewConfiguration)
     }
 
     func testPrepareWebViewConfigurationAlignsWebsiteDataStoreWithProfile() throws {
@@ -48,7 +84,6 @@ final class SafariExtensionRuntimeDataStoreTests: XCTestCase {
             context: container.mainContext,
             initialProfile: profile
         )
-        let manager = fixture.manager
         let inspection = fixture.inspection
         XCTAssertNil(
             inspection.contextState.profiles.controllerForCurrentProfile()
@@ -113,7 +148,6 @@ final class SafariExtensionRuntimeDataStoreTests: XCTestCase {
             initialProfile: profile
         )
         let manager = fixture.manager
-        let inspection = fixture.inspection
         manager.attach(browserManager: browserManager)
         let composition = fixture.attachedRuntime.runtime.controller
 

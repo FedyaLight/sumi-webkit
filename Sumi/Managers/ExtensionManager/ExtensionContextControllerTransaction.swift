@@ -62,7 +62,8 @@ final class ExtensionContextControllerTransaction {
         controllerBinding: ExtensionControllerBindingSnapshot,
         storage: WebExtensionRuntimeStoragePreparation,
         request: ExtensionContextLoadRequest,
-        profileAdmission: ProfileReferenceAdmissionReceipt
+        profileAdmission: ProfileReferenceAdmissionReceipt,
+        bootstrapChromeScope: ExtensionBootstrapChromeAdmission.Scope? = nil
     ) throws -> ExtensionLoadedContext {
         try validateController(
             controllerBinding,
@@ -149,7 +150,8 @@ final class ExtensionContextControllerTransaction {
                         controller: controller,
                         bindingReceipt: bindingReceipt,
                         loadClaim: request.claim,
-                        mutationLease: request.mutationLease
+                        mutationLease: request.mutationLease,
+                        bootstrapChromeScope: bootstrapChromeScope
                     )
                 )
                 if rollbackResult.externalStateDisposition != .rollbackAllowed {
@@ -173,7 +175,8 @@ final class ExtensionContextControllerTransaction {
             controller: controller,
             bindingReceipt: bindingReceipt,
             loadClaim: request.claim,
-            mutationLease: request.mutationLease
+            mutationLease: request.mutationLease,
+            bootstrapChromeScope: bootstrapChromeScope
         )
     }
 

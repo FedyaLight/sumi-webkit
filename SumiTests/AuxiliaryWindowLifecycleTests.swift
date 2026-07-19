@@ -330,13 +330,12 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
             ownerExtensionID: "normal-popup-owner",
             publishNormalWindow: true
         )
+        let popupURL = harness.extensionContext.baseURL.appendingPathComponent(
+            "popup.html"
+        )
         let request = extensionWindowRequest(
             windowType: .popup,
-            tabURLs: [
-                harness.extensionContext.baseURL.appendingPathComponent(
-                    "popup.html"
-                ),
-            ],
+            tabURLs: [popupURL],
             shouldBePrivate: false
         )
 
@@ -377,6 +376,12 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
         XCTAssertIdentical(
             session.webView.configuration.webExtensionController,
             harness.inspection.controller.provisioning.ensureExtensionController(for: harness.profile.id)
+        )
+        XCTAssertIdentical(session.tab.resolvedCurrentWebView(), session.webView)
+        XCTAssertEqual(session.webView.url, popupURL)
+        XCTAssertEqual(
+            session.miniWindowAdapter?.tabs(for: harness.extensionContext).count,
+            1
         )
     }
 

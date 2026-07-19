@@ -58,17 +58,16 @@ final class ExtensionNormalTabRegistration: ExtensionDeferredTabRuntimeResuming 
             return
         }
         tab.extensionPageRuntimeOwner.prepareGeneration(generation)
-        guard let runtimeLoadStatus,
-              publicationStage.admits(runtimeLoadStatus)
-        else {
-            return
-        }
+        let effectivePublicationStage: ExtensionRuntimePublicationStage =
+            runtimeLoadStatus?.extensionsLoaded == true
+                ? publicationStage
+                : .loadFinalization
 
         tab.extensionPageRuntimeOwner.markEligible(for: generation)
         controllers?.repair(
             tab,
             reason: reason,
-            publicationStage: publicationStage
+            publicationStage: effectivePublicationStage
         )
         publishIfNeeded(tab, reason: reason)
     }
@@ -100,8 +99,7 @@ final class ExtensionNormalTabRegistration: ExtensionDeferredTabRuntimeResuming 
               canEnterGeneration(tab, generation: generation)
         else { return }
         tab.extensionPageRuntimeOwner.prepareGeneration(generation)
-        guard runtimeLoadStatus?.extensionsLoaded == true,
-              preparedTabs?.containsPreparedTab(tab) == true,
+        guard preparedTabs?.containsPreparedTab(tab) == true,
               tab.extensionPageRuntimeOwner
               .hasDidOpenTabNotification(for: generation) == false
         else {

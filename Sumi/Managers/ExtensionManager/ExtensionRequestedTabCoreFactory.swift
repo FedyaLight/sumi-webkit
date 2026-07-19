@@ -78,9 +78,6 @@ final class ExtensionRequestedTabCoreFactory {
             publications: windows.windows.query,
             publicationAdmission: windows.tabs.admission,
             events: normalTabs.tabLifecycleEvents,
-            extensionsLoaded: { [runtimeLoadStatus] in
-                runtimeLoadStatus.extensionsLoaded
-            },
             diagnostics: diagnostics
         )
         let initialTabAdapters = ExtensionCreatedTabAdapterPublication(

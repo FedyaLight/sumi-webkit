@@ -131,9 +131,9 @@ final class SafariExtensionActionPopupRuntimeTests: XCTestCase {
     func testRaindropStyleIframePopupPackageReachesWebKitPopupGate() async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Raindrop Iframe Profile")
-        let fixture = makeSafariExtensionManagerTestFixture(
+        let fixture = makeAttachedBrowserFixture(
             context: container.mainContext,
-            initialProfile: profile
+            profile: profile
         )
         let inspection = fixture.inspection
 
@@ -150,8 +150,25 @@ final class SafariExtensionActionPopupRuntimeTests: XCTestCase {
         XCTAssertTrue(installed.hasAction)
         XCTAssertFalse(installed.hasContentScripts)
 
-        let tab = Tab(url: URL(string: "https://example.com/")!)
-        tab.profileId = profile.id
+        inspection.contextCoordination.residency.unloadExtensionContextIfLoaded(
+            extensionId: installed.id,
+            profileId: profile.id
+        )
+        XCTAssertNil(
+            inspection.contextState.profileState.context(
+                for: installed.id,
+                profileId: profile.id
+            ),
+            "The action must exercise the cold lazy-load path"
+        )
+        let catalogRevision = inspection.actionSurfaces.installedExtensions
+            .recordRevision(for: installed.id)
+
+        let tab = makeVisibleTab(
+            url: URL(string: "https://example.com/")!,
+            profile: profile,
+            fixture: fixture
+        )
 
         let result = await inspection.actionSurfaces.invocation.openPopup(
             extensionID: installed.id,
@@ -164,6 +181,14 @@ final class SafariExtensionActionPopupRuntimeTests: XCTestCase {
         XCTAssertNotEqual(blocker, BrowserExtensionActionPopupBlocker.runtimeUnavailable)
         XCTAssertNotEqual(blocker, BrowserExtensionActionPopupBlocker.runtimeLoadFailed)
         XCTAssertNotEqual(blocker, BrowserExtensionActionPopupBlocker.contextUnavailable)
+        XCTAssertNotEqual(blocker, BrowserExtensionActionPopupBlocker.staleInvocation)
+        XCTAssertEqual(
+            inspection.actionSurfaces.installedExtensions.recordRevision(
+                for: installed.id
+            ),
+            catalogRevision,
+            "Lazy loading unchanged package metadata must not invalidate its own action"
+        )
     }
 
     func testURLHubActiveTabUsesWebKitGestureWithoutGlobalGrant() async throws {

@@ -65,8 +65,7 @@ enum ExtensionBootstrapPermissionTargetPolicy {
         guard authority.isEmpty == false, authority != "*" else { return false }
         if authority.hasPrefix("*.") {
             let scopedHost = authority.dropFirst(2)
-            return scopedHost.isEmpty == false
-                && scopedHost.contains("*") == false
+            return scopedHost.isEmpty == false && scopedHost.contains("*") == false
         }
         return authority.contains("*") == false
     }

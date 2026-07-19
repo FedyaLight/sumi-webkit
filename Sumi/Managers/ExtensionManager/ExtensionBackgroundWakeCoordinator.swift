@@ -12,8 +12,6 @@ final class ExtensionBackgroundWakeCoordinator {
     private let contextIdentity: @MainActor (WKWebExtensionContext) -> (extensionId: String, profileId: UUID)?
     private let resolvedProfileId: @MainActor (UUID?) -> UUID?
     private let runtimeMetrics: ExtensionRuntimeMetricsAuthority
-    private let backgroundReadiness:
-        any ExtensionBackgroundReadinessAwaiting
     private let trace: @MainActor (String) -> Void
     private let logBackgroundWakeFailure: @MainActor (
         Error,
@@ -32,8 +30,6 @@ final class ExtensionBackgroundWakeCoordinator {
         contextIdentity: @escaping @MainActor (WKWebExtensionContext) -> (extensionId: String, profileId: UUID)?,
         resolvedProfileId: @escaping @MainActor (UUID?) -> UUID?,
         runtimeMetrics: ExtensionRuntimeMetricsAuthority,
-        backgroundReadiness: any ExtensionBackgroundReadinessAwaiting =
-            ExtensionBackgroundReadinessAwaiter(),
         trace: @escaping @MainActor (String) -> Void,
         logBackgroundWakeFailure: @escaping @MainActor (
             Error,
@@ -47,7 +43,6 @@ final class ExtensionBackgroundWakeCoordinator {
         self.contextIdentity = contextIdentity
         self.resolvedProfileId = resolvedProfileId
         self.runtimeMetrics = runtimeMetrics
-        self.backgroundReadiness = backgroundReadiness
         self.trace = trace
         self.logBackgroundWakeFailure = logBackgroundWakeFailure
     }
@@ -76,9 +71,8 @@ final class ExtensionBackgroundWakeCoordinator {
             trace: { [trace] in trace($0) },
             isCurrent: isCurrent,
             loadBackgroundContent: {
-                try await self.loadBackgroundContentAndWaitUntilReady(
+                try await self.loadBackgroundContent(
                     wakeKey: wakeKey,
-                    webExtension: webExtension,
                     context: extensionContext
                 )
             },
@@ -150,9 +144,8 @@ final class ExtensionBackgroundWakeCoordinator {
                 guard admission.isCurrent(evidence) else {
                     throw CancellationError()
                 }
-                try await self.loadBackgroundContentAndWaitUntilReady(
+                try await self.loadBackgroundContent(
                     wakeKey: wakeKey,
-                    webExtension: evidence.context.webExtension,
                     context: evidence.context
                 )
             },
@@ -180,9 +173,8 @@ final class ExtensionBackgroundWakeCoordinator {
         return "context:\(ObjectIdentifier(extensionContext))"
     }
 
-    private func loadBackgroundContentAndWaitUntilReady(
+    private func loadBackgroundContent(
         wakeKey: String,
-        webExtension: WKWebExtension,
         context: WKWebExtensionContext
     ) async throws {
         #if DEBUG
@@ -196,22 +188,6 @@ final class ExtensionBackgroundWakeCoordinator {
         #endif
 
         try await context.loadBackgroundContent()
-        let readinessRoute = try await backgroundReadiness.waitUntilReady(
-            webExtension: webExtension,
-            context: context
-        )
-        traceReadinessRoute(readinessRoute, wakeKey: wakeKey)
-    }
-
-    private func traceReadinessRoute(
-        _ route: ExtensionBackgroundReadinessRoute,
-        wakeKey: String
-    ) {
-        guard route == .serviceWorkerActivationBarrier else { return }
-        trace(
-            "backgroundReadiness wakeKey=\(wakeKey) "
-                + "apiFallback=serviceWorkerActivationBarrier"
-        )
     }
 
     func backgroundRuntimeState(

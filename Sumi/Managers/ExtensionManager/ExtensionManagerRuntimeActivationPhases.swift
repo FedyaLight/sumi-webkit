@@ -24,7 +24,8 @@ extension ExtensionManagerAssembler {
         actionPolicy: ExtensionActionPolicyAssemblyProduct,
         contextLoading: ExtensionContextLoadingAssemblyProduct,
         contextLifecycle: ExtensionContextLifecycleCoreProduct,
-        nativeMessaging: ExtensionNativeMessagingAssemblyProduct
+        nativeMessaging: ExtensionNativeMessagingAssemblyProduct,
+        bootstrapChromeAdmission: ExtensionBootstrapChromeAdmission
     ) -> ExtensionContextFinalizationPhaseProduct {
         let installActivation = ExtensionInstallRuntimeActivator(
             authority: contextLoading.authority,
@@ -43,7 +44,8 @@ extension ExtensionManagerAssembler {
                 actionSurfaces: actionPolicy.actionSurfaces,
                 retention: contextLifecycle.retention,
                 settlement: contextLifecycle.settlement,
-                installationActivation: installActivation
+                installationActivation: installActivation,
+                bootstrapChromeAdmission: bootstrapChromeAdmission
             )
         )
     }

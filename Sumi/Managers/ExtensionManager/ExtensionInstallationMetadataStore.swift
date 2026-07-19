@@ -409,7 +409,7 @@ final class ExtensionInstallationMetadataStore {
         )
     }
 
-    private func extensionMetadataNeedsRefresh(
+    func extensionMetadataNeedsRefresh(
         _ entity: ExtensionEntity,
         refreshedRecord: InstalledExtension
     ) -> Bool {

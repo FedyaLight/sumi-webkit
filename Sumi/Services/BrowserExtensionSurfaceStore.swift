@@ -31,7 +31,7 @@ struct BrowserExtensionActionButtonSnapshot: Equatable {
         label: nil,
         badgeText: nil,
         hasUnreadBadgeText: false,
-        isEnabled: false,
+        isEnabled: nil,
         icon: nil
     )
 

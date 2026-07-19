@@ -8,29 +8,35 @@ final class ExtensionContextSettlementOwner {
     private let runtimeLifecycle: ExtensionRuntimeLifecycleAuthority
     private let installedExtensions: InstalledExtensionCollection
     private let bootstrapChromeAdmission: ExtensionBootstrapChromeAdmission?
-    private let publishReadyProfile:
+    private let publishProfileProjection:
         @MainActor (UUID, WKWebExtensionController) -> Bool
     private let markPublicationReady: @MainActor () -> Void
+    private let finalizeProfilePublication: (@MainActor (UUID) -> Void)?
     private let diagnostics: ExtensionRuntimeDiagnostics
+    private var publishedProfileID: UUID?
+    private weak var publishedController: WKWebExtensionController?
+    private var finalizedContextGenerationByProfile: [UUID: UInt64] = [:]
 
     init(
         profileRuntime: ExtensionProfileRuntime,
         runtimeLifecycle: ExtensionRuntimeLifecycleAuthority,
         installedExtensions: InstalledExtensionCollection,
         bootstrapChromeAdmission: ExtensionBootstrapChromeAdmission? = nil,
-        publishReadyProfile: @escaping @MainActor (
+        publishProfileProjection: @escaping @MainActor (
             UUID,
             WKWebExtensionController
         ) -> Bool,
         markPublicationReady: @escaping @MainActor () -> Void,
+        finalizeProfilePublication: (@MainActor (UUID) -> Void)? = nil,
         diagnostics: ExtensionRuntimeDiagnostics
     ) {
         self.profileRuntime = profileRuntime
         self.runtimeLifecycle = runtimeLifecycle
         self.installedExtensions = installedExtensions
         self.bootstrapChromeAdmission = bootstrapChromeAdmission
-        self.publishReadyProfile = publishReadyProfile
+        self.publishProfileProjection = publishProfileProjection
         self.markPublicationReady = markPublicationReady
+        self.finalizeProfilePublication = finalizeProfilePublication
         self.diagnostics = diagnostics
     }
 
@@ -55,16 +61,39 @@ final class ExtensionContextSettlementOwner {
             globalRuntimeReady: runtimeLifecycle.isReady
         )
         runtimeLifecycle.updateReadiness(isReady: readiness.isProfileReady)
-        let didPublish = readiness.isProfileReady
-            && publishReadyProfile(profileID, loadedContext.controller)
-        if didPublish {
+        let projectionWasPublished =
+            publishedProfileID == profileID
+            && publishedController === loadedContext.controller
+        let projectionIsPublished: Bool
+        if projectionWasPublished {
+            projectionIsPublished = true
+        } else {
+            projectionIsPublished = publishProfileProjection(
+                profileID,
+                loadedContext.controller
+            )
+            if projectionIsPublished {
+                publishedProfileID = profileID
+                publishedController = loadedContext.controller
+            }
+        }
+        if readiness.isProfileReady && projectionIsPublished {
             markPublicationReady()
+            let contextGeneration = profileRuntime.contextBindingGeneration(
+                for: profileID
+            )
+            if finalizedContextGenerationByProfile[profileID]
+                != contextGeneration {
+                finalizedContextGenerationByProfile[profileID] =
+                    contextGeneration
+                finalizeProfilePublication?(profileID)
+            }
         }
         diagnostics.trace(
             "markExtensionRuntimeReady profile=\(profileID.uuidString) "
                 + "loadedContexts=\(profileRuntime.contexts(for: profileID).count) "
                 + "allEnabledLoaded=\(readiness.isProfileReady) "
-                + "controllerPublished=\(didPublish) "
+                + "controllerPublished=\(projectionIsPublished) "
                 + "unloadedEnabledExtensionIDs=\(readiness.unloadedEnabledExtensionIDs.joined(separator: ","))"
         )
         bootstrapChromeAdmission?.finishBootstrap(

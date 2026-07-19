@@ -203,12 +203,30 @@ final class ExtensionRuntimeLoader {
                 manifest: manifest
             )
             try authority.validate(loaded)
-            metadataStore.update(entity, from: refreshed)
-            try modelContext.save()
+            let publishedRecord: InstalledExtension
+            if metadataStore.extensionMetadataNeedsRefresh(
+                entity,
+                refreshedRecord: refreshed
+            ) {
+                metadataStore.update(entity, from: refreshed)
+                try modelContext.save()
+                installedRecords.upsert(refreshed)
+                publishedRecord = refreshed
+            } else if let current = installedRecords.records.first(where: {
+                $0.id == entity.id
+            }) {
+                publishedRecord = current
+            } else if let persisted = InstalledExtension(from: entity) {
+                installedRecords.upsert(persisted)
+                publishedRecord = persisted
+            } else {
+                throw ExtensionError.installationFailed(
+                    "Persisted extension metadata is invalid"
+                )
+            }
             runtimeCatalog.recordManifest(manifest, for: entity.id)
-            installedRecords.upsert(refreshed)
             try finalizer.settlePublication(loaded)
-            return refreshed
+            return publishedRecord
         } catch {
             if let loadedContext {
                 let rollbackResult = rollback.rollBack(loadedContext)

@@ -931,6 +931,10 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
         XCTAssertEqual(model.snapshot(for: targetA).label, "Profile A")
         XCTAssertEqual(model.snapshot(for: targetB), .unavailable)
         XCTAssertEqual(model.snapshot(for: nil), .unavailable)
+        XCTAssertNil(
+            BrowserExtensionActionButtonSnapshot.unavailable.isEnabled,
+            "An unresolved action must stay clickable so its first click can lazily load the WebKit context"
+        )
         let afterInitialTarget = publications
 
         changes.send(

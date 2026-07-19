@@ -13,6 +13,8 @@ extension ExtensionAdapterCatalog: ExtensionTabAdapterResolving {}
 @available(macOS 15.5, *)
 @MainActor
 protocol ExtensionInitialDocumentReadiness: AnyObject {
+    func profileHasLoadedExtensionContext(profileId: UUID) -> Bool
+
     func profileNeedsInitialDocumentExtensionContextLoad(
         profileId: UUID
     ) -> Bool
@@ -21,6 +23,14 @@ protocol ExtensionInitialDocumentReadiness: AnyObject {
 @available(macOS 15.5, *)
 extension ExtensionInitialDocumentRuntimePreparationOwner:
     ExtensionInitialDocumentReadiness {}
+
+@available(macOS 15.5, *)
+extension ExtensionInitialDocumentReadiness {
+    func profileHasLoadedExtensionContext(profileId: UUID) -> Bool {
+        profileNeedsInitialDocumentExtensionContextLoad(profileId: profileId)
+            == false
+    }
+}
 
 @available(macOS 15.5, *)
 @MainActor
@@ -156,9 +166,8 @@ final class ExtensionNormalTabOpenTransaction: ExtensionNormalTabOpening {
             return deferOpen("missingProfile")
         }
         guard contextReadiness?
-            .profileNeedsInitialDocumentExtensionContextLoad(
-                profileId: profileID
-            ) == false else {
+            .profileHasLoadedExtensionContext(profileId: profileID)
+            == true else {
             _ = deferredRegistration?
                 .scheduleDeferredTabNotificationAfterContextLoad(
                     tab,
@@ -294,9 +303,8 @@ final class ExtensionNormalTabOpenTransaction: ExtensionNormalTabOpening {
             && profileRuntime.contextBindingGeneration(for: profileID)
                 == contextBindingGeneration
             && contextReadiness?
-                .profileNeedsInitialDocumentExtensionContextLoad(
-                    profileId: profileID
-                ) == false
+                .profileHasLoadedExtensionContext(profileId: profileID)
+                == true
             && tabs?.extensionTab(for: tab.id) === tab
             && profiles?.profileID(for: tab) == profileID
             && profileRuntime.controller(for: profileID) === controller

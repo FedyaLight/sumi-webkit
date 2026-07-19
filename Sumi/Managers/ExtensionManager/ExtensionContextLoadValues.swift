@@ -8,6 +8,26 @@ struct ExtensionLoadedContext {
     let bindingReceipt: ExtensionContextBindingReceipt
     let loadClaim: ExtensionContextLoadClaim
     let mutationLease: ExtensionRuntimeMutationLease?
+    /// The scope that admits extension-created bootstrap tabs during the
+    /// activation transaction. It is released after background startup work,
+    /// so later user actions are never mistaken for install chrome.
+    let bootstrapChromeScope: ExtensionBootstrapChromeAdmission.Scope?
+
+    init(
+        context: WKWebExtensionContext,
+        controller: WKWebExtensionController,
+        bindingReceipt: ExtensionContextBindingReceipt,
+        loadClaim: ExtensionContextLoadClaim,
+        mutationLease: ExtensionRuntimeMutationLease?,
+        bootstrapChromeScope: ExtensionBootstrapChromeAdmission.Scope? = nil
+    ) {
+        self.context = context
+        self.controller = controller
+        self.bindingReceipt = bindingReceipt
+        self.loadClaim = loadClaim
+        self.mutationLease = mutationLease
+        self.bootstrapChromeScope = bootstrapChromeScope
+    }
 }
 
 @available(macOS 15.5, *)

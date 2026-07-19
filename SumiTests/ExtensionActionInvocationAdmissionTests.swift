@@ -953,7 +953,13 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
                 $0.id == harness.extensionID
             }
         )
-        harness.inspection.actionSurfaces.installedExtensions.upsert(installed)
+        harness.inspection.actionSurfaces.installedExtensions.upsert(
+            Self.copyRecord(
+                installed,
+                isEnabled: true,
+                manifestRootFingerprint: "replacement-\(installed.manifestRootFingerprint)"
+            )
+        )
         let (currentEvidence, currentAction) = try exactInvocation(in: harness)
         XCTAssertIdentical(firstAction, currentAction)
         let currentTarget = ExtensionActionPopupInvocationTarget(
@@ -1741,7 +1747,8 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
 
     private static func copyRecord(
         _ record: InstalledExtension,
-        isEnabled: Bool
+        isEnabled: Bool,
+        manifestRootFingerprint: String? = nil
     ) -> InstalledExtension {
         InstalledExtension(
             id: record.id,
@@ -1758,7 +1765,8 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
             backgroundModel: record.backgroundModel,
             incognitoMode: record.incognitoMode,
             sourcePathFingerprint: record.sourcePathFingerprint,
-            manifestRootFingerprint: record.manifestRootFingerprint,
+            manifestRootFingerprint: manifestRootFingerprint
+                ?? record.manifestRootFingerprint,
             sourceBundlePath: record.sourceBundlePath,
             optionsPagePath: record.optionsPagePath,
             defaultPopupPath: record.defaultPopupPath,

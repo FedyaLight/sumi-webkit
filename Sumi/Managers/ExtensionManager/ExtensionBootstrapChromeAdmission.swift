@@ -89,6 +89,7 @@ final class ExtensionBootstrapChromeAdmission {
     struct Scope: Hashable {
         let cause: ExtensionActivationCause
         let admitsBootstrapChrome: Bool
+        let enforcesBootstrapAdmission: Bool
         fileprivate let id: UUID
         fileprivate let extensionIdentity: String
         fileprivate let profileID: UUID
@@ -116,6 +117,12 @@ final class ExtensionBootstrapChromeAdmission {
         let scope = Scope(
             cause: cause,
             admitsBootstrapChrome: claim.admitsBootstrapChrome,
+            // A profile attachment or a user enable can start ordinary
+            // extension runtime work. WebKit does not label those callbacks
+            // as onboarding, so suppressing them would also suppress normal
+            // tabs.create/windows.create calls.
+            enforcesBootstrapAdmission: cause == .installation
+                || cause == .update,
             id: UUID(),
             extensionIdentity: extensionIdentity,
             profileID: profileID
@@ -159,6 +166,9 @@ final class ExtensionBootstrapChromeAdmission {
         }
         if hasUserGesture {
             activeScopes.removeValue(forKey: scopeKey)
+            return true
+        }
+        guard active.enforcesBootstrapAdmission else {
             return true
         }
         return active.admitsBootstrapChrome

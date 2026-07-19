@@ -24,7 +24,8 @@ extension ExtensionManagerAssembler {
             browser: f.browser, actionPolicy: core.actionPolicy,
             contextLoading: core.contextLoading,
             contextLifecycle: core.contextLifecycle,
-            nativeMessaging: core.nativeMessaging
+            nativeMessaging: core.nativeMessaging,
+            bootstrapChromeAdmission: core.bootstrapChromeAdmission
         )
         let runtimeLoader = assembleRuntimeLoaderPhase(
             installation: f.installation, runtime: f.runtime,

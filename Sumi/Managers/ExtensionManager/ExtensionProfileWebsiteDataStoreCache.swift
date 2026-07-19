@@ -15,17 +15,27 @@ final class ExtensionProfileWebsiteDataStoreCache {
         self.limit = limit
     }
 
+    /// Registers the browser-owned store before any controller is created.
+    /// A profile is represented by one WKWebsiteDataStore object for the
+    /// lifetime of the runtime; recreating a store with the same identifier
+    /// still breaks WebKit's object-identity checks on configurations.
+    func remember(_ profile: Profile) {
+        let profileID = profile.id
+        if storesByProfile[profileID] == nil {
+            storesByProfile[profileID] = profile.dataStore
+            touch(profileID)
+        }
+        rememberPrivateRuntimeProfileIfNeeded(profile)
+    }
+
     func store(
         for profileId: UUID,
         activeProfile: Profile?,
         currentProfileId: UUID?
     ) -> WKWebsiteDataStore {
-        if let activeProfile {
-            rememberPrivateRuntimeProfileIfNeeded(activeProfile)
-            let store = activeProfile.dataStore
-            storesByProfile[profileId] = store
-            touch(profileId)
-            return store
+        if let activeProfile, activeProfile.id == profileId {
+            remember(activeProfile)
+            return activeProfile.dataStore
         }
 
         if let store = storesByProfile[profileId] {

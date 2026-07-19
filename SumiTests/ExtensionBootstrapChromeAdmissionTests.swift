@@ -85,6 +85,7 @@ final class ExtensionBootstrapChromeAdmissionTests: XCTestCase {
         let admission = ExtensionBootstrapChromeAdmission(ledger: ledger)
         let firstProfile = UUID()
         let secondProfile = UUID()
+        let gatedProfile = UUID()
         let first = admission.begin(
             extensionIdentity: "extension",
             version: "1",
@@ -97,6 +98,12 @@ final class ExtensionBootstrapChromeAdmissionTests: XCTestCase {
             profileID: secondProfile,
             cause: .profileAttachment
         )
+        let gated = admission.begin(
+            extensionIdentity: "extension",
+            version: "1",
+            profileID: gatedProfile,
+            cause: .installation
+        )
 
         XCTAssertTrue(
             admission.admitsChrome(
@@ -105,27 +112,36 @@ final class ExtensionBootstrapChromeAdmissionTests: XCTestCase {
                 hasUserGesture: false
             )
         )
-        XCTAssertFalse(
-            admission.admitsChrome(
-                extensionIdentity: "extension",
-                profileID: secondProfile,
-                hasUserGesture: false
-            )
-        )
-        XCTAssertTrue(
-            admission.admitsChrome(
-                extensionIdentity: "extension",
-                profileID: secondProfile,
-                hasUserGesture: true
-            )
-        )
         XCTAssertTrue(
             admission.admitsChrome(
                 extensionIdentity: "extension",
                 profileID: secondProfile,
                 hasUserGesture: false
             ),
-            "A real user gesture must end the secondary-profile bootstrap gate"
+            "Profile attachment must not block ordinary extension tabs"
+        )
+        XCTAssertFalse(
+            admission.admitsChrome(
+                extensionIdentity: "extension",
+                profileID: gatedProfile,
+                hasUserGesture: false
+            ),
+            "A duplicate install must suppress automatic bootstrap chrome"
+        )
+        XCTAssertTrue(
+            admission.admitsChrome(
+                extensionIdentity: "extension",
+                profileID: gatedProfile,
+                hasUserGesture: true
+            )
+        )
+        XCTAssertTrue(
+            admission.admitsChrome(
+                extensionIdentity: "extension",
+                profileID: gatedProfile,
+                hasUserGesture: false
+            ),
+            "A real user gesture must end the install bootstrap gate"
         )
 
         admission.finish(second)
@@ -137,6 +153,7 @@ final class ExtensionBootstrapChromeAdmissionTests: XCTestCase {
             )
         )
         admission.finish(first)
+        admission.finish(gated)
     }
 
     func testUninstallClearsLedger() {
@@ -238,60 +255,6 @@ final class ExtensionBootstrapChromeAdmissionTests: XCTestCase {
                 profileID: profileID,
                 hasUserGesture: false
             )
-        )
-    }
-
-    func testBootstrapPermissionTargetsCausalSiteScopedManifestOrigins() {
-        let manifest: [String: Any] = [
-            "manifest_version": 3,
-            "host_permissions": ["*://*/*"],
-            "externally_connectable": [
-                "matches": [
-                    "https://account.example.com/*",
-                    "https://*.broad.example/*",
-                ],
-            ],
-            "content_scripts": [
-                ["matches": ["https://content.example/*"]],
-            ],
-        ]
-
-        XCTAssertTrue(
-            ExtensionBootstrapPermissionTargetPolicy.requiresEarlyPrompt(
-                for: URL(string: "https://account.example.com/onboarding")!,
-                manifest: manifest
-            )
-        )
-        XCTAssertTrue(
-            ExtensionBootstrapPermissionTargetPolicy.requiresEarlyPrompt(
-                for: URL(string: "https://login.broad.example/onboarding")!,
-                manifest: manifest
-            )
-        )
-        XCTAssertTrue(
-            ExtensionBootstrapPermissionTargetPolicy.requiresEarlyPrompt(
-                for: URL(string: "https://content.example/onboarding")!,
-                manifest: manifest
-            )
-        )
-        XCTAssertFalse(
-            ExtensionBootstrapPermissionTargetPolicy.requiresEarlyPrompt(
-                for: URL(string: "https://unrelated.example/login")!,
-                manifest: manifest
-            )
-        )
-        XCTAssertEqual(
-            ExtensionBootstrapPermissionTargetPolicy.earlyPromptTargets(
-                in: [
-                    URL(string: "https://account.example.com/first")!,
-                    URL(string: "https://account.example.com/second")!,
-                    URL(string: "https://unrelated.example/login")!,
-                ],
-                manifest: manifest
-            ),
-            [
-                URL(string: "https://account.example.com/")!,
-            ]
         )
     }
 

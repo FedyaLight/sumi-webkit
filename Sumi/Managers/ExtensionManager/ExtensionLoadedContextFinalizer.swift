@@ -24,19 +24,22 @@ final class ExtensionLoadedContextFinalizer {
     private let retention: ExtensionContextRetentionOwner
     private let settlement: ExtensionContextSettlementOwner
     private let installationActivation: ExtensionInstallRuntimeActivator
+    private let bootstrapChromeAdmission: ExtensionBootstrapChromeAdmission?
 
     init(
         authority: ExtensionLoadedContextAuthority,
         actionSurfaces: ExtensionActionSurfacePublisher,
         retention: ExtensionContextRetentionOwner,
         settlement: ExtensionContextSettlementOwner,
-        installationActivation: ExtensionInstallRuntimeActivator
+        installationActivation: ExtensionInstallRuntimeActivator,
+        bootstrapChromeAdmission: ExtensionBootstrapChromeAdmission? = nil
     ) {
         self.authority = authority
         self.actionSurfaces = actionSurfaces
         self.retention = retention
         self.settlement = settlement
         self.installationActivation = installationActivation
+        self.bootstrapChromeAdmission = bootstrapChromeAdmission
     }
 
     func finalize(
@@ -44,6 +47,11 @@ final class ExtensionLoadedContextFinalizer {
         activation: Activation
     ) async throws {
         try authority.validate(loadedContext)
+        defer {
+            if let scope = loadedContext.bootstrapChromeScope {
+                bootstrapChromeAdmission?.finish(scope)
+            }
+        }
         let key = loadedContext.bindingReceipt.key
         retention.touch(
             extensionID: key.extensionId,

@@ -5,6 +5,47 @@ import XCTest
 @available(macOS 15.5, *)
 @MainActor
 final class InstalledExtensionCatalogTests: XCTestCase {
+    func testIdempotentUpsertDoesNotAdvanceRecordRevision() throws {
+        let harness = try makeHarness()
+        let original = makeRecord(
+            id: "idempotent-extension",
+            lastUpdateDate: Date(timeIntervalSince1970: 1)
+        )
+        harness.inspection.actionSurfaces.installedExtensions.upsert(original)
+        let revision = harness.inspection.actionSurfaces.installedExtensions
+            .recordRevision(for: original.id)
+
+        let refreshedTimestampOnly = makeRecord(
+            id: original.id,
+            lastUpdateDate: Date(timeIntervalSince1970: 2)
+        )
+        harness.inspection.actionSurfaces.installedExtensions.upsert(
+            refreshedTimestampOnly
+        )
+
+        XCTAssertEqual(
+            harness.inspection.actionSurfaces.installedExtensions.recordRevision(
+                for: original.id
+            ),
+            revision
+        )
+        XCTAssertEqual(
+            harness.inspection.actionSurfaces.installedExtensions.records.first?
+                .lastUpdateDate,
+            refreshedTimestampOnly.lastUpdateDate
+        )
+
+        harness.inspection.actionSurfaces.installedExtensions.upsert(
+            makeRecord(id: original.id, isEnabled: false)
+        )
+        XCTAssertGreaterThan(
+            harness.inspection.actionSurfaces.installedExtensions.recordRevision(
+                for: original.id
+            ),
+            revision
+        )
+    }
+
     func testFailedFetchPreservesAuthoritativeCatalogReadinessToolbarPinsRevisionAndDurability() throws {
         let harness = try makeHarness()
         let existing = makeRecord(id: "existing-extension")
@@ -213,7 +254,8 @@ final class InstalledExtensionCatalogTests: XCTestCase {
 
     private func makeRecord(
         id: String,
-        isEnabled: Bool = true
+        isEnabled: Bool = true,
+        lastUpdateDate: Date = Date(timeIntervalSince1970: 1)
     ) -> InstalledExtension {
         let manifest: [String: Any] = [
             "manifest_version": 3,
@@ -228,7 +270,7 @@ final class InstalledExtensionCatalogTests: XCTestCase {
             description: nil,
             isEnabled: isEnabled,
             installDate: Date(timeIntervalSince1970: 1),
-            lastUpdateDate: Date(timeIntervalSince1970: 1),
+            lastUpdateDate: lastUpdateDate,
             packagePath: "/tmp/\(id)",
             iconPath: nil,
             sourceKind: .directory,

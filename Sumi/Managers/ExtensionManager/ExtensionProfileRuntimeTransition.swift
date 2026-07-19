@@ -150,6 +150,12 @@ final class ExtensionProfileRuntimeTransition {
         return receipt
     }
 
+    /// Makes the Profile-owned data store canonical before a controller or
+    /// WebView is provisioned for the profile.
+    func rememberProfile(_ profile: Profile) {
+        _ = profileRuntime.rememberProfile(profile)
+    }
+
     func settleImmediately(_ receipt: Receipt) {
         guard isCurrent(receipt) else { return }
         pendingReconciliation?.cancel()

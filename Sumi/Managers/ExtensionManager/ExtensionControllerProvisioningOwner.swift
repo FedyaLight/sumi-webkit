@@ -278,8 +278,10 @@ final class ExtensionControllerProvisioningOwner:
             identifier: Self.extensionControllerIdentifier(for: profileId)
         )
         let runtimeWebConfiguration = dependencies.browserConfiguration.webViewConfiguration
-        let extensionPageConfiguration = WKWebViewConfiguration()
-        extensionPageConfiguration.websiteDataStore = defaultDataStore
+        let extensionPageConfiguration = makeExtensionPageBaseWebViewConfiguration(
+            from: runtimeWebConfiguration,
+            websiteDataStore: defaultDataStore
+        )
         configuration.webViewConfiguration = extensionPageConfiguration
         configuration.defaultWebsiteDataStore = defaultDataStore
 
@@ -297,6 +299,21 @@ final class ExtensionControllerProvisioningOwner:
         runtimeWebConfiguration.defaultWebpagePreferences.allowsContentJavaScript = true
 
         return controller
+    }
+
+    private func makeExtensionPageBaseWebViewConfiguration(
+        from source: WKWebViewConfiguration,
+        websiteDataStore: WKWebsiteDataStore
+    ) -> WKWebViewConfiguration {
+        let configuration = dependencies.browserConfiguration
+            .auxiliaryWebViewConfiguration(
+                from: source,
+                surface: .extensionOptions
+            )
+        configuration.websiteDataStore = websiteDataStore
+        configuration.sumiIsNormalTabWebViewConfiguration = false
+        configuration.defaultWebpagePreferences.allowsContentJavaScript = true
+        return configuration
     }
 
     private func verifyExtensionStorage(profileId: UUID) {

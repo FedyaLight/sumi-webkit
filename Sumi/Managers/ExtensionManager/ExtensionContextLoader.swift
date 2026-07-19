@@ -198,7 +198,8 @@ final class ExtensionContextLoader {
             controllerBinding: controllerBinding,
             storage: storage,
             request: request,
-            profileAdmission: profileAdmission
+            profileAdmission: profileAdmission,
+            bootstrapChromeScope: activationScope
         )
         if request.operation.emitsLoadedTrace {
             diagnostics.trace(

@@ -28,6 +28,7 @@ final class ExtensionProfileRuntime {
         if let initialProfile,
            profileReferenceAdmission.isReferenceAllowed(initialProfile.id) {
             knownProfilesByID = [initialProfile.id: initialProfile]
+            websiteDataStoreCache.remember(initialProfile)
         } else {
             knownProfilesByID = [:]
         }
@@ -433,6 +434,7 @@ final class ExtensionProfileRuntime {
             return false
         }
         knownProfilesByID[profile.id] = profile
+        websiteDataStoreCache.remember(profile)
         return true
     }
 

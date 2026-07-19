@@ -45,13 +45,18 @@ final class InstalledExtensionCollection: ObservableObject {
         _ record: InstalledExtension,
         durability: RecordDurability = .durable
     ) {
+        let advancesRevision: Bool
         if let index = records.firstIndex(where: { $0.id == record.id }) {
+            advancesRevision = Self.sameCatalogRecord(records[index], record) == false
             records[index] = record
         } else {
+            advancesRevision = true
             records.append(record)
         }
         durabilityByID[record.id] = durability
-        bumpRecordRevision(record.id)
+        if advancesRevision {
+            bumpRecordRevision(record.id)
+        }
         sortRecords()
         notifyRecordChanges()
     }
@@ -130,7 +135,6 @@ final class InstalledExtensionCollection: ObservableObject {
             && lhs.manifestVersion == rhs.manifestVersion
             && lhs.isEnabled == rhs.isEnabled
             && lhs.installDate == rhs.installDate
-            && lhs.lastUpdateDate == rhs.lastUpdateDate
             && lhs.packagePath == rhs.packagePath
             && lhs.sourceKind == rhs.sourceKind
             && lhs.incognitoMode == rhs.incognitoMode

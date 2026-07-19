@@ -1,5 +1,6 @@
 import Foundation
 import SumiDomain
+import SumiWebRuntime
 import WebKit
 
 @available(macOS 15.5, *)
@@ -233,7 +234,9 @@ final class ExtensionAuxiliaryWindowOpeningService {
                 )
                 return nil
             }
-            tab.loadURL(loadURL)
+            // This session already owns the context-bound WebView displayed by
+            // the native window, so its initial load must not replace that view.
+            WebRuntimeMainFrameLoader.load(loadURL, on: webView)
             guard callbackAdmission.isCurrent(evidence),
                   presentation.isCurrent(sessionReceipt) else {
                 teardown.teardown(

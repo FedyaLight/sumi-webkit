@@ -101,20 +101,15 @@ extension ExtensionManagerAssembler {
                 runtimeLifecycle: f.runtime.lifecycle,
                 installedExtensions: f.contexts.installedExtensions,
                 bootstrapChromeAdmission: bootstrapChromeAdmission,
-                publishReadyProfile: {
+                publishProfileProjection: {
                     [profileRuntime = f.runtime.profileRuntime,
-                     browserConfiguration = f.controller.browserConfiguration,
-                     reloads = f.browser.reloads]
+                     browserConfiguration = f.controller.browserConfiguration]
                     profileID, controller in
                     guard profileRuntime.currentProfileId == profileID,
                           profileRuntime.controller(for: profileID) === controller
                     else { return false }
                     browserConfiguration.webViewConfiguration
                         .webExtensionController = controller
-                    reloads.reconcile(
-                        profileID: profileID,
-                        reason: "ExtensionContextSettlementOwner"
-                    )
                     return profileRuntime.currentProfileId == profileID
                         && profileRuntime.controller(for: profileID) === controller
                         && browserConfiguration.webViewConfiguration
@@ -122,6 +117,12 @@ extension ExtensionManagerAssembler {
                 },
                 markPublicationReady: { [surface = f.actions.surfacePublication] in
                     _ = surface.markRuntimePublicationReady()
+                },
+                finalizeProfilePublication: { [reloads = f.browser.reloads] profileID in
+                    reloads.finalizeRuntimeLoad(
+                        reason: "ExtensionContextSettlementOwner",
+                        profileID: profileID
+                    )
                 },
                 diagnostics: f.runtime.diagnostics
             )
