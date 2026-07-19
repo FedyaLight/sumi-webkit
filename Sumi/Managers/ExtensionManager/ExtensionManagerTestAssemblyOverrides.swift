@@ -15,7 +15,7 @@ struct ExtensionManagerTestAssemblyOverrides {
             ExtensionManager.ExtensionBackgroundWakeReason,
             @escaping @MainActor () -> Bool
         ) async throws -> Void
-        let reconcile: @MainActor (String) -> Void
+        let reconcile: @MainActor (String, UUID) -> Void
     }
 
     let unloadContext: (@MainActor (

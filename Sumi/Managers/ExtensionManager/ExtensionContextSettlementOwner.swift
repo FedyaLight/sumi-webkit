@@ -1,4 +1,5 @@
 import Foundation
+import WebKit
 
 @available(macOS 15.5, *)
 @MainActor
@@ -6,6 +7,9 @@ final class ExtensionContextSettlementOwner {
     private let profileRuntime: ExtensionProfileRuntime
     private let runtimeLifecycle: ExtensionRuntimeLifecycleAuthority
     private let installedExtensions: InstalledExtensionCollection
+    private let bootstrapChromeAdmission: ExtensionBootstrapChromeAdmission?
+    private let publishReadyProfile:
+        @MainActor (UUID, WKWebExtensionController) -> Bool
     private let markPublicationReady: @MainActor () -> Void
     private let diagnostics: ExtensionRuntimeDiagnostics
 
@@ -13,12 +17,19 @@ final class ExtensionContextSettlementOwner {
         profileRuntime: ExtensionProfileRuntime,
         runtimeLifecycle: ExtensionRuntimeLifecycleAuthority,
         installedExtensions: InstalledExtensionCollection,
+        bootstrapChromeAdmission: ExtensionBootstrapChromeAdmission? = nil,
+        publishReadyProfile: @escaping @MainActor (
+            UUID,
+            WKWebExtensionController
+        ) -> Bool,
         markPublicationReady: @escaping @MainActor () -> Void,
         diagnostics: ExtensionRuntimeDiagnostics
     ) {
         self.profileRuntime = profileRuntime
         self.runtimeLifecycle = runtimeLifecycle
         self.installedExtensions = installedExtensions
+        self.bootstrapChromeAdmission = bootstrapChromeAdmission
+        self.publishReadyProfile = publishReadyProfile
         self.markPublicationReady = markPublicationReady
         self.diagnostics = diagnostics
     }
@@ -44,12 +55,21 @@ final class ExtensionContextSettlementOwner {
             globalRuntimeReady: runtimeLifecycle.isReady
         )
         runtimeLifecycle.updateReadiness(isReady: readiness.isProfileReady)
-        markPublicationReady()
+        let didPublish = readiness.isProfileReady
+            && publishReadyProfile(profileID, loadedContext.controller)
+        if didPublish {
+            markPublicationReady()
+        }
         diagnostics.trace(
             "markExtensionRuntimeReady profile=\(profileID.uuidString) "
                 + "loadedContexts=\(profileRuntime.contexts(for: profileID).count) "
                 + "allEnabledLoaded=\(readiness.isProfileReady) "
+                + "controllerPublished=\(didPublish) "
                 + "unloadedEnabledExtensionIDs=\(readiness.unloadedEnabledExtensionIDs.joined(separator: ","))"
+        )
+        bootstrapChromeAdmission?.finishBootstrap(
+            extensionIdentity: receipt.key.extensionId,
+            profileID: profileID
         )
         return true
     }

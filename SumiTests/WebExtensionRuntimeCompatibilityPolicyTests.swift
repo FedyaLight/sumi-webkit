@@ -3,7 +3,7 @@ import XCTest
 @testable import Sumi
 
 final class WebExtensionRuntimeCompatibilityPolicyTests: XCTestCase {
-    func testNonWebKitManifestDoesNotDisableLegacyInjectionAPIs() {
+    func testNonWebKitManifestDoesNotOverrideNativeAPIs() {
         XCTAssertEqual(
             WebExtensionRuntimeCompatibilityPolicy.unsupportedAPIs(
                 for: ["manifest_version": 3]
@@ -24,11 +24,25 @@ final class WebExtensionRuntimeCompatibilityPolicyTests: XCTestCase {
                 unsupported,
                 [
                     "browser.contentScripts.register",
-                    "browser.tabs.executeScript",
-                    "browser.tabs.insertCSS",
                 ],
                 "Unexpected compatibility policy for \(target)"
             )
+        }
+    }
+
+    func testWebKitOwnsManifestAwareLegacyTabsAPIAvailability() {
+        for manifestVersion in [2, 3] {
+            let unsupported = WebExtensionRuntimeCompatibilityPolicy
+                .unsupportedAPIs(
+                    for: [
+                        "manifest_version": manifestVersion,
+                        "browser_specific_settings": ["safari": [:]],
+                    ]
+                )
+
+            XCTAssertFalse(unsupported.contains("browser.tabs.executeScript"))
+            XCTAssertFalse(unsupported.contains("browser.tabs.insertCSS"))
+            XCTAssertFalse(unsupported.contains("browser.tabs.removeCSS"))
         }
     }
 

@@ -44,8 +44,12 @@ extension ExtensionManagerAssembler {
                         isCurrent: isCurrent
                     )
             },
-            reconcileOpenTabs: { [reloads = f.browser.reloads] reason in
-                reloads.reloadLoadedRuntime(reason: reason)
+            prepareBrowserProjection: {
+                [reloads = f.browser.reloads] reason, profileID in
+                reloads.finalizeRuntimeLoad(
+                    reason: reason,
+                    profileID: profileID
+                )
             }
         )
     }
@@ -60,7 +64,8 @@ extension ExtensionManagerAssembler {
             ExtensionManager.ExtensionBackgroundWakeReason,
             @escaping @MainActor () -> Bool
         ) async throws -> Void,
-        reconcileOpenTabs: @escaping @MainActor (String) -> Void
+        prepareBrowserProjection:
+            @escaping @MainActor (String, UUID) -> Void
     ) -> ExtensionActionPolicyAssemblyProduct {
         let permissionDecisions = f.actions.permissionDecisions
         let contextPreparation = ExtensionContextPreparation(
@@ -103,7 +108,7 @@ extension ExtensionManagerAssembler {
             authority: contextAuthority,
             ensureBackgroundAvailableIfRequired:
                 ensureBackgroundAvailableIfRequired,
-            reconcileOpenTabs: reconcileOpenTabs
+            prepareBrowserProjection: prepareBrowserProjection
         )
         return ExtensionActionPolicyAssemblyProduct(
             toolbarPinning: f.actions.toolbarPinning,

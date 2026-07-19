@@ -117,12 +117,15 @@ final class ExtensionProfileRuntimeTransition {
         guard runtimeInitialized else {
             return pendingReceipt
         }
+        if let publishedController = browserConfiguration.webViewConfiguration
+            .webExtensionController,
+           profileRuntime.profileId(for: publishedController) != profileID {
+            browserConfiguration.webViewConfiguration.webExtensionController = nil
+        }
         guard let controller = controllerProvisioning.controllerIfAdmitted(
             for: profileID,
             mutationLease: mutationLease
         ) else { return pendingReceipt }
-        browserConfiguration.webViewConfiguration.webExtensionController =
-            controller
         let readiness = profileRuntime.readinessContext(
             for: profileID,
             hasEnabledExtensionDemand: hasEnabledExtensionDemand,
@@ -166,15 +169,39 @@ final class ExtensionProfileRuntimeTransition {
         guard let controller = receipt.controller,
               isCurrent(receipt),
               profileRuntime.controller(for: receipt.profileID) === controller,
-              browserConfiguration.webViewConfiguration
-                .webExtensionController === controller
-        else { return }
-        reconcileProfile(receipt.profileID)
-        guard isCurrent(receipt),
-              profileRuntime.controller(for: receipt.profileID) === controller,
-              browserConfiguration.webViewConfiguration
-                .webExtensionController === controller
+              publishIfReady(
+                profileID: receipt.profileID,
+                controller: controller
+              )
         else { return }
         refreshActionSurfaces(receipt.profileID)
+    }
+
+    @discardableResult
+    func publishIfReady(
+        profileID: UUID,
+        controller: WKWebExtensionController
+    ) -> Bool {
+        guard profileRuntime.currentProfileId == profileID,
+              profileRuntime.controller(for: profileID) === controller
+        else { return false }
+        let enabledExtensionIDs = Set(
+            installedExtensions.records.lazy.filter(\.isEnabled).map(\.id)
+        )
+        let readiness = profileRuntime.readinessContext(
+            for: profileID,
+            hasEnabledExtensionDemand: enabledExtensionIDs.isEmpty == false,
+            enabledExtensionIDs: enabledExtensionIDs,
+            globalRuntimeReady: runtimeLifecycle.isReady
+        )
+        guard readiness.isProfileReady else { return false }
+
+        browserConfiguration.webViewConfiguration.webExtensionController =
+            controller
+        reconcileProfile(profileID)
+        return profileRuntime.currentProfileId == profileID
+            && profileRuntime.controller(for: profileID) === controller
+            && browserConfiguration.webViewConfiguration
+                .webExtensionController === controller
     }
 }

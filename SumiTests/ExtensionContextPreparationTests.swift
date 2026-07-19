@@ -54,6 +54,7 @@ final class ExtensionContextPreparationTests: XCTestCase {
             packageRoot: fixture.directory,
             manifest: fixture.manifest,
             operation: .install,
+            activationCause: .installation,
             claim: registry.begin(
                 for: .init(profileId: profileID, extensionId: extensionID)
             ),

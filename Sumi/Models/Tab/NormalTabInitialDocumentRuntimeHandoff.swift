@@ -21,6 +21,7 @@ enum NormalTabInitialDocumentRuntimeHandoff {
         warmInitialDocumentContexts: @MainActor () async -> Void,
         isStillValid: @MainActor () -> Bool,
         register: @MainActor () -> Void,
+        warmPostPublicationBackground: @MainActor () async -> Void,
         load: @MainActor () -> Void
     ) async {
         await waitForInitialUserContent()
@@ -28,6 +29,8 @@ enum NormalTabInitialDocumentRuntimeHandoff {
         await warmInitialDocumentContexts()
         guard isStillValid() else { return }
         register()
+        await warmPostPublicationBackground()
+        guard isStillValid() else { return }
         load()
     }
 
@@ -139,6 +142,11 @@ enum NormalTabInitialDocumentRuntimeHandoff {
             } register: {
                 tab?.registerTabWithExtensionRuntimeIfNeeded(
                     reason: registrationReason
+                )
+            } warmPostPublicationBackground: {
+                await Self.warmInitialDocumentBackgroundIfNeeded(
+                    tab: tab,
+                    profileId: profileId
                 )
             } load: {
                 guard let tab,
@@ -269,6 +277,16 @@ enum NormalTabInitialDocumentRuntimeHandoff {
         if let profileId, let tab {
             await tab.navigationRuntime.normalWebViewExtensionRuntime
                 .ensureInitialExtensionContextsIfNeeded(profileId)
+        }
+    }
+
+    private static func warmInitialDocumentBackgroundIfNeeded(
+        tab: Tab?,
+        profileId: UUID?
+    ) async {
+        if let profileId, let tab {
+            await tab.navigationRuntime.normalWebViewExtensionRuntime
+                .warmInitialDocumentNativeMessagingIfNeeded(profileId)
         }
     }
 }

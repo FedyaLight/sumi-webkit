@@ -467,7 +467,7 @@ private final class UnresolvedRequestedWindowPreparedStub:
     private(set) var acceptCallCount = 0
     private(set) var cancelCallCount = 0
 
-    func present() -> Bool {
+    func present(activate _: Bool) -> Bool {
         presentCallCount += 1
         return true
     }

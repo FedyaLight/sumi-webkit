@@ -1,10 +1,11 @@
+import AppKit
 import Foundation
 import SumiDomain
 import WebKit
 
-/// Routes WebKit normal-window requests either to an exact existing published
-/// window for an external web flow, or to the browser's atomic initial-window
-/// transaction. It never materializes a raw window adapter.
+/// Routes every WebKit normal-window request through the browser's reversible
+/// initial-window transaction. The completion is settled only after all
+/// requested URL tabs are published in the new window.
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionWindowRequestRouter {
@@ -64,7 +65,18 @@ final class ExtensionWindowRequestRouter {
         ) -> Void
     ) {
         open(
-            tabURLs: tabURLs,
+            request: ExtensionWindowOpeningRequest(
+                windowType: .normal,
+                frame: CGRect(
+                    x: CGFloat.nan,
+                    y: CGFloat.nan,
+                    width: CGFloat.nan,
+                    height: CGFloat.nan
+                ),
+                tabURLs: tabURLs,
+                shouldBeFocused: true,
+                shouldBePrivate: false
+            ),
             controller: controller,
             extensionContext: extensionContext,
             authority: nil,
@@ -73,7 +85,25 @@ final class ExtensionWindowRequestRouter {
     }
 
     func open(
-        tabURLs: [URL],
+        request: ExtensionWindowOpeningRequest,
+        controller: WKWebExtensionController,
+        extensionContext: WKWebExtensionContext?,
+        completion: @escaping (
+            (any WKWebExtensionWindow)?,
+            (any Error)?
+        ) -> Void
+    ) {
+        open(
+            request: request,
+            controller: controller,
+            extensionContext: extensionContext,
+            authority: nil,
+            completion: completion
+        )
+    }
+
+    func open(
+        request: ExtensionWindowOpeningRequest,
         evidence: ExtensionControllerCallbackEvidence,
         admission: ExtensionControllerCallbackAdmission,
         completion: @escaping (
@@ -82,7 +112,7 @@ final class ExtensionWindowRequestRouter {
         ) -> Void
     ) {
         open(
-            tabURLs: tabURLs,
+            request: request,
             controller: evidence.controller,
             extensionContext: evidence.context,
             authority: CallbackAuthority(
@@ -94,7 +124,7 @@ final class ExtensionWindowRequestRouter {
     }
 
     private func open(
-        tabURLs: [URL],
+        request: ExtensionWindowOpeningRequest,
         controller: WKWebExtensionController,
         extensionContext: WKWebExtensionContext?,
         authority: CallbackAuthority?,
@@ -103,11 +133,11 @@ final class ExtensionWindowRequestRouter {
             (any Error)?
         ) -> Void
     ) {
-        guard tabURLs.count <= 1 else {
+        guard request.tabs.isEmpty else {
             completion(
                 nil,
                 ExtensionManagerCallbackError
-                    .multipleWindowTabsUnsupported.nsError()
+                    .existingWindowTabMoveUnsupported.nsError()
             )
             return
         }
@@ -142,21 +172,8 @@ final class ExtensionWindowRequestRouter {
                 )
                 return
             }
-            let firstURL = tabURLs.first
-            if let firstURL,
-               Self.isExternalWebPopupURL(firstURL),
-               await self.openExternalTabInPublishedWindow(
-                   firstURL,
-                   profileID: profileID,
-                   controller: controller,
-                   extensionContext: extensionContext,
-                   authority: authority,
-                   completion: completion
-               ) {
-                return
-            }
             await self.openAtomicWindow(
-                firstURL,
+                request,
                 profileID: profileID,
                 controller: controller,
                 extensionContext: extensionContext,
@@ -166,96 +183,8 @@ final class ExtensionWindowRequestRouter {
         }
     }
 
-    private nonisolated static func isExternalWebPopupURL(_ url: URL) -> Bool {
-        guard let scheme = url.scheme?.lowercased(),
-              scheme == "http" || scheme == "https",
-              ExtensionURLIdentity.isOwned(url) == false
-        else { return false }
-        return true
-    }
-
-    private func openExternalTabInPublishedWindow(
-        _ url: URL,
-        profileID: UUID,
-        controller: WKWebExtensionController,
-        extensionContext: WKWebExtensionContext?,
-        authority: CallbackAuthority?,
-        completion: @escaping (
-            (any WKWebExtensionWindow)?,
-            (any Error)?
-        ) -> Void
-    ) async -> Bool {
-        guard let query = windowQuery(),
-              let window = query.activeExtensionWindowState,
-              query.extensionWindowState(for: window.id) === window,
-              let adapter = publishedWindow(window, profileID),
-              let space = targetResolver.targetSpace(
-                  for: window,
-                  contextProfileId: profileID
-              ),
-              space.profileId == profileID
-        else {
-            return false
-        }
-
-        let load = loadResolver.resolve(url, controller: controller)
-        guard load.hasUnresolvedExtensionOwnership == false,
-              await prepare(
-            load,
-            targetWindow: window,
-            targetSpace: space,
-            profileID: profileID,
-            controller: controller,
-            extensionContext: extensionContext,
-            authority: authority
-        ), query.extensionWindowState(for: window.id) === window,
-           publishedWindow(window, profileID) === adapter,
-           targetResolver.targetSpace(
-               for: window,
-               contextProfileId: profileID
-           ) === space
-        else {
-            return false
-        }
-
-        do {
-            _ = try tabOpening.open(
-                url: url,
-                shouldBeActive: true,
-                shouldBePinned: false,
-                requestedWindow: adapter,
-                controller: controller,
-                extensionContext: extensionContext,
-                evidence: authority?.evidence,
-                callbackAdmission: authority?.admission,
-                reason: "ExtensionWindowRequestRouter.externalTab"
-            )
-        } catch {
-            completion(
-                nil,
-                ExtensionManagerCallbackError
-                    .extensionExternalTabUnavailable.nsError()
-            )
-            return true
-        }
-
-        guard authority?.isCurrent() ?? true,
-              query.extensionWindowState(for: window.id) === window,
-              publishedWindow(window, profileID) === adapter
-        else {
-            completion(
-                nil,
-                ExtensionManagerCallbackError
-                    .extensionExternalTabUnavailable.nsError()
-            )
-            return true
-        }
-        completion(adapter, nil)
-        return true
-    }
-
     private func openAtomicWindow(
-        _ url: URL?,
+        _ request: ExtensionWindowOpeningRequest,
         profileID: UUID,
         controller: WKWebExtensionController,
         extensionContext: WKWebExtensionContext?,
@@ -275,25 +204,47 @@ final class ExtensionWindowRequestRouter {
             )
             return
         }
-        let load = loadResolver.resolve(url, controller: controller)
-        guard load.hasUnresolvedExtensionOwnership == false,
-              await prepare(
-            load,
-            targetWindow: nil,
-            targetSpace: space,
-            profileID: profileID,
-            controller: controller,
-            extensionContext: extensionContext,
-            authority: authority
-        ), targetResolver.targetSpace(
+        let requestedURLs: [URL?] = request.tabURLs.isEmpty
+            ? [nil]
+            : request.tabURLs.map(Optional.some)
+        let loads = requestedURLs.map {
+            loadResolver.resolve($0, controller: controller)
+        }
+        guard loads.allSatisfy({ $0.hasUnresolvedExtensionOwnership == false })
+        else {
+            completion(
+                nil,
+                ExtensionManagerCallbackError.newWindowUnavailable.nsError()
+            )
+            return
+        }
+        for load in loads {
+            guard await prepare(
+                load,
+                targetWindow: nil,
+                targetSpace: space,
+                profileID: profileID,
+                controller: controller,
+                extensionContext: extensionContext,
+                authority: authority
+            ) else {
+                completion(
+                    nil,
+                    ExtensionManagerCallbackError.newWindowUnavailable.nsError()
+                )
+                return
+            }
+        }
+        guard let initialLoad = loads.first,
+              targetResolver.targetSpace(
             for: nil,
             contextProfileId: profileID
-        ) === space,
+              ) === space,
            requestIsCurrent(
                profileID: profileID,
                controller: controller,
                extensionContext: extensionContext,
-               load: load,
+               loads: loads,
                space: space,
                authority: authority
            ),
@@ -302,8 +253,8 @@ final class ExtensionWindowRequestRouter {
                ExtensionRequestedWindowSeed(
                    profileID: profileID,
                    space: space,
-                   url: load.url,
-                   webExtensionContext: load.extensionContext
+                   url: initialLoad.url,
+                   webExtensionContext: initialLoad.extensionContext
                )
            )
         else {
@@ -315,16 +266,29 @@ final class ExtensionWindowRequestRouter {
         }
 
         let window = preparedWindow.window
+        var stagedTabs: [Tab] = []
+        var didAcceptWindow = false
+        defer {
+            if didAcceptWindow == false {
+                for tab in stagedTabs.reversed() {
+                    _ = tabOpening.discardStagedTab(
+                        tab,
+                        restoringSelectionTo: window.currentTabId
+                    )
+                }
+                preparedWindow.cancel()
+            }
+        }
         guard requestIsCurrent(
             profileID: profileID,
             controller: controller,
             extensionContext: extensionContext,
-            load: load,
+            loads: loads,
             space: space,
             authority: authority
-        ), let adapter = publishedWindow(window, profileID)
+        ), let adapter = publishedWindow(window, profileID),
+           let nativeWindow = windowQuery()?.appKitWindow(for: window)
         else {
-            preparedWindow.cancel()
             completion(
                 nil,
                 ExtensionManagerCallbackError.newWindowUnavailable.nsError()
@@ -332,26 +296,112 @@ final class ExtensionWindowRequestRouter {
             return
         }
 
-        guard preparedWindow.present(),
+        do {
+            for load in loads.dropFirst() {
+                let tab = try tabOpening.open(
+                    url: load.url,
+                    shouldBeActive: false,
+                    shouldBePinned: false,
+                    requestedWindow: adapter,
+                    controller: controller,
+                    extensionContext: extensionContext,
+                    evidence: authority?.evidence,
+                    callbackAdmission: authority?.admission,
+                    recordsRecentRequest: false,
+                    reason: "ExtensionWindowRequestRouter.additionalInitialTab"
+                )
+                stagedTabs.append(tab)
+            }
+        } catch {
+            completion(
+                nil,
+                SumiWebExtensionCallbackErrorMapper
+                    .webExtensionCallbackError(from: error)
+            )
+            return
+        }
+
+        applyRequestedFrame(request.frame, to: nativeWindow)
+        guard preparedWindow.present(activate: request.shouldBeFocused),
               requestIsCurrent(
                   profileID: profileID,
                   controller: controller,
                   extensionContext: extensionContext,
-                  load: load,
+                  loads: loads,
                   space: space,
                   authority: authority
               ),
-              publishedWindow(window, profileID) === adapter,
-              preparedWindow.accept()
+              publishedWindow(window, profileID) === adapter
         else {
-            preparedWindow.cancel()
             completion(
                 nil,
                 ExtensionManagerCallbackError.newWindowUnavailable.nsError()
             )
             return
         }
+        if let stateError = await applyRequestedState(
+            request.windowState,
+            to: adapter,
+            extensionContext: extensionContext
+        ) {
+            completion(
+                nil,
+                SumiWebExtensionCallbackErrorMapper
+                    .webExtensionCallbackError(from: stateError)
+            )
+            return
+        }
+        guard requestIsCurrent(
+            profileID: profileID,
+            controller: controller,
+            extensionContext: extensionContext,
+            loads: loads,
+            space: space,
+            authority: authority
+        ), publishedWindow(window, profileID) === adapter,
+           preparedWindow.accept()
+        else {
+            completion(
+                nil,
+                ExtensionManagerCallbackError.newWindowUnavailable.nsError()
+            )
+            return
+        }
+        request.tabURLs.forEach { tabOpening.recentRequests.record($0) }
+        didAcceptWindow = true
         completion(adapter, nil)
+    }
+
+    private func applyRequestedFrame(_ requested: CGRect, to window: NSWindow) {
+        let current = window.frame
+        let resolved = CGRect(
+            x: requested.origin.x.isFinite
+                ? requested.origin.x : current.origin.x,
+            y: requested.origin.y.isFinite
+                ? requested.origin.y : current.origin.y,
+            width: requested.size.width.isFinite
+                ? requested.size.width : current.size.width,
+            height: requested.size.height.isFinite
+                ? requested.size.height : current.size.height
+        )
+        guard resolved.width > 0, resolved.height > 0 else { return }
+        window.setFrame(resolved, display: false)
+    }
+
+    private func applyRequestedState(
+        _ state: WKWebExtension.WindowState,
+        to adapter: ExtensionWindowAdapter,
+        extensionContext: WKWebExtensionContext?
+    ) async -> Error? {
+        guard state != .normal else { return nil }
+        guard let extensionContext else {
+            return ExtensionManagerCallbackError.newWindowUnavailable.nsError()
+        }
+        return await withCheckedContinuation { continuation in
+            adapter.setWindowState(state, for: extensionContext) {
+                continuation.resume(returning: $0)
+            }
+        }
     }
 
     private func prepare(
@@ -431,5 +481,25 @@ final class ExtensionWindowRequestRouter {
             }
         }
         return true
+    }
+
+    private func requestIsCurrent(
+        profileID: UUID,
+        controller: WKWebExtensionController,
+        extensionContext: WKWebExtensionContext?,
+        loads: [ExtensionRequestedTabLoad],
+        space: Space,
+        authority: CallbackAuthority?
+    ) -> Bool {
+        loads.allSatisfy {
+            requestIsCurrent(
+                profileID: profileID,
+                controller: controller,
+                extensionContext: extensionContext,
+                load: $0,
+                space: space,
+                authority: authority
+            )
+        }
     }
 }

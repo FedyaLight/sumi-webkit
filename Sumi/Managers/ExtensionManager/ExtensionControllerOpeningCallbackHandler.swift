@@ -99,7 +99,7 @@ struct ExtensionControllerOpeningCallbackHandler {
 
         guard request.windowType == .popup else {
             runtime.windowRouter.open(
-                tabURLs: request.tabURLs,
+                request: request,
                 evidence: evidence,
                 admission: runtime.admission,
                 completion: completionHandler

@@ -59,6 +59,7 @@ final class ExtensionInstallationRuntimeActivation {
         packageRoot: URL,
         manifest: [String: Any],
         operation: Operation,
+        activationCause: ExtensionActivationCause,
         mutationLease: ExtensionRuntimeMutationLease
     ) async throws -> Transaction {
         guard let profileID = runtimeAccess.resolvedProfileId(nil) else {
@@ -81,6 +82,7 @@ final class ExtensionInstallationRuntimeActivation {
                     packageRoot: packageRoot,
                     manifest: manifest,
                     operation: operation.contextLoadOperation,
+                    activationCause: activationCause,
                     claim: claim,
                     mutationLease: mutationLease
                 )

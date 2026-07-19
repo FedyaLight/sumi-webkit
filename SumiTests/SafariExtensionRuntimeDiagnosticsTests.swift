@@ -241,7 +241,10 @@ final class SafariExtensionRuntimeDiagnosticsTests: XCTestCase {
         XCTAssertEqual(report.adapterCompatibility.count, SafariExtensionCompatibilityTargets.all.count)
         XCTAssertEqual(
             report.registeredAdapterIdentifiers,
-            [BitwardenNativeMessagingIdentifiers.protocolIdentifier]
+            [
+                BitwardenNativeMessagingIdentifiers.protocolIdentifier,
+                UserscriptsNativeMessagingIdentifiers.protocolIdentifier,
+            ]
         )
         let bitwarden = report.entries.first { $0.targetKey == "bitwarden" }
         XCTAssertEqual(bitwarden?.launchSuppressionExpected, true)

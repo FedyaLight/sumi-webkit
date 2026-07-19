@@ -19,7 +19,7 @@ final class SumiNativeMessagingPortSession: NSObject {
     private let resolverBucket: SumiNativeMessagingResolverBucket
     private let logDiagnostic: (SafariExtensionNativeMessagingDiagnostic) -> Void
     private let companionProtocolErrorProvider: () -> NSError
-    private let portInactivityTimeout: Duration
+    private let portInactivityTimeout: Duration?
     private let delayedActions: MainActorDelayedActionScheduler
     private var cancelInactivityTimeout: MainActorDelayedActionScheduler.Cancellation?
     private let disconnectFinalizer: @MainActor (SumiNativeMessagingPortSession, (any Error)?) -> Void
@@ -34,7 +34,7 @@ final class SumiNativeMessagingPortSession: NSObject {
         resolverBucket: SumiNativeMessagingResolverBucket,
         logDiagnostic: @escaping (SafariExtensionNativeMessagingDiagnostic) -> Void,
         companionProtocolErrorProvider: @escaping () -> NSError,
-        portInactivityTimeout: Duration = SumiNativeMessagingConnection.defaultPortInactivityTimeout,
+        portInactivityTimeout: Duration? = SumiNativeMessagingConnection.defaultPortInactivityTimeout,
         delayedActions: MainActorDelayedActionScheduler = .live,
         disconnectFinalizer: @escaping @MainActor (
             SumiNativeMessagingPortSession,
@@ -172,6 +172,7 @@ final class SumiNativeMessagingPortSession: NSObject {
 
     private func armPortInactivityTimeout() {
         cancelPortInactivityTimeout()
+        guard let portInactivityTimeout else { return }
         cancelInactivityTimeout = delayedActions.schedule(after: portInactivityTimeout) { [weak self] in
             guard let self else { return }
             guard self.port.isDisconnected == false else { return }

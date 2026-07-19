@@ -274,7 +274,8 @@ final class BrowserExtensionRequestedWindowTransaction:
 
     fileprivate func presentPreparedWindow(
         token: UUID,
-        window: BrowserWindowState
+        window: BrowserWindowState,
+        activate: Bool
     ) -> Bool {
         guard var prepared = currentPreparedWindow(
             token: token,
@@ -282,7 +283,7 @@ final class BrowserExtensionRequestedWindowTransaction:
             requiresPresented: false
         ), prepared.isPresented == false,
            let commands,
-           commands.presentPreparedWindow(window, activate: true),
+           commands.presentPreparedWindow(window, activate: activate),
            let current = currentPreparedWindow(
                token: token,
                window: window,
@@ -454,8 +455,12 @@ private final class BrowserPreparedExtensionRequestedWindow:
         self.window = window
     }
 
-    func present() -> Bool {
-        transaction.presentPreparedWindow(token: token, window: window)
+    func present(activate: Bool) -> Bool {
+        transaction.presentPreparedWindow(
+            token: token,
+            window: window,
+            activate: activate
+        )
     }
 
     func accept() -> Bool {

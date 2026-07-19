@@ -89,6 +89,12 @@ extension TabNormalWebViewExtensionRuntime {
                         profileId: profileId
                     )
             },
+            warmInitialDocumentNativeMessagingIfNeeded: { profileId in
+                await extensionsModule()?
+                    .warmInitialDocumentNativeMessagingIfNeeded(
+                        profileId: profileId
+                    )
+            },
             pageContextMenuItems: { tab in
                 extensionsModule()?.pageContextMenuItemsIfLoaded(for: tab) ?? []
             },

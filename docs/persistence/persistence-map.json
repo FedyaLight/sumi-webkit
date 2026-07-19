@@ -113,6 +113,7 @@
         "Sumi/ContentBlocking/SumiProtectionBundleUpdateStatusStore.swift",
         "Sumi/ContentBlocking/SumiProtectionSettings.swift",
         "Sumi/Managers/ExtensionManager/ExtensionHubOrderingOwner.swift",
+        "Sumi/Managers/ExtensionManager/ExtensionBootstrapChromeAdmission.swift",
         "Sumi/Managers/ExtensionManager/ExtensionInstallationMetadataStore.swift",
         "Sumi/Managers/ExtensionManager/ExtensionManager.swift",
         "Sumi/Managers/ExtensionManager/ExtensionManagerRootAssembler.swift",
@@ -228,6 +229,26 @@
         "SumiTests/Fixtures/Persistence/live-folders/live-folders-malformed.json",
         "SumiTests/Fixtures/Persistence/live-folders/live-folders-shipped-unversioned.json"
       ]
+    },
+    {
+      "id": "userscripts-library",
+      "name": "Userscripts file library",
+      "classification": "authoritative",
+      "technology": "Atomic userscript/userstyle files plus an app-owned JSON manifest and downloaded require-resource cache; an optional security-scoped bookmark selects an external scripts directory",
+      "versionOwner": "UserscriptsLibraryProtocolService owns the upstream-compatible manifest shape; UserscriptsLibraryLocationStore owns bookmark key v1",
+      "locationPolicy": "By default <Application Support>/<runtime bundle identifier>/Userscripts contains scripts, manifest.json, and require resources. A user-selected external directory replaces only the scripts directory and may be shared with Safari Userscripts.",
+      "backupRestorePolicy": "Not included in Sumi Backup v1. Scripts in an external directory remain user-owned; the default library, manifest, and downloaded resources remain local application data.",
+      "corruptionRecoveryPolicy": "Script files are scanned independently and never replaced because another file or manifest is unreadable. Invalid manifest data falls back to defaults and is rebuilt from valid files; writes are atomic, paths are validated, and orphaned downloaded resources are removed.",
+      "legacySources": "A security-scoped folder chosen through Change Save Location, including an existing Safari Userscripts directory",
+      "productionTypes": [
+        "UserscriptsLibraryLocationStore",
+        "UserscriptsLibraryProtocolService"
+      ],
+      "semanticSources": [
+        "Sumi/Managers/ExtensionManager/SafariExtension/UserscriptsLibraryLocationStore.swift",
+        "Sumi/Managers/ExtensionManager/SafariExtension/UserscriptsLibraryProtocolService.swift"
+      ],
+      "fixtures": []
     },
     {
       "id": "extension-packages",
@@ -503,6 +524,7 @@
         "Sumi/ContentBlocking/SumiProtectionBundleUpdateStatusStore.swift",
         "Sumi/ContentBlocking/SumiProtectionSettings.swift",
         "Sumi/Managers/ExtensionManager/ExtensionHubOrderingOwner.swift",
+        "Sumi/Managers/ExtensionManager/ExtensionBootstrapChromeAdmission.swift",
         "Sumi/Managers/ExtensionManager/ExtensionInstallationMetadataStore.swift",
         "Sumi/Managers/ExtensionManager/ExtensionManager.swift",
         "Sumi/Managers/ExtensionManager/ExtensionManagerRootAssembler.swift",
@@ -530,6 +552,20 @@
         "Sumi/Services/SumiSiteDataPolicyStore.swift",
         "Sumi/Services/WindowSessionSnapshotStore.swift",
         "Sumi/Updates/SumiUpdaterService.swift"
+      ]
+    },
+    {
+      "owner": "userscripts-library",
+      "kind": "user_defaults",
+      "paths": [
+        "Sumi/Managers/ExtensionManager/SafariExtension/UserscriptsLibraryLocationStore.swift"
+      ]
+    },
+    {
+      "owner": "userscripts-library",
+      "kind": "file_write",
+      "paths": [
+        "Sumi/Managers/ExtensionManager/SafariExtension/UserscriptsLibraryProtocolService.swift"
       ]
     },
     {

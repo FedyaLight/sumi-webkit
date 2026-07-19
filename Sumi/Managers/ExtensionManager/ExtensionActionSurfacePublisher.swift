@@ -38,10 +38,12 @@ final class ExtensionActionSurfacePublisher {
             ExtensionManager.ExtensionBackgroundWakeReason,
             @escaping @MainActor () -> Bool
         ) async throws -> Void
-    private let reconcileOpenTabsAfterExtensionContextLoad: @MainActor (String) -> Void
+    private let prepareBrowserProjectionForBackgroundWake:
+        @MainActor (String, UUID) -> Void
     #if DEBUG
         private var debugBackgroundWake: BackgroundWake?
-        private var debugReconcileOpenTabs: (@MainActor (String) -> Void)?
+        private var debugPrepareBrowserProjection:
+            (@MainActor (String, UUID) -> Void)?
     #endif
 
     init(
@@ -66,7 +68,8 @@ final class ExtensionActionSurfacePublisher {
             ExtensionManager.ExtensionBackgroundWakeReason,
             @escaping @MainActor () -> Bool
         ) async throws -> Void,
-        reconcileOpenTabsAfterExtensionContextLoad: @escaping @MainActor (String) -> Void
+        prepareBrowserProjectionForBackgroundWake:
+            @escaping @MainActor (String, UUID) -> Void
     ) {
         self.authority = authority
         self.extensionIDForContext = extensionIDForContext
@@ -76,16 +79,18 @@ final class ExtensionActionSurfacePublisher {
         self.exactContextIdentity = exactContextIdentity
         self.actionForLoadedContext = actionForLoadedContext
         self.ensureBackgroundAvailableIfRequired = ensureBackgroundAvailableIfRequired
-        self.reconcileOpenTabsAfterExtensionContextLoad = reconcileOpenTabsAfterExtensionContextLoad
+        self.prepareBrowserProjectionForBackgroundWake =
+            prepareBrowserProjectionForBackgroundWake
     }
 
     #if DEBUG
         func installDebugFinalization(
             backgroundWake: BackgroundWake?,
-            reconcileOpenTabs: (@MainActor (String) -> Void)?
+            prepareBrowserProjection:
+                (@MainActor (String, UUID) -> Void)?
         ) {
             debugBackgroundWake = backgroundWake
-            debugReconcileOpenTabs = reconcileOpenTabs
+            debugPrepareBrowserProjection = prepareBrowserProjection
         }
     #endif
 
@@ -147,6 +152,16 @@ final class ExtensionActionSurfacePublisher {
         try validate(loadedContext)
 
         if let backgroundWakeReason {
+            guard let identity = exactContextIdentity(extensionContext),
+                  identity.extensionID == extensionId
+            else {
+                throw CancellationError()
+            }
+            prepareBrowserProjection(
+                "ExtensionActionSurfacePublisher.beforeBackgroundWake",
+                profileID: identity.profileID
+            )
+            try validate(loadedContext)
             let webExtension = extensionContext.webExtension
             do {
                 try await wakeBackground(
@@ -167,9 +182,6 @@ final class ExtensionActionSurfacePublisher {
         }
         try validate(loadedContext)
 
-        reconcileOpenTabs(
-            "ExtensionActionSurfacePublisher.finalizeEnabledExtensionRuntime"
-        )
     }
 
     private func validate(
@@ -214,13 +226,16 @@ final class ExtensionActionSurfacePublisher {
         )
     }
 
-    private func reconcileOpenTabs(_ reason: String) {
+    private func prepareBrowserProjection(
+        _ reason: String,
+        profileID: UUID
+    ) {
         #if DEBUG
-            if let debugReconcileOpenTabs {
-                debugReconcileOpenTabs(reason)
+            if let debugPrepareBrowserProjection {
+                debugPrepareBrowserProjection(reason, profileID)
                 return
             }
         #endif
-        reconcileOpenTabsAfterExtensionContextLoad(reason)
+        prepareBrowserProjectionForBackgroundWake(reason, profileID)
     }
 }

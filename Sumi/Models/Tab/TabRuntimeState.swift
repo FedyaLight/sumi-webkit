@@ -359,6 +359,7 @@ struct TabNormalWebViewExtensionRuntime {
     var registerTabWithExtensionRuntimeIfNeeded: (Tab, String) -> Void
     var prepareWebViewForExtensionRuntime: (WKWebView, URL?, String) -> Void
     var ensureInitialExtensionContextsIfNeeded: (UUID) async -> Void
+    var warmInitialDocumentNativeMessagingIfNeeded: (UUID) async -> Void
     var pageContextMenuItems: (Tab) -> [NSMenuItem] = { _ in [] }
     var reconcileOnUserGesture: (Tab, String) -> Void = { _, _ in }
 
@@ -366,6 +367,7 @@ struct TabNormalWebViewExtensionRuntime {
         registerTabWithExtensionRuntimeIfNeeded: { _, _ in /* No-op. */ },
         prepareWebViewForExtensionRuntime: { _, _, _ in /* No-op. */ },
         ensureInitialExtensionContextsIfNeeded: { _ in /* No-op. */ },
+        warmInitialDocumentNativeMessagingIfNeeded: { _ in /* No-op. */ },
         pageContextMenuItems: { _ in [] },
         reconcileOnUserGesture: { _, _ in /* No-op. */ }
     )

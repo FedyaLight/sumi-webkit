@@ -261,11 +261,17 @@ final class SumiNativeMessagingProtocolAdapterTests: XCTestCase {
         XCTAssertNotIdentical(first.diagnosticsAdapterRegistry, second.diagnosticsAdapterRegistry)
         XCTAssertEqual(
             first.diagnosticsAdapterRegistry.registeredProtocolIdentifiers,
-            [BitwardenNativeMessagingIdentifiers.protocolIdentifier]
+            [
+                BitwardenNativeMessagingIdentifiers.protocolIdentifier,
+                UserscriptsNativeMessagingIdentifiers.protocolIdentifier,
+            ]
         )
         XCTAssertEqual(
             second.diagnosticsAdapterRegistry.registeredProtocolIdentifiers,
-            [BitwardenNativeMessagingIdentifiers.protocolIdentifier]
+            [
+                BitwardenNativeMessagingIdentifiers.protocolIdentifier,
+                UserscriptsNativeMessagingIdentifiers.protocolIdentifier,
+            ]
         )
     }
 

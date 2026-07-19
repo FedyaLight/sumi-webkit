@@ -26,7 +26,6 @@ final class ExtensionInitialDocumentRuntimePreparationOwner:
 
     func profileNeedsInitialDocumentExtensionContextLoad(profileId: UUID) -> Bool {
         contentScripts.profileNeedsLoad(profileID: profileId)
-            || nativeMessaging.profileNeedsWarmup(profileID: profileId)
     }
 
     func ensureContentScriptContextsLoaded(for profileId: UUID) async {
@@ -35,6 +34,14 @@ final class ExtensionInitialDocumentRuntimePreparationOwner:
 
     func ensureInitialExtensionContextsLoaded(for profileId: UUID) async {
         await contentScripts.ensureLoaded(profileID: profileId)
+        // Initial-document materialization is the browser's bootstrap
+        // boundary. Complete the background/native-messaging wake before a
+        // WebView is created so document-start scripts observe the same ready
+        // runtime as Safari.
+        await nativeMessaging.ensureLoaded(profileID: profileId)
+    }
+
+    func warmInitialDocumentNativeMessaging(for profileId: UUID) async {
         await nativeMessaging.ensureLoaded(profileID: profileId)
     }
 

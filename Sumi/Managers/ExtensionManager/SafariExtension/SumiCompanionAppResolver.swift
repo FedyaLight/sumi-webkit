@@ -92,6 +92,23 @@ enum SumiCompanionAppResolver {
                 )
             }
 
+            // Userscripts intentionally uses the literal host name `app` in
+            // its Safari extension. Resolve that alias only for the signed
+            // Userscripts app extension; `app` remains an ordinary explicit
+            // host name for every other extension.
+            if trimmedRequest == UserscriptsNativeMessagingIdentifiers.applicationIdentifier,
+               UserscriptsNativeMessagingIdentifiers.isUserscriptsExtension(
+                   extensionId: extensionId,
+                   installedExtensions: installedExtensions
+               ) {
+                return IdentityResolution(
+                    resolvedBundleIdentifier:
+                        UserscriptsNativeMessagingIdentifiers.containingAppBundleIdentifier,
+                    resolutionSource: .containingAppOfImportedAppex,
+                    isContainingApp: true
+                )
+            }
+
             let normalized = SumiCompanionAppIdentityMetadata
                 .normalizedHostBundleIdentifier(trimmedRequest)
             let source: SumiCompanionAppResolutionSource =

@@ -377,7 +377,8 @@ final class TabRuntimeRoutingTests: XCTestCase {
                 registrationReasons.append(reason)
             },
             prepareWebViewForExtensionRuntime: { _, _, _ in /* No-op. */ },
-            ensureInitialExtensionContextsIfNeeded: { _ in /* No-op. */ }
+            ensureInitialExtensionContextsIfNeeded: { _ in /* No-op. */ },
+            warmInitialDocumentNativeMessagingIfNeeded: { _ in /* No-op. */ }
         )
 
         tab.normalWebViewInitialDocumentStage()
@@ -402,7 +403,8 @@ final class TabRuntimeRoutingTests: XCTestCase {
                 preparedURLs.append(currentURL)
                 preparedReasons.append(reason)
             },
-            ensureInitialExtensionContextsIfNeeded: { _ in /* No-op. */ }
+            ensureInitialExtensionContextsIfNeeded: { _ in /* No-op. */ },
+            warmInitialDocumentNativeMessagingIfNeeded: { _ in /* No-op. */ }
         )
 
         tab.ownedWebViewPreparationOwner.prepareCreatedFocusableWebView(

@@ -15,6 +15,7 @@ enum SumiNativeMessagingConfiguredAdapters {
     /// `com.bitwarden.desktop`, `com.8bit.bitwarden`, `com.8bit.bitwarden.desktop` (alias table).
     static let all: [SumiNativeMessagingProtocolAdapter] = [
         BitwardenNativeMessagingAdapter(),
+        UserscriptsNativeMessagingAdapter(),
     ]
 }
 

@@ -25,20 +25,23 @@ struct ExtensionContextLifecycleCoreProduct {
 extension ExtensionManagerAssembler {
     static func assembleContextState(
         _ f: ExtensionManagerAssemblyFoundation,
-        popupRetirement: ExtensionActionPopupRuntimeRetirement
+        popupRetirement: ExtensionActionPopupRuntimeRetirement,
+        bootstrapChromeAdmission: ExtensionBootstrapChromeAdmission
     ) -> (
         loading: ExtensionContextLoadingAssemblyProduct,
         lifecycle: ExtensionContextLifecycleCoreProduct
     ) {
         makeContextState(
             f,
-            popupRetirement: popupRetirement
+            popupRetirement: popupRetirement,
+            bootstrapChromeAdmission: bootstrapChromeAdmission
         )
     }
 
     private static func makeContextState(
         _ f: ExtensionManagerAssemblyFoundation,
-        popupRetirement: ExtensionActionPopupRuntimeRetirement
+        popupRetirement: ExtensionActionPopupRuntimeRetirement,
+        bootstrapChromeAdmission: ExtensionBootstrapChromeAdmission
     ) -> (
         loading: ExtensionContextLoadingAssemblyProduct,
         lifecycle: ExtensionContextLifecycleCoreProduct
@@ -55,7 +58,8 @@ extension ExtensionManagerAssembler {
             runtimeResidency: f.runtime.residency,
             errorObservation: errors,
             diagnostics: f.runtime.diagnostics,
-            actionPopups: popupRetirement
+            actionPopups: popupRetirement,
+            bootstrapChromeAdmission: bootstrapChromeAdmission
         )
         let admission = ExtensionContextLoadAdmission(
             mutationRegistry: f.contexts.runtimeMutationRegistry,
@@ -96,6 +100,26 @@ extension ExtensionManagerAssembler {
                 profileRuntime: f.runtime.profileRuntime,
                 runtimeLifecycle: f.runtime.lifecycle,
                 installedExtensions: f.contexts.installedExtensions,
+                bootstrapChromeAdmission: bootstrapChromeAdmission,
+                publishReadyProfile: {
+                    [profileRuntime = f.runtime.profileRuntime,
+                     browserConfiguration = f.controller.browserConfiguration,
+                     reloads = f.browser.reloads]
+                    profileID, controller in
+                    guard profileRuntime.currentProfileId == profileID,
+                          profileRuntime.controller(for: profileID) === controller
+                    else { return false }
+                    browserConfiguration.webViewConfiguration
+                        .webExtensionController = controller
+                    reloads.reconcile(
+                        profileID: profileID,
+                        reason: "ExtensionContextSettlementOwner"
+                    )
+                    return profileRuntime.currentProfileId == profileID
+                        && profileRuntime.controller(for: profileID) === controller
+                        && browserConfiguration.webViewConfiguration
+                            .webExtensionController === controller
+                },
                 markPublicationReady: { [surface = f.actions.surfacePublication] in
                     _ = surface.markRuntimePublicationReady()
                 },

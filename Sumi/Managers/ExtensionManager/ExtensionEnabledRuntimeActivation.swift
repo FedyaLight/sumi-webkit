@@ -29,6 +29,7 @@ final class ExtensionEnabledRuntimeActivation {
         entity: ExtensionEntity,
         profileID: UUID,
         activation: ExtensionLoadedContextFinalizer.Activation,
+        activationCause: ExtensionActivationCause,
         mutationLease: ExtensionRuntimeMutationLease?
     ) async throws -> InstalledExtension? {
         guard runtimeAccess.ensureExtensionController(profileID) else {
@@ -40,6 +41,7 @@ final class ExtensionEnabledRuntimeActivation {
                 from: entity,
                 profileID: profileID,
                 activation: activation,
+                activationCause: activationCause,
                 mutationLease: mutationLease
             )
         }

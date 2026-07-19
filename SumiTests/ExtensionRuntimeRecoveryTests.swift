@@ -400,7 +400,7 @@ final class ExtensionRuntimeRecoveryTests:
         )
         XCTAssertEqual(
             recorder.reconciliationCount,
-            1,
+            2,
             "a failed profile must not prevent later profiles from recovery"
         )
         XCTAssertNil(
@@ -460,7 +460,7 @@ final class ExtensionRuntimeRecoveryTests:
                     }
                     guard isCurrent() else { throw CancellationError() }
                 },
-                reconcile: { _ in
+                reconcile: { _, _ in
                     finalization.recorder?.recordReconciliation()
                 }
             )

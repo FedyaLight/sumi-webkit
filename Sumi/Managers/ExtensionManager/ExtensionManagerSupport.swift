@@ -24,7 +24,8 @@ enum ExtensionManagerCallbackError: LocalizedError, Equatable, Sendable {
     case optionsPageNotFound
     case privateWindowsUnsupported
     case optionsURLOutsideExtensionDirectory
-    case multipleWindowTabsUnsupported
+    case existingWindowTabMoveUnsupported
+    case bootstrapChromeSuppressed
 
     var code: Int {
         switch self {
@@ -48,8 +49,10 @@ enum ExtensionManagerCallbackError: LocalizedError, Equatable, Sendable {
         case .privateWindowsUnsupported,
              .optionsURLOutsideExtensionDirectory:
             return 7
-        case .multipleWindowTabsUnsupported:
+        case .existingWindowTabMoveUnsupported:
             return 8
+        case .bootstrapChromeSuppressed:
+            return 9
         }
     }
 
@@ -81,8 +84,10 @@ enum ExtensionManagerCallbackError: LocalizedError, Equatable, Sendable {
             return "Sumi does not support private extension windows without an isolated private extension runtime"
         case .optionsURLOutsideExtensionDirectory:
             return "Options URL outside extension directory"
-        case .multipleWindowTabsUnsupported:
-            return "Sumi cannot atomically create an extension window with multiple initial tabs"
+        case .existingWindowTabMoveUnsupported:
+            return "Sumi cannot move an existing tab into a new extension window"
+        case .bootstrapChromeSuppressed:
+            return "Extension install or update chrome was already shown in another profile"
         }
     }
 
@@ -115,6 +120,8 @@ enum ExtensionBridgeAdapterCallbackError: LocalizedError, Equatable, Sendable {
     }
 
     case windowUnavailable(operation: WindowOperation)
+    case windowStateTransitionSuperseded
+    case windowStateTransitionInvalidated
     case miniWindowUnavailable(operation: MiniWindowOperation)
     case miniWindowStateTransitionSuperseded
     case miniWindowStateTransitionInvalidated
@@ -126,7 +133,9 @@ enum ExtensionBridgeAdapterCallbackError: LocalizedError, Equatable, Sendable {
 
     var domain: String {
         switch self {
-        case .windowUnavailable:
+        case .windowUnavailable,
+             .windowStateTransitionSuperseded,
+             .windowStateTransitionInvalidated:
             return "ExtensionWindowAdapter"
         case .miniWindowUnavailable,
              .miniWindowStateTransitionSuperseded,
@@ -145,6 +154,10 @@ enum ExtensionBridgeAdapterCallbackError: LocalizedError, Equatable, Sendable {
         switch self {
         case .windowUnavailable(let operation):
             return operation.rawValue
+        case .windowStateTransitionSuperseded:
+            return 5
+        case .windowStateTransitionInvalidated:
+            return 6
         case .miniWindowUnavailable(let operation):
             return operation.rawValue
         case .miniWindowStateTransitionSuperseded:
@@ -168,6 +181,10 @@ enum ExtensionBridgeAdapterCallbackError: LocalizedError, Equatable, Sendable {
         switch self {
         case .windowUnavailable:
             return "Window is no longer available"
+        case .windowStateTransitionSuperseded:
+            return "Window state transition was superseded"
+        case .windowStateTransitionInvalidated:
+            return "Window state transition lost its exact publication authority"
         case .miniWindowUnavailable:
             return "Mini-window is no longer available"
         case .miniWindowStateTransitionSuperseded:

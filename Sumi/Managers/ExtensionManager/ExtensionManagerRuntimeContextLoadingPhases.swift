@@ -37,7 +37,8 @@ extension ExtensionManagerAssembler {
         actionPolicy: ExtensionActionPolicyAssemblyProduct,
         contextLoading: ExtensionContextLoadingAssemblyProduct,
         controller: ExtensionControllerCoreAssemblyProduct,
-        transaction: ExtensionContextControllerTransaction
+        transaction: ExtensionContextControllerTransaction,
+        bootstrapChromeAdmission: ExtensionBootstrapChromeAdmission
     ) -> ExtensionContextLoader {
         ExtensionContextLoader(
             authority: contextLoading.authority,
@@ -53,7 +54,8 @@ extension ExtensionManagerAssembler {
             runtimeMetrics: runtime.metrics,
             diagnostics: runtime.diagnostics,
             expectedControllerDelegate: controller.delegateBridge,
-            controllerTransaction: transaction
+            controllerTransaction: transaction,
+            bootstrapChromeAdmission: bootstrapChromeAdmission
         )
     }
 }

@@ -96,6 +96,11 @@ enum SumiNativeMessagingRelayPolicy {
             return false
         }
 
+        if requested == UserscriptsNativeMessagingIdentifiers.applicationIdentifier,
+           UserscriptsNativeMessagingIdentifiers.isUserscriptsExtension(installed) {
+            return false
+        }
+
         if let containing = SumiNativeMessagingAppResolver.containingApplicationBundleIdentifier(
             forAppexPath: installed.sourceBundlePath
         ),

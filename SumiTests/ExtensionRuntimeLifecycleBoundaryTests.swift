@@ -137,7 +137,7 @@ final class ExtensionRuntimeLifecycleBoundaryTests: XCTestCase {
         XCTAssertEqual(retirement.keptProfileIDs, [profileA, profileB, profileA])
     }
 
-    func testReadyRuntimeBecomesLoadingWhenTargetProfileLacksEnabledContext() {
+    func testProfileWithoutEnabledContextDoesNotPublishController() {
         let profileA = UUID()
         let profileB = UUID()
         let profileRuntime = ExtensionProfileRuntime(initialProfileId: profileA)
@@ -167,9 +167,8 @@ final class ExtensionRuntimeLifecycleBoundaryTests: XCTestCase {
 
         XCTAssertEqual(profileRuntime.currentProfileId, profileB)
         XCTAssertEqual(lifecycle.state, .loading)
-        XCTAssertIdentical(
-            browserConfiguration.webViewConfiguration.webExtensionController,
-            provisioning.controllersByProfile[profileB]
+        XCTAssertNil(
+            browserConfiguration.webViewConfiguration.webExtensionController
         )
     }
 
@@ -324,6 +323,7 @@ final class ExtensionRuntimeLifecycleBoundaryTests: XCTestCase {
             profileRuntime: profileRuntime,
             runtimeLifecycle: runtimeLifecycle,
             installedExtensions: installedExtensions,
+            publishReadyProfile: { _, _ in true },
             markPublicationReady: {
                 runtimeLoadStatus.markExtensionsLoaded()
             },

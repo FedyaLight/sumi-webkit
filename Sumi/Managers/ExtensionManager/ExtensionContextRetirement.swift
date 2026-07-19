@@ -31,6 +31,7 @@ final class ExtensionContextRetirement {
     private let errorObservation: ExtensionContextErrorObservation
     private let diagnostics: ExtensionRuntimeDiagnostics
     private let actionPopups: ExtensionActionPopupRuntimeRetirement?
+    private let bootstrapChromeAdmission: ExtensionBootstrapChromeAdmission?
     private var inFlightReceipts = Set<ExtensionContextBindingReceipt>()
     #if DEBUG
         private var debugUnloadContext: UnloadContext?
@@ -43,7 +44,8 @@ final class ExtensionContextRetirement {
         runtimeResidency: ExtensionRuntimeResidencyAuthority,
         errorObservation: ExtensionContextErrorObservation,
         diagnostics: ExtensionRuntimeDiagnostics,
-        actionPopups: ExtensionActionPopupRuntimeRetirement? = nil
+        actionPopups: ExtensionActionPopupRuntimeRetirement? = nil,
+        bootstrapChromeAdmission: ExtensionBootstrapChromeAdmission? = nil
     ) {
         self.profileRuntime = profileRuntime
         self.backgroundRuntimeState = backgroundRuntimeState
@@ -51,6 +53,7 @@ final class ExtensionContextRetirement {
         self.errorObservation = errorObservation
         self.diagnostics = diagnostics
         self.actionPopups = actionPopups
+        self.bootstrapChromeAdmission = bootstrapChromeAdmission
     }
 
     #if DEBUG
@@ -71,8 +74,9 @@ final class ExtensionContextRetirement {
                 backgroundRuntimeState: backgroundRuntimeState,
                 runtimeResidency: runtimeResidency,
                 errorObservation: errorObservation,
-                diagnostics: diagnostics,
-                actionPopups: actionPopups
+            diagnostics: diagnostics,
+            actionPopups: actionPopups,
+            bootstrapChromeAdmission: nil
             )
             installDebugOperations(
                 unloadContext: unloadContext,
@@ -255,6 +259,10 @@ final class ExtensionContextRetirement {
 
         runtimeResidency.remove(
             extensionID: key.extensionId,
+            profileID: key.profileId
+        )
+        bootstrapChromeAdmission?.retire(
+            extensionIdentity: key.extensionId,
             profileID: key.profileId
         )
         backgroundRuntimeState.removeRuntimeState(

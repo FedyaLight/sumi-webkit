@@ -56,12 +56,14 @@ final class ExtensionRuntimeLoader {
         profileID: UUID? = nil,
         postLoadBackgroundWakeReason:
             ExtensionManager.ExtensionBackgroundWakeReason? = nil,
+        activationCause: ExtensionActivationCause = .profileAttachment,
         mutationLease: ExtensionRuntimeMutationLease? = nil
     ) async throws -> InstalledExtension {
         try await loadEnabled(
             from: entity,
             profileID: profileID,
             activation: .background(postLoadBackgroundWakeReason),
+            activationCause: activationCause,
             mutationLease: mutationLease
         )
     }
@@ -70,12 +72,14 @@ final class ExtensionRuntimeLoader {
         from entity: ExtensionEntity,
         profileID: UUID? = nil,
         activation: ExtensionLoadedContextFinalizer.Activation,
+        activationCause: ExtensionActivationCause = .profileAttachment,
         mutationLease: ExtensionRuntimeMutationLease? = nil
     ) async throws -> InstalledExtension {
         guard let refreshed = try await activate(
             entity,
             profileID: profileID,
             activation: activation,
+            activationCause: activationCause,
             mutationLease: mutationLease,
             metadataCommit: .refreshFromManifest
         ) else {
@@ -96,6 +100,7 @@ final class ExtensionRuntimeLoader {
             entity,
             profileID: profileID,
             activation: .background(.enable),
+            activationCause: .profileAttachment,
             mutationLease: mutationLease,
             metadataCommit: .preservePersistedRecord
         )
@@ -105,6 +110,7 @@ final class ExtensionRuntimeLoader {
         _ entity: ExtensionEntity,
         profileID: UUID?,
         activation: ExtensionLoadedContextFinalizer.Activation,
+        activationCause: ExtensionActivationCause,
         mutationLease: ExtensionRuntimeMutationLease?,
         metadataCommit: MetadataCommit
     ) async throws -> InstalledExtension? {
@@ -171,6 +177,7 @@ final class ExtensionRuntimeLoader {
                     packageRoot: extensionRoot,
                     manifest: manifest,
                     operation: activation.loadOperation,
+                    activationCause: activationCause,
                     claim: claim,
                     mutationLease: mutationLease
                 )

@@ -20,7 +20,8 @@ extension ExtensionManagerAssembler {
         _ f: ExtensionManagerAssemblyFoundation,
         callbackAdmission: ExtensionControllerCallbackAdmission,
         actionPolicy: ExtensionActionPolicyAssemblyProduct,
-        nativeMessaging: ExtensionNativeMessagingAssemblyProduct
+        nativeMessaging: ExtensionNativeMessagingAssemblyProduct,
+        bootstrapChromeAdmission: ExtensionBootstrapChromeAdmission
     ) -> ExtensionControllerCoreAssemblyProduct {
         let permissionSettlement = ExtensionPermissionCallbackSettlement(
             admission: callbackAdmission,
@@ -39,7 +40,9 @@ extension ExtensionManagerAssembler {
             permissions: permissionSettlement,
             urlPermissions: urlPermissionSettlement,
             nativeMessages: nativeMessaging.messageSettlement,
-            nativePorts: nativeMessaging.portSettlement
+            nativePorts: nativeMessaging.portSettlement,
+            installedExtensions: f.contexts.installedExtensions,
+            bootstrapChromeAdmission: bootstrapChromeAdmission
         )
         let delegateReadiness = ExtensionControllerDelegateReadiness(
             profileRuntime: f.runtime.profileRuntime,

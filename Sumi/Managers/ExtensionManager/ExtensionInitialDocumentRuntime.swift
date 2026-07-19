@@ -23,6 +23,11 @@ struct ExtensionInitialDocumentRuntime {
             .ensureInitialExtensionContextsLoaded(for: profileID)
     }
 
+    func warmNativeMessaging(profileID: UUID) async {
+        await owners.initialDocumentRuntimePreparationOwner
+            .warmInitialDocumentNativeMessaging(for: profileID)
+    }
+
     func needsInitialContextLoad(profileID: UUID) -> Bool {
         owners.initialDocumentRuntimePreparationOwner
             .profileNeedsInitialDocumentExtensionContextLoad(

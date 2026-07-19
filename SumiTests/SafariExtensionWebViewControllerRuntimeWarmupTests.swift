@@ -86,7 +86,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         XCTAssertEqual(tab.extensionPageRuntimeOwner.openNotifiedContextReadiness, .loaded)
     }
 
-    func testNotifyTabOpenedDefersUntilInitialDocumentNativeMessagingWarmup() async throws {
+    func testNotifyTabOpenedPublishesBeforeNativeMessagingWarmup() async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Profile A")
         let managerFixture = makeManager(
@@ -122,8 +122,6 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         var backgroundWakeCount = 0
         var backgroundWakeKey: String?
         var backgroundWakeObservations: [String] = []
-        let backgroundWakeExpectation = expectation(description: "nativeMessaging warmup")
-        backgroundWakeExpectation.assertForOverFulfill = false
         manager.testHooks.backgroundContentWake = { wakeKey, extensionContext in
             backgroundWakeKey = wakeKey
             let contextIdentity = inspection.contextState.profiles.contextIdentity(for: extensionContext)
@@ -136,7 +134,6 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
                 "wake=\(backgroundWakeCount + 1) key=\(wakeKey) expectedProfile=\(profile.id) contextProfile=\(contextIdentity?.profileId.uuidString ?? "nil") stateBefore=\(stateBefore)"
             )
             backgroundWakeCount += 1
-            backgroundWakeExpectation.fulfill()
         }
         defer {
             manager.testHooks.backgroundContentWake = nil
@@ -172,32 +169,25 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
                     profileId: profile.id
                 )
         )
-        XCTAssertFalse(
+        XCTAssertTrue(
             managerFixture.attachedRuntime.runtime.normalTabs.tabOpening
                 .publishOpen(tab)
         )
-        XCTAssertFalse(tab.extensionPageRuntimeOwner.didNotifyOpenToExtensions)
-
-        await fulfillment(of: [backgroundWakeExpectation], timeout: 3.0)
-        if let deferredTask = attachedRuntime.runtime.normalTabs
-            .deferredTabRegistration.task(for: tab.id) {
-            await deferredTask.value
-        }
-        XCTAssertEqual(backgroundWakeCount, 1, backgroundWakeObservations.joined(separator: "\n"))
-        XCTAssertEqual(
-            backgroundWakeKey,
-            ExtensionRuntimeResidencyState.scopedKey(
-                extensionId: installed.id,
-                profileId: profile.id
+        XCTAssertTrue(tab.extensionPageRuntimeOwner.didNotifyOpenToExtensions)
+        XCTAssertNil(
+            attachedRuntime.runtime.normalTabs.deferredTabRegistration.task(
+                for: tab.id
             )
         )
+        XCTAssertEqual(backgroundWakeCount, 0, backgroundWakeObservations.joined(separator: "\n"))
+        XCTAssertNil(backgroundWakeKey)
         XCTAssertEqual(
             backgroundRuntimeState(
                 in: inspection,
                 extensionID: installed.id,
                 profileID: profile.id
             ),
-            .loaded
+            .neverLoaded
         )
     }
 
@@ -798,7 +788,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         )
     }
 
-    func testDeferredTabNotificationWaitsForInitialDocumentNativeMessagingWarmup() async throws {
+    func testDeferredTabNotificationLoadsContextsWithoutWakingBackground() async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Profile A")
         let managerFixture = makeManager(
@@ -823,10 +813,8 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         _ = inspection.installation.catalog.load()
 
         var backgroundWakeCount = 0
-        let backgroundWakeExpectation = expectation(description: "nativeMessaging background wake")
         manager.testHooks.backgroundContentWake = { _, _ in
             backgroundWakeCount += 1
-            backgroundWakeExpectation.fulfill()
         }
 
         await inspection.normalTabs.deferredRuntime
@@ -854,7 +842,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
                     profileId: profile.id
                 )
         )
-        XCTAssertTrue(
+        XCTAssertFalse(
             inspection.normalTabs.deferredRuntime
                 .initialDocumentRuntimePreparationOwner
                 .profileNeedsInitialDocumentExtensionContextLoad(
@@ -889,17 +877,16 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         let deferredTask = attachedRuntime.runtime.normalTabs
             .deferredTabRegistration.task(for: tab.id)
 
-        await fulfillment(of: [backgroundWakeExpectation], timeout: 3.0)
         await deferredTask?.value
 
-        XCTAssertEqual(backgroundWakeCount, 1)
+        XCTAssertEqual(backgroundWakeCount, 0)
         XCTAssertEqual(
             backgroundRuntimeState(
                 in: inspection,
                 extensionID: installed.id,
                 profileID: profile.id
             ),
-            .loaded
+            .neverLoaded
         )
     }
 
@@ -950,7 +937,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         )
     }
 
-    func testInitialDocumentWarmupWakesBackgroundForNativeMessagingContentScripts() async throws {
+    func testPostPublicationWarmupWakesNativeMessagingBackground() async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Profile A")
         let managerFixture = makeManager(
@@ -980,6 +967,20 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         await inspection.normalTabs.deferredRuntime
             .initialDocumentRuntimePreparationOwner
             .ensureInitialExtensionContextsLoaded(for: profile.id)
+
+        XCTAssertEqual(backgroundWakeCount, 0)
+        XCTAssertEqual(
+            backgroundRuntimeState(
+                in: inspection,
+                extensionID: installed.id,
+                profileID: profile.id
+            ),
+            .neverLoaded
+        )
+
+        await inspection.normalTabs.deferredRuntime
+            .initialDocumentRuntimePreparationOwner
+            .warmInitialDocumentNativeMessaging(for: profile.id)
 
         let context = try XCTUnwrap(
             inspection.contextState.profiles.contexts(for: profile.id)[installed.id]

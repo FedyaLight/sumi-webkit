@@ -54,6 +54,41 @@ extension ExtensionRequestedTabServicesTests {
         XCTAssertEqual(harness.sourceTab.url, originalURL)
     }
 
+    func testTabAdapterProjectsPendingURLAndExactLiveViewportSize()
+        async throws {
+        let harness = try await makeRequestedPublicationHarness()
+        let adapter = try XCTUnwrap(
+            harness.inspection.normalTabs.adapters.existingTabAdapter(
+                for: harness.sourceTab.id
+            )
+        )
+        let webView = try XCTUnwrap(
+            harness.browserManager.webViewRuntime.ownershipQuery.webView(
+                for: harness.sourceTab.id,
+                in: harness.window.id
+            )
+        )
+        webView.frame = CGRect(x: 0, y: 0, width: 840, height: 620)
+        let pendingURL = try XCTUnwrap(
+            URL(string: "https://pending.example/navigation")
+        )
+
+        _ = harness.sourceTab.beginMainFrameNavigationIntent(to: pendingURL)
+        harness.sourceTab.beginLoadingPresentationIfNeeded()
+
+        XCTAssertEqual(
+            adapter.pendingURL(for: harness.extensionContext),
+            pendingURL
+        )
+        XCTAssertEqual(
+            adapter.size(for: harness.extensionContext),
+            CGSize(width: 840, height: 620)
+        )
+
+        harness.sourceTab.loadingState = .idle
+        XCTAssertNil(adapter.pendingURL(for: harness.extensionContext))
+    }
+
     func testPromotionInvalidationPreventsSelectionMutation() async throws {
         let harness = try await makeRequestedPublicationHarness()
         let underlyingMutation = harness.attachedRuntime.bridge.tabMutation

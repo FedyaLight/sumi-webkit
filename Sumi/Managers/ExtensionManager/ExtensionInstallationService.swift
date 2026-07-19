@@ -219,6 +219,8 @@ final class ExtensionInstallationService {
                     packageRoot: materialized.root,
                     manifest: materialized.manifest,
                     operation: package.runtimeOperation,
+                    activationCause: existingEntity == nil
+                        ? .installation : .update,
                     mutationLease: mutationLease
                 )
                 activation = loaded

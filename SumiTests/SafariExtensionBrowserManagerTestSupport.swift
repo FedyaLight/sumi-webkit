@@ -165,6 +165,7 @@ extension XCTestCase {
         extensionsModule: SumiExtensionsModule? = nil,
         profile: Profile? = nil,
         windowRegistry: WindowRegistry? = nil,
+        automaticallyStartPersistedStateLoad: Bool = true,
         retainUntilTestTeardown: Bool = true
     ) -> BrowserManager {
         let startupPersistence: BrowserManagerStartupPersistence
@@ -213,7 +214,8 @@ extension XCTestCase {
             startupPersistence: startupPersistence,
             adBlockingModule: adBlockingModule,
             protectionCoordinator: protectionCoordinator,
-            extensionsModule: extensionsModule
+            extensionsModule: extensionsModule,
+            automaticallyStartPersistedStateLoad: automaticallyStartPersistedStateLoad
         )
         if let profile {
             browserManager.profileManager.profiles = [profile]

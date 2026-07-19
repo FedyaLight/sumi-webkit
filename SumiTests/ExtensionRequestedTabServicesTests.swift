@@ -678,6 +678,51 @@ final class ExtensionRequestedTabServicesTests:
         )
     }
 
+    func testNormalWindowStateCompletionFollowsNativeSettlement() async throws {
+        let harness = try await makeRequestedPublicationHarness()
+        let window = try XCTUnwrap(
+            harness.attachedRuntime.bridge.windows.appKitWindow(
+                for: harness.window
+            )
+        )
+        window.orderFront(nil)
+        var didSettle = false
+        let nativeSettlement = expectation(
+            description: "normal window miniaturized"
+        )
+        let observer = NotificationCenter.default.addObserver(
+            forName: NSWindow.didMiniaturizeNotification,
+            object: window,
+            queue: nil
+        ) { _ in
+            MainActor.assumeIsolated {
+                didSettle = true
+                nativeSettlement.fulfill()
+            }
+        }
+        defer {
+            NotificationCenter.default.removeObserver(observer)
+            window.deminiaturize(nil)
+        }
+
+        var completionError: Error?
+        var completionObservedSettlement = false
+        let completion = expectation(description: "state callback")
+        harness.publishedWindow.setWindowState(
+            .minimized,
+            for: harness.extensionContext
+        ) {
+            completionError = $0
+            completionObservedSettlement = didSettle
+            completion.fulfill()
+        }
+
+        await fulfillment(of: [nativeSettlement, completion], timeout: 5)
+        XCTAssertNil(completionError)
+        XCTAssertTrue(completionObservedSettlement)
+        XCTAssertTrue(window.isMiniaturized)
+    }
+
     func testReplacedNormalContextLosesEveryTabAndWindowCapability()
         async throws {
         let harness = try await makeRequestedPublicationHarness()
@@ -1056,7 +1101,7 @@ final class ExtensionRequestedTabServicesTests:
         window.currentSpaceId = space.id
         let appKitWindow = NSWindow(
             contentRect: NSRect(x: 120, y: 120, width: 960, height: 700),
-            styleMask: [.titled, .closable, .resizable],
+            styleMask: [.titled, .closable, .resizable, .miniaturizable],
             backing: .buffered,
             defer: false
         )

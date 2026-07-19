@@ -169,7 +169,8 @@ extension ExtensionManagerAssembler {
             ExtensionManager.ExtensionBackgroundWakeReason,
             @escaping @MainActor () -> Bool
         ) async throws -> Void,
-        reconcileOpenTabs: @escaping @MainActor (String) -> Void
+        prepareBrowserProjection:
+            @escaping @MainActor (String, UUID) -> Void
     ) -> ExtensionActionSurfacePublisher {
         ExtensionActionSurfacePublisher(
             authority: authority,
@@ -200,8 +201,8 @@ extension ExtensionManagerAssembler {
             },
             ensureBackgroundAvailableIfRequired:
                 ensureBackgroundAvailableIfRequired,
-            reconcileOpenTabsAfterExtensionContextLoad:
-                reconcileOpenTabs
+            prepareBrowserProjectionForBackgroundWake:
+                prepareBrowserProjection
         )
     }
 

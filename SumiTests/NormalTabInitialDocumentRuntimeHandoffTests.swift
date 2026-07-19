@@ -1129,6 +1129,8 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
             true
         } register: {
             events.append("register")
+        } warmPostPublicationBackground: {
+            events.append("warmPostPublicationBackground")
         } load: {
             events.append("load")
         }
@@ -1139,6 +1141,7 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
                 "waitUserContent",
                 "warmInitialDocumentContexts",
                 "register",
+                "warmPostPublicationBackground",
                 "load",
             ]
         )
@@ -1155,6 +1158,8 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
             false
         } register: {
             events.append("register")
+        } warmPostPublicationBackground: {
+            events.append("warmPostPublicationBackground")
         } load: {
             events.append("load")
         }
@@ -1180,6 +1185,8 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
             isValid
         } register: {
             events.append("register")
+        } warmPostPublicationBackground: {
+            events.append("warmPostPublicationBackground")
         } load: {
             events.append("load")
         }
@@ -1189,6 +1196,36 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
             [
                 "waitUserContent",
                 "warmInitialDocumentContexts",
+            ]
+        )
+    }
+
+    func testPerformStopsAfterPostPublicationWarmupWhenCommandBecomesInvalid() async {
+        var events: [String] = []
+        var isValid = true
+
+        await NormalTabInitialDocumentRuntimeHandoff.perform {
+            events.append("waitUserContent")
+        } warmInitialDocumentContexts: {
+            events.append("warmInitialDocumentContexts")
+        } isStillValid: {
+            isValid
+        } register: {
+            events.append("register")
+        } warmPostPublicationBackground: {
+            events.append("warmPostPublicationBackground")
+            isValid = false
+        } load: {
+            events.append("load")
+        }
+
+        XCTAssertEqual(
+            events,
+            [
+                "waitUserContent",
+                "warmInitialDocumentContexts",
+                "register",
+                "warmPostPublicationBackground",
             ]
         )
     }
@@ -1450,7 +1487,8 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
             prepareWebViewForExtensionRuntime: { _, _, _ in /* No-op. */ },
             ensureInitialExtensionContextsIfNeeded: { warmedProfileId in
                 warmedProfileIds.append(warmedProfileId)
-            }
+            },
+            warmInitialDocumentNativeMessagingIfNeeded: { _ in }
         )
 
         NormalTabInitialDocumentRuntimeHandoff.scheduleTabSetupInitialLoad(

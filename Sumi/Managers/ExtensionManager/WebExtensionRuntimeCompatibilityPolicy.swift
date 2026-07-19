@@ -15,13 +15,12 @@ enum WebExtensionRuntimeCompatibilityPolicy {
     ) -> Set<String> {
         guard declaresWebKitBrowserTarget(manifest) else { return [] }
 
-        // WebKit's native browser.scripting implementation is verified by
-        // SafariExtensionScriptingRuntimeTests. Only legacy injection APIs
-        // without a verified WebKit implementation remain unsupported.
+        // WebKit implements the legacy tabs injection API for Manifest V2 and
+        // hides it itself for Manifest V3. Do not override that native
+        // manifest-aware behavior. Firefox's contentScripts namespace has no
+        // WebKit implementation, so extensions can feature-detect it.
         return [
             "browser.contentScripts.register",
-            "browser.tabs.executeScript",
-            "browser.tabs.insertCSS",
         ]
     }
 

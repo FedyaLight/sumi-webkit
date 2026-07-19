@@ -45,7 +45,8 @@ class SafariExtensionWebViewControllerWiringTestCase: XCTestCase {
             moduleRegistry: moduleRegistry,
             extensionsModule: extensionsModule,
             profile: profile,
-            windowRegistry: windowRegistry
+            windowRegistry: windowRegistry,
+            automaticallyStartPersistedStateLoad: false
         )
         return browserManager
     }

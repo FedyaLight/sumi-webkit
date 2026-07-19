@@ -42,7 +42,7 @@ final class ExtensionControllerDelegateBridge: NSObject, WKWebExtensionControlle
     }
 
     private let coreRoutes: CoreRoutes
-    private let openingCallbacks = ExtensionControllerOpeningCallbackHandler()
+    private let openingCallbacks: ExtensionControllerDelegateOpeningCallbacks
     private var browserRoutes: ExtensionControllerDelegateBrowserRoutes?
 
     func optionsInvocation(
@@ -71,7 +71,10 @@ final class ExtensionControllerDelegateBridge: NSObject, WKWebExtensionControlle
         permissions: ExtensionPermissionCallbackSettlement,
         urlPermissions: ExtensionURLPermissionCallbackSettlement,
         nativeMessages: ExtensionNativeMessageSendSettlement,
-        nativePorts: ExtensionNativePortConnectionSettlement
+        nativePorts: ExtensionNativePortConnectionSettlement,
+        installedExtensions: InstalledExtensionCollection,
+        bootstrapChromeAdmission: ExtensionBootstrapChromeAdmission =
+            ExtensionBootstrapChromeAdmission()
     ) {
         coreRoutes = CoreRoutes(
             callbackAdmission: callbackAdmission,
@@ -79,6 +82,11 @@ final class ExtensionControllerDelegateBridge: NSObject, WKWebExtensionControlle
             urlPermissions: urlPermissions,
             nativeMessages: nativeMessages,
             nativePorts: nativePorts
+        )
+        openingCallbacks = ExtensionControllerDelegateOpeningCallbacks(
+            bootstrapChromeAdmission: bootstrapChromeAdmission,
+            installedExtensions: installedExtensions,
+            handler: ExtensionControllerOpeningCallbackHandler()
         )
         super.init()
     }
@@ -248,18 +256,15 @@ final class ExtensionControllerDelegateBridge: NSObject, WKWebExtensionControlle
               let evidence = coreRoutes.callbackAdmission.capture(
                   context: extensionContext,
                   controller: controller
-              )
-        else {
-            completionHandler(
-                nil,
-                CancellationError()
-            )
+              ) else {
+            completionHandler(nil, CancellationError())
             return
         }
         openingCallbacks.openNewTab(
             configuration: configuration,
             evidence: evidence,
-            runtime: routes.opening.tabOpeningCallback,
+            routes: routes,
+            urlPermissions: coreRoutes.urlPermissions,
             completionHandler: completionHandler
         )
     }
@@ -270,25 +275,19 @@ final class ExtensionControllerDelegateBridge: NSObject, WKWebExtensionControlle
         for extensionContext: WKWebExtensionContext,
         completionHandler: @escaping ((any WKWebExtensionWindow)?, (any Error)?) -> Void
     ) {
-        let request = ExtensionWindowOpeningRequest(
-            configuration: configuration
-        )
         guard let routes = browserRoutes,
               let evidence = coreRoutes.callbackAdmission.capture(
                   context: extensionContext,
                   controller: controller
-              )
-        else {
-            completionHandler(
-                nil,
-                CancellationError()
-            )
+              ) else {
+            completionHandler(nil, CancellationError())
             return
         }
         openingCallbacks.openNewWindow(
-            request: request,
+            configuration: configuration,
             evidence: evidence,
-            runtime: routes.opening,
+            routes: routes,
+            urlPermissions: coreRoutes.urlPermissions,
             completionHandler: completionHandler
         )
     }

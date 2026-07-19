@@ -452,6 +452,7 @@ final class SumiWebPageMenuPresenterTests: XCTestCase {
             registerTabWithExtensionRuntimeIfNeeded: { _, _ in /* No-op. */ },
             prepareWebViewForExtensionRuntime: { _, _, _ in /* No-op. */ },
             ensureInitialExtensionContextsIfNeeded: { _ in /* No-op. */ },
+            warmInitialDocumentNativeMessagingIfNeeded: { _ in /* No-op. */ },
             pageContextMenuItems: { requestedTab in
                 requestedTabIds.append(requestedTab.id)
                 return [extensionItem]

@@ -1149,7 +1149,7 @@ final class ExtensionScopedRuntimeRetirementTests: XCTestCase {
             exactContextIdentity: { _ in nil },
             actionForLoadedContext: { _, _ in nil },
             ensureBackgroundAvailableIfRequired: { _, _, _, _ in },
-            reconcileOpenTabsAfterExtensionContextLoad: { _ in }
+            prepareBrowserProjectionForBackgroundWake: { _, _ in }
         )
         let attachment = ExtensionBrowserAttachmentAuthority()
         return ExtensionRuntimeRetirement(

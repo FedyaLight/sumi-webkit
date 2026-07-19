@@ -123,6 +123,7 @@ struct ExtensionContextLoadRequest {
     let packageRoot: URL
     let manifest: [String: Any]
     let operation: ExtensionContextLoadOperation
+    let activationCause: ExtensionActivationCause
     let claim: ExtensionContextLoadClaim
     let mutationLease: ExtensionRuntimeMutationLease?
 }

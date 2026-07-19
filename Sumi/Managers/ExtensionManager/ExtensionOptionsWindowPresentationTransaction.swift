@@ -52,15 +52,6 @@ final class ExtensionOptionsWindowPresentationTransaction {
             webView.isInspectable = true
         }
         webView.allowsBackForwardNavigationGestures = true
-        guard isCurrent else {
-            completionHandler(CancellationError())
-            return
-        }
-        webView.load(URLRequest(url: receipt.optionsURL))
-        guard isCurrent else {
-            completionHandler(CancellationError())
-            return
-        }
         let createdWindow = service.makePresentationWindow()
         window = createdWindow
         createdWindow.title = "\(receipt.displayName) – Options"
@@ -110,7 +101,13 @@ final class ExtensionOptionsWindowPresentationTransaction {
             return
         }
         delegate.bind(tracked)
+        // Keep the two AppKit operations explicit.  Besides matching the
+        // native window lifecycle (order first, then make key), this lets a
+        // reentrant close/replacement callback run between the two phases and
+        // invalidates the presentation claim before loading can commit.
         createdWindow.orderFront(nil)
+        createdWindow.makeKey()
+        webView.load(URLRequest(url: receipt.optionsURL))
         guard isCurrent,
               service.receipt(for: receipt.evidence.extensionID) == tracked
         else {

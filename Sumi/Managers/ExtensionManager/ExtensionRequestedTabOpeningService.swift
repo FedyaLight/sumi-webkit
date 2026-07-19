@@ -53,6 +53,33 @@ struct ExtensionRequestedTabOpeningService {
         callbackAdmission: ExtensionControllerCallbackAdmission? = nil,
         reason: String
     ) throws -> Tab {
+        try open(
+            url: url,
+            shouldBeActive: shouldBeActive,
+            shouldBePinned: shouldBePinned,
+            requestedWindow: requestedWindow,
+            controller: controller,
+            extensionContext: extensionContext,
+            evidence: evidence,
+            callbackAdmission: callbackAdmission,
+            recordsRecentRequest: true,
+            reason: reason
+        )
+    }
+
+    @discardableResult
+    func open(
+        url: URL?,
+        shouldBeActive: Bool,
+        shouldBePinned: Bool,
+        requestedWindow: (any WKWebExtensionWindow)?,
+        controller: WKWebExtensionController,
+        extensionContext: WKWebExtensionContext? = nil,
+        evidence: ExtensionControllerCallbackEvidence? = nil,
+        callbackAdmission: ExtensionControllerCallbackAdmission? = nil,
+        recordsRecentRequest: Bool,
+        reason: String
+    ) throws -> Tab {
         let invocation = ExtensionRequestedTabInvocationAuthority(
             profileRuntime: profileRuntime,
             controller: controller,
@@ -214,7 +241,9 @@ struct ExtensionRequestedTabOpeningService {
         }
 
         guard invocation.isCurrent else { throw CancellationError() }
-        recentRequests.record(url)
+        if recordsRecentRequest {
+            recentRequests.record(url)
+        }
         didCommit = true
 
         ExtensionRequestedTabBindingDiagnostics.record(
@@ -226,5 +255,16 @@ struct ExtensionRequestedTabOpeningService {
             hasTabAdapter: hasTabAdapter(newTab)
         )
         return newTab
+    }
+
+    @discardableResult
+    func discardStagedTab(
+        _ tab: Tab,
+        restoringSelectionTo tabID: UUID?
+    ) -> Bool {
+        browserContext()?.discardExtensionRequestedTab(
+            tab,
+            restoringSelectionTo: tabID
+        ) ?? false
     }
 }

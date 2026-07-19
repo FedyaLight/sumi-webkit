@@ -102,7 +102,8 @@ extension ExtensionManagerAssembler {
         controller: ExtensionControllerCoreAssemblyProduct,
         retirement: ExtensionRuntimeRetirementAssemblyProduct,
         activation: ExtensionRuntimeActivationPhaseProduct,
-        termination: ExtensionRuntimeTerminationPhaseProduct
+        termination: ExtensionRuntimeTerminationPhaseProduct,
+        bootstrapChromeAdmission: ExtensionBootstrapChromeAdmission
     ) -> InstalledExtensionLifecycleService {
         InstalledExtensionLifecycleService(
             environment: .init(
@@ -141,6 +142,11 @@ extension ExtensionManagerAssembler {
                         await storageCleanup.removeStoredData(
                             for: extensionID,
                             mode: mode
+                        )
+                    },
+                    removeGlobalInstallLedger: {
+                        bootstrapChromeAdmission.removeFromLedger(
+                            extensionIdentity: $0
                         )
                     }
             )

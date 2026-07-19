@@ -1233,7 +1233,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         XCTAssertFalse(browserManager.structuralPersistence.shouldPersistRegularTab(tab))
     }
 
-    func testExtensionRequestedWindowPublishesExactTabBeforeFocusAndCompletion() async throws {
+    func testExtensionRequestedWindowPublishesAllInitialTabsBeforeFocusAndCompletion() async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Extension Window Profile")
         let browserConfiguration = BrowserConfiguration()
@@ -1318,6 +1318,8 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         XCTAssertEqual(extensionContext.baseURL.scheme, "safari-web-extension")
         let extensionURL = extensionContext.baseURL
             .appendingPathComponent("popup.html")
+        let externalURL = URL(string: "https://example.com/second")!
+        let requestedFrame = CGRect(x: 160, y: 180, width: 720, height: 520)
 
         let preexistingWindowIDs = Set(windowRegistry.windows.keys)
         var openedTabIDs: [UUID] = []
@@ -1336,13 +1338,19 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         var windowWasFocusedBeforeCompletion = false
 
         attachedRuntime.runtime.requestedTabs.windowRouter.open(
-            tabURLs: [extensionURL],
+            request: ExtensionWindowOpeningRequest(
+                windowType: .normal,
+                frame: requestedFrame,
+                tabURLs: [extensionURL, externalURL],
+                shouldBeFocused: true,
+                shouldBePrivate: false
+            ),
             controller: controller,
             extensionContext: extensionContext,
             completion: { window, error in
                 completionWindow = window
                 completionError = error
-                tabWasPublishedBeforeCompletion = openedTabIDs.count == 1
+                tabWasPublishedBeforeCompletion = openedTabIDs.count == 2
                 if let adapter = window as? ExtensionWindowAdapter {
                     windowWasFocusedBeforeCompletion =
                         (extensionContext.focusedWindow as? ExtensionWindowAdapter)
@@ -1370,12 +1378,20 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             })
         )
         XCTAssertEqual(openedTabIDs.filter { $0 == tab.id }.count, 1)
+        let externalTab = try XCTUnwrap(
+            browserManager.tabStateStore.regularTabs
+                .tabsBySpaceSnapshot()[space.id]?.first(where: {
+                    $0.url == externalURL
+                })
+        )
+        XCTAssertEqual(openedTabIDs.filter { $0 == externalTab.id }.count, 1)
         XCTAssertIdentical(controller.extensionContext(for: tab.url), extensionContext)
         XCTAssertIdentical(
             tab.webExtensionContextOverride,
             extensionContext
         )
         let window = try XCTUnwrap(windowRegistry.windows[adapter.windowId])
+        XCTAssertEqual(adapter.tabs(for: extensionContext).count, 2)
         XCTAssertFalse(preexistingWindowIDs.contains(window.id))
         XCTAssertEqual(window.currentProfileId, profile.id)
         XCTAssertEqual(window.currentSpaceId, space.id)
@@ -1404,7 +1420,15 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         XCTAssertTrue(
             windowRegistry.appKitWindow(for: window)?.isVisible == true
         )
+        XCTAssertEqual(
+            windowRegistry.appKitWindow(for: window)?.frame,
+            requestedFrame
+        )
         XCTAssertFalse(browserManager.structuralPersistence.shouldPersistRegularTab(tab))
+        XCTAssertTrue(
+            browserManager.structuralPersistence
+                .shouldPersistRegularTab(externalTab)
+        )
         let appKitWindow = windowRegistry.appKitWindow(for: window)
         windowRegistry.unregister(window.id)
         appKitWindow?.close()
@@ -1500,57 +1524,6 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         )
     }
 
-    func testExtensionRequestedWindowRejectsMultipleInitialURLsWithoutMutation() throws {
-        let container = try makeTestContainer()
-        let profile = Profile(name: "Requested Window URL Cardinality")
-        let managerFixture = makeManager(
-            context: container.mainContext,
-            profile: profile
-        )
-        let manager = managerFixture.manager
-        let inspection = managerFixture.inspection
-        let attachedRuntime = managerFixture.attachedRuntime
-        let controller = inspection.controller.provisioning.ensureExtensionController(for: profile.id)
-        var callbackCount = 0
-        var completionWindow: (any WKWebExtensionWindow)?
-        var completionError: (any Error)?
-
-        inspection.normalTabs.requestedTabs.openWindow(
-            tabURLs: [
-                URL(string: "https://one.example")!,
-                URL(string: "https://two.example")!,
-            ],
-            controller: controller,
-            extensionContext: nil,
-            completion: { window, error in
-                callbackCount += 1
-                completionWindow = window
-                completionError = error
-            }
-        )
-
-        XCTAssertEqual(callbackCount, 1)
-        XCTAssertNil(completionWindow)
-        XCTAssertEqual(
-            (completionError as NSError?)?.domain,
-            ExtensionManagerCallbackError.domain
-        )
-        XCTAssertEqual(
-            (completionError as NSError?)?.code,
-            ExtensionManagerCallbackError.multipleWindowTabsUnsupported.code
-        )
-        XCTAssertFalse(
-            inspection.normalTabs.recentRequests.consume(
-                URL(string: "https://one.example")!
-            )
-        )
-        XCTAssertFalse(
-            inspection.normalTabs.recentRequests.consume(
-                URL(string: "https://two.example")!
-            )
-        )
-    }
-
     func testColdExtensionRequestedWindowFailsWithoutMaterializingBrowserRuntime()
         throws {
         let container = try makeTestContainer()
@@ -1599,6 +1572,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         let attachedRuntime = managerFixture.attachedRuntime
         var browserManager: BrowserManager? = makeSafariExtensionTestBrowserManager(
             profile: profile,
+            automaticallyStartPersistedStateLoad: false,
             retainUntilTestTeardown: false
         )
         weak var releasedBrowserManager = browserManager
@@ -2062,11 +2036,13 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         PreparedExtensionRequestedWindow {
         let window = BrowserWindowState()
         private(set) var presentCallCount = 0
+        private(set) var presentedActivationValues: [Bool] = []
         private(set) var acceptCallCount = 0
         private(set) var cancelCallCount = 0
 
-        func present() -> Bool {
+        func present(activate: Bool) -> Bool {
             presentCallCount += 1
+            presentedActivationValues.append(activate)
             return true
         }
 

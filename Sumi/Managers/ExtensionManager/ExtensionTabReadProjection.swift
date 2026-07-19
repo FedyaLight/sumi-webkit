@@ -72,6 +72,13 @@ final class ExtensionTabReadProjection {
         evidence.currentPublication(visibleTo: context)?.tab.url
     }
 
+    func pendingURL(for context: WKWebExtensionContext) -> URL? {
+        guard let tab = evidence.currentPublication(visibleTo: context)?.tab,
+              tab.isLoading
+        else { return nil }
+        return tab.mainFrameLoads.currentIntent.targetURL
+    }
+
     func title(for context: WKWebExtensionContext) -> String? {
         evidence.currentPublication(visibleTo: context)?.tab.name
     }
@@ -148,6 +155,10 @@ final class ExtensionTabReadProjection {
 
     func zoomFactor(for context: WKWebExtensionContext) -> Double {
         Double(webView(for: context)?.pageZoom ?? 1)
+    }
+
+    func size(for context: WKWebExtensionContext) -> CGSize {
+        webView(for: context)?.bounds.size ?? .zero
     }
 
     func window(

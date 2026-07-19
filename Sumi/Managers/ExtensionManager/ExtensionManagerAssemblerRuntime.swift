@@ -17,7 +17,8 @@ extension ExtensionManagerAssembler {
             runtime: f.runtime, contexts: f.contexts, browser: f.browser,
             actionPolicy: core.actionPolicy,
             contextLoading: core.contextLoading, controller: core.controller,
-            transaction: transaction
+            transaction: transaction,
+            bootstrapChromeAdmission: core.bootstrapChromeAdmission
         )
         let finalization = assembleContextFinalizationPhase(
             browser: f.browser, actionPolicy: core.actionPolicy,
@@ -112,7 +113,8 @@ extension ExtensionManagerAssembler {
         let lifecycle = assembleRuntimeLifecyclePhase(
             installation: f.installation, contexts: f.contexts,
             controller: core.controller, retirement: core.retirement,
-            activation: activation, termination: termination
+            activation: activation, termination: termination,
+            bootstrapChromeAdmission: core.bootstrapChromeAdmission
         )
         let installer = assembleRuntimeInstallerPhase(
             installation: f.installation, runtime: f.runtime,

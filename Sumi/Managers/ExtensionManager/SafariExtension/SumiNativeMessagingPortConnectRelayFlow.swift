@@ -341,6 +341,7 @@ final class SumiNativeMessagingPortConnectRelayFlow {
                     )
                 )
             },
+            portInactivityTimeout: adapter.portInactivityTimeout,
             disconnectFinalizer: { [weak sessionStore] session, _ in
                 sessionStore?.finalizePortSession(
                     session,

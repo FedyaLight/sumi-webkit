@@ -22,7 +22,7 @@ protocol PreparedExtensionRequestedWindow: AnyObject {
     var window: BrowserWindowState { get }
 
     /// Emits focus/activation only after the exact published adapter is known.
-    func present() -> Bool
+    func present(activate: Bool) -> Bool
 
     /// Finalizes persistence after post-focus controller/context validation.
     func accept() -> Bool

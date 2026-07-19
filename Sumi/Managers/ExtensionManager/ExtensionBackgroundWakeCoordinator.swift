@@ -12,6 +12,8 @@ final class ExtensionBackgroundWakeCoordinator {
     private let contextIdentity: @MainActor (WKWebExtensionContext) -> (extensionId: String, profileId: UUID)?
     private let resolvedProfileId: @MainActor (UUID?) -> UUID?
     private let runtimeMetrics: ExtensionRuntimeMetricsAuthority
+    private let backgroundReadiness:
+        any ExtensionBackgroundReadinessAwaiting
     private let trace: @MainActor (String) -> Void
     private let logBackgroundWakeFailure: @MainActor (
         Error,
@@ -30,6 +32,8 @@ final class ExtensionBackgroundWakeCoordinator {
         contextIdentity: @escaping @MainActor (WKWebExtensionContext) -> (extensionId: String, profileId: UUID)?,
         resolvedProfileId: @escaping @MainActor (UUID?) -> UUID?,
         runtimeMetrics: ExtensionRuntimeMetricsAuthority,
+        backgroundReadiness: any ExtensionBackgroundReadinessAwaiting =
+            ExtensionBackgroundReadinessAwaiter(),
         trace: @escaping @MainActor (String) -> Void,
         logBackgroundWakeFailure: @escaping @MainActor (
             Error,
@@ -43,6 +47,7 @@ final class ExtensionBackgroundWakeCoordinator {
         self.contextIdentity = contextIdentity
         self.resolvedProfileId = resolvedProfileId
         self.runtimeMetrics = runtimeMetrics
+        self.backgroundReadiness = backgroundReadiness
         self.trace = trace
         self.logBackgroundWakeFailure = logBackgroundWakeFailure
     }
@@ -71,19 +76,11 @@ final class ExtensionBackgroundWakeCoordinator {
             trace: { [trace] in trace($0) },
             isCurrent: isCurrent,
             loadBackgroundContent: {
-                #if DEBUG
-                    if let backgroundContentWake =
-                        self.debugBackgroundContentWake?() {
-                        try await backgroundContentWake(
-                            wakeKey,
-                            extensionContext
-                        )
-                    } else {
-                        try await extensionContext.loadBackgroundContent()
-                    }
-                #else
-                    try await extensionContext.loadBackgroundContent()
-                #endif
+                try await self.loadBackgroundContentAndWaitUntilReady(
+                    wakeKey: wakeKey,
+                    webExtension: webExtension,
+                    context: extensionContext
+                )
             },
             recordWakeMetric: { [runtimeMetrics] duration, reason, didFail in
                 runtimeMetrics.recordBackgroundWake(
@@ -153,19 +150,11 @@ final class ExtensionBackgroundWakeCoordinator {
                 guard admission.isCurrent(evidence) else {
                     throw CancellationError()
                 }
-                #if DEBUG
-                    if let backgroundContentWake =
-                        self.debugBackgroundContentWake?() {
-                        try await backgroundContentWake(
-                            wakeKey,
-                            evidence.context
-                        )
-                    } else {
-                        try await evidence.context.loadBackgroundContent()
-                    }
-                #else
-                    try await evidence.context.loadBackgroundContent()
-                #endif
+                try await self.loadBackgroundContentAndWaitUntilReady(
+                    wakeKey: wakeKey,
+                    webExtension: evidence.context.webExtension,
+                    context: evidence.context
+                )
             },
             recordWakeMetric: { [runtimeMetrics] duration, reason, didFail in
                 guard admission.isCurrent(evidence) else { return }
@@ -189,6 +178,40 @@ final class ExtensionBackgroundWakeCoordinator {
             )
         }
         return "context:\(ObjectIdentifier(extensionContext))"
+    }
+
+    private func loadBackgroundContentAndWaitUntilReady(
+        wakeKey: String,
+        webExtension: WKWebExtension,
+        context: WKWebExtensionContext
+    ) async throws {
+        #if DEBUG
+            if let backgroundContentWake = debugBackgroundContentWake?() {
+                // The injected operation represents the complete background
+                // readiness boundary. Reaching into WebKit after it would
+                // mix the real runtime with deterministic test ownership.
+                try await backgroundContentWake(wakeKey, context)
+                return
+            }
+        #endif
+
+        try await context.loadBackgroundContent()
+        let readinessRoute = try await backgroundReadiness.waitUntilReady(
+            webExtension: webExtension,
+            context: context
+        )
+        traceReadinessRoute(readinessRoute, wakeKey: wakeKey)
+    }
+
+    private func traceReadinessRoute(
+        _ route: ExtensionBackgroundReadinessRoute,
+        wakeKey: String
+    ) {
+        guard route == .serviceWorkerActivationBarrier else { return }
+        trace(
+            "backgroundReadiness wakeKey=\(wakeKey) "
+                + "apiFallback=serviceWorkerActivationBarrier"
+        )
     }
 
     func backgroundRuntimeState(

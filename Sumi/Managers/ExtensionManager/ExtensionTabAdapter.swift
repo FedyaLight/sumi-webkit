@@ -39,6 +39,9 @@ final class ExtensionTabAdapter: NSObject, WKWebExtensionTab {
     func url(for context: WKWebExtensionContext) -> URL? {
         projection.url(for: context)
     }
+    func pendingURL(for context: WKWebExtensionContext) -> URL? {
+        projection.pendingURL(for: context)
+    }
     func title(for context: WKWebExtensionContext) -> String? {
         projection.title(for: context)
     }
@@ -66,6 +69,9 @@ final class ExtensionTabAdapter: NSObject, WKWebExtensionTab {
     }
     func zoomFactor(for context: WKWebExtensionContext) -> Double {
         projection.zoomFactor(for: context)
+    }
+    func size(for context: WKWebExtensionContext) -> CGSize {
+        projection.size(for: context)
     }
     func shouldGrantPermissionsOnUserGesture(
         for context: WKWebExtensionContext
@@ -123,6 +129,16 @@ final class ExtensionTabAdapter: NSObject, WKWebExtensionTab {
     ) {
         commands.setZoomFactor(
             zoomFactor,
+            for: context,
+            completion: completionHandler
+        )
+    }
+
+    func detectWebpageLocale(
+        for context: WKWebExtensionContext,
+        completionHandler: @escaping (Locale?, Error?) -> Void
+    ) {
+        commands.detectWebpageLocale(
             for: context,
             completion: completionHandler
         )

@@ -354,6 +354,18 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
     private weak var publishedTabs: ExtensionPublishedNormalTabQuery?
     private weak var preparedTabs: ExtensionPreparedNormalTabQuery?
     private let preparedTabVisibility: ExtensionPreparedTabVisibility
+    private let stateTransitions = ExtensionWindowStateTransitionCoordinator(
+        supersededError: {
+            ExtensionBridgeAdapterCallbackError
+                .windowStateTransitionSuperseded
+                .nsError()
+        },
+        invalidatedError: {
+            ExtensionBridgeAdapterCallbackError
+                .windowStateTransitionInvalidated
+                .nsError()
+        }
+    )
 
     init(
         windowState: BrowserWindowState,
@@ -493,7 +505,9 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
         for extensionContext: WKWebExtensionContext,
         completionHandler: @escaping (Error?) -> Void
     ) {
-        guard let windowState = publishedWindowState(for: extensionContext) else {
+        guard let windowState = publishedWindowState(for: extensionContext),
+              let window = appKitWindow(for: windowState)
+        else {
             ExtensionBridgeCallbackSupport.complete(
                 completionHandler,
                 api: .windowAdapterCompletion,
@@ -504,7 +518,7 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
             return
         }
 
-        appKitWindow(for: windowState)?.makeKeyAndOrderFront(nil)
+        window.makeKeyAndOrderFront(nil)
         windowActivation?.setActiveExtensionWindow(windowState)
         NSApp.activate(ignoringOtherApps: true)
         ExtensionBridgeCallbackSupport.complete(completionHandler, api: .windowAdapterCompletion, error: nil)
@@ -522,6 +536,7 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
         guard let window = appKitWindow(for: extensionContext) else { return .normal }
         if window.isMiniaturized { return .minimized }
         if window.styleMask.contains(.fullScreen) { return .fullscreen }
+        if window.isZoomed { return .maximized }
         return .normal
     }
 
@@ -540,30 +555,21 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
             )
             return
         }
-
-        switch windowState {
-        case .minimized:
-            window.miniaturize(nil)
-        case .maximized:
-            if window.isMiniaturized {
-                window.deminiaturize(nil)
+        stateTransitions.transition(
+            window: window,
+            to: windowState,
+            isCurrent: { [weak self, weak window] in
+                guard let self, let window else { return false }
+                return self.appKitWindow(for: extensionContext) === window
+            },
+            completion: { error in
+                ExtensionBridgeCallbackSupport.complete(
+                    completionHandler,
+                    api: .windowAdapterCompletion,
+                    error: error
+                )
             }
-            window.zoom(nil)
-        case .fullscreen:
-            if !window.styleMask.contains(.fullScreen) {
-                window.toggleFullScreen(nil)
-            }
-        case .normal:
-            if window.isMiniaturized {
-                window.deminiaturize(nil)
-            } else if window.styleMask.contains(.fullScreen) {
-                window.toggleFullScreen(nil)
-            }
-        @unknown default:
-            break
-        }
-
-        ExtensionBridgeCallbackSupport.complete(completionHandler, api: .windowAdapterCompletion, error: nil)
+        )
     }
 
     func setFrame(

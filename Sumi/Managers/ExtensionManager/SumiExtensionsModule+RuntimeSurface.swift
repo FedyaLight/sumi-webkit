@@ -122,6 +122,12 @@ extension SumiExtensionsModule {
         await runtimeSurface.ensureInitialExtensionContexts(profileID: profileId)
     }
 
+    func warmInitialDocumentNativeMessagingIfNeeded(profileId: UUID) async {
+        await runtimeSurface.warmInitialDocumentNativeMessaging(
+            profileID: profileId
+        )
+    }
+
     func needsInitialDocumentExtensionContextLoadIfNeeded(profileId: UUID) -> Bool {
         runtimeSurface.needsInitialDocumentExtensionContextLoad(profileID: profileId)
     }

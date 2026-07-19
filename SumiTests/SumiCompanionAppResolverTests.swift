@@ -92,6 +92,73 @@ final class SumiCompanionAppResolverTests: XCTestCase {
         XCTAssertNotEqual(identity?.isContainingApp, true)
     }
 
+    func testUserscriptsAppAliasIsScopedToExactUserscriptsAppex() throws {
+        let appexPath = try makeFixtureApp(
+            appBundleID: UserscriptsNativeMessagingIdentifiers.containingAppBundleIdentifier,
+            appexBundleID: UserscriptsNativeMessagingIdentifiers.extensionBundleIdentifier
+        )
+        let installed = makeInstalledExtension(
+            id: "userscripts",
+            sourceBundlePath: appexPath
+        )
+        let identity = SumiCompanionAppResolver.resolveIdentity(
+            requestedApplicationIdentifier:
+                UserscriptsNativeMessagingIdentifiers.applicationIdentifier,
+            extensionId: installed.id,
+            installedExtensions: [installed],
+            importStore: SafariExtensionImportStore(defaults: makeDefaults())
+        )
+
+        XCTAssertEqual(
+            identity?.resolvedBundleIdentifier,
+            UserscriptsNativeMessagingIdentifiers.containingAppBundleIdentifier
+        )
+        XCTAssertEqual(identity?.isContainingApp, true)
+
+        let unrelatedPath = try makeFixtureApp(
+            appBundleID: "com.example.app",
+            appexBundleID: "com.example.app.extension"
+        )
+        let unrelated = makeInstalledExtension(
+            id: "unrelated",
+            sourceBundlePath: unrelatedPath
+        )
+        let unrelatedIdentity = SumiCompanionAppResolver.resolveIdentity(
+            requestedApplicationIdentifier: "app",
+            extensionId: unrelated.id,
+            installedExtensions: [unrelated],
+            importStore: SafariExtensionImportStore(defaults: makeDefaults())
+        )
+        XCTAssertEqual(unrelatedIdentity?.resolvedBundleIdentifier, "app")
+        XCTAssertEqual(unrelatedIdentity?.isContainingApp, false)
+
+        XCTAssertNoThrow(
+            try SumiNativeMessagingRelayPolicy.evaluate(
+                SumiNativeMessagingRelayPolicyContext(
+                    extensionsModuleEnabled: true,
+                    extensionId: installed.id,
+                    installedExtension: installed,
+                    isPrivateBrowsing: false,
+                    requestedApplicationIdentifier: "app"
+                )
+            ).get()
+        )
+        switch SumiNativeMessagingRelayPolicy.evaluate(
+            SumiNativeMessagingRelayPolicyContext(
+                extensionsModuleEnabled: true,
+                extensionId: unrelated.id,
+                installedExtension: unrelated,
+                isPrivateBrowsing: false,
+                requestedApplicationIdentifier: "app"
+            )
+        ) {
+        case .failure(.arbitraryNativeMessagingDenied):
+            break
+        default:
+            XCTFail("Unrelated extensions must not inherit the Userscripts app alias")
+        }
+    }
+
     func testNativeMessagingPolicyDeniesPublicAliasUntilGenericIdentityMatches() throws {
         let appexPath = try makeFixtureApp(
             appBundleID: "com.bitwarden.desktop",

@@ -10,12 +10,16 @@ final class ExtensionOptionsWindowService {
     private let windowFactory: WindowFactory
     init(
         windowFactory: @escaping WindowFactory = {
-            NSWindow(
+            let window = NSWindow(
                 contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
                 styleMask: [.titled, .closable, .resizable, .miniaturizable],
                 backing: .buffered,
                 defer: false
             )
+            // The registry, rather than AppKit's legacy close-time release,
+            // owns extension windows until their WebView teardown completes.
+            window.isReleasedWhenClosed = false
+            return window
         }
     ) {
         self.windowFactory = windowFactory

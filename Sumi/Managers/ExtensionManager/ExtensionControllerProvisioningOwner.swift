@@ -169,17 +169,21 @@ final class ExtensionControllerProvisioningOwner:
         )
         guard let controllerBinding = dependencies.profileRuntime
             .publishControllerIfAdmitted(
-            controller,
-            for: profileId,
-            mutationLease: mutationLease
-        ) else { return nil }
+                controller,
+                for: profileId,
+                mutationLease: mutationLease
+            ) else { return nil }
         dependencies.controllerDelegateReadiness.controllerInstalled(
             controllerBinding
         )
 
+        // The browser's normal-tab configuration is a projection of the
+        // currently selected profile. Auxiliary extension pages use their own
+        // configuration, so this assignment cannot leak a controller into a
+        // different profile.
         if dependencies.currentProfileId() == profileId {
-            dependencies.browserConfiguration.webViewConfiguration.webExtensionController =
-                controller
+            dependencies.browserConfiguration.webViewConfiguration
+                .webExtensionController = controller
         }
 
         dependencies.trace {
@@ -274,17 +278,14 @@ final class ExtensionControllerProvisioningOwner:
             identifier: Self.extensionControllerIdentifier(for: profileId)
         )
         let runtimeWebConfiguration = dependencies.browserConfiguration.webViewConfiguration
-        let extensionPageConfiguration =
-            makeExtensionPageBaseWebViewConfiguration(
-                from: runtimeWebConfiguration,
-                websiteDataStore: defaultDataStore
-            )
-        extensionPageUserContentControllersByProfile[profileId] =
-            extensionPageConfiguration.userContentController
+        let extensionPageConfiguration = WKWebViewConfiguration()
+        extensionPageConfiguration.websiteDataStore = defaultDataStore
         configuration.webViewConfiguration = extensionPageConfiguration
         configuration.defaultWebsiteDataStore = defaultDataStore
 
         let controller = WKWebExtensionController(configuration: configuration)
+        extensionPageUserContentControllersByProfile[profileId] =
+            extensionPageConfiguration.userContentController
         dependencies.assignControllerDelegate(controller)
         dependencies.traceControllerBinding(
             "controllerCreated",
@@ -293,26 +294,9 @@ final class ExtensionControllerProvisioningOwner:
             extensionPageConfiguration
         )
 
-        if dependencies.currentProfileId() == profileId {
-            runtimeWebConfiguration.webExtensionController = controller
-        }
         runtimeWebConfiguration.defaultWebpagePreferences.allowsContentJavaScript = true
 
         return controller
-    }
-
-    private func makeExtensionPageBaseWebViewConfiguration(
-        from source: WKWebViewConfiguration,
-        websiteDataStore: WKWebsiteDataStore
-    ) -> WKWebViewConfiguration {
-        let configuration = dependencies.browserConfiguration.auxiliaryWebViewConfiguration(
-            from: source,
-            surface: .extensionOptions
-        )
-        configuration.websiteDataStore = websiteDataStore
-        configuration.sumiIsNormalTabWebViewConfiguration = false
-        configuration.defaultWebpagePreferences.allowsContentJavaScript = true
-        return configuration
     }
 
     private func verifyExtensionStorage(profileId: UUID) {

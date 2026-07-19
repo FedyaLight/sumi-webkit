@@ -1,4 +1,5 @@
 import Foundation
+import NaturalLanguage
 import SumiWebRuntime
 import WebKit
 
@@ -214,5 +215,84 @@ final class ExtensionTabCommandMutation {
         }
         webView.pageZoom = zoomFactor
         complete(completion, error: nil)
+    }
+
+    func detectWebpageLocale(
+        for context: WKWebExtensionContext,
+        completion: @escaping (Locale?, Error?) -> Void
+    ) {
+        guard let publication = evidence.currentPublication(visibleTo: context),
+              let webView = projection.webView(for: context) else {
+            completion(nil, tabUnavailableError)
+            return
+        }
+
+        Task { @MainActor [weak self] in
+            guard let self,
+                  self.evidence.isCurrent(
+                      publication,
+                      visibleTo: context
+                  ) else {
+                completion(nil, self?.tabUnavailableUntilReloadError)
+                return
+            }
+            do {
+                let value = try await webView.callAsyncJavaScript(
+                    """
+                    const root = document.documentElement;
+                    const declared = (root?.lang ||
+                        document.querySelector('meta[http-equiv="content-language"]')?.content ||
+                        '').trim();
+                    const text = (document.body?.innerText || '').slice(0, 65536);
+                    return { declared, text };
+                    """,
+                    arguments: [:],
+                    in: nil,
+                    contentWorld: .defaultClient
+                )
+                let payload = value as? [String: Any] ?? [:]
+                let declared = (payload["declared"] as? String)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                let text = payload["text"] as? String ?? ""
+                let identifier = await Self.localeIdentifier(
+                    declared: declared,
+                    text: text
+                )
+                guard self.evidence.isCurrent(
+                    publication,
+                    visibleTo: context
+                ) else {
+                    completion(nil, self.tabUnavailableUntilReloadError)
+                    return
+                }
+                completion(
+                    identifier.map {
+                        Locale(identifier: $0.replacingOccurrences(of: "-", with: "_"))
+                    },
+                    nil
+                )
+            } catch {
+                completion(
+                    nil,
+                    SumiWebExtensionCallbackErrorMapper
+                        .webExtensionCallbackError(from: error)
+                )
+            }
+        }
+    }
+
+    private nonisolated static func localeIdentifier(
+        declared: String?,
+        text: String
+    ) async -> String? {
+        if let declared, declared.isEmpty == false {
+            return declared
+        }
+        guard text.isEmpty == false else { return nil }
+        return await Task.detached(priority: .utility) {
+            let recognizer = NLLanguageRecognizer()
+            recognizer.processString(text)
+            return recognizer.dominantLanguage?.rawValue
+        }.value
     }
 }

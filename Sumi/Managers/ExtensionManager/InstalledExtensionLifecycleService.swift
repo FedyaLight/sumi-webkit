@@ -23,6 +23,7 @@ final class InstalledExtensionLifecycleService {
         let removeStoredData: @MainActor (
             String, ExtensionManager.WebExtensionStorageCleanupMode
         ) async -> Void
+        let removeGlobalInstallLedger: @MainActor (String) -> Void
     }
 
     private let environment: Environment
@@ -96,6 +97,7 @@ final class InstalledExtensionLifecycleService {
                     entity: entity,
                     profileID: profileID,
                     activation: activation,
+                    activationCause: .userEnable,
                     mutationLease: mutationLease
                 ) {
                 return loadedRecord
@@ -341,6 +343,7 @@ final class InstalledExtensionLifecycleService {
             }
 
             publish { $0.remove(id: extensionID) }
+            environment.removeGlobalInstallLedger(extensionID)
             if let copiedPackageURL,
                FileManager.default.fileExists(atPath: copiedPackageURL.path) {
                 do {

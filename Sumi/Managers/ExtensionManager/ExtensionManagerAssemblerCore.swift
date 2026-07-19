@@ -3,6 +3,7 @@ import Foundation
 @available(macOS 15.5, *)
 @MainActor
 struct ExtensionManagerCoreAssembly {
+    let bootstrapChromeAdmission: ExtensionBootstrapChromeAdmission
     let actionPolicy: ExtensionActionPolicyAssemblyProduct
     let popup: ExtensionPopupAssemblyProduct
     let contextLoading: ExtensionContextLoadingAssemblyProduct
@@ -45,7 +46,7 @@ enum ExtensionManagerAssembler {
             core.actionPolicy.actionSurfaces.installDebugFinalization(
                 backgroundWake:
                     testAssemblyOverrides?.actionFinalization?.backgroundWake,
-                reconcileOpenTabs:
+                prepareBrowserProjection:
                     testAssemblyOverrides?.actionFinalization?.reconcile
             )
             core.inspectionDidAssemble = testInspectionDidAssemble
@@ -56,6 +57,7 @@ enum ExtensionManagerAssembler {
     private static func assembleCore(
         _ f: ExtensionManagerAssemblyFoundation
     ) -> ExtensionManagerCoreAssembly {
+        let bootstrapChromeAdmission = ExtensionBootstrapChromeAdmission()
         let callbackAdmission = ExtensionControllerCallbackAdmission(
             profileRuntime: f.runtime.profileRuntime,
             extensionLoadRevisions: f.runtime.loadRevisions
@@ -63,7 +65,8 @@ enum ExtensionManagerAssembler {
         let popup = assemblePopup(f)
         let contextState = assembleContextState(
             f,
-            popupRetirement: popup.runtimeRetirement
+            popupRetirement: popup.runtimeRetirement,
+            bootstrapChromeAdmission: bootstrapChromeAdmission
         )
         let nativeMessaging = assembleNativeMessaging(
             f,
@@ -81,7 +84,8 @@ enum ExtensionManagerAssembler {
             contextLoading: contextState.loading,
             contextLifecycle: contextState.lifecycle,
             nativeMessaging: nativeMessaging,
-            actionPolicy: actionPolicy
+            actionPolicy: actionPolicy,
+            bootstrapChromeAdmission: bootstrapChromeAdmission
         )
     }
 
@@ -92,13 +96,15 @@ enum ExtensionManagerAssembler {
         contextLoading: ExtensionContextLoadingAssemblyProduct,
         contextLifecycle: ExtensionContextLifecycleCoreProduct,
         nativeMessaging: ExtensionNativeMessagingAssemblyProduct,
-        actionPolicy: ExtensionActionPolicyAssemblyProduct
+        actionPolicy: ExtensionActionPolicyAssemblyProduct,
+        bootstrapChromeAdmission: ExtensionBootstrapChromeAdmission
     ) -> ExtensionManagerCoreAssembly {
         let controller = assembleControllerCore(
             f,
             callbackAdmission: callbackAdmission,
             actionPolicy: actionPolicy,
-            nativeMessaging: nativeMessaging
+            nativeMessaging: nativeMessaging,
+            bootstrapChromeAdmission: bootstrapChromeAdmission
         )
         let retirement = assembleRetirement(
             f,
@@ -108,6 +114,7 @@ enum ExtensionManagerAssembler {
             nativeMessaging: nativeMessaging
         )
         return ExtensionManagerCoreAssembly(
+            bootstrapChromeAdmission: bootstrapChromeAdmission,
             actionPolicy: actionPolicy,
             popup: popup,
             contextLoading: contextLoading,

@@ -19,6 +19,7 @@ final class ExtensionContextLoader {
     private let diagnostics: ExtensionRuntimeDiagnostics
     private let expectedControllerDelegate: ExtensionControllerDelegateBridge
     private let controllerTransaction: ExtensionContextControllerTransaction
+    private let bootstrapChromeAdmission: ExtensionBootstrapChromeAdmission
 
     init(
         authority: ExtensionLoadedContextAuthority,
@@ -33,7 +34,9 @@ final class ExtensionContextLoader {
         runtimeMetrics: ExtensionRuntimeMetricsAuthority,
         diagnostics: ExtensionRuntimeDiagnostics,
         expectedControllerDelegate: ExtensionControllerDelegateBridge,
-        controllerTransaction: ExtensionContextControllerTransaction
+        controllerTransaction: ExtensionContextControllerTransaction,
+        bootstrapChromeAdmission: ExtensionBootstrapChromeAdmission =
+            ExtensionBootstrapChromeAdmission()
     ) {
         self.authority = authority
         self.profileRuntime = profileRuntime
@@ -47,6 +50,7 @@ final class ExtensionContextLoader {
         self.diagnostics = diagnostics
         self.expectedControllerDelegate = expectedControllerDelegate
         self.controllerTransaction = controllerTransaction
+        self.bootstrapChromeAdmission = bootstrapChromeAdmission
     }
 
     func load(
@@ -81,6 +85,22 @@ final class ExtensionContextLoader {
             request: request,
             profileAdmission: profileAdmission
         )
+
+        let activationScope = bootstrapChromeAdmission.begin(
+            extensionIdentity: request.extensionId,
+            version: request.manifest["version"] as? String ?? "0",
+            profileID: request.profileId,
+            cause: request.activationCause
+        )
+        diagnostics.trace(
+            "\(request.operation.runtimeTraceOperation) activationCause=\(activationScope.cause.rawValue) globalBootstrapChromeAdmitted=\(activationScope.admitsBootstrapChrome)"
+        )
+        var didPublishLoadedContext = false
+        defer {
+            if didPublishLoadedContext == false {
+                bootstrapChromeAdmission.finish(activationScope)
+            }
+        }
 
         let webExtensionStart = CFAbsoluteTimeGetCurrent()
         let source = try await sourceCache.resolve(
@@ -185,6 +205,10 @@ final class ExtensionContextLoader {
                 "loadEnabledExtension loaded extensionId=\(request.extensionId) context=\(ExtensionRuntimeDiagnostics.objectDescription(loaded.context)) controller=\(ExtensionRuntimeDiagnostics.objectDescription(loaded.controller))"
             )
         }
+        // Keep the causal bootstrap gate with the loaded context. A secondary
+        // profile leaves bootstrap only after an actual extension user gesture;
+        // exact context retirement clears the remaining scope.
+        didPublishLoadedContext = true
         return loaded
     }
 

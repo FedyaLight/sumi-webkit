@@ -21,6 +21,10 @@ protocol SumiNativeMessagingProtocolAdapter: AnyObject {
     /// Stable adapter identifier for diagnostics (not a vendor bundle ID).
     var protocolIdentifier: String { get }
 
+    /// Nil keeps a receive-only native port alive until WebKit or the adapter
+    /// disconnects it. The default bounds ordinary desktop transports.
+    var portInactivityTimeout: Duration? { get }
+
     func supports(hostBundleIdentifier: String) -> Bool
 
     /// Relay a one-time message. Must call `replyHandler` exactly once.
@@ -49,6 +53,10 @@ protocol SumiNativeMessagingProtocolAdapter: AnyObject {
 }
 
 extension SumiNativeMessagingProtocolAdapter {
+    var portInactivityTimeout: Duration? {
+        SumiNativeMessagingConnection.defaultPortInactivityTimeout
+    }
+
     func disconnectPort(session: SumiNativeMessagingPortSession) {}
 }
 

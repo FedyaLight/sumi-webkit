@@ -228,6 +228,7 @@ final class ExtensionRuntimeTransactionFailureTests:
                     packageRoot: directory,
                     manifest: manifest,
                     operation: .install,
+                    activationCause: .installation,
                     claim: claim,
                     mutationLease: nil
                 )

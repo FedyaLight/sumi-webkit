@@ -109,14 +109,6 @@ extension ExtensionBrowserAttachmentAuthority {
                 (any Error)?
             ) -> Void
         ) {
-            guard tabURLs.count <= 1 else {
-                completion(
-                    nil,
-                    ExtensionManagerCallbackError
-                        .multipleWindowTabsUnsupported.nsError()
-                )
-                return
-            }
             guard let windowRouter = attachedEnvironment()?.windowRouter else {
                 completion(
                     nil,

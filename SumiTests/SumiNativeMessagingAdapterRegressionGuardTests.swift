@@ -10,7 +10,10 @@ final class SumiNativeMessagingAdapterRegressionGuardTests: XCTestCase {
         XCTAssertEqual(report.adapterCompatibility.count, SafariExtensionCompatibilityTargets.all.count)
         XCTAssertEqual(
             report.registeredAdapterIdentifiers,
-            [BitwardenNativeMessagingIdentifiers.protocolIdentifier]
+            [
+                BitwardenNativeMessagingIdentifiers.protocolIdentifier,
+                UserscriptsNativeMessagingIdentifiers.protocolIdentifier,
+            ]
         )
         let bitwarden = report.adapterCompatibility.first { $0.targetKey == "bitwarden" }
         XCTAssertEqual(bitwarden?.adapterSelected, true)
