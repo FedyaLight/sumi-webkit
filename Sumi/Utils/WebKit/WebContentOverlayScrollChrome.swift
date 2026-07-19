@@ -75,7 +75,9 @@ final class WebContentOverlayScrollChrome {
         guard let hostView else { return }
         let bounds = hostView.bounds
         indicatorView.frame = CGRect(
-            x: bounds.maxX - OverlayScrollIndicatorStyle.trackWidth,
+            x: bounds.maxX
+                - OverlayScrollIndicatorStyle.edgeInset
+                - OverlayScrollIndicatorStyle.trackWidth,
             y: bounds.minY,
             width: OverlayScrollIndicatorStyle.trackWidth,
             height: bounds.height
