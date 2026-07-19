@@ -27,6 +27,7 @@ struct TabFolderHeaderView: View {
     let contextMenuEntries: () -> [SidebarContextMenuEntry]
     let onToggle: () -> Void
     let onActivateShortcutPin: (ShortcutPin) -> Void
+    let onResetProjection: (() -> Void)?
 
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(WindowRegistry.self) private var windowRegistry
@@ -68,7 +69,8 @@ struct TabFolderHeaderView: View {
             glyphPresentation: folderGlyphPresentation,
             glyphPalette: folderShellPalette,
             isDropHighlighted: isDropHighlighted,
-            isInteractive: isInteractive
+            isInteractive: isInteractive,
+            onResetProjection: onResetProjection
         )
         .sidebarFolderDropGeometry(
             folderId: folder.id,
@@ -90,6 +92,7 @@ struct TabFolderHeaderView: View {
                 previewKind: .folderRow,
                 folderGlyphPresentation: folderGlyphPresentation,
                 folderGlyphPalette: folderShellPalette,
+                exclusionZones: onResetProjection != nil ? [.trailingStrip(40)] : [],
                 onActivate: onToggle,
                 isEnabled: isInteractive
             ),

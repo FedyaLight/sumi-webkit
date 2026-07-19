@@ -16,22 +16,45 @@ final class SidebarFolderProjectionCoalescer {
         store.projection(for: folderID)
     }
 
+    /// The projection a same-tick mutation would base itself on: any pending
+    /// write wins over the flushed store. Always touches `store` so SwiftUI
+    /// observation keeps tracking flushes even while a pending value wins.
+    func pendingOrCurrentProjection(for folderID: UUID) -> SidebarFolderProjectionState {
+        let current = store.projection(for: folderID)
+        return pendingUpdates[folderID] ?? current
+    }
+
     func scheduleUpdate(
         for folderID: UUID,
-        projectedChildIDs: [UUID],
+        stickyItemIDs: [UUID],
         hasActiveProjection: Bool
     ) {
         let projection = SidebarFolderProjectionState(
-            projectedChildIDs: projectedChildIDs,
+            stickyItemIDs: stickyItemIDs,
             hasActiveProjection: hasActiveProjection
         )
+        scheduleMutation(for: folderID) { _ in projection }
+    }
 
-        if store.projection(for: folderID) == projection,
-           pendingUpdates[folderID] == nil {
+    /// Transforms the folder's projection on top of any same-tick pending
+    /// write, so appends from one folder's handler survive prunes scheduled
+    /// by another view in the same tick.
+    func scheduleMutation(
+        for folderID: UUID,
+        _ transform: (SidebarFolderProjectionState) -> SidebarFolderProjectionState
+    ) {
+        let base = pendingUpdates[folderID] ?? store.projection(for: folderID)
+        let projection = transform(base)
+
+        if projection == base, pendingUpdates[folderID] == nil {
             return
         }
 
         pendingUpdates[folderID] = projection
+        scheduleFlushIfNeeded()
+    }
+
+    private func scheduleFlushIfNeeded() {
         guard !isFlushScheduled else { return }
 
         isFlushScheduled = true

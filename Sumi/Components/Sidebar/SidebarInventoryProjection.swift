@@ -55,6 +55,56 @@ struct SidebarSpaceInventorySnapshot {
         folderItemsByFolderID[folderID] ?? []
     }
 
+    /// Depth-first positional order of every launcher pin and split group
+    /// hosted anywhere inside the folder, including nested folders.
+    func orderedDescendantItemIDs(for folderID: UUID) -> [UUID] {
+        descendantItems(for: folderID).compactMap { item in
+            switch item {
+            case .shortcut(let pinID), .splitGroup(let pinID):
+                return pinID
+            case .folder:
+                return nil
+            }
+        }
+    }
+
+    /// Flattens a folder subtree once, preserving the sidebar's visual order.
+    /// Consumers that need both pins and split groups should use this result
+    /// instead of traversing the same subtree multiple times.
+    func descendantItems(for folderID: UUID) -> [SidebarPinnedInventoryItem] {
+        var items: [SidebarPinnedInventoryItem] = []
+        var visited = Set<UUID>()
+
+        func walk(_ parentID: UUID) {
+            guard visited.insert(parentID).inserted else { return }
+            for item in folderItems(for: parentID) {
+                switch item {
+                case .shortcut, .splitGroup:
+                    items.append(item)
+                case .folder(let childFolderID):
+                    walk(childFolderID)
+                }
+            }
+        }
+
+        walk(folderID)
+        return items
+    }
+
+    func descendantPins(for folderID: UUID) -> [ShortcutPin] {
+        descendantItems(for: folderID).compactMap { item in
+            guard case .shortcut(let pinID) = item else { return nil }
+            return pinsByID[pinID]
+        }
+    }
+
+    func descendantSplitGroups(for folderID: UUID) -> [SplitGroup] {
+        descendantItems(for: folderID).compactMap { item in
+            guard case .splitGroup(let groupID) = item else { return nil }
+            return splitGroupsByID[groupID]
+        }
+    }
+
     func recursiveChildCount(for folderID: UUID) -> Int {
         func count(_ parentID: UUID, visited: Set<UUID>) -> Int {
             guard !visited.contains(parentID) else { return 0 }

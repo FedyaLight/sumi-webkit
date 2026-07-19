@@ -38,12 +38,25 @@ struct TabFolderContentView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.sidebarWindowSelectionSnapshot) private var sidebarSelection
 
-    private var shortcutPinsInFolder: [ShortcutPin] {
-        inventory.folderPinsByFolderID[folder.id] ?? []
+    private var folderProjectionState: SidebarFolderProjectionState {
+        // Pending-aware read: collapse/selection handlers schedule sticky
+        // writes in the same tick the row re-renders, and the collapsed
+        // projection must animate with them, not one flush later.
+        windowState.sidebarFolderProjections.pendingOrCurrentProjection(for: folder.id)
     }
 
-    private var folderProjectionState: SidebarFolderProjectionState {
-        windowState.sidebarFolderProjections.projection(for: folder.id)
+    private var orderedDescendantItemIDs: [UUID] {
+        inventory.orderedDescendantItemIDs(for: folder.id)
+    }
+
+    private var stickyOwner: SidebarFolderStickyProjectionOwner {
+        SidebarFolderStickyProjectionOwner(
+            folder: folder,
+            inventory: inventory,
+            selection: selection,
+            selectionSnapshot: sidebarSelection,
+            windowState: windowState
+        )
     }
 
     private var folderLayoutAnimation: Animation? {
@@ -93,8 +106,8 @@ struct TabFolderContentView: View {
     private var targetCollapsedProjectionIDs: [UUID] {
         guard !folder.isOpen else { return [] }
         return SidebarFolderDisplayProjection.targetCollapsedProjectionIDs(
-            shortcutPins: shortcutPinsInFolder,
-            projectedChildIDs: folderProjectionState.projectedChildIDs,
+            stickyItemIDs: folderProjectionState.stickyItemIDs,
+            orderedDescendantItemIDs: orderedDescendantItemIDs,
             projection: projection
         )
     }
@@ -104,10 +117,10 @@ struct TabFolderContentView: View {
             baseItems: projection.baseItems,
             folderID: folder.id,
             isFolderOpen: folder.isOpen,
-            shortcutPins: shortcutPinsInFolder,
             restoreGaps: shortcutRestoreSession.gaps,
             displayedCollapsedProjectionIDs: displayedCollapsedProjectionIDs,
-            projectedChildIDs: folderProjectionState.projectedChildIDs,
+            stickyItemIDs: folderProjectionState.stickyItemIDs,
+            orderedDescendantItemIDs: orderedDescendantItemIDs,
             projection: projection,
             dragProjection: SidebarFolderDragDisplayProjection(
                 dragSnapshot: dragSnapshot,
@@ -139,24 +152,28 @@ struct TabFolderContentView: View {
         folderCompositeContent
             .onChange(of: targetCollapsedProjectionIDs) { _, _ in
                 syncDisplayedCollapsedProjectionIDs(animated: true)
-                scheduleProjectionStateRefresh()
+                stickyOwner.prunePublish()
             }
-            .onChange(of: folder.isOpen) { _, _ in
+            .onChange(of: folder.isOpen) { _, isOpen in
+                if isOpen {
+                    stickyOwner.handleExpand()
+                } else {
+                    stickyOwner.handleCollapse()
+                }
                 syncDisplayedCollapsedProjectionIDs(animated: true)
-                scheduleProjectionStateRefresh()
                 refreshLiveFolderIfNeeded()
             }
-            .onChange(of: sidebarSelection.currentTabID) { _, _ in
+            .onChange(of: sidebarSelection) { _, _ in
+                stickyOwner.handleSelectionChange()
                 syncDisplayedCollapsedProjectionIDs(animated: true)
-                scheduleProjectionStateRefresh()
             }
-            .onChange(of: sidebarSelection.currentShortcutPinID) { _, _ in
+            .onChange(of: orderedDescendantItemIDs) { _, _ in
+                stickyOwner.handleMembershipChange()
                 syncDisplayedCollapsedProjectionIDs(animated: true)
-                scheduleProjectionStateRefresh()
             }
             .onAppear {
+                stickyOwner.reconcileOnAppear()
                 syncDisplayedCollapsedProjectionIDs(animated: false)
-                scheduleProjectionStateRefresh()
                 refreshLiveFolderIfNeeded()
             }
     }
@@ -185,7 +202,11 @@ struct TabFolderContentView: View {
                 isDragging: dragSnapshot.isDragging,
                 contextMenuEntries: { contextMenuActionOwner.folderHeaderContextMenuEntries() },
                 onToggle: { mutationActions.toggleFolderOpenState(folder.id) },
-                onActivateShortcutPin: mutationActions.activateShortcutPin
+                onActivateShortcutPin: mutationActions.activateShortcutPin,
+                onResetProjection: !folder.isOpen
+                    && !contentProjection.visibleCollapsedProjectionIDs.isEmpty
+                    ? { mutationActions.resetCollapsedProjection(folder, inventory: inventory) }
+                    : nil
             )
             folderBodyContainer
         }
@@ -285,20 +306,6 @@ struct TabFolderContentView: View {
     private func refreshLiveFolderIfNeeded() {
         guard folder.isOpen else { return }
         browserContext.liveFolderManager.refreshIfStale(folderId: folder.id)
-    }
-
-    private func scheduleProjectionStateRefresh() {
-        let projectedIDs = SidebarFolderDisplayProjection.targetCollapsedProjectionPins(
-            shortcutPins: shortcutPinsInFolder,
-            projectedChildIDs: folderProjectionState.projectedChildIDs,
-            projection: projection
-        ).map(\.id)
-        let hasActiveProjection = folderHasActiveSelection || !projectedIDs.isEmpty
-        windowState.sidebarFolderProjections.scheduleUpdate(
-            for: folder.id,
-            projectedChildIDs: projectedIDs,
-            hasActiveProjection: hasActiveProjection
-        )
     }
 
     private func syncDisplayedCollapsedProjectionIDs(animated: Bool) {

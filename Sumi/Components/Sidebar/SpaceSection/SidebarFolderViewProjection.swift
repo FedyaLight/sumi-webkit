@@ -84,10 +84,10 @@ struct SidebarFolderContentProjection {
         baseItems: [SidebarFolderListItem],
         folderID: UUID,
         isFolderOpen: Bool,
-        shortcutPins: [ShortcutPin],
         restoreGaps: [ShortcutRestoreGap],
         displayedCollapsedProjectionIDs: [UUID],
-        projectedChildIDs: [UUID],
+        stickyItemIDs: [UUID],
+        orderedDescendantItemIDs: [UUID],
         projection: SidebarFolderViewProjection,
         dragProjection: SidebarFolderDragDisplayProjection
     ) {
@@ -102,8 +102,8 @@ struct SidebarFolderContentProjection {
         targetCollapsedProjectionIDs = isFolderOpen
             ? []
             : SidebarFolderDisplayProjection.targetCollapsedProjectionIDs(
-                shortcutPins: shortcutPins,
-                projectedChildIDs: projectedChildIDs,
+                stickyItemIDs: stickyItemIDs,
+                orderedDescendantItemIDs: orderedDescendantItemIDs,
                 projection: projection
             )
         visibleCollapsedProjectionIDs = SidebarFolderDisplayProjection.visibleCollapsedProjectionIDs(
@@ -112,7 +112,7 @@ struct SidebarFolderContentProjection {
         )
         bodyItems = isFolderOpen
             ? renderedItems
-            : visibleCollapsedProjectionIDs.map(SidebarFolderListItem.shortcut)
+            : visibleCollapsedProjectionIDs.compactMap(projection.collapsedProjectionItem)
         bodyDisplayEntries = SidebarFolderDisplayProjection.displayEntries(
             from: bodyItems,
             restoreGaps: restoreGaps,
@@ -195,44 +195,15 @@ enum SidebarFolderDisplayProjection {
     }
 
     @MainActor
-    static func targetCollapsedProjectionPins(
-        shortcutPins: [ShortcutPin],
-        projectedChildIDs: [UUID],
-        projection: SidebarFolderViewProjection
-    ) -> [ShortcutPin] {
-        let livePins = shortcutPins.filter { pin in
-            projection.liveTab(for: pin.id) != nil
-        }
-
-        guard !projectedChildIDs.isEmpty else {
-            return livePins.sorted { lhs, rhs in
-                if lhs.index != rhs.index { return lhs.index < rhs.index }
-                return lhs.id.uuidString < rhs.id.uuidString
-            }
-        }
-
-        let projectedOrder = Dictionary(
-            uniqueKeysWithValues: projectedChildIDs.enumerated().map { ($1, $0) }
-        )
-        return livePins.sorted { lhs, rhs in
-            let leftOrder = projectedOrder[lhs.id] ?? lhs.index
-            let rightOrder = projectedOrder[rhs.id] ?? rhs.index
-            if leftOrder != rightOrder { return leftOrder < rightOrder }
-            return lhs.id.uuidString < rhs.id.uuidString
-        }
-    }
-
-    @MainActor
     static func targetCollapsedProjectionIDs(
-        shortcutPins: [ShortcutPin],
-        projectedChildIDs: [UUID],
+        stickyItemIDs: [UUID],
+        orderedDescendantItemIDs: [UUID],
         projection: SidebarFolderViewProjection
     ) -> [UUID] {
-        targetCollapsedProjectionPins(
-            shortcutPins: shortcutPins,
-            projectedChildIDs: projectedChildIDs,
-            projection: projection
-        ).map(\.id)
+        let stickyMembers = Set(stickyItemIDs)
+        return orderedDescendantItemIDs
+            .filter(stickyMembers.contains)
+            .filter(projection.isCollapsedProjectionEligible)
     }
 
     static func visibleCollapsedProjectionIDs(
@@ -336,7 +307,6 @@ struct SidebarFolderViewProjection {
         folder: TabFolder,
         space: Space,
         shortcutPins: [ShortcutPin],
-        childFolders: [TabFolder],
         shortcutRestoreGaps: [ShortcutRestoreGap],
         inventory: SidebarSpaceInventorySnapshot,
         selection: SidebarWindowSelectionQuery,
@@ -347,14 +317,26 @@ struct SidebarFolderViewProjection {
         selectionSnapshot: SidebarWindowSelectionSnapshot
     ) {
         let visualItems = inventory.folderItems(for: folder.id)
-        let shortcutHostedGroups = visualItems.compactMap { item -> SplitGroup? in
+        let descendantItems = inventory.descendantItems(for: folder.id)
+        var shortcutHostedGroups = descendantItems.compactMap { item -> SplitGroup? in
             guard case .splitGroup(let groupID) = item else { return nil }
             return inventory.splitGroup(id: groupID)
+        }
+        for item in visualItems {
+            guard case .splitGroup(let groupID) = item,
+                  !shortcutHostedGroups.contains(where: { $0.id == groupID }),
+                  let group = inventory.splitGroup(id: groupID) else { continue }
+            shortcutHostedGroups.append(group)
         }
         let restorePins = shortcutRestoreGaps
             .filter { $0.container == .folder(folder.id) }
             .compactMap { inventory.pin(id: $0.pinId) }
-        let projectionPins = shortcutPins + restorePins
+        let projectionPins = shortcutPins
+            + descendantItems.compactMap { item -> ShortcutPin? in
+                guard case .shortcut(let pinID) = item else { return nil }
+                return inventory.pin(id: pinID)
+            }
+            + restorePins
         let projectionPinsById = projectionPins.reduce(into: [UUID: ShortcutPin]()) { result, pin in
             result[pin.id] = pin
         }
@@ -443,6 +425,25 @@ struct SidebarFolderViewProjection {
         selectedPinIds.contains(pin.id)
     }
 
+    /// Whether a sticky item can render as a collapsed-projection row right
+    /// now: a launcher pin with a live tab, or an existing split group.
+    func isCollapsedProjectionEligible(_ itemID: UUID) -> Bool {
+        if shortcutPinsById[itemID] != nil {
+            return liveTabsByPinId[itemID] != nil
+        }
+        return splitGroupsById[itemID] != nil
+    }
+
+    func collapsedProjectionItem(_ itemID: UUID) -> SidebarFolderListItem? {
+        if shortcutPinsById[itemID] != nil {
+            return .shortcut(itemID)
+        }
+        if splitGroupsById[itemID] != nil {
+            return .splitGroup(itemID)
+        }
+        return nil
+    }
+
     private static func makeBaseItems(
         liveFolderItems: [SumiLiveFolderItem],
         isLiveFolder: Bool,
@@ -469,7 +470,6 @@ struct SidebarFolderViewProjectionReader<Content: View>: View {
     let folder: TabFolder
     let space: Space
     let shortcutPins: [ShortcutPin]
-    let childFolders: [TabFolder]
     let shortcutRestoreGaps: [ShortcutRestoreGap]
     let inventory: SidebarSpaceInventorySnapshot
     let selection: SidebarWindowSelectionQuery
@@ -483,7 +483,6 @@ struct SidebarFolderViewProjectionReader<Content: View>: View {
         folder: TabFolder,
         space: Space,
         shortcutPins: [ShortcutPin],
-        childFolders: [TabFolder],
         shortcutRestoreGaps: [ShortcutRestoreGap],
         inventory: SidebarSpaceInventorySnapshot,
         selection: SidebarWindowSelectionQuery,
@@ -493,7 +492,6 @@ struct SidebarFolderViewProjectionReader<Content: View>: View {
         self.folder = folder
         self.space = space
         self.shortcutPins = shortcutPins
-        self.childFolders = childFolders
         self.shortcutRestoreGaps = shortcutRestoreGaps
         self.inventory = inventory
         self.selection = selection
@@ -508,7 +506,6 @@ struct SidebarFolderViewProjectionReader<Content: View>: View {
                 folder: folder,
                 space: space,
                 shortcutPins: shortcutPins,
-                childFolders: childFolders,
                 shortcutRestoreGaps: shortcutRestoreGaps,
                 inventory: inventory,
                 selection: selection,

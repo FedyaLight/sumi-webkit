@@ -59,12 +59,12 @@ final class DomainRuntimeOwnerTests: XCTestCase {
 
         owner.scheduleUpdate(
             for: folderID,
-            projectedChildIDs: [firstChildID],
+            stickyItemIDs: [firstChildID],
             hasActiveProjection: false
         )
         owner.scheduleUpdate(
             for: folderID,
-            projectedChildIDs: [finalChildID],
+            stickyItemIDs: [finalChildID],
             hasActiveProjection: true
         )
 
@@ -75,7 +75,7 @@ final class DomainRuntimeOwnerTests: XCTestCase {
         XCTAssertEqual(
             owner.projection(for: folderID),
             SidebarFolderProjectionState(
-                projectedChildIDs: [finalChildID],
+                stickyItemIDs: [finalChildID],
                 hasActiveProjection: true
             )
         )
@@ -111,7 +111,7 @@ final class DomainRuntimeOwnerTests: XCTestCase {
             compositor.refresh()
             projection.scheduleUpdate(
                 for: UUID(),
-                projectedChildIDs: [UUID()],
+                stickyItemIDs: [UUID()],
                 hasActiveProjection: true
             )
         }

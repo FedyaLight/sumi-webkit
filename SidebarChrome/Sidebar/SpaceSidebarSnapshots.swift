@@ -588,20 +588,23 @@ enum SpaceSidebarTransitionSnapshotBuilder {
 
         let projectionState = context.windowState.sidebarFolderProjections.projection(for: folder.id)
 
-        let childSnapshots: [SpacePinnedItemSnapshot]
+        let bodyChildren: [SpacePinnedItemSnapshot]
         let hasActiveSelection: Bool
 
-        if folder.isOpen || projectionState.hasActiveProjection {
-            childSnapshots = folderBodyChildSnapshots(
+        if folder.isOpen {
+            bodyChildren = folderBodyChildSnapshots(
                 childFolders: directChildFolders,
                 shortcutPins: directShortcutPins,
                 context: context,
                 visitedFolderIds: nextVisited
             )
-            hasActiveSelection = projectionState.hasActiveProjection || childSnapshots.containsActiveSelection
+            hasActiveSelection = projectionState.hasActiveProjection || bodyChildren.containsActiveSelection
         } else {
-            let livePins = directShortcutPins.filter { context.liveTabsByPinId[$0.id] != nil }
-            childSnapshots = livePins.map { pin in
+            bodyChildren = collapsedStickyShortcutPins(
+                for: folder.id,
+                context: context,
+                projectionState: projectionState
+            ).map { pin in
                 SpacePinnedItemSnapshot.shortcut(
                     shortcutSnapshot(
                         for: pin,
@@ -623,17 +626,6 @@ enum SpaceSidebarTransitionSnapshotBuilder {
                 windowState: context.windowState
             )
         }
-
-        let childSnapshotsById = Dictionary(
-            childSnapshots.map { ($0.id, $0) },
-            uniquingKeysWith: { first, _ in first }
-        )
-        let collapsedProjectedChildSnapshots = collapsedProjectedShortcutPins(
-            directShortcutPins,
-            liveTabsByPinId: context.liveTabsByPinId,
-            projectionState: projectionState
-        ).compactMap { childSnapshotsById[$0.id] }
-        let bodyChildren = folder.isOpen ? childSnapshots : collapsedProjectedChildSnapshots
 
         return SpaceFolderSnapshot(
             id: folder.id,
@@ -691,26 +683,19 @@ enum SpaceSidebarTransitionSnapshotBuilder {
         .map(\.2)
     }
 
-    private static func collapsedProjectedShortcutPins(
-        _ children: [ShortcutPin],
-        liveTabsByPinId: [UUID: Tab],
+    private static func collapsedStickyShortcutPins(
+        for folderId: UUID,
+        context: FolderSnapshotContext,
         projectionState: SidebarFolderProjectionState
     ) -> [ShortcutPin] {
-        let livePins = children.filter { liveTabsByPinId[$0.id] != nil }
-
-        guard !projectionState.projectedChildIDs.isEmpty else {
-            return livePins
-        }
-
-        let projectedOrder = Dictionary(
-            projectionState.projectedChildIDs.enumerated().map { ($1, $0) },
+        let descendantPinsById = Dictionary(
+            context.inventory.descendantPins(for: folderId).map { ($0.id, $0) },
             uniquingKeysWith: { first, _ in first }
         )
-        return livePins.sorted { lhs, rhs in
-            let leftOrder = projectedOrder[lhs.id] ?? lhs.index
-            let rightOrder = projectedOrder[rhs.id] ?? rhs.index
-            if leftOrder != rightOrder { return leftOrder < rightOrder }
-            return lhs.id.uuidString < rhs.id.uuidString
+        return projectionState.stickyItemIDs.compactMap { itemID in
+            guard let pin = descendantPinsById[itemID],
+                  context.liveTabsByPinId[pin.id] != nil else { return nil }
+            return pin
         }
     }
 

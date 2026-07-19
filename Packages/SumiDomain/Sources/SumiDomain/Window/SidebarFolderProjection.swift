@@ -1,14 +1,18 @@
 import Foundation
 
 public struct SidebarFolderProjectionState: Equatable, Sendable {
-    public var projectedChildIDs: [UUID] = []
+    /// Items (launcher pins or split groups) the user made sticky while the
+    /// folder is collapsed: selected at collapse time, or activated while
+    /// collapsed. Cleared on expand; pruned when an item leaves the folder.
+    public var stickyItemIDs: [UUID] = []
+    /// Whether the collapsed folder currently shows sticky rows.
     public var hasActiveProjection: Bool = false
 
     public init(
-        projectedChildIDs: [UUID] = [],
+        stickyItemIDs: [UUID] = [],
         hasActiveProjection: Bool = false
     ) {
-        self.projectedChildIDs = projectedChildIDs
+        self.stickyItemIDs = stickyItemIDs
         self.hasActiveProjection = hasActiveProjection
     }
 

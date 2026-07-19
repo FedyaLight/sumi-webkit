@@ -119,9 +119,9 @@ struct FolderSearchCandidateBuilder {
                 )
 
             case .splitGroup(let groupID):
-                guard let group = inventory.splitGroup(id: groupID) else {
-                    return []
-                }
+                guard !visibleCollapsedProjectionIDs.contains(groupID),
+                      let group = inventory.splitGroup(id: groupID)
+                else { return [] }
                 return SplitGroupSidebarModel.items(
                     for: group,
                     inventory: inventory,

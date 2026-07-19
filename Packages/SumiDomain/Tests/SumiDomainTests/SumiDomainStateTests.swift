@@ -125,12 +125,12 @@ final class SumiDomainStateTests: XCTestCase {
 
         store.setProjection(
             SidebarFolderProjectionState(
-                projectedChildIDs: childIDs,
+                stickyItemIDs: childIDs,
                 hasActiveProjection: true
             ),
             for: folderID
         )
-        XCTAssertEqual(store.projection(for: folderID).projectedChildIDs, childIDs)
+        XCTAssertEqual(store.projection(for: folderID).stickyItemIDs, childIDs)
         XCTAssertTrue(store.projection(for: folderID).hasActiveProjection)
 
         store.setProjection(.empty, for: folderID)

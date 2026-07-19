@@ -39,10 +39,6 @@ struct TabFolderView: View {
         inventory.folderPinsByFolderID[folder.id] ?? []
     }
 
-    var childFolders: [TabFolder] {
-        inventory.childFoldersByParentID[folder.id] ?? []
-    }
-
     var body: some View {
         let liveFolderManager = browserContext.liveFolderManager
         SidebarScopedSnapshotReader(
@@ -62,7 +58,6 @@ struct TabFolderView: View {
                     folder: folder,
                     space: space,
                     shortcutPins: shortcutPinsInFolder,
-                    childFolders: childFolders,
                     shortcutRestoreGaps: shortcutRestoreSession.gaps,
                     inventory: inventory,
                     selection: selection,

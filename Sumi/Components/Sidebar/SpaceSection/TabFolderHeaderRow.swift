@@ -12,12 +12,16 @@ struct TabFolderHeaderRow: View {
     let isDropHighlighted: Bool
     let isInteractive: Bool
     var dropHighlightHorizontalBleed: CGFloat = 8
+    /// Zen parity: collapsed folders with sticky rows offer an unload/reset
+    /// affordance on hover. Nil hides the affordance entirely.
+    var onResetProjection: (() -> Void)? = nil
 
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
     @Environment(\.chromeThemeTokens) private var scopedChromeTokens
     @State private var isHovered = false
+    @State private var isResetHovered = false
 
     private var tokens: ChromeThemeTokens {
         scopedChromeTokens ?? themeContext.tokens(settings: sumiSettings)
@@ -35,6 +39,9 @@ struct TabFolderHeaderRow: View {
             iconSlot
             titleView
             Spacer(minLength: 0)
+            if let onResetProjection {
+                resetProjectionButton(action: onResetProjection)
+            }
         }
         .padding(.leading, SidebarRowLayout.leadingInset)
         .padding(.trailing, SidebarRowLayout.trailingInset)
@@ -58,6 +65,33 @@ struct TabFolderHeaderRow: View {
         )
         .contentShape(RoundedRectangle(cornerRadius: sumiSettings.resolvedCornerRadius(12), style: .continuous))
         .sidebarDDGHover($isHovered, isEnabled: isInteractive)
+    }
+
+    private func resetProjectionButton(action: @escaping () -> Void) -> some View {
+        let showsButton = displayIsHovering && isInteractive
+        return Button(action: action) {
+            Image(systemName: "minus")
+                .font(SidebarThemeTokens.Typography.trailingAction)
+                .foregroundColor(tokens.primaryText)
+                .frame(
+                    width: SidebarRowLayout.trailingActionSize,
+                    height: SidebarRowLayout.trailingActionSize
+                )
+                .background(isResetHovered ? tokens.fieldBackground : Color.clear)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+        }
+        .buttonStyle(SidebarZenActionButtonStyle(isEnabled: showsButton))
+        .opacity(showsButton ? 1 : 0)
+        .allowsHitTesting(showsButton)
+        .accessibilityHidden(!showsButton)
+        .accessibilityLabel("Unload folder tabs")
+        .help("Unload tabs and collapse")
+        .sidebarDDGHover($isResetHovered, isEnabled: showsButton)
+        .sidebarAppKitPrimaryAction(
+            isEnabled: showsButton,
+            isInteractionEnabled: isInteractive,
+            action: action
+        )
     }
 
     private var titleView: some View {

@@ -52,9 +52,6 @@ struct TabFolderBodyListView: View {
         let childFoldersById = Dictionary(
             uniqueKeysWithValues: (inventory.childFoldersByParentID[folder.id] ?? []).map { ($0.id, $0) }
         )
-        let shortcutPinsById = Dictionary(
-            uniqueKeysWithValues: (inventory.folderPinsByFolderID[folder.id] ?? []).map { ($0.id, $0) }
-        )
 
         LazyVStack(spacing: 0) {
             ForEach(contentProjection.bodyDisplayEntries) { entry in
@@ -90,7 +87,7 @@ struct TabFolderBodyListView: View {
                                 )
                         }
                     case .shortcut(let pinId):
-                        if let pin = shortcutPinsById[pinId] {
+                        if let pin = projection.shortcutPin(with: pinId) {
                             shortcutEntry(
                                 pin,
                                 selectionSnapshot: selectionSnapshot
@@ -191,7 +188,7 @@ struct TabFolderBodyListView: View {
         case .folder(let folderId):
             return elevatedFolderIds.contains(folderId)
         case .shortcut(let pinId):
-            guard let pin = inventory.folderPinsByFolderID[folder.id]?.first(where: { $0.id == pinId }) else {
+            guard let pin = projection.shortcutPin(with: pinId) else {
                 return false
             }
             if let placeholderGroup = projection.regularPlaceholderGroup(for: pin.id) {
