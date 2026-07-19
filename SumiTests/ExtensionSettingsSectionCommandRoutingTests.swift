@@ -4,6 +4,26 @@ import XCTest
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionSettingsSectionCommandRoutingTests: XCTestCase {
+    func testTemporaryMissingSiteAccessSnapshotCannotPersistFallbackAsk() {
+        XCTAssertFalse(
+            ExtensionSettingsSiteAccessMutationAdmission.shouldPersist(
+                oldValue: SafariExtensionSiteAccessLevel.allow,
+                newValue: .ask,
+                persistedValue: nil
+            )
+        )
+    }
+
+    func testUserSiteAccessChangePersistsAgainstLoadedPolicy() {
+        XCTAssertTrue(
+            ExtensionSettingsSiteAccessMutationAdmission.shouldPersist(
+                oldValue: SafariExtensionSiteAccessLevel.ask,
+                newValue: .allow,
+                persistedValue: .ask
+            )
+        )
+    }
+
     func testInstalledSectionCommandRouting() async throws {
         let recorder = InstalledSectionCommandRecorder()
         let commands = ExtensionSettingsInstalledCommands(

@@ -338,7 +338,7 @@ struct SumiSettingsTabRootView: View {
         case .privacy:
             PrivacySettingsView(
                 repository: browserContext.makePermissionRepository(),
-                activeProfile: activePrivacyProfile
+                activeProfile: activeSettingsProfile
             )
         case .profiles:
             SumiProfilesSettingsPane(
@@ -351,7 +351,7 @@ struct SumiSettingsTabRootView: View {
         case .extensions:
             SumiExtensionsSettingsPane(
                 extensionsModule: browserContext.extensionsModule,
-                currentProfileID: currentProfileID,
+                currentProfileID: activeSettingsProfile?.id,
                 extensionSurfaceStore: browserContext.extensionSurfaceStore
             )
         case .advanced:
@@ -372,7 +372,7 @@ struct SumiSettingsTabRootView: View {
         browserContext.scheduleRuntimeStatePersistence(tab)
     }
 
-    private var activePrivacyProfile: Profile? {
+    private var activeSettingsProfile: Profile? {
         if let windowState {
             if windowState.isIncognito {
                 return windowState.ephemeralProfile

@@ -38,6 +38,17 @@ struct ExtensionSettingsInstalledRow: Identifiable {
     let siteAccessPolicy: SafariExtensionSiteAccessPolicy?
 }
 
+enum ExtensionSettingsSiteAccessMutationAdmission {
+    static func shouldPersist<Value: Equatable>(
+        oldValue: Value,
+        newValue: Value,
+        persistedValue: Value?
+    ) -> Bool {
+        guard let persistedValue else { return false }
+        return oldValue != newValue && newValue != persistedValue
+    }
+}
+
 struct ExtensionSettingsInstalledSection: View {
     let projection: ExtensionSettingsInstalledProjection
     let scanState: ExtensionSettingsScanState
@@ -217,7 +228,7 @@ private struct ExtensionCatalogRow: View {
     let onOpenOptions: () -> Void
 
     @State private var isEnabled = false
-    @State private var defaultSiteAccess: SafariExtensionSiteAccessLevel = .allow
+    @State private var defaultSiteAccess: SafariExtensionSiteAccessLevel = .ask
     @State private var privateAccessAllowed = false
     @State private var isDetailsPresented = false
 
@@ -311,14 +322,20 @@ private struct ExtensionCatalogRow: View {
             syncSiteAccessState()
         }
         .onChange(of: defaultSiteAccess) { oldValue, newValue in
-            guard oldValue != newValue,
-                  newValue != siteAccessPolicy?.defaultAccess
+            guard ExtensionSettingsSiteAccessMutationAdmission.shouldPersist(
+                oldValue: oldValue,
+                newValue: newValue,
+                persistedValue: siteAccessPolicy?.defaultAccess
+            )
             else { return }
             onDefaultSiteAccessChanged(newValue)
         }
         .onChange(of: privateAccessAllowed) { oldValue, newValue in
-            guard oldValue != newValue,
-                  newValue != siteAccessPolicy?.privateAccessAllowed
+            guard ExtensionSettingsSiteAccessMutationAdmission.shouldPersist(
+                oldValue: oldValue,
+                newValue: newValue,
+                persistedValue: siteAccessPolicy?.privateAccessAllowed
+            )
             else { return }
             onPrivateAccessChanged(newValue)
         }
@@ -338,8 +355,9 @@ private struct ExtensionCatalogRow: View {
     }
 
     private func syncSiteAccessState() {
-        defaultSiteAccess = siteAccessPolicy?.defaultAccess ?? .ask
-        privateAccessAllowed = siteAccessPolicy?.privateAccessAllowed ?? false
+        guard let siteAccessPolicy else { return }
+        defaultSiteAccess = siteAccessPolicy.defaultAccess
+        privateAccessAllowed = siteAccessPolicy.privateAccessAllowed
     }
 }
 
