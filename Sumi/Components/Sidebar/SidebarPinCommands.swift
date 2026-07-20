@@ -65,6 +65,11 @@ final class SidebarPinCommands {
         return lifecycle.remove(pin)
     }
 
+    func remove(_ pins: [ShortcutPin]) -> Bool {
+        guard runtime.current != nil else { return false }
+        return lifecycle.remove(pins)
+    }
+
     func move(_ pin: ShortcutPin, toFolder folderID: UUID) -> Bool {
         guard runtime.current != nil else { return false }
         return placement.move(pin, toFolder: folderID)

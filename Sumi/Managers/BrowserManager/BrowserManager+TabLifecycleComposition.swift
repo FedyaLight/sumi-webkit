@@ -21,6 +21,7 @@ extension BrowserManager {
             structuralLookup: structuralLookupCoordinator,
             retirement: shortcutLiveTabRetirement,
             fallbackPlanner: tabCloseFallbackPlanner,
+            splitMembership: splitGroupMembership,
             visuals: shellRuntime.windowVisuals
         )
         let publication = ShortcutLiveTabClosePublication(
@@ -62,7 +63,8 @@ extension BrowserManager {
                 ),
                 shortcutTabs: shortcutLiveTabClose
             ),
-            residences: tabResidenceAuthority
+            residences: tabResidenceAuthority,
+            notifications: notificationPresenter
         )
     }
 

@@ -9,7 +9,8 @@ enum ShortcutPinCommandComposition {
         runtimeConnection: TabRuntimePortConnection,
         store: ShortcutPinStoreOwner,
         spacePinnedStructure: SpacePinnedStructureOwner,
-        bindings: ShortcutTabBindingSynchronizer
+        bindings: ShortcutTabBindingSynchronizer,
+        essentialsVisualOrder: EssentialsVisualOrderTransaction
     ) -> ShortcutPinPlacementCommandService {
         ShortcutPinPlacementCommandService(
             moves: ShortcutPinMoveTransaction(
@@ -28,7 +29,8 @@ enum ShortcutPinCommandComposition {
                 structuralLookup: structuralLookup,
                 pins: pins,
                 structuralMutations: structuralMutations,
-                spacePinnedStructure: spacePinnedStructure
+                spacePinnedStructure: spacePinnedStructure,
+                essentialsVisualOrder: essentialsVisualOrder
             )
         )
     }

@@ -13,24 +13,22 @@ struct SidebarDragPreviewAsset {
     let anchorOffset: CGPoint
 }
 
-/// One coherent Split Group Drag Presentation. Keeping member attributes in a
-/// single value prevents icon/title/accent arrays from drifting out of order.
+/// One ordered visual member shared by live Essentials, transition snapshots,
+/// and drag presentations.
+struct EssentialSplitTileMemberPresentation {
+    let icon: Image
+    let glyphText: String?
+    let systemImageName: String?
+    let accentColor: Color
+    let title: String
+    var backdrop: Image? = nil
+}
+
+/// Drag presentation retains the same coherent members as the live tile.
 struct SidebarSplitDragPresentation {
-    struct Member {
-        let icon: Image
-        let glyphText: String?
-        let systemImageName: String?
-        let accentColor: Color
-        let title: String
-    }
+    typealias Member = EssentialSplitTileMemberPresentation
 
-    let members: [Member]
-
-    var icons: [Image] { members.map(\.icon) }
-    var glyphTexts: [String?] { members.map(\.glyphText) }
-    var systemImageNames: [String?] { members.map(\.systemImageName) }
-    var accentColors: [Color] { members.map(\.accentColor) }
-    var titles: [String] { members.map(\.title) }
+    let members: [EssentialSplitTileMemberPresentation]
 }
 
 struct SidebarDragPreviewModel {
@@ -38,6 +36,7 @@ struct SidebarDragPreviewModel {
     let sourceZone: DropZoneID
     let baseKind: SidebarDragPreviewKind
     let previewIcon: Image?
+    var previewBackdrop: Image? = nil
     let previewGlyphText: String?
     let splitPresentation: SidebarSplitDragPresentation?
     let chromeTemplateSystemImageName: String?

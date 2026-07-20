@@ -37,4 +37,14 @@ final class ShortcutLiveTabClosePublication {
             in: windowState
         )
     }
+
+    func notifySplitViewUnload(
+        tabCount: Int,
+        in windowState: BrowserWindowState
+    ) {
+        notifications.presentSplitViewUnloadedNotification(
+            tabCount: tabCount,
+            in: windowState
+        )
+    }
 }

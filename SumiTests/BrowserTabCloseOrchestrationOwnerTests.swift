@@ -1,3 +1,4 @@
+import SumiDomain
 import XCTest
 
 @testable import Sumi
@@ -57,4 +58,137 @@ final class BrowserTabCloseOrchestrationOwnerTests: XCTestCase {
         XCTAssertEqual(activeWindow.currentTabId, activeTabID)
         XCTAssertIdentical(browser.windowRegistry.activeWindow, activeWindow)
     }
+
+    func testClosingRegularSplitClosesEveryMemberAndUsesSplitNotification()
+        throws {
+        let fixture = try makeRegularSplitFixture()
+
+        fixture.browser.tabCloseOrchestration.closeCurrentTab(
+            in: fixture.window
+        )
+
+        try assertClosedSplit(fixture)
+    }
+
+    func testClosingOneRegularSplitMemberLeavesTheOtherTabOpen() throws {
+        let fixture = try makeRegularSplitFixture()
+
+        XCTAssertTrue(
+            fixture.browser.tabCloseOrchestration.closeTab(
+                fixture.first,
+                in: fixture.window
+            )
+        )
+
+        XCTAssertNil(
+            fixture.browser.regularTabCollectionOwner.tab(
+                for: fixture.first.id
+            )
+        )
+        XCTAssertIdentical(
+            fixture.browser.regularTabCollectionOwner.tab(
+                for: fixture.second.id
+            ),
+            fixture.second
+        )
+        XCTAssertNil(
+            fixture.browser.splitGroupStore.group(id: fixture.group.id)
+        )
+    }
+
+    func testSidebarCloseSplitCommandUsesSplitNotification() throws {
+        let fixture = try makeRegularSplitFixture()
+        let context = fixture.browser.composeSidebarBrowserContext(
+            spaceLifecycle: fixture.browser.sidebarSpaceLifecycle
+        )
+
+        context.splitGroupLifecycle.closeRegular(
+            fixture.group,
+            in: fixture.window
+        )
+
+        try assertClosedSplit(fixture)
+    }
+
+    private func assertClosedSplit(
+        _ fixture: RegularSplitFixture,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) throws {
+        XCTAssertNil(
+            fixture.browser.regularTabCollectionOwner.tab(
+                for: fixture.first.id
+            ),
+            file: file,
+            line: line
+        )
+        XCTAssertNil(
+            fixture.browser.regularTabCollectionOwner.tab(
+                for: fixture.second.id
+            ),
+            file: file,
+            line: line
+        )
+        let notification = try XCTUnwrap(
+            fixture.window.inAppNotifications.items.first?.notification
+        )
+        XCTAssertEqual(notification.messageKey, "split-view-closed")
+        XCTAssertEqual(notification.title, "2-tab Split View closed")
+        XCTAssertNotNil(notification.subtitle)
+    }
+
+    private func makeRegularSplitFixture() throws -> RegularSplitFixture {
+        let browser = BrowserManager()
+        let profile = Profile(name: "Profile")
+        let space = Space(name: "Space", profileId: profile.id)
+        let window = BrowserWindowState()
+        browser.profileManager.profiles = [profile]
+        browser.currentProfile = profile
+        browser.spaceStateOwner.replaceSpaces([space])
+        browser.spaceStateOwner.replaceCurrentSpace(space)
+        browser.tabResidenceAuthority.establishResidenceSession(on: window)
+        window.currentSpaceId = space.id
+        window.currentProfileId = profile.id
+        XCTAssertEqual(browser.windowRegistry.register(window), .registered)
+        browser.windowRegistry.setActive(window)
+        let first = browser.regularTabLifecycleOwner.createNewTab(
+            url: "https://first.example",
+            in: space,
+            activate: false
+        )
+        let second = browser.regularTabLifecycleOwner.createNewTab(
+            url: "https://second.example",
+            in: space,
+            activate: false
+        )
+        let group = try XCTUnwrap(SplitGroup.make(
+            members: [
+                .regularTab(first.id),
+                .regularTab(second.id),
+            ],
+            layoutKind: .vertical,
+            container: .regularTabs(spaceId: space.id)
+        ))
+        XCTAssertTrue(browser.splitGroupMutations.insert(
+            group,
+            persist: false
+        ))
+        browser.selectTab(first, in: window)
+        return RegularSplitFixture(
+            browser: browser,
+            window: window,
+            first: first,
+            second: second,
+            group: group
+        )
+    }
+}
+
+@MainActor
+private struct RegularSplitFixture {
+    let browser: BrowserManager
+    let window: BrowserWindowState
+    let first: Tab
+    let second: Tab
+    let group: SplitGroup
 }

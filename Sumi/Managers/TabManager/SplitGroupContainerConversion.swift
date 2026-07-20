@@ -13,6 +13,7 @@ final class SplitGroupContainerConversion {
     private let launcherPlacement: ShortcutSplitLauncherPlacementService
     private let shortcutMoves: SplitGroupShortcutMoveService
     private let shortcutToRegular: ShortcutPinToRegularTabService
+    private let essentialsVisualOrder: EssentialsVisualOrderTransaction
 
     init(
         ordering: SplitGroupSidebarOrderingService,
@@ -22,7 +23,8 @@ final class SplitGroupContainerConversion {
         orderTransaction: SpacePinnedOrderTransaction,
         launcherPlacement: ShortcutSplitLauncherPlacementService,
         shortcutMoves: SplitGroupShortcutMoveService,
-        shortcutToRegular: ShortcutPinToRegularTabService
+        shortcutToRegular: ShortcutPinToRegularTabService,
+        essentialsVisualOrder: EssentialsVisualOrderTransaction
     ) {
         self.ordering = ordering
         self.mutations = mutations
@@ -32,6 +34,7 @@ final class SplitGroupContainerConversion {
         self.launcherPlacement = launcherPlacement
         self.shortcutMoves = shortcutMoves
         self.shortcutToRegular = shortcutToRegular
+        self.essentialsVisualOrder = essentialsVisualOrder
     }
 
     @discardableResult
@@ -39,6 +42,16 @@ final class SplitGroupContainerConversion {
         guard ordering.group(id: group.id) == group,
               sourceContainerMatches(group.container, operation.fromContainer)
         else { return false }
+
+        if case .essentialSidebar(let ownerProfileID, _) = group.container,
+           operation.toContainer == .essentials,
+           let profileID = ownerProfileID ?? operation.scope.profileId {
+            return essentialsVisualOrder.reorder(
+                .splitGroup(group.id),
+                for: profileID,
+                to: operation.toIndex
+            )
+        }
 
         switch operation.toContainer {
         case .essentials:

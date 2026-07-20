@@ -34,6 +34,39 @@ protocol BrowserFaviconImageReading: AnyObject, Sendable {
     ) async -> NSImage?
 }
 
+@MainActor
+protocol BrowserEssentialBackdropReading: AnyObject, Sendable {
+    func cachedBackdrop(
+        for documentURL: URL,
+        partition: SumiFaviconPartition
+    ) -> NSImage?
+    func loadBackdrop(
+        for documentURL: URL,
+        partition: SumiFaviconPartition
+    ) async -> NSImage?
+}
+
+private final class UnavailableEssentialBackdropReader:
+    BrowserEssentialBackdropReading,
+    @unchecked Sendable
+{
+    nonisolated static let shared = UnavailableEssentialBackdropReader()
+
+    func cachedBackdrop(
+        for _: URL,
+        partition _: SumiFaviconPartition
+    ) -> NSImage? {
+        nil
+    }
+
+    func loadBackdrop(
+        for _: URL,
+        partition _: SumiFaviconPartition
+    ) async -> NSImage? {
+        nil
+    }
+}
+
 protocol BrowserFaviconLiveDiscoveryIngesting: AnyObject, Sendable {
     @MainActor
     func ingestVisibleTabDiscovery(
@@ -68,6 +101,22 @@ struct BrowserFaviconCapabilities: Sendable {
     let liveDiscovery: any BrowserFaviconLiveDiscoveryIngesting
     let localIconIngestion: any BrowserFaviconLocalIconIngesting
     let prefetch: any BrowserFaviconPrefetchScheduling
+    let essentialBackdrops: any BrowserEssentialBackdropReading
+
+    init(
+        images: any BrowserFaviconImageReading,
+        liveDiscovery: any BrowserFaviconLiveDiscoveryIngesting,
+        localIconIngestion: any BrowserFaviconLocalIconIngesting,
+        prefetch: any BrowserFaviconPrefetchScheduling,
+        essentialBackdrops: (any BrowserEssentialBackdropReading)? = nil
+    ) {
+        self.images = images
+        self.liveDiscovery = liveDiscovery
+        self.localIconIngestion = localIconIngestion
+        self.prefetch = prefetch
+        self.essentialBackdrops = essentialBackdrops
+            ?? UnavailableEssentialBackdropReader.shared
+    }
 }
 
 extension SumiFaviconImageRepository: BrowserFaviconImageReading {}

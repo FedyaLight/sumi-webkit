@@ -85,6 +85,34 @@ final class BrowserNotificationPresenter {
         presentNotification(.tabUnloaded(count: count), in: windowState)
     }
 
+    func presentSplitViewClosureNotification(
+        tabCount: Int,
+        in windowState: BrowserWindowState? = nil
+    ) {
+        let undoCloseTabAction = undoCloseTab
+        let undoAction = BrowserNotificationAction(label: "Undo") {
+            undoCloseTabAction()
+        }
+        presentNotification(
+            .splitViewClosure(
+                tabCount: tabCount,
+                undoShortcut: undoCloseTabShortcut(),
+                action: undoAction
+            ),
+            in: windowState
+        )
+    }
+
+    func presentSplitViewUnloadedNotification(
+        tabCount: Int,
+        in windowState: BrowserWindowState? = nil
+    ) {
+        presentNotification(
+            .splitViewUnloaded(tabCount: tabCount),
+            in: windowState
+        )
+    }
+
     func presentSpaceRenamedNotification(name: String, in windowState: BrowserWindowState? = nil) {
         presentNotification(.spaceRenamed(name: name), in: windowState)
     }

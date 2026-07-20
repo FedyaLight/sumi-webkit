@@ -9,6 +9,7 @@ struct PinnedTile: View {
     @ObservedObject var pin: ShortcutPin
     let faviconPartition: SumiFaviconPartition
     let faviconImageReader: any BrowserFaviconImageReading
+    let essentialBackdropReader: any BrowserEssentialBackdropReading
     let presentationState: ShortcutPresentationState
     let liveTab: Tab?
     let essentialRuntimeState: SumiEssentialRuntimeState?
@@ -26,6 +27,7 @@ struct PinnedTile: View {
                     pin: pin,
                     faviconPartition: faviconPartition,
                     faviconImageReader: faviconImageReader,
+                    essentialBackdropReader: essentialBackdropReader,
                     liveTab: liveTab,
                     presentationState: presentationState,
                     essentialRuntimeState: essentialRuntimeState,
@@ -41,6 +43,7 @@ struct PinnedTile: View {
                     pin: pin,
                     faviconPartition: faviconPartition,
                     faviconImageReader: faviconImageReader,
+                    essentialBackdropReader: essentialBackdropReader,
                     presentationState: presentationState,
                     essentialRuntimeState: essentialRuntimeState,
                     accessibilityID: accessibilityID,
@@ -61,6 +64,7 @@ func makePinnedTileDragSourceConfiguration(
     pin: ShortcutPin,
     resolvedTitle: String,
     previewIcon: Image?,
+    previewBackdrop: Image? = nil,
     chromeTemplateSystemImageName: String? = nil,
     previewPresentationState: ShortcutPresentationState? = nil,
     exclusionZones: [SidebarDragSourceExclusionZone],
@@ -76,6 +80,7 @@ func makePinnedTileDragSourceConfiguration(
         sourceZone: .essentials,
         previewKind: .essentialsTile,
         previewIcon: previewIcon,
+        previewBackdrop: previewBackdrop,
         chromeTemplateSystemImageName: chromeTemplateSystemImageName,
         previewPresentationState: previewPresentationState,
         exclusionZones: exclusionZones,

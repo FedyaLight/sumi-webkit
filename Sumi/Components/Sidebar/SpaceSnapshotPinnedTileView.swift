@@ -8,17 +8,31 @@ struct SpaceSnapshotPinnedTileView: View {
     @Environment(\.sumiSettings) private var sumiSettings
 
     var body: some View {
+        let selectedBackdrop = item.presentationState.isSelected
+            ? item.essentialBackdrop : nil
         ZStack {
-            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .fill(backgroundColor)
-                .overlay {
-                    if item.presentationState.isSelected {
-                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                            .fill(selectionAccentColor.opacity(0.35))
-                    }
-                }
-                .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            if let selectedBackdrop {
+                EssentialBackdropSelectionChrome(
+                    image: selectedBackdrop,
+                    cornerRadius: cornerRadius,
+                    plateColor: backgroundColor,
+                    isHovered: false
+                )
                 .frame(width: tileSize.width, height: tileSize.height)
+            } else {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(backgroundColor)
+                    .overlay {
+                        if item.presentationState.isSelected {
+                            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                                .fill(selectionAccentColor.opacity(0.35))
+                        }
+                    }
+                    .clipShape(
+                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    )
+                    .frame(width: tileSize.width, height: tileSize.height)
+            }
 
             SpaceSnapshotIconView(
                 icon: item.icon,
@@ -37,7 +51,8 @@ struct SpaceSnapshotPinnedTileView: View {
                 )
                 .frame(width: tileSize.width, height: tileSize.height)
                 .allowsHitTesting(false)
-            } else if item.presentationState.isSelected {
+            } else if item.presentationState.isSelected
+                && selectedBackdrop == nil {
                 PinnedTileSelectionRing(
                     corner: cornerRadius,
                     thickness: PinnedTileMetrics.strokeWidth,

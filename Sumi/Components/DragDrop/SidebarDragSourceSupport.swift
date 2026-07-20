@@ -57,6 +57,7 @@ struct SidebarDragSourceConfiguration {
     let sourceZone: DropZoneID
     let previewKind: SidebarDragPreviewKind
     let previewIcon: Image?
+    let previewBackdrop: Image?
     let previewGlyphText: String?
     let splitPresentation: SidebarSplitDragPresentation?
     let chromeTemplateSystemImageName: String?
@@ -73,6 +74,7 @@ struct SidebarDragSourceConfiguration {
         sourceZone: DropZoneID,
         previewKind: SidebarDragPreviewKind,
         previewIcon: Image? = nil,
+        previewBackdrop: Image? = nil,
         previewGlyphText: String? = nil,
         splitPresentation: SidebarSplitDragPresentation? = nil,
         chromeTemplateSystemImageName: String? = nil,
@@ -88,6 +90,7 @@ struct SidebarDragSourceConfiguration {
         self.sourceZone = sourceZone
         self.previewKind = previewKind
         self.previewIcon = previewIcon
+        self.previewBackdrop = previewBackdrop
         self.previewGlyphText = previewGlyphText
         self.splitPresentation = splitPresentation
         self.chromeTemplateSystemImageName = chromeTemplateSystemImageName
@@ -108,6 +111,7 @@ struct SidebarDragSourceConfiguration {
             sourceZone: sourceZone,
             previewKind: previewKind,
             previewIcon: previewIcon,
+            previewBackdrop: previewBackdrop,
             previewGlyphText: previewGlyphText,
             splitPresentation: splitPresentation,
             chromeTemplateSystemImageName: chromeTemplateSystemImageName,
@@ -129,6 +133,7 @@ struct SidebarDragSourceConfiguration {
             sourceZone: sourceZone,
             previewKind: previewKind,
             previewIcon: previewIcon,
+            previewBackdrop: previewBackdrop,
             previewGlyphText: previewGlyphText,
             splitPresentation: splitPresentation,
             chromeTemplateSystemImageName: chromeTemplateSystemImageName,
@@ -156,12 +161,17 @@ enum SidebarDragPreviewSessionFactory {
         sourceSize: CGSize,
         sourceOffsetFromBottomLeading point: CGPoint
     ) -> SidebarDragPreviewSession? {
+        let sourceAnchor = resolvedSourceAnchor(
+            for: configuration,
+            sourceSize: sourceSize,
+            pointerAnchor: point
+        )
         let descriptor = SumiNativeDragPreviewDescriptor(
             item: configuration.item,
             previewIcon: configuration.previewIcon,
             sourceZone: configuration.sourceZone,
             sourceSize: sourceSize,
-            sourceOffsetFromBottomLeading: point,
+            sourceOffsetFromBottomLeading: sourceAnchor,
             folderGlyphPresentation: configuration.folderGlyphPresentation,
             folderGlyphPalette: configuration.folderGlyphPalette
         )
@@ -176,12 +186,13 @@ enum SidebarDragPreviewSessionFactory {
             sourceZone: configuration.sourceZone,
             baseKind: configuration.previewKind,
             previewIcon: configuration.previewIcon,
+            previewBackdrop: configuration.previewBackdrop,
             previewGlyphText: configuration.previewGlyphText,
             splitPresentation: configuration.splitPresentation,
             chromeTemplateSystemImageName: configuration.chromeTemplateSystemImageName,
             sourceSize: sourceSize,
             normalizedTopLeadingAnchor: SidebarDragPreviewModel.normalizedTopLeadingAnchor(
-                fromBottomLeading: point,
+                fromBottomLeading: sourceAnchor,
                 in: sourceSize
             ),
             shortcutPresentationState: configuration.previewPresentationState,
@@ -193,6 +204,20 @@ enum SidebarDragPreviewSessionFactory {
             previewAssets: previewAssets,
             previewModel: model,
             primaryAsset: primaryAsset
+        )
+    }
+
+    private static func resolvedSourceAnchor(
+        for configuration: SidebarDragSourceConfiguration,
+        sourceSize: CGSize,
+        pointerAnchor: CGPoint
+    ) -> CGPoint {
+        guard case .essentials = configuration.sourceZone else {
+            return pointerAnchor
+        }
+        return CGPoint(
+            x: sourceSize.width / 2,
+            y: sourceSize.height / 2
         )
     }
 

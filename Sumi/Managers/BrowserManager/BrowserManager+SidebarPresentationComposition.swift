@@ -30,6 +30,8 @@ extension BrowserManager {
             glanceManager: glanceManager,
             extensionSurfaceStore: extensions.surfaceStore,
             faviconImageReader: dataServices.faviconCapabilities.images,
+            essentialBackdropReader:
+                dataServices.faviconCapabilities.essentialBackdrops,
             spaceEditorPresentation: composeSidebarSpaceEditorPresentation(),
             folderEditorPresentation: composeSidebarFolderEditorPresentation(),
             folderSearchPresentation: composeSidebarFolderSearchPresentation(),
@@ -63,13 +65,12 @@ extension BrowserManager {
             ),
             splitGroupLifecycle: SidebarSplitGroupLifecycleCommands(
                 groups: splitGroupStore,
-                mutations: splitGroupMutations,
                 pins: shortcutPinCollectionStateOwner,
                 pinCommands: sidebarPinCommands,
                 hostedUnload: splitShortcutHostedUnload,
                 membership: tabCollectionMembershipOwner,
                 close: tabCloseOrchestration,
-                structuralLookup: structuralLookupCoordinator
+                notifications: notificationPresenter
             ),
             splitGroupEditor: SidebarSplitGroupEditorPresentationService(
                 groups: splitGroupStore,

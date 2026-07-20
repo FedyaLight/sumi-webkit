@@ -13,15 +13,12 @@ struct SpaceRegularSplitGroupEntryView: View {
     let group: SplitGroup
     let space: Space
     let tabByID: [UUID: Tab]
-    let inventory: SidebarSpaceInventorySnapshot
     let selection: SidebarWindowSelectionQuery
     let regularTabCatalog: SidebarRegularTabCatalog
     let regularTabTargets: SidebarRegularTabTargetQuery
     let browserContext: SidebarBrowserContext
     let isInteractive: Bool
-    let contentMutationAnimation: Animation?
     let tabActionOwner: SpaceRegularTabActionOwner
-    let onCloseRegularTab: (Tab) -> Void
 
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sidebarWindowSelectionSnapshot) private var sidebarSelection
@@ -56,10 +53,13 @@ struct SpaceRegularSplitGroupEntryView: View {
                 for: group,
                 items: items
             ),
+            memberAction: { item in
+                SplitGroupSidebarModel.memberAction(for: item, in: group)
+            },
             dragSource: splitSegmentDragSource,
             contextMenuEntries: splitContextMenuEntries,
             onActivateMember: activateMember,
-            onGroupAction: closeGroup
+            onMemberAction: closeMember
         )
         .zIndex(
             SidebarSelectionElevation.zIndex(
@@ -143,7 +143,7 @@ struct SpaceRegularSplitGroupEntryView: View {
         guard let tab = item.tab else { return [] }
         return tabActionOwner.contextMenuEntries(
             for: tab,
-            close: { onCloseRegularTab(tab) }
+            close: { tabActionOwner.close(tab) }
         )
     }
 
@@ -155,10 +155,8 @@ struct SpaceRegularSplitGroupEntryView: View {
         )
     }
 
-    private func closeGroup() {
-        browserContext.splitGroupLifecycle.closeRegular(
-            group,
-            in: windowState
-        )
+    private func closeMember(_ item: SplitGroupSidebarItem) {
+        guard let tab = item.tab else { return }
+        tabActionOwner.close(tab)
     }
 }

@@ -20,13 +20,17 @@ final class ShortcutPinRetirementCommitter {
         self.structuralMutations = structuralMutations
     }
 
-    func commit(_ pin: ShortcutPin) {
-        guard let claim = retirement.prepareDeletedPinRetirement(pin.id) else {
-            return
+    func commit(_ pins: [ShortcutPin]) -> Bool {
+        let pinIDs = Set(pins.map(\.id))
+        guard pinIDs.count == pins.count,
+              let claim = retirement.prepareDeletedPinRetirements(pinIDs)
+        else { return false }
+        pins.forEach { pin in
+            runtimeConnection.current?.captureDeletedShortcutLauncher(pin)
+            store.removeFromContainers(pin)
         }
-        runtimeConnection.current?.captureDeletedShortcutLauncher(pin)
-        store.removeFromContainers(pin)
         retirement.finishAfterCurrentBatch(claim)
         structuralMutations.schedulePersistence()
+        return true
     }
 }

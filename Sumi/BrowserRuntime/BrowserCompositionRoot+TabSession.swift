@@ -673,6 +673,12 @@ extension BrowserCompositionRoot {
             pins: state.shortcutPins,
             splitGroups: state.splitGroups
         )
+        let essentialsVisualOrder = EssentialsVisualOrderTransaction(
+            ordering: splitGroupSidebarOrdering,
+            groupMutations: splitGroupMutations,
+            pins: state.shortcutPins,
+            structuralMutations: structuralCollectionMutationOwner
+        )
         let shortcutPinPlacementCommands =
             ShortcutPinCommandComposition.makePlacement(
                 pins: state.shortcutPins,
@@ -681,7 +687,8 @@ extension BrowserCompositionRoot {
                 runtimeConnection: runtimeConnection,
                 store: shortcutPinStoreOwner,
                 spacePinnedStructure: spacePinnedStructureOwner,
-                bindings: shortcutTabBindings
+                bindings: shortcutTabBindings,
+                essentialsVisualOrder: essentialsVisualOrder
             )
         let regularTabShortcutConversionCommand =
             RegularTabShortcutConversionCommand(
@@ -710,7 +717,8 @@ extension BrowserCompositionRoot {
             orderTransaction: spacePinnedOrderTransaction,
             launcherPlacement: splitGroupLauncherPlacement,
             shortcutMoves: splitGroupShortcutMoves,
-            shortcutToRegular: shortcutPinToRegularTab
+            shortcutToRegular: shortcutPinToRegularTab,
+            essentialsVisualOrder: essentialsVisualOrder
         )
         let regularTabEssentialPinning = RegularTabEssentialPinningService(
             structuralLookup: structuralLookupCoordinator,

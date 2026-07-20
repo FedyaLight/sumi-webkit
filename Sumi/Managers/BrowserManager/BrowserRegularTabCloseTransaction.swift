@@ -19,12 +19,16 @@ final class BrowserRegularTabCloseTransaction {
         self.residences = residences
     }
 
-    func close(_ tab: Tab, in windowState: BrowserWindowState) {
+    func close(
+        _ tab: Tab,
+        in windowState: BrowserWindowState,
+        presentNotification: Bool = true
+    ) -> Bool {
         guard let admission = residences.admitRegularRemoval(
             of: tab,
             from: windowState
         ) else {
-            return
+            return false
         }
         let wasCurrent = windowState.currentTabId == admission.tab.id
         let fallback = wasCurrent
@@ -36,10 +40,11 @@ final class BrowserRegularTabCloseTransaction {
         guard residences.validates(admission),
               tabClosure.removeExactRegularTab(
                   admission.tab,
-                  in: admission.spaceID
+                  in: admission.spaceID,
+                  presentNotification: presentNotification
               )
         else {
-            return
+            return false
         }
         if let fallback {
             presentation.selectFallback(fallback, in: windowState)
@@ -52,5 +57,6 @@ final class BrowserRegularTabCloseTransaction {
         } else {
             presentation.persist(windowState)
         }
+        return true
     }
 }

@@ -28,6 +28,10 @@ _Avoid_: Split copy, group recreation
 One Essentials grid item representing an entire split group. Its participants do not consume additional Essentials grid slots.
 _Avoid_: Split member tiles
 
+**Essential Selection Material**:
+The site-derived visual treatment applied to a selected Essential or Essential Split Tile. It belongs only to the Essentials presentation and is never applied to Regular or Pinned launchers.
+_Avoid_: Pinned backdrop, global launcher gradient
+
 **Sidebar Visual Item**:
 One ordered sidebar identity presented and moved as a whole. A regular tab, launcher, folder, or Split Group each occupies one visual position regardless of the number of durable records behind it.
 _Avoid_: Render row record, split member slot

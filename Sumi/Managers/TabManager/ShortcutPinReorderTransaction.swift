@@ -7,43 +7,31 @@ final class ShortcutPinReorderTransaction {
     private let pins: ShortcutPinCollectionStateOwner
     private let structuralMutations: TabStructuralCollectionMutationOwner
     private let spacePinnedStructure: SpacePinnedStructureOwner
+    private let essentialsVisualOrder: EssentialsVisualOrderTransaction
 
     init(
         structuralLookup: TabStructuralLookupCoordinator,
         pins: ShortcutPinCollectionStateOwner,
         structuralMutations: TabStructuralCollectionMutationOwner,
-        spacePinnedStructure: SpacePinnedStructureOwner
+        spacePinnedStructure: SpacePinnedStructureOwner,
+        essentialsVisualOrder: EssentialsVisualOrderTransaction
     ) {
         self.structuralLookup = structuralLookup
         self.pins = pins
         self.structuralMutations = structuralMutations
         self.spacePinnedStructure = spacePinnedStructure
+        self.essentialsVisualOrder = essentialsVisualOrder
     }
 
     func reorderEssential(_ pin: ShortcutPin, to index: Int) -> Bool {
         structuralLookup.withTransaction {
             guard self.pins.shortcutPin(by: pin.id) === pin else { return false }
             guard let profileID = pin.profileId else { return false }
-            var profilePins = pins.essentialPins(for: profileID)
-            guard let currentIndex = profilePins.firstIndex(where: {
-                $0 === pin
-            }) else { return false }
-            let targetIndex = spacePinnedStructure.adjustedSameContainerInsertionIndex(
-                currentIndex: currentIndex,
-                proposedIndex: index
+            return essentialsVisualOrder.reorder(
+                .shortcut(pin.id),
+                for: profileID,
+                to: index
             )
-            guard targetIndex != currentIndex else { return false }
-            profilePins.remove(at: currentIndex)
-            profilePins.insert(
-                pin,
-                at: max(0, min(targetIndex, profilePins.count))
-            )
-            structuralMutations.setPinnedTabs(
-                ShortcutPin.reindexed(profilePins),
-                for: profileID
-            )
-            structuralMutations.schedulePersistence()
-            return true
         }
     }
 

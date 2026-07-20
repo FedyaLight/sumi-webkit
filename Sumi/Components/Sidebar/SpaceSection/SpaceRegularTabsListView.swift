@@ -9,7 +9,6 @@ import SwiftUI
 /// Owns regular-tab row projection and the transient insertion/removal lifecycle.
 struct SpaceRegularTabsListView: View {
     let space: Space
-    let inventory: SidebarSpaceInventorySnapshot
     let selection: SidebarWindowSelectionQuery
     let regularTabCatalog: SidebarRegularTabCatalog
     let regularTabTargets: SidebarRegularTabTargetQuery
@@ -64,15 +63,12 @@ struct SpaceRegularTabsListView: View {
                                 group: group,
                                 space: space,
                                 tabByID: tabByID,
-                                inventory: inventory,
                                 selection: selection,
                                 regularTabCatalog: regularTabCatalog,
                                 regularTabTargets: regularTabTargets,
                                 browserContext: browserContext,
                                 isInteractive: isInteractive,
-                                contentMutationAnimation: contentMutationAnimation,
-                                tabActionOwner: tabActionOwner,
-                                onCloseRegularTab: closeRegularTab
+                                tabActionOwner: tabActionOwner
                             )
                         } else if groupedTabIDs.contains(tabID) {
                             EmptyView()

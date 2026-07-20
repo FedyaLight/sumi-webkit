@@ -906,9 +906,12 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         guard let item = snapshot.stationaryEssentials?.items.first else {
             return XCTFail("Expected stationary essentials snapshot item")
         }
-        XCTAssertEqual(item.presentationState, .visuallySelected)
-        XCTAssertEqual(item.accentSource.launchURL, essential.launchURL)
-        XCTAssertEqual(item.accentSource.partition, expectedPartition)
+        guard case .shortcut(let shortcut) = item else {
+            return XCTFail("Expected stationary essential shortcut")
+        }
+        XCTAssertEqual(shortcut.presentationState, .visuallySelected)
+        XCTAssertEqual(shortcut.accentSource.launchURL, essential.launchURL)
+        XCTAssertEqual(shortcut.accentSource.partition, expectedPartition)
     }
 
     func testSnapshotBuilderCapturesSpaceTitleNameIconAndCornerRadius() {

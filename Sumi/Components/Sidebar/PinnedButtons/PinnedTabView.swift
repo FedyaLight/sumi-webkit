@@ -32,6 +32,7 @@ struct PinnedTabView: View {
     var accentSourceURL: URL?
     var accentSourcePartition: SumiFaviconPartition?
     var faviconImageReader: (any BrowserFaviconImageReading)?
+    var essentialBackdropReader: (any BrowserEssentialBackdropReading)? = nil
 
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sumiSettings) var sumiSettings
@@ -39,10 +40,11 @@ struct PinnedTabView: View {
     @Environment(\.chromeThemeTokens) private var scopedChromeTokens
     @State private var isTileHovered = false
     @State private var isActionHovered = false
+    @State private var backdropLoader = SidebarEssentialBackdropLoader()
 
     var body: some View {
         let cornerRadius = sumiSettings.resolvedCornerRadius(PinnedTileMetrics.cornerRadius)
-        ZStack {
+        return ZStack {
             PinnedTileVisual(
                 tabIcon: tabIcon,
                 glyphText: glyphText,
@@ -52,7 +54,8 @@ struct PinnedTabView: View {
                 showsSplitGroupOutline: showsSplitGroupOutline,
                 accentSourceURL: accentSourceURL ?? liveTab?.url,
                 accentSourcePartition: accentSourcePartition,
-                faviconImageReader: faviconImageReader
+                faviconImageReader: faviconImageReader,
+                selectionBackdrop: selectionBackdrop
             )
 
             if supportsActionButton {
@@ -134,6 +137,19 @@ struct PinnedTabView: View {
             radius: presentationState.isSelected ? 2 : 0,
             y: presentationState.isSelected ? 1 : 0
         )
+        .task(id: selectionBackdropLoadKey) {
+            await loadSelectionBackdropIfNeeded()
+        }
+        .onReceive(
+            NotificationCenter.default.publisher(for: .essentialBackdropUpdated)
+        ) { notification in
+            guard let accentSourceURL, let accentSourcePartition else { return }
+            backdropLoader.invalidateIfNeeded(
+                for: notification,
+                launchURL: accentSourceURL,
+                partition: accentSourcePartition
+            )
+        }
     }
 
     // MARK: - Colors
@@ -208,207 +224,84 @@ struct PinnedTabView: View {
         }
         return "\(accessibilityID)-\(suffix)"
     }
-}
 
-struct PinnedTileVisual: View {
-    private enum TileBackgroundState {
-        case active
-        case hover
-        case idle
-    }
-
-    var tabIcon: SwiftUI.Image
-    var glyphText: String?
-    var chromeTemplateSystemImageName: String?
-    var presentationState: ShortcutPresentationState
-    var isHovered: Bool = false
-    var showsSplitGroupOutline: Bool = false
-    var faviconOpacity: Double = 1
-    var accentSourceURL: URL?
-    var accentSourcePartition: SumiFaviconPartition?
-    var faviconImageReader: (any BrowserFaviconImageReading)?
-
-    @Environment(\.sumiSettings) private var sumiSettings
-    @Environment(\.resolvedThemeContext) private var themeContext
-    @Environment(\.chromeThemeTokens) private var scopedChromeTokens
-    @State private var loadedSelectionAccentColor: Color?
-    @State private var accentCacheRefreshID = UUID()
-
-    private var selectionAccentColor: Color {
-        if let loadedSelectionAccentColor {
-            return loadedSelectionAccentColor
-        }
-        return PinnedTileAccentResolver.resolve(
-            launchURL: accentSourceURL,
-            partition: accentSourcePartition,
-            glyphText: glyphText,
-            chromeTemplateSystemImageName: chromeTemplateSystemImageName,
-            tokens: tokens
-        )
-    }
-
-    var body: some View {
-        let cornerRadius = sumiSettings.resolvedCornerRadius(PinnedTileMetrics.cornerRadius)
-
-        ZStack {
-            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .fill(backgroundColor)
-                .overlay {
-                    if presentationState.isSelected {
-                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                            .fill(selectionAccentColor.opacity(0.35 * faviconOpacity))
-                    }
-                }
-                .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-
-            HStack {
-                Spacer()
-                VStack {
-                    Spacer()
-                    resolvedFaviconSymbol(height: PinnedTileMetrics.faviconHeight)
-                        .saturation(presentationState.shouldDesaturateIcon ? 0.0 : 1.0)
-                        .opacity((presentationState.shouldDesaturateIcon ? 0.8 : 1.0) * faviconOpacity)
-                    Spacer()
-                }
-                Spacer()
-            }
-
-            if showsSplitGroupOutline {
-                PinnedTileSplitGroupOutlineMask(
-                    corner: cornerRadius,
-                    thickness: max(1.25, PinnedTileMetrics.strokeWidth * 0.7),
-                    strokeColor: selectionAccentColor
-                )
-                .allowsHitTesting(false)
-            } else if presentationState.isSelected {
-                PinnedTileSelectionRing(
-                    corner: cornerRadius,
-                    thickness: PinnedTileMetrics.strokeWidth,
-                    color: selectionAccentColor
-                )
-                .allowsHitTesting(false)
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .frame(height: PinnedTileMetrics.height)
-        .frame(minWidth: PinnedTileMetrics.minWidth)
-        .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-        .task(id: selectionAccentLoadKey) {
-            await loadSelectionAccentColorIfNeeded()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .faviconCacheUpdated)) { notification in
-            guard PinnedTileAccentResolver.faviconUpdate(notification, matches: accentSourceURL) else { return }
-            loadedSelectionAccentColor = nil
-            PinnedTileAccentResolver.invalidateAccent(for: accentSourceURL)
-            accentCacheRefreshID = UUID()
-        }
-    }
-
-    private var backgroundColor: Color {
-        let state: TileBackgroundState
-        if presentationState.isSelected {
-            state = .active
-        } else if isHovered {
-            state = .hover
-        } else {
-            state = .idle
-        }
-        switch state {
-        case .active:
-            return tokens.pinnedActiveBackground
-        case .hover:
-            return tokens.pinnedHoverBackground
-        case .idle:
-            return tokens.pinnedIdleBackground
-        }
-    }
-
-    private var tokens: ChromeThemeTokens {
-        scopedChromeTokens ?? themeContext.tokens(settings: sumiSettings)
-    }
-
-    private var drawsAccentChrome: Bool {
-        presentationState.isSelected || showsSplitGroupOutline
-    }
-
-    private var selectionAccentLoadKey: String {
-        [
-            accentSourceURL?.absoluteString ?? "no-url",
-            accentSourcePartition?.storageComponent ?? "no-partition",
-            glyphText == nil ? "no-glyph" : "glyph",
-            chromeTemplateSystemImageName ?? "no-template",
-            drawsAccentChrome ? "draws-accent" : "no-accent",
-            accentCacheRefreshID.uuidString,
-        ].joined(separator: "|")
-    }
-
-    @MainActor
-    private func loadSelectionAccentColorIfNeeded() async {
-        guard drawsAccentChrome,
+    private var selectionBackdrop: Image? {
+        guard presentationState.isSelected,
               glyphText == nil,
               chromeTemplateSystemImageName == nil,
               let accentSourceURL,
               let accentSourcePartition,
-              let faviconImageReader
-        else { return }
-
-        if let cached = PinnedTileAccentResolver.cachedAccent(
+              let essentialBackdropReader
+        else { return nil }
+        return backdropLoader.image(
             for: accentSourceURL,
             partition: accentSourcePartition
-        ) {
-            loadedSelectionAccentColor = cached
-            return
-        }
-
-        let cachedImage = TabFaviconStore.getCachedImage(
-            forDocumentURL: accentSourceURL,
-            partition: accentSourcePartition,
-            context: .pinnedLauncher,
-            imageReader: faviconImageReader
-        )
-        let image: NSImage?
-        if let cachedImage {
-            image = cachedImage
-        } else {
-            image = await TabFaviconStore.loadCachedLauncherImage(
-                forDocumentURL: accentSourceURL,
-                partition: accentSourcePartition,
-                imageReader: faviconImageReader
-            )
-        }
-
-        guard !Task.isCancelled,
-              let image,
-              let accent = SumiFaviconAccentColor.extract(from: image)
-        else { return }
-
-        PinnedTileAccentResolver.storeAccent(
-            accent,
+        ) ?? essentialBackdropReader.cachedBackdrop(
             for: accentSourceURL,
             partition: accentSourcePartition
-        )
-        loadedSelectionAccentColor = accent
+        ).map(Image.init(nsImage:))
     }
 
-    @ViewBuilder
-    private func resolvedFaviconSymbol(height: CGFloat) -> some View {
-        Group {
-            if let glyphText {
-                Text(glyphText)
-                    .font(SidebarThemeTokens.Typography.pinnedTileGlyphText(size: height))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.45)
-                    .multilineTextAlignment(.center)
-            } else if let systemName = chromeTemplateSystemImageName {
-                Image(systemName: systemName)
-                    .font(SidebarThemeTokens.Typography.chromeTemplateIcon(size: height))
-                    .symbolRenderingMode(.monochrome)
-                    .foregroundStyle(tokens.primaryText)
-            } else {
-                tabIcon
-            }
+    private var selectionBackdropLoadKey: String {
+        guard let accentSourceURL, let accentSourcePartition else {
+            return "no-backdrop-source"
         }
-        .frame(width: height, height: height)
+        return backdropLoader.loadKey(
+            launchURL: accentSourceURL,
+            partition: accentSourcePartition,
+            isEnabled: presentationState.isSelected
+                && glyphText == nil
+                && chromeTemplateSystemImageName == nil
+                && essentialBackdropReader != nil
+        )
+    }
+
+    private func loadSelectionBackdropIfNeeded() async {
+        guard presentationState.isSelected,
+              glyphText == nil,
+              chromeTemplateSystemImageName == nil,
+              let accentSourceURL,
+              let accentSourcePartition,
+              let essentialBackdropReader
+        else { return }
+        await backdropLoader.load(
+            launchURL: accentSourceURL,
+            partition: accentSourcePartition,
+            reader: essentialBackdropReader,
+            isCurrentLaunchURL: { accentSourceURL == $0 }
+        )
+    }
+}
+
+struct EssentialBackdropSelectionChrome: View {
+    let image: Image
+    let cornerRadius: CGFloat
+    let plateColor: Color
+    let isHovered: Bool
+    var opacity: Double = 1
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            .fill(Color.clear)
+            .overlay {
+                image
+                    .resizable()
+                    .interpolation(.high)
+                    .scaledToFill()
+                    .scaleEffect(1.12)
+                    .opacity(opacity)
+            }
+            .overlay {
+                RoundedRectangle(
+                    cornerRadius: max(0, cornerRadius - 2),
+                    style: .continuous
+                )
+                .fill(plateColor.opacity(isHovered ? 0.94 : 1))
+                .padding(2)
+            }
+            .clipShape(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            )
     }
 }
 

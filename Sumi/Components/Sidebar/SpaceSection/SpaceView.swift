@@ -135,7 +135,6 @@ struct SpaceView: View {
     private var regularTabsSection: SpaceRegularTabsView {
         SpaceRegularTabsView(
             space: space,
-            inventory: inventory,
             selection: selection,
             regularTabCatalog: regularTabCatalog,
             regularTabTargets: regularTabTargets,

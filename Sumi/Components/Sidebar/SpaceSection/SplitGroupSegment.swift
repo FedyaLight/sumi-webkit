@@ -12,55 +12,154 @@ struct SplitGroupSegment: View {
     let isDeparting: Bool
     let trailingPadding: CGFloat
     let reservesTrailingAction: Bool
+    let memberAction: SplitGroupSidebarMemberAction?
     let isAppKitInteractionEnabled: Bool
     let faviconImageReader: any BrowserFaviconImageReading
     let dragSourceConfiguration: SidebarDragSourceConfiguration?
     let dragPreviewSourceGeometry: SidebarDragPreviewSourceGeometry?
     let contextMenuEntries: () -> [SidebarContextMenuEntry]
     let onActivate: () -> Void
+    let onMemberAction: () -> Void
     let onMiddleClick: (() -> Void)?
 
+    @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
+    @State private var isSegmentHovered = false
+    @State private var isActionHovered = false
     @StateObject private var storedFaviconLoader = SidebarStoredFaviconLoader()
 
     var body: some View {
-        SplitGroupSegmentLabel(
-            title: item.title,
-            trailingPadding: trailingPadding,
-            textColor: tokens.primaryText
-        ) {
-            icon
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .contentShape(Rectangle())
-        .onTapGesture(perform: onActivate)
-        .sidebarAppKitContextMenu(
-            isInteractionEnabled: (item.tab != nil || dragSourceConfiguration != nil) && isAppKitInteractionEnabled,
-            dragSource: resolvedDragSourceConfiguration,
-            primaryAction: onActivate,
-            onMiddleClick: onMiddleClick,
-            sourceID: rowSourceID,
-            entries: contextMenuEntries
-        )
-        .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-        .opacity(isDeparting ? 0 : 1)
-        .task(id: item.tab?.url) {
-            await item.tab?.fetchFaviconForVisiblePresentation()
-        }
-        .task(id: storedFaviconLoadKey) {
-            await loadStoredFavicon()
-        }
-        .onReceive(
-            NotificationCenter.default.publisher(for: .faviconCacheUpdated)
-        ) { notification in
-            guard let pin = item.pin, pin.iconAsset == nil else { return }
-            storedFaviconLoader.invalidateIfNeeded(
-                for: notification,
-                launchURL: pin.launchURL,
-                partition: faviconPartition(for: pin)
+        hoverTrackedContent
+            .frame(
+                minWidth: 0,
+                maxWidth: .infinity,
+                maxHeight: .infinity,
+                alignment: .leading
             )
+            .opacity(isDeparting ? 0 : 1)
+            .task(id: item.tab?.url) {
+                await item.tab?.fetchFaviconForVisiblePresentation()
+            }
+            .task(id: storedFaviconLoadKey) {
+                await loadStoredFavicon()
+            }
+            .onReceive(
+                NotificationCenter.default.publisher(
+                    for: .faviconCacheUpdated
+                )
+            ) { notification in
+                guard let pin = item.pin, pin.iconAsset == nil else { return }
+                storedFaviconLoader.invalidateIfNeeded(
+                    for: notification,
+                    launchURL: pin.launchURL,
+                    partition: faviconPartition(for: pin)
+                )
+            }
+    }
+
+    @ViewBuilder
+    private var hoverTrackedContent: some View {
+        if memberAction != nil {
+            segmentContent.sidebarDDGHover(
+                $isSegmentHovered,
+                isEnabled: isAppKitInteractionEnabled
+            )
+        } else {
+            segmentContent
         }
+    }
+
+    private var segmentContent: some View {
+        ZStack(alignment: .trailing) {
+            SplitGroupSegmentLabel(
+                title: item.title,
+                trailingPadding: trailingPadding,
+                textColor: tokens.primaryText
+            ) {
+                icon
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .contentShape(Rectangle())
+            .onTapGesture(perform: onActivate)
+            .sidebarAppKitContextMenu(
+                isInteractionEnabled: (item.tab != nil || dragSourceConfiguration != nil) && isAppKitInteractionEnabled,
+                dragSource: resolvedDragSourceConfiguration,
+                primaryAction: onActivate,
+                onMiddleClick: onMiddleClick,
+                sourceID: rowSourceID,
+                entries: contextMenuEntries
+            )
+
+            if let memberAction {
+                memberActionButton(memberAction)
+                    .padding(.trailing, 4)
+            }
+        }
+    }
+
+    private func memberActionButton(
+        _ action: SplitGroupSidebarMemberAction
+    ) -> some View {
+        Button(action: performMemberAction) {
+            Image(systemName: action.systemImageName)
+                .font(SidebarThemeTokens.Typography.trailingAction)
+                .foregroundColor(tokens.primaryText)
+                .frame(
+                    width: SidebarRowLayout.trailingActionSize,
+                    height: SidebarRowLayout.trailingActionSize
+                )
+                .background(
+                    displayIsActionHovering
+                        ? tokens.fieldBackgroundHover : Color.clear
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+        }
+        .buttonStyle(
+            SidebarZenActionButtonStyle(
+                isEnabled: showsMemberAction && !freezesHoverState
+            )
+        )
+        .opacity(showsMemberAction ? 1 : 0)
+        .sidebarZenActionOpacity(showsMemberAction)
+        .allowsHitTesting(showsMemberAction && !freezesHoverState)
+        .accessibilityHidden(!showsMemberAction)
+        .sidebarDDGHover(
+            $isActionHovered,
+            isEnabled: showsMemberAction && isAppKitInteractionEnabled
+        )
+        .accessibilityIdentifier(
+            "\(action.accessibilityPrefix)-\(item.stableIDDescription)"
+        )
+        .help(action.help)
+        .sidebarAppKitPrimaryAction(
+            isEnabled: showsMemberAction && !freezesHoverState,
+            isInteractionEnabled: isAppKitInteractionEnabled,
+            action: performMemberAction
+        )
+    }
+
+    private var showsMemberAction: Bool {
+        memberAction != nil && SidebarHoverChrome.displayHover(
+            isSegmentHovered,
+            freezesHoverState: freezesHoverState
+        )
+    }
+
+    private var freezesHoverState: Bool {
+        windowState.sidebarInteractionState.freezesSidebarHoverState
+    }
+
+    private var displayIsActionHovering: Bool {
+        SidebarHoverChrome.displayHover(
+            isActionHovered,
+            freezesHoverState: freezesHoverState
+        )
+    }
+
+    private func performMemberAction() {
+        guard !isDeparting else { return }
+        onMemberAction()
     }
 
     @ViewBuilder

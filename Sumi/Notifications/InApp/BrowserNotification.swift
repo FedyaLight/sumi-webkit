@@ -128,6 +128,16 @@ extension BrowserNotification {
         )
     }
 
+    static func splitViewUnloaded(tabCount: Int) -> Self {
+        Self(
+            messageKey: "split-view-unloaded",
+            title: "\(tabCount)-tab Split View unloaded",
+            subtitle: "Click the Split View to reload it",
+            duration: 2.0,
+            icon: "rectangle.split.2x1"
+        )
+    }
+
     static func tabClosure(
         count: Int,
         undoShortcut: String?,
@@ -147,6 +157,23 @@ extension BrowserNotification {
             duration: 3.0,
             action: action,
             icon: "arrow.uturn.backward"
+        )
+    }
+
+    static func splitViewClosure(
+        tabCount: Int,
+        undoShortcut: String?,
+        action: BrowserNotificationAction?
+    ) -> Self {
+        let subtitle = undoShortcut.map { "Press \($0) to reopen" }
+            ?? "Use History to reopen"
+        return Self(
+            messageKey: "split-view-closed",
+            title: "\(tabCount)-tab Split View closed",
+            subtitle: subtitle,
+            duration: 3.0,
+            action: action,
+            icon: "rectangle.split.2x1"
         )
     }
 

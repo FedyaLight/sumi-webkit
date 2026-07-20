@@ -147,7 +147,7 @@ final class RegularSplitSegmentResolverTests: XCTestCase {
         XCTAssertEqual(items.last?.persistentID, secondTab.id)
     }
 
-    func testSplitGroupHasOneRowActionInsteadOfMemberActions() throws {
+    func testRegularSplitUsesMemberCloseActionsInsteadOfGroupAction() throws {
         let regularTab = makeTab()
         let group = try regularGroup([regularTab, makeTab()])
         let regularItem = try XCTUnwrap(
@@ -156,10 +156,16 @@ final class RegularSplitSegmentResolverTests: XCTestCase {
                 tab: regularTab
             )
         )
-        XCTAssertEqual(
+        XCTAssertNil(
             SplitGroupSidebarModel.rowAction(
                 for: group,
                 items: [regularItem]
+            )
+        )
+        XCTAssertEqual(
+            SplitGroupSidebarModel.memberAction(
+                for: regularItem,
+                in: group
             ),
             .close
         )
@@ -206,6 +212,9 @@ final class RegularSplitSegmentResolverTests: XCTestCase {
             for: group,
             items: [unloaded]
         ))
+        XCTAssertNil(
+            SplitGroupSidebarModel.memberAction(for: loaded, in: group)
+        )
     }
 
     func testSplitRowDisplayProjectionRefreshesLoadedStateWithoutChangingMemberIdentity() throws {
@@ -332,10 +341,13 @@ final class RegularSplitSegmentResolverTests: XCTestCase {
             splitLayout: context.splitLayout,
             emptySplitCreation: context.emptySplitCreation,
             groupEditor: context.splitGroupEditor,
-            groupAction: .close,
+            groupAction: nil,
+            memberAction: { item in
+                SplitGroupSidebarModel.memberAction(for: item, in: group)
+            },
             contextMenuEntries: { _ in [] },
             onActivateMember: { _ in },
-            onGroupAction: {}
+            onMemberAction: { _ in }
         )
         .environment(windowState)
         .frame(width: 280)

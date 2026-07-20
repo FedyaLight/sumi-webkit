@@ -172,8 +172,17 @@ struct WindowView: View {
                             currentProfileID: {
                                 sidebarContext.currentProfileID()
                             },
-                            essentialPins: { profileId in
-                                sidebarContext.essentialPins(profileID: profileId)
+                            essentialItems: { profileId, spaceId in
+                                SidebarEssentialVisualProjection.make(
+                                    pins: sidebarContext.essentialPins(
+                                        profileID: profileId
+                                    ),
+                                    splitGroups: sidebarContext.inventory
+                                        .snapshot(for: spaceId).map {
+                                            Array($0.splitGroupsByID.values)
+                                        } ?? [],
+                                    profileID: profileId
+                                )
                             }
                         )
                     )

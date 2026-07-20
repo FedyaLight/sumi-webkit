@@ -276,11 +276,20 @@ struct EssentialsSnapshotGrid: View {
             ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                 HStack(spacing: PinnedTileMetrics.gridSpacing) {
                     ForEach(row.items) { item in
-                        SpaceSnapshotPinnedTileView(
-                            item: item,
-                            tileSize: row.tileSize,
-                            tokens: tokens
-                        )
+                        switch item {
+                        case .shortcut(let shortcut):
+                            SpaceSnapshotPinnedTileView(
+                                item: shortcut,
+                                tileSize: row.tileSize,
+                                tokens: tokens
+                            )
+                        case .splitGroup(let splitGroup):
+                            EssentialsSnapshotSplitTileView(
+                                splitGroup: splitGroup,
+                                tileSize: row.tileSize,
+                                tokens: tokens
+                            )
+                        }
                     }
                 }
             }
@@ -297,8 +306,65 @@ struct EssentialsSnapshotGrid: View {
     }
 
     private struct EssentialsSnapshotRow {
-        let items: [SpaceShortcutSnapshot]
+        let items: [EssentialsSnapshotItem]
         let tileSize: CGSize
+    }
+}
+
+private struct EssentialsSnapshotSplitTileView: View {
+    let splitGroup: SpaceSplitGroupSnapshot
+    let tileSize: CGSize
+    let tokens: ChromeThemeTokens
+
+    @Environment(\.sumiSettings) private var sumiSettings
+
+    var body: some View {
+        EssentialSplitCompactVisual(
+            members: splitGroup.members.map { member in
+                EssentialSplitTileMemberPresentation(
+                    icon: fallbackImage(for: member.icon),
+                    glyphText: member.icon.accentGlyphText,
+                    systemImageName: member.icon.accentSystemImageName,
+                    accentColor: accentColor(for: member),
+                    title: member.title,
+                    backdrop: member.essentialBackdrop
+                )
+            },
+            isGroupActive: splitGroup.isSelected,
+            cornerRadius: sumiSettings.resolvedCornerRadius(
+                PinnedTileMetrics.cornerRadius
+            ),
+            idleBackground: tokens.pinnedIdleBackground,
+            activeBackground: tokens.pinnedActiveBackground,
+            desaturatesIcons: !splitGroup.isLoaded
+        )
+        .frame(width: tileSize.width, height: tileSize.height)
+        .shadow(
+            color: splitGroup.isSelected ? tokens.sidebarSelectionShadow : .clear,
+            radius: splitGroup.isSelected ? 2 : 0,
+            y: splitGroup.isSelected ? 1 : 0
+        )
+        .accessibilityIdentifier(
+            "essential-split-group-snapshot-\(splitGroup.id.uuidString)"
+        )
+    }
+
+    private func fallbackImage(for icon: SpaceSidebarSnapshotIcon) -> Image {
+        if case .image(let image) = icon { return image }
+        return Image(systemName: "globe")
+    }
+
+    private func accentColor(
+        for member: SpaceSplitGroupMemberSnapshot
+    ) -> Color {
+        guard let source = member.accentSource else { return .accentColor }
+        return PinnedTileAccentResolver.resolve(
+            launchURL: source.launchURL,
+            partition: source.partition,
+            glyphText: member.icon.accentGlyphText,
+            chromeTemplateSystemImageName: member.icon.accentSystemImageName,
+            tokens: tokens
+        )
     }
 }
 

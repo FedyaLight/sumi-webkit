@@ -6,6 +6,14 @@ protocol BrowserNotificationPresenting: AnyObject {
     func presentProfileSwitchNotification(to profile: Profile, in windowState: BrowserWindowState?)
     func presentTabClosureNotification(tabCount: Int)
     func presentTabUnloadedNotification(count: Int, in windowState: BrowserWindowState?)
+    func presentSplitViewClosureNotification(
+        tabCount: Int,
+        in windowState: BrowserWindowState?
+    )
+    func presentSplitViewUnloadedNotification(
+        tabCount: Int,
+        in windowState: BrowserWindowState?
+    )
     func presentSpaceRenamedNotification(name: String, in windowState: BrowserWindowState?)
     func presentBackgroundTabOpenedNotification(tabId: UUID, in windowState: BrowserWindowState)
     func presentSplitViewLimitNotification(in windowState: BrowserWindowState)

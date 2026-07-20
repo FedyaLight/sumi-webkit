@@ -33,9 +33,11 @@ final class ShortcutLiveTabCloseService {
                   $0 === tab && $0.shortcutPinId == pinID
               }) else { return false }
 
+        let splitTabCount: Int?
         switch splitClose.close(pinID: pinID, in: windowState) {
-        case .committed:
+        case .committed(let unloadedTabCount):
             publication.captureHistory(for: tab, in: windowState)
+            splitTabCount = unloadedTabCount
         case .rejected:
             return false
         case .notGrouped:
@@ -47,10 +49,18 @@ final class ShortcutLiveTabCloseService {
                     publication.captureHistory(for: tab, in: windowState)
                 }
             ) else { return false }
+            splitTabCount = nil
         }
 
         if presentNotification {
-            publication.notifyClose(in: windowState)
+            if let splitTabCount {
+                publication.notifySplitViewUnload(
+                    tabCount: splitTabCount,
+                    in: windowState
+                )
+            } else {
+                publication.notifyClose(in: windowState)
+            }
         }
         return true
     }

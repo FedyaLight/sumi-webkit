@@ -16,6 +16,24 @@ final class ShortcutLiveTabUnloadNotificationTests: XCTestCase {
 
         let multiple = BrowserNotification.tabUnloaded(count: 3)
         XCTAssertEqual(multiple.title, "3 tabs unloaded")
+
+        let splitView = BrowserNotification.splitViewUnloaded(tabCount: 3)
+        XCTAssertEqual(splitView.messageKey, "split-view-unloaded")
+        XCTAssertEqual(splitView.title, "3-tab Split View unloaded")
+        XCTAssertEqual(
+            splitView.subtitle,
+            "Click the Split View to reload it"
+        )
+        XCTAssertEqual(splitView.icon, "rectangle.split.2x1")
+
+        let closedSplitView = BrowserNotification.splitViewClosure(
+            tabCount: 4,
+            undoShortcut: "⇧⌘T",
+            action: nil
+        )
+        XCTAssertEqual(closedSplitView.messageKey, "split-view-closed")
+        XCTAssertEqual(closedSplitView.title, "4-tab Split View closed")
+        XCTAssertEqual(closedSplitView.subtitle, "Press ⇧⌘T to reopen")
     }
 
     func testRuntimeContextForwardsTabUnloadedNotification() {
@@ -51,12 +69,10 @@ final class ShortcutLiveTabUnloadNotificationTests: XCTestCase {
 
         let windowState = BrowserWindowState()
         windowState.currentSpaceId = space.id
-        tabManager.runtimePortConnection.attach(TestRuntimePorts.make(
-            windowState: { [windowState] windowId in
-                windowId == windowState.id ? windowState : nil
-            },
-            windows: { [(windowState.id, windowState)] }
-        ))
+        XCTAssertEqual(
+            tabManager.windowRegistry.register(windowState),
+            .registered
+        )
 
         let liveTab = tabManager.shortcutTabMaterializer.materialize(
             pin,
@@ -79,6 +95,64 @@ final class ShortcutLiveTabUnloadNotificationTests: XCTestCase {
 
         XCTAssertEqual(spy.presentTabUnloadedNotificationCalls.map(\.count), [1])
         XCTAssertEqual(spy.presentTabUnloadedNotificationCalls.map(\.windowState?.id), [windowState.id])
-        XCTAssertNil(tabManager.shortcutPresentationOwner.shortcutLiveTab(for: pin.id, in: windowState.id))
+        XCTAssertIdentical(
+            tabManager.shortcutPresentationOwner.shortcutLiveTab(
+                for: pin.id,
+                in: windowState.id
+            ),
+            liveTab
+        )
+    }
+
+    func testClosingHostedSplitUnloadsEveryMemberAndUsesSplitNotification()
+        throws {
+        let fixture = try PublicationFixture(
+            pinCount: 2,
+            hostedSplit: true
+        )
+
+        XCTAssertTrue(fixture.browser.shortcutLiveTabClose.close(
+            fixture.liveTabs[0],
+            in: fixture.window
+        ))
+
+        XCTAssertTrue(fixture.liveTabs.allSatisfy { tab in
+            fixture.browser.liveShortcutTabs.entry(tabId: tab.id) == nil
+                && fixture.browser.tabCollectionMembershipOwner
+                    .tab(for: tab.id) == nil
+        })
+        let notification = try XCTUnwrap(
+            fixture.window.inAppNotifications.items.first?.notification
+        )
+        XCTAssertEqual(notification.messageKey, "split-view-unloaded")
+        XCTAssertEqual(notification.title, "2-tab Split View unloaded")
+        XCTAssertEqual(
+            notification.subtitle,
+            "Click the Split View to reload it"
+        )
+    }
+
+    func testSidebarUnloadSplitCommandUsesSplitNotification() throws {
+        let fixture = try PublicationFixture(
+            pinCount: 2,
+            hostedSplit: true
+        )
+        let context = fixture.browser.composeSidebarBrowserContext(
+            spaceLifecycle: fixture.browser.sidebarSpaceLifecycle
+        )
+
+        context.splitGroupLifecycle.unload(
+            fixture.group,
+            in: fixture.window
+        )
+
+        XCTAssertTrue(fixture.liveTabs.allSatisfy {
+            fixture.browser.liveShortcutTabs.entry(tabId: $0.id) == nil
+        })
+        let notification = try XCTUnwrap(
+            fixture.window.inAppNotifications.items.first?.notification
+        )
+        XCTAssertEqual(notification.messageKey, "split-view-unloaded")
+        XCTAssertEqual(notification.title, "2-tab Split View unloaded")
     }
 }

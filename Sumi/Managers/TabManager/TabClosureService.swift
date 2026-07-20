@@ -48,7 +48,11 @@ final class TabClosureService {
     }
 
     @discardableResult
-    func removeExactRegularTab(_ tab: Tab, in spaceID: UUID) -> Bool {
+    func removeExactRegularTab(
+        _ tab: Tab,
+        in spaceID: UUID,
+        presentNotification: Bool = true
+    ) -> Bool {
         transactions.withTransaction {
             let currentTabAtStart = selectionRepair.currentTab
             guard let committed = regularCommit.commitExact(
@@ -62,7 +66,10 @@ final class TabClosureService {
                 removedCurrentTab: currentTabAtStart,
                 profileID: committed.runtime.currentProfileId
             )
-            regularCommit.publish(committed)
+            regularCommit.publish(
+                committed,
+                presentNotification: presentNotification
+            )
             return true
         }
     }

@@ -143,7 +143,6 @@ private struct SpaceRegularDragSnapshotReader<Content: View>: View {
 /// `SpaceRegularTabsListView`; hover state lives with the new-tab control.
 struct SpaceRegularTabsView: View {
     let space: Space
-    let inventory: SidebarSpaceInventorySnapshot
     let selection: SidebarWindowSelectionQuery
     let regularTabCatalog: SidebarRegularTabCatalog
     let regularTabTargets: SidebarRegularTabTargetQuery
@@ -166,7 +165,6 @@ struct SpaceRegularTabsView: View {
         SpaceRegularDragSnapshotReader(spaceID: space.id, tabs: tabs) { dragSnapshot in
             SpaceRegularTabsContentView(
                 space: space,
-                inventory: inventory,
                 selection: selection,
                 regularTabCatalog: regularTabCatalog,
                 regularTabTargets: regularTabTargets,
@@ -187,7 +185,6 @@ struct SpaceRegularTabsView: View {
 
 private struct SpaceRegularTabsContentView: View {
     let space: Space
-    let inventory: SidebarSpaceInventorySnapshot
     let selection: SidebarWindowSelectionQuery
     let regularTabCatalog: SidebarRegularTabCatalog
     let regularTabTargets: SidebarRegularTabTargetQuery
@@ -255,7 +252,6 @@ private struct SpaceRegularTabsContentView: View {
 
                 SpaceRegularTabsListView(
                     space: space,
-                    inventory: inventory,
                     selection: selection,
                     regularTabCatalog: regularTabCatalog,
                     regularTabTargets: regularTabTargets,

@@ -202,6 +202,7 @@ extension BrowserManager {
         ShortcutHostedSplitUnloadService(
             runtimeConnection: runtimePortConnection,
             splitGroups: splitGroupStore,
+            splitMembership: splitGroupMembership,
             retirement: shortcutLiveTabRetirement,
             fallback: ShortcutHostedSplitFallbackQuery(
                 spaces: spaceStateOwner,

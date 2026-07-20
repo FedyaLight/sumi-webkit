@@ -55,23 +55,11 @@ enum SidebarDragPresentationProjection {
         }
     }
 
-    static func anchorOffset(
-        for model: SidebarDragPreviewModel,
-        previewKind: SidebarDragPreviewKind,
-        in size: CGSize
-    ) -> CGPoint {
-        if model.item.kind == .splitGroup,
-           model.sourceZone == .essentials,
-           previewKind == .row {
-            return CGPoint(x: size.width / 2, y: size.height / 2)
-        }
-        return model.anchorOffset(in: size)
-    }
 }
 
 struct SidebarFloatingDragPreviewContext {
     let currentProfileID: () -> UUID?
-    let essentialPins: (UUID) -> [ShortcutPin]
+    let essentialItems: (UUID, UUID) -> [SidebarEssentialVisualItem]
 }
 
 struct SidebarFloatingDragPreview: View {
@@ -100,11 +88,7 @@ struct SidebarFloatingDragPreview: View {
                             hoveredSlot: dragState.hoveredSlot
                         )
                         let size = resolvedSize(for: previewKind, model: previewModel)
-                        let anchor = SidebarDragPresentationProjection.anchorOffset(
-                            for: previewModel,
-                            previewKind: previewKind,
-                            in: size
-                        )
+                        let anchor = previewModel.anchorOffset(in: size)
 
                         previewContent(kind: previewKind, model: previewModel, size: size)
                             .frame(width: size.width, height: size.height)
@@ -176,10 +160,7 @@ struct SidebarFloatingDragPreview: View {
     private func essentialsPreview(model: SidebarDragPreviewModel) -> some View {
         if let split = model.splitPresentation {
             EssentialSplitCompactVisual(
-                icons: split.icons,
-                glyphTexts: split.glyphTexts,
-                systemImageNames: split.systemImageNames,
-                accentColors: split.accentColors,
+                members: split.members,
                 isGroupActive: model.shortcutPresentationState?.isSelected == true,
                 desaturatesIcons:
                     model.shortcutPresentationState?.shouldDesaturateIcon == true
@@ -190,7 +171,8 @@ struct SidebarFloatingDragPreview: View {
                 glyphText: model.previewGlyphText,
                 chromeTemplateSystemImageName: model.chromeTemplateSystemImageName,
                 presentationState: model.shortcutPresentationState ?? .launcherOnly,
-                isHovered: false
+                isHovered: false,
+                selectionBackdrop: model.previewBackdrop
             )
         }
     }
@@ -199,10 +181,7 @@ struct SidebarFloatingDragPreview: View {
     private func rowPreview(model: SidebarDragPreviewModel) -> some View {
         if let split = model.splitPresentation {
             SidebarSplitRowPreviewVisual(
-                icons: split.icons,
-                glyphTexts: split.glyphTexts,
-                systemImageNames: split.systemImageNames,
-                titles: split.titles,
+                members: split.members,
                 desaturatesIcons:
                     model.shortcutPresentationState?.shouldDesaturateIcon == true
             )
@@ -251,9 +230,11 @@ struct SidebarFloatingDragPreview: View {
             return slotFrame.frame.size
         }
 
-        let pins = profileId.map { browserContext.essentialPins($0) } ?? []
+        let items = profileId.map {
+            browserContext.essentialItems($0, hoveredPage.spaceId)
+        } ?? []
         let projection = SidebarEssentialsProjectionPolicy.make(
-            items: pins.map(SidebarEssentialVisualItem.pin),
+            items: items,
             width: metrics.frame.width,
             dragState: dragState
         )
@@ -322,10 +303,7 @@ struct SidebarFloatingDragPreview: View {
 }
 
 private struct SidebarSplitRowPreviewVisual: View {
-    let icons: [Image]
-    let glyphTexts: [String?]
-    let systemImageNames: [String?]
-    let titles: [String]
+    let members: [EssentialSplitTileMemberPresentation]
     let desaturatesIcons: Bool
 
     @Environment(\.sumiSettings) private var sumiSettings
@@ -334,7 +312,7 @@ private struct SidebarSplitRowPreviewVisual: View {
 
     var body: some View {
         GeometryReader { geometry in
-            let count = max(min(icons.count, SplitGroup.maximumMembers), 1)
+            let count = max(min(members.count, SplitGroup.maximumMembers), 1)
             let segmentWidth = max(
                 0,
                 (geometry.size.width - CGFloat(count - 1)) / CGFloat(count)
@@ -342,8 +320,8 @@ private struct SidebarSplitRowPreviewVisual: View {
             HStack(spacing: 0) {
                 ForEach(0..<count, id: \.self) { index in
                     SplitGroupSegmentLabel(
-                        title: titles.indices.contains(index)
-                            ? titles[index] : String(localized: "Tab"),
+                        title: members.indices.contains(index)
+                            ? members[index].title : String(localized: "Tab"),
                         trailingPadding: 7,
                         textColor: tokens.primaryText
                     ) {
@@ -375,20 +353,20 @@ private struct SidebarSplitRowPreviewVisual: View {
 
     @ViewBuilder
     private func previewIcon(at index: Int) -> some View {
-        if glyphTexts.indices.contains(index),
-           let glyph = glyphTexts[index] {
+        if members.indices.contains(index),
+           let glyph = members[index].glyphText {
             Text(glyph)
                 .font(.system(size: 16))
                 .frame(width: 16, height: 16)
-        } else if systemImageNames.indices.contains(index),
-                  let systemName = systemImageNames[index] {
+        } else if members.indices.contains(index),
+                  let systemName = members[index].systemImageName {
             Image(systemName: systemName)
                 .font(.system(size: 15, weight: .medium))
                 .symbolRenderingMode(.monochrome)
                 .frame(width: 16, height: 16)
         } else {
-            (icons.indices.contains(index)
-                ? icons[index] : Image(systemName: "globe"))
+            (members.indices.contains(index)
+                ? members[index].icon : Image(systemName: "globe"))
                 .resizable()
                 .scaledToFit()
                 .frame(width: 16, height: 16)

@@ -17,10 +17,12 @@ struct SplitGroupSidebarRow: View {
     let groupEditor: SidebarSplitGroupEditorPresentationService
     var groupContextMenuActions: SplitGroupContextMenuActions = .empty
     let groupAction: SplitGroupSidebarAction?
+    var memberAction: (SplitGroupSidebarItem) -> SplitGroupSidebarMemberAction? = { _ in nil }
     var dragSource: (SplitGroupSidebarItem) -> SidebarDragSourceConfiguration? = { _ in nil }
     let contextMenuEntries: (SplitGroupSidebarItem) -> [SidebarContextMenuEntry]
     let onActivateMember: (SplitMemberID) -> Void
-    let onGroupAction: () -> Void
+    var onMemberAction: (SplitGroupSidebarItem) -> Void = { _ in }
+    var onGroupAction: () -> Void = {}
 
     @Environment(BrowserWindowState.self) var windowState
     @Environment(\.accessibilityReduceMotion) var reduceMotion
@@ -85,6 +87,7 @@ struct SplitGroupSidebarRow: View {
 
             HStack(spacing: 0) {
                 ForEach(Array(rowItems.enumerated()), id: \.element.id) { index, item in
+                    let itemAction = memberAction(item)
                     SplitGroupSegment(
                         groupID: group.id,
                         item: item,
@@ -94,10 +97,11 @@ struct SplitGroupSidebarRow: View {
                             for: index,
                             in: rowItems
                         ),
-                        reservesTrailingAction: isLastVisibleItem(
-                            at: index,
-                            in: rowItems
-                        ) && groupAction != nil,
+                        reservesTrailingAction: itemAction != nil || (
+                            isLastVisibleItem(at: index, in: rowItems)
+                                && groupAction != nil
+                        ),
+                        memberAction: itemAction,
                         isAppKitInteractionEnabled: isAppKitInteractionEnabled && !isDeparting(item),
                         faviconImageReader: faviconImageReader,
                         dragSourceConfiguration: dragSource(item),
@@ -116,7 +120,8 @@ struct SplitGroupSidebarRow: View {
                             groupContextMenuEntries
                         },
                         onActivate: { activate(item) },
-                        onMiddleClick: groupAction == nil ? nil : onGroupAction
+                        onMemberAction: { onMemberAction(item) },
+                        onMiddleClick: middleClickAction(for: item)
                     )
                     .frame(width: isDeparting(item) ? 0 : segmentWidth)
                     .clipped()
@@ -252,7 +257,7 @@ struct SplitGroupSidebarRow: View {
                 freezesHoverState:
                     windowState.sidebarInteractionState.freezesSidebarHoverState
             ),
-            isSelected: groupAction.showsWhenSelected && isFocusedGroup
+            isSelected: false
         )
     }
 
@@ -266,8 +271,20 @@ struct SplitGroupSidebarRow: View {
         for index: Int,
         in rowItems: [SplitGroupSidebarItem]
     ) -> CGFloat {
-        isLastVisibleItem(at: index, in: rowItems) && showsGroupAction
+        if memberAction(rowItems[index]) != nil {
+            return SidebarRowLayout.trailingActionPadding
+        }
+        return isLastVisibleItem(at: index, in: rowItems) && showsGroupAction
             ? SidebarRowLayout.trailingActionPadding : 7
+    }
+
+    private func middleClickAction(
+        for item: SplitGroupSidebarItem
+    ) -> (() -> Void)? {
+        if memberAction(item) != nil {
+            return { onMemberAction(item) }
+        }
+        return groupAction == nil ? nil : onGroupAction
     }
 
     private func isLastVisibleItem(

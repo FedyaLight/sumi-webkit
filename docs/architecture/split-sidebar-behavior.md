@@ -53,7 +53,7 @@ An unloaded launcher dropped into an active split is materialized immediately an
 - A launcher-backed split loads and unloads only as a group. Clicking a participant loads every member and focuses that participant; clicking shared row chrome restores the last active participant, falling back to the first.
 - `Unload Split View` unloads every runtime instance and preserves the group.
 - `Delete Split View…` removes the saved group and all launcher members after confirmation.
-- `Close Split View` closes every member of a regular group.
+- Regular split rows expose a separate close button for each visible participant. `Close Split View` in the group context menu closes every member.
 - Removing one participant dissolves a two-member group and leaves the survivor standalone.
 
 ## Separation and capacity

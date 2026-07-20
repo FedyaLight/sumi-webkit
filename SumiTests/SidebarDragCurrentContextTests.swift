@@ -48,6 +48,33 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         )
     }
 
+    func testEssentialsDragPreviewCentersTileOnCursorRegardlessOfGrabPoint() {
+        let sourceSize = CGSize(width: 132, height: 56)
+        let session = SidebarDragPreviewSessionFactory.make(
+            configuration: SidebarDragSourceConfiguration(
+                item: SumiDragItem(
+                    tabId: UUID(),
+                    title: "Essential",
+                    urlString: "https://example.com"
+                ),
+                sourceZone: .essentials,
+                previewKind: .essentialsTile
+            ),
+            sourceSize: sourceSize,
+            sourceOffsetFromBottomLeading: CGPoint(x: 12, y: 8)
+        )
+        let center = CGPoint(
+            x: sourceSize.width / 2,
+            y: sourceSize.height / 2
+        )
+
+        XCTAssertEqual(session?.primaryAsset.anchorOffset, center)
+        XCTAssertEqual(
+            session?.previewModel.anchorOffset(in: sourceSize),
+            center
+        )
+    }
+
     func testLauncherDragPreviewSessionRendersRowAndEssentialsAssets() {
         let session = SidebarDragPreviewSessionFactory.make(
             configuration: SidebarDragSourceConfiguration(
@@ -107,8 +134,8 @@ final class SidebarDragCurrentContextTests: XCTestCase {
 
         XCTAssertEqual(anchor, CGPoint(x: 159, y: 20))
         XCTAssertEqual(
-            session?.previewModel.anchorOffset(in: geometry.size).x,
-            159
+            session?.previewModel.anchorOffset(in: geometry.size),
+            CGPoint(x: 159, y: 16)
         )
     }
 
@@ -204,7 +231,8 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         )
     }
 
-    func testEssentialSplitGroupRowPreviewCentersUnderPointer() throws {
+    func testEssentialSplitGroupPreviewCentersUnderPointerForTileAndRow()
+        throws {
         let sourceSize = CGSize(width: 90, height: 64)
         let rowSize = CGSize(width: 240, height: SidebarRowLayout.rowHeight)
         let session = try XCTUnwrap(SidebarDragPreviewSessionFactory.make(
@@ -218,19 +246,11 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         ))
 
         XCTAssertEqual(
-            SidebarDragPresentationProjection.anchorOffset(
-                for: session.previewModel,
-                previewKind: .row,
-                in: rowSize
-            ),
+            session.previewModel.anchorOffset(in: rowSize),
             CGPoint(x: rowSize.width / 2, y: rowSize.height / 2)
         )
-        XCTAssertNotEqual(
-            SidebarDragPresentationProjection.anchorOffset(
-                for: session.previewModel,
-                previewKind: .essentialsTile,
-                in: sourceSize
-            ),
+        XCTAssertEqual(
+            session.previewModel.anchorOffset(in: sourceSize),
             CGPoint(x: sourceSize.width / 2, y: sourceSize.height / 2)
         )
     }

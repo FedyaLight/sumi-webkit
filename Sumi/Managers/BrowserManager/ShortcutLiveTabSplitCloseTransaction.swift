@@ -4,7 +4,7 @@ import SumiDomain
 enum ShortcutLiveTabSplitCloseOutcome {
     case notGrouped
     case rejected
-    case committed
+    case committed(unloadedTabCount: Int)
 }
 
 /// Retires one canonical live shortcut residence from its durable split
@@ -30,9 +30,10 @@ final class ShortcutLiveTabSplitCloseTransaction {
             containing: .shortcutPin(pinID)
         ) else { return .notGrouped }
         guard group.container.isShortcutSidebar else { return .rejected }
-        return hostedUnload.unloadShortcutHostedSplitGroup(
+        guard let result = hostedUnload.unloadShortcutHostedSplitGroup(
             group,
             in: windowState
-        ) ? .committed : .rejected
+        ) else { return .rejected }
+        return .committed(unloadedTabCount: result.unloadedTabCount)
     }
 }

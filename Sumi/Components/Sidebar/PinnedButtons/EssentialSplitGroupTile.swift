@@ -7,6 +7,7 @@ struct EssentialSplitGroupTile: View {
     let selection: SidebarWindowSelectionQuery
     let selectionSnapshot: SidebarWindowSelectionSnapshot
     let faviconImageReader: any BrowserFaviconImageReading
+    let essentialBackdropReader: any BrowserEssentialBackdropReading
     let splitLayout: SplitLayoutService
     let emptySplitCreation: EmptySplitCreationWorkflow
     let groupEditor: SidebarSplitGroupEditorPresentationService
@@ -22,6 +23,7 @@ struct EssentialSplitGroupTile: View {
     @State private var loadedAccentColors: [UUID: Color] = [:]
     @State private var accentRefreshID = UUID()
     @StateObject private var storedFaviconLoader = SidebarStoredFaviconLoader()
+    @State private var backdropLoader = SidebarEssentialBackdropLoader()
 
     var body: some View {
         Group {
@@ -42,6 +44,9 @@ struct EssentialSplitGroupTile: View {
         }
         .task(id: storedFaviconLoadKey) {
             await loadStoredFavicons()
+        }
+        .task(id: backdropLoadKey) {
+            await loadBackdrops()
         }
         .onReceive(
             NotificationCenter.default.publisher(for: .faviconCacheUpdated)
@@ -66,14 +71,22 @@ struct EssentialSplitGroupTile: View {
             }
             accentRefreshID = UUID()
         }
+        .onReceive(
+            NotificationCenter.default.publisher(for: .essentialBackdropUpdated)
+        ) { notification in
+            for pin in memberPins where pin.iconAsset == nil {
+                backdropLoader.invalidateIfNeeded(
+                    for: notification,
+                    launchURL: pin.launchURL,
+                    partition: faviconPartition(for: pin)
+                )
+            }
+        }
     }
 
     private var memberCompositionTile: some View {
         EssentialSplitCompactVisual(
-            icons: memberVisuals.map(\.icon),
-            glyphTexts: memberVisuals.map(\.glyphText),
-            systemImageNames: memberVisuals.map(\.systemImageName),
-            accentColors: memberVisuals.map(\.accentColor),
+            members: splitTileMembers,
             isGroupActive: isGroupActive,
             cornerRadius: sumiSettings.resolvedCornerRadius(
                 PinnedTileMetrics.cornerRadius
@@ -84,11 +97,11 @@ struct EssentialSplitGroupTile: View {
         )
         .overlay {
             GeometryReader { geometry in
-                let rects = EssentialSplitCompactLayout.rects(
+                let rects = EssentialSplitTileGeometry.resolve(
                     in: geometry.size,
                     count: memberVisuals.count,
-                    gap: PinnedTileMetrics.strokeWidth
-                )
+                    thickness: PinnedTileMetrics.strokeWidth
+                ).contentRects
                 ForEach(Array(memberVisuals.enumerated()), id: \.element.id) {
                     index, member in
                     if rects.indices.contains(index) {
@@ -255,7 +268,8 @@ struct EssentialSplitGroupTile: View {
                 ),
                 partition: .regular(
                     pin.executionProfileId ?? pin.profileId
-                )
+                ),
+                backdrop: backdropImage(for: pin)
             )
         }
     }
@@ -286,6 +300,19 @@ struct EssentialSplitGroupTile: View {
         }.joined(separator: "|")
     }
 
+    private var backdropLoadKey: String {
+        memberPins.map { pin in
+            backdropLoader.loadKey(
+                launchURL: pin.launchURL,
+                partition: faviconPartition(for: pin),
+                isEnabled: isGroupActive
+                    && pin.iconAsset == nil
+                    && pin.glyphText == nil
+                    && pin.chromeTemplateSystemImageName == nil
+            )
+        }.joined(separator: "|")
+    }
+
     @MainActor
     private func loadStoredFavicons() async {
         for pin in memberPins where pin.iconAsset == nil {
@@ -297,6 +324,40 @@ struct EssentialSplitGroupTile: View {
             )
             guard !Task.isCancelled else { return }
         }
+    }
+
+    @MainActor
+    private func loadBackdrops() async {
+        guard isGroupActive else { return }
+        for pin in memberPins where pin.iconAsset == nil
+            && pin.glyphText == nil
+            && pin.chromeTemplateSystemImageName == nil {
+            await backdropLoader.load(
+                launchURL: pin.launchURL,
+                partition: faviconPartition(for: pin),
+                reader: essentialBackdropReader,
+                isCurrentLaunchURL: { pin.launchURL == $0 }
+            )
+            guard !Task.isCancelled else { return }
+        }
+    }
+
+    private func backdropImage(for pin: ShortcutPin) -> Image? {
+        guard pin.iconAsset == nil,
+              pin.glyphText == nil,
+              pin.chromeTemplateSystemImageName == nil
+        else { return nil }
+        let partition = faviconPartition(for: pin)
+        if let loaded = backdropLoader.image(
+            for: pin.launchURL,
+            partition: partition
+        ) {
+            return loaded
+        }
+        return essentialBackdropReader.cachedBackdrop(
+            for: pin.launchURL,
+            partition: partition
+        ).map(Image.init(nsImage:))
     }
 
     private func faviconPartition(
@@ -381,17 +442,20 @@ struct EssentialSplitGroupTile: View {
     }
 
     private var splitDragPresentation: SidebarSplitDragPresentation {
-        SidebarSplitDragPresentation(
-            members: memberVisuals.map { member in
-                SidebarSplitDragPresentation.Member(
-                    icon: member.icon,
-                    glyphText: member.glyphText,
-                    systemImageName: member.systemImageName,
-                    accentColor: member.accentColor,
-                    title: member.title
-                )
-            }
-        )
+        SidebarSplitDragPresentation(members: splitTileMembers)
+    }
+
+    private var splitTileMembers: [EssentialSplitTileMemberPresentation] {
+        memberVisuals.map { member in
+            EssentialSplitTileMemberPresentation(
+                icon: member.icon,
+                glyphText: member.glyphText,
+                systemImageName: member.systemImageName,
+                accentColor: member.accentColor,
+                title: member.title,
+                backdrop: member.backdrop
+            )
+        }
     }
 
     private var supportsUnload: Bool {
@@ -473,10 +537,62 @@ private struct EssentialSplitMemberVisual: Identifiable {
     let systemImageName: String?
     let accentColor: Color
     let partition: SumiFaviconPartition
+    let backdrop: Image?
 }
 
-enum EssentialSplitCompactLayout {
-    static func rects(
+struct EssentialSplitTileGeometry {
+    let outerRect: CGRect
+    let contentRects: [CGRect]
+    let materialRects: [CGRect]
+    let dividerRects: [CGRect]
+
+    static func resolve(
+        in size: CGSize,
+        count: Int,
+        thickness: CGFloat
+    ) -> EssentialSplitTileGeometry {
+        let contentRects = rects(
+            in: size,
+            count: count,
+            gap: max(0, thickness)
+        )
+        let materialRects = rects(in: size, count: count, gap: 0)
+        let width = max(0, size.width)
+        let height = max(0, size.height)
+        let lineWidth = max(0, min(thickness, min(width, height)))
+        let vertical = CGRect(
+            x: (width - lineWidth) / 2,
+            y: 0,
+            width: lineWidth,
+            height: height
+        )
+        let fullHorizontal = CGRect(
+            x: 0,
+            y: (height - lineWidth) / 2,
+            width: width,
+            height: lineWidth
+        )
+        let leftHorizontal = CGRect(
+            x: 0,
+            y: (height - lineWidth) / 2,
+            width: (width + lineWidth) / 2,
+            height: lineWidth
+        )
+        let dividers: [CGRect] = switch count {
+        case 2: [vertical]
+        case 3: [vertical, leftHorizontal]
+        case 4: [vertical, fullHorizontal]
+        default: []
+        }
+        return EssentialSplitTileGeometry(
+            outerRect: CGRect(x: 0, y: 0, width: width, height: height),
+            contentRects: contentRects,
+            materialRects: materialRects,
+            dividerRects: dividers
+        )
+    }
+
+    private static func rects(
         in size: CGSize,
         count: Int,
         gap: CGFloat
@@ -541,54 +657,8 @@ enum EssentialSplitCompactLayout {
     }
 }
 
-struct EssentialSplitCompactChromeGeometry {
-    let outerRect: CGRect
-    let dividerRects: [CGRect]
-
-    static func resolve(
-        in size: CGSize,
-        count: Int,
-        thickness: CGFloat
-    ) -> EssentialSplitCompactChromeGeometry {
-        let width = max(0, size.width)
-        let height = max(0, size.height)
-        let lineWidth = max(0, min(thickness, min(width, height)))
-        let vertical = CGRect(
-            x: (width - lineWidth) / 2,
-            y: 0,
-            width: lineWidth,
-            height: height
-        )
-        let fullHorizontal = CGRect(
-            x: 0,
-            y: (height - lineWidth) / 2,
-            width: width,
-            height: lineWidth
-        )
-        let leftHorizontal = CGRect(
-            x: 0,
-            y: (height - lineWidth) / 2,
-            width: (width + lineWidth) / 2,
-            height: lineWidth
-        )
-        let dividers: [CGRect] = switch count {
-        case 2: [vertical]
-        case 3: [vertical, leftHorizontal]
-        case 4: [vertical, fullHorizontal]
-        default: []
-        }
-        return EssentialSplitCompactChromeGeometry(
-            outerRect: CGRect(x: 0, y: 0, width: width, height: height),
-            dividerRects: dividers
-        )
-    }
-}
-
 struct EssentialSplitCompactVisual: View {
-    let icons: [Image]
-    var glyphTexts: [String?] = []
-    var systemImageNames: [String?] = []
-    var accentColors: [Color] = []
+    let members: [EssentialSplitTileMemberPresentation]
     var isGroupActive: Bool
     var cornerRadius: CGFloat = PinnedTileMetrics.cornerRadius
     var idleBackground: Color = Color(nsColor: .controlBackgroundColor)
@@ -597,11 +667,12 @@ struct EssentialSplitCompactVisual: View {
 
     var body: some View {
         GeometryReader { geometry in
-            let rects = EssentialSplitCompactLayout.rects(
+            let splitGeometry = EssentialSplitTileGeometry.resolve(
                 in: geometry.size,
-                count: min(icons.count, SplitGroup.maximumMembers),
-                gap: PinnedTileMetrics.strokeWidth
+                count: min(members.count, SplitGroup.maximumMembers),
+                thickness: PinnedTileMetrics.strokeWidth
             )
+            let rects = splitGeometry.contentRects
             ZStack {
                 ForEach(Array(rects.enumerated()), id: \.offset) { index, rect in
                     Rectangle()
@@ -616,23 +687,19 @@ struct EssentialSplitCompactVisual: View {
                 }
 
                 if isGroupActive {
-                    let accentMesh = EssentialSplitAccentMesh.resolve(
-                        in: geometry.size,
-                        memberRects: rects
-                    )
-                    EssentialSplitChromeMask(
-                        memberCount: rects.count,
-                        cornerRadius: cornerRadius,
-                        thickness: PinnedTileMetrics.strokeWidth
-                    )
-                    .fill(MeshGradient(
-                        width: accentMesh.width,
-                        height: accentMesh.height,
-                        points: accentMesh.points,
-                        colors: accentMesh.colorIndices.map { index in
-                            resolvedAccentColor(at: index)
+                    ZStack {
+                        ForEach(Array(splitGeometry.materialRects.enumerated()), id: \.offset) {
+                            index, rect in
+                            splitChromeSource(at: index, rect: rect)
                         }
-                    ))
+                    }
+                    .mask {
+                        EssentialSplitChromeMask(
+                            memberCount: rects.count,
+                            cornerRadius: cornerRadius,
+                            thickness: PinnedTileMetrics.strokeWidth
+                        )
+                    }
                     .allowsHitTesting(false)
                 }
             }
@@ -644,19 +711,19 @@ struct EssentialSplitCompactVisual: View {
 
     @ViewBuilder
     private func compactIcon(at index: Int) -> some View {
-        if glyphTexts.indices.contains(index),
-           let glyph = glyphTexts[index] {
+        if members.indices.contains(index),
+           let glyph = members[index].glyphText {
             Text(glyph)
                 .font(.system(size: 16))
                 .frame(width: 16, height: 16)
-        } else if systemImageNames.indices.contains(index),
-                  let systemName = systemImageNames[index] {
+        } else if members.indices.contains(index),
+                  let systemName = members[index].systemImageName {
             Image(systemName: systemName)
                 .font(.system(size: 15, weight: .medium))
                 .symbolRenderingMode(.monochrome)
                 .frame(width: 16, height: 16)
         } else {
-            icons[index]
+            members[index].icon
                 .resizable()
                 .scaledToFit()
                 .frame(width: 16, height: 16)
@@ -667,113 +734,59 @@ struct EssentialSplitCompactVisual: View {
     }
 
     private func resolvedAccentColor(at index: Int) -> Color {
-        accentColors.indices.contains(index)
-            ? accentColors[index] : .accentColor
+        members.indices.contains(index)
+            ? members[index].accentColor : .accentColor
+    }
+
+    @ViewBuilder
+    private func splitChromeSource(at index: Int, rect: CGRect) -> some View {
+        if members.indices.contains(index), let backdrop = members[index].backdrop {
+            backdrop
+                .resizable()
+                .interpolation(.high)
+                .scaledToFill()
+                .scaleEffect(1.12)
+                .frame(width: rect.width, height: rect.height)
+                .clipped()
+                .position(x: rect.midX, y: rect.midY)
+        } else {
+            Rectangle()
+                .fill(resolvedAccentColor(at: index))
+                .frame(width: rect.width, height: rect.height)
+                .position(x: rect.midX, y: rect.midY)
+        }
     }
 }
 
-struct EssentialSplitAccentMesh {
-    let width: Int
-    let height: Int
-    let points: [SIMD2<Float>]
-    let colorIndices: [Int]
-
-    static func resolve(
-        in size: CGSize,
-        memberRects: [CGRect]
-    ) -> EssentialSplitAccentMesh {
-        guard size.width > 0, size.height > 0, !memberRects.isEmpty else {
-            return EssentialSplitAccentMesh(
-                width: 2,
-                height: 2,
-                points: [
-                    SIMD2<Float>(0, 0), SIMD2<Float>(1, 0),
-                    SIMD2<Float>(0, 1), SIMD2<Float>(1, 1),
-                ],
-                colorIndices: [0, 0, 0, 0]
-            )
-        }
-
-        let centers = memberRects.map { rect in
-            CGPoint(
-                x: rect.midX / size.width,
-                y: rect.midY / size.height
-            )
-        }
-        let xPositions = meshAxisPositions(centers.map(\.x))
-        let yPositions = meshAxisPositions(centers.map(\.y))
-        let points = yPositions.flatMap { y in
-            xPositions.map { x in SIMD2<Float>(Float(x), Float(y)) }
-        }
-        let colorIndices = points.map { point in
-            nearestCenterIndex(
-                to: CGPoint(x: CGFloat(point.x), y: CGFloat(point.y)),
-                centers: centers
-            )
-        }
-        return EssentialSplitAccentMesh(
-            width: xPositions.count,
-            height: yPositions.count,
-            points: points,
-            colorIndices: colorIndices
-        )
-    }
-
-    private static func meshAxisPositions(
-        _ memberPositions: [CGFloat]
-    ) -> [CGFloat] {
-        Array(Set([0, 0.5, 1] + memberPositions)).sorted()
-    }
-
-    private static func nearestCenterIndex(
-        to point: CGPoint,
-        centers: [CGPoint]
-    ) -> Int {
-        centers.indices.min { lhs, rhs in
-            squaredDistance(from: point, to: centers[lhs])
-                < squaredDistance(from: point, to: centers[rhs])
-        } ?? 0
-    }
-
-    private static func squaredDistance(
-        from first: CGPoint,
-        to second: CGPoint
-    ) -> CGFloat {
-        let deltaX = first.x - second.x
-        let deltaY = first.y - second.y
-        return deltaX * deltaX + deltaY * deltaY
-    }
-}
-
-private struct EssentialSplitChromeMask: Shape {
+private struct EssentialSplitChromeMask: View {
     let memberCount: Int
     let cornerRadius: CGFloat
     let thickness: CGFloat
 
-    func path(in rect: CGRect) -> Path {
-        let geometry = EssentialSplitCompactChromeGeometry.resolve(
-            in: rect.size,
-            count: memberCount,
-            thickness: thickness
-        )
-        var result = Path()
-        let outerRect = geometry.outerRect
-            .offsetBy(dx: rect.minX, dy: rect.minY)
-            .insetBy(dx: thickness / 2, dy: thickness / 2)
-        let resolvedCornerRadius = min(
-            cornerRadius,
-            min(outerRect.width, outerRect.height) / 2
-        )
-        let outerStroke = Path(
-            roundedRect: outerRect,
-            cornerRadius: resolvedCornerRadius
-        ).strokedPath(StrokeStyle(lineWidth: thickness))
-        result.addPath(outerStroke)
-        for dividerRect in geometry.dividerRects {
-            result.addRect(
-                dividerRect.offsetBy(dx: rect.minX, dy: rect.minY)
+    var body: some View {
+        GeometryReader { geometryProxy in
+            let geometry = EssentialSplitTileGeometry.resolve(
+                in: geometryProxy.size,
+                count: memberCount,
+                thickness: thickness
             )
+            ZStack {
+                RoundedRectangle(
+                    cornerRadius: cornerRadius,
+                    style: .continuous
+                )
+                .strokeBorder(Color.white, lineWidth: thickness)
+
+                ForEach(
+                    Array(geometry.dividerRects.enumerated()),
+                    id: \.offset
+                ) { _, rect in
+                    Rectangle()
+                        .fill(Color.white)
+                        .frame(width: rect.width, height: rect.height)
+                        .position(x: rect.midX, y: rect.midY)
+                }
+            }
         }
-        return result
     }
 }

@@ -8,6 +8,7 @@ final class ShortcutLiveTabStandaloneCloseTransaction {
     private let structuralLookup: TabStructuralLookupCoordinator
     private let retirement: ShortcutLiveTabRetirementService
     private let fallbackPlanner: BrowserTabCloseFallbackPlanner
+    private let splitMembership: SplitGroupMembershipQuery
     private let visuals: BrowserWindowVisualCoordinator
 
     init(
@@ -15,12 +16,14 @@ final class ShortcutLiveTabStandaloneCloseTransaction {
         structuralLookup: TabStructuralLookupCoordinator,
         retirement: ShortcutLiveTabRetirementService,
         fallbackPlanner: BrowserTabCloseFallbackPlanner,
+        splitMembership: SplitGroupMembershipQuery,
         visuals: BrowserWindowVisualCoordinator
     ) {
         self.tabStore = tabStore
         self.structuralLookup = structuralLookup
         self.retirement = retirement
         self.fallbackPlanner = fallbackPlanner
+        self.splitMembership = splitMembership
         self.visuals = visuals
     }
 
@@ -47,9 +50,10 @@ final class ShortcutLiveTabStandaloneCloseTransaction {
 
         var target = windowState.unpublishedShortcutMutationState
         if wasCurrent, let fallback {
-            _ = WindowTabSelectionStateApplicator.apply(
+            _ = WindowTabSelectionStateApplicator.applyFallback(
                 fallback,
                 to: &target,
+                splitMembership: splitMembership,
                 updateSpaceFromTab: true,
                 rememberSelection: true
             )

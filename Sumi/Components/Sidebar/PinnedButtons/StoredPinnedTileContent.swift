@@ -9,6 +9,7 @@ struct StoredPinnedTileContent: View {
     @ObservedObject var pin: ShortcutPin
     let faviconPartition: SumiFaviconPartition
     let faviconImageReader: any BrowserFaviconImageReading
+    let essentialBackdropReader: any BrowserEssentialBackdropReading
     let presentationState: ShortcutPresentationState
     let essentialRuntimeState: SumiEssentialRuntimeState?
     let accessibilityID: String
@@ -42,6 +43,7 @@ struct StoredPinnedTileContent: View {
                 pin: pin,
                 resolvedTitle: resolvedTitle,
                 previewIcon: resolvedFavicon,
+                previewBackdrop: cachedEssentialBackdrop,
                 chromeTemplateSystemImageName: resolvedChromeTemplateSystemImageName,
                 previewPresentationState: presentationState,
                 exclusionZones: dragExclusionZones,
@@ -58,7 +60,8 @@ struct StoredPinnedTileContent: View {
             onUnload: onUnload,
             accentSourceURL: pin.launchURL,
             accentSourcePartition: faviconPartition,
-            faviconImageReader: faviconImageReader
+            faviconImageReader: faviconImageReader,
+            essentialBackdropReader: essentialBackdropReader
         )
         .task(id: storedFaviconLoadKey) {
             await loadStoredFavicon()
@@ -79,6 +82,13 @@ struct StoredPinnedTileContent: View {
             for: pin.launchURL,
             partition: faviconPartition
         )
+    }
+
+    private var cachedEssentialBackdrop: Image? {
+        essentialBackdropReader.cachedBackdrop(
+            for: pin.launchURL,
+            partition: faviconPartition
+        ).map(Image.init(nsImage:))
     }
 
     private var storedFaviconLoadKey: String {

@@ -344,6 +344,167 @@ final class SidebarDropCoordinatorBoundaryTests: XCTestCase {
         )
     }
 
+    func testEssentialsCommitMatchesPresentedVisualGapWhenSplitTileIsPresent() throws {
+        let profile = Profile(name: "Essential Split Reorder")
+        let browser = makeSafariExtensionTestBrowserManager(profile: profile)
+        let space = try XCTUnwrap(
+            browser.sidebarSpaceLifecycle.createSpace(
+                name: "Work",
+                icon: SumiPersistentGlyph.spaceDefaultIconValue,
+                profileID: profile.id
+            )
+        )
+        let pins = try (0..<4).map { index in
+            try makeEssentialPin(
+                browser,
+                in: space,
+                profileId: profile.id,
+                url: "https://essential-\(index).example",
+                index: index
+            )
+        }
+        let group = try XCTUnwrap(SplitGroup.make(
+            members: pins.prefix(2).map { .shortcutPin($0.id) },
+            layoutKind: .horizontal,
+            container: .essentialSidebar(profileId: profile.id, index: 0)
+        ))
+        XCTAssertTrue(browser.splitGroupMutations.insert(group, persist: false))
+        XCTAssertEqual(
+            browser.splitGroupSidebarOrdering.essentialItems(for: profile.id),
+            [.splitGroup(group.id), .shortcut(pins[2].id), .shortcut(pins[3].id)]
+        )
+
+        let windowState = BrowserWindowState()
+        windowState.currentSpaceId = space.id
+        windowState.currentProfileId = profile.id
+        browser.windowRegistry.register(windowState)
+        let pasteboard = makePasteboard(
+            item: SumiDragItem.shortcutPin(pins[2].id, title: "Moved"),
+            scope: SidebarDragScope(
+                windowId: nil,
+                spaceId: space.id,
+                profileId: profile.id,
+                sourceContainer: .essentials,
+                sourceItemId: pins[2].id,
+                sourceItemKind: .tab
+            )
+        )
+        let context = WindowSidebarContext.make(
+            browserManager: browser,
+            updaterService: SumiUpdaterService(backendFactory: { _ in nil }),
+            nowPlayingController: SumiNativeNowPlayingController()
+        )
+
+        XCTAssertTrue(context.dragTransactions.commit(
+            pasteboard: pasteboard,
+            resolution: SidebarDropResolution(
+                slot: .essentials(slot: 2),
+                folderIntent: .none,
+                activeHoveredFolderId: nil
+            ),
+            windowState: windowState
+        ))
+        XCTAssertEqual(
+            browser.splitGroupSidebarOrdering.essentialItems(for: profile.id),
+            [.splitGroup(group.id), .shortcut(pins[3].id), .shortcut(pins[2].id)]
+        )
+    }
+
+    func testEssentialsCommitKeepsPinAndSplitMovesAlignedWithPresentedGap() throws {
+        let profile = Profile(name: "Essential Mixed Reorder")
+        let browser = makeSafariExtensionTestBrowserManager(profile: profile)
+        let space = try XCTUnwrap(
+            browser.sidebarSpaceLifecycle.createSpace(
+                name: "Work",
+                icon: SumiPersistentGlyph.spaceDefaultIconValue,
+                profileID: profile.id
+            )
+        )
+        let pins = try (0..<4).map { index in
+            try makeEssentialPin(
+                browser,
+                in: space,
+                profileId: profile.id,
+                url: "https://mixed-essential-\(index).example",
+                index: index
+            )
+        }
+        let group = try XCTUnwrap(SplitGroup.make(
+            members: pins[1...2].map { .shortcutPin($0.id) },
+            layoutKind: .vertical,
+            container: .essentialSidebar(profileId: profile.id, index: 1)
+        ))
+        XCTAssertTrue(browser.splitGroupMutations.insert(group, persist: false))
+
+        let windowState = BrowserWindowState()
+        windowState.currentSpaceId = space.id
+        windowState.currentProfileId = profile.id
+        browser.windowRegistry.register(windowState)
+        let context = WindowSidebarContext.make(
+            browserManager: browser,
+            updaterService: SumiUpdaterService(backendFactory: { _ in nil }),
+            nowPlayingController: SumiNativeNowPlayingController()
+        )
+        let trailingPinPasteboard = makePasteboard(
+            item: SumiDragItem.shortcutPin(pins[3].id, title: "Trailing"),
+            scope: SidebarDragScope(
+                windowId: nil,
+                spaceId: space.id,
+                profileId: profile.id,
+                sourceContainer: .essentials,
+                sourceItemId: pins[3].id,
+                sourceItemKind: .tab
+            )
+        )
+
+        XCTAssertTrue(context.dragTransactions.commit(
+            pasteboard: trailingPinPasteboard,
+            resolution: SidebarDropResolution(
+                slot: .essentials(slot: 0),
+                folderIntent: .none,
+                activeHoveredFolderId: nil
+            ),
+            windowState: windowState
+        ))
+        XCTAssertEqual(
+            browser.splitGroupSidebarOrdering.essentialItems(for: profile.id),
+            [.shortcut(pins[3].id), .shortcut(pins[0].id), .splitGroup(group.id)]
+        )
+        XCTAssertEqual(
+            browser.splitGroupStore.group(id: group.id)?.container,
+            .essentialSidebar(profileId: profile.id, index: 2)
+        )
+
+        let splitPasteboard = makePasteboard(
+            item: SumiDragItem.splitGroup(group.id, title: "Split"),
+            scope: SidebarDragScope(
+                windowId: nil,
+                spaceId: space.id,
+                profileId: profile.id,
+                sourceContainer: .essentials,
+                sourceItemId: group.id,
+                sourceItemKind: .splitGroup
+            )
+        )
+        XCTAssertTrue(context.dragTransactions.commit(
+            pasteboard: splitPasteboard,
+            resolution: SidebarDropResolution(
+                slot: .essentials(slot: 0),
+                folderIntent: .none,
+                activeHoveredFolderId: nil
+            ),
+            windowState: windowState
+        ))
+        XCTAssertEqual(
+            browser.splitGroupSidebarOrdering.essentialItems(for: profile.id),
+            [.splitGroup(group.id), .shortcut(pins[3].id), .shortcut(pins[0].id)]
+        )
+        XCTAssertEqual(
+            browser.splitGroupStore.group(id: group.id)?.container,
+            .essentialSidebar(profileId: profile.id, index: 0)
+        )
+    }
+
     func testLiveCoordinatorMovesEssentialSplitGroupIntoPinnedGap() throws {
         let profile = Profile(name: "Essential Split Drop")
         let browser = makeSafariExtensionTestBrowserManager(profile: profile)

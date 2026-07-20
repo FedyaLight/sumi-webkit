@@ -8,6 +8,8 @@ final class NotificationPresentingSpy: BrowserNotificationPresenting {
     private(set) var presentProfileSwitchNotificationCalls: [(Profile, BrowserWindowState?)] = []
     private(set) var presentTabClosureNotificationCalls: [Int] = []
     private(set) var presentTabUnloadedNotificationCalls: [(count: Int, windowState: BrowserWindowState?)] = []
+    private(set) var presentSplitViewClosureNotificationCalls: [(count: Int, windowState: BrowserWindowState?)] = []
+    private(set) var presentSplitViewUnloadedNotificationCalls: [(count: Int, windowState: BrowserWindowState?)] = []
     private(set) var presentSpaceRenamedNotificationCalls: [(name: String, windowState: BrowserWindowState?)] = []
     private(set) var presentBackgroundTabOpenedNotificationCalls: [(tabId: UUID, windowState: BrowserWindowState)] = []
     private(set) var presentSplitViewLimitNotificationCalls: [BrowserWindowState] = []
@@ -26,6 +28,20 @@ final class NotificationPresentingSpy: BrowserNotificationPresenting {
 
     func presentTabUnloadedNotification(count: Int, in windowState: BrowserWindowState?) {
         presentTabUnloadedNotificationCalls.append((count, windowState))
+    }
+
+    func presentSplitViewClosureNotification(
+        tabCount: Int,
+        in windowState: BrowserWindowState?
+    ) {
+        presentSplitViewClosureNotificationCalls.append((tabCount, windowState))
+    }
+
+    func presentSplitViewUnloadedNotification(
+        tabCount: Int,
+        in windowState: BrowserWindowState?
+    ) {
+        presentSplitViewUnloadedNotificationCalls.append((tabCount, windowState))
     }
 
     func presentSpaceRenamedNotification(name: String, in windowState: BrowserWindowState?) {

@@ -1,3 +1,4 @@
+import SumiDomain
 import XCTest
 
 @testable import Sumi
@@ -253,6 +254,64 @@ final class RecentlyClosedShortcutUndoTests: XCTestCase {
         XCTAssertEqual(harness.windowState.currentTabId, essentialLiveTab.id)
         XCTAssertEqual(harness.windowState.currentShortcutPinId, essentialPin.id)
         XCTAssertFalse(harness.windowState.isShowingEmptyState)
+    }
+
+    func testUnloadingCurrentShortcutRestoresWholePreviousRegularSplit()
+        throws {
+        let harness = makeHarness()
+        let first = harness.browserManager.regularTabLifecycleOwner.createNewTab(
+            url: "https://split-first.example",
+            in: harness.space,
+            activate: false
+        )
+        let second = harness.browserManager.regularTabLifecycleOwner.createNewTab(
+            url: "https://split-second.example",
+            in: harness.space,
+            activate: false
+        )
+        let group = try XCTUnwrap(SplitGroup.make(
+            members: [
+                .regularTab(first.id),
+                .regularTab(second.id),
+            ],
+            layoutKind: .vertical,
+            container: .regularTabs(spaceId: harness.space.id)
+        ))
+        XCTAssertTrue(
+            harness.browserManager.splitGroupMutations.insert(
+                group,
+                persist: false
+            )
+        )
+        harness.browserManager.selectTab(first, in: harness.windowState)
+
+        let pin = try insertSpacePinnedLauncher(in: harness)
+        let current = try XCTUnwrap(
+            harness.browserManager.shortcutTabMaterializer.materialize(
+                pin,
+                in: harness.windowState.id,
+                currentSpaceId: harness.space.id
+            )
+        )
+        harness.browserManager.selectTab(current, in: harness.windowState)
+
+        harness.browserManager.tabCloseOrchestration.closeTab(
+            current,
+            in: harness.windowState
+        )
+
+        XCTAssertEqual(harness.windowState.currentTabId, first.id)
+        XCTAssertEqual(harness.windowState.splitSelection?.groupID, group.id)
+        guard case .ready(let presentation) =
+            harness.browserManager.splitQuery.resolution(
+                in: harness.windowState.id
+            )
+        else {
+            return XCTFail("Expected the previous split group presentation")
+        }
+        XCTAssertEqual(presentation.groupID, group.id)
+        XCTAssertEqual(Set(presentation.visibleTabIDs), [first.id, second.id])
+        XCTAssertEqual(presentation.activeTabID, first.id)
     }
 
     private func makeHarness() -> Harness {

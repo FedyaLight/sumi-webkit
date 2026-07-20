@@ -183,6 +183,38 @@ enum WindowTabSelectionStateApplicator {
         )
     }
 
+    static func applyFallback(
+        _ tab: Tab,
+        to state: inout BrowserWindowShortcutMutationState,
+        splitMembership: SplitGroupMembershipQuery,
+        updateSpaceFromTab: Bool,
+        rememberSelection: Bool
+    ) -> WindowTabSelectionApplicationResult {
+        let result = apply(
+            tab,
+            to: &state,
+            updateSpaceFromTab: updateSpaceFromTab,
+            rememberSelection: rememberSelection
+        )
+        let memberID = splitMembership.memberID(for: tab)
+        let splitSelection = splitMembership.group(containing: memberID).map {
+            WindowSplitSelection(
+                groupID: $0.id,
+                activeMemberID: memberID
+            )
+        }
+        let splitStateDidChange = assignIfChanged(
+            \.splitSelection,
+            splitSelection,
+            in: &state
+        )
+        return WindowTabSelectionApplicationResult(
+            previousTabId: result.previousTabId,
+            previousSpaceId: result.previousSpaceId,
+            stateDidChange: result.stateDidChange || splitStateDidChange
+        )
+    }
+
     @discardableResult
     private static func assignIfChanged<Value: Equatable>(
         _ keyPath: WritableKeyPath<BrowserWindowShortcutMutationState, Value>,

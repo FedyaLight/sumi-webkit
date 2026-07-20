@@ -112,6 +112,7 @@ struct SpaceShortcutSnapshot: Identifiable {
     let title: String
     let icon: SpaceSidebarSnapshotIcon
     let accentSource: SpaceShortcutSnapshotAccentSource
+    let essentialBackdrop: Image?
     let presentationState: ShortcutPresentationState
     let showsAudioButton: Bool
     let isMuted: Bool
@@ -136,6 +137,8 @@ struct SpaceSplitGroupMemberSnapshot: Identifiable {
     let id: SplitMemberID
     let title: String
     let icon: SpaceSidebarSnapshotIcon
+    let accentSource: SpaceShortcutSnapshotAccentSource?
+    let essentialBackdrop: Image?
     let isSelected: Bool
 }
 
@@ -143,6 +146,7 @@ struct SpaceSplitGroupSnapshot: Identifiable {
     let id: UUID
     let members: [SpaceSplitGroupMemberSnapshot]
     let isSelected: Bool
+    let isLoaded: Bool
 }
 
 indirect enum SpacePinnedItemSnapshot: Identifiable {
@@ -177,8 +181,20 @@ private extension Array where Element == SpacePinnedItemSnapshot {
     }
 }
 
+enum EssentialsSnapshotItem: Identifiable {
+    case shortcut(SpaceShortcutSnapshot)
+    case splitGroup(SpaceSplitGroupSnapshot)
+
+    var id: UUID {
+        switch self {
+        case .shortcut(let shortcut): shortcut.id
+        case .splitGroup(let group): group.id
+        }
+    }
+}
+
 struct EssentialsSnapshot {
-    let items: [SpaceShortcutSnapshot]
+    let items: [EssentialsSnapshotItem]
 }
 
 struct ExtensionActionSlotSnapshot: Identifiable {
@@ -297,6 +313,7 @@ enum SpaceSidebarTransitionSnapshotBuilder {
                 selection: selection,
                 pinProjection: pinProjection,
                 imageReader: browserContext.faviconImageReader,
+                backdropReader: browserContext.essentialBackdropReader,
                 windowState: windowState
             )
             : nil
@@ -367,6 +384,7 @@ enum SpaceSidebarTransitionSnapshotBuilder {
                     selection: selection,
                     pinProjection: pinProjection,
                     imageReader: browserContext.faviconImageReader,
+                    backdropReader: browserContext.essentialBackdropReader,
                     windowState: windowState
                 ),
             hasPinnedContent: hasPinnedContent,
@@ -446,22 +464,63 @@ enum SpaceSidebarTransitionSnapshotBuilder {
         selection: SidebarWindowSelectionQuery,
         pinProjection: SidebarPinFolderProjection,
         imageReader: any BrowserFaviconImageReading,
+        backdropReader: any BrowserEssentialBackdropReading,
         windowState: BrowserWindowState
     ) -> EssentialsSnapshot {
-        EssentialsSnapshot(
-            items: profileId == nil
-                ? []
-                : spaceCatalog.essentialPins(profileID: profileId).map {
-                    shortcutSnapshot(
-                        for: $0,
-                        liveTab: selection.liveTab(for: $0.id, in: windowState),
-                        inventory: spaceInventory,
-                        selection: selection,
-                        pinProjection: pinProjection,
-                        imageReader: imageReader,
-                        windowState: windowState
+        guard let profileId else { return EssentialsSnapshot(items: []) }
+        let pins = spaceCatalog.essentialPins(profileID: profileId)
+        let visualItems = SidebarEssentialVisualProjection.make(
+            pins: pins,
+            splitGroups: spaceInventory.map {
+                Array($0.splitGroupsByID.values)
+            } ?? [],
+            profileID: profileId
+        )
+        let splitContext = spaceInventory.map { inventory in
+            FolderSnapshotContext(
+                childFoldersByParentId: inventory.childFoldersByParentID,
+                folderPinsByFolderId: inventory.folderPinsByFolderID,
+                liveTabsByPinId: Dictionary(
+                    uniqueKeysWithValues: pins.compactMap { pin in
+                        selection.liveTab(for: pin.id, in: windowState).map {
+                            (pin.id, $0)
+                        }
+                    }
+                ),
+                inventory: inventory,
+                selection: selection,
+                pinProjection: pinProjection,
+                imageReader: imageReader,
+                windowState: windowState
+            )
+        }
+        return EssentialsSnapshot(
+            items: visualItems.compactMap { item in
+                switch item {
+                case .pin(let pin):
+                    return .shortcut(
+                        shortcutSnapshot(
+                            for: pin,
+                            liveTab: selection.liveTab(for: pin.id, in: windowState),
+                            inventory: spaceInventory,
+                            selection: selection,
+                            pinProjection: pinProjection,
+                            imageReader: imageReader,
+                            backdropReader: backdropReader,
+                            windowState: windowState
+                        )
+                    )
+                case .splitGroup(let group):
+                    guard let splitContext else { return nil }
+                    return .splitGroup(
+                        splitGroupSnapshot(
+                            for: group,
+                            context: splitContext,
+                            backdropReader: backdropReader
+                        )
                     )
                 }
+            }
         )
     }
 
@@ -748,7 +807,8 @@ enum SpaceSidebarTransitionSnapshotBuilder {
 
     private static func splitGroupSnapshot(
         for group: SplitGroup,
-        context: FolderSnapshotContext
+        context: FolderSnapshotContext,
+        backdropReader: (any BrowserEssentialBackdropReading)? = nil
     ) -> SpaceSplitGroupSnapshot {
         let selectionSnapshot = SidebarWindowSelectionSnapshot(
             windowState: context.windowState
@@ -780,6 +840,24 @@ enum SpaceSidebarTransitionSnapshotBuilder {
                 id: item.id,
                 title: item.title,
                 icon: icon,
+                accentSource: item.pin.map { pin in
+                    SpaceShortcutSnapshotAccentSource(
+                        launchURL: pin.launchURL,
+                        partition: context.pinProjection.faviconPartition(
+                            for: pin,
+                            currentSpaceID: context.inventory.spaceID
+                        )
+                    )
+                },
+                essentialBackdrop: item.pin.flatMap { pin in
+                    backdropReader?.cachedBackdrop(
+                        for: pin.launchURL,
+                        partition: context.pinProjection.faviconPartition(
+                            for: pin,
+                            currentSpaceID: context.inventory.spaceID
+                        )
+                    ).map(Image.init(nsImage:))
+                },
                 isSelected: selectionSnapshot.splitSelection?.groupID == group.id
                     && selectionSnapshot.splitSelection?.activeMemberID == item.id
             )
@@ -791,7 +869,8 @@ enum SpaceSidebarTransitionSnapshotBuilder {
                 group,
                 in: context.windowState,
                 selection: selectionSnapshot
-            )
+            ),
+            isLoaded: items.contains { $0.tab != nil }
         )
     }
 
@@ -802,6 +881,7 @@ enum SpaceSidebarTransitionSnapshotBuilder {
         selection: SidebarWindowSelectionQuery,
         pinProjection: SidebarPinFolderProjection,
         imageReader: any BrowserFaviconImageReading,
+        backdropReader: (any BrowserEssentialBackdropReading)? = nil,
         windowState: BrowserWindowState
     ) -> SpaceShortcutSnapshot {
         let presentationState = selection.presentationState(for: pin, in: windowState)
@@ -830,6 +910,10 @@ enum SpaceSidebarTransitionSnapshotBuilder {
                 launchURL: pin.launchURL,
                 partition: faviconPartition
             ),
+            essentialBackdrop: backdropReader?.cachedBackdrop(
+                for: pin.launchURL,
+                partition: faviconPartition
+            ).map(Image.init(nsImage:)),
             presentationState: presentationState,
             showsAudioButton: liveTab?.audioState.showsTabAudioButton ?? false,
             isMuted: liveTab?.audioState.isMuted ?? false,

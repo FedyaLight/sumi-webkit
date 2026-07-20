@@ -64,16 +64,21 @@ final class RegularTabClosureCommitTransaction {
         )
     }
 
-    func publish(_ committed: CommittedRegularTabClosures) {
+    func publish(
+        _ committed: CommittedRegularTabClosures,
+        presentNotification: Bool = true
+    ) {
         for removal in committed.removals {
             committed.runtime.captureClosedTab(
                 removal.tab,
                 sourceSpaceId: removal.spaceId
             )
         }
-        committed.runtime.notifications()?.presentTabClosureNotification(
-            tabCount: committed.removals.count
-        )
+        if presentNotification {
+            committed.runtime.notifications()?.presentTabClosureNotification(
+                tabCount: committed.removals.count
+            )
+        }
         _ = committed.runtime.validateWindowStates()
     }
 }

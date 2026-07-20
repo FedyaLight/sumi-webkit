@@ -211,33 +211,27 @@ enum SplitGroupMemberIconResolver {
 }
 
 enum SplitGroupSidebarAction: Equatable {
-    case close
     case unload
 
     var systemImageName: String {
-        switch self {
-        case .close: "xmark"
-        case .unload: "minus"
-        }
+        "minus"
     }
 
     var accessibilityPrefix: String {
-        switch self {
-        case .close: "space-split-group-close"
-        case .unload: "space-split-group-unload"
-        }
+        "space-split-group-unload"
     }
 
     var help: String {
-        switch self {
-        case .close: "Close Split View"
-        case .unload: "Unload Split View"
-        }
+        String(localized: "Unload Split View")
     }
+}
 
-    var showsWhenSelected: Bool {
-        self == .close
-    }
+enum SplitGroupSidebarMemberAction: Equatable {
+    case close
+
+    var systemImageName: String { "xmark" }
+    var accessibilityPrefix: String { "space-split-member-close" }
+    var help: String { String(localized: "Close Tab") }
 }
 
 enum SplitGroupSidebarModel {
@@ -283,10 +277,22 @@ enum SplitGroupSidebarModel {
     ) -> SplitGroupSidebarAction? {
         switch group.container {
         case .regularTabs:
-            return .close
+            return nil
         case .essentialSidebar, .shortcutSidebar:
             return items.contains { $0.tab != nil } ? .unload : nil
         }
+    }
+
+    static func memberAction(
+        for item: SplitGroupSidebarItem,
+        in group: SplitGroup
+    ) -> SplitGroupSidebarMemberAction? {
+        guard case .regularTabs = group.container,
+              case .regularTab = item.id,
+              item.tab != nil else {
+            return nil
+        }
+        return .close
     }
 
     /// Animation state may retain removed members briefly, but it must never

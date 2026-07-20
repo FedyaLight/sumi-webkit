@@ -4,37 +4,41 @@ import SumiDomain
 @MainActor
 final class SidebarSplitGroupLifecycleCommands {
     private let groups: SplitGroupStore
-    private let mutations: SplitGroupMutationService
     private let pins: ShortcutPinCollectionStateOwner
     private let pinCommands: SidebarPinCommands
     private let hostedUnload: ShortcutHostedSplitUnloadService
     private let membership: TabCollectionMembershipOwner
     private let close: BrowserTabCloseOrchestrationOwner
-    private let structuralLookup: TabStructuralLookupCoordinator
+    private let notifications: any BrowserNotificationPresenting
 
     init(
         groups: SplitGroupStore,
-        mutations: SplitGroupMutationService,
         pins: ShortcutPinCollectionStateOwner,
         pinCommands: SidebarPinCommands,
         hostedUnload: ShortcutHostedSplitUnloadService,
         membership: TabCollectionMembershipOwner,
         close: BrowserTabCloseOrchestrationOwner,
-        structuralLookup: TabStructuralLookupCoordinator
+        notifications: any BrowserNotificationPresenting
     ) {
         self.groups = groups
-        self.mutations = mutations
         self.pins = pins
         self.pinCommands = pinCommands
         self.hostedUnload = hostedUnload
         self.membership = membership
         self.close = close
-        self.structuralLookup = structuralLookup
+        self.notifications = notifications
     }
 
     func unload(_ group: SplitGroup, in windowState: BrowserWindowState) {
         guard groups.group(id: group.id) == group else { return }
-        _ = hostedUnload.unloadShortcutHostedSplitGroup(group, in: windowState)
+        guard let result = hostedUnload.unloadShortcutHostedSplitGroup(
+            group,
+            in: windowState
+        ) else { return }
+        notifications.presentSplitViewUnloadedNotification(
+            tabCount: result.unloadedTabCount,
+            in: windowState
+        )
     }
 
     func contextMenuActions(
@@ -60,9 +64,7 @@ final class SidebarSplitGroupLifecycleCommands {
             return membership.tab(for: tabID)
         }
         guard tabs.count == group.memberIDs.count else { return }
-        for tab in tabs {
-            close.closeTab(tab, in: windowState)
-        }
+        close.closeSplitGroup(tabs, in: windowState)
     }
 
     func deleteSaved(_ group: SplitGroup) {
@@ -73,14 +75,6 @@ final class SidebarSplitGroupLifecycleCommands {
             return pins.shortcutPin(by: pinID)
         }
         guard groupPins.count == group.memberIDs.count else { return }
-        structuralLookup.withTransaction {
-            guard mutations.remove(group, persist: false) else { return }
-            for pin in groupPins {
-                precondition(
-                    pinCommands.remove(pin),
-                    "Validated split launcher could not be retired"
-                )
-            }
-        }
+        _ = pinCommands.remove(groupPins)
     }
 }

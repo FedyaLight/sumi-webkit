@@ -229,6 +229,7 @@ struct PinnedGrid: View {
             selection: selection,
             selectionSnapshot: selectionSnapshot,
             faviconImageReader: browserContext.faviconImageReader,
+            essentialBackdropReader: browserContext.essentialBackdropReader,
             splitLayout: browserContext.splitLayout,
             emptySplitCreation: browserContext.emptySplitCreation,
             groupEditor: browserContext.splitGroupEditor,
@@ -282,6 +283,7 @@ struct PinnedGrid: View {
                 currentSpaceID: windowState.currentSpaceId
             ),
             faviconImageReader: browserContext.faviconImageReader,
+            essentialBackdropReader: browserContext.essentialBackdropReader,
             presentationState: presentationState,
             liveTab: liveTab,
             essentialRuntimeState: essentialRuntimeState(

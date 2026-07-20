@@ -16,13 +16,26 @@ final class BrowserTabCloseRouting {
         self.shortcutTabs = shortcutTabs
     }
 
-    func close(_ tab: Tab, in windowState: BrowserWindowState) {
+    func close(
+        _ tab: Tab,
+        in windowState: BrowserWindowState,
+        presentNotification: Bool = true
+    ) -> Bool {
         if windowState.isIncognito {
             incognitoTabs.close(tab, in: windowState)
+            return true
         } else if tab.isShortcutLiveInstance {
-            shortcutTabs.close(tab, in: windowState)
+            return shortcutTabs.close(
+                tab,
+                in: windowState,
+                presentNotification: presentNotification
+            )
         } else {
-            regularTabs.close(tab, in: windowState)
+            return regularTabs.close(
+                tab,
+                in: windowState,
+                presentNotification: presentNotification
+            )
         }
     }
 
