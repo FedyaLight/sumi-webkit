@@ -513,20 +513,8 @@ final class SplitInsertionServiceTests: XCTestCase {
         ))
         let sourceGroup = try XCTUnwrap(SplitGroup.make(
             members: [
-                .shortcutPin(
-                    scenario.pin.id,
-                    returnPlacement: .essential(
-                        profileId: scenario.profileID,
-                        index: 0
-                    )
-                ),
-                .shortcutPin(
-                    companion.id,
-                    returnPlacement: .essential(
-                        profileId: scenario.profileID,
-                        index: 1
-                    )
-                ),
+                .shortcutPin(scenario.pin.id),
+                .shortcutPin(companion.id),
             ],
             layoutKind: .vertical,
             container: .regularTabs(spaceId: scenario.sourceSpace.id)
@@ -777,7 +765,6 @@ private extension SplitInsertionServiceTests {
             }
         }
         let members = makeTestSplitRuntimeMemberResolver(manager)
-        let launcherPlacement = makeTestShortcutSplitLauncherPlacement(manager)
         let presentations = makeTestWindowSplitPresentationSynchronizer(
             browser: manager,
             windows: { [window] }
@@ -803,8 +790,7 @@ private extension SplitInsertionServiceTests {
             topology: SplitLayoutTopologyTransaction(
                 splitGroups: manager.splitGroupStore,
                 mutations: manager.splitGroupMutations,
-                regularTabs: manager.regularTabCollectionOwner,
-                launcherPlacement: launcherPlacement
+                regularTabs: manager.regularTabCollectionOwner
             ),
             query: query,
             weightMutations: SplitLayoutWeightMutationService(
@@ -815,10 +801,8 @@ private extension SplitInsertionServiceTests {
             dissolution: SplitGroupDissolutionService(
                 splitGroups: manager.splitGroupStore,
                 mutations: manager.splitGroupMutations,
-                launcherPlacement: launcherPlacement,
                 presentations: presentations
-            ),
-            restoreShortcutMember: { _, _, _ in false }
+            )
         )
         let tabClosures = SplitTabClosureService(
             dropTargets: dropTargets,
@@ -855,16 +839,17 @@ private extension SplitInsertionServiceTests {
                 structuralLookup: manager.structuralLookupCoordinator,
                 membership: manager.splitGroupMembership,
                 splitGroups: manager.splitGroupStore,
-                mutations: manager.splitGroupMutations,
-                launcherPlacement: launcherPlacement
+                mutations: manager.splitGroupMutations
             ),
             memberResolver: members,
             regularShortcutSidebarDrop:
                 RegularTabShortcutSidebarDropTransaction(
                     conversion: manager.regularTabShortcutConversion,
-                    launcherPlacement: launcherPlacement,
                     presentations: presentations
                 ),
+            shortcutMemberRelocation:
+                manager.splitGroupShortcutMemberRelocation,
+            duplication: makeTestSplitTabDuplicationService(manager),
             presentations: presentations,
             notifyLimit: { _ in }
         )

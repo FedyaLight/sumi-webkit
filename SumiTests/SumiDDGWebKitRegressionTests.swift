@@ -426,14 +426,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         let group = try XCTUnwrap(SumiDomain.SplitGroup.make(
             members: [
                 .regularTab(regularTab.id),
-                .shortcutPin(
-                    pinID,
-                    returnPlacement: .spacePinned(
-                        spaceId: UUID(),
-                        folderId: nil,
-                        index: 0
-                    )
-                ),
+                .shortcutPin(pinID),
             ],
             layoutKind: .vertical
         ))
@@ -1019,8 +1012,11 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         reportedResize = nil
         splitView.setPosition(280, ofDividerAt: 0)
         if reportedResize == nil {
-            splitView.splitViewDidResizeSubviews(
-                Notification(name: NSSplitView.didResizeSubviewsNotification, object: splitView)
+            splitView.delegate?.splitViewDidResizeSubviews?(
+                Notification(
+                    name: NSSplitView.didResizeSubviewsNotification,
+                    object: splitView
+                )
             )
         }
 

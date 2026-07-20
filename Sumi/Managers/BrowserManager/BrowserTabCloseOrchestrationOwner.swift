@@ -36,12 +36,13 @@ final class BrowserTabCloseOrchestrationOwner {
             return
         }
 
-        guard let currentTab = context.currentTab(in: windowState) else {
+        let closeTargets = context.currentCloseTargets(in: windowState)
+        guard closeTargets.isEmpty == false else {
             routing.showEmptyState(in: windowState)
             return
         }
 
-        closeTab(currentTab, in: windowState)
+        closeTargets.forEach { closeTab($0, in: windowState) }
     }
 
     func closeTab(_ tab: Tab, in windowState: BrowserWindowState) {

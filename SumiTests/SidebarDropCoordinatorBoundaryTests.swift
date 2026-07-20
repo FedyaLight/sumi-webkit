@@ -1,10 +1,37 @@
 import AppKit
+import SumiDomain
 import XCTest
 
 @testable import Sumi
 
 @MainActor
 final class SidebarDropCoordinatorBoundaryTests: XCTestCase {
+    func testCommitUsesTheGapAlreadyPresentedToTheUser() {
+        let spaceID = UUID()
+        let state = SidebarDragState()
+        let presented = SidebarDropResolution(
+            slot: .spacePinned(spaceId: spaceID, slot: 2),
+            folderIntent: .none,
+            activeHoveredFolderId: nil
+        )
+        state.presentDropResolution(presented)
+        var refreshCount = 0
+
+        let committed = state.beginDropCommit(
+            refreshingIfEmpty: {
+                refreshCount += 1
+                return SidebarDropResolution(
+                    slot: .spacePinned(spaceId: spaceID, slot: 1),
+                    folderIntent: .none,
+                    activeHoveredFolderId: nil
+                )
+            }
+        )
+
+        XCTAssertEqual(committed, presented)
+        XCTAssertEqual(refreshCount, 0)
+    }
+
     func testSameContainerReorderAdjustsIndexAfterSourceRemoval() {
         let sourceId = UUID()
         let spaceId = UUID()
@@ -314,6 +341,80 @@ final class SidebarDropCoordinatorBoundaryTests: XCTestCase {
             browserManager.shortcutPinCollectionStateOwner
                 .essentialPins(for: profile.id).map(\.id),
             [moved.id, first.id]
+        )
+    }
+
+    func testLiveCoordinatorMovesEssentialSplitGroupIntoPinnedGap() throws {
+        let profile = Profile(name: "Essential Split Drop")
+        let browser = makeSafariExtensionTestBrowserManager(profile: profile)
+        let space = try XCTUnwrap(
+            browser.sidebarSpaceLifecycle.createSpace(
+                name: "Work",
+                icon: SumiPersistentGlyph.spaceDefaultIconValue,
+                profileID: profile.id
+            )
+        )
+        let pins = try (0..<2).map { index in
+            try makeEssentialPin(
+                browser,
+                in: space,
+                profileId: profile.id,
+                url: "https://split-\(index).example",
+                index: index
+            )
+        }
+        let group = try XCTUnwrap(SplitGroup.make(
+            members: pins.map { .shortcutPin($0.id) },
+            layoutKind: .vertical,
+            container: .essentialSidebar(profileId: profile.id, index: 0)
+        ))
+        XCTAssertTrue(browser.splitGroupMutations.insert(group, persist: false))
+
+        let windowState = BrowserWindowState()
+        windowState.currentSpaceId = space.id
+        windowState.currentProfileId = profile.id
+        browser.windowRegistry.register(windowState)
+        let item = SumiDragItem.splitGroup(group.id, title: "Split View")
+        let pasteboard = makePasteboard(
+            item: item,
+            scope: SidebarDragScope(
+                windowId: nil,
+                spaceId: space.id,
+                profileId: profile.id,
+                sourceContainer: .essentials,
+                sourceItemId: group.id,
+                sourceItemKind: .splitGroup
+            )
+        )
+        let context = WindowSidebarContext.make(
+            browserManager: browser,
+            updaterService: SumiUpdaterService(backendFactory: { _ in nil }),
+            nowPlayingController: SumiNativeNowPlayingController()
+        )
+
+        XCTAssertTrue(context.dragTransactions.commit(
+            pasteboard: pasteboard,
+            resolution: SidebarDropResolution(
+                slot: .spacePinned(spaceId: space.id, slot: 0),
+                folderIntent: .none,
+                activeHoveredFolderId: nil
+            ),
+            windowState: windowState
+        ))
+
+        let movedGroup = try XCTUnwrap(browser.splitGroupStore.group(id: group.id))
+        XCTAssertEqual(
+            movedGroup.container,
+            .shortcutSidebar(
+                spaceId: space.id,
+                profileId: profile.id,
+                folderId: nil,
+                index: 0
+            )
+        )
+        XCTAssertEqual(
+            browser.splitGroupSidebarOrdering.topLevelItems(for: space.id),
+            [.splitGroup(group.id)]
         )
     }
 

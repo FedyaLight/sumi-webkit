@@ -945,14 +945,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
             SplitGroup.make(
                 members: [
                     .regularTab(regular.id),
-                    .shortcutPin(
-                        pin.id,
-                        returnPlacement: .spacePinned(
-                            spaceId: space.id,
-                            folderId: nil,
-                            index: pin.index
-                        )
-                    ),
+                    .shortcutPin(pin.id),
                 ],
                 layoutKind: .vertical,
                 container: .regularTabs(spaceId: space.id)

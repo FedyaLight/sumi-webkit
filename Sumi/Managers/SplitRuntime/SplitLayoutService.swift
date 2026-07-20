@@ -6,18 +6,15 @@ final class SplitLayoutTopologyTransaction {
     private let splitGroups: SplitGroupStore
     private let mutations: SplitGroupMutationService
     private let regularTabs: RegularTabCollectionOwner
-    private let launcherPlacement: ShortcutSplitLauncherPlacementService
 
     init(
         splitGroups: SplitGroupStore,
         mutations: SplitGroupMutationService,
-        regularTabs: RegularTabCollectionOwner,
-        launcherPlacement: ShortcutSplitLauncherPlacementService
+        regularTabs: RegularTabCollectionOwner
     ) {
         self.splitGroups = splitGroups
         self.mutations = mutations
         self.regularTabs = regularTabs
-        self.launcherPlacement = launcherPlacement
     }
 
     func replace(
@@ -51,19 +48,9 @@ final class SplitLayoutTopologyTransaction {
         let changedGroups = expected.filter { previous in
             replacement.first(where: { $0.id == previous.id }) != previous
         }
-        let remainingMemberIDs = Set(replacement.flatMap(\.memberIDs))
-        let releasedShortcuts = changedGroups.flatMap(\.members).filter {
-            guard case .shortcutPin = $0.memberID else { return false }
-            return !remainingMemberIDs.contains($0.memberID)
-        }
-        guard let restorations = launcherPlacement.prepareRestorations(
-            for: releasedShortcuts
-        ), replacement != expected,
-           mutations.replaceAllAtomically(
-               expected: expected,
-               with: replacement,
-               applying: { restorations.applyAndCommit() }
-           ) else { return nil }
+        guard replacement != expected,
+              mutations.replaceAll(expected: expected, with: replacement)
+        else { return nil }
         return changedGroups
     }
 }
@@ -77,30 +64,19 @@ final class SplitLayoutService {
     private let weightMutations: SplitLayoutWeightMutationService
     private let presentations: WindowSplitPresentationSynchronizer
     private let dissolution: SplitGroupDissolutionService
-    private let restoreShortcutMember: @MainActor (
-        SplitMemberID,
-        SumiDomain.SplitGroup,
-        BrowserWindowState
-    ) -> Bool
 
     init(
         topology: SplitLayoutTopologyTransaction,
         query: WindowSplitQuery,
         weightMutations: SplitLayoutWeightMutationService,
         presentations: WindowSplitPresentationSynchronizer,
-        dissolution: SplitGroupDissolutionService,
-        restoreShortcutMember: @escaping @MainActor (
-            SplitMemberID,
-            SumiDomain.SplitGroup,
-            BrowserWindowState
-        ) -> Bool
+        dissolution: SplitGroupDissolutionService
     ) {
         self.topology = topology
         self.query = query
         self.weightMutations = weightMutations
         self.presentations = presentations
         self.dissolution = dissolution
-        self.restoreShortcutMember = restoreShortcutMember
     }
 
     func updateWeights(
@@ -121,18 +97,40 @@ final class SplitLayoutService {
 
     func setLayoutKind(_ layoutKind: SplitLayoutKind, in windowID: UUID) {
         guard let group = query.group(in: windowID),
+              setLayoutKind(layoutKind, for: group, in: windowID) else {
+            return
+        }
+    }
+
+    @discardableResult
+    func setLayoutKind(
+        _ layoutKind: SplitLayoutKind,
+        groupID: UUID,
+        in windowID: UUID
+    ) -> Bool {
+        guard let group = query.group(id: groupID) else { return false }
+        return setLayoutKind(layoutKind, for: group, in: windowID)
+    }
+
+    private func setLayoutKind(
+        _ layoutKind: SplitLayoutKind,
+        for group: SumiDomain.SplitGroup,
+        in windowID: UUID
+    ) -> Bool {
+        guard
               let replacement = group.changingLayout(to: layoutKind),
               replacement != group,
               topology.replace(
                   group,
                   with: replacement
               ) else {
-            return
+            return false
         }
         presentations.synchronize(
             previousGroups: [group],
             affectedGroupIDs: [group.id]
         )
+        return true
     }
 
     func stageClosedRegularTabs(
@@ -155,6 +153,21 @@ final class SplitLayoutService {
         _ = dissolution.dissolve(group)
     }
 
+    func unsplit(groupID: UUID) {
+        guard let group = query.group(id: groupID) else { return }
+        _ = dissolution.dissolve(group)
+    }
+
+    func separate(
+        _ memberID: SplitMemberID,
+        from groupID: UUID,
+        in windowState: BrowserWindowState
+    ) {
+        guard let group = query.group(id: groupID),
+              group.contains(memberID) else { return }
+        commitSeparation(memberID, from: group, in: windowState)
+    }
+
     func expand(tabID: UUID, in windowState: BrowserWindowState) {
         guard let presentation = query.resolution(
                   in: windowState.id
@@ -162,13 +175,16 @@ final class SplitLayoutService {
               let memberID = presentation.memberID(for: tabID) else {
             return
         }
-        let group = presentation.group
-        if case .shortcutPin = memberID {
-            _ = restoreShortcutMember(memberID, group, windowState)
-            return
-        }
-        guard case .regularTab(let regularTabID) = memberID,
-              topology.containsRegularTab(regularTabID) else {
+        commitSeparation(memberID, from: presentation.group, in: windowState)
+    }
+
+    private func commitSeparation(
+        _ memberID: SplitMemberID,
+        from group: SumiDomain.SplitGroup,
+        in windowState: BrowserWindowState
+    ) {
+        if case .regularTab(let regularTabID) = memberID,
+           !topology.containsRegularTab(regularTabID) {
             return
         }
 

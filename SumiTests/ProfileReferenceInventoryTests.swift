@@ -36,21 +36,8 @@ final class ProfileReferenceInventoryTests: XCTestCase {
         )
         let splitGroup = try XCTUnwrap(SplitGroup.make(
             members: [
-                .shortcutPin(
-                    UUID(),
-                    returnPlacement: .essential(
-                        profileId: splitReturnProfileID,
-                        index: 0
-                    )
-                ),
-                .shortcutPin(
-                    UUID(),
-                    returnPlacement: .spacePinned(
-                        spaceId: space.id,
-                        folderId: nil,
-                        index: 1
-                    )
-                ),
+                .shortcutPin(UUID()),
+                .shortcutPin(UUID()),
             ],
             layoutKind: .vertical,
             container: .shortcutSidebar(
@@ -106,21 +93,8 @@ final class ProfileReferenceInventoryTests: XCTestCase {
         let spaceID = UUID()
         let splitGroup = try XCTUnwrap(SplitGroup.make(
             members: [
-                .shortcutPin(
-                    UUID(),
-                    returnPlacement: .essential(
-                        profileId: splitReturnProfileID,
-                        index: 0
-                    )
-                ),
-                .shortcutPin(
-                    UUID(),
-                    returnPlacement: .spacePinned(
-                        spaceId: spaceID,
-                        folderId: nil,
-                        index: 1
-                    )
-                ),
+                .shortcutPin(UUID()),
+                .shortcutPin(UUID()),
             ],
             layoutKind: .horizontal,
             container: .shortcutSidebar(

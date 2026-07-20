@@ -287,6 +287,40 @@ struct SumiCommands: Commands {
             .disabled(
                 browserContext.hasActivePageTab == false
                     || !browserContext.currentTabHasAudioContent)
+
+            Divider()
+
+            Menu("Split View") {
+                Button("Grid Layout") {
+                    performShortcut(.splitGrid)
+                }
+                .modifier(dynamicShortcut(.splitGrid))
+
+                Button("Vertical Layout") {
+                    performShortcut(.splitVertical)
+                }
+                .modifier(dynamicShortcut(.splitVertical))
+
+                Button("Horizontal Layout") {
+                    performShortcut(.splitHorizontal)
+                }
+                .modifier(dynamicShortcut(.splitHorizontal))
+
+                Divider()
+
+                Button("New Empty Split") {
+                    performShortcut(.newEmptySplit)
+                }
+                .modifier(dynamicShortcut(.newEmptySplit))
+
+                Divider()
+
+                Button("Unsplit") {
+                    performShortcut(.unsplit)
+                }
+                .modifier(dynamicShortcut(.unsplit))
+            }
+            .disabled(browserContext.hasActivePageTab == false)
         }
 
         secondaryCommandMenus

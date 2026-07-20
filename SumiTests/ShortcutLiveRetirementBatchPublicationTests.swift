@@ -259,6 +259,108 @@ final class ShortcutLiveRetirementBatchPublicationTests: XCTestCase {
         )
     }
 
+    func testFolderSplitUnloadRetiresWholeGroupWithoutCollapsingFolder()
+        throws {
+        let fixture = try PublicationFixture(
+            pinCount: 2,
+            foldered: true,
+            hostedSplit: true
+        )
+        let folder = try XCTUnwrap(fixture.folder)
+        folder.isOpen = true
+        let browser = fixture.browser
+        let lifecycle = SidebarSplitGroupLifecycleCommands(
+            groups: browser.splitGroupStore,
+            mutations: browser.splitGroupMutations,
+            pins: browser.shortcutPinCollectionStateOwner,
+            pinCommands: browser.sidebarPinCommands,
+            hostedUnload: ShortcutHostedSplitUnloadService(
+                runtimeConnection: browser.runtimePortConnection,
+                splitGroups: browser.splitGroupStore,
+                retirement: browser.shortcutLiveTabRetirement,
+                fallback: ShortcutHostedSplitFallbackQuery(
+                    spaces: browser.spaceStateOwner,
+                    regularTabs: browser.regularTabCollectionOwner
+                ),
+                visuals: browser.shellRuntime.windowVisuals
+            ),
+            membership: browser.tabCollectionMembershipOwner,
+            close: browser.tabCloseOrchestration,
+            structuralLookup: browser.structuralLookupCoordinator
+        )
+
+        lifecycle.unload(
+            fixture.group,
+            in: fixture.window
+        )
+
+        XCTAssertTrue(folder.isOpen)
+        XCTAssertEqual(
+            fixture.browser.splitGroupStore.group(id: fixture.group.id),
+            fixture.group
+        )
+        XCTAssertEqual(
+            fixture.group.container.shortcutSidebarFolderId,
+            folder.id
+        )
+        XCTAssertTrue(fixture.pins.allSatisfy { $0.folderId == folder.id })
+        XCTAssertTrue(fixture.liveTabs.allSatisfy { tab in
+            fixture.browser.liveShortcutTabs.entry(tabId: tab.id) == nil
+        })
+        XCTAssertNil(fixture.window.splitSelection)
+    }
+
+    func testCollapsedFolderResetUnloadsHostedSplitGroup() throws {
+        let fixture = try PublicationFixture(
+            pinCount: 2,
+            foldered: true,
+            hostedSplit: true
+        )
+        let browser = fixture.browser
+        let folder = try XCTUnwrap(fixture.folder)
+        let spaceID = try XCTUnwrap(fixture.pins.first?.spaceId)
+        let space = try XCTUnwrap(browser.spaceStateOwner.space(with: spaceID))
+        let context = browser.composeSidebarBrowserContext(
+            spaceLifecycle: browser.sidebarSpaceLifecycle
+        )
+        let inventory = SidebarPinnedInventoryProjection(
+            folders: browser.folderCollectionStateOwner,
+            pins: browser.shortcutPinCollectionStateOwner,
+            splitGroups: browser.splitGroupStore,
+            splitOrdering: browser.splitGroupSidebarOrdering
+        ).snapshot(for: spaceID, regularTabs: [])
+        let actions = TabFolderMutationActions(
+            browserContext: context,
+            pinExecution: SidebarPinExecutionCommands(
+                runtime: browser.runtimePortConnection,
+                windows: SidebarWindowIdentityQuery(
+                    registry: browser.windowRegistry
+                ),
+                pins: browser.shortcutPinCollectionStateOwner,
+                materializer: browser.shortcutTabMaterializer,
+                profiles: browser.shortcutExecutionProfileAssignments
+            ),
+            folderCommands: browser.sidebarFolderCommands,
+            windowState: fixture.window,
+            windowRegistry: browser.windowRegistry,
+            themeContext: .default,
+            space: space,
+            folderLayoutAnimation: nil
+        )
+
+        actions.resetCollapsedProjection(folder, inventory: inventory)
+
+        XCTAssertEqual(
+            browser.splitGroupStore.group(id: fixture.group.id),
+            fixture.group
+        )
+        XCTAssertTrue(fixture.liveTabs.allSatisfy { tab in
+            browser.liveShortcutTabs.entry(tabId: tab.id) == nil
+                && browser.tabCollectionMembershipOwner.tab(for: tab.id) == nil
+        })
+        XCTAssertNil(fixture.window.splitSelection)
+    }
+
     func testTopologyOnlyDeletionCommitsWithExactDetachedRuntime() throws {
         let tabManager = BrowserManager()
         tabManager.runtimePortConnection.attach(TestRuntimePorts.make())
@@ -270,15 +372,8 @@ final class ShortcutLiveRetirementBatchPublicationTests: XCTestCase {
             ))
         }
         let group = try XCTUnwrap(SplitGroup.make(
-            members: pins.enumerated().map { index, pin in
-                .shortcutPin(
-                    pin.id,
-                    returnPlacement: .spacePinned(
-                        spaceId: space.id,
-                        folderId: nil,
-                        index: index
-                    )
-                )
+            members: pins.map { pin in
+                .shortcutPin(pin.id)
             },
             layoutKind: .vertical,
             container: .regularTabs(spaceId: space.id)

@@ -34,23 +34,23 @@ final class ShortcutSplitLauncherMoveBatchStaging:
     }
 
     func prepare(
-        _ restorations: [PreparedShortcutSplitLauncherRestoration]
+        _ preparedMoves: [PreparedShortcutSplitLauncherMove]
     ) -> (any ShortcutSplitLauncherMoveBatchParticipant)? {
-        guard let preflight = preflightBindingContribution(restorations),
+        guard let preflight = preflightBindingContribution(preparedMoves),
               let contribution = prepareContribution(
                   preflight,
-                  terminalRestorations: restorations
+                  terminalMoves: preparedMoves
               ) else { return nil }
         return makeParticipant(from: contribution)
     }
 
     func prepareForComposedResidenceAggregate(
-        _ restorations: [PreparedShortcutSplitLauncherRestoration],
+        _ preparedMoves: [PreparedShortcutSplitLauncherMove],
         bindingMode: ShortcutSplitLauncherComposedBindingMode
     ) -> (any ShortcutSplitLauncherComposedMoveBatchParticipant)? {
         guard let contribution =
             prepareBindingContributionForComposedResidenceAggregate(
-                restorations,
+                preparedMoves,
                 bindingMode: bindingMode
             ) else { return nil }
         return ShortcutSplitLauncherComposedMoveBatchReceipt(
@@ -61,27 +61,27 @@ final class ShortcutSplitLauncherMoveBatchStaging:
     }
 
     func prepareBindingContributionForComposedResidenceAggregate(
-        _ restorations: [PreparedShortcutSplitLauncherRestoration]
+        _ preparedMoves: [PreparedShortcutSplitLauncherMove]
     ) -> ShortcutSplitLauncherBindingContribution? {
         prepareBindingContributionForComposedResidenceAggregate(
-            restorations,
+            preparedMoves,
             bindingMode: .preservingLiveBindings
         )
     }
 
     private func prepareBindingContributionForComposedResidenceAggregate(
-        _ restorations: [PreparedShortcutSplitLauncherRestoration],
+        _ preparedMoves: [PreparedShortcutSplitLauncherMove],
         bindingMode: ShortcutSplitLauncherComposedBindingMode
     ) -> ShortcutSplitLauncherBindingContribution? {
         guard let preflight = preflightBindingContribution(
-            restorations,
+            preparedMoves,
             bindingMode: bindingMode
         ) else {
             return nil
         }
         let contribution = prepareContribution(
             preflight,
-            terminalRestorations: restorations
+            terminalMoves: preparedMoves
         )
         return contribution
     }

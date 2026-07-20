@@ -24,7 +24,6 @@ struct TabFolderBodyListView: View {
     let pinExecution: SidebarPinExecutionCommands
     let folderCommands: SidebarFolderCommands
     let spaceLifecycle: SidebarSpaceLifecycle
-    @Binding var shortcutRestoreSession: SpaceShortcutRestoreInteractionSession
     let elevatedFolderIds: Set<UUID>
     let isInteractive: Bool
     let nestingDepth: Int
@@ -70,7 +69,6 @@ struct TabFolderBodyListView: View {
                                 pinExecution: pinExecution,
                                 folderCommands: folderCommands,
                                 spaceLifecycle: spaceLifecycle,
-                                shortcutRestoreSession: $shortcutRestoreSession,
                                 elevatedFolderIDs: elevatedFolderIds,
                                 isInteractive: isInteractive,
                                 parentFolderID: folder.id,
@@ -116,11 +114,8 @@ struct TabFolderBodyListView: View {
                                 group: group,
                                 items: projection.splitGroupItems(for: groupId),
                                 space: space,
-                                inventory: inventory,
                                 browserContext: browserContext,
-                                isInteractive: isInteractive,
-                                folderLayoutAnimation: folderLayoutAnimation,
-                                shortcutRestoreSession: $shortcutRestoreSession
+                                isInteractive: isInteractive
                             )
                                 .sidebarFolderChildDropGeometry(
                                     spaceId: space.id,
@@ -131,11 +126,6 @@ struct TabFolderBodyListView: View {
                                     isActive: isInteractive && reportsGeometry && reportsFolderChildGeometry
                                 )
                         }
-                    case .restoreGap(let gapId):
-                        shortcutRestoreGap(
-                            gapId,
-                            selectionSnapshot: selectionSnapshot
-                        )
                     case .placeholder:
                         folderDropGap
                     }
@@ -191,13 +181,6 @@ struct TabFolderBodyListView: View {
             guard let pin = projection.shortcutPin(with: pinId) else {
                 return false
             }
-            if let placeholderGroup = projection.regularPlaceholderGroup(for: pin.id) {
-                return isFolderSplitPlaceholderSelected(
-                    placeholderGroup,
-                    pin: pin,
-                    selectionSnapshot: selectionSnapshot
-                )
-            }
             return projection.isShortcutSelected(pin)
         case .liveItem(let itemId):
             guard let item = projection.liveFolderItem(with: itemId) else {
@@ -213,7 +196,7 @@ struct TabFolderBodyListView: View {
                 in: windowState,
                 selection: selectionSnapshot
             )
-        case .restoreGap, .placeholder:
+        case .placeholder:
             return false
         }
     }
@@ -227,34 +210,10 @@ struct TabFolderBodyListView: View {
             .accessibilityHidden(true)
     }
 
-    private func shortcutRestoreGap(
-        _ gapId: UUID,
-        selectionSnapshot: SidebarWindowSelectionSnapshot
-    ) -> some View {
-        let isAppearing = shortcutRestoreSession.appearingGapIDs.contains(gapId)
-        return ZStack(alignment: .topLeading) {
-            if let gap = shortcutRestoreSession.gaps.first(where: { $0.id == gapId }),
-               let pin = projection.shortcutPin(with: gap.pinId) {
-                shortcutEntry(
-                    pin,
-                    selectionSnapshot: selectionSnapshot
-                )
-                    .frame(height: SidebarRowLayout.rowHeight, alignment: .top)
-            }
-        }
-        .frame(height: SidebarRowLayout.rowHeight, alignment: .top)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .sidebarRowStagedInsertion(isRevealing: isAppearing)
-        .clipped()
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
-    }
-
     private func shortcutEntry(
         _ pin: ShortcutPin,
         selectionSnapshot: SidebarWindowSelectionSnapshot
     ) -> TabFolderShortcutEntryView {
-        let placeholderGroup = projection.regularPlaceholderGroup(for: pin.id)
         let presentationOwner = TabFolderShortcutPresentationOwner(
             pinProjection: pinProjection,
             selection: selection,
@@ -263,14 +222,6 @@ struct TabFolderBodyListView: View {
         )
         return TabFolderShortcutEntryView(
             pin: pin,
-            placeholderGroup: placeholderGroup,
-            placeholderIsSelected: placeholderGroup.map {
-                isFolderSplitPlaceholderSelected(
-                    $0,
-                    pin: pin,
-                    selectionSnapshot: selectionSnapshot
-                )
-            } ?? false,
             liveTab: projection.liveTab(for: pin.id),
             faviconPartition: presentationOwner.faviconPartition(for: pin),
             faviconImageReader: browserContext.faviconImageReader,
@@ -283,21 +234,4 @@ struct TabFolderBodyListView: View {
         )
     }
 
-    private func isFolderSplitPlaceholderSelected(
-        _ group: SplitGroup,
-        pin: ShortcutPin,
-        selectionSnapshot: SidebarWindowSelectionSnapshot
-    ) -> Bool {
-        selection.isShortcutSelected(
-            pin,
-            in: windowState,
-            selection: selectionSnapshot
-        )
-            || selection.isSplitMemberSelected(
-                groupID: group.id,
-                memberID: .shortcutPin(pin.id),
-                in: windowState,
-                selection: selectionSnapshot
-            )
-    }
 }

@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 @MainActor
 extension BrowserManager {
@@ -58,7 +59,10 @@ extension BrowserManager {
             activePageTab: { [activePages] window in
                 activePages.resolve(in: window)?.tab
             },
-            pageNavigation: pageNavigation
+            pageNavigation: pageNavigation,
+            newSplitView: { [weak self] window in
+                self?.splitEmptyCreation.create(side: .right, in: window)
+            }
         )
 
         let currentProfile = currentProfileAuthority
@@ -100,7 +104,19 @@ extension BrowserManager {
                 )
             },
             presentation: presentation,
-            commit: commit
+            commit: commit,
+            offersCommandSuggestions: { [weak self] window in
+                guard let self else { return false }
+                // The fill-the-pane session after empty-split creation arrives
+                // with reason .keyboard, so the placeholder check is the one
+                // that actually breaks the recursion.
+                guard window.floatingBarPresentationReason != .splitTabPicker,
+                      self.emptySplitSession.placeholder(in: window.id) == nil
+                else { return false }
+                let memberCount =
+                    self.splitQuery.group(in: window.id)?.members.count ?? 0
+                return memberCount < SplitGroup.maximumMembers
+            }
         )
         return FloatingBarServices(
             presentation: presentation,

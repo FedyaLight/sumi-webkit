@@ -7,6 +7,15 @@ enum SidebarLinkActions {
         NSPasteboard.general.setString(url.absoluteString, forType: .string)
     }
 
+    static func copyLinkAsMarkdown(title: String, url: URL) {
+        let escapedTitle = title.replacingOccurrences(of: "]", with: "\\]")
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(
+            "[\(escapedTitle)](\(url.absoluteString))",
+            forType: .string
+        )
+    }
+
     static func presentSharePicker(
         for url: URL,
         source: SidebarTransientPresentationSource?,
@@ -16,9 +25,14 @@ enum SidebarLinkActions {
             presentation.presentSharingServicePicker([url], source: source)
             return
         }
+        presentSharePicker(for: [url])
+    }
 
-        guard let contentView = NSApp.keyWindow?.contentView else { return }
-        let picker = NSSharingServicePicker(items: [url])
+    static func presentSharePicker(for urls: [URL]) {
+        guard !urls.isEmpty, let contentView = NSApp.keyWindow?.contentView else {
+            return
+        }
+        let picker = NSSharingServicePicker(items: urls)
         let anchor = NSRect(
             x: contentView.bounds.midX,
             y: contentView.bounds.midY,

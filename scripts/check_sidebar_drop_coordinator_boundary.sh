@@ -22,7 +22,7 @@ router='Sumi/Managers/TabManager/SidebarDragOperationRouter.swift'
 router_roles=(
   Sumi/Managers/TabManager/SidebarDragPayloadResolver.swift
   Sumi/Managers/TabManager/SidebarDragContextValidationService.swift
-  Sumi/Managers/TabManager/SidebarDragPlanExecutor.swift
+  Sumi/Managers/TabManager/SidebarCanonicalDragMutation.swift
   Sumi/Managers/TabManager/SidebarDragOperationTransaction.swift
   Sumi/Managers/TabManager/SidebarExplicitTabMoveTransaction.swift
   "$router"

@@ -397,7 +397,9 @@ final class PaneContainerView: NSView {
         windowState: BrowserWindowState,
         sidebarDragState: SidebarDragState
     ) {
-        let controls = splitControlsView ?? SplitPaneControlsView()
+        let controls = splitControlsView ?? SplitPaneControlsView(
+            frame: NSRect(origin: .zero, size: SplitPaneControlsView.preferredSize)
+        )
         splitControlsView = controls
         controls.configure(
             tab: tab,

@@ -42,7 +42,8 @@ final class SidebarStoredFaviconLoaderTests: XCTestCase {
                 name: .faviconCacheUpdated,
                 userInfo: [NSNotification.Name.faviconCacheUpdatedDomainKey: "other.example"]
             ),
-            launchURL: launchURL
+            launchURL: launchURL,
+            partition: partition
         )
         XCTAssertEqual(loader.loadKey(launchURL: launchURL, partition: partition), originalKey)
 
@@ -51,7 +52,8 @@ final class SidebarStoredFaviconLoaderTests: XCTestCase {
                 name: .faviconCacheUpdated,
                 userInfo: [NSNotification.Name.faviconCacheUpdatedDomainKey: "example.com"]
             ),
-            launchURL: launchURL
+            launchURL: launchURL,
+            partition: partition
         )
         XCTAssertNotEqual(loader.loadKey(launchURL: launchURL, partition: partition), originalKey)
     }

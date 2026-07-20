@@ -54,6 +54,8 @@ struct SumiWebPageMenuItemFactory {
             )
         case .openLinkInNewTab:
             return SumiWebPageMenuStrings.openLinkInNewTab
+        case .openLinkInSplitView:
+            return SumiWebPageMenuStrings.openLinkInSplitView
         case .openLinkInNewWindow:
             return SumiWebPageMenuStrings.openLinkInNewWindow
         case .addLinkToBookmarks:

@@ -4,17 +4,60 @@
 //
 
 import SwiftUI
+import SumiDomain
+
+enum SidebarEssentialVisualItem {
+    case pin(ShortcutPin)
+    case splitGroup(SplitGroup)
+
+    var id: UUID {
+        switch self {
+        case .pin(let pin): pin.id
+        case .splitGroup(let group): group.id
+        }
+    }
+}
+
+@MainActor
+enum SidebarEssentialVisualProjection {
+    static func make(
+        pins: [ShortcutPin],
+        splitGroups: [SplitGroup],
+        profileID: UUID?
+    ) -> [SidebarEssentialVisualItem] {
+        let pinsByID = Dictionary(uniqueKeysWithValues: pins.map { ($0.id, $0) })
+        let groupsByID = Dictionary(
+            uniqueKeysWithValues: splitGroups.map { ($0.id, $0) }
+        )
+        return SidebarVisualOrdering.essentialItems(
+            pins: pins,
+            groups: splitGroups,
+            profileID: profileID
+        ).compactMap { item in
+            switch item {
+            case .shortcut(let pinID):
+                return pinsByID[pinID].map(SidebarEssentialVisualItem.pin)
+            case .splitGroup(let groupID):
+                return groupsByID[groupID].map(
+                    SidebarEssentialVisualItem.splitGroup
+                )
+            case .folder:
+                return nil
+            }
+        }
+    }
+}
 
 struct SidebarEssentialsProjectedRow {
-    let items: [ShortcutPin?]
+    let items: [SidebarEssentialVisualItem?]
     let startSlot: Int
     let visualColumnCount: Int
     let tileSize: CGSize
 }
 
 struct SidebarEssentialsProjectedLayout {
-    let layoutItems: [ShortcutPin?]
-    let visibleItems: [ShortcutPin?]
+    let layoutItems: [SidebarEssentialVisualItem?]
+    let visibleItems: [SidebarEssentialVisualItem?]
     let capacityColumnCount: Int
     let tileSize: CGSize
     let rows: [SidebarEssentialsProjectedRow]
@@ -49,7 +92,7 @@ enum SidebarEssentialsProjectionPolicy {
     static let maxItems = maxColumns * maxRows
 
     static func make(
-        items: [ShortcutPin],
+        items: [SidebarEssentialVisualItem],
         width: CGFloat,
         dragState: SidebarDragState
     ) -> SidebarEssentialsProjectedLayout {
@@ -149,9 +192,9 @@ enum SidebarEssentialsProjectionPolicy {
     }
 
     private static func resolvedVisibleItems(
-        from items: [ShortcutPin],
+        from items: [SidebarEssentialVisualItem],
         dragState: SidebarDragState
-    ) -> [ShortcutPin?] {
+    ) -> [SidebarEssentialVisualItem?] {
         guard let projectionDragItemId = dragState.projectionDragItemId else {
             return items.map { Optional($0) }
         }
@@ -164,7 +207,7 @@ enum SidebarEssentialsProjectionPolicy {
             return items.contains { $0.id == projectionDragItemId }
         }()
 
-        return items.compactMap { item -> ShortcutPin? in
+        return items.compactMap { item -> SidebarEssentialVisualItem? in
             if item.id == projectionDragItemId, isDraggingExistingEssential {
                 return nil
             }
@@ -173,11 +216,11 @@ enum SidebarEssentialsProjectionPolicy {
     }
 
     private static func resolvedLayoutItems(
-        from items: [ShortcutPin?],
+        from items: [SidebarEssentialVisualItem?],
         dragState: SidebarDragState,
         canAcceptDrop: Bool,
         essentialsStoreIsEmpty: Bool
-    ) -> [ShortcutPin?] {
+    ) -> [SidebarEssentialVisualItem?] {
         var layoutItems = items
 
         guard dragState.isDropProjectionActive, canAcceptDrop else {
@@ -246,7 +289,7 @@ enum SidebarEssentialsProjectionPolicy {
     }
 
     static func projectedRows(
-        from items: [ShortcutPin?],
+        from items: [SidebarEssentialVisualItem?],
         capacityColumnCount: Int,
         width: CGFloat
     ) -> [SidebarEssentialsProjectedRow] {

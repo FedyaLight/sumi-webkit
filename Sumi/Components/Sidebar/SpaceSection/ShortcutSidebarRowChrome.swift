@@ -122,7 +122,11 @@ struct ShortcutSidebarRowChrome: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .faviconCacheUpdated)) { notification in
             guard pin.iconAsset == nil else { return }
-            storedFaviconLoader.invalidateIfNeeded(for: notification, launchURL: pin.launchURL)
+            storedFaviconLoader.invalidateIfNeeded(
+                for: notification,
+                launchURL: pin.launchURL,
+                partition: faviconPartition
+            )
         }
         .sidebarAppKitContextMenu(
             isInteractionEnabled: dragIsEnabled,

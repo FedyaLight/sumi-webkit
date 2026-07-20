@@ -21,21 +21,21 @@ final class SplitGroupMembershipQueryTests: XCTestCase {
         let regular = Tab(url: URL(string: "https://regular.example")!)
         let shortcut = Tab(url: URL(string: "https://shortcut.example")!)
         let pinID = UUID()
+        let siblingPinID = UUID()
         shortcut.shortcutPinId = pinID
         let group = try XCTUnwrap(
             SplitGroup.make(
                 members: [
-                    .regularTab(regular.id),
-                    .shortcutPin(
-                        pinID,
-                        returnPlacement: .spacePinned(
-                            spaceId: UUID(),
-                            folderId: nil,
-                            index: 3
-                        )
-                    ),
+                    .shortcutPin(pinID),
+                    .shortcutPin(siblingPinID),
                 ],
-                layoutKind: .vertical
+                layoutKind: .vertical,
+                container: .shortcutSidebar(
+                    spaceId: UUID(),
+                    profileId: nil,
+                    folderId: nil,
+                    index: 0
+                )
             )
         )
         let store = SplitGroupStore()
@@ -43,14 +43,14 @@ final class SplitGroupMembershipQueryTests: XCTestCase {
         let query = makeQuery(
             store: store,
             tabs: [regular, shortcut],
-            pins: [makePin(id: pinID)]
+            pins: [makePin(id: pinID), makePin(id: siblingPinID)]
         )
 
-        XCTAssertEqual(query.group(containing: regular), group)
+        XCTAssertNil(query.group(containing: regular))
         XCTAssertEqual(query.group(containing: shortcut), group)
         XCTAssertEqual(query.group(forLookupID: shortcut.id), group)
         XCTAssertEqual(query.group(forLookupID: pinID), group)
-        XCTAssertFalse(group.contains(.regularTab(shortcut.id)))
+        XCTAssertFalse(group.contains(.regularTab(regular.id)))
     }
 
     func testRawLookupPrioritizesDurablePinWhenUUIDExistsInBothCatalogs() {
@@ -89,20 +89,8 @@ final class SplitGroupMembershipQueryTests: XCTestCase {
         let shortcutGroup = try XCTUnwrap(
             SplitGroup.make(
                 members: [
-                    .shortcutPin(
-                        sharedID,
-                        returnPlacement: .essential(
-                            profileId: nil,
-                            index: 0
-                        )
-                    ),
-                    .shortcutPin(
-                        UUID(),
-                        returnPlacement: .essential(
-                            profileId: nil,
-                            index: 1
-                        )
-                    ),
+                    .shortcutPin(sharedID),
+                    .shortcutPin(UUID()),
                 ],
                 layoutKind: .horizontal,
                 container: .shortcutSidebar(

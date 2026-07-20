@@ -71,6 +71,7 @@ struct SidebarSavedURLDriftActions {
 
 struct SidebarTabContextMenuActions {
     var duplicate: (() -> Void)?
+    var openInSplitView: (() -> Void)?
     var copyLink: (() -> Void)?
     var share: (() -> Void)?
     var edit: (() -> Void)?
@@ -89,6 +90,33 @@ struct SidebarTabContextMenuActions {
     var closeTabsBelow: (() -> Void)?
     var close: (() -> Void)?
     var deleteSavedTab: (() -> Void)?
+}
+
+@MainActor
+func makeSidebarShortcutOpenInSplitAction(
+    pin: ShortcutPin,
+    browserContext: SidebarBrowserContext,
+    pinExecution: SidebarPinExecutionCommands,
+    windowState: BrowserWindowState,
+    currentSpaceID: UUID?
+) -> (() -> Void)? {
+    let memberCount = browserContext.splitQuery
+        .group(in: windowState.id)?.memberIDs.count ?? 0
+    guard windowState.currentShortcutPinId != pin.id,
+          browserContext.splitMembership.group(forLookupID: pin.id) == nil,
+          memberCount < SplitGroup.maximumMembers else { return nil }
+    return {
+        guard let tab = pinExecution.materialize(
+            pin,
+            in: windowState,
+            currentSpaceID: currentSpaceID
+        ) else { return }
+        browserContext.splitInsertion.enterSplit(
+            with: tab,
+            side: .right,
+            in: windowState
+        )
+    }
 }
 
 private enum SidebarChoiceSubmenuAvailability {
@@ -295,9 +323,14 @@ func makeSidebarTabContextMenuEntries(
 private func makeRegularSidebarTabEntries(
     actions: SidebarTabContextMenuActions
 ) -> [SidebarContextMenuEntry] {
-    let duplicateSection: [SidebarContextMenuEntry] = actions.duplicate.map {
-        [.action(.init(title: "Duplicate Tab", systemImage: "plus.square.on.square", classification: .structuralMutation, onAction: $0))]
-    } ?? []
+    let duplicateSection: [SidebarContextMenuEntry] = [
+        actions.duplicate.map {
+            .action(.init(title: "Duplicate Tab", systemImage: "plus.square.on.square", classification: .structuralMutation, onAction: $0))
+        },
+        actions.openInSplitView.map {
+            .action(.init(title: "Open in Split View", systemImage: "rectangle.split.2x1", classification: .structuralMutation, onAction: $0))
+        },
+    ].compactMap { $0 }
 
     let editSection: [SidebarContextMenuEntry] = [
         actions.copyLink.map {
@@ -386,6 +419,16 @@ private func makeSavedSidebarTabEntries(
     var openSection: [SidebarContextMenuEntry] = []
     if let onDuplicate = actions.duplicate {
         openSection.append(.action(.init(title: "Duplicate as Tab", systemImage: "doc.on.doc", classification: .structuralMutation, onAction: onDuplicate)))
+    }
+    if let onOpenInSplitView = actions.openInSplitView {
+        openSection.append(
+            .action(.init(
+                title: "Open in Split View",
+                systemImage: "rectangle.split.2x1",
+                classification: .structuralMutation,
+                onAction: onOpenInSplitView
+            ))
+        )
     }
 
     let shareSection: [SidebarContextMenuEntry] = [

@@ -26,6 +26,18 @@ final class RegularTabShortcutCandidatePreparer {
         planner.prepareConversion(tab, preferredWindowId: preferredWindowID)
     }
 
+    func prepareSplitGroupMoveMember(
+        _ tab: Tab,
+        sourceGroupID: UUID,
+        preferredWindowID: UUID?
+    ) -> TabShortcutConversionPreparation {
+        planner.prepareSplitGroupMoveMemberConversion(
+            tab,
+            sourceGroupID: sourceGroupID,
+            preferredWindowId: preferredWindowID
+        )
+    }
+
     func candidate(
         for tab: Tab,
         preparation: TabShortcutConversionPreparation,

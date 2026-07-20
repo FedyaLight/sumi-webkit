@@ -125,6 +125,12 @@ struct ShortcutProfileReferenceMutationPlanner {
         switch group.container {
         case .regularTabs:
             container = group.container
+        case .essentialSidebar(let ownerProfileID, let index):
+            container = .essentialSidebar(
+                profileId: ownerProfileID == profileID
+                    ? fallbackProfileID : ownerProfileID,
+                index: index
+            )
         case .shortcutSidebar(
             let spaceID,
             let ownerProfileID,
@@ -139,29 +145,8 @@ struct ShortcutProfileReferenceMutationPlanner {
                 index: index
             )
         }
-        guard var migrated = group.changingContainer(to: container) else {
+        guard let migrated = group.changingContainer(to: container) else {
             return nil
-        }
-        for member in group.members {
-            guard case .essential(let ownerProfileID, let index)
-                    = member.returnPlacement,
-                  ownerProfileID == profileID,
-                  case .shortcutPin(let pinID) = member.memberID else {
-                continue
-            }
-            guard let replacement = migrated.replacingMember(
-                member.memberID,
-                with: .shortcutPin(
-                    pinID,
-                    returnPlacement: .essential(
-                        profileId: fallbackProfileID,
-                        index: index
-                    )
-                )
-            ) else {
-                return nil
-            }
-            migrated = replacement
         }
         return migrated
     }

@@ -107,14 +107,10 @@ final class SplitRuntimeMemberResolver {
             return .regularTab(tabID)
 
         case .shortcutPin(let pinID):
-            guard let pin = pins.shortcutPin(by: pinID),
-                  let placement = returnPlacement(
-                      for: pin,
-                      windowState: windowState
-                  ) else {
+            guard pins.shortcutPin(by: pinID) != nil else {
                 return nil
             }
-            return .shortcutPin(pinID, returnPlacement: placement)
+            return .shortcutPin(pinID)
         }
     }
 
@@ -126,12 +122,7 @@ final class SplitRuntimeMemberResolver {
         guard case .shortcutPin(let incomingPinID) = incoming,
               case .shortcutPin(let targetPinID) = target,
               let incomingPin = pins.shortcutPin(by: incomingPinID),
-              let targetPin = pins.shortcutPin(by: targetPinID),
-              incomingPin.role == .spacePinned,
-              targetPin.role == .spacePinned,
-              let spaceID = incomingPin.spaceId,
-              targetPin.spaceId == spaceID,
-              incomingPin.folderId == targetPin.folderId else {
+              let targetPin = pins.shortcutPin(by: targetPinID) else {
             let targetSpaceID: UUID?
             switch target {
             case .regularTab(let tabID):
@@ -144,14 +135,51 @@ final class SplitRuntimeMemberResolver {
             )
         }
 
-        return .shortcutSidebar(
-            spaceId: spaceID,
-            profileId: incomingPin.profileId
-                ?? targetPin.profileId
-                ?? windowState.currentProfileId,
-            folderId: incomingPin.folderId,
-            index: min(incomingPin.index, targetPin.index)
-        )
+        if incomingPin.role == .essential,
+           targetPin.role == .essential,
+           let profileID = incomingPin.profileId,
+           targetPin.profileId == profileID {
+            return .essentialSidebar(
+                profileId: profileID,
+                index: min(incomingPin.index, targetPin.index)
+            )
+        }
+
+        if incomingPin.role == .spacePinned,
+           targetPin.role == .spacePinned,
+           let spaceID = incomingPin.spaceId,
+           targetPin.spaceId == spaceID,
+           incomingPin.folderId == targetPin.folderId {
+            return .shortcutSidebar(
+                spaceId: spaceID,
+                profileId: incomingPin.profileId
+                    ?? targetPin.profileId
+                    ?? windowState.currentProfileId,
+                folderId: incomingPin.folderId,
+                index: min(incomingPin.index, targetPin.index)
+            )
+        }
+
+        // A new saved split belongs to the drop target. The incoming launcher
+        // is moved into that target container by SplitDropService's atomic
+        // topology + launcher-placement transaction.
+        switch targetPin.role {
+        case .essential:
+            return .essentialSidebar(
+                profileId: targetPin.profileId ?? windowState.currentProfileId,
+                index: targetPin.index
+            )
+        case .spacePinned:
+            guard let targetSpaceID = targetPin.spaceId else {
+                return .regularTabs(spaceId: windowState.currentSpaceId)
+            }
+            return .shortcutSidebar(
+                spaceId: targetSpaceID,
+                profileId: targetPin.profileId ?? windowState.currentProfileId,
+                folderId: targetPin.folderId,
+                index: targetPin.index
+            )
+        }
     }
 
     func canJoinShortcutSidebar(
@@ -177,19 +205,21 @@ final class SplitRuntimeMemberResolver {
         _ memberID: SplitMemberID,
         in container: SplitGroupContainer
     ) -> Bool {
-        guard case .shortcutSidebar(
-            let spaceID,
-            _,
-            let folderID,
-            _
-        ) = container,
-              case .shortcutPin(let pinID) = memberID,
+        guard case .shortcutPin(let pinID) = memberID,
               let pin = pins.shortcutPin(by: pinID) else {
             return false
         }
-        return pin.role == .spacePinned
-            && pin.spaceId == spaceID
-            && pin.folderId == folderID
+        switch container {
+        case .regularTabs:
+            return false
+        case .essentialSidebar(let profileID, _):
+            return pin.role == .essential
+                && (profileID == nil || pin.profileId == profileID)
+        case .shortcutSidebar(let spaceID, _, let folderID, _):
+            return pin.role == .spacePinned
+                && pin.spaceId == spaceID
+                && pin.folderId == folderID
+        }
     }
 
     func canCreateShortcutGroup(
@@ -231,24 +261,5 @@ final class SplitRuntimeMemberResolver {
             return .shortcutPin(pinID)
         }
         return windowState.currentTabId.map(SplitMemberID.regularTab)
-    }
-
-    private func returnPlacement(
-        for pin: ShortcutPin,
-        windowState: BrowserWindowState
-    ) -> SplitShortcutReturnPlacement? {
-        switch pin.role {
-        case .essential:
-            return .essential(profileId: pin.profileId, index: pin.index)
-        case .spacePinned:
-            guard let spaceID = pin.spaceId ?? windowState.currentSpaceId else {
-                return nil
-            }
-            return .spacePinned(
-                spaceId: spaceID,
-                folderId: pin.folderId,
-                index: pin.index
-            )
-        }
     }
 }

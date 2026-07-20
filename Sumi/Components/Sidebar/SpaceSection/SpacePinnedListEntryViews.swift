@@ -18,7 +18,6 @@ struct SpacePinnedFolderEntryView: View {
     let folderCommands: SidebarFolderCommands
     let spaceLifecycle: SidebarSpaceLifecycle
     let browserContext: SidebarBrowserContext
-    @Binding var shortcutRestoreSession: SpaceShortcutRestoreInteractionSession
     let elevatedFolderIDs: Set<UUID>
     let topLevelIndex: Int
     let geometryGeneration: Int
@@ -36,7 +35,6 @@ struct SpacePinnedFolderEntryView: View {
             pinExecution: pinExecution,
             folderCommands: folderCommands,
             spaceLifecycle: spaceLifecycle,
-            shortcutRestoreSession: $shortcutRestoreSession,
             elevatedFolderIds: elevatedFolderIDs,
             isInteractive: isInteractive,
             parentFolderId: nil,
@@ -57,8 +55,6 @@ struct SpacePinnedFolderEntryView: View {
 /// One top-level shortcut row with its already-resolved presentation values.
 struct SpacePinnedShortcutEntryView: View {
     let pin: ShortcutPin
-    let placeholderGroup: SplitGroup?
-    let placeholderIsSelected: Bool
     let liveTab: Tab?
     let faviconPartition: SumiFaviconPartition
     let faviconImageReader: any BrowserFaviconImageReading
@@ -71,39 +67,22 @@ struct SpacePinnedShortcutEntryView: View {
     let actionOwner: SpacePinnedActionOwner
 
     var body: some View {
-        Group {
-            if let placeholderGroup {
-                ShortcutSplitPlaceholderRow(
-                    pin: pin,
-                    isSelected: placeholderIsSelected,
-                    accessibilityID: "space-pinned-split-placeholder-\(pin.id.uuidString)",
-                    isAppKitInteractionEnabled: isInteractive,
-                    action: {
-                        actionOwner.focusSplitGroup(
-                            placeholderGroup.id,
-                            memberID: .shortcutPin(pin.id)
-                        )
-                    }
-                )
-            } else {
-                ShortcutSidebarRow(
-                    pin: pin,
-                    liveTab: liveTab,
-                    faviconPartition: faviconPartition,
-                    faviconImageReader: faviconImageReader,
-                    runtimeAffordance: runtimeAffordance,
-                    accessibilityID: "space-pinned-shortcut-\(pin.id.uuidString)",
-                    contextMenuEntries: { actionOwner.pinnedShortcutContextMenuEntries(pin) },
-                    action: { actionOwner.activateShortcutPin(pin) },
-                    dragSourceZone: .spacePinned(spaceID),
-                    dragHasTrailingActionExclusion: true,
-                    dragIsEnabled: isInteractive,
-                    onResetToLaunchURL: { actionOwner.resetShortcutPin(pin) },
-                    onUnload: { actionOwner.unloadShortcutPin(pin) },
-                    onRemove: { actionOwner.removeShortcutPin(pin) }
-                )
-            }
-        }
+        ShortcutSidebarRow(
+            pin: pin,
+            liveTab: liveTab,
+            faviconPartition: faviconPartition,
+            faviconImageReader: faviconImageReader,
+            runtimeAffordance: runtimeAffordance,
+            accessibilityID: "space-pinned-shortcut-\(pin.id.uuidString)",
+            contextMenuEntries: { actionOwner.pinnedShortcutContextMenuEntries(pin) },
+            action: { actionOwner.activateShortcutPin(pin) },
+            dragSourceZone: .spacePinned(spaceID),
+            dragHasTrailingActionExclusion: true,
+            dragIsEnabled: isInteractive,
+            onResetToLaunchURL: { actionOwner.resetShortcutPin(pin) },
+            onUnload: { actionOwner.unloadShortcutPin(pin) },
+            onRemove: { actionOwner.removeShortcutPin(pin) }
+        )
         .opacity(opacity)
         .sidebarTopLevelPinnedItemGeometry(
             itemId: pin.id,
@@ -116,18 +95,15 @@ struct SpacePinnedShortcutEntryView: View {
     }
 }
 
-/// One shortcut-hosted split row and its restore interaction boundary.
+/// One shortcut-hosted split row.
 struct SpacePinnedSplitGroupEntryView: View {
     let group: SplitGroup
     let items: [SplitGroupSidebarItem]
     let space: Space
-    let inventory: SidebarSpaceInventorySnapshot
     let browserContext: SidebarBrowserContext
     let isInteractive: Bool
     let topLevelIndex: Int
     let geometryGeneration: Int
-    let contentMutationAnimation: Animation?
-    @Binding var shortcutRestoreSession: SpaceShortcutRestoreInteractionSession
 
     @Environment(BrowserWindowState.self) private var windowState
 
@@ -139,6 +115,9 @@ struct SpacePinnedSplitGroupEntryView: View {
                 spaceId: space.id,
                 splitLayout: browserContext.splitLayout,
                 emptySplitCreation: browserContext.emptySplitCreation,
+                groupEditor: browserContext.splitGroupEditor,
+                groupContextMenuActions: browserContext.splitGroupLifecycle
+                    .contextMenuActions(for: group, in: windowState),
                 isAppKitInteractionEnabled: isInteractive,
                 faviconImageReader: browserContext.faviconImageReader,
                 accessibilityID: "shortcut-host-split-row-\(group.id.uuidString)",
@@ -149,22 +128,12 @@ struct SpacePinnedSplitGroupEntryView: View {
                         windowState.id
                     )
                 },
-                onRestoreShortcutMember: { memberID in
-                    browserContext.splitFocusCommands.restoreMember(
-                        group.id,
-                        memberID,
-                        windowState.id
+                onUnloadGroup: {
+                    browserContext.splitGroupLifecycle.unload(
+                        group,
+                        in: windowState
                     )
-                },
-                onCloseMember: { memberID in
-                    browserContext.splitCloseCommand.closeMember(
-                        group.id,
-                        memberID,
-                        windowState.id
-                    )
-                },
-                onPrepareShortcutRestoreGap: prepareShortcutRestoreGap,
-                onPerformShortcutRestoreWithPreparedGap: performShortcutRestoreWithPreparedGap
+                }
             )
             .sidebarTopLevelPinnedItemGeometry(
                 itemId: group.id,
@@ -177,31 +146,4 @@ struct SpacePinnedSplitGroupEntryView: View {
         }
     }
 
-    private func prepareShortcutRestoreGap(_ memberID: SplitMemberID) {
-        let gap = SpaceShortcutRestorePlanner(
-            inventory: inventory,
-            space: space
-        ).shortcutRestoreGap(groupID: group.id, memberID: memberID)
-        guard let gap, contentMutationAnimation != nil else { return }
-        SpaceShortcutRestoreInteraction.prepare(
-            session: $shortcutRestoreSession,
-            gap: gap,
-            animation: SidebarDropMotion.contentLayout
-        )
-    }
-
-    private func performShortcutRestoreWithPreparedGap(
-        _ memberID: SplitMemberID,
-        _ update: () -> Void
-    ) {
-        let gap = SpaceShortcutRestorePlanner(
-            inventory: inventory,
-            space: space
-        ).shortcutRestoreGap(groupID: group.id, memberID: memberID)
-        SpaceShortcutRestoreInteraction.perform(
-            session: $shortcutRestoreSession,
-            gap: gap,
-            update: update
-        )
-    }
 }

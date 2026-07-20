@@ -14,13 +14,13 @@ struct SplitGroupSidebarRow: View {
     let faviconImageReader: any BrowserFaviconImageReading
     let splitLayout: SplitLayoutService
     let emptySplitCreation: EmptySplitCreationWorkflow
-    let segmentAction: (SplitGroupSidebarItem) -> SplitGroupSidebarSegmentAction?
+    let groupEditor: SidebarSplitGroupEditorPresentationService
+    var groupContextMenuActions: SplitGroupContextMenuActions = .empty
+    let groupAction: SplitGroupSidebarAction?
     var dragSource: (SplitGroupSidebarItem) -> SidebarDragSourceConfiguration? = { _ in nil }
-    let contextMenuEntries: (Tab) -> [SidebarContextMenuEntry]
+    let contextMenuEntries: (SplitGroupSidebarItem) -> [SidebarContextMenuEntry]
     let onActivateMember: (SplitMemberID) -> Void
-    var onSegmentActionAnimationStart: (SplitMemberID) -> Void = { _ in }
-    let onSegmentAction: (SplitMemberID) -> Void
-    let onSegmentMiddleClick: (SplitMemberID) -> Void
+    let onGroupAction: () -> Void
 
     @Environment(BrowserWindowState.self) var windowState
     @Environment(\.accessibilityReduceMotion) var reduceMotion
@@ -29,11 +29,51 @@ struct SplitGroupSidebarRow: View {
     @Environment(\.chromeThemeTokens) var scopedChromeTokens
     @Environment(\.sidebarWindowSelectionSnapshot) var sidebarSelection
     @State var isRowHovered = false
+    @State private var isActionHovered = false
     @State var displayedItems: [SplitGroupSidebarItem] = []
     @State var departingItemIds = Set<SplitMemberID>()
-    @State var isCollapsingRow = false
 
     var body: some View {
+        rowContent
+        .frame(height: SidebarRowLayout.rowHeight, alignment: .top)
+        .padding(.horizontal, 2)
+        .frame(minWidth: 0, maxWidth: .infinity)
+        .sidebarRowSurface(
+            background: rowBackground,
+            cornerRadius: sumiSettings.resolvedCornerRadius(
+                SidebarRowLayout.defaultCornerRadius
+            ),
+            tokens: tokens,
+            isVisible: drawsRowSurface,
+            drawsSelectionShadow: isFocusedGroup
+        )
+        .overlay(alignment: .trailing) {
+            trailingActionButton
+                .padding(.trailing, SidebarRowLayout.trailingInset)
+        }
+        .sidebarDDGHover($isRowHovered, isEnabled: isRowHoverTrackingEnabled)
+        .accessibilityIdentifier("space-split-group-\(group.id.uuidString)")
+        .onAppear {
+            if displayedItems.isEmpty {
+                displayedItems = items
+            }
+        }
+        .onChange(of: items.map(\.id)) { _, _ in
+            reconcileDisplayedItems(with: items)
+        }
+    }
+
+    @ViewBuilder
+    private var rowContent: some View {
+        if let iconAsset = group.iconAsset,
+           let activationItem = customIconActivationItem {
+            customIconRow(iconAsset, activationItem: activationItem)
+        } else {
+            segmentedRow
+        }
+    }
+
+    private var segmentedRow: some View {
         GeometryReader { geometry in
             let rowItems = resolvedDisplayItems
             let activeCount = max(rowItems.filter { !isDeparting($0) }.count, 1)
@@ -49,18 +89,34 @@ struct SplitGroupSidebarRow: View {
                         groupID: group.id,
                         item: item,
                         spaceId: spaceId,
-                        isActive: isActive(item),
                         isDeparting: isDeparting(item),
-                        segmentAction: segmentAction(item),
+                        trailingPadding: segmentTrailingPadding(
+                            for: index,
+                            in: rowItems
+                        ),
+                        reservesTrailingAction: isLastVisibleItem(
+                            at: index,
+                            in: rowItems
+                        ) && groupAction != nil,
                         isAppKitInteractionEnabled: isAppKitInteractionEnabled && !isDeparting(item),
                         faviconImageReader: faviconImageReader,
                         dragSourceConfiguration: dragSource(item),
+                        dragPreviewSourceGeometry: SidebarDragPreviewSourceGeometry(
+                            size: geometry.size,
+                            localOrigin: CGPoint(
+                                x: segmentLeadingOffset(
+                                    for: index,
+                                    in: rowItems,
+                                    segmentWidth: segmentWidth
+                                ),
+                                y: 0
+                            )
+                        ),
                         contextMenuEntries: {
-                            item.tab.map(splitContextMenuEntries) ?? []
+                            groupContextMenuEntries
                         },
                         onActivate: { activate(item) },
-                        onSegmentAction: { performSegmentMutation(for: item, in: rowItems) },
-                        onMiddleClick: { onSegmentMiddleClick(item.id) }
+                        onMiddleClick: groupAction == nil ? nil : onGroupAction
                     )
                     .frame(width: isDeparting(item) ? 0 : segmentWidth)
                     .clipped()
@@ -82,25 +138,75 @@ struct SplitGroupSidebarRow: View {
                 value: departingItemIds.map(\.sidebarStableDescription).sorted()
             )
         }
-        .sidebarRowLifecycle(isCollapsed: isCollapsingRow)
-        .padding(.horizontal, 2)
-        .frame(minWidth: 0, maxWidth: .infinity)
-        .sidebarRowSurface(
-            background: rowBackground,
-            cornerRadius: sumiSettings.resolvedCornerRadius(8),
-            tokens: tokens,
-            isVisible: drawsRowSurface,
-            drawsSelectionShadow: isFocusedGroup
-        )
-        .sidebarDDGHover($isRowHovered, isEnabled: isRowHoverTrackingEnabled)
-        .accessibilityIdentifier("space-split-group-\(group.id.uuidString)")
-        .onAppear {
-            if displayedItems.isEmpty {
-                displayedItems = items
+    }
+
+    private func customIconRow(
+        _ iconAsset: String,
+        activationItem: SplitGroupSidebarItem
+    ) -> some View {
+        HStack(spacing: SidebarRowLayout.iconTrailingSpacing) {
+            Group {
+                if SumiPersistentGlyph.presentsAsEmoji(iconAsset) {
+                    Text(iconAsset)
+                        .font(SidebarThemeTokens.Typography.launcherEmoji(
+                            size: SidebarRowLayout.faviconSize
+                        ))
+                } else {
+                    Image(systemName:
+                        SumiPersistentGlyph.resolvedLauncherSystemImageName(
+                            iconAsset
+                        )
+                    )
+                    .symbolRenderingMode(.monochrome)
+                }
             }
+            .frame(
+                width: SidebarRowLayout.faviconSize,
+                height: SidebarRowLayout.faviconSize
+            )
+            .saturation(isSavedGroupUnloaded ? 0 : 1)
+            .opacity(isSavedGroupUnloaded ? 0.8 : 1)
+
+            Text(groupDisplayTitle)
+                .font(.system(size: 13, weight: .medium))
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.trailing, titleTrailingPadding)
         }
-        .onChange(of: items.map(\.id)) { _, _ in
-            reconcileDisplayedItems(with: items)
+        .padding(.leading, SidebarRowLayout.leadingInset)
+        .padding(.trailing, SidebarRowLayout.trailingInset)
+        .frame(height: SidebarRowLayout.rowHeight)
+        .contentShape(Rectangle())
+        .onTapGesture { activate(activationItem) }
+        .sidebarAppKitContextMenu(
+            isInteractionEnabled: isAppKitInteractionEnabled,
+            surfaceKind: .row,
+            dragSource: dragSource(activationItem),
+            primaryAction: { activate(activationItem) },
+            onMiddleClick: groupAction == nil ? nil : onGroupAction,
+            sourceID: "split-group-custom-icon-\(group.id.uuidString)",
+            entries: { groupContextMenuEntries }
+        )
+    }
+
+    private var customIconActivationItem: SplitGroupSidebarItem? {
+        if let activeID = sidebarSelection.splitSelection?.activeMemberID,
+           let active = items.first(where: { $0.id == activeID }) {
+            return active
+        }
+        return items.first
+    }
+
+    private var groupDisplayTitle: String {
+        SplitGroupSidebarModel.displayTitle(for: group)
+    }
+
+    private var isSavedGroupUnloaded: Bool {
+        switch group.container {
+        case .regularTabs:
+            return false
+        case .essentialSidebar, .shortcutSidebar:
+            return items.contains { $0.tab != nil } == false
         }
     }
 
@@ -131,75 +237,173 @@ struct SplitGroupSidebarRow: View {
     }
 
     var isRowHoverTrackingEnabled: Bool {
-        !isFocusedGroup && isAppKitInteractionEnabled
+        isAppKitInteractionEnabled
     }
 
     var isFocusedGroup: Bool {
         sidebarSelection.splitSelection?.groupID == group.id
     }
 
-    func isActive(_ item: SplitGroupSidebarItem) -> Bool {
-        if sidebarSelection.splitSelection?.groupID == group.id,
-           sidebarSelection.splitSelection?.activeMemberID == item.id {
-            return true
+    private var showsGroupAction: Bool {
+        guard let groupAction else { return false }
+        return SidebarHoverChrome.showsTrailingAction(
+            isHovered: SidebarHoverChrome.displayHover(
+                isRowHovered,
+                freezesHoverState:
+                    windowState.sidebarInteractionState.freezesSidebarHoverState
+            ),
+            isSelected: groupAction.showsWhenSelected && isFocusedGroup
+        )
+    }
+
+    private var titleTrailingPadding: CGFloat {
+        SidebarHoverChrome.trailingPadding(
+            showsTrailingAction: showsGroupAction
+        )
+    }
+
+    private func segmentTrailingPadding(
+        for index: Int,
+        in rowItems: [SplitGroupSidebarItem]
+    ) -> CGFloat {
+        isLastVisibleItem(at: index, in: rowItems) && showsGroupAction
+            ? SidebarRowLayout.trailingActionPadding : 7
+    }
+
+    private func isLastVisibleItem(
+        at index: Int,
+        in rowItems: [SplitGroupSidebarItem]
+    ) -> Bool {
+        rowItems[(index + 1)...].contains { !isDeparting($0) } == false
+    }
+
+    private func segmentLeadingOffset(
+        for index: Int,
+        in rowItems: [SplitGroupSidebarItem],
+        segmentWidth: CGFloat
+    ) -> CGFloat {
+        let precedingVisibleCount = rowItems[..<index].count {
+            !isDeparting($0)
         }
-        switch item.id {
-        case .regularTab(let tabID):
-            return sidebarSelection.currentTabID == tabID
-        case .shortcutPin(let pinID):
-            return ShortcutSelectionIdentity.isSelected(
-                tabId: item.tab?.id,
-                pinId: pinID,
-                in: sidebarSelection.shortcut
+        return CGFloat(precedingVisibleCount) * (segmentWidth + 1)
+    }
+
+    @ViewBuilder
+    private var trailingActionButton: some View {
+        if let groupAction {
+            Button(action: onGroupAction) {
+                Image(systemName: groupAction.systemImageName)
+                    .font(SidebarThemeTokens.Typography.trailingAction)
+                    .foregroundColor(tokens.primaryText)
+                    .frame(
+                        width: SidebarRowLayout.trailingActionSize,
+                        height: SidebarRowLayout.trailingActionSize
+                    )
+                    .background(
+                        displayIsActionHovering
+                            ? actionBackground : Color.clear
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+            }
+            .buttonStyle(
+                SidebarZenActionButtonStyle(
+                    isEnabled: showsGroupAction && !freezesHoverState
+                )
+            )
+            .opacity(showsGroupAction ? 1 : 0)
+            .sidebarZenActionOpacity(showsGroupAction)
+            .allowsHitTesting(showsGroupAction && !freezesHoverState)
+            .accessibilityHidden(!showsGroupAction)
+            .sidebarDDGHover(
+                $isActionHovered,
+                isEnabled: showsGroupAction && isAppKitInteractionEnabled
+            )
+            .accessibilityIdentifier(
+                "\(groupAction.accessibilityPrefix)-\(group.id.uuidString)"
+            )
+            .help(groupAction.help)
+            .sidebarAppKitPrimaryAction(
+                isEnabled: showsGroupAction && !freezesHoverState,
+                isInteractionEnabled: isAppKitInteractionEnabled,
+                action: onGroupAction
             )
         }
     }
 
-    func splitContextMenuEntries(for tab: Tab) -> [SidebarContextMenuEntry] {
-        var entries = contextMenuEntries(tab)
-        let splitEntries: [SidebarContextMenuEntry] = [
-            .submenu(
-                title: "Split Layout",
-                systemImage: "rectangle.split.2x2",
-                children: [
-                    .action(.init(title: "Grid", systemImage: "square.grid.2x2", onAction: {
-                        splitLayout.setLayoutKind(.grid, in: windowState.id)
-                    })),
-                    .action(.init(title: "Vertical", systemImage: "rectangle.split.2x1", onAction: {
-                        splitLayout.setLayoutKind(.vertical, in: windowState.id)
-                    })),
-                    .action(.init(title: "Horizontal", systemImage: "rectangle.split.1x2", onAction: {
-                        splitLayout.setLayoutKind(.horizontal, in: windowState.id)
-                    })),
-                ]
-            ),
-            .submenu(
-                title: "New Empty Split",
-                systemImage: "plus.rectangle.on.rectangle",
-                children: [
-                    .action(.init(title: "Right", systemImage: "rectangle.righthalf.filled", onAction: {
-                        emptySplitCreation.create(side: .right, in: windowState)
-                    })),
-                    .action(.init(title: "Left", systemImage: "rectangle.lefthalf.filled", onAction: {
-                        emptySplitCreation.create(side: .left, in: windowState)
-                    })),
-                    .action(.init(title: "Top", systemImage: "rectangle.tophalf.filled", onAction: {
-                        emptySplitCreation.create(side: .top, in: windowState)
-                    })),
-                    .action(.init(title: "Bottom", systemImage: "rectangle.bottomhalf.filled", onAction: {
-                        emptySplitCreation.create(side: .bottom, in: windowState)
-                    })),
-                ]
-            ),
-            .action(.init(title: "Unsplit", systemImage: "rectangle", onAction: {
-                performSplitSidebarMutation {
-                    splitLayout.unsplit(in: windowState)
+    private var freezesHoverState: Bool {
+        windowState.sidebarInteractionState.freezesSidebarHoverState
+    }
+
+    private var displayIsActionHovering: Bool {
+        SidebarHoverChrome.displayHover(
+            isActionHovered,
+            freezesHoverState: freezesHoverState
+        )
+    }
+
+    private var actionBackground: Color {
+        isFocusedGroup ? tokens.fieldBackgroundHover : tokens.fieldBackground
+    }
+
+    var groupContextMenuEntries: [SidebarContextMenuEntry] {
+        SplitGroupContextMenuFactory.entries(
+            for: group,
+            members: items.compactMap { item in
+                guard let url = item.tab?.url ?? item.pin?.launchURL else {
+                    return nil
                 }
-            })),
-        ]
-        entries.append(.separator)
-        entries.append(contentsOf: splitEntries)
-        return entries
+                return SplitGroupContextMenuMember(
+                    id: item.id,
+                    title: item.title,
+                    url: url,
+                    additionalEntries: contextMenuEntries(item)
+                )
+            },
+            splitLayout: splitLayout,
+            emptySplitCreation: emptySplitCreation,
+            windowState: windowState,
+            actions: resolvedGroupContextMenuActions
+        )
+    }
+
+    private var resolvedGroupContextMenuActions: SplitGroupContextMenuActions {
+        var actions = groupContextMenuActions
+        actions.edit = {
+            groupEditor.show(
+                group,
+                in: windowState,
+                themeContext: themeContext
+            )
+        }
+        actions.duplicate = {
+            groupEditor.duplicate(group, in: windowState)
+        }
+        actions.moveTo = groupEditor.moveMenuEntries(
+            for: group,
+            in: windowState
+        )
+        if group.memberIDs.count < SplitGroup.maximumMembers,
+           let activationItem = customIconActivationItem ?? items.first {
+            actions.addTab = {
+                onActivateMember(activationItem.id)
+                _ = emptySplitCreation.create(
+                    side: .right,
+                    in: windowState,
+                    reason: .splitTabPicker
+                )
+            }
+        }
+        if let delete = actions.delete {
+            actions.delete = {
+                groupEditor.confirmDelete(
+                    group,
+                    in: windowState,
+                    themeContext: themeContext,
+                    onDelete: delete
+                )
+            }
+        }
+        return actions
     }
 }
 

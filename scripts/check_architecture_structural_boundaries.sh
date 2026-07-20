@@ -805,13 +805,11 @@ guard_expect_no_matches \
   'split services stored runtime managers' \
   '^    private let [A-Za-z_]+: TabManager\b' \
   Sumi/Managers/BrowserManager/SplitShortcutFocusService.swift \
-  Sumi/Managers/BrowserManager/SplitShortcutMemberRestoreService.swift \
   Sumi/Managers/BrowserManager/ShortcutHostedSplitUnloadService.swift
 guard_expect_no_matches \
   'split services separate runtime providers' \
   '^    private let [A-Za-z_]+: \(\) -> TabManager\?' \
   Sumi/Managers/BrowserManager/SplitShortcutFocusService.swift \
-  Sumi/Managers/BrowserManager/SplitShortcutMemberRestoreService.swift \
   Sumi/Managers/BrowserManager/ShortcutHostedSplitUnloadService.swift
 guard_expect_no_matches \
   'durable window write archive/scheduler reachback' \

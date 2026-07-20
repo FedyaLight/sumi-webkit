@@ -24,7 +24,6 @@ struct TabFolderView: View {
     let pinExecution: SidebarPinExecutionCommands
     let folderCommands: SidebarFolderCommands
     let spaceLifecycle: SidebarSpaceLifecycle
-    @Binding var shortcutRestoreSession: SpaceShortcutRestoreInteractionSession
     let elevatedFolderIds: Set<UUID>
     let isInteractive: Bool
     let parentFolderId: UUID?
@@ -58,7 +57,6 @@ struct TabFolderView: View {
                     folder: folder,
                     space: space,
                     shortcutPins: shortcutPinsInFolder,
-                    shortcutRestoreGaps: shortcutRestoreSession.gaps,
                     inventory: inventory,
                     selection: selection,
                     liveFolderSnapshot: liveFolderSnapshot,
@@ -74,7 +72,6 @@ struct TabFolderView: View {
                         pinExecution: pinExecution,
                         folderCommands: folderCommands,
                         spaceLifecycle: spaceLifecycle,
-                        shortcutRestoreSession: $shortcutRestoreSession,
                         displayedCollapsedProjectionIDs: $displayedCollapsedProjectionIDs,
                         elevatedFolderIds: elevatedFolderIds,
                         isInteractive: isInteractive,

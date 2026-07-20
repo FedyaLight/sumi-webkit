@@ -553,14 +553,7 @@ final class ShortcutPinAtomicityTests: XCTestCase {
         XCTAssertFalse(convertedGroup.contains(.regularTab(input.tab.id)))
         XCTAssertEqual(
             convertedGroup.member(for: .shortcutPin(converted.id)),
-            SplitMember.shortcutPin(
-                converted.id,
-                returnPlacement: .spacePinned(
-                    spaceId: input.space.id,
-                    folderId: nil,
-                    index: 0
-                )
-            )
+            SplitMember.shortcutPin(converted.id)
         )
         _ = cancellable
     }

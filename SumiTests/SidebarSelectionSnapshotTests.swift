@@ -93,14 +93,7 @@ final class SidebarSelectionSnapshotTests: XCTestCase {
         let spaceID = UUID()
         let activePinID = UUID()
         let activeMemberID = SplitMemberID.shortcutPin(activePinID)
-        let activeMember = SplitMember.shortcutPin(
-            activePinID,
-            returnPlacement: .spacePinned(
-                spaceId: spaceID,
-                folderId: nil,
-                index: 0
-            )
-        )
+        let activeMember = SplitMember.shortcutPin(activePinID)
         let group = try XCTUnwrap(
             SplitGroup.make(
                 members: [activeMember, .regularTab(UUID())],

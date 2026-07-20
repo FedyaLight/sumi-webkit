@@ -7,17 +7,13 @@ struct ShortcutHostedSplitGroupRow: View {
     let spaceId: UUID
     let splitLayout: SplitLayoutService
     let emptySplitCreation: EmptySplitCreationWorkflow
+    let groupEditor: SidebarSplitGroupEditorPresentationService
+    let groupContextMenuActions: SplitGroupContextMenuActions
     let isAppKitInteractionEnabled: Bool
     let faviconImageReader: any BrowserFaviconImageReading
     let accessibilityID: String
     let onActivateMember: (SplitMemberID) -> Void
-    let onRestoreShortcutMember: (SplitMemberID) -> Void
-    let onCloseMember: (SplitMemberID) -> Void
-    let onPrepareShortcutRestoreGap: (SplitMemberID) -> Void
-    let onPerformShortcutRestoreWithPreparedGap: (
-        SplitMemberID,
-        @escaping () -> Void
-    ) -> Void
+    let onUnloadGroup: () -> Void
 
     init(
         group: SplitGroup,
@@ -25,32 +21,26 @@ struct ShortcutHostedSplitGroupRow: View {
         spaceId: UUID,
         splitLayout: SplitLayoutService,
         emptySplitCreation: EmptySplitCreationWorkflow,
+        groupEditor: SidebarSplitGroupEditorPresentationService,
+        groupContextMenuActions: SplitGroupContextMenuActions,
         isAppKitInteractionEnabled: Bool,
         faviconImageReader: any BrowserFaviconImageReading,
         accessibilityID: String,
         onActivateMember: @escaping (SplitMemberID) -> Void,
-        onRestoreShortcutMember: @escaping (SplitMemberID) -> Void,
-        onCloseMember: @escaping (SplitMemberID) -> Void,
-        onPrepareShortcutRestoreGap: @escaping (SplitMemberID) -> Void,
-        onPerformShortcutRestoreWithPreparedGap: @escaping (
-            SplitMemberID,
-            @escaping () -> Void
-        ) -> Void
+        onUnloadGroup: @escaping () -> Void
     ) {
         self.group = group
         self.items = items
         self.spaceId = spaceId
         self.splitLayout = splitLayout
         self.emptySplitCreation = emptySplitCreation
+        self.groupEditor = groupEditor
+        self.groupContextMenuActions = groupContextMenuActions
         self.isAppKitInteractionEnabled = isAppKitInteractionEnabled
         self.faviconImageReader = faviconImageReader
         self.accessibilityID = accessibilityID
         self.onActivateMember = onActivateMember
-        self.onRestoreShortcutMember = onRestoreShortcutMember
-        self.onCloseMember = onCloseMember
-        self.onPrepareShortcutRestoreGap = onPrepareShortcutRestoreGap
-        self.onPerformShortcutRestoreWithPreparedGap =
-            onPerformShortcutRestoreWithPreparedGap
+        self.onUnloadGroup = onUnloadGroup
     }
 
     var body: some View {
@@ -62,65 +52,40 @@ struct ShortcutHostedSplitGroupRow: View {
             faviconImageReader: faviconImageReader,
             splitLayout: splitLayout,
             emptySplitCreation: emptySplitCreation,
-            segmentAction: { item in
-                SplitGroupSidebarModel.segmentAction(for: item, in: group)
-            },
+            groupEditor: groupEditor,
+            groupContextMenuActions: groupContextMenuActions,
+            groupAction: SplitGroupSidebarModel.rowAction(
+                for: group,
+                items: items
+            ),
             dragSource: shortcutHostedSplitSegmentDragSource,
             contextMenuEntries: { _ in [] },
             onActivateMember: onActivateMember,
-            onSegmentActionAnimationStart: { memberID in
-                if isShortcut(memberID) {
-                    onPrepareShortcutRestoreGap(memberID)
-                }
-            },
-            onSegmentAction: performShortcutHostedSegmentAction,
-            onSegmentMiddleClick: onCloseMember
+            onGroupAction: onUnloadGroup
         )
         .accessibilityIdentifier(accessibilityID)
-    }
-
-    private func performShortcutHostedSegmentAction(
-        for memberID: SplitMemberID
-    ) {
-        if isShortcut(memberID) {
-            onPerformShortcutRestoreWithPreparedGap(memberID) {
-                SidebarMotionTransaction.withoutAnimation {
-                    onRestoreShortcutMember(memberID)
-                }
-            }
-            return
-        }
-        SidebarMotionTransaction.withoutAnimation {
-            onCloseMember(memberID)
-        }
-    }
-
-    private func isShortcut(_ memberID: SplitMemberID) -> Bool {
-        if case .shortcutPin = memberID { return true }
-        return false
     }
 
     private func shortcutHostedSplitSegmentDragSource(
         for item: SplitGroupSidebarItem
     ) -> SidebarDragSourceConfiguration? {
+        let memberIcon = iconPresentation(for: item)
         if let pin = item.pin {
             return SidebarDragSourceConfiguration(
-                item: SumiDragItem.splitMember(
-                    item.id,
-                    groupID: group.id,
+                item: SumiDragItem.splitGroup(
+                    group.id,
                     title: item.title,
                     urlString: item.tab?.url.absoluteString
                         ?? pin.launchURL.absoluteString
                 ),
-                sourceZone: SplitGroupSidebarModel.sourceZone(
-                    for: pin,
-                    fallbackSpaceId: spaceId
-                ),
+                sourceZone: sourceZone,
                 previewKind: .row,
-                previewIcon: item.tab?.favicon ?? pin.storedFaviconImage(
-                    partition: .regular(pin.executionProfileId ?? pin.profileId),
-                    imageReader: faviconImageReader
-                ),
+                previewIcon: groupPreviewIcon ?? memberIcon.image,
+                previewGlyphText: groupPreviewGlyph,
+                splitPresentation: group.iconAsset == nil
+                    ? splitDragPresentation : nil,
+                chromeTemplateSystemImageName: groupPreviewSystemImage,
+                previewPresentationState: groupPresentationState,
                 exclusionZones: [.trailingStrip(32)],
                 onActivate: { onActivateMember(item.id) },
                 isEnabled: isAppKitInteractionEnabled
@@ -129,18 +94,110 @@ struct ShortcutHostedSplitGroupRow: View {
 
         guard let tab = item.tab else { return nil }
         return SidebarDragSourceConfiguration(
-            item: SumiDragItem.splitMember(
-                item.id,
-                groupID: group.id,
+            item: SumiDragItem.splitGroup(
+                group.id,
                 title: tab.name,
                 urlString: tab.url.absoluteString
             ),
-            sourceZone: .spaceRegular(spaceId),
+            sourceZone: sourceZone,
             previewKind: .row,
-            previewIcon: tab.favicon,
+            previewIcon: groupPreviewIcon ?? memberIcon.image,
+            previewGlyphText: groupPreviewGlyph,
+            splitPresentation: group.iconAsset == nil
+                ? splitDragPresentation : nil,
+            chromeTemplateSystemImageName: groupPreviewSystemImage,
+            previewPresentationState: groupPresentationState,
             exclusionZones: [.trailingStrip(32)],
             onActivate: { onActivateMember(item.id) },
             isEnabled: isAppKitInteractionEnabled
         )
+    }
+
+    private var splitDragPresentation: SidebarSplitDragPresentation {
+        SidebarSplitDragPresentation(
+            members: zip(items, iconPresentations).map { item, icon in
+                SidebarSplitDragPresentation.Member(
+                    icon: icon.image,
+                    glyphText: icon.glyphText,
+                    systemImageName: icon.systemImageName,
+                    accentColor: accentColor(for: item),
+                    title: item.title
+                )
+            }
+        )
+    }
+
+    private var iconPresentations: [SplitGroupMemberIconPresentation] {
+        items.map(iconPresentation)
+    }
+
+    private func iconPresentation(
+        for item: SplitGroupSidebarItem
+    ) -> SplitGroupMemberIconPresentation {
+        SplitGroupMemberIconResolver.resolve(
+            item: item,
+            loadedStoredFavicon: nil,
+            imageReader: faviconImageReader
+        )
+    }
+
+    @Environment(\.sidebarWindowSelectionSnapshot) private var sidebarSelection
+    @Environment(\.sumiSettings) private var sumiSettings
+    @Environment(\.resolvedThemeContext) private var themeContext
+    @Environment(\.chromeThemeTokens) private var scopedChromeTokens
+
+    private func accentColor(for item: SplitGroupSidebarItem) -> Color {
+        let pin = item.pin
+        return PinnedTileAccentResolver.resolve(
+            launchURL: item.tab?.url ?? pin?.launchURL,
+            partition: pin.map {
+                .regular($0.executionProfileId ?? $0.profileId)
+            },
+            glyphText: pin?.glyphText,
+            chromeTemplateSystemImageName:
+                pin?.chromeTemplateSystemImageName,
+            tokens: tokens
+        )
+    }
+
+    private var tokens: ChromeThemeTokens {
+        scopedChromeTokens ?? themeContext.tokens(settings: sumiSettings)
+    }
+
+    private var groupPresentationState: ShortcutPresentationState {
+        if sidebarSelection.splitSelection?.groupID == group.id {
+            return .visuallySelected
+        }
+        return !items.isEmpty && items.allSatisfy { $0.tab != nil }
+            ? .liveBackgrounded : .launcherOnly
+    }
+
+    private var groupPreviewGlyph: String? {
+        group.iconAsset.flatMap {
+            SumiPersistentGlyph.presentsAsEmoji($0) ? $0 : nil
+        }
+    }
+
+    private var groupPreviewSystemImage: String? {
+        group.iconAsset.flatMap {
+            SumiPersistentGlyph.presentsAsEmoji($0)
+                ? nil : SumiPersistentGlyph.resolvedLauncherSystemImageName($0)
+        }
+    }
+
+    private var groupPreviewIcon: Image? {
+        groupPreviewSystemImage.map(Image.init(systemName:))
+    }
+
+    private var sourceZone: DropZoneID {
+        switch group.container {
+        case .regularTabs(let groupSpaceID):
+            return .spaceRegular(groupSpaceID ?? spaceId)
+        case .essentialSidebar:
+            return .essentials
+        case .shortcutSidebar(let groupSpaceID, _, let folderID, _):
+            return folderID.map(DropZoneID.folder)
+                ?? .spacePinned(groupSpaceID)
+        }
     }
 }

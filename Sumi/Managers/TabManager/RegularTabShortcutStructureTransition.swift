@@ -28,12 +28,36 @@ final class RegularTabShortcutStructureTransition {
             return nil
         }
         let sourceMemberID = SplitMemberID.regularTab(tab.id)
+        let sourceGroup = splitGroupStore.group(containing: sourceMemberID)
         return RegularTabShortcutStructurePlan(
             sourceTabID: tab.id,
             expectedSplitGroups: splitGroupStore.groups,
-            sourceSplitGroup: splitGroupStore.group(
-                containing: sourceMemberID
-            ),
+            sourceSplitGroup: sourceGroup,
+            presentationSourceSplitGroupID: sourceGroup?.id,
+            structuralRevision: structuralLookup.mutationRevision,
+            profileRevision: tab.profileAssignment.changeRevision
+        )
+    }
+
+    /// Captures the deliberate topology gap during a whole-group move.
+    func prepareSplitGroupMoveMember(
+        _ tab: Tab,
+        sourceGroupID: UUID
+    ) -> RegularTabShortcutStructurePlan? {
+        guard regularTabs.contains(tab),
+              tab.isShortcutLiveInstance == false,
+              tab.profileAssignment.hasUnsettledAssignment == false,
+              splitGroupStore.group(id: sourceGroupID) == nil,
+              splitGroupStore.group(
+                  containing: .regularTab(tab.id)
+              ) == nil else {
+            return nil
+        }
+        return RegularTabShortcutStructurePlan(
+            sourceTabID: tab.id,
+            expectedSplitGroups: splitGroupStore.groups,
+            sourceSplitGroup: nil,
+            presentationSourceSplitGroupID: sourceGroupID,
             structuralRevision: structuralLookup.mutationRevision,
             profileRevision: tab.profileAssignment.changeRevision
         )

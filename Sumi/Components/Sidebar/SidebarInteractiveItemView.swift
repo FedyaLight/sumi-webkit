@@ -411,10 +411,15 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
 
         let point = convert(event.locationInWindow, from: nil)
         let resolvedAnchorPoint = anchorPoint ?? point
+        let previewSourceSize = configuration.previewSourceGeometry?.size
+            ?? bounds.size
+        let previewAnchorPoint = configuration.previewSourceGeometry?
+            .anchor(forLocalPoint: resolvedAnchorPoint)
+            ?? resolvedAnchorPoint
         guard let previewSession = SidebarDragPreviewSessionFactory.make(
             configuration: configuration,
-            sourceSize: bounds.size,
-            sourceOffsetFromBottomLeading: resolvedAnchorPoint
+            sourceSize: previewSourceSize,
+            sourceOffsetFromBottomLeading: previewAnchorPoint
         ) else { return }
 
         didStartDrag = true

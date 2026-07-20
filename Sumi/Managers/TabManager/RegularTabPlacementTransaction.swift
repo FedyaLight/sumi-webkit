@@ -153,6 +153,147 @@ final class RegularTabPlacementTransaction {
         return placement.admission.cancel()
     }
 
+    func stageAggregate(
+        _ placements: [PreparedRegularTabPlacement]
+    ) -> Bool {
+        guard let first = placements.first,
+              placements.allSatisfy({
+                  $0.belongs(to: self)
+                      && $0.state == .prepared
+                      && $0.target.spaceID == first.target.spaceID
+                      && sameTabs($0.target.tabs, first.target.tabs)
+                      && $0.tab.spaceId == $0.source.spaceID
+                      && $0.tab.profileId == $0.source.profileID
+                      && $0.tab.profileAssignment.changeRevision
+                          == $0.source.assignmentRevision
+                      && !$0.tab.profileAssignment.hasUnsettledAssignment
+              }),
+              Set(placements.map { ObjectIdentifier($0.tab) }).count
+                  == placements.count,
+              sameTabs(
+                  stateOwner.tabs(in: first.target.spaceID),
+                  first.target.tabs
+              ),
+              placements.allSatisfy({ placement in
+                  !first.target.tabs.contains(where: { $0 === placement.tab })
+              }) else {
+            _ = cancelAggregate(placements)
+            return false
+        }
+
+        var stagedAdmissions: [PreparedRegularTabPlacement] = []
+        for placement in placements {
+            guard placement.admission.stage() else {
+                stagedAdmissions.reversed().forEach {
+                    precondition($0.admission.rollback())
+                    $0.state = .cancelled
+                }
+                placements.dropFirst(stagedAdmissions.count + 1).forEach {
+                    precondition(cancel($0))
+                }
+                placement.state = .cancelled
+                return false
+            }
+            stagedAdmissions.append(placement)
+        }
+
+        var tabs = first.target.tabs
+        for placement in placements {
+            let index = max(
+                0,
+                min(placement.target.index ?? tabs.count, tabs.count)
+            )
+            placement.tab.spaceId = placement.target.spaceID
+            placement.tab.isPinned = false
+            placement.tab.isSpacePinned = false
+            placement.tab.folderId = nil
+            tabs.insert(placement.tab, at: index)
+        }
+        reindex(tabs)
+        structuralMutations.setTabs(tabs, for: first.target.spaceID)
+        placements.forEach {
+            $0.stagedTargetTabs = tabs
+            $0.state = .staged
+        }
+        return true
+    }
+
+    func finishAggregate(
+        _ placements: [PreparedRegularTabPlacement],
+        publishing publication: @MainActor () -> Void
+    ) -> Bool {
+        guard let first = placements.first,
+              let targetTabs = first.stagedTargetTabs,
+              placements.allSatisfy({
+                  $0.belongs(to: self)
+                      && $0.state == .staged
+                      && $0.stagedTargetTabs.map {
+                          sameTabs($0, targetTabs)
+                      } == true
+              }),
+              sameTabs(stateOwner.tabs(in: first.target.spaceID), targetTabs),
+              placements.allSatisfy({ $0.admission.settleProfile() })
+        else { return false }
+
+        guard placements.allSatisfy({ $0.admission.commit() }) else {
+            preconditionFailure(
+                "Settled regular-tab aggregate lost an admission lease"
+            )
+        }
+        placements.forEach { $0.state = .committed }
+        publication()
+        structuralLookup.runAfterCurrentBatch { [placements] in
+            precondition(
+                placements.allSatisfy {
+                    $0.admission.endCommittedLease()
+                },
+                "Committed regular-tab aggregate lost an admission lease"
+            )
+        }
+        return true
+    }
+
+    func rollbackAggregate(
+        _ placements: [PreparedRegularTabPlacement]
+    ) -> Bool {
+        guard let first = placements.first,
+              let targetTabs = first.stagedTargetTabs,
+              placements.allSatisfy({
+                  $0.belongs(to: self)
+                      && $0.state == .staged
+                      && $0.stagedTargetTabs.map {
+                          sameTabs($0, targetTabs)
+                      } == true
+                      && $0.admission.canRollback()
+              }),
+              sameTabs(stateOwner.tabs(in: first.target.spaceID), targetTabs)
+        else { return false }
+
+        structuralMutations.setTabs(
+            first.target.tabs,
+            for: first.target.spaceID
+        )
+        for placement in placements.reversed() {
+            placement.tab.spaceId = placement.source.spaceID
+            placement.tab.index = placement.source.index
+            placement.tab.isPinned = placement.source.isPinned
+            placement.tab.isSpacePinned = placement.source.isSpacePinned
+            placement.tab.folderId = placement.source.folderID
+            precondition(placement.admission.rollback())
+            placement.state = .cancelled
+        }
+        return true
+    }
+
+    func cancelAggregate(
+        _ placements: [PreparedRegularTabPlacement]
+    ) -> Bool {
+        guard placements.allSatisfy({
+            $0.belongs(to: self) && $0.state == .prepared
+        }) else { return placements.isEmpty }
+        return placements.allSatisfy(cancel)
+    }
+
     private func settleDivergedRollback(
         _ placement: PreparedRegularTabPlacement
     ) {

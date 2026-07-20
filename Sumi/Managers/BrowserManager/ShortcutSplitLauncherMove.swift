@@ -10,7 +10,7 @@ struct ShortcutSplitLauncherDestination {
 }
 
 @MainActor
-struct PreparedShortcutSplitLauncherRestoration {
+struct PreparedShortcutSplitLauncherMove {
     let pin: ShortcutPin
     let pinReceipt: ShortcutSplitLauncherCatalogPinReceipt
     let destination: ShortcutSplitLauncherDestination

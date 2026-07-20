@@ -6,6 +6,7 @@ import SumiWebRuntime
 enum TabLinkDisposition: Equatable {
     case newTab(selected: Bool)
     case newWindow(selected: Bool)
+    case splitView
 }
 
 /// Browser-chrome presentation commands whose destination must be derived from
@@ -21,6 +22,10 @@ struct TabLinkPresentationCommands {
         _ url: URL,
         _ source: PhysicalWebViewSourceReceipt,
         _ selected: Bool
+    ) -> Bool
+    typealias OpenSplit = @MainActor (
+        _ url: URL,
+        _ source: PhysicalWebViewSourceReceipt
     ) -> Bool
     typealias PresentGlance = @MainActor (
         _ url: URL,
@@ -49,6 +54,7 @@ struct TabLinkPresentationCommands {
         ) -> PhysicalWebViewSourceReceipt?,
         openTab: @escaping OpenTab,
         openWindow: @escaping OpenWindow,
+        openSplit: @escaping OpenSplit,
         activateSource: @escaping ActivateSource,
         presentGlance: @escaping PresentGlance
     ) {
@@ -62,6 +68,8 @@ struct TabLinkPresentationCommands {
                 return openTab(url, source, selected)
             case .newWindow(let selected):
                 return openWindow(url, source, selected)
+            case .splitView:
+                return openSplit(url, source)
             }
         }
         activateAction = { sourceWebView in
@@ -112,6 +120,7 @@ struct TabLinkPresentationCommands {
         resolveSource: { _ in nil },
         openTab: { _, _, _ in false },
         openWindow: { _, _, _ in false },
+        openSplit: { _, _ in false },
         activateSource: { _ in false },
         presentGlance: { _, _, _ in false }
     )

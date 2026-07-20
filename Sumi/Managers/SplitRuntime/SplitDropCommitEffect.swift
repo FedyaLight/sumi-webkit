@@ -1,7 +1,7 @@
 import Foundation
 import SumiDomain
 
-/// Typed post-commit input for window reconciliation and launcher restoration.
+/// Typed post-commit input for window reconciliation and launcher relocation.
 /// It carries durable identities only; runtime tabs remain window-local.
 struct SplitDropCommitEffect {
     let callerWindowID: UUID

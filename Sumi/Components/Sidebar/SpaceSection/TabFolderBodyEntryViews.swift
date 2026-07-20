@@ -18,7 +18,6 @@ struct TabFolderNestedFolderEntryView: View {
     let pinExecution: SidebarPinExecutionCommands
     let folderCommands: SidebarFolderCommands
     let spaceLifecycle: SidebarSpaceLifecycle
-    @Binding var shortcutRestoreSession: SpaceShortcutRestoreInteractionSession
     let elevatedFolderIDs: Set<UUID>
     let isInteractive: Bool
     let parentFolderID: UUID
@@ -37,7 +36,6 @@ struct TabFolderNestedFolderEntryView: View {
             pinExecution: pinExecution,
             folderCommands: folderCommands,
             spaceLifecycle: spaceLifecycle,
-            shortcutRestoreSession: $shortcutRestoreSession,
             elevatedFolderIds: elevatedFolderIDs,
             isInteractive: isInteractive,
             parentFolderId: parentFolderID,
@@ -50,8 +48,6 @@ struct TabFolderNestedFolderEntryView: View {
 /// One saved shortcut with presentation resolved before entering the leaf.
 struct TabFolderShortcutEntryView: View {
     let pin: ShortcutPin
-    let placeholderGroup: SplitGroup?
-    let placeholderIsSelected: Bool
     let liveTab: Tab?
     let faviconPartition: SumiFaviconPartition
     let faviconImageReader: any BrowserFaviconImageReading
@@ -63,41 +59,24 @@ struct TabFolderShortcutEntryView: View {
     let mutationActions: TabFolderMutationActions
 
     var body: some View {
-        Group {
-            if let placeholderGroup {
-                ShortcutSplitPlaceholderRow(
-                    pin: pin,
-                    isSelected: placeholderIsSelected,
-                    accessibilityID: "folder-split-placeholder-\(pin.id.uuidString)",
-                    isAppKitInteractionEnabled: isInteractive,
-                    action: {
-                        mutationActions.focusSplitGroup(
-                            placeholderGroup.id,
-                            memberID: .shortcutPin(pin.id)
-                        )
-                    }
-                )
-            } else {
-                ShortcutSidebarRow(
-                    pin: pin,
-                    liveTab: liveTab,
-                    faviconPartition: faviconPartition,
-                    faviconImageReader: faviconImageReader,
-                    runtimeAffordance: runtimeAffordance,
-                    accessibilityID: "folder-shortcut-\(pin.id.uuidString)",
-                    contextMenuEntries: {
-                        contextMenuActionOwner.folderShortcutContextMenuEntries(pin)
-                    },
-                    action: { mutationActions.activateShortcutPin(pin) },
-                    dragSourceZone: .folder(folderID),
-                    dragHasTrailingActionExclusion: true,
-                    dragIsEnabled: isInteractive,
-                    onResetToLaunchURL: { contextMenuActionOwner.resetShortcutPin(pin) },
-                    onUnload: { contextMenuActionOwner.unloadShortcutPin(pin) },
-                    onRemove: { contextMenuActionOwner.removeShortcutPin(pin) }
-                )
-            }
-        }
+        ShortcutSidebarRow(
+            pin: pin,
+            liveTab: liveTab,
+            faviconPartition: faviconPartition,
+            faviconImageReader: faviconImageReader,
+            runtimeAffordance: runtimeAffordance,
+            accessibilityID: "folder-shortcut-\(pin.id.uuidString)",
+            contextMenuEntries: {
+                contextMenuActionOwner.folderShortcutContextMenuEntries(pin)
+            },
+            action: { mutationActions.activateShortcutPin(pin) },
+            dragSourceZone: .folder(folderID),
+            dragHasTrailingActionExclusion: true,
+            dragIsEnabled: isInteractive,
+            onResetToLaunchURL: { contextMenuActionOwner.resetShortcutPin(pin) },
+            onUnload: { contextMenuActionOwner.unloadShortcutPin(pin) },
+            onRemove: { contextMenuActionOwner.removeShortcutPin(pin) }
+        )
         .opacity(opacity)
     }
 }
@@ -123,16 +102,13 @@ struct TabFolderLiveItemEntryView: View {
     }
 }
 
-/// One shortcut-hosted split group and its folder-scoped restore interaction.
+/// One shortcut-hosted split group.
 struct TabFolderSplitGroupEntryView: View {
     let group: SplitGroup
     let items: [SplitGroupSidebarItem]
     let space: Space
-    let inventory: SidebarSpaceInventorySnapshot
     let browserContext: SidebarBrowserContext
     let isInteractive: Bool
-    let folderLayoutAnimation: Animation?
-    @Binding var shortcutRestoreSession: SpaceShortcutRestoreInteractionSession
 
     @Environment(BrowserWindowState.self) private var windowState
 
@@ -144,6 +120,9 @@ struct TabFolderSplitGroupEntryView: View {
                 spaceId: space.id,
                 splitLayout: browserContext.splitLayout,
                 emptySplitCreation: browserContext.emptySplitCreation,
+                groupEditor: browserContext.splitGroupEditor,
+                groupContextMenuActions: browserContext.splitGroupLifecycle
+                    .contextMenuActions(for: group, in: windowState),
                 isAppKitInteractionEnabled: isInteractive,
                 faviconImageReader: browserContext.faviconImageReader,
                 accessibilityID: "folder-shortcut-host-split-row-\(group.id.uuidString)",
@@ -154,51 +133,14 @@ struct TabFolderSplitGroupEntryView: View {
                         windowState.id
                     )
                 },
-                onRestoreShortcutMember: { memberID in
-                    browserContext.splitFocusCommands.restoreMember(
-                        group.id,
-                        memberID,
-                        windowState.id
+                onUnloadGroup: {
+                    browserContext.splitGroupLifecycle.unload(
+                        group,
+                        in: windowState
                     )
-                },
-                onCloseMember: { memberID in
-                    browserContext.splitCloseCommand.closeMember(
-                        group.id,
-                        memberID,
-                        windowState.id
-                    )
-                },
-                onPrepareShortcutRestoreGap: prepareShortcutRestoreGap,
-                onPerformShortcutRestoreWithPreparedGap: performShortcutRestoreWithPreparedGap
+                }
             )
         }
     }
 
-    private func prepareShortcutRestoreGap(_ memberID: SplitMemberID) {
-        let gap = SpaceShortcutRestorePlanner(
-            inventory: inventory,
-            space: space
-        ).shortcutRestoreGap(groupID: group.id, memberID: memberID)
-        guard let gap, folderLayoutAnimation != nil else { return }
-        SpaceShortcutRestoreInteraction.prepare(
-            session: $shortcutRestoreSession,
-            gap: gap,
-            animation: SidebarDropMotion.contentLayout
-        )
-    }
-
-    private func performShortcutRestoreWithPreparedGap(
-        _ memberID: SplitMemberID,
-        _ update: () -> Void
-    ) {
-        let gap = SpaceShortcutRestorePlanner(
-            inventory: inventory,
-            space: space
-        ).shortcutRestoreGap(groupID: group.id, memberID: memberID)
-        SpaceShortcutRestoreInteraction.perform(
-            session: $shortcutRestoreSession,
-            gap: gap,
-            update: update
-        )
-    }
 }

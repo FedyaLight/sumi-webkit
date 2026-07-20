@@ -30,86 +30,6 @@ enum SpaceViewLayout {
     }
 }
 
-struct ShortcutRestoreGap: Identifiable, Hashable {
-    enum Container: Hashable {
-        case spacePinned(UUID)
-        case folder(UUID)
-    }
-
-    let id = UUID()
-    let pinId: UUID
-    let container: Container
-    let index: Int
-}
-
-/// State shared only by the pinned and regular sections while a shortcut split
-/// member is restored back into its saved container.
-struct SpaceShortcutRestoreInteractionSession: Equatable {
-    var gaps: [ShortcutRestoreGap] = []
-    var appearingGapIDs: Set<UUID> = []
-
-    func gap(matching candidate: ShortcutRestoreGap) -> ShortcutRestoreGap? {
-        gaps.first {
-            $0.pinId == candidate.pinId && $0.container == candidate.container
-        }
-    }
-
-    @discardableResult
-    mutating func register(_ gap: ShortcutRestoreGap) -> Bool {
-        guard self.gap(matching: gap) == nil else { return false }
-        gaps.append(gap)
-        return true
-    }
-
-    mutating func remove(_ gap: ShortcutRestoreGap) {
-        gaps.removeAll { $0.id == gap.id }
-        appearingGapIDs.remove(gap.id)
-    }
-}
-
-enum SpaceShortcutRestoreInteraction {
-    static func prepare(
-        session: Binding<SpaceShortcutRestoreInteractionSession>,
-        gap: ShortcutRestoreGap,
-        animation: Animation?
-    ) {
-        guard let animation,
-              session.wrappedValue.gap(matching: gap) == nil
-        else { return }
-
-        SidebarMotionTransaction.withoutAnimation {
-            session.wrappedValue.appearingGapIDs.insert(gap.id)
-            _ = session.wrappedValue.register(gap)
-        }
-
-        SidebarRowStagedReveal.reveal(
-            [gap.id],
-            in: session.appearingGapIDs,
-            animation: animation
-        ) {
-            session.wrappedValue.gaps.contains { $0.id == gap.id }
-        }
-    }
-
-    static func perform(
-        session: Binding<SpaceShortcutRestoreInteractionSession>,
-        gap: ShortcutRestoreGap?,
-        update: () -> Void
-    ) {
-        guard let gap,
-              let existingGap = session.wrappedValue.gap(matching: gap)
-        else {
-            update()
-            return
-        }
-
-        SidebarMotionTransaction.withoutAnimation {
-            update()
-            session.wrappedValue.remove(existingGap)
-        }
-    }
-}
-
 struct SpaceView: View {
     let space: Space
     let browserContext: SidebarBrowserContext
@@ -136,7 +56,6 @@ struct SpaceView: View {
     @Environment(\.resolvedThemeContext) private var themeContext
     @Environment(\.sidebarWindowSelectionSnapshot) private var sidebarSelection
     @Environment(\.sumiSettings) private var sumiSettings
-    @State private var shortcutRestoreSession = SpaceShortcutRestoreInteractionSession()
 
     let onScrollViewportChange: (UUID, SpaceSidebarSnapshotViewport) -> Void
     private var outerWidth: CGFloat {
@@ -190,8 +109,7 @@ struct SpaceView: View {
             spaceLifecycle: spaceLifecycle,
             browserContext: browserContext,
             isInteractive: isInteractive,
-            onSetPinnedContentCollapsed: setPinnedContentCollapsed,
-            shortcutRestoreSession: $shortcutRestoreSession
+            onSetPinnedContentCollapsed: setPinnedContentCollapsed
         )
     }
 
@@ -227,8 +145,7 @@ struct SpaceView: View {
             browserContext: browserContext,
             isInteractive: isInteractive,
             innerWidth: innerWidth,
-            isSidebarHovered: $isSidebarHovered,
-            shortcutRestoreSession: $shortcutRestoreSession
+            isSidebarHovered: $isSidebarHovered
         )
     }
 

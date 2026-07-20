@@ -1432,22 +1432,8 @@ final class RegularTabShortcutConversionServiceTests: XCTestCase {
         ))
         let targetGroup = try XCTUnwrap(SplitGroup.make(
             members: [
-                .shortcutPin(
-                    firstPin.id,
-                    returnPlacement: .spacePinned(
-                        spaceId: space.id,
-                        folderId: nil,
-                        index: 0
-                    )
-                ),
-                .shortcutPin(
-                    secondPin.id,
-                    returnPlacement: .spacePinned(
-                        spaceId: space.id,
-                        folderId: nil,
-                        index: 1
-                    )
-                ),
+                .shortcutPin(firstPin.id),
+                .shortcutPin(secondPin.id),
             ],
             layoutKind: .vertical,
             container: .shortcutSidebar(
@@ -1523,12 +1509,10 @@ final class RegularTabShortcutConversionServiceTests: XCTestCase {
             tabManager.splitGroupStore.group(id: targetGroup.id),
             replacementTarget
         )
-        guard case .generatedSpacePinnedFromRegular(let restoredSpaceID, _) =
-            replacementTarget.member(for: prepared.member.memberID)?
-                .returnPlacement else {
-            return XCTFail("Expected generated regular-tab return placement")
-        }
-        XCTAssertEqual(restoredSpaceID, space.id)
+        XCTAssertEqual(
+            replacementTarget.member(for: prepared.member.memberID),
+            prepared.member
+        )
         for state in [first, second] {
             XCTAssertEqual(state.splitSelection?.groupID, targetGroup.id)
             XCTAssertEqual(
@@ -1561,22 +1545,8 @@ final class RegularTabShortcutConversionServiceTests: XCTestCase {
         )
         let target = try XCTUnwrap(SplitGroup.make(
             members: [
-                .shortcutPin(
-                    firstPin.id,
-                    returnPlacement: .spacePinned(
-                        spaceId: space.id,
-                        folderId: nil,
-                        index: 0
-                    )
-                ),
-                .shortcutPin(
-                    secondPin.id,
-                    returnPlacement: .spacePinned(
-                        spaceId: space.id,
-                        folderId: nil,
-                        index: 1
-                    )
-                ),
+                .shortcutPin(firstPin.id),
+                .shortcutPin(secondPin.id),
             ],
             layoutKind: .vertical,
             container: .shortcutSidebar(

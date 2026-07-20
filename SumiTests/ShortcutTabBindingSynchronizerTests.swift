@@ -727,7 +727,7 @@ final class ShortcutTabBindingSynchronizerTests: XCTestCase {
 
         let mutation = try XCTUnwrap(
             transaction.stage([
-                PreparedShortcutSplitLauncherRestoration(
+                PreparedShortcutSplitLauncherMove(
                     pin: source,
                     destination: ShortcutSplitLauncherDestination(
                         role: .spacePinned,
@@ -867,11 +867,11 @@ final class ShortcutTabBindingSynchronizerTests: XCTestCase {
             .structureChangedPublisher.sink { structuralEvents += 1 }
         structuralEvents = 0
         let mutation = try XCTUnwrap(transaction.stage([
-            PreparedShortcutSplitLauncherRestoration(
+            PreparedShortcutSplitLauncherMove(
                 pin: first,
                 destination: destination
             ),
-            PreparedShortcutSplitLauncherRestoration(
+            PreparedShortcutSplitLauncherMove(
                 pin: second,
                 destination: destination
             ),
@@ -1013,8 +1013,8 @@ final class ShortcutTabBindingSynchronizerTests: XCTestCase {
             windowMutations: tabManager.shortcutWindowMutationOwner,
             folderOpenState: tabManager.folderOpenState
         )
-        let restorations = zip(pins, pins.indices).map { pin, index in
-            PreparedShortcutSplitLauncherRestoration(
+        let preparedMoves = zip(pins, pins.indices).map { pin, index in
+            PreparedShortcutSplitLauncherMove(
                 pin: pin,
                 destination: ShortcutSplitLauncherDestination(
                     role: .spacePinned,
@@ -1025,14 +1025,14 @@ final class ShortcutTabBindingSynchronizerTests: XCTestCase {
                 )
             )
         }
-        XCTAssertTrue(restorations.allSatisfy {
+        XCTAssertTrue(preparedMoves.allSatisfy {
             transaction.accepts($0.pin, destination: $0.destination)
         })
         var structuralEvents = 0
         let cancellable = tabManager.tabStructureEventBus
             .structureChangedPublisher.sink { structuralEvents += 1 }
         structuralEvents = 0
-        let mutation = try XCTUnwrap(transaction.stage(restorations))
+        let mutation = try XCTUnwrap(transaction.stage(preparedMoves))
 
         XCTAssertEqual(structuralEvents, 0)
         XCTAssertTrue(mutation.settleModel())

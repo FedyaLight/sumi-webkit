@@ -19,7 +19,6 @@ struct SpaceNestedPinnedStickyEntryView: View {
     let itemID: UUID
     let dragSnapshot: SpacePinnedDragSnapshot
     let contentMutationAnimation: Animation?
-    @Binding var shortcutRestoreSession: SpaceShortcutRestoreInteractionSession
 
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(WindowRegistry.self) private var windowRegistry
@@ -45,7 +44,6 @@ struct SpaceNestedPinnedStickyEntryView: View {
         _ pin: ShortcutPin,
         folder: TabFolder
     ) -> TabFolderShortcutEntryView {
-        let placeholderGroup = regularSplitGroup(containing: pin.id)
         let mutationActions = folderMutationActions
         let contextOwner = folderContextOwner(
             folder: folder,
@@ -54,10 +52,6 @@ struct SpaceNestedPinnedStickyEntryView: View {
         let presentationOwner = shortcutPresentationOwner
         return TabFolderShortcutEntryView(
             pin: pin,
-            placeholderGroup: placeholderGroup,
-            placeholderIsSelected: placeholderGroup.map {
-                isSplitPlaceholderSelected($0, pin: pin)
-            } ?? false,
             liveTab: selection.liveTab(for: pin.id, in: windowState),
             faviconPartition: presentationOwner.faviconPartition(for: pin),
             faviconImageReader: browserContext.faviconImageReader,
@@ -80,11 +74,8 @@ struct SpaceNestedPinnedStickyEntryView: View {
                 windowState: windowState
             ),
             space: space,
-            inventory: inventory,
             browserContext: browserContext,
-            isInteractive: isInteractive,
-            folderLayoutAnimation: contentMutationAnimation,
-            shortcutRestoreSession: $shortcutRestoreSession
+            isInteractive: isInteractive
         )
     }
 
@@ -132,31 +123,6 @@ struct SpaceNestedPinnedStickyEntryView: View {
             folderLayoutAnimation: contentMutationAnimation,
             mutationActions: mutationActions
         )
-    }
-
-    private func regularSplitGroup(containing pinID: UUID) -> SplitGroup? {
-        guard let group = inventory.splitGroup(containing: .shortcutPin(pinID)),
-              !group.container.isShortcutSidebar else {
-            return nil
-        }
-        return group
-    }
-
-    private func isSplitPlaceholderSelected(
-        _ group: SplitGroup,
-        pin: ShortcutPin
-    ) -> Bool {
-        selection.isShortcutSelected(
-            pin,
-            in: windowState,
-            selection: sidebarSelection
-        )
-            || selection.isSplitMemberSelected(
-                groupID: group.id,
-                memberID: .shortcutPin(pin.id),
-                in: windowState,
-                selection: sidebarSelection
-            )
     }
 
     private func itemOpacity(_ itemID: UUID) -> Double {

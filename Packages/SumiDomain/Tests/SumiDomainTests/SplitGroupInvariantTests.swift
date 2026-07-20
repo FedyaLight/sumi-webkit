@@ -72,14 +72,11 @@ final class SplitGroupInvariantTests: XCTestCase {
         )
     }
 
-    func testRegularContainerAllowsMixedRegularAndShortcutMembers() throws {
+    func testRegularContainerRejectsMixedRegularAndShortcutMembers() throws {
         let regular = SplitMember.regularTab(UUID())
-        let shortcut = SplitMember.shortcutPin(
-            UUID(),
-            returnPlacement: .essential(profileId: UUID(), index: 1)
-        )
+        let shortcut = SplitMember.shortcutPin(UUID())
 
-        XCTAssertNotNil(
+        XCTAssertNil(
             SplitGroup.make(
                 members: [regular, shortcut],
                 layoutKind: .horizontal,

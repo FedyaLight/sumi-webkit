@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 /// Commits pin removal, exact split mutation and runtime promotion in one
 /// structural batch, then performs one durable persistence request.
@@ -65,6 +66,85 @@ final class ShortcutPinRegularConversionTransaction {
         }
         guard let prepared else { return false }
         _ = promotion.finish(prepared)
+        persistence.scheduleStructuralPersistence()
+        return true
+    }
+
+    func commitGroup(
+        _ group: SplitGroup,
+        pins: [ShortcutPin],
+        into targetSpaceID: UUID,
+        at targetIndex: Int,
+        preferredWindowID: UUID?
+    ) -> Bool {
+        guard group.container.isShortcutSidebar,
+              pins.map(\.id).map(SplitMemberID.shortcutPin)
+                == group.memberIDs else { return false }
+
+        var plans: [ShortcutTabPromotionPlan] = []
+        for (offset, pin) in pins.enumerated() {
+            guard let plan = promotion.preparePromotion(
+                pin,
+                into: targetSpaceID,
+                at: targetIndex + offset,
+                preferredWindowId: preferredWindowID,
+                allowsGroupedPin: true
+            ) else {
+                _ = PreparedRegularTabPlacement.cancelAggregate(
+                    plans.map(\.placement)
+                )
+                return false
+            }
+            plans.append(plan)
+        }
+
+        var tree = group.layoutTree
+        var memberByPinID: [UUID: SplitMemberID] = [:]
+        for plan in plans {
+            let memberID = SplitMemberID.regularTab(plan.tab.id)
+            memberByPinID[plan.pinID] = memberID
+            guard let replacement = tree.replacingMember(
+                .shortcutPin(plan.pinID),
+                with: memberID
+            ) else {
+                _ = PreparedRegularTabPlacement.cancelAggregate(
+                    plans.map(\.placement)
+                )
+                return false
+            }
+            tree = replacement
+        }
+        guard let replacementGroup = SplitGroup(
+            id: group.id,
+            layoutKind: group.layoutKind,
+            layoutTree: tree,
+            container: .regularTabs(spaceId: targetSpaceID),
+            title: group.title,
+            iconAsset: group.iconAsset
+        ) else {
+            _ = PreparedRegularTabPlacement.cancelAggregate(
+                plans.map(\.placement)
+            )
+            return false
+        }
+
+        var prepared: PreparedShortcutTabGroupPromotion?
+        let committed = splitMutations.replaceAtomically(
+            group,
+            with: replacementGroup,
+            persist: false
+        ) { [self] in
+            guard let groupPromotion = promotion.commitGroup(
+                plans,
+                groupID: group.id,
+                memberByPinID: memberByPinID
+            ) else { return false }
+            prepared = groupPromotion
+            pins.forEach(pinStore.removeFromContainers)
+            return true
+        }
+        guard committed, let prepared else { return false }
+        promotion.finishGroup(prepared)
         persistence.scheduleStructuralPersistence()
         return true
     }

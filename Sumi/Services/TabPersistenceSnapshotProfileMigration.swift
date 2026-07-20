@@ -82,6 +82,15 @@ enum TabPersistenceSnapshotProfileMigration {
         switch group.container {
         case .regularTabs:
             migratedContainer = group.container
+        case .essentialSidebar(let profileID, let index):
+            migratedContainer = .essentialSidebar(
+                profileId: replacement(
+                    for: profileID,
+                    from: deletedProfileID,
+                    to: fallbackProfileID
+                ),
+                index: index
+            )
         case .shortcutSidebar(
             let spaceID,
             let profileID,
@@ -99,32 +108,10 @@ enum TabPersistenceSnapshotProfileMigration {
                 index: index
             )
         }
-        guard var migrated = group.changingContainer(
+        guard let migrated = group.changingContainer(
             to: migratedContainer
         ) else {
             return nil
-        }
-
-        for member in group.members {
-            guard case .essential(let profileID, let index) = member.returnPlacement,
-                  profileID == deletedProfileID,
-                  case .shortcutPin(let pinID) = member.memberID else {
-                continue
-            }
-            let replacement = SplitMember.shortcutPin(
-                pinID,
-                returnPlacement: .essential(
-                    profileId: fallbackProfileID,
-                    index: index
-                )
-            )
-            guard let next = migrated.replacingMember(
-                member.memberID,
-                with: replacement
-            ) else {
-                return nil
-            }
-            migrated = next
         }
         return migrated
     }

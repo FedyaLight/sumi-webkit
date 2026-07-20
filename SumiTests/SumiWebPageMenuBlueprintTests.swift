@@ -22,7 +22,12 @@ final class SumiWebPageMenuBlueprintTests: XCTestCase {
 
         XCTAssertEqual(rules[0], Rule(
             anchor: .openLink,
-            operations: [.replace([.command(.openLinkInNewTab)])]
+            operations: [
+                .replace([
+                    .command(.openLinkInNewTab),
+                    .command(.openLinkInSplitView),
+                ])
+            ]
         ))
         XCTAssertEqual(rules[1], Rule(
             anchor: .openLinkInNewWindow,

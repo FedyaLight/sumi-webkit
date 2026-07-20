@@ -40,6 +40,12 @@ struct SidebarDropResolution: Equatable {
     let slot: DropZoneSlot
     let folderIntent: FolderDropIntent
     let activeHoveredFolderId: UUID?
+
+    static let empty = SidebarDropResolution(
+        slot: .empty,
+        folderIntent: .none,
+        activeHoveredFolderId: nil
+    )
 }
 
 /// Published while a drag hovers above/below a space's regular tab list so the
@@ -150,9 +156,7 @@ enum SidebarDropResolver {
             draggedItem: draggedItem,
             scope: scope
         )
-        state.hoveredSlot = resolution.slot
-        state.folderDropIntent = resolution.folderIntent
-        state.activeHoveredFolderId = resolution.activeHoveredFolderId
+        state.presentDropResolution(resolution)
         state.regularExternalDropGap = regularExternalDropGap(
             location: state.baseGeometryLocation(from: location),
             state: state,
@@ -511,11 +515,7 @@ enum SidebarDropResolver {
     }
 
     private static var emptyResolution: SidebarDropResolution {
-        SidebarDropResolution(
-            slot: .empty,
-            folderIntent: .none,
-            activeHoveredFolderId: nil
-        )
+        .empty
     }
 
     private static func resolveRegularTarget(

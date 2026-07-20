@@ -4,9 +4,11 @@
 //
 
 import SwiftUI
+import SumiDomain
 
 enum SidebarEssentialsDisplayCell {
     case pin(ShortcutPin)
+    case splitGroup(SplitGroup)
     case gap(Int)
     case spacer(Int)
 
@@ -14,6 +16,8 @@ enum SidebarEssentialsDisplayCell {
         switch self {
         case .pin(let pin):
             return "pin-\(pin.id.uuidString)"
+        case .splitGroup(let group):
+            return "split-group-\(group.id.uuidString)"
         case .gap(let slot):
             return "gap-\(slot)"
         case .spacer(let id):
@@ -88,7 +92,12 @@ struct SidebarEssentialsGridProjection {
         var rows = layout.rows.map { row in
             let cells = row.items.enumerated().map { offset, item in
                 if let item {
-                    return SidebarEssentialsDisplayCell.pin(item)
+                    switch item {
+                    case .pin(let pin):
+                        return SidebarEssentialsDisplayCell.pin(pin)
+                    case .splitGroup(let group):
+                        return SidebarEssentialsDisplayCell.splitGroup(group)
+                    }
                 }
                 return .gap(row.startSlot + offset)
             }

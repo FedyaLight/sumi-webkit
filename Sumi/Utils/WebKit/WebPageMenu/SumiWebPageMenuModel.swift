@@ -114,6 +114,7 @@ enum SumiWebPageMenuCommand: String, CaseIterable {
     case searchSelection = "SumiWebPageMenu.SearchSelection"
     case openLinkInNewTab = "SumiWebPageMenu.OpenLinkInNewTab"
     case openLinkInNewWindow = "SumiWebPageMenu.OpenLinkInNewWindow"
+    case openLinkInSplitView = "SumiWebPageMenu.OpenLinkInSplitView"
     case addLinkToBookmarks = "SumiWebPageMenu.AddLinkToBookmarks"
     case copyLink = "SumiWebPageMenu.CopyLink"
     case copyEmailAddress = "SumiWebPageMenu.CopyEmailAddress"
@@ -175,6 +176,8 @@ enum SumiWebPageMenuCommand: String, CaseIterable {
             return "plus.square.on.square"
         case .openLinkInNewWindow, .openImageInNewWindow:
             return "macwindow.badge.plus"
+        case .openLinkInSplitView:
+            return "rectangle.split.2x1"
         case .copyEmailAddress:
             return "envelope"
         }

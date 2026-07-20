@@ -81,14 +81,7 @@ final class TabStructuralSnapshotMaterializerTests: XCTestCase {
             SplitGroup.make(
                 members: [
                     .regularTab(persistedTab.id),
-                    .shortcutPin(
-                        spacePin.id,
-                        returnPlacement: .spacePinned(
-                            spaceId: secondSpace.id,
-                            folderId: persistedTab.folderId,
-                            index: spacePin.index
-                        )
-                    ),
+                    .shortcutPin(spacePin.id),
                 ],
                 layoutKind: .vertical,
                 container: .regularTabs(spaceId: secondSpace.id)

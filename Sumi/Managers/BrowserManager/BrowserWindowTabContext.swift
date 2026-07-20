@@ -37,6 +37,15 @@ final class BrowserWindowTabContext {
         )
     }
 
+    func currentSplitTabs(in windowState: BrowserWindowState) -> [Tab] {
+        let tabIDs = splitQuery.visibleTabIDs(in: windowState.id)
+        guard let currentTabID = windowState.currentTabId,
+              tabIDs.contains(currentTabID) else {
+            return []
+        }
+        return tabIDs.compactMap(tabStore.tab(for:))
+    }
+
     func hasValidCurrentSelection(in windowState: BrowserWindowState) -> Bool {
         selectionService.hasValidCurrentSelection(
             in: windowState,

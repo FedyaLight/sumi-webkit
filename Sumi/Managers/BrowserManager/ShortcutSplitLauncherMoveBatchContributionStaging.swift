@@ -2,25 +2,25 @@
 extension ShortcutSplitLauncherMoveBatchStaging {
     func prepareContribution(
         _ preflight: ShortcutSplitLauncherBindingPreflight,
-        terminalRestorations restorations: [
-            PreparedShortcutSplitLauncherRestoration
+        terminalMoves preparedMoves: [
+            PreparedShortcutSplitLauncherMove
         ],
         insertion: ShortcutSplitLauncherCatalogInsertionPlan? = nil
     ) -> ShortcutSplitLauncherBindingContribution? {
         guard preflight.catalog === catalog,
-              restorations.count == preflight.entries.count,
+              preparedMoves.count == preflight.entries.count,
               preflight.bindingBatch.builder.isCurrent() else { return nil }
         let source = insertion?.sourceCatalog ?? catalog.snapshot()
         guard catalog.matches(source) else { return nil }
         var moves: [ShortcutSplitLauncherPreparedMove] = []
-        for (restoration, prepared) in zip(
-            restorations,
+        for (preparedMove, prepared) in zip(
+            preparedMoves,
             preflight.entries.map(\.binding)
         ) {
-            guard let pin = catalog.currentPin(withID: restoration.pin.id),
+            guard let pin = catalog.currentPin(withID: preparedMove.pin.id),
                   let target = catalog.preview(
                       pin,
-                      destination: restoration.destination
+                      destination: preparedMove.destination
                   ), prepared.pinTarget.accepts(target),
                   let binding = preflight.bindingBatch.prepareTransaction(
                       pin: target,
@@ -31,14 +31,14 @@ extension ShortcutSplitLauncherMoveBatchStaging {
             }
             moves.append(ShortcutSplitLauncherPreparedMove(
                 binding: binding,
-                destination: restoration.destination
+                destination: preparedMove.destination
             ))
         }
         let plan = ShortcutSplitLauncherCatalogMovePlan(
             insertion: insertion?.insertion,
-            entries: zip(restorations, moves).map { restoration, move in
+            entries: zip(preparedMoves, moves).map { preparedMove, move in
                 ShortcutSplitLauncherCatalogMovePlan.Entry(
-                    pinID: restoration.pin.id,
+                    pinID: preparedMove.pin.id,
                     destination: move.destination,
                     target: move.binding.pinTarget
                 )

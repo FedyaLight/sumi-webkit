@@ -27,61 +27,13 @@ final class SplitDomainCodingTests: XCTestCase {
         )
     }
 
-    func testShortcutReturnPlacementsRoundTripEveryStableKind() throws {
-        let placements: [SplitShortcutReturnPlacement] = [
-            .essential(profileId: profileID, index: 2),
-            .spacePinned(spaceId: spaceID, folderId: folderID, index: 5),
-            .generatedSpacePinnedFromRegular(spaceId: spaceID, index: 8),
-        ]
-
-        XCTAssertEqual(
-            try JSONDecoder().decode(
-                [SplitShortcutReturnPlacement].self,
-                from: JSONEncoder().encode(placements)
-            ),
-            placements
-        )
-    }
-
-    func testMemberCodingRejectsIdentityPlacementMismatch() throws {
-        XCTAssertNil(
-            SplitMember(
-                memberID: .regularTab(regularID),
-                returnPlacement: .essential(profileId: nil, index: 0)
-            )
-        )
-        XCTAssertNil(
-            SplitMember(
-                memberID: .shortcutPin(pinID),
-                returnPlacement: nil
-            )
-        )
-
-        let missingPlacement = Data(
-            #"{"memberID":{"kind":"shortcutPin","id":"22222222-2222-2222-2222-222222222222"}}"#.utf8
-        )
-        XCTAssertThrowsError(
-            try JSONDecoder().decode(SplitMember.self, from: missingPlacement)
-        )
-    }
-
     func testTreeEncodingUsesExplicitCaseAndWeightKeys() throws {
         let tree = SplitLayoutTree.split(
             axis: .row,
             weight: 1,
             children: [
                 .leaf(member: .regularTab(regularID), weight: 0.25),
-                .leaf(
-                    member: .shortcutPin(
-                        pinID,
-                        returnPlacement: .spacePinned(
-                            spaceId: spaceID,
-                            folderId: folderID,
-                            index: 3
-                        )
-                    ),
-                    weight: 0.75
-                ),
+                .leaf(member: .shortcutPin(pinID), weight: 0.75),
             ]
         )
         let data = try JSONEncoder().encode(tree)
@@ -101,17 +53,9 @@ final class SplitDomainCodingTests: XCTestCase {
     }
 
     func testGroupRoundTripPreservesExplicitSidebarFolderPlacement() throws {
-        let firstPin = SplitMember.shortcutPin(
-            pinID,
-            returnPlacement: .spacePinned(
-                spaceId: spaceID,
-                folderId: folderID,
-                index: 0
-            )
-        )
+        let firstPin = SplitMember.shortcutPin(pinID)
         let secondPin = SplitMember.shortcutPin(
-            UUID(uuidString: "66666666-6666-6666-6666-666666666666")!,
-            returnPlacement: .essential(profileId: profileID, index: 1)
+            UUID(uuidString: "66666666-6666-6666-6666-666666666666")!
         )
         let group = try XCTUnwrap(
             SplitGroup.make(
@@ -123,7 +67,9 @@ final class SplitDomainCodingTests: XCTestCase {
                     profileId: profileID,
                     folderId: folderID,
                     index: 4
-                )
+                ),
+                title: "Research",
+                iconAsset: "emoji:🧭"
             )
         )
 
@@ -134,5 +80,34 @@ final class SplitDomainCodingTests: XCTestCase {
         XCTAssertEqual(decoded.container.shortcutSidebarFolderId, folderID)
         XCTAssertEqual(decoded.container.shortcutSidebarIndex, 4)
         XCTAssertEqual(decoded.container.spaceId, spaceID)
+        XCTAssertEqual(decoded.title, "Research")
+        XCTAssertEqual(decoded.iconAsset, "emoji:🧭")
+    }
+
+    func testLegacyGroupWithoutMetadataDecodesWithNilMetadata() throws {
+        let group = try XCTUnwrap(SplitGroup.make(
+            id: UUID(uuidString: "77777777-7777-7777-7777-777777777777")!,
+            members: [
+                .regularTab(regularID),
+                .regularTab(UUID()),
+            ],
+            layoutKind: .vertical,
+            container: .regularTabs(spaceId: spaceID)
+        ))
+        var object = try XCTUnwrap(
+            JSONSerialization.jsonObject(
+                with: JSONEncoder().encode(group)
+            ) as? [String: Any]
+        )
+        object.removeValue(forKey: "title")
+        object.removeValue(forKey: "iconAsset")
+
+        let decoded = try JSONDecoder().decode(
+            SplitGroup.self,
+            from: JSONSerialization.data(withJSONObject: object)
+        )
+
+        XCTAssertNil(decoded.title)
+        XCTAssertNil(decoded.iconAsset)
     }
 }

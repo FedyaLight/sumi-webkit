@@ -441,6 +441,19 @@ final class BrowserWindowChromeTests: XCTestCase {
         XCTAssertNil(controls.hitTest(NSPoint(x: 8, y: 8)))
     }
 
+    func testNativeSplitTreeDelegateCapabilityLookupDoesNotRecurse() {
+        let splitView = NativeSplitTreeView(
+            axis: .row,
+            path: [],
+            sizes: [0.5, 0.5]
+        )
+
+        XCTAssertFalse(splitView.delegate === splitView)
+        XCTAssertFalse(splitView.responds(to: #selector(
+            NSSplitViewDelegate.splitView(_:canCollapseSubview:)
+        )))
+    }
+
     private func assertNativeBrowserControlsHidden(
         _ window: NSWindow,
         file: StaticString = #filePath,

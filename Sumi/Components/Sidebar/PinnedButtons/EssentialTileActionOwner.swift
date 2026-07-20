@@ -48,11 +48,19 @@ struct EssentialTileActionOwner {
                 moveEssential(pin, toSpace: targetSpaceId)
             }
             let spaceChoices = essentialSpaceChoices
+            let openInSplitView = makeSidebarShortcutOpenInSplitAction(
+                pin: pin,
+                browserContext: browserContext,
+                pinExecution: pinExecution,
+                windowState: windowState,
+                currentSpaceID: windowState.currentSpaceId
+            )
 
             return makeSidebarTabContextMenuEntries(
                 role: .essential,
                 actions: .init(
                     duplicate: { duplicateAsRegularTab(pin) },
+                    openInSplitView: openInSplitView,
                     copyLink: { SidebarLinkActions.copyLink(pin.launchURL) },
                     share: {
                         SidebarLinkActions.presentSharePicker(

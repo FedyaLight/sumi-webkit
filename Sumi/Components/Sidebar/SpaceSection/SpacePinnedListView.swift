@@ -35,7 +35,6 @@ struct SpacePinnedListView: View {
     let dragSnapshot: SpacePinnedDragSnapshot
     let contentMutationAnimation: Animation?
     let actionOwner: SpacePinnedActionOwner
-    @Binding var shortcutRestoreSession: SpaceShortcutRestoreInteractionSession
 
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sidebarWindowSelectionSnapshot) private var sidebarSelection
@@ -52,7 +51,6 @@ struct SpacePinnedListView: View {
         SpacePinnedListProjection(
             spaceId: space.id,
             items: pinnedItems,
-            restoreGaps: shortcutRestoreSession.gaps,
             dragProjection: dragSnapshot.projection
         )
     }
@@ -148,7 +146,6 @@ struct SpacePinnedListView: View {
                                     folderCommands: folderCommands,
                                     spaceLifecycle: spaceLifecycle,
                                     browserContext: browserContext,
-                                    shortcutRestoreSession: $shortcutRestoreSession,
                                     elevatedFolderIDs: elevatedFolderIDs,
                                     topLevelIndex: entry.dropIndex,
                                     geometryGeneration: dragSnapshot.geometryGeneration,
@@ -174,22 +171,14 @@ struct SpacePinnedListView: View {
                                         windowState: windowState
                                     ),
                                     space: space,
-                                    inventory: inventory,
                                     browserContext: browserContext,
                                     isInteractive: isInteractive,
                                     topLevelIndex: entry.dropIndex,
-                                    geometryGeneration: dragSnapshot.geometryGeneration,
-                                    contentMutationAnimation: contentMutationAnimation,
-                                    shortcutRestoreSession: $shortcutRestoreSession
+                                    geometryGeneration: dragSnapshot.geometryGeneration
                                 )
                             }
                         case .dragPlaceholder:
                             dropGap
-                        case .restoreGap(let gapID):
-                            shortcutRestoreGap(
-                                gapID,
-                                selectionSnapshot: selectionSnapshot
-                            )
                         }
                     case .nestedSticky(let itemID):
                         SpaceNestedPinnedStickyEntryView(
@@ -205,8 +194,7 @@ struct SpacePinnedListView: View {
                             isInteractive: isInteractive,
                             itemID: itemID,
                             dragSnapshot: dragSnapshot,
-                            contentMutationAnimation: contentMutationAnimation,
-                            shortcutRestoreSession: $shortcutRestoreSession
+                            contentMutationAnimation: contentMutationAnimation
                         )
                     }
                 }
@@ -226,8 +214,6 @@ struct SpacePinnedListView: View {
             value: projection.projectedItems
         )
         .animation(contentMutationAnimation, value: pinnedItems)
-        .animation(contentMutationAnimation, value: shortcutRestoreSession.gaps)
-        .animation(contentMutationAnimation, value: shortcutRestoreSession.appearingGapIDs)
         .animation(contentMutationAnimation, value: contentDisplayEntries.map(\.id))
         .animation(contentMutationAnimation, value: isCollapsed)
     }
@@ -237,17 +223,8 @@ struct SpacePinnedListView: View {
         topLevelIndex: Int,
         selectionSnapshot: SidebarWindowSelectionSnapshot
     ) -> SpacePinnedShortcutEntryView {
-        let placeholderGroup = regularSplitGroup(containing: pin.id)
         return SpacePinnedShortcutEntryView(
             pin: pin,
-            placeholderGroup: placeholderGroup,
-            placeholderIsSelected: placeholderGroup.map {
-                isSplitPlaceholderSelected(
-                    $0,
-                    pin: pin,
-                    selectionSnapshot: selectionSnapshot
-                )
-            } ?? false,
             liveTab: selection.liveTab(for: pin.id, in: windowState),
             faviconPartition: pinProjection.faviconPartition(
                 for: pin,
@@ -277,30 +254,6 @@ struct SpacePinnedListView: View {
             .accessibilityHidden(true)
     }
 
-    private func shortcutRestoreGap(
-        _ gapID: UUID,
-        selectionSnapshot: SidebarWindowSelectionSnapshot
-    ) -> some View {
-        let isAppearing = shortcutRestoreSession.appearingGapIDs.contains(gapID)
-        return ZStack(alignment: .topLeading) {
-            if let gap = shortcutRestoreSession.gaps.first(where: { $0.id == gapID }),
-               let pin = inventory.pin(id: gap.pinId) {
-                shortcutEntry(
-                    pin,
-                    topLevelIndex: gap.index,
-                    selectionSnapshot: selectionSnapshot
-                )
-                    .frame(height: SidebarRowLayout.rowHeight, alignment: .top)
-            }
-        }
-        .frame(height: SidebarRowLayout.rowHeight, alignment: .top)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .sidebarRowStagedInsertion(isRevealing: isAppearing)
-        .clipped()
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
-    }
-
     private func displayEntryZIndex(
         _ entry: SpacePinnedContentDisplayEntry,
         selectionSnapshot: SidebarWindowSelectionSnapshot,
@@ -326,13 +279,6 @@ struct SpacePinnedListView: View {
             return elevatedFolderIDs.contains(folderID)
         case .shortcut(let pinID):
             guard let pin = topLevelPins.first(where: { $0.id == pinID }) else { return false }
-            if let group = regularSplitGroup(containing: pin.id) {
-                return isSplitPlaceholderSelected(
-                    group,
-                    pin: pin,
-                    selectionSnapshot: selectionSnapshot
-                )
-            }
             return selection.isShortcutSelected(
                 pin,
                 in: windowState,
@@ -352,29 +298,4 @@ struct SpacePinnedListView: View {
         dragSnapshot.isDragging && dragSnapshot.activeDragItemID == itemID ? 0.001 : 1
     }
 
-    private func regularSplitGroup(containing pinID: UUID) -> SplitGroup? {
-        guard let group = inventory.splitGroup(containing: .shortcutPin(pinID)),
-              !group.container.isShortcutSidebar else {
-            return nil
-        }
-        return group
-    }
-
-    private func isSplitPlaceholderSelected(
-        _ group: SplitGroup,
-        pin: ShortcutPin,
-        selectionSnapshot: SidebarWindowSelectionSnapshot
-    ) -> Bool {
-        selection.isShortcutSelected(
-            pin,
-            in: windowState,
-            selection: selectionSnapshot
-        )
-            || selection.isSplitMemberSelected(
-                groupID: group.id,
-                memberID: .shortcutPin(pin.id),
-                in: windowState,
-                selection: selectionSnapshot
-            )
-    }
 }

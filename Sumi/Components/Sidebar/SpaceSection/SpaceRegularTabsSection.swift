@@ -89,7 +89,6 @@ struct SpaceRegularTabsListProjection {
 
 struct SpaceRegularTabsInteractionSession {
     var listAnimation = RegularTabsListAnimationState()
-    var splitSegmentRemovalIDs: Set<UUID> = []
 }
 
 struct SpaceRegularDragSnapshot {
@@ -155,7 +154,6 @@ struct SpaceRegularTabsView: View {
     let isInteractive: Bool
     let innerWidth: CGFloat
     @Binding var isSidebarHovered: Bool
-    @Binding var shortcutRestoreSession: SpaceShortcutRestoreInteractionSession
 
     @State private var interactionSession = SpaceRegularTabsInteractionSession()
     @Environment(BrowserWindowState.self) private var windowState
@@ -181,7 +179,6 @@ struct SpaceRegularTabsView: View {
                 tabs: tabs,
                 dragSnapshot: dragSnapshot,
                 isSidebarHovered: $isSidebarHovered,
-                shortcutRestoreSession: $shortcutRestoreSession,
                 interactionSession: $interactionSession
             )
         }
@@ -203,7 +200,6 @@ private struct SpaceRegularTabsContentView: View {
     let tabs: [Tab]
     let dragSnapshot: SpaceRegularDragSnapshot
     @Binding var isSidebarHovered: Bool
-    @Binding var shortcutRestoreSession: SpaceShortcutRestoreInteractionSession
     @Binding var interactionSession: SpaceRegularTabsInteractionSession
 
     @Environment(\.sumiSettings) private var sumiSettings
@@ -272,7 +268,6 @@ private struct SpaceRegularTabsContentView: View {
                     tabs: tabs,
                     projection: projection,
                     dragSnapshot: dragSnapshot,
-                    shortcutRestoreSession: $shortcutRestoreSession,
                     interactionSession: $interactionSession
                 )
                 .sidebarRegularListHitGeometry(

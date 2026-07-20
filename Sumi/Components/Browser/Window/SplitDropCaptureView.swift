@@ -104,14 +104,25 @@ final class SplitDropCaptureView: NSView {
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
         guard let windowState,
               let item = SidebarDropCoordinator.draggedItem(from: sender.draggingPasteboard),
-              let tab = resolveDragTab(item),
               let target = currentTarget ?? resolvedDropTarget(sender, item: item)
         else {
             finishDrag(resetSidebarDragState: true)
             return false
         }
 
-        let didDrop = splitDrops.drop(tab, on: target, in: windowState)
+        let didDrop: Bool
+        if let memberID = item.splitMemberID {
+            didDrop = splitDrops.drop(
+                memberID,
+                sourceTab: resolveDragTab(item),
+                on: target,
+                in: windowState
+            )
+        } else if let tab = resolveDragTab(item) {
+            didDrop = splitDrops.drop(tab, on: target, in: windowState)
+        } else {
+            didDrop = false
+        }
         finishDrag(resetSidebarDragState: true)
         return didDrop
     }

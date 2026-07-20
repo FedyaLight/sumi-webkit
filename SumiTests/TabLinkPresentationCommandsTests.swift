@@ -183,6 +183,10 @@ final class TabLinkPresentationCommandsTests: XCTestCase {
                 requestCount += 1
                 return true
             },
+            openSplit: { _, _ in
+                requestCount += 1
+                return true
+            },
             activateSource: { _ in
                 requestCount += 1
                 return true
@@ -248,6 +252,9 @@ final class TabLinkPresentationCommandsTests: XCTestCase {
         openWindow: @escaping TabLinkPresentationCommands.OpenWindow = {
             _, _, _ in true
         },
+        openSplit: @escaping TabLinkPresentationCommands.OpenSplit = {
+            _, _ in true
+        },
         activateSource: @escaping TabLinkPresentationCommands.ActivateSource = {
             _ in true
         },
@@ -268,6 +275,7 @@ final class TabLinkPresentationCommandsTests: XCTestCase {
             resolveSource: { receipts[ObjectIdentifier($0)] },
             openTab: openTab,
             openWindow: openWindow,
+            openSplit: openSplit,
             activateSource: activateSource,
             presentGlance: presentGlance
         )

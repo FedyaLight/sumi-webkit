@@ -6,31 +6,38 @@ final class SidebarDragOperationTransaction {
     private let structuralLookup: TabStructuralLookupCoordinator
     private let resolution: SidebarDragPayloadResolver
     private let validation: SidebarDragContextValidationService
-    private let executor: SidebarDragPlanExecutor
+    private let mutation: SidebarCanonicalDragMutation
 
     init(
         structuralLookup: TabStructuralLookupCoordinator,
         resolution: SidebarDragPayloadResolver,
         validation: SidebarDragContextValidationService,
-        executor: SidebarDragPlanExecutor
+        mutation: SidebarCanonicalDragMutation
     ) {
         self.structuralLookup = structuralLookup
         self.resolution = resolution
         self.validation = validation
-        self.executor = executor
+        self.mutation = mutation
     }
 
     func perform(_ operation: DragOperation) -> Bool {
         structuralLookup.withTransaction {
-            guard validation.validate(operation),
-                  resolution.isCanonical(operation.payload) else {
+            guard let canonicalPayload = resolution.canonicalPayload(
+                for: operation.payload
+            ) else {
                 return false
             }
-            let plan = SidebarDragOperationPlanner.plan(
-                operation: operation,
-                shortcutPin: resolution.shortcutPin
+            let canonicalOperation = DragOperation(
+                payload: canonicalPayload,
+                scope: operation.scope,
+                fromContainer: operation.fromContainer,
+                toContainer: operation.toContainer,
+                toIndex: operation.toIndex
             )
-            return executor.execute(plan, operation: operation)
+            guard validation.validate(canonicalOperation) else {
+                return false
+            }
+            return mutation.perform(canonicalOperation)
         }
     }
 }

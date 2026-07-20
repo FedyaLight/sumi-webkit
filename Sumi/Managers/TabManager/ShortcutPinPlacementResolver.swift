@@ -36,7 +36,8 @@ final class ShortcutPinPlacementResolver {
                 .filter { $0.id != pin.id }
                 .count
             guard destinationCount
-                    < EssentialsShortcutPlacementOwner.CapacityPolicy.maxItems
+                    < EssentialsShortcutPlacementOwner.CapacityPolicy
+                        .maxStoredMembers
             else { return nil }
         case .spacePinned:
             guard let spaceID = pin.spaceId else { return nil }
@@ -123,7 +124,8 @@ final class ShortcutPinPlacementResolver {
             guard let profileId else { return false }
             return pins.essentialPins(for: profileId)
                 .filter { $0.id != pin.id }
-                .count < EssentialsShortcutPlacementOwner.CapacityPolicy.maxItems
+                .count < EssentialsShortcutPlacementOwner.CapacityPolicy
+                    .maxStoredMembers
         case .spacePinned:
             return spaceId != nil
         }

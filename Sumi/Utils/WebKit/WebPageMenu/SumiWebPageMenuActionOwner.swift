@@ -40,6 +40,8 @@ final class SumiWebPageMenuActionOwner: NSObject, NSMenuItemValidation {
             return #selector(SumiWebPageMenuActionOwner.searchSelection(_:))
         case .openLinkInNewTab:
             return #selector(SumiWebPageMenuActionOwner.openLinkInNewTab(_:))
+        case .openLinkInSplitView:
+            return #selector(SumiWebPageMenuActionOwner.openLinkInSplitView(_:))
         case .openLinkInNewWindow:
             return #selector(SumiWebPageMenuActionOwner.openLinkInNewWindow(_:))
         case .addLinkToBookmarks:
@@ -86,7 +88,8 @@ final class SumiWebPageMenuActionOwner: NSObject, NSMenuItemValidation {
             return selectedTextSearchURL != nil
         case .printPage:
             return true
-        case .openLinkInNewTab, .openLinkInNewWindow, .addLinkToBookmarks:
+        case .openLinkInNewTab, .openLinkInNewWindow, .openLinkInSplitView,
+             .addLinkToBookmarks:
             return routableLinkURL != nil && webView.owningTab != nil
         case .copyLink:
             return context?.linkURL != nil
@@ -199,6 +202,11 @@ final class SumiWebPageMenuActionOwner: NSObject, NSMenuItemValidation {
     @objc func openLinkInNewWindow(_: Any?) {
         guard let url = routableLinkURL else { return }
         open(url, disposition: .newWindow(selected: true))
+    }
+
+    @objc func openLinkInSplitView(_: Any?) {
+        guard let url = routableLinkURL else { return }
+        open(url, disposition: .splitView)
     }
 
     @objc func addLinkToBookmarks(_: Any?) {

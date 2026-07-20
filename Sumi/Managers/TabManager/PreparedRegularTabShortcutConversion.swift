@@ -201,7 +201,7 @@ final class RegularTabShortcutSidebarMutation {
 final class RegularTabShortcutSidebarMutationPreparation {
     private enum Payload {
         case noChange
-        case launcher(PreparedShortcutSplitLauncherRestorationBatch)
+        case launcher(PreparedShortcutSplitLauncherMoveBatch)
     }
 
     private let payload: Payload
@@ -215,9 +215,9 @@ final class RegularTabShortcutSidebarMutationPreparation {
         switch payload {
         case .noChange:
             return .noChange
-        case .launcher(let restorations):
-            return restorations.preflightBindingContribution().map {
-                .launcher(restorations, $0)
+        case .launcher(let preparedMoves):
+            return preparedMoves.preflightBindingContribution().map {
+                .launcher(preparedMoves, $0)
             }
         }
     }
@@ -227,8 +227,8 @@ final class RegularTabShortcutSidebarMutationPreparation {
     }
 
     static func launcher(
-        _ restorations: PreparedShortcutSplitLauncherRestorationBatch
+        _ preparedMoves: PreparedShortcutSplitLauncherMoveBatch
     ) -> RegularTabShortcutSidebarMutationPreparation {
-        Self(payload: .launcher(restorations))
+        Self(payload: .launcher(preparedMoves))
     }
 }

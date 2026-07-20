@@ -13,16 +13,13 @@ enum ShortcutLiveTabSplitCloseOutcome {
 final class ShortcutLiveTabSplitCloseTransaction {
     private let splitGroups: SplitGroupStore
     private let hostedUnload: ShortcutHostedSplitUnloadService
-    private let memberRestore: SplitShortcutMemberRestoreService
 
     init(
         splitGroups: SplitGroupStore,
-        hostedUnload: ShortcutHostedSplitUnloadService,
-        memberRestore: SplitShortcutMemberRestoreService
+        hostedUnload: ShortcutHostedSplitUnloadService
     ) {
         self.splitGroups = splitGroups
         self.hostedUnload = hostedUnload
-        self.memberRestore = memberRestore
     }
 
     func close(
@@ -32,17 +29,10 @@ final class ShortcutLiveTabSplitCloseTransaction {
         guard let group = splitGroups.group(
             containing: .shortcutPin(pinID)
         ) else { return .notGrouped }
-        if group.container.isShortcutSidebar {
-            return hostedUnload.unloadShortcutHostedSplitGroup(
-                group,
-                in: windowState
-            ) ? .committed : .rejected
-        }
-        return memberRestore.restoreShortcutSplitMember(
-            .shortcutPin(pinID),
-            from: group,
-            in: windowState,
-            preserveLiveInstance: false
+        guard group.container.isShortcutSidebar else { return .rejected }
+        return hostedUnload.unloadShortcutHostedSplitGroup(
+            group,
+            in: windowState
         ) ? .committed : .rejected
     }
 }

@@ -191,6 +191,16 @@ private struct FloatingBarSuggestionsListView: View {
                 selectedChipBackground: selectedChipBackground,
                 selectedChipForeground: selectedChipForeground
             )
+        case .command(let command):
+            GenericSuggestionItem(
+                systemImage: command.symbolName,
+                text: suggestion.text,
+                actionLabel: "Run Command",
+                isSelected: isSelected,
+                selectedForeground: selectedForeground,
+                selectedChipBackground: selectedChipBackground,
+                selectedChipForeground: selectedChipForeground
+            )
         }
     }
 
@@ -206,6 +216,8 @@ private struct FloatingBarSuggestionsListView: View {
             return "Open URL, \(suggestion.text)"
         case .search:
             return "Search, \(suggestion.text)"
+        case .command:
+            return "Run command, \(suggestion.text)"
         }
     }
 }

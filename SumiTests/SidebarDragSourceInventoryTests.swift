@@ -142,8 +142,8 @@ final class SidebarDragSourceInventoryTests: XCTestCase {
             SplitGroup.make(
                 id: groupId,
                 members: [
-                    .shortcutPin(UUID(), returnPlacement: .spacePinned(spaceId: UUID(), folderId: nil, index: 0)),
-                    .shortcutPin(UUID(), returnPlacement: .spacePinned(spaceId: UUID(), folderId: nil, index: 1)),
+                    .shortcutPin(UUID()),
+                    .shortcutPin(UUID()),
                 ],
                 layoutKind: .horizontal,
                 container: .shortcutSidebar(
@@ -215,9 +215,86 @@ final class SidebarDragSourceInventoryTests: XCTestCase {
         )
     }
 
+    func testSplitGroupContextAcceptsEveryRenderedContainer() throws {
+        let spaceID = UUID()
+        let profileID = UUID()
+        let folderID = UUID()
+        let members = [SplitMember.shortcutPin(UUID()), .shortcutPin(UUID())]
+        let regularMembers = [SplitMember.regularTab(UUID()), .regularTab(UUID())]
+        let cases: [(SplitGroup, TabDragManager.DragContainer)] = [
+            (
+                try XCTUnwrap(SplitGroup.make(
+                    members: regularMembers,
+                    layoutKind: .vertical,
+                    container: .regularTabs(spaceId: spaceID)
+                )),
+                .spaceRegular(spaceID)
+            ),
+            (
+                try XCTUnwrap(SplitGroup.make(
+                    members: members,
+                    layoutKind: .vertical,
+                    container: .essentialSidebar(
+                        profileId: profileID,
+                        index: 0
+                    )
+                )),
+                .essentials
+            ),
+            (
+                try XCTUnwrap(SplitGroup.make(
+                    members: members,
+                    layoutKind: .vertical,
+                    container: .shortcutSidebar(
+                        spaceId: spaceID,
+                        profileId: profileID,
+                        folderId: nil,
+                        index: 0
+                    )
+                )),
+                .spacePinned(spaceID)
+            ),
+            (
+                try XCTUnwrap(SplitGroup.make(
+                    members: members,
+                    layoutKind: .vertical,
+                    container: .shortcutSidebar(
+                        spaceId: spaceID,
+                        profileId: profileID,
+                        folderId: folderID,
+                        index: 0
+                    )
+                )),
+                .folder(folderID)
+            ),
+        ]
+
+        for (group, container) in cases {
+            let scope = SidebarDragScope(
+                windowId: UUID(),
+                spaceId: spaceID,
+                profileId: profileID,
+                sourceContainer: container,
+                sourceItemId: group.id,
+                sourceItemKind: .splitGroup
+            )
+            XCTAssertTrue(SidebarDragOperationContextValidator.validate(
+                operation: DragOperation(
+                    payload: .splitGroup(group),
+                    scope: scope,
+                    fromContainer: container,
+                    toContainer: container,
+                    toIndex: 0
+                ),
+                spaceProfileId: profileID,
+                folderSpaceId: { $0 == folderID ? spaceID : nil },
+                shortcutPin: { _ in nil }
+            ))
+        }
+    }
+
     private func makeInventory(from tabManager: BrowserManager) -> SidebarDragSourceInventory {
         SidebarDragSourceInventory(
-            essentialPins: tabManager.shortcutPinCollectionStateOwner,
             splitOrdering: tabManager.splitGroupSidebarOrdering,
             regularTabs: tabManager.regularTabCollectionOwner,
             folders: tabManager.folderCollectionStateOwner,

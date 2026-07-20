@@ -73,6 +73,20 @@ struct SpaceRegularTabActionOwner {
                 )
             }
             : nil
+        let currentGroupMemberCount = browserContext.splitQuery
+            .group(in: windowState.id)?.members.count ?? 0
+        let openInSplitViewAction: (() -> Void)? =
+            tab.id != windowState.currentTabId
+            && browserContext.splitMembership.group(containing: tab) == nil
+            && currentGroupMemberCount < SplitGroup.maximumMembers
+            ? {
+                browserContext.splitInsertion.enterSplit(
+                    with: tab,
+                    side: .right,
+                    in: windowState
+                )
+            }
+            : nil
         let closeTabsBelowAction: (() -> Void)? = !tab.isPinned
             && !tab.isSpacePinned
             && tab.spaceId != nil
@@ -88,6 +102,7 @@ struct SpaceRegularTabActionOwner {
                         in: windowState
                     )
                 },
+                openInSplitView: openInSplitViewAction,
                 copyLink: { SidebarLinkActions.copyLink(tab.url) },
                 share: {
                     SidebarLinkActions.presentSharePicker(

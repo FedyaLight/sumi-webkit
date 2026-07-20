@@ -40,6 +40,10 @@ final class WindowSplitQuery {
         return group
     }
 
+    func group(id: UUID) -> SumiDomain.SplitGroup? {
+        splitGroups.group(id: id)
+    }
+
     func resolution(in windowID: UUID) -> WindowSplitResolution {
         guard let windowState = windows.windows[windowID] else {
             return .inactive

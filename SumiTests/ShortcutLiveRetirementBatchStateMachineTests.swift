@@ -144,15 +144,8 @@ final class ShortcutLiveRetirementBatchStateMachineTests: XCTestCase {
             ))
         }
         let group = try XCTUnwrap(SplitGroup.make(
-            members: ([oracle.pin] + companions).enumerated().map { index, pin in
-                .shortcutPin(
-                    pin.id,
-                    returnPlacement: .spacePinned(
-                        spaceId: spaceID,
-                        folderId: nil,
-                        index: index
-                    )
-                )
+            members: ([oracle.pin] + companions).map { pin in
+                .shortcutPin(pin.id)
             },
             layoutKind: .vertical,
             container: .regularTabs(spaceId: spaceID)

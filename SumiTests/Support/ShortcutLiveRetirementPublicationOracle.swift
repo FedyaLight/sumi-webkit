@@ -54,15 +54,8 @@ final class PublicationFixture {
         }
         liveTabs = createdLiveTabs
         let createdGroup = try XCTUnwrap(SplitGroup.make(
-            members: createdPins.enumerated().map { index, pin in
-                .shortcutPin(
-                    pin.id,
-                    returnPlacement: .spacePinned(
-                        spaceId: space.id,
-                        folderId: createdFolder?.id,
-                        index: index
-                    )
-                )
+            members: createdPins.map { pin in
+                .shortcutPin(pin.id)
             },
             layoutKind: .vertical,
             container: hostedSplit

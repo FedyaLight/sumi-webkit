@@ -96,9 +96,14 @@ struct PinnedGrid: View {
         let effectiveProfileId = profileId
             ?? windowState.currentProfileId
             ?? browserContext.profileAuthority.currentProfile?.id
+        let visualItems = SidebarEssentialVisualProjection.make(
+            pins: items,
+            splitGroups: Array(inventory.splitGroupsByID.values),
+            profileID: effectiveProfileId
+        )
         let layout = PinnedGridLayoutModel(
             width: width,
-            items: items,
+            items: visualItems,
             dragState: dragState,
             geometrySpaceId: geometrySpaceId,
             effectiveProfileId: effectiveProfileId,
@@ -124,7 +129,7 @@ struct PinnedGrid: View {
         let dropSlotFrames = layout.dropSlotFrames
 
         ZStack(alignment: .topLeading) {
-            if items.isEmpty {
+            if visualItems.isEmpty {
                 VStack(spacing: 0) {
                     if showsRevealGap {
                         Color.clear
@@ -149,6 +154,12 @@ struct PinnedGrid: View {
                                         tileSize: row.tileSize,
                                         selectionSnapshot: selectionSnapshot
                                     )
+                                case .splitGroup(let group):
+                                    renderSplitTile(
+                                        group,
+                                        tileSize: row.tileSize,
+                                        selectionSnapshot: selectionSnapshot
+                                    )
                                 case .gap:
                                     renderDropGap(
                                         tileSize: row.tileSize
@@ -164,7 +175,7 @@ struct PinnedGrid: View {
                 }
                 .contentShape(Rectangle())
                 .fixedSize(horizontal: false, vertical: true)
-                .animation(shouldAnimateContentLayout ? SidebarDropMotion.contentLayout : nil, value: items.map(\.id))
+                .animation(shouldAnimateContentLayout ? SidebarDropMotion.contentLayout : nil, value: visualItems.map(\.id))
                 .animation(shouldAnimateContentLayout ? SidebarDropMotion.contentLayout : nil, value: projectedLayout.visualColumnSignature)
                 .animation(shouldAnimateContentLayout ? SidebarDropMotion.contentLayout : nil, value: projectedLayout.projectedItemCount)
                 .animation(shouldAnimateDropLayout ? .easeInOut(duration: 0.18) : nil, value: previewState?.expandedDropRowCount)
@@ -172,7 +183,7 @@ struct PinnedGrid: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
-        .frame(minHeight: items.isEmpty ? revealHeight : 0, alignment: .top)
+        .frame(minHeight: visualItems.isEmpty ? revealHeight : 0, alignment: .top)
         .sidebarSectionGeometry(
             for: .essentials,
             spaceId: geometrySpaceId,
@@ -207,85 +218,94 @@ struct PinnedGrid: View {
     }
 
     @ViewBuilder
+    private func renderSplitTile(
+        _ group: SplitGroup,
+        tileSize: CGSize,
+        selectionSnapshot: SidebarWindowSelectionSnapshot
+    ) -> some View {
+        EssentialSplitGroupTile(
+            group: group,
+            pinsByID: Dictionary(uniqueKeysWithValues: items.map { ($0.id, $0) }),
+            selection: selection,
+            selectionSnapshot: selectionSnapshot,
+            faviconImageReader: browserContext.faviconImageReader,
+            splitLayout: browserContext.splitLayout,
+            emptySplitCreation: browserContext.emptySplitCreation,
+            groupEditor: browserContext.splitGroupEditor,
+            groupContextMenuActions: browserContext.splitGroupLifecycle
+                .contextMenuActions(for: group, in: windowState),
+            isAppKitInteractionEnabled: isAppKitInteractionEnabled,
+            onActivateMember: { memberID in
+                browserContext.splitFocusCommands.focusGroup(
+                    group.id,
+                    memberID,
+                    windowState.id
+                )
+            },
+            onUnloadGroup: {
+                browserContext.splitGroupLifecycle.unload(
+                    group,
+                    in: windowState
+                )
+            }
+        )
+        .frame(width: tileSize.width, height: tileSize.height, alignment: .center)
+        .opacity(
+            dragState.isDragging && dragState.activeDragItemId == group.id
+                ? 0.001
+                : 1
+        )
+        .transition(
+            reduceMotion
+                ? .identity
+                : .scale(scale: 0.96, anchor: .center).combined(with: .opacity)
+        )
+    }
+
+    @ViewBuilder
     private func renderTile(
         for pin: ShortcutPin,
         tileSize: CGSize,
         selectionSnapshot: SidebarWindowSelectionSnapshot
     ) -> some View {
-        if let placeholderGroup = splitPlaceholderGroup(for: pin) {
-            PinnedSplitPlaceholderTile(
-                pin: pin,
-                faviconPartition: pinProjection.faviconPartition(
-                    for: pin,
-                    currentSpaceID: windowState.currentSpaceId
-                ),
-                faviconImageReader: browserContext.faviconImageReader,
-                isSelected: isSplitPlaceholderSelected(
-                    placeholderGroup,
-                    pin: pin,
-                    selectionSnapshot: selectionSnapshot
-                ),
-                accessibilityID: "essential-split-placeholder-\(pin.id.uuidString)",
-                isAppKitInteractionEnabled: isAppKitInteractionEnabled,
-                onActivate: {
-                    browserContext.splitFocusCommands.focusGroup(
-                        placeholderGroup.id,
-                        .shortcutPin(pin.id),
-                        windowState.id
-                    )
-                }
-            )
-            .frame(width: tileSize.width, height: tileSize.height, alignment: .center)
-            .opacity(
-                dragState.isDragging && dragState.activeDragItemId == pin.id
-                    ? 0.001
-                    : 1
-            )
-            .transition(
-                reduceMotion
-                    ? .identity
-                    : .scale(scale: 0.96, anchor: .center).combined(with: .opacity)
-            )
-        } else {
-            let presentationState = pinPresentationState(
+        let presentationState = pinPresentationState(
+            pin,
+            selectionSnapshot: selectionSnapshot
+        )
+        let liveTab = selection.liveTab(for: pin.id, in: windowState)
+        let contextMenuActions = essentialTileActionOwner.contextMenuActions(for: pin)
+
+        PinnedTile(
+            pin: pin,
+            faviconPartition: pinProjection.faviconPartition(
+                for: pin,
+                currentSpaceID: windowState.currentSpaceId
+            ),
+            faviconImageReader: browserContext.faviconImageReader,
+            presentationState: presentationState,
+            liveTab: liveTab,
+            essentialRuntimeState: essentialRuntimeState(
                 pin,
                 selectionSnapshot: selectionSnapshot
-            )
-            let liveTab = selection.liveTab(for: pin.id, in: windowState)
-            let contextMenuActions = essentialTileActionOwner.contextMenuActions(for: pin)
-
-            PinnedTile(
-                pin: pin,
-                faviconPartition: pinProjection.faviconPartition(
-                    for: pin,
-                    currentSpaceID: windowState.currentSpaceId
-                ),
-                faviconImageReader: browserContext.faviconImageReader,
-                presentationState: presentationState,
-                liveTab: liveTab,
-                essentialRuntimeState: essentialRuntimeState(
-                    pin,
-                    selectionSnapshot: selectionSnapshot
-                ),
-                accessibilityID: "essential-shortcut-\(pin.id.uuidString)",
-                onActivate: { activate(pin) },
-                onUnload: { essentialTileActionOwner.unload(pin) },
-                contextMenuActions: contextMenuActions,
-                dragIsEnabled: !isTransitioningProfile && isAppKitInteractionEnabled,
-                isAppKitInteractionEnabled: isAppKitInteractionEnabled
-            )
-            .frame(width: tileSize.width, height: tileSize.height, alignment: .center)
-            .opacity(
-                dragState.isDragging && dragState.activeDragItemId == pin.id
-                    ? 0.001
-                    : 1
-            )
-            .transition(
-                reduceMotion
-                    ? .identity
-                    : .scale(scale: 0.96, anchor: .center).combined(with: .opacity)
-            )
-        }
+            ),
+            accessibilityID: "essential-shortcut-\(pin.id.uuidString)",
+            onActivate: { activate(pin) },
+            onUnload: { essentialTileActionOwner.unload(pin) },
+            contextMenuActions: contextMenuActions,
+            dragIsEnabled: !isTransitioningProfile && isAppKitInteractionEnabled,
+            isAppKitInteractionEnabled: isAppKitInteractionEnabled
+        )
+        .frame(width: tileSize.width, height: tileSize.height, alignment: .center)
+        .opacity(
+            dragState.isDragging && dragState.activeDragItemId == pin.id
+                ? 0.001
+                : 1
+        )
+        .transition(
+            reduceMotion
+                ? .identity
+                : .scale(scale: 0.96, anchor: .center).combined(with: .opacity)
+        )
     }
 
     @ViewBuilder
@@ -320,35 +340,6 @@ struct PinnedGrid: View {
             in: windowState,
             selection: selectionSnapshot
         )
-    }
-
-    private func splitPlaceholderGroup(for pin: ShortcutPin) -> SplitGroup? {
-        guard let spaceID = spaceId ?? windowState.currentSpaceId,
-              spaceID == inventory.spaceID,
-              let group = inventory.splitGroup(
-                containing: .shortcutPin(pin.id)
-              ), !group.container.isShortcutSidebar else {
-            return nil
-        }
-        return group
-    }
-
-    private func isSplitPlaceholderSelected(
-        _ group: SplitGroup,
-        pin: ShortcutPin,
-        selectionSnapshot: SidebarWindowSelectionSnapshot
-    ) -> Bool {
-        selection.isShortcutSelected(
-            pin,
-            in: windowState,
-            selection: selectionSnapshot
-        )
-            || selection.isSplitMemberSelected(
-                groupID: group.id,
-                memberID: .shortcutPin(pin.id),
-                in: windowState,
-                selection: selectionSnapshot
-            )
     }
 
     private func activate(_ pin: ShortcutPin) {

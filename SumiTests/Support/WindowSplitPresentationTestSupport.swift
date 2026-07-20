@@ -16,12 +16,22 @@ func makeTestSplitRuntimeMemberResolver(
 }
 
 @MainActor
+func makeTestSplitTabDuplicationService(
+    _ manager: BrowserManager
+) -> SplitTabDuplicationService {
+    SplitTabDuplicationService(
+        spaces: manager.spaceStateOwner,
+        regularTabs: manager.regularTabLifecycleOwner,
+        closure: manager.tabClosureService
+    )
+}
+
+@MainActor
 func makeTestShortcutSplitLauncherDestinationResolver(
     _ manager: BrowserManager
 ) -> ShortcutSplitLauncherDestinationResolver {
     ShortcutSplitLauncherDestinationResolver(
-        folders: manager.folderCollectionStateOwner,
-        spacePinnedStructure: manager.spacePinnedStructureOwner
+        folders: manager.folderCollectionStateOwner
     )
 }
 
@@ -53,9 +63,6 @@ func makeTestShortcutSplitLauncherPlacement(
     )
     return ShortcutSplitLauncherPlacementService(
         pins: manager.shortcutPinCollectionStateOwner,
-        destinationResolver: makeTestShortcutSplitLauncherDestinationResolver(
-            manager
-        ),
         moves: ShortcutSplitLauncherMoveTransaction(
             batches: batches,
             windowMutations: manager.shortcutWindowMutationOwner,

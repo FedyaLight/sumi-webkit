@@ -98,7 +98,17 @@ struct SumiWebPageMenuBlueprint {
             return
         }
 
-        rules.append(Rule(anchor: .openLink, operations: [.replace([.command(.openLinkInNewTab)])]))
+        rules.append(
+            Rule(
+                anchor: .openLink,
+                operations: [
+                    .replace([
+                        .command(.openLinkInNewTab),
+                        .command(.openLinkInSplitView),
+                    ])
+                ]
+            )
+        )
         rules.append(Rule(
             anchor: .openLinkInNewWindow,
             operations: [.replace([.command(.openLinkInNewWindow)])]

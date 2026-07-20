@@ -84,12 +84,12 @@ final class ShortcutSplitLauncherComposedMoveBatchReceipt:
             return bindingCancelled && externalCancelled
                 ? .rejectedUnstaged(.stale) : .conflicted
         }
-        let participants = SplitShortcutMemberRestoreParticipants(
+        let participants = ShortcutSplitLauncherMoveParticipants(
             presentation: presentation,
             retirement: retirement,
             topology: topology
         )
-        let aggregate = SplitShortcutMemberRestoreAggregateTransaction(
+        let aggregate = ShortcutSplitLauncherMoveAggregateTransaction(
             binding: binding,
             participants: participants,
             structuralMutations: structuralMutations,

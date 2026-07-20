@@ -89,6 +89,97 @@ final class BrowserShortcutCommandRoutingTests: XCTestCase {
         XCTAssertEqual(harness.windowState.currentTabId, third.id)
     }
 
+    func testCloseTabShortcutUnloadsEntireShortcutHostedSplitGroup() throws {
+        let harness = try makeHarness()
+        let pins = try (0..<2).map { index in
+            try XCTUnwrap(harness.browserManager.shortcutPinStoreOwner.insert(
+                ShortcutPin(
+                    id: UUID(),
+                    role: .spacePinned,
+                    spaceId: harness.space.id,
+                    index: index,
+                    launchURL: URL(string: "https://split-\(index).example")!,
+                    title: "Split \(index)"
+                ),
+                at: index
+            ))
+        }
+        let liveTabs = try pins.map { pin in
+            try XCTUnwrap(
+                harness.browserManager.shortcutTabMaterializer.materialize(
+                    pin,
+                    in: harness.windowState.id,
+                    currentSpaceId: harness.space.id
+                )
+            )
+        }
+        let group = try XCTUnwrap(SplitGroup.make(
+            members: pins.map { .shortcutPin($0.id) },
+            layoutKind: .vertical,
+            container: .shortcutSidebar(
+                spaceId: harness.space.id,
+                profileId: harness.profile.id,
+                folderId: nil,
+                index: 0
+            )
+        ))
+        XCTAssertTrue(harness.browserManager.splitGroupMutations.insert(
+            group,
+            persist: false
+        ))
+        harness.windowState.currentTabId = liveTabs[0].id
+        harness.windowState.currentShortcutPinId = pins[0].id
+        harness.windowState.currentShortcutPinRole = .spacePinned
+        harness.windowState.splitSelection = WindowSplitSelection(
+            groupID: group.id,
+            activeMemberID: .shortcutPin(pins[0].id)
+        )
+        execute(.closeTab, in: harness)
+
+        XCTAssertEqual(
+            harness.browserManager.splitGroupStore.group(id: group.id),
+            group
+        )
+        XCTAssertTrue(liveTabs.allSatisfy { tab in
+            harness.browserManager.liveShortcutTabs.entry(tabId: tab.id) == nil
+        })
+        XCTAssertNil(harness.windowState.splitSelection)
+        XCTAssertNil(harness.windowState.currentTabId)
+        XCTAssertNil(harness.windowState.currentShortcutPinId)
+    }
+
+    func testCloseTabShortcutClosesEntireRegularSplitGroup() throws {
+        let harness = try makeHarness()
+        let tabs = [
+            createTab("https://split-first.example", in: harness),
+            createTab("https://split-second.example", in: harness),
+        ]
+        let group = try XCTUnwrap(SplitGroup.make(
+            members: tabs.map { .regularTab($0.id) },
+            layoutKind: .vertical,
+            container: .regularTabs(spaceId: harness.space.id)
+        ))
+        XCTAssertTrue(harness.browserManager.splitGroupMutations.insert(
+            group,
+            persist: false
+        ))
+        harness.windowState.currentTabId = tabs[0].id
+        harness.windowState.splitSelection = WindowSplitSelection(
+            groupID: group.id,
+            activeMemberID: .regularTab(tabs[0].id)
+        )
+
+        execute(.closeTab, in: harness)
+
+        XCTAssertTrue(tabs.allSatisfy { tab in
+            harness.browserManager.regularTabCollectionOwner.tab(
+                for: tab.id
+            ) == nil
+        })
+        XCTAssertNil(harness.browserManager.splitGroupStore.group(id: group.id))
+        XCTAssertNil(harness.windowState.splitSelection)
+    }
+
     func testSelectByIndexAndLastUseVisibleTabsForActiveWindow() throws {
         let harness = try makeHarness()
         let first = createTab("https://first.example", in: harness)

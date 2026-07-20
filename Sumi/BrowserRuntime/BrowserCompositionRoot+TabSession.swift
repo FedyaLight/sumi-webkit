@@ -135,13 +135,12 @@ extension BrowserCompositionRoot {
             store: state.splitGroups,
             publication: structuralMutationPublisher
         )
-        let splitGroupSidebarOrdering = SplitGroupSidebarOrderingService(
-            store: state.splitGroups,
-            mutations: splitGroupMutations,
-            folders: state.folders,
-            pins: state.shortcutPins,
-            orderTransaction: spacePinnedOrderTransaction
-        )
+        let splitGroupSidebarOrdering =
+            SplitGroupSidebarOrderingService(
+                store: state.splitGroups,
+                folders: state.folders,
+                pins: state.shortcutPins
+            )
         let splitGroupMembership = SplitGroupMembershipQuery(
             store: state.splitGroups,
             tabs: tabCollectionMembershipOwner,
@@ -536,6 +535,38 @@ extension BrowserCompositionRoot {
             ),
             targets: shortcutBindingTargets
         )
+        let splitGroupLauncherPlacement =
+            ShortcutSplitLauncherPlacementService(
+                pins: state.shortcutPins,
+                moves: ShortcutSplitLauncherMoveTransaction(
+                    batches: ShortcutSplitLauncherMoveBatchStaging(
+                        catalog: ShortcutSplitLauncherCatalogTransaction(
+                            pinStore: shortcutPinStoreOwner,
+                            pins: state.shortcutPins
+                        ),
+                        bindingStaging: ShortcutSplitLauncherBindingStaging(
+                            refreshes: liveShortcutPresentationRefreshes,
+                            resolution: shortcutPinRuntimeResolutionOwner,
+                            batches: ShortcutTabBindingBatchFactory(
+                                runtimeConnection: runtimeConnection,
+                                windowMutations: shortcutWindowMutationOwner,
+                                profiles: tabProfileTransitions,
+                                persistence:
+                                    ShortcutSplitLauncherWindowPersistence(
+                                        structuralLookup:
+                                            structuralLookupCoordinator
+                                    ),
+                                structuralLookup: structuralLookupCoordinator
+                            )
+                        ),
+                        residenceMutations: liveShortcutTabs.staging,
+                        structuralMutations: structuralCollectionMutationOwner,
+                        structuralLookup: structuralLookupCoordinator
+                    ),
+                    windowMutations: shortcutWindowMutationOwner,
+                    folderOpenState: folderOpenState
+                )
+            )
         let shortcutFreshTabs = ShortcutFreshTabFactory(
             tabFactory: tabManager.tabFactory,
             bindings: shortcutTabBindings
@@ -639,7 +670,8 @@ extension BrowserCompositionRoot {
         let essentialsShortcutPlacementOwner = EssentialsShortcutPlacementOwner(
             spaces: state.spaces,
             runtimeConnection: runtimeConnection,
-            pins: state.shortcutPins
+            pins: state.shortcutPins,
+            splitGroups: state.splitGroups
         )
         let shortcutPinPlacementCommands =
             ShortcutPinCommandComposition.makePlacement(
@@ -657,6 +689,29 @@ extension BrowserCompositionRoot {
                 runtimeConnection: runtimeConnection,
                 conversion: regularTabShortcutConversion
             )
+        let splitGroupShortcutMoves = SplitGroupShortcutMoveService(
+            conversion: regularTabShortcutConversion,
+            groups: splitGroupMutations,
+            structuralLookup: structuralLookupCoordinator,
+            runtimeConnection: runtimeConnection,
+            windowMutations: shortcutWindowMutationOwner
+        )
+        let splitGroupShortcutMemberRelocation =
+            SplitGroupShortcutMemberRelocation(
+                ordering: splitGroupSidebarOrdering,
+                mutations: splitGroupMutations,
+                launcherPlacement: splitGroupLauncherPlacement
+            )
+        let splitGroupContainerConversion = SplitGroupContainerConversion(
+            ordering: splitGroupSidebarOrdering,
+            mutations: splitGroupMutations,
+            folders: state.folders,
+            regularTabs: regularTabCollectionOwner,
+            orderTransaction: spacePinnedOrderTransaction,
+            launcherPlacement: splitGroupLauncherPlacement,
+            shortcutMoves: splitGroupShortcutMoves,
+            shortcutToRegular: shortcutPinToRegularTab
+        )
         let regularTabEssentialPinning = RegularTabEssentialPinningService(
             structuralLookup: structuralLookupCoordinator,
             placement: essentialsShortcutPlacementOwner,
@@ -842,11 +897,12 @@ extension BrowserCompositionRoot {
                     folders: state.folders,
                     pins: state.shortcutPins
                 ),
-                executor: SidebarDragPlanExecutor(
+                mutation: SidebarCanonicalDragMutation(
                     folderPlacement: folderPlacement,
                     shortcuts: shortcutDragOperationOwner,
                     regularTabs: regularTabDragService,
-                    splits: splitGroupSidebarOrdering
+                    splits: splitGroupContainerConversion,
+                    payloads: sidebarDragPayloadResolver
                 )
             ),
             explicitMoves: SidebarExplicitTabMoveTransaction(
@@ -1021,6 +1077,9 @@ extension BrowserCompositionRoot {
             shortcutPresentationActivation: shortcutPresentationActivation,
             splitGroupMutations: splitGroupMutations,
             splitGroupSidebarOrdering: splitGroupSidebarOrdering,
+            splitGroupContainerConversion: splitGroupContainerConversion,
+            splitGroupShortcutMemberRelocation:
+                splitGroupShortcutMemberRelocation,
             splitGroupMembership: splitGroupMembership,
             regularTabShortcutConversion: regularTabShortcutConversion,
             shortcutLiveTabRetirement: shortcutLiveTabRetirement,

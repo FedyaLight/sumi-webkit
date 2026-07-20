@@ -43,6 +43,8 @@ enum SuggestionDeduplicationPolicy {
             return "url:\(topLinkDeduplicationKey(for: bookmark.url).lowercased())"
         case .tab(let tab):
             return "url:\(topLinkDeduplicationKey(for: tab.url).lowercased())"
+        case .command(let command):
+            return "command:\(command.rawValue)"
         }
     }
 
@@ -50,7 +52,7 @@ enum SuggestionDeduplicationPolicy {
         switch suggestion.type {
         case .history, .bookmark, .tab:
             return true
-        case .search, .url:
+        case .search, .url, .command:
             return false
         }
     }

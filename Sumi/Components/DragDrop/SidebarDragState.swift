@@ -18,9 +18,7 @@ final class SidebarDragState: ObservableObject {
     // updates while the pointer is idle); without this guard each sample publishes
     // `objectWillChange` to every observing sidebar view even when nothing moved.
     @Published private var storedIsDragging = false
-    @Published private var storedHoveredSlot: DropZoneSlot = .empty
-    @Published private var storedFolderDropIntent: FolderDropIntent = .none
-    @Published private var storedActiveHoveredFolderId: UUID?
+    @Published private var presentedDropIntent = SidebarPresentedDropIntentState()
     @Published private var storedActiveSplitTarget: SplitDropSide?
     @Published private var storedActiveDragItemId: UUID?
     @Published private var storedPreviewKind: SidebarDragPreviewKind?
@@ -39,28 +37,12 @@ final class SidebarDragState: ObservableObject {
         }
     }
 
-    var hoveredSlot: DropZoneSlot {
-        get { storedHoveredSlot }
-        set {
-            guard storedHoveredSlot != newValue else { return }
-            storedHoveredSlot = newValue
-        }
-    }
-
+    var hoveredSlot: DropZoneSlot { presentedDropIntent.active.slot }
     var folderDropIntent: FolderDropIntent {
-        get { storedFolderDropIntent }
-        set {
-            guard storedFolderDropIntent != newValue else { return }
-            storedFolderDropIntent = newValue
-        }
+        presentedDropIntent.active.folderIntent
     }
-
     var activeHoveredFolderId: UUID? {
-        get { storedActiveHoveredFolderId }
-        set {
-            guard storedActiveHoveredFolderId != newValue else { return }
-            storedActiveHoveredFolderId = newValue
-        }
+        presentedDropIntent.active.activeHoveredFolderId
     }
 
     var activeSplitTarget: SplitDropSide? {
@@ -125,10 +107,9 @@ final class SidebarDragState: ObservableObject {
             locationTracker.previewLocation = newValue
         }
     }
-    @Published private var dropCommitProjection = SidebarDropCommitProjectionState()
     private let delayedActions: MainActorDelayedActionScheduler
-    private var dropCommitProjectionGeneration = 0
-    private var cancelPendingDropCommitProjectionFinishAction: MainActorDelayedActionScheduler.Cancellation?
+    private var dropCompletionGeneration = 0
+    private var cancelPendingDropCompletionAction: MainActorDelayedActionScheduler.Cancellation?
     private(set) var isInternalDragGeometryArmed: Bool = false
     private(set) var armedDragScope: SidebarDragScope?
 
@@ -148,7 +129,7 @@ final class SidebarDragState: ObservableObject {
     }
 
     isolated deinit {
-        cancelPendingDropCommitProjectionFinishAction?()
+        cancelPendingDropCompletionAction?()
     }
 
     private lazy var geometryRepository = SidebarDragGeometryRepository(
@@ -175,34 +156,34 @@ final class SidebarDragState: ObservableObject {
     }
 
     var isCompletingDrop: Bool {
-        dropCommitProjection.isCompletingDrop
+        presentedDropIntent.isCompletingDrop
     }
 
     var isDropProjectionActive: Bool {
-        dropCommitProjection.isDropProjectionActive(isDragging: isDragging)
+        presentedDropIntent.isDropProjectionActive(isDragging: isDragging)
     }
 
     var projectionDragItemId: UUID? {
-        dropCommitProjection.dragItemId(activeDragItemId: activeDragItemId)
+        presentedDropIntent.dragItemId(activeDragItemId: activeDragItemId)
     }
 
     var projectionDragScope: SidebarDragScope? {
-        dropCommitProjection.dragScope(activeDragScope: activeDragScope)
+        presentedDropIntent.dragScope(activeDragScope: activeDragScope)
     }
 
     var projectionHoveredSlot: DropZoneSlot {
-        dropCommitProjection.hoveredSlot(activeHoveredSlot: hoveredSlot)
+        presentedDropIntent.projected.slot
     }
 
     var projectionFolderDropIntent: FolderDropIntent {
-        dropCommitProjection.folderDropIntent(activeFolderDropIntent: folderDropIntent)
+        presentedDropIntent.projected.folderIntent
     }
 
     func shouldHideCommittedCrossContainerPlaceholder(
         into targetContainer: TabDragManager.DragContainer,
         targetAlreadyContainsDraggedItem: Bool
     ) -> Bool {
-        dropCommitProjection.shouldHideCommittedCrossContainerPlaceholder(
+        presentedDropIntent.shouldHideCommittedCrossContainerPlaceholder(
             activeDragScope: activeDragScope,
             targetContainer: targetContainer,
             targetAlreadyContainsDraggedItem: targetAlreadyContainsDraggedItem
@@ -309,17 +290,26 @@ final class SidebarDragState: ObservableObject {
         essentialsPreviewStateBySpace = [:]
     }
 
-    func beginDropCommit() {
-        cancelPendingDropCommitProjectionFinish()
-        dropCommitProjectionGeneration += 1
-        var projection = dropCommitProjection
+    @discardableResult
+    func beginDropCommit(
+        refreshingIfEmpty refresh: () -> SidebarDropResolution? = { nil }
+    ) -> SidebarDropResolution? {
+        let resolution = hoveredSlot == .empty
+            ? refresh()
+            : presentedDropIntent.active
+        guard let resolution, resolution.slot != .empty else {
+            return nil
+        }
+        cancelPendingDropCompletion()
+        dropCompletionGeneration += 1
+        var projection = presentedDropIntent
         projection.begin(
             itemId: activeDragItemId,
             scope: activeDragScope,
-            slot: hoveredSlot,
-            folderIntent: folderDropIntent
+            resolution: resolution
         )
-        dropCommitProjection = projection
+        presentedDropIntent = projection
+        return resolution
     }
 
     func resetInteractionState() {
@@ -334,10 +324,10 @@ final class SidebarDragState: ObservableObject {
         isInternalDragSession = false
         activeDragScope = nil
         if isCompletingDrop {
-            let expectedProjectionGeneration = dropCommitProjectionGeneration
-            scheduleDropCommitProjectionFinish(expectedGeneration: expectedProjectionGeneration)
+            let expectedGeneration = dropCompletionGeneration
+            scheduleDropCompletionFinish(expectedGeneration: expectedGeneration)
         } else {
-            finishDropCommitProjection()
+            finishDropCompletion()
         }
         isInternalDragGeometryArmed = false
         armedDragScope = nil
@@ -346,26 +336,26 @@ final class SidebarDragState: ObservableObject {
         requestGeometryRefresh()
     }
 
-    private func scheduleDropCommitProjectionFinish(expectedGeneration: Int) {
-        cancelPendingDropCommitProjectionFinish()
-        cancelPendingDropCommitProjectionFinishAction = delayedActions.schedule(after: 0.05) { [weak self] in
-            self?.finishDropCommitProjection(expectedGeneration: expectedGeneration)
+    private func scheduleDropCompletionFinish(expectedGeneration: Int) {
+        cancelPendingDropCompletion()
+        cancelPendingDropCompletionAction = delayedActions.schedule(after: 0.05) { [weak self] in
+            self?.finishDropCompletion(expectedGeneration: expectedGeneration)
         }
     }
 
-    private func cancelPendingDropCommitProjectionFinish() {
-        cancelPendingDropCommitProjectionFinishAction?()
-        cancelPendingDropCommitProjectionFinishAction = nil
+    private func cancelPendingDropCompletion() {
+        cancelPendingDropCompletionAction?()
+        cancelPendingDropCompletionAction = nil
     }
 
-    private func finishDropCommitProjection(expectedGeneration: Int? = nil) {
-        if let expectedGeneration, expectedGeneration != dropCommitProjectionGeneration {
+    private func finishDropCompletion(expectedGeneration: Int? = nil) {
+        if let expectedGeneration, expectedGeneration != dropCompletionGeneration {
             return
         }
-        cancelPendingDropCommitProjectionFinish()
-        var projection = dropCommitProjection
+        cancelPendingDropCompletion()
+        var projection = presentedDropIntent
         projection.finish()
-        dropCommitProjection = projection
+        presentedDropIntent = projection
     }
 
     func beginPendingGeometryEpoch(
@@ -478,12 +468,19 @@ final class SidebarDragState: ObservableObject {
     }
 
     func clearHoverState() {
-        hoveredSlot = .empty
-        folderDropIntent = .none
-        activeHoveredFolderId = nil
+        var intent = presentedDropIntent
+        intent.clearPresentation()
+        presentedDropIntent = intent
         activeSplitTarget = nil
         regularExternalDropGap = nil
         clearEssentialsPreviewState()
+    }
+
+    func presentDropResolution(_ resolution: SidebarDropResolution) {
+        guard presentedDropIntent.active != resolution else { return }
+        var intent = presentedDropIntent
+        intent.present(resolution)
+        presentedDropIntent = intent
     }
 
     func updateEssentialsPreviewState(

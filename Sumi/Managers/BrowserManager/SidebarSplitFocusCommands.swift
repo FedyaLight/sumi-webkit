@@ -4,18 +4,15 @@ import SumiDomain
 @MainActor
 final class SidebarSplitFocusCommands {
     private let focus: SplitShortcutFocusService
-    private let restoration: SplitShortcutMemberRestoreService
     private let groups: SplitGroupStore
     private let windows: SidebarWindowIdentityQuery
 
     init(
         focus: SplitShortcutFocusService,
-        restoration: SplitShortcutMemberRestoreService,
         groups: SplitGroupStore,
         windows: SidebarWindowIdentityQuery
     ) {
         self.focus = focus
-        self.restoration = restoration
         self.groups = groups
         self.windows = windows
     }
@@ -33,16 +30,4 @@ final class SidebarSplitFocusCommands {
         )
     }
 
-    func restoreMember(_ groupID: UUID, _ memberID: SplitMemberID, _ windowID: UUID) {
-        guard let group = groups.group(id: groupID),
-              group.contains(memberID),
-              let windowState = windows.window(id: windowID) else {
-            return
-        }
-        _ = restoration.restoreShortcutSplitMember(
-            memberID,
-            from: group,
-            in: windowState
-        )
-    }
 }

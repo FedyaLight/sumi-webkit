@@ -1,10 +1,10 @@
 @MainActor
-final class SplitShortcutMemberRestoreParticipants {
+final class ShortcutSplitLauncherMoveParticipants {
     enum StageOutcome { case staged, cleanupRetained, restored, conflicted }
     private let presentation: PreparedWindowSplitPresentationSettlement
     private let retirement: ReversibleShortcutLiveTabRetirement?
     private let topology: SplitGroupReplacementReceipt
-    private var state = SplitShortcutMemberRestoreParticipantState.prepared
+    private var state = ShortcutSplitLauncherMoveParticipantState.prepared
 
     init(
         presentation: PreparedWindowSplitPresentationSettlement,
@@ -18,7 +18,7 @@ final class SplitShortcutMemberRestoreParticipants {
 
     func stage() -> StageOutcome {
         guard case .prepared = state else { return .conflicted }
-        let outcome = SplitShortcutMemberRestoreStaging.stage(
+        let outcome = ShortcutSplitLauncherMoveStaging.stage(
             presentation: presentation,
             retirement: retirement,
             topology: topology
@@ -101,7 +101,7 @@ final class SplitShortcutMemberRestoreParticipants {
 
     func rollbackModel() -> Bool {
         guard case .staged = state else { return false }
-        let restored = SplitShortcutMemberRestoreParticipantCompensation
+        let restored = ShortcutSplitLauncherMoveParticipantCompensation
             .rollbackStaged(
                 presentation: presentation,
                 retirement: retirement,
@@ -113,7 +113,7 @@ final class SplitShortcutMemberRestoreParticipants {
 
     func cancelPrepared() -> Bool {
         guard case .prepared = state else { return false }
-        let cancelled = SplitShortcutMemberRestoreParticipantCompensation
+        let cancelled = ShortcutSplitLauncherMoveParticipantCompensation
             .cancelPrepared(
                 presentation: presentation,
                 retirement: retirement,
@@ -125,7 +125,7 @@ final class SplitShortcutMemberRestoreParticipants {
 
     func canSettleTerminalDrain() -> Bool {
         if case .staged = state { return stagedModelIsExact() }
-        return SplitShortcutMemberRestoreParticipantDrain.canSettle(
+        return ShortcutSplitLauncherMoveParticipantDrain.canSettle(
             state: state,
             presentation: presentation,
             retirement: retirement,
@@ -138,7 +138,7 @@ final class SplitShortcutMemberRestoreParticipants {
         if case .staged = state {
             _ = claimTerminalModel()
         }
-        return SplitShortcutMemberRestoreParticipantDrain.prepare(
+        return ShortcutSplitLauncherMoveParticipantDrain.prepare(
             state: &state,
             presentation: presentation,
             retirement: retirement,

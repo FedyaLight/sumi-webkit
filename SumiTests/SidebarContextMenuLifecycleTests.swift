@@ -147,8 +147,14 @@ final class SidebarContextMenuLifecycleTests: XCTestCase {
             profiles: [personalProfile, workProfile],
             selectedProfileId: personalProfile.id
         )
-        XCTAssertEqual(profileChoices.first?.icon, .emoji("😀"))
-        XCTAssertEqual(profileChoices.last?.icon, .emoji("💼"))
+        XCTAssertEqual(
+            profileChoices.first?.icon,
+            .systemImage("person.crop.circle")
+        )
+        XCTAssertEqual(
+            profileChoices.last?.icon,
+            .systemImage("person.crop.circle")
+        )
 
         let folderChoices = makeSidebarContextMenuFolderChoices(folders: [folder])
         XCTAssertEqual(
@@ -338,6 +344,18 @@ final class SidebarContextMenuLifecycleTests: XCTestCase {
         XCTAssertTrue(folderPinnedSnapshot.contains("  Archive"))
         XCTAssertFalse(folderPinnedSnapshot.contains("> Add to Folder"))
         XCTAssertTrue(folderPinnedSnapshot.contains("Delete Pinned Tab [destructive]"))
+    }
+
+    func testSavedTabContextMenuExposesSplitActionWhenAvailable() {
+        let entries = makeSidebarTabContextMenuEntries(
+            role: .pinnedTab,
+            actions: .init(openInSplitView: Self.noop)
+        )
+
+        XCTAssertEqual(
+            Self.snapshot(entries),
+            ["Open in Split View"]
+        )
     }
 
     func testMoveToSpaceUsesSubmenuForLongDestinationLists() {

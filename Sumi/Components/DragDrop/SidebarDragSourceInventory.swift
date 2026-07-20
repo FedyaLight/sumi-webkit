@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 /// Ordered identity of one projected row in a sidebar drag source container.
 enum SidebarDragSourceIdentity: Hashable {
@@ -69,20 +70,17 @@ extension SidebarDragSourceInventorying {
 
 @MainActor
 final class SidebarDragSourceInventory: SidebarDragSourceInventorying {
-    private let essentialPins: ShortcutPinCollectionStateOwner
     private let splitOrdering: SplitGroupSidebarOrderingService
     private let regularTabs: RegularTabCollectionOwner
     private let folders: TabFolderCollectionStateOwner
     private let spacePinned: SpacePinnedStructureOwner
 
     init(
-        essentialPins: ShortcutPinCollectionStateOwner,
         splitOrdering: SplitGroupSidebarOrderingService,
         regularTabs: RegularTabCollectionOwner,
         folders: TabFolderCollectionStateOwner,
         spacePinned: SpacePinnedStructureOwner
     ) {
-        self.essentialPins = essentialPins
         self.splitOrdering = splitOrdering
         self.regularTabs = regularTabs
         self.folders = folders
@@ -92,15 +90,24 @@ final class SidebarDragSourceInventory: SidebarDragSourceInventorying {
     func sourceIdentities(for scope: SidebarDragScope) -> [SidebarDragSourceIdentity]? {
         switch scope.sourceContainer {
         case .essentials:
-            return essentialPins.essentialPins(for: scope.profileId).map {
-                .pin($0.id)
-            }
+            return splitOrdering.essentialItems(for: scope.profileId)
+                .map(identity(from:))
 
         case .spacePinned(let spaceId):
             return splitOrdering.topLevelItems(for: spaceId).map(identity(from:))
 
         case .spaceRegular(let spaceId):
-            return regularTabs.tabs(in: spaceId).map { .tab($0.id) }
+            let tabs = regularTabs.tabs(in: spaceId)
+            let groups = splitOrdering.regularGroups(for: spaceId)
+            return SidebarVisualOrdering.regularBlocks(
+                tabs: tabs,
+                groups: groups
+            ).map { block in
+                switch block.identity {
+                case .tab(let tabID): return .tab(tabID)
+                case .splitGroup(let groupID): return .splitGroup(groupID)
+                }
+            }
 
         case .folder(let folderId):
             guard let spaceId = folders.spaceId(for: folderId) else {

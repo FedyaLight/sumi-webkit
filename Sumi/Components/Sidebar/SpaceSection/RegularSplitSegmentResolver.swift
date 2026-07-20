@@ -5,6 +5,7 @@
 
 import Foundation
 import SumiDomain
+import SwiftUI
 
 /// Pure sidebar projection for split groups hosted by the regular tab list.
 @MainActor
@@ -14,10 +15,8 @@ struct RegularSplitSegmentResolver {
 
     func visibleSplitGroups(
         currentTabs: [Tab],
-        isDragging: Bool,
         splitGroup: (SplitMemberID) -> SplitGroup?
     ) -> [SplitGroup] {
-        guard !isDragging else { return [] }
         let currentMemberIDs = Set(
             currentTabs.map { SplitMemberID.regularTab($0.id) }
         )
@@ -26,7 +25,7 @@ struct RegularSplitSegmentResolver {
         return currentTabs.compactMap { tab in
             let memberID = SplitMemberID.regularTab(tab.id)
             guard let group = splitGroup(memberID),
-                  !group.container.isShortcutSidebar,
+                  case .regularTabs = group.container,
                   seenGroupIDs.insert(group.id).inserted,
                   group.memberIDs.count >= SplitGroup.minimumMembers,
                   group.memberIDs.contains(where: currentMemberIDs.contains)
@@ -63,18 +62,6 @@ struct RegularSplitSegmentResolver {
         }
     }
 
-    func action(
-        for item: SplitGroupSidebarItem,
-        in _: SplitGroup
-    ) -> SplitGroupSidebarSegmentAction? {
-        switch item.id {
-        case .shortcutPin:
-            return .restore
-        case .regularTab:
-            return item.tab == nil ? nil : .close
-        }
-    }
-
     func member(
         for item: SplitGroupSidebarItem,
         in group: SplitGroup
@@ -107,44 +94,46 @@ struct RegularSplitSegmentResolver {
         in group: SplitGroup,
         faviconImageReader: any BrowserFaviconImageReading,
         shortcutPin: (UUID) -> ShortcutPin?,
+        splitPresentation: SidebarSplitDragPresentation,
+        isGroupSelected: Bool,
         onActivateMember: @escaping () -> Void
     ) -> SidebarDragSourceConfiguration? {
-        if let pin = self.shortcutPin(
-            for: item,
-            member: member(for: item, in: group),
-            shortcutPin: shortcutPin
-        ) {
-            return SidebarDragSourceConfiguration(
-                item: SumiDragItem.splitMember(
-                    item.id,
-                    groupID: group.id,
-                    title: item.title,
-                    urlString: item.tab?.url.absoluteString
-                        ?? pin.launchURL.absoluteString
-                ),
-                sourceZone: sourceZone(for: pin),
-                previewKind: .row,
-                previewIcon: item.tab?.favicon ?? pin.storedFaviconImage(
-                    partition: .regular(pin.executionProfileId ?? pin.profileId),
-                    imageReader: faviconImageReader
-                ),
-                exclusionZones: [.trailingStrip(32)],
-                onActivate: onActivateMember,
-                isEnabled: isInteractive
-            )
-        }
-
         guard let tab = item.tab else { return nil }
+        let memberIcon = SplitGroupMemberIconResolver.resolve(
+            item: item,
+            loadedStoredFavicon: nil,
+            imageReader: faviconImageReader
+        )
         return SidebarDragSourceConfiguration(
-            item: SumiDragItem.splitMember(
-                item.id,
-                groupID: group.id,
-                title: tab.name,
+            item: SumiDragItem.splitGroup(
+                group.id,
+                title: group.iconAsset == nil
+                    ? tab.name : SplitGroupSidebarModel.displayTitle(for: group),
                 urlString: tab.url.absoluteString
             ),
             sourceZone: .spaceRegular(space.id),
             previewKind: .row,
-            previewIcon: tab.favicon,
+            previewIcon: group.iconAsset.flatMap { iconAsset in
+                SumiPersistentGlyph.presentsAsEmoji(iconAsset)
+                    ? nil
+                    : Image(systemName:
+                        SumiPersistentGlyph.resolvedLauncherSystemImageName(
+                            iconAsset
+                        )
+                    )
+            } ?? memberIcon.image,
+            previewGlyphText: group.iconAsset.flatMap {
+                SumiPersistentGlyph.presentsAsEmoji($0) ? $0 : nil
+            },
+            splitPresentation: group.iconAsset == nil
+                ? splitPresentation : nil,
+            chromeTemplateSystemImageName: group.iconAsset.flatMap {
+                SumiPersistentGlyph.presentsAsEmoji($0)
+                    ? nil
+                    : SumiPersistentGlyph.resolvedLauncherSystemImageName($0)
+            },
+            previewPresentationState: isGroupSelected
+                ? .visuallySelected : .liveBackgrounded,
             exclusionZones: [.trailingStrip(32)],
             onActivate: onActivateMember,
             isEnabled: isInteractive

@@ -252,7 +252,11 @@ final class SpaceActivationServiceTests: XCTestCase {
                 regularTabs: tabManager.tabStateStore.regularTabs,
                 pins: tabManager.shortcutPinCollectionStateOwner,
                 folders: tabManager.folderCollectionStateOwner,
-                splitOrdering: tabManager.splitGroupSidebarOrdering,
+                splitOrdering: SplitGroupSidebarOrderingService(
+                    store: tabManager.tabStateStore.splitGroups,
+                    folders: tabManager.folderCollectionStateOwner,
+                    pins: tabManager.shortcutPinCollectionStateOwner
+                ),
                 transientTabs: tabManager.tabStateStore.transientTabs
             ),
             persistence: tabManager.structuralPersistence,

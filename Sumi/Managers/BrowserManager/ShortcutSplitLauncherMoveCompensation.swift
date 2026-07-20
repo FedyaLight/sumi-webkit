@@ -1,5 +1,5 @@
 @MainActor
-enum SplitShortcutMemberRestoreCompensation {
+enum ShortcutSplitLauncherMoveCompensation {
     static func settleFailedPreparation(
         binding: any ShortcutSplitLauncherBindingModelTransaction,
         structural: TabStructuralCollectionMutationOwner.PreparedAggregate
@@ -11,7 +11,7 @@ enum SplitShortcutMemberRestoreCompensation {
 
     static func settleFailedBindingStage(
         binding: any ShortcutSplitLauncherBindingModelTransaction,
-        participants: SplitShortcutMemberRestoreParticipants,
+        participants: ShortcutSplitLauncherMoveParticipants,
         structural: TabStructuralCollectionMutationOwner.PreparedAggregate
     ) -> Bool {
         let participantsRestored = participants.rollbackModel()
@@ -22,7 +22,7 @@ enum SplitShortcutMemberRestoreCompensation {
 
     static func rollbackStagedModel(
         binding: any ShortcutSplitLauncherBindingModelTransaction,
-        participants: SplitShortcutMemberRestoreParticipants,
+        participants: ShortcutSplitLauncherMoveParticipants,
         structural: TabStructuralCollectionMutationOwner.PreparedAggregate
     ) -> Bool {
         var restored = true
@@ -34,6 +34,6 @@ enum SplitShortcutMemberRestoreCompensation {
     }
 }
 
-enum SplitShortcutMemberRestoreAggregateError: Error {
+enum ShortcutSplitLauncherMoveAggregateError: Error {
     case stale, compensationFailed
 }

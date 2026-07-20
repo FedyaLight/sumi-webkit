@@ -80,4 +80,44 @@ final class PreparedRegularTabPlacement {
     func cancel() -> Bool {
         transaction.cancel(self)
     }
+
+    static func stageAggregate(
+        _ placements: [PreparedRegularTabPlacement]
+    ) -> Bool {
+        guard let transaction = placements.first?.transaction else {
+            return false
+        }
+        return transaction.stageAggregate(placements)
+    }
+
+    static func finishAggregate(
+        _ placements: [PreparedRegularTabPlacement],
+        publishing publication: @MainActor () -> Void
+    ) -> Bool {
+        guard let transaction = placements.first?.transaction else {
+            return false
+        }
+        return transaction.finishAggregate(
+            placements,
+            publishing: publication
+        )
+    }
+
+    static func cancelAggregate(
+        _ placements: [PreparedRegularTabPlacement]
+    ) -> Bool {
+        guard let transaction = placements.first?.transaction else {
+            return placements.isEmpty
+        }
+        return transaction.cancelAggregate(placements)
+    }
+
+    static func rollbackAggregate(
+        _ placements: [PreparedRegularTabPlacement]
+    ) -> Bool {
+        guard let transaction = placements.first?.transaction else {
+            return false
+        }
+        return transaction.rollbackAggregate(placements)
+    }
 }

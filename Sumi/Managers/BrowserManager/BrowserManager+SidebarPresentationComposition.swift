@@ -22,6 +22,8 @@ extension BrowserManager {
             liveFolderManager: liveFolderManager,
             splitQuery: splitQuery,
             splitLayout: splitLayout,
+            splitInsertion: splitInsertion,
+            splitMembership: splitGroupMembership,
             emptySplitCreation: splitEmptyCreation,
             downloadManager: downloadManager,
             downloadsPopoverPresenter: chromeBundle.commands.downloadsPopoverPresenter,
@@ -49,7 +51,6 @@ extension BrowserManager {
             floatingBarCommit: urlBarBundle.floatingBar.commit,
             splitFocusCommands: SidebarSplitFocusCommands(
                 focus: splitShortcutFocus,
-                restoration: splitShortcutMemberRestoration,
                 groups: splitGroupStore,
                 windows: windowIdentity
             ),
@@ -59,6 +60,46 @@ extension BrowserManager {
                 membership: tabCollectionMembershipOwner,
                 shortcuts: shortcutPresentationOwner,
                 close: tabCloseOrchestration
+            ),
+            splitGroupLifecycle: SidebarSplitGroupLifecycleCommands(
+                groups: splitGroupStore,
+                mutations: splitGroupMutations,
+                pins: shortcutPinCollectionStateOwner,
+                pinCommands: sidebarPinCommands,
+                hostedUnload: splitShortcutHostedUnload,
+                membership: tabCollectionMembershipOwner,
+                close: tabCloseOrchestration,
+                structuralLookup: structuralLookupCoordinator
+            ),
+            splitGroupEditor: SidebarSplitGroupEditorPresentationService(
+                groups: splitGroupStore,
+                mutations: splitGroupMutations,
+                windows: windowIdentity,
+                duplication: SidebarSplitGroupDuplicationService(
+                    regular: RegularSplitGroupDuplicationService(
+                        groups: splitGroupStore,
+                        mutations: splitGroupMutations,
+                        regularTabs: regularTabCollectionOwner,
+                        duplication: SplitTabDuplicationService(
+                            spaces: spaceStateOwner,
+                            regularTabs: regularTabLifecycleOwner,
+                            closure: tabClosureService
+                        )
+                    ),
+                    saved: SavedSplitGroupDuplicationService(
+                        groups: splitGroupStore,
+                        mutations: splitGroupMutations,
+                        pins: shortcutPinCollectionStateOwner,
+                        pinStore: shortcutPinStoreOwner
+                    )
+                ),
+                moves: SidebarSplitGroupMoveService(
+                    ordering: splitGroupSidebarOrdering,
+                    conversion: splitGroupContainerConversion,
+                    folders: folderCollectionStateOwner,
+                    regularTabs: regularTabCollectionOwner,
+                    liveFolders: liveFolderManager
+                )
             ),
             shortcutCopy: sidebarPinCommands,
             shortcutPinUnload: composeSidebarShortcutPinUnloadOwner(),

@@ -32,6 +32,40 @@ final class ShortcutTabPromotionWindowTransition {
         })
     }
 
+    func projectGroup(
+        plans: [ShortcutTabPromotionPlan],
+        groupID: UUID,
+        memberByPinID: [UUID: SplitMemberID]
+    ) -> [UUID: BrowserWindowShortcutMutationState] {
+        let plansByPinID = Dictionary(
+            uniqueKeysWithValues: plans.map { ($0.pinID, $0) }
+        )
+        let selectedWindows = plans
+            .flatMap(\.selectedWindowStates)
+            .reduce(into: [UUID: BrowserWindowState]()) {
+                $0[$1.id] = $1
+            }
+        return selectedWindows.reduce(into: [:]) { result, entry in
+            let window = entry.value
+            let source = window.unpublishedShortcutMutationState
+            guard source.splitSelection?.groupID == groupID,
+                  case .shortcutPin(let pinID) =
+                    source.splitSelection?.activeMemberID,
+                  let plan = plansByPinID[pinID],
+                  let memberID = memberByPinID[pinID]
+            else { return }
+            var target = source
+            select(plan.tab, in: &target)
+            target.splitSelection = WindowSplitSelection(
+                groupID: groupID,
+                activeMemberID: memberID
+            )
+            if target != source {
+                result[window.id] = target
+            }
+        }
+    }
+
     private func apply(
         plan: ShortcutTabPromotionPlan,
         split: ShortcutTabPromotionSplitTransition,

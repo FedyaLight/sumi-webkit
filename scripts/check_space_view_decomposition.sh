@@ -27,6 +27,10 @@ guard_require_directory "$space_root"
 for file in "${section_files[@]}" "$space_root/SpaceView.swift"; do
   guard_require_file "$file"
 done
+guard_expect_no_matches \
+  'retired split placeholder policy returned' \
+  'SplitPlaceholderRow|ShortcutRestoreGap|SpaceShortcutRestore|shortcutRestoreSession|onPrepareShortcutRestoreGap|onPerformShortcutRestoreWithPreparedGap' \
+  -g '*.swift' "$space_root"
 
 space_extension_hits="$(guard_capture_matches '^extension SpaceView\b' "$space_root" -g '*.swift')"
 if [[ -n "$space_extension_hits" ]]; then
@@ -54,8 +58,7 @@ for declaration in \
   'struct TabFolderSplitGroupEntryView: View' \
   'struct SpaceScrollChromeSurface<Content: View>: View' \
   'struct SpacePinnedListProjection' \
-  'struct SpaceRegularTabsListProjection' \
-  'struct SpaceShortcutRestoreInteractionSession'; do
+  'struct SpaceRegularTabsListProjection'; do
   declaration_count="$(guard_count_matches "$declaration" -F "$space_root")"
   if (( declaration_count == 0 )); then
     echo "SpaceView decomposition guard: missing semantic boundary: $declaration" >&2
@@ -448,7 +451,6 @@ banned_fanout_names = {
     "presentSharingServicePicker", "splitCommands", "requestUserTabActivation",
     "openForegroundTab", "pinShortcutGlobally", "unloadShortcutPin",
     "unloadShortcutPins", "browserWindowRegistry", "onUngroup", "onDelete",
-    "onPrepareShortcutRestoreGap", "onPerformShortcutRestoreWithPreparedGap",
 }
 banned_fanout_types = {
     "BrowserManager", "TabManager", "ProfileManager", "SumiLiveFolderManager",
@@ -506,6 +508,7 @@ allowed_browser_context_views = {
     "SpaceView",
     "SpacePinnedSectionView", "SpacePinnedSectionContentView", "SpacePinnedListView",
     "SpacePinnedFolderEntryView", "SpacePinnedSplitGroupEntryView",
+    "SpaceNestedPinnedStickyEntryView",
     "SpaceRegularTabsView", "SpaceRegularTabsContentView", "SpaceRegularNewTabRow",
     "SpaceRegularTabsListView", "SpaceRegularSplitGroupEntryView",
     "TabFolderView", "TabFolderContentView", "TabFolderBodyListView",
@@ -519,54 +522,6 @@ if unexpected_browser_context_views:
         f"{sorted(unexpected_browser_context_views)}"
     )
 
-retired_bindings = {"shortcutRestoreGaps", "shortcutRestoreAppearingGapIds"}
-leaked_retired_bindings = []
-for view_name in fanout_guard_views:
-    body = view_structs[view_name][1]
-    for binding_name in retired_bindings:
-        if re.search(
-            rf"@(Binding|State)\b[^\n]*\bvar\s+{re.escape(binding_name)}\b",
-            body,
-        ):
-            leaked_retired_bindings.append(f"{view_name}.{binding_name}")
-leaked_retired_bindings.sort()
-if leaked_retired_bindings:
-    raise SystemExit(
-        "SpaceView decomposition guard: retired split restore bindings returned "
-        f"{leaked_retired_bindings}"
-    )
-
-session_binding_pattern = re.compile(
-    r"@Binding\s+(?:(?:private|fileprivate|internal|package|public)\s+)?"
-    r"var\s+shortcutRestoreSession\s*:\s*SpaceShortcutRestoreInteractionSession\b"
-)
-actual_session_views = {
-    name for name, (_, body) in view_structs.items() if session_binding_pattern.search(body)
-}
-permitted_session_views = {
-    "SpacePinnedSectionView", "SpacePinnedSectionContentView", "SpacePinnedListView",
-    "SpacePinnedFolderEntryView", "SpacePinnedSplitGroupEntryView",
-    "SpaceRegularTabsView", "SpaceRegularTabsContentView", "SpaceRegularTabsListView",
-    "SpaceRegularSplitGroupEntryView", "TabFolderView", "TabFolderContentView",
-    "TabFolderBodyListView", "TabFolderNestedFolderEntryView",
-    "TabFolderSplitGroupEntryView",
-}
-unexpected_session_views = actual_session_views - permitted_session_views
-if unexpected_session_views:
-    raise SystemExit(
-        "SpaceView decomposition guard: shortcut restore session leaked into unexpected "
-        f"views {sorted(unexpected_session_views)}"
-    )
-
-space_state_pattern = re.compile(
-    r"@State\s+private\s+var\s+shortcutRestoreSession\s*=\s*"
-    r"SpaceShortcutRestoreInteractionSession\s*\("
-)
-if len(space_state_pattern.findall(space_view_source)) != 1:
-    raise SystemExit(
-        "SpaceView decomposition guard: SpaceView must own one typed shortcut restore "
-        "interaction session"
-    )
 PY
 
 echo "SpaceView decomposition guard passed"

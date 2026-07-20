@@ -6,6 +6,7 @@ enum TabLinkPresentationCommandsFactory {
         sourceResolver: PhysicalWebViewSourceResolver,
         openTab: @escaping TabLinkPresentationCommands.OpenTab,
         openWindow: @escaping TabLinkPresentationCommands.OpenWindow,
+        openSplit: @escaping TabLinkPresentationCommands.OpenSplit,
         activateSource: @escaping TabLinkPresentationCommands.ActivateSource,
         presentGlance: @escaping TabLinkPresentationCommands.PresentGlance
     ) -> TabLinkPresentationCommands {
@@ -15,6 +16,7 @@ enum TabLinkPresentationCommandsFactory {
             },
             openTab: openTab,
             openWindow: openWindow,
+            openSplit: openSplit,
             activateSource: activateSource,
             presentGlance: presentGlance
         )

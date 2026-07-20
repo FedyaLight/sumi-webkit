@@ -264,7 +264,8 @@ final class FloatingBarServicesTests: XCTestCase {
             pageNavigation: FloatingBarPageNavigationService(
                 settings: { settings },
                 loadPage: loadPage
-            )
+            ),
+            newSplitView: { _ in /* no-op */ }
         )
     }
 

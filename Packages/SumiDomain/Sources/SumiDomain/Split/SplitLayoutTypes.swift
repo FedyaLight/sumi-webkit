@@ -46,6 +46,7 @@ public enum SplitDropSide: String, Codable, Hashable, Sendable {
 /// Durable placement of a split group in the browser's shared structure.
 public enum SplitGroupContainer: Hashable, Sendable {
     case regularTabs(spaceId: UUID?)
+    case essentialSidebar(profileId: UUID?, index: Int?)
     case shortcutSidebar(
         spaceId: UUID,
         profileId: UUID?,
@@ -63,6 +64,7 @@ public enum SplitGroupContainer: Hashable, Sendable {
 
     private enum Kind: String, Codable {
         case regularTabs
+        case essentialSidebar
         case shortcutSidebar
     }
 
@@ -70,14 +72,20 @@ public enum SplitGroupContainer: Hashable, Sendable {
         switch self {
         case .regularTabs(let spaceId):
             return spaceId
+        case .essentialSidebar:
+            return nil
         case .shortcutSidebar(let spaceId, _, _, _):
             return spaceId
         }
     }
 
     public var isShortcutSidebar: Bool {
-        if case .shortcutSidebar = self { return true }
-        return false
+        switch self {
+        case .shortcutSidebar, .essentialSidebar:
+            return true
+        case .regularTabs:
+            return false
+        }
     }
 
     public var shortcutSidebarFolderId: UUID? {
@@ -104,6 +112,11 @@ extension SplitGroupContainer: Codable {
             self = .regularTabs(
                 spaceId: try container.decodeIfPresent(UUID.self, forKey: .spaceId)
             )
+        case .essentialSidebar:
+            self = .essentialSidebar(
+                profileId: try container.decodeIfPresent(UUID.self, forKey: .profileId),
+                index: try container.decodeIfPresent(Int.self, forKey: .index)
+            )
         case .shortcutSidebar:
             self = .shortcutSidebar(
                 spaceId: try container.decode(UUID.self, forKey: .spaceId),
@@ -120,6 +133,10 @@ extension SplitGroupContainer: Codable {
         case .regularTabs(let spaceId):
             try container.encode(Kind.regularTabs, forKey: .kind)
             try container.encodeIfPresent(spaceId, forKey: .spaceId)
+        case .essentialSidebar(let profileId, let index):
+            try container.encode(Kind.essentialSidebar, forKey: .kind)
+            try container.encodeIfPresent(profileId, forKey: .profileId)
+            try container.encodeIfPresent(index, forKey: .index)
         case .shortcutSidebar(let spaceId, let profileId, let folderId, let index):
             try container.encode(Kind.shortcutSidebar, forKey: .kind)
             try container.encode(spaceId, forKey: .spaceId)

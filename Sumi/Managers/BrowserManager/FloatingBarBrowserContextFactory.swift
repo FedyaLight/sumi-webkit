@@ -10,6 +10,7 @@ final class FloatingBarBrowserContextFactory {
     private let deleteHistoryEntry: @MainActor (HistoryListItem) async -> Void
     private let presentation: FloatingBarPresentationService
     private let commit: FloatingBarCommitService
+    private let offersCommandSuggestions: @MainActor (BrowserWindowState) -> Bool
 
     init(
         currentProfileId: @escaping @MainActor () -> UUID?,
@@ -17,7 +18,8 @@ final class FloatingBarBrowserContextFactory {
         configureSearchManager: @escaping @MainActor (SearchManager) -> Void,
         deleteHistoryEntry: @escaping @MainActor (HistoryListItem) async -> Void,
         presentation: FloatingBarPresentationService,
-        commit: FloatingBarCommitService
+        commit: FloatingBarCommitService,
+        offersCommandSuggestions: @escaping @MainActor (BrowserWindowState) -> Bool
     ) {
         self.currentProfileId = currentProfileId
         self.faviconContext = faviconContext
@@ -25,6 +27,7 @@ final class FloatingBarBrowserContextFactory {
         self.deleteHistoryEntry = deleteHistoryEntry
         self.presentation = presentation
         self.commit = commit
+        self.offersCommandSuggestions = offersCommandSuggestions
     }
 
     var context: FloatingBarBrowserContext {
@@ -50,7 +53,8 @@ final class FloatingBarBrowserContextFactory {
             },
             commitSuggestion: { [commit] suggestion, windowState in
                 commit.commitSuggestion(suggestion, in: windowState)
-            }
+            },
+            offersCommandSuggestions: offersCommandSuggestions
         )
     }
 

@@ -88,6 +88,10 @@ struct TabFolderMutationActions {
         }
         collectDescendantFolders(folder.id)
 
+        for group in inventory.descendantSplitGroups(for: folder.id) {
+            browserContext.splitGroupLifecycle.unload(group, in: windowState)
+        }
+
         let descendantPins = inventory.descendantPins(for: folder.id)
         if !descendantPins.isEmpty {
             browserContext.shortcutPinUnload.unloadShortcutPins(

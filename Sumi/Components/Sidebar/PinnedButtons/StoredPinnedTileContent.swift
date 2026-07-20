@@ -64,14 +64,21 @@ struct StoredPinnedTileContent: View {
             await loadStoredFavicon()
         }
         .onReceive(NotificationCenter.default.publisher(for: .faviconCacheUpdated)) { notification in
-            storedFaviconLoader.invalidateIfNeeded(for: notification, launchURL: pin.launchURL)
+            storedFaviconLoader.invalidateIfNeeded(
+                for: notification,
+                launchURL: pin.launchURL,
+                partition: faviconPartition
+            )
         }
     }
 
     private var dragExclusionZones: [SidebarDragSourceExclusionZone] { [] }
 
     private var currentLoadedStoredFavicon: Image? {
-        storedFaviconLoader.image(for: pin.launchURL)
+        storedFaviconLoader.image(
+            for: pin.launchURL,
+            partition: faviconPartition
+        )
     }
 
     private var storedFaviconLoadKey: String {

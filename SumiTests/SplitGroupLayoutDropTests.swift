@@ -9,10 +9,7 @@ final class SplitGroupLayoutDropTests: XCTestCase {
 
     func testFirstSplitResolverUsesTypedMembersForEveryEdge() throws {
         let current = SplitMember.regularTab(UUID())
-        let incoming = SplitMember.shortcutPin(
-            UUID(),
-            returnPlacement: .essential(profileId: UUID(), index: 2)
-        )
+        let incoming = SplitMember.shortcutPin(UUID())
         let scenarios: [(side: SplitDropSide, location: CGPoint)] = [
             (.left, CGPoint(x: 20, y: 400)),
             (.right, CGPoint(x: 980, y: 400)),
@@ -118,22 +115,13 @@ final class SplitGroupLayoutDropTests: XCTestCase {
         XCTAssertEqual(hits.reduce(0) { $0 + $1.rect.width }, bounds.width)
     }
 
-    func testExternalDropPreservesShortcutReturnPlacement() throws {
+    func testExternalDropPreservesMemberIdentity() throws {
         let regular = SplitMember.regularTab(UUID())
-        let pinID = UUID()
-        let placement = SplitShortcutReturnPlacement.spacePinned(
-            spaceId: UUID(),
-            folderId: UUID(),
-            index: 7
-        )
-        let shortcut = SplitMember.shortcutPin(
-            pinID,
-            returnPlacement: placement
-        )
+        let second = SplitMember.regularTab(UUID())
         let incoming = SplitMember.regularTab(UUID())
         let group = try XCTUnwrap(
             SplitGroup.make(
-                members: [regular, shortcut],
+                members: [regular, second],
                 layoutKind: .vertical
             )
         )
@@ -152,11 +140,11 @@ final class SplitGroupLayoutDropTests: XCTestCase {
 
         XCTAssertEqual(
             Set(resolved.memberIDs),
-            Set([regular.memberID, shortcut.memberID, incoming.memberID])
+            Set([regular.memberID, second.memberID, incoming.memberID])
         )
         XCTAssertEqual(
-            resolved.member(for: shortcut.memberID)?.returnPlacement,
-            placement
+            resolved.member(for: second.memberID),
+            second
         )
         assertCanonical(resolved)
     }

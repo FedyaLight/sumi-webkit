@@ -263,6 +263,28 @@ final class RegularTabCollectionOwner {
         return true
     }
 
+    /// Reorders a regular split as one visual row while preserving the member
+    /// order encoded by the current tab collection.
+    func reorderSplitGroup(
+        memberIDs: Set<UUID>,
+        in spaceID: UUID,
+        toRawIndex rawIndex: Int
+    ) -> Bool {
+        var tabs = stateOwner.tabs(in: spaceID)
+        let moving = tabs.filter { memberIDs.contains($0.id) }
+        guard moving.count == memberIDs.count else { return false }
+
+        tabs.removeAll { memberIDs.contains($0.id) }
+        let safeIndex = max(0, min(rawIndex, tabs.count))
+        tabs.insert(contentsOf: moving, at: safeIndex)
+        guard tabs.map(\.id) != stateOwner.tabs(in: spaceID).map(\.id) else {
+            return false
+        }
+        reindex(tabs)
+        structuralTransaction.commitPersistedTabs(tabs, in: spaceID)
+        return true
+    }
+
     func moveUp(_ tabId: UUID) -> Bool {
         guard let spaceId = findSpace(for: tabId) else { return false }
         let regularTabs = tabs(in: spaceId)

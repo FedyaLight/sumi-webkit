@@ -21,7 +21,6 @@ struct TabFolderContentView: View {
     let pinExecution: SidebarPinExecutionCommands
     let folderCommands: SidebarFolderCommands
     let spaceLifecycle: SidebarSpaceLifecycle
-    @Binding var shortcutRestoreSession: SpaceShortcutRestoreInteractionSession
     @Binding var displayedCollapsedProjectionIDs: [UUID]
     let elevatedFolderIds: Set<UUID>
     let isInteractive: Bool
@@ -117,7 +116,6 @@ struct TabFolderContentView: View {
             baseItems: projection.baseItems,
             folderID: folder.id,
             isFolderOpen: folder.isOpen,
-            restoreGaps: shortcutRestoreSession.gaps,
             displayedCollapsedProjectionIDs: displayedCollapsedProjectionIDs,
             stickyItemIDs: folderProjectionState.stickyItemIDs,
             orderedDescendantItemIDs: orderedDescendantItemIDs,
@@ -259,7 +257,6 @@ struct TabFolderContentView: View {
             pinExecution: pinExecution,
             folderCommands: folderCommands,
             spaceLifecycle: spaceLifecycle,
-            shortcutRestoreSession: $shortcutRestoreSession,
             elevatedFolderIds: elevatedFolderIds,
             isInteractive: isInteractive,
             nestingDepth: nestingDepth,

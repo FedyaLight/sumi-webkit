@@ -22,8 +22,6 @@ struct SpaceRegularSplitGroupEntryView: View {
     let contentMutationAnimation: Animation?
     let tabActionOwner: SpaceRegularTabActionOwner
     let onCloseRegularTab: (Tab) -> Void
-    @Binding var shortcutRestoreSession: SpaceShortcutRestoreInteractionSession
-    @Binding var splitSegmentRemovalIDs: Set<UUID>
 
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sidebarWindowSelectionSnapshot) private var sidebarSelection
@@ -51,13 +49,17 @@ struct SpaceRegularSplitGroupEntryView: View {
             faviconImageReader: browserContext.faviconImageReader,
             splitLayout: browserContext.splitLayout,
             emptySplitCreation: browserContext.emptySplitCreation,
-            segmentAction: { item in splitResolver.action(for: item, in: group) },
+            groupEditor: browserContext.splitGroupEditor,
+            groupContextMenuActions: browserContext.splitGroupLifecycle
+                .contextMenuActions(for: group, in: windowState),
+            groupAction: SplitGroupSidebarModel.rowAction(
+                for: group,
+                items: items
+            ),
             dragSource: splitSegmentDragSource,
             contextMenuEntries: splitContextMenuEntries,
             onActivateMember: activateMember,
-            onSegmentActionAnimationStart: prepareSegmentActionAnimation,
-            onSegmentAction: performSegmentAction,
-            onSegmentMiddleClick: performSegmentMiddleClick
+            onGroupAction: closeGroup
         )
         .zIndex(
             SidebarSelectionElevation.zIndex(
@@ -77,6 +79,9 @@ struct SpaceRegularSplitGroupEntryView: View {
             in: group,
             faviconImageReader: browserContext.faviconImageReader,
             shortcutPin: { regularTabTargets.shortcutPin(by: $0) },
+            splitPresentation: splitDragPresentation,
+            isGroupSelected:
+                sidebarSelection.splitSelection?.groupID == group.id,
             onActivateMember: {
                 browserContext.splitFocusCommands.focusGroup(
                     group.id,
@@ -87,8 +92,56 @@ struct SpaceRegularSplitGroupEntryView: View {
         )
     }
 
-    private func splitContextMenuEntries(_ tab: Tab) -> [SidebarContextMenuEntry] {
-        tabActionOwner.contextMenuEntries(
+    private var splitDragPresentation: SidebarSplitDragPresentation {
+        SidebarSplitDragPresentation(
+            members: zip(items, iconPresentations).map { item, icon in
+                SidebarSplitDragPresentation.Member(
+                    icon: icon.image,
+                    glyphText: icon.glyphText,
+                    systemImageName: icon.systemImageName,
+                    accentColor: accentColor(for: item),
+                    title: item.title
+                )
+            }
+        )
+    }
+
+    private var iconPresentations: [SplitGroupMemberIconPresentation] {
+        items.map { item in
+            SplitGroupMemberIconResolver.resolve(
+                item: item,
+                loadedStoredFavicon: nil,
+                imageReader: browserContext.faviconImageReader
+            )
+        }
+    }
+
+    @Environment(\.sumiSettings) private var sumiSettings
+    @Environment(\.resolvedThemeContext) private var themeContext
+    @Environment(\.chromeThemeTokens) private var scopedChromeTokens
+
+    private func accentColor(for item: SplitGroupSidebarItem) -> Color {
+        PinnedTileAccentResolver.resolve(
+            launchURL: item.tab?.url ?? item.pin?.launchURL,
+            partition: item.pin.map {
+                .regular($0.executionProfileId ?? $0.profileId)
+            },
+            glyphText: item.pin?.glyphText,
+            chromeTemplateSystemImageName:
+                item.pin?.chromeTemplateSystemImageName,
+            tokens: tokens
+        )
+    }
+
+    private var tokens: ChromeThemeTokens {
+        scopedChromeTokens ?? themeContext.tokens(settings: sumiSettings)
+    }
+
+    private func splitContextMenuEntries(
+        _ item: SplitGroupSidebarItem
+    ) -> [SidebarContextMenuEntry] {
+        guard let tab = item.tab else { return [] }
+        return tabActionOwner.contextMenuEntries(
             for: tab,
             close: { onCloseRegularTab(tab) }
         )
@@ -102,74 +155,10 @@ struct SpaceRegularSplitGroupEntryView: View {
         )
     }
 
-    private func prepareSegmentActionAnimation(_ memberID: SplitMemberID) {
-        guard case .shortcutPin = memberID else { return }
-        prepareShortcutRestoreGap(memberID: memberID)
-    }
-
-    private func performSegmentAction(_ memberID: SplitMemberID) {
-        if case .shortcutPin = memberID {
-            performShortcutRestoreWithPreparedGap(memberID: memberID) {
-                SidebarMotionTransaction.withoutAnimation {
-                    browserContext.splitFocusCommands.restoreMember(
-                        group.id,
-                        memberID,
-                        windowState.id
-                    )
-                }
-            }
-            return
-        }
-
-        guard case .regularTab(let tabID) = memberID else { return }
-        SidebarMotionTransaction.withoutAnimation {
-            splitSegmentRemovalIDs.insert(tabID)
-            browserContext.splitCloseCommand.closeMember(
-                group.id,
-                memberID,
-                windowState.id
-            )
-        }
-    }
-
-    private func performSegmentMiddleClick(_ memberID: SplitMemberID) {
-        SidebarMotionTransaction.withoutAnimation {
-            if case .regularTab(let tabID) = memberID {
-                splitSegmentRemovalIDs.insert(tabID)
-            }
-            browserContext.splitCloseCommand.closeMember(
-                group.id,
-                memberID,
-                windowState.id
-            )
-        }
-    }
-
-    private func prepareShortcutRestoreGap(memberID: SplitMemberID) {
-        let gap = SpaceShortcutRestorePlanner(
-            inventory: inventory,
-            space: space
-        ).shortcutRestoreGap(groupID: group.id, memberID: memberID)
-        guard let gap, contentMutationAnimation != nil else { return }
-        SpaceShortcutRestoreInteraction.prepare(
-            session: $shortcutRestoreSession,
-            gap: gap,
-            animation: SidebarDropMotion.contentLayout
-        )
-    }
-
-    private func performShortcutRestoreWithPreparedGap(
-        memberID: SplitMemberID,
-        update: () -> Void
-    ) {
-        let gap = SpaceShortcutRestorePlanner(
-            inventory: inventory,
-            space: space
-        ).shortcutRestoreGap(groupID: group.id, memberID: memberID)
-        SpaceShortcutRestoreInteraction.perform(
-            session: $shortcutRestoreSession,
-            gap: gap,
-            update: update
+    private func closeGroup() {
+        browserContext.splitGroupLifecycle.closeRegular(
+            group,
+            in: windowState
         )
     }
 }

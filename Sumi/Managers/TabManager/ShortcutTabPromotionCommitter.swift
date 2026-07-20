@@ -108,4 +108,103 @@ final class ShortcutTabPromotionCommitter {
             retirement: prepared.result
         )
     }
+
+    func commitGroup(
+        _ plans: [ShortcutTabPromotionPlan],
+        groupID: UUID,
+        memberByPinID: [UUID: SplitMemberID]
+    ) -> PreparedShortcutTabGroupPromotion? {
+        guard !plans.isEmpty,
+              Set(plans.map(\.pinID)).count == plans.count,
+              Set(memberByPinID.keys) == Set(plans.map(\.pinID))
+        else {
+            _ = PreparedRegularTabPlacement.cancelAggregate(
+                plans.map(\.placement)
+            )
+            return nil
+        }
+
+        let registrySnapshot = registry.mutationSnapshot
+        let bindings = plans.map { plan in
+            (
+                tab: plan.tab,
+                pinID: plan.tab.shortcutPinId,
+                role: plan.tab.shortcutPinRole,
+                isLive: plan.tab.isShortcutLiveInstance
+            )
+        }
+        for plan in plans where plan.chosenEntry != nil {
+            guard let chosen = plan.chosenEntry,
+                  registry.remove(
+                      pinId: plan.pinID,
+                      in: chosen.windowId
+                  )?.tab === plan.tab else {
+                registry.restoreMutationSnapshot(registrySnapshot)
+                restoreBindings(bindings)
+                _ = PreparedRegularTabPlacement.cancelAggregate(
+                    plans.map(\.placement)
+                )
+                return nil
+            }
+            plan.tab.clearShortcutBinding()
+        }
+
+        let placements = plans.map(\.placement)
+        guard PreparedRegularTabPlacement.stageAggregate(placements) else {
+            registry.restoreMutationSnapshot(registrySnapshot)
+            restoreBindings(bindings)
+            return nil
+        }
+        let targetWindows = windows.projectGroup(
+            plans: plans,
+            groupID: groupID,
+            memberByPinID: memberByPinID
+        )
+        guard let preparedRetirement = retirement
+            .prepareDeletedPinRetirements(
+                Set(plans.map(\.pinID)),
+                targetWindowStates: targetWindows
+            ) else {
+            precondition(
+                PreparedRegularTabPlacement.rollbackAggregate(placements)
+            )
+            registry.restoreMutationSnapshot(registrySnapshot)
+            restoreBindings(bindings)
+            return nil
+        }
+        precondition(
+            PreparedRegularTabPlacement.finishAggregate(
+                placements,
+                publishing: { [membership] in
+                    plans.forEach { membership.attach($0.tab) }
+                }
+            ),
+            "Staged split promotion lost its regular-tab admission"
+        )
+        return PreparedShortcutTabGroupPromotion(
+            retirement: preparedRetirement
+        )
+    }
+
+    func finishGroup(_ prepared: PreparedShortcutTabGroupPromotion) {
+        retirement.finishAfterCurrentBatch(prepared.retirement)
+    }
+
+    private func restoreBindings(
+        _ bindings: [(
+            tab: Tab,
+            pinID: UUID?,
+            role: ShortcutPinRole?,
+            isLive: Bool
+        )]
+    ) {
+        bindings.forEach {
+            restoreShortcutBinding(
+                $0.tab,
+                pinID: $0.pinID,
+                role: $0.role,
+                isLive: $0.isLive
+            )
+        }
+    }
 }

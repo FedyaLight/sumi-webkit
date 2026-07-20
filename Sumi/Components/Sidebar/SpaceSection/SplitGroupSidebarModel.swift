@@ -66,39 +66,192 @@ struct SplitGroupSidebarItem: Identifiable {
     }
 }
 
-enum SplitGroupSidebarSegmentAction {
+enum SplitGroupMemberIconKind: Equatable {
+    case glyph
+    case systemImage
+    case storedLauncher
+    case liveFavicon
+    case storedFallback
+}
+
+struct SplitGroupMemberIconPresentation {
+    let image: Image
+    let glyphText: String?
+    let systemImageName: String?
+    let kind: SplitGroupMemberIconKind
+    let shouldDesaturate: Bool
+}
+
+/// Keeps every split surface on the same launcher-favicon policy as a normal
+/// pinned row: a durable launcher icon wins over transient live-tab imagery,
+/// and a placeholder globe never replaces a cached site favicon.
+@MainActor
+enum SplitGroupMemberIconResolver {
+    static func resolve(
+        item: SplitGroupSidebarItem,
+        loadedStoredFavicon: Image?,
+        imageReader: any BrowserFaviconImageReading
+    ) -> SplitGroupMemberIconPresentation {
+        guard let pin = item.pin else {
+            return SplitGroupMemberIconPresentation(
+                image: item.tab?.favicon ?? Image(systemName: "globe"),
+                glyphText: nil,
+                systemImageName: nil,
+                kind: item.tab == nil ? .storedFallback : .liveFavicon,
+                shouldDesaturate: false
+            )
+        }
+
+        let shouldDesaturate = item.tab == nil
+        if let iconAsset = pin.iconAsset {
+            if SumiPersistentGlyph.presentsAsEmoji(iconAsset) {
+                return SplitGroupMemberIconPresentation(
+                    image: Image(systemName: "globe"),
+                    glyphText: iconAsset,
+                    systemImageName: nil,
+                    kind: .glyph,
+                    shouldDesaturate: shouldDesaturate
+                )
+            }
+            return SplitGroupMemberIconPresentation(
+                image: Image(systemName:
+                    SumiPersistentGlyph.resolvedLauncherSystemImageName(
+                        iconAsset
+                    )
+                ),
+                glyphText: nil,
+                systemImageName:
+                    SumiPersistentGlyph.resolvedLauncherSystemImageName(
+                        iconAsset
+                    ),
+                kind: .systemImage,
+                shouldDesaturate: shouldDesaturate
+            )
+        }
+
+        if let liveTab = item.tab,
+           SumiSurface.isSettingsSurfaceURL(liveTab.url) {
+            return SplitGroupMemberIconPresentation(
+                image: Image(systemName:
+                    SumiSurface.settingsTabFaviconSystemImageName
+                ),
+                glyphText: nil,
+                systemImageName: SumiSurface.settingsTabFaviconSystemImageName,
+                kind: .systemImage,
+                shouldDesaturate: false
+            )
+        }
+
+        let partition = SumiFaviconPartition.regular(
+            pin.executionProfileId ?? pin.profileId
+        )
+        if let storedFavicon = loadedStoredFavicon
+            ?? ShortcutPin.cachedLaunchFavicon(
+                for: pin.launchURL,
+                partition: partition,
+                imageReader: imageReader
+            ) {
+            return SplitGroupMemberIconPresentation(
+                image: storedFavicon,
+                glyphText: nil,
+                systemImageName: nil,
+                kind: .storedLauncher,
+                shouldDesaturate: shouldDesaturate
+            )
+        }
+
+        if let liveTab = item.tab,
+           !liveTab.faviconIsTemplateGlobePlaceholder {
+            return SplitGroupMemberIconPresentation(
+                image: liveTab.favicon,
+                glyphText: nil,
+                systemImageName: nil,
+                kind: .liveFavicon,
+                shouldDesaturate: false
+            )
+        }
+
+        if item.tab?.faviconIsTemplateGlobePlaceholder == true {
+            return SplitGroupMemberIconPresentation(
+                image: Image(systemName:
+                    SumiPersistentGlyph.launcherSystemImageFallback
+                ),
+                glyphText: nil,
+                systemImageName:
+                    SumiPersistentGlyph.launcherSystemImageFallback,
+                kind: .systemImage,
+                shouldDesaturate: false
+            )
+        }
+
+        if let systemImageName = pin.storedChromeTemplateSystemImageName(
+            for: partition,
+            imageReader: imageReader
+        ) {
+            return SplitGroupMemberIconPresentation(
+                image: Image(systemName: systemImageName),
+                glyphText: nil,
+                systemImageName: systemImageName,
+                kind: .systemImage,
+                shouldDesaturate: shouldDesaturate
+            )
+        }
+
+        return SplitGroupMemberIconPresentation(
+            image: pin.storedFaviconImage(
+                partition: partition,
+                imageReader: imageReader
+            ),
+            glyphText: nil,
+            systemImageName: nil,
+            kind: .storedFallback,
+            shouldDesaturate: shouldDesaturate
+        )
+    }
+}
+
+enum SplitGroupSidebarAction: Equatable {
     case close
-    case restore
+    case unload
 
     var systemImageName: String {
         switch self {
-        case .close:
-            return "xmark"
-        case .restore:
-            return "arrow.uturn.backward"
+        case .close: "xmark"
+        case .unload: "minus"
         }
     }
 
     var accessibilityPrefix: String {
         switch self {
-        case .close:
-            return "space-split-tab-close"
-        case .restore:
-            return "space-split-segment-restore"
+        case .close: "space-split-group-close"
+        case .unload: "space-split-group-unload"
         }
     }
 
     var help: String {
         switch self {
-        case .close:
-            return "Close split segment"
-        case .restore:
-            return "Return pinned tab to original place"
+        case .close: "Close Split View"
+        case .unload: "Unload Split View"
         }
+    }
+
+    var showsWhenSelected: Bool {
+        self == .close
     }
 }
 
 enum SplitGroupSidebarModel {
+    static func displayTitle(for group: SplitGroup) -> String {
+        let title = group.title?.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        ) ?? ""
+        guard title.isEmpty else { return title }
+        return String.localizedStringWithFormat(
+            String(localized: "%lld Tabs"),
+            group.memberIDs.count
+        )
+    }
+
     @MainActor
     static func items(
         for group: SplitGroup,
@@ -124,16 +277,29 @@ enum SplitGroupSidebarModel {
         }
     }
 
-    static func segmentAction(
-        for item: SplitGroupSidebarItem,
-        in _: SplitGroup
-    ) -> SplitGroupSidebarSegmentAction? {
-        switch item.id {
-        case .shortcutPin:
-            return .restore
-        case .regularTab:
-            return item.tab == nil ? nil : .close
+    static func rowAction(
+        for group: SplitGroup,
+        items: [SplitGroupSidebarItem]
+    ) -> SplitGroupSidebarAction? {
+        switch group.container {
+        case .regularTabs:
+            return .close
+        case .essentialSidebar, .shortcutSidebar:
+            return items.contains { $0.tab != nil } ? .unload : nil
         }
+    }
+
+    /// Animation state may retain removed members briefly, but it must never
+    /// retain stale runtime data for a member that still exists.
+    static func displayItems(
+        current: [SplitGroupSidebarItem],
+        animationSnapshot: [SplitGroupSidebarItem]
+    ) -> [SplitGroupSidebarItem] {
+        guard !animationSnapshot.isEmpty else { return current }
+        let currentByID = Dictionary(
+            uniqueKeysWithValues: current.map { ($0.id, $0) }
+        )
+        return animationSnapshot.map { currentByID[$0.id] ?? $0 }
     }
 
     static func shortcutPin(

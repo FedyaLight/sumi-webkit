@@ -1,28 +1,22 @@
 import Foundation
 import SumiDomain
 
-/// Resolves persisted return placement against the current launcher catalog.
+/// Resolves the launcher's current durable placement.
 @MainActor
 struct ShortcutSplitLauncherDestinationResolver {
     private let folders: TabFolderCollectionStateOwner
-    private let spacePinnedStructure: SpacePinnedStructureOwner
 
-    init(
-        folders: TabFolderCollectionStateOwner,
-        spacePinnedStructure: SpacePinnedStructureOwner
-    ) {
+    init(folders: TabFolderCollectionStateOwner) {
         self.folders = folders
-        self.spacePinnedStructure = spacePinnedStructure
     }
 
     func destination(
-        for member: SplitMember,
+        for _: SplitMember,
         pin: ShortcutPin
     ) -> ShortcutSplitLauncherDestination? {
-        guard let returnPlacement = member.returnPlacement else { return nil }
-        switch returnPlacement {
-        case .essential(let profileID, let index):
-            guard let targetProfileID = profileID ?? pin.profileId else {
+        switch pin.role {
+        case .essential:
+            guard let targetProfileID = pin.profileId else {
                 return nil
             }
             return ShortcutSplitLauncherDestination(
@@ -30,10 +24,11 @@ struct ShortcutSplitLauncherDestinationResolver {
                 profileId: targetProfileID,
                 spaceId: nil,
                 folderId: nil,
-                index: index
+                index: pin.index
             )
-        case .spacePinned(let spaceID, let folderID, let index):
-            let validFolderID = folderID.flatMap {
+        case .spacePinned:
+            guard let spaceID = pin.spaceId else { return nil }
+            let validFolderID = pin.folderId.flatMap {
                 folders.spaceId(for: $0) == spaceID ? $0 : nil
             }
             return ShortcutSplitLauncherDestination(
@@ -41,16 +36,7 @@ struct ShortcutSplitLauncherDestinationResolver {
                 profileId: nil,
                 spaceId: spaceID,
                 folderId: validFolderID,
-                index: index
-            )
-        case .generatedSpacePinnedFromRegular(let spaceID, _):
-            return ShortcutSplitLauncherDestination(
-                role: .spacePinned,
-                profileId: nil,
-                spaceId: spaceID,
-                folderId: nil,
-                index: spacePinnedStructure
-                    .topLevelSpacePinnedItems(for: spaceID).count
+                index: pin.index
             )
         }
     }

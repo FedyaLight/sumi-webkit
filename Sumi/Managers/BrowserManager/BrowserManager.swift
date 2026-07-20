@@ -82,6 +82,8 @@ class BrowserManager: ObservableObject {
         ShortcutPresentationActivationService
     let splitGroupMutations: SplitGroupMutationService
     let splitGroupSidebarOrdering: SplitGroupSidebarOrderingService
+    let splitGroupContainerConversion: SplitGroupContainerConversion
+    let splitGroupShortcutMemberRelocation: SplitGroupShortcutMemberRelocation
     let splitGroupMembership: SplitGroupMembershipQuery
     let regularTabShortcutConversion:
         RegularTabShortcutConversionService
@@ -145,7 +147,6 @@ class BrowserManager: ObservableObject {
     lazy var splitMembers = composeSplitMembers()
     lazy var splitMaterialization = composeSplitMaterialization()
     lazy var splitPresentations = composeSplitPresentations()
-    lazy var splitLauncherPlacement = composeSplitLauncherPlacement()
     lazy var splitLauncherRelease = composeSplitLauncherRelease()
     lazy var splitDissolution = composeSplitDissolution()
     lazy var splitWeightMutations = composeSplitWeightMutations()
@@ -159,7 +160,6 @@ class BrowserManager: ObservableObject {
     lazy var splitPlaceholderReplacements = composeSplitPlaceholderReplacements()
     lazy var splitDrops = composeSplitDrops()
     lazy var splitInsertion = composeSplitInsertion()
-    lazy var splitShortcutMemberRestoration = composeSplitShortcutMemberRestoration()
     lazy var splitShortcutFocus = composeSplitShortcutFocus()
     lazy var splitShortcutHostedUnload = composeSplitShortcutHostedUnload()
     lazy var splitLayout = composeSplitLayout()
@@ -471,6 +471,9 @@ class BrowserManager: ObservableObject {
             graph.shortcutPresentationActivation
         self.splitGroupMutations = graph.splitGroupMutations
         self.splitGroupSidebarOrdering = graph.splitGroupSidebarOrdering
+        self.splitGroupContainerConversion = graph.splitGroupContainerConversion
+        self.splitGroupShortcutMemberRelocation =
+            graph.splitGroupShortcutMemberRelocation
         self.splitGroupMembership = graph.splitGroupMembership
         self.regularTabShortcutConversion =
             graph.regularTabShortcutConversion

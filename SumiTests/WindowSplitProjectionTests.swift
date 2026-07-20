@@ -249,14 +249,7 @@ final class WindowSplitProjectionTests: XCTestCase {
         SumiDomain.SplitGroup.make(
             members: [
                 .regularTab(regularTabID),
-                .shortcutPin(
-                    pinID,
-                    returnPlacement: .spacePinned(
-                        spaceId: UUID(),
-                        folderId: nil,
-                        index: 0
-                    )
-                ),
+                .shortcutPin(pinID),
             ],
             layoutKind: .vertical
         )

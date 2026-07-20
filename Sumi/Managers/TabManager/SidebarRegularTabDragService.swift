@@ -3,6 +3,15 @@ import SumiDomain
 
 @MainActor
 final class SidebarRegularTabDragService {
+    private enum Operation {
+        case reorder(spaceID: UUID)
+        case moveToPinned(spaceID: UUID)
+        case moveToFolder(folderID: UUID)
+        case moveToEssentials
+        case moveToRegular(spaceID: UUID)
+        case unsupported
+    }
+
     private let shortcuts: SidebarRegularTabShortcutTransaction
     private let regularTabs: SidebarRegularTabPlacementTransaction
     private let splitRetirement: SidebarDraggedTabSplitRetirementTransaction
@@ -20,9 +29,9 @@ final class SidebarRegularTabDragService {
     @discardableResult
     func execute(
         _ tab: Tab,
-        regularOperation: SidebarRegularTabDragOperationKind,
         dragOperation operation: DragOperation
     ) -> Bool {
+        let regularOperation = classify(operation)
         let didMutate: Bool
         switch regularOperation {
         case .reorder where operation.toContainer == .essentials:
@@ -157,6 +166,48 @@ final class SidebarRegularTabDragService {
             splitRetirement.dissolveActiveSplitIfNeeded(for: tab)
         }
         return didMutate
+    }
+
+    private func classify(_ operation: DragOperation) -> Operation {
+        switch (operation.fromContainer, operation.toContainer) {
+        case (.essentials, .essentials):
+            return .reorder(spaceID: operation.scope.spaceId)
+
+        case (.spacePinned(let fromSpaceID), .spacePinned(let toSpaceID))
+            where fromSpaceID == toSpaceID:
+            return .reorder(spaceID: toSpaceID)
+
+        case (.spaceRegular(let fromSpaceID), .spaceRegular(let toSpaceID))
+            where fromSpaceID == toSpaceID:
+            return .reorder(spaceID: toSpaceID)
+
+        case (.spaceRegular, .spacePinned(let targetSpaceID)),
+             (.essentials, .spacePinned(let targetSpaceID)),
+             (.folder, .spacePinned(let targetSpaceID)):
+            return .moveToPinned(spaceID: targetSpaceID)
+
+        case (.spaceRegular, .folder(let folderID)),
+             (.spacePinned, .folder(let folderID)),
+             (.folder, .folder(let folderID)):
+            return .moveToFolder(folderID: folderID)
+
+        case (.spaceRegular, .essentials),
+             (.spacePinned, .essentials),
+             (.folder, .essentials):
+            return .moveToEssentials
+
+        case (.spacePinned, .spaceRegular(let targetSpaceID)),
+             (.essentials, .spaceRegular(let targetSpaceID)),
+             (.folder, .spaceRegular(let targetSpaceID)):
+            return .moveToRegular(spaceID: targetSpaceID)
+
+        case (.essentials, .folder),
+             (.spacePinned, .spacePinned),
+             (.spaceRegular, .spaceRegular),
+             (.none, _),
+             (_, .none):
+            return .unsupported
+        }
     }
 
     private func isFolderContainer(

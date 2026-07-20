@@ -14,8 +14,7 @@ extension BrowserManager {
         let tabStore = runtimeStore
         let splitClose = ShortcutLiveTabSplitCloseTransaction(
             splitGroups: splitGroupStore,
-            hostedUnload: splitShortcutHostedUnload,
-            memberRestore: splitShortcutMemberRestoration
+            hostedUnload: splitShortcutHostedUnload
         )
         let standaloneClose = ShortcutLiveTabStandaloneCloseTransaction(
             tabStore: tabStore,

@@ -32,6 +32,24 @@ final class RegularTabShortcutConversionPlanner {
         )
     }
 
+    func prepareSplitGroupMoveMemberConversion(
+        _ tab: Tab,
+        sourceGroupID: UUID,
+        preferredWindowId: UUID?
+    ) -> TabShortcutConversionPreparation {
+        guard let durablePlan = structure.prepareSplitGroupMoveMember(
+            tab,
+            sourceGroupID: sourceGroupID
+        ) else {
+            return .rejected
+        }
+        return windows.resolve(
+            tab: tab,
+            structure: durablePlan,
+            preferredWindowID: preferredWindowId
+        )
+    }
+
     func isStructureCurrent(
         _ preparation: TabShortcutConversionPreparation,
         for tab: Tab

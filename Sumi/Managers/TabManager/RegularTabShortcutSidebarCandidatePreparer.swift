@@ -1,7 +1,7 @@
 import Foundation
 import SumiDomain
 
-/// Derives the only valid pin destination and durable return placement for a
+/// Derives the only valid pin destination for a
 /// regular tab entering an existing shortcut-sidebar split.
 @MainActor
 final class RegularTabShortcutSidebarCandidatePreparer {
@@ -49,13 +49,7 @@ final class RegularTabShortcutSidebarCandidatePreparer {
 
         return PreparedRegularTabShortcutSidebarDrop(
             candidatePin: conversion.candidatePin,
-            member: .shortcutPin(
-                conversion.candidatePin.id,
-                returnPlacement: .generatedSpacePinnedFromRegular(
-                    spaceId: spaceID,
-                    index: index
-                )
-            ),
+            member: .shortcutPin(conversion.candidatePin.id),
             expectedSplitGroups: structure.expectedSplitGroups,
             conversion: conversion,
             targetGroup: targetGroup

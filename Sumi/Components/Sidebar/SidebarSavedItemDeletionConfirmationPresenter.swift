@@ -67,6 +67,29 @@ enum SidebarSavedItemDeletionConfirmationPresenter {
         run(alert, window: window, onConfirm: onDelete)
     }
 
+    static func confirmDeleteSplitGroup(
+        title: String,
+        memberCount: Int,
+        window: NSWindow?,
+        themeContext: ResolvedThemeContext? = nil,
+        onDelete: @escaping @MainActor () -> Void
+    ) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Delete Split View?"
+        alert.informativeText = "\(title)\n\nThis removes the split group and its \(memberCount) saved tabs. It does not delete browsing history or website data."
+        alert.icon = NSImage(
+            systemSymbolName: "trash",
+            accessibilityDescription: "Delete Split View"
+        )
+        let deleteButton = alert.addButton(withTitle: "Delete Split View")
+        deleteButton.hasDestructiveAction = true
+        let cancelButton = alert.addButton(withTitle: "Cancel")
+        cancelButton.keyEquivalent = "\u{1b}"
+        alert.sumiApplyNativeSurfaceAppearance(themeContext: themeContext)
+        run(alert, window: window, onConfirm: onDelete)
+    }
+
     private static func run(
         _ alert: NSAlert,
         window: NSWindow?,

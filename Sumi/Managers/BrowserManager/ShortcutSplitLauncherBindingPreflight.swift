@@ -1,7 +1,7 @@
 @MainActor
 final class ShortcutSplitLauncherBindingPreflight {
     struct Entry {
-        let restoration: PreparedShortcutSplitLauncherRestoration
+        let preparedMove: PreparedShortcutSplitLauncherMove
         let binding: ShortcutSplitLauncherPreparedBinding
     }
 

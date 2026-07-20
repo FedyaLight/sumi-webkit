@@ -1,18 +1,18 @@
 @MainActor
-enum SplitShortcutMemberRestoreAggregateStaging {
+enum ShortcutSplitLauncherMoveAggregateStaging {
     struct Failure: Error {
         enum Disposition { case terminal, retained, conflicted }
 
         let disposition: Disposition
-        let settlement: PreparedSplitShortcutMemberRestoreSettlement?
+        let settlement: PreparedShortcutSplitLauncherMoveSettlement?
         let cause: any Error
     }
 
     static func stage(
         binding: any ShortcutSplitLauncherBindingModelTransaction,
-        participants: SplitShortcutMemberRestoreParticipants,
+        participants: ShortcutSplitLauncherMoveParticipants,
         structuralMutations: TabStructuralCollectionMutationOwner
-    ) throws -> PreparedSplitShortcutMemberRestoreSettlement {
+    ) throws -> PreparedShortcutSplitLauncherMoveSettlement {
         guard binding.validateForStaging() else {
             let bindingCancelled = binding.cancelPrepared()
             let participantsCancelled = participants.cancelPrepared()
@@ -23,7 +23,7 @@ enum SplitShortcutMemberRestoreAggregateStaging {
             let participantsCancelled = participants.cancelPrepared()
             throw failure(restored: bindingCancelled && participantsCancelled)
         }
-        let settlement = PreparedSplitShortcutMemberRestoreSettlement(
+        let settlement = PreparedShortcutSplitLauncherMoveSettlement(
             binding: binding, participants: participants, structural: structural
         )
         switch participants.stage() {
@@ -33,7 +33,7 @@ enum SplitShortcutMemberRestoreAggregateStaging {
             throw Failure(
                 disposition: settled ? .terminal : .conflicted,
                 settlement: settlement,
-                cause: SplitShortcutMemberRestoreAggregateError
+                cause: ShortcutSplitLauncherMoveAggregateError
                     .compensationFailed
             )
         case .restored:
@@ -45,7 +45,7 @@ enum SplitShortcutMemberRestoreAggregateStaging {
             throw Failure(
                 disposition: .conflicted,
                 settlement: settlement,
-                cause: SplitShortcutMemberRestoreAggregateError
+                cause: ShortcutSplitLauncherMoveAggregateError
                     .compensationFailed
             )
         }
@@ -90,7 +90,7 @@ enum SplitShortcutMemberRestoreAggregateStaging {
     }
 
     private static func failedBindingStage(
-        _ settlement: PreparedSplitShortcutMemberRestoreSettlement
+        _ settlement: PreparedShortcutSplitLauncherMoveSettlement
     ) -> Failure {
         failure(
             restored: settlement.failBindingStage(), settlement: settlement
@@ -99,13 +99,13 @@ enum SplitShortcutMemberRestoreAggregateStaging {
 
     private static func failure(
         restored: Bool,
-        settlement: PreparedSplitShortcutMemberRestoreSettlement? = nil
+        settlement: PreparedShortcutSplitLauncherMoveSettlement? = nil
     ) -> Failure {
         Failure(
             disposition: restored ? .terminal : .conflicted,
             settlement: settlement,
-            cause: restored ? SplitShortcutMemberRestoreAggregateError.stale
-                : SplitShortcutMemberRestoreAggregateError.compensationFailed
+            cause: restored ? ShortcutSplitLauncherMoveAggregateError.stale
+                : ShortcutSplitLauncherMoveAggregateError.compensationFailed
         )
     }
 }

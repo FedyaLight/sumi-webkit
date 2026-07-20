@@ -4,10 +4,11 @@ import XCTest
 @testable import Sumi
 
 @MainActor
-final class SplitShortcutMemberRestoreAggregateTransactionTests: XCTestCase {
+final class ShortcutSplitLauncherMoveAggregateTransactionTests: XCTestCase {
     func testCancelAttemptsEveryPreparedParticipantAfterBindingFailure() throws {
         let binding = RestoreAggregateBinding(cancelResult: false)
         let harness = try makeHarness(binding: binding)
+        defer { harness.runtimeConnection.detach() }
 
         XCTAssertFalse(harness.aggregate.cancelPrepared())
 
@@ -18,10 +19,11 @@ final class SplitShortcutMemberRestoreAggregateTransactionTests: XCTestCase {
     func testRollbackCompensationFailureIsNotClassifiedAsStale() throws {
         let binding = RestoreAggregateBinding(rollbackFails: true)
         let harness = try makeHarness(binding: binding)
+        defer { harness.runtimeConnection.detach() }
         try harness.aggregate.stage()
 
         XCTAssertThrowsError(try harness.aggregate.rollback()) { error in
-            guard case SplitShortcutMemberRestoreAggregateError
+            guard case ShortcutSplitLauncherMoveAggregateError
                 .compensationFailed = error else {
                 return XCTFail("Expected compensation failure, got \(error)")
             }
@@ -35,6 +37,7 @@ final class SplitShortcutMemberRestoreAggregateTransactionTests: XCTestCase {
     func testTerminalDrainRejectsStagedAggregate() throws {
         let binding = RestoreAggregateBinding()
         let harness = try makeHarness(binding: binding)
+        defer { harness.runtimeConnection.detach() }
         try harness.aggregate.stage()
 
         XCTAssertFalse(harness.aggregate.canSettleTerminalDrain())
@@ -50,6 +53,7 @@ final class SplitShortcutMemberRestoreAggregateTransactionTests: XCTestCase {
             canDrain: false
         )
         let harness = try makeHarness(binding: binding)
+        defer { harness.runtimeConnection.detach() }
 
         XCTAssertThrowsError(try harness.aggregate.stage())
         binding.canDrain = true
@@ -64,6 +68,7 @@ final class SplitShortcutMemberRestoreAggregateTransactionTests: XCTestCase {
     ) throws -> RestoreAggregateHarness {
         let window = BrowserWindowState()
         let tabManager = BrowserManager()
+        tabManager.tabRuntimeLifecycle.shutdown()
         tabManager.runtimePortConnection.attach(TestRuntimePorts.make(
             windowState: { $0 == window.id ? window : nil },
             windows: { [(window.id, window)] }
@@ -88,28 +93,30 @@ final class SplitShortcutMemberRestoreAggregateTransactionTests: XCTestCase {
                 expected: [], replacement: [], persist: false
             )
         )
-        let participants = SplitShortcutMemberRestoreParticipants(
+        let participants = ShortcutSplitLauncherMoveParticipants(
             presentation: presentation,
             retirement: nil,
             topology: topology
         )
         return RestoreAggregateHarness(
-            aggregate: SplitShortcutMemberRestoreAggregateTransaction(
+            aggregate: ShortcutSplitLauncherMoveAggregateTransaction(
                 binding: binding,
                 participants: participants,
                 structuralMutations: tabManager
                     .structuralCollectionMutationOwner,
                 structuralLookup: tabManager.structuralLookupCoordinator
             ),
-            participants: participants
+            participants: participants,
+            runtimeConnection: tabManager.runtimePortConnection
         )
     }
 }
 
 @MainActor
 private struct RestoreAggregateHarness {
-    let aggregate: SplitShortcutMemberRestoreAggregateTransaction
-    let participants: SplitShortcutMemberRestoreParticipants
+    let aggregate: ShortcutSplitLauncherMoveAggregateTransaction
+    let participants: ShortcutSplitLauncherMoveParticipants
+    let runtimeConnection: TabRuntimePortConnection
 }
 
 @MainActor

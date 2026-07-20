@@ -82,7 +82,7 @@ final class TabRestoreRepairTests: XCTestCase {
             TabRestoreRepair.restoreSplitGroups(
                 from: nil,
                 regularTabIDs: [],
-                shortcutReturnPlacementsByPinID: [:],
+                shortcutPinIDs: [],
                 repairReasons: &reasons
             ).isEmpty
         )
@@ -95,7 +95,7 @@ final class TabRestoreRepairTests: XCTestCase {
             TabRestoreRepair.restoreSplitGroups(
                 from: Data(),
                 regularTabIDs: [],
-                shortcutReturnPlacementsByPinID: [:],
+                shortcutPinIDs: [],
                 repairReasons: &reasons
             ).isEmpty
         )
@@ -109,7 +109,7 @@ final class TabRestoreRepairTests: XCTestCase {
         let result = TabRestoreRepair.restoreSplitGroups(
             from: garbage,
             regularTabIDs: [],
-            shortcutReturnPlacementsByPinID: [:],
+            shortcutPinIDs: [],
             repairReasons: &reasons
         )
 

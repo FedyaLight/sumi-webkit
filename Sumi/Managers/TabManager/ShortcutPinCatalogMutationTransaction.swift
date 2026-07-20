@@ -108,7 +108,8 @@ final class ShortcutPinCatalogMutationTransaction {
             var destination = pins.essentialPins(for: profileID)
             destination.removeAll { $0.id == pin.id }
             guard destination.count
-                    < EssentialsShortcutPlacementOwner.CapacityPolicy.maxItems
+                    < EssentialsShortcutPlacementOwner.CapacityPolicy
+                        .maxStoredMembers
             else { return nil }
             let safeIndex = max(0, min(targetIndex, destination.count))
             destination.insert(pin, at: safeIndex)

@@ -1,5 +1,5 @@
 @MainActor
-enum SplitShortcutMemberRestoreParticipantCompensation {
+enum ShortcutSplitLauncherMoveParticipantCompensation {
     static func cancelPrepared(
         presentation: PreparedWindowSplitPresentationSettlement,
         retirement: ReversibleShortcutLiveTabRetirement?,

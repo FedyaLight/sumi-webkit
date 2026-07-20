@@ -116,7 +116,8 @@ final class RegularTabShortcutCommitStructurePreparer {
                 candidate.structure.expectedSplitGroups,
                 replacement,
                 .replacingSource(
-                    groupID: candidate.structure.sourceSplitGroupID,
+                    groupID: candidate.structure
+                        .presentationSourceSplitGroupID,
                     memberID: member.memberID
                 )
             )
@@ -134,25 +135,6 @@ final class RegularTabShortcutCommitStructurePreparer {
     }
 
     private func shortcutMember(for pin: ShortcutPin) -> SplitMember? {
-        switch pin.role {
-        case .essential:
-            return .shortcutPin(
-                pin.id,
-                returnPlacement: .essential(
-                    profileId: pin.profileId,
-                    index: pin.index
-                )
-            )
-        case .spacePinned:
-            guard let spaceID = pin.spaceId else { return nil }
-            return .shortcutPin(
-                pin.id,
-                returnPlacement: .spacePinned(
-                    spaceId: spaceID,
-                    folderId: pin.folderId,
-                    index: pin.index
-                )
-            )
-        }
+        .shortcutPin(pin.id)
     }
 }

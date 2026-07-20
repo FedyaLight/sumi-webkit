@@ -1,14 +1,14 @@
 @MainActor
-enum SplitShortcutMemberRestoreParticipantState {
+enum ShortcutSplitLauncherMoveParticipantState {
     case prepared, staged, claimed, restoredAfterFailedClaim
     case retainedCleanupConflict
     case terminalEffectsClaimed, conflicted, terminal
 }
 
 @MainActor
-enum SplitShortcutMemberRestoreParticipantDrain {
+enum ShortcutSplitLauncherMoveParticipantDrain {
     static func canSettle(
-        state: SplitShortcutMemberRestoreParticipantState,
+        state: ShortcutSplitLauncherMoveParticipantState,
         presentation: PreparedWindowSplitPresentationSettlement,
         retirement: ReversibleShortcutLiveTabRetirement?,
         topology: SplitGroupReplacementReceipt
@@ -28,7 +28,7 @@ enum SplitShortcutMemberRestoreParticipantDrain {
     }
 
     static func prepare(
-        state: inout SplitShortcutMemberRestoreParticipantState,
+        state: inout ShortcutSplitLauncherMoveParticipantState,
         presentation: PreparedWindowSplitPresentationSettlement,
         retirement: ReversibleShortcutLiveTabRetirement?,
         topology: SplitGroupReplacementReceipt

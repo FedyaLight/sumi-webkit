@@ -31,7 +31,7 @@ final class PinnedGridLayoutModelTests: XCTestCase {
     ) -> PinnedGridLayoutModel {
         PinnedGridLayoutModel(
             width: width,
-            items: items,
+            items: items.map(SidebarEssentialVisualItem.pin),
             dragState: dragState,
             geometrySpaceId: UUID(),
             effectiveProfileId: UUID(),

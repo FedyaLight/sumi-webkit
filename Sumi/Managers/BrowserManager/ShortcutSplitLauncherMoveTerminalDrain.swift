@@ -1,5 +1,5 @@
 @MainActor
-enum SplitShortcutMemberRestoreTerminalDrain {
+enum ShortcutSplitLauncherMoveTerminalDrain {
     static func settleSiblings(
         binding: any ShortcutSplitLauncherBindingModelTransaction,
         structural: TabStructuralCollectionMutationOwner.PreparedAggregate

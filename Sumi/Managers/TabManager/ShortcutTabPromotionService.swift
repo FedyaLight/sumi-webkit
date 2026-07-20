@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 /// Public promotion workflow. Planning, structural commit and window
 /// reconciliation remain independently testable collaborators.
@@ -101,5 +102,21 @@ final class ShortcutTabPromotionService {
         _ prepared: PreparedShortcutTabPromotion
     ) -> ShortcutTabPromotionResult {
         committer.finish(prepared)
+    }
+
+    func commitGroup(
+        _ plans: [ShortcutTabPromotionPlan],
+        groupID: UUID,
+        memberByPinID: [UUID: SplitMemberID]
+    ) -> PreparedShortcutTabGroupPromotion? {
+        committer.commitGroup(
+            plans,
+            groupID: groupID,
+            memberByPinID: memberByPinID
+        )
+    }
+
+    func finishGroup(_ prepared: PreparedShortcutTabGroupPromotion) {
+        committer.finishGroup(prepared)
     }
 }

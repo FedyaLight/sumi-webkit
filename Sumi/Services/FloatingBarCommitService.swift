@@ -29,19 +29,22 @@ final class FloatingBarCommitService {
     private let tabTargets: FloatingBarTabTargetCommitter
     private let activePageTab: @MainActor (BrowserWindowState) -> Tab?
     private let pageNavigation: FloatingBarPageNavigationService
+    private let newSplitView: @MainActor (BrowserWindowState) -> Void
 
     init(
         presentation: FloatingBarPresentationService,
         tabOpening: @escaping @MainActor () -> (any FloatingBarTabOpening)?,
         tabTargets: FloatingBarTabTargetCommitter,
         activePageTab: @escaping @MainActor (BrowserWindowState) -> Tab?,
-        pageNavigation: FloatingBarPageNavigationService
+        pageNavigation: FloatingBarPageNavigationService,
+        newSplitView: @escaping @MainActor (BrowserWindowState) -> Void
     ) {
         self.presentation = presentation
         self.tabOpening = tabOpening
         self.tabTargets = tabTargets
         self.activePageTab = activePageTab
         self.pageNavigation = pageNavigation
+        self.newSplitView = newSplitView
     }
 
     func openNewTabSurface(in windowState: BrowserWindowState) {
@@ -156,6 +159,11 @@ final class FloatingBarCommitService {
                 target: target,
                 windowState: windowState
             )
+        case .command(let command):
+            switch command {
+            case .newSplitView:
+                newSplitView(windowState)
+            }
         }
         return true
     }

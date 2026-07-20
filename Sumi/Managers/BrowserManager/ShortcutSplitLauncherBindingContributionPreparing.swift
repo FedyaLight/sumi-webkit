@@ -1,11 +1,11 @@
 @MainActor
 protocol ShortcutSplitLauncherBindingContributionPreparing: AnyObject {
     func prepareBindingContributionForComposedResidenceAggregate(
-        _ restorations: [PreparedShortcutSplitLauncherRestoration]
+        _ preparedMoves: [PreparedShortcutSplitLauncherMove]
     ) -> ShortcutSplitLauncherBindingContribution?
 
     func preflightBindingContribution(
-        _ restorations: [PreparedShortcutSplitLauncherRestoration]
+        _ preparedMoves: [PreparedShortcutSplitLauncherMove]
     ) -> ShortcutSplitLauncherBindingPreflight?
 
     func prepareBindingContribution(

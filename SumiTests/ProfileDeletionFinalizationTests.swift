@@ -60,15 +60,7 @@ final class ProfileDeletionFinalizationTests: XCTestCase {
         let group = try XCTUnwrap(
             SumiDomain.SplitGroup.make(
                 members: [deletedPin, firstFallbackPin, secondFallbackPin]
-                    .map {
-                        .shortcutPin(
-                            $0.id,
-                            returnPlacement: .essential(
-                                profileId: deletedProfile.id,
-                                index: $0.index
-                            )
-                        )
-                    },
+                    .map { .shortcutPin($0.id) },
                 layoutKind: .grid,
                 container: .shortcutSidebar(
                     spaceId: UUID(),
@@ -125,12 +117,6 @@ final class ProfileDeletionFinalizationTests: XCTestCase {
             return XCTFail("The live shortcut container must remain typed")
         }
         XCTAssertEqual(ownerProfileID, fallbackProfile.id)
-        XCTAssertTrue(migratedGroup.members.allSatisfy {
-            guard case .essential(let profileID, _) = $0.returnPlacement else {
-                return false
-            }
-            return profileID == fallbackProfile.id
-        })
         XCTAssertFalse(
             tabManager.profileDeletion.containsReference(
                 to: deletedProfile.id
@@ -176,15 +162,7 @@ final class ProfileDeletionFinalizationTests: XCTestCase {
         )
         let staleGroup = try XCTUnwrap(
             SumiDomain.SplitGroup.make(
-                members: pins.map {
-                    .shortcutPin(
-                        $0.id,
-                        returnPlacement: .essential(
-                            profileId: deletedProfile.id,
-                            index: $0.index
-                        )
-                    )
-                },
+                members: pins.map { .shortcutPin($0.id) },
                 layoutKind: .horizontal,
                 container: .shortcutSidebar(
                     spaceId: UUID(),

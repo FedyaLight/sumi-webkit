@@ -36,7 +36,6 @@ final class SpacePinnedListProjectionTests: XCTestCase {
         let model = SpacePinnedListProjection(
             spaceId: spaceId,
             items: [],
-            restoreGaps: [],
             dragProjection: makeSnapshot(isDropProjectionActive: false, hoveredSpaceId: spaceId, hoveredSlot: 0)
         )
 
@@ -48,7 +47,6 @@ final class SpacePinnedListProjectionTests: XCTestCase {
         let model = SpacePinnedListProjection(
             spaceId: spaceId,
             items: [],
-            restoreGaps: [],
             dragProjection: makeSnapshot(isDropProjectionActive: true, hoveredSpaceId: UUID(), hoveredSlot: 0)
         )
 
@@ -60,7 +58,6 @@ final class SpacePinnedListProjectionTests: XCTestCase {
         let model = SpacePinnedListProjection(
             spaceId: spaceId,
             items: [],
-            restoreGaps: [],
             dragProjection: makeSnapshot(
                 isDropProjectionActive: true,
                 hoveredSpaceId: spaceId,
@@ -77,7 +74,6 @@ final class SpacePinnedListProjectionTests: XCTestCase {
         let model = SpacePinnedListProjection(
             spaceId: spaceId,
             items: [],
-            restoreGaps: [],
             dragProjection: makeSnapshot(isDropProjectionActive: true, hoveredSpaceId: spaceId, hoveredSlot: 2)
         )
 
@@ -90,7 +86,6 @@ final class SpacePinnedListProjectionTests: XCTestCase {
         let model = SpacePinnedListProjection(
             spaceId: spaceId,
             items: [.shortcut(dragItemId)],
-            restoreGaps: [],
             dragProjection: makeSnapshot(
                 isDropProjectionActive: true,
                 dragItemId: dragItemId,
@@ -111,7 +106,6 @@ final class SpacePinnedListProjectionTests: XCTestCase {
         let model = SpacePinnedListProjection(
             spaceId: spaceId,
             items: [.shortcut(dragItemId), .folder(UUID())],
-            restoreGaps: [],
             dragProjection: makeSnapshot(
                 isDropProjectionActive: true,
                 sourceContainer: .spacePinned(spaceId),
@@ -128,7 +122,6 @@ final class SpacePinnedListProjectionTests: XCTestCase {
         let model = SpacePinnedListProjection(
             spaceId: spaceId,
             items: [.shortcut(dragItemId)],
-            restoreGaps: [],
             dragProjection: makeSnapshot(
                 isDropProjectionActive: true,
                 sourceContainer: .essentials,
@@ -137,60 +130,6 @@ final class SpacePinnedListProjectionTests: XCTestCase {
         )
 
         XCTAssertNil(model.projectedSourceItem)
-    }
-
-    // MARK: - renderedItems: restore-gap merge
-
-    func testRenderedItemsInsertsRestoreGapReplacingMatchingShortcut() {
-        let spaceId = UUID()
-        let pinId = UUID()
-        let folderId = UUID()
-        let gap = ShortcutRestoreGap(pinId: pinId, container: .spacePinned(spaceId), index: 0)
-        let model = SpacePinnedListProjection(
-            spaceId: spaceId,
-            items: [.shortcut(pinId), .folder(folderId)],
-            restoreGaps: [gap],
-            dragProjection: makeSnapshot()
-        )
-
-        XCTAssertEqual(
-            model.renderedItems,
-            [.restoreGap(gap.id), .item(.folder(folderId))]
-        )
-    }
-
-    func testRenderedItemsIgnoresRestoreGapsForOtherContainers() {
-        let spaceId = UUID()
-        let pinId = UUID()
-        let gap = ShortcutRestoreGap(pinId: pinId, container: .folder(UUID()), index: 0)
-        let model = SpacePinnedListProjection(
-            spaceId: spaceId,
-            items: [.shortcut(pinId)],
-            restoreGaps: [gap],
-            dragProjection: makeSnapshot()
-        )
-
-        XCTAssertEqual(model.renderedItems, [.item(.shortcut(pinId))])
-    }
-
-    func testRenderedItemsMergesMultipleGapsInIndexOrder() {
-        let spaceId = UUID()
-        let pinA = UUID()
-        let pinB = UUID()
-        let folderId = UUID()
-        let gapA = ShortcutRestoreGap(pinId: pinA, container: .spacePinned(spaceId), index: 0)
-        let gapB = ShortcutRestoreGap(pinId: pinB, container: .spacePinned(spaceId), index: 2)
-        let model = SpacePinnedListProjection(
-            spaceId: spaceId,
-            items: [.shortcut(pinA), .folder(folderId), .shortcut(pinB)],
-            restoreGaps: [gapB, gapA],
-            dragProjection: makeSnapshot()
-        )
-
-        XCTAssertEqual(
-            model.renderedItems,
-            [.restoreGap(gapA.id), .item(.folder(folderId)), .restoreGap(gapB.id)]
-        )
     }
 
     // MARK: - displayEntries
@@ -203,7 +142,6 @@ final class SpacePinnedListProjectionTests: XCTestCase {
         let model = SpacePinnedListProjection(
             spaceId: spaceId,
             items: [.folder(folderIdA), .folder(folderIdB)],
-            restoreGaps: [],
             dragProjection: makeSnapshot(
                 isDropProjectionActive: true,
                 dragItemId: dragItemId,
@@ -223,7 +161,6 @@ final class SpacePinnedListProjectionTests: XCTestCase {
         let model = SpacePinnedListProjection(
             spaceId: spaceId,
             items: [],
-            restoreGaps: [],
             dragProjection: makeSnapshot(dragItemId: dragItemId)
         )
 
@@ -235,7 +172,6 @@ final class SpacePinnedListProjectionTests: XCTestCase {
         let model = SpacePinnedListProjection(
             spaceId: spaceId,
             items: [],
-            restoreGaps: [],
             dragProjection: makeSnapshot()
         )
 

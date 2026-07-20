@@ -19,6 +19,7 @@ final class FloatingBarBrowserContext {
     private let commitNavigatesCurrentTabHandler: (BrowserWindowState) -> Bool
     private let commitNavigationHandler: (String, BrowserWindowState) -> Void
     private let commitSuggestionHandler: (SearchManager.SearchSuggestion, BrowserWindowState) -> Void
+    private let offersCommandSuggestionsHandler: (BrowserWindowState) -> Bool
 
     init(
         currentProfileId: UUID?,
@@ -29,7 +30,8 @@ final class FloatingBarBrowserContext {
         deleteHistoryEntry: @escaping (HistoryListItem) async -> Void,
         commitNavigatesCurrentTab: @escaping (BrowserWindowState) -> Bool,
         commitNavigation: @escaping (String, BrowserWindowState) -> Void,
-        commitSuggestion: @escaping (SearchManager.SearchSuggestion, BrowserWindowState) -> Void
+        commitSuggestion: @escaping (SearchManager.SearchSuggestion, BrowserWindowState) -> Void,
+        offersCommandSuggestions: @escaping (BrowserWindowState) -> Bool
     ) {
         self.currentProfileId = currentProfileId
         self.favicon = favicon
@@ -40,6 +42,7 @@ final class FloatingBarBrowserContext {
         self.commitNavigatesCurrentTabHandler = commitNavigatesCurrentTab
         self.commitNavigationHandler = commitNavigation
         self.commitSuggestionHandler = commitSuggestion
+        self.offersCommandSuggestionsHandler = offersCommandSuggestions
     }
 
     func configureSearchManager(_ searchManager: SearchManager) {
@@ -80,5 +83,9 @@ final class FloatingBarBrowserContext {
         in windowState: BrowserWindowState
     ) {
         commitSuggestionHandler(suggestion, windowState)
+    }
+
+    func offersCommandSuggestions(in windowState: BrowserWindowState) -> Bool {
+        offersCommandSuggestionsHandler(windowState)
     }
 }

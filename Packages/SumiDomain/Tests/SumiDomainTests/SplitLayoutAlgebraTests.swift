@@ -28,13 +28,7 @@ final class SplitLayoutAlgebraTests: XCTestCase {
             SplitLayoutFactory.make(kind: .vertical, members: members)
         )
         let pinID = UUID()
-        let replacement = SplitMember.shortcutPin(
-            pinID,
-            returnPlacement: .generatedSpacePinnedFromRegular(
-                spaceId: UUID(),
-                index: 2
-            )
-        )
+        let replacement = SplitMember.shortcutPin(pinID)
         let replaced = try XCTUnwrap(
             tree.replacingMember(members[1].memberID, with: replacement)
         )

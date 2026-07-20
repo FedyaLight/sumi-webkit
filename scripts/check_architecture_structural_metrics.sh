@@ -157,7 +157,6 @@ role_budgets=(
   "Window split materialization|Sumi/Managers/BrowserManager/WindowSplitMaterializationService.swift|80|3"
   "Window split materialization query|Sumi/Managers/BrowserManager/WindowSplitMaterializationQuery.swift|65|4"
   "Split-shortcut member resolver|Sumi/Managers/BrowserManager/SplitShortcutMemberResolver.swift|90|0"
-  "Split-shortcut member restore|Sumi/Managers/BrowserManager/SplitShortcutMemberRestoreService.swift|192|7"
   "Shortcut launcher placement|Sumi/Managers/BrowserManager/ShortcutSplitLauncherPlacementService.swift|90|4"
   "Shortcut launcher destination resolver|Sumi/Managers/BrowserManager/ShortcutSplitLauncherDestinationResolver.swift|60|2"
   "Shortcut launcher move transaction|Sumi/Managers/BrowserManager/ShortcutSplitLauncherMoveTransaction.swift|85|3"

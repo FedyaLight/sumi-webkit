@@ -1,9 +1,9 @@
 @MainActor
-enum SplitShortcutMemberRestoreCommitPublisher {
+enum ShortcutSplitLauncherMoveCommitPublisher {
     static func publish(
         binding: any ShortcutSplitLauncherBindingModelTransaction,
-        participants: SplitShortcutMemberRestoreParticipants,
-        settlement: PreparedSplitShortcutMemberRestoreSettlement,
+        participants: ShortcutSplitLauncherMoveParticipants,
+        settlement: PreparedShortcutSplitLauncherMoveSettlement,
         structuralLookup: TabStructuralLookupCoordinator,
         markTerminal: () -> Void
     ) {

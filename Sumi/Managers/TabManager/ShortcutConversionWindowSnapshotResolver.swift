@@ -11,7 +11,7 @@ struct ShortcutConversionWindowSnapshotResolver {
         runtime: RuntimePortRegistry
     ) -> [UUID] {
         var ids = Set(selected + displaying)
-        if let groupID = structure.sourceSplitGroupID {
+        if let groupID = structure.presentationSourceSplitGroupID {
             runtime.forEachWindow { id, state in
                 if state.splitSelection?.groupID == groupID { ids.insert(id) }
             }
@@ -25,7 +25,7 @@ struct ShortcutConversionWindowSnapshotResolver {
         presentationWindowIDs: [UUID],
         runtime: RuntimePortRegistry
     ) -> Bool {
-        if structure.sourceSplitGroup == nil {
+        if structure.presentationSourceSplitGroupID == nil {
             return presentationWindowIDs.allSatisfy {
                 !runtime.visibleSplitTabIds(for: $0).contains(tabID)
             }

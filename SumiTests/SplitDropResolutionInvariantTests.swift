@@ -152,18 +152,10 @@ final class SplitDropResolutionInvariantTests: XCTestCase {
         }
     }
 
-    func testTypedTargetAndMutationPreserveShortcutPlacementMetadata() throws {
+    func testTypedTargetAndMutationPreserveShortcutIdentity() throws {
         let regular = SplitMember.regularTab(UUID())
         let pinID = UUID()
-        let placement = SplitShortcutReturnPlacement.spacePinned(
-            spaceId: UUID(),
-            folderId: UUID(),
-            index: 7
-        )
-        let shortcut = SplitMember.shortcutPin(
-            pinID,
-            returnPlacement: placement
-        )
+        let shortcut = SplitMember.shortcutPin(pinID)
         let incoming = SplitMember.regularTab(UUID())
         let tree = try XCTUnwrap(
             SplitLayoutFactory.equalSplit(
@@ -190,9 +182,8 @@ final class SplitDropResolutionInvariantTests: XCTestCase {
 
         XCTAssertEqual(resolved.target.targetMemberID, .shortcutPin(pinID))
         XCTAssertEqual(
-            resolved.layoutTree.member(for: .shortcutPin(pinID))?
-                .returnPlacement,
-            placement
+            resolved.layoutTree.member(for: .shortcutPin(pinID)),
+            shortcut
         )
     }
 

@@ -1,4 +1,3 @@
-import Combine
 import Foundation
 import SumiDomain
 import XCTest
@@ -7,242 +6,520 @@ import XCTest
 
 @MainActor
 final class SidebarDragMultiwindowSplitConversionTests: XCTestCase {
-    func testSplitVisibleRegularTabDropConvertsMultiwindowSplitAtomically() throws {
-        try assertConversionCommitted(secondarySelectsDraggedTab: false)
-    }
-
-    func testSelectedSplitVisibleRegularTabDropConvertsMultiwindowSplitAtomically() throws {
-        try assertConversionCommitted(secondarySelectsDraggedTab: true)
-    }
-
-    private func assertConversionCommitted(
-        secondarySelectsDraggedTab: Bool
-    ) throws {
-        let primaryWindow = BrowserWindowState()
-        let secondaryWindow = BrowserWindowState()
-        let uninvolvedWindow = BrowserWindowState()
-        let states = [
-            primaryWindow.id: primaryWindow,
-            secondaryWindow.id: secondaryWindow,
-            uninvolvedWindow.id: uninvolvedWindow,
-        ]
-        var visibleSplitIdsByWindow: [UUID: [UUID]] = [:]
-        var primaryTrackedTabId: UUID?
-        var persistedWindowIds: [UUID] = []
-        let tabManager = BrowserManager()
-        tabManager.runtimePortConnection.attach(TestRuntimePorts.make(
-            windowState: { states[$0] },
-            windows: { states.map { ($0.key, $0.value) } },
-            webViewLifecycle: TestRuntimePorts.webViewLifecycle(
-                retirement: .rejecting,
-                primaryTrackedWindowId: { tabId in
-                    tabId == primaryTrackedTabId ? primaryWindow.id : nil
-                }
-            ),
-            visibleSplitTabIds: { visibleSplitIdsByWindow[$0] ?? [] },
-            persistWindowSession: { persistedWindowIds.append($0.id) }
+    func testUnloadedPinnedSplitMoveToRegularMaterializesWholeGroup() throws {
+        let window = BrowserWindowState()
+        let profile = Profile(name: "Profile")
+        let browser = BrowserManager()
+        browser.tabRuntimeLifecycle.shutdown()
+        browser.runtimePortConnection.attach(TestRuntimePorts.make(
+            currentProfileId: { profile.id },
+            defaultProfileId: { profile.id },
+            profile: { $0 == profile.id ? profile : nil },
+            windowState: { $0 == window.id ? window : nil },
+            windows: { [(window.id, window)] },
+            windowStates: { [window] }
         ))
-        states.values.forEach { tabManager.windowRegistry.register($0) }
-        let profileId = UUID()
-        let space = try XCTUnwrap(tabManager.sidebarSpaceLifecycle.createSpace(
+        defer { browser.runtimePortConnection.detach() }
+        browser.windowRegistry.register(window)
+        let space = try XCTUnwrap(browser.sidebarSpaceLifecycle.createSpace(
             name: "Work",
             icon: SumiPersistentGlyph.spaceDefaultIconValue,
-            profileID: profileId
+            profileID: profile.id
         ))
-        let companion = tabManager.regularTabLifecycleOwner.createNewTab(
-            url: "https://example.com/current",
-            in: space
-        )
-        let draggedTab = tabManager.regularTabLifecycleOwner.createNewTab(
-            url: "https://example.com/multiwindow-split",
-            in: space,
-            activate: false
-        )
-        primaryTrackedTabId = draggedTab.id
-        for window in states.values {
-            window.currentSpaceId = space.id
-            window.currentProfileId = profileId
+        window.currentSpaceId = space.id
+        let pins = try (0..<2).map { index in
+            try XCTUnwrap(browser.shortcutPinStoreOwner.insert(
+                ShortcutPin(
+                    id: UUID(),
+                    role: .spacePinned,
+                    profileId: profile.id,
+                    spaceId: space.id,
+                    index: index,
+                    launchURL: URL(
+                        string: "https://unloaded-\(index).example"
+                    )!,
+                    title: "Unloaded \(index)"
+                ),
+                at: index
+            ))
         }
-        for window in [primaryWindow, secondaryWindow] {
-            window.activeTabForSpace[space.id] = draggedTab.id
-            window.selectionHistory.recordRegularTabSelection(
-                draggedTab.id,
-                in: space.id
-            )
-        }
-        primaryWindow.currentTabId = draggedTab.id
-        secondaryWindow.currentTabId = secondarySelectsDraggedTab
-            ? draggedTab.id
-            : companion.id
-        uninvolvedWindow.currentTabId = companion.id
-        uninvolvedWindow.activeTabForSpace[space.id] = companion.id
-        uninvolvedWindow.selectionHistory.recordRegularTabSelection(
-            companion.id,
-            in: space.id
-        )
-        let group = try XCTUnwrap(
-            SplitGroup.make(
-                members: [
-                    .regularTab(companion.id),
-                    .regularTab(draggedTab.id),
-                ],
-                layoutKind: .vertical,
-                container: .regularTabs(spaceId: space.id)
-            )
-        )
-        visibleSplitIdsByWindow = [
-            primaryWindow.id: [companion.id, draggedTab.id],
-            secondaryWindow.id: [companion.id, draggedTab.id],
-        ]
-        XCTAssertTrue(
-            tabManager.splitGroupMutations.insert(group, persist: false)
-        )
-        primaryWindow.splitSelection = WindowSplitSelection(
-            groupID: group.id,
-            activeMemberID: .regularTab(draggedTab.id)
-        )
-        let uninvolvedSession = ShortcutConversionWindowSessionState(
-            uninvolvedWindow
-        )
-        let uninvolvedHistory = uninvolvedWindow.selectionHistory
-            .recentRegularTabIdsBySpace
-        var structuralEvents = 0
-        let cancellable = tabManager.tabStructureEventBus
-            .structureChangedPublisher.sink { structuralEvents += 1 }
-        structuralEvents = 0
-
-        let didMove = tabManager.sidebarDragRouter
-            .performSidebarDragOperation(
-                DragOperation(
-                    payload: .tab(draggedTab),
-                    scope: try makeScope(
-                        spaceId: space.id,
-                        profileId: profileId,
-                        sourceZone: .spaceRegular(space.id),
-                        item: dragItem(draggedTab),
-                        windowState: primaryWindow
-                    ),
-                    fromContainer: .spaceRegular(space.id),
-                    toContainer: .spacePinned(space.id),
-                    toIndex: 0
-                )
-            )
-
-        XCTAssertTrue(didMove)
-        XCTAssertEqual(structuralEvents, 1)
-        XCTAssertEqual(persistedWindowIds.count, 2)
-        XCTAssertEqual(
-            Set(persistedWindowIds),
-            [primaryWindow.id, secondaryWindow.id]
-        )
-        XCTAssertFalse(tabManager.regularTabCollectionOwner.contains(draggedTab))
-        XCTAssertTrue(draggedTab.isShortcutLiveInstance)
-
-        let pins = tabManager.shortcutPinCollectionStateOwner
-            .spacePinnedPins(for: space.id)
-        let pin = try XCTUnwrap(pins.first)
-        XCTAssertEqual(pins.count, 1)
-        let replacementMember = SplitMember.shortcutPin(
-            pin.id,
-            returnPlacement: .spacePinned(
+        let group = try XCTUnwrap(SplitGroup.make(
+            members: pins.map { SplitMember.shortcutPin($0.id) },
+            layoutKind: .vertical,
+            container: .shortcutSidebar(
                 spaceId: space.id,
+                profileId: profile.id,
                 folderId: nil,
                 index: 0
             )
+        ))
+        XCTAssertTrue(browser.splitGroupMutations.insert(
+            group,
+            persist: false
+        ))
+        XCTAssertTrue(pins.allSatisfy {
+            browser.liveShortcutTabs.entries(for: $0.id).isEmpty
+        })
+        let scope = try XCTUnwrap(SidebarDragScope(
+            windowState: window,
+            sourceZone: .spacePinned(space.id),
+            item: .splitGroup(group.id, title: "Split")
+        ))
+
+        XCTAssertTrue(browser.sidebarDragRouter.performSidebarDragOperation(
+            DragOperation(
+                payload: .splitGroup(group),
+                scope: scope,
+                fromContainer: .spacePinned(space.id),
+                toContainer: .spaceRegular(space.id),
+                toIndex: 0
+            )
+        ))
+
+        let converted = try XCTUnwrap(browser.splitGroupStore.group(
+            id: group.id
+        ))
+        XCTAssertEqual(
+            converted.container,
+            SplitGroupContainer.regularTabs(spaceId: space.id)
+        )
+        XCTAssertTrue(converted.memberIDs.allSatisfy {
+            if case .regularTab = $0 { return true }
+            return false
+        })
+        XCTAssertEqual(
+            browser.regularTabCollectionOwner.tabs(in: space.id).count,
+            2
+        )
+        XCTAssertTrue(browser.shortcutPinCollectionStateOwner
+            .spacePinnedPins(for: space.id).isEmpty)
+    }
+
+    func testLoadedPinnedSplitMoveToRegularPromotesWholeGroupAtomically()
+        throws {
+        let window = BrowserWindowState()
+        let profile = Profile(name: "Profile")
+        let browser = BrowserManager()
+        browser.tabRuntimeLifecycle.shutdown()
+        browser.runtimePortConnection.attach(TestRuntimePorts.make(
+            currentProfileId: { profile.id },
+            defaultProfileId: { profile.id },
+            profile: { $0 == profile.id ? profile : nil },
+            windowState: { $0 == window.id ? window : nil },
+            windows: { [(window.id, window)] },
+            windowStates: { [window] }
+        ))
+        defer { browser.runtimePortConnection.detach() }
+        browser.windowRegistry.register(window)
+        let space = try XCTUnwrap(browser.sidebarSpaceLifecycle.createSpace(
+            name: "Work",
+            icon: SumiPersistentGlyph.spaceDefaultIconValue,
+            profileID: profile.id
+        ))
+        window.currentSpaceId = space.id
+        window.currentProfileId = profile.id
+        let pins = try (0..<2).map { index in
+            try XCTUnwrap(browser.shortcutPinStoreOwner.insert(
+                ShortcutPin(
+                    id: UUID(),
+                    role: .spacePinned,
+                    profileId: profile.id,
+                    spaceId: space.id,
+                    index: index,
+                    launchURL: URL(
+                        string: "https://loaded-\(index).example"
+                    )!,
+                    title: "Loaded \(index)"
+                ),
+                at: index
+            ))
+        }
+        let tabs = pins.map { pin in
+            let tab = Tab(
+                url: pin.launchURL,
+                name: pin.title,
+                spaceId: space.id,
+                loadsCachedFaviconOnInit: false
+            )
+            tab.profileId = profile.id
+            tab.bindToShortcutPin(pin)
+            XCTAssertTrue(browser.liveShortcutTabs.register(
+                tab,
+                for: pin.id,
+                in: window.id,
+                presentationPage: LiveShortcutPresentationPageReceipt(
+                    windowID: window.id,
+                    spaceID: space.id,
+                    profileID: profile.id
+                )
+            ))
+            return tab
+        }
+        let group = try XCTUnwrap(SplitGroup.make(
+            members: pins.map { SplitMember.shortcutPin($0.id) },
+            layoutKind: .vertical,
+            container: .shortcutSidebar(
+                spaceId: space.id,
+                profileId: profile.id,
+                folderId: nil,
+                index: 0
+            )
+        ))
+        XCTAssertTrue(browser.splitGroupMutations.insert(group, persist: false))
+        window.currentTabId = tabs[0].id
+        window.currentShortcutPinId = pins[0].id
+        window.currentShortcutPinRole = .spacePinned
+        window.splitSelection = WindowSplitSelection(
+            groupID: group.id,
+            activeMemberID: .shortcutPin(pins[0].id)
+        )
+        let scope = try XCTUnwrap(SidebarDragScope(
+            windowState: window,
+            sourceZone: .spacePinned(space.id),
+            item: .splitGroup(group.id, title: "Split")
+        ))
+
+        XCTAssertTrue(browser.sidebarDragRouter.performSidebarDragOperation(
+            DragOperation(
+                payload: .splitGroup(group),
+                scope: scope,
+                fromContainer: .spacePinned(space.id),
+                toContainer: .spaceRegular(space.id),
+                toIndex: 0
+            )
+        ))
+
+        let converted = try XCTUnwrap(browser.splitGroupStore.group(
+            id: group.id
+        ))
+        let regularIDs = converted.memberIDs.compactMap { memberID -> UUID? in
+            guard case .regularTab(let tabID) = memberID else { return nil }
+            return tabID
+        }
+        XCTAssertEqual(regularIDs, tabs.map(\.id))
+        XCTAssertEqual(
+            browser.regularTabCollectionOwner.tabs(in: space.id).map(\.id),
+            tabs.map(\.id)
         )
         XCTAssertEqual(
-            tabManager.splitGroupStore.group(id: group.id),
-            group.replacingMember(
-                .regularTab(draggedTab.id),
-                with: replacementMember
+            window.splitSelection,
+            WindowSplitSelection(
+                groupID: group.id,
+                activeMemberID: .regularTab(tabs[0].id)
             )
+        )
+        XCTAssertEqual(window.currentTabId, tabs[0].id)
+        XCTAssertNil(window.currentShortcutPinId)
+        XCTAssertTrue(tabs.allSatisfy { !$0.isShortcutLiveInstance })
+        XCTAssertTrue(pins.allSatisfy {
+            browser.liveShortcutTabs.entries(for: $0.id).isEmpty
+        })
+    }
+
+    func testRegularSplitRowReordersAsOneItemAcrossWindows() throws {
+        try assertGroupReorder(secondarySelectsGroup: false)
+    }
+
+    func testSelectedRegularSplitRowReordersWithoutChangingWindowSelection()
+        throws {
+        try assertGroupReorder(secondarySelectsGroup: true)
+    }
+
+    func testRegularSplitRowMovesThroughPinnedAndEssentialsWithoutChangingGroupIdentity()
+        throws {
+        let window = BrowserWindowState()
+        let profile = Profile(name: "Profile")
+        let browser = BrowserManager()
+        var visibleSplitTabIDs: [UUID] = []
+        browser.tabRuntimeLifecycle.shutdown()
+        browser.runtimePortConnection.attach(TestRuntimePorts.make(
+            currentProfileId: { profile.id },
+            defaultProfileId: { profile.id },
+            profile: { $0 == profile.id ? profile : nil },
+            windowState: { $0 == window.id ? window : nil },
+            windows: { [(window.id, window)] },
+            windowStates: { [window] },
+            webViewLifecycle: TestRuntimePorts.webViewLifecycle(
+                retirement: .rejecting,
+                primaryTrackedWindowId: { _ in window.id },
+                executeProfileAssignment: { tab, _, intent in
+                    tab.profileAssignment.commit(intent) ? .committed : .stale
+                }
+            ),
+            visibleSplitTabIds: { _ in visibleSplitTabIDs }
+        ))
+        defer { browser.runtimePortConnection.detach() }
+        browser.windowRegistry.register(window)
+
+        let space = try XCTUnwrap(browser.sidebarSpaceLifecycle.createSpace(
+            name: "Work",
+            icon: SumiPersistentGlyph.spaceDefaultIconValue,
+            profileID: profile.id
+        ))
+        let first = makeTab("first", in: space, browser: browser)
+        let second = makeTab("second", in: space, browser: browser)
+        visibleSplitTabIDs = [first.id, second.id]
+        let group = try XCTUnwrap(SplitGroup.make(
+            members: [.regularTab(first.id), .regularTab(second.id)],
+            layoutKind: .vertical,
+            container: .regularTabs(spaceId: space.id)
+        ))
+        XCTAssertTrue(browser.splitGroupMutations.insert(group, persist: false))
+        window.currentSpaceId = space.id
+        window.currentProfileId = profile.id
+        window.currentTabId = first.id
+        window.splitSelection = WindowSplitSelection(
+            groupID: group.id,
+            activeMemberID: .regularTab(first.id)
         )
 
-        let primaryLiveTab = try XCTUnwrap(
-            tabManager.liveShortcutTabs.tab(
-                for: pin.id,
-                in: primaryWindow.id
+        let item = SumiDragItem.splitGroup(group.id, title: "Split")
+        let scope = try XCTUnwrap(SidebarDragScope(
+            windowState: window,
+            sourceZone: .spaceRegular(space.id),
+            item: item
+        ))
+        let didMove = browser.sidebarDragRouter.performSidebarDragOperation(
+            DragOperation(
+                payload: .splitGroup(group),
+                scope: scope,
+                fromContainer: .spaceRegular(space.id),
+                toContainer: .spacePinned(space.id),
+                toIndex: 0
             )
         )
-        let secondaryLiveTab = try XCTUnwrap(
-            tabManager.liveShortcutTabs.tab(
-                for: pin.id,
-                in: secondaryWindow.id
-            )
-        )
-        XCTAssertIdentical(primaryLiveTab, draggedTab)
-        XCTAssertNotIdentical(secondaryLiveTab, draggedTab)
-        XCTAssertNil(
-            tabManager.liveShortcutTabs.tab(
-                for: pin.id,
-                in: uninvolvedWindow.id
-            )
-        )
+        XCTAssertTrue(didMove)
         XCTAssertEqual(
-            tabManager.liveShortcutTabs.entries(for: pin.id).count,
+            browser.shortcutPinCollectionStateOwner
+                .spacePinnedPins(for: space.id).count,
             2
         )
 
-        XCTAssertEqual(primaryWindow.currentTabId, primaryLiveTab.id)
-        XCTAssertEqual(primaryWindow.currentShortcutPinId, pin.id)
+        let saved = try XCTUnwrap(browser.splitGroupStore.group(id: group.id))
+        guard case .shortcutSidebar(let spaceID, _, nil, let index) = saved.container else {
+            return XCTFail("Expected a top-level pinned split group")
+        }
+        XCTAssertEqual(spaceID, space.id)
+        XCTAssertEqual(index, 0)
+        XCTAssertTrue(saved.memberIDs.allSatisfy(\.isShortcutPin))
+        let savedPinIDs = saved.memberIDs.compactMap { memberID -> UUID? in
+            guard case .shortcutPin(let pinID) = memberID else { return nil }
+            return pinID
+        }
+        XCTAssertEqual(savedPinIDs.count, 2)
+        XCTAssertIdentical(
+            browser.shortcutPresentationOwner.shortcutLiveTab(
+                for: savedPinIDs[0],
+                in: window.id
+            ),
+            first
+        )
+        XCTAssertIdentical(
+            browser.shortcutPresentationOwner.shortcutLiveTab(
+                for: savedPinIDs[1],
+                in: window.id
+            ),
+            second
+        )
         XCTAssertEqual(
-            primaryWindow.splitSelection,
+            window.splitSelection,
             WindowSplitSelection(
                 groupID: group.id,
-                activeMemberID: .shortcutPin(pin.id)
+                activeMemberID: .shortcutPin(savedPinIDs[0])
             )
         )
         XCTAssertEqual(
-            secondaryWindow.currentTabId,
-            secondarySelectsDraggedTab ? secondaryLiveTab.id : companion.id
+            browser.shortcutPinCollectionStateOwner
+                .spacePinnedPins(for: space.id).count,
+            2
+        )
+        XCTAssertFalse(browser.regularTabCollectionOwner.contains(first))
+        XCTAssertFalse(browser.regularTabCollectionOwner.contains(second))
+
+        let savedItem = SumiDragItem.splitGroup(saved.id, title: "Split")
+        let savedScope = try XCTUnwrap(SidebarDragScope(
+            windowState: window,
+            sourceZone: .spacePinned(space.id),
+            item: savedItem
+        ))
+
+        XCTAssertTrue(browser.sidebarDragRouter.performSidebarDragOperation(
+            DragOperation(
+                payload: .splitGroup(saved),
+                scope: savedScope,
+                fromContainer: .spacePinned(space.id),
+                toContainer: .spaceRegular(space.id),
+                toIndex: 0
+            )
+        ))
+        let regularAgain = try XCTUnwrap(
+            browser.splitGroupStore.group(id: group.id)
         )
         XCTAssertEqual(
-            secondaryWindow.currentShortcutPinId,
-            secondarySelectsDraggedTab ? pin.id : nil
+            regularAgain.container,
+            .regularTabs(spaceId: space.id)
         )
-        XCTAssertNil(secondaryWindow.splitSelection)
+        XCTAssertTrue(regularAgain.memberIDs.allSatisfy { memberID in
+            if case .regularTab = memberID { return true }
+            return false
+        })
+        XCTAssertEqual(browser.regularTabCollectionOwner.tabs(in: space.id).count, 2)
+        XCTAssertTrue(
+            browser.shortcutPinCollectionStateOwner
+                .spacePinnedPins(for: space.id).isEmpty
+        )
+        guard case .regularTab(let selectedRegularTabID) =
+            window.splitSelection?.activeMemberID else {
+            return XCTFail("Expected a selected regular split member")
+        }
 
-        for window in [primaryWindow, secondaryWindow] {
-            XCTAssertEqual(window.activeTabForSpace[space.id], companion.id)
-            XCTAssertFalse(
-                window.selectionHistory.recentRegularTabIdsBySpace[space.id]?
-                    .contains(draggedTab.id) == true
+        let regularScope = try XCTUnwrap(SidebarDragScope(
+            windowState: window,
+            sourceZone: .spaceRegular(space.id),
+            item: .splitGroup(regularAgain.id, title: "Split")
+        ))
+        XCTAssertTrue(browser.sidebarDragRouter.performSidebarDragOperation(
+            DragOperation(
+                payload: .splitGroup(regularAgain),
+                scope: regularScope,
+                fromContainer: .spaceRegular(space.id),
+                toContainer: .essentials,
+                toIndex: 0
+            )
+        ))
+        let essential = try XCTUnwrap(
+            browser.splitGroupStore.group(id: group.id)
+        )
+        guard case .essentialSidebar(let profileID, let essentialIndex) =
+            essential.container else {
+            return XCTFail("Expected an Essential split group")
+        }
+        XCTAssertEqual(profileID, profile.id)
+        XCTAssertEqual(essentialIndex, 0)
+        let essentialPinIDs = essential.memberIDs.compactMap {
+            memberID -> UUID? in
+            guard case .shortcutPin(let pinID) = memberID else { return nil }
+            return pinID
+        }
+        XCTAssertEqual(essentialPinIDs.count, 2)
+        XCTAssertIdentical(
+            browser.shortcutPresentationOwner.shortcutLiveTab(
+                for: essentialPinIDs[0],
+                in: window.id
+            ),
+            first
+        )
+        XCTAssertIdentical(
+            browser.shortcutPresentationOwner.shortcutLiveTab(
+                for: essentialPinIDs[1],
+                in: window.id
+            ),
+            second
+        )
+        let selectedEssentialPinID = try XCTUnwrap(
+            essentialPinIDs.first { pinID in
+                browser.shortcutPresentationOwner.shortcutLiveTab(
+                    for: pinID,
+                    in: window.id
+                )?.id == selectedRegularTabID
+            }
+        )
+        XCTAssertEqual(
+            window.splitSelection,
+            WindowSplitSelection(
+                groupID: group.id,
+                activeMemberID: .shortcutPin(selectedEssentialPinID)
+            )
+        )
+    }
+
+    private func assertGroupReorder(
+        secondarySelectsGroup: Bool
+    ) throws {
+        let primaryWindow = BrowserWindowState()
+        let secondaryWindow = BrowserWindowState()
+        let states = [
+            primaryWindow.id: primaryWindow,
+            secondaryWindow.id: secondaryWindow,
+        ]
+        let browser = BrowserManager()
+        browser.tabRuntimeLifecycle.shutdown()
+        browser.runtimePortConnection.attach(TestRuntimePorts.make(
+            windowState: { states[$0] },
+            windows: { states.map { ($0.key, $0.value) } }
+        ))
+        defer { browser.runtimePortConnection.detach() }
+
+        let profileID = UUID()
+        let space = try XCTUnwrap(browser.sidebarSpaceLifecycle.createSpace(
+            name: "Work",
+            icon: SumiPersistentGlyph.spaceDefaultIconValue,
+            profileID: profileID
+        ))
+        let before = makeTab("before", in: space, browser: browser)
+        let first = makeTab("first", in: space, browser: browser)
+        let second = makeTab("second", in: space, browser: browser)
+        let after = makeTab("after", in: space, browser: browser)
+        let group = try XCTUnwrap(SplitGroup.make(
+            members: [.regularTab(first.id), .regularTab(second.id)],
+            layoutKind: .vertical,
+            container: .regularTabs(spaceId: space.id)
+        ))
+        XCTAssertTrue(browser.splitGroupMutations.insert(group, persist: false))
+
+        for window in states.values {
+            window.currentSpaceId = space.id
+            window.currentProfileId = profileID
+        }
+        primaryWindow.currentTabId = first.id
+        primaryWindow.splitSelection = WindowSplitSelection(
+            groupID: group.id,
+            activeMemberID: .regularTab(first.id)
+        )
+        secondaryWindow.currentTabId = secondarySelectsGroup ? second.id : before.id
+        if secondarySelectsGroup {
+            secondaryWindow.splitSelection = WindowSplitSelection(
+                groupID: group.id,
+                activeMemberID: .regularTab(second.id)
             )
         }
-        XCTAssertEqual(
-            ShortcutConversionWindowSessionState(uninvolvedWindow),
-            uninvolvedSession
-        )
-        XCTAssertEqual(
-            uninvolvedWindow.selectionHistory.recentRegularTabIdsBySpace,
-            uninvolvedHistory
-        )
-        _ = cancellable
-    }
+        let primarySelection = primaryWindow.splitSelection
+        let secondarySelection = secondaryWindow.splitSelection
+        let item = SumiDragItem.splitGroup(group.id, title: "Split")
+        let scope = try XCTUnwrap(SidebarDragScope(
+            windowState: primaryWindow,
+            sourceZone: .spaceRegular(space.id),
+            item: item
+        ))
 
-    private func makeScope(
-        spaceId: UUID,
-        profileId: UUID,
-        sourceZone: DropZoneID,
-        item: SumiDragItem,
-        windowState: BrowserWindowState
-    ) throws -> SidebarDragScope {
-        windowState.currentSpaceId = spaceId
-        windowState.currentProfileId = profileId
-        return try XCTUnwrap(
-            SidebarDragScope(
-                windowState: windowState,
-                sourceZone: sourceZone,
-                item: item
+        XCTAssertTrue(browser.sidebarDragRouter.performSidebarDragOperation(
+            DragOperation(
+                payload: .splitGroup(group),
+                scope: scope,
+                fromContainer: .spaceRegular(space.id),
+                toContainer: .spaceRegular(space.id),
+                toIndex: 4
             )
+        ))
+
+        XCTAssertEqual(
+            browser.regularTabCollectionOwner.tabs(in: space.id).map(\.id),
+            [before.id, after.id, first.id, second.id]
         )
+        XCTAssertEqual(browser.splitGroupStore.group(id: group.id), group)
+        XCTAssertEqual(primaryWindow.splitSelection, primarySelection)
+        XCTAssertEqual(secondaryWindow.splitSelection, secondarySelection)
     }
 
-    private func dragItem(_ tab: Tab) -> SumiDragItem {
-        SumiDragItem(
-            tabId: tab.id,
-            title: tab.name,
-            urlString: tab.url.absoluteString
+    private func makeTab(
+        _ name: String,
+        in space: Space,
+        browser: BrowserManager
+    ) -> Tab {
+        browser.regularTabLifecycleOwner.createNewTab(
+            url: "https://\(name).example",
+            in: space,
+            activate: false
         )
     }
 }

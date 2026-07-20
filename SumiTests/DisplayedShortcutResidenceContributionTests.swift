@@ -82,22 +82,8 @@ final class DisplayedShortcutResidenceContributionTests: XCTestCase {
         ))
         let target = try XCTUnwrap(SplitGroup.make(
             members: [
-                .shortcutPin(
-                    activatedPinID,
-                    returnPlacement: .spacePinned(
-                        spaceId: spaceID,
-                        folderId: nil,
-                        index: 0
-                    )
-                ),
-                .shortcutPin(
-                    UUID(),
-                    returnPlacement: .spacePinned(
-                        spaceId: spaceID,
-                        folderId: nil,
-                        index: 1
-                    )
-                ),
+                .shortcutPin(activatedPinID),
+                .shortcutPin(UUID()),
             ],
             layoutKind: .vertical,
             container: .shortcutSidebar(

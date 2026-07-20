@@ -22,7 +22,6 @@ struct SpaceRegularTabsListView: View {
     let tabs: [Tab]
     let projection: SpaceRegularTabsListProjection
     let dragSnapshot: SpaceRegularDragSnapshot
-    @Binding var shortcutRestoreSession: SpaceShortcutRestoreInteractionSession
     @Binding var interactionSession: SpaceRegularTabsInteractionSession
 
     @Environment(BrowserWindowState.self) private var windowState
@@ -34,18 +33,24 @@ struct SpaceRegularTabsListView: View {
         let selectionSnapshot = sidebarSelection
         let tabByID = Dictionary(uniqueKeysWithValues: tabs.map { ($0.id, $0) })
         let splitGroups = visibleSplitGroups
-        let groupedTabIDs = Set(splitGroups.flatMap { group in
-            group.memberIDs.compactMap { memberID -> UUID? in
-                guard case .regularTab(let tabID) = memberID else { return nil }
-                return tabID
-            }
+        let splitGroupsByID = Dictionary(
+            uniqueKeysWithValues: splitGroups.map { ($0.id, $0) }
+        )
+        let regularBlocks = SidebarVisualOrdering.regularBlocks(
+            tabs: tabs,
+            groups: splitGroups
+        )
+        let groupedTabIDs = Set<UUID>(regularBlocks.flatMap { block -> [UUID] in
+            guard case .splitGroup = block.identity else { return [] }
+            return block.tabIDs
         })
-        let splitGroupByFirstTabID = Dictionary(
-            uniqueKeysWithValues: splitGroups.compactMap { group -> (UUID, SplitGroup)? in
-                guard let first = tabs.first(where: { group.contains(.regularTab($0.id)) })?.id else {
-                    return nil
-                }
-                return (first, group)
+        let splitGroupByFirstTabID: [UUID: SplitGroup] = Dictionary(
+            uniqueKeysWithValues: regularBlocks.compactMap {
+                block -> (UUID, SplitGroup)? in
+                guard case .splitGroup(let groupID) = block.identity,
+                      let firstTabID = block.firstTabID,
+                      let group = splitGroupsByID[groupID] else { return nil }
+                return (firstTabID, group)
             }
         )
 
@@ -67,9 +72,7 @@ struct SpaceRegularTabsListView: View {
                                 isInteractive: isInteractive,
                                 contentMutationAnimation: contentMutationAnimation,
                                 tabActionOwner: tabActionOwner,
-                                onCloseRegularTab: closeRegularTab,
-                                shortcutRestoreSession: $shortcutRestoreSession,
-                                splitSegmentRemovalIDs: $interactionSession.splitSegmentRemovalIDs
+                                onCloseRegularTab: closeRegularTab
                             )
                         } else if groupedTabIDs.contains(tabID) {
                             EmptyView()
@@ -123,7 +126,6 @@ struct SpaceRegularTabsListView: View {
     private var visibleSplitGroups: [SplitGroup] {
         splitResolver.visibleSplitGroups(
             currentTabs: tabs,
-            isDragging: dragSnapshot.isDragging,
             splitGroup: { regularTabTargets.splitGroup(containing: $0) }
         )
     }
@@ -205,10 +207,6 @@ struct SpaceRegularTabsListView: View {
         }
 
         if let removedID = oldIDs.first(where: { !newIDs.contains($0) }) {
-            if interactionSession.splitSegmentRemovalIDs.remove(removedID) != nil {
-                syncRenderedTabsWithoutAnimation(to: newIDs)
-                return
-            }
             if interactionSession.listAnimation.isRemovalInFlight(for: removedID) { return }
             guard interactionSession.listAnimation.containsRenderedTab(removedID),
                   let tab = interactionSession.listAnimation.resolvedTab(

@@ -28,14 +28,7 @@ final class ShortcutTabPromotionServiceTests: XCTestCase {
             .setSpacePinnedShortcuts([pin], for: space.id)
         let group = try XCTUnwrap(SplitGroup.make(
             members: [
-                .shortcutPin(
-                    pin.id,
-                    returnPlacement: .spacePinned(
-                        spaceId: space.id,
-                        folderId: nil,
-                        index: 0
-                    )
-                ),
+                .shortcutPin(pin.id),
                 .regularTab(companion.id),
             ],
             layoutKind: .vertical,

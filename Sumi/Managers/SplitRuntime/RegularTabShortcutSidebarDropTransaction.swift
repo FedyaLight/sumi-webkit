@@ -6,16 +6,13 @@ import SumiDomain
 @MainActor
 final class RegularTabShortcutSidebarDropTransaction {
     private let conversion: RegularTabShortcutConversionService
-    private let launcherPlacement: ShortcutSplitLauncherPlacementService
     private let presentations: any SplitDropPresentationReconciling
 
     init(
         conversion: RegularTabShortcutConversionService,
-        launcherPlacement: ShortcutSplitLauncherPlacementService,
         presentations: any SplitDropPresentationReconciling
     ) {
         self.conversion = conversion
-        self.launcherPlacement = launcherPlacement
         self.presentations = presentations
     }
 
@@ -64,9 +61,6 @@ final class RegularTabShortcutSidebarDropTransaction {
             activatedMemberID: prepared.member.memberID,
             replacementGroups: replacement
         )
-        guard let sidebarMutation = launcherPlacement.prepareSidebarMutation(
-            for: effect.releasedMembers
-        ) else { return false }
         let presentation = RegularTabShortcutSplitPresentationPreparation(
             presentations: presentations,
             effect: effect,
@@ -77,7 +71,7 @@ final class RegularTabShortcutSidebarDropTransaction {
         guard conversion.commitShortcutSidebarDrop(
                 prepared,
                 replacingSplitGroupsWith: replacement,
-                sidebarMutation: sidebarMutation,
+                sidebarMutation: .noChange,
                 presentation: presentation
             ) != nil else {
             return false

@@ -93,16 +93,22 @@ final class SidebarDragPayloadResolver {
         }
     }
 
-    func isCanonical(_ payload: DragOperation.Payload) -> Bool {
+    func canonicalPayload(
+        for payload: DragOperation.Payload
+    ) -> DragOperation.Payload? {
         switch payload {
         case .tab(let tab):
-            return membership.tab(for: tab.id) === tab
+            guard membership.tab(for: tab.id) === tab else { return nil }
+            return .tab(tab)
         case .pin(let pin):
-            return pins.shortcutPin(by: pin.id) === pin
+            return pins.shortcutPin(by: pin.id).map(DragOperation.Payload.pin)
         case .folder(let folder):
-            return folders.folder(by: folder.id) === folder
+            guard folders.folder(by: folder.id) === folder else { return nil }
+            return .folder(folder)
         case .splitGroup(let group):
-            return splits.group(id: group.id) == group
+            guard let canonical = splits.group(id: group.id),
+                  canonical == group else { return nil }
+            return .splitGroup(canonical)
         }
     }
 

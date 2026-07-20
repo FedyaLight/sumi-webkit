@@ -49,8 +49,7 @@ struct TabRestorePlanner: Sendable {
         let splitGroups = TabRestoreRepair.restoreSplitGroups(
             from: records.states.first?.splitGroupsData,
             regularTabIDs: restoredRegularTabIDs(restoredTabs),
-            shortcutReturnPlacementsByPinID:
-                restoredShortcutReturnPlacements(restoredTabs),
+            shortcutPinIDs: restoredShortcutPinIDs(restoredTabs),
             repairReasons: &repairReasons
         )
         let snapshot = snapshotBuilder.makeSnapshot(
@@ -88,29 +87,13 @@ struct TabRestorePlanner: Sendable {
         )
     }
 
-    private func restoredShortcutReturnPlacements(
+    private func restoredShortcutPinIDs(
         _ tabs: TabRestoreCategorizedTabs
-    ) -> [UUID: SumiDomain.SplitShortcutReturnPlacement] {
+    ) -> Set<UUID> {
         let shortcuts =
             tabs.pinnedShortcutsByProfile.values.flatMap { $0 }
                 + tabs.pendingPinnedShortcuts
                 + tabs.spacePinnedShortcutsBySpace.values.flatMap { $0 }
-        return shortcuts.reduce(into: [:]) { placements, shortcut in
-            guard placements[shortcut.id] == nil else { return }
-            switch shortcut.role {
-            case .essential:
-                placements[shortcut.id] = .essential(
-                    profileId: shortcut.profileId,
-                    index: shortcut.index
-                )
-            case .spacePinned:
-                guard let spaceID = shortcut.spaceId else { return }
-                placements[shortcut.id] = .spacePinned(
-                    spaceId: spaceID,
-                    folderId: shortcut.folderId,
-                    index: shortcut.index
-                )
-            }
-        }
+        return Set(shortcuts.map(\.id))
     }
 }

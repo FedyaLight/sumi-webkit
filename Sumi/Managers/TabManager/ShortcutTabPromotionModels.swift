@@ -27,6 +27,11 @@ struct PreparedShortcutTabPromotion {
 }
 
 @MainActor
+struct PreparedShortcutTabGroupPromotion {
+    let retirement: PreparedShortcutLiveRetirementBatch
+}
+
+@MainActor
 enum ShortcutTabPromotionSplitTransition {
     case none
     case replaced(groupID: UUID, memberID: SplitMemberID)

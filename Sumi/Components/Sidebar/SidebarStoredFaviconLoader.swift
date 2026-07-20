@@ -2,16 +2,19 @@ import SwiftUI
 
 @MainActor
 final class SidebarStoredFaviconLoader: ObservableObject {
-    private struct LoadedFavicon {
+    private struct CacheKey: Hashable {
         let launchURL: URL
-        let image: Image
+        let partition: String
     }
 
     @Published private var refreshID = UUID()
-    @Published private var loadedFavicon: LoadedFavicon?
+    @Published private var loadedFavicons: [CacheKey: Image] = [:]
 
-    func image(for launchURL: URL) -> Image? {
-        loadedFavicon?.launchURL == launchURL ? loadedFavicon?.image : nil
+    func image(
+        for launchURL: URL,
+        partition: SumiFaviconPartition
+    ) -> Image? {
+        loadedFavicons[cacheKey(launchURL, partition)]
     }
 
     func loadKey(
@@ -33,10 +36,15 @@ final class SidebarStoredFaviconLoader: ObservableObject {
 
     func invalidateIfNeeded(
         for notification: Notification,
-        launchURL: URL
+        launchURL: URL,
+        partition: SumiFaviconPartition
     ) {
-        guard PinnedTileAccentResolver.faviconUpdate(notification, matches: launchURL) else { return }
-        loadedFavicon = nil
+        guard SumiFaviconNotificationMatcher.update(
+            notification,
+            matches: launchURL,
+            partition: partition
+        ) else { return }
+        loadedFavicons[cacheKey(launchURL, partition)] = nil
         refreshID = UUID()
     }
 
@@ -55,9 +63,16 @@ final class SidebarStoredFaviconLoader: ObservableObject {
               isCurrentLaunchURL(launchURL)
         else { return }
 
-        loadedFavicon = LoadedFavicon(
+        loadedFavicons[cacheKey(launchURL, partition)] = Image(nsImage: image)
+    }
+
+    private func cacheKey(
+        _ launchURL: URL,
+        _ partition: SumiFaviconPartition
+    ) -> CacheKey {
+        CacheKey(
             launchURL: launchURL,
-            image: Image(nsImage: image)
+            partition: partition.storageComponent
         )
     }
 }

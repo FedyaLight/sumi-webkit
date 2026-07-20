@@ -97,22 +97,8 @@ final class FolderSearchCandidateBuilderTests: XCTestCase {
         let group = try XCTUnwrap(
             SplitGroup.make(
                 members: [
-                    .shortcutPin(
-                        first.id,
-                        returnPlacement: .spacePinned(
-                            spaceId: space.id,
-                            folderId: folder.id,
-                            index: first.index
-                        )
-                    ),
-                    .shortcutPin(
-                        second.id,
-                        returnPlacement: .spacePinned(
-                            spaceId: space.id,
-                            folderId: folder.id,
-                            index: second.index
-                        )
-                    ),
+                    .shortcutPin(first.id),
+                    .shortcutPin(second.id),
                 ],
                 layoutKind: .vertical,
                 container: .shortcutSidebar(

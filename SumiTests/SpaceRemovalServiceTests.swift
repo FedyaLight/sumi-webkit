@@ -419,14 +419,7 @@ final class SpaceRemovalServiceTests: XCTestCase {
             SplitGroup.make(
                 members: [
                     .regularTab(deletedHostTabs.0.id),
-                    .shortcutPin(
-                        shortcutPinID,
-                        returnPlacement: .spacePinned(
-                            spaceId: removedSpaceId,
-                            folderId: nil,
-                            index: 0
-                        )
-                    ),
+                    .shortcutPin(shortcutPinID),
                 ],
                 layoutKind: .vertical,
                 container: .regularTabs(spaceId: removedSpaceId)

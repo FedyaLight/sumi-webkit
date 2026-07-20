@@ -196,6 +196,11 @@ struct FolderSearchCandidateBuilder {
         let urlString = url?.absoluteString ?? ""
         let host = url?.host ?? ""
         let title = item.title
+        let icon = SplitGroupMemberIconResolver.resolve(
+            item: item,
+            loadedStoredFavicon: nil,
+            imageReader: faviconImageReader
+        ).image
 
         return FolderSearchCandidate(
             id: "split-\(group.id.uuidString)-\(item.stableIDDescription)",
@@ -205,12 +210,7 @@ struct FolderSearchCandidateBuilder {
             ),
             title: title,
             secondaryText: secondaryText(host: host, folderPath: folderPath),
-            icon: item.tab?.favicon ?? item.pin.map {
-                $0.storedFaviconImage(
-                    partition: .regular($0.executionProfileId ?? $0.profileId),
-                    imageReader: faviconImageReader
-                )
-            } ?? Image(systemName: "square.split.2x2"),
+            icon: icon,
             searchText: FolderSearchMatcher.searchText(
                 components: [title, host, urlString] + folderPath
             ),

@@ -38,15 +38,32 @@ enum SidebarDragSourceExclusionZone {
     }
 }
 
+/// Maps a drag handle that occupies only part of a visual item back into the
+/// coordinate space of the whole preview.
+struct SidebarDragPreviewSourceGeometry: Equatable {
+    let size: CGSize
+    let localOrigin: CGPoint
+
+    func anchor(forLocalPoint point: CGPoint) -> CGPoint {
+        CGPoint(
+            x: localOrigin.x + point.x,
+            y: localOrigin.y + point.y
+        )
+    }
+}
+
 struct SidebarDragSourceConfiguration {
     let item: SumiDragItem
     let sourceZone: DropZoneID
     let previewKind: SidebarDragPreviewKind
     let previewIcon: Image?
+    let previewGlyphText: String?
+    let splitPresentation: SidebarSplitDragPresentation?
     let chromeTemplateSystemImageName: String?
     let previewPresentationState: ShortcutPresentationState?
     let folderGlyphPresentation: SumiFolderGlyphPresentationState?
     let folderGlyphPalette: SumiFolderGlyphPalette?
+    let previewSourceGeometry: SidebarDragPreviewSourceGeometry?
     let exclusionZones: [SidebarDragSourceExclusionZone]
     let onActivate: (() -> Void)?
     let isEnabled: Bool
@@ -56,10 +73,13 @@ struct SidebarDragSourceConfiguration {
         sourceZone: DropZoneID,
         previewKind: SidebarDragPreviewKind,
         previewIcon: Image? = nil,
+        previewGlyphText: String? = nil,
+        splitPresentation: SidebarSplitDragPresentation? = nil,
         chromeTemplateSystemImageName: String? = nil,
         previewPresentationState: ShortcutPresentationState? = nil,
         folderGlyphPresentation: SumiFolderGlyphPresentationState? = nil,
         folderGlyphPalette: SumiFolderGlyphPalette? = nil,
+        previewSourceGeometry: SidebarDragPreviewSourceGeometry? = nil,
         exclusionZones: [SidebarDragSourceExclusionZone] = [],
         onActivate: (() -> Void)? = nil,
         isEnabled: Bool = true
@@ -68,10 +88,13 @@ struct SidebarDragSourceConfiguration {
         self.sourceZone = sourceZone
         self.previewKind = previewKind
         self.previewIcon = previewIcon
+        self.previewGlyphText = previewGlyphText
+        self.splitPresentation = splitPresentation
         self.chromeTemplateSystemImageName = chromeTemplateSystemImageName
         self.previewPresentationState = previewPresentationState
         self.folderGlyphPresentation = folderGlyphPresentation
         self.folderGlyphPalette = folderGlyphPalette
+        self.previewSourceGeometry = previewSourceGeometry
         self.exclusionZones = exclusionZones
         self.onActivate = onActivate
         self.isEnabled = isEnabled
@@ -85,10 +108,34 @@ struct SidebarDragSourceConfiguration {
             sourceZone: sourceZone,
             previewKind: previewKind,
             previewIcon: previewIcon,
+            previewGlyphText: previewGlyphText,
+            splitPresentation: splitPresentation,
             chromeTemplateSystemImageName: chromeTemplateSystemImageName,
             previewPresentationState: previewPresentationState,
             folderGlyphPresentation: folderGlyphPresentation,
             folderGlyphPalette: folderGlyphPalette,
+            previewSourceGeometry: previewSourceGeometry,
+            exclusionZones: exclusionZones,
+            onActivate: onActivate,
+            isEnabled: isEnabled
+        )
+    }
+
+    func replacingPreviewSourceGeometry(
+        _ previewSourceGeometry: SidebarDragPreviewSourceGeometry?
+    ) -> SidebarDragSourceConfiguration {
+        SidebarDragSourceConfiguration(
+            item: item,
+            sourceZone: sourceZone,
+            previewKind: previewKind,
+            previewIcon: previewIcon,
+            previewGlyphText: previewGlyphText,
+            splitPresentation: splitPresentation,
+            chromeTemplateSystemImageName: chromeTemplateSystemImageName,
+            previewPresentationState: previewPresentationState,
+            folderGlyphPresentation: folderGlyphPresentation,
+            folderGlyphPalette: folderGlyphPalette,
+            previewSourceGeometry: previewSourceGeometry,
             exclusionZones: exclusionZones,
             onActivate: onActivate,
             isEnabled: isEnabled
@@ -129,6 +176,8 @@ enum SidebarDragPreviewSessionFactory {
             sourceZone: configuration.sourceZone,
             baseKind: configuration.previewKind,
             previewIcon: configuration.previewIcon,
+            previewGlyphText: configuration.previewGlyphText,
+            splitPresentation: configuration.splitPresentation,
             chromeTemplateSystemImageName: configuration.chromeTemplateSystemImageName,
             sourceSize: sourceSize,
             normalizedTopLeadingAnchor: SidebarDragPreviewModel.normalizedTopLeadingAnchor(

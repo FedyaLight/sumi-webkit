@@ -69,6 +69,8 @@ struct BrowserKernelGraph {
         ShortcutPresentationActivationService
     let splitGroupMutations: SplitGroupMutationService
     let splitGroupSidebarOrdering: SplitGroupSidebarOrderingService
+    let splitGroupContainerConversion: SplitGroupContainerConversion
+    let splitGroupShortcutMemberRelocation: SplitGroupShortcutMemberRelocation
     let splitGroupMembership: SplitGroupMembershipQuery
     let regularTabShortcutConversion:
         RegularTabShortcutConversionService

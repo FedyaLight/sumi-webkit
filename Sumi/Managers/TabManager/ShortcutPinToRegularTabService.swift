@@ -53,4 +53,26 @@ final class ShortcutPinToRegularTabService {
         }
         return transaction.commit(pin: pin, plan: plan, split: split)
     }
+
+    func convertGroup(
+        _ group: SplitGroup,
+        into targetSpaceID: UUID,
+        at targetIndex: Int,
+        preferredWindowID: UUID?
+    ) -> Bool {
+        guard splitGroups.group(id: group.id) == group,
+              group.container.isShortcutSidebar else { return false }
+        let groupPins = group.memberIDs.compactMap { memberID -> ShortcutPin? in
+            guard case .shortcutPin(let pinID) = memberID else { return nil }
+            return pins.shortcutPin(by: pinID)
+        }
+        guard groupPins.count == group.memberIDs.count else { return false }
+        return transaction.commitGroup(
+            group,
+            pins: groupPins,
+            into: targetSpaceID,
+            at: targetIndex,
+            preferredWindowID: preferredWindowID
+        )
+    }
 }

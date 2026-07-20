@@ -54,7 +54,7 @@ struct ShortcutPinRegularSplitTransitionPlanner {
         switch group.container {
         case .regularTabs(let spaceID):
             return spaceID != nil && spaceID != targetSpaceID
-        case .shortcutSidebar:
+        case .shortcutSidebar, .essentialSidebar:
             return true
         }
     }

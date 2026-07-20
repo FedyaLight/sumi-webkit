@@ -84,6 +84,7 @@ class SearchManager {
             case tab(Tab)
             case history(HistoryListItem)
             case bookmark(SumiBookmark)
+            case command(FloatingBarCommand)
         }
 
         static func == (lhs: SearchSuggestion, rhs: SearchSuggestion) -> Bool {
@@ -96,6 +97,8 @@ class SearchManager {
                 return lhs.text == rhs.text && lhsHistory.id == rhsHistory.id
             case (.bookmark(let lhsBookmark), .bookmark(let rhsBookmark)):
                 return lhs.text == rhs.text && lhsBookmark.id == rhsBookmark.id
+            case (.command(let lhsCommand), .command(let rhsCommand)):
+                return lhsCommand == rhsCommand
             default:
                 return false
             }

@@ -17,7 +17,7 @@ struct PinnedGridLayoutModel {
     private static let collapsedRevealHeight: CGFloat = 6
 
     let width: CGFloat
-    let items: [ShortcutPin]
+    let items: [SidebarEssentialVisualItem]
     let dragState: SidebarDragState
     let geometrySpaceId: UUID
     let effectiveProfileId: UUID?
@@ -30,7 +30,7 @@ struct PinnedGridLayoutModel {
 
     init(
         width: CGFloat,
-        items: [ShortcutPin],
+        items: [SidebarEssentialVisualItem],
         dragState: SidebarDragState,
         geometrySpaceId: UUID,
         effectiveProfileId: UUID?,

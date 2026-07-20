@@ -1,0 +1,150 @@
+import Foundation
+import SumiDomain
+
+@MainActor
+final class SidebarSplitGroupMoveService {
+    enum Destination {
+        case regular(spaceID: UUID)
+        case pinned(spaceID: UUID)
+        case essentials(profileID: UUID)
+        case folder(id: UUID, name: String, spaceID: UUID)
+    }
+
+    private let ordering: SplitGroupSidebarOrderingService
+    private let conversion: SplitGroupContainerConversion
+    private let folders: TabFolderCollectionStateOwner
+    private let regularTabs: RegularTabCollectionOwner
+    private let liveFolders: SumiLiveFolderManager
+
+    init(
+        ordering: SplitGroupSidebarOrderingService,
+        conversion: SplitGroupContainerConversion,
+        folders: TabFolderCollectionStateOwner,
+        regularTabs: RegularTabCollectionOwner,
+        liveFolders: SumiLiveFolderManager
+    ) {
+        self.ordering = ordering
+        self.conversion = conversion
+        self.folders = folders
+        self.regularTabs = regularTabs
+        self.liveFolders = liveFolders
+    }
+
+    func destinations(
+        for group: SplitGroup,
+        in windowState: BrowserWindowState
+    ) -> [Destination] {
+        guard let spaceID = group.container.spaceId
+                ?? windowState.currentSpaceId else { return [] }
+        var result: [Destination] = []
+        if group.container != .regularTabs(spaceId: spaceID) {
+            result.append(.regular(spaceID: spaceID))
+        }
+        if !(group.container.isShortcutSidebar
+            && group.container.spaceId == spaceID
+            && group.container.shortcutSidebarFolderId == nil) {
+            result.append(.pinned(spaceID: spaceID))
+        }
+        if let profileID = windowState.currentProfileId,
+           !isEssential(group, profileID: profileID),
+           ordering.essentialItems(for: profileID).count
+                < EssentialsShortcutPlacementOwner.CapacityPolicy.maxItems {
+            result.append(.essentials(profileID: profileID))
+        }
+        result.append(contentsOf: folders.folders(for: spaceID).compactMap {
+            folder in
+            guard !liveFolders.isLiveFolder(folder.id),
+                  group.container.shortcutSidebarFolderId != folder.id else {
+                return nil
+            }
+            return .folder(
+                id: folder.id,
+                name: folder.name,
+                spaceID: spaceID
+            )
+        })
+        return result
+    }
+
+    func move(
+        _ group: SplitGroup,
+        to destination: Destination,
+        in windowState: BrowserWindowState
+    ) -> Bool {
+        guard let source = source(for: group),
+              let scope = SidebarDragScope(
+                  windowState: windowState,
+                  sourceZone: source.zone,
+                  item: .splitGroup(
+                      group.id,
+                      title: group.title ?? "Split View"
+                  )
+              ) else { return false }
+        let target: TabManagerDragTarget
+        switch destination {
+        case .regular(let spaceID):
+            target = .init(
+                container: .spaceRegular(spaceID),
+                index: regularTabs.tabs(in: spaceID).count
+            )
+        case .pinned(let spaceID):
+            target = .init(
+                container: .spacePinned(spaceID),
+                index: ordering.topLevelItems(for: spaceID).count
+            )
+        case .essentials(let profileID):
+            target = .init(
+                container: .essentials,
+                index: ordering.essentialItems(for: profileID).count
+            )
+        case .folder(let folderID, _, let spaceID):
+            target = .init(
+                container: .folder(folderID),
+                index: ordering.groups(
+                    for: spaceID,
+                    folderID: folderID
+                ).count
+            )
+        }
+        return conversion.move(
+            group,
+            operation: DragOperation(
+                payload: .splitGroup(group),
+                scope: scope,
+                fromContainer: source.container,
+                toContainer: target.container,
+                toIndex: target.index
+            )
+        )
+    }
+
+    private func source(
+        for group: SplitGroup
+    ) -> (zone: DropZoneID, container: TabDragManager.DragContainer)? {
+        switch group.container {
+        case .regularTabs(let spaceID?):
+            return (.spaceRegular(spaceID), .spaceRegular(spaceID))
+        case .essentialSidebar:
+            return (.essentials, .essentials)
+        case .shortcutSidebar(let spaceID, _, let folderID, _):
+            if let folderID {
+                return (.folder(folderID), .folder(folderID))
+            }
+            return (.spacePinned(spaceID), .spacePinned(spaceID))
+        case .regularTabs(nil):
+            return nil
+        }
+    }
+
+    private func isEssential(_ group: SplitGroup, profileID: UUID) -> Bool {
+        guard case .essentialSidebar(let ownerID, _) = group.container else {
+            return false
+        }
+        return ownerID == nil || ownerID == profileID
+    }
+}
+
+private struct TabManagerDragTarget {
+    let container: TabDragManager.DragContainer
+    let index: Int
+}

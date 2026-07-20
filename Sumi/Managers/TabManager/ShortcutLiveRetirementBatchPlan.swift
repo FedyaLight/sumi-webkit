@@ -32,27 +32,12 @@ struct ShortcutLiveRetirementBatchPlan {
 
     func sourceIsExact() -> Bool {
         guard attachment.isCurrent(),
-              entries.count == residencePlans.count,
-              excludesRegularSplitResidences() else { return false }
+              entries.count == residencePlans.count else { return false }
         let current = registry.mutationSnapshot
         return entries.allSatisfy { expected in
             current.entry(containing: expected.tab)?.isIdentical(to: expected)
                 == true
         } && windows.allSatisfy { $0.isCurrent(using: attachment) }
-    }
-
-    private func excludesRegularSplitResidences() -> Bool {
-        guard let runtime else { return tabs.isEmpty }
-        let tabIDs = Set(tabs.map(\.id))
-        var overlap = false
-        runtime.forEachWindowState { window in
-            if tabIDs.isDisjoint(
-                with: runtime.visibleSplitTabIds(for: window.id)
-            ) == false {
-                overlap = true
-            }
-        }
-        return overlap == false
     }
 }
 

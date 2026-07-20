@@ -140,13 +140,11 @@ final class SplitLayoutWeightMutationServiceTests: XCTestCase {
     private func makeLayoutService(
         tabManager: BrowserManager
     ) -> SplitLayoutService {
-        let launcherPlacement = tabManager.splitLauncherPlacement
         return SplitLayoutService(
             topology: SplitLayoutTopologyTransaction(
                 splitGroups: tabManager.splitGroupStore,
                 mutations: tabManager.splitGroupMutations,
-                regularTabs: tabManager.regularTabCollectionOwner,
-                launcherPlacement: launcherPlacement
+                regularTabs: tabManager.regularTabCollectionOwner
             ),
             query: WindowSplitQuery(
                 splitGroups: tabManager.splitGroupStore,
@@ -164,10 +162,8 @@ final class SplitLayoutWeightMutationServiceTests: XCTestCase {
             dissolution: SplitGroupDissolutionService(
                 splitGroups: tabManager.splitGroupStore,
                 mutations: tabManager.splitGroupMutations,
-                launcherPlacement: launcherPlacement,
                 presentations: tabManager.splitPresentations
-            ),
-            restoreShortcutMember: { _, _, _ in false }
+            )
         )
     }
 }

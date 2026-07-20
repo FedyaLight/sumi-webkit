@@ -8,17 +8,17 @@ final class TestShortcutSplitLauncherMoveBatchPreparer:
         ShortcutSplitLauncherDestination
     ) -> Bool
     private let prepareAction: @MainActor (
-        [PreparedShortcutSplitLauncherRestoration]
+        [PreparedShortcutSplitLauncherMove]
     ) -> (any ShortcutSplitLauncherMoveBatchParticipant)?
     private let prepareComposedAction: @MainActor (
-        [PreparedShortcutSplitLauncherRestoration],
+        [PreparedShortcutSplitLauncherMove],
         ShortcutSplitLauncherComposedBindingMode
     ) -> (any ShortcutSplitLauncherComposedMoveBatchParticipant)?
     private let prepareContributionAction: @MainActor (
-        [PreparedShortcutSplitLauncherRestoration]
+        [PreparedShortcutSplitLauncherMove]
     ) -> ShortcutSplitLauncherBindingContribution?
     private let preflightContributionAction: @MainActor (
-        [PreparedShortcutSplitLauncherRestoration]
+        [PreparedShortcutSplitLauncherMove]
     ) -> ShortcutSplitLauncherBindingPreflight?
     private let prepareContributionAfterInsertionPlanAction: @MainActor (
         ShortcutSplitLauncherBindingPreflight,
@@ -31,18 +31,18 @@ final class TestShortcutSplitLauncherMoveBatchPreparer:
             ShortcutSplitLauncherDestination
         ) -> Bool,
         prepare: @escaping @MainActor (
-            [PreparedShortcutSplitLauncherRestoration]
+            [PreparedShortcutSplitLauncherMove]
         ) -> (any ShortcutSplitLauncherMoveBatchParticipant)?,
         prepareForComposedResidenceAggregate: @escaping @MainActor (
-            [PreparedShortcutSplitLauncherRestoration],
+            [PreparedShortcutSplitLauncherMove],
             ShortcutSplitLauncherComposedBindingMode
         ) -> (any ShortcutSplitLauncherComposedMoveBatchParticipant)?,
         prepareBindingContributionForComposedResidenceAggregate:
             @escaping @MainActor (
-                [PreparedShortcutSplitLauncherRestoration]
+                [PreparedShortcutSplitLauncherMove]
             ) -> ShortcutSplitLauncherBindingContribution?,
         preflightBindingContribution: @escaping @MainActor (
-            [PreparedShortcutSplitLauncherRestoration]
+            [PreparedShortcutSplitLauncherMove]
         ) -> ShortcutSplitLauncherBindingPreflight?,
         prepareBindingContributionPlan: @escaping @MainActor (
             ShortcutSplitLauncherBindingPreflight,
@@ -67,28 +67,28 @@ final class TestShortcutSplitLauncherMoveBatchPreparer:
     }
 
     func prepare(
-        _ restorations: [PreparedShortcutSplitLauncherRestoration]
+        _ preparedMoves: [PreparedShortcutSplitLauncherMove]
     ) -> (any ShortcutSplitLauncherMoveBatchParticipant)? {
-        prepareAction(restorations)
+        prepareAction(preparedMoves)
     }
 
     func prepareForComposedResidenceAggregate(
-        _ restorations: [PreparedShortcutSplitLauncherRestoration],
+        _ preparedMoves: [PreparedShortcutSplitLauncherMove],
         bindingMode: ShortcutSplitLauncherComposedBindingMode
     ) -> (any ShortcutSplitLauncherComposedMoveBatchParticipant)? {
-        prepareComposedAction(restorations, bindingMode)
+        prepareComposedAction(preparedMoves, bindingMode)
     }
 
     func prepareBindingContributionForComposedResidenceAggregate(
-        _ restorations: [PreparedShortcutSplitLauncherRestoration]
+        _ preparedMoves: [PreparedShortcutSplitLauncherMove]
     ) -> ShortcutSplitLauncherBindingContribution? {
-        prepareContributionAction(restorations)
+        prepareContributionAction(preparedMoves)
     }
 
     func preflightBindingContribution(
-        _ restorations: [PreparedShortcutSplitLauncherRestoration]
+        _ preparedMoves: [PreparedShortcutSplitLauncherMove]
     ) -> ShortcutSplitLauncherBindingPreflight? {
-        preflightContributionAction(restorations)
+        preflightContributionAction(preparedMoves)
     }
 
     func prepareBindingContribution(

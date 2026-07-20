@@ -11,7 +11,6 @@ enum SidebarFolderListItem: Hashable {
     case shortcut(UUID)
     case liveItem(String)
     case splitGroup(UUID)
-    case restoreGap(UUID)
     case placeholder
 }
 
@@ -84,7 +83,6 @@ struct SidebarFolderContentProjection {
         baseItems: [SidebarFolderListItem],
         folderID: UUID,
         isFolderOpen: Bool,
-        restoreGaps: [ShortcutRestoreGap],
         displayedCollapsedProjectionIDs: [UUID],
         stickyItemIDs: [UUID],
         orderedDescendantItemIDs: [UUID],
@@ -96,7 +94,6 @@ struct SidebarFolderContentProjection {
             baseItems: baseItems,
             folderID: folderID,
             isFolderOpen: isFolderOpen,
-            restoreGaps: restoreGaps,
             dragProjection: dragProjection
         )
         targetCollapsedProjectionIDs = isFolderOpen
@@ -115,7 +112,6 @@ struct SidebarFolderContentProjection {
             : visibleCollapsedProjectionIDs.compactMap(projection.collapsedProjectionItem)
         bodyDisplayEntries = SidebarFolderDisplayProjection.displayEntries(
             from: bodyItems,
-            restoreGaps: restoreGaps,
             placeholderDragItemID: dragProjection.draggedItemID
         )
     }
@@ -126,10 +122,9 @@ enum SidebarFolderDisplayProjection {
         baseItems: [SidebarFolderListItem],
         folderID: UUID,
         isFolderOpen: Bool,
-        restoreGaps: [ShortcutRestoreGap],
         dragProjection: SidebarFolderDragDisplayProjection
     ) -> [SidebarFolderListItem] {
-        var items = SidebarDropProjection.projectedItems(
+        SidebarDropProjection.projectedItems(
             itemIDs: baseItems,
             removesSourceID: projectedSourceItem(
                 in: baseItems,
@@ -151,25 +146,10 @@ enum SidebarFolderDisplayProjection {
             }
         }
 
-        let gaps = restoreGaps.filter { gap in
-            gap.container == .folder(folderID)
-        }
-        for gap in gaps.sorted(by: { $0.index < $1.index }) {
-            items.removeAll { item in
-                if case .shortcut(let pinID) = item {
-                    return pinID == gap.pinId
-                }
-                return false
-            }
-            items.insert(.restoreGap(gap.id), at: max(0, min(gap.index, items.count)))
-        }
-
-        return items
     }
 
     static func displayEntries(
         from items: [SidebarFolderListItem],
-        restoreGaps: [ShortcutRestoreGap],
         placeholderDragItemID: UUID?
     ) -> [SidebarFolderDisplayEntry] {
         var childCount = 0
@@ -180,14 +160,13 @@ enum SidebarFolderDisplayProjection {
                 id: displayID(
                     for: item,
                     placeholderIndex: childCount,
-                    restoreGaps: restoreGaps,
                     placeholderDragItemID: placeholderDragItemID
                 )
             )
             switch item {
             case .folder, .shortcut, .liveItem, .splitGroup:
                 childCount += 1
-            case .restoreGap, .placeholder:
+            case .placeholder:
                 break
             }
             return entry
@@ -249,7 +228,6 @@ enum SidebarFolderDisplayProjection {
     private static func displayID(
         for item: SidebarFolderListItem,
         placeholderIndex: Int,
-        restoreGaps: [ShortcutRestoreGap],
         placeholderDragItemID: UUID?
     ) -> String {
         switch item {
@@ -261,11 +239,6 @@ enum SidebarFolderDisplayProjection {
             return "live-item-\(id)"
         case .splitGroup(let id):
             return "split-group-\(id.uuidString)"
-        case .restoreGap(let id):
-            if let gap = restoreGaps.first(where: { $0.id == id }) {
-                return "item-\(gap.pinId.uuidString)"
-            }
-            return "restore-gap-\(id.uuidString)"
         case .placeholder:
             if let placeholderDragItemID {
                 return "item-\(placeholderDragItemID.uuidString)"
@@ -280,7 +253,7 @@ private extension SidebarFolderListItem {
         switch self {
         case .folder(let itemID), .shortcut(let itemID), .splitGroup(let itemID):
             return itemID == id
-        case .liveItem, .restoreGap, .placeholder:
+        case .liveItem, .placeholder:
             return false
         }
     }
@@ -294,7 +267,6 @@ struct SidebarFolderViewProjection {
     let splitGroupsById: [UUID: SplitGroup]
     let splitGroupItemsById: [UUID: [SplitGroupSidebarItem]]
     let shortcutPinsById: [UUID: ShortcutPin]
-    let regularPlaceholderGroupsByPinId: [UUID: SplitGroup]
     let liveTabsByPinId: [UUID: Tab]
     let selectedPinIds: Set<UUID>
     let currentTabURLString: String?
@@ -307,7 +279,6 @@ struct SidebarFolderViewProjection {
         folder: TabFolder,
         space: Space,
         shortcutPins: [ShortcutPin],
-        shortcutRestoreGaps: [ShortcutRestoreGap],
         inventory: SidebarSpaceInventorySnapshot,
         selection: SidebarWindowSelectionQuery,
         liveFolderSource: SumiLiveFolderSource?,
@@ -328,15 +299,11 @@ struct SidebarFolderViewProjection {
                   let group = inventory.splitGroup(id: groupID) else { continue }
             shortcutHostedGroups.append(group)
         }
-        let restorePins = shortcutRestoreGaps
-            .filter { $0.container == .folder(folder.id) }
-            .compactMap { inventory.pin(id: $0.pinId) }
         let projectionPins = shortcutPins
             + descendantItems.compactMap { item -> ShortcutPin? in
                 guard case .shortcut(let pinID) = item else { return nil }
                 return inventory.pin(id: pinID)
             }
-            + restorePins
         let projectionPinsById = projectionPins.reduce(into: [UUID: ShortcutPin]()) { result, pin in
             result[pin.id] = pin
         }
@@ -366,15 +333,6 @@ struct SidebarFolderViewProjection {
             }
         )
         self.shortcutPinsById = projectionPinsById
-        self.regularPlaceholderGroupsByPinId = Dictionary(
-            uniqueKeysWithValues: uniqueProjectionPins.compactMap { pin in
-                guard let group = inventory.splitGroup(containing: .shortcutPin(pin.id)),
-                      !group.container.isShortcutSidebar else {
-                    return nil
-                }
-                return (pin.id, group)
-            }
-        )
         self.liveTabsByPinId = Dictionary(
             uniqueKeysWithValues: uniqueProjectionPins.compactMap { pin in
                 guard let liveTab = selection.liveTab(for: pin.id, in: windowState) else {
@@ -411,10 +369,6 @@ struct SidebarFolderViewProjection {
 
     func shortcutPin(with id: UUID) -> ShortcutPin? {
         shortcutPinsById[id]
-    }
-
-    func regularPlaceholderGroup(for pinId: UUID) -> SplitGroup? {
-        regularPlaceholderGroupsByPinId[pinId]
     }
 
     func liveTab(for pinId: UUID) -> Tab? {
@@ -470,7 +424,6 @@ struct SidebarFolderViewProjectionReader<Content: View>: View {
     let folder: TabFolder
     let space: Space
     let shortcutPins: [ShortcutPin]
-    let shortcutRestoreGaps: [ShortcutRestoreGap]
     let inventory: SidebarSpaceInventorySnapshot
     let selection: SidebarWindowSelectionQuery
     let liveFolderSnapshot: SidebarLiveFolderSnapshot
@@ -483,7 +436,6 @@ struct SidebarFolderViewProjectionReader<Content: View>: View {
         folder: TabFolder,
         space: Space,
         shortcutPins: [ShortcutPin],
-        shortcutRestoreGaps: [ShortcutRestoreGap],
         inventory: SidebarSpaceInventorySnapshot,
         selection: SidebarWindowSelectionQuery,
         liveFolderSnapshot: SidebarLiveFolderSnapshot,
@@ -492,7 +444,6 @@ struct SidebarFolderViewProjectionReader<Content: View>: View {
         self.folder = folder
         self.space = space
         self.shortcutPins = shortcutPins
-        self.shortcutRestoreGaps = shortcutRestoreGaps
         self.inventory = inventory
         self.selection = selection
         self.liveFolderSnapshot = liveFolderSnapshot
@@ -506,7 +457,6 @@ struct SidebarFolderViewProjectionReader<Content: View>: View {
                 folder: folder,
                 space: space,
                 shortcutPins: shortcutPins,
-                shortcutRestoreGaps: shortcutRestoreGaps,
                 inventory: inventory,
                 selection: selection,
                 liveFolderSource: liveFolderSnapshot.source,

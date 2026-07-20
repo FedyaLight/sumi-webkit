@@ -8,20 +8,17 @@ final class SplitDropTopologyTransaction {
     private let membership: SplitGroupMembershipQuery
     private let splitGroups: SplitGroupStore
     private let mutations: SplitGroupMutationService
-    private let launcherPlacement: ShortcutSplitLauncherPlacementService
 
     init(
         structuralLookup: TabStructuralLookupCoordinator,
         membership: SplitGroupMembershipQuery,
         splitGroups: SplitGroupStore,
-        mutations: SplitGroupMutationService,
-        launcherPlacement: ShortcutSplitLauncherPlacementService
+        mutations: SplitGroupMutationService
     ) {
         self.structuralLookup = structuralLookup
         self.membership = membership
         self.splitGroups = splitGroups
         self.mutations = mutations
-        self.launcherPlacement = launcherPlacement
     }
 
     func perform(
@@ -43,16 +40,9 @@ final class SplitDropTopologyTransaction {
     func commit(
         expected: [SumiDomain.SplitGroup],
         replacement: [SumiDomain.SplitGroup],
-        releasedMembers: [SplitMember]
+        releasedMembers _: [SplitMember]
     ) -> Bool {
-        guard let restorations = launcherPlacement.prepareRestorations(
-            for: releasedMembers
-        ) else { return false }
-        return mutations.replaceAllAtomically(
-            expected: expected,
-            with: replacement,
-            applying: { restorations.applyAndCommit() }
-        )
+        mutations.replaceAll(expected: expected, with: replacement)
     }
 
     func flushPendingWritesForRead() {
@@ -68,6 +58,8 @@ final class SplitDropService {
     private let topology: SplitDropTopologyTransaction
     private let memberResolver: SplitRuntimeMemberResolver
     private let regularShortcutSidebarDrop: RegularTabShortcutSidebarDropTransaction
+    private let shortcutMemberRelocation: SplitGroupShortcutMemberRelocation
+    private let duplication: SplitTabDuplicationService
     private let presentations: any SplitDropPresentationReconciling
     private let notifyLimit: @MainActor (BrowserWindowState) -> Void
 
@@ -75,12 +67,16 @@ final class SplitDropService {
         topology: SplitDropTopologyTransaction,
         memberResolver: SplitRuntimeMemberResolver,
         regularShortcutSidebarDrop: RegularTabShortcutSidebarDropTransaction,
+        shortcutMemberRelocation: SplitGroupShortcutMemberRelocation,
+        duplication: SplitTabDuplicationService,
         presentations: any SplitDropPresentationReconciling,
         notifyLimit: @escaping @MainActor (BrowserWindowState) -> Void
     ) {
         self.topology = topology
         self.memberResolver = memberResolver
         self.regularShortcutSidebarDrop = regularShortcutSidebarDrop
+        self.shortcutMemberRelocation = shortcutMemberRelocation
+        self.duplication = duplication
         self.presentations = presentations
         self.notifyLimit = notifyLimit
     }
@@ -95,17 +91,61 @@ final class SplitDropService {
             return false
         }
         return topology.perform {
-            commitDrop(tab, on: target, in: windowState)
+            commitDrop(
+                topology.memberID(for: tab),
+                sourceTab: tab,
+                on: target,
+                in: windowState
+            )
+        }
+    }
+
+    /// Sidebar shortcut drags carry the durable pin identity. Resolving them
+    /// through a synthetic drag-proxy tab loses that identity at the runtime
+    /// boundary, so sidebar-originated drops enter through this overload.
+    @discardableResult
+    func drop(
+        _ memberID: SplitMemberID,
+        sourceTab: Tab? = nil,
+        on target: SplitDropTarget,
+        in windowState: BrowserWindowState
+    ) -> Bool {
+        let candidate: Tab? = switch memberID {
+        case .regularTab: sourceTab
+        case .shortcutPin: nil
+        }
+        guard let resolvedSourceTab = memberResolver.liveTab(
+            for: memberID,
+            candidate: candidate,
+            in: windowState
+        ), resolvedSourceTab.representsSumiNativeSurface == false,
+              let member = memberResolver.makeMember(
+                  for: memberID,
+                  windowState: windowState
+              ) else {
+            return false
+        }
+        return topology.perform {
+            commitDrop(
+                memberID,
+                sourceTab: resolvedSourceTab,
+                resolvedIncoming: ResolvedSplitRuntimeMember(
+                    member: member,
+                    liveTab: resolvedSourceTab
+                ),
+                on: target,
+                in: windowState
+            )
         }
     }
 
     private func commitDrop(
-        _ tab: Tab,
+        _ incomingID: SplitMemberID,
+        sourceTab tab: Tab,
+        resolvedIncoming: ResolvedSplitRuntimeMember? = nil,
         on target: SplitDropTarget,
         in windowState: BrowserWindowState
     ) -> Bool {
-        let incomingID = topology.memberID(for: tab)
-
         let sourceGroup = topology.group(
             containing: incomingID
         )
@@ -123,7 +163,7 @@ final class SplitDropService {
                 windowState: windowState
             )
         }
-        guard let incoming = memberResolver.resolveExisting(
+        guard let incoming = resolvedIncoming ?? memberResolver.resolveExisting(
             tab,
             sourceGroup: sourceGroup,
             in: windowState
@@ -205,6 +245,29 @@ final class SplitDropService {
         target: SplitDropTarget,
         windowState: BrowserWindowState
     ) -> Bool {
+        if case .regularTabs = targetGroup.container,
+           case .shortcutPin = incoming.member.memberID {
+            return insertDuplicatingShortcut(
+                incoming,
+                into: targetGroup,
+                target: target,
+                windowState: windowState
+            )
+        }
+        if targetGroup.container.isShortcutSidebar,
+           case .shortcutPin = incoming.member.memberID,
+           memberResolver.canJoinShortcutSidebar(
+               incoming.member.memberID,
+               group: targetGroup
+           ) == false {
+            return insertMovingShortcut(
+                incoming,
+                sourceGroup: sourceGroup,
+                into: targetGroup,
+                target: target,
+                windowState: windowState
+            )
+        }
         guard !targetGroup.container.isShortcutSidebar
                 || memberResolver.canJoinShortcutSidebar(
                     incoming.member.memberID,
@@ -261,6 +324,57 @@ final class SplitDropService {
         return true
     }
 
+    private func insertMovingShortcut(
+        _ incoming: ResolvedSplitRuntimeMember,
+        sourceGroup: SumiDomain.SplitGroup?,
+        into targetGroup: SumiDomain.SplitGroup,
+        target: SplitDropTarget,
+        windowState: BrowserWindowState
+    ) -> Bool {
+        guard target.side != .center else { return false }
+        guard targetGroup.memberIDs.count < SumiDomain.SplitGroup.maximumMembers
+        else {
+            notifyLimit(windowState)
+            return false
+        }
+        guard let updatedTree = SplitDropGroupAlgebra.resolvedTree(
+            for: incoming.member,
+            in: targetGroup,
+            target: target
+        ), let replacementTarget = targetGroup.replacingLayoutTree(
+            with: updatedTree
+        ) else {
+            return false
+        }
+        let expected = topology.groups
+        let replacement = SplitDropGroupAlgebra.replacingGroups(
+            expected,
+            sourceGroup: sourceGroup,
+            movingMemberID: incoming.member.memberID,
+            targetGroup: targetGroup,
+            replacementTarget: replacementTarget
+        )
+        let effect = SplitDropCommitEffect.resolving(
+            callerWindowID: windowState.id,
+            sourceGroup: sourceGroup,
+            targetGroup: targetGroup,
+            committedTargetGroupID: replacementTarget.id,
+            movingMemberID: incoming.member.memberID,
+            activatedMemberID: incoming.member.memberID,
+            replacementGroups: replacement
+        )
+        guard shortcutMemberRelocation.move(
+            incoming.member.memberID,
+            into: targetGroup.container,
+            expectedGroups: expected,
+            replacementGroups: replacement
+        ) else {
+            return false
+        }
+        presentations.reconcile(effect)
+        return true
+    }
+
     private func createGroup(
         _ incoming: ResolvedSplitRuntimeMember,
         sourceGroup: SumiDomain.SplitGroup?,
@@ -271,17 +385,33 @@ final class SplitDropService {
               let targetMember = memberResolver.makeMember(
                   for: target.targetMemberID,
                   windowState: windowState
-              ),
-              let targetLiveTab = memberResolver.liveTab(
-                  for: target.targetMemberID,
-                  in: windowState
-              ), targetLiveTab.representsSumiNativeSurface == false,
-              memberResolver.canCreateShortcutGroup(
-                  incoming: incoming.member.memberID,
-                  target: targetMember.memberID,
-                  in: windowState
               ) else {
             return false
+        }
+
+        let container = memberResolver.initialContainer(
+            incoming: incoming.member.memberID,
+            target: targetMember.memberID,
+            windowState: windowState
+        )
+        if case .regularTabs = container,
+           incoming.member.memberID.isShortcutPin
+                || targetMember.memberID.isShortcutPin {
+            guard let targetLiveTab = memberResolver.liveTab(
+                for: target.targetMemberID,
+                in: windowState
+            ), targetLiveTab.representsSumiNativeSurface == false else {
+                return false
+            }
+            return createRegularGroupByDuplicatingLaunchers(
+                incoming,
+                sourceGroup: sourceGroup,
+                targetMember: targetMember,
+                targetLiveTab: targetLiveTab,
+                target: target,
+                container: container,
+                windowState: windowState
+            )
         }
 
         let orderedMembers: [SplitMember]
@@ -294,16 +424,7 @@ final class SplitDropService {
             || target.side == .bottom
             ? .horizontal
             : .vertical
-        let container = memberResolver.initialContainer(
-            incoming: incoming.member.memberID,
-            target: targetMember.memberID,
-            windowState: windowState
-        )
-        guard memberResolver.canMoveShortcut(
-                  incoming.member.memberID,
-                  from: sourceGroup,
-                  into: container
-              ), let group = SumiDomain.SplitGroup.make(
+        guard let group = SumiDomain.SplitGroup.make(
             members: orderedMembers,
             layoutKind: layoutKind,
             container: container
@@ -327,11 +448,146 @@ final class SplitDropService {
                 activatedMemberID: incoming.member.memberID,
                 replacementGroups: replacement
             )
+        if container.isShortcutSidebar,
+           incoming.member.memberID.isShortcutPin,
+           memberResolver.canJoinShortcutSidebar(
+               incoming.member.memberID,
+               group: group
+           ) == false {
+            guard shortcutMemberRelocation.move(
+                incoming.member.memberID,
+                into: container,
+                expectedGroups: expected,
+                replacementGroups: replacement
+            ) else {
+                return false
+            }
+            presentations.reconcile(effect)
+            return true
+        }
         guard commit(
             expected: expected,
             replacement: replacement,
             effect: effect
-        ) else { return false }
+        ) else {
+            return false
+        }
+        presentations.reconcile(effect)
+        return true
+    }
+
+    private func insertDuplicatingShortcut(
+        _ incoming: ResolvedSplitRuntimeMember,
+        into targetGroup: SumiDomain.SplitGroup,
+        target: SplitDropTarget,
+        windowState: BrowserWindowState
+    ) -> Bool {
+        if target.side != .center,
+           targetGroup.memberIDs.count >= SumiDomain.SplitGroup.maximumMembers {
+            notifyLimit(windowState)
+            return false
+        }
+        let copy = duplication.duplicate(incoming.liveTab, in: windowState)
+        let member = SplitMember.regularTab(copy.id)
+        guard let updatedTree = SplitDropGroupAlgebra.resolvedTree(
+            for: member,
+            in: targetGroup,
+            target: target
+        ), let replacementTarget = targetGroup.replacingLayoutTree(
+            with: updatedTree
+        ) else {
+            duplication.discard(copy)
+            return false
+        }
+        let expected = topology.groups
+        guard let index = expected.firstIndex(where: { $0 == targetGroup }) else {
+            duplication.discard(copy)
+            return false
+        }
+        var replacement = expected
+        replacement[index] = replacementTarget
+        let effect = SplitDropCommitEffect.resolving(
+            callerWindowID: windowState.id,
+            sourceGroup: nil,
+            targetGroup: targetGroup,
+            committedTargetGroupID: replacementTarget.id,
+            movingMemberID: member,
+            activatedMemberID: member,
+            replacementGroups: replacement
+        )
+        guard commit(
+            expected: expected,
+            replacement: replacement,
+            effect: effect
+        ) else {
+            duplication.discard(copy)
+            return false
+        }
+        presentations.reconcile(effect)
+        return true
+    }
+
+    private func createRegularGroupByDuplicatingLaunchers(
+        _ incoming: ResolvedSplitRuntimeMember,
+        sourceGroup: SumiDomain.SplitGroup?,
+        targetMember: SplitMember,
+        targetLiveTab: Tab,
+        target: SplitDropTarget,
+        container: SplitGroupContainer,
+        windowState: BrowserWindowState
+    ) -> Bool {
+        var copies: [Tab] = []
+        func regularMember(_ member: SplitMember, liveTab: Tab) -> SplitMember {
+            guard member.isShortcutPin else { return member }
+            let copy = duplication.duplicate(liveTab, in: windowState)
+            copies.append(copy)
+            return .regularTab(copy.id)
+        }
+
+        let incomingMember = regularMember(
+            incoming.member,
+            liveTab: incoming.liveTab
+        )
+        let regularTarget = regularMember(targetMember, liveTab: targetLiveTab)
+        let orderedMembers = target.side.insertsBeforeTarget
+            ? [incomingMember, regularTarget]
+            : [regularTarget, incomingMember]
+        let layoutKind: SplitLayoutKind = target.side == .top
+            || target.side == .bottom ? .horizontal : .vertical
+        guard let group = SumiDomain.SplitGroup.make(
+            members: orderedMembers,
+            layoutKind: layoutKind,
+            container: container
+        ) else {
+            copies.forEach { duplication.discard($0) }
+            return false
+        }
+
+        let expected = topology.groups
+        let movesOriginalIncoming = incomingMember == incoming.member
+        var replacement = SplitDropGroupAlgebra.removingSourceGroup(
+            movesOriginalIncoming ? sourceGroup : nil,
+            memberID: incoming.member.memberID,
+            from: expected
+        )
+        replacement.append(group)
+        let effect = SplitDropCommitEffect.resolving(
+            callerWindowID: windowState.id,
+            sourceGroup: movesOriginalIncoming ? sourceGroup : nil,
+            targetGroup: nil,
+            committedTargetGroupID: group.id,
+            movingMemberID: incomingMember,
+            activatedMemberID: incomingMember,
+            replacementGroups: replacement
+        )
+        guard commit(
+            expected: expected,
+            replacement: replacement,
+            effect: effect
+        ) else {
+            copies.forEach { duplication.discard($0) }
+            return false
+        }
         presentations.reconcile(effect)
         return true
     }

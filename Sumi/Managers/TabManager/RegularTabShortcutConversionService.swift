@@ -38,6 +38,18 @@ final class RegularTabShortcutConversionService {
         candidates.prepare(tab, preferredWindowID: preferredWindowId)
     }
 
+    func prepareSplitGroupMoveMember(
+        _ tab: Tab,
+        sourceGroupID: UUID,
+        preferredWindowId: UUID?
+    ) -> TabShortcutConversionPreparation {
+        candidates.prepareSplitGroupMoveMember(
+            tab,
+            sourceGroupID: sourceGroupID,
+            preferredWindowID: preferredWindowId
+        )
+    }
+
     func prepareShortcutSidebarDrop(
         _ tab: Tab,
         into targetGroup: SumiDomain.SplitGroup,

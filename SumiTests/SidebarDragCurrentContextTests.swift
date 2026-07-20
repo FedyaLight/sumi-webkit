@@ -82,6 +82,36 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         XCTAssertEqual(renderedKinds, [.folderRow])
     }
 
+    func testSplitSegmentDragAnchorUsesWholeRowCoordinates() {
+        let geometry = SidebarDragPreviewSourceGeometry(
+            size: CGSize(width: 281, height: 36),
+            localOrigin: CGPoint(x: 141, y: 0)
+        )
+        let anchor = geometry.anchor(
+            forLocalPoint: CGPoint(x: 18, y: 20)
+        )
+
+        let session = SidebarDragPreviewSessionFactory.make(
+            configuration: SidebarDragSourceConfiguration(
+                item: .splitGroup(
+                    UUID(),
+                    title: "Split",
+                    urlString: "https://example.com"
+                ),
+                sourceZone: .spacePinned(UUID()),
+                previewKind: .row
+            ),
+            sourceSize: geometry.size,
+            sourceOffsetFromBottomLeading: anchor
+        )
+
+        XCTAssertEqual(anchor, CGPoint(x: 159, y: 20))
+        XCTAssertEqual(
+            session?.previewModel.anchorOffset(in: geometry.size).x,
+            159
+        )
+    }
+
     func testStandaloneShortcutPayloadResolvesByTypedPinIdentity() throws {
         let tabManager = BrowserManager()
         let profileID = UUID()
@@ -148,7 +178,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         ]
 
         XCTAssertEqual(
-            SidebarFloatingDragPreviewPolicy.resolvedPreviewKind(
+            SidebarDragPresentationProjection.resolvedPreviewKind(
                 baseKind: .row,
                 hoveredSlot: .essentials(slot: 0),
                 previewAssets: assets
@@ -165,12 +195,43 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         ]
 
         XCTAssertEqual(
-            SidebarFloatingDragPreviewPolicy.resolvedPreviewKind(
+            SidebarDragPresentationProjection.resolvedPreviewKind(
                 baseKind: .essentialsTile,
                 hoveredSlot: .spacePinned(spaceId: spaceId, slot: 0),
                 previewAssets: assets
             ),
             .row
+        )
+    }
+
+    func testEssentialSplitGroupRowPreviewCentersUnderPointer() throws {
+        let sourceSize = CGSize(width: 90, height: 64)
+        let rowSize = CGSize(width: 240, height: SidebarRowLayout.rowHeight)
+        let session = try XCTUnwrap(SidebarDragPreviewSessionFactory.make(
+            configuration: SidebarDragSourceConfiguration(
+                item: .splitGroup(UUID(), title: "Split View"),
+                sourceZone: .essentials,
+                previewKind: .essentialsTile
+            ),
+            sourceSize: sourceSize,
+            sourceOffsetFromBottomLeading: CGPoint(x: 12, y: 11)
+        ))
+
+        XCTAssertEqual(
+            SidebarDragPresentationProjection.anchorOffset(
+                for: session.previewModel,
+                previewKind: .row,
+                in: rowSize
+            ),
+            CGPoint(x: rowSize.width / 2, y: rowSize.height / 2)
+        )
+        XCTAssertNotEqual(
+            SidebarDragPresentationProjection.anchorOffset(
+                for: session.previewModel,
+                previewKind: .essentialsTile,
+                in: sourceSize
+            ),
+            CGPoint(x: sourceSize.width / 2, y: sourceSize.height / 2)
         )
     }
 
@@ -191,7 +252,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
                 urlString: "https://example.com"
             )
         )
-        state.hoveredSlot = .spacePinned(spaceId: spaceId, slot: 0)
+        present(.spacePinned(spaceId: spaceId, slot: 0), in: state)
 
         state.beginDropCommit()
 
@@ -222,7 +283,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         let draggedItemId = UUID()
         state.isDragging = true
         state.activeDragItemId = draggedItemId
-        state.hoveredSlot = .spacePinned(spaceId: spaceId, slot: 0)
+        present(.spacePinned(spaceId: spaceId, slot: 0), in: state)
 
         state.beginDropCommit()
         state.resetInteractionState()
@@ -248,13 +309,13 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         let secondDraggedItemId = UUID()
         state.isDragging = true
         state.activeDragItemId = firstDraggedItemId
-        state.hoveredSlot = .spacePinned(spaceId: spaceId, slot: 0)
+        present(.spacePinned(spaceId: spaceId, slot: 0), in: state)
         state.beginDropCommit()
         state.resetInteractionState()
 
         state.isDragging = true
         state.activeDragItemId = secondDraggedItemId
-        state.hoveredSlot = .spacePinned(spaceId: spaceId, slot: 1)
+        present(.spacePinned(spaceId: spaceId, slot: 1), in: state)
         state.beginDropCommit()
 
         XCTAssertEqual(delayedActions.pendingActionCount, 0)
@@ -586,194 +647,6 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         XCTAssertEqual(harness.windowState.currentTabId, tab.id)
         XCTAssertEqual(harness.windowState.currentShortcutPinId, pin.id)
         XCTAssertEqual(harness.windowState.currentShortcutPinRole, .essential)
-    }
-
-    func testSplitVisibleRegularTabDropIntoSpacePinnedPreservesLiveInstanceAndSplit() throws {
-        let harness = try makeLiveWindowHarness()
-        let tabManager = harness.tabManager
-        let profileId = UUID()
-        let space = try makeSpace(tabManager, name: "Work", profileId: profileId)
-        let currentTab = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/current", in: space)
-        let draggedTab = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/split-pin", in: space, activate: false)
-        harness.windowState.currentSpaceId = space.id
-        harness.windowState.currentProfileId = profileId
-        harness.windowState.currentTabId = currentTab.id
-        let splitGroup = try XCTUnwrap(
-            SplitGroup.make(
-                members: [
-                    .regularTab(currentTab.id),
-                    .regularTab(draggedTab.id),
-                ],
-                layoutKind: .vertical,
-                container: .regularTabs(spaceId: space.id)
-            )
-        )
-        XCTAssertTrue(
-            tabManager.splitGroupMutations.insert(
-                splitGroup,
-                persist: false
-            )
-        )
-        harness.windowState.splitSelection = WindowSplitSelection(
-            groupID: splitGroup.id,
-            activeMemberID: .regularTab(currentTab.id)
-        )
-        harness.browserManager.materializeVisibleTabWebViewIfNeeded(
-            draggedTab,
-            in: harness.windowState
-        )
-        XCTAssertEqual(
-            tabManager.runtimePortConnection.current?.webViewLifecycle
-                .primaryTrackedWindowId(for: draggedTab.id),
-            harness.windowState.id
-        )
-        let scope = try makeScope(
-            spaceId: space.id,
-            profileId: profileId,
-            sourceZone: .spaceRegular(space.id),
-            item: dragItem(draggedTab)
-        )
-
-        let didMove = tabManager.sidebarDragRouter.performSidebarDragOperation(
-            DragOperation(
-                payload: .tab(draggedTab),
-                scope: scope,
-                fromContainer: .spaceRegular(space.id),
-                toContainer: .spacePinned(space.id),
-                toIndex: 0
-            )
-        )
-
-        XCTAssertTrue(didMove)
-        XCTAssertEqual(tabManager.regularTabCollectionOwner.tabs(in: space.id).map(\.id), [currentTab.id])
-        let pin = try XCTUnwrap(tabManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: space.id).first)
-        let liveTab = try XCTUnwrap(tabManager.shortcutPresentationOwner.shortcutLiveTab(for: pin.id, in: harness.windowState.id))
-        XCTAssertIdentical(liveTab, draggedTab)
-        XCTAssertTrue(liveTab.isShortcutLiveInstance)
-        XCTAssertEqual(liveTab.shortcutPinId, pin.id)
-        XCTAssertEqual(liveTab.shortcutPinRole, .spacePinned)
-        let convertedGroup = try XCTUnwrap(
-            tabManager.splitGroupStore.group(id: splitGroup.id)
-        )
-        XCTAssertEqual(convertedGroup.layoutKind, splitGroup.layoutKind)
-        XCTAssertEqual(
-            Set(convertedGroup.memberIDs),
-            [.regularTab(currentTab.id), .shortcutPin(pin.id)]
-        )
-        XCTAssertEqual(
-            convertedGroup.member(for: .shortcutPin(pin.id)),
-            SplitMember.shortcutPin(
-                pin.id,
-                returnPlacement: .spacePinned(
-                    spaceId: space.id,
-                    folderId: nil,
-                    index: 0
-                )
-            )
-        )
-        XCTAssertNotNil(
-            harness.browserManager.splitWindowContext.query.group(in: harness.windowState.id)
-        )
-        XCTAssertEqual(
-            harness.browserManager.splitWindowContext.query.visibleTabIDs(
-                in: harness.windowState.id
-            ),
-            [currentTab.id, draggedTab.id]
-        )
-    }
-
-    func testSplitVisibleRegularTabDropIntoEssentialsPreservesLiveInstanceAndSplit() throws {
-        let harness = try makeLiveWindowHarness()
-        let tabManager = harness.tabManager
-        let profileId = UUID()
-        let space = try makeSpace(tabManager, name: "Work", profileId: profileId)
-        let currentTab = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/current", in: space)
-        let draggedTab = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/split-essential", in: space, activate: false)
-        harness.windowState.currentSpaceId = space.id
-        harness.windowState.currentProfileId = profileId
-        harness.windowState.currentTabId = currentTab.id
-        let splitGroup = try XCTUnwrap(
-            SplitGroup.make(
-                members: [
-                    .regularTab(currentTab.id),
-                    .regularTab(draggedTab.id),
-                ],
-                layoutKind: .vertical,
-                container: .regularTabs(spaceId: space.id)
-            )
-        )
-        XCTAssertTrue(
-            tabManager.splitGroupMutations.insert(
-                splitGroup,
-                persist: false
-            )
-        )
-        harness.windowState.splitSelection = WindowSplitSelection(
-            groupID: splitGroup.id,
-            activeMemberID: .regularTab(currentTab.id)
-        )
-        harness.browserManager.materializeVisibleTabWebViewIfNeeded(
-            draggedTab,
-            in: harness.windowState
-        )
-        XCTAssertEqual(
-            tabManager.runtimePortConnection.current?.webViewLifecycle
-                .primaryTrackedWindowId(for: draggedTab.id),
-            harness.windowState.id
-        )
-        let scope = try makeScope(
-            spaceId: space.id,
-            profileId: profileId,
-            sourceZone: .spaceRegular(space.id),
-            item: dragItem(draggedTab)
-        )
-
-        let didMove = tabManager.sidebarDragRouter.performSidebarDragOperation(
-            DragOperation(
-                payload: .tab(draggedTab),
-                scope: scope,
-                fromContainer: .spaceRegular(space.id),
-                toContainer: .essentials,
-                toIndex: 0
-            )
-        )
-
-        XCTAssertTrue(didMove)
-        XCTAssertEqual(tabManager.regularTabCollectionOwner.tabs(in: space.id).map(\.id), [currentTab.id])
-        let pin = try XCTUnwrap(tabManager.shortcutPinCollectionStateOwner.essentialPins(for: profileId).first)
-        let liveTab = try XCTUnwrap(tabManager.shortcutPresentationOwner.shortcutLiveTab(for: pin.id, in: harness.windowState.id))
-        XCTAssertIdentical(liveTab, draggedTab)
-        XCTAssertTrue(liveTab.isShortcutLiveInstance)
-        XCTAssertEqual(liveTab.shortcutPinId, pin.id)
-        XCTAssertEqual(liveTab.shortcutPinRole, .essential)
-        XCTAssertNil(liveTab.spaceId)
-        let convertedGroup = try XCTUnwrap(
-            tabManager.splitGroupStore.group(id: splitGroup.id)
-        )
-        XCTAssertEqual(convertedGroup.layoutKind, splitGroup.layoutKind)
-        XCTAssertEqual(
-            Set(convertedGroup.memberIDs),
-            [.regularTab(currentTab.id), .shortcutPin(pin.id)]
-        )
-        XCTAssertEqual(
-            convertedGroup.member(for: .shortcutPin(pin.id)),
-            SplitMember.shortcutPin(
-                pin.id,
-                returnPlacement: .essential(
-                    profileId: profileId,
-                    index: 0
-                )
-            )
-        )
-        XCTAssertNotNil(
-            harness.browserManager.splitWindowContext.query.group(in: harness.windowState.id)
-        )
-        XCTAssertEqual(
-            harness.browserManager.splitWindowContext.query.visibleTabIDs(
-                in: harness.windowState.id
-            ),
-            [currentTab.id, draggedTab.id]
-        )
     }
 
     func testNonDisplayedRegularTabDropIntoShortcutSectionsCreatesLauncherWithoutLiveTab() throws {
@@ -2155,6 +2028,16 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         XCTAssertEqual(harness.windowState.currentTabId, liveTab.id)
         XCTAssertEqual(harness.windowState.currentShortcutPinId, movedPin.id)
         XCTAssertEqual(harness.windowState.currentShortcutPinRole, movedPin.role)
+    }
+
+    private func present(_ slot: DropZoneSlot, in state: SidebarDragState) {
+        state.presentDropResolution(
+            SidebarDropResolution(
+                slot: slot,
+                folderIntent: .none,
+                activeHoveredFolderId: nil
+            )
+        )
     }
 
     private func makePin(

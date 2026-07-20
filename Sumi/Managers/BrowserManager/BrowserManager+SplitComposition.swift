@@ -90,50 +90,11 @@ extension BrowserManager {
         )
     }
 
-    func composeSplitLauncherPlacement() -> ShortcutSplitLauncherPlacementService {
-        let destinationResolver = ShortcutSplitLauncherDestinationResolver(
-            folders: folderCollectionStateOwner,
-            spacePinnedStructure: spacePinnedStructureOwner
-        )
-        let moveBatches = ShortcutSplitLauncherMoveBatchStaging(
-            catalog: ShortcutSplitLauncherCatalogTransaction(
-                pinStore: shortcutPinStoreOwner,
-                pins: shortcutPinCollectionStateOwner
-            ),
-            bindingStaging: ShortcutSplitLauncherBindingStaging(
-                refreshes: liveShortcutPresentationRefreshes,
-                resolution: shortcutPinRuntimeResolutionOwner,
-                batches: ShortcutTabBindingBatchFactory(
-                    runtimeConnection: runtimePortConnection,
-                    windowMutations: shortcutWindowMutationOwner,
-                    profiles: tabProfileTransitions,
-                    persistence: ShortcutSplitLauncherWindowPersistence(
-                        structuralLookup: structuralLookupCoordinator
-                    ),
-                    structuralLookup: structuralLookupCoordinator
-                )
-            ),
-            residenceMutations: liveShortcutTabs.staging,
-            structuralMutations: structuralCollectionMutationOwner,
-            structuralLookup: structuralLookupCoordinator
-        )
-        return ShortcutSplitLauncherPlacementService(
-            pins: shortcutPinCollectionStateOwner,
-            destinationResolver: destinationResolver,
-            moves: ShortcutSplitLauncherMoveTransaction(
-                batches: moveBatches,
-                windowMutations: shortcutWindowMutationOwner,
-                folderOpenState: folderOpenState
-            )
-        )
-    }
-
     func composeSplitLauncherRelease() -> ShortcutSplitLauncherReleasePlanner {
         ShortcutSplitLauncherReleasePlanner(
             pins: shortcutPinCollectionStateOwner,
             destinationResolver: ShortcutSplitLauncherDestinationResolver(
-                folders: folderCollectionStateOwner,
-                spacePinnedStructure: spacePinnedStructureOwner
+                folders: folderCollectionStateOwner
             )
         )
     }
@@ -142,7 +103,6 @@ extension BrowserManager {
         SplitGroupDissolutionService(
             splitGroups: splitGroupStore,
             mutations: splitGroupMutations,
-            launcherPlacement: splitLauncherPlacement,
             presentations: splitPresentations
         )
     }
@@ -203,14 +163,18 @@ extension BrowserManager {
                 structuralLookup: structuralLookupCoordinator,
                 membership: splitGroupMembership,
                 splitGroups: splitGroupStore,
-                mutations: splitGroupMutations,
-                launcherPlacement: splitLauncherPlacement
+                mutations: splitGroupMutations
             ),
             memberResolver: splitMembers,
             regularShortcutSidebarDrop: RegularTabShortcutSidebarDropTransaction(
                 conversion: regularTabShortcutConversion,
-                launcherPlacement: splitLauncherPlacement,
                 presentations: splitPresentations
+            ),
+            shortcutMemberRelocation: splitGroupShortcutMemberRelocation,
+            duplication: SplitTabDuplicationService(
+                spaces: spaceStateOwner,
+                regularTabs: regularTabLifecycleOwner,
+                closure: tabClosureService
             ),
             presentations: splitPresentations,
             notifyLimit: { [weak self] in
@@ -231,26 +195,6 @@ extension BrowserManager {
             },
             members: splitMembers,
             drops: splitDrops
-        )
-    }
-
-    func composeSplitShortcutMemberRestoration()
-        -> SplitShortcutMemberRestoreService {
-        SplitShortcutMemberRestoreService(
-            preparation: SplitShortcutMemberRestorePreparationService(
-                splitGroups: splitGroupStore,
-                pins: shortcutPinCollectionStateOwner,
-                liveShortcuts: liveShortcutTabs,
-                runtimeConnection: runtimePortConnection,
-                launcherPlacement: splitLauncherPlacement
-            ),
-            splitMutations: splitGroupMutations,
-            shortcutRetirement: shortcutLiveTabRetirement,
-            publication: SplitShortcutMemberRestorePublication(
-                presentations: splitPresentations,
-                folderOpenState: folderOpenState,
-                visuals: shellRuntime.windowVisuals
-            )
         )
     }
 
@@ -286,20 +230,12 @@ extension BrowserManager {
             topology: SplitLayoutTopologyTransaction(
                 splitGroups: splitGroupStore,
                 mutations: splitGroupMutations,
-                regularTabs: regularTabCollectionOwner,
-                launcherPlacement: splitLauncherPlacement
+                regularTabs: regularTabCollectionOwner
             ),
             query: splitQuery,
             weightMutations: splitWeightMutations,
             presentations: splitPresentations,
-            dissolution: splitDissolution,
-            restoreShortcutMember: { [splitShortcutMemberRestoration] in
-                splitShortcutMemberRestoration.restoreShortcutSplitMember(
-                    $0,
-                    from: $1,
-                    in: $2
-                )
-            }
+            dissolution: splitDissolution
         )
     }
 

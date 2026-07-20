@@ -1,15 +1,15 @@
 @MainActor
-final class PreparedSplitShortcutMemberRestoreSettlement {
+final class PreparedShortcutSplitLauncherMoveSettlement {
     private enum State { case active, rolledBack, terminal, conflicted }
 
     private let binding: any ShortcutSplitLauncherBindingModelTransaction
-    private let participants: SplitShortcutMemberRestoreParticipants
+    private let participants: ShortcutSplitLauncherMoveParticipants
     private let structural: TabStructuralCollectionMutationOwner.PreparedAggregate
     private var state = State.active
 
     init(
         binding: any ShortcutSplitLauncherBindingModelTransaction,
-        participants: SplitShortcutMemberRestoreParticipants,
+        participants: ShortcutSplitLauncherMoveParticipants,
         structural: TabStructuralCollectionMutationOwner.PreparedAggregate
     ) {
         self.binding = binding
@@ -35,7 +35,7 @@ final class PreparedSplitShortcutMemberRestoreSettlement {
 
     func failPreparation() -> Bool {
         guard case .active = state else { return false }
-        let restored = SplitShortcutMemberRestoreCompensation
+        let restored = ShortcutSplitLauncherMoveCompensation
             .settleFailedPreparation(binding: binding, structural: structural)
         state = restored ? .terminal : .conflicted
         return restored
@@ -50,7 +50,7 @@ final class PreparedSplitShortcutMemberRestoreSettlement {
 
     func failBindingStage() -> Bool {
         guard case .active = state else { return false }
-        let restored = SplitShortcutMemberRestoreCompensation
+        let restored = ShortcutSplitLauncherMoveCompensation
             .settleFailedBindingStage(
                 binding: binding,
                 participants: participants,
@@ -62,7 +62,7 @@ final class PreparedSplitShortcutMemberRestoreSettlement {
 
     func rollbackStagedModel() -> Bool {
         guard case .active = state else { return false }
-        let restored = SplitShortcutMemberRestoreCompensation
+        let restored = ShortcutSplitLauncherMoveCompensation
             .rollbackStagedModel(
                 binding: binding,
                 participants: participants,
@@ -101,7 +101,7 @@ final class PreparedSplitShortcutMemberRestoreSettlement {
               let destructiveEffect = participants.prepareTerminalDrain()
         else { return false }
         state = .terminal
-        let siblingsSettled = SplitShortcutMemberRestoreTerminalDrain
+        let siblingsSettled = ShortcutSplitLauncherMoveTerminalDrain
             .settleSiblings(binding: binding, structural: structural)
         destructiveEffect()
         return siblingsSettled

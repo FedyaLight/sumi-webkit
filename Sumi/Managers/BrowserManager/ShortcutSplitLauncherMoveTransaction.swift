@@ -25,9 +25,9 @@ final class ShortcutSplitLauncherMoveTransaction {
     }
 
     func preflightBindingContribution(
-        _ restorations: [PreparedShortcutSplitLauncherRestoration]
+        _ preparedMoves: [PreparedShortcutSplitLauncherMove]
     ) -> ShortcutSplitLauncherBindingPreflight? {
-        batches.preflightBindingContribution(restorations)
+        batches.preflightBindingContribution(preparedMoves)
     }
 
     func prepareBindingContribution(
@@ -38,9 +38,9 @@ final class ShortcutSplitLauncherMoveTransaction {
     }
 
     func stage(
-        _ restorations: [PreparedShortcutSplitLauncherRestoration]
+        _ preparedMoves: [PreparedShortcutSplitLauncherMove]
     ) -> RegularTabShortcutSidebarMutation? {
-        guard let batch = batches.prepare(restorations) else { return nil }
+        guard let batch = batches.prepare(preparedMoves) else { return nil }
         return RegularTabShortcutSidebarMutation(
             batch: batch,
             windowMutations: windowMutations,
@@ -49,11 +49,11 @@ final class ShortcutSplitLauncherMoveTransaction {
     }
 
     func stageForComposedResidenceAggregate(
-        _ restorations: [PreparedShortcutSplitLauncherRestoration],
+        _ preparedMoves: [PreparedShortcutSplitLauncherMove],
         bindingMode: ShortcutSplitLauncherComposedBindingMode
     ) -> (any ShortcutSplitLauncherComposedMoveBatchParticipant)? {
         batches.prepareForComposedResidenceAggregate(
-            restorations,
+            preparedMoves,
             bindingMode: bindingMode
         )
     }

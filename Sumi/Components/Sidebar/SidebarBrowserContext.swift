@@ -6,6 +6,8 @@ struct SidebarBrowserContext {
     let liveFolderManager: SumiLiveFolderManager
     let splitQuery: WindowSplitQuery
     let splitLayout: SplitLayoutService
+    let splitInsertion: SplitInsertionService
+    let splitMembership: SplitGroupMembershipQuery
     let emptySplitCreation: EmptySplitCreationWorkflow
     let downloadManager: DownloadManager
     let downloadsPopoverPresenter: DownloadsPopoverPresenter
@@ -29,6 +31,8 @@ struct SidebarBrowserContext {
     let floatingBarCommit: FloatingBarCommitService
     let splitFocusCommands: SidebarSplitFocusCommands
     let splitCloseCommand: SidebarSplitCloseCommand
+    let splitGroupLifecycle: SidebarSplitGroupLifecycleCommands
+    let splitGroupEditor: SidebarSplitGroupEditorPresentationService
     let shortcutCopy: SidebarPinCommands
     let shortcutPinUnload: BrowserShortcutPinUnloadOwner
     let headerContextOwner: BrowserURLBarContextOwner

@@ -93,7 +93,6 @@ extension BrowserManager {
         let dragTransactions = SidebarDragTransactionPort(
             windows: windowIdentity,
             sourceInventory: SidebarDragSourceInventory(
-                essentialPins: shortcutPinCollectionStateOwner,
                 splitOrdering: splitGroupSidebarOrdering,
                 regularTabs: regularTabCollectionOwner,
                 folders: folderCollectionStateOwner,

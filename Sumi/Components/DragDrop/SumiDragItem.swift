@@ -225,6 +225,20 @@ struct SumiDragItem: Codable, Equatable {
         )
     }
 
+    static func splitGroup(
+        _ groupID: UUID,
+        title: String,
+        urlString: String = ""
+    ) -> SumiDragItem {
+        SumiDragItem(
+            tabId: groupID,
+            kind: .splitGroup,
+            title: title,
+            urlString: urlString,
+            splitGroupID: groupID
+        )
+    }
+
     static func shortcutPin(
         _ pinID: UUID,
         title: String,
@@ -239,7 +253,7 @@ struct SumiDragItem: Codable, Equatable {
     }
 
     var stableID: UUID {
-        splitMemberID?.rawUUID ?? tabId
+        splitGroupID ?? splitMemberID?.rawUUID ?? tabId
     }
 }
 

@@ -155,14 +155,11 @@ struct ProfileReferenceInventory {
         into profileIDs: inout Set<UUID>
     ) {
         for group in groups {
-            if case .shortcutSidebar(_, let profileID, _, _) = group.container {
-                profileIDs.insertIfPresent(profileID)
-            }
-
-            for member in group.members {
-                guard case .essential(let profileID, _) = member.returnPlacement else {
-                    continue
-                }
+            switch group.container {
+            case .regularTabs:
+                break
+            case .essentialSidebar(let profileID, _),
+                 .shortcutSidebar(_, let profileID, _, _):
                 profileIDs.insertIfPresent(profileID)
             }
         }

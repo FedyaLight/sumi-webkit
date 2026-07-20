@@ -347,7 +347,7 @@ struct FloatingBarView: View {
                 isFloatingBarVisible: windowState.presentationState.isFloatingBarVisible
             )
         }
-        .onChange(of: searchSession.searchManager.suggestions.count) { _, _ in
+        .onChange(of: searchSession.visibleSuggestions.count) { _, _ in
             searchSession.handleSuggestionsChanged(chromeContentAnimation: chromeContentAnimation)
         }
         .onChange(of: searchSession.searchManager.isLoadingSuggestions) { _, isLoading in
@@ -371,6 +371,10 @@ struct FloatingBarView: View {
             refreshEmptyStateSuggestionsIfNeeded()
         }
         .onChange(of: windowState.floatingBarPresentationReason) { _, _ in
+            if windowState.presentationState.isFloatingBarVisible {
+                searchSession.isCommandSuggestionAllowed =
+                    browserContext.offersCommandSuggestions(in: windowState)
+            }
             refreshEmptyStateSuggestionsIfNeeded()
         }
     }
@@ -407,6 +411,8 @@ struct FloatingBarView: View {
             deferredTextOwner.beginSession(windowID: windowID)
             installOutsideClickMonitorIfNeeded()
             browserContext.configureSearchManager(searchSession.searchManager)
+            searchSession.isCommandSuggestionAllowed =
+                browserContext.offersCommandSuggestions(in: windowState)
 
             searchSession.text = windowState.floatingBarDraftText
             refreshEmptyStateSuggestionsIfNeeded()

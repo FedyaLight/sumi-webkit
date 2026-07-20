@@ -30,6 +30,15 @@ retired_files=(
   Sumi/Managers/BrowserManager/SplitShortcutServices+Live.swift
   Sumi/Managers/BrowserManager/SplitShortcutServices.swift
   Sumi/Managers/BrowserManager/BrowserSplitServices.swift
+  Sumi/Components/Sidebar/PinnedButtons/PinnedSplitPlaceholderTile.swift
+  Sumi/Components/Sidebar/SpaceSection/ShortcutSplitPlaceholderRow.swift
+  Sumi/Components/Sidebar/SpaceSection/SpaceShortcutRestorePlanner.swift
+  Sumi/Managers/TabManager/SidebarDragOperationPlanner.swift
+  Sumi/Managers/TabManager/SidebarDragPlanExecutor.swift
+  Sumi/Managers/BrowserManager/PreparedShortcutSplitLauncherRestorationBatch.swift
+  Sumi/Managers/BrowserManager/SplitShortcutMemberRestoreHandoffReceipt.swift
+  Sumi/Managers/BrowserManager/ShortcutSplitLauncherRestoration.swift
+  Sumi/Managers/BrowserManager/SplitShortcutMemberRestoreService.swift
   SumiTests/SplitGroupCollectionStateOwnerTests.swift
   SumiTests/SplitMembershipResolutionOwnerTests.swift
   SumiTests/SplitEmptyPlaceholderOwnerTests.swift
@@ -58,6 +67,9 @@ required_runtime_components=(
   Sumi/Managers/TabManager/SplitGroupStore.swift
   Sumi/Managers/TabManager/SplitGroupMutationService.swift
   Sumi/Managers/TabManager/SplitGroupMembershipQuery.swift
+  Sumi/Managers/TabManager/SidebarVisualOrdering.swift
+  Sumi/Managers/TabManager/SplitGroupContainerConversion.swift
+  Sumi/Managers/TabManager/SplitGroupShortcutMemberRelocation.swift
   Sumi/Managers/SplitRuntime/WindowSplitProjection.swift
   Sumi/Models/Window/WindowSplitPresentation.swift
   Sumi/Managers/BrowserManager/WindowSplitMaterializationService.swift
@@ -75,9 +87,9 @@ required_runtime_components=(
   Sumi/Managers/BrowserManager/ShortcutSplitLauncherCatalogPinReceipt.swift
   Sumi/Managers/BrowserManager/ShortcutSplitLauncherReleasePlanner.swift
   Sumi/Managers/BrowserManager/ShortcutSplitLauncherReleaseReceipt.swift
-  Sumi/Managers/BrowserManager/PreparedShortcutSplitLauncherRestorationBatch.swift
-  Sumi/Managers/BrowserManager/SplitShortcutMemberRestoreHandoffReceipt.swift
-  Sumi/Managers/BrowserManager/ShortcutSplitLauncherRestoration.swift
+  Sumi/Managers/BrowserManager/PreparedShortcutSplitLauncherMoveBatch.swift
+  Sumi/Managers/BrowserManager/PreparedShortcutSplitLauncherMoveSettlement.swift
+  Sumi/Managers/BrowserManager/ShortcutSplitLauncherMoveAggregateTransaction.swift
   Sumi/Managers/SplitRuntime/WindowSplitQuery.swift
   Sumi/Managers/SplitRuntime/WindowSplitPresentationSynchronizer.swift
   Sumi/Managers/SplitRuntime/WindowSplitPresentationEffectExecutor.swift

@@ -12,19 +12,25 @@ public struct SplitGroup: Identifiable, Equatable, Hashable, Sendable {
     public let layoutKind: SplitLayoutKind
     public let layoutTree: SplitLayoutTree
     public let container: SplitGroupContainer
+    public let title: String?
+    public let iconAsset: String?
 
     private enum CodingKeys: String, CodingKey {
         case id
         case layoutKind
         case layoutTree
         case container
+        case title
+        case iconAsset
     }
 
     public init?(
         id: UUID = UUID(),
         layoutKind: SplitLayoutKind,
         layoutTree: SplitLayoutTree,
-        container: SplitGroupContainer = .regularTabs(spaceId: nil)
+        container: SplitGroupContainer = .regularTabs(spaceId: nil),
+        title: String? = nil,
+        iconAsset: String? = nil
     ) {
         let rootedTree = SplitLayoutSizing.settingWeight(1, in: layoutTree)
         guard let canonicalTree = SplitLayoutReconciler
@@ -37,7 +43,15 @@ public struct SplitGroup: Identifiable, Equatable, Hashable, Sendable {
               Set(memberIDs).count == memberIDs.count else {
             return nil
         }
-        if container.isShortcutSidebar {
+        switch container {
+        case .regularTabs:
+            guard memberIDs.allSatisfy({ memberID in
+                if case .regularTab = memberID { return true }
+                return false
+            }) else {
+                return nil
+            }
+        case .shortcutSidebar, .essentialSidebar:
             guard memberIDs.allSatisfy({ memberID in
                 if case .shortcutPin = memberID { return true }
                 return false
@@ -49,13 +63,17 @@ public struct SplitGroup: Identifiable, Equatable, Hashable, Sendable {
         self.layoutKind = layoutKind
         self.layoutTree = canonicalTree
         self.container = container
+        self.title = title
+        self.iconAsset = iconAsset
     }
 
     public static func make(
         id: UUID = UUID(),
         members: [SplitMember],
         layoutKind: SplitLayoutKind,
-        container: SplitGroupContainer = .regularTabs(spaceId: nil)
+        container: SplitGroupContainer = .regularTabs(spaceId: nil),
+        title: String? = nil,
+        iconAsset: String? = nil
     ) -> SplitGroup? {
         guard members.count >= minimumMembers,
               let tree = SplitLayoutFactory.make(
@@ -68,7 +86,9 @@ public struct SplitGroup: Identifiable, Equatable, Hashable, Sendable {
             id: id,
             layoutKind: layoutKind,
             layoutTree: tree,
-            container: container
+            container: container,
+            title: title,
+            iconAsset: iconAsset
         )
     }
 
@@ -99,7 +119,9 @@ public struct SplitGroup: Identifiable, Equatable, Hashable, Sendable {
             id: id,
             layoutKind: layoutKind,
             layoutTree: tree,
-            container: container
+            container: container,
+            title: title,
+            iconAsset: iconAsset
         )
     }
 
@@ -110,7 +132,9 @@ public struct SplitGroup: Identifiable, Equatable, Hashable, Sendable {
             id: id,
             layoutKind: layoutKind,
             layoutTree: layoutTree,
-            container: container
+            container: container,
+            title: title,
+            iconAsset: iconAsset
         )
     }
 
@@ -121,7 +145,23 @@ public struct SplitGroup: Identifiable, Equatable, Hashable, Sendable {
             id: id,
             layoutKind: layoutKind,
             layoutTree: layoutTree,
-            container: container
+            container: container,
+            title: title,
+            iconAsset: iconAsset
+        )
+    }
+
+    public func editingMetadata(
+        title: String?,
+        iconAsset: String?
+    ) -> SplitGroup? {
+        SplitGroup(
+            id: id,
+            layoutKind: layoutKind,
+            layoutTree: layoutTree,
+            container: container,
+            title: title,
+            iconAsset: iconAsset
         )
     }
 
@@ -248,11 +288,18 @@ extension SplitGroup: Codable {
             SplitGroupContainer.self,
             forKey: .container
         )
+        let title = try container.decodeIfPresent(String.self, forKey: .title)
+        let iconAsset = try container.decodeIfPresent(
+            String.self,
+            forKey: .iconAsset
+        )
         guard let group = SplitGroup(
             id: id,
             layoutKind: layoutKind,
             layoutTree: layoutTree,
-            container: groupContainer
+            container: groupContainer,
+            title: title,
+            iconAsset: iconAsset
         ) else {
             throw DecodingError.dataCorruptedError(
                 forKey: .layoutTree,
@@ -269,5 +316,7 @@ extension SplitGroup: Codable {
         try container.encode(layoutKind, forKey: .layoutKind)
         try container.encode(layoutTree, forKey: .layoutTree)
         try container.encode(self.container, forKey: .container)
+        try container.encodeIfPresent(title, forKey: .title)
+        try container.encodeIfPresent(iconAsset, forKey: .iconAsset)
     }
 }

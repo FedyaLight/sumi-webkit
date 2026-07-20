@@ -6,6 +6,7 @@ struct RegularTabShortcutStructurePlan {
     let sourceTabID: UUID
     let expectedSplitGroups: [SumiDomain.SplitGroup]
     let sourceSplitGroup: SumiDomain.SplitGroup?
+    let presentationSourceSplitGroupID: UUID?
     let structuralRevision: UInt64
     let profileRevision: UInt64
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Split-shortcut focus, restore, unload and close paths retain concrete
+# Split-shortcut focus, unload and close paths retain concrete
 # behavioral roles. Lifetime callback slots and replacement bags are forbidden.
 set -euo pipefail
 
@@ -12,10 +12,6 @@ guard_initialize "$repo_root"
 sources=(
   Sumi/Managers/BrowserManager/SplitShortcutFocusPresentationService.swift
   Sumi/Managers/BrowserManager/SplitShortcutFocusService.swift
-  Sumi/Managers/BrowserManager/SplitShortcutMemberRestorePreparationService.swift
-  Sumi/Managers/BrowserManager/SplitShortcutMemberRestoreService.swift
-  Sumi/Managers/BrowserManager/SplitShortcutMemberRestoreHandoffReceipt.swift
-  Sumi/Managers/BrowserManager/SplitShortcutMemberRestorePublication.swift
   Sumi/Managers/BrowserManager/ShortcutHostedSplitUnloadService.swift
   Sumi/Managers/BrowserManager/ShortcutHostedSplitFallbackQuery.swift
   Sumi/Managers/BrowserManager/ShortcutLiveTabCloseService.swift
@@ -57,9 +53,6 @@ guard_expect_no_matches \
 declare -a type_limits=(
   'SplitShortcutFocusPresentationService|3'
   'SplitShortcutFocusService|4'
-  'SplitShortcutMemberRestorePreparationService|5'
-  'SplitShortcutMemberRestorePublication|3'
-  'SplitShortcutMemberRestoreService|4'
   'ShortcutHostedSplitFallbackQuery|2'
   'ShortcutHostedSplitUnloadService|5'
   'ShortcutLiveTabCloseService|4'

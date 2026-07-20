@@ -142,7 +142,10 @@ extension ShortcutSidebarRowChrome {
     }
 
     var currentLoadedStoredFavicon: Image? {
-        storedFaviconLoader.image(for: pin.launchURL)
+        storedFaviconLoader.image(
+            for: pin.launchURL,
+            partition: faviconPartition
+        )
     }
 
     var currentCachedStoredFavicon: Image? {

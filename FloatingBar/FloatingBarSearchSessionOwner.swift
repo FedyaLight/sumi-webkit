@@ -12,7 +12,9 @@ final class FloatingBarSearchSessionOwner {
     var isWaitingForSearchDebounce = false
     var committedSuggestionLayoutCount = 0
     var isSuggestionPreviewActive = false
+    var isCommandSuggestionAllowed = false
 
+    private let commandProvider = FloatingBarCommandSuggestionProvider()
     private var searchDebouncer = MainActorDebouncedTask()
     private var suppressNextTextSearch = false
     private var suggestionPreviewRestorationText: String?
@@ -28,7 +30,10 @@ final class FloatingBarSearchSessionOwner {
                 return false
             }
         }
-        return searchManager.suggestions
+        guard isCommandSuggestionAllowed else {
+            return searchManager.suggestions
+        }
+        return commandProvider.suggestions(for: text) + searchManager.suggestions
     }
 
     var visibleSuggestionLayoutCount: Int {
@@ -224,6 +229,8 @@ final class FloatingBarSearchSessionOwner {
             return bookmark.url.absoluteString
         case .tab(let tab):
             return tab.url.absoluteString
+        case .command:
+            return suggestion.text
         }
     }
 
@@ -275,6 +282,7 @@ final class FloatingBarSearchSessionOwner {
         isSuggestionPreviewActive = false
         suggestionPreviewRestorationText = nil
         suppressNextTextSearch = false
+        isCommandSuggestionAllowed = false
     }
 
     func cancelPendingSearch() {

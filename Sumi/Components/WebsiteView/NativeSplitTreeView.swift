@@ -1,9 +1,10 @@
 import AppKit
 import SumiDomain
 
-final class NativeSplitTreeView: NSSplitView, NSSplitViewDelegate {
+final class NativeSplitTreeView: NSSplitView {
     let path: [Int]
     var resizeHandler: (([Int], [Double]) -> Void)?
+    private var splitDelegate: NativeSplitTreeDelegate?
     private var storedSizes: [Double]
     private var needsStoredSizeApplication = true
     private var isApplyingStoredSizes = false
@@ -16,7 +17,8 @@ final class NativeSplitTreeView: NSSplitView, NSSplitViewDelegate {
         isVertical = axis == .row
         dividerStyle = .thin
         wantsLayer = false
-        delegate = self
+        splitDelegate = NativeSplitTreeDelegate(owner: self)
+        delegate = splitDelegate
     }
 
     @available(*, unavailable)
@@ -47,7 +49,7 @@ final class NativeSplitTreeView: NSSplitView, NSSplitViewDelegate {
         needsLayout = true
     }
 
-    func splitViewDidResizeSubviews(_ notification: Notification) {
+    fileprivate func reportResizeIfNeeded() {
         guard !isApplyingStoredSizes,
               !needsStoredSizeApplication,
               !isHidden,
@@ -61,14 +63,6 @@ final class NativeSplitTreeView: NSSplitView, NSSplitViewDelegate {
         guard !sizes.isApproximatelyEqual(to: lastReportedSizes) else { return }
         lastReportedSizes = sizes
         resizeHandler?(path, sizes)
-    }
-
-    func splitView(_ splitView: NSSplitView, constrainMinCoordinate proposedMinimumPosition: CGFloat, ofSubviewAt dividerIndex: Int) -> CGFloat {
-        proposedMinimumPosition + 48
-    }
-
-    func splitView(_ splitView: NSSplitView, constrainMaxCoordinate proposedMaximumPosition: CGFloat, ofSubviewAt dividerIndex: Int) -> CGFloat {
-        proposedMaximumPosition - 48
     }
 
     private func applyStoredSizesIfNeeded() {
@@ -99,6 +93,34 @@ final class NativeSplitTreeView: NSSplitView, NSSplitViewDelegate {
             return Array(repeating: 1 / Double(fallbackCount), count: fallbackCount)
         }
         return sizes.map { max(0.01, $0) / total }
+    }
+}
+
+private final class NativeSplitTreeDelegate: NSObject, NSSplitViewDelegate {
+    private weak var owner: NativeSplitTreeView?
+
+    init(owner: NativeSplitTreeView) {
+        self.owner = owner
+    }
+
+    func splitViewDidResizeSubviews(_ notification: Notification) {
+        owner?.reportResizeIfNeeded()
+    }
+
+    func splitView(
+        _ splitView: NSSplitView,
+        constrainMinCoordinate proposedMinimumPosition: CGFloat,
+        ofSubviewAt dividerIndex: Int
+    ) -> CGFloat {
+        proposedMinimumPosition + 48
+    }
+
+    func splitView(
+        _ splitView: NSSplitView,
+        constrainMaxCoordinate proposedMaximumPosition: CGFloat,
+        ofSubviewAt dividerIndex: Int
+    ) -> CGFloat {
+        proposedMaximumPosition - 48
     }
 }
 

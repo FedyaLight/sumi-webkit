@@ -3,20 +3,20 @@ import Foundation
 @MainActor
 extension ShortcutSplitLauncherMoveBatchStaging {
     func preflightBindingContribution(
-        _ restorations: [PreparedShortcutSplitLauncherRestoration]
+        _ preparedMoves: [PreparedShortcutSplitLauncherMove]
     ) -> ShortcutSplitLauncherBindingPreflight? {
         preflightBindingContribution(
-            restorations,
+            preparedMoves,
             bindingMode: .preservingLiveBindings
         )
     }
 
     func preflightBindingContribution(
-        _ restorations: [PreparedShortcutSplitLauncherRestoration],
+        _ preparedMoves: [PreparedShortcutSplitLauncherMove],
         bindingMode: ShortcutSplitLauncherComposedBindingMode
     ) -> ShortcutSplitLauncherBindingPreflight? {
-        guard Set(restorations.map { $0.pin.id }).count == restorations.count,
-              restorations.allSatisfy({ catalog.isCurrent($0.pin) }) else {
+        guard Set(preparedMoves.map { $0.pin.id }).count == preparedMoves.count,
+              preparedMoves.allSatisfy({ catalog.isCurrent($0.pin) }) else {
             return nil
         }
         let bindingBatch = bindingStaging.beginBatch()
@@ -26,10 +26,10 @@ extension ShortcutSplitLauncherMoveBatchStaging {
         case .consumingExactRetirement(let value): exclusion = value
         }
         var didConsumeExclusion = exclusion == nil
-        let entries = restorations.compactMap { restoration in
+        let entries = preparedMoves.compactMap { preparedMove in
             guard let preview = catalog.preview(
-                restoration.pin,
-                destination: restoration.destination
+                preparedMove.pin,
+                destination: preparedMove.destination
             ) else {
                 return nil as ShortcutSplitLauncherBindingPreflight.Entry?
             }
@@ -57,11 +57,11 @@ extension ShortcutSplitLauncherMoveBatchStaging {
                 return nil as ShortcutSplitLauncherBindingPreflight.Entry?
             }
             return ShortcutSplitLauncherBindingPreflight.Entry(
-                restoration: restoration,
+                preparedMove: preparedMove,
                 binding: binding
             )
         }
-        guard entries.count == restorations.count,
+        guard entries.count == preparedMoves.count,
               didConsumeExclusion else { return nil }
         return ShortcutSplitLauncherBindingPreflight(
             catalog: catalog,
@@ -74,14 +74,14 @@ extension ShortcutSplitLauncherMoveBatchStaging {
         _ preflight: ShortcutSplitLauncherBindingPreflight,
         after insertion: ShortcutSplitLauncherCatalogInsertionPlan
     ) -> ShortcutSplitLauncherBindingContribution? {
-        let restorations = preflight.entries.map(\.restoration)
+        let preparedMoves = preflight.entries.map(\.preparedMove)
         guard preflight.catalog === catalog,
-              restorations.allSatisfy({
+              preparedMoves.allSatisfy({
                   insertion.sourceCatalog.contains($0.pinReceipt)
               }), catalog.matches(insertion.sourceCatalog) else { return nil }
         return prepareContribution(
             preflight,
-            terminalRestorations: restorations,
+            terminalMoves: preparedMoves,
             insertion: insertion
         )
     }

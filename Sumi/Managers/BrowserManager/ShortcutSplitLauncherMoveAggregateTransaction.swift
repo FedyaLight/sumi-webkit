@@ -1,7 +1,7 @@
 import SumiWebRuntime
 
 @MainActor
-final class SplitShortcutMemberRestoreAggregateTransaction:
+final class ShortcutSplitLauncherMoveAggregateTransaction:
     ShortcutTabBindingAggregateTransaction {
     private enum State {
         case prepared, staged, retainedAfterFailedStage, claimed
@@ -10,17 +10,17 @@ final class SplitShortcutMemberRestoreAggregateTransaction:
     }
 
     private let binding: any ShortcutSplitLauncherBindingModelTransaction
-    private let participants: SplitShortcutMemberRestoreParticipants
+    private let participants: ShortcutSplitLauncherMoveParticipants
     private let structuralMutations: TabStructuralCollectionMutationOwner
     private let structuralLookup: TabStructuralLookupCoordinator
-    private var settlement: PreparedSplitShortcutMemberRestoreSettlement?
+    private var settlement: PreparedShortcutSplitLauncherMoveSettlement?
     private var state = State.prepared
 
     var exactBindingTabs: [Tab] { binding.exactBindingTabs }
 
     init(
         binding: any ShortcutSplitLauncherBindingModelTransaction,
-        participants: SplitShortcutMemberRestoreParticipants,
+        participants: ShortcutSplitLauncherMoveParticipants,
         structuralMutations: TabStructuralCollectionMutationOwner,
         structuralLookup: TabStructuralLookupCoordinator
     ) {
@@ -44,16 +44,16 @@ final class SplitShortcutMemberRestoreAggregateTransaction:
 
     func stage() throws {
         guard case .prepared = state else {
-            throw SplitShortcutMemberRestoreAggregateError.stale
+            throw ShortcutSplitLauncherMoveAggregateError.stale
         }
         do {
-            settlement = try SplitShortcutMemberRestoreAggregateStaging.stage(
+            settlement = try ShortcutSplitLauncherMoveAggregateStaging.stage(
                 binding: binding,
                 participants: participants,
                 structuralMutations: structuralMutations
             )
             state = .staged
-        } catch let failure as SplitShortcutMemberRestoreAggregateStaging.Failure {
+        } catch let failure as ShortcutSplitLauncherMoveAggregateStaging.Failure {
             settlement = failure.settlement
             switch failure.disposition {
             case .terminal: state = .terminal
@@ -101,7 +101,7 @@ final class SplitShortcutMemberRestoreAggregateTransaction:
         guard claimedModelIsExact(), let settlement else {
             preconditionFailure("Split restore was not exactly claimed")
         }
-        SplitShortcutMemberRestoreCommitPublisher.publish(
+        ShortcutSplitLauncherMoveCommitPublisher.publish(
             binding: binding,
             participants: participants,
             settlement: settlement,
@@ -121,11 +121,11 @@ final class SplitShortcutMemberRestoreAggregateTransaction:
 
     func rollback() throws {
         guard stagedModelIsExact(), let settlement else {
-            throw SplitShortcutMemberRestoreAggregateError.stale
+            throw ShortcutSplitLauncherMoveAggregateError.stale
         }
         guard settlement.rollbackStagedModel() else {
             state = .conflicted
-            throw SplitShortcutMemberRestoreAggregateError.compensationFailed
+            throw ShortcutSplitLauncherMoveAggregateError.compensationFailed
         }
         state = .rolledBack
     }

@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 @MainActor
 final class EssentialsShortcutPlacementOwner {
@@ -6,6 +7,7 @@ final class EssentialsShortcutPlacementOwner {
         static let maxColumns = 3
         static let maxRows = 4
         static let maxItems = maxColumns * maxRows
+        static let maxStoredMembers = maxItems * SplitGroup.maximumMembers
     }
 
     struct TargetContext {
@@ -52,15 +54,18 @@ final class EssentialsShortcutPlacementOwner {
     private let spaces: TabSpaceCollectionStateOwner
     private let runtimeConnection: TabRuntimePortConnection
     private let pins: ShortcutPinCollectionStateOwner
+    private let splitGroups: SplitGroupStore
 
     init(
         spaces: TabSpaceCollectionStateOwner,
         runtimeConnection: TabRuntimePortConnection,
-        pins: ShortcutPinCollectionStateOwner
+        pins: ShortcutPinCollectionStateOwner,
+        splitGroups: SplitGroupStore
     ) {
         self.spaces = spaces
         self.runtimeConnection = runtimeConnection
         self.pins = pins
+        self.splitGroups = splitGroups
     }
 
     func resolveTarget(using context: TargetContext? = nil) -> TargetResolution {
@@ -92,7 +97,10 @@ final class EssentialsShortcutPlacementOwner {
     func canAddURL(_ url: URL, using context: TargetContext? = nil) -> Bool {
         guard let profileId = resolvedProfileId(using: context) else { return false }
         let profilePins = pins.essentialPins(for: profileId)
-        guard profilePins.count < CapacityPolicy.maxItems else { return false }
+        guard visualItemCount(
+            profilePins: profilePins,
+            profileID: profileId
+        ) < CapacityPolicy.maxItems else { return false }
         return profilePins.contains { $0.launchURL == url } == false
     }
 
@@ -108,7 +116,10 @@ final class EssentialsShortcutPlacementOwner {
             profilePins.remove(at: existingIndex)
         }
 
-        guard profilePins.count < CapacityPolicy.maxItems else { return nil }
+        guard visualItemCount(
+            profilePins: profilePins,
+            profileID: profileId
+        ) < CapacityPolicy.maxItems else { return nil }
 
         let targetIndex = max(
             0,
@@ -119,6 +130,29 @@ final class EssentialsShortcutPlacementOwner {
             index: targetIndex,
             resolution: resolution
         )
+    }
+
+    private func visualItemCount(
+        profilePins: [ShortcutPin],
+        profileID: UUID
+    ) -> Int {
+        let pinIDs = Set(profilePins.map(\.id))
+        let groups = splitGroups.groups.filter { group in
+            guard case .essentialSidebar(let ownerID, _) = group.container,
+                  ownerID == nil || ownerID == profileID else { return false }
+            return group.memberIDs.allSatisfy { memberID in
+                guard case .shortcutPin(let pinID) = memberID else {
+                    return false
+                }
+                return pinIDs.contains(pinID)
+            }
+        }
+        let groupedPinIDs = Set(groups.flatMap(\.memberIDs).compactMap {
+            memberID -> UUID? in
+            guard case .shortcutPin(let pinID) = memberID else { return nil }
+            return pinID
+        })
+        return profilePins.count - groupedPinIDs.count + groups.count
     }
 
     func resolvedProfileId(for operation: DragOperation) -> UUID? {

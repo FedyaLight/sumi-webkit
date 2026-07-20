@@ -13,15 +13,14 @@ final class SplitGroupStoreTests: XCTestCase {
             .regularTab(UUID()),
         ]))
         let shortcutGroup = try XCTUnwrap(group([
-            .shortcutPin(
-                sharedID,
-                returnPlacement: .essential(profileId: UUID(), index: 0)
-            ),
-            .shortcutPin(
-                UUID(),
-                returnPlacement: .essential(profileId: UUID(), index: 1)
-            ),
-        ]))
+            .shortcutPin(sharedID),
+            .shortcutPin(UUID()),
+        ], container: .shortcutSidebar(
+            spaceId: UUID(),
+            profileId: nil,
+            folderId: nil,
+            index: 0
+        )))
         let store = SplitGroupStore()
 
         store.replaceAll(with: [regularGroup, shortcutGroup])
@@ -117,11 +116,13 @@ final class SplitGroupStoreTests: XCTestCase {
 
     private func group(
         _ members: [SumiDomain.SplitMember],
-        layoutKind: SumiDomain.SplitLayoutKind = .vertical
+        layoutKind: SumiDomain.SplitLayoutKind = .vertical,
+        container: SumiDomain.SplitGroupContainer = .regularTabs(spaceId: nil)
     ) -> SumiDomain.SplitGroup? {
         SumiDomain.SplitGroup.make(
             members: members,
-            layoutKind: layoutKind
+            layoutKind: layoutKind,
+            container: container
         )
     }
 }

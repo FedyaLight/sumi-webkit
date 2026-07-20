@@ -2,7 +2,7 @@
 enum RegularTabShortcutSidebarBindingPreflight {
     case noChange
     case launcher(
-        PreparedShortcutSplitLauncherRestorationBatch,
+        PreparedShortcutSplitLauncherMoveBatch,
         ShortcutSplitLauncherBindingPreflight
     )
 
@@ -23,8 +23,8 @@ enum RegularTabShortcutSidebarBindingPreflight {
                 catalog: catalog,
                 builder: builder
             ).map(RegularTabShortcutSidebarBindingContribution.launcher)
-        case .launcher(let restorations, let preflight):
-            return restorations.prepareBindingContribution(
+        case .launcher(let preparedMoves, let preflight):
+            return preparedMoves.prepareBindingContribution(
                 preflight,
                 after: insertion
             ).map(RegularTabShortcutSidebarBindingContribution.launcher)

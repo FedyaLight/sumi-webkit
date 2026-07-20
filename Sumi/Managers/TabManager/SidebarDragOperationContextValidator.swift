@@ -84,19 +84,33 @@ enum SidebarDragOperationContextValidator {
     ) -> Bool {
         switch operation.payload {
         case .splitGroup(let group):
-            guard case .spacePinned(let spaceId) = operation.fromContainer else {
+            switch (group.container, operation.fromContainer) {
+            case (.regularTabs(let spaceID), .spaceRegular(let sourceSpaceID)):
+                return spaceID == operation.scope.spaceId
+                    && spaceID == sourceSpaceID
+
+            case (.essentialSidebar(let profileID, _), .essentials):
+                return profileID == nil
+                    || profileID == operation.scope.profileId
+
+            case (
+                .shortcutSidebar(let spaceID, _, nil, _),
+                .spacePinned(let sourceSpaceID)
+            ):
+                return spaceID == operation.scope.spaceId
+                    && spaceID == sourceSpaceID
+
+            case (
+                .shortcutSidebar(let spaceID, _, let folderID?, _),
+                .folder(let sourceFolderID)
+            ):
+                return spaceID == operation.scope.spaceId
+                    && folderID == sourceFolderID
+                    && folderSpaceId(folderID) == spaceID
+
+            default:
                 return false
             }
-            guard case .shortcutSidebar(
-                let hostSpaceID,
-                _,
-                nil,
-                _
-            ) = group.container else {
-                return false
-            }
-            return hostSpaceID == operation.scope.spaceId
-                && hostSpaceID == spaceId
 
         case .folder(let folder):
             switch operation.fromContainer {

@@ -19,7 +19,6 @@ struct SpacePinnedSectionView: View {
     let browserContext: SidebarBrowserContext
     let isInteractive: Bool
     let onSetPinnedContentCollapsed: (Bool) -> Void
-    @Binding var shortcutRestoreSession: SpaceShortcutRestoreInteractionSession
 
     @Environment(BrowserWindowState.self) private var windowState
 
@@ -52,8 +51,7 @@ struct SpacePinnedSectionView: View {
                 isInteractive: isInteractive,
                 onSetPinnedContentCollapsed: onSetPinnedContentCollapsed,
                 pinnedItems: pinnedItems,
-                dragSnapshot: dragSnapshot,
-                shortcutRestoreSession: $shortcutRestoreSession
+                dragSnapshot: dragSnapshot
             )
         }
     }
@@ -144,7 +142,6 @@ private struct SpacePinnedSectionContentView: View {
     let onSetPinnedContentCollapsed: (Bool) -> Void
     let pinnedItems: [SpacePinnedListItem]
     let dragSnapshot: SpacePinnedDragSnapshot
-    @Binding var shortcutRestoreSession: SpaceShortcutRestoreInteractionSession
 
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sumiSettings) private var sumiSettings
@@ -154,7 +151,6 @@ private struct SpacePinnedSectionContentView: View {
 
     private var hasContent: Bool {
         !pinnedItems.isEmpty
-            || shortcutRestoreSession.gaps.contains { $0.container == .spacePinned(space.id) }
     }
 
     private var hasPinnedContent: Bool {
@@ -297,8 +293,7 @@ private struct SpacePinnedSectionContentView: View {
             stickyItemIDs: visibleStickyItemIDs,
             dragSnapshot: dragSnapshot,
             contentMutationAnimation: contentMutationAnimation,
-            actionOwner: actionOwner,
-            shortcutRestoreSession: $shortcutRestoreSession
+            actionOwner: actionOwner
         )
     }
 

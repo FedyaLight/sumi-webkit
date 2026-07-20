@@ -1,11 +1,30 @@
 import Foundation
 
-struct SidebarDropCommitProjectionState: Equatable {
+/// Owns the Presented Drop Intent from hover presentation through the short
+/// post-commit projection interval. The active and committed destinations are
+/// kept together so rendered gaps and structural commits cannot diverge.
+struct SidebarPresentedDropIntentState: Equatable {
+    private var activeResolution = SidebarDropResolution.empty
+    private var committedResolution: SidebarDropResolution?
     private(set) var isCompletingDrop = false
     private var itemId: UUID?
     private var scope: SidebarDragScope?
-    private var slot: DropZoneSlot = .empty
-    private var folderIntent: FolderDropIntent = .none
+
+    var active: SidebarDropResolution { activeResolution }
+
+    var projected: SidebarDropResolution {
+        activeResolution.slot == .empty
+            ? committedResolution ?? .empty
+            : activeResolution
+    }
+
+    mutating func present(_ resolution: SidebarDropResolution) {
+        activeResolution = resolution
+    }
+
+    mutating func clearPresentation() {
+        activeResolution = .empty
+    }
 
     func isDropProjectionActive(isDragging: Bool) -> Bool {
         isDragging || isCompletingDrop
@@ -17,14 +36,6 @@ struct SidebarDropCommitProjectionState: Equatable {
 
     func dragScope(activeDragScope: SidebarDragScope?) -> SidebarDragScope? {
         activeDragScope ?? scope
-    }
-
-    func hoveredSlot(activeHoveredSlot: DropZoneSlot) -> DropZoneSlot {
-        activeHoveredSlot != .empty ? activeHoveredSlot : slot
-    }
-
-    func folderDropIntent(activeFolderDropIntent: FolderDropIntent) -> FolderDropIntent {
-        activeFolderDropIntent != .none ? activeFolderDropIntent : folderIntent
     }
 
     func shouldHideCommittedCrossContainerPlaceholder(
@@ -43,13 +54,12 @@ struct SidebarDropCommitProjectionState: Equatable {
     mutating func begin(
         itemId: UUID?,
         scope: SidebarDragScope?,
-        slot: DropZoneSlot,
-        folderIntent: FolderDropIntent
+        resolution: SidebarDropResolution
     ) {
         self.itemId = itemId
         self.scope = scope
-        self.slot = slot
-        self.folderIntent = folderIntent
+        activeResolution = resolution
+        committedResolution = resolution
         isCompletingDrop = true
     }
 
@@ -57,7 +67,6 @@ struct SidebarDropCommitProjectionState: Equatable {
         isCompletingDrop = false
         itemId = nil
         scope = nil
-        slot = .empty
-        folderIntent = .none
+        committedResolution = nil
     }
 }

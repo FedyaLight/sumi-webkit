@@ -1,10 +1,10 @@
 @MainActor
-enum SplitShortcutMemberRestoreStaging {
+enum ShortcutSplitLauncherMoveStaging {
     static func stage(
         presentation: PreparedWindowSplitPresentationSettlement,
         retirement: ReversibleShortcutLiveTabRetirement?,
         topology: SplitGroupReplacementReceipt
-    ) -> SplitShortcutMemberRestoreParticipants.StageOutcome {
+    ) -> ShortcutSplitLauncherMoveParticipants.StageOutcome {
         guard topology.commitModel() else {
             return settlePreparedFailure(
                 presentation: presentation,
@@ -37,9 +37,9 @@ enum SplitShortcutMemberRestoreStaging {
         presentation: PreparedWindowSplitPresentationSettlement,
         retirement: ReversibleShortcutLiveTabRetirement?,
         topology: SplitGroupReplacementReceipt
-    ) -> SplitShortcutMemberRestoreParticipants.StageOutcome {
+    ) -> ShortcutSplitLauncherMoveParticipants.StageOutcome {
         outcome(
-            restored: SplitShortcutMemberRestoreParticipantCompensation
+            restored: ShortcutSplitLauncherMoveParticipantCompensation
                 .cancelPrepared(
                     presentation: presentation,
                     retirement: retirement,
@@ -50,7 +50,7 @@ enum SplitShortcutMemberRestoreStaging {
 
     private static func outcome(
         restored: Bool
-    ) -> SplitShortcutMemberRestoreParticipants.StageOutcome {
+    ) -> ShortcutSplitLauncherMoveParticipants.StageOutcome {
         restored ? .restored : .conflicted
     }
 }

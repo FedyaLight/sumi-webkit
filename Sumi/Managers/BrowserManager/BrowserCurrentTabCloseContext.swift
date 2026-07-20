@@ -20,4 +20,12 @@ final class BrowserCurrentTabCloseContext {
     func currentTab(in windowState: BrowserWindowState) -> Tab? {
         tabs.currentTab(for: windowState)
     }
+
+    func currentCloseTargets(in windowState: BrowserWindowState) -> [Tab] {
+        let splitTabs = tabs.currentSplitTabs(in: windowState)
+        if splitTabs.isEmpty == false {
+            return splitTabs
+        }
+        return currentTab(in: windowState).map { [$0] } ?? []
+    }
 }

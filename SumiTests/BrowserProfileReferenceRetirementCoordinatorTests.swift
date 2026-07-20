@@ -617,20 +617,8 @@ final class BrowserProfileReferenceRetirementCoordinatorTests: XCTestCase {
         let group = try XCTUnwrap(
             SplitGroup.make(
                 members: [
-                    .shortcutPin(
-                        firstPinID,
-                        returnPlacement: .essential(
-                            profileId: deletedProfileID,
-                            index: 0
-                        )
-                    ),
-                    .shortcutPin(
-                        secondPinID,
-                        returnPlacement: .essential(
-                            profileId: fallbackProfileID,
-                            index: 1
-                        )
-                    ),
+                    .shortcutPin(firstPinID),
+                    .shortcutPin(secondPinID),
                 ],
                 layoutKind: .horizontal,
                 container: .shortcutSidebar(

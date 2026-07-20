@@ -7,20 +7,15 @@ import SumiDomain
 import SwiftUI
 
 extension SplitGroupSidebarRow {
-    func performSplitSidebarMutation(_ update: () -> Void) {
-        guard !reduceMotion && !sumiSettings.shouldReduceChromeMotion else {
-            update()
-            return
-        }
-        withAnimation(SidebarDropMotion.contentLayout, update)
-    }
-
     var shouldAnimateProjectedLayout: Bool {
         !reduceMotion && !sumiSettings.shouldReduceChromeMotion
     }
 
     var resolvedDisplayItems: [SplitGroupSidebarItem] {
-        displayedItems.isEmpty ? items : displayedItems
+        SplitGroupSidebarModel.displayItems(
+            current: items,
+            animationSnapshot: displayedItems
+        )
     }
 
     func isDeparting(_ item: SplitGroupSidebarItem) -> Bool {
@@ -31,56 +26,6 @@ extension SplitGroupSidebarRow {
         guard index < rowItems.count - 1 else { return false }
         guard !isDeparting(rowItems[index]) else { return false }
         return rowItems[(index + 1)...].contains { !isDeparting($0) }
-    }
-
-    func performSegmentMutation(for item: SplitGroupSidebarItem, in rowItems: [SplitGroupSidebarItem]) {
-        let memberID = item.id
-        guard !reduceMotion && !sumiSettings.shouldReduceChromeMotion else {
-            onSegmentAction(memberID)
-            return
-        }
-
-        onSegmentActionAnimationStart(memberID)
-        withAnimation(SidebarDropMotion.contentLayout) {
-            let _ = departingItemIds.insert(item.id)
-            if shouldCollapseRowAfterRemoving(item, from: rowItems) {
-                isCollapsingRow = true
-            }
-        }
-        let completionDelay = segmentActionCompletionDelay(for: item)
-        DispatchQueue.main.asyncAfter(deadline: .now() + completionDelay) {
-            onSegmentAction(memberID)
-        }
-    }
-
-    func segmentActionCompletionDelay(for item: SplitGroupSidebarItem) -> Double {
-        segmentAction(item) == .restore
-            ? SidebarDropMotion.shortcutRestoreActionDelay
-            : SidebarDropMotion.contentLayoutDuration
-    }
-
-    func shouldCollapseRowAfterRemoving(
-        _ item: SplitGroupSidebarItem,
-        from rowItems: [SplitGroupSidebarItem]
-    ) -> Bool {
-        guard !group.container.isShortcutSidebar,
-              segmentAction(item) == .close
-        else {
-            return false
-        }
-
-        let activeItems = rowItems.filter { !isDeparting($0) }
-        guard activeItems.count <= SplitGroup.minimumMembers else {
-            return false
-        }
-
-        let remainingItems = activeItems.filter { $0.id != item.id }
-        return remainingItems.count == 1 && isShortcutBacked(remainingItems[0])
-    }
-
-    func isShortcutBacked(_ item: SplitGroupSidebarItem) -> Bool {
-        if case .shortcutPin = item.id { return true }
-        return false
     }
 
     func reconcileDisplayedItems(with newItems: [SplitGroupSidebarItem]) {

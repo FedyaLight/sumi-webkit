@@ -128,8 +128,6 @@ class SidebarDragNSView: NSView {
     }
 
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
-        let resolution = resolveDropResolution(sender: sender)
-
         defer {
             runWithoutDropAnimations {
                 dragState.resetInteractionState()
@@ -138,10 +136,12 @@ class SidebarDragNSView: NSView {
             dragAutoscrollRegistry.stop()
         }
 
-        guard let resolution,
-              resolution.slot != .empty,
-              let transactionPort else { return false }
-        dragState.beginDropCommit()
+        guard let transactionPort,
+              let resolution = dragState.beginDropCommit(
+                refreshingIfEmpty: { [self] in
+                    resolveDropResolution(sender: sender)
+                }
+              ) else { return false }
         return runWithoutDropAnimations {
             transactionPort.commit(
                 pasteboard: sender.draggingPasteboard,

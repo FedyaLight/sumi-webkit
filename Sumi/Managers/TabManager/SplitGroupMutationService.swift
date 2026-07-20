@@ -157,7 +157,7 @@ final class SplitGroupMutationService {
     }
 
     /// Compound mutation for a fallible, preflighted catalog side effect such
-    /// as restoring shortcut launcher placement. The side effect runs first
+    /// as relocating shortcut launchers. The side effect runs first
     /// inside the same structural batch; the split store is changed only when
     /// it succeeds, and persistence is requested once by this service.
     @discardableResult

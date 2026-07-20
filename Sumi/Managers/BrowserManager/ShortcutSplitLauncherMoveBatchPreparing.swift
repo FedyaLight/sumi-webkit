@@ -7,11 +7,11 @@ protocol ShortcutSplitLauncherMoveBatchPreparing:
     ) -> Bool
 
     func prepare(
-        _ restorations: [PreparedShortcutSplitLauncherRestoration]
+        _ preparedMoves: [PreparedShortcutSplitLauncherMove]
     ) -> (any ShortcutSplitLauncherMoveBatchParticipant)?
 
     func prepareForComposedResidenceAggregate(
-        _ restorations: [PreparedShortcutSplitLauncherRestoration],
+        _ preparedMoves: [PreparedShortcutSplitLauncherMove],
         bindingMode: ShortcutSplitLauncherComposedBindingMode
     ) -> (any ShortcutSplitLauncherComposedMoveBatchParticipant)?
 }

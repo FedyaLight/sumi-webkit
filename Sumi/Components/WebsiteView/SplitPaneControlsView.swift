@@ -4,6 +4,8 @@ import SumiDomain
 
 @MainActor
 final class SplitPaneControlsView: NSVisualEffectView {
+    static let preferredSize = NSSize(width: 64, height: 26)
+
     private let stackView = NSStackView()
     private let dragButton = SplitPaneDragButton()
     private let expandButton = SplitPaneToolbarButton(icon: .fullscreen)
@@ -47,7 +49,7 @@ final class SplitPaneControlsView: NSVisualEffectView {
     }
 
     override var intrinsicContentSize: NSSize {
-        NSSize(width: 64, height: 26)
+        Self.preferredSize
     }
 
     func configure(
@@ -354,6 +356,8 @@ private final class SplitPaneDragButton: SplitPaneToolbarButton, NSDraggingSourc
             sourceZone: .spaceRegular(spaceId),
             baseKind: .row,
             previewIcon: tab.favicon,
+            previewGlyphText: nil,
+            splitPresentation: nil,
             chromeTemplateSystemImageName: nil,
             sourceSize: CGSize(width: 180, height: SidebarRowLayout.rowHeight),
             normalizedTopLeadingAnchor: CGPoint(x: 0.5, y: 0.5),

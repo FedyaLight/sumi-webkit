@@ -13,6 +13,7 @@ enum SumiWebPageMenuStrings {
     static var printPage: String { String(localized: "Print Page…") }
 
     static var openLinkInNewTab: String { String(localized: "Open Link in New Tab") }
+    static var openLinkInSplitView: String { String(localized: "Open Link in Split View") }
     static var openLinkInNewWindow: String { String(localized: "Open Link in New Window") }
     static var downloadLinkedFileAs: String { String(localized: "Download Linked File As…") }
     static var addLinkToBookmarks: String { String(localized: "Add Link to Bookmarks") }

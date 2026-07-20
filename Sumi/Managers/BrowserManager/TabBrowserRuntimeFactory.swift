@@ -215,6 +215,20 @@ enum TabBrowserRuntimeFactory {
                     activate: selected
                 ) != nil
             },
+            openSplit: { [tabOpening, weak browserManager] url, source in
+                guard let browserManager,
+                      let tab = tabOpening.open(
+                          url,
+                          from: source,
+                          selected: false
+                      )
+                else { return false }
+                return browserManager.splitInsertion.enterSplit(
+                    with: tab,
+                    side: .right,
+                    in: source.window
+                )
+            },
             activateSource: { [weak browserManager] source in
                 guard let browserManager else { return false }
                 browserManager.selectTab(

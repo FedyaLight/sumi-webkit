@@ -66,6 +66,13 @@ struct TabFolderContextMenuActionOwner {
             role: .folderPinnedTab,
             actions: .init(
                 duplicate: { duplicateShortcutPin(pin) },
+                openInSplitView: makeSidebarShortcutOpenInSplitAction(
+                    pin: pin,
+                    browserContext: browserContext,
+                    pinExecution: pinExecution,
+                    windowState: windowState,
+                    currentSpaceID: space.id
+                ),
                 copyLink: { SidebarLinkActions.copyLink(pin.launchURL) },
                 share: {
                     SidebarLinkActions.presentSharePicker(

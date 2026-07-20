@@ -55,9 +55,7 @@ enum TabRestoreRepair {
     static func restoreSplitGroups(
         from data: Data?,
         regularTabIDs: Set<UUID>,
-        shortcutReturnPlacementsByPinID: [
-            UUID: SumiDomain.SplitShortcutReturnPlacement
-        ],
+        shortcutPinIDs: Set<UUID>,
         repairReasons: inout Set<String>
     ) -> [SumiDomain.SplitGroup] {
         guard let data, data.isEmpty == false else { return [] }
@@ -73,9 +71,7 @@ enum TabRestoreRepair {
             return repairVersion2SplitGroups(
                 archive.groups,
                 regularTabIDs: regularTabIDs,
-                shortcutPinIDs: Set(
-                    shortcutReturnPlacementsByPinID.keys
-                ),
+                shortcutPinIDs: shortcutPinIDs,
                 repairReasons: &repairReasons
             )
         } catch {

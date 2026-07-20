@@ -1,7 +1,8 @@
 import AppKit
+import SumiDomain
 import SwiftUI
 
-enum SidebarFloatingDragPreviewPolicy {
+enum SidebarDragPresentationProjection {
     static let transformAnimation = Animation.easeInOut(duration: 0.15)
 
     static func resolvedPreviewKind(
@@ -53,6 +54,19 @@ enum SidebarFloatingDragPreviewPolicy {
             return model.baseKind
         }
     }
+
+    static func anchorOffset(
+        for model: SidebarDragPreviewModel,
+        previewKind: SidebarDragPreviewKind,
+        in size: CGSize
+    ) -> CGPoint {
+        if model.item.kind == .splitGroup,
+           model.sourceZone == .essentials,
+           previewKind == .row {
+            return CGPoint(x: size.width / 2, y: size.height / 2)
+        }
+        return model.anchorOffset(in: size)
+    }
 }
 
 struct SidebarFloatingDragPreviewContext {
@@ -81,12 +95,16 @@ struct SidebarFloatingDragPreview: View {
                 GeometryReader { geo in
                     if let previewModel = dragState.previewModel,
                        let dragLocation = currentDragLocation {
-                        let previewKind = SidebarFloatingDragPreviewPolicy.resolvedPreviewKind(
+                        let previewKind = SidebarDragPresentationProjection.resolvedPreviewKind(
                             model: previewModel,
                             hoveredSlot: dragState.hoveredSlot
                         )
                         let size = resolvedSize(for: previewKind, model: previewModel)
-                        let anchor = previewModel.anchorOffset(in: size)
+                        let anchor = SidebarDragPresentationProjection.anchorOffset(
+                            for: previewModel,
+                            previewKind: previewKind,
+                            in: size
+                        )
 
                         previewContent(kind: previewKind, model: previewModel, size: size)
                             .frame(width: size.width, height: size.height)
@@ -95,9 +113,9 @@ struct SidebarFloatingDragPreview: View {
                                 y: (dragLocation.y - geo.frame(in: .global).minY) - anchor.y + (size.height / 2)
                             )
                             .transition(.opacity.combined(with: .scale(scale: 0.98)))
-                            .animation(SidebarFloatingDragPreviewPolicy.transformAnimation, value: previewKind)
-                            .animation(SidebarFloatingDragPreviewPolicy.transformAnimation, value: size)
-                            .animation(SidebarFloatingDragPreviewPolicy.transformAnimation, value: dragState.hoveredSlot)
+                            .animation(SidebarDragPresentationProjection.transformAnimation, value: previewKind)
+                            .animation(SidebarDragPresentationProjection.transformAnimation, value: size)
+                            .animation(SidebarDragPresentationProjection.transformAnimation, value: dragState.hoveredSlot)
                     } else if let asset = currentAsset,
                               let dragLocation = currentDragLocation {
                         fallbackImagePreview(asset: asset)
@@ -105,7 +123,7 @@ struct SidebarFloatingDragPreview: View {
                                 x: (dragLocation.x - geo.frame(in: .global).minX) - asset.anchorOffset.x + (asset.size.width / 2),
                                 y: (dragLocation.y - geo.frame(in: .global).minY) - asset.anchorOffset.y + (asset.size.height / 2)
                             )
-                            .animation(SidebarFloatingDragPreviewPolicy.transformAnimation, value: currentPreviewKind)
+                            .animation(SidebarDragPresentationProjection.transformAnimation, value: currentPreviewKind)
                     }
                 }
             }
@@ -130,21 +148,13 @@ struct SidebarFloatingDragPreview: View {
         size: CGSize
     ) -> some View {
         ZStack {
-            PinnedTileVisual(
-                tabIcon: model.previewIcon ?? Image(systemName: "globe"),
-                chromeTemplateSystemImageName: model.chromeTemplateSystemImageName,
-                presentationState: model.shortcutPresentationState ?? .launcherOnly,
-                isHovered: false
-            )
+            essentialsPreview(model: model)
             .frame(width: size.width, height: size.height)
             .shadow(color: .black.opacity(0.18), radius: 8, y: 2)
             .opacity(kind == .essentialsTile ? 1 : 0)
             .scaleEffect(kind == .essentialsTile ? 1 : 0.97)
 
-            SidebarTabRowPreviewVisual(
-                title: model.item.title,
-                icon: model.previewIcon ?? Image(systemName: "globe")
-            )
+            rowPreview(model: model)
             .frame(width: size.width, height: size.height)
             .opacity(kind == .row ? 1 : 0)
             .scaleEffect(kind == .row ? 1 : 0.97)
@@ -159,7 +169,49 @@ struct SidebarFloatingDragPreview: View {
             .scaleEffect(kind == .folderRow ? 1 : 0.97)
         }
         .geometryGroup()
-        .animation(SidebarFloatingDragPreviewPolicy.transformAnimation, value: kind)
+        .animation(SidebarDragPresentationProjection.transformAnimation, value: kind)
+    }
+
+    @ViewBuilder
+    private func essentialsPreview(model: SidebarDragPreviewModel) -> some View {
+        if let split = model.splitPresentation {
+            EssentialSplitCompactVisual(
+                icons: split.icons,
+                glyphTexts: split.glyphTexts,
+                systemImageNames: split.systemImageNames,
+                accentColors: split.accentColors,
+                isGroupActive: model.shortcutPresentationState?.isSelected == true,
+                desaturatesIcons:
+                    model.shortcutPresentationState?.shouldDesaturateIcon == true
+            )
+        } else {
+            PinnedTileVisual(
+                tabIcon: model.previewIcon ?? Image(systemName: "globe"),
+                glyphText: model.previewGlyphText,
+                chromeTemplateSystemImageName: model.chromeTemplateSystemImageName,
+                presentationState: model.shortcutPresentationState ?? .launcherOnly,
+                isHovered: false
+            )
+        }
+    }
+
+    @ViewBuilder
+    private func rowPreview(model: SidebarDragPreviewModel) -> some View {
+        if let split = model.splitPresentation {
+            SidebarSplitRowPreviewVisual(
+                icons: split.icons,
+                glyphTexts: split.glyphTexts,
+                systemImageNames: split.systemImageNames,
+                titles: split.titles,
+                desaturatesIcons:
+                    model.shortcutPresentationState?.shouldDesaturateIcon == true
+            )
+        } else {
+            SidebarTabRowPreviewVisual(
+                title: model.item.title,
+                icon: model.previewIcon ?? Image(systemName: "globe")
+            )
+        }
     }
 
     private func resolvedSize(
@@ -201,7 +253,7 @@ struct SidebarFloatingDragPreview: View {
 
         let pins = profileId.map { browserContext.essentialPins($0) } ?? []
         let projection = SidebarEssentialsProjectionPolicy.make(
-            items: pins,
+            items: pins.map(SidebarEssentialVisualItem.pin),
             width: metrics.frame.width,
             dragState: dragState
         )
@@ -261,11 +313,89 @@ struct SidebarFloatingDragPreview: View {
     }
 
     private var currentPreviewKind: SidebarDragPreviewKind? {
-        SidebarFloatingDragPreviewPolicy.resolvedPreviewKind(
+        SidebarDragPresentationProjection.resolvedPreviewKind(
             baseKind: dragState.previewKind,
             hoveredSlot: dragState.hoveredSlot,
             previewAssets: dragState.previewAssets
         )
+    }
+}
+
+private struct SidebarSplitRowPreviewVisual: View {
+    let icons: [Image]
+    let glyphTexts: [String?]
+    let systemImageNames: [String?]
+    let titles: [String]
+    let desaturatesIcons: Bool
+
+    @Environment(\.sumiSettings) private var sumiSettings
+    @Environment(\.resolvedThemeContext) private var themeContext
+    @Environment(\.chromeThemeTokens) private var scopedChromeTokens
+
+    var body: some View {
+        GeometryReader { geometry in
+            let count = max(min(icons.count, SplitGroup.maximumMembers), 1)
+            let segmentWidth = max(
+                0,
+                (geometry.size.width - CGFloat(count - 1)) / CGFloat(count)
+            )
+            HStack(spacing: 0) {
+                ForEach(0..<count, id: \.self) { index in
+                    SplitGroupSegmentLabel(
+                        title: titles.indices.contains(index)
+                            ? titles[index] : String(localized: "Tab"),
+                        trailingPadding: 7,
+                        textColor: tokens.primaryText
+                    ) {
+                        previewIcon(at: index)
+                            .saturation(desaturatesIcons ? 0 : 1)
+                            .opacity(desaturatesIcons ? 0.8 : 1)
+                    }
+                    .frame(width: segmentWidth)
+
+                    if index < count - 1 {
+                        Rectangle()
+                            .fill(tokens.separator.opacity(0.7))
+                            .frame(width: 1, height: 22)
+                            .padding(.vertical, 6)
+                    }
+                }
+            }
+        }
+        .frame(height: SidebarRowLayout.rowHeight)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(tokens.sidebarRowHover)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .shadow(color: .black.opacity(0.16), radius: 8, y: 2)
+    }
+
+    private var tokens: ChromeThemeTokens {
+        scopedChromeTokens ?? themeContext.tokens(settings: sumiSettings)
+    }
+
+    @ViewBuilder
+    private func previewIcon(at index: Int) -> some View {
+        if glyphTexts.indices.contains(index),
+           let glyph = glyphTexts[index] {
+            Text(glyph)
+                .font(.system(size: 16))
+                .frame(width: 16, height: 16)
+        } else if systemImageNames.indices.contains(index),
+                  let systemName = systemImageNames[index] {
+            Image(systemName: systemName)
+                .font(.system(size: 15, weight: .medium))
+                .symbolRenderingMode(.monochrome)
+                .frame(width: 16, height: 16)
+        } else {
+            (icons.indices.contains(index)
+                ? icons[index] : Image(systemName: "globe"))
+                .resizable()
+                .scaledToFit()
+                .frame(width: 16, height: 16)
+                .clipShape(
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                )
+        }
     }
 }
 

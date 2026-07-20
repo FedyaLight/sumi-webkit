@@ -38,7 +38,7 @@ final class ShortcutSplitLauncherMoveTransactionTests: XCTestCase {
             folderOpenState: folderOpenState
         )
 
-        XCTAssertNil(transaction.stage([restoration(for: pin)]))
+        XCTAssertNil(transaction.stage([preparedMove(for: pin)]))
         XCTAssertEqual(receivedIDs, [pin.id])
     }
 
@@ -81,7 +81,7 @@ final class ShortcutSplitLauncherMoveTransactionTests: XCTestCase {
         )
 
         let sideEffect = try XCTUnwrap(
-            transaction.stage([restoration(for: pin)])
+            transaction.stage([preparedMove(for: pin)])
         )
         XCTAssertTrue(sideEffect.settleModel())
         XCTAssertEqual(effects, ["settle"])
@@ -131,7 +131,7 @@ final class ShortcutSplitLauncherMoveTransactionTests: XCTestCase {
 
         XCTAssertNotNil(
             transaction.stageForComposedResidenceAggregate([
-                restoration(for: pin),
+                preparedMove(for: pin),
             ], bindingMode: .preservingLiveBindings)
         )
         XCTAssertEqual(ordinaryPreparationCount, 0)
@@ -169,10 +169,10 @@ final class ShortcutSplitLauncherMoveTransactionTests: XCTestCase {
         )
     }
 
-    private func restoration(
+    private func preparedMove(
         for pin: ShortcutPin
-    ) -> PreparedShortcutSplitLauncherRestoration {
-        PreparedShortcutSplitLauncherRestoration(
+    ) -> PreparedShortcutSplitLauncherMove {
+        PreparedShortcutSplitLauncherMove(
             pin: pin,
             destination: ShortcutSplitLauncherDestination(
                 role: pin.role,

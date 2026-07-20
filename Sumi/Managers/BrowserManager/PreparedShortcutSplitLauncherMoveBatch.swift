@@ -1,22 +1,22 @@
-/// Retains one preflighted restoration set with the exact move transaction that
+/// Retains one preflighted preparedMove set with the exact move transaction that
 /// admitted it, preventing a caller from applying the witnesses through a
 /// different launcher catalog.
 @MainActor
-final class PreparedShortcutSplitLauncherRestorationBatch {
-    let restorations: [PreparedShortcutSplitLauncherRestoration]
+final class PreparedShortcutSplitLauncherMoveBatch {
+    let preparedMoves: [PreparedShortcutSplitLauncherMove]
     let moves: ShortcutSplitLauncherMoveTransaction
 
     init(
-        restorations: [PreparedShortcutSplitLauncherRestoration],
+        preparedMoves: [PreparedShortcutSplitLauncherMove],
         moves: ShortcutSplitLauncherMoveTransaction
     ) {
-        self.restorations = restorations
+        self.preparedMoves = preparedMoves
         self.moves = moves
     }
 
     @discardableResult
     func applyAndCommit() -> Bool {
-        guard let receipt = moves.stage(restorations),
+        guard let receipt = moves.stage(preparedMoves),
               receipt.settleModel() else { return false }
         receipt.commit()
         return true
@@ -27,14 +27,14 @@ final class PreparedShortcutSplitLauncherRestorationBatch {
     )
         -> (any ShortcutSplitLauncherComposedMoveBatchParticipant)? {
         moves.stageForComposedResidenceAggregate(
-            restorations,
+            preparedMoves,
             bindingMode: bindingMode
         )
     }
 
     func preflightBindingContribution()
         -> ShortcutSplitLauncherBindingPreflight? {
-        moves.preflightBindingContribution(restorations)
+        moves.preflightBindingContribution(preparedMoves)
     }
 
     func prepareBindingContribution(
