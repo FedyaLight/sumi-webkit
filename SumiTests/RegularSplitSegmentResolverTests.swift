@@ -446,9 +446,42 @@ final class RegularSplitSegmentResolverTests: XCTestCase {
         )
         XCTAssertEqual(blocks[1].tabIDs, [splitA.id, splitB.id])
         XCTAssertEqual(
-            SidebarVisualOrdering.rawInsertionIndex(
+            (0...3).map {
+                SidebarVisualOrdering.regularRawInsertionIndex(
+                    atVisualBoundary: $0,
+                    blocks: blocks
+                )
+            },
+            [0, 1, 3, 4]
+        )
+        XCTAssertEqual(
+            SidebarVisualOrdering.regularRawInsertionIndex(
                 movingGroupID: group.id,
-                proposedVisualIndex: 3,
+                atModelBoundary: 0,
+                blocks: blocks
+            ),
+            0
+        )
+        XCTAssertEqual(
+            SidebarVisualOrdering.regularRawInsertionIndex(
+                movingGroupID: group.id,
+                atModelBoundary: 1,
+                blocks: blocks
+            ),
+            1
+        )
+        XCTAssertEqual(
+            SidebarVisualOrdering.regularRawInsertionIndex(
+                movingGroupID: group.id,
+                atModelBoundary: 3,
+                blocks: blocks
+            ),
+            1
+        )
+        XCTAssertEqual(
+            SidebarVisualOrdering.regularRawInsertionIndex(
+                movingGroupID: group.id,
+                atModelBoundary: 4,
                 blocks: blocks
             ),
             2

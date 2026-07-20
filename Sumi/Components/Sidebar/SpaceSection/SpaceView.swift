@@ -144,51 +144,48 @@ struct SpaceView: View {
             browserContext: browserContext,
             isInteractive: isInteractive,
             innerWidth: innerWidth,
+            showsPinnedBoundary: hasPinnedContent,
             isSidebarHovered: $isSidebarHovered
         )
     }
 
+    // Drop commits are no longer suppressed at the surface level: the list
+    // sections settle rows into place (SidebarMotionPolicy.dropSettleAnimation)
+    // while the essentials grid keeps its own commit suppression in PinnedGrid.
     var body: some View {
-        SpaceDropCommitSignalReader { isCompletingDrop in
-            VStack(spacing: 4) {
-                SpaceTitle(
-                    space: space,
-                    actions: spaceTitleActions,
-                    hasPinnedContent: hasPinnedContent,
-                    isPinnedContentCollapsed: isPinnedContentCollapsed,
-                    onTogglePinnedContent: {
-                        setPinnedContentCollapsed(!isPinnedContentCollapsed)
-                    },
-                    isAppKitInteractionEnabled: isInteractive
-                )
+        VStack(spacing: 4) {
+            SpaceTitle(
+                space: space,
+                actions: spaceTitleActions,
+                hasPinnedContent: hasPinnedContent,
+                isPinnedContentCollapsed: isPinnedContentCollapsed,
+                onTogglePinnedContent: {
+                    setPinnedContentCollapsed(!isPinnedContentCollapsed)
+                },
+                isAppKitInteractionEnabled: isInteractive
+            )
 
-                SpaceScrollChromeSurface(
-                    isInteractive: isInteractive,
-                    spaceId: space.id,
-                    scrollHoverCoordinator: scrollHoverCoordinator,
-                    outerWidth: outerWidth,
-                    onViewportChange: { viewport in
-                        onScrollViewportChange(space.id, viewport)
-                    }
-                ) {
-                    SpaceSectionsView(
-                        pinnedSection: pinnedSection,
-                        regularTabsSection: regularTabsSection
-                    )
+            SpaceScrollChromeSurface(
+                isInteractive: isInteractive,
+                spaceId: space.id,
+                scrollHoverCoordinator: scrollHoverCoordinator,
+                outerWidth: outerWidth,
+                onViewportChange: { viewport in
+                    onScrollViewportChange(space.id, viewport)
                 }
-            }
-            .padding(.horizontal, SpaceViewLayout.horizontalPadding)
-            .frame(minWidth: 0, maxWidth: outerWidth, alignment: .leading)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .contentShape(Rectangle())
-            .coordinateSpace(name: "SpaceViewCoordinateSpace")
-            .transaction { transaction in
-                if isCompletingDrop {
-                    transaction.animation = nil
-                    transaction.disablesAnimations = true
-                }
+            ) {
+                SpaceSectionsView(
+                    pinnedSection: pinnedSection,
+                    regularTabsSection: regularTabsSection,
+                    sectionSpacing: hasPinnedContent ? 8 : 0
+                )
             }
         }
+        .padding(.horizontal, SpaceViewLayout.horizontalPadding)
+        .frame(minWidth: 0, maxWidth: outerWidth, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .contentShape(Rectangle())
+        .coordinateSpace(name: "SpaceViewCoordinateSpace")
     }
 
     private func setPinnedContentCollapsed(_ isCollapsed: Bool) {
@@ -209,13 +206,3 @@ struct SpaceView: View {
     }
 }
 
-/// Reads only the drop-commit bit at the outer transaction boundary. The
-/// scroll surface remains free of the broad drag-state observation stream.
-private struct SpaceDropCommitSignalReader<Content: View>: View {
-    @EnvironmentObject private var dragState: SidebarDragState
-    @ViewBuilder let content: (Bool) -> Content
-
-    var body: some View {
-        content(dragState.isCompletingDrop)
-    }
-}

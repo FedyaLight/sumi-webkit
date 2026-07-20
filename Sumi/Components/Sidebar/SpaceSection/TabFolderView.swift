@@ -81,12 +81,6 @@ struct TabFolderView: View {
                         projection: projection,
                         dragSnapshot: dragSnapshot
                     )
-                        .transaction { transaction in
-                            if dragSnapshot.isCompletingDrop {
-                                transaction.animation = nil
-                                transaction.disablesAnimations = true
-                            }
-                        }
                 }
             }
         }

@@ -1,5 +1,8 @@
 import Foundation
 
+/// Source-removal math for the essentials grid, the one surface whose drag
+/// projection removes the source tile. Storage-order conversion is owned by
+/// `SidebarDropOrderProjecting`.
 enum SidebarDropProjection {
     static func modelInsertionIndex(
         fromProjectedIndex projectedIndex: Int,
@@ -47,36 +50,4 @@ enum SidebarDropProjection {
         return max(0, min(visualIndex, max(sourceItemCount - 1, 0)))
     }
 
-    static func projectedItems<ID: Hashable>(
-        itemIDs: [ID],
-        sourceID: ID?,
-        projectedInsertionIndex: Int?
-    ) -> [ProjectedItem<ID>] {
-        let sourceRemovedItems = itemIDs.filter { $0 != sourceID }
-        guard let projectedInsertionIndex else {
-            return sourceRemovedItems.map(ProjectedItem.item)
-        }
-
-        var items = sourceRemovedItems.map(ProjectedItem.item)
-        let safeIndex = max(0, min(projectedInsertionIndex, items.count))
-        items.insert(.placeholder, at: safeIndex)
-        return items
-    }
-
-    static func projectedItems<ID: Hashable>(
-        itemIDs: [ID],
-        removesSourceID sourceID: ID?,
-        insertsPlaceholderAt projectedInsertionIndex: Int?
-    ) -> [ProjectedItem<ID>] {
-        projectedItems(
-            itemIDs: itemIDs,
-            sourceID: sourceID,
-            projectedInsertionIndex: projectedInsertionIndex
-        )
-    }
-}
-
-enum ProjectedItem<ID: Hashable>: Hashable {
-    case item(ID)
-    case placeholder
 }

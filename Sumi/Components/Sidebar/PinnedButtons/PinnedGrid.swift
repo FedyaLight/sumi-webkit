@@ -105,6 +105,7 @@ struct PinnedGrid: View {
             width: width,
             items: visualItems,
             dragState: dragState,
+            dragGeometry: dragGeometry,
             geometrySpaceId: geometrySpaceId,
             effectiveProfileId: effectiveProfileId,
             animateLayout: animateLayout,
@@ -187,7 +188,7 @@ struct PinnedGrid: View {
         .sidebarSectionGeometry(
             for: .essentials,
             spaceId: geometrySpaceId,
-            generation: dragState.sidebarGeometryGeneration,
+            generation: dragGeometry.sidebarGeometryGeneration,
             isEnabled: reportsGeometry
         )
         .sidebarEssentialsLayoutGeometry(
@@ -205,7 +206,7 @@ struct PinnedGrid: View {
             itemSize: projectedLayout.tileSize,
             gridSpacing: PinnedTileMetrics.gridSpacing,
             canAcceptDrop: projectedLayout.canAcceptDrop,
-            generation: dragState.sidebarGeometryGeneration,
+            generation: dragGeometry.sidebarGeometryGeneration,
             isEnabled: reportsDetailedGeometry
         )
         .transaction { transaction in
@@ -321,6 +322,7 @@ struct PinnedGrid: View {
     }
 
     @EnvironmentObject private var dragState: SidebarDragState
+    @EnvironmentObject private var dragGeometry: SidebarDragGeometryModule
 
     private func pinPresentationState(
         _ pin: ShortcutPin,

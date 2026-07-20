@@ -40,25 +40,40 @@ struct SidebarDropResolution: Equatable {
     let slot: DropZoneSlot
     let folderIntent: FolderDropIntent
     let activeHoveredFolderId: UUID?
+    /// Scroll-normalized SwiftUI-global line chosen by the same geometry
+    /// decision as `slot`. The presenter never reconstructs it from the slot.
+    let indicatorLineRect: CGRect?
+
+    init(
+        slot: DropZoneSlot,
+        folderIntent: FolderDropIntent,
+        activeHoveredFolderId: UUID?,
+        indicatorLineRect: CGRect? = nil
+    ) {
+        self.slot = slot
+        self.folderIntent = folderIntent
+        self.activeHoveredFolderId = activeHoveredFolderId
+        self.indicatorLineRect = indicatorLineRect
+    }
+
+    func anchored(in geometry: SidebarGeometrySnapshot) -> Self {
+        Self(
+            slot: slot,
+            folderIntent: folderIntent,
+            activeHoveredFolderId: activeHoveredFolderId,
+            indicatorLineRect: SidebarDropIndicatorGeometry.lineRect(
+                slot: slot,
+                folderIntent: folderIntent,
+                geometry: geometry
+            )
+        )
+    }
 
     static let empty = SidebarDropResolution(
         slot: .empty,
         folderIntent: .none,
         activeHoveredFolderId: nil
     )
-}
-
-/// Published while a drag hovers above/below a space's regular tab list so the
-/// list can open an edge gap. Computed here (not in the view) so row views
-/// don't have to observe the raw pointer location.
-struct SidebarRegularExternalDropGap: Equatable {
-    enum Edge: Equatable {
-        case top
-        case bottom
-    }
-
-    let spaceId: UUID
-    let edge: Edge
 }
 
 @MainActor
@@ -85,7 +100,7 @@ enum SidebarDropResolver {
             draggedItem: draggedItem,
             hoveredPage: hoveredPage,
             scope: activeScope
-        )
+        ).anchored(in: state.geometry.geometrySnapshot)
     }
 
     private static func resolve(
@@ -157,38 +172,11 @@ enum SidebarDropResolver {
             scope: scope
         )
         state.presentDropResolution(resolution)
-        state.regularExternalDropGap = regularExternalDropGap(
-            location: state.baseGeometryLocation(from: location),
-            state: state,
-            slot: resolution.slot
-        )
         state.updateEssentialsPreviewState(
             at: location,
             resolution: resolution.slot
         )
         return resolution
-    }
-
-    private static func regularExternalDropGap(
-        location: CGPoint,
-        state: SidebarDragState,
-        slot: DropZoneSlot
-    ) -> SidebarRegularExternalDropGap? {
-        guard state.isDragging,
-              case .spaceRegular(let spaceId, let slotIndex) = slot,
-              let listMetrics = state.regularListHitTargets[spaceId] else {
-            return nil
-        }
-
-        if slotIndex == 0, location.y < listMetrics.frame.minY {
-            return SidebarRegularExternalDropGap(spaceId: spaceId, edge: .top)
-        }
-
-        if location.y > listMetrics.frame.maxY {
-            return SidebarRegularExternalDropGap(spaceId: spaceId, edge: .bottom)
-        }
-
-        return nil
     }
 
     private static func resolveSpacePinnedTarget(
@@ -214,6 +202,17 @@ enum SidebarDropResolver {
         }
 
         let topLevelItems = state.topLevelPinnedItemsBySpace[hoveredPage.spaceId] ?? []
+
+        if let metrics = state.pinnedListHitTargets[hoveredPage.spaceId] {
+            return SidebarDropResolution(
+                slot: .spacePinned(
+                    spaceId: hoveredPage.spaceId,
+                    slot: metrics.rowBoundaryIndex(forGlobalY: location.y)
+                ),
+                folderIntent: .none,
+                activeHoveredFolderId: nil
+            )
+        }
 
         if !topLevelItems.isEmpty,
            let slot = resolveTopLevelPinnedSlot(location: location, topLevelItems: topLevelItems) {
@@ -581,17 +580,19 @@ enum SidebarDropResolver {
             return .spaceRegular(spaceId: spaceId, slot: 0)
         }
 
-        guard metrics.itemCount > 0 else {
+        guard metrics.rowCount > 0 else {
             return .spaceRegular(spaceId: spaceId, slot: 0)
         }
 
         if location.y <= metrics.frame.maxY {
             let localY = max(0, location.y - metrics.frame.minY)
-            let slotIndex = midpointSlotIndex(localY: localY, itemCount: metrics.itemCount)
-            return .spaceRegular(spaceId: spaceId, slot: slotIndex)
+            return .spaceRegular(
+                spaceId: spaceId,
+                slot: metrics.rowBoundaryIndex(forLocalY: localY)
+            )
         }
 
-        return .spaceRegular(spaceId: spaceId, slot: metrics.itemCount)
+        return .spaceRegular(spaceId: spaceId, slot: metrics.rowCount)
     }
 
     private static func resolveEssentials(

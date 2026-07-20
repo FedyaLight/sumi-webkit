@@ -13,7 +13,7 @@ final class SidebarURLDropServiceTests: XCTestCase {
         XCTAssertTrue(harness.service.open(
             URL(string: "https://drop.example")!,
             in: window,
-            at: .spaceRegular(spaceId: space.id, slot: 3)
+            atPresentedSlot: .spaceRegular(spaceId: space.id, slot: 3)
         ))
 
         let request = try XCTUnwrap(harness.tabOpening.requests.first)
@@ -35,12 +35,12 @@ final class SidebarURLDropServiceTests: XCTestCase {
         XCTAssertTrue(harness.service.open(
             URL(string: "https://pinned.example")!,
             in: window,
-            at: .spacePinned(spaceId: space.id, slot: 2)
+            atPresentedSlot: .spacePinned(spaceId: space.id, slot: 2)
         ))
         XCTAssertTrue(harness.service.open(
             URL(string: "https://folder.example")!,
             in: window,
-            at: .folder(folderId: folder.id, slot: 4)
+            atPresentedSlot: .folder(folderId: folder.id, slot: 4)
         ))
 
         let pinned = try XCTUnwrap(harness.shortcutInsertion.requests.first?.placement)
@@ -62,7 +62,7 @@ final class SidebarURLDropServiceTests: XCTestCase {
         XCTAssertTrue(harness.service.open(
             URL(string: "https://private.example")!,
             in: window,
-            at: .essentials(slot: 7)
+            atPresentedSlot: .essentials(slot: 7)
         ))
 
         XCTAssertEqual(harness.tabOpening.requests.count, 1)
@@ -79,12 +79,12 @@ final class SidebarURLDropServiceTests: XCTestCase {
         XCTAssertTrue(harness.service.open(
             settingsURL,
             in: window,
-            at: .spaceRegular(spaceId: space.id, slot: 1)
+            atPresentedSlot: .spaceRegular(spaceId: space.id, slot: 1)
         ))
         XCTAssertFalse(harness.service.open(
             settingsURL,
             in: window,
-            at: .spacePinned(spaceId: space.id, slot: 1)
+            atPresentedSlot: .spacePinned(spaceId: space.id, slot: 1)
         ))
 
         XCTAssertEqual(harness.nativeSurfaces.requests.count, 1)
@@ -101,9 +101,13 @@ final class SidebarURLDropServiceTests: XCTestCase {
         XCTAssertFalse(harness.service.open(
             url,
             in: window,
-            at: .spaceRegular(spaceId: UUID(), slot: 0)
+            atPresentedSlot: .spaceRegular(spaceId: UUID(), slot: 0)
         ))
-        XCTAssertFalse(harness.service.open(url, in: window, at: .empty))
+        XCTAssertFalse(harness.service.open(
+            url,
+            in: window,
+            atPresentedSlot: .empty
+        ))
 
         XCTAssertTrue(harness.tabOpening.requests.isEmpty)
         XCTAssertTrue(harness.nativeSurfaces.requests.isEmpty)

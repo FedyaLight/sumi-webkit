@@ -27,15 +27,11 @@ final class ShortcutDragOperationOwner {
             return placement.reorderEssential(pin, to: operation.toIndex)
 
         case (.essentials, .spacePinned(let targetSpaceId)):
-            return placement.move(
+            return moveToTopLevelPinned(
                 pin,
-                to: .spacePinned,
-                profileId: nil,
-                spaceId: targetSpaceId,
-                folderId: nil,
-                index: operation.toIndex,
-                openTargetFolder: true
-            ) != nil
+                in: targetSpaceId,
+                at: operation.toIndex
+            )
 
         case (.essentials, .folder(let targetFolderId)):
             guard let targetSpaceId = folders.spaceId(for: targetFolderId) else {
@@ -74,16 +70,20 @@ final class ShortcutDragOperationOwner {
                 openTargetFolder: true
             ) != nil
 
-        case (.spacePinned, .spacePinned(let targetSpaceId)):
-            return placement.move(
+        case (.spacePinned(let sourceSpaceId), .spacePinned(let targetSpaceId))
+            where sourceSpaceId == targetSpaceId:
+            return placement.reorderSpacePinned(
                 pin,
-                to: .spacePinned,
-                profileId: nil,
-                spaceId: targetSpaceId,
-                folderId: nil,
-                index: operation.toIndex,
-                openTargetFolder: true
-            ) != nil
+                in: targetSpaceId,
+                to: operation.toIndex
+            )
+
+        case (.spacePinned, .spacePinned(let targetSpaceId)):
+            return moveToTopLevelPinned(
+                pin,
+                in: targetSpaceId,
+                at: operation.toIndex
+            )
 
         case (.spacePinned, .folder(let targetFolderId)),
              (.folder, .folder(let targetFolderId)):
@@ -101,15 +101,11 @@ final class ShortcutDragOperationOwner {
             ) != nil
 
         case (.folder, .spacePinned(let targetSpaceId)):
-            return placement.move(
+            return moveToTopLevelPinned(
                 pin,
-                to: .spacePinned,
-                profileId: nil,
-                spaceId: targetSpaceId,
-                folderId: nil,
-                index: operation.toIndex,
-                openTargetFolder: true
-            ) != nil
+                in: targetSpaceId,
+                at: operation.toIndex
+            )
 
         case (.spacePinned, .spaceRegular(let targetSpaceId)),
              (.folder, .spaceRegular(let targetSpaceId)):
@@ -125,5 +121,21 @@ final class ShortcutDragOperationOwner {
              (_, .none):
             return false
         }
+    }
+
+    private func moveToTopLevelPinned(
+        _ pin: ShortcutPin,
+        in spaceID: UUID,
+        at visualIndex: Int
+    ) -> Bool {
+        return placement.move(
+            pin,
+            to: .spacePinned,
+            profileId: nil,
+            spaceId: spaceID,
+            folderId: nil,
+            index: visualIndex,
+            openTargetFolder: true
+        ) != nil
     }
 }

@@ -141,6 +141,11 @@ extension BrowserCompositionRoot {
                 folders: state.folders,
                 pins: state.shortcutPins
             )
+        let spacePinnedVisualOrder = SpacePinnedVisualOrderTransaction(
+            ordering: splitGroupSidebarOrdering,
+            groupMutations: splitGroupMutations,
+            orderTransaction: spacePinnedOrderTransaction
+        )
         let splitGroupMembership = SplitGroupMembershipQuery(
             store: state.splitGroups,
             tabs: tabCollectionMembershipOwner,
@@ -512,6 +517,7 @@ extension BrowserCompositionRoot {
                 pins: state.shortcutPins,
                 structuralMutations: structuralCollectionMutationOwner,
                 spacePinnedStructure: spacePinnedStructureOwner,
+                spacePinnedVisualOrder: spacePinnedVisualOrder,
                 profileAdmissions: profileReferenceAdmission
             ),
             folderOpenState: folderOpenState
@@ -687,6 +693,7 @@ extension BrowserCompositionRoot {
                 runtimeConnection: runtimeConnection,
                 store: shortcutPinStoreOwner,
                 spacePinnedStructure: spacePinnedStructureOwner,
+                spacePinnedVisualOrder: spacePinnedVisualOrder,
                 bindings: shortcutTabBindings,
                 essentialsVisualOrder: essentialsVisualOrder
             )
@@ -714,7 +721,7 @@ extension BrowserCompositionRoot {
             mutations: splitGroupMutations,
             folders: state.folders,
             regularTabs: regularTabCollectionOwner,
-            orderTransaction: spacePinnedOrderTransaction,
+            spacePinnedVisualOrder: spacePinnedVisualOrder,
             launcherPlacement: splitGroupLauncherPlacement,
             shortcutMoves: splitGroupShortcutMoves,
             shortcutToRegular: shortcutPinToRegularTab,
@@ -821,6 +828,7 @@ extension BrowserCompositionRoot {
         let folderPlacementCommit = TabFolderPlacementCommitTransaction(
             hierarchy: folderHierarchyMutations,
             spacePinnedStructure: spacePinnedStructureOwner,
+            spacePinnedVisualOrder: spacePinnedVisualOrder,
             folderOpenState: folderOpenState,
             structuralMutations: structuralCollectionMutationOwner
         )
@@ -904,6 +912,10 @@ extension BrowserCompositionRoot {
                     spaces: state.spaces,
                     folders: state.folders,
                     pins: state.shortcutPins
+                ),
+                orderProjection: SidebarDropOrderProjection(
+                    regularTabs: regularTabCollectionOwner,
+                    splitOrdering: splitGroupSidebarOrdering
                 ),
                 mutation: SidebarCanonicalDragMutation(
                     folderPlacement: folderPlacement,

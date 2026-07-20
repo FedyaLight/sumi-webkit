@@ -7,6 +7,9 @@ struct SidebarGlobalDragOverlay: NSViewRepresentable {
     let dragAutoscrollRegistry: SidebarTabListDragAutoscrollRegistry
     @EnvironmentObject private var dragState: SidebarDragState
     @Environment(BrowserWindowState.self) var windowState
+    @Environment(\.resolvedThemeContext) private var themeContext
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.sumiSettings) private var sumiSettings
 
     func makeNSView(context: Context) -> SidebarDragNSView {
         let view = SidebarDragNSView(
@@ -15,6 +18,7 @@ struct SidebarGlobalDragOverlay: NSViewRepresentable {
         )
         view.transactionPort = transactionPort
         view.windowState = windowState
+        applyIndicatorAppearance(to: view)
         return view
     }
 
@@ -23,6 +27,19 @@ struct SidebarGlobalDragOverlay: NSViewRepresentable {
         nsView.dragState = dragState
         nsView.dragAutoscrollRegistry = dragAutoscrollRegistry
         nsView.windowState = windowState
+        applyIndicatorAppearance(to: nsView)
+    }
+
+    private func applyIndicatorAppearance(to view: SidebarDragNSView) {
+        view.applyIndicatorAccent(
+            primaryColorHex: themeContext.gradient.primaryColorHex,
+            isDarkChrome: themeContext.chromeColorScheme == .dark
+        )
+        view.dropIndicatorPresenter.prefersReducedMotion =
+            SumiChromeMotionPolicy.currentMode(
+                reduceMotion: reduceMotion,
+                energySaverReducesMotion: sumiSettings.shouldReduceChromeMotion
+            ) == .reducedMotion
     }
 }
 
@@ -42,11 +59,48 @@ class SidebarDragNSView: NSView {
         }
     }
 
+    /// Everything a drag sample's outcome depends on. While the pointer sits
+    /// still and no geometry moved underneath it (periodic dragging updates
+    /// fire regardless), re-resolving would reproduce the same resolution —
+    /// skip the whole pipeline, like Zen's `animLastScreenPos` early-out.
+    private struct DragUpdateSignature: Equatable {
+        let location: CGPoint
+        let scrollRevision: UInt64
+        let structuralRevision: UInt64
+        let pasteboardChangeCount: Int
+    }
+
     var transactionPort: SidebarDragTransactionPort?
     var windowState: BrowserWindowState?
     var dragState: SidebarDragState
     var dragAutoscrollRegistry: SidebarTabListDragAutoscrollRegistry
+    let dropIndicatorPresenter = SidebarDropIndicatorPresenter()
     private var cachedDragContext: DragContext?
+    private var lastUpdateSignature: DragUpdateSignature?
+    private var lastUpdateAccepted = false
+    private var appliedAccentKey: IndicatorAccentKey?
+
+    private struct IndicatorAccentKey: Equatable {
+        let primaryColorHex: String
+        let isDarkChrome: Bool
+    }
+
+    /// Zen's indicator color: the space's primary color mixed 50/50 toward
+    /// near-black (light chrome) or near-white (dark chrome). `updateNSView`
+    /// fires on every drag-state publish, so the hex-parse/blend only runs
+    /// when the theme inputs actually change.
+    func applyIndicatorAccent(primaryColorHex: String, isDarkChrome: Bool) {
+        let key = IndicatorAccentKey(
+            primaryColorHex: primaryColorHex,
+            isDarkChrome: isDarkChrome
+        )
+        guard key != appliedAccentKey else { return }
+        appliedAccentKey = key
+        let primary = NSColor(Color(hex: primaryColorHex))
+        let mixin: NSColor = isDarkChrome ? .white : .black
+        dropIndicatorPresenter.accentColor =
+            primary.blended(withFraction: 0.5, of: mixin) ?? primary
+    }
 
     init(
         frame frameRect: NSRect = .zero,
@@ -56,6 +110,10 @@ class SidebarDragNSView: NSView {
         self.dragState = dragState
         self.dragAutoscrollRegistry = dragAutoscrollRegistry
         super.init(frame: frameRect)
+        wantsLayer = true
+        if let layer {
+            dropIndicatorPresenter.attach(to: layer)
+        }
         registerForDraggedTypes([
             .string,
             .URL,
@@ -74,6 +132,7 @@ class SidebarDragNSView: NSView {
 
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
         cachedDragContext = nil
+        lastUpdateSignature = nil
         let context = dragContext(for: sender)
 
         if let item = context.draggedItem {
@@ -108,9 +167,19 @@ class SidebarDragNSView: NSView {
             in: self,
             dragState: dragState
         )
-        return updateDragSlot(sender: sender)
-            ? context.dragOperation
-            : []
+        let signature = DragUpdateSignature(
+            location: sender.draggingLocation,
+            scrollRevision: dragState.geometry.geometrySnapshot.scrollRevision,
+            structuralRevision: dragState.geometry.geometrySnapshot.structuralRevision,
+            pasteboardChangeCount: sender.draggingPasteboard.changeCount
+        )
+        if signature == lastUpdateSignature {
+            return lastUpdateAccepted ? context.dragOperation : []
+        }
+        let accepted = updateDragSlot(sender: sender)
+        lastUpdateSignature = signature
+        lastUpdateAccepted = accepted
+        return accepted ? context.dragOperation : []
     }
 
     override func wantsPeriodicDraggingUpdates() -> Bool {
@@ -118,6 +187,8 @@ class SidebarDragNSView: NSView {
     }
 
     override func draggingExited(_ sender: NSDraggingInfo?) {
+        dropIndicatorPresenter.hide()
+        lastUpdateSignature = nil
         if dragState.isInternalDragSession {
             dragState.clearHoverState()
         } else {
@@ -128,6 +199,8 @@ class SidebarDragNSView: NSView {
     }
 
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        dropIndicatorPresenter.hide()
+        lastUpdateSignature = nil
         defer {
             runWithoutDropAnimations {
                 dragState.resetInteractionState()
@@ -159,9 +232,32 @@ class SidebarDragNSView: NSView {
 
     private func updateDragSlot(sender: NSDraggingInfo) -> Bool {
         guard let resolution = resolveDropResolution(sender: sender) else {
+            presentDropIndicator(for: nil)
             return false
         }
+        presentDropIndicator(for: resolution)
         return resolution.slot != .empty
+    }
+
+    /// Positions the drop-indicator line for the resolved slot. The geometry
+    /// rect arrives in scroll-normalized SwiftUI-global space; strip the
+    /// autoscroll delta, flip into window coordinates, then into view space.
+    private func presentDropIndicator(for resolution: SidebarDropResolution?) {
+        guard let resolution,
+              let window,
+              var lineRect = resolution.indicatorLineRect else {
+            dropIndicatorPresenter.hide()
+            return
+        }
+        lineRect.origin.y -= dragState.geometry.geometrySnapshot.cumulativeScrollDeltaY
+        let windowRect = SidebarDragLocationMapper.windowRect(
+            fromSwiftUITopLeftRect: lineRect,
+            in: window
+        )
+        dropIndicatorPresenter.update(
+            lineRect: convert(windowRect, from: nil),
+            slotKey: resolution.slot
+        )
     }
 
     @discardableResult

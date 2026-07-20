@@ -6,136 +6,36 @@
 import SumiDomain
 import SwiftUI
 
-enum SpaceRegularExternalDropGapPlacement: Equatable {
-    case top
-    case bottom
-}
-
-let regularDragProjectionGapID = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
-
-struct SpaceRegularTabsListProjection {
-    struct DragSnapshot {
-        let isDropProjectionActive: Bool
-        let sourceContainer: TabDragManager.DragContainer?
-        let dragItemID: UUID?
-        let hoveredSlot: DropZoneSlot?
-        let externalDropGap: SidebarRegularExternalDropGap?
-        let isCompletingDrop: Bool
-        let hidesCommittedCrossContainerPlaceholder: Bool
-    }
-
-    let spaceID: UUID
-    let tabIDs: [UUID]
-    let showsBottomNewTabButton: Bool
-    let drag: DragSnapshot
-
-    var sourceID: UUID? {
-        guard drag.isDropProjectionActive,
-              drag.sourceContainer == .spaceRegular(spaceID),
-              let dragItemID = drag.dragItemID,
-              tabIDs.contains(dragItemID)
-        else { return nil }
-        return dragItemID
-    }
-
-    var externalDropGapPlacement: SpaceRegularExternalDropGapPlacement? {
-        guard let gap = drag.externalDropGap, gap.spaceId == spaceID else { return nil }
-        switch gap.edge {
-        case .top: return .top
-        case .bottom: return showsBottomNewTabButton ? .bottom : nil
-        }
-    }
-
-    var insertionIndex: Int? {
-        guard drag.isDropProjectionActive,
-              case .spaceRegular(let hoveredSpaceID, let slot) = drag.hoveredSlot,
-              hoveredSpaceID == spaceID,
-              externalDropGapPlacement == nil
-        else { return nil }
-
-        if SidebarDragPlaceholderPolicy.shouldSuppressCommitGapForExternalSource(
-            isCompletingDrop: drag.isCompletingDrop,
-            sourceContainer: drag.sourceContainer,
-            targetContainer: .spaceRegular(spaceID)
-        ) {
-            return nil
-        }
-        guard !drag.hidesCommittedCrossContainerPlaceholder else { return nil }
-        return slot
-    }
-
-    var projectedItems: [ProjectedItem<UUID>] {
-        SidebarDropProjection.projectedItems(
-            itemIDs: tabIDs,
-            removesSourceID: sourceID,
-            insertsPlaceholderAt: insertionIndex
-        )
-    }
-
-    var usesProjectedDropLayout: Bool {
-        sourceID != nil || insertionIndex != nil
-    }
-
-    func displayItems(fallback: [RegularTabRenderedItem]) -> [RegularTabRenderedItem] {
-        guard usesProjectedDropLayout else { return fallback }
-        return projectedItems.map { item in
-            switch item {
-            case .item(let tabID): return .tab(tabID)
-            case .placeholder: return .gap(regularDragProjectionGapID)
-            }
-        }
-    }
-}
-
 struct SpaceRegularTabsInteractionSession {
     var listAnimation = RegularTabsListAnimationState()
 }
 
-struct SpaceRegularDragSnapshot {
+struct SpaceRegularDragSnapshot: Equatable {
     let isDragging: Bool
     let isCompletingDrop: Bool
     let activeDragItemID: UUID?
     let geometryGeneration: Int
-    let shouldAnimateDropLayout: Bool
-    let projection: SpaceRegularTabsListProjection.DragSnapshot
 
     @MainActor
-    init(dragState: SidebarDragState, spaceID: UUID, tabs: [Tab]) {
-        let dragItemID = dragState.projectionDragItemId
-        let targetContainsDraggedItem = dragItemID.map { id in
-            tabs.contains { $0.id == id }
-        } ?? false
-
+    init(dragState: SidebarDragState, geometryGeneration: Int) {
         isDragging = dragState.isDragging
         isCompletingDrop = dragState.isCompletingDrop
         activeDragItemID = dragState.activeDragItemId
-        geometryGeneration = dragState.sidebarGeometryGeneration
-        shouldAnimateDropLayout = dragState.shouldAnimateDropLayout
-        projection = .init(
-            isDropProjectionActive: dragState.isDropProjectionActive,
-            sourceContainer: dragState.projectionDragScope?.sourceContainer,
-            dragItemID: dragItemID,
-            hoveredSlot: dragState.projectionHoveredSlot,
-            externalDropGap: dragState.regularExternalDropGap,
-            isCompletingDrop: dragState.isCompletingDrop,
-            hidesCommittedCrossContainerPlaceholder: dragItemID != nil
-                && dragState.shouldHideCommittedCrossContainerPlaceholder(
-                    into: .spaceRegular(spaceID),
-                    targetAlreadyContainsDraggedItem: targetContainsDraggedItem
-                )
-        )
+        self.geometryGeneration = geometryGeneration
     }
 }
 
 private struct SpaceRegularDragSnapshotReader<Content: View>: View {
-    let spaceID: UUID
-    let tabs: [Tab]
     @ViewBuilder let content: (SpaceRegularDragSnapshot) -> Content
 
     @EnvironmentObject private var dragState: SidebarDragState
+    @EnvironmentObject private var dragGeometry: SidebarDragGeometryModule
 
     var body: some View {
-        content(SpaceRegularDragSnapshot(dragState: dragState, spaceID: spaceID, tabs: tabs))
+        content(SpaceRegularDragSnapshot(
+            dragState: dragState,
+            geometryGeneration: dragGeometry.sidebarGeometryGeneration
+        ))
     }
 }
 
@@ -152,6 +52,7 @@ struct SpaceRegularTabsView: View {
     let browserContext: SidebarBrowserContext
     let isInteractive: Bool
     let innerWidth: CGFloat
+    let showsPinnedBoundary: Bool
     @Binding var isSidebarHovered: Bool
 
     @State private var interactionSession = SpaceRegularTabsInteractionSession()
@@ -162,7 +63,7 @@ struct SpaceRegularTabsView: View {
     }
 
     var body: some View {
-        SpaceRegularDragSnapshotReader(spaceID: space.id, tabs: tabs) { dragSnapshot in
+        SpaceRegularDragSnapshotReader { dragSnapshot in
             SpaceRegularTabsContentView(
                 space: space,
                 selection: selection,
@@ -176,6 +77,7 @@ struct SpaceRegularTabsView: View {
                 innerWidth: innerWidth,
                 tabs: tabs,
                 dragSnapshot: dragSnapshot,
+                showsPinnedBoundary: showsPinnedBoundary,
                 isSidebarHovered: $isSidebarHovered,
                 interactionSession: $interactionSession
             )
@@ -196,6 +98,9 @@ private struct SpaceRegularTabsContentView: View {
     let innerWidth: CGFloat
     let tabs: [Tab]
     let dragSnapshot: SpaceRegularDragSnapshot
+    /// Zen parity (`hide-separator`): the pinned/regular separator and its
+    /// breathing room exist only while the pinned section has content.
+    let showsPinnedBoundary: Bool
     @Binding var isSidebarHovered: Bool
     @Binding var interactionSession: SpaceRegularTabsInteractionSession
 
@@ -213,32 +118,21 @@ private struct SpaceRegularTabsContentView: View {
         showsNewTabButtonInList && !showsNewTabButtonAtTop
     }
 
-    private var projection: SpaceRegularTabsListProjection {
-        SpaceRegularTabsListProjection(
-            spaceID: space.id,
-            tabIDs: tabs.map(\.id),
-            showsBottomNewTabButton: showsBottomNewTabButton,
-            drag: dragSnapshot.projection
-        )
-    }
-
     private var renderedRowCount: Int {
-        projection.displayItems(fallback: interactionSession.listAnimation.renderedItems).count
+        interactionSession.listAnimation.renderedItems.count
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            if projection.externalDropGapPlacement == .top {
-                dropGap
+            if showsPinnedBoundary {
+                SpaceSeparator(
+                    hasTabs: regularTabCatalog.hasPersistedTabs(in: space),
+                    isHovering: $isSidebarHovered
+                ) {
+                    regularTabLifecycleCommands.clearRegularTabs(for: space.id)
+                }
+                .padding(.horizontal, 8)
             }
-
-            SpaceSeparator(
-                hasTabs: regularTabCatalog.hasPersistedTabs(in: space),
-                isHovering: $isSidebarHovered
-            ) {
-                regularTabLifecycleCommands.clearRegularTabs(for: space.id)
-            }
-            .padding(.horizontal, 8)
 
             VStack(spacing: 2) {
                 if showsNewTabButtonInList && showsNewTabButtonAtTop {
@@ -262,20 +156,9 @@ private struct SpaceRegularTabsContentView: View {
                     isInteractive: isInteractive,
                     innerWidth: innerWidth,
                     tabs: tabs,
-                    projection: projection,
                     dragSnapshot: dragSnapshot,
                     interactionSession: $interactionSession
                 )
-                .sidebarRegularListHitGeometry(
-                    for: space.id,
-                    itemCount: renderedRowCount,
-                    generation: dragSnapshot.geometryGeneration,
-                    isEnabled: isInteractive
-                )
-
-                if projection.externalDropGapPlacement == .bottom {
-                    dropGap
-                }
 
                 if showsBottomNewTabButton {
                     SpaceRegularNewTabRow(
@@ -285,7 +168,7 @@ private struct SpaceRegularTabsContentView: View {
                     )
                 }
             }
-            .padding(.top, 8)
+            .padding(.top, showsPinnedBoundary ? 8 : 4)
 
             Color.clear.frame(
                 height: renderedRowCount == 0 && !interactionSession.listAnimation.hasRemovalInFlight
@@ -299,25 +182,6 @@ private struct SpaceRegularTabsContentView: View {
             generation: dragSnapshot.geometryGeneration,
             isEnabled: isInteractive
         )
-        .animation(
-            isInteractive && dragSnapshot.shouldAnimateDropLayout ? SidebarDropMotion.gap : nil,
-            value: projection.externalDropGapPlacement
-        )
-        .transaction { transaction in
-            if dragSnapshot.isCompletingDrop {
-                transaction.animation = nil
-                transaction.disablesAnimations = true
-            }
-        }
-    }
-
-    private var dropGap: some View {
-        Color.clear
-            .frame(height: SidebarRowLayout.rowHeight)
-            .frame(maxWidth: .infinity)
-            .allowsHitTesting(false)
-            .transition(.sidebarRowDropGap)
-            .accessibilityHidden(true)
     }
 }
 

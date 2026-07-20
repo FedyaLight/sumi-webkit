@@ -90,7 +90,53 @@ struct SidebarFolderChildDropTargetUpdate: Equatable {
 
 struct SidebarRegularListHitMetrics: Equatable {
     var frame: CGRect
-    var itemCount: Int
+    /// Number of rendered rows. A split group is one row regardless of its
+    /// member count.
+    var rowCount: Int
+
+    /// True visual row pitch (row height + derived inter-row spacing).
+    var rowPitch: CGFloat {
+        guard rowCount > 1 else { return SidebarRowLayout.rowHeight }
+        let spacing = (frame.height - CGFloat(rowCount) * SidebarRowLayout.rowHeight)
+            / CGFloat(rowCount - 1)
+        return SidebarRowLayout.rowHeight + max(0, spacing)
+    }
+
+    /// Nearest visual row boundary for a Y offset inside the list frame.
+    func rowBoundaryIndex(forLocalY localY: CGFloat) -> Int {
+        guard rowCount > 0 else { return 0 }
+        let rawIndex = Int(((localY / rowPitch) + 0.5).rounded(.down))
+        return max(0, min(rawIndex, rowCount))
+    }
+}
+
+/// Compact geometry for the common Pinned layout where every top-level item
+/// is one fixed-height row and no folder expands the stack.
+struct SidebarPinnedListHitMetrics: Equatable {
+    var frame: CGRect
+    var rowCount: Int
+    var leadingInset: CGFloat
+
+    var rowsFrame: CGRect {
+        CGRect(
+            x: frame.minX,
+            y: frame.minY + leadingInset,
+            width: frame.width,
+            height: CGFloat(max(rowCount, 0)) * SidebarRowLayout.rowHeight
+        )
+    }
+
+    func rowBoundaryIndex(forGlobalY globalY: CGFloat) -> Int {
+        guard rowCount > 0 else { return 0 }
+        let localY = globalY - rowsFrame.minY
+        let rawIndex = Int(((localY / SidebarRowLayout.rowHeight) + 0.5).rounded(.down))
+        return max(0, min(rawIndex, rowCount))
+    }
+
+    func boundaryY(for slot: Int) -> CGFloat {
+        let safeSlot = max(0, min(slot, rowCount))
+        return rowsFrame.minY + CGFloat(safeSlot) * SidebarRowLayout.rowHeight
+    }
 }
 
 struct SidebarSectionGeometryKey: Hashable {
@@ -270,6 +316,7 @@ struct SidebarRuntimeGeometryStore {
     var topLevelPinnedItemTargets: [UUID: SidebarTopLevelPinnedItemMetrics] = [:]
     var folderDropTargets: [UUID: SidebarFolderDropTargetMetrics] = [:]
     var folderChildDropTargets: [UUID: SidebarFolderChildDropTargetMetrics] = [:]
+    var pinnedListHitTargets: [UUID: SidebarPinnedListHitMetrics] = [:]
     var regularListHitTargets: [UUID: SidebarRegularListHitMetrics] = [:]
     var essentialsLayoutMetricsBySpace: [UUID: SidebarEssentialsLayoutMetrics] = [:]
     var hitTestIndex: SidebarGeometryHitTestIndex = .empty
@@ -281,6 +328,7 @@ enum SidebarDragGeometryMutationKey: Hashable {
     case folder(UUID, SidebarFolderDragRegion)
     case topLevelPinnedItem(UUID)
     case folderChild(UUID)
+    case pinnedList(UUID)
     case regularList(UUID)
     case essentials(UUID)
 }
@@ -318,9 +366,8 @@ struct SidebarGeometrySnapshot: Equatable {
     var scrollRevision: UInt64 = 0
     var pageGeometryByKey: [SidebarPageGeometryKey: SidebarPageGeometryMetrics] = [:]
     var sectionFramesBySpace: [SidebarSectionGeometryKey: CGRect] = [:]
-    var topLevelPinnedItemTargets: [UUID: SidebarTopLevelPinnedItemMetrics] = [:]
     var folderDropTargets: [UUID: SidebarFolderDropTargetMetrics] = [:]
-    var folderChildDropTargets: [UUID: SidebarFolderChildDropTargetMetrics] = [:]
+    var pinnedListHitTargets: [UUID: SidebarPinnedListHitMetrics] = [:]
     var regularListHitTargets: [UUID: SidebarRegularListHitMetrics] = [:]
     var essentialsLayoutMetricsBySpace: [UUID: SidebarEssentialsLayoutMetrics] = [:]
     var hitTestIndex: SidebarGeometryHitTestIndex = .empty
@@ -339,48 +386,44 @@ extension SidebarDragState {
     func baseGeometryLocation(from visibleLocation: CGPoint) -> CGPoint {
         CGPoint(
             x: visibleLocation.x,
-            y: visibleLocation.y + geometrySnapshot.cumulativeScrollDeltaY
+            y: visibleLocation.y + geometry.geometrySnapshot.cumulativeScrollDeltaY
         )
     }
 
     var sectionFramesBySpace: [SidebarSectionGeometryKey: CGRect] {
-        geometrySnapshot.sectionFramesBySpace
+        geometry.geometrySnapshot.sectionFramesBySpace
     }
 
     var pageGeometryByKey: [SidebarPageGeometryKey: SidebarPageGeometryMetrics] {
-        geometrySnapshot.pageGeometryByKey
+        geometry.geometrySnapshot.pageGeometryByKey
     }
 
     var folderDropTargets: [UUID: SidebarFolderDropTargetMetrics] {
-        geometrySnapshot.folderDropTargets
-    }
-
-    var topLevelPinnedItemTargets: [UUID: SidebarTopLevelPinnedItemMetrics] {
-        geometrySnapshot.topLevelPinnedItemTargets
-    }
-
-    var folderChildDropTargets: [UUID: SidebarFolderChildDropTargetMetrics] {
-        geometrySnapshot.folderChildDropTargets
+        geometry.geometrySnapshot.folderDropTargets
     }
 
     var regularListHitTargets: [UUID: SidebarRegularListHitMetrics] {
-        geometrySnapshot.regularListHitTargets
+        geometry.geometrySnapshot.regularListHitTargets
+    }
+
+    var pinnedListHitTargets: [UUID: SidebarPinnedListHitMetrics] {
+        geometry.geometrySnapshot.pinnedListHitTargets
     }
 
     var essentialsLayoutMetricsBySpace: [UUID: SidebarEssentialsLayoutMetrics] {
-        geometrySnapshot.essentialsLayoutMetricsBySpace
+        geometry.geometrySnapshot.essentialsLayoutMetricsBySpace
     }
 
     var topLevelPinnedItemsBySpace: [UUID: [SidebarTopLevelPinnedItemMetrics]] {
-        geometrySnapshot.hitTestIndex.topLevelPinnedItemsBySpace
+        geometry.geometrySnapshot.hitTestIndex.topLevelPinnedItemsBySpace
     }
 
     var folderTargetsBySpace: [UUID: [SidebarFolderDropTargetMetrics]] {
-        geometrySnapshot.hitTestIndex.folderTargetsBySpace
+        geometry.geometrySnapshot.hitTestIndex.folderTargetsBySpace
     }
 
     var folderChildrenByFolder: [UUID: [SidebarFolderChildDropTargetMetrics]] {
-        geometrySnapshot.hitTestIndex.folderChildrenByFolder
+        geometry.geometrySnapshot.hitTestIndex.folderChildrenByFolder
     }
 
     func sectionFrame(

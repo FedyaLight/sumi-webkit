@@ -122,3 +122,14 @@ struct DragOperation {
         return pin
     }
 }
+
+/// Canonical sidebar commit intent. Its destination index is always the
+/// boundary shown by the current sidebar projection; durable index conversion
+/// happens inside the drag transaction, next to the stores it depends on.
+struct SidebarDragCommitIntent {
+    let payload: DragOperation.Payload
+    let scope: SidebarDragScope
+    let fromContainer: TabDragManager.DragContainer
+    let toContainer: TabDragManager.DragContainer
+    let presentedVisualIndex: Int
+}

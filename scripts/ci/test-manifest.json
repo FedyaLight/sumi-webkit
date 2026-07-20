@@ -521,6 +521,7 @@
         "SumiTests/SidebarDragPasteboardPayloadTests",
         "SumiTests/SidebarDragSourceInventoryTests",
         "SumiTests/SidebarDropCoordinatorBoundaryTests",
+        "SumiTests/SidebarDropIndicatorGeometryTests",
         "SumiTests/SidebarDropProjectionTests",
         "SumiTests/SidebarInventoryDescendantItemsTests",
         "SumiTests/SidebarPinCommandIdentityTests",

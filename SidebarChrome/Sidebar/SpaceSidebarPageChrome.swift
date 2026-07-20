@@ -252,7 +252,7 @@ extension SpacesSideBarView {
                 spaceId: space.id,
                 profileId: pageProfileId,
                 renderMode: pageRenderMode.geometryRenderMode,
-                generation: dragState.sidebarGeometryGeneration,
+                generation: dragGeometry.sidebarGeometryGeneration,
                 isEnabled: allowsInteractiveWork
             )
         }

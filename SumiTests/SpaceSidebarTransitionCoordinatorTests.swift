@@ -175,8 +175,8 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
         XCTAssertNil(coordinator.transitionSnapshot)
         XCTAssertFalse(coordinator.transitionState.hasDestination)
 
-        let pendingGeneration = try XCTUnwrap(dragState.pendingGeometryGeneration)
-        XCTAssertEqual(dragState.activeGeometryGeneration, 0)
+        let pendingGeneration = try XCTUnwrap(dragState.geometry.pendingGeometryGeneration)
+        XCTAssertEqual(dragState.geometry.activeGeometryGeneration, 0)
 
         applyIncompleteInteractiveGeometry(
             to: dragState,
@@ -185,20 +185,20 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
             generation: pendingGeneration
         )
 
-        XCTAssertEqual(dragState.pendingGeometryGeneration, pendingGeneration)
-        XCTAssertEqual(dragState.activeGeometryGeneration, 0)
+        XCTAssertEqual(dragState.geometry.pendingGeometryGeneration, pendingGeneration)
+        XCTAssertEqual(dragState.geometry.activeGeometryGeneration, 0)
 
         applyRegularListGeometry(
             to: dragState,
             spaceId: destination.id,
             generation: pendingGeneration
         )
-        dragState.flushDeferredGeometryForDragStart()
+        dragState.geometry.flushDeferredGeometryForDragStart()
 
-        XCTAssertEqual(dragState.activeGeometryGeneration, pendingGeneration)
-        XCTAssertNil(dragState.pendingGeometryGeneration)
+        XCTAssertEqual(dragState.geometry.activeGeometryGeneration, pendingGeneration)
+        XCTAssertNil(dragState.geometry.pendingGeometryGeneration)
         XCTAssertEqual(
-            dragState.geometrySnapshot.pageGeometryByKey[
+            dragState.geometry.geometrySnapshot.pageGeometryByKey[
                 SidebarPageGeometryKey(spaceId: destination.id, profileId: destinationProfileId)
             ]?.renderMode,
             .interactive
@@ -438,17 +438,17 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
         XCTAssertNil(coordinator.transitionSnapshot)
         XCTAssertFalse(coordinator.transitionState.hasDestination)
 
-        let pendingGeneration = try XCTUnwrap(dragState.pendingGeometryGeneration)
+        let pendingGeneration = try XCTUnwrap(dragState.geometry.pendingGeometryGeneration)
         applyCompleteInteractiveGeometry(
             to: dragState,
             spaceId: scheduledDestination.id,
             profileId: scheduledDestination.profileId,
             generation: pendingGeneration
         )
-        dragState.flushDeferredGeometryForDragStart()
+        dragState.geometry.flushDeferredGeometryForDragStart()
 
-        XCTAssertEqual(dragState.pendingGeometryGeneration, pendingGeneration)
-        XCTAssertEqual(dragState.activeGeometryGeneration, 0)
+        XCTAssertEqual(dragState.geometry.pendingGeometryGeneration, pendingGeneration)
+        XCTAssertEqual(dragState.geometry.activeGeometryGeneration, 0)
 
         XCTAssertEqual(delayedActions.scheduledDelays, [SpaceSidebarRenderPolicy.completionDelay])
         XCTAssertEqual(delayedActions.pendingActionCount, 0)
@@ -466,12 +466,12 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
             profileId: directDestination.profileId,
             generation: pendingGeneration
         )
-        dragState.flushDeferredGeometryForDragStart()
+        dragState.geometry.flushDeferredGeometryForDragStart()
 
-        XCTAssertEqual(dragState.activeGeometryGeneration, pendingGeneration)
-        XCTAssertNil(dragState.pendingGeometryGeneration)
+        XCTAssertEqual(dragState.geometry.activeGeometryGeneration, pendingGeneration)
+        XCTAssertNil(dragState.geometry.pendingGeometryGeneration)
         XCTAssertEqual(
-            dragState.geometrySnapshot.pageGeometryByKey[
+            dragState.geometry.geometrySnapshot.pageGeometryByKey[
                 SidebarPageGeometryKey(spaceId: directDestination.id, profileId: directDestination.profileId)
             ]?.renderMode,
             .interactive
@@ -672,33 +672,41 @@ private func applyIncompleteInteractiveGeometry(
     profileId: UUID?,
     generation: Int
 ) {
-    dragState.applyPageGeometry(
-        spaceId: spaceId,
-        profileId: profileId,
-        frame: CGRect(x: 0, y: 0, width: 300, height: 600),
-        renderMode: .interactive,
+    dragState.geometry.report(
+        .page(
+            spaceId: spaceId,
+            profileId: profileId,
+            frame: CGRect(x: 0, y: 0, width: 300, height: 600),
+            renderMode: .interactive
+        ),
         generation: generation
     )
-    dragState.applySectionFrame(
-        spaceId: spaceId,
-        section: .essentials,
-        frame: CGRect(x: 0, y: 0, width: 300, height: 140),
+    dragState.geometry.report(
+        .section(
+            spaceId: spaceId,
+            section: .essentials,
+            frame: CGRect(x: 0, y: 0, width: 300, height: 140)
+        ),
         generation: generation
     )
-    dragState.applySectionFrame(
-        spaceId: spaceId,
-        section: .spacePinned,
-        frame: CGRect(x: 0, y: 140, width: 300, height: 180),
+    dragState.geometry.report(
+        .section(
+            spaceId: spaceId,
+            section: .spacePinned,
+            frame: CGRect(x: 0, y: 140, width: 300, height: 180)
+        ),
         generation: generation
     )
-    dragState.applySectionFrame(
-        spaceId: spaceId,
-        section: .spaceRegular,
-        frame: CGRect(x: 0, y: 320, width: 300, height: 260),
+    dragState.geometry.report(
+        .section(
+            spaceId: spaceId,
+            section: .spaceRegular,
+            frame: CGRect(x: 0, y: 320, width: 300, height: 260)
+        ),
         generation: generation
     )
-    dragState.applyEssentialsLayoutMetrics(
-        SidebarEssentialsLayoutUpdate(
+    dragState.geometry.report(
+        .essentials(SidebarEssentialsLayoutUpdate(
             spaceId: spaceId,
             input: SidebarEssentialsLayoutMetricsInput(
                 profileId: profileId,
@@ -714,7 +722,7 @@ private func applyIncompleteInteractiveGeometry(
                 visibleRowCount: 2,
                 maxDropRowCount: 3
             )
-        ),
+        )),
         generation: generation
     )
 }
@@ -745,10 +753,12 @@ private func applyRegularListGeometry(
     spaceId: UUID,
     generation: Int
 ) {
-    dragState.applyRegularListHitTarget(
-        spaceId: spaceId,
-        frame: CGRect(x: 0, y: 320, width: 300, height: 260),
-        itemCount: 6,
+    dragState.geometry.report(
+        .regularList(
+            spaceId: spaceId,
+            frame: CGRect(x: 0, y: 320, width: 300, height: 260),
+            rowCount: 6
+        ),
         generation: generation
     )
 }

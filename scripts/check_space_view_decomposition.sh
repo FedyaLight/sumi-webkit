@@ -57,8 +57,7 @@ for declaration in \
   'struct TabFolderLiveItemEntryView: View' \
   'struct TabFolderSplitGroupEntryView: View' \
   'struct SpaceScrollChromeSurface<Content: View>: View' \
-  'struct SpacePinnedListProjection' \
-  'struct SpaceRegularTabsListProjection'; do
+  'struct SpacePinnedListProjection'; do
   declaration_count="$(guard_count_matches "$declaration" -F "$space_root")"
   if (( declaration_count == 0 )); then
     echo "SpaceView decomposition guard: missing semantic boundary: $declaration" >&2
@@ -307,7 +306,6 @@ for filename, names in roots.items():
 
 permitted_coarse_drag_readers = {
     "SidebarFolderDragSnapshotReader",
-    "SpaceDropCommitSignalReader",
     "SpacePinnedDragSnapshotReader",
     "SpaceRegularDragSnapshotReader",
     "SpaceScrollDragRegistration",
@@ -379,28 +377,12 @@ for name in folder_interaction_views:
             f"SpaceView decomposition guard: {name} must store exactly one Bool "
             "isInteractive gate"
         )
-space_body = view_body(space_view_source, "SpaceView")
-suppression_sequence = [
-    r"\bSpaceDropCommitSignalReader\s*{\s*isCompletingDrop\s+in\b",
-    r"\bVStack\s*\(",
-    r"\.transaction\s*{\s*transaction\s+in\b",
-    r"\bif\s+isCompletingDrop\s*{",
-    r"\btransaction\s*\.\s*animation\s*=\s*nil\b",
-    r"\btransaction\s*\.\s*disablesAnimations\s*=\s*true\b",
-]
-cursor = 0
-for required in suppression_sequence:
-    match = re.search(required, space_body[cursor:], re.DOTALL)
-    if not match:
-        raise SystemExit(
-            "SpaceView decomposition guard: whole-surface drop commit suppression "
-            f"is incomplete at pattern {required}"
-        )
-    cursor += match.end()
-reader_body = view_body(view_structs["SpaceDropCommitSignalReader"][1], "SpaceDropCommitSignalReader")
-if not re.search(r"\bcontent\s*\(\s*dragState\s*\.\s*isCompletingDrop\s*\)", reader_body):
+# Drop commits settle with SidebarMotionPolicy.dropSettleAnimation in the list
+# sections; whole-surface suppression must not regrow around SpaceView.
+if re.search(r"\bSpaceDropCommitSignalReader\b", space_view_source):
     raise SystemExit(
-        "SpaceView decomposition guard: drop reader must project only isCompletingDrop"
+        "SpaceView decomposition guard: whole-surface drop commit suppression "
+        "may not regrow around SpaceView"
     )
 
 adoption = {

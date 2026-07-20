@@ -9,10 +9,6 @@ struct SidebarFolderDragSnapshot: Equatable {
     let activeHoveredFolderID: UUID?
     let folderDropIntent: FolderDropIntent
     let geometryGeneration: Int
-    let isDropProjectionActive: Bool
-    let projectionDragItemID: UUID?
-    let projectionSourceContainer: TabDragManager.DragContainer?
-    let projectionFolderDropIntent: FolderDropIntent
 
     init(
         isDragging: Bool = false,
@@ -20,11 +16,7 @@ struct SidebarFolderDragSnapshot: Equatable {
         activeDragItemID: UUID? = nil,
         activeHoveredFolderID: UUID? = nil,
         folderDropIntent: FolderDropIntent = .none,
-        geometryGeneration: Int = 0,
-        isDropProjectionActive: Bool? = nil,
-        projectionDragItemID: UUID? = nil,
-        projectionSourceContainer: TabDragManager.DragContainer? = nil,
-        projectionFolderDropIntent: FolderDropIntent = .none
+        geometryGeneration: Int = 0
     ) {
         self.isDragging = isDragging
         self.isCompletingDrop = isCompletingDrop
@@ -32,33 +24,18 @@ struct SidebarFolderDragSnapshot: Equatable {
         self.activeHoveredFolderID = activeHoveredFolderID
         self.folderDropIntent = folderDropIntent
         self.geometryGeneration = geometryGeneration
-        self.isDropProjectionActive = isDropProjectionActive ?? (isDragging || isCompletingDrop)
-        self.projectionDragItemID = projectionDragItemID
-        self.projectionSourceContainer = projectionSourceContainer
-        self.projectionFolderDropIntent = projectionFolderDropIntent
     }
 
     @MainActor
-    init(dragState: SidebarDragState) {
+    init(dragState: SidebarDragState, geometryGeneration: Int) {
         self.init(
             isDragging: dragState.isDragging,
             isCompletingDrop: dragState.isCompletingDrop,
             activeDragItemID: dragState.activeDragItemId,
             activeHoveredFolderID: dragState.activeHoveredFolderId,
             folderDropIntent: dragState.folderDropIntent,
-            geometryGeneration: dragState.sidebarGeometryGeneration,
-            isDropProjectionActive: dragState.isDropProjectionActive,
-            projectionDragItemID: dragState.projectionDragItemId,
-            projectionSourceContainer: dragState.projectionDragScope?.sourceContainer,
-            projectionFolderDropIntent: dragState.projectionFolderDropIntent
+            geometryGeneration: geometryGeneration
         )
-    }
-
-    var projectionSourceFolderID: UUID? {
-        guard case .folder(let folderID) = projectionSourceContainer else {
-            return nil
-        }
-        return folderID
     }
 
     func isContainTargeted(folderID: UUID) -> Bool {
@@ -69,28 +46,12 @@ struct SidebarFolderDragSnapshot: Equatable {
         isOpen || (isDragging && activeHoveredFolderID == folderID)
     }
 
-    func allowsLayoutAnimation(isInteractive: Bool) -> Bool {
-        isInteractive && !isCompletingDrop
-    }
-
     func afterDropTargetHeight(rowHeight: CGFloat) -> CGFloat {
         isDragging ? rowHeight * 0.45 : 0
     }
 
     func childOpacity(itemID: UUID) -> Double {
-        isDragging && activeDragItemID == itemID ? 0.001 : 1
-    }
-
-    func shouldHideCommittedPlaceholder(
-        into targetContainer: TabDragManager.DragContainer,
-        targetAlreadyContainsDraggedItem: Bool
-    ) -> Bool {
-        SidebarDragPlaceholderPolicy.shouldHideCommittedCrossContainerPlaceholder(
-            isCompletingDrop: isCompletingDrop,
-            sourceContainer: projectionSourceContainer,
-            targetContainer: targetContainer,
-            targetAlreadyContainsDraggedItem: targetAlreadyContainsDraggedItem
-        )
+        isDragging && activeDragItemID == itemID ? SidebarDragSourceDim.opacity : 1
     }
 }
 
@@ -98,10 +59,14 @@ struct SidebarFolderDragSnapshot: Equatable {
 /// reader and hands the folder subtree one immutable interaction snapshot.
 struct SidebarFolderDragSnapshotReader<Content: View>: View {
     @EnvironmentObject private var dragState: SidebarDragState
+    @EnvironmentObject private var dragGeometry: SidebarDragGeometryModule
 
     @ViewBuilder let content: (SidebarFolderDragSnapshot) -> Content
 
     var body: some View {
-        content(SidebarFolderDragSnapshot(dragState: dragState))
+        content(SidebarFolderDragSnapshot(
+            dragState: dragState,
+            geometryGeneration: dragGeometry.sidebarGeometryGeneration
+        ))
     }
 }

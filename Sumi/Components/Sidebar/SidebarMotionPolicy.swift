@@ -72,6 +72,13 @@ enum SidebarMotionPolicy {
         return .interactiveSpring(response: 0.22, dampingFraction: 0.86)
     }
 
+    /// Post-drop settle: rows slide into their committed positions (Zen:
+    /// 100ms ease-out FLIP after the model mutates).
+    static func dropSettleAnimation(for mode: Mode) -> Animation? {
+        guard mode != .reducedMotion else { return nil }
+        return .easeOut(duration: 0.10)
+    }
+
     /// Shared duration for list/folder content reflow. Also gates when model
     /// mutations commit after a gap-collapse (see `SidebarDropMotion`).
     static let contentLayoutDuration: TimeInterval = 0.16

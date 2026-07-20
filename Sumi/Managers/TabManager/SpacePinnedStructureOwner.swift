@@ -120,47 +120,6 @@ final class SpacePinnedStructureOwner {
         )
     }
 
-    @discardableResult
-    func reorderTopLevelSpacePinnedShortcut(
-        _ pin: ShortcutPin,
-        in spaceId: UUID,
-        to targetIndex: Int
-    ) -> ShortcutPin? {
-        switch SpacePinnedShortcutOrderOwner.reorderingTopLevelItem(
-            id: pin.id,
-            in: topLevelSpacePinnedItems(for: spaceId),
-            to: targetIndex
-        ) {
-        case .missing:
-            return nil
-        case .unchanged:
-            return pin
-        case .moved(let items):
-            applyTopLevelSpacePinnedOrder(items, for: spaceId)
-            return pins.spacePinnedPins(for: spaceId).first(where: { $0.id == pin.id })
-        }
-    }
-
-    @discardableResult
-    func reorderFolderInTopLevelPinned(
-        _ folder: TabFolder,
-        in spaceId: UUID,
-        to targetIndex: Int
-    ) -> Bool {
-        switch SpacePinnedShortcutOrderOwner.reorderingTopLevelItem(
-            id: folder.id,
-            in: topLevelSpacePinnedItems(for: spaceId),
-            to: targetIndex
-        ) {
-        case .missing, .unchanged:
-            return false
-        case .moved(let items):
-            applyTopLevelSpacePinnedOrder(items, for: spaceId)
-            orderTransaction.schedulePersistence()
-            return true
-        }
-    }
-
     func withSpacePinnedShortcutGroup(
         for spaceId: UUID,
         folderId: UUID?,

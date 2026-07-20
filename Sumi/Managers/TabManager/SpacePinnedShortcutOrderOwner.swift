@@ -14,12 +14,6 @@ enum SpacePinnedShortcutOrderOwner {
         }
     }
 
-    enum TopLevelReorderResult {
-        case missing
-        case unchanged
-        case moved([TopLevelItem])
-    }
-
     struct FolderPlacement {
         let folder: TabFolder
         let spaceId: UUID
@@ -163,26 +157,6 @@ enum SpacePinnedShortcutOrderOwner {
         let safeIndex = max(0, min(targetIndex, updatedItems.count))
         updatedItems.insert(.shortcut(pin.moved(toFolderId: nil)), at: safeIndex)
         return updatedItems
-    }
-
-    static func reorderingTopLevelItem(
-        id: UUID,
-        in items: [TopLevelItem],
-        to targetIndex: Int
-    ) -> TopLevelReorderResult {
-        var updatedItems = items
-        guard let currentIndex = updatedItems.firstIndex(where: { $0.id == id }) else {
-            return .missing
-        }
-        let adjustedIndex = adjustedSameContainerInsertionIndex(
-            currentIndex: currentIndex,
-            proposedIndex: targetIndex
-        )
-        guard currentIndex != adjustedIndex else { return .unchanged }
-        let moving = updatedItems.remove(at: currentIndex)
-        let safeIndex = max(0, min(adjustedIndex, updatedItems.count))
-        updatedItems.insert(moving, at: safeIndex)
-        return .moved(updatedItems)
     }
 
     static func adjustedSameContainerInsertionIndex(

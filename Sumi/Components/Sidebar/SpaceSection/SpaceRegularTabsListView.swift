@@ -19,7 +19,6 @@ struct SpaceRegularTabsListView: View {
     let isInteractive: Bool
     let innerWidth: CGFloat
     let tabs: [Tab]
-    let projection: SpaceRegularTabsListProjection
     let dragSnapshot: SpaceRegularDragSnapshot
     @Binding var interactionSession: SpaceRegularTabsInteractionSession
 
@@ -54,7 +53,7 @@ struct SpaceRegularTabsListView: View {
         )
 
         LazyVStack(alignment: .leading, spacing: 2) {
-            ForEach(projection.displayItems(fallback: interactionSession.listAnimation.renderedItems)) { item in
+            ForEach(interactionSession.listAnimation.renderedItems) { item in
                 VStack(spacing: 0) {
                     switch item {
                     case .tab(let tabID):
@@ -70,6 +69,11 @@ struct SpaceRegularTabsListView: View {
                                 isInteractive: isInteractive,
                                 tabActionOwner: tabActionOwner
                             )
+                            .opacity(
+                                dragSnapshot.isDragging && dragSnapshot.activeDragItemID == group.id
+                                    ? SidebarDragSourceDim.opacity
+                                    : 1
+                            )
                         } else if groupedTabIDs.contains(tabID) {
                             EmptyView()
                         } else if let tab = tabByID[tabID]
@@ -82,11 +86,6 @@ struct SpaceRegularTabsListView: View {
                                 selectionSnapshot: selectionSnapshot
                             )
                         }
-                    case .gap(let gapID):
-                        Color.clear.sidebarRowLayoutGap(
-                            height: interactionSession.listAnimation.gapHeights[gapID]
-                                ?? SidebarRowLayout.rowHeight
-                        )
                     }
                 }
             }
@@ -94,25 +93,27 @@ struct SpaceRegularTabsListView: View {
         .animation(contentMutationAnimation, value: interactionSession.listAnimation.gapHeights)
         .animation(contentMutationAnimation, value: interactionSession.listAnimation.disappearingTabIds)
         .animation(contentMutationAnimation, value: interactionSession.listAnimation.appearingTabIds)
-            .frame(minWidth: 0, maxWidth: innerWidth, alignment: .leading)
-            .contentShape(Rectangle())
-            .animation(
-                isInteractive && dragSnapshot.shouldAnimateDropLayout ? SidebarDropMotion.gap : nil,
-                value: projection.projectedItems
+        .frame(minWidth: 0, maxWidth: innerWidth, alignment: .leading)
+        .sidebarRegularListHitGeometry(
+            for: space.id,
+            rowCount: regularBlocks.count,
+            generation: dragSnapshot.geometryGeneration,
+            isEnabled: isInteractive
+        )
+        .contentShape(Rectangle())
+        .onAppear {
+            interactionSession.listAnimation.cacheTabs(tabs)
+            syncRenderedTabsWithoutAnimation(to: tabs.map(\.id))
+        }
+        .onChange(of: tabs.map(\.id)) { oldValue, newValue in
+            interactionSession.listAnimation.preserveSnapshots(
+                from: oldValue,
+                to: newValue,
+                liveTab: { regularTabCatalog.tab(for: $0) }
             )
-            .onAppear {
-                interactionSession.listAnimation.cacheTabs(tabs)
-                syncRenderedTabsWithoutAnimation(to: tabs.map(\.id))
-            }
-            .onChange(of: tabs.map(\.id)) { oldValue, newValue in
-                interactionSession.listAnimation.preserveSnapshots(
-                    from: oldValue,
-                    to: newValue,
-                    liveTab: { regularTabCatalog.tab(for: $0) }
-                )
-                interactionSession.listAnimation.cacheTabs(tabs)
-                animateRenderedTabsChange(from: oldValue, to: newValue)
-            }
+            interactionSession.listAnimation.cacheTabs(tabs)
+            animateRenderedTabsChange(from: oldValue, to: newValue)
+        }
     }
 
     private var splitResolver: RegularSplitSegmentResolver {
@@ -135,7 +136,9 @@ struct SpaceRegularTabsListView: View {
             tab: tab,
             spaceID: space.id,
             isCurrentTab: isCurrentTab,
-            opacity: dragSnapshot.isDragging && dragSnapshot.activeDragItemID == tab.id ? 0.001 : 1,
+            opacity: dragSnapshot.isDragging && dragSnapshot.activeDragItemID == tab.id
+                ? SidebarDragSourceDim.opacity
+                : 1,
             isInteractive: isInteractive,
             actionOwner: tabActionOwner,
             onClose: { closeRegularTab(tab) }
@@ -164,14 +167,15 @@ struct SpaceRegularTabsListView: View {
     private var contentMutationAnimation: Animation? {
         guard isInteractive,
               !reduceMotion,
-              !sumiSettings.shouldReduceChromeMotion,
-              !dragSnapshot.isCompletingDrop
+              !sumiSettings.shouldReduceChromeMotion
         else { return nil }
-        return SidebarMotionPolicy.folderLayoutAnimation(
-            for: SidebarMotionPolicy.currentMode(
-                reduceMotion: reduceMotion || sumiSettings.shouldReduceChromeMotion
-            )
+        let mode = SidebarMotionPolicy.currentMode(
+            reduceMotion: reduceMotion || sumiSettings.shouldReduceChromeMotion
         )
+        // Drop commit settles rows into place with the short Zen-style slide.
+        return dragSnapshot.isCompletingDrop
+            ? SidebarMotionPolicy.dropSettleAnimation(for: mode)
+            : SidebarMotionPolicy.folderLayoutAnimation(for: mode)
     }
 
     private func closeRegularTab(_ tab: Tab) {

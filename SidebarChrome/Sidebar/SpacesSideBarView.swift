@@ -33,6 +33,7 @@ struct SpacesSideBarView: View {
     @Environment(\.resolvedThemeContext) var themeContext
     @Environment(\.accessibilityReduceMotion) var reduceMotion
     @EnvironmentObject var dragState: SidebarDragState
+    @EnvironmentObject var dragGeometry: SidebarDragGeometryModule
 
     @State var isSidebarHovered: Bool = false
     @State var transitionCoordinator = SpaceSidebarTransitionCoordinator()

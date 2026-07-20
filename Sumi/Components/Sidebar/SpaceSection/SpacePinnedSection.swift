@@ -35,8 +35,7 @@ struct SpacePinnedSectionView: View {
 
     var body: some View {
         SpacePinnedDragSnapshotReader(
-            spaceID: space.id,
-            pinnedItems: pinnedItems
+            spaceID: space.id
         ) { dragSnapshot in
             SpacePinnedSectionContentView(
                 space: space,
@@ -59,69 +58,47 @@ struct SpacePinnedSectionView: View {
 
 /// Exact drag values consumed by the pinned section. The broad observable drag
 /// object never enters the section's rendering tree.
-struct SpacePinnedDragSnapshot {
+struct SpacePinnedDragSnapshot: Equatable {
     let isDragging: Bool
     let isCompletingDrop: Bool
     let activeDragItemID: UUID?
     let isHoveringEmptySection: Bool
     let geometryGeneration: Int
-    let shouldAnimateDropLayout: Bool
-    let projection: SpacePinnedListProjection.DragProjectionSnapshot
 
     @MainActor
     init(
         dragState: SidebarDragState,
-        spaceID: UUID,
-        pinnedItems: [SpacePinnedListItem]
+        geometryGeneration: Int,
+        spaceID: UUID
     ) {
         let hoveredSpaceID: UUID?
-        let hoveredSlot: Int?
-        if case .spacePinned(let candidateSpaceID, let slot) = dragState.projectionHoveredSlot {
+        if case .spacePinned(let candidateSpaceID, _) = dragState.projectionHoveredSlot {
             hoveredSpaceID = candidateSpaceID
-            hoveredSlot = slot
         } else {
             hoveredSpaceID = nil
-            hoveredSlot = nil
         }
-
-        let targetContainsDraggedItem = dragState.projectionDragItemId.map { dragItemID in
-            pinnedItems.contains { $0.id == dragItemID }
-        } ?? false
 
         isDragging = dragState.isDragging
         isCompletingDrop = dragState.isCompletingDrop
         activeDragItemID = dragState.activeDragItemId
-        geometryGeneration = dragState.sidebarGeometryGeneration
-        shouldAnimateDropLayout = dragState.shouldAnimateDropLayout
+        self.geometryGeneration = geometryGeneration
         isHoveringEmptySection = hoveredSpaceID == spaceID
-        projection = .init(
-            isDropProjectionActive: dragState.isDropProjectionActive,
-            sourceContainer: dragState.projectionDragScope?.sourceContainer,
-            dragItemId: dragState.projectionDragItemId,
-            hoveredSpaceId: hoveredSpaceID,
-            hoveredSlot: hoveredSlot,
-            folderDropIntent: dragState.projectionFolderDropIntent,
-            hidesCommittedCrossContainerPlaceholder: dragState.shouldHideCommittedCrossContainerPlaceholder(
-                into: .spacePinned(spaceID),
-                targetAlreadyContainsDraggedItem: targetContainsDraggedItem
-            )
-        )
     }
 }
 
 private struct SpacePinnedDragSnapshotReader<Content: View>: View {
     let spaceID: UUID
-    let pinnedItems: [SpacePinnedListItem]
     @ViewBuilder let content: (SpacePinnedDragSnapshot) -> Content
 
     @EnvironmentObject private var dragState: SidebarDragState
+    @EnvironmentObject private var dragGeometry: SidebarDragGeometryModule
 
     var body: some View {
         content(
             SpacePinnedDragSnapshot(
                 dragState: dragState,
-                spaceID: spaceID,
-                pinnedItems: pinnedItems
+                geometryGeneration: dragGeometry.sidebarGeometryGeneration,
+                spaceID: spaceID
             )
         )
     }
@@ -186,14 +163,15 @@ private struct SpacePinnedSectionContentView: View {
     private var contentMutationAnimation: Animation? {
         guard isInteractive,
               !reduceMotion,
-              !sumiSettings.shouldReduceChromeMotion,
-              !dragSnapshot.isCompletingDrop
+              !sumiSettings.shouldReduceChromeMotion
         else { return nil }
-        return SidebarMotionPolicy.folderLayoutAnimation(
-            for: SidebarMotionPolicy.currentMode(
-                reduceMotion: reduceMotion || sumiSettings.shouldReduceChromeMotion
-            )
+        let mode = SidebarMotionPolicy.currentMode(
+            reduceMotion: reduceMotion || sumiSettings.shouldReduceChromeMotion
         )
+        // Drop commit settles rows into place with the short Zen-style slide.
+        return dragSnapshot.isCompletingDrop
+            ? SidebarMotionPolicy.dropSettleAnimation(for: mode)
+            : SidebarMotionPolicy.folderLayoutAnimation(for: mode)
     }
 
     private var actionOwner: SpacePinnedActionOwner {
@@ -238,12 +216,6 @@ private struct SpacePinnedSectionContentView: View {
         .animation(contentMutationAnimation, value: pinnedItems)
         .animation(contentMutationAnimation, value: visibleStickyItemIDs)
         .animation(contentMutationAnimation, value: isCollapsed)
-        .transaction { transaction in
-            if dragSnapshot.isCompletingDrop {
-                transaction.animation = nil
-                transaction.disablesAnimations = true
-            }
-        }
         .sidebarSectionGeometry(
             for: .spacePinned,
             spaceId: space.id,
@@ -298,9 +270,11 @@ private struct SpacePinnedSectionContentView: View {
     }
 
     private var emptyRevealStrip: some View {
+        // Rests at zero height (Zen: an empty pinned section adds no gap under
+        // the title); grows into a drop target only while a drag hovers it.
         Color.clear
             .frame(
-                height: showsEmptyDropPlaceholder ? SidebarRowLayout.rowHeight : 6
+                height: showsEmptyDropPlaceholder ? SidebarRowLayout.rowHeight : 0
             )
             .frame(maxWidth: .infinity)
     }

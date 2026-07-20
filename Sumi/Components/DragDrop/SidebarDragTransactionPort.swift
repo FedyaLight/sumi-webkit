@@ -6,18 +6,15 @@ import AppKit
 @MainActor
 final class SidebarDragTransactionPort {
     private let windows: SidebarWindowIdentityQuery
-    private let sourceInventory: any SidebarDragSourceInventorying
     private let dragOperations: any SidebarDragOperationExecuting
     private let urlDropService: SidebarURLDropService
 
     init(
         windows: SidebarWindowIdentityQuery,
-        sourceInventory: any SidebarDragSourceInventorying,
         dragOperations: any SidebarDragOperationExecuting,
         urlDropService: SidebarURLDropService
     ) {
         self.windows = windows
-        self.sourceInventory = sourceInventory
         self.dragOperations = dragOperations
         self.urlDropService = urlDropService
     }
@@ -33,7 +30,6 @@ final class SidebarDragTransactionPort {
         return SidebarDropCoordinator.performDrop(
             pasteboard: pasteboard,
             resolution: resolution,
-            sourceInventory: sourceInventory,
             dragOperations: dragOperations,
             urlDropService: urlDropService,
             windowState: windowState

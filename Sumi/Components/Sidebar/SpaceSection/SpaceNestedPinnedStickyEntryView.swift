@@ -126,7 +126,9 @@ struct SpaceNestedPinnedStickyEntryView: View {
     }
 
     private func itemOpacity(_ itemID: UUID) -> Double {
-        dragSnapshot.isDragging && dragSnapshot.activeDragItemID == itemID ? 0.001 : 1
+        dragSnapshot.isDragging && dragSnapshot.activeDragItemID == itemID
+            ? SidebarDragSourceDim.opacity
+            : 1
     }
 
     private func owningFolderID(of group: SplitGroup) -> UUID? {

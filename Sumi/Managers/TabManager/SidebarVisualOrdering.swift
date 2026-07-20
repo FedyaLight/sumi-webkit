@@ -1,8 +1,8 @@
 import Foundation
 import SumiDomain
 
-/// Canonical ordering of Sidebar Visual Items. Render projections, drag source
-/// inventory, and commit index conversion all consume this same ordering.
+/// Canonical ordering of Sidebar Visual Items. Render projections and commit
+/// index conversion consume this same ordering.
 @MainActor
 enum SidebarVisualOrdering {
     struct RegularBlock: Equatable {
@@ -50,25 +50,42 @@ enum SidebarVisualOrdering {
         }
     }
 
-    static func rawInsertionIndex(
-        movingGroupID: UUID,
-        proposedVisualIndex: Int,
+    /// Converts one visual row boundary to the Regular tab store's insertion
+    /// index. A split row contributes all of its member records here, behind
+    /// the visual-order seam.
+    static func regularRawInsertionIndex(
+        atVisualBoundary proposedIndex: Int,
         blocks: [RegularBlock]
-    ) -> Int? {
-        guard let currentIndex = blocks.firstIndex(where: {
-            $0.identity == .splitGroup(movingGroupID)
-        }) else { return nil }
-        let targetIndex = SpacePinnedShortcutOrderOwner
-            .adjustedSameContainerInsertionIndex(
-                currentIndex: currentIndex,
-                proposedIndex: proposedVisualIndex
-            )
-        var remaining = blocks
-        remaining.remove(at: currentIndex)
-        let safeTarget = max(0, min(targetIndex, remaining.count))
-        return remaining.prefix(safeTarget).reduce(0) {
+    ) -> Int {
+        let safeIndex = max(0, min(proposedIndex, blocks.count))
+        return blocks.prefix(safeIndex).reduce(0) {
             $0 + $1.tabIDs.count
         }
+    }
+
+    static func regularRawInsertionIndex(
+        movingGroupID: UUID,
+        atModelBoundary proposedIndex: Int,
+        blocks: [RegularBlock]
+    ) -> Int? {
+        guard let currentBlockIndex = blocks.firstIndex(where: {
+            $0.identity == .splitGroup(movingGroupID)
+        }) else { return nil }
+        let groupStartIndex = blocks.prefix(currentBlockIndex).reduce(0) {
+            $0 + $1.tabIDs.count
+        }
+        let groupItemCount = blocks[currentBlockIndex].tabIDs.count
+        let groupEndIndex = groupStartIndex + groupItemCount
+        let modelItemCount = blocks.reduce(0) { $0 + $1.tabIDs.count }
+        let safeProposedIndex = max(0, min(proposedIndex, modelItemCount))
+
+        if safeProposedIndex <= groupStartIndex {
+            return safeProposedIndex
+        }
+        if safeProposedIndex >= groupEndIndex {
+            return safeProposedIndex - groupItemCount
+        }
+        return groupStartIndex
     }
 
     static func essentialItems(

@@ -6,27 +6,39 @@ final class ShortcutPinCatalogMutationTransaction {
     private let pins: ShortcutPinCollectionStateOwner
     private let structuralMutations: TabStructuralCollectionMutationOwner
     private let spacePinnedStructure: SpacePinnedStructureOwner
+    private let spacePinnedVisualOrder: SpacePinnedVisualOrderTransaction
     private let profileAdmissions: ProfileReferenceAdmissionLedger
 
     init(
         pins: ShortcutPinCollectionStateOwner,
         structuralMutations: TabStructuralCollectionMutationOwner,
         spacePinnedStructure: SpacePinnedStructureOwner,
+        spacePinnedVisualOrder: SpacePinnedVisualOrderTransaction,
         profileAdmissions: ProfileReferenceAdmissionLedger
     ) {
         self.pins = pins
         self.structuralMutations = structuralMutations
         self.spacePinnedStructure = spacePinnedStructure
+        self.spacePinnedVisualOrder = spacePinnedVisualOrder
         self.profileAdmissions = profileAdmissions
     }
 
-    func insert(_ pin: ShortcutPin, at targetIndex: Int) -> ShortcutPin? {
+    func insert(
+        _ pin: ShortcutPin,
+        at targetIndex: Int,
+        sidebarVisualMembership: ShortcutPinSidebarVisualMembership
+    ) -> ShortcutPin? {
         withProfileReferenceLease(for: pin.profileReferenceIDs) {
             let aggregate = structuralMutations.prepareAggregate()
             guard aggregate != nil || structuralMutations.hasOpenAggregate else {
                 return nil
             }
-            guard let inserted = insertAdmitted(pin, at: targetIndex) else {
+            guard let inserted = insertAdmitted(pin, at: targetIndex),
+                  finalizePlacement(
+                      of: inserted,
+                      at: targetIndex,
+                      sidebarVisualMembership: sidebarVisualMembership
+                  ) else {
                 if let aggregate { precondition(aggregate.rollback()) }
                 return nil
             }
@@ -38,6 +50,7 @@ final class ShortcutPinCatalogMutationTransaction {
     func move(
         source: ShortcutPin,
         target: ShortcutPin,
+        sidebarVisualMembership: ShortcutPinSidebarVisualMembership,
         applying: ((ShortcutPin) -> Bool)?
     ) -> ShortcutPin? {
         withProfileReferenceLease(
@@ -50,7 +63,12 @@ final class ShortcutPinCatalogMutationTransaction {
             }
             removeFromContainers(source)
             guard let inserted = insertAdmitted(target, at: target.index),
-                  applying?(inserted) != false else {
+                  finalizePlacement(
+                      of: inserted,
+                      at: target.index,
+                      sidebarVisualMembership: sidebarVisualMembership,
+                      applying: { applying?(inserted) != false }
+                  ) else {
                 if let aggregate {
                     precondition(aggregate.rollback())
                 } else {
@@ -119,11 +137,13 @@ final class ShortcutPinCatalogMutationTransaction {
         case .spacePinned:
             guard let spaceID = pin.spaceId else { return nil }
             if pin.folderId == nil {
-                return spacePinnedStructure.insertTopLevelSpacePinnedShortcut(
+                guard let inserted = spacePinnedStructure.insertTopLevelSpacePinnedShortcut(
                     pin,
                     in: spaceID,
                     at: targetIndex
-                )
+                ) else { return nil }
+                return pins.spacePinnedPins(for: spaceID)
+                    .first { $0.id == inserted.id }
             }
             spacePinnedStructure.withSpacePinnedShortcutGroup(
                 for: spaceID,
@@ -138,6 +158,28 @@ final class ShortcutPinCatalogMutationTransaction {
             return pins.spacePinnedPins(for: spaceID)
                 .first { $0.id == pin.id }
         }
+    }
+
+    private func finalizePlacement(
+        of pin: ShortcutPin,
+        at targetIndex: Int,
+        sidebarVisualMembership: ShortcutPinSidebarVisualMembership,
+        applying sideEffect: @escaping @MainActor () -> Bool = { true }
+    ) -> Bool {
+        guard sidebarVisualMembership == .standalone else {
+            return sideEffect()
+        }
+        guard pin.role == .spacePinned,
+              pin.folderId == nil,
+              let spaceID = pin.spaceId else {
+            return sideEffect()
+        }
+        return spacePinnedVisualOrder.placeExisting(
+            .shortcut(pin.id),
+            in: spaceID,
+            at: targetIndex,
+            applying: sideEffect
+        )
     }
 
     private func restoreToSource(_ pin: ShortcutPin) {

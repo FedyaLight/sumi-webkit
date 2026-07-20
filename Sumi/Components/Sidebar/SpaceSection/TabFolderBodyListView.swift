@@ -126,8 +126,6 @@ struct TabFolderBodyListView: View {
                                     isActive: isInteractive && reportsGeometry && reportsFolderChildGeometry
                                 )
                         }
-                    case .placeholder:
-                        folderDropGap
                     }
                 }
                 .zIndex(
@@ -196,18 +194,7 @@ struct TabFolderBodyListView: View {
                 in: windowState,
                 selection: selectionSnapshot
             )
-        case .placeholder:
-            return false
         }
-    }
-
-    private var folderDropGap: some View {
-        Color.clear
-            .frame(height: SidebarRowLayout.rowHeight)
-            .frame(maxWidth: .infinity)
-            .allowsHitTesting(false)
-            .transition(.sidebarRowDropGap)
-            .accessibilityHidden(true)
     }
 
     private func shortcutEntry(

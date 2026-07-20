@@ -1,6 +1,11 @@
 import Foundation
 import SumiDomain
 
+enum ShortcutPinSidebarVisualMembership: Equatable {
+    case standalone
+    case splitMember
+}
+
 @MainActor
 final class ShortcutPinStoreOwner {
     private let placements: ShortcutPinPlacementResolver
@@ -21,10 +26,15 @@ final class ShortcutPinStoreOwner {
     func insert(
         _ pin: ShortcutPin,
         at targetIndex: Int,
-        openTargetFolder: Bool = true
+        openTargetFolder: Bool = true,
+        sidebarVisualMembership: ShortcutPinSidebarVisualMembership = .standalone
     ) -> ShortcutPin? {
         guard placements.previewInsert(pin, at: targetIndex) != nil,
-              let inserted = mutations.insert(pin, at: targetIndex) else {
+              let inserted = mutations.insert(
+                  pin,
+                  at: targetIndex,
+                  sidebarVisualMembership: sidebarVisualMembership
+              ) else {
             return nil
         }
         openFolderIfNeeded(for: inserted, enabled: openTargetFolder)
@@ -46,7 +56,8 @@ final class ShortcutPinStoreOwner {
         spaceId: UUID?,
         folderId: UUID?,
         index: Int,
-        openTargetFolder: Bool = true
+        openTargetFolder: Bool = true,
+        sidebarVisualMembership: ShortcutPinSidebarVisualMembership = .standalone
     ) -> ShortcutPin? {
         moveResolved(
             pin,
@@ -56,6 +67,7 @@ final class ShortcutPinStoreOwner {
             folderId: folderId,
             index: index,
             openTargetFolder: openTargetFolder,
+            sidebarVisualMembership: sidebarVisualMembership,
             applying: nil
         )
     }
@@ -69,6 +81,7 @@ final class ShortcutPinStoreOwner {
         folderId: UUID?,
         index: Int,
         openTargetFolder: Bool = true,
+        sidebarVisualMembership: ShortcutPinSidebarVisualMembership = .standalone,
         applying: @escaping (ShortcutPin) -> Bool
     ) -> ShortcutPin? {
         moveResolved(
@@ -79,6 +92,7 @@ final class ShortcutPinStoreOwner {
             folderId: folderId,
             index: index,
             openTargetFolder: openTargetFolder,
+            sidebarVisualMembership: sidebarVisualMembership,
             applying: applying
         )
     }
@@ -130,6 +144,7 @@ final class ShortcutPinStoreOwner {
         folderId: UUID?,
         index: Int,
         openTargetFolder: Bool,
+        sidebarVisualMembership: ShortcutPinSidebarVisualMembership,
         applying: ((ShortcutPin) -> Bool)?
     ) -> ShortcutPin? {
         guard let source = placements.canonicalSource(matching: pin),
@@ -143,6 +158,7 @@ final class ShortcutPinStoreOwner {
               ), let inserted = mutations.move(
                   source: source,
                   target: target,
+                  sidebarVisualMembership: sidebarVisualMembership,
                   applying: applying
               ) else { return nil }
         openFolderIfNeeded(for: inserted, enabled: openTargetFolder)

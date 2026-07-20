@@ -7,24 +7,28 @@ final class SidebarURLDropService {
     private let nativeSurfaces: any NativeBrowserSurfaceOpening
     private let destinations: any SidebarURLDropDestinationResolving
     private let shortcutInsertion: any ShortcutURLInserting
+    private let orderProjection: any SidebarDropOrderProjecting
 
     init(
         tabOpening: any URLTabOpening,
         nativeSurfaces: any NativeBrowserSurfaceOpening,
         destinations: any SidebarURLDropDestinationResolving,
-        shortcutInsertion: any ShortcutURLInserting
+        shortcutInsertion: any ShortcutURLInserting,
+        orderProjection: any SidebarDropOrderProjecting = SidebarIdentityDropOrderProjection()
     ) {
         self.tabOpening = tabOpening
         self.nativeSurfaces = nativeSurfaces
         self.destinations = destinations
         self.shortcutInsertion = shortcutInsertion
+        self.orderProjection = orderProjection
     }
 
     func open(
         _ url: URL,
         in windowState: BrowserWindowState,
-        at slot: DropZoneSlot
+        atPresentedSlot presentedSlot: DropZoneSlot
     ) -> Bool {
+        let slot = orderProjection.storageSlot(for: presentedSlot)
         guard slot != .empty else { return false }
 
         if windowState.isIncognito {

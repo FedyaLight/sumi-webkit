@@ -7,7 +7,7 @@ import SumiDomain
 import SwiftUI
 
 private enum SpacePinnedContentRenderedItem {
-    case pinned(SpacePinnedRenderedItem)
+    case pinned(SpacePinnedListItem)
     case nestedSticky(UUID)
 }
 
@@ -50,8 +50,7 @@ struct SpacePinnedListView: View {
     private var projection: SpacePinnedListProjection {
         SpacePinnedListProjection(
             spaceId: space.id,
-            items: pinnedItems,
-            dragProjection: dragSnapshot.projection
+            items: pinnedItems
         )
     }
 
@@ -69,7 +68,7 @@ struct SpacePinnedListView: View {
         return stickyItemIDs.compactMap { itemID in
             if let index = pinnedItems.firstIndex(where: { $0.id == itemID }) {
                 return SpacePinnedContentDisplayEntry(
-                    item: .pinned(.item(pinnedItems[index])),
+                    item: .pinned(pinnedItems[index]),
                     dropIndex: index,
                     id: "item-\(itemID.uuidString)"
                 )
@@ -104,6 +103,15 @@ struct SpacePinnedListView: View {
         showsCollapsedEmptyTarget ? 0 : 8
     }
 
+    /// Shortcut and split rows are a gapless fixed-height stack. Folders and
+    /// collapsed sticky projections keep the exact per-item measured path.
+    private var usesUniformDropGeometry: Bool {
+        !isCollapsed && !pinnedItems.contains { item in
+            if case .folder = item { return true }
+            return false
+        }
+    }
+
     private func elevatedFolderIDs(
         selectionSnapshot: SidebarWindowSelectionSnapshot
     ) -> Set<UUID> {
@@ -133,7 +141,7 @@ struct SpacePinnedListView: View {
                     switch entry.item {
                     case .pinned(let item):
                         switch item {
-                        case .item(.folder(let folderID)):
+                        case .folder(let folderID):
                             if let folder = foldersByID[folderID] {
                                 SpacePinnedFolderEntryView(
                                     folder: folder,
@@ -149,10 +157,12 @@ struct SpacePinnedListView: View {
                                     elevatedFolderIDs: elevatedFolderIDs,
                                     topLevelIndex: entry.dropIndex,
                                     geometryGeneration: dragSnapshot.geometryGeneration,
-                                    isInteractive: isInteractive
+                                    isInteractive: isInteractive,
+                                    reportsDropGeometry: !usesUniformDropGeometry
                                 )
+                                .opacity(itemOpacity(folderID))
                             }
-                        case .item(.shortcut(let pinID)):
+                        case .shortcut(let pinID):
                             if let pin = pinsByID[pinID] {
                                 shortcutEntry(
                                     pin,
@@ -160,7 +170,7 @@ struct SpacePinnedListView: View {
                                     selectionSnapshot: selectionSnapshot
                                 )
                             }
-                        case .item(.splitGroup(let groupID)):
+                        case .splitGroup(let groupID):
                             if let group = inventory.splitGroup(id: groupID) {
                                 SpacePinnedSplitGroupEntryView(
                                     group: group,
@@ -174,11 +184,11 @@ struct SpacePinnedListView: View {
                                     browserContext: browserContext,
                                     isInteractive: isInteractive,
                                     topLevelIndex: entry.dropIndex,
-                                    geometryGeneration: dragSnapshot.geometryGeneration
+                                    geometryGeneration: dragSnapshot.geometryGeneration,
+                                    reportsDropGeometry: !usesUniformDropGeometry
                                 )
+                                .opacity(itemOpacity(groupID))
                             }
-                        case .dragPlaceholder:
-                            dropGap
                         }
                     case .nestedSticky(let itemID):
                         SpaceNestedPinnedStickyEntryView(
@@ -209,9 +219,12 @@ struct SpacePinnedListView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.bottom, bottomPadding)
-        .animation(
-            isInteractive && dragSnapshot.shouldAnimateDropLayout ? SidebarDropMotion.gap : nil,
-            value: projection.projectedItems
+        .sidebarPinnedListHitGeometry(
+            for: space.id,
+            rowCount: contentDisplayEntries.count,
+            leadingInset: leadingSpacerHeight,
+            generation: dragSnapshot.geometryGeneration,
+            isEnabled: isInteractive && usesUniformDropGeometry
         )
         .animation(contentMutationAnimation, value: pinnedItems)
         .animation(contentMutationAnimation, value: contentDisplayEntries.map(\.id))
@@ -241,17 +254,9 @@ struct SpacePinnedListView: View {
             opacity: itemOpacity(pin.id),
             topLevelIndex: topLevelIndex,
             geometryGeneration: dragSnapshot.geometryGeneration,
+            reportsDropGeometry: !usesUniformDropGeometry,
             actionOwner: actionOwner
         )
-    }
-
-    private var dropGap: some View {
-        Color.clear
-            .frame(height: SidebarRowLayout.rowHeight)
-            .frame(maxWidth: .infinity)
-            .allowsHitTesting(false)
-            .transition(.sidebarRowDropGap)
-            .accessibilityHidden(true)
     }
 
     private func displayEntryZIndex(
@@ -259,7 +264,7 @@ struct SpacePinnedListView: View {
         selectionSnapshot: SidebarWindowSelectionSnapshot,
         elevatedFolderIDs: Set<UUID>
     ) -> Double {
-        guard case .pinned(.item(let item)) = entry.item else { return 0 }
+        guard case .pinned(let item) = entry.item else { return 0 }
         return SidebarSelectionElevation.zIndex(
             isElevated: itemIsElevated(
                 item,
@@ -295,7 +300,9 @@ struct SpacePinnedListView: View {
     }
 
     private func itemOpacity(_ itemID: UUID) -> Double {
-        dragSnapshot.isDragging && dragSnapshot.activeDragItemID == itemID ? 0.001 : 1
+        dragSnapshot.isDragging && dragSnapshot.activeDragItemID == itemID
+            ? SidebarDragSourceDim.opacity
+            : 1
     }
 
 }

@@ -77,6 +77,7 @@ enum SidebarDropMotion {
     static let shortcutRestoreActionDelay: Double = contentLayoutDuration + shortcutRestoreRevealStartDelay + 0.01
     static let gap = SidebarMotionPolicy.dragGapAnimation(for: .standard)
     static let contentLayout = SidebarMotionPolicy.contentLayoutAnimation(for: .standard)
+    static let settle = SidebarMotionPolicy.dropSettleAnimation(for: .standard)
 }
 
 enum SidebarZenPressKind {
@@ -315,12 +316,6 @@ extension AnyTransition {
         .opacity.animation(sidebarRowLayoutAnimation)
     }
 
-    static var sidebarRowDropGap: AnyTransition {
-        .opacity
-            .combined(with: .scale(scale: 0.98, anchor: .center))
-            .animation(sidebarRowLayoutAnimation)
-    }
-
     /// Prefer gap-collapse layout for list mutations; keep identity on stable rows.
     static var sidebarRowListItem: AnyTransition {
         .identity
@@ -379,14 +374,4 @@ extension View {
         }
     }
 
-    func sidebarRowLayoutGap(height: CGFloat) -> some View {
-        Color.clear
-            .sidebarRowAnimatedListSlot(
-                RegularTabRowMotion(
-                    layoutHeight: height,
-                    hidesContent: false,
-                    isInteractionDisabled: true
-                )
-            )
-    }
 }

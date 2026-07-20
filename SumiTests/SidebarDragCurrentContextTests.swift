@@ -8,24 +8,25 @@ import XCTest
 
 @MainActor
 final class SidebarDragCurrentContextTests: XCTestCase {
-    func testDeferredGeometryWriterUsesInjectedDragState() {
+    func testGeometryModuleIsWindowScoped() {
         let injectedState = SidebarDragState()
         let otherState = SidebarDragState()
         let spaceId = UUID()
         let frame = CGRect(x: 10, y: 20, width: 30, height: 40)
         let key = SidebarSectionGeometryKey(spaceId: spaceId, section: .spaceRegular)
 
-        SidebarDragStateDeferredGeometry.setSectionFrame(
-            dragState: injectedState,
-            spaceId: spaceId,
-            section: .spaceRegular,
-            generation: injectedState.activeGeometryGeneration,
-            frame
+        injectedState.geometry.report(
+            .section(
+                spaceId: spaceId,
+                section: .spaceRegular,
+                frame: frame
+            ),
+            generation: injectedState.geometry.activeGeometryGeneration,
         )
-        injectedState.flushDeferredGeometryForDragStart()
+        injectedState.geometry.flushDeferredGeometryForDragStart()
 
-        XCTAssertEqual(injectedState.geometrySnapshot.sectionFramesBySpace[key], frame)
-        XCTAssertNil(otherState.geometrySnapshot.sectionFramesBySpace[key])
+        XCTAssertEqual(injectedState.geometry.geometrySnapshot.sectionFramesBySpace[key], frame)
+        XCTAssertNil(otherState.geometry.geometrySnapshot.sectionFramesBySpace[key])
     }
 
     func testEssentialsNativeDragPreviewUsesActualSourceTileSize() {
@@ -349,8 +350,12 @@ final class SidebarDragCurrentContextTests: XCTestCase {
     func testDropCommitCleanupIsCancelledWhenDragStateIsReleased() {
         let delayedActions = ManualMainActorDelayedActionScheduler()
         var state: SidebarDragState? = SidebarDragState(delayedActions: delayedActions.scheduler)
+        let spaceID = UUID()
         state?.isDragging = true
         state?.activeDragItemId = UUID()
+        if let state {
+            present(.spacePinned(spaceId: spaceID, slot: 0), in: state)
+        }
         state?.beginDropCommit()
         state?.resetInteractionState()
 

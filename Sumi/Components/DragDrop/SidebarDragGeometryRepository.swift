@@ -27,6 +27,7 @@ final class SidebarDragGeometryRepository {
     private var pendingGeometryRefreshRequested = false
     private var pendingGeometrySnapshotPublishRequested = false
     private var isDrainingMainRunLoopGeometry = false
+    private var isApplyingDeferredGeometryBatch = false
     private let geometryMutationBuffer = SidebarDragGeometryMutationBuffer()
     private let mainRunLoopOwner = MainRunLoopOwner()
 
@@ -157,10 +158,28 @@ final class SidebarDragGeometryRepository {
         }
     }
 
+    func schedulePinnedListHitTarget(
+        spaceId: UUID,
+        frame: CGRect?,
+        rowCount: Int,
+        leadingInset: CGFloat,
+        generation: Int
+    ) {
+        enqueueDeferredGeometryMutation(key: .pinnedList(spaceId)) { repository in
+            repository.applyPinnedListHitTarget(
+                spaceId: spaceId,
+                frame: frame,
+                rowCount: rowCount,
+                leadingInset: leadingInset,
+                generation: generation
+            )
+        }
+    }
+
     func scheduleRegularListHitTarget(
         spaceId: UUID,
         frame: CGRect?,
-        itemCount: Int,
+        rowCount: Int,
         generation: Int
     ) {
         enqueueDeferredGeometryMutation(
@@ -169,7 +188,7 @@ final class SidebarDragGeometryRepository {
             repository.applyRegularListHitTarget(
                 spaceId: spaceId,
                 frame: frame,
-                itemCount: itemCount,
+                rowCount: rowCount,
                 generation: generation
             )
         }
@@ -376,7 +395,7 @@ final class SidebarDragGeometryRepository {
     func applyRegularListHitTarget(
         spaceId: UUID,
         frame: CGRect?,
-        itemCount: Int,
+        rowCount: Int,
         generation: Int
     ) {
         let frame = frame.map { normalizedFrame($0, for: generation) }
@@ -384,7 +403,7 @@ final class SidebarDragGeometryRepository {
             if let frame {
                 let target = SidebarRegularListHitMetrics(
                     frame: frame,
-                    itemCount: itemCount
+                    rowCount: rowCount
                 )
                 guard store.regularListHitTargets[spaceId] != target else { return false }
                 store.regularListHitTargets[spaceId] = target
@@ -394,6 +413,32 @@ final class SidebarDragGeometryRepository {
                 store.regularListHitTargets[spaceId] = nil
                 return true
             }
+        }
+    }
+
+    func applyPinnedListHitTarget(
+        spaceId: UUID,
+        frame: CGRect?,
+        rowCount: Int,
+        leadingInset: CGFloat,
+        generation: Int
+    ) {
+        let frame = frame.map { normalizedFrame($0, for: generation) }
+        mutateGeometryStore(for: generation) { store in
+            if let frame {
+                let target = SidebarPinnedListHitMetrics(
+                    frame: frame,
+                    rowCount: rowCount,
+                    leadingInset: leadingInset
+                )
+                guard store.pinnedListHitTargets[spaceId] != target else { return false }
+                store.pinnedListHitTargets[spaceId] = target
+                return true
+            }
+
+            guard store.pinnedListHitTargets[spaceId] != nil else { return false }
+            store.pinnedListHitTargets[spaceId] = nil
+            return true
         }
     }
 
@@ -447,6 +492,14 @@ final class SidebarDragGeometryRepository {
     }
 
     private func flushDeferredGeometryMutations() {
+        guard !isApplyingDeferredGeometryBatch else { return }
+        isApplyingDeferredGeometryBatch = true
+        defer {
+            isApplyingDeferredGeometryBatch = false
+            if pendingGeometrySnapshotPublishRequested {
+                rebuildIndices(in: &activeGeometryStore)
+            }
+        }
         geometryMutationBuffer.flush(into: self)
     }
 
@@ -568,7 +621,9 @@ final class SidebarDragGeometryRepository {
 
     private func publishActiveGeometryStore() {
         activeGeometryStore.structuralRevision &+= 1
-        rebuildIndices(in: &activeGeometryStore)
+        if !isApplyingDeferredGeometryBatch {
+            rebuildIndices(in: &activeGeometryStore)
+        }
         pendingGeometrySnapshotPublishRequested = true
         scheduleMainRunLoopGeometryDrain()
     }
@@ -642,9 +697,8 @@ final class SidebarDragGeometryRepository {
             scrollRevision: store.scrollRevision,
             pageGeometryByKey: store.pageGeometryByKey,
             sectionFramesBySpace: store.sectionFramesBySpace,
-            topLevelPinnedItemTargets: store.topLevelPinnedItemTargets,
             folderDropTargets: store.folderDropTargets,
-            folderChildDropTargets: store.folderChildDropTargets,
+            pinnedListHitTargets: store.pinnedListHitTargets,
             regularListHitTargets: store.regularListHitTargets,
             essentialsLayoutMetricsBySpace: store.essentialsLayoutMetricsBySpace,
             hitTestIndex: store.hitTestIndex

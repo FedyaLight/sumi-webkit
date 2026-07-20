@@ -5,6 +5,15 @@ import XCTest
 
 @MainActor
 final class SidebarDragGeometryRepositoryTests: XCTestCase {
+    func testPublishedSnapshotDoesNotDuplicateIndexedItemMetrics() {
+        let storedFieldNames = Set(
+            Mirror(reflecting: SidebarGeometrySnapshot.empty).children.compactMap(\.label)
+        )
+
+        XCTAssertFalse(storedFieldNames.contains("topLevelPinnedItemTargets"))
+        XCTAssertFalse(storedFieldNames.contains("folderChildDropTargets"))
+    }
+
     func testDeferredMutationsCoalesceByGeometryKeyBeforePublishing() {
         let repository = SidebarDragGeometryRepository()
         let spaceId = UUID()
@@ -175,7 +184,7 @@ final class SidebarDragGeometryRepositoryTests: XCTestCase {
         repository.applyRegularListHitTarget(
             spaceId: spaceId,
             frame: CGRect(x: 0, y: 320, width: 300, height: 260),
-            itemCount: 6,
+            rowCount: 6,
             generation: pendingGeneration
         )
         repository.flushDeferredGeometryForDragStart()
@@ -188,7 +197,7 @@ final class SidebarDragGeometryRepositoryTests: XCTestCase {
             ]?.renderMode,
             .interactive
         )
-        XCTAssertEqual(repository.geometrySnapshot.regularListHitTargets[spaceId]?.itemCount, 6)
+        XCTAssertEqual(repository.geometrySnapshot.regularListHitTargets[spaceId]?.rowCount, 6)
     }
 
     func testScrollDeltaKeepsBaseFramesAndPublishesOneSnapshotAndRevision() {
@@ -216,7 +225,7 @@ final class SidebarDragGeometryRepositoryTests: XCTestCase {
         repository.applyRegularListHitTarget(
             spaceId: spaceId,
             frame: CGRect(x: 0, y: 120, width: 220, height: 200),
-            itemCount: 3,
+            rowCount: 3,
             generation: generation
         )
         repository.flushDeferredGeometryForDragStart()
@@ -227,7 +236,12 @@ final class SidebarDragGeometryRepositoryTests: XCTestCase {
         revisionPublishCount = 0
         repository.adjustGeometryStoreScrollDelta(deltaY: 12)
 
-        XCTAssertEqual(repository.geometrySnapshot.topLevelPinnedItemTargets[itemId]?.frame.origin.y, 50)
+        XCTAssertEqual(
+            repository.geometrySnapshot.hitTestIndex
+                .topLevelPinnedItemsBySpace[spaceId]?.first(where: { $0.itemId == itemId })?
+                .frame.origin.y,
+            50
+        )
         XCTAssertEqual(repository.geometrySnapshot.regularListHitTargets[spaceId]?.frame.origin.y, 120)
         XCTAssertEqual(repository.geometrySnapshot.cumulativeScrollDeltaY, 12)
         XCTAssertEqual(repository.geometrySnapshot.structuralRevision, structuralRevisionBeforeScroll)
@@ -248,7 +262,12 @@ final class SidebarDragGeometryRepositoryTests: XCTestCase {
             generation: generation
         )
         repository.flushDeferredGeometryForDragStart()
-        XCTAssertEqual(repository.geometrySnapshot.topLevelPinnedItemTargets[itemId]?.frame.origin.y, 50)
+        XCTAssertEqual(
+            repository.geometrySnapshot.hitTestIndex
+                .topLevelPinnedItemsBySpace[spaceId]?.first(where: { $0.itemId == itemId })?
+                .frame.origin.y,
+            50
+        )
         XCTAssertEqual(repository.geometrySnapshot.structuralRevision, structuralRevisionBeforeScroll)
 
         repository.adjustGeometryStoreScrollDelta(deltaY: -7)
@@ -257,7 +276,12 @@ final class SidebarDragGeometryRepositoryTests: XCTestCase {
         XCTAssertEqual(repository.geometrySnapshot.cumulativeScrollDeltaY, 0)
         XCTAssertEqual(repository.geometrySnapshot.structuralRevision, structuralRevisionBeforeScroll)
         XCTAssertEqual(repository.geometrySnapshot.scrollRevision, 3)
-        XCTAssertEqual(repository.geometrySnapshot.topLevelPinnedItemTargets[itemId]?.frame.origin.y, 50)
+        XCTAssertEqual(
+            repository.geometrySnapshot.hitTestIndex
+                .topLevelPinnedItemsBySpace[spaceId]?.first(where: { $0.itemId == itemId })?
+                .frame.origin.y,
+            50
+        )
         XCTAssertEqual(repository.geometrySnapshot.regularListHitTargets[spaceId]?.frame.origin.y, 120)
     }
 }

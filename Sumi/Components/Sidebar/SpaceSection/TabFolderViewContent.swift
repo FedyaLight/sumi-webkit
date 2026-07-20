@@ -59,13 +59,14 @@ struct TabFolderContentView: View {
     }
 
     private var folderLayoutAnimation: Animation? {
-        dragSnapshot.allowsLayoutAnimation(isInteractive: isInteractive)
-            ? SidebarMotionPolicy.folderLayoutAnimation(
-                for: SidebarMotionPolicy.currentMode(
-                    reduceMotion: reduceMotion || sumiSettings.shouldReduceChromeMotion
-                )
-            )
-            : nil
+        guard isInteractive else { return nil }
+        let mode = SidebarMotionPolicy.currentMode(
+            reduceMotion: reduceMotion || sumiSettings.shouldReduceChromeMotion
+        )
+        // Drop commit settles rows into place with the short Zen-style slide.
+        return dragSnapshot.isCompletingDrop
+            ? SidebarMotionPolicy.dropSettleAnimation(for: mode)
+            : SidebarMotionPolicy.folderLayoutAnimation(for: mode)
     }
 
     private var mutationActions: TabFolderMutationActions {
@@ -114,17 +115,11 @@ struct TabFolderContentView: View {
     private var contentProjection: SidebarFolderContentProjection {
         SidebarFolderContentProjection(
             baseItems: projection.baseItems,
-            folderID: folder.id,
             isFolderOpen: folder.isOpen,
             displayedCollapsedProjectionIDs: displayedCollapsedProjectionIDs,
             stickyItemIDs: folderProjectionState.stickyItemIDs,
             orderedDescendantItemIDs: orderedDescendantItemIDs,
-            projection: projection,
-            dragProjection: SidebarFolderDragDisplayProjection(
-                dragSnapshot: dragSnapshot,
-                folderID: folder.id,
-                baseItems: projection.baseItems
-            )
+            projection: projection
         )
     }
 
@@ -313,7 +308,7 @@ struct TabFolderContentView: View {
             displayedCollapsedProjectionIDs = targetIDs
         }
 
-        if animated && dragSnapshot.allowsLayoutAnimation(isInteractive: isInteractive) {
+        if animated, let folderLayoutAnimation {
             withAnimation(folderLayoutAnimation, update)
         } else {
             update()

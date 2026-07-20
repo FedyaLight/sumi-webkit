@@ -9,7 +9,7 @@ final class SplitGroupContainerConversion {
     private let mutations: SplitGroupMutationService
     private let folders: TabFolderCollectionStateOwner
     private let regularTabs: RegularTabCollectionOwner
-    private let orderTransaction: SpacePinnedOrderTransaction
+    private let spacePinnedVisualOrder: SpacePinnedVisualOrderTransaction
     private let launcherPlacement: ShortcutSplitLauncherPlacementService
     private let shortcutMoves: SplitGroupShortcutMoveService
     private let shortcutToRegular: ShortcutPinToRegularTabService
@@ -20,7 +20,7 @@ final class SplitGroupContainerConversion {
         mutations: SplitGroupMutationService,
         folders: TabFolderCollectionStateOwner,
         regularTabs: RegularTabCollectionOwner,
-        orderTransaction: SpacePinnedOrderTransaction,
+        spacePinnedVisualOrder: SpacePinnedVisualOrderTransaction,
         launcherPlacement: ShortcutSplitLauncherPlacementService,
         shortcutMoves: SplitGroupShortcutMoveService,
         shortcutToRegular: ShortcutPinToRegularTabService,
@@ -30,7 +30,7 @@ final class SplitGroupContainerConversion {
         self.mutations = mutations
         self.folders = folders
         self.regularTabs = regularTabs
-        self.orderTransaction = orderTransaction
+        self.spacePinnedVisualOrder = spacePinnedVisualOrder
         self.launcherPlacement = launcherPlacement
         self.shortcutMoves = shortcutMoves
         self.shortcutToRegular = shortcutToRegular
@@ -109,8 +109,8 @@ final class SplitGroupContainerConversion {
             }
             if case .shortcutSidebar(let sourceSpaceID, _, nil, _) = group.container,
                sourceSpaceID == spaceID {
-                return reorderTopLevelPinnedGroup(
-                    group,
+                return spacePinnedVisualOrder.reorder(
+                    .splitGroup(group.id),
                     in: spaceID,
                     to: operation.toIndex
                 )
@@ -184,7 +184,7 @@ final class SplitGroupContainerConversion {
                   let rawIndex = regularGroupRawInsertionIndex(
                       for: group,
                       in: spaceID,
-                      proposedVisualIndex: operation.toIndex
+                      proposedModelIndex: operation.toIndex
                   ) else { return false }
             let memberIDs = Set(group.memberIDs.compactMap { memberID -> UUID? in
                 guard case .regularTab(let tabID) = memberID else { return nil }
@@ -201,49 +201,12 @@ final class SplitGroupContainerConversion {
         }
     }
 
-    private func reorderTopLevelPinnedGroup(
-        _ group: SplitGroup,
-        in spaceID: UUID,
-        to proposedIndex: Int
-    ) -> Bool {
-        guard ordering.group(id: group.id) == group,
-              case .shortcutSidebar(let groupSpaceID, _, nil, _) = group.container,
-              groupSpaceID == spaceID else {
-            return false
-        }
-
-        let currentItems = ordering.topLevelItems(for: spaceID)
-        let currentIndex = currentItems.firstIndex { item in
-            if case .splitGroup(let groupID) = item { return groupID == group.id }
-            return false
-        }
-        let targetIndex = currentIndex.map {
-            SpacePinnedShortcutOrderOwner.adjustedSameContainerInsertionIndex(
-                currentIndex: $0,
-                proposedIndex: proposedIndex
-            )
-        } ?? proposedIndex
-        var reorderedItems = currentItems
-        let movingItem: SplitGroupVisualListItem
-        if let currentIndex {
-            movingItem = reorderedItems.remove(at: currentIndex)
-        } else {
-            movingItem = .splitGroup(group.id)
-        }
-        reorderedItems.insert(
-            movingItem,
-            at: max(0, min(targetIndex, reorderedItems.count))
-        )
-        guard reorderedItems != currentItems else { return false }
-        return applyTopLevelOrder(reorderedItems, in: spaceID)
-    }
-
     private func moveLauncherGroup(
         _ group: SplitGroup,
         to container: SplitGroupContainer,
         destination: (ShortcutPin, Int) -> ShortcutSplitLauncherDestination?
     ) -> Bool {
-        guard group.container.isShortcutSidebar,
+        guard isLauncherContainer(group.container),
               let replacement = group.changingContainer(to: container),
               replacement != group,
               let moves = launcherPlacement.prepareMoves(
@@ -301,11 +264,11 @@ final class SplitGroupContainerConversion {
     private func regularGroupRawInsertionIndex(
         for group: SplitGroup,
         in spaceID: UUID,
-        proposedVisualIndex: Int
+        proposedModelIndex: Int
     ) -> Int? {
-        SidebarVisualOrdering.rawInsertionIndex(
+        SidebarVisualOrdering.regularRawInsertionIndex(
             movingGroupID: group.id,
-            proposedVisualIndex: proposedVisualIndex,
+            atModelBoundary: proposedModelIndex,
             blocks: SidebarVisualOrdering.regularBlocks(
                 tabs: regularTabs.tabs(in: spaceID),
                 groups: ordering.regularGroups(for: spaceID)
@@ -331,25 +294,13 @@ final class SplitGroupContainerConversion {
         }
     }
 
-    private func applyTopLevelOrder(
-        _ items: [SplitGroupVisualListItem],
-        in spaceID: UUID
-    ) -> Bool {
-        let currentGroups = ordering.groupsSnapshot
-        guard let planned = orderTransaction.planVisualOrder(
-            items,
-            in: spaceID,
-            groups: currentGroups
-        ) else { return false }
-        return mutations.replaceAll(
-            expected: currentGroups,
-            with: planned.groups,
-            alongside: { [orderTransaction] in
-                precondition(
-                    orderTransaction.apply(planned.plan),
-                    "Pinned order changed during synchronous split commit"
-                )
-            }
-        )
+    private func isLauncherContainer(_ container: SplitGroupContainer) -> Bool {
+        switch container {
+        case .essentialSidebar, .shortcutSidebar:
+            return true
+        case .regularTabs:
+            return false
+        }
     }
+
 }

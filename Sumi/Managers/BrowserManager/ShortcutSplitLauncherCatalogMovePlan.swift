@@ -5,6 +5,7 @@ struct ShortcutSplitLauncherCatalogMovePlan {
     struct Insertion {
         let pin: ShortcutPin
         let index: Int
+        let sidebarVisualMembership: ShortcutPinSidebarVisualMembership
         let target: ShortcutSplitLauncherBindingPinTarget
     }
 

@@ -15,11 +15,40 @@ struct FolderSearchPopoverPresentationContext {
 @MainActor
 final class FolderSearchPopoverPresenter: NSObject, NSPopoverDelegate {
 
+    typealias ShowPopover = @MainActor (
+        _ popover: NSPopover,
+        _ anchorRect: NSRect,
+        _ anchorView: NSView,
+        _ preferredEdge: NSRectEdge
+    ) -> Void
+    typealias IsPopoverShown = @MainActor (_ popover: NSPopover) -> Bool
+    typealias ClosePopover = @MainActor (_ popover: NSPopover) -> Void
+
     weak var windowRegistry: WindowRegistry?
     private let sidebarRecoveryCoordinator: SidebarHostRecoveryHandling
+    private let delayedActions: MainActorDelayedActionScheduler
+    private let showPopover: ShowPopover
+    private let isPopoverShown: IsPopoverShown
+    private let closePopover: ClosePopover
 
-    init(sidebarRecoveryCoordinator: SidebarHostRecoveryHandling = SidebarHostRecoveryCoordinator()) {
+    init(
+        sidebarRecoveryCoordinator: SidebarHostRecoveryHandling = SidebarHostRecoveryCoordinator(),
+        delayedActions: MainActorDelayedActionScheduler = .live,
+        showPopover: @escaping ShowPopover = { popover, anchorRect, anchorView, preferredEdge in
+            popover.show(
+                relativeTo: anchorRect,
+                of: anchorView,
+                preferredEdge: preferredEdge
+            )
+        },
+        isPopoverShown: @escaping IsPopoverShown = { $0.isShown },
+        closePopover: @escaping ClosePopover = { $0.close() }
+    ) {
         self.sidebarRecoveryCoordinator = sidebarRecoveryCoordinator
+        self.delayedActions = delayedActions
+        self.showPopover = showPopover
+        self.isPopoverShown = isPopoverShown
+        self.closePopover = closePopover
         super.init()
     }
     private final class ActiveSession {
@@ -57,7 +86,32 @@ final class FolderSearchPopoverPresenter: NSObject, NSPopoverDelegate {
         }
     }
 
+    private final class PendingPresentation {
+        let id = UUID()
+        let request: FolderSearchPopoverRequest
+        let windowState: BrowserWindowState
+        let themeContext: ResolvedThemeContext
+        let presentationContext: FolderSearchPopoverPresentationContext
+        let source: SidebarTransientPresentationSource
+
+        init(
+            request: FolderSearchPopoverRequest,
+            windowState: BrowserWindowState,
+            themeContext: ResolvedThemeContext,
+            presentationContext: FolderSearchPopoverPresentationContext,
+            source: SidebarTransientPresentationSource
+        ) {
+            self.request = request
+            self.windowState = windowState
+            self.themeContext = themeContext
+            self.presentationContext = presentationContext
+            self.source = source
+        }
+    }
+
     private var activeSession: ActiveSession?
+    private var pendingPresentation: PendingPresentation?
+    private var cancelPendingPresentationAction: MainActorDelayedActionScheduler.Cancellation?
 
     func present(
         request: FolderSearchPopoverRequest,
@@ -66,23 +120,75 @@ final class FolderSearchPopoverPresenter: NSObject, NSPopoverDelegate {
         presentationContext: FolderSearchPopoverPresentationContext,
         source: SidebarTransientPresentationSource
     ) {
-        guard !request.candidates.isEmpty,
-              let anchor = resolvedPresentationAnchor(
-                source: source,
-                in: windowState,
-                sidebarPosition: presentationContext.sidebarPosition
-              )
-        else { return }
+        guard !request.candidates.isEmpty else { return }
 
         if let activeSession,
            activeSession.folderID == request.folderID,
-           activeSession.windowID == windowState.id {
+           activeSession.windowID == windowState.id,
+           !activeSession.isClosing {
             activeSession.anchorHovered = true
             activeSession.closeGraceTask?.cancel()
             return
         }
 
-        dismissActiveImmediately(reason: "FolderSearchPopoverPresenter.replaceActive")
+        pendingPresentation = PendingPresentation(
+            request: request,
+            windowState: windowState,
+            themeContext: themeContext,
+            presentationContext: presentationContext,
+            source: source
+        )
+        cancelPendingPresentationAction?()
+        cancelPendingPresentationAction = nil
+
+        if let activeSession {
+            closeActiveSession(
+                activeSession,
+                reason: "FolderSearchPopoverPresenter.replaceActive"
+            )
+        } else {
+            schedulePendingPresentation()
+        }
+    }
+
+    private func schedulePendingPresentation() {
+        guard activeSession == nil,
+              let pendingPresentation
+        else { return }
+
+        cancelPendingPresentationAction?()
+        let presentationID = pendingPresentation.id
+        cancelPendingPresentationAction = delayedActions.schedule(after: 0) { [weak self] in
+            guard let self,
+                  self.activeSession == nil,
+                  let pendingPresentation = self.pendingPresentation,
+                  pendingPresentation.id == presentationID
+            else { return }
+
+            self.cancelPendingPresentationAction = nil
+            guard let anchor = self.resolvedPresentationAnchor(
+                source: pendingPresentation.source,
+                in: pendingPresentation.windowState,
+                sidebarPosition: pendingPresentation.presentationContext.sidebarPosition
+            ) else {
+                self.pendingPresentation = nil
+                return
+            }
+
+            self.pendingPresentation = nil
+            self.present(pendingPresentation, at: anchor)
+        }
+    }
+
+    private func present(
+        _ pendingPresentation: PendingPresentation,
+        at anchor: (view: NSView, rect: NSRect, preferredEdge: NSRectEdge)
+    ) {
+        let request = pendingPresentation.request
+        let windowState = pendingPresentation.windowState
+        let themeContext = pendingPresentation.themeContext
+        let presentationContext = pendingPresentation.presentationContext
+        let source = pendingPresentation.source
 
         let surfaceColorScheme = themeContext.nativeSurfaceColorScheme
         let surfaceThemeContext = PopoverPresenterChromeSupport.themeContext(
@@ -155,11 +261,7 @@ final class FolderSearchPopoverPresenter: NSObject, NSPopoverDelegate {
         installDismissalObservers(for: session)
 
         windowState.shellWindow(in: windowRegistry)?.makeKeyAndOrderFront(nil)
-        popover.show(
-            relativeTo: anchor.rect,
-            of: anchor.view,
-            preferredEdge: anchor.preferredEdge
-        )
+        showPopover(popover, anchor.rect, anchor.view, anchor.preferredEdge)
     }
 
     func setAnchorHovered(
@@ -167,6 +269,15 @@ final class FolderSearchPopoverPresenter: NSObject, NSPopoverDelegate {
         in windowState: BrowserWindowState,
         hovering: Bool
     ) {
+        if let pendingPresentation,
+           pendingPresentation.request.folderID == folderID,
+           pendingPresentation.windowState.id == windowState.id,
+           !hovering {
+            self.pendingPresentation = nil
+            cancelPendingPresentationAction?()
+            cancelPendingPresentationAction = nil
+        }
+
         guard let activeSession,
               activeSession.folderID == folderID,
               activeSession.windowID == windowState.id
@@ -184,6 +295,14 @@ final class FolderSearchPopoverPresenter: NSObject, NSPopoverDelegate {
         folderID: UUID,
         windowID: UUID
     ) {
+        if let pendingPresentation,
+           pendingPresentation.request.folderID == folderID,
+           pendingPresentation.windowState.id == windowID {
+            self.pendingPresentation = nil
+            cancelPendingPresentationAction?()
+            cancelPendingPresentationAction = nil
+        }
+
         guard let activeSession,
               activeSession.folderID == folderID,
               activeSession.windowID == windowID
@@ -297,10 +416,14 @@ final class FolderSearchPopoverPresenter: NSObject, NSPopoverDelegate {
         activeSession.isClosing = true
         activeSession.closeGraceTask?.cancel()
 
-        PopoverPresenterChromeSupport.closePopoverWithFallback(
-            popover: activeSession.popover,
-            closeFallbackTask: &activeSession.closeFallbackTask,
-            onFallback: { [weak self, weak activeSession] in
+        guard isPopoverShown(activeSession.popover) else {
+            finishClosedSession(activeSession, reason: "\(reason).notShown")
+            return
+        }
+
+        PopoverPresenterChromeSupport.scheduleCloseFallback(
+            task: &activeSession.closeFallbackTask,
+            onTimeout: { [weak self, weak activeSession] in
                 guard let self,
                       let activeSession,
                       self.activeSession === activeSession
@@ -310,26 +433,9 @@ final class FolderSearchPopoverPresenter: NSObject, NSPopoverDelegate {
                     activeSession,
                     reason: "\(reason).fallback"
                 )
-            },
-            onNotShown: { [weak self, weak activeSession] in
-                guard let self,
-                      let activeSession
-                else { return }
-                self.finishClosedSession(activeSession, reason: "\(reason).notShown")
             }
         )
-    }
-
-    private func dismissActiveImmediately(reason: String) {
-        guard let activeSession else { return }
-        self.activeSession = nil
-        removeNotificationObservers(for: activeSession)
-        activeSession.closeGraceTask?.cancel()
-        activeSession.closeFallbackTask?.cancel()
-        if activeSession.popover.isShown {
-            activeSession.popover.close()
-        }
-        finishSession(activeSession, reason: reason)
+        closePopover(activeSession.popover)
     }
 
     private func finishClosedSession(
@@ -343,6 +449,7 @@ final class FolderSearchPopoverPresenter: NSObject, NSPopoverDelegate {
         closedSession.closeGraceTask?.cancel()
         closedSession.closeFallbackTask?.cancel()
         finishSession(closedSession, reason: reason)
+        schedulePendingPresentation()
     }
 
     private func installDismissalObservers(for activeSession: ActiveSession) {

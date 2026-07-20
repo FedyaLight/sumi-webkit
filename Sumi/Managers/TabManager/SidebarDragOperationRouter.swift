@@ -20,6 +20,13 @@ final class SidebarDragOperationRouter {
     }
 
     @discardableResult
+    func performSidebarDragCommit(_ intent: SidebarDragCommitIntent) -> Bool {
+        dragOperations.perform(intent)
+    }
+
+    /// Internal command path for callers that already own durable placement
+    /// semantics. Sidebar DnD must use `performSidebarDragCommit` instead.
+    @discardableResult
     func performSidebarDragOperation(_ operation: DragOperation) -> Bool {
         dragOperations.perform(operation)
     }

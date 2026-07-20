@@ -19,6 +19,7 @@ struct PinnedGridLayoutModel {
     let width: CGFloat
     let items: [SidebarEssentialVisualItem]
     let dragState: SidebarDragState
+    let dragGeometry: SidebarDragGeometryModule
     let geometrySpaceId: UUID
     let effectiveProfileId: UUID?
     let shouldAnimateDropLayout: Bool
@@ -32,6 +33,7 @@ struct PinnedGridLayoutModel {
         width: CGFloat,
         items: [SidebarEssentialVisualItem],
         dragState: SidebarDragState,
+        dragGeometry: SidebarDragGeometryModule,
         geometrySpaceId: UUID,
         effectiveProfileId: UUID?,
         animateLayout: Bool,
@@ -43,6 +45,7 @@ struct PinnedGridLayoutModel {
         self.width = width
         self.items = items
         self.dragState = dragState
+        self.dragGeometry = dragGeometry
         self.geometrySpaceId = geometrySpaceId
         self.effectiveProfileId = effectiveProfileId
 
@@ -53,7 +56,7 @@ struct PinnedGridLayoutModel {
             dragState: dragState
         )
         reportsDetailedGeometry = reportsGeometry
-            && dragState.shouldCollectDetailedGeometry(
+            && dragGeometry.shouldCollectDetailedGeometry(
                 spaceId: geometrySpaceId,
                 profileId: effectiveProfileId
             )

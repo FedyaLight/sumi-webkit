@@ -61,7 +61,6 @@ enum SidebarDropCoordinator {
     static func performDrop(
         pasteboard: NSPasteboard,
         resolution: SidebarDropResolution,
-        sourceInventory: any SidebarDragSourceInventorying,
         dragOperations: any SidebarDragOperationExecuting,
         urlDropService: SidebarURLDropService,
         windowState: BrowserWindowState?
@@ -78,31 +77,15 @@ enum SidebarDropCoordinator {
                 return false
             }
 
-            let sourceIdentities = sourceInventory.sourceIdentities(for: scope)
-            let sourceIndex = sourceIdentities.flatMap {
-                SidebarDragSourceMembership.sourceIndex(
-                    in: $0,
-                    sourceItemId: scope.sourceItemId,
-                    payload: payload
-                )
-            }
-            let operationIndex = SidebarDropProjection.operationIndex(
-                visualIndex: resolution.slot.visualIndex,
-                sourceContainer: scope.sourceContainer,
-                targetContainer: resolution.slot.asDragContainer,
-                sourceIndex: sourceIndex,
-                sourceItemCount: sourceIdentities?.count
-            )
-
-            let operation = DragOperation(
+            let intent = SidebarDragCommitIntent(
                 payload: payload,
                 scope: scope,
                 fromContainer: scope.sourceContainer,
                 toContainer: resolution.slot.asDragContainer,
-                toIndex: operationIndex
+                presentedVisualIndex: resolution.slot.visualIndex
             )
 
-            return dragOperations.performSidebarDragOperation(operation)
+            return dragOperations.performSidebarDragCommit(intent)
         }
 
         guard let droppedURL = pasteboard.sumiDroppedURL,
@@ -113,7 +96,7 @@ enum SidebarDropCoordinator {
         return urlDropService.open(
             droppedURL,
             in: windowState,
-            at: resolution.slot
+            atPresentedSlot: resolution.slot
         )
     }
 }

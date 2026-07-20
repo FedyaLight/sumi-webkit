@@ -5,17 +5,20 @@ import Foundation
 final class TabFolderPlacementCommitTransaction {
     private let hierarchy: TabFolderHierarchyMutationService
     private let spacePinnedStructure: SpacePinnedStructureOwner
+    private let spacePinnedVisualOrder: SpacePinnedVisualOrderTransaction
     private let folderOpenState: TabFolderOpenStateService
     private let structuralMutations: TabStructuralCollectionMutationOwner
 
     init(
         hierarchy: TabFolderHierarchyMutationService,
         spacePinnedStructure: SpacePinnedStructureOwner,
+        spacePinnedVisualOrder: SpacePinnedVisualOrderTransaction,
         folderOpenState: TabFolderOpenStateService,
         structuralMutations: TabStructuralCollectionMutationOwner
     ) {
         self.hierarchy = hierarchy
         self.spacePinnedStructure = spacePinnedStructure
+        self.spacePinnedVisualOrder = spacePinnedVisualOrder
         self.folderOpenState = folderOpenState
         self.structuralMutations = structuralMutations
     }
@@ -26,8 +29,8 @@ final class TabFolderPlacementCommitTransaction {
     ) -> Bool {
         switch intent {
         case .reorderTopLevel(let spaceID, let targetIndex):
-            return spacePinnedStructure.reorderFolderInTopLevelPinned(
-                folder,
+            return spacePinnedVisualOrder.reorder(
+                .folder(folder.id),
                 in: spaceID,
                 to: targetIndex
             )

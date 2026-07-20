@@ -11,60 +11,12 @@ enum SidebarFolderListItem: Hashable {
     case shortcut(UUID)
     case liveItem(String)
     case splitGroup(UUID)
-    case placeholder
 }
 
 struct SidebarFolderDisplayEntry: Identifiable {
     let item: SidebarFolderListItem
     let dropIndex: Int
     let id: String
-}
-
-struct SidebarFolderDragDisplayProjection: Equatable {
-    let isActive: Bool
-    let sourceFolderID: UUID?
-    let draggedItemID: UUID?
-    let folderDropIntent: FolderDropIntent
-    let suppressesCommittedPlaceholder: Bool
-
-    init(
-        isActive: Bool,
-        sourceFolderID: UUID?,
-        draggedItemID: UUID?,
-        folderDropIntent: FolderDropIntent,
-        suppressesCommittedPlaceholder: Bool
-    ) {
-        self.isActive = isActive
-        self.sourceFolderID = sourceFolderID
-        self.draggedItemID = draggedItemID
-        self.folderDropIntent = folderDropIntent
-        self.suppressesCommittedPlaceholder = suppressesCommittedPlaceholder
-    }
-
-    @MainActor
-    init(
-        dragSnapshot: SidebarFolderDragSnapshot,
-        folderID: UUID,
-        baseItems: [SidebarFolderListItem]
-    ) {
-        let draggedItemID = dragSnapshot.projectionDragItemID
-
-        let targetAlreadyContainsDraggedItem = draggedItemID.map { itemID in
-            baseItems.contains { $0.matchesItemID(itemID) }
-        } ?? false
-
-        self.init(
-            isActive: dragSnapshot.isDropProjectionActive,
-            sourceFolderID: dragSnapshot.projectionSourceFolderID,
-            draggedItemID: draggedItemID,
-            folderDropIntent: dragSnapshot.projectionFolderDropIntent,
-            suppressesCommittedPlaceholder: draggedItemID != nil
-                && dragSnapshot.shouldHideCommittedPlaceholder(
-                    into: .folder(folderID),
-                    targetAlreadyContainsDraggedItem: targetAlreadyContainsDraggedItem
-                )
-        )
-    }
 }
 
 @MainActor
@@ -81,21 +33,13 @@ struct SidebarFolderContentProjection {
 
     init(
         baseItems: [SidebarFolderListItem],
-        folderID: UUID,
         isFolderOpen: Bool,
         displayedCollapsedProjectionIDs: [UUID],
         stickyItemIDs: [UUID],
         orderedDescendantItemIDs: [UUID],
-        projection: SidebarFolderViewProjection,
-        dragProjection: SidebarFolderDragDisplayProjection
+        projection: SidebarFolderViewProjection
     ) {
         childCount = baseItems.count
-        let renderedItems = SidebarFolderDisplayProjection.renderedItems(
-            baseItems: baseItems,
-            folderID: folderID,
-            isFolderOpen: isFolderOpen,
-            dragProjection: dragProjection
-        )
         targetCollapsedProjectionIDs = isFolderOpen
             ? []
             : SidebarFolderDisplayProjection.targetCollapsedProjectionIDs(
@@ -108,68 +52,22 @@ struct SidebarFolderContentProjection {
             targetCollapsedProjectionIDs: targetCollapsedProjectionIDs
         )
         bodyItems = isFolderOpen
-            ? renderedItems
+            ? baseItems
             : visibleCollapsedProjectionIDs.compactMap(projection.collapsedProjectionItem)
-        bodyDisplayEntries = SidebarFolderDisplayProjection.displayEntries(
-            from: bodyItems,
-            placeholderDragItemID: dragProjection.draggedItemID
-        )
+        bodyDisplayEntries = SidebarFolderDisplayProjection.displayEntries(from: bodyItems)
     }
 }
 
 enum SidebarFolderDisplayProjection {
-    static func renderedItems(
-        baseItems: [SidebarFolderListItem],
-        folderID: UUID,
-        isFolderOpen: Bool,
-        dragProjection: SidebarFolderDragDisplayProjection
-    ) -> [SidebarFolderListItem] {
-        SidebarDropProjection.projectedItems(
-            itemIDs: baseItems,
-            removesSourceID: projectedSourceItem(
-                in: baseItems,
-                folderID: folderID,
-                dragProjection: dragProjection
-            ),
-            insertsPlaceholderAt: projectedInsertionIndex(
-                folderID: folderID,
-                isFolderOpen: isFolderOpen,
-                dragProjection: dragProjection
-            )
-        )
-        .map { item in
-            switch item {
-            case .item(let folderItem):
-                return folderItem
-            case .placeholder:
-                return .placeholder
-            }
-        }
-
-    }
-
     static func displayEntries(
-        from items: [SidebarFolderListItem],
-        placeholderDragItemID: UUID?
+        from items: [SidebarFolderListItem]
     ) -> [SidebarFolderDisplayEntry] {
-        var childCount = 0
-        return items.map { item in
-            let entry = SidebarFolderDisplayEntry(
+        items.enumerated().map { index, item in
+            SidebarFolderDisplayEntry(
                 item: item,
-                dropIndex: childCount,
-                id: displayID(
-                    for: item,
-                    placeholderIndex: childCount,
-                    placeholderDragItemID: placeholderDragItemID
-                )
+                dropIndex: index,
+                id: displayID(for: item)
             )
-            switch item {
-            case .folder, .shortcut, .liveItem, .splitGroup:
-                childCount += 1
-            case .placeholder:
-                break
-            }
-            return entry
         }
     }
 
@@ -194,42 +92,7 @@ enum SidebarFolderDisplayProjection {
             : displayedCollapsedProjectionIDs
     }
 
-    private static func projectedSourceItem(
-        in items: [SidebarFolderListItem],
-        folderID: UUID,
-        dragProjection: SidebarFolderDragDisplayProjection
-    ) -> SidebarFolderListItem? {
-        guard dragProjection.isActive,
-              dragProjection.sourceFolderID == folderID,
-              let draggedItemID = dragProjection.draggedItemID else {
-            return nil
-        }
-        return items.first { $0.matchesItemID(draggedItemID) }
-    }
-
-    private static func projectedInsertionIndex(
-        folderID: UUID,
-        isFolderOpen: Bool,
-        dragProjection: SidebarFolderDragDisplayProjection
-    ) -> Int? {
-        guard dragProjection.isActive,
-              case .insertIntoFolder(let targetFolderID, let index) = dragProjection.folderDropIntent,
-              targetFolderID == folderID,
-              isFolderOpen else {
-            return nil
-        }
-
-        guard !dragProjection.suppressesCommittedPlaceholder else {
-            return nil
-        }
-        return index
-    }
-
-    private static func displayID(
-        for item: SidebarFolderListItem,
-        placeholderIndex: Int,
-        placeholderDragItemID: UUID?
-    ) -> String {
+    private static func displayID(for item: SidebarFolderListItem) -> String {
         switch item {
         case .folder(let id):
             return "folder-\(id.uuidString)"
@@ -239,22 +102,6 @@ enum SidebarFolderDisplayProjection {
             return "live-item-\(id)"
         case .splitGroup(let id):
             return "split-group-\(id.uuidString)"
-        case .placeholder:
-            if let placeholderDragItemID {
-                return "item-\(placeholderDragItemID.uuidString)"
-            }
-            return "placeholder-\(placeholderIndex)"
-        }
-    }
-}
-
-private extension SidebarFolderListItem {
-    func matchesItemID(_ id: UUID) -> Bool {
-        switch self {
-        case .folder(let itemID), .shortcut(let itemID), .splitGroup(let itemID):
-            return itemID == id
-        case .liveItem, .placeholder:
-            return false
         }
     }
 }

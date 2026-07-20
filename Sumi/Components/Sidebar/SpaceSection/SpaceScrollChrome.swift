@@ -15,9 +15,12 @@ struct SidebarPassiveScrollIndicatorState: Equatable {
 struct SpaceSectionsView<Pinned: View, Regular: View>: View {
     let pinnedSection: Pinned
     let regularTabsSection: Regular
+    /// Zen parity: the pinned/regular boundary spacing exists only while the
+    /// pinned section has content (`hide-separator` collapses it otherwise).
+    var sectionSpacing: CGFloat = 8
 
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: sectionSpacing) {
             pinnedSection
             regularTabsSection
         }

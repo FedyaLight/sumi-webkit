@@ -88,16 +88,14 @@ extension BrowserManager {
                 folders: folderCollectionStateOwner,
                 essentials: essentialsShortcutPlacementOwner
             ),
-            shortcutInsertion: shortcutInsertion
+            shortcutInsertion: shortcutInsertion,
+            orderProjection: SidebarDropOrderProjection(
+                regularTabs: regularTabCollectionOwner,
+                splitOrdering: splitGroupSidebarOrdering
+            )
         )
         let dragTransactions = SidebarDragTransactionPort(
             windows: windowIdentity,
-            sourceInventory: SidebarDragSourceInventory(
-                splitOrdering: splitGroupSidebarOrdering,
-                regularTabs: regularTabCollectionOwner,
-                folders: folderCollectionStateOwner,
-                spacePinned: spacePinnedStructureOwner
-            ),
             dragOperations: sidebarDragRouter,
             urlDropService: urlDrops
         )

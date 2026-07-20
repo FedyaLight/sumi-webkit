@@ -17,6 +17,33 @@ enum SidebarDragLocationMapper {
         )
     }
 
+    /// Inverse of `swiftUITopLeftPoint` for rects: maps a rect expressed in
+    /// SwiftUI `.global` (top-left origin) back into AppKit window coordinates
+    /// (bottom-left origin). Used to place the drop-indicator layer, whose
+    /// target rect is computed in reported (SwiftUI-global) geometry space.
+    static func windowRect(
+        fromSwiftUITopLeftRect rect: CGRect,
+        topBoundaryY: CGFloat
+    ) -> CGRect {
+        CGRect(
+            x: rect.minX,
+            y: max(topBoundaryY, 0) - rect.maxY,
+            width: rect.width,
+            height: rect.height
+        )
+    }
+
+    @MainActor
+    static func windowRect(
+        fromSwiftUITopLeftRect rect: CGRect,
+        in window: NSWindow
+    ) -> CGRect {
+        windowRect(
+            fromSwiftUITopLeftRect: rect,
+            topBoundaryY: swiftUIFullContentBoundaryY(in: window)
+        )
+    }
+
     @MainActor
     static func swiftUIGlobalPoint(
         fromWindowPoint windowPoint: CGPoint,

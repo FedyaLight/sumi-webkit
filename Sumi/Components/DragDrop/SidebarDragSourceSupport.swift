@@ -1,5 +1,11 @@
 import SwiftUI
 
+/// Zen parity: the dragged row stays in place, dimmed, while the drop
+/// indicator line shows the insertion point.
+enum SidebarDragSourceDim {
+    static let opacity: Double = 0.5
+}
+
 enum SidebarDragSourceExclusionZone {
     case leadingStrip(CGFloat)
     case trailingStrip(CGFloat)

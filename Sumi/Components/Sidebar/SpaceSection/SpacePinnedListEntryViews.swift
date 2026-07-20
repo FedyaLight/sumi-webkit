@@ -22,6 +22,7 @@ struct SpacePinnedFolderEntryView: View {
     let topLevelIndex: Int
     let geometryGeneration: Int
     let isInteractive: Bool
+    let reportsDropGeometry: Bool
 
     var body: some View {
         TabFolderView(
@@ -46,7 +47,7 @@ struct SpacePinnedFolderEntryView: View {
             spaceId: space.id,
             topLevelIndex: topLevelIndex,
             generation: geometryGeneration,
-            isActive: isInteractive
+            isActive: isInteractive && reportsDropGeometry
         )
         .sidebarZenCompositeLifecycleTransition(isEnabled: isInteractive)
     }
@@ -64,6 +65,7 @@ struct SpacePinnedShortcutEntryView: View {
     let opacity: Double
     let topLevelIndex: Int
     let geometryGeneration: Int
+    let reportsDropGeometry: Bool
     let actionOwner: SpacePinnedActionOwner
 
     var body: some View {
@@ -89,7 +91,7 @@ struct SpacePinnedShortcutEntryView: View {
             spaceId: spaceID,
             topLevelIndex: topLevelIndex,
             generation: geometryGeneration,
-            isActive: isInteractive
+            isActive: isInteractive && reportsDropGeometry
         )
         .sidebarRowListItemTransition(isEnabled: isInteractive)
     }
@@ -104,6 +106,7 @@ struct SpacePinnedSplitGroupEntryView: View {
     let isInteractive: Bool
     let topLevelIndex: Int
     let geometryGeneration: Int
+    let reportsDropGeometry: Bool
 
     @Environment(BrowserWindowState.self) private var windowState
 
@@ -140,7 +143,7 @@ struct SpacePinnedSplitGroupEntryView: View {
                 spaceId: space.id,
                 topLevelIndex: topLevelIndex,
                 generation: geometryGeneration,
-                isActive: isInteractive
+                isActive: isInteractive && reportsDropGeometry
             )
             .sidebarRowListItemTransition(isEnabled: isInteractive)
         }

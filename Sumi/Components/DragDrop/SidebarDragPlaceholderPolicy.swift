@@ -21,25 +21,6 @@ enum SidebarDragPlaceholderPolicy {
         }
         return sourceContainer != targetContainer
     }
-
-    /// True when a drop is completing from a shortcut-hosting container
-    /// (essentials/space-pinned/folder) into a *different* target container —
-    /// i.e. the dragged item is losing its persistent shortcut identity and
-    /// becoming (or returning to being) a plain item in `targetContainer`.
-    /// Used to suppress a stale commit-time insertion gap at the target while
-    /// the item's identity transition settles.
-    static func shouldSuppressCommitGapForExternalSource(
-        isCompletingDrop: Bool,
-        sourceContainer: TabDragManager.DragContainer?,
-        targetContainer: TabDragManager.DragContainer
-    ) -> Bool {
-        guard isCompletingDrop,
-              let sourceContainer,
-              sourceContainer != targetContainer else {
-            return false
-        }
-        return sourceContainer.hostsShortcutIdentity
-    }
 }
 
 private extension TabDragManager.DragContainer {

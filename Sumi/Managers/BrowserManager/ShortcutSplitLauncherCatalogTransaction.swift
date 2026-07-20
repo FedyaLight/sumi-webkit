@@ -41,7 +41,8 @@ final class ShortcutSplitLauncherCatalogTransaction {
 
     func prepareInsertion(
         _ pin: ShortcutPin,
-        at index: Int
+        at index: Int,
+        sidebarVisualMembership: ShortcutPinSidebarVisualMembership = .standalone
     ) -> ShortcutSplitLauncherCatalogInsertionPlan? {
         let source = snapshot()
         guard let inserted = pinStore.previewInsert(pin, at: index) else {
@@ -51,7 +52,12 @@ final class ShortcutSplitLauncherCatalogTransaction {
         return ShortcutSplitLauncherCatalogInsertionPlan(
             insertedPin: inserted,
             sourceCatalog: source,
-            insertion: .init(pin: pin, index: index, target: target),
+            insertion: .init(
+                pin: pin,
+                index: index,
+                sidebarVisualMembership: sidebarVisualMembership,
+                target: target
+            ),
             presentationPreview: .init(
                 pin: inserted,
                 source: source,
@@ -67,7 +73,8 @@ final class ShortcutSplitLauncherCatalogTransaction {
         pinStore.insert(
             insertion.pin,
             at: insertion.index,
-            openTargetFolder: false
+            openTargetFolder: false,
+            sidebarVisualMembership: insertion.sidebarVisualMembership
         )
     }
 
@@ -92,6 +99,7 @@ final class ShortcutSplitLauncherCatalogTransaction {
             folderId: destination.folderId,
             index: destination.index,
             openTargetFolder: false,
+            sidebarVisualMembership: .splitMember,
             applying: applying
         )
     }

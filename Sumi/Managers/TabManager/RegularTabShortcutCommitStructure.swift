@@ -46,7 +46,8 @@ final class RegularTabShortcutCommitStructurePreparer {
     ) -> PreparedRegularTabShortcutCommitStructure? {
         guard let insertion = catalog.prepareInsertion(
             candidate.candidatePin,
-            at: candidate.destination.index
+            at: candidate.destination.index,
+            sidebarVisualMembership: structure.sidebarVisualMembership
         ), insertion.insertion.target.accepts(insertion.insertedPin),
            let resolved = resolve(
                structure,
@@ -136,5 +137,16 @@ final class RegularTabShortcutCommitStructurePreparer {
 
     private func shortcutMember(for pin: ShortcutPin) -> SplitMember? {
         .shortcutPin(pin.id)
+    }
+}
+
+private extension RegularTabShortcutCommitStructure {
+    var sidebarVisualMembership: ShortcutPinSidebarVisualMembership {
+        switch self {
+        case .sourceReplacement:
+            return .standalone
+        case .sidebar:
+            return .splitMember
+        }
     }
 }

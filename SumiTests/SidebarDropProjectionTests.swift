@@ -169,47 +169,6 @@ final class SidebarDropProjectionTests: XCTestCase {
         )
     }
 
-    func testProjectedItemsRemoveSourceAndInsertPlaceholder() {
-        XCTAssertEqual(
-            SidebarDropProjection.projectedItems(
-                itemIDs: ["A", "B", "C"],
-                sourceID: "A",
-                projectedInsertionIndex: 2
-            ),
-            [.item("B"), .item("C"), .placeholder]
-        )
-        XCTAssertEqual(
-            SidebarDropProjection.projectedItems(
-                itemIDs: ["A", "B", "C"],
-                sourceID: "B",
-                projectedInsertionIndex: 0
-            ),
-            [.placeholder, .item("A"), .item("C")]
-        )
-    }
-
-    func testProjectedItemsWithoutPlaceholderOnlyRemoveSource() {
-        XCTAssertEqual(
-            SidebarDropProjection.projectedItems(
-                itemIDs: ["A", "B", "C"],
-                sourceID: "B",
-                projectedInsertionIndex: nil
-            ),
-            [.item("A"), .item("C")]
-        )
-    }
-
-    func testProjectedItemsClampPlaceholderSlot() {
-        XCTAssertEqual(
-            SidebarDropProjection.projectedItems(
-                itemIDs: ["A", "B", "C"],
-                sourceID: "C",
-                projectedInsertionIndex: 99
-            ),
-            [.item("A"), .item("B"), .placeholder]
-        )
-    }
-
     @MainActor
     func testEssentialsProjectionRemovesDraggedSourceAndInsertsPlaceholder() {
         let spaceId = UUID()
@@ -291,95 +250,6 @@ final class SidebarDropProjectionTests: XCTestCase {
         XCTAssertEqual(layout.rows.first?.visualColumnCount, 1)
     }
 
-    func testFolderProjectionRemovesDraggedSourceAndInsertsPlaceholderInOpenFolder() {
-        let folderId = UUID()
-        let draggedFolderId = UUID()
-        let shortcutId = UUID()
-        let splitGroupId = UUID()
-
-        let items = SidebarFolderDisplayProjection.renderedItems(
-            baseItems: [
-                .folder(draggedFolderId),
-                .shortcut(shortcutId),
-                .splitGroup(splitGroupId),
-            ],
-            folderID: folderId,
-            isFolderOpen: true,
-            dragProjection: SidebarFolderDragDisplayProjection(
-                isActive: true,
-                sourceFolderID: folderId,
-                draggedItemID: draggedFolderId,
-                folderDropIntent: .insertIntoFolder(folderId: folderId, index: 2),
-                suppressesCommittedPlaceholder: false
-            )
-        )
-
-        XCTAssertEqual(items, [.shortcut(shortcutId), .splitGroup(splitGroupId), .placeholder])
-    }
-
-    func testFolderProjectionDoesNotInsertPlaceholderIntoClosedFolder() {
-        let folderId = UUID()
-        let draggedShortcutId = UUID()
-        let shortcutId = UUID()
-
-        let items = SidebarFolderDisplayProjection.renderedItems(
-            baseItems: [.shortcut(draggedShortcutId), .shortcut(shortcutId)],
-            folderID: folderId,
-            isFolderOpen: false,
-            dragProjection: SidebarFolderDragDisplayProjection(
-                isActive: true,
-                sourceFolderID: folderId,
-                draggedItemID: draggedShortcutId,
-                folderDropIntent: .insertIntoFolder(folderId: folderId, index: 1),
-                suppressesCommittedPlaceholder: false
-            )
-        )
-
-        XCTAssertEqual(items, [.shortcut(shortcutId)])
-    }
-
-    func testFolderProjectionSuppressesCommittedPlaceholderForRegularSource() {
-        let folderId = UUID()
-        let draggedTabId = UUID()
-        let shortcutId = UUID()
-
-        let items = SidebarFolderDisplayProjection.renderedItems(
-            baseItems: [.shortcut(shortcutId)],
-            folderID: folderId,
-            isFolderOpen: true,
-            dragProjection: SidebarFolderDragDisplayProjection(
-                isActive: true,
-                sourceFolderID: nil,
-                draggedItemID: draggedTabId,
-                folderDropIntent: .insertIntoFolder(folderId: folderId, index: 0),
-                suppressesCommittedPlaceholder: true
-            )
-        )
-
-        XCTAssertEqual(items, [.shortcut(shortcutId)])
-    }
-
-    func testFolderProjectionKeepsSameFolderCommitPlaceholder() {
-        let folderId = UUID()
-        let draggedShortcutId = UUID()
-        let shortcutId = UUID()
-
-        let items = SidebarFolderDisplayProjection.renderedItems(
-            baseItems: [.shortcut(draggedShortcutId), .shortcut(shortcutId)],
-            folderID: folderId,
-            isFolderOpen: true,
-            dragProjection: SidebarFolderDragDisplayProjection(
-                isActive: true,
-                sourceFolderID: folderId,
-                draggedItemID: draggedShortcutId,
-                folderDropIntent: .insertIntoFolder(folderId: folderId, index: 1),
-                suppressesCommittedPlaceholder: false
-            )
-        )
-
-        XCTAssertEqual(items, [.shortcut(shortcutId), .placeholder])
-    }
-
     func testFolderDragSnapshotDerivesFolderPresentationState() {
         let folderId = UUID()
         let otherFolderId = UUID()
@@ -399,88 +269,26 @@ final class SidebarDropProjectionTests: XCTestCase {
         XCTAssertFalse(snapshot.isFolderPreviewOpen(folderID: otherFolderId, isOpen: false))
         XCTAssertTrue(snapshot.isFolderPreviewOpen(folderID: otherFolderId, isOpen: true))
         XCTAssertEqual(snapshot.afterDropTargetHeight(rowHeight: 20), 9)
-        XCTAssertEqual(snapshot.childOpacity(itemID: childId), 0.001, accuracy: 0.0001)
+        XCTAssertEqual(
+            snapshot.childOpacity(itemID: childId),
+            SidebarDragSourceDim.opacity,
+            accuracy: 0.0001
+        )
         XCTAssertEqual(snapshot.childOpacity(itemID: otherFolderId), 1)
-        XCTAssertTrue(snapshot.allowsLayoutAnimation(isInteractive: true))
-        XCTAssertFalse(snapshot.allowsLayoutAnimation(isInteractive: false))
         XCTAssertEqual(snapshot.geometryGeneration, 42)
     }
 
-    func testFolderDragSnapshotKeepsCompletionProjectionSeparateFromLiveHover() {
+    func testFolderDragSnapshotClearsRowChromeDuringCommit() {
         let folderId = UUID()
         let draggedId = UUID()
 
         let snapshot = SidebarFolderDragSnapshot(
-            isCompletingDrop: true,
-            projectionDragItemID: draggedId,
-            projectionSourceContainer: .folder(folderId),
-            projectionFolderDropIntent: .insertIntoFolder(folderId: folderId, index: 1)
+            isCompletingDrop: true
         )
 
-        XCTAssertTrue(snapshot.isDropProjectionActive)
-        XCTAssertEqual(snapshot.projectionSourceFolderID, folderId)
-        XCTAssertEqual(snapshot.projectionDragItemID, draggedId)
-        XCTAssertEqual(
-            snapshot.projectionFolderDropIntent,
-            .insertIntoFolder(folderId: folderId, index: 1)
-        )
         XCTAssertFalse(snapshot.isContainTargeted(folderID: folderId))
         XCTAssertEqual(snapshot.childOpacity(itemID: draggedId), 1)
-        XCTAssertFalse(snapshot.allowsLayoutAnimation(isInteractive: true))
-    }
-
-    func testFolderDragSnapshotUsesCommittedPlaceholderPolicy() {
-        let sourceSpaceId = UUID()
-        let sourceFolderId = UUID()
-        let targetFolderId = UUID()
-
-        let regularSourceCommit = SidebarFolderDragSnapshot(
-            isCompletingDrop: true,
-            projectionSourceContainer: .spaceRegular(sourceSpaceId)
-        )
-
-        XCTAssertTrue(
-            regularSourceCommit.shouldHideCommittedPlaceholder(
-                into: .folder(targetFolderId),
-                targetAlreadyContainsDraggedItem: false
-            )
-        )
-
-        let sameFolderCommit = SidebarFolderDragSnapshot(
-            isCompletingDrop: true,
-            projectionSourceContainer: .folder(sourceFolderId)
-        )
-
-        XCTAssertFalse(
-            sameFolderCommit.shouldHideCommittedPlaceholder(
-                into: .folder(sourceFolderId),
-                targetAlreadyContainsDraggedItem: true
-            )
-        )
-        XCTAssertTrue(
-            sameFolderCommit.shouldHideCommittedPlaceholder(
-                into: .folder(targetFolderId),
-                targetAlreadyContainsDraggedItem: true
-            )
-        )
-        XCTAssertFalse(
-            sameFolderCommit.shouldHideCommittedPlaceholder(
-                into: .folder(targetFolderId),
-                targetAlreadyContainsDraggedItem: false
-            )
-        )
-
-        let activeDrag = SidebarFolderDragSnapshot(
-            isDragging: true,
-            projectionSourceContainer: .folder(sourceFolderId)
-        )
-
-        XCTAssertFalse(
-            activeDrag.shouldHideCommittedPlaceholder(
-                into: .folder(targetFolderId),
-                targetAlreadyContainsDraggedItem: true
-            )
-        )
+        XCTAssertEqual(snapshot.afterDropTargetHeight(rowHeight: 20), 0)
     }
 
     @MainActor

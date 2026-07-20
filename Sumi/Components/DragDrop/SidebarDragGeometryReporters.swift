@@ -1,173 +1,18 @@
 import SwiftUI
 
-// MARK: - Geometry tracking (deferred)
-
-/// Publishes geometry into `SidebarDragState` on the next main run loop turn so SwiftUI does not emit
-/// "Publishing changes from within view updates" during layout/preference application.
-@MainActor
-enum SidebarDragStateDeferredGeometry {
-    static func setPageGeometry(
-        dragState: SidebarDragState,
-        spaceId: UUID,
-        profileId: UUID?,
-        renderMode: SidebarPageGeometryRenderMode,
-        generation: Int,
-        _ frame: CGRect?
-    ) {
-        dragState.schedulePageGeometry(
-            spaceId: spaceId,
-            profileId: profileId,
-            frame: frame,
-            renderMode: renderMode,
-            generation: generation
-        )
-    }
-
-    static func setSectionFrame(
-        dragState: SidebarDragState,
-        spaceId: UUID,
-        section: SidebarSectionPrefix,
-        generation: Int,
-        _ frame: CGRect?
-    ) {
-        dragState.scheduleSectionFrame(
-            spaceId: spaceId,
-            section: section,
-            frame: frame,
-            generation: generation
-        )
-    }
-
-    static func updateFolderDropTarget(
-        dragState: SidebarDragState,
-        update: SidebarFolderDropTargetUpdate,
-        generation: Int
-    ) {
-        dragState.scheduleFolderDropTarget(
-            update,
-            generation: generation
-        )
-    }
-
-    static func removeFolderDropTarget(
-        dragState: SidebarDragState,
-        folderId: UUID,
-        region: SidebarFolderDragRegion,
-        generation: Int
-    ) {
-        dragState.scheduleFolderDropTarget(
-            SidebarFolderDropTargetUpdate(folderId: folderId, region: region),
-            generation: generation
-        )
-    }
-
-    static func updateTopLevelPinnedItemTarget(
-        dragState: SidebarDragState,
-        update: SidebarTopLevelPinnedItemTargetUpdate,
-        generation: Int
-    ) {
-        dragState.scheduleTopLevelPinnedItemTarget(
-            update,
-            generation: generation
-        )
-    }
-
-    static func removeTopLevelPinnedItemTarget(
-        dragState: SidebarDragState,
-        itemId: UUID,
-        generation: Int
-    ) {
-        dragState.scheduleTopLevelPinnedItemTarget(
-            SidebarTopLevelPinnedItemTargetUpdate(itemId: itemId),
-            generation: generation
-        )
-    }
-
-    static func updateFolderChildDropTarget(
-        dragState: SidebarDragState,
-        update: SidebarFolderChildDropTargetUpdate,
-        generation: Int
-    ) {
-        dragState.scheduleFolderChildDropTarget(
-            update,
-            generation: generation
-        )
-    }
-
-    static func removeFolderChildDropTarget(
-        dragState: SidebarDragState,
-        childId: UUID,
-        generation: Int
-    ) {
-        dragState.scheduleFolderChildDropTarget(
-            SidebarFolderChildDropTargetUpdate(childId: childId),
-            generation: generation
-        )
-    }
-
-    static func updateRegularListHitTarget(
-        dragState: SidebarDragState,
-        spaceId: UUID,
-        frame: CGRect,
-        itemCount: Int,
-        generation: Int
-    ) {
-        dragState.scheduleRegularListHitTarget(
-            spaceId: spaceId,
-            frame: frame,
-            itemCount: itemCount,
-            generation: generation
-        )
-    }
-
-    static func removeRegularListHitTarget(
-        dragState: SidebarDragState,
-        spaceId: UUID,
-        generation: Int
-    ) {
-        dragState.scheduleRegularListHitTarget(
-            spaceId: spaceId,
-            frame: nil,
-            itemCount: 0,
-            generation: generation
-        )
-    }
-
-    static func updateEssentialsLayoutMetrics(
-        dragState: SidebarDragState,
-        update: SidebarEssentialsLayoutUpdate,
-        generation: Int
-    ) {
-        dragState.scheduleEssentialsLayoutMetrics(
-            update,
-            generation: generation
-        )
-    }
-
-    static func removeEssentialsLayoutMetrics(
-        dragState: SidebarDragState,
-        spaceId: UUID,
-        generation: Int
-    ) {
-        dragState.scheduleEssentialsLayoutMetrics(
-            SidebarEssentialsLayoutUpdate(spaceId: spaceId),
-            generation: generation
-        )
-    }
-}
-
 // MARK: - Geometry Tracking
 
 /// Shared skeleton for geometry reporters: a background `GeometryReader` that
 /// re-reports the global frame when it moves, when any caller-supplied trigger changes,
-/// when `SidebarDragState.geometryRevision` bumps, and on appear; `remove` runs on disappear.
+/// when the geometry module revision bumps, and on appear; `remove` runs on disappear.
 private struct SidebarDragGeometryReporting<Trigger: Equatable>: ViewModifier {
     let isEnabled: Bool
     let trigger: Trigger
     var reportsOnDragBegin = false
     let report: (CGRect) -> Void
     let remove: () -> Void
-    @EnvironmentObject private var dragState: SidebarDragState
+    @EnvironmentObject private var geometry: SidebarDragGeometryModule
+    @EnvironmentObject private var refreshSignal: SidebarDragGeometryRefreshSignal
 
     func body(content: Content) -> some View {
         content
@@ -181,10 +26,10 @@ private struct SidebarDragGeometryReporting<Trigger: Equatable>: ViewModifier {
                             .onChange(of: trigger) { _, _ in
                                 report(geo.frame(in: .global))
                             }
-                            .onChange(of: dragState.geometryRevision) { _, _ in
+                            .onChange(of: refreshSignal.revision) { _, _ in
                                 report(geo.frame(in: .global))
                             }
-                            .onChange(of: dragState.isDragging) { _, isDragging in
+                            .onChange(of: geometry.isDragging) { _, isDragging in
                                 if reportsOnDragBegin, isDragging {
                                     report(geo.frame(in: .global))
                                 }
@@ -209,14 +54,14 @@ private struct SidebarDragGeometryReporter<Trigger: Equatable>: ViewModifier {
     var detailedGeometrySpace: (spaceId: UUID, profileId: UUID?)? = nil
     let trigger: Trigger
     var reportsOnDragBegin = false
-    let report: (SidebarDragState, CGRect) -> Void
-    let remove: (SidebarDragState) -> Void
-    @EnvironmentObject private var dragState: SidebarDragState
+    let report: (SidebarDragGeometryModule, CGRect) -> Void
+    let remove: (SidebarDragGeometryModule) -> Void
+    @EnvironmentObject private var geometry: SidebarDragGeometryModule
 
     private var resolvedIsEnabled: Bool {
         guard isEnabled else { return false }
         guard let detailedGeometrySpace else { return true }
-        return dragState.shouldCollectDetailedGeometry(
+        return geometry.shouldCollectDetailedGeometry(
             spaceId: detailedGeometrySpace.spaceId,
             profileId: detailedGeometrySpace.profileId
         )
@@ -228,8 +73,8 @@ private struct SidebarDragGeometryReporter<Trigger: Equatable>: ViewModifier {
                 isEnabled: resolvedIsEnabled,
                 trigger: trigger,
                 reportsOnDragBegin: reportsOnDragBegin,
-                report: { frame in report(dragState, frame) },
-                remove: { remove(dragState) }
+                report: { frame in report(geometry, frame) },
+                remove: { remove(geometry) }
             )
         )
     }
@@ -264,24 +109,26 @@ extension View {
             SidebarDragGeometryReporter(
                 isEnabled: isEnabled && renderMode == .interactive,
                 trigger: generation,
-                report: { dragState, frame in
-                    SidebarDragStateDeferredGeometry.setPageGeometry(
-                        dragState: dragState,
-                        spaceId: spaceId,
-                        profileId: profileId,
-                        renderMode: renderMode,
-                        generation: generation,
-                        frame
+                report: { geometry, frame in
+                    geometry.report(
+                        .page(
+                            spaceId: spaceId,
+                            profileId: profileId,
+                            frame: frame,
+                            renderMode: renderMode
+                        ),
+                        generation: generation
                     )
                 },
-                remove: { dragState in
-                    SidebarDragStateDeferredGeometry.setPageGeometry(
-                        dragState: dragState,
-                        spaceId: spaceId,
-                        profileId: profileId,
-                        renderMode: renderMode,
-                        generation: generation,
-                        nil
+                remove: { geometry in
+                    geometry.report(
+                        .page(
+                            spaceId: spaceId,
+                            profileId: profileId,
+                            frame: nil,
+                            renderMode: renderMode
+                        ),
+                        generation: generation
                     )
                 }
             )
@@ -298,22 +145,16 @@ extension View {
             SidebarDragGeometryReporter(
                 isEnabled: isEnabled,
                 trigger: generation,
-                report: { dragState, frame in
-                    SidebarDragStateDeferredGeometry.setSectionFrame(
-                        dragState: dragState,
-                        spaceId: spaceId,
-                        section: section,
-                        generation: generation,
-                        frame
+                report: { geometry, frame in
+                    geometry.report(
+                        .section(spaceId: spaceId, section: section, frame: frame),
+                        generation: generation
                     )
                 },
-                remove: { dragState in
-                    SidebarDragStateDeferredGeometry.setSectionFrame(
-                        dragState: dragState,
-                        spaceId: spaceId,
-                        section: section,
-                        generation: generation,
-                        nil
+                remove: { geometry in
+                    geometry.report(
+                        .section(spaceId: spaceId, section: section, frame: nil),
+                        generation: generation
                     )
                 }
             )
@@ -343,7 +184,7 @@ extension View {
                     AnyHashable(generation),
                 ],
                 reportsOnDragBegin: true,
-                report: { dragState, frame in
+                report: { geometry, frame in
                     let update = isActive
                         ? SidebarFolderDropTargetUpdate(
                             metrics: SidebarFolderDropTargetMetrics(
@@ -358,17 +199,17 @@ extension View {
                             frame: frame
                         )
                         : SidebarFolderDropTargetUpdate(folderId: folderId, region: region)
-                    SidebarDragStateDeferredGeometry.updateFolderDropTarget(
-                        dragState: dragState,
-                        update: update,
+                    geometry.report(
+                        .folder(update),
                         generation: generation
                     )
                 },
-                remove: { dragState in
-                    SidebarDragStateDeferredGeometry.removeFolderDropTarget(
-                        dragState: dragState,
-                        folderId: folderId,
-                        region: region,
+                remove: { geometry in
+                    geometry.report(
+                        .folder(SidebarFolderDropTargetUpdate(
+                            folderId: folderId,
+                            region: region
+                        )),
                         generation: generation
                     )
                 }
@@ -391,7 +232,7 @@ extension View {
                     AnyHashable(topLevelIndex),
                     AnyHashable(generation),
                 ],
-                report: { dragState, frame in
+                report: { geometry, frame in
                     let update = isActive
                         ? SidebarTopLevelPinnedItemTargetUpdate(
                             metrics: SidebarTopLevelPinnedItemMetrics(
@@ -402,16 +243,16 @@ extension View {
                             )
                         )
                         : SidebarTopLevelPinnedItemTargetUpdate(itemId: itemId)
-                    SidebarDragStateDeferredGeometry.updateTopLevelPinnedItemTarget(
-                        dragState: dragState,
-                        update: update,
+                    geometry.report(
+                        .topLevelPinnedItem(update),
                         generation: generation
                     )
                 },
-                remove: { dragState in
-                    SidebarDragStateDeferredGeometry.removeTopLevelPinnedItemTarget(
-                        dragState: dragState,
-                        itemId: itemId,
+                remove: { geometry in
+                    geometry.report(
+                        .topLevelPinnedItem(
+                            SidebarTopLevelPinnedItemTargetUpdate(itemId: itemId)
+                        ),
                         generation: generation
                     )
                 }
@@ -435,7 +276,7 @@ extension View {
                     AnyHashable(index),
                     AnyHashable(generation),
                 ],
-                report: { dragState, frame in
+                report: { geometry, frame in
                     let update = isActive
                         ? SidebarFolderChildDropTargetUpdate(
                             metrics: SidebarFolderChildDropTargetMetrics(
@@ -446,16 +287,16 @@ extension View {
                             )
                         )
                         : SidebarFolderChildDropTargetUpdate(childId: childId)
-                    SidebarDragStateDeferredGeometry.updateFolderChildDropTarget(
-                        dragState: dragState,
-                        update: update,
+                    geometry.report(
+                        .folderChild(update),
                         generation: generation
                     )
                 },
-                remove: { dragState in
-                    SidebarDragStateDeferredGeometry.removeFolderChildDropTarget(
-                        dragState: dragState,
-                        childId: childId,
+                remove: { geometry in
+                    geometry.report(
+                        .folderChild(
+                            SidebarFolderChildDropTargetUpdate(childId: childId)
+                        ),
                         generation: generation
                     )
                 }
@@ -465,7 +306,7 @@ extension View {
 
     func sidebarRegularListHitGeometry(
         for spaceId: UUID,
-        itemCount: Int,
+        rowCount: Int,
         generation: Int,
         isEnabled: Bool = true
     ) -> some View {
@@ -474,30 +315,71 @@ extension View {
                 isEnabled: isEnabled,
                 detailedGeometrySpace: (spaceId, nil),
                 trigger: [
-                    AnyHashable(itemCount),
+                    AnyHashable(rowCount),
                     AnyHashable(generation),
                 ],
-                report: { dragState, frame in
+                report: { geometry, frame in
                     if isEnabled {
-                        SidebarDragStateDeferredGeometry.updateRegularListHitTarget(
-                            dragState: dragState,
-                            spaceId: spaceId,
-                            frame: frame,
-                            itemCount: itemCount,
+                        geometry.report(
+                            .regularList(
+                                spaceId: spaceId,
+                                frame: frame,
+                                rowCount: rowCount
+                            ),
                             generation: generation
                         )
                     } else {
-                        SidebarDragStateDeferredGeometry.removeRegularListHitTarget(
-                            dragState: dragState,
-                            spaceId: spaceId,
+                        geometry.report(
+                            .regularList(spaceId: spaceId, frame: nil, rowCount: 0),
                             generation: generation
                         )
                     }
                 },
-                remove: { dragState in
-                    SidebarDragStateDeferredGeometry.removeRegularListHitTarget(
-                        dragState: dragState,
-                        spaceId: spaceId,
+                remove: { geometry in
+                    geometry.report(
+                        .regularList(spaceId: spaceId, frame: nil, rowCount: 0),
+                        generation: generation
+                    )
+                }
+            )
+        )
+    }
+
+    func sidebarPinnedListHitGeometry(
+        for spaceId: UUID,
+        rowCount: Int,
+        leadingInset: CGFloat,
+        generation: Int,
+        isEnabled: Bool
+    ) -> some View {
+        modifier(
+            SidebarDragGeometryReporter(
+                isEnabled: isEnabled,
+                detailedGeometrySpace: (spaceId, nil),
+                trigger: [
+                    AnyHashable(rowCount),
+                    AnyHashable(leadingInset),
+                    AnyHashable(generation),
+                ],
+                report: { geometry, frame in
+                    geometry.report(
+                        .pinnedList(
+                            spaceId: spaceId,
+                            frame: frame,
+                            rowCount: rowCount,
+                            leadingInset: leadingInset
+                        ),
+                        generation: generation
+                    )
+                },
+                remove: { geometry in
+                    geometry.report(
+                        .pinnedList(
+                            spaceId: spaceId,
+                            frame: nil,
+                            rowCount: 0,
+                            leadingInset: 0
+                        ),
                         generation: generation
                     )
                 }
@@ -544,7 +426,7 @@ extension View {
                 isEnabled: isEnabled,
                 detailedGeometrySpace: (spaceId, profileId),
                 trigger: signature,
-                report: { dragState, frame in
+                report: { geometry, frame in
                     if isEnabled {
                         let resolvedDropFrame = CGRect(
                             x: frame.minX + dropFrame.minX,
@@ -582,23 +464,20 @@ extension View {
                                 maxDropRowCount: maxDropRowCount
                             )
                         )
-                        SidebarDragStateDeferredGeometry.updateEssentialsLayoutMetrics(
-                            dragState: dragState,
-                            update: update,
+                        geometry.report(
+                            .essentials(update),
                             generation: generation
                         )
                     } else {
-                        SidebarDragStateDeferredGeometry.removeEssentialsLayoutMetrics(
-                            dragState: dragState,
-                            spaceId: spaceId,
+                        geometry.report(
+                            .essentials(SidebarEssentialsLayoutUpdate(spaceId: spaceId)),
                             generation: generation
                         )
                     }
                 },
-                remove: { dragState in
-                    SidebarDragStateDeferredGeometry.removeEssentialsLayoutMetrics(
-                        dragState: dragState,
-                        spaceId: spaceId,
+                remove: { geometry in
+                    geometry.report(
+                        .essentials(SidebarEssentialsLayoutUpdate(spaceId: spaceId)),
                         generation: generation
                     )
                 }
