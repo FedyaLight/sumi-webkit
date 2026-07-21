@@ -236,6 +236,68 @@ final class BrowserShortcutCommandRoutingTests: XCTestCase {
         XCTAssertEqual(harness.windowState.currentSpaceId, third.id)
     }
 
+    /// Every covered position, including the first, reaches its ordinal route.
+    func testGoToSpaceSelectsTheSpaceAtThatCatalogPosition() throws {
+        let harness = try makeHarness()
+        let second = Space(name: "Second", profileId: harness.profile.id)
+        let third = Space(name: "Third", profileId: harness.profile.id)
+        let spaces = [harness.space, second, third]
+        harness.browserManager.spaceStateOwner.replaceSpaces(spaces)
+        harness.browserManager.spaceStateOwner.replaceCurrentSpace(third)
+        harness.windowState.currentSpaceId = third.id
+
+        for (index, expected) in spaces.enumerated() {
+            let action = try XCTUnwrap(SpaceSwitchShortcuts.action(forSpaceAt: index))
+            execute(action, in: harness)
+            XCTAssertEqual(
+                harness.windowState.currentSpaceId,
+                expected.id,
+                "position \(index) must activate \(expected.name)"
+            )
+        }
+    }
+
+    func testGoToSpaceUsesMountedSidebarTransitionInsteadOfCommittingImmediately() throws {
+        let harness = try makeHarness()
+        let second = Space(name: "Second", profileId: harness.profile.id)
+        harness.browserManager.spaceStateOwner.replaceSpaces([
+            harness.space,
+            second,
+        ])
+        let presentation = harness.windowState.presentationState.spaceSwitch
+        let consumerID = UUID()
+        presentation.registerConsumer(consumerID)
+        defer { presentation.unregisterConsumer(consumerID) }
+
+        execute(.goToSpace2, in: harness)
+
+        XCTAssertEqual(harness.windowState.currentSpaceId, harness.space.id)
+        XCTAssertEqual(presentation.request?.targetSpaceID, second.id)
+    }
+
+    func testGoToSpacePastTheCatalogLeavesTheActiveSpaceAlone() throws {
+        let harness = try makeHarness()
+        harness.browserManager.spaceStateOwner.replaceSpaces([harness.space])
+        harness.windowState.currentSpaceId = harness.space.id
+
+        execute(.goToSpace10, in: harness)
+
+        XCTAssertEqual(harness.windowState.currentSpaceId, harness.space.id)
+    }
+
+    func testGoToSpaceDoesNotExposeTheRegularCatalogInAPrivateWindow() throws {
+        let harness = try makeHarness()
+        let second = Space(name: "Second", profileId: harness.profile.id)
+        harness.browserManager.spaceStateOwner.replaceSpaces([harness.space, second])
+        harness.browserManager.spaceStateOwner.replaceCurrentSpace(second)
+        harness.windowState.currentSpaceId = second.id
+        harness.windowState.isIncognito = true
+
+        execute(.goToSpace1, in: harness)
+
+        XCTAssertEqual(harness.windowState.currentSpaceId, second.id)
+    }
+
     func testExpandAllFoldersUsesActiveWindowSpace() throws {
         let harness = try makeHarness()
         let folder = TabFolder(name: "Folder", spaceId: harness.space.id)

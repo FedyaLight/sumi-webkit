@@ -26,7 +26,9 @@ private extension ShortcutAction {
         case .newWindow, .closeBrowser:
             .application
         case .undoCloseTab, .nextSpace, .previousSpace, .closeWindow,
-             .toggleFullScreen, .expandAllFolders:
+             .toggleFullScreen, .expandAllFolders,
+             .goToSpace1, .goToSpace2, .goToSpace3, .goToSpace4, .goToSpace5,
+             .goToSpace6, .goToSpace7, .goToSpace8, .goToSpace9, .goToSpace10:
             .windowsAndSpaces
         case .viewDownloads, .toggleSidebar, .toggleReaderMode,
              .customizeSpaceGradient:

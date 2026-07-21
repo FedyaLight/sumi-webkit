@@ -35,7 +35,22 @@ final class BrowserKeyboardSpaceCommands {
         let nextIndex = (
             currentIndex + offset + spaces.spaces.count
         ) % spaces.spaces.count
-        transitions.setActiveSpace(spaces.spaces[nextIndex], in: windowState)
+        activate(spaces.spaces[nextIndex], in: windowState)
+    }
+
+    /// Activates the space at `index` in catalog order. Positions past the end
+    /// are a no-op: a shortcut may outlive the space it was bound to.
+    func selectSpace(
+        atIndex index: Int,
+        in windowState: BrowserWindowState
+    ) {
+        // Private windows expose one ephemeral space and intentionally hide the
+        // regular spaces strip. An ordinal regular-space command is therefore
+        // unavailable rather than a path back into the durable catalog.
+        guard !windowState.isIncognito,
+              spaces.spaces.indices.contains(index)
+        else { return }
+        activate(spaces.spaces[index], in: windowState)
     }
 
     func expandAllFolders(in windowState: BrowserWindowState) {
@@ -44,5 +59,16 @@ final class BrowserKeyboardSpaceCommands {
         }
         folderOpenState.setAllFolders(open: true, in: currentSpaceID)
         persistence.persist(windowState)
+    }
+
+    private func activate(
+        _ space: Space,
+        in windowState: BrowserWindowState
+    ) {
+        if windowState.presentationState.spaceSwitch
+            .requestAnimatedSwitch(to: space.id) {
+            return
+        }
+        transitions.setActiveSpace(space, in: windowState)
     }
 }

@@ -90,6 +90,7 @@ struct CollapsedSidebarOverlayHost: View {
                     windowState: windowState,
                     windowRegistry: windowRegistry,
                     sumiSettings: sumiSettings,
+                    keyboardShortcutManager: keyboardShortcutManager,
                     nowPlayingController: nowPlayingController,
                     resolvedThemeContext: resolvedThemeContext,
                     chromeBackgroundResolvedThemeContext: chromeBackgroundResolvedThemeContext,
@@ -119,4 +120,5 @@ struct CollapsedSidebarOverlayHost: View {
     }
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(KeyboardShortcutManager.self) private var keyboardShortcutManager
 }

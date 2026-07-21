@@ -12,8 +12,7 @@ import SwiftUI
 
 struct SpacesList: View {
     @Environment(BrowserWindowState.self) private var windowState
-    @Environment(\.sumiSettings) private var sumiSettings
-    @Environment(\.resolvedThemeContext) private var themeContext
+    @Environment(KeyboardShortcutManager.self) private var shortcutManager
     @Environment(\.controlSize) private var controlSize
     let browserContext: SidebarBrowserContext
     let spaceLifecycle: SidebarSpaceLifecycle
@@ -21,9 +20,7 @@ struct SpacesList: View {
     let onSelectSpace: (Space) -> Void
     @State private var availableWidth: CGFloat = 0
     @State private var deferredAvailableWidthMutation = SidebarDeferredStateMutation<CGFloat>()
-    @State private var hoveredSpaceId: UUID?
-    @State private var showPreview: Bool = false
-    @State private var isHoveringList: Bool = false
+    @State private var hoverLabel = SpaceHoverLabelSession()
     @State private var reorderState = ReorderDragState<UUID>()
     @State private var stripScrollPosition = ScrollPosition(edge: .leading)
     @State private var stripScrollOffset: CGFloat = 0
@@ -76,9 +73,6 @@ struct SpacesList: View {
                 revealActiveSpace(animated: false)
             }
         }
-        .overlay(alignment: .top) {
-            spacePreviewOverlay(spaces: displayedSpaces)
-        }
         .onChange(of: visualSelectedSpaceId) { _, _ in
             revealActiveSpace(animated: true)
         }
@@ -87,6 +81,7 @@ struct SpacesList: View {
                 windowState.sidebarInteractionState.syncSidebarItemDrag(false)
             }
             reorderState.reset()
+            hoverLabel.suppress()
             revealActiveSpace(animated: true)
         }
         .onDisappear {
@@ -94,13 +89,10 @@ struct SpacesList: View {
                 windowState.sidebarInteractionState.syncSidebarItemDrag(false)
             }
             reorderState.reset()
+            hoverLabel.suppress()
         }
         .animation(.easeInOut(duration: 0.3), value: visibleSpaces.count)
         .animation(.interactiveSpring(duration: 0.22, extraBounce: 0.05), value: displayedSpaces.map(\.id))
-    }
-
-    private var previewTextColor: Color {
-        themeContext.tokens(settings: sumiSettings).secondaryText
     }
 
     private var canReorderSpaces: Bool {
@@ -109,7 +101,7 @@ struct SpacesList: View {
 
     private func spacesContent(spaces: [Space]) -> some View {
         SpaceStripLayout(geometry: stripGeometry, metrics: metrics) {
-            ForEach(spaces, id: \.id) { space in
+            ForEach(Array(spaces.enumerated()), id: \.element.id) { index, space in
                 SpacesListItem(
                     space: space,
                     browserContext: browserContext,
@@ -129,6 +121,20 @@ struct SpacesList: View {
                     }
                 )
                 .environment(windowState)
+                .anchorPreference(
+                    key: SpaceHoverLabelAnchorPreference.self,
+                    value: .bounds
+                ) { bounds in
+                    guard hoverLabel.visibleSpaceID == space.id else { return nil }
+                    return SpaceHoverLabelAnchor(
+                        label: SpaceHoverLabelBuilder.label(
+                            for: space,
+                            at: index,
+                            shortcuts: shortcutManager
+                        ),
+                        bounds: bounds
+                    )
+                }
                 .gesture(spaceInteractionGesture(for: space, spaces: spaces))
                 .opacity(reorderState.hidesInlineItem(space.id) ? 0 : 1)
                 .id(space.id)
@@ -140,11 +146,8 @@ struct SpacesList: View {
         }
         .coordinateSpace(name: SpaceReorderCoordinateSpace.name)
         .onHover { hovering in
-            isHoveringList = hovering
-            if !hovering {
-                showPreview = false
-                hoveredSpaceId = nil
-            }
+            guard !hovering else { return }
+            hoverLabel.suppress()
         }
         .overlay(alignment: .topLeading) {
             draggedSpaceOverlay(spaces: spaces)
@@ -156,8 +159,9 @@ struct SpacesList: View {
     /// another space is being hovered.
     private func showsCompactDot(for space: Space) -> Bool {
         guard stripGeometry.displayMode == .compactDots else { return false }
-        if hoveredSpaceId == space.id { return false }
-        if visualSelectedSpaceId == space.id { return hoveredSpaceId != nil }
+        let presentedSpaceID = hoverLabel.hoveredSpaceID ?? hoverLabel.visibleSpaceID
+        if presentedSpaceID == space.id { return false }
+        if visualSelectedSpaceId == space.id { return presentedSpaceID != nil }
         return true
     }
 
@@ -197,19 +201,10 @@ struct SpacesList: View {
         guard !reorderState.isDragging else { return }
 
         if isHovering {
-            hoveredSpaceId = space.id
+            hoverLabel.hoverBegan(space.id)
             revealSpace(space.id, animated: true)
-            if !showPreview {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
-                    if hoveredSpaceId == space.id && isHoveringList && !reorderState.isDragging {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            showPreview = true
-                        }
-                    }
-                }
-            }
-        } else if hoveredSpaceId == space.id {
-            hoveredSpaceId = nil
+        } else {
+            hoverLabel.hoverEnded(space.id)
         }
     }
 
@@ -222,8 +217,7 @@ struct SpacesList: View {
             geometry: { reorderGeometry },
             state: $reorderState,
             onBeginDrag: {
-                showPreview = false
-                hoveredSpaceId = nil
+                hoverLabel.suppress()
                 windowState.sidebarInteractionState.syncSidebarItemDrag(true)
             },
             onEndDrag: {
@@ -262,24 +256,4 @@ struct SpacesList: View {
         }
     }
 
-    @ViewBuilder
-    private func spacePreviewOverlay(spaces: [Space]) -> some View {
-        if showPreview,
-           let hoveredId = hoveredSpaceId,
-           hoveredId != visualSelectedSpaceId,
-           let hoveredSpace = spaces.first(where: { $0.id == hoveredId }) {
-            Text(hoveredSpace.name)
-                .font(.caption)
-                .foregroundStyle(previewTextColor)
-                .opacity(0.7)
-                .lineLimit(1)
-                .id(hoveredSpace.id)
-                .transition(
-                    .scale(scale: 0.8)
-                        .combined(with: .opacity)
-                        .animation(.smooth(duration: 0.2))
-                )
-                .offset(y: -20)
-        }
-    }
 }

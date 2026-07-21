@@ -27,6 +27,7 @@ struct WindowView: View {
     @EnvironmentObject private var glanceManager: GlanceManager
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(WindowRegistry.self) private var windowRegistry
+    @Environment(KeyboardShortcutManager.self) private var keyboardShortcutManager
     @Environment(\.sumiSettings) var sumiSettings
     @StateObject private var hoverSidebarManager = HoverSidebarManager()
     @State private var dockedSidebarLayout = DockedSidebarLayoutState()
@@ -411,6 +412,7 @@ struct WindowView: View {
             windowState: windowState,
             windowRegistry: windowRegistry,
             sumiSettings: sumiSettings,
+            keyboardShortcutManager: keyboardShortcutManager,
             nowPlayingController: sidebarContext.nowPlayingController,
             resolvedThemeContext: resolvedThemeContext,
             chromeBackgroundResolvedThemeContext: resolvedThemeContext,

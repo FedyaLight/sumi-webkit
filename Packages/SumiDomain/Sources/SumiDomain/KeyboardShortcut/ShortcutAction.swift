@@ -29,6 +29,16 @@ public enum ShortcutAction: String, CaseIterable, Hashable, Codable, Sendable {
 
     case nextSpace = "next_space"
     case previousSpace = "previous_space"
+    case goToSpace1 = "go_to_space_1"
+    case goToSpace2 = "go_to_space_2"
+    case goToSpace3 = "go_to_space_3"
+    case goToSpace4 = "go_to_space_4"
+    case goToSpace5 = "go_to_space_5"
+    case goToSpace6 = "go_to_space_6"
+    case goToSpace7 = "go_to_space_7"
+    case goToSpace8 = "go_to_space_8"
+    case goToSpace9 = "go_to_space_9"
+    case goToSpace10 = "go_to_space_10"
 
     case newWindow = "new_window"
     case closeWindow = "close_window"
@@ -79,6 +89,16 @@ public enum ShortcutAction: String, CaseIterable, Hashable, Codable, Sendable {
         case .newEmptySplit: return "New Empty Split"
         case .nextSpace: return "Next Space"
         case .previousSpace: return "Previous Space"
+        case .goToSpace1: return "Go to Space 1"
+        case .goToSpace2: return "Go to Space 2"
+        case .goToSpace3: return "Go to Space 3"
+        case .goToSpace4: return "Go to Space 4"
+        case .goToSpace5: return "Go to Space 5"
+        case .goToSpace6: return "Go to Space 6"
+        case .goToSpace7: return "Go to Space 7"
+        case .goToSpace8: return "Go to Space 8"
+        case .goToSpace9: return "Go to Space 9"
+        case .goToSpace10: return "Go to Space 10"
         case .newWindow: return "New Window"
         case .closeWindow: return "Close Window"
         case .closeBrowser: return "Close Browser"
@@ -107,7 +127,9 @@ public enum ShortcutAction: String, CaseIterable, Hashable, Codable, Sendable {
             return .navigation
         case .newTab, .closeTab, .undoCloseTab, .nextTab, .previousTab, .goToTab1, .goToTab2, .goToTab3, .goToTab4, .goToTab5, .goToTab6, .goToTab7, .goToTab8, .goToLastTab, .duplicateTab, .splitGrid, .splitVertical, .splitHorizontal, .unsplit, .newEmptySplit:
             return .tabs
-        case .nextSpace, .previousSpace, .customizeSpaceGradient:
+        case .nextSpace, .previousSpace, .customizeSpaceGradient,
+             .goToSpace1, .goToSpace2, .goToSpace3, .goToSpace4, .goToSpace5,
+             .goToSpace6, .goToSpace7, .goToSpace8, .goToSpace9, .goToSpace10:
             return .spaces
         case .newWindow, .closeWindow, .closeBrowser, .toggleFullScreen, .toggleSidebar:
             return .window

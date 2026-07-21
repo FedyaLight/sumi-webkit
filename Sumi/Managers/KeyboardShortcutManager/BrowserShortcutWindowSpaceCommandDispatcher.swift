@@ -38,7 +38,10 @@ final class BrowserShortcutWindowSpaceCommandDispatcher {
         case .expandAllFolders:
             spaces.expandAllFolders(in: windowState)
         default:
-            return false
+            guard let index = SpaceSwitchShortcuts.spaceIndex(for: action) else {
+                return false
+            }
+            spaces.selectSpace(atIndex: index, in: windowState)
         }
         return true
     }

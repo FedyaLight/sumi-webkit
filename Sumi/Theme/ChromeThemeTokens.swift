@@ -56,6 +56,8 @@ enum ChromeThemeTypography {
     static let floatingBarDeleteControlSmall = Font.system(size: 10, weight: .bold)
     static let floatingBarDeleteControl = Font.system(size: 11, weight: .bold)
     static let floatingBarDeleteAction = Font.system(size: 11, weight: .semibold)
+    static let spaceHoverLabelTitle = Font.system(size: 13, weight: .semibold)
+    static let spaceHoverLabelShortcutChip = Font.system(size: 12, weight: .semibold)
 }
 
 enum ThemeChromeRecipeColors {

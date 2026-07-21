@@ -37,6 +37,7 @@ struct SpacesSideBarView: View {
 
     @State var isSidebarHovered: Bool = false
     @State var transitionCoordinator = SpaceSidebarTransitionCoordinator()
+    @State private var spaceSwitchConsumerID = UUID()
     @StateObject var scrollHoverCoordinator = NativeSurfaceScrollHoverCoordinator()
     let browserContext: SidebarBrowserContext
     let spaceCatalog: SidebarSpaceCatalogProjection
@@ -126,16 +127,23 @@ struct SpacesSideBarView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .onDisappear {
+                windowState.presentationState.spaceSwitch.unregisterConsumer(
+                    spaceSwitchConsumerID
+                )
                 transitionCoordinator.cancelLocalSpaceTransitionIfNeeded(
                     context: makeTransitionContext(spaces: availableSpaces),
                     cancelTheme: true
                 )
                 scrollHoverCoordinator.reset()
             }
+            .onAppear {
+                syncSpaceSwitchConsumer(isEnabled: allowsSidebarInteractiveWork)
+            }
             .onHover { state in
                 isSidebarHovered = allowsSidebarInteractiveWork ? state : false
             }
             .onChange(of: allowsSidebarInteractiveWork) { _, allowsInteractiveWork in
+                syncSpaceSwitchConsumer(isEnabled: allowsInteractiveWork)
                 if !allowsInteractiveWork {
                     isSidebarHovered = false
                 }
@@ -264,6 +272,9 @@ struct SpacesSideBarView: View {
         .onChange(of: windowState.presentationState.pendingSplitGroupFocusRequest) { _, request in
             handlePendingSplitGroupFocusRequest(request, spaces: spaces)
         }
+        .onChange(of: windowState.presentationState.spaceSwitch.request) { _, request in
+            handleSpaceSwitchRequest(request, spaces: spaces)
+        }
     }
 
     var availableSpaces: [Space] {
@@ -348,6 +359,32 @@ struct SpacesSideBarView: View {
         }
 
         switchSpace(to: targetSpace, spaces: spaces)
+    }
+
+    func handleSpaceSwitchRequest(
+        _ request: WindowSpaceSwitchRequest?,
+        spaces: [Space]
+    ) {
+        guard let request else { return }
+        defer {
+            windowState.presentationState.spaceSwitch.consume(request)
+        }
+        guard allowsSidebarInteractiveWork,
+              let targetSpace = space(for: request.targetSpaceID, in: spaces)
+        else { return }
+        switchSpace(to: targetSpace, spaces: spaces)
+    }
+
+    func syncSpaceSwitchConsumer(isEnabled: Bool) {
+        if isEnabled {
+            windowState.presentationState.spaceSwitch.registerConsumer(
+                spaceSwitchConsumerID
+            )
+        } else {
+            windowState.presentationState.spaceSwitch.unregisterConsumer(
+                spaceSwitchConsumerID
+            )
+        }
     }
 
     func switchSpace(

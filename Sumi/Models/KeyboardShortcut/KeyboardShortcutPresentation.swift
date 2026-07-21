@@ -3,8 +3,15 @@ import SwiftUI
 import SumiDomain
 
 enum KeyboardShortcutPresentation {
+    /// One glyph per key the user presses, in menu order (⌃⌥⇧⌘ then the key).
+    /// Surfaces that draw a chip per key read this; `displayString` is the same
+    /// vocabulary joined for menus and recorders.
+    static func glyphs(for keyCombination: KeyCombination) -> [String] {
+        keyCombination.modifiers.orderedMenuGlyphs + [displayKey(for: keyCombination.key)]
+    }
+
     static func displayString(for keyCombination: KeyCombination) -> String {
-        keyCombination.modifiers.menuGlyphs + displayKey(for: keyCombination.key)
+        glyphs(for: keyCombination).joined()
     }
 
     static func keyEquivalent(for keyCombination: KeyCombination) -> KeyEquivalent? {
@@ -82,13 +89,17 @@ enum KeyboardShortcutPresentation {
 }
 
 extension Modifiers {
-    var menuGlyphs: String {
-        var glyphs = ""
-        if contains(.control) { glyphs += "⌃" }
-        if contains(.option) { glyphs += "⌥" }
-        if contains(.shift) { glyphs += "⇧" }
-        if contains(.command) { glyphs += "⌘" }
+    var orderedMenuGlyphs: [String] {
+        var glyphs: [String] = []
+        if contains(.control) { glyphs.append("⌃") }
+        if contains(.option) { glyphs.append("⌥") }
+        if contains(.shift) { glyphs.append("⇧") }
+        if contains(.command) { glyphs.append("⌘") }
         return glyphs
+    }
+
+    var menuGlyphs: String {
+        orderedMenuGlyphs.joined()
     }
 
     var nsEventModifierFlags: NSEvent.ModifierFlags {

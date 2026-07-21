@@ -538,6 +538,7 @@
         "SumiTests/SpaceActivationServiceTests",
         "SumiTests/SpaceCatalogCommandsTests",
         "SumiTests/SpaceCreationSessionTests",
+        "SumiTests/SpaceHoverLabelTests",
         "SumiTests/SpacePinnedListProjectionTests",
         "SumiTests/SpaceProfileReconciliationLeaseTests",
         "SumiTests/SpaceProfileRetirementTransactionTests",

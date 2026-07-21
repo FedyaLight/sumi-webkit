@@ -224,6 +224,7 @@ struct SidebarColumnRepresentable: NSViewControllerRepresentable {
     var windowState: BrowserWindowState
     var windowRegistry: WindowRegistry
     var sumiSettings: SumiSettingsService
+    var keyboardShortcutManager: KeyboardShortcutManager
     var nowPlayingController: SumiNativeNowPlayingController
     var resolvedThemeContext: ResolvedThemeContext
     var chromeBackgroundResolvedThemeContext: ResolvedThemeContext
@@ -239,6 +240,7 @@ struct SidebarColumnRepresentable: NSViewControllerRepresentable {
             windowState: windowState,
             windowRegistry: windowRegistry,
             sumiSettings: sumiSettings,
+            keyboardShortcutManager: keyboardShortcutManager,
             nowPlayingController: nowPlayingController,
             updaterService: updaterService,
             resolvedThemeContext: resolvedThemeContext,

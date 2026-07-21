@@ -14,6 +14,7 @@ struct SidebarHostEnvironmentContext {
     let windowState: BrowserWindowState
     let windowRegistry: WindowRegistry
     let sumiSettings: SumiSettingsService
+    let keyboardShortcutManager: KeyboardShortcutManager
     let nowPlayingController: SumiNativeNowPlayingController
     let updaterService: SumiUpdaterService
     let resolvedThemeContext: ResolvedThemeContext
@@ -134,6 +135,10 @@ extension View {
             .environmentObject(context.sidebarDragState.geometry.refreshSignal)
             .environment(\.sidebarDragStateHandle, context.sidebarDragState)
             .environment(\.sumiSettings, context.sumiSettings)
+            // The sidebar is hosted in its own `NSHostingController`, so the
+            // scene's shortcut manager has to be re-established here for chrome
+            // that renders key bindings.
+            .environment(context.keyboardShortcutManager)
             .sumiChromeThemeScope(
                 context: context.resolvedThemeContext,
                 settings: context.sumiSettings
