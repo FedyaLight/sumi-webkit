@@ -984,8 +984,10 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         )
 
         XCTAssertTrue(browserContext.profileManager === browserManager.profileManager)
-        XCTAssertEqual(browserContext.profileInventory.spacesCount(profile.id), 1)
-        XCTAssertEqual(browserContext.profileInventory.tabsCount(profile.id), 1)
+        XCTAssertEqual(
+            browserContext.profileInventory.usage(profile.id),
+            ProfileUsage(spaces: 1, tabs: 1)
+        )
         XCTAssertTrue(browserContext.extensionsModule === browserManager.optionalModules.extensions)
         XCTAssertTrue(
             browserContext.extensionSurfaceStore === browserManager.optionalModules.extensions.surfaceStore
@@ -1004,7 +1006,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
             activate: false
         )
         XCTAssertEqual(inventoryUpdateCount, 1)
-        XCTAssertEqual(browserContext.profileInventory.tabsCount(profile.id), 2)
+        XCTAssertEqual(browserContext.profileInventory.usage(profile.id).tabs, 2)
 
         var browserManagerChangeCount = 0
         var publishedProfileIDs: [UUID?] = []

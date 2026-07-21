@@ -83,20 +83,16 @@ enum WebsiteViewContextFactory {
         return SettingsBrowserContext(
             profileManager: browserManager.profileManager,
             profileInventory: ProfileSettingsInventory(
-                spacesCount: { profileID in
-                    spaces.spaces.lazy.filter {
-                        $0.profileId == profileID
-                    }.count
-                },
-                tabsCount: { profileID in
+                usage: { profileID in
                     let spaceIDs = Set(
                         spaces.spaces.lazy.filter {
                             $0.profileId == profileID
                         }.map(\.id)
                     )
-                    return membership.allTabs().lazy.filter {
+                    let tabs = membership.allTabs().lazy.filter {
                         $0.spaceId.map(spaceIDs.contains) == true
                     }.count
+                    return ProfileUsage(spaces: spaceIDs.count, tabs: tabs)
                 },
                 updates: browserManager.tabStructureEventBus
                     .structureChangedPublisher

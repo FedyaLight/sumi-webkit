@@ -9,23 +9,13 @@ import SwiftUI
 
 struct ProfileRowView: View {
     let profile: Profile
-    let spacesCount: Int
-    let tabsCount: Int
+    let usage: ProfileUsage
     let canDelete: Bool
     let onEdit: () -> Void
     let onDelete: () -> Void
 
     var body: some View {
         HStack(spacing: 12) {
-            ZStack {
-                Circle()
-                    .fill(Color(nsColor: .controlBackgroundColor))
-                Image(systemName: "person.fill")
-                    .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(.secondary)
-            }
-            .frame(width: 36, height: 36)
-
             VStack(alignment: .leading, spacing: 3) {
                 Text(profile.name)
                     .font(.body)
@@ -79,8 +69,6 @@ struct ProfileRowView: View {
     }
 
     private var profileDetailText: String {
-        let spaces = spacesCount == 1 ? "1 space" : "\(spacesCount) spaces"
-        let tabs = tabsCount == 1 ? "1 tab" : "\(tabsCount) tabs"
-        return "\(spaces) - \(tabs)"
+        "\(usage.spacesText) - \(usage.tabsText)"
     }
 }

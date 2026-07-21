@@ -1,29 +1,14 @@
 //
-//  ProfilesSettingsView.swift
+//  SumiProfilesSettingsPane.swift
 //  Sumi
+//
+//  Profile management (also used in the in-tab settings surface).
 //
 
 import AppKit
 import SwiftUI
 
-/// Profile management (also used in the in-tab settings surface).
 struct SumiProfilesSettingsPane: View {
-    @ObservedObject var profileManager: ProfileManager
-    let profileInventory: ProfileSettingsInventory
-    let deleteProfile: (Profile) -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            ProfilesSettingsView(
-                profileManager: profileManager,
-                profileInventory: profileInventory,
-                deleteProfile: deleteProfile
-            )
-        }
-    }
-}
-
-struct ProfilesSettingsView: View {
     private enum ProfileEditorPresentation: Identifiable {
         case add
         case edit(UUID)
@@ -44,7 +29,7 @@ struct ProfilesSettingsView: View {
     @Environment(\.resolvedThemeContext) private var themeContext
     @State private var profileEditorPresentation: ProfileEditorPresentation?
     @State private var profileCreationFailed = false
-    @State private var inventoryRevision = 0
+    @State private var usage: [UUID: ProfileUsage] = [:]
 
     var body: some View {
         SettingsSection(
@@ -58,17 +43,13 @@ struct ProfilesSettingsView: View {
                         title: "No Profiles",
                         detail: "Add a profile to keep browsing data separate."
                     )
-
-                    SettingsDivider()
-
-                    profileToolbar
                 } else {
                     profileRows
-
-                    SettingsDivider()
-
-                    profileToolbar
                 }
+
+                SettingsDivider()
+
+                profileToolbar
             }
         }
         .sheet(item: $profileEditorPresentation) { presentation in
@@ -80,8 +61,11 @@ struct ProfilesSettingsView: View {
         } message: {
             Text("The profile couldn't be saved. No profile was created.")
         }
+        .onChange(of: profileManager.profiles.map(\.id), initial: true) { _, _ in
+            refreshUsage()
+        }
         .onReceive(profileInventory.updates) { _ in
-            inventoryRevision &+= 1
+            refreshUsage()
         }
     }
 
@@ -92,16 +76,15 @@ struct ProfilesSettingsView: View {
             ForEach(profileManager.profiles, id: \.id) { profile in
                 ProfileRowView(
                     profile: profile,
-                    spacesCount: spacesCount(for: profile),
-                    tabsCount: tabsCount(for: profile),
-                    canDelete: canDelete(profile),
+                    usage: usage(for: profile),
+                    canDelete: canDelete,
                     onEdit: { startEdit(profile) },
                     onDelete: { startDelete(profile) }
                 )
 
                 if profile.id != profileManager.profiles.last?.id {
                     SettingsDivider()
-                        .padding(.leading, 58)
+                        .padding(.leading, 10)
                 }
             }
         }
@@ -117,19 +100,21 @@ struct ProfilesSettingsView: View {
         }
     }
 
-    private func canDelete(_ profile: Profile) -> Bool {
+    /// The last profile is the browser's fallback and can never be removed.
+    private var canDelete: Bool {
         profileManager.profiles.count > 1
-            && profileManager.profiles.contains { $0.id == profile.id }
     }
 
-    private func spacesCount(for profile: Profile) -> Int {
-        _ = inventoryRevision
-        return profileInventory.spacesCount(profile.id)
+    private func usage(for profile: Profile) -> ProfileUsage {
+        usage[profile.id] ?? .none
     }
 
-    private func tabsCount(for profile: Profile) -> Int {
-        _ = inventoryRevision
-        return profileInventory.tabsCount(profile.id)
+    private func refreshUsage() {
+        usage = Dictionary(
+            uniqueKeysWithValues: profileManager.profiles.map {
+                ($0.id, profileInventory.usage($0.id))
+            }
+        )
     }
 
     // MARK: - Actions
@@ -175,7 +160,7 @@ struct ProfilesSettingsView: View {
     }
 
     private func startDelete(_ profile: Profile) {
-        guard canDelete(profile) else { return }
+        guard canDelete else { return }
 
         let alert = NSAlert()
         alert.alertStyle = .warning
@@ -195,8 +180,8 @@ struct ProfilesSettingsView: View {
         cancelButton.keyEquivalent = "\u{1b}"
 
         alert.sumiApplyNativeSurfaceAppearance(themeContext: themeContext)
-        if alert.runModal() == .alertFirstButtonReturn {
-            confirmDelete(profile)
+        if alert.runModal() == .alertFirstButtonReturn, canDelete {
+            deleteProfile(profile)
         }
     }
 
@@ -226,11 +211,6 @@ struct ProfilesSettingsView: View {
         profileEditorPresentation = nil
     }
 
-    private func confirmDelete(_ profile: Profile) {
-        guard canDelete(profile) else { return }
-        deleteProfile(profile)
-    }
-
     private func isProfileNameAvailable(
         _ proposedName: String,
         excluding excludedProfileID: UUID? = nil
@@ -244,10 +224,7 @@ struct ProfilesSettingsView: View {
     }
 
     private func deleteConfirmationMessage(for profile: Profile) -> String {
-        let spaces = spacesCount(for: profile)
-        let tabs = tabsCount(for: profile)
-        let spaceText = spaces == 1 ? "1 space" : "\(spaces) spaces"
-        let tabText = tabs == 1 ? "1 tab" : "\(tabs) tabs"
-        return "\(spaceText) and \(tabText) that use this profile will move to another profile. Website data stored for this profile will be deleted."
+        let usage = usage(for: profile)
+        return "\(usage.spacesText) and \(usage.tabsText) that use this profile will move to another profile. Website data stored for this profile will be deleted."
     }
 }

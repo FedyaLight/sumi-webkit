@@ -4,8 +4,7 @@ import SumiDomain
 
 @MainActor
 struct ProfileSettingsInventory {
-    let spacesCount: (UUID) -> Int
-    let tabsCount: (UUID) -> Int
+    let usage: (UUID) -> ProfileUsage
     let updates: AnyPublisher<Void, Never>
 }
 
