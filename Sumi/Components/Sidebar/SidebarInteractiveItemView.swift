@@ -28,6 +28,7 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
     private var mouseDownPoint: CGPoint?
     private var mouseDownCanStartDrag = false
     private var didStartDrag = false
+    private var didArmDragGeometry = false
     private var isTrackingDragGesture = false
     private var middleMouseDownPoint: CGPoint?
     private var trackedPressedSourceID: String?
@@ -75,15 +76,17 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
     func update(configuration: SidebarAppKitItemConfiguration) {
         let previousSignature = itemConfiguration.bridgeUpdateSignature
         let nextSignature = configuration.bridgeUpdateSignature
+        let didReplaceInteraction = previousSignature != nextSignature
+
+        if didReplaceInteraction && hasInFlightClickGesture {
+            resetMouseState()
+        }
         itemConfiguration = configuration
-        guard previousSignature != nextSignature else { return }
+        guard didReplaceInteraction else { return }
 
         isConfigurationInteractionEnabled = configuration.isInteractionEnabled
         isTransientInteractionEnabled = true
         identifier = configuration.sourceID.map { NSUserInterfaceItemIdentifier($0) }
-        if !configuration.supportsPrimaryMouseTracking {
-            resetMouseState()
-        }
         applyEffectiveInteractionEnabled()
     }
 
@@ -123,6 +126,7 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
                 sidebarDragState?.armInternalDragGeometry(
                     scope: itemConfiguration.dragScope
                 )
+                didArmDragGeometry = true
             }
             contextMenuController?.beginPrimaryMouseTracking(self)
             return
@@ -494,18 +498,23 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
     }
 
     private func resetMouseState() {
-        let shouldCancelArmedGeometry = !didStartDrag
+        let shouldCancelArmedGeometry = didArmDragGeometry && !didStartDrag
         mouseDownEvent = nil
         mouseDownPoint = nil
         mouseDownCanStartDrag = false
         middleMouseDownPoint = nil
         didStartDrag = false
+        didArmDragGeometry = false
         isTrackingDragGesture = false
         endPressTracking()
         if shouldCancelArmedGeometry {
             sidebarDragState?.cancelArmedDragGeometry()
         }
         contextMenuController?.endPrimaryMouseTracking(self)
+    }
+
+    private var hasInFlightClickGesture: Bool {
+        (isTrackingDragGesture && !didStartDrag) || middleMouseDownPoint != nil
     }
 
     private func beginPressTracking() {

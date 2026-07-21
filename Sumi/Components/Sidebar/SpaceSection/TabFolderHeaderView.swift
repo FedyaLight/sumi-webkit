@@ -105,7 +105,6 @@ struct TabFolderHeaderView: View {
                 folderGlyphPresentation: folderGlyphPresentation,
                 folderGlyphPalette: folderShellPalette,
                 exclusionZones: onResetProjection != nil ? [.trailingStrip(40)] : [],
-                onActivate: onToggle,
                 isEnabled: isInteractive
             ),
             primaryAction: onToggle,

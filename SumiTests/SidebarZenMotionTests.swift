@@ -98,6 +98,53 @@ final class SidebarZenMotionTests: XCTestCase {
         XCTAssertNil(state.activePressedSourceID)
     }
 
+    func testBridgeReuseForDifferentSourceCancelsInFlightPrimaryAction() {
+        let state = SidebarInteractionState()
+        var firstActivationCount = 0
+        var secondActivationCount = 0
+        let view = makeInteractiveItemView(
+            sourceID: "folder-header-first",
+            state: state
+        ) {
+            firstActivationCount += 1
+        }
+
+        view.mouseDown(with: mouseEvent(.leftMouseDown))
+        view.update(
+            configuration: SidebarAppKitItemConfiguration(
+                interactionState: state,
+                primaryAction: { secondActivationCount += 1 },
+                sourceID: "folder-header-second"
+            )
+        )
+
+        XCTAssertNil(state.activePressedSourceID)
+
+        view.mouseUp(with: mouseEvent(.leftMouseUp))
+
+        XCTAssertEqual(firstActivationCount, 0)
+        XCTAssertEqual(secondActivationCount, 0)
+    }
+
+    func testBridgeUpdateWithoutLocalGestureDoesNotCancelAnotherRowsArmedDrag() {
+        let dragState = SidebarDragState()
+        dragState.armInternalDragGeometry(scope: nil)
+        let view = SidebarInteractiveItemView(
+            frame: NSRect(x: 0, y: 0, width: 160, height: 36)
+        )
+        view.sidebarDragState = dragState
+
+        view.update(
+            configuration: SidebarAppKitItemConfiguration(
+                primaryAction: { /* no-op */ },
+                sourceID: "folder-header-test"
+            )
+        )
+        view.cancelPrimaryMouseTracking()
+
+        XCTAssertTrue(dragState.isInternalDragGeometryArmed)
+    }
+
     func testUnrelatedBridgeUpdateWithoutSourceDoesNotClearPressedSource() {
         let state = SidebarInteractionState()
         let pressedView = makeInteractiveItemView(
@@ -298,6 +345,11 @@ final class SidebarZenMotionTests: XCTestCase {
         XCTAssertFalse(otherDragState.isInternalDragGeometryArmed)
         XCTAssertEqual(injectedDragState.armedDragScope, scope)
         XCTAssertNil(otherDragState.armedDragScope)
+
+        view.cancelPrimaryMouseTracking()
+
+        XCTAssertFalse(injectedDragState.isInternalDragGeometryArmed)
+        XCTAssertNil(injectedDragState.armedDragScope)
     }
 
     func testPrimaryActionWithSourceIDUsesAppKitOwnerForPressTrackingInDockedSidebar() {
